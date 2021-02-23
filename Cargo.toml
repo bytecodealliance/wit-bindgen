@@ -1,0 +1,19 @@
+[package]
+name = "witx-bindgen-cli"
+version = "0.1.0"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+edition = "2018"
+
+[workspace]
+
+[dependencies]
+anyhow = "1.0"
+structopt = { version = "0.3", default-features = false }
+witx = "0.9"
+
+witx-bindgen-core = { path = 'crates/core' }
+witx-bindgen-rust-wasm = { path = 'crates/rust-wasm' }
+witx-bindgen-wasmtime = { path = 'crates/wasmtime' }
+
+[patch.crates-io]
+witx = { path = '../WASI/tools/witx' }

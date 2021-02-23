@@ -1,0 +1,9 @@
+[package]
+name = "witx-bindgen-rust-wasm"
+version = "0.1.0"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+edition = "2018"
+
+[dependencies]
+witx-bindgen-core = { path = '../core', version = '0.1.0' }
+heck = "0.3"
