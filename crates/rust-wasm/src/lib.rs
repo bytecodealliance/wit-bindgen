@@ -4,22 +4,32 @@ use std::mem;
 use std::process::{Command, Stdio};
 use witx_bindgen_core::{witx::*, Files, Generator};
 
+#[derive(Default)]
 pub struct RustWasm {
     src: String,
     rustfmt: bool,
     multi_module: bool,
+    unchecked: bool,
 }
 
 impl RustWasm {
-    pub fn new(rustfmt: bool, multi_module: bool) -> RustWasm {
-        RustWasm {
-            rustfmt,
-            multi_module,
-            src: "\
-// This file is automatically @generated.
-"
-            .to_string(),
-        }
+    pub fn new() -> RustWasm {
+        RustWasm::default()
+    }
+
+    pub fn rustfmt(&mut self, rustfmt: bool) -> &mut Self {
+        self.rustfmt = rustfmt;
+        self
+    }
+
+    pub fn multi_module(&mut self, multi_module: bool) -> &mut Self {
+        self.multi_module = multi_module;
+        self
+    }
+
+    pub fn unchecked(&mut self, unchecked: bool) -> &mut Self {
+        self.unchecked = unchecked;
+        self
     }
 
     fn rustdoc(&mut self, docs: &str) {
@@ -342,7 +352,7 @@ impl Generator for RustWasm {
         func.call_wasm(
             module,
             &mut RustWasmBindgen {
-                src: &mut self.src,
+                cfg: self,
                 params,
                 block_storage: Vec::new(),
                 blocks: Vec::new(),
@@ -353,22 +363,25 @@ impl Generator for RustWasm {
         self.src.push_str("}}");
     }
 
-    fn export(&mut self, _module: &Id, func: &InterfaceFunc) {
+    fn export(&mut self, module: &Id, func: &InterfaceFunc) {
         let rust_name = func.name.as_ref().to_snake_case();
 
         self.src.push_str("#[export_name = \"");
         self.src.push_str(&rust_name);
         self.src.push_str("\"]\n");
-        self.src.push_str("pub extern \"C\" fn __witx_bindgen_");
+        self.src
+            .push_str("pub unsafe extern \"C\" fn __witx_bindgen_");
         self.src.push_str(&rust_name);
         self.src.push_str("(");
         let sig = func.wasm_signature();
+        let mut params = Vec::new();
         for (i, param) in sig.params.iter().enumerate() {
-            self.src.push_str("arg");
-            self.src.push_str(&i.to_string());
+            let name = format!("arg{}", i);
+            self.src.push_str(&name);
             self.src.push_str(": ");
             self.wasm_type(*param);
             self.src.push_str(",");
+            params.push(name);
         }
         self.src.push_str(")");
 
@@ -382,15 +395,16 @@ impl Generator for RustWasm {
         }
         self.src.push_str("{");
 
-        // func.call_interface(
-        //     module,
-        //     &mut Rust {
-        //         src,
-        //         params: &func.params,
-        //         block_storage: Vec::new(),
-        //         blocks: Vec::new(),
-        //     },
-        // );
+        func.call_interface(
+            module,
+            &mut RustWasmBindgen {
+                cfg: self,
+                params,
+                block_storage: Vec::new(),
+                blocks: Vec::new(),
+                tmp: 0,
+            },
+        );
 
         self.src.push_str("}");
     }
@@ -513,7 +527,7 @@ impl Generator for RustWasm {
 //}
 
 struct RustWasmBindgen<'a> {
-    src: &'a mut String,
+    cfg: &'a mut RustWasm,
     params: Vec<String>,
     block_storage: Vec<String>,
     blocks: Vec<String>,
@@ -526,19 +540,23 @@ impl RustWasmBindgen<'_> {
         self.tmp += 1;
         ret
     }
+
+    fn push_str(&mut self, s: &str) {
+        self.cfg.src.push_str(s);
+    }
 }
 
 impl Bindgen for RustWasmBindgen<'_> {
     type Operand = String;
 
     fn push_block(&mut self) {
-        let prev = mem::replace(self.src, String::new());
+        let prev = mem::take(&mut self.cfg.src);
         self.block_storage.push(prev);
     }
 
     fn finish_block(&mut self, operands: &mut Vec<String>) {
         let to_restore = self.block_storage.pop().unwrap();
-        let src = mem::replace(self.src, to_restore);
+        let src = mem::replace(&mut self.cfg.src, to_restore);
         let expr = match operands.len() {
             0 => "()".to_string(),
             1 => operands.pop().unwrap(),
@@ -553,19 +571,16 @@ impl Bindgen for RustWasmBindgen<'_> {
 
     fn allocate_typed_space(&mut self, ty: &NamedType) -> String {
         let tmp = self.tmp();
-        self.src
-            .push_str(&format!("let mut rp{} = MaybeUninit::<", tmp));
-        self.src.push_str(&ty.name.as_str().to_camel_case());
-        self.src.push_str(">::uninit();");
+        self.push_str(&format!("let mut rp{} = MaybeUninit::<", tmp));
+        self.push_str(&ty.name.as_str().to_camel_case());
+        self.push_str(">::uninit();");
         format!("rp{}.as_mut_ptr() as i32", tmp)
     }
 
     fn allocate_i64_array(&mut self, amt: usize) -> String {
         let tmp = self.tmp();
-        self.src
-            .push_str(&format!("let mut space{} = [0i64; {}];\n", tmp, amt));
-        self.src
-            .push_str(&format!("let ptr{} = space{0}.as_mut_ptr() as i32;\n", tmp));
+        self.push_str(&format!("let mut space{} = [0i64; {}];\n", tmp, amt));
+        self.push_str(&format!("let ptr{} = space{0}.as_mut_ptr() as i32;\n", tmp));
         format!("ptr{}", tmp)
     }
 
@@ -587,21 +602,21 @@ impl Bindgen for RustWasmBindgen<'_> {
             1 => {
                 let tmp = self.tmp();
                 let res = format!("result{}", tmp);
-                self.src.push_str("let ");
-                self.src.push_str(&res);
+                self.push_str("let ");
+                self.push_str(&res);
                 results.push(res);
-                self.src.push_str(" = ");
+                self.push_str(" = ");
             }
             n => {
                 let tmp = self.tmp();
-                self.src.push_str("let (");
+                self.push_str("let (");
                 for i in 0..n {
                     let arg = format!("result{}_{}", tmp, i);
-                    self.src.push_str(&arg);
-                    self.src.push_str(",");
+                    self.push_str(&arg);
+                    self.push_str(",");
                     results.push(arg);
                 }
-                self.src.push_str(") = ");
+                self.push_str(") = ");
             }
         };
 
@@ -635,24 +650,31 @@ impl Bindgen for RustWasmBindgen<'_> {
             | Instruction::If32FromF32
             | Instruction::If64FromF64
             | Instruction::I64FromS64
-            | Instruction::I32FromS32 => {
+            | Instruction::I32FromS32
+            | Instruction::S32FromI32
+            | Instruction::S64FromI64 => {
                 results.push(operands.pop().unwrap());
             }
             Instruction::S8FromI32 => top_as("i8"),
             Instruction::Char8FromI32 | Instruction::U8FromI32 => top_as("u8"),
             Instruction::S16FromI32 => top_as("i16"),
             Instruction::U16FromI32 => top_as("u16"),
-            Instruction::S32FromI32 => {}
             Instruction::U32FromI32 => top_as("u32"),
-            Instruction::S64FromI64 => {}
             Instruction::U64FromI64 => top_as("u64"),
             Instruction::UsizeFromI32 => top_as("usize"),
             Instruction::HandleFromI32 { .. } => top_as("u32"),
             Instruction::CharFromI32 => {
-                results.push(format!(
-                    "std::char::from_u32({} as u32).unwrap()",
-                    operands[0]
-                ));
+                if self.cfg.unchecked {
+                    results.push(format!(
+                        "std::char::from_u32_unchecked({} as u32)",
+                        operands[0]
+                    ));
+                } else {
+                    results.push(format!(
+                        "std::char::from_u32({} as u32).unwrap()",
+                        operands[0]
+                    ));
+                }
             }
 
             Instruction::Bitcasts { casts } => {
@@ -661,7 +683,10 @@ impl Bindgen for RustWasmBindgen<'_> {
                         Bitcast::None => results.push(item),
                         Bitcast::F32ToF64 => results.push(format!("f64::from({})", item)),
                         Bitcast::I32ToI64 => results.push(format!("i64::from({})", item)),
-                        Bitcast::F32ToI32 | Bitcast::F64ToI64 => {
+                        Bitcast::F32ToI32 => {
+                            results.push(format!("({}).to_bits() as i32", item));
+                        }
+                        Bitcast::F64ToI64 => {
                             results.push(format!("({}).to_bits() as i64", item));
                         }
                         Bitcast::F64ToF32 => results.push(format!("{} as f32", item)),
@@ -685,31 +710,31 @@ impl Bindgen for RustWasmBindgen<'_> {
             Instruction::RecordLower { ty, name } => {
                 let tmp = self.tmp();
                 if ty.is_tuple() {
-                    self.src.push_str("let (");
+                    self.push_str("let (");
                     for i in 0..ty.members.len() {
                         let arg = format!("t{}_{}", tmp, i);
-                        self.src.push_str(&arg);
-                        self.src.push_str(",");
+                        self.push_str(&arg);
+                        self.push_str(",");
                         results.push(arg);
                     }
-                    self.src.push_str(") = ");
-                    self.src.push_str(&operands[0]);
-                    self.src.push_str(";\n");
+                    self.push_str(") = ");
+                    self.push_str(&operands[0]);
+                    self.push_str(";\n");
                 } else if let Some(name) = name {
-                    self.src.push_str("let ");
-                    self.src.push_str(&name.name.as_str().to_camel_case());
-                    self.src.push_str("{ ");
+                    self.push_str("let ");
+                    self.push_str(&name.name.as_str().to_camel_case());
+                    self.push_str("{ ");
                     for member in ty.members.iter() {
                         let arg = format!("{}{}", member.name.as_str(), tmp);
-                        self.src.push_str(to_rust_ident(member.name.as_str()));
-                        self.src.push_str(":");
-                        self.src.push_str(&arg);
-                        self.src.push_str(",");
+                        self.push_str(to_rust_ident(member.name.as_str()));
+                        self.push_str(":");
+                        self.push_str(&arg);
+                        self.push_str(",");
                         results.push(arg);
                     }
-                    self.src.push_str("} = ");
-                    self.src.push_str(&operands[0]);
-                    self.src.push_str(";\n");
+                    self.push_str("} = ");
+                    self.push_str(&operands[0]);
+                    self.push_str(";\n");
                 } else {
                     unimplemented!()
                 }
@@ -745,33 +770,32 @@ impl Bindgen for RustWasmBindgen<'_> {
                     .blocks
                     .drain(self.blocks.len() - ty.cases.len()..)
                     .collect::<Vec<_>>();
-                self.src.push_str("match ");
-                self.src.push_str(&operands[0]);
-                self.src.push_str("{\n");
+                self.push_str("match ");
+                self.push_str(&operands[0]);
+                self.push_str("{\n");
                 for (case, block) in ty.cases.iter().zip(blocks) {
                     if ty.is_bool() {
-                        self.src.push_str(case.name.as_str());
+                        self.push_str(case.name.as_str());
                     } else if ty.as_expected().is_some() {
-                        self.src.push_str(&case.name.as_str().to_camel_case());
-                        self.src.push_str("(");
-                        self.src
-                            .push_str(if case.tref.is_some() { "e" } else { "()" });
-                        self.src.push_str(")");
+                        self.push_str(&case.name.as_str().to_camel_case());
+                        self.push_str("(");
+                        self.push_str(if case.tref.is_some() { "e" } else { "()" });
+                        self.push_str(")");
                     } else if let Some(name) = name {
-                        self.src.push_str(&name.name.as_str().to_camel_case());
-                        self.src.push_str("::");
-                        self.src.push_str(&case_name(&case.name));
+                        self.push_str(&name.name.as_str().to_camel_case());
+                        self.push_str("::");
+                        self.push_str(&case_name(&case.name));
                         if case.tref.is_some() {
-                            self.src.push_str("(e)");
+                            self.push_str("(e)");
                         }
                     } else {
                         unimplemented!()
                     }
-                    self.src.push_str(" => { ");
-                    self.src.push_str(&block);
-                    self.src.push_str("}\n");
+                    self.push_str(" => { ");
+                    self.push_str(&block);
+                    self.push_str("}\n");
                 }
-                self.src.push_str("};\n");
+                self.push_str("};\n");
             }
 
             Instruction::VariantLift { ty, name } => {
@@ -806,7 +830,11 @@ impl Bindgen for RustWasmBindgen<'_> {
                     }
                     result.push_str(",\n");
                 }
-                result.push_str("_ => std::hint::unreachable_unchecked(),");
+                if self.cfg.unchecked {
+                    result.push_str("_ => std::hint::unreachable_unchecked(),");
+                } else {
+                    result.push_str("_ => panic!(\"invalid enum discriminant\"),");
+                }
                 result.push_str("}");
                 results.push(result);
             }
@@ -822,13 +850,10 @@ impl Bindgen for RustWasmBindgen<'_> {
                     }
                     _ => operands.pop().unwrap(),
                 };
-                self.src
-                    .push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
-                self.src
-                    .push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, val));
-                self.src
-                    .push_str(&format!("let {} = {}.len() as i32;\n", len, val));
-                self.src.push_str(&format!("std::mem::forget({});\n", val));
+                self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
+                self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, val));
+                self.push_str(&format!("let {} = {}.len() as i32;\n", len, val));
+                self.push_str(&format!("std::mem::forget({});\n", val));
                 results.push(ptr);
                 results.push(len);
             }
@@ -836,15 +861,18 @@ impl Bindgen for RustWasmBindgen<'_> {
             Instruction::ListCanonLift { element, .. } => {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
-                self.src
-                    .push_str(&format!("let {} = {} as usize;\n", len, operands[1]));
+                self.push_str(&format!("let {} = {} as usize;\n", len, operands[1]));
                 let result = format!(
                     "Vec::from_raw_parts({} as *mut _, {1}, {1})",
                     operands[0], len
                 );
                 match &**element.type_() {
                     Type::Builtin(BuiltinType::Char) => {
-                        results.push(format!("String::from_utf8_unchecked({})", result));
+                        if self.cfg.unchecked {
+                            results.push(format!("String::from_utf8_unchecked({})", result));
+                        } else {
+                            results.push(format!("String::from_utf8({}).unwrap()", result));
+                        }
                     }
                     _ => results.push(result),
                 }
@@ -855,8 +883,7 @@ impl Bindgen for RustWasmBindgen<'_> {
                 let tmp = self.tmp();
                 let vec = format!("vec{}", tmp);
                 let result = format!("result{}", tmp);
-                self.src
-                    .push_str(&format!("let {} = {};\n", vec, operands[0]));
+                self.push_str(&format!("let {} = {};\n", vec, operands[0]));
                 let size_align = element.mem_size_align();
                 let (ty, multiplier) = match size_align {
                     SizeAlign { align: 1, size } => ("u8", size),
@@ -865,28 +892,25 @@ impl Bindgen for RustWasmBindgen<'_> {
                     SizeAlign { align: 8, size } => ("u64", size / 8),
                     _ => unimplemented!(),
                 };
-                self.src.push_str(&format!(
+                self.push_str(&format!(
                     "let {} = Vec::<{}>::with_capacity({}.len() * {});\n",
                     result, ty, vec, multiplier,
                 ));
-                self.src.push_str(&format!(
+                self.push_str(&format!(
                     "for (i, e) in {}.into_iter().enumerate() {{\n",
                     vec
                 ));
-                self.src.push_str(&format!(
+                self.push_str(&format!(
                     "let base = {}.as_ptr() as i32 + (i as i32) * {};\n",
                     result, size_align.size,
                 ));
-                self.src.push_str(&body);
-                self.src.push_str("}");
+                self.push_str(&body);
+                self.push_str("}");
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
-                self.src
-                    .push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, result));
-                self.src
-                    .push_str(&format!("let {} = {}.len() as i32;\n", len, result));
-                self.src
-                    .push_str(&format!("std::mem::forget({});\n", result));
+                self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, result));
+                self.push_str(&format!("let {} = {}.len() as i32;\n", len, result));
+                self.push_str(&format!("std::mem::forget({});\n", result));
                 results.push(ptr);
                 results.push(len);
             }
@@ -903,32 +927,31 @@ impl Bindgen for RustWasmBindgen<'_> {
                     _ => unimplemented!(),
                 };
                 let len = format!("len{}", tmp);
-                self.src
-                    .push_str(&format!("let {} = {} as usize;\n", len, operands[1],));
+                self.push_str(&format!("let {} = {} as usize;\n", len, operands[1],));
                 let base = format!("base{}", tmp);
-                self.src.push_str(&format!(
+                self.push_str(&format!(
                     "let {} = Vec::<{}>::from_raw_parts({} as *mut _, {len} * {mult}, {len} * {mult});\n",
                     base, ty, operands[0], len=len, mult=multiplier,
                 ));
                 let result = format!("result{}", tmp);
-                self.src.push_str(&format!(
+                self.push_str(&format!(
                     "let mut {} = Vec::with_capacity({});\n",
                     result, len,
                 ));
 
-                self.src.push_str("for i in 0..");
-                self.src.push_str(&len);
-                self.src.push_str(" {\n");
-                self.src.push_str("let base = ");
-                self.src.push_str(&base);
-                self.src.push_str(".as_ptr() as i32 + (i as i32) *");
-                self.src.push_str(&size_align.size.to_string());
-                self.src.push_str(";\n");
-                self.src.push_str(&result);
-                self.src.push_str(".push(");
-                self.src.push_str(&body);
-                self.src.push_str(");\n");
-                self.src.push_str("}\n");
+                self.push_str("for i in 0..");
+                self.push_str(&len);
+                self.push_str(" {\n");
+                self.push_str("let base = ");
+                self.push_str(&base);
+                self.push_str(".as_ptr() as i32 + (i as i32) *");
+                self.push_str(&size_align.size.to_string());
+                self.push_str(";\n");
+                self.push_str(&result);
+                self.push_str(".push(");
+                self.push_str(&body);
+                self.push_str(");\n");
+                self.push_str("}\n");
                 results.push(result);
             }
 
@@ -945,53 +968,53 @@ impl Bindgen for RustWasmBindgen<'_> {
                 assert!(func_results.len() < 2);
 
                 // Define the actual function we're calling inline
-                self.src.push_str("#[link(wasm_import_module = \"");
-                self.src.push_str(module);
-                self.src.push_str("\")]\n");
-                self.src.push_str("extern \"C\" {\n");
-                self.src.push_str("#[link_name = \"");
-                self.src.push_str(name);
-                self.src.push_str("\"]\n");
-                self.src.push_str("fn witx_import(");
+                self.push_str("#[link(wasm_import_module = \"");
+                self.push_str(module);
+                self.push_str("\")]\n");
+                self.push_str("extern \"C\" {\n");
+                self.push_str("#[link_name = \"");
+                self.push_str(name);
+                self.push_str("\"]\n");
+                self.push_str("fn witx_import(");
                 for param in params.iter() {
-                    self.src.push_str("_: ");
-                    self.src.push_str(wasm_type(*param));
-                    self.src.push_str(",");
+                    self.push_str("_: ");
+                    self.push_str(wasm_type(*param));
+                    self.push_str(",");
                 }
-                self.src.push_str(")");
+                self.push_str(")");
                 for result in func_results.iter() {
-                    self.src.push_str("->");
-                    self.src.push_str(wasm_type(*result));
+                    self.push_str("->");
+                    self.push_str(wasm_type(*result));
                 }
-                self.src.push_str(";\n}\n");
+                self.push_str(";\n}\n");
 
                 // ... then call the function with all our operands
                 if func_results.len() > 0 {
-                    self.src.push_str("let ret = ");
+                    self.push_str("let ret = ");
                     results.push("ret".to_string());
                 }
-                self.src.push_str("witx_import");
-                self.src.push_str("(");
-                self.src.push_str(&operands.join(", "));
-                self.src.push_str(");");
+                self.push_str("witx_import");
+                self.push_str("(");
+                self.push_str(&operands.join(", "));
+                self.push_str(");");
             }
 
             Instruction::CallInterface { module: _, func } => {
                 let_results(func.results.len(), results);
-                self.src.push_str(func.name.as_str());
-                self.src.push_str("(");
-                self.src.push_str(&operands.join(", "));
-                self.src.push_str(");");
+                self.push_str(func.name.as_str());
+                self.push_str("(");
+                self.push_str(&operands.join(", "));
+                self.push_str(");");
             }
 
             Instruction::Return { amt: 0 } => {}
             Instruction::Return { amt: 1 } => {
-                self.src.push_str(&operands[0]);
+                self.push_str(&operands[0]);
             }
             Instruction::Return { .. } => {
-                self.src.push_str("(");
-                self.src.push_str(&operands.join(", "));
-                self.src.push_str(")");
+                self.push_str("(");
+                self.push_str(&operands.join(", "));
+                self.push_str(")");
             }
 
             Instruction::I32Load { offset } => {
@@ -1031,37 +1054,37 @@ impl Bindgen for RustWasmBindgen<'_> {
                 results.push(format!("*(({} + {}) as *const f64)", operands[0], offset));
             }
             Instruction::I32Store { offset } => {
-                self.src.push_str(&format!(
+                self.push_str(&format!(
                     "*(({} + {}) as *mut i32) = {};\n",
                     operands[1], offset, operands[0]
                 ));
             }
             Instruction::I32Store8 { offset } => {
-                self.src.push_str(&format!(
+                self.push_str(&format!(
                     "*(({} + {}) as *mut u8) = ({}) as u8;\n",
                     operands[1], offset, operands[0]
                 ));
             }
             Instruction::I32Store16 { offset } => {
-                self.src.push_str(&format!(
+                self.push_str(&format!(
                     "*(({} + {}) as *mut u16) = ({}) as u16;\n",
                     operands[1], offset, operands[0]
                 ));
             }
             Instruction::I64Store { offset } => {
-                self.src.push_str(&format!(
+                self.push_str(&format!(
                     "*(({} + {}) as *mut i64) = {};\n",
                     operands[1], offset, operands[0]
                 ));
             }
             Instruction::F32Store { offset } => {
-                self.src.push_str(&format!(
+                self.push_str(&format!(
                     "*(({} + {}) as *mut f32) = {};\n",
                     operands[1], offset, operands[0]
                 ));
             }
             Instruction::F64Store { offset } => {
-                self.src.push_str(&format!(
+                self.push_str(&format!(
                     "*(({} + {}) as *mut f64) = {};\n",
                     operands[1], offset, operands[0]
                 ));
