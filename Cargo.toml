@@ -16,4 +16,5 @@ witx-bindgen-rust-wasm = { path = 'crates/rust-wasm' }
 witx-bindgen-wasmtime = { path = 'crates/wasmtime' }
 
 [patch.crates-io]
-witx = { path = '../WASI/tools/witx' }
+#witx = { path = '../WASI/tools/witx' }
+witx = { git = 'https://github.com/alexcrichton/WASI', branch = 'abi-next' }
