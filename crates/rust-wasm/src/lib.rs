@@ -1,4 +1,5 @@
 use heck::*;
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
@@ -7,9 +8,30 @@ use witx_bindgen_core::{witx::*, Files, Generator};
 #[derive(Default)]
 pub struct RustWasm {
     src: String,
+    opts: Opts,
+    needs_mem: bool,
+    type_info: HashMap<Id, TypeInfo>,
+}
+
+#[derive(Default)]
+struct Opts {
     rustfmt: bool,
     multi_module: bool,
     unchecked: bool,
+}
+
+#[derive(Default)]
+struct TypeInfo {
+    param: bool,
+    result: bool,
+    owns_data: bool,
+}
+
+#[derive(Copy, Clone)]
+enum TypeMode {
+    Owned,
+    Borrowed(&'static str),
+    Lifetime(&'static str),
 }
 
 impl RustWasm {
@@ -18,17 +40,17 @@ impl RustWasm {
     }
 
     pub fn rustfmt(&mut self, rustfmt: bool) -> &mut Self {
-        self.rustfmt = rustfmt;
+        self.opts.rustfmt = rustfmt;
         self
     }
 
     pub fn multi_module(&mut self, multi_module: bool) -> &mut Self {
-        self.multi_module = multi_module;
+        self.opts.multi_module = multi_module;
         self
     }
 
     pub fn unchecked(&mut self, unchecked: bool) -> &mut Self {
-        self.unchecked = unchecked;
+        self.opts.unchecked = unchecked;
         self
     }
 
@@ -79,12 +101,7 @@ impl RustWasm {
     }
 
     fn int_repr(&mut self, repr: IntRepr) {
-        match repr {
-            IntRepr::U8 => self.src.push_str("u8"),
-            IntRepr::U16 => self.src.push_str("u16"),
-            IntRepr::U32 => self.src.push_str("u32"),
-            IntRepr::U64 => self.src.push_str("u64"),
-        }
+        self.src.push_str(int_repr(repr));
     }
 
     fn wasm_type(&mut self, ty: WasmType) {
@@ -115,40 +132,60 @@ impl RustWasm {
         }
     }
 
-    fn type_ref(&mut self, ty: &TypeRef) {
+    fn type_ref(&mut self, ty: &TypeRef, mode: TypeMode) {
         match ty {
             TypeRef::Name(t) => {
+                let info = &self.type_info[&t.name];
+
+                // If we're a borrowed piece of data then this is a parameter
+                // and we need a leading `&` out in front. Note that the leading
+                // `&` is skipped for lists whose typedefs already have a
+                // leading `&`.
+                if info.owns_data {
+                    if let TypeMode::Borrowed(lt) = mode {
+                        match &**t.type_() {
+                            Type::List(_) => {}
+                            _ => {
+                                self.src.push_str("&");
+                                if lt != "'_" {
+                                    self.src.push_str(lt);
+                                }
+                                self.src.push_str(" ");
+                            }
+                        }
+                    }
+                }
+
                 self.src.push_str(&t.name.as_str().to_camel_case());
+
+                // If the type recursively owns data and it's a
+                // variant/record/list, then we need to place the lifetime
+                // parameter on the type as well.
+                if info.owns_data {
+                    match &**t.type_() {
+                        Type::Variant(_) | Type::Record(_) | Type::List(_) => {
+                            self.lifetime_param(mode);
+                        }
+                        _ => {}
+                    }
+                }
             }
             TypeRef::Value(v) => match &**v {
                 Type::Builtin(t) => self.builtin(*t),
-                Type::List(t) => match &**t.type_() {
-                    Type::Builtin(BuiltinType::Char) => self.src.push_str("String"),
-                    _ => {
-                        self.src.push_str("Vec<");
-                        self.type_ref(t);
-                        self.src.push_str(">");
-                    }
-                },
-                Type::Pointer(t) => {
-                    self.src.push_str("*mut ");
-                    self.type_ref(t);
-                }
-                Type::ConstPointer(t) => {
-                    self.src.push_str("*const ");
-                    self.type_ref(t);
-                }
+                Type::List(t) => self.type_list(t, mode),
+                Type::Pointer(t) => self.type_pointer("mut", t),
+                Type::ConstPointer(t) => self.type_pointer("const", t),
                 Type::Variant(v) if v.is_bool() => self.src.push_str("bool"),
                 Type::Variant(v) => match v.as_expected() {
                     Some((ok, err)) => {
                         self.src.push_str("Result<");
                         match ok {
-                            Some(ty) => self.type_ref(ty),
+                            Some(ty) => self.type_ref(ty, mode),
                             None => self.src.push_str("()"),
                         }
                         self.src.push_str(",");
                         match err {
-                            Some(ty) => self.type_ref(ty),
+                            Some(ty) => self.type_ref(ty, mode),
                             None => self.src.push_str("()"),
                         }
                         self.src.push_str(">");
@@ -160,7 +197,7 @@ impl RustWasm {
                 Type::Record(r) if r.is_tuple() => {
                     self.src.push_str("(");
                     for member in r.members.iter() {
-                        self.type_ref(&member.tref);
+                        self.type_ref(&member.tref, mode);
                         self.src.push_str(",");
                     }
                     self.src.push_str(")");
@@ -169,13 +206,143 @@ impl RustWasm {
             },
         }
     }
+
+    fn type_list(&mut self, ty: &TypeRef, mode: TypeMode) {
+        match &**ty.type_() {
+            Type::Builtin(BuiltinType::Char) => match mode {
+                TypeMode::Borrowed(lt) | TypeMode::Lifetime(lt) => {
+                    self.src.push_str("&");
+                    if lt != "'_" {
+                        self.src.push_str(lt);
+                        self.src.push_str(" ");
+                    }
+                    self.src.push_str(" str");
+                }
+                TypeMode::Owned => {
+                    self.src.push_str("String");
+                }
+            },
+            _ => match mode {
+                TypeMode::Borrowed(lt) | TypeMode::Lifetime(lt) => {
+                    self.src.push_str("&");
+                    if lt != "'_" {
+                        self.src.push_str(lt);
+                        self.src.push_str(" ");
+                    }
+                    self.src.push_str("[");
+                    self.type_ref(ty, TypeMode::Lifetime(lt));
+                    self.src.push_str("]");
+                }
+                TypeMode::Owned => {
+                    self.src.push_str("Vec<");
+                    self.type_ref(ty, TypeMode::Owned);
+                    self.src.push_str(">");
+                }
+            },
+        }
+    }
+
+    fn type_pointer(&mut self, kind: &str, ty: &TypeRef) {
+        self.src.push_str("*");
+        self.src.push_str(kind);
+        self.src.push_str(" ");
+        match &**ty.type_() {
+            Type::Builtin(_) | Type::Pointer(_) | Type::ConstPointer(_) => {
+                self.type_ref(ty, TypeMode::Owned);
+            }
+            Type::List(_) | Type::Variant(_) => panic!("unsupported type"),
+            Type::Handle(_) | Type::Record(_) => {
+                self.needs_mem = true;
+                self.src.push_str("mem::ManuallyDrop<");
+                self.type_ref(ty, TypeMode::Owned);
+                self.src.push_str(">");
+            }
+        }
+    }
+
+    fn lifetime_param(&mut self, mode: TypeMode) {
+        match mode {
+            TypeMode::Borrowed(lt) | TypeMode::Lifetime(lt) => {
+                self.src.push_str("<");
+                self.src.push_str(lt);
+                self.src.push_str(">");
+            }
+            TypeMode::Owned => {}
+        }
+    }
+
+    fn modes_of(&self, ty: &Id) -> Vec<(String, TypeMode)> {
+        let info = &self.type_info[ty];
+        let mut result = Vec::new();
+        if info.owns_data {
+            if info.param {
+                result.push((info.param_name(ty), TypeMode::Lifetime("'a")));
+            }
+            if info.result {
+                result.push((info.result_name(ty), TypeMode::Lifetime("'a")));
+            }
+        } else {
+            result.push((info.result_name(ty), TypeMode::Owned));
+        }
+        return result;
+    }
+
+    fn register_type_info(&mut self, ty: &TypeRef, param: bool, result: bool) {
+        if let TypeRef::Name(nt) = ty {
+            let info = self.type_info.get_mut(&nt.name).unwrap();
+            info.param = info.param || param;
+            info.result = info.result || result;
+        }
+        let mut owns = false;
+        match &**ty.type_() {
+            Type::Builtin(_) => {}
+            Type::Handle(_) => owns = true,
+            Type::List(t) => {
+                self.register_type_info(t, param, result);
+                owns = true;
+            }
+            Type::Pointer(t) | Type::ConstPointer(t) => self.register_type_info(t, param, result),
+            Type::Variant(v) => {
+                for c in v.cases.iter() {
+                    if let Some(ty) = &c.tref {
+                        self.register_type_info(ty, param, result);
+                    }
+                }
+            }
+            Type::Record(r) => {
+                for member in r.members.iter() {
+                    self.register_type_info(&member.tref, param, result);
+                }
+            }
+        }
+        if let TypeRef::Name(nt) = ty {
+            let info = self.type_info.get_mut(&nt.name).unwrap();
+            info.owns_data = info.owns_data || owns;
+        }
+    }
 }
 
 impl Generator for RustWasm {
+    fn preprocess(&mut self, doc: &Document) {
+        for t in doc.typenames() {
+            self.type_info.insert(t.name.clone(), TypeInfo::default());
+        }
+        for m in doc.modules() {
+            for f in m.funcs() {
+                for param in f.params.iter() {
+                    self.register_type_info(&param.tref, true, false);
+                }
+                for param in f.results.iter() {
+                    self.register_type_info(&param.tref, false, true);
+                }
+            }
+        }
+    }
+
     fn type_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str) {
-        self.rustdoc(docs);
-        let name = name.as_str();
         if let Some(repr) = record.bitflags_repr() {
+            let name = name.as_str();
+            self.rustdoc(docs);
             self.src
                 .push_str(&format!("pub type {} = ", name.to_camel_case()));
             self.int_repr(repr);
@@ -192,58 +359,92 @@ impl Generator for RustWasm {
             }
             return;
         }
-        if record.members.iter().all(|m| is_copy(&m.tref)) {
-            self.src.push_str("#[repr(C)]\n");
-            self.src.push_str("#[derive(Copy)]\n");
+        for (name, mode) in self.modes_of(name) {
+            if record.members.iter().all(|m| is_clone(&m.tref)) {
+                if record.members.iter().all(|m| is_copy(&m.tref)) {
+                    self.src.push_str("#[repr(C)]\n");
+                    self.src.push_str("#[derive(Copy)]\n");
+                }
+                self.src.push_str("#[derive(Clone)]\n");
+            }
+            self.src.push_str("#[derive(Debug)]\n");
+            self.src.push_str(&format!("pub struct {} {{\n", name));
+            for member in record.members.iter() {
+                self.rustdoc(&member.docs);
+                self.src.push_str("pub ");
+                self.src.push_str(to_rust_ident(member.name.as_str()));
+                self.src.push_str(": ");
+                self.type_ref(&member.tref, mode);
+                self.src.push_str(",\n");
+            }
+            self.src.push_str("}\n");
         }
-        self.src.push_str("#[derive(Clone, Debug)]\n");
-        self.src
-            .push_str(&format!("pub struct {} {{\n", name.to_camel_case()));
-        for member in record.members.iter() {
-            self.rustdoc(&member.docs);
-            self.src.push_str("pub ");
-            self.src.push_str(to_rust_ident(member.name.as_str()));
-            self.src.push_str(": ");
-            self.type_ref(&member.tref);
-            self.src.push_str(",\n");
-        }
-        self.src.push_str("}\n");
     }
 
     fn type_variant(&mut self, name: &Id, variant: &Variant, docs: &str) {
-        self.rustdoc(docs);
-        let name = name.as_str();
-        if variant
-            .cases
-            .iter()
-            .filter_map(|c| c.tref.as_ref())
-            .all(is_copy)
-        {
-            self.src.push_str("#[repr(C)]\n");
-            self.src.push_str("#[derive(Copy)]\n");
-        }
-        self.src.push_str("#[derive(Clone, Debug)]\n");
-        self.src
-            .push_str(&format!("pub enum {} {{\n", name.to_camel_case()));
-        for case in variant.cases.iter() {
-            self.rustdoc(&case.docs);
-            self.src.push_str(&case_name(&case.name));
-            if let Some(ty) = &case.tref {
-                self.src.push_str("(");
-                self.type_ref(ty);
-                self.src.push_str(")")
+        for (name, mode) in self.modes_of(name) {
+            self.rustdoc(docs);
+            if variant
+                .cases
+                .iter()
+                .filter_map(|c| c.tref.as_ref())
+                .all(is_clone)
+            {
+                if variant.cases.iter().all(|c| c.tref.is_none()) {
+                    self.src.push_str("#[repr(");
+                    self.int_repr(variant.tag_repr);
+                    self.src.push_str(")]\n#[derive(Copy, PartialEq, Eq)]\n");
+                } else if variant
+                    .cases
+                    .iter()
+                    .filter_map(|c| c.tref.as_ref())
+                    .all(is_copy)
+                {
+                    self.src.push_str("#[derive(Copy)]\n");
+                }
+                self.src.push_str("#[derive(Clone)]\n");
             }
-            self.src.push_str(",\n");
+            self.src.push_str("#[derive(Debug)]\n");
+            self.src
+                .push_str(&format!("pub enum {} {{\n", name.to_camel_case()));
+            for case in variant.cases.iter() {
+                self.rustdoc(&case.docs);
+                self.src.push_str(&case_name(&case.name));
+                if let Some(ty) = &case.tref {
+                    self.src.push_str("(");
+                    self.type_ref(ty, mode);
+                    self.src.push_str(")")
+                }
+                self.src.push_str(",\n");
+            }
+            self.src.push_str("}\n");
         }
-        self.src.push_str("}\n");
     }
 
     fn type_handle(&mut self, name: &Id, _ty: &HandleDatatype, docs: &str) {
         self.rustdoc(docs);
+        self.src.push_str("#[derive(Debug)]\n");
+        self.src.push_str("#[repr(transparent)]\n");
         self.src.push_str(&format!(
-            "pub type {} = u32;",
+            "pub struct {}(i32);",
             name.as_str().to_camel_case()
         ));
+        self.src.push_str("impl ");
+        self.src.push_str(&name.as_str().to_camel_case());
+        self.needs_mem = true;
+        self.src.push_str(
+            " {
+                pub unsafe fn from_raw(raw: i32) -> Self {
+                    Self(raw)
+                }
+
+                pub fn into_raw(self) -> i32 {
+                    let ret = self.0;
+                    mem::forget(self);
+                    return ret;
+                }
+            }",
+        );
     }
 
     fn type_alias(&mut self, name: &Id, ty: &NamedType, docs: &str) {
@@ -256,21 +457,14 @@ impl Generator for RustWasm {
     }
 
     fn type_list(&mut self, name: &Id, ty: &TypeRef, docs: &str) {
-        self.rustdoc(docs);
-
-        self.src
-            .push_str(&format!("pub type {} = ", name.as_str().to_camel_case(),));
-        match &**ty.type_() {
-            Type::Builtin(BuiltinType::Char) => {
-                self.src.push_str("String");
-            }
-            _ => {
-                self.src.push_str("Vec<");
-                self.type_ref(ty);
-                self.src.push('>');
-            }
+        for (name, mode) in self.modes_of(name) {
+            self.rustdoc(docs);
+            self.src.push_str(&format!("pub type {}", name));
+            self.lifetime_param(mode);
+            self.src.push_str(" = ");
+            self.type_list(ty, mode);
+            self.src.push(';');
         }
-        self.src.push(';');
     }
 
     fn type_pointer(&mut self, name: &Id, const_: bool, ty: &TypeRef, docs: &str) {
@@ -281,7 +475,7 @@ impl Generator for RustWasm {
             name.as_str().to_camel_case(),
             mutbl,
         ));
-        self.type_ref(ty);
+        self.type_ref(ty, TypeMode::Owned);
         self.src.push(';');
     }
 
@@ -313,7 +507,7 @@ impl Generator for RustWasm {
 
         self.src.push_str("pub fn ");
 
-        if self.multi_module {
+        if self.opts.multi_module {
             self.src.push_str(&module.as_str().to_snake_case());
             self.src.push('_');
             self.src.push_str(&rust_name);
@@ -327,7 +521,7 @@ impl Generator for RustWasm {
             self.src.push_str(to_rust_ident(param.name.as_str()));
             params.push(to_rust_ident(param.name.as_str()).to_string());
             self.src.push_str(": ");
-            self.type_ref(&param.tref);
+            self.type_ref(&param.tref, TypeMode::Borrowed("'_"));
             self.src.push_str(",");
         }
         self.src.push_str(")");
@@ -336,12 +530,12 @@ impl Generator for RustWasm {
             0 => {}
             1 => {
                 self.src.push_str(" -> ");
-                self.type_ref(&func.results[0].tref);
+                self.type_ref(&func.results[0].tref, TypeMode::Owned);
             }
             _ => {
                 self.src.push_str(" -> (");
                 for result in func.results.iter() {
-                    self.type_ref(&result.tref);
+                    self.type_ref(&result.tref, TypeMode::Owned);
                     self.src.push_str(", ");
                 }
                 self.src.push_str(")");
@@ -349,8 +543,9 @@ impl Generator for RustWasm {
         }
         self.src.push_str("{unsafe{");
 
-        func.call_wasm(
+        func.call(
             module,
+            CallMode::DeclaredImport,
             &mut RustWasmBindgen {
                 cfg: self,
                 params,
@@ -395,8 +590,9 @@ impl Generator for RustWasm {
         }
         self.src.push_str("{");
 
-        func.call_interface(
+        func.call(
             module,
+            CallMode::DefinedExport,
             &mut RustWasmBindgen {
                 cfg: self,
                 params,
@@ -413,7 +609,12 @@ impl Generator for RustWasm {
         let mut files = Files::default();
 
         let mut src = mem::take(&mut self.src);
-        if self.rustfmt {
+
+        if self.needs_mem {
+            src.insert_str(0, "use std::mem;\n");
+        }
+
+        if self.opts.rustfmt {
             let mut child = Command::new("rustfmt")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -571,10 +772,12 @@ impl Bindgen for RustWasmBindgen<'_> {
 
     fn allocate_typed_space(&mut self, ty: &NamedType) -> String {
         let tmp = self.tmp();
-        self.push_str(&format!("let mut rp{} = MaybeUninit::<", tmp));
+        self.cfg.needs_mem = true;
+        self.push_str(&format!("let mut rp{} = mem::MaybeUninit::<", tmp));
         self.push_str(&ty.name.as_str().to_camel_case());
         self.push_str(">::uninit();");
-        format!("rp{}.as_mut_ptr() as i32", tmp)
+        self.push_str(&format!("let ptr{} = rp{0}.as_mut_ptr() as i32;\n", tmp));
+        format!("ptr{}", tmp)
     }
 
     fn allocate_i64_array(&mut self, amt: usize) -> String {
@@ -590,6 +793,7 @@ impl Bindgen for RustWasmBindgen<'_> {
         operands: &mut Vec<String>,
         results: &mut Vec<String>,
     ) {
+        let unchecked = self.cfg.opts.unchecked;
         let mut top_as = |cvt: &str| {
             let mut s = operands.pop().unwrap();
             s.push_str(" as ");
@@ -635,8 +839,7 @@ impl Bindgen for RustWasmBindgen<'_> {
             }
 
             Instruction::I64FromU64 => top_as("i64"),
-            Instruction::I32FromHandle { .. }
-            | Instruction::I32FromUsize
+            Instruction::I32FromUsize
             | Instruction::I32FromChar
             | Instruction::I32FromU8
             | Instruction::I32FromS8
@@ -662,9 +865,8 @@ impl Bindgen for RustWasmBindgen<'_> {
             Instruction::U32FromI32 => top_as("u32"),
             Instruction::U64FromI64 => top_as("u64"),
             Instruction::UsizeFromI32 => top_as("usize"),
-            Instruction::HandleFromI32 { .. } => top_as("u32"),
             Instruction::CharFromI32 => {
-                if self.cfg.unchecked {
+                if unchecked {
                     results.push(format!(
                         "std::char::from_u32_unchecked({} as u32)",
                         operands[0]
@@ -706,6 +908,24 @@ impl Bindgen for RustWasmBindgen<'_> {
                     }
                 }
             }
+
+            Instruction::I32FromOwnedHandle { .. } => unimplemented!(),
+            Instruction::I32FromBorrowedHandle { .. } => {
+                results.push(format!("{}.0", operands[0]));
+            }
+            Instruction::HandleBorrowedFromI32 { .. } => unimplemented!(),
+            Instruction::HandleOwnedFromI32 { ty } => {
+                results.push(format!(
+                    "{}({})",
+                    ty.name.as_str().to_camel_case(),
+                    operands[0]
+                ));
+            }
+
+            Instruction::I32FromBitflags { .. } => top_as("i32"),
+            Instruction::I64FromBitflags { .. } => top_as("i64"),
+            Instruction::BitflagsFromI32 { repr, .. } => top_as(int_repr(*repr)),
+            Instruction::BitflagsFromI64 { repr, .. } => top_as(int_repr(*repr)),
 
             Instruction::RecordLower { ty, name } => {
                 let tmp = self.tmp();
@@ -764,6 +984,21 @@ impl Bindgen for RustWasmBindgen<'_> {
 
             Instruction::VariantPayload => results.push("e".to_string()),
 
+            // If this is a named enum with no type payloads and we're
+            // producing a singular result, then we know we're directly
+            // converting from the Rust enum to the integer discriminant. In
+            // this scenario we can optimize a bit and use just `as i32`
+            // instead of letting LLVM figure out it can do the same with
+            // optimizing the `match` generated below.
+            Instruction::VariantLower {
+                ty,
+                name: Some(_),
+                nresults: 1,
+            } if ty.cases.iter().all(|c| c.tref.is_none()) => {
+                self.blocks.drain(self.blocks.len() - ty.cases.len()..);
+                results.push(format!("{} as i32", operands[0]));
+            }
+
             Instruction::VariantLower { ty, name, nresults } => {
                 let_results(*nresults, results);
                 let blocks = self
@@ -798,6 +1033,24 @@ impl Bindgen for RustWasmBindgen<'_> {
                 self.push_str("};\n");
             }
 
+            // In unchecked mode when this type is a named enum then we know we
+            // defined the type so we can transmute directly into it.
+            Instruction::VariantLift {
+                ty,
+                name: Some(name),
+            } if ty.cases.iter().all(|c| c.tref.is_none()) && unchecked => {
+                self.blocks.drain(self.blocks.len() - ty.cases.len()..);
+                self.cfg.needs_mem = true;
+                let mut result = format!("mem::transmute::<_, ");
+                result.push_str(&name.name.as_str().to_camel_case());
+                result.push_str(">(");
+                result.push_str(&operands[0]);
+                result.push_str(" as ");
+                result.push_str(int_repr(ty.tag_repr));
+                result.push_str(")");
+                results.push(result);
+            }
+
             Instruction::VariantLift { ty, name } => {
                 let blocks = self
                     .blocks
@@ -807,7 +1060,11 @@ impl Bindgen for RustWasmBindgen<'_> {
                 result.push_str(&operands[0]);
                 result.push_str(" {\n");
                 for (i, (case, block)) in ty.cases.iter().zip(blocks).enumerate() {
-                    result.push_str(&i.to_string());
+                    if i == ty.cases.len() - 1 && unchecked {
+                        result.push_str("_");
+                    } else {
+                        result.push_str(&i.to_string());
+                    }
                     result.push_str(" => ");
                     if ty.is_bool() {
                         result.push_str(case.name.as_str());
@@ -830,30 +1087,35 @@ impl Bindgen for RustWasmBindgen<'_> {
                     }
                     result.push_str(",\n");
                 }
-                if self.cfg.unchecked {
-                    result.push_str("_ => std::hint::unreachable_unchecked(),");
-                } else {
+                if !unchecked {
                     result.push_str("_ => panic!(\"invalid enum discriminant\"),");
                 }
                 result.push_str("}");
                 results.push(result);
             }
 
-            Instruction::ListCanonLower { element, .. } => {
+            Instruction::ListCanonLower { element, malloc } => {
                 let tmp = self.tmp();
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
-                let op0 = match &**element.type_() {
-                    Type::Builtin(BuiltinType::Char) => {
-                        format!("{}.into_bytes()", operands[0])
-                    }
-                    _ => operands.pop().unwrap(),
-                };
-                self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
+                if malloc.is_none() {
+                    self.push_str(&format!("let {} = {};\n", val, operands[0]));
+                } else {
+                    let op0 = match &**element.type_() {
+                        Type::Builtin(BuiltinType::Char) => {
+                            format!("{}.into_bytes()", operands[0])
+                        }
+                        _ => operands.pop().unwrap(),
+                    };
+                    self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
+                }
                 self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, val));
                 self.push_str(&format!("let {} = {}.len() as i32;\n", len, val));
-                self.push_str(&format!("std::mem::forget({});\n", val));
+                if malloc.is_some() {
+                    self.cfg.needs_mem = true;
+                    self.push_str(&format!("mem::forget({});\n", val));
+                }
                 results.push(ptr);
                 results.push(len);
             }
@@ -868,7 +1130,7 @@ impl Bindgen for RustWasmBindgen<'_> {
                 );
                 match &**element.type_() {
                     Type::Builtin(BuiltinType::Char) => {
-                        if self.cfg.unchecked {
+                        if unchecked {
                             results.push(format!("String::from_utf8_unchecked({})", result));
                         } else {
                             results.push(format!("String::from_utf8({}).unwrap()", result));
@@ -910,7 +1172,8 @@ impl Bindgen for RustWasmBindgen<'_> {
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, result));
                 self.push_str(&format!("let {} = {}.len() as i32;\n", len, result));
-                self.push_str(&format!("std::mem::forget({});\n", result));
+                self.push_str(&format!("mem::forget({});\n", result));
+                self.cfg.needs_mem = true;
                 results.push(ptr);
                 results.push(len);
             }
@@ -1090,7 +1353,12 @@ impl Bindgen for RustWasmBindgen<'_> {
                 ));
             }
 
-            Instruction::Witx { .. } => unimplemented!(),
+            Instruction::Witx { instr } => match instr {
+                WitxInstruction::I32FromPointer => top_as("i32"),
+                WitxInstruction::I32FromConstPointer => top_as("i32"),
+                WitxInstruction::ReuseReturn => results.push("ret".to_string()),
+                i => unimplemented!("{:?}", i),
+            },
         }
     }
 }
@@ -1110,6 +1378,15 @@ fn wasm_type(ty: WasmType) -> &'static str {
         WasmType::I64 => "i64",
         WasmType::F32 => "f32",
         WasmType::F64 => "f64",
+    }
+}
+
+fn int_repr(repr: IntRepr) -> &'static str {
+    match repr {
+        IntRepr::U8 => "u8",
+        IntRepr::U16 => "u16",
+        IntRepr::U32 => "u32",
+        IntRepr::U64 => "u64",
     }
 }
 
@@ -1141,5 +1418,35 @@ fn is_copy(ty: &TypeRef) -> bool {
         | Type::Builtin(BuiltinType::F64)
         | Type::Pointer(_)
         | Type::ConstPointer(_) => true,
+    }
+}
+
+fn is_clone(ty: &TypeRef) -> bool {
+    match &**ty.type_() {
+        Type::Record(r) => r.members.iter().all(|t| is_clone(&t.tref)),
+        Type::Variant(v) => v.cases.iter().filter_map(|v| v.tref.as_ref()).all(is_clone),
+        Type::Handle(_) => false,
+        Type::List(t) => is_clone(t),
+        Type::Builtin(_) | Type::Pointer(_) | Type::ConstPointer(_) => true,
+    }
+}
+
+impl TypeInfo {
+    fn param_name(&self, name: &Id) -> String {
+        let name = name.as_str().to_camel_case();
+        if self.result && self.owns_data {
+            format!("{}Param", name)
+        } else {
+            name
+        }
+    }
+
+    fn result_name(&self, name: &Id) -> String {
+        let name = name.as_str().to_camel_case();
+        if self.param && self.owns_data {
+            format!("{}Result", name)
+        } else {
+            name
+        }
     }
 }

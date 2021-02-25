@@ -289,32 +289,37 @@ fn export(src: &str, rust: &str) {
 
 fn witx(src: &str, rust: Option<&str>) {
     let base = init();
-    let me = CNT.fetch_add(1, SeqCst);
     let doc = witx::parse(src).unwrap();
-    let files = RustWasm::new().rustfmt(true).generate(&doc, rust.is_none());
-    let dir = base.join(format!("t{}", me));
-    std::fs::create_dir(&dir).unwrap();
-    for (file, contents) in files.iter() {
-        let file = dir.join(file);
-        std::fs::write(&file, &contents).unwrap();
-        let mut cmd = Command::new("rustc");
-        cmd.arg("--target=wasm32-wasi")
-            .arg("--crate-type=lib")
-            .arg("--out-dir")
-            .arg(&dir)
-            .arg("-Dwarnings");
-        match rust {
-            Some(contents) => {
-                let rust = dir.join("lib.rs");
-                std::fs::write(&rust, contents).unwrap();
-                cmd.arg(&rust);
+    for unchecked in [false, true].iter() {
+        let me = CNT.fetch_add(1, SeqCst);
+        let files = RustWasm::new()
+            .rustfmt(true)
+            .unchecked(*unchecked)
+            .generate(&doc, rust.is_none());
+        let dir = base.join(format!("t{}", me));
+        std::fs::create_dir(&dir).unwrap();
+        for (file, contents) in files.iter() {
+            let file = dir.join(file);
+            std::fs::write(&file, &contents).unwrap();
+            let mut cmd = Command::new("rustc");
+            cmd.arg("--target=wasm32-wasi")
+                .arg("--crate-type=lib")
+                .arg("--out-dir")
+                .arg(&dir)
+                .arg("-Dwarnings");
+            match rust {
+                Some(contents) => {
+                    let rust = dir.join("lib.rs");
+                    std::fs::write(&rust, contents).unwrap();
+                    cmd.arg(&rust);
+                }
+                None => {
+                    cmd.arg(&file);
+                }
             }
-            None => {
-                cmd.arg(&file);
-            }
+            let status = cmd.status().unwrap();
+            assert!(status.success());
         }
-        let status = cmd.status().unwrap();
-        assert!(status.success());
     }
 }
 

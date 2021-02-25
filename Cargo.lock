@@ -201,7 +201,6 @@ dependencies = [
 [[package]]
 name = "witx"
 version = "0.9.0"
-source = "git+https://github.com/alexcrichton/WASI?branch=abi-next#c008c8e6d7ff7efc1b3cffefdb724b18940518e8"
 dependencies = [
  "anyhow",
  "log",
@@ -239,3 +238,7 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-wasmtime"
 version = "0.1.0"
+dependencies = [
+ "heck",
+ "witx-bindgen-core",
+]
