@@ -209,9 +209,14 @@ impl RustWasm {
                         }
                         self.src.push_str(">");
                     }
-                    None => {
-                        panic!("unsupported anonymous variant")
-                    }
+                    None => match v.as_option() {
+                        Some(ty) => {
+                            self.src.push_str("Option<");
+                            self.type_ref(ty, mode);
+                            self.src.push_str(">");
+                        }
+                        None => panic!("unsupported anonymous variant"),
+                    },
                 },
                 Type::Record(r) if r.is_tuple() => {
                     self.src.push_str("(");
@@ -1022,6 +1027,11 @@ impl Bindgen for RustWasmBindgen<'_> {
                         self.push_str("(");
                         self.push_str(if case.tref.is_some() { "e" } else { "()" });
                         self.push_str(")");
+                    } else if ty.as_option().is_some() {
+                        self.push_str(&case.name.as_str().to_camel_case());
+                        if case.tref.is_some() {
+                            self.push_str("(e)");
+                        }
                     } else if let Some(name) = name {
                         self.push_str(&name.name.as_str().to_camel_case());
                         self.push_str("::");
@@ -1079,6 +1089,13 @@ impl Bindgen for RustWasmBindgen<'_> {
                         result.push_str("(");
                         result.push_str(&block);
                         result.push_str(")");
+                    } else if ty.as_option().is_some() {
+                        result.push_str(&case.name.as_str().to_camel_case());
+                        if case.tref.is_some() {
+                            result.push_str("(");
+                            result.push_str(&block);
+                            result.push_str(")");
+                        }
                     } else if let Some(name) = name {
                         result.push_str(&name.name.as_str().to_camel_case());
                         result.push_str("::");

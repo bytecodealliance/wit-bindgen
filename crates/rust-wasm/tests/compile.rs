@@ -276,6 +276,30 @@ fn lists() {
     );
 }
 
+#[test]
+fn options() {
+    import("(module $x (export \"y\" (func (param $a (option u8)) (result $b (option u8)))))");
+
+    export(
+        "
+            (module $x
+                (export \"y\" (func
+                    (param $a (option (list char)))
+                    (result $b (option (option char)))
+                ))
+            )
+        ",
+        r#"
+            include!("bindings.rs");
+
+            fn y(a: Option<String>) -> Option<Option<char>> {
+                drop(a);
+                Some(Some('x'))
+            }
+        "#,
+    );
+}
+
 static INIT: Once = Once::new();
 static CNT: AtomicUsize = AtomicUsize::new(0);
 
