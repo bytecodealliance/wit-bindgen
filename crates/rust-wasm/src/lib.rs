@@ -10,6 +10,7 @@ pub struct RustWasm {
     src: String,
     opts: Opts,
     needs_mem: bool,
+    needs_fmt: bool,
     type_info: HashMap<Id, TypeInfo>,
 }
 
@@ -400,6 +401,9 @@ impl Generator for RustWasm {
     }
 
     fn type_variant(&mut self, name: &Id, variant: &Variant, docs: &str) {
+        // TODO: should this perhaps be an attribute in the witx file?
+        let is_error = name.as_str().contains("errno") && variant.is_enum();
+
         for (name, mode) in self.modes_of(name) {
             self.rustdoc(docs);
             if variant
@@ -408,7 +412,7 @@ impl Generator for RustWasm {
                 .filter_map(|c| c.tref.as_ref())
                 .all(is_clone)
             {
-                if variant.cases.iter().all(|c| c.tref.is_none()) {
+                if variant.is_enum() {
                     self.src.push_str("#[repr(");
                     self.int_repr(variant.tag_repr);
                     self.src.push_str(")]\n#[derive(Copy, PartialEq, Eq)]\n");
@@ -422,7 +426,9 @@ impl Generator for RustWasm {
                 }
                 self.src.push_str("#[derive(Clone)]\n");
             }
-            self.src.push_str("#[derive(Debug)]\n");
+            if !is_error {
+                self.src.push_str("#[derive(Debug)]\n");
+            }
             self.src
                 .push_str(&format!("pub enum {} {{\n", name.to_camel_case()));
             for case in variant.cases.iter() {
@@ -436,6 +442,71 @@ impl Generator for RustWasm {
                 self.src.push_str(",\n");
             }
             self.src.push_str("}\n");
+
+            // Auto-synthesize an implementation of the standard `Error` trait for
+            // error-looking types based on their name.
+            if is_error {
+                self.needs_fmt = true;
+                self.src.push_str("impl ");
+                self.src.push_str(&name);
+                self.src.push_str("{\n");
+
+                self.src.push_str("pub fn name(&self) -> &'static str {\n");
+                self.src.push_str("match self {");
+                for case in variant.cases.iter() {
+                    self.src.push_str(&name);
+                    self.src.push_str("::");
+                    self.src.push_str(&case_name(&case.name));
+                    self.src.push_str(" => \"");
+                    self.src.push_str(case.name.as_str());
+                    self.src.push_str("\",");
+                }
+                self.src.push_str("}\n");
+                self.src.push_str("}\n");
+
+                self.src
+                    .push_str("pub fn message(&self) -> &'static str {\n");
+                self.src.push_str("match self {");
+                for case in variant.cases.iter() {
+                    self.src.push_str(&name);
+                    self.src.push_str("::");
+                    self.src.push_str(&case_name(&case.name));
+                    self.src.push_str(" => \"");
+                    self.src.push_str(case.docs.trim());
+                    self.src.push_str("\",");
+                }
+                self.src.push_str("}\n");
+                self.src.push_str("}\n");
+
+                self.src.push_str("}\n");
+
+                self.src.push_str("impl fmt::Debug for ");
+                self.src.push_str(&name);
+                self.src
+                    .push_str("{\nfn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n");
+                self.src.push_str("f.debug_struct(\"");
+                self.src.push_str(&name);
+                self.src.push_str("\")");
+                self.src.push_str(".field(\"code\", &(*self as i32))");
+                self.src.push_str(".field(\"name\", &self.name())");
+                self.src.push_str(".field(\"message\", &self.message())");
+                self.src.push_str(".finish()");
+                self.src.push_str("}\n");
+                self.src.push_str("}\n");
+
+                self.src.push_str("impl fmt::Display for ");
+                self.src.push_str(&name);
+                self.src
+                    .push_str("{\nfn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n");
+                self.src
+                    .push_str("write!(f, \"{} (error {})\", self.name(), *self as i32)");
+                self.src.push_str("}\n");
+                self.src.push_str("}\n");
+                self.src.push_str("\n");
+                self.src.push_str("impl std::error::Error for ");
+                self.src.push_str(&name);
+                self.src.push_str("{}\n");
+            }
         }
     }
 
@@ -631,6 +702,9 @@ impl Generator for RustWasm {
         if self.needs_mem {
             src.insert_str(0, "use std::mem;\n");
         }
+        if self.needs_fmt {
+            src.insert_str(0, "use std::fmt;\n");
+        }
 
         if self.opts.rustfmt {
             let mut child = Command::new("rustfmt")
@@ -658,92 +732,6 @@ impl Generator for RustWasm {
         files
     }
 }
-
-//fn render_enum_like_variant(src: &mut String, name: &str, s: &Variant) {
-//    src.push_str("#[repr(transparent)]\n");
-//    src.push_str("#[derive(Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]\n");
-//    src.push_str(&format!("pub struct {}(", name.to_camel_case()));
-//    s.tag_repr.render(src);
-//    src.push_str(");\n");
-//    for (i, variant) in s.cases.iter().enumerate() {
-//        rustdoc(&variant.docs, src);
-//        src.push_str(&format!(
-//            "pub const {}_{}: {ty} = {ty}({});\n",
-//            name.to_shouty_snake_case(),
-//            variant.name.as_str().to_shouty_snake_case(),
-//            i,
-//            ty = name.to_camel_case(),
-//        ));
-//    }
-//    let camel_name = name.to_camel_case();
-
-//    src.push_str("impl ");
-//    src.push_str(&camel_name);
-//    src.push_str("{\n");
-
-//    src.push_str("pub const fn raw(&self) -> ");
-//    s.tag_repr.render(src);
-//    src.push_str("{ self.0 }\n\n");
-
-//    src.push_str("pub fn name(&self) -> &'static str {\n");
-//    src.push_str("match self.0 {");
-//    for (i, variant) in s.cases.iter().enumerate() {
-//        src.push_str(&i.to_string());
-//        src.push_str(" => \"");
-//        src.push_str(&variant.name.as_str().to_shouty_snake_case());
-//        src.push_str("\",");
-//    }
-//    src.push_str("_ => unsafe { core::hint::unreachable_unchecked() },");
-//    src.push_str("}\n");
-//    src.push_str("}\n");
-
-//    src.push_str("pub fn message(&self) -> &'static str {\n");
-//    src.push_str("match self.0 {");
-//    for (i, variant) in s.cases.iter().enumerate() {
-//        src.push_str(&i.to_string());
-//        src.push_str(" => \"");
-//        src.push_str(variant.docs.trim());
-//        src.push_str("\",");
-//    }
-//    src.push_str("_ => unsafe { core::hint::unreachable_unchecked() },");
-//    src.push_str("}\n");
-//    src.push_str("}\n");
-
-//    src.push_str("}\n");
-
-//    src.push_str("impl fmt::Debug for ");
-//    src.push_str(&camel_name);
-//    src.push_str("{\nfn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n");
-//    src.push_str("f.debug_struct(\"");
-//    src.push_str(&camel_name);
-//    src.push_str("\")");
-//    src.push_str(".field(\"code\", &self.0)");
-//    src.push_str(".field(\"name\", &self.name())");
-//    src.push_str(".field(\"message\", &self.message())");
-//    src.push_str(".finish()");
-//    src.push_str("}\n");
-//    src.push_str("}\n");
-
-//    // Auto-synthesize an implementation of the standard `Error` trait for
-//    // error-looking types based on their name.
-//    //
-//    // TODO: should this perhaps be an attribute in the witx file?
-//    if name.contains("errno") {
-//        src.push_str("impl fmt::Display for ");
-//        src.push_str(&camel_name);
-//        src.push_str("{\nfn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n");
-//        src.push_str("write!(f, \"{} (error {})\", self.name(), self.0)");
-//        src.push_str("}\n");
-//        src.push_str("}\n");
-//        src.push_str("\n");
-//        src.push_str("#[cfg(feature = \"std\")]\n");
-//        src.push_str("extern crate std;\n");
-//        src.push_str("#[cfg(feature = \"std\")]\n");
-//        src.push_str("impl std::error::Error for ");
-//        src.push_str(&camel_name);
-//        src.push_str("{}\n");
-//    }
-//}
 
 struct RustWasmBindgen<'a> {
     cfg: &'a mut RustWasm,
