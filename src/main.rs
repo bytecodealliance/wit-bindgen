@@ -54,6 +54,7 @@ fn main() -> Result<()> {
             Some(path) => path.join(name),
             None => name.into(),
         };
+        println!("Generating {:?}", dst);
         std::fs::write(&dst, contents).with_context(|| format!("failed to write {:?}", dst))?;
     }
 
