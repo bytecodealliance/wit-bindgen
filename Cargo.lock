@@ -232,6 +232,7 @@ name = "witx-bindgen-rust-wasm"
 version = "0.1.0"
 dependencies = [
  "heck",
+ "structopt",
  "witx-bindgen-core",
 ]
 

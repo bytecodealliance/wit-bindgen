@@ -12,7 +12,7 @@ structopt = { version = "0.3", default-features = false }
 witx = "0.9"
 
 witx-bindgen-core = { path = 'crates/core' }
-witx-bindgen-rust-wasm = { path = 'crates/rust-wasm' }
+witx-bindgen-rust-wasm = { path = 'crates/rust-wasm', features = ['structopt'] }
 witx-bindgen-wasmtime = { path = 'crates/wasmtime' }
 
 [patch.crates-io]

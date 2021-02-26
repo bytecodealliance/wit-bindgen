@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 witx-bindgen-core = { path = '../core', version = '0.1.0' }
 heck = "0.3"
+structopt = { version = "0.3", default-features = false, optional = true }

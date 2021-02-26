@@ -13,11 +13,29 @@ pub struct RustWasm {
     type_info: HashMap<Id, TypeInfo>,
 }
 
-#[derive(Default)]
-struct Opts {
+#[derive(Default, Debug)]
+#[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
+pub struct Opts {
+    /// Whether or not `rustfmt` is executed to format generated code.
+    #[cfg_attr(feature = "structopt", structopt(long))]
     rustfmt: bool,
+
+    /// Adds the witx module name into import binding names when enabled.
+    #[cfg_attr(feature = "structopt", structopt(long))]
     multi_module: bool,
+
+    /// Whether or not the bindings assume interface values are always
+    /// well-formed or whether checks are performed.
+    #[cfg_attr(feature = "structopt", structopt(long))]
     unchecked: bool,
+}
+
+impl Opts {
+    pub fn build(self) -> RustWasm {
+        let mut r = RustWasm::new();
+        r.opts = self;
+        r
+    }
 }
 
 #[derive(Default)]
