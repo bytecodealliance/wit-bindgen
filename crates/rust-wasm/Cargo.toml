@@ -1,11 +1,8 @@
 [package]
-name = "witx-bindgen-rust-wasm"
+name = "witx-bindgen-rust"
 version = "0.1.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 edition = "2018"
 
 [dependencies]
-witx-bindgen-core = { path = '../core', version = '0.1.0' }
-witx-bindgen-rust-core = { path = '../rust-core', version = '0.1.0' }
-heck = "0.3"
-structopt = { version = "0.3", default-features = false, optional = true }
+witx-bindgen-rust-impl = { path = "../rust-wasm-impl" }

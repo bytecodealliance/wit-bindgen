@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use structopt::StructOpt;
-use witx_bindgen_core::{witx, Generator};
+use witx_bindgen_gen_core::{witx, Generator};
 
 #[derive(Debug, StructOpt)]
 struct Opt {
@@ -13,13 +13,13 @@ struct Opt {
 enum Command {
     RustWasm {
         #[structopt(flatten)]
-        opts: witx_bindgen_rust_wasm::Opts,
+        opts: witx_bindgen_gen_rust_wasm::Opts,
         #[structopt(flatten)]
         common: Common,
     },
     Wasmtime {
         #[structopt(flatten)]
-        opts: witx_bindgen_wasmtime::Opts,
+        opts: witx_bindgen_gen_wasmtime::Opts,
         #[structopt(flatten)]
         common: Common,
     },

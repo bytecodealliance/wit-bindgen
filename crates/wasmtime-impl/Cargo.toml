@@ -1,0 +1,14 @@
+[package]
+name = "witx-bindgen-wasmtime-impl"
+version = "0.1.0"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+syn = "1.0"
+witx-bindgen-gen-core = { path = "../gen-core", version = "0.1" }
+witx-bindgen-gen-wasmtime = { path = "../gen-wasmtime", version = "0.1" }

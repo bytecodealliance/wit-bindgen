@@ -1,5 +1,5 @@
 use heck::*;
-use witx_bindgen_core::{witx::*, TypeInfo};
+use witx_bindgen_gen_core::{witx::*, TypeInfo};
 
 #[derive(Copy, Clone)]
 pub enum TypeMode {
