@@ -228,12 +228,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "witx-bindgen-rust-core"
+version = "0.1.0"
+dependencies = [
+ "heck",
+ "witx-bindgen-core",
+]
+
+[[package]]
 name = "witx-bindgen-rust-wasm"
 version = "0.1.0"
 dependencies = [
  "heck",
  "structopt",
  "witx-bindgen-core",
+ "witx-bindgen-rust-core",
 ]
 
 [[package]]
@@ -241,5 +250,7 @@ name = "witx-bindgen-wasmtime"
 version = "0.1.0"
 dependencies = [
  "heck",
+ "structopt",
  "witx-bindgen-core",
+ "witx-bindgen-rust-core",
 ]

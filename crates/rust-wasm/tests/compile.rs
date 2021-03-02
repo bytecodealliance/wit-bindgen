@@ -6,7 +6,6 @@ use std::sync::{
     Once,
 };
 use witx_bindgen_core::{witx, Generator};
-use witx_bindgen_rust_wasm::RustWasm;
 
 #[test]
 fn smoke() {
@@ -316,10 +315,10 @@ fn witx(src: &str, rust: Option<&str>) {
     let doc = witx::parse(src).unwrap();
     for unchecked in [false, true].iter() {
         let me = CNT.fetch_add(1, SeqCst);
-        let files = RustWasm::new()
-            .rustfmt(true)
-            .unchecked(*unchecked)
-            .generate(&doc, rust.is_none());
+        let mut opts = witx_bindgen_rust_wasm::Opts::default();
+        opts.rustfmt = true;
+        opts.unchecked = *unchecked;
+        let files = opts.build().generate(&doc, rust.is_none());
         let dir = base.join(format!("t{}", me));
         std::fs::create_dir(&dir).unwrap();
         for (file, contents) in files.iter() {
@@ -330,7 +329,8 @@ fn witx(src: &str, rust: Option<&str>) {
                 .arg("--crate-type=lib")
                 .arg("--out-dir")
                 .arg(&dir)
-                .arg("-Dwarnings");
+                .arg("-Dwarnings")
+                .arg("-Adead-code");
             match rust {
                 Some(contents) => {
                     let rust = dir.join("lib.rs");

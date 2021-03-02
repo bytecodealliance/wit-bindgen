@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use witx::*;
 
 pub use witx;
@@ -55,6 +56,94 @@ pub trait Generator {
         }
 
         self.finish()
+    }
+}
+
+#[derive(Default)]
+pub struct Types {
+    type_info: HashMap<Id, TypeInfo>,
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct TypeInfo {
+    /// Whether or not this type is ever used (transitively) within the
+    /// parameter of a function.
+    pub param: bool,
+
+    /// Whether or not this type is ever used (transitively) within the
+    /// result of a function.
+    pub result: bool,
+
+    /// Whether or not this type (transitively) has a list.
+    pub has_list: bool,
+
+    /// Whether or not this type (transitively) has a handle.
+    pub has_handle: bool,
+}
+
+impl Types {
+    pub fn analyze(&mut self, doc: &Document) {
+        for t in doc.typenames() {
+            self.type_info.insert(t.name.clone(), TypeInfo::default());
+        }
+        for m in doc.modules() {
+            for f in m.funcs() {
+                for param in f.params.iter() {
+                    self.register_type_info(&param.tref, true, false);
+                }
+                for param in f.results.iter() {
+                    self.register_type_info(&param.tref, false, true);
+                }
+            }
+        }
+    }
+
+    pub fn get(&self, id: &Id) -> TypeInfo {
+        self.type_info[id]
+    }
+
+    fn register_type_info(&mut self, ty: &TypeRef, param: bool, result: bool) -> (bool, bool) {
+        if let TypeRef::Name(nt) = ty {
+            let info = self.type_info.get_mut(&nt.name).unwrap();
+            info.param = info.param || param;
+            info.result = info.result || result;
+        }
+        let (list, handle) = match &**ty.type_() {
+            Type::Handle(_) | Type::Builtin(_) => (false, false),
+            Type::List(t) => {
+                let (_list, handle) = self.register_type_info(t, param, result);
+                (true, handle)
+            }
+            Type::Pointer(t) | Type::ConstPointer(t) => self.register_type_info(t, param, result),
+            Type::Variant(v) => {
+                let mut list = false;
+                let mut handle = false;
+                for c in v.cases.iter() {
+                    if let Some(ty) = &c.tref {
+                        let pair = self.register_type_info(ty, param, result);
+                        list = list || pair.0;
+                        handle = handle || pair.1;
+                    }
+                }
+                (list, handle)
+            }
+            Type::Record(r) => {
+                let mut list = false;
+                let mut handle = false;
+                for member in r.members.iter() {
+                    let pair = self.register_type_info(&member.tref, param, result);
+                    list = list || pair.0;
+                    handle = handle || pair.1;
+                }
+                (list, handle)
+            }
+        };
+        if let TypeRef::Name(nt) = ty {
+            let info = self.type_info.get_mut(&nt.name).unwrap();
+            info.has_list = info.has_list || list;
+            info.has_handle = info.has_handle || handle;
+        }
+        (list, handle)
     }
 }
 

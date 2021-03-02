@@ -17,6 +17,12 @@ enum Command {
         #[structopt(flatten)]
         common: Common,
     },
+    Wasmtime {
+        #[structopt(flatten)]
+        opts: witx_bindgen_wasmtime::Opts,
+        #[structopt(flatten)]
+        common: Common,
+    },
 }
 
 #[derive(Debug, StructOpt)]
@@ -41,6 +47,7 @@ fn main() -> Result<()> {
     let opt = Opt::from_args();
     let (mut generator, common): (Box<dyn Generator>, _) = match opt.command {
         Command::RustWasm { opts, common } => (Box::new(opts.build()), common),
+        Command::Wasmtime { opts, common } => (Box::new(opts.build()), common),
     };
 
     if !common.import && !common.export {
