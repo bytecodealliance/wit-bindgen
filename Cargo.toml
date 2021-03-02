@@ -20,5 +20,5 @@ witx-bindgen-gen-rust-wasm = { path = 'crates/gen-rust-wasm', features = ['struc
 witx-bindgen-gen-wasmtime = { path = 'crates/gen-wasmtime', features = ['structopt'] }
 
 [patch.crates-io]
-witx = { path = '../WASI/tools/witx' }
-#witx = { git = 'https://github.com/alexcrichton/WASI', branch = 'abi-next' }
+#witx = { path = '../WASI/tools/witx' }
+witx = { git = 'https://github.com/alexcrichton/WASI', branch = 'abi-next' }
