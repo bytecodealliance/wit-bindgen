@@ -153,24 +153,33 @@ impl Generator for RustWasm {
             return;
         }
         for (name, mode) in self.modes_of(name) {
-            if !info.has_handle {
-                if !info.owns_data() {
-                    self.src.push_str("#[repr(C)]\n");
-                    self.src.push_str("#[derive(Copy)]\n");
+            if record.is_tuple() {
+                self.src.push_str(&format!("pub type {} = (", name));
+                for member in record.members.iter() {
+                    self.print_tref(&member.tref, mode);
+                    self.src.push_str(",");
                 }
-                self.src.push_str("#[derive(Clone)]\n");
+                self.src.push_str(");\n");
+            } else {
+                if !info.has_handle {
+                    if !info.owns_data() {
+                        self.src.push_str("#[repr(C)]\n");
+                        self.src.push_str("#[derive(Copy)]\n");
+                    }
+                    self.src.push_str("#[derive(Clone)]\n");
+                }
+                self.src.push_str("#[derive(Debug)]\n");
+                self.src.push_str(&format!("pub struct {} {{\n", name));
+                for member in record.members.iter() {
+                    self.rustdoc(&member.docs);
+                    self.src.push_str("pub ");
+                    self.src.push_str(to_rust_ident(member.name.as_str()));
+                    self.src.push_str(": ");
+                    self.print_tref(&member.tref, mode);
+                    self.src.push_str(",\n");
+                }
+                self.src.push_str("}\n");
             }
-            self.src.push_str("#[derive(Debug)]\n");
-            self.src.push_str(&format!("pub struct {} {{\n", name));
-            for member in record.members.iter() {
-                self.rustdoc(&member.docs);
-                self.src.push_str("pub ");
-                self.src.push_str(to_rust_ident(member.name.as_str()));
-                self.src.push_str(": ");
-                self.print_tref(&member.tref, mode);
-                self.src.push_str(",\n");
-            }
-            self.src.push_str("}\n");
         }
     }
 

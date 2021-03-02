@@ -19,7 +19,7 @@ fn run(input: TokenStream, import: bool) -> TokenStream {
     let (_, contents) = files.iter().next().unwrap();
 
     let mut header = "
-        use witx_bindgen_wasmtime::{wasmtime, anyhow};
+        use witx_bindgen_wasmtime::{wasmtime, anyhow, bitflags};
     "
     .parse::<TokenStream>()
     .unwrap();

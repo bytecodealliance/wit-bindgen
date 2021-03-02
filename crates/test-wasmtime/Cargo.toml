@@ -7,7 +7,6 @@ publish = false
 
 [dependencies]
 anyhow = "1.0"
-wasmtime = "0.23.0"
-wasmtime-wasi = "0.23.0"
+wasmtime = "0.22.0"
+wasmtime-wasi = "0.22.0"
 witx-bindgen-wasmtime = { path = "../wasmtime" }
-wasi-cap-std-sync = "0.23.0"

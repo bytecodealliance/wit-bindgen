@@ -143,19 +143,19 @@ impl Generator for Wasmtime {
             for (i, member) in record.members.iter().enumerate() {
                 self.rustdoc(&member.docs);
                 self.src.push_str(&format!(
-                    "const {}: {} = 1 << {};\n",
-                    member.name.as_str().to_shouty_snake_case(),
-                    name.to_camel_case(),
-                    i,
+                    "const {} = 1 << {};\n",
+                    member.name.as_str().to_camel_case(),
+                    i
                 ));
             }
             self.src.push_str("}\n");
             self.src.push_str("}\n\n");
 
-            self.src.push_str("impl fmt::Display for ");
+            self.src.push_str("impl std::fmt::Display for ");
             self.src.push_str(&name.to_camel_case());
-            self.src
-                .push_str("{\nfn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n");
+            self.src.push_str(
+                "{\nfn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
+            );
 
             self.src.push_str("f.write_str(\"");
             self.src.push_str(&name.to_camel_case());
@@ -171,25 +171,35 @@ impl Generator for Wasmtime {
             self.src.push_str("}\n\n");
             return;
         }
+
         for (name, mode) in self.modes_of(name) {
-            if !info.has_handle {
-                if !info.owns_data() {
-                    self.src.push_str("#[repr(C)]\n");
-                    self.src.push_str("#[derive(Copy)]\n");
+            if record.is_tuple() {
+                self.src.push_str(&format!("pub type {} = (", name));
+                for member in record.members.iter() {
+                    self.print_tref(&member.tref, mode);
+                    self.src.push_str(",");
                 }
-                self.src.push_str("#[derive(Clone)]\n");
+                self.src.push_str(");\n");
+            } else {
+                if !info.has_handle {
+                    if !info.owns_data() {
+                        self.src.push_str("#[repr(C)]\n");
+                        self.src.push_str("#[derive(Copy)]\n");
+                    }
+                    self.src.push_str("#[derive(Clone)]\n");
+                }
+                self.src.push_str("#[derive(Debug)]\n");
+                self.src.push_str(&format!("pub struct {} {{\n", name));
+                for member in record.members.iter() {
+                    self.rustdoc(&member.docs);
+                    self.src.push_str("pub ");
+                    self.src.push_str(to_rust_ident(member.name.as_str()));
+                    self.src.push_str(": ");
+                    self.print_tref(&member.tref, mode);
+                    self.src.push_str(",\n");
+                }
+                self.src.push_str("}\n");
             }
-            self.src.push_str("#[derive(Debug)]\n");
-            self.src.push_str(&format!("pub struct {} {{\n", name));
-            for member in record.members.iter() {
-                self.rustdoc(&member.docs);
-                self.src.push_str("pub ");
-                self.src.push_str(to_rust_ident(member.name.as_str()));
-                self.src.push_str(": ");
-                self.print_tref(&member.tref, mode);
-                self.src.push_str(",\n");
-            }
-            self.src.push_str("}\n");
         }
     }
 
@@ -493,7 +503,14 @@ impl Generator for Wasmtime {
                 src.push_str(
                     "
                         fn store(mem: &wasmtime::Memory, offset: u32, bytes: &[u8]) -> Result<(), wasmtime::Trap> {
-                            mem.write(offset as usize, bytes)?;
+                            unsafe {
+                                mem.data_unchecked_mut()
+                                    .get_mut(offset as usize..)
+                                    .and_then(|s| s.get_mut(..bytes.len()))
+                                    .ok_or_else(|| wasmtime::Trap::new(\"out of bounds write\"))?
+                                    .copy_from_slice(bytes);
+                            }
+                            //mem.write(offset as usize, bytes)?;
                             Ok(())
                         }
                     ",
@@ -1074,7 +1091,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 self.cfg.needs_memory = true;
                 self.cfg.needs_store = true;
                 self.push_str(&format!(
-                    "store(&memory, ({} + {}) as u32, &({}).into_le_bytes())?;\n",
+                    "store(&memory, ({} + {}) as u32, &({}).to_le_bytes())?;\n",
                     operands[1], offset, operands[0]
                 ));
             }
@@ -1082,7 +1099,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 self.cfg.needs_memory = true;
                 self.cfg.needs_store = true;
                 self.push_str(&format!(
-                    "store(&memory, ({} + {}) as u32, &(({}) as u8).into_le_bytes())?;\n",
+                    "store(&memory, ({} + {}) as u32, &(({}) as u8).to_le_bytes())?;\n",
                     operands[1], offset, operands[0]
                 ));
             }
@@ -1090,7 +1107,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 self.cfg.needs_memory = true;
                 self.cfg.needs_store = true;
                 self.push_str(&format!(
-                    "store(&memory, ({} + {}) as u32, &(({}) as u16).into_le_bytes())?;\n",
+                    "store(&memory, ({} + {}) as u32, &(({}) as u16).to_le_bytes())?;\n",
                     operands[1], offset, operands[0]
                 ));
             }

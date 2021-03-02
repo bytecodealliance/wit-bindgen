@@ -14,4 +14,6 @@ fn main() {
     assert!(status.success());
     let wasm = Path::new(&out_dir).join("wasm32-wasi/debug/test_rust_wasm.wasm");
     println!("cargo:rustc-env=WASM={}", wasm.display());
+    println!("cargo:rerun-if-changed=../test-rust-wasm");
+    println!("cargo:rerun-if-changed=../../tests/host.witx");
 }
