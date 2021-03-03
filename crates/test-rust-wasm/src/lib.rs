@@ -10,6 +10,7 @@ pub extern "C" fn run_host_tests() {
     host_get_set();
     host_records();
     host_variants();
+    host_legacy();
 }
 
 fn host_integers() {
@@ -48,6 +49,8 @@ fn host_integers() {
     assert_eq!(roundtrip_usize(1), 1);
     assert_eq!(roundtrip_usize(usize::min_value()), usize::min_value());
     assert_eq!(roundtrip_usize(usize::max_value()), usize::max_value());
+
+    assert_eq!(multiple_results(), (4, 5));
 }
 
 fn host_floats() {
@@ -81,6 +84,11 @@ fn host_records() {
     assert_eq!(roundtrip_flags1(0), 0);
     assert_eq!(roundtrip_flags1(F1_B), F1_B);
     assert_eq!(roundtrip_flags1(F1_A | F1_B), F1_A | F1_B);
+
+    assert_eq!(roundtrip_flags2(F2_C), F2_C);
+    assert_eq!(roundtrip_flags2(0), 0);
+    assert_eq!(roundtrip_flags2(F2_D), F2_D);
+    assert_eq!(roundtrip_flags2(F2_C | F2_E), F2_C | F2_E);
 
     let r = roundtrip_record1(R1 { a: 8, b: 0 });
     assert_eq!(r.a, 8);
@@ -118,7 +126,7 @@ fn host_variants() {
     assert!(matches!(a3, C3::A(3)));
     assert!(matches!(a4, C4::A(4)));
     assert!(matches!(a5, C5::A(5)));
-    assert!(matches!(a6, C6::A(6.0)));
+    assert!(matches!(a6, C6::A(b) if b == 6.0));
 
     let (a1, a2, a3, a4, a5, a6) = variant_casts((
         C1::B(1),
@@ -129,11 +137,30 @@ fn host_variants() {
         C6::B(6.0),
     ));
     assert!(matches!(a1, C1::B(1)));
-    assert!(matches!(a2, C2::B(2.0)));
-    assert!(matches!(a3, C3::B(3.0)));
-    assert!(matches!(a4, C4::B(4.0)));
-    assert!(matches!(a5, C5::B(5.0)));
-    assert!(matches!(a6, C6::B(6.0)));
+    assert!(matches!(a2, C2::B(b) if b == 2.0));
+    assert!(matches!(a3, C3::B(b) if b == 3.0));
+    assert!(matches!(a4, C4::B(b) if b == 4.0));
+    assert!(matches!(a5, C5::B(b) if b == 5.0));
+    assert!(matches!(a6, C6::B(b) if b == 6.0));
+
+    let (a1, a2, a3, a4) = variant_zeros((Z1::A(1), Z2::A(2), Z3::A(3.0), Z4::A(4.0)));
+    assert!(matches!(a1, Z1::A(1)));
+    assert!(matches!(a2, Z2::A(2)));
+    assert!(matches!(a3, Z3::A(b) if b == 3.0));
+    assert!(matches!(a4, Z4::A(b) if b == 4.0));
+}
+
+fn host_legacy() {
+    legacy_params(
+        (1, 2),
+        R1 {
+            a: 0,
+            b: F1_A | F1_B,
+        },
+        (1, 2, 3, 4, 5, 6, 7, 8, 9., 10.),
+    );
+    assert!(legacy_result(true).is_ok());
+    assert!(legacy_result(false).is_err());
 }
 
 #[no_mangle]

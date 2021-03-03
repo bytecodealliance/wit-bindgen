@@ -59,6 +59,10 @@ impl Host for MyHost {
         val
     }
 
+    fn multiple_results(&self) -> (u8, u16) {
+        (4, 5)
+    }
+
     fn set_scalar(&self, val: u32) {
         self.scalar.set(val);
     }
@@ -75,6 +79,10 @@ impl Host for MyHost {
         drop(a.to_string());
         drop(format!("{:?}", a));
         drop(a & F1::all());
+        a
+    }
+
+    fn roundtrip_flags2(&self, a: F2) -> F2 {
         a
     }
 
@@ -111,6 +119,42 @@ impl Host for MyHost {
 
     fn variant_casts(&self, a: Casts) -> Casts {
         a
+    }
+
+    fn variant_zeros(&self, a: Zeros) -> Zeros {
+        a
+    }
+
+    fn legacy_params(
+        &self,
+        a: (u32, u32),
+        _: R1,
+        _: (u8, i8, u16, i16, u32, i32, u64, i64, f32, f64),
+    ) {
+        assert_eq!(a, (1, 2));
+    }
+
+    fn legacy_result(&self, succeed: bool) -> Result<LegacyResult, E1> {
+        if succeed {
+            Ok((
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9.,
+                10.,
+                R1 {
+                    a: 0,
+                    b: F1::empty(),
+                },
+            ))
+        } else {
+            Err(E1::B)
+        }
     }
 }
 

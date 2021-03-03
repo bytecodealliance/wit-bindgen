@@ -521,11 +521,18 @@ impl Generator for Wasmtime {
                     "
                         fn load<T: AsMut<[u8]>, U>(
                             mem: &wasmtime::Memory,
-                            offset: u32,
+                            offset: i32,
                             mut bytes: T,
                             cvt: impl FnOnce(T) -> U,
                         ) -> Result<U, wasmtime::Trap> {
-                            mem.read(offset as usize, bytes.as_mut())?;
+                            unsafe {
+                                let slice = mem.data_unchecked_mut()
+                                    .get(offset as usize..)
+                                    .and_then(|s| s.get(..bytes.as_mut().len()))
+                                    .ok_or_else(|| wasmtime::Trap::new(\"out of bounds read\"))?;
+                                bytes.as_mut().copy_from_slice(slice);
+                            }
+                            //mem.read(offset as usize, bytes.as_mut())?;
                             Ok(cvt(bytes))
                         }
                     ",

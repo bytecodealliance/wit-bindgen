@@ -968,6 +968,11 @@ impl Bindgen for RustWasmBindgen<'_> {
                 WitxInstruction::I32FromPointer => top_as("i32"),
                 WitxInstruction::I32FromConstPointer => top_as("i32"),
                 WitxInstruction::ReuseReturn => results.push("ret".to_string()),
+                WitxInstruction::AddrOf => {
+                    let i = self.cfg.tmp();
+                    self.push_str(&format!("let t{} = {};\n", i, operands[0]));
+                    results.push(format!("&t{} as *const _ as i32", i));
+                }
                 i => unimplemented!("{:?}", i),
             },
         }
