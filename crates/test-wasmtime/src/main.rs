@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use wasmtime::*;
+use witx_bindgen_wasmtime::{BorrowChecker, GuestPtr};
 
 const WASM: &[u8] = include_bytes!(env!("WASM"));
 
@@ -8,9 +9,14 @@ witx_bindgen_wasmtime::import!("tests/host.witx");
 #[derive(Default)]
 struct MyHost {
     scalar: Cell<u32>,
+    borrow_checker: BorrowChecker,
 }
 
 impl Host for MyHost {
+    fn borrow_checker(&self) -> &BorrowChecker {
+        &self.borrow_checker
+    }
+
     fn roundtrip_u8(&self, val: u8) -> u8 {
         val
     }
@@ -156,18 +162,61 @@ impl Host for MyHost {
             Err(E1::B)
         }
     }
+
+    fn list_param(&self, ptr: GuestPtr<'_, [u8]>) {
+        let list = ptr.borrow().unwrap();
+        assert_eq!(*list, [1, 2, 3, 4]);
+        assert!(ptr.borrow().is_ok());
+        assert!(ptr.borrow_mut().is_err());
+        drop(list);
+        assert!(ptr.borrow().is_ok());
+        assert!(ptr.borrow_mut().is_ok());
+    }
+
+    fn list_param2(&self, ptr: GuestPtr<'_, str>) {
+        assert_eq!(&*ptr.borrow().unwrap(), "foo");
+    }
+
+    fn list_param3(&self, ptr: Vec<GuestPtr<'_, str>>) {
+        assert_eq!(ptr.len(), 3);
+        assert_eq!(&*ptr[0].borrow().unwrap(), "foo");
+        assert_eq!(&*ptr[1].borrow().unwrap(), "bar");
+        assert_eq!(&*ptr[2].borrow().unwrap(), "baz");
+    }
+
+    fn list_param4(&self, ptr: Vec<Vec<GuestPtr<'_, str>>>) {
+        assert_eq!(ptr.len(), 2);
+        assert_eq!(&*ptr[0][0].borrow().unwrap(), "foo");
+        assert_eq!(&*ptr[0][1].borrow().unwrap(), "bar");
+        assert_eq!(&*ptr[1][0].borrow().unwrap(), "baz");
+    }
+
+    fn list_result(&self) -> Vec<u8> {
+        vec![1, 2, 3, 4, 5]
+    }
+
+    fn list_result2(&self) -> String {
+        "hello!".to_string()
+    }
+
+    fn list_result3(&self) -> Vec<String> {
+        vec!["hello,".to_string(), "world!".to_string()]
+    }
 }
 
 fn main() -> anyhow::Result<()> {
+    // Create an engine with caching enabled to assist with iteration in this
+    // project.
     let mut config = Config::new();
     config.cache_config_load_default()?;
     let engine = Engine::new(&config);
+
+    // Compile our wasm module ...
     let module = Module::new(&engine, WASM)?;
+
+    // Create a linker with WASI functions ...
     let store = Store::new(&engine);
     let mut linker = Linker::new(&store);
-
-    add_host_to_linker(MyHost::default(), &mut linker)?;
-
     wasmtime_wasi::Wasi::new(
         &store,
         wasmtime_wasi::WasiCtxBuilder::new()
@@ -176,6 +225,10 @@ fn main() -> anyhow::Result<()> {
     )
     .add_to_linker(&mut linker)?;
 
+    // Add our witx-defined functions to the linker
+    add_host_to_linker(MyHost::default(), &mut linker)?;
+
+    // And now we can run the whole test!
     let instance = linker.instantiate(&module)?;
     run(&instance, "run_host_tests")?;
     run_err(&instance, "invalid_bool", "invalid discriminant for `bool`")?;

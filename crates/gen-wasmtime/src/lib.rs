@@ -14,18 +14,28 @@ pub struct Wasmtime {
     needs_mem: bool,
     needs_fmt: bool,
     needs_memory: bool,
+    needs_guest_memory: bool,
     needs_get_memory: bool,
+    needs_get_func: bool,
     needs_char_from_i32: bool,
     needs_invalid_variant: bool,
     needs_validate_flags: bool,
     needs_store: bool,
     needs_load: bool,
     needs_bad_int: bool,
+    needs_borrow_checker: bool,
+    needs_slice_as_bytes: bool,
+    needs_functions: HashMap<String, NeededFunction>,
     types: Types,
     imports: HashMap<Id, Vec<Import>>,
 }
 
-pub struct Import {
+enum NeededFunction {
+    Malloc,
+    Free,
+}
+
+struct Import {
     name: String,
     trait_signature: String,
     closure: String,
@@ -110,15 +120,17 @@ impl TypePrint for Wasmtime {
     }
 
     fn print_borrowed_slice(&mut self, ty: &TypeRef, lifetime: &'static str) {
-        self.push_str("GuestPtr<");
+        self.push_str("witx_bindgen_wasmtime::GuestPtr<");
         self.push_str(lifetime);
         self.push_str(",[");
-        self.print_tref(ty, TypeMode::Lifetime(lifetime));
+        // This should only ever be used on types without lifetimes, so use
+        // invalid syntax here to catch bugs where that's not the case.
+        self.print_tref(ty, TypeMode::Lifetime("INVALID"));
         self.push_str("]>");
     }
 
     fn print_borrowed_str(&mut self, lifetime: &'static str) {
-        self.push_str("GuestPtr<");
+        self.push_str("witx_bindgen_wasmtime::GuestPtr<");
         self.push_str(lifetime);
         self.push_str(",str>");
     }
@@ -396,7 +408,7 @@ impl Generator for Wasmtime {
         for param in func.params.iter() {
             self.push_str(to_rust_ident(param.name.as_str()));
             self.push_str(": ");
-            self.print_tref(&param.tref, TypeMode::Borrowed("'_"));
+            self.print_tref(&param.tref, TypeMode::LeafBorrowed("'_"));
             self.push_str(",");
         }
         self.push_str(")");
@@ -443,11 +455,43 @@ impl Generator for Wasmtime {
         );
         self.src.push_str("}");
 
-        if mem::take(&mut self.needs_memory) {
+        if self.needs_guest_memory {
+            // TODO: this unsafe isn't justified and it's actually unsafe, we
+            // need a better solution for where to store this.
+            self.src.insert_str(
+                pos,
+                "let guest_memory = unsafe { witx_bindgen_wasmtime::WasmtimeGuestMemory::new(
+                    &memory,
+                    m.borrow_checker(),
+                ) };\n",
+            );
+            self.needs_borrow_checker = true;
+        }
+        if self.needs_memory || self.needs_guest_memory {
             self.src
                 .insert_str(pos, "let memory = get_memory(&_caller, \"memory\")?;\n");
-            self.needs_memory = false;
             self.needs_get_memory = true;
+        }
+
+        self.needs_mem = false;
+        self.needs_guest_memory = false;
+
+        for (name, func) in self.needs_functions.drain() {
+            self.src.insert_str(
+                pos,
+                &format!(
+                    "
+                        let func = get_func(&_caller, \"{name}\")?;
+                        let func_{name} = func.get{cvt}()?;
+                    ",
+                    name = name,
+                    cvt = match func {
+                        NeededFunction::Malloc => "1::<i32, i32>",
+                        NeededFunction::Free => "2::<i32, i32, ()>",
+                    },
+                ),
+            );
+            self.needs_get_func = true;
         }
 
         let closure = mem::replace(&mut self.src, prev);
@@ -485,6 +529,11 @@ impl Generator for Wasmtime {
             src.push_str("\npub trait ");
             src.push_str(&module.as_str().to_camel_case());
             src.push_str("{\n");
+            if self.needs_borrow_checker {
+                src.push_str(
+                    "fn borrow_checker(&self) -> &witx_bindgen_wasmtime::BorrowChecker;\n",
+                );
+            }
             for f in funcs {
                 src.push_str(&f.trait_signature);
                 src.push_str(";\n\n");
@@ -502,7 +551,7 @@ impl Generator for Wasmtime {
             if self.needs_store {
                 src.push_str(
                     "
-                        fn store(mem: &wasmtime::Memory, offset: u32, bytes: &[u8]) -> Result<(), wasmtime::Trap> {
+                        fn store(mem: &wasmtime::Memory, offset: i32, bytes: &[u8]) -> Result<(), wasmtime::Trap> {
                             unsafe {
                                 mem.data_unchecked_mut()
                                     .get_mut(offset as usize..)
@@ -560,6 +609,28 @@ impl Generator for Wasmtime {
                     ",
                 );
             }
+            if self.needs_get_func {
+                src.push_str(
+                    "
+                        fn get_func(
+                            caller: &wasmtime::Caller<'_>,
+                            func: &str,
+                        ) -> Result<wasmtime::Func, wasmtime::Trap> {
+                            let func = caller.get_export(func)
+                                .ok_or_else(|| {
+                                    let msg = format!(\"`{}` export not available\", func);
+                                    wasmtime::Trap::new(msg)
+                                })?
+                                .into_func()
+                                .ok_or_else(|| {
+                                    let msg = format!(\"`{}` export not a function\", func);
+                                    wasmtime::Trap::new(msg)
+                                })?;
+                            Ok(func)
+                        }
+                    ",
+                );
+            }
             if self.needs_char_from_i32 {
                 src.push_str(
                     "
@@ -610,6 +681,18 @@ impl Generator for Wasmtime {
                             } else {
                                 Ok(mk(bits))
                             }
+                        }
+                    ",
+                );
+            }
+            if self.needs_slice_as_bytes {
+                src.push_str(
+                    "
+                        unsafe fn slice_as_bytes<T: Copy>(slice: &[T]) -> &[u8] {
+                            std::slice::from_raw_parts(
+                                slice.as_ptr() as *const u8,
+                                std::mem::size_of_val(slice),
+                            )
                         }
                     ",
                 );
@@ -871,106 +954,120 @@ impl Bindgen for WasmtimeBindgen<'_> {
             }
 
             Instruction::ListCanonLower { element, malloc } => {
+                // Lowering only happens when we're passing lists into wasm,
+                // which forces us to always allocate, so this should always be
+                // `Some`.
+                let malloc = malloc.as_ref().unwrap();
+                self.cfg
+                    .needs_functions
+                    .insert(malloc.clone(), NeededFunction::Malloc);
+                let size_align = element.mem_size_align();
+
+                // Store the operand into a temporary...
                 let tmp = self.cfg.tmp();
                 let val = format!("vec{}", tmp);
+                self.push_str(&format!("let {} = {};\n", val, operands[0]));
+
+                // ... and then malloc space for the result in the guest module
                 let ptr = format!("ptr{}", tmp);
-                let len = format!("len{}", tmp);
-                if malloc.is_none() {
-                    self.push_str(&format!("let {} = {};\n", val, operands[0]));
-                } else {
-                    let op0 = match &**element.type_() {
-                        Type::Builtin(BuiltinType::Char) => {
-                            format!("{}.into_bytes()", operands[0])
-                        }
-                        _ => operands.pop().unwrap(),
-                    };
-                    self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
-                }
-                self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, val));
-                self.push_str(&format!("let {} = {}.len() as i32;\n", len, val));
-                if malloc.is_some() {
-                    self.cfg.needs_mem = true;
-                    self.push_str(&format!("mem::forget({});\n", val));
-                }
+                self.push_str(&format!(
+                    "let {} = func_{}(({}.len() as i32) * {})?;\n",
+                    ptr, malloc, val, size_align.size
+                ));
+
+                // ... and then copy over the result.
+                //
+                // Note the unsafety here, in general it's not safe to copy
+                // from arbitrary types on the host as a slice of bytes, but in
+                // this case we should be able to get away with it since
+                // canonical lowerings have the same memory representation on
+                // the host as in the guest.
+                self.push_str(&format!(
+                    "store(&memory, {}, unsafe {{ slice_as_bytes({}.as_ref()) }})?;\n",
+                    ptr, val
+                ));
+                self.cfg.needs_store = true;
+                self.cfg.needs_slice_as_bytes = true;
                 results.push(ptr);
-                results.push(len);
+                results.push(format!("{}.len() as i32", val));
             }
 
-            Instruction::ListCanonLift { element, .. } => {
-                let tmp = self.cfg.tmp();
-                let len = format!("len{}", tmp);
-                self.push_str(&format!("let {} = {} as usize;\n", len, operands[1]));
-                let result = format!(
-                    "Vec::from_raw_parts({} as *mut _, {1}, {1})",
-                    operands[0], len
-                );
-                match &**element.type_() {
-                    Type::Builtin(BuiltinType::Char) => {
-                        results.push(format!("String::from_utf8({}).unwrap_or_else(XXX)", result));
-                    }
-                    _ => results.push(result),
-                }
+            Instruction::ListCanonLift { element: _, free } => {
+                assert!(free.is_none());
+                self.cfg.needs_guest_memory = true;
+                // Note the unsafety here. This is possibly an unsafe operation
+                // because the representation of the target must match the
+                // representation on the host, but `ListCanonLift` is only
+                // generated for types where that's true, so this should be
+                // safe.
+                results.push(format!(
+                    "
+                        unsafe {{
+                            witx_bindgen_wasmtime::GuestPtr::new(
+                                &guest_memory,
+                                (({}) as u32, ({}) as u32),
+                            )
+                        }}
+                    ",
+                    operands[0], operands[1]
+                ));
             }
 
-            Instruction::ListLower { element, .. } => {
+            Instruction::ListLower {
+                element,
+                owned,
+                malloc,
+            } => {
+                assert!(*owned);
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.cfg.tmp();
                 let vec = format!("vec{}", tmp);
                 let result = format!("result{}", tmp);
-                self.push_str(&format!("let {} = {};\n", vec, operands[0]));
+                let len = format!("len{}", tmp);
+                self.cfg
+                    .needs_functions
+                    .insert(malloc.clone(), NeededFunction::Malloc);
                 let size_align = element.mem_size_align();
-                let (ty, multiplier) = match size_align {
-                    SizeAlign { align: 1, size } => ("u8", size),
-                    SizeAlign { align: 2, size } => ("u16", size / 2),
-                    SizeAlign { align: 4, size } => ("u32", size / 4),
-                    SizeAlign { align: 8, size } => ("u64", size / 8),
-                    _ => unimplemented!(),
-                };
+
+                // first store our vec-to-lower in a temporary since we'll
+                // reference it multiple times.
+                self.push_str(&format!("let {} = {};\n", vec, operands[0]));
+                self.push_str(&format!("let {} = {}.len() as i32;\n", len, vec));
+
+                // ... then malloc space for the result in the guest module
                 self.push_str(&format!(
-                    "let {} = Vec::<{}>::with_capacity({}.len() * {});\n",
-                    result, ty, vec, multiplier,
+                    "let {} = func_{}({} * {})?;\n",
+                    result, malloc, len, size_align.size
                 ));
+
+                // ... then consume the vector and use the block to lower the
+                // result.
                 self.push_str(&format!(
                     "for (i, e) in {}.into_iter().enumerate() {{\n",
                     vec
                 ));
                 self.push_str(&format!(
-                    "let base = {}.as_ptr() as i32 + (i as i32) * {};\n",
+                    "let base = {} + (i as i32) * {};\n",
                     result, size_align.size,
                 ));
                 self.push_str(&body);
                 self.push_str("}");
-                let ptr = format!("ptr{}", tmp);
-                let len = format!("len{}", tmp);
-                self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, result));
-                self.push_str(&format!("let {} = {}.len() as i32;\n", len, result));
-                self.push_str(&format!("mem::forget({});\n", result));
-                self.cfg.needs_mem = true;
-                results.push(ptr);
+
+                results.push(result);
                 results.push(len);
             }
 
-            Instruction::ListLift { element, .. } => {
+            Instruction::ListLift { element, free } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.cfg.tmp();
                 let size_align = element.mem_size_align();
-                let (ty, multiplier) = match size_align {
-                    SizeAlign { align: 1, size } => ("u8", size),
-                    SizeAlign { align: 2, size } => ("u16", size / 2),
-                    SizeAlign { align: 4, size } => ("u32", size / 4),
-                    SizeAlign { align: 8, size } => ("u64", size / 8),
-                    _ => unimplemented!(),
-                };
                 let len = format!("len{}", tmp);
-                self.push_str(&format!("let {} = {} as usize;\n", len, operands[1],));
+                self.push_str(&format!("let {} = {};\n", len, operands[1]));
                 let base = format!("base{}", tmp);
-                self.push_str(&format!(
-                    "let {} = Vec::<{}>::from_raw_parts({} as *mut _, {len} * {mult}, {len} * {mult});\n",
-                    base, ty, operands[0], len=len, mult=multiplier,
-                ));
+                self.push_str(&format!("let {} = {};\n", base, operands[0]));
                 let result = format!("result{}", tmp);
                 self.push_str(&format!(
-                    "let mut {} = Vec::with_capacity({});\n",
+                    "let mut {} = Vec::with_capacity({} as usize);\n",
                     result, len,
                 ));
 
@@ -979,7 +1076,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 self.push_str(" {\n");
                 self.push_str("let base = ");
                 self.push_str(&base);
-                self.push_str(".as_ptr() as i32 + (i as i32) *");
+                self.push_str(" + i *");
                 self.push_str(&size_align.size.to_string());
                 self.push_str(";\n");
                 self.push_str(&result);
@@ -987,7 +1084,11 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 self.push_str(&body);
                 self.push_str(");\n");
                 self.push_str("}\n");
+                self.push_str(&format!("func_{}({}, {})?;\n", free, base, len));
                 results.push(result);
+                self.cfg
+                    .needs_functions
+                    .insert(free.to_string(), NeededFunction::Free);
             }
 
             Instruction::IterElem => results.push("e".to_string()),
@@ -1098,7 +1199,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 self.cfg.needs_memory = true;
                 self.cfg.needs_store = true;
                 self.push_str(&format!(
-                    "store(&memory, ({} + {}) as u32, &({}).to_le_bytes())?;\n",
+                    "store(&memory, {} + {}, &({}).to_le_bytes())?;\n",
                     operands[1], offset, operands[0]
                 ));
             }
@@ -1106,7 +1207,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 self.cfg.needs_memory = true;
                 self.cfg.needs_store = true;
                 self.push_str(&format!(
-                    "store(&memory, ({} + {}) as u32, &(({}) as u8).to_le_bytes())?;\n",
+                    "store(&memory, {} + {}, &(({}) as u8).to_le_bytes())?;\n",
                     operands[1], offset, operands[0]
                 ));
             }
@@ -1114,7 +1215,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 self.cfg.needs_memory = true;
                 self.cfg.needs_store = true;
                 self.push_str(&format!(
-                    "store(&memory, ({} + {}) as u32, &(({}) as u16).to_le_bytes())?;\n",
+                    "store(&memory, {} + {}, &(({}) as u16).to_le_bytes())?;\n",
                     operands[1], offset, operands[0]
                 ));
             }

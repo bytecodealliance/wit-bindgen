@@ -108,4 +108,14 @@
     (result $b (expected $legacy_result (error $e1)))
   )
 
+  ;; ===========================================
+  ;; lists
+  ;; ===========================================
+  (export "list_param" (func (param $a (list u8))))
+  (export "list_param2" (func (param $a string)))
+  (export "list_param3" (func (param $a (list string))))
+  (export "list_param4" (func (param $a (list (list string)))))
+  (export "list_result" (func (result $a (list u8))))
+  (export "list_result2" (func (result $a string)))
+  (export "list_result3" (func (result $a (list string))))
 )

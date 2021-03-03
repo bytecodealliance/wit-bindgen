@@ -11,6 +11,7 @@ pub extern "C" fn run_host_tests() {
     host_records();
     host_variants();
     host_legacy();
+    host_lists();
 }
 
 fn host_integers() {
@@ -161,6 +162,16 @@ fn host_legacy() {
     );
     assert!(legacy_result(true).is_ok());
     assert!(legacy_result(false).is_err());
+}
+
+fn host_lists() {
+    list_param(&[1, 2, 3, 4]);
+    list_param2("foo");
+    list_param3(&["foo", "bar", "baz"]);
+    list_param4(&[&["foo", "bar"], &["baz"]]);
+    assert_eq!(list_result(), [1, 2, 3, 4, 5]);
+    assert_eq!(list_result2(), "hello!");
+    assert_eq!(list_result3(), ["hello,", "world!"]);
 }
 
 #[no_mangle]

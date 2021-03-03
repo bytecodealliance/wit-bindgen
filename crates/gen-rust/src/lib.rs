@@ -4,7 +4,8 @@ use witx_bindgen_gen_core::{witx::*, TypeInfo};
 #[derive(Copy, Clone)]
 pub enum TypeMode {
     Owned,
-    Borrowed(&'static str),
+    AllBorrowed(&'static str),
+    LeafBorrowed(&'static str),
     Lifetime(&'static str),
 }
 
@@ -73,17 +74,20 @@ pub trait TypePrint {
                 // `&` is skipped for lists whose typedefs already have a
                 // leading `&`.
                 if info.owns_data() {
-                    if let TypeMode::Borrowed(lt) = mode {
-                        match &**t.type_() {
-                            Type::List(_) => {}
-                            _ => {
-                                self.push_str("&");
-                                if lt != "'_" {
-                                    self.push_str(lt);
+                    match mode {
+                        TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) => {
+                            match &**t.type_() {
+                                Type::List(_) => {}
+                                _ => {
+                                    self.push_str("&");
+                                    if lt != "'_" {
+                                        self.push_str(lt);
+                                    }
+                                    self.push_str(" ");
                                 }
-                                self.push_str(" ");
                             }
                         }
+                        _ => {}
                     }
                 }
 
@@ -145,13 +149,22 @@ pub trait TypePrint {
 
     fn print_list(&mut self, ty: &TypeRef, mode: TypeMode) {
         match &**ty.type_() {
-            Type::Builtin(BuiltinType::Char) => match mode {
-                TypeMode::Borrowed(lt) | TypeMode::Lifetime(lt) => self.print_borrowed_str(lt),
-                TypeMode::Owned => self.push_str("String"),
+            Type::Builtin(BuiltinType::Char) => match mode.lifetime() {
+                Some(lt) => self.print_borrowed_str(lt),
+                None => self.push_str("String"),
             },
-            _ => match mode {
-                TypeMode::Borrowed(lt) | TypeMode::Lifetime(lt) => {
+            t => match mode {
+                TypeMode::AllBorrowed(lt) | TypeMode::Lifetime(lt) => {
                     self.print_borrowed_slice(ty, lt);
+                }
+                TypeMode::LeafBorrowed(lt) => {
+                    if t.all_bits_valid() {
+                        self.print_borrowed_slice(ty, lt);
+                    } else {
+                        self.push_str("Vec<");
+                        self.print_tref(ty, mode);
+                        self.push_str(">");
+                    }
                 }
                 TypeMode::Owned => {
                     self.push_str("Vec<");
@@ -187,13 +200,10 @@ pub trait TypePrint {
     }
 
     fn print_lifetime_param(&mut self, mode: TypeMode) {
-        match mode {
-            TypeMode::Borrowed(lt) | TypeMode::Lifetime(lt) => {
-                self.push_str("<");
-                self.push_str(lt);
-                self.push_str(">");
-            }
-            TypeMode::Owned => {}
+        if let Some(lt) = mode.lifetime() {
+            self.push_str("<");
+            self.push_str(lt);
+            self.push_str(">");
         }
     }
 
@@ -385,6 +395,17 @@ pub trait TypePrint {
             }
         } else {
             unimplemented!()
+        }
+    }
+}
+
+impl TypeMode {
+    fn lifetime(&self) -> Option<&'static str> {
+        match self {
+            TypeMode::Owned => None,
+            TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s) | TypeMode::Lifetime(s) => {
+                Some(*s)
+            }
         }
     }
 }

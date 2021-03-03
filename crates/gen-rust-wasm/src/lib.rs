@@ -14,6 +14,7 @@ pub struct RustWasm {
     opts: Opts,
     needs_mem: bool,
     needs_fmt: bool,
+    needs_cleanup_list: bool,
     types: Types,
 }
 
@@ -377,7 +378,7 @@ impl Generator for RustWasm {
             self.push_str(to_rust_ident(param.name.as_str()));
             params.push(to_rust_ident(param.name.as_str()).to_string());
             self.push_str(": ");
-            self.print_tref(&param.tref, TypeMode::Borrowed("'_"));
+            self.print_tref(&param.tref, TypeMode::AllBorrowed("'_"));
             self.push_str(",");
         }
         self.push_str(")");
@@ -399,6 +400,8 @@ impl Generator for RustWasm {
         }
         self.src.push_str("{unsafe{");
 
+        let start_pos = self.src.len();
+
         func.call(
             module,
             CallMode::DeclaredImport,
@@ -407,8 +410,14 @@ impl Generator for RustWasm {
                 params,
                 block_storage: Vec::new(),
                 blocks: Vec::new(),
+                cleanup: Vec::new(),
             },
         );
+
+        if mem::take(&mut self.needs_cleanup_list) {
+            self.src
+                .insert_str(start_pos, "let mut cleanup_list = Vec::new();\n");
+        }
 
         self.src.push_str("}}");
     }
@@ -453,8 +462,10 @@ impl Generator for RustWasm {
                 params,
                 block_storage: Vec::new(),
                 blocks: Vec::new(),
+                cleanup: Vec::new(),
             },
         );
+        assert!(!self.needs_cleanup_list);
 
         self.src.push_str("}");
     }
@@ -501,8 +512,11 @@ impl Generator for RustWasm {
 struct RustWasmBindgen<'a> {
     cfg: &'a mut RustWasm,
     params: Vec<String>,
-    block_storage: Vec<String>,
     blocks: Vec<String>,
+    cleanup: Vec<(String, String)>,
+
+    // Stack of previous blocks with their source and their cleanups.
+    block_storage: Vec<(String, Vec<(String, String)>)>,
 }
 
 impl RustWasmBindgen<'_> {
@@ -515,13 +529,28 @@ impl Bindgen for RustWasmBindgen<'_> {
     type Operand = String;
 
     fn push_block(&mut self) {
-        let prev = mem::take(&mut self.cfg.src);
-        self.block_storage.push(prev);
+        let prev_src = mem::take(&mut self.cfg.src);
+        let prev_cleanup = mem::take(&mut self.cleanup);
+        self.block_storage.push((prev_src, prev_cleanup));
     }
 
     fn finish_block(&mut self, operands: &mut Vec<String>) {
-        let to_restore = self.block_storage.pop().unwrap();
-        let src = mem::replace(&mut self.cfg.src, to_restore);
+        if self.cleanup.len() > 0 {
+            self.cfg.needs_cleanup_list = true;
+            self.push_str("cleanup_list.extend_from_slice(&[");
+            for (ptr, len) in mem::take(&mut self.cleanup) {
+                self.push_str("(");
+                self.push_str(&ptr);
+                self.push_str(",");
+                self.push_str(&len);
+                self.push_str("),");
+            }
+            self.push_str("]);");
+        }
+
+        let (prev_src, prev_cleanup) = self.block_storage.pop().unwrap();
+        let src = mem::replace(&mut self.cfg.src, prev_src);
+        self.cleanup = prev_cleanup;
         let expr = match operands.len() {
             0 => "()".to_string(),
             1 => operands.pop().unwrap(),
@@ -731,7 +760,8 @@ impl Bindgen for RustWasmBindgen<'_> {
                 results.push(len);
             }
 
-            Instruction::ListCanonLift { element, .. } => {
+            Instruction::ListCanonLift { element, free } => {
+                assert!(free.is_some());
                 let tmp = self.cfg.tmp();
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {} as usize;\n", len, operands[1]));
@@ -751,39 +781,45 @@ impl Bindgen for RustWasmBindgen<'_> {
                 }
             }
 
-            Instruction::ListLower { element, .. } => {
+            Instruction::ListLower { element, owned, .. } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.cfg.tmp();
                 let vec = format!("vec{}", tmp);
                 let result = format!("result{}", tmp);
+                let layout = format!("layout{}", tmp);
                 self.push_str(&format!("let {} = {};\n", vec, operands[0]));
                 let size_align = element.mem_size_align();
-                let (ty, multiplier) = match size_align {
-                    SizeAlign { align: 1, size } => ("u8", size),
-                    SizeAlign { align: 2, size } => ("u16", size / 2),
-                    SizeAlign { align: 4, size } => ("u32", size / 4),
-                    SizeAlign { align: 8, size } => ("u64", size / 8),
-                    _ => unimplemented!(),
-                };
                 self.push_str(&format!(
-                    "let {} = Vec::<{}>::with_capacity({}.len() * {});\n",
-                    result, ty, vec, multiplier,
+                    "let {} = std::alloc::Layout::from_size_align_unchecked({}.len() * {}, 8);\n",
+                    layout, vec, size_align.size,
+                ));
+                self.push_str(&format!(
+                    "let {} = std::alloc::alloc({});\n",
+                    result, layout,
+                ));
+                self.push_str(&format!(
+                    "if {}.is_null() {{ std::alloc::handle_alloc_error({}); }}\n",
+                    result, layout,
                 ));
                 self.push_str(&format!(
                     "for (i, e) in {}.into_iter().enumerate() {{\n",
                     vec
                 ));
                 self.push_str(&format!(
-                    "let base = {}.as_ptr() as i32 + (i as i32) * {};\n",
+                    "let base = {} as i32 + (i as i32) * {};\n",
                     result, size_align.size,
                 ));
                 self.push_str(&body);
                 self.push_str("}");
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
-                self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, result));
-                self.push_str(&format!("let {} = {}.len() as i32;\n", len, result));
-                self.push_str(&format!("mem::forget({});\n", result));
+                self.push_str(&format!("let {} = {} as i32;\n", ptr, result));
+                self.push_str(&format!("let {} = {}.len() as i32;\n", len, vec));
+                if *owned {
+                    self.push_str(&format!("mem::forget({});\n", result));
+                } else {
+                    self.cleanup.push((ptr.clone(), layout));
+                }
                 self.cfg.needs_mem = true;
                 results.push(ptr);
                 results.push(len);
@@ -881,14 +917,29 @@ impl Bindgen for RustWasmBindgen<'_> {
                 self.push_str(");");
             }
 
-            Instruction::Return { amt: 0 } => {}
-            Instruction::Return { amt: 1 } => {
-                self.push_str(&operands[0]);
-            }
-            Instruction::Return { .. } => {
-                self.push_str("(");
-                self.push_str(&operands.join(", "));
-                self.push_str(")");
+            Instruction::Return { amt } => {
+                for (ptr, layout) in self.cleanup.drain(..) {
+                    self.cfg.push_str(&format!(
+                        "std::alloc::dealloc({} as *mut _, {});\n",
+                        ptr, layout
+                    ));
+                }
+                if self.cfg.needs_cleanup_list {
+                    self.push_str(
+                        "for (ptr, layout) in cleanup_list {
+                            std::alloc::dealloc(ptr as *mut _, layout);
+                        }",
+                    );
+                }
+                match amt {
+                    0 => {}
+                    1 => self.push_str(&operands[0]),
+                    _ => {
+                        self.push_str("(");
+                        self.push_str(&operands.join(", "));
+                        self.push_str(")");
+                    }
+                }
             }
 
             Instruction::I32Load { offset } => {
