@@ -7,11 +7,13 @@ mod error;
 mod memory;
 mod ptr;
 mod region;
+mod table;
 
 pub use error::GuestError;
 pub use memory::{BorrowHandle, GuestMemory};
 pub use ptr::{GuestPtr, Pointee};
 pub use region::{BorrowChecker, Region};
+pub use table::*;
 
 pub struct WasmtimeGuestMemory<'a> {
     mem: &'a wasmtime::Memory,
