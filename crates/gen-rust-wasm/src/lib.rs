@@ -15,6 +15,7 @@ pub struct RustWasm {
     blocks: Vec<String>,
     block_storage: Vec<String>,
     is_dtor: bool,
+    in_import: bool,
 }
 
 #[derive(Default, Debug)]
@@ -49,8 +50,23 @@ impl RustWasm {
 }
 
 impl TypePrint for RustWasm {
-    fn is_host(&self) -> bool {
-        false
+    fn call_mode(&self) -> CallMode {
+        if self.in_import {
+            CallMode::DeclaredImport
+        } else {
+            CallMode::DefinedExport
+        }
+    }
+
+    fn default_param_mode(&self) -> TypeMode {
+        // We default to borrowing as much as possible to maximize the ability
+        // for host to take views into our memory without forcing wasm modules
+        // to allocate anything.
+        TypeMode::AllBorrowed("'a")
+    }
+
+    fn handle_projection(&self) -> Option<&'static str> {
+        None
     }
 
     fn tmp(&mut self) -> usize {
@@ -98,7 +114,7 @@ impl TypePrint for RustWasm {
             self.push_str(" ");
         }
         self.push_str("[");
-        self.print_tref(ty, TypeMode::Lifetime(lifetime));
+        self.print_tref(ty, TypeMode::AllBorrowed(lifetime));
         self.push_str("]");
     }
 
@@ -232,6 +248,7 @@ impl Generator for RustWasm {
     }
 
     fn import(&mut self, module: &Id, func: &InterfaceFunc) {
+        self.in_import = true;
         let rust_name = func.name.as_ref().to_snake_case();
         self.rustdoc(&func.docs);
         self.rustdoc_params(&func.params, "Parameters");
@@ -290,6 +307,7 @@ impl Generator for RustWasm {
     }
 
     fn export(&mut self, module: &Id, func: &InterfaceFunc) {
+        self.in_import = false;
         let rust_name = func.name.as_ref().to_snake_case();
 
         self.src.push_str("#[export_name = \"");

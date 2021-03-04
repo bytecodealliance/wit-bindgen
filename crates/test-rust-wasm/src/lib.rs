@@ -219,13 +219,13 @@ fn host_lists() {
 }
 
 fn host_flavorful() {
-    list_in_record1(&ListInRecord1 {
+    list_in_record1(ListInRecord1 {
         a: "list_in_record1",
     });
     assert_eq!(list_in_record2().a, "list_in_record2");
 
     assert_eq!(
-        list_in_record3(&ListInRecord3Param {
+        list_in_record3(ListInRecord3Param {
             a: "list_in_record3 input"
         })
         .a,
@@ -233,14 +233,14 @@ fn host_flavorful() {
     );
 
     assert_eq!(
-        list_in_record4(&ListInAliasParam { a: "input4" }).a,
+        list_in_record4(ListInAliasParam { a: "input4" }).a,
         "result4"
     );
 
-    list_in_variant1(&Some("foo"), &Err("bar"), &ListInVariant13::V0("baz"));
+    list_in_variant1(Some("foo"), Err("bar"), ListInVariant13::V0("baz"));
     assert_eq!(list_in_variant2(), Some("list_in_variant2".to_string()));
     assert_eq!(
-        list_in_variant3(&Some("input3")),
+        list_in_variant3(Some("input3")),
         Some("output3".to_string())
     );
 
@@ -265,8 +265,26 @@ fn host_handles() {
     drop(s);
     assert_eq!(host_state2_saw_close(), true);
 
-    let (a, b) = two_host_states(&host_state_create(), &host_state2_create());
-    drop((a, b));
+    let (a, s2) = two_host_states(&host_state_create(), &host_state2_create());
+
+    host_state2_param_record(HostStateParamRecord { a: &s2 });
+    host_state2_param_tuple((&s2,));
+    host_state2_param_option(Some(&s2));
+    host_state2_param_option(None);
+    host_state2_param_result(Ok(&s2));
+    host_state2_param_result(Err(2));
+    host_state2_param_variant(HostStateParamVariant::V0(&s2));
+    host_state2_param_variant(HostStateParamVariant::V1(2));
+    host_state2_param_list(&[]);
+    host_state2_param_list(&[&s2]);
+    host_state2_param_list(&[&s2, &s2]);
+
+    drop(host_state2_result_record().a);
+    drop(host_state2_result_tuple().0);
+    drop(host_state2_result_option().unwrap());
+    drop(host_state2_result_result().unwrap());
+    drop(host_state2_result_variant());
+    drop(host_state2_result_list());
 }
 
 mod invalid {

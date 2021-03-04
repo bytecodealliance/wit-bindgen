@@ -67,6 +67,18 @@
 (typename $host_state (handle))
 (typename $host_state2 (handle))
 
+(typename $host_state_param_record (record (field $a $host_state2)))
+(typename $host_state_param_tuple (tuple $host_state2))
+(typename $host_state_param_option (option $host_state2))
+(typename $host_state_param_result (expected $host_state2 (error u32)))
+(typename $host_state_param_variant (union $host_state2 u32))
+
+(typename $host_state_result_record (record (field $a $host_state2)))
+(typename $host_state_result_tuple (tuple $host_state2))
+(typename $host_state_result_option (option $host_state2))
+(typename $host_state_result_result (expected $host_state2 (error u32)))
+(typename $host_state_result_variant (union $host_state2 u32))
+
 (module $host
 
   ;; ===========================================
@@ -165,6 +177,20 @@
     (result $c $host_state)
     (result $d $host_state2)
   ))
+
+  (export "host_state2_param_record" (func (param $a $host_state_param_record)))
+  (export "host_state2_param_tuple" (func (param $a $host_state_param_tuple)))
+  (export "host_state2_param_option" (func (param $a $host_state_param_option)))
+  (export "host_state2_param_result" (func (param $a $host_state_param_result)))
+  (export "host_state2_param_variant" (func (param $a $host_state_param_variant)))
+  (export "host_state2_param_list" (func (param $a (list $host_state2))))
+
+  (export "host_state2_result_record" (func (result $a $host_state_result_record)))
+  (export "host_state2_result_tuple" (func (result $a $host_state_result_tuple)))
+  (export "host_state2_result_option" (func (result $a $host_state_result_option)))
+  (export "host_state2_result_result" (func (result $a $host_state_result_result)))
+  (export "host_state2_result_variant" (func (result $a $host_state_result_variant)))
+  (export "host_state2_result_list" (func (result $a (list $host_state2))))
 
   ;; ===========================================
   ;; More flavorful types

@@ -18,7 +18,7 @@ struct MyHost {
 
 struct SuchState(u32);
 
-impl Host for MyHost {
+impl Glue for MyHost {
     type HostState = SuchState;
     type HostState2 = ();
 
@@ -33,7 +33,9 @@ impl Host for MyHost {
     fn borrow_checker(&self) -> &BorrowChecker {
         &self.borrow_checker
     }
+}
 
+impl Host for MyHost {
     fn roundtrip_u8(&self, val: u8) -> u8 {
         val
     }
@@ -308,6 +310,32 @@ impl Host for MyHost {
 
     fn two_host_states(&self, _a: &SuchState, _b: &()) -> (SuchState, ()) {
         (SuchState(2), ())
+    }
+
+    fn host_state2_param_record(&self, _a: HostStateParamRecord<'_, Self>) {}
+    fn host_state2_param_tuple(&self, _a: (&'_ (),)) {}
+    fn host_state2_param_option(&self, _a: Option<&'_ ()>) {}
+    fn host_state2_param_result(&self, _a: Result<&'_ (), u32>) {}
+    fn host_state2_param_variant(&self, _a: HostStateParamVariant<'_, Self>) {}
+    fn host_state2_param_list(&self, _a: Vec<&()>) {}
+
+    fn host_state2_result_record(&self) -> HostStateResultRecord<Self> {
+        HostStateResultRecord { a: () }
+    }
+    fn host_state2_result_tuple(&self) -> ((),) {
+        ((),)
+    }
+    fn host_state2_result_option(&self) -> Option<()> {
+        Some(())
+    }
+    fn host_state2_result_result(&self) -> Result<(), u32> {
+        Ok(())
+    }
+    fn host_state2_result_variant(&self) -> HostStateResultVariant<Self> {
+        HostStateResultVariant::V0(())
+    }
+    fn host_state2_result_list(&self) -> Vec<()> {
+        vec![(), ()]
     }
 }
 

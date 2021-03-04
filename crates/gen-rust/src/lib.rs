@@ -6,7 +6,6 @@ pub enum TypeMode {
     Owned,
     AllBorrowed(&'static str),
     LeafBorrowed(&'static str),
-    Lifetime(&'static str),
 }
 
 pub trait TypePrint {
@@ -17,7 +16,9 @@ pub trait TypePrint {
     fn print_pointer(&mut self, const_: bool, ty: &TypeRef);
     fn print_borrowed_slice(&mut self, ty: &TypeRef, lifetime: &'static str);
     fn print_borrowed_str(&mut self, lifetime: &'static str);
-    fn is_host(&self) -> bool;
+    fn call_mode(&self) -> CallMode;
+    fn default_param_mode(&self) -> TypeMode;
+    fn handle_projection(&self) -> Option<&'static str>;
 
     fn rustdoc(&mut self, docs: &str) {
         if docs.trim().is_empty() {
@@ -71,52 +72,42 @@ pub trait TypePrint {
                 let info = self.info(&t.name);
                 let ty = &**t.type_();
 
-                // If we're a borrowed piece of data then this is a parameter
-                // and we need a leading `&` out in front. Note that the leading
-                // `&` is skipped for lists whose typedefs already have a
-                // leading `&`.
-                if info.owns_data() {
-                    match mode {
-                        TypeMode::AllBorrowed(lt) => match ty {
-                            Type::List(_) => {}
-                            _ => {
-                                self.push_str("&");
-                                if lt != "'_" {
-                                    self.push_str(lt);
-                                }
-                                self.push_str(" ");
+                match ty {
+                    Type::Handle(_) => {
+                        // Borrowed handles are always behind a reference since
+                        // in that case we never take ownership of the handle.
+                        if let Some(lt) = mode.lifetime() {
+                            self.push_str("&");
+                            if lt != "'_" {
+                                self.push_str(lt);
                             }
-                        },
-                        TypeMode::LeafBorrowed(_) => match ty {
-                            Type::Handle(_) => self.push_str("&"),
-                            _ => {}
-                        },
-                        _ => {}
-                    }
-                }
-
-                // TODO: this will need more abstraction, it's not appropriate
-                // for wasm-exported handles
-                if let Type::Handle(_) = ty {
-                    if self.is_host() {
-                        self.push_str("Self::");
-                    }
-                    self.push_str(&t.name.as_str().to_camel_case());
-                } else if mode.lifetime().is_some() {
-                    self.push_str(&info.param_name(&t.name));
-                } else {
-                    self.push_str(&info.result_name(&t.name));
-                }
-
-                // If the type recursively owns data and it's a
-                // variant/record/list, then we need to place the lifetime
-                // parameter on the type as well.
-                if info.owns_data() {
-                    match ty {
-                        Type::Variant(_) | Type::Record(_) | Type::List(_) => {
-                            self.print_lifetime_param(mode);
+                            self.push_str(" ");
                         }
-                        _ => {}
+
+                        if let Some(proj) = self.handle_projection() {
+                            self.push_str(proj);
+                            self.push_str("::");
+                        }
+                        self.push_str(&t.name.as_str().to_camel_case());
+                    }
+                    _ => {
+                        if mode.lifetime().is_some() {
+                            self.push_str(&info.param_name(&t.name));
+                        } else {
+                            self.push_str(&info.result_name(&t.name));
+                        }
+
+                        // If the type recursively owns data and it's a
+                        // variant/record/list, then we need to place the
+                        // lifetime parameter on the type as well.
+                        if info.owns_data() {
+                            match ty {
+                                Type::Variant(_) | Type::Record(_) | Type::List(_) => {
+                                    self.print_generics(&info, mode, false);
+                                }
+                                _ => {}
+                            }
+                        }
                     }
                 }
             }
@@ -169,7 +160,7 @@ pub trait TypePrint {
                 None => self.push_str("String"),
             },
             t => match mode {
-                TypeMode::AllBorrowed(lt) | TypeMode::Lifetime(lt) => {
+                TypeMode::AllBorrowed(lt) => {
                     self.print_borrowed_slice(ty, lt);
                 }
                 TypeMode::LeafBorrowed(lt) => {
@@ -214,12 +205,28 @@ pub trait TypePrint {
         }
     }
 
-    fn print_lifetime_param(&mut self, mode: TypeMode) {
-        if let Some(lt) = mode.lifetime() {
-            self.push_str("<");
-            self.push_str(lt);
-            self.push_str(">");
+    fn print_generics(&mut self, info: &TypeInfo, mode: TypeMode, bound: bool) {
+        let lifetime = mode.lifetime();
+        let proj = if info.has_handle {
+            self.handle_projection()
+        } else {
+            None
+        };
+        if lifetime.is_none() && proj.is_none() {
+            return;
         }
+        self.push_str("<");
+        if let Some(lt) = lifetime {
+            self.push_str(lt);
+            self.push_str(",");
+        }
+        if let Some(proj) = proj {
+            self.push_str(proj);
+            if bound {
+                self.push_str(": Glue");
+            }
+        }
+        self.push_str(">");
     }
 
     fn int_repr(&mut self, repr: IntRepr) {
@@ -235,11 +242,7 @@ pub trait TypePrint {
         let mut result = Vec::new();
         if info.owns_data() {
             if info.param {
-                let mode = if self.is_host() {
-                    TypeMode::LeafBorrowed("'a")
-                } else {
-                    TypeMode::Lifetime("'a")
-                };
+                let mode = self.default_param_mode();
                 result.push((info.param_name(ty), mode));
             }
             if info.result {
@@ -257,7 +260,7 @@ pub trait TypePrint {
             self.rustdoc(docs);
             if record.is_tuple() {
                 self.push_str(&format!("pub type {}", name));
-                self.print_lifetime_param(mode);
+                self.print_generics(&info, mode, true);
                 self.push_str(" = (");
                 for member in record.members.iter() {
                     self.print_tref(&member.tref, mode);
@@ -265,16 +268,15 @@ pub trait TypePrint {
                 }
                 self.push_str(");\n");
             } else {
-                if !info.has_handle {
-                    if !info.owns_data() {
-                        self.push_str("#[repr(C)]\n");
-                        self.push_str("#[derive(Copy)]\n");
-                    }
+                if mode.lifetime().is_some() || !info.owns_data() {
+                    self.push_str("#[repr(C)]\n");
+                    self.push_str("#[derive(Copy, Clone)]\n");
+                } else if !info.has_handle {
                     self.push_str("#[derive(Clone)]\n");
                 }
                 self.push_str("#[derive(Debug)]\n");
                 self.push_str(&format!("pub struct {}\n", name));
-                self.print_lifetime_param(mode);
+                self.print_generics(&info, mode, true);
                 self.push_str(" {\n");
                 for member in record.members.iter() {
                     self.rustdoc(&member.docs);
@@ -301,14 +303,14 @@ pub trait TypePrint {
                 continue;
             } else if let Some(ty) = variant.as_option() {
                 self.push_str(&format!("pub type {}", name));
-                self.print_lifetime_param(mode);
+                self.print_generics(&info, mode, true);
                 self.push_str("= Option<");
                 self.print_tref(ty, mode);
                 self.push_str(">;\n");
                 continue;
             } else if let Some((ok, err)) = variant.as_expected() {
                 self.push_str(&format!("pub type {}", name));
-                self.print_lifetime_param(mode);
+                self.print_generics(&info, mode, true);
                 self.push_str("= Result<");
                 match ok {
                     Some(ty) => self.print_tref(ty, mode),
@@ -322,21 +324,18 @@ pub trait TypePrint {
                 self.push_str(">;\n");
                 continue;
             }
-            if !info.has_handle {
-                if variant.is_enum() {
-                    self.push_str("#[repr(");
-                    self.int_repr(variant.tag_repr);
-                    self.push_str(")]\n#[derive(Copy, PartialEq, Eq)]\n");
-                } else if !info.owns_data() {
-                    self.push_str("#[derive(Copy)]\n");
-                }
-                self.push_str("#[derive(Clone)]\n");
+            if variant.is_enum() {
+                self.push_str("#[repr(");
+                self.int_repr(variant.tag_repr);
+                self.push_str(")]\n#[derive(Clone, Copy, PartialEq, Eq)]\n");
+            } else if mode.lifetime().is_some() || !info.owns_data() {
+                self.push_str("#[derive(Clone, Copy)]\n");
             }
             if !is_error {
                 self.push_str("#[derive(Debug)]\n");
             }
             self.push_str(&format!("pub enum {}", name.to_camel_case()));
-            self.print_lifetime_param(mode);
+            self.print_generics(&info, mode, true);
             self.push_str("{\n");
             for case in variant.cases.iter() {
                 self.rustdoc(&case.docs);
@@ -417,26 +416,27 @@ pub trait TypePrint {
     }
 
     fn print_typedef_alias(&mut self, name: &Id, ty: &NamedType, docs: &str) {
+        let info = self.info(&ty.name);
         for (name, mode) in self.modes_of(name) {
             self.rustdoc(docs);
             self.push_str(&format!("pub type {}", name));
-            self.print_lifetime_param(mode);
+            self.print_generics(&info, mode, true);
             self.push_str(" = ");
-            let info = self.info(&ty.name);
             match mode.lifetime() {
                 Some(_) => self.push_str(&info.param_name(&ty.name)),
                 None => self.push_str(&info.result_name(&ty.name)),
             }
-            self.print_lifetime_param(mode);
+            self.print_generics(&info, mode, false);
             self.push_str(";\n");
         }
     }
 
     fn print_type_list(&mut self, name: &Id, ty: &TypeRef, docs: &str) {
+        let info = self.info(name);
         for (name, mode) in self.modes_of(name) {
             self.rustdoc(docs);
             self.push_str(&format!("pub type {}", name));
-            self.print_lifetime_param(mode);
+            self.print_generics(&info, mode, true);
             self.push_str(" = ");
             self.print_list(ty, mode);
             self.push_str(";\n");
@@ -465,11 +465,15 @@ pub trait TypePrint {
         } else if let Some(name) = name {
             let info = self.info(&name.name);
             self.push_str("let ");
-            if self.is_host() {
-                self.push_str(&info.result_name(&name.name));
-            } else {
-                self.push_str(&info.param_name(&name.name));
-            }
+            let name = match self.call_mode() {
+                // Lowering the result of a defined function means we're
+                // lowering the return value.
+                CallMode::DefinedImport | CallMode::DefinedExport => info.result_name(&name.name),
+                // Lowering the result of a declared function means we're
+                // lowering a parameter.
+                CallMode::DeclaredImport | CallMode::DeclaredExport => info.param_name(&name.name),
+            };
+            self.push_str(&name);
             self.push_str("{ ");
             for member in ty.members.iter() {
                 let arg = format!("{}{}", member.name.as_str(), tmp);
@@ -502,10 +506,13 @@ pub trait TypePrint {
             }
         } else if let Some(name) = name {
             let info = self.info(&name.name);
-            let mut result = if self.is_host() {
-                info.param_name(&name.name)
-            } else {
-                info.result_name(&name.name)
+            let mut result = match self.call_mode() {
+                // Lifting to a defined function means that we're lifting into
+                // a parameter
+                CallMode::DefinedImport | CallMode::DefinedExport => info.param_name(&name.name),
+                // Lifting for a declared function means we're lifting one of
+                // the return values.
+                CallMode::DeclaredImport | CallMode::DeclaredExport => info.result_name(&name.name),
             };
             result.push_str("{");
             for (member, val) in ty.members.iter().zip(operands) {
@@ -641,9 +648,7 @@ impl TypeMode {
     fn lifetime(&self) -> Option<&'static str> {
         match self {
             TypeMode::Owned => None,
-            TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s) | TypeMode::Lifetime(s) => {
-                Some(*s)
-            }
+            TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s) => Some(*s),
         }
     }
 }

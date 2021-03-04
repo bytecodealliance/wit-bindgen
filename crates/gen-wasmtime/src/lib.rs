@@ -24,13 +24,16 @@ pub struct Wasmtime {
     needs_borrow_checker: bool,
     needs_slice_as_bytes: bool,
     needs_functions: HashMap<String, NeededFunction>,
-    handles: BTreeSet<String>,
+    all_needed_handles: BTreeSet<String>,
+    handles_for_func: BTreeSet<String>,
     types: Types,
     imports: HashMap<Id, Vec<Import>>,
     params: Vec<String>,
     block_storage: Vec<String>,
     blocks: Vec<String>,
     is_dtor: bool,
+    in_import: bool,
+    in_trait: bool,
 }
 
 enum NeededFunction {
@@ -67,8 +70,26 @@ impl Wasmtime {
 }
 
 impl TypePrint for Wasmtime {
-    fn is_host(&self) -> bool {
-        true
+    fn call_mode(&self) -> CallMode {
+        if self.in_import {
+            CallMode::DefinedImport
+        } else {
+            CallMode::DeclaredExport
+        }
+    }
+
+    fn default_param_mode(&self) -> TypeMode {
+        // The default here is that only leaf values can be borrowed because
+        // otherwise lists and such need to be copied into our own memory.
+        TypeMode::LeafBorrowed("'a")
+    }
+
+    fn handle_projection(&self) -> Option<&'static str> {
+        if self.in_trait {
+            Some("Self")
+        } else {
+            Some("T")
+        }
     }
 
     fn tmp(&mut self) -> usize {
@@ -115,7 +136,7 @@ impl TypePrint for Wasmtime {
         self.push_str(",[");
         // This should only ever be used on types without lifetimes, so use
         // invalid syntax here to catch bugs where that's not the case.
-        self.print_tref(ty, TypeMode::Lifetime("INVALID"));
+        self.print_tref(ty, TypeMode::AllBorrowed("INVALID"));
         self.push_str("]>");
     }
 
@@ -226,6 +247,7 @@ impl Generator for Wasmtime {
     }
 
     fn import(&mut self, module: &Id, func: &InterfaceFunc) {
+        self.in_import = true;
         let prev = mem::take(&mut self.src);
         self.is_dtor = self.types.is_dtor_func(&func.name);
 
@@ -236,6 +258,7 @@ impl Generator for Wasmtime {
         self.push_str("fn ");
         self.push_str(to_rust_ident(&rust_name));
 
+        self.in_trait = true;
         self.push_str("(&self,");
         let param_mode = if self.is_dtor {
             TypeMode::Owned
@@ -265,6 +288,7 @@ impl Generator for Wasmtime {
                 self.push_str(")");
             }
         }
+        self.in_trait = false;
         let trait_signature = mem::take(&mut self.src);
 
         self.params.truncate(0);
@@ -304,6 +328,20 @@ impl Generator for Wasmtime {
         self.needs_memory = false;
         self.needs_guest_memory = false;
 
+        if self.handles_for_func.len() > 0 {
+            for handle in self.handles_for_func.iter() {
+                self.src.insert_str(
+                    pos,
+                    &format!(
+                        "let {0}_table_access = m.{0}_table().access();\n",
+                        handle.as_str().to_snake_case()
+                    ),
+                );
+                self.all_needed_handles.insert(handle.clone());
+            }
+            self.handles_for_func.clear();
+        }
+
         for (name, func) in self.needs_functions.drain() {
             self.src.insert_str(
                 pos,
@@ -334,6 +372,7 @@ impl Generator for Wasmtime {
     }
 
     fn export(&mut self, module: &Id, func: &InterfaceFunc) {
+        self.in_import = false;
         drop((module, func));
         unimplemented!()
     }
@@ -347,16 +386,16 @@ impl Generator for Wasmtime {
             src.insert_str(0, "use anyhow::Result;\n");
         }
 
-        for (module, funcs) in self.imports.iter() {
-            src.push_str("\npub trait ");
-            src.push_str(&module.as_str().to_camel_case());
-            src.push_str("{\n");
+        let mut has_glue = false;
+        if self.needs_borrow_checker || self.all_needed_handles.len() > 0 {
+            has_glue = true;
+            src.push_str("\npub trait Glue: Sized {\n");
             if self.needs_borrow_checker {
                 src.push_str(
                     "fn borrow_checker(&self) -> &witx_bindgen_wasmtime::BorrowChecker;\n",
                 );
             }
-            for handle in self.handles.iter() {
+            for handle in self.all_needed_handles.iter() {
                 src.push_str("type ");
                 src.push_str(&handle.to_camel_case());
                 src.push_str(";\n");
@@ -367,6 +406,16 @@ impl Generator for Wasmtime {
                 src.push_str(&handle.to_camel_case());
                 src.push_str(">;\n");
             }
+            src.push_str("}\n");
+        }
+
+        for (module, funcs) in self.imports.iter() {
+            src.push_str("\npub trait ");
+            src.push_str(&module.as_str().to_camel_case());
+            if has_glue {
+                src.push_str(": Glue");
+            }
+            src.push_str("{\n");
             for f in funcs {
                 src.push_str(&f.trait_signature);
                 src.push_str(";\n\n");
@@ -688,7 +737,7 @@ impl Bindgen for Wasmtime {
             }
 
             Instruction::I32FromOwnedHandle { ty } => {
-                self.handles.insert(ty.name.as_str().to_string());
+                self.all_needed_handles.insert(ty.name.as_str().to_string());
                 results.push(format!(
                     "m.{}_table().insert({}) as i32",
                     ty.name.as_str().to_snake_case(),
@@ -696,8 +745,8 @@ impl Bindgen for Wasmtime {
                 ));
             }
             Instruction::HandleBorrowedFromI32 { ty } => {
-                self.handles.insert(ty.name.as_str().to_string());
                 if self.is_dtor {
+                    self.all_needed_handles.insert(ty.name.as_str().to_string());
                     results.push(format!(
                         "m.{}_table().remove(({}) as u32).map_err(|e| {{
                             wasmtime::Trap::new(format!(\"failed to remove handle: {{}}\", e))
@@ -706,10 +755,11 @@ impl Bindgen for Wasmtime {
                         operands[0]
                     ));
                 } else {
+                    self.handles_for_func.insert(ty.name.as_str().to_string());
                     results.push(format!(
-                        "&*m.{}_table().get(({}) as u32).ok_or_else(|| {{
-                        wasmtime::Trap::new(\"invalid handle index\")
-                    }})?",
+                        "{}_table_access.get(({}) as u32).ok_or_else(|| {{
+                            wasmtime::Trap::new(\"invalid handle index\")
+                        }})?",
                         ty.name.as_str().to_snake_case(),
                         operands[0]
                     ));
