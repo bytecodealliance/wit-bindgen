@@ -2,7 +2,8 @@ use std::cell::Cell;
 use wasmtime::*;
 use witx_bindgen_wasmtime::{BorrowChecker, GuestPtr};
 
-const WASM: &[u8] = include_bytes!(env!("WASM"));
+const CHECKED: &[u8] = include_bytes!(env!("CHECKED"));
+const UNCHECKED: &[u8] = include_bytes!(env!("UNCHECKED"));
 
 witx_bindgen_wasmtime::import!("tests/host.witx");
 
@@ -279,8 +280,15 @@ fn main() -> anyhow::Result<()> {
     config.cache_config_load_default()?;
     let engine = Engine::new(&config);
 
+    run_test(&engine, CHECKED)?;
+    run_test(&engine, UNCHECKED)?;
+
+    Ok(())
+}
+
+fn run_test(engine: &Engine, wasm: &[u8]) -> anyhow::Result<()> {
     // Compile our wasm module ...
-    let module = Module::new(&engine, WASM)?;
+    let module = Module::new(&engine, wasm)?;
 
     // Create a linker with WASI functions ...
     let store = Store::new(&engine);

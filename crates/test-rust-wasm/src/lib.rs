@@ -1,6 +1,10 @@
 #![cfg(target_arch = "wasm32")]
 
+#[cfg(not(feature = "unchecked"))]
 witx_bindgen_rust::import!("tests/host.witx");
+
+#[cfg(feature = "unchecked")]
+witx_bindgen_rust::import!({ paths: ["tests/host.witx"], unchecked });
 
 // A small global allocator implementation which is intended to keep track of
 // the number of allocated bytes to ensure that all our integration glue indeed

@@ -5,7 +5,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering::SeqCst},
     Once,
 };
-use witx_bindgen_core::{witx, Generator};
+use witx_bindgen_gen_core::{witx, Generator};
 
 #[test]
 fn smoke() {
@@ -315,7 +315,7 @@ fn witx(src: &str, rust: Option<&str>) {
     let doc = witx::parse(src).unwrap();
     for unchecked in [false, true].iter() {
         let me = CNT.fetch_add(1, SeqCst);
-        let mut opts = witx_bindgen_rust_wasm::Opts::default();
+        let mut opts = witx_bindgen_gen_rust_wasm::Opts::default();
         opts.rustfmt = true;
         opts.unchecked = *unchecked;
         let files = opts.build().generate(&doc, rust.is_none());

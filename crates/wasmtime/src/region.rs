@@ -170,14 +170,14 @@ mod test {
 
     #[test]
     fn nonoverlapping() {
-        let mut bs = InnerBorrowChecker::new();
+        let mut bs = InnerBorrowChecker::default();
         let r1 = Region::new(0, 10);
         let r2 = Region::new(10, 10);
         assert!(!r1.overlaps(r2));
         bs.mut_borrow(r1).expect("can borrow r1");
         bs.mut_borrow(r2).expect("can borrow r2");
 
-        let mut bs = InnerBorrowChecker::new();
+        let mut bs = InnerBorrowChecker::default();
         let r1 = Region::new(10, 10);
         let r2 = Region::new(0, 10);
         assert!(!r1.overlaps(r2));
@@ -187,7 +187,7 @@ mod test {
 
     #[test]
     fn overlapping() {
-        let mut bs = InnerBorrowChecker::new();
+        let mut bs = InnerBorrowChecker::default();
         let r1 = Region::new(0, 10);
         let r2 = Region::new(9, 10);
         assert!(r1.overlaps(r2));
@@ -195,7 +195,7 @@ mod test {
         assert!(bs.mut_borrow(r2).is_err(), "cant mut borrow r2");
         bs.shared_borrow(r2).expect("can shared borrow r2");
 
-        let mut bs = InnerBorrowChecker::new();
+        let mut bs = InnerBorrowChecker::default();
         let r1 = Region::new(0, 10);
         let r2 = Region::new(2, 5);
         assert!(r1.overlaps(r2));
@@ -203,7 +203,7 @@ mod test {
         assert!(bs.mut_borrow(r2).is_err(), "cant borrow r2");
         bs.shared_borrow(r2).expect("can shared borrow r2");
 
-        let mut bs = InnerBorrowChecker::new();
+        let mut bs = InnerBorrowChecker::default();
         let r1 = Region::new(9, 10);
         let r2 = Region::new(0, 10);
         assert!(r1.overlaps(r2));
@@ -211,7 +211,7 @@ mod test {
         assert!(bs.mut_borrow(r2).is_err(), "cant borrow r2");
         bs.shared_borrow(r2).expect("can shared borrow r2");
 
-        let mut bs = InnerBorrowChecker::new();
+        let mut bs = InnerBorrowChecker::default();
         let r1 = Region::new(2, 5);
         let r2 = Region::new(0, 10);
         assert!(r1.overlaps(r2));
@@ -219,7 +219,7 @@ mod test {
         assert!(bs.mut_borrow(r2).is_err(), "cant borrow r2");
         bs.shared_borrow(r2).expect("can shared borrow r2");
 
-        let mut bs = InnerBorrowChecker::new();
+        let mut bs = InnerBorrowChecker::default();
         let r1 = Region::new(2, 5);
         let r2 = Region::new(10, 5);
         let r3 = Region::new(15, 5);
@@ -234,7 +234,7 @@ mod test {
 
     #[test]
     fn unborrowing() {
-        let mut bs = InnerBorrowChecker::new();
+        let mut bs = InnerBorrowChecker::default();
         let r1 = Region::new(0, 10);
         let r2 = Region::new(10, 10);
         assert!(!r1.overlaps(r2));
@@ -259,7 +259,7 @@ mod test {
 
         // Lets try again with shared:
 
-        let mut bs = InnerBorrowChecker::new();
+        let mut bs = InnerBorrowChecker::default();
         let r1 = Region::new(0, 10);
         let r2 = Region::new(10, 10);
         assert!(!r1.overlaps(r2));
@@ -292,7 +292,7 @@ mod test {
     }
 
     #[test]
-    fn nonoverlapping() {
+    fn nonoverlapping_region() {
         let r1 = Region::new(0, 10);
         let r2 = Region::new(10, 10);
         assert!(!r1.overlaps(r2));
@@ -303,7 +303,7 @@ mod test {
     }
 
     #[test]
-    fn overlapping() {
+    fn overlapping_region() {
         let r1 = Region::new(0, 10);
         let r2 = Region::new(9, 10);
         assert!(r1.overlaps(r2));

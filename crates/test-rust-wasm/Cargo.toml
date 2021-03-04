@@ -10,3 +10,6 @@ crate-type = ['cdylib']
 
 [dependencies]
 witx-bindgen-rust = { path = "../rust-wasm" }
+
+[features]
+unchecked = []

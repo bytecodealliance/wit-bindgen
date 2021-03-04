@@ -592,7 +592,9 @@ impl Bindgen for RustWasmBindgen<'_> {
                 let vec = format!("vec{}", tmp);
                 let result = format!("result{}", tmp);
                 let layout = format!("layout{}", tmp);
+                let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {};\n", vec, operands[0]));
+                self.push_str(&format!("let {} = {}.len() as i32;\n", len, vec));
                 let size_align = element.mem_size_align();
                 self.push_str(&format!(
                     "let {} = core::alloc::Layout::from_size_align_unchecked({}.len() * {}, 8);\n",
@@ -616,11 +618,7 @@ impl Bindgen for RustWasmBindgen<'_> {
                 ));
                 self.push_str(&body);
                 self.push_str("}");
-                let ptr = format!("ptr{}", tmp);
-                let len = format!("len{}", tmp);
-                self.push_str(&format!("let {} = {} as i32;\n", ptr, result));
-                self.push_str(&format!("let {} = {}.len() as i32;\n", len, vec));
-                results.push(ptr);
+                results.push(format!("{} as i32", result));
                 results.push(len);
             }
 
