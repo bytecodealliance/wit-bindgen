@@ -106,12 +106,19 @@ impl Types {
     }
 
     fn register_type_info(&mut self, ty: &TypeRef, param: bool, result: bool) -> (bool, bool) {
-        if let TypeRef::Name(nt) = ty {
-            let info = self.type_info.get_mut(&nt.name).unwrap();
-            info.param = info.param || param;
-            info.result = info.result || result;
-        }
-        let (list, handle) = match &**ty.type_() {
+        let ty = match ty {
+            TypeRef::Name(nt) => {
+                let (list, handle) = self.register_type_info(&nt.tref, param, result);
+                let info = self.type_info.get_mut(&nt.name).unwrap();
+                info.param = info.param || param;
+                info.result = info.result || result;
+                info.has_list = info.has_list || list;
+                info.has_handle = info.has_handle || handle;
+                return (list, handle);
+            }
+            TypeRef::Value(t) => &**t,
+        };
+        match ty {
             Type::Handle(_) | Type::Builtin(_) => (false, false),
             Type::List(t) => {
                 let (_list, handle) = self.register_type_info(t, param, result);
@@ -140,13 +147,7 @@ impl Types {
                 }
                 (list, handle)
             }
-        };
-        if let TypeRef::Name(nt) = ty {
-            let info = self.type_info.get_mut(&nt.name).unwrap();
-            info.has_list = info.has_list || list;
-            info.has_handle = info.has_handle || handle;
         }
-        (list, handle)
     }
 }
 

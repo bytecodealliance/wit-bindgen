@@ -10,7 +10,6 @@ pub struct RustWasm {
     tmp: usize,
     src: String,
     opts: Opts,
-    needs_cleanup_list: bool,
     types: Types,
 }
 
@@ -172,14 +171,7 @@ impl Generator for RustWasm {
     }
 
     fn type_list(&mut self, name: &Id, ty: &TypeRef, docs: &str) {
-        for (name, mode) in self.modes_of(name) {
-            self.rustdoc(docs);
-            self.src.push_str(&format!("pub type {}", name));
-            self.print_lifetime_param(mode);
-            self.src.push_str(" = ");
-            self.print_list(ty, mode);
-            self.src.push(';');
-        }
+        self.print_type_list(name, ty, docs);
     }
 
     fn type_pointer(&mut self, name: &Id, const_: bool, ty: &TypeRef, docs: &str) {
@@ -251,8 +243,6 @@ impl Generator for RustWasm {
         }
         self.src.push_str("{unsafe{");
 
-        let start_pos = self.src.len();
-
         func.call(
             module,
             CallMode::DeclaredImport,
@@ -261,14 +251,8 @@ impl Generator for RustWasm {
                 params,
                 block_storage: Vec::new(),
                 blocks: Vec::new(),
-                cleanup: Vec::new(),
             },
         );
-
-        if mem::take(&mut self.needs_cleanup_list) {
-            self.src
-                .insert_str(start_pos, "let mut cleanup_list = Vec::new();\n");
-        }
 
         self.src.push_str("}}");
     }
@@ -313,10 +297,8 @@ impl Generator for RustWasm {
                 params,
                 block_storage: Vec::new(),
                 blocks: Vec::new(),
-                cleanup: Vec::new(),
             },
         );
-        assert!(!self.needs_cleanup_list);
 
         self.src.push_str("}");
     }
@@ -357,10 +339,7 @@ struct RustWasmBindgen<'a> {
     cfg: &'a mut RustWasm,
     params: Vec<String>,
     blocks: Vec<String>,
-    cleanup: Vec<(String, String)>,
-
-    // Stack of previous blocks with their source and their cleanups.
-    block_storage: Vec<(String, Vec<(String, String)>)>,
+    block_storage: Vec<String>,
 }
 
 impl RustWasmBindgen<'_> {
@@ -374,27 +353,12 @@ impl Bindgen for RustWasmBindgen<'_> {
 
     fn push_block(&mut self) {
         let prev_src = mem::take(&mut self.cfg.src);
-        let prev_cleanup = mem::take(&mut self.cleanup);
-        self.block_storage.push((prev_src, prev_cleanup));
+        self.block_storage.push(prev_src);
     }
 
     fn finish_block(&mut self, operands: &mut Vec<String>) {
-        if self.cleanup.len() > 0 {
-            self.cfg.needs_cleanup_list = true;
-            self.push_str("cleanup_list.extend_from_slice(&[");
-            for (ptr, len) in mem::take(&mut self.cleanup) {
-                self.push_str("(");
-                self.push_str(&ptr);
-                self.push_str(",");
-                self.push_str(&len);
-                self.push_str("),");
-            }
-            self.push_str("]);");
-        }
-
-        let (prev_src, prev_cleanup) = self.block_storage.pop().unwrap();
+        let prev_src = self.block_storage.pop().unwrap();
         let src = mem::replace(&mut self.cfg.src, prev_src);
-        self.cleanup = prev_cleanup;
         let expr = match operands.len() {
             0 => "()".to_string(),
             1 => operands.pop().unwrap(),
@@ -622,7 +586,7 @@ impl Bindgen for RustWasmBindgen<'_> {
                 }
             }
 
-            Instruction::ListLower { element, owned, .. } => {
+            Instruction::ListLower { element, .. } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.cfg.tmp();
                 let vec = format!("vec{}", tmp);
@@ -656,11 +620,6 @@ impl Bindgen for RustWasmBindgen<'_> {
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {} as i32;\n", ptr, result));
                 self.push_str(&format!("let {} = {}.len() as i32;\n", len, vec));
-                if *owned {
-                    self.push_str(&format!("core::mem::forget({});\n", result));
-                } else {
-                    self.cleanup.push((ptr.clone(), layout));
-                }
                 results.push(ptr);
                 results.push(len);
             }
@@ -669,23 +628,13 @@ impl Bindgen for RustWasmBindgen<'_> {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.cfg.tmp();
                 let size_align = element.mem_size_align();
-                let (ty, multiplier) = match size_align {
-                    SizeAlign { align: 1, size } => ("u8", size),
-                    SizeAlign { align: 2, size } => ("u16", size / 2),
-                    SizeAlign { align: 4, size } => ("u32", size / 4),
-                    SizeAlign { align: 8, size } => ("u64", size / 8),
-                    _ => unimplemented!(),
-                };
                 let len = format!("len{}", tmp);
-                self.push_str(&format!("let {} = {} as usize;\n", len, operands[1],));
                 let base = format!("base{}", tmp);
-                self.push_str(&format!(
-                    "let {} = Vec::<{}>::from_raw_parts({} as *mut _, {len} * {mult}, {len} * {mult});\n",
-                    base, ty, operands[0], len=len, mult=multiplier,
-                ));
                 let result = format!("result{}", tmp);
+                self.push_str(&format!("let {} = {};\n", base, operands[0]));
+                self.push_str(&format!("let {} = {};\n", len, operands[1],));
                 self.push_str(&format!(
-                    "let mut {} = Vec::with_capacity({});\n",
+                    "let mut {} = Vec::with_capacity({} as usize);\n",
                     result, len,
                 ));
 
@@ -694,7 +643,7 @@ impl Bindgen for RustWasmBindgen<'_> {
                 self.push_str(" {\n");
                 self.push_str("let base = ");
                 self.push_str(&base);
-                self.push_str(".as_ptr() as i32 + (i as i32) *");
+                self.push_str(" + i *");
                 self.push_str(&size_align.size.to_string());
                 self.push_str(";\n");
                 self.push_str(&result);
@@ -703,6 +652,16 @@ impl Bindgen for RustWasmBindgen<'_> {
                 self.push_str(");\n");
                 self.push_str("}\n");
                 results.push(result);
+                self.push_str(&format!(
+                    "std::alloc::dealloc(
+                        {} as *mut _,
+                        std::alloc::Layout::from_size_align_unchecked(
+                            ({} as usize) * {},
+                            8,
+                        ),
+                    );",
+                    base, len, size_align.size
+                ));
             }
 
             Instruction::IterElem => results.push("e".to_string()),
@@ -757,30 +716,15 @@ impl Bindgen for RustWasmBindgen<'_> {
                 self.push_str(");");
             }
 
-            Instruction::Return { amt } => {
-                for (ptr, layout) in self.cleanup.drain(..) {
-                    self.cfg.push_str(&format!(
-                        "std::alloc::dealloc({} as *mut _, {});\n",
-                        ptr, layout
-                    ));
+            Instruction::Return { amt } => match amt {
+                0 => {}
+                1 => self.push_str(&operands[0]),
+                _ => {
+                    self.push_str("(");
+                    self.push_str(&operands.join(", "));
+                    self.push_str(")");
                 }
-                if self.cfg.needs_cleanup_list {
-                    self.push_str(
-                        "for (ptr, layout) in cleanup_list {
-                            std::alloc::dealloc(ptr as *mut _, layout);
-                        }",
-                    );
-                }
-                match amt {
-                    0 => {}
-                    1 => self.push_str(&operands[0]),
-                    _ => {
-                        self.push_str("(");
-                        self.push_str(&operands.join(", "));
-                        self.push_str(")");
-                    }
-                }
-            }
+            },
 
             Instruction::I32Load { offset } => {
                 results.push(format!("*(({} + {}) as *const i32)", operands[0], offset));

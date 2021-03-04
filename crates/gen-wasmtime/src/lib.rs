@@ -204,14 +204,7 @@ impl Generator for Wasmtime {
     }
 
     fn type_list(&mut self, name: &Id, ty: &TypeRef, docs: &str) {
-        for (name, mode) in self.modes_of(name) {
-            self.rustdoc(docs);
-            self.src.push_str(&format!("pub type {}", name));
-            self.print_lifetime_param(mode);
-            self.src.push_str(" = ");
-            self.print_list(ty, mode);
-            self.src.push(';');
-        }
+        self.print_type_list(name, ty, docs);
     }
 
     fn type_pointer(&mut self, name: &Id, const_: bool, ty: &TypeRef, docs: &str) {
@@ -802,11 +795,18 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 // Lowering only happens when we're passing lists into wasm,
                 // which forces us to always allocate, so this should always be
                 // `Some`.
+                //
+                // Note that the size of a list of `char` is 1 because it's
+                // encoded as utf-8, otherwise it's just normal contiguous array
+                // elements.
                 let malloc = malloc.as_ref().unwrap();
                 self.cfg
                     .needs_functions
                     .insert(malloc.clone(), NeededFunction::Malloc);
-                let size_align = element.mem_size_align();
+                let size = match &**element.type_() {
+                    Type::Builtin(BuiltinType::Char) => 1,
+                    _ => element.mem_size_align().size,
+                };
 
                 // Store the operand into a temporary...
                 let tmp = self.cfg.tmp();
@@ -817,7 +817,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 let ptr = format!("ptr{}", tmp);
                 self.push_str(&format!(
                     "let {} = func_{}(({}.len() as i32) * {})?;\n",
-                    ptr, malloc, val, size_align.size
+                    ptr, malloc, val, size
                 ));
 
                 // ... and then copy over the result.
@@ -929,7 +929,10 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 self.push_str(&body);
                 self.push_str(");\n");
                 self.push_str("}\n");
-                self.push_str(&format!("func_{}({}, {})?;\n", free, base, len));
+                self.push_str(&format!(
+                    "func_{}({}, {} * {})?;\n",
+                    free, base, len, size_align.size
+                ));
                 results.push(result);
                 self.cfg
                     .needs_functions

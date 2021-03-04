@@ -45,6 +45,7 @@
 (typename $list_in_record1 (record (field $a string)))
 (typename $list_in_record2 (record (field $a string)))
 (typename $list_in_record3 (record (field $a string)))
+(typename $list_in_record4 (record (field $a string)))
 
 (typename $option_typedef (option u32))
 (typename $bool_typedef bool)
@@ -57,6 +58,11 @@
 (typename $list_in_variant3 (option string))
 
 (typename $my_errno (enum $success $a $b))
+
+(typename $list_in_alias $list_in_record4)
+(typename $list_typedef string)
+(typename $list_typedef2 (list u8))
+(typename $list_typedef3 (list string))
 
 (module $host
 
@@ -148,6 +154,7 @@
   (export "list_in_record1" (func (param $a $list_in_record1)))
   (export "list_in_record2" (func (result $a $list_in_record2)))
   (export "list_in_record3" (func (param $a $list_in_record3) (result $b $list_in_record3)))
+  (export "list_in_record4" (func (param $a $list_in_alias) (result $b $list_in_alias)))
 
   (export "list_in_variant1" (func
     (param $a $list_in_variant1_1)
@@ -158,4 +165,11 @@
   (export "list_in_variant3" (func (param $a $list_in_variant3) (result $b $list_in_variant3)))
 
   (export "errno_result" (func (result $a (expected (error $my_errno)))))
+
+  (export "list_typedefs" (func
+    (param $a $list_typedef)
+    (param $c $list_typedef3)
+    (result $r1 $list_typedef2)
+    (result $r2 $list_typedef3)
+  ))
 )

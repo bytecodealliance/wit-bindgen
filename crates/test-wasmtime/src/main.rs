@@ -222,6 +222,13 @@ impl Host for MyHost {
         }
     }
 
+    fn list_in_record4(&self, a: ListInAliasParam<'_>) -> ListInAliasResult {
+        assert_eq!(&*a.a.borrow().unwrap(), "input4");
+        ListInRecord4Result {
+            a: "result4".to_string(),
+        }
+    }
+
     fn list_in_variant1(
         &self,
         a: ListInVariant11<'_>,
@@ -251,6 +258,17 @@ impl Host for MyHost {
         fn assert_error<T: std::error::Error>() {}
         assert_error::<MyErrno>();
         Err(MyErrno::B)
+    }
+
+    fn list_typedefs(
+        &self,
+        a: ListTypedef<'_>,
+        b: ListTypedef3Param<'_>,
+    ) -> (ListTypedef2, ListTypedef3Result) {
+        assert_eq!(&*a.borrow().unwrap(), "typedef1");
+        assert_eq!(b.len(), 1);
+        assert_eq!(&*b[0].borrow().unwrap(), "typedef2");
+        (b"typedef3".to_vec(), vec!["typedef4".to_string()])
     }
 }
 

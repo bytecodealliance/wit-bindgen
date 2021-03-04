@@ -223,7 +223,12 @@ pub trait TypePrint {
         let mut result = Vec::new();
         if info.owns_data() {
             if info.param {
-                result.push((info.param_name(ty), TypeMode::Lifetime("'a")));
+                let mode = if self.is_host() {
+                    TypeMode::LeafBorrowed("'a")
+                } else {
+                    TypeMode::Lifetime("'a")
+                };
+                result.push((info.param_name(ty), mode));
             }
             if info.result {
                 result.push((info.result_name(ty), TypeMode::Owned));
@@ -400,11 +405,30 @@ pub trait TypePrint {
     }
 
     fn print_typedef_alias(&mut self, name: &Id, ty: &NamedType, docs: &str) {
-        self.rustdoc(docs);
-        self.push_str(&format!("pub type {}", name.as_str().to_camel_case()));
-        self.push_str(" = ");
-        self.push_str(&ty.name.as_str().to_camel_case());
-        self.push_str(";\n");
+        for (name, mode) in self.modes_of(name) {
+            self.rustdoc(docs);
+            self.push_str(&format!("pub type {}", name));
+            self.print_lifetime_param(mode);
+            self.push_str(" = ");
+            let info = self.info(&ty.name);
+            match mode.lifetime() {
+                Some(_) => self.push_str(&info.param_name(&ty.name)),
+                None => self.push_str(&info.result_name(&ty.name)),
+            }
+            self.print_lifetime_param(mode);
+            self.push_str(";\n");
+        }
+    }
+
+    fn print_type_list(&mut self, name: &Id, ty: &TypeRef, docs: &str) {
+        for (name, mode) in self.modes_of(name) {
+            self.rustdoc(docs);
+            self.push_str(&format!("pub type {}", name));
+            self.print_lifetime_param(mode);
+            self.push_str(" = ");
+            self.print_list(ty, mode);
+            self.push_str(";\n");
+        }
     }
 
     fn record_lower(
