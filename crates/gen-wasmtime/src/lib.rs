@@ -738,8 +738,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
             }
 
             Instruction::RecordLower { ty, name } => {
-                let tmp = self.cfg.tmp();
-                self.cfg.record_lower(ty, *name, tmp, &operands[0], results);
+                self.cfg.record_lower(ty, *name, &operands[0], results);
             }
             Instruction::RecordLift { ty, name } => {
                 self.cfg.record_lift(ty, *name, operands, results);

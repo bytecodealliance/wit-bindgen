@@ -479,8 +479,7 @@ impl Bindgen for RustWasmBindgen<'_> {
             Instruction::BitflagsFromI64 { repr, .. } => top_as(int_repr(*repr)),
 
             Instruction::RecordLower { ty, name } => {
-                let tmp = self.cfg.tmp();
-                self.cfg.record_lower(ty, *name, tmp, &operands[0], results);
+                self.cfg.record_lower(ty, *name, &operands[0], results);
             }
             Instruction::RecordLift { ty, name } => {
                 self.cfg.record_lift(ty, *name, operands, results);

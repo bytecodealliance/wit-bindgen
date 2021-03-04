@@ -435,10 +435,10 @@ pub trait TypePrint {
         &mut self,
         ty: &RecordDatatype,
         name: Option<&NamedType>,
-        tmp: usize,
         operand: &str,
         results: &mut Vec<String>,
     ) {
+        let tmp = self.tmp();
         if ty.is_tuple() {
             self.push_str("let (");
             for i in 0..ty.members.len() {
