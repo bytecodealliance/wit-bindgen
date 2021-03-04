@@ -12,6 +12,7 @@ pub extern "C" fn run_host_tests() {
     host_variants();
     host_legacy();
     host_lists();
+    host_flavorful();
 }
 
 fn host_integers() {
@@ -149,6 +150,8 @@ fn host_variants() {
     assert!(matches!(a2, Z2::A(2)));
     assert!(matches!(a3, Z3::A(b) if b == 3.0));
     assert!(matches!(a4, Z4::A(b) if b == 4.0));
+
+    variant_typedefs(None, false, Err(()));
 }
 
 fn host_legacy() {
@@ -172,6 +175,34 @@ fn host_lists() {
     assert_eq!(list_result(), [1, 2, 3, 4, 5]);
     assert_eq!(list_result2(), "hello!");
     assert_eq!(list_result3(), ["hello,", "world!"]);
+}
+
+fn host_flavorful() {
+    list_in_record1(&ListInRecord1 {
+        a: "list_in_record1",
+    });
+    assert_eq!(list_in_record2().a, "list_in_record2");
+
+    assert_eq!(
+        list_in_record3(&ListInRecord3Param {
+            a: "list_in_record3 input"
+        })
+        .a,
+        "list_in_record3 output"
+    );
+
+    list_in_variant1(&Some("foo"), &Err("bar"), &ListInVariant13::V0("baz"));
+    assert_eq!(list_in_variant2(), Some("list_in_variant2".to_string()));
+    assert_eq!(
+        list_in_variant3(&Some("input3")),
+        Some("output3".to_string())
+    );
+
+    assert!(errno_result().is_err());
+    MyErrno::A.to_string();
+    format!("{:?}", MyErrno::A);
+    fn assert_error<T: std::error::Error>() {}
+    assert_error::<MyErrno>();
 }
 
 #[no_mangle]

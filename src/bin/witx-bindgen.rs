@@ -62,6 +62,10 @@ fn main() -> Result<()> {
             None => name.into(),
         };
         println!("Generating {:?}", dst);
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {:?}", parent))?;
+        }
         std::fs::write(&dst, contents).with_context(|| format!("failed to write {:?}", dst))?;
     }
 

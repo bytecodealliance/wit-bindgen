@@ -86,6 +86,9 @@ impl Types {
         for t in doc.typenames() {
             self.type_info.insert(t.name.clone(), TypeInfo::default());
         }
+        for t in doc.typenames() {
+            self.register_type_info(&TypeRef::Name(t.clone()), false, false);
+        }
         for m in doc.modules() {
             for f in m.funcs() {
                 for param in f.params.iter() {

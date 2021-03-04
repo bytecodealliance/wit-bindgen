@@ -17,6 +17,7 @@ pub trait TypePrint {
     fn print_pointer(&mut self, const_: bool, ty: &TypeRef);
     fn print_borrowed_slice(&mut self, ty: &TypeRef, lifetime: &'static str);
     fn print_borrowed_str(&mut self, lifetime: &'static str);
+    fn is_host(&self) -> bool;
 
     fn rustdoc(&mut self, docs: &str) {
         if docs.trim().is_empty() {
@@ -75,23 +76,25 @@ pub trait TypePrint {
                 // leading `&`.
                 if info.owns_data() {
                     match mode {
-                        TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) => {
-                            match &**t.type_() {
-                                Type::List(_) => {}
-                                _ => {
-                                    self.push_str("&");
-                                    if lt != "'_" {
-                                        self.push_str(lt);
-                                    }
-                                    self.push_str(" ");
+                        TypeMode::AllBorrowed(lt) => match &**t.type_() {
+                            Type::List(_) => {}
+                            _ => {
+                                self.push_str("&");
+                                if lt != "'_" {
+                                    self.push_str(lt);
                                 }
+                                self.push_str(" ");
                             }
-                        }
+                        },
                         _ => {}
                     }
                 }
 
-                self.push_str(&t.name.as_str().to_camel_case());
+                if mode.lifetime().is_some() {
+                    self.push_str(&info.param_name(&t.name));
+                } else {
+                    self.push_str(&info.result_name(&t.name));
+                }
 
                 // If the type recursively owns data and it's a
                 // variant/record/list, then we need to place the lifetime
@@ -215,6 +218,195 @@ pub trait TypePrint {
         self.push_str(wasm_type(ty));
     }
 
+    fn modes_of(&self, ty: &Id) -> Vec<(String, TypeMode)> {
+        let info = self.info(ty);
+        let mut result = Vec::new();
+        if info.owns_data() {
+            if info.param {
+                result.push((info.param_name(ty), TypeMode::Lifetime("'a")));
+            }
+            if info.result {
+                result.push((info.result_name(ty), TypeMode::Owned));
+            }
+        } else {
+            result.push((info.result_name(ty), TypeMode::Owned));
+        }
+        return result;
+    }
+
+    fn print_typedef_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str) {
+        let info = self.info(name);
+        for (name, mode) in self.modes_of(name) {
+            self.rustdoc(docs);
+            if record.is_tuple() {
+                self.push_str(&format!("pub type {}", name));
+                self.print_lifetime_param(mode);
+                self.push_str(" = (");
+                for member in record.members.iter() {
+                    self.print_tref(&member.tref, mode);
+                    self.push_str(",");
+                }
+                self.push_str(");\n");
+            } else {
+                if !info.has_handle {
+                    if !info.owns_data() {
+                        self.push_str("#[repr(C)]\n");
+                        self.push_str("#[derive(Copy)]\n");
+                    }
+                    self.push_str("#[derive(Clone)]\n");
+                }
+                self.push_str("#[derive(Debug)]\n");
+                self.push_str(&format!("pub struct {}\n", name));
+                self.print_lifetime_param(mode);
+                self.push_str(" {\n");
+                for member in record.members.iter() {
+                    self.rustdoc(&member.docs);
+                    self.push_str("pub ");
+                    self.push_str(to_rust_ident(member.name.as_str()));
+                    self.push_str(": ");
+                    self.print_tref(&member.tref, mode);
+                    self.push_str(",\n");
+                }
+                self.push_str("}\n");
+            }
+        }
+    }
+
+    fn print_typedef_variant(&mut self, name: &Id, variant: &Variant, docs: &str) {
+        // TODO: should this perhaps be an attribute in the witx file?
+        let is_error = name.as_str().contains("errno") && variant.is_enum();
+        let info = self.info(name);
+
+        for (name, mode) in self.modes_of(name) {
+            self.rustdoc(docs);
+            if variant.is_bool() {
+                self.push_str(&format!("pub type {} = bool;\n", name));
+                continue;
+            } else if let Some(ty) = variant.as_option() {
+                self.push_str(&format!("pub type {}", name));
+                self.print_lifetime_param(mode);
+                self.push_str("= Option<");
+                self.print_tref(ty, mode);
+                self.push_str(">;\n");
+                continue;
+            } else if let Some((ok, err)) = variant.as_expected() {
+                self.push_str(&format!("pub type {}", name));
+                self.print_lifetime_param(mode);
+                self.push_str("= Result<");
+                match ok {
+                    Some(ty) => self.print_tref(ty, mode),
+                    None => self.push_str("()"),
+                }
+                self.push_str(",");
+                match err {
+                    Some(ty) => self.print_tref(ty, mode),
+                    None => self.push_str("()"),
+                }
+                self.push_str(">;\n");
+                continue;
+            }
+            if !info.has_handle {
+                if variant.is_enum() {
+                    self.push_str("#[repr(");
+                    self.int_repr(variant.tag_repr);
+                    self.push_str(")]\n#[derive(Copy, PartialEq, Eq)]\n");
+                } else if !info.owns_data() {
+                    self.push_str("#[derive(Copy)]\n");
+                }
+                self.push_str("#[derive(Clone)]\n");
+            }
+            if !is_error {
+                self.push_str("#[derive(Debug)]\n");
+            }
+            self.push_str(&format!("pub enum {}", name.to_camel_case()));
+            self.print_lifetime_param(mode);
+            self.push_str("{\n");
+            for case in variant.cases.iter() {
+                self.rustdoc(&case.docs);
+                self.push_str(&case_name(&case.name));
+                if let Some(ty) = &case.tref {
+                    self.push_str("(");
+                    self.print_tref(ty, mode);
+                    self.push_str(")")
+                }
+                self.push_str(",\n");
+            }
+            self.push_str("}\n");
+
+            // Auto-synthesize an implementation of the standard `Error` trait for
+            // error-looking types based on their name.
+            if is_error {
+                self.push_str("impl ");
+                self.push_str(&name);
+                self.push_str("{\n");
+
+                self.push_str("pub fn name(&self) -> &'static str {\n");
+                self.push_str("match self {");
+                for case in variant.cases.iter() {
+                    self.push_str(&name);
+                    self.push_str("::");
+                    self.push_str(&case_name(&case.name));
+                    self.push_str(" => \"");
+                    self.push_str(case.name.as_str());
+                    self.push_str("\",");
+                }
+                self.push_str("}\n");
+                self.push_str("}\n");
+
+                self.push_str("pub fn message(&self) -> &'static str {\n");
+                self.push_str("match self {");
+                for case in variant.cases.iter() {
+                    self.push_str(&name);
+                    self.push_str("::");
+                    self.push_str(&case_name(&case.name));
+                    self.push_str(" => \"");
+                    self.push_str(case.docs.trim());
+                    self.push_str("\",");
+                }
+                self.push_str("}\n");
+                self.push_str("}\n");
+
+                self.push_str("}\n");
+
+                self.push_str("impl std::fmt::Debug for ");
+                self.push_str(&name);
+                self.push_str(
+                    "{\nfn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
+                );
+                self.push_str("f.debug_struct(\"");
+                self.push_str(&name);
+                self.push_str("\")");
+                self.push_str(".field(\"code\", &(*self as i32))");
+                self.push_str(".field(\"name\", &self.name())");
+                self.push_str(".field(\"message\", &self.message())");
+                self.push_str(".finish()");
+                self.push_str("}\n");
+                self.push_str("}\n");
+
+                self.push_str("impl std::fmt::Display for ");
+                self.push_str(&name);
+                self.push_str(
+                    "{\nfn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
+                );
+                self.push_str("write!(f, \"{} (error {})\", self.name(), *self as i32)");
+                self.push_str("}\n");
+                self.push_str("}\n");
+                self.push_str("\n");
+                self.push_str("impl std::error::Error for ");
+                self.push_str(&name);
+                self.push_str("{}\n");
+            }
+        }
+    }
+
+    fn print_typedef_alias(&mut self, name: &Id, ty: &NamedType, docs: &str) {
+        self.rustdoc(docs);
+        self.push_str(&format!("pub type {}", name.as_str().to_camel_case()));
+        self.push_str(" = ");
+        self.push_str(&ty.name.as_str().to_camel_case());
+        self.push_str(";\n");
+    }
+
     fn record_lower(
         &mut self,
         ty: &RecordDatatype,
@@ -235,8 +427,13 @@ pub trait TypePrint {
             self.push_str(operand);
             self.push_str(";\n");
         } else if let Some(name) = name {
+            let info = self.info(&name.name);
             self.push_str("let ");
-            self.push_str(&name.name.as_str().to_camel_case());
+            if self.is_host() {
+                self.push_str(&info.result_name(&name.name));
+            } else {
+                self.push_str(&info.param_name(&name.name));
+            }
             self.push_str("{ ");
             for member in ty.members.iter() {
                 let arg = format!("{}{}", member.name.as_str(), tmp);
@@ -268,7 +465,12 @@ pub trait TypePrint {
                 results.push(format!("({})", operands.join(",")));
             }
         } else if let Some(name) = name {
-            let mut result = name.name.as_str().to_camel_case();
+            let info = self.info(&name.name);
+            let mut result = if self.is_host() {
+                info.param_name(&name.name)
+            } else {
+                info.result_name(&name.name)
+            };
             result.push_str("{");
             for (member, val) in ty.members.iter().zip(operands) {
                 result.push_str(to_rust_ident(member.name.as_str()));

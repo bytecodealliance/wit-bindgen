@@ -3,9 +3,7 @@ use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use witx_bindgen_gen_core::{witx::*, Files, Generator, TypeInfo, Types};
-use witx_bindgen_gen_rust::{
-    case_name, int_repr, to_rust_ident, wasm_type, TypeInfoExt, TypeMode, TypePrint,
-};
+use witx_bindgen_gen_rust::{int_repr, to_rust_ident, wasm_type, TypeMode, TypePrint};
 
 #[derive(Default)]
 pub struct RustWasm {
@@ -47,25 +45,13 @@ impl RustWasm {
     pub fn new() -> RustWasm {
         RustWasm::default()
     }
-
-    fn modes_of(&self, ty: &Id) -> Vec<(String, TypeMode)> {
-        let info = self.types.get(ty);
-        let mut result = Vec::new();
-        if info.owns_data() {
-            if info.param {
-                result.push((info.param_name(ty), TypeMode::Lifetime("'a")));
-            }
-            if info.result {
-                result.push((info.result_name(ty), TypeMode::Lifetime("'a")));
-            }
-        } else {
-            result.push((info.result_name(ty), TypeMode::Owned));
-        }
-        return result;
-    }
 }
 
 impl TypePrint for RustWasm {
+    fn is_host(&self) -> bool {
+        false
+    }
+
     fn tmp(&mut self) -> usize {
         let ret = self.tmp;
         self.tmp += 1;
@@ -132,8 +118,6 @@ impl Generator for RustWasm {
     }
 
     fn type_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str) {
-        let info = self.types.get(name);
-
         if let Some(repr) = record.bitflags_repr() {
             let name = name.as_str();
             self.rustdoc(docs);
@@ -153,136 +137,12 @@ impl Generator for RustWasm {
             }
             return;
         }
-        for (name, mode) in self.modes_of(name) {
-            if record.is_tuple() {
-                self.src.push_str(&format!("pub type {} = (", name));
-                for member in record.members.iter() {
-                    self.print_tref(&member.tref, mode);
-                    self.src.push_str(",");
-                }
-                self.src.push_str(");\n");
-            } else {
-                if !info.has_handle {
-                    if !info.owns_data() {
-                        self.src.push_str("#[repr(C)]\n");
-                        self.src.push_str("#[derive(Copy)]\n");
-                    }
-                    self.src.push_str("#[derive(Clone)]\n");
-                }
-                self.src.push_str("#[derive(Debug)]\n");
-                self.src.push_str(&format!("pub struct {} {{\n", name));
-                for member in record.members.iter() {
-                    self.rustdoc(&member.docs);
-                    self.src.push_str("pub ");
-                    self.src.push_str(to_rust_ident(member.name.as_str()));
-                    self.src.push_str(": ");
-                    self.print_tref(&member.tref, mode);
-                    self.src.push_str(",\n");
-                }
-                self.src.push_str("}\n");
-            }
-        }
+
+        self.print_typedef_record(name, record, docs);
     }
 
     fn type_variant(&mut self, name: &Id, variant: &Variant, docs: &str) {
-        // TODO: should this perhaps be an attribute in the witx file?
-        let is_error = name.as_str().contains("errno") && variant.is_enum();
-        let info = self.types.get(name);
-
-        for (name, mode) in self.modes_of(name) {
-            self.rustdoc(docs);
-            if !info.has_handle {
-                if variant.is_enum() {
-                    self.src.push_str("#[repr(");
-                    self.int_repr(variant.tag_repr);
-                    self.src.push_str(")]\n#[derive(Copy, PartialEq, Eq)]\n");
-                } else if !info.owns_data() {
-                    self.src.push_str("#[derive(Copy)]\n");
-                }
-                self.src.push_str("#[derive(Clone)]\n");
-            }
-            if !is_error {
-                self.src.push_str("#[derive(Debug)]\n");
-            }
-            self.src
-                .push_str(&format!("pub enum {} {{\n", name.to_camel_case()));
-            for case in variant.cases.iter() {
-                self.rustdoc(&case.docs);
-                self.src.push_str(&case_name(&case.name));
-                if let Some(ty) = &case.tref {
-                    self.src.push_str("(");
-                    self.print_tref(ty, mode);
-                    self.src.push_str(")")
-                }
-                self.src.push_str(",\n");
-            }
-            self.src.push_str("}\n");
-
-            // Auto-synthesize an implementation of the standard `Error` trait for
-            // error-looking types based on their name.
-            if is_error {
-                self.needs_fmt = true;
-                self.src.push_str("impl ");
-                self.src.push_str(&name);
-                self.src.push_str("{\n");
-
-                self.src.push_str("pub fn name(&self) -> &'static str {\n");
-                self.src.push_str("match self {");
-                for case in variant.cases.iter() {
-                    self.src.push_str(&name);
-                    self.src.push_str("::");
-                    self.src.push_str(&case_name(&case.name));
-                    self.src.push_str(" => \"");
-                    self.src.push_str(case.name.as_str());
-                    self.src.push_str("\",");
-                }
-                self.src.push_str("}\n");
-                self.src.push_str("}\n");
-
-                self.src
-                    .push_str("pub fn message(&self) -> &'static str {\n");
-                self.src.push_str("match self {");
-                for case in variant.cases.iter() {
-                    self.src.push_str(&name);
-                    self.src.push_str("::");
-                    self.src.push_str(&case_name(&case.name));
-                    self.src.push_str(" => \"");
-                    self.src.push_str(case.docs.trim());
-                    self.src.push_str("\",");
-                }
-                self.src.push_str("}\n");
-                self.src.push_str("}\n");
-
-                self.src.push_str("}\n");
-
-                self.src.push_str("impl fmt::Debug for ");
-                self.src.push_str(&name);
-                self.src
-                    .push_str("{\nfn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n");
-                self.src.push_str("f.debug_struct(\"");
-                self.src.push_str(&name);
-                self.src.push_str("\")");
-                self.src.push_str(".field(\"code\", &(*self as i32))");
-                self.src.push_str(".field(\"name\", &self.name())");
-                self.src.push_str(".field(\"message\", &self.message())");
-                self.src.push_str(".finish()");
-                self.src.push_str("}\n");
-                self.src.push_str("}\n");
-
-                self.src.push_str("impl fmt::Display for ");
-                self.src.push_str(&name);
-                self.src
-                    .push_str("{\nfn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n");
-                self.src
-                    .push_str("write!(f, \"{} (error {})\", self.name(), *self as i32)");
-                self.src.push_str("}\n");
-                self.src.push_str("}\n");
-                self.src.push_str("\n");
-                self.src.push_str("impl std::error::Error for ");
-                self.src.push_str(&name);
-                self.src.push_str("{}\n");
-            }
-        }
+        self.print_typedef_variant(name, variant, docs);
     }
 
     fn type_handle(&mut self, name: &Id, _ty: &HandleDatatype, docs: &str) {
@@ -312,12 +172,7 @@ impl Generator for RustWasm {
     }
 
     fn type_alias(&mut self, name: &Id, ty: &NamedType, docs: &str) {
-        self.rustdoc(docs);
-        self.src
-            .push_str(&format!("pub type {}", name.as_str().to_camel_case()));
-        self.src.push_str(" = ");
-        self.src.push_str(&ty.name.as_str().to_camel_case());
-        self.src.push(';');
+        self.print_typedef_alias(name, ty, docs);
     }
 
     fn type_list(&mut self, name: &Id, ty: &TypeRef, docs: &str) {

@@ -131,6 +131,8 @@ impl Host for MyHost {
         a
     }
 
+    fn variant_typedefs(&self, _: Option<u32>, _: bool, _: Result<u32, ()>) {}
+
     fn legacy_params(
         &self,
         a: (u32, u32),
@@ -201,6 +203,54 @@ impl Host for MyHost {
 
     fn list_result3(&self) -> Vec<String> {
         vec!["hello,".to_string(), "world!".to_string()]
+    }
+
+    fn list_in_record1(&self, ty: ListInRecord1<'_>) {
+        assert_eq!(&*ty.a.borrow().unwrap(), "list_in_record1");
+    }
+
+    fn list_in_record2(&self) -> ListInRecord2 {
+        ListInRecord2 {
+            a: "list_in_record2".to_string(),
+        }
+    }
+
+    fn list_in_record3(&self, a: ListInRecord3Param<'_>) -> ListInRecord3Result {
+        assert_eq!(&*a.a.borrow().unwrap(), "list_in_record3 input");
+        ListInRecord3Result {
+            a: "list_in_record3 output".to_string(),
+        }
+    }
+
+    fn list_in_variant1(
+        &self,
+        a: ListInVariant11<'_>,
+        b: ListInVariant12<'_>,
+        c: ListInVariant13<'_>,
+    ) {
+        assert_eq!(&*a.unwrap().borrow().unwrap(), "foo");
+        assert_eq!(&*b.unwrap_err().borrow().unwrap(), "bar");
+        match c {
+            ListInVariant13::V0(s) => assert_eq!(&*s.borrow().unwrap(), "baz"),
+            ListInVariant13::V1(_) => panic!(),
+        }
+    }
+
+    fn list_in_variant2(&self) -> Option<String> {
+        Some("list_in_variant2".to_string())
+    }
+
+    fn list_in_variant3(&self, a: ListInVariant3Param<'_>) -> Option<String> {
+        assert_eq!(&*a.unwrap().borrow().unwrap(), "input3");
+        Some("output3".to_string())
+    }
+
+    fn errno_result(&self) -> Result<(), MyErrno> {
+        MyErrno::A.to_string();
+        format!("{:?}", MyErrno::A);
+        fn assert_error<T: std::error::Error>() {}
+        assert_error::<MyErrno>();
+        Err(MyErrno::B)
     }
 }
 
