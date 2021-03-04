@@ -11,6 +11,10 @@ pub struct RustWasm {
     src: String,
     opts: Opts,
     types: Types,
+    params: Vec<String>,
+    blocks: Vec<String>,
+    block_storage: Vec<String>,
+    is_dtor: bool,
 }
 
 #[derive(Default, Debug)]
@@ -162,8 +166,29 @@ impl Generator for RustWasm {
                     core::mem::forget(self);
                     return ret;
                 }
+
+                pub fn as_raw(&self) -> i32 {
+                    self.0
+                }
             }",
         );
+        let info = self.info(name);
+
+        if info.handle_with_dtor {
+            self.src.push_str("impl Drop for ");
+            self.src.push_str(&name.as_str().to_camel_case());
+            self.src.push_str(&format!(
+                "{{
+                    fn drop(&mut self) {{
+                        unsafe {{
+                            drop({}_close({}(self.0)));
+                        }}
+                    }}
+                }}",
+                name.as_str(),
+                name.as_str().to_camel_case(),
+            ));
+        }
     }
 
     fn type_alias(&mut self, name: &Id, ty: &NamedType, docs: &str) {
@@ -212,16 +237,26 @@ impl Generator for RustWasm {
         self.rustdoc_params(&func.params, "Parameters");
         self.rustdoc_params(&func.results, "Return");
 
+        self.is_dtor = self.types.is_dtor_func(&func.name);
+        if self.is_dtor {
+            self.push_str("unsafe ");
+        }
         self.push_str("fn ");
         self.push_str(to_rust_ident(&rust_name));
 
         self.push_str("(");
-        let mut params = Vec::new();
+        self.params.truncate(0);
+        let param_mode = if self.is_dtor {
+            TypeMode::Owned
+        } else {
+            TypeMode::AllBorrowed("'_")
+        };
         for param in func.params.iter() {
             self.push_str(to_rust_ident(param.name.as_str()));
-            params.push(to_rust_ident(param.name.as_str()).to_string());
+            self.params
+                .push(to_rust_ident(param.name.as_str()).to_string());
             self.push_str(": ");
-            self.print_tref(&param.tref, TypeMode::AllBorrowed("'_"));
+            self.print_tref(&param.tref, param_mode);
             self.push_str(",");
         }
         self.push_str(")");
@@ -241,20 +276,17 @@ impl Generator for RustWasm {
                 self.push_str(")");
             }
         }
-        self.src.push_str("{unsafe{");
+        self.src.push_str("{");
+        if !self.is_dtor {
+            self.src.push_str("unsafe{");
+        }
 
-        func.call(
-            module,
-            CallMode::DeclaredImport,
-            &mut RustWasmBindgen {
-                cfg: self,
-                params,
-                block_storage: Vec::new(),
-                blocks: Vec::new(),
-            },
-        );
+        func.call(module, CallMode::DeclaredImport, self);
 
-        self.src.push_str("}}");
+        if !self.is_dtor {
+            self.src.push_str("}");
+        }
+        self.src.push_str("}");
     }
 
     fn export(&mut self, module: &Id, func: &InterfaceFunc) {
@@ -268,14 +300,14 @@ impl Generator for RustWasm {
         self.src.push_str(&rust_name);
         self.src.push_str("(");
         let sig = func.wasm_signature();
-        let mut params = Vec::new();
+        self.params.truncate(0);
         for (i, param) in sig.params.iter().enumerate() {
             let name = format!("arg{}", i);
             self.src.push_str(&name);
             self.src.push_str(": ");
             self.wasm_type(*param);
             self.src.push_str(",");
-            params.push(name);
+            self.params.push(name);
         }
         self.src.push_str(")");
 
@@ -289,16 +321,8 @@ impl Generator for RustWasm {
         }
         self.src.push_str("{");
 
-        func.call(
-            module,
-            CallMode::DefinedExport,
-            &mut RustWasmBindgen {
-                cfg: self,
-                params,
-                block_storage: Vec::new(),
-                blocks: Vec::new(),
-            },
-        );
+        self.is_dtor = false;
+        func.call(module, CallMode::DefinedExport, self);
 
         self.src.push_str("}");
     }
@@ -335,30 +359,17 @@ impl Generator for RustWasm {
     }
 }
 
-struct RustWasmBindgen<'a> {
-    cfg: &'a mut RustWasm,
-    params: Vec<String>,
-    blocks: Vec<String>,
-    block_storage: Vec<String>,
-}
-
-impl RustWasmBindgen<'_> {
-    fn push_str(&mut self, s: &str) {
-        self.cfg.src.push_str(s);
-    }
-}
-
-impl Bindgen for RustWasmBindgen<'_> {
+impl Bindgen for RustWasm {
     type Operand = String;
 
     fn push_block(&mut self) {
-        let prev_src = mem::take(&mut self.cfg.src);
+        let prev_src = mem::take(&mut self.src);
         self.block_storage.push(prev_src);
     }
 
     fn finish_block(&mut self, operands: &mut Vec<String>) {
         let prev_src = self.block_storage.pop().unwrap();
-        let src = mem::replace(&mut self.cfg.src, prev_src);
+        let src = mem::replace(&mut self.src, prev_src);
         let expr = match operands.len() {
             0 => "()".to_string(),
             1 => operands.pop().unwrap(),
@@ -372,7 +383,7 @@ impl Bindgen for RustWasmBindgen<'_> {
     }
 
     fn allocate_typed_space(&mut self, ty: &NamedType) -> String {
-        let tmp = self.cfg.tmp();
+        let tmp = self.tmp();
         self.push_str(&format!("let mut rp{} = core::mem::MaybeUninit::<", tmp));
         self.push_str(&ty.name.as_str().to_camel_case());
         self.push_str(">::uninit();");
@@ -381,7 +392,7 @@ impl Bindgen for RustWasmBindgen<'_> {
     }
 
     fn allocate_i64_array(&mut self, amt: usize) -> String {
-        let tmp = self.cfg.tmp();
+        let tmp = self.tmp();
         self.push_str(&format!("let mut space{} = [0i64; {}];\n", tmp, amt));
         self.push_str(&format!("let ptr{} = space{0}.as_mut_ptr() as i32;\n", tmp));
         format!("ptr{}", tmp)
@@ -393,7 +404,7 @@ impl Bindgen for RustWasmBindgen<'_> {
         operands: &mut Vec<String>,
         results: &mut Vec<String>,
     ) {
-        let unchecked = self.cfg.opts.unchecked;
+        let unchecked = self.opts.unchecked;
         let mut top_as = |cvt: &str| {
             let mut s = operands.pop().unwrap();
             s.push_str(" as ");
@@ -462,7 +473,11 @@ impl Bindgen for RustWasmBindgen<'_> {
 
             Instruction::I32FromOwnedHandle { .. } => unimplemented!(),
             Instruction::I32FromBorrowedHandle { .. } => {
-                results.push(format!("{}.0", operands[0]));
+                if self.is_dtor {
+                    results.push(format!("{}.into_raw()", operands[0]));
+                } else {
+                    results.push(format!("{}.0", operands[0]));
+                }
             }
             Instruction::HandleBorrowedFromI32 { .. } => unimplemented!(),
             Instruction::HandleOwnedFromI32 { ty } => {
@@ -479,10 +494,10 @@ impl Bindgen for RustWasmBindgen<'_> {
             Instruction::BitflagsFromI64 { repr, .. } => top_as(int_repr(*repr)),
 
             Instruction::RecordLower { ty, name } => {
-                self.cfg.record_lower(ty, *name, &operands[0], results);
+                self.record_lower(ty, *name, &operands[0], results);
             }
             Instruction::RecordLift { ty, name } => {
-                self.cfg.record_lift(ty, *name, operands, results);
+                self.record_lift(ty, *name, operands, results);
             }
 
             Instruction::VariantPayload => results.push("e".to_string()),
@@ -492,8 +507,7 @@ impl Bindgen for RustWasmBindgen<'_> {
                     .blocks
                     .drain(self.blocks.len() - ty.cases.len()..)
                     .collect::<Vec<_>>();
-                self.cfg
-                    .variant_lower(ty, *name, *nresults, &operands[0], results, blocks);
+                self.variant_lower(ty, *name, *nresults, &operands[0], results, blocks);
             }
 
             // In unchecked mode when this type is a named enum then we know we
@@ -528,8 +542,7 @@ impl Bindgen for RustWasmBindgen<'_> {
                         result.push_str(&i.to_string());
                     }
                     result.push_str(" => ");
-                    self.cfg
-                        .variant_lift_case(ty, *name, case, &block, &mut result);
+                    self.variant_lift_case(ty, *name, case, &block, &mut result);
                     result.push_str(",\n");
                 }
                 if !unchecked {
@@ -540,7 +553,7 @@ impl Bindgen for RustWasmBindgen<'_> {
             }
 
             Instruction::ListCanonLower { element, malloc } => {
-                let tmp = self.cfg.tmp();
+                let tmp = self.tmp();
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
@@ -566,7 +579,7 @@ impl Bindgen for RustWasmBindgen<'_> {
 
             Instruction::ListCanonLift { element, free } => {
                 assert!(free.is_some());
-                let tmp = self.cfg.tmp();
+                let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {} as usize;\n", len, operands[1]));
                 let result = format!(
@@ -587,7 +600,7 @@ impl Bindgen for RustWasmBindgen<'_> {
 
             Instruction::ListLower { element, .. } => {
                 let body = self.blocks.pop().unwrap();
-                let tmp = self.cfg.tmp();
+                let tmp = self.tmp();
                 let vec = format!("vec{}", tmp);
                 let result = format!("result{}", tmp);
                 let layout = format!("layout{}", tmp);
@@ -623,7 +636,7 @@ impl Bindgen for RustWasmBindgen<'_> {
 
             Instruction::ListLift { element, .. } => {
                 let body = self.blocks.pop().unwrap();
-                let tmp = self.cfg.tmp();
+                let tmp = self.tmp();
                 let size_align = element.mem_size_align();
                 let len = format!("len{}", tmp);
                 let base = format!("base{}", tmp);
@@ -706,7 +719,7 @@ impl Bindgen for RustWasmBindgen<'_> {
             }
 
             Instruction::CallInterface { module: _, func } => {
-                self.cfg.let_results(func.results.len(), results);
+                self.let_results(func.results.len(), results);
                 self.push_str(func.name.as_str());
                 self.push_str("(");
                 self.push_str(&operands.join(", "));
@@ -801,7 +814,7 @@ impl Bindgen for RustWasmBindgen<'_> {
                 WitxInstruction::I32FromConstPointer => top_as("i32"),
                 WitxInstruction::ReuseReturn => results.push("ret".to_string()),
                 WitxInstruction::AddrOf => {
-                    let i = self.cfg.tmp();
+                    let i = self.tmp();
                     self.push_str(&format!("let t{} = {};\n", i, operands[0]));
                     results.push(format!("&t{} as *const _ as i32", i));
                 }

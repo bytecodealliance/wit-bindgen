@@ -1,5 +1,5 @@
 use heck::*;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
@@ -24,8 +24,13 @@ pub struct Wasmtime {
     needs_borrow_checker: bool,
     needs_slice_as_bytes: bool,
     needs_functions: HashMap<String, NeededFunction>,
+    handles: BTreeSet<String>,
     types: Types,
     imports: HashMap<Id, Vec<Import>>,
+    params: Vec<String>,
+    block_storage: Vec<String>,
+    blocks: Vec<String>,
+    is_dtor: bool,
 }
 
 enum NeededFunction {
@@ -174,29 +179,10 @@ impl Generator for Wasmtime {
         self.print_typedef_variant(name, variant, docs);
     }
 
-    fn type_handle(&mut self, name: &Id, _ty: &HandleDatatype, docs: &str) {
-        self.rustdoc(docs);
-        self.src.push_str("#[derive(Debug)]\n");
-        self.src.push_str("#[repr(transparent)]\n");
-        self.src.push_str(&format!(
-            "pub struct {}(i32);",
-            name.as_str().to_camel_case()
-        ));
-        self.src.push_str("impl ");
-        self.src.push_str(&name.as_str().to_camel_case());
-        self.src.push_str(
-            " {
-                pub unsafe fn from_raw(raw: i32) -> Self {
-                    Self(raw)
-                }
-
-                pub fn into_raw(self) -> i32 {
-                    let ret = self.0;
-                    core::mem::forget(self);
-                    return ret;
-                }
-            }",
-        );
+    fn type_handle(&mut self, _name: &Id, _ty: &HandleDatatype, _docs: &str) {
+        // for now handles are all associated types for imports
+        //
+        // TODO: support exports where we'll print something here.
     }
 
     fn type_alias(&mut self, name: &Id, ty: &NamedType, docs: &str) {
@@ -241,6 +227,7 @@ impl Generator for Wasmtime {
 
     fn import(&mut self, module: &Id, func: &InterfaceFunc) {
         let prev = mem::take(&mut self.src);
+        self.is_dtor = self.types.is_dtor_func(&func.name);
 
         let rust_name = func.name.as_str().to_snake_case();
         self.rustdoc(&func.docs);
@@ -250,10 +237,15 @@ impl Generator for Wasmtime {
         self.push_str(to_rust_ident(&rust_name));
 
         self.push_str("(&self,");
+        let param_mode = if self.is_dtor {
+            TypeMode::Owned
+        } else {
+            TypeMode::LeafBorrowed("'_")
+        };
         for param in func.params.iter() {
             self.push_str(to_rust_ident(param.name.as_str()));
             self.push_str(": ");
-            self.print_tref(&param.tref, TypeMode::LeafBorrowed("'_"));
+            self.print_tref(&param.tref, param_mode);
             self.push_str(",");
         }
         self.push_str(")");
@@ -275,7 +267,7 @@ impl Generator for Wasmtime {
         }
         let trait_signature = mem::take(&mut self.src);
 
-        let mut params = Vec::new();
+        self.params.truncate(0);
         let sig = func.wasm_signature();
         self.src.push_str("move |_caller: wasmtime::Caller<'_>");
         for (i, param) in sig.params.iter().enumerate() {
@@ -284,20 +276,11 @@ impl Generator for Wasmtime {
             self.src.push_str(&arg);
             self.src.push_str(":");
             self.wasm_type(*param);
-            params.push(arg);
+            self.params.push(arg);
         }
         self.src.push_str("| -> Result<_, wasmtime::Trap> {\n");
         let pos = self.src.len();
-        func.call(
-            module,
-            CallMode::DefinedImport,
-            &mut WasmtimeBindgen {
-                cfg: self,
-                params,
-                block_storage: Vec::new(),
-                blocks: Vec::new(),
-            },
-        );
+        func.call(module, CallMode::DefinedImport, self);
         self.src.push_str("}");
 
         if self.needs_guest_memory {
@@ -373,6 +356,17 @@ impl Generator for Wasmtime {
                     "fn borrow_checker(&self) -> &witx_bindgen_wasmtime::BorrowChecker;\n",
                 );
             }
+            for handle in self.handles.iter() {
+                src.push_str("type ");
+                src.push_str(&handle.to_camel_case());
+                src.push_str(";\n");
+
+                src.push_str("fn ");
+                src.push_str(&handle.to_snake_case());
+                src.push_str("_table(&self) -> &witx_bindgen_wasmtime::Table<Self::");
+                src.push_str(&handle.to_camel_case());
+                src.push_str(">;\n");
+            }
             for f in funcs {
                 src.push_str(&f.trait_signature);
                 src.push_str(";\n\n");
@@ -383,9 +377,10 @@ impl Generator for Wasmtime {
         for (module, funcs) in self.imports.iter() {
             src.push_str("\npub fn add_");
             src.push_str(module.as_str());
-            src.push_str("_to_linker(module: impl ");
+            src.push_str("_to_linker<T: ");
             src.push_str(&module.as_str().to_camel_case());
-            src.push_str(" + 'static, linker: &mut wasmtime::Linker) -> Result<()> {\n");
+            src.push_str(" + 'static>(module: T, ");
+            src.push_str("linker: &mut wasmtime::Linker) -> Result<()> {\n");
             src.push_str("let module = std::rc::Rc::new(module);\n");
             if self.needs_store {
                 src.push_str(
@@ -576,30 +571,17 @@ impl Generator for Wasmtime {
     }
 }
 
-struct WasmtimeBindgen<'a> {
-    cfg: &'a mut Wasmtime,
-    params: Vec<String>,
-    block_storage: Vec<String>,
-    blocks: Vec<String>,
-}
-
-impl WasmtimeBindgen<'_> {
-    fn push_str(&mut self, s: &str) {
-        self.cfg.src.push_str(s);
-    }
-}
-
-impl Bindgen for WasmtimeBindgen<'_> {
+impl Bindgen for Wasmtime {
     type Operand = String;
 
     fn push_block(&mut self) {
-        let prev = mem::take(&mut self.cfg.src);
+        let prev = mem::take(&mut self.src);
         self.block_storage.push(prev);
     }
 
     fn finish_block(&mut self, operands: &mut Vec<String>) {
         let to_restore = self.block_storage.pop().unwrap();
-        let src = mem::replace(&mut self.cfg.src, to_restore);
+        let src = mem::replace(&mut self.src, to_restore);
         let expr = match operands.len() {
             0 => "()".to_string(),
             1 => operands.pop().unwrap(),
@@ -613,7 +595,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
     }
 
     fn allocate_typed_space(&mut self, ty: &NamedType) -> String {
-        let tmp = self.cfg.tmp();
+        let tmp = self.tmp();
         self.push_str(&format!("let mut rp{} = core::mem::MaybeUninit::<", tmp));
         self.push_str(&ty.name.as_str().to_camel_case());
         self.push_str(">::uninit();");
@@ -622,7 +604,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
     }
 
     fn allocate_i64_array(&mut self, amt: usize) -> String {
-        let tmp = self.cfg.tmp();
+        let tmp = self.tmp();
         self.push_str(&format!("let mut space{} = [0i64; {}];\n", tmp, amt));
         self.push_str(&format!("let ptr{} = space{0}.as_mut_ptr() as i32;\n", tmp));
         format!("ptr{}", tmp)
@@ -641,9 +623,8 @@ impl Bindgen for WasmtimeBindgen<'_> {
             results.push(s);
         };
 
-        let cfg = &mut self.cfg;
         let mut try_from = |cvt: &str, operands: &[String], results: &mut Vec<String>| {
-            cfg.needs_bad_int = true;
+            self.needs_bad_int = true;
             let result = format!("{}::try_from({}).map_err(bad_int)?", cvt, operands[0]);
             results.push(result);
         };
@@ -698,7 +679,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
             Instruction::U64FromI64 => top_as("u64"),
 
             Instruction::CharFromI32 => {
-                self.cfg.needs_char_from_i32 = true;
+                self.needs_char_from_i32 = true;
                 results.push(format!("char_from_i32({})?", operands[0]));
             }
 
@@ -706,13 +687,35 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 witx_bindgen_gen_rust::bitcast(casts, operands, results)
             }
 
-            Instruction::I32FromOwnedHandle { .. } => {
-                results.push("ZZZ".to_string());
+            Instruction::I32FromOwnedHandle { ty } => {
+                self.handles.insert(ty.name.as_str().to_string());
+                results.push(format!(
+                    "m.{}_table().insert({}) as i32",
+                    ty.name.as_str().to_snake_case(),
+                    operands[0]
+                ));
+            }
+            Instruction::HandleBorrowedFromI32 { ty } => {
+                self.handles.insert(ty.name.as_str().to_string());
+                if self.is_dtor {
+                    results.push(format!(
+                        "m.{}_table().remove(({}) as u32).map_err(|e| {{
+                            wasmtime::Trap::new(format!(\"failed to remove handle: {{}}\", e))
+                        }})?",
+                        ty.name.as_str().to_snake_case(),
+                        operands[0]
+                    ));
+                } else {
+                    results.push(format!(
+                        "&*m.{}_table().get(({}) as u32).ok_or_else(|| {{
+                        wasmtime::Trap::new(\"invalid handle index\")
+                    }})?",
+                        ty.name.as_str().to_snake_case(),
+                        operands[0]
+                    ));
+                }
             }
             Instruction::I32FromBorrowedHandle { .. } => unimplemented!(),
-            Instruction::HandleBorrowedFromI32 { .. } => {
-                results.push("YYY".to_string());
-            }
             Instruction::HandleOwnedFromI32 { .. } => unimplemented!(),
 
             Instruction::I32FromBitflags { .. } => {
@@ -723,7 +726,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
             }
             Instruction::BitflagsFromI32 { repr, name, .. }
             | Instruction::BitflagsFromI64 { repr, name, .. } => {
-                self.cfg.needs_validate_flags = true;
+                self.needs_validate_flags = true;
                 results.push(format!(
                     "validate_flags(
                         i64::from({}),
@@ -738,10 +741,10 @@ impl Bindgen for WasmtimeBindgen<'_> {
             }
 
             Instruction::RecordLower { ty, name } => {
-                self.cfg.record_lower(ty, *name, &operands[0], results);
+                self.record_lower(ty, *name, &operands[0], results);
             }
             Instruction::RecordLift { ty, name } => {
-                self.cfg.record_lift(ty, *name, operands, results);
+                self.record_lift(ty, *name, operands, results);
             }
 
             Instruction::VariantPayload => results.push("e".to_string()),
@@ -751,8 +754,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
                     .blocks
                     .drain(self.blocks.len() - ty.cases.len()..)
                     .collect::<Vec<_>>();
-                self.cfg
-                    .variant_lower(ty, *name, *nresults, &operands[0], results, blocks);
+                self.variant_lower(ty, *name, *nresults, &operands[0], results, blocks);
             }
 
             Instruction::VariantLift { ty, name } => {
@@ -766,8 +768,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 for (i, (case, block)) in ty.cases.iter().zip(blocks).enumerate() {
                     result.push_str(&i.to_string());
                     result.push_str(" => ");
-                    self.cfg
-                        .variant_lift_case(ty, *name, case, &block, &mut result);
+                    self.variant_lift_case(ty, *name, case, &block, &mut result);
                     result.push_str(",\n");
                 }
                 let variant_name = name.map(|s| s.name.as_str().to_camel_case());
@@ -787,7 +788,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 result.push_str("\")),\n");
                 result.push_str("}");
                 results.push(result);
-                self.cfg.needs_invalid_variant = true;
+                self.needs_invalid_variant = true;
             }
 
             Instruction::ListCanonLower { element, malloc } => {
@@ -799,8 +800,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 // encoded as utf-8, otherwise it's just normal contiguous array
                 // elements.
                 let malloc = malloc.as_ref().unwrap();
-                self.cfg
-                    .needs_functions
+                self.needs_functions
                     .insert(malloc.clone(), NeededFunction::Malloc);
                 let size = match &**element.type_() {
                     Type::Builtin(BuiltinType::Char) => 1,
@@ -808,7 +808,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
                 };
 
                 // Store the operand into a temporary...
-                let tmp = self.cfg.tmp();
+                let tmp = self.tmp();
                 let val = format!("vec{}", tmp);
                 self.push_str(&format!("let {} = {};\n", val, operands[0]));
 
@@ -830,15 +830,15 @@ impl Bindgen for WasmtimeBindgen<'_> {
                     "store(&memory, {}, unsafe {{ slice_as_bytes({}.as_ref()) }})?;\n",
                     ptr, val
                 ));
-                self.cfg.needs_store = true;
-                self.cfg.needs_slice_as_bytes = true;
+                self.needs_store = true;
+                self.needs_slice_as_bytes = true;
                 results.push(ptr);
                 results.push(format!("{}.len() as i32", val));
             }
 
             Instruction::ListCanonLift { element: _, free } => {
                 assert!(free.is_none());
-                self.cfg.needs_guest_memory = true;
+                self.needs_guest_memory = true;
                 // Note the unsafety here. This is possibly an unsafe operation
                 // because the representation of the target must match the
                 // representation on the host, but `ListCanonLift` is only
@@ -864,12 +864,11 @@ impl Bindgen for WasmtimeBindgen<'_> {
             } => {
                 assert!(*owned);
                 let body = self.blocks.pop().unwrap();
-                let tmp = self.cfg.tmp();
+                let tmp = self.tmp();
                 let vec = format!("vec{}", tmp);
                 let result = format!("result{}", tmp);
                 let len = format!("len{}", tmp);
-                self.cfg
-                    .needs_functions
+                self.needs_functions
                     .insert(malloc.clone(), NeededFunction::Malloc);
                 let size_align = element.mem_size_align();
 
@@ -903,7 +902,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
 
             Instruction::ListLift { element, free } => {
                 let body = self.blocks.pop().unwrap();
-                let tmp = self.cfg.tmp();
+                let tmp = self.tmp();
                 let size_align = element.mem_size_align();
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {};\n", len, operands[1]));
@@ -933,8 +932,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
                     free, base, len, size_align.size
                 ));
                 results.push(result);
-                self.cfg
-                    .needs_functions
+                self.needs_functions
                     .insert(free.to_string(), NeededFunction::Free);
             }
 
@@ -953,7 +951,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
             }
 
             Instruction::CallInterface { module: _, func } => {
-                self.cfg.let_results(func.results.len(), results);
+                self.let_results(func.results.len(), results);
                 self.push_str("m.");
                 self.push_str(func.name.as_str());
                 self.push_str("(");
@@ -976,64 +974,64 @@ impl Bindgen for WasmtimeBindgen<'_> {
             }
 
             Instruction::I32Load { offset } => {
-                self.cfg.needs_memory = true;
-                self.cfg.needs_load = true;
+                self.needs_memory = true;
+                self.needs_load = true;
                 results.push(format!(
                     "load(&memory, {} + {}, [0u8; 4], i32::from_le_bytes)?",
                     operands[0], offset,
                 ));
             }
             Instruction::I32Load8U { offset } => {
-                self.cfg.needs_memory = true;
-                self.cfg.needs_load = true;
+                self.needs_memory = true;
+                self.needs_load = true;
                 results.push(format!(
                     "i32::from(load(&memory, {} + {}, [0u8; 1], u8::from_le_bytes)?)",
                     operands[0], offset,
                 ));
             }
             Instruction::I32Load8S { offset } => {
-                self.cfg.needs_memory = true;
-                self.cfg.needs_load = true;
+                self.needs_memory = true;
+                self.needs_load = true;
                 results.push(format!(
                     "i32::from(load(&memory, {} + {}, [0u8; 1], i8::from_le_bytes)?)",
                     operands[0], offset,
                 ));
             }
             Instruction::I32Load16U { offset } => {
-                self.cfg.needs_memory = true;
-                self.cfg.needs_load = true;
+                self.needs_memory = true;
+                self.needs_load = true;
                 results.push(format!(
                     "i32::from(load(&memory, {} + {}, [0u8; 2], u16::from_le_bytes)?)",
                     operands[0], offset,
                 ));
             }
             Instruction::I32Load16S { offset } => {
-                self.cfg.needs_memory = true;
-                self.cfg.needs_load = true;
+                self.needs_memory = true;
+                self.needs_load = true;
                 results.push(format!(
                     "i32::from(load(&memory, {} + {}, [0u8; 2], i16::from_le_bytes)?)",
                     operands[0], offset,
                 ));
             }
             Instruction::I64Load { offset } => {
-                self.cfg.needs_memory = true;
-                self.cfg.needs_load = true;
+                self.needs_memory = true;
+                self.needs_load = true;
                 results.push(format!(
                     "load(&memory, {} + {}, [0u8; 8], i64::from_le_bytes)?",
                     operands[0], offset,
                 ));
             }
             Instruction::F32Load { offset } => {
-                self.cfg.needs_memory = true;
-                self.cfg.needs_load = true;
+                self.needs_memory = true;
+                self.needs_load = true;
                 results.push(format!(
                     "load(&memory, {} + {}, [0u8; 4], f32::from_le_bytes)?",
                     operands[0], offset,
                 ));
             }
             Instruction::F64Load { offset } => {
-                self.cfg.needs_memory = true;
-                self.cfg.needs_load = true;
+                self.needs_memory = true;
+                self.needs_load = true;
                 results.push(format!(
                     "load(&memory, {} + {}, [0u8; 8], f64::from_le_bytes)?",
                     operands[0], offset,
@@ -1043,24 +1041,24 @@ impl Bindgen for WasmtimeBindgen<'_> {
             | Instruction::I64Store { offset }
             | Instruction::F32Store { offset }
             | Instruction::F64Store { offset } => {
-                self.cfg.needs_memory = true;
-                self.cfg.needs_store = true;
+                self.needs_memory = true;
+                self.needs_store = true;
                 self.push_str(&format!(
                     "store(&memory, {} + {}, &({}).to_le_bytes())?;\n",
                     operands[1], offset, operands[0]
                 ));
             }
             Instruction::I32Store8 { offset } => {
-                self.cfg.needs_memory = true;
-                self.cfg.needs_store = true;
+                self.needs_memory = true;
+                self.needs_store = true;
                 self.push_str(&format!(
                     "store(&memory, {} + {}, &(({}) as u8).to_le_bytes())?;\n",
                     operands[1], offset, operands[0]
                 ));
             }
             Instruction::I32Store16 { offset } => {
-                self.cfg.needs_memory = true;
-                self.cfg.needs_store = true;
+                self.needs_memory = true;
+                self.needs_store = true;
                 self.push_str(&format!(
                     "store(&memory, {} + {}, &(({}) as u16).to_le_bytes())?;\n",
                     operands[1], offset, operands[0]

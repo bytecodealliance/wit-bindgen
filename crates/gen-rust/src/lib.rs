@@ -69,6 +69,7 @@ pub trait TypePrint {
         match ty {
             TypeRef::Name(t) => {
                 let info = self.info(&t.name);
+                let ty = &**t.type_();
 
                 // If we're a borrowed piece of data then this is a parameter
                 // and we need a leading `&` out in front. Note that the leading
@@ -76,7 +77,7 @@ pub trait TypePrint {
                 // leading `&`.
                 if info.owns_data() {
                     match mode {
-                        TypeMode::AllBorrowed(lt) => match &**t.type_() {
+                        TypeMode::AllBorrowed(lt) => match ty {
                             Type::List(_) => {}
                             _ => {
                                 self.push_str("&");
@@ -86,11 +87,22 @@ pub trait TypePrint {
                                 self.push_str(" ");
                             }
                         },
+                        TypeMode::LeafBorrowed(_) => match ty {
+                            Type::Handle(_) => self.push_str("&"),
+                            _ => {}
+                        },
                         _ => {}
                     }
                 }
 
-                if mode.lifetime().is_some() {
+                // TODO: this will need more abstraction, it's not appropriate
+                // for wasm-exported handles
+                if let Type::Handle(_) = ty {
+                    if self.is_host() {
+                        self.push_str("Self::");
+                    }
+                    self.push_str(&t.name.as_str().to_camel_case());
+                } else if mode.lifetime().is_some() {
                     self.push_str(&info.param_name(&t.name));
                 } else {
                     self.push_str(&info.result_name(&t.name));
@@ -100,7 +112,7 @@ pub trait TypePrint {
                 // variant/record/list, then we need to place the lifetime
                 // parameter on the type as well.
                 if info.owns_data() {
-                    match &**t.type_() {
+                    match ty {
                         Type::Variant(_) | Type::Record(_) | Type::List(_) => {
                             self.print_lifetime_param(mode);
                         }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use witx::*;
 
 pub use witx;
@@ -62,6 +62,7 @@ pub trait Generator {
 #[derive(Default)]
 pub struct Types {
     type_info: HashMap<Id, TypeInfo>,
+    handle_dtors: HashSet<Id>,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -79,6 +80,9 @@ pub struct TypeInfo {
 
     /// Whether or not this type (transitively) has a handle.
     pub has_handle: bool,
+
+    /// Whether or not this type is a handle and has a destructor.
+    pub handle_with_dtor: bool,
 }
 
 impl Types {
@@ -97,12 +101,59 @@ impl Types {
                 for param in f.results.iter() {
                     self.register_type_info(&param.tref, false, true);
                 }
+                self.maybe_set_dtor(doc, &f);
             }
         }
     }
 
+    fn maybe_set_dtor(&mut self, doc: &Document, f: &InterfaceFunc) {
+        // Dtors only happen when the function has a singular parameter
+        if f.params.len() != 1 {
+            return;
+        }
+        let param_ty_name = match &f.params[0].tref {
+            TypeRef::Name(n) => &n.name,
+            _ => return,
+        };
+
+        // Dtors are inferred to be `${type}_close` right now, but we should
+        // probably use some sort of configuration/witx attribute for this in
+        // the future.
+        let name = f.name.as_str();
+        let prefix = match name.strip_suffix("_close") {
+            Some(prefix) => prefix,
+            None => return,
+        };
+
+        // The singular parameter type name must be the prefix of this
+        // function's own name.
+        if param_ty_name.as_str() != prefix {
+            return;
+        }
+
+        // ... and finally the actual type of this value must be a `(handle)`
+        let id = Id::new(prefix);
+        let ty = match doc.typename(&id) {
+            Some(ty) => ty,
+            None => return,
+        };
+        match &**ty.type_() {
+            Type::Handle(_) => {}
+            _ => return,
+        }
+
+        // ... and if we got this far then `id` is a handle type which has a
+        // destructor in this module.
+        self.type_info.get_mut(&id).unwrap().handle_with_dtor = true;
+        self.handle_dtors.insert(f.name.clone());
+    }
+
     pub fn get(&self, id: &Id) -> TypeInfo {
         self.type_info[id]
+    }
+
+    pub fn is_dtor_func(&self, func: &Id) -> bool {
+        self.handle_dtors.contains(func)
     }
 
     fn register_type_info(&mut self, ty: &TypeRef, param: bool, result: bool) -> (bool, bool) {
@@ -119,7 +170,8 @@ impl Types {
             TypeRef::Value(t) => &**t,
         };
         match ty {
-            Type::Handle(_) | Type::Builtin(_) => (false, false),
+            Type::Builtin(_) => (false, false),
+            Type::Handle(_) => (false, true),
             Type::List(t) => {
                 let (_list, handle) = self.register_type_info(t, param, result);
                 (true, handle)

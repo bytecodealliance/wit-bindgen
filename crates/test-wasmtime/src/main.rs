@@ -1,6 +1,6 @@
 use std::cell::Cell;
 use wasmtime::*;
-use witx_bindgen_wasmtime::{BorrowChecker, GuestPtr};
+use witx_bindgen_wasmtime::{BorrowChecker, GuestPtr, Table};
 
 const CHECKED: &[u8] = include_bytes!(env!("CHECKED"));
 const UNCHECKED: &[u8] = include_bytes!(env!("UNCHECKED"));
@@ -11,9 +11,25 @@ witx_bindgen_wasmtime::import!("tests/host.witx");
 struct MyHost {
     scalar: Cell<u32>,
     borrow_checker: BorrowChecker,
+    host_state_table: Table<SuchState>,
+    host_state2_table: Table<()>,
+    host_state2_closed: Cell<bool>,
 }
 
+struct SuchState(u32);
+
 impl Host for MyHost {
+    type HostState = SuchState;
+    type HostState2 = ();
+
+    fn host_state_table(&self) -> &Table<SuchState> {
+        &self.host_state_table
+    }
+
+    fn host_state2_table(&self) -> &Table<()> {
+        &self.host_state2_table
+    }
+
     fn borrow_checker(&self) -> &BorrowChecker {
         &self.borrow_checker
     }
@@ -271,6 +287,28 @@ impl Host for MyHost {
         assert_eq!(&*b[0].borrow().unwrap(), "typedef2");
         (b"typedef3".to_vec(), vec!["typedef4".to_string()])
     }
+
+    fn host_state_create(&self) -> SuchState {
+        SuchState(100)
+    }
+
+    fn host_state_get(&self, state: &SuchState) -> u32 {
+        state.0
+    }
+
+    fn host_state2_create(&self) {}
+
+    fn host_state2_saw_close(&self) -> bool {
+        self.host_state2_closed.get()
+    }
+
+    fn host_state2_close(&self, _state: ()) {
+        self.host_state2_closed.set(true);
+    }
+
+    fn two_host_states(&self, _a: &SuchState, _b: &()) -> (SuchState, ()) {
+        (SuchState(2), ())
+    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -314,6 +352,8 @@ fn run_test(engine: &Engine, wasm: &[u8]) -> anyhow::Result<()> {
     run_err(&instance, "invalid_s16", "out-of-bounds integer conversion")?;
     run_err(&instance, "invalid_char", "char value out of valid range")?;
     run_err(&instance, "invalid_e1", "invalid discriminant for `E1`")?;
+    run_err(&instance, "invalid_handle", "invalid handle index")?;
+    run_err(&instance, "invalid_handle_close", "invalid handle index")?;
     Ok(())
 }
 

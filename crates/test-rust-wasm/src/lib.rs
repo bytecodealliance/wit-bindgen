@@ -52,6 +52,7 @@ pub extern "C" fn run_host_tests() {
     host_legacy();
     host_lists();
     host_flavorful();
+    host_handles();
     assert_eq!(allocator::get(), start);
 }
 
@@ -255,49 +256,70 @@ fn host_flavorful() {
     assert_eq!(b[0], "typedef4");
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn invalid_bool() {
+fn host_handles() {
+    let s: HostState = host_state_create();
+    assert_eq!(host_state_get(&s), 100);
+    assert_eq!(host_state2_saw_close(), false);
+    let s: HostState2 = host_state2_create();
+    assert_eq!(host_state2_saw_close(), false);
+    drop(s);
+    assert_eq!(host_state2_saw_close(), true);
+
+    let (a, b) = two_host_states(&host_state_create(), &host_state2_create());
+    drop((a, b));
+}
+
+mod invalid {
     #[link(wasm_import_module = "host")]
     extern "C" {
         fn invert_bool(a: i32) -> i32;
-    }
-    invert_bool(2);
-}
-
-macro_rules! invalid_int {
-    ($($name:ident $import:ident)*) => ($(
-        #[no_mangle]
-        pub unsafe extern "C" fn $name() {
-            #[link(wasm_import_module = "host")]
-            extern "C" {
-                fn $import(a: i32) -> i32;
-            }
-            $import(i32::max_value());
-        }
-    )*)
-}
-
-invalid_int! {
-    invalid_u8 roundtrip_u8
-    invalid_s8 roundtrip_s8
-    invalid_u16 roundtrip_u16
-    invalid_s16 roundtrip_s16
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn invalid_char() {
-    #[link(wasm_import_module = "host")]
-    extern "C" {
         fn roundtrip_char(a: i32) -> i32;
-    }
-    roundtrip_char(0xd800);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn invalid_e1() {
-    #[link(wasm_import_module = "host")]
-    extern "C" {
         fn roundtrip_enum(a: i32) -> i32;
+        fn host_state_get(a: i32) -> i32;
+        fn host_state2_close(a: i32);
     }
-    roundtrip_enum(400);
+    #[no_mangle]
+    pub unsafe extern "C" fn invalid_bool() {
+        invert_bool(2);
+    }
+
+    macro_rules! invalid_int {
+        ($($name:ident $import:ident)*) => ($(
+            #[no_mangle]
+            pub unsafe extern "C" fn $name() {
+                #[link(wasm_import_module = "host")]
+                extern "C" {
+                    fn $import(a: i32) -> i32;
+                }
+                $import(i32::max_value());
+            }
+        )*)
+    }
+
+    invalid_int! {
+        invalid_u8 roundtrip_u8
+        invalid_s8 roundtrip_s8
+        invalid_u16 roundtrip_u16
+        invalid_s16 roundtrip_s16
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn invalid_char() {
+        roundtrip_char(0xd800);
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn invalid_e1() {
+        roundtrip_enum(400);
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn invalid_handle() {
+        host_state_get(100);
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn invalid_handle_close() {
+        host_state2_close(100);
+    }
 }

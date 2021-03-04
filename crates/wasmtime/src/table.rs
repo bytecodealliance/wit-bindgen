@@ -1,5 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::convert::TryFrom;
+use std::fmt;
 use std::mem;
 use std::ops::Deref;
 
@@ -14,6 +15,7 @@ pub struct Borrow<'a, T> {
     index: usize,
 }
 
+#[derive(Debug)]
 pub enum RemoveError {
     NotAllocated,
     InUse,
@@ -136,6 +138,17 @@ impl<T> Drop for Borrow<'_, T> {
         }
     }
 }
+
+impl fmt::Display for RemoveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RemoveError::NotAllocated => f.write_str("invalid handle index"),
+            RemoveError::InUse => f.write_str("table index in use"),
+        }
+    }
+}
+
+impl std::error::Error for RemoveError {}
 
 #[cfg(test)]
 mod tests {
