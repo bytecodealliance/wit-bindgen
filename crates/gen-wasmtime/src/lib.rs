@@ -11,8 +11,6 @@ pub struct Wasmtime {
     tmp: usize,
     src: String,
     opts: Opts,
-    needs_mem: bool,
-    needs_fmt: bool,
     needs_memory: bool,
     needs_guest_memory: bool,
     needs_get_memory: bool,
@@ -99,8 +97,7 @@ impl TypePrint for Wasmtime {
             }
             Type::List(_) | Type::Variant(_) => panic!("unsupported type"),
             Type::Handle(_) | Type::Record(_) => {
-                self.needs_mem = true;
-                self.push_str("mem::ManuallyDrop<");
+                self.push_str("core::mem::ManuallyDrop<");
                 self.print_tref(ty, TypeMode::Owned);
                 self.push_str(">");
             }
@@ -149,19 +146,19 @@ impl Generator for Wasmtime {
             self.src.push_str("}\n");
             self.src.push_str("}\n\n");
 
-            self.src.push_str("impl std::fmt::Display for ");
+            self.src.push_str("impl core::fmt::Display for ");
             self.src.push_str(&name.to_camel_case());
             self.src.push_str(
-                "{\nfn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
+                "{\nfn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {\n",
             );
 
             self.src.push_str("f.write_str(\"");
             self.src.push_str(&name.to_camel_case());
             self.src.push_str("(\")?;\n");
-            self.src.push_str("std::fmt::Debug::fmt(self, f)?;\n");
+            self.src.push_str("core::fmt::Debug::fmt(self, f)?;\n");
             self.src.push_str("f.write_str(\" (0x\")?;\n");
             self.src
-                .push_str("std::fmt::LowerHex::fmt(&self.bits, f)?;\n");
+                .push_str("core::fmt::LowerHex::fmt(&self.bits, f)?;\n");
             self.src.push_str("f.write_str(\"))\")?;\n");
             self.src.push_str("Ok(())");
 
@@ -187,7 +184,6 @@ impl Generator for Wasmtime {
         ));
         self.src.push_str("impl ");
         self.src.push_str(&name.as_str().to_camel_case());
-        self.needs_mem = true;
         self.src.push_str(
             " {
                 pub unsafe fn from_raw(raw: i32) -> Self {
@@ -196,7 +192,7 @@ impl Generator for Wasmtime {
 
                 pub fn into_raw(self) -> i32 {
                     let ret = self.0;
-                    mem::forget(self);
+                    core::mem::forget(self);
                     return ret;
                 }
             }",
@@ -329,7 +325,7 @@ impl Generator for Wasmtime {
             self.needs_get_memory = true;
         }
 
-        self.needs_mem = false;
+        self.needs_memory = false;
         self.needs_guest_memory = false;
 
         for (name, func) in self.needs_functions.drain() {
@@ -371,12 +367,6 @@ impl Generator for Wasmtime {
 
         let mut src = mem::take(&mut self.src);
 
-        if self.needs_mem {
-            src.insert_str(0, "use std::mem;\n");
-        }
-        if self.needs_fmt {
-            src.insert_str(0, "use std::fmt;\n");
-        }
         if self.imports.len() > 0 {
             src.insert_str(0, "use anyhow::Result;\n");
         }
@@ -493,7 +483,7 @@ impl Generator for Wasmtime {
                         fn char_from_i32(
                             val: i32,
                         ) -> Result<char, wasmtime::Trap> {
-                            std::char::from_u32(val as u32)
+                            core::char::from_u32(val as u32)
                                 .ok_or_else(|| {
                                     wasmtime::Trap::new(\"char value out of valid range\")
                                 })
@@ -512,10 +502,10 @@ impl Generator for Wasmtime {
                 );
             }
             if self.needs_bad_int {
-                src.push_str("use std::convert::TryFrom;\n");
+                src.push_str("use core::convert::TryFrom;\n");
                 src.push_str(
                     "
-                        fn bad_int(_: std::num::TryFromIntError) -> wasmtime::Trap {
+                        fn bad_int(_: core::num::TryFromIntError) -> wasmtime::Trap {
                             let msg = \"out-of-bounds integer conversion\";
                             wasmtime::Trap::new(msg)
                         }
@@ -545,9 +535,9 @@ impl Generator for Wasmtime {
                 src.push_str(
                     "
                         unsafe fn slice_as_bytes<T: Copy>(slice: &[T]) -> &[u8] {
-                            std::slice::from_raw_parts(
+                            core::slice::from_raw_parts(
                                 slice.as_ptr() as *const u8,
-                                std::mem::size_of_val(slice),
+                                core::mem::size_of_val(slice),
                             )
                         }
                     ",
@@ -631,8 +621,7 @@ impl Bindgen for WasmtimeBindgen<'_> {
 
     fn allocate_typed_space(&mut self, ty: &NamedType) -> String {
         let tmp = self.cfg.tmp();
-        self.cfg.needs_mem = true;
-        self.push_str(&format!("let mut rp{} = mem::MaybeUninit::<", tmp));
+        self.push_str(&format!("let mut rp{} = core::mem::MaybeUninit::<", tmp));
         self.push_str(&ty.name.as_str().to_camel_case());
         self.push_str(">::uninit();");
         self.push_str(&format!("let ptr{} = rp{0}.as_mut_ptr() as i32;\n", tmp));

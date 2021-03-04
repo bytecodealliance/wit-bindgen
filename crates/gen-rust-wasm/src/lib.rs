@@ -10,8 +10,6 @@ pub struct RustWasm {
     tmp: usize,
     src: String,
     opts: Opts,
-    needs_mem: bool,
-    needs_fmt: bool,
     needs_cleanup_list: bool,
     types: Types,
 }
@@ -83,8 +81,7 @@ impl TypePrint for RustWasm {
             }
             Type::List(_) | Type::Variant(_) => panic!("unsupported type"),
             Type::Handle(_) | Type::Record(_) => {
-                self.needs_mem = true;
-                self.push_str("mem::ManuallyDrop<");
+                self.push_str("core::mem::ManuallyDrop<");
                 self.print_tref(ty, TypeMode::Owned);
                 self.push_str(">");
             }
@@ -155,7 +152,6 @@ impl Generator for RustWasm {
         ));
         self.src.push_str("impl ");
         self.src.push_str(&name.as_str().to_camel_case());
-        self.needs_mem = true;
         self.src.push_str(
             " {
                 pub unsafe fn from_raw(raw: i32) -> Self {
@@ -164,7 +160,7 @@ impl Generator for RustWasm {
 
                 pub fn into_raw(self) -> i32 {
                     let ret = self.0;
-                    mem::forget(self);
+                    core::mem::forget(self);
                     return ret;
                 }
             }",
@@ -330,13 +326,6 @@ impl Generator for RustWasm {
 
         let mut src = mem::take(&mut self.src);
 
-        if self.needs_mem {
-            src.insert_str(0, "use std::mem;\n");
-        }
-        if self.needs_fmt {
-            src.insert_str(0, "use std::fmt;\n");
-        }
-
         if self.opts.rustfmt {
             let mut child = Command::new("rustfmt")
                 .stdin(Stdio::piped())
@@ -420,8 +409,7 @@ impl Bindgen for RustWasmBindgen<'_> {
 
     fn allocate_typed_space(&mut self, ty: &NamedType) -> String {
         let tmp = self.cfg.tmp();
-        self.cfg.needs_mem = true;
-        self.push_str(&format!("let mut rp{} = mem::MaybeUninit::<", tmp));
+        self.push_str(&format!("let mut rp{} = core::mem::MaybeUninit::<", tmp));
         self.push_str(&ty.name.as_str().to_camel_case());
         self.push_str(">::uninit();");
         self.push_str(&format!("let ptr{} = rp{0}.as_mut_ptr() as i32;\n", tmp));
@@ -493,12 +481,12 @@ impl Bindgen for RustWasmBindgen<'_> {
             Instruction::CharFromI32 => {
                 if unchecked {
                     results.push(format!(
-                        "std::char::from_u32_unchecked({} as u32)",
+                        "core::char::from_u32_unchecked({} as u32)",
                         operands[0]
                     ));
                 } else {
                     results.push(format!(
-                        "std::char::from_u32({} as u32).unwrap()",
+                        "core::char::from_u32({} as u32).unwrap()",
                         operands[0]
                     ));
                 }
@@ -552,8 +540,7 @@ impl Bindgen for RustWasmBindgen<'_> {
                 name: Some(name),
             } if ty.cases.iter().all(|c| c.tref.is_none()) && unchecked => {
                 self.blocks.drain(self.blocks.len() - ty.cases.len()..);
-                self.cfg.needs_mem = true;
-                let mut result = format!("mem::transmute::<_, ");
+                let mut result = format!("core::mem::transmute::<_, ");
                 result.push_str(&name.name.as_str().to_camel_case());
                 result.push_str(">(");
                 result.push_str(&operands[0]);
@@ -608,8 +595,7 @@ impl Bindgen for RustWasmBindgen<'_> {
                 self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, val));
                 self.push_str(&format!("let {} = {}.len() as i32;\n", len, val));
                 if malloc.is_some() {
-                    self.cfg.needs_mem = true;
-                    self.push_str(&format!("mem::forget({});\n", val));
+                    self.push_str(&format!("core::mem::forget({});\n", val));
                 }
                 results.push(ptr);
                 results.push(len);
@@ -645,7 +631,7 @@ impl Bindgen for RustWasmBindgen<'_> {
                 self.push_str(&format!("let {} = {};\n", vec, operands[0]));
                 let size_align = element.mem_size_align();
                 self.push_str(&format!(
-                    "let {} = std::alloc::Layout::from_size_align_unchecked({}.len() * {}, 8);\n",
+                    "let {} = core::alloc::Layout::from_size_align_unchecked({}.len() * {}, 8);\n",
                     layout, vec, size_align.size,
                 ));
                 self.push_str(&format!(
@@ -671,11 +657,10 @@ impl Bindgen for RustWasmBindgen<'_> {
                 self.push_str(&format!("let {} = {} as i32;\n", ptr, result));
                 self.push_str(&format!("let {} = {}.len() as i32;\n", len, vec));
                 if *owned {
-                    self.push_str(&format!("mem::forget({});\n", result));
+                    self.push_str(&format!("core::mem::forget({});\n", result));
                 } else {
                     self.cleanup.push((ptr.clone(), layout));
                 }
-                self.cfg.needs_mem = true;
                 results.push(ptr);
                 results.push(len);
             }
