@@ -215,7 +215,7 @@ fn host_lists() {
     list_param4(&[&["foo", "bar"], &["baz"]]);
     assert_eq!(list_result(), [1, 2, 3, 4, 5]);
     assert_eq!(list_result2(), "hello!");
-    // assert_eq!(list_result3(), ["hello,", "world!"]);
+    assert_eq!(list_result3(), ["hello,", "world!"]);
 }
 
 fn host_flavorful() {

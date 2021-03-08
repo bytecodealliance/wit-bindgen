@@ -13,7 +13,6 @@ members = [
 [dependencies]
 anyhow = "1.0"
 structopt = { version = "0.3", default-features = false }
-witx = "0.9"
 
 witx-bindgen-gen-core = { path = 'crates/gen-core' }
 witx-bindgen-gen-rust-wasm = { path = 'crates/gen-rust-wasm', features = ['structopt'] }

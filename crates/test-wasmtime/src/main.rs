@@ -361,7 +361,7 @@ fn run_test(engine: &Engine, wasm: &[u8]) -> anyhow::Result<()> {
     let mut linker = Linker::new(&store);
     wasmtime_wasi::Wasi::new(
         &store,
-        wasmtime_wasi::WasiCtxBuilder::new()
+        wasi_cap_std_sync::WasiCtxBuilder::new()
             .inherit_stdio()
             .build()?,
     )

@@ -13,9 +13,11 @@ pub struct RustWasm {
     types: Types,
     params: Vec<String>,
     blocks: Vec<String>,
-    block_storage: Vec<String>,
+    block_storage: Vec<(String, Vec<(String, String)>)>,
     is_dtor: bool,
     in_import: bool,
+    needs_cleanup_list: bool,
+    cleanup: Vec<(String, String)>,
 }
 
 #[derive(Default, Debug)]
@@ -298,7 +300,14 @@ impl Generator for RustWasm {
             self.src.push_str("unsafe{");
         }
 
+        let start_pos = self.src.len();
+
         func.call(module, CallMode::DeclaredImport, self);
+
+        if mem::take(&mut self.needs_cleanup_list) {
+            self.src
+                .insert_str(start_pos, "let mut cleanup_list = Vec::new();\n");
+        }
 
         if !self.is_dtor {
             self.src.push_str("}");
@@ -341,6 +350,7 @@ impl Generator for RustWasm {
 
         self.is_dtor = false;
         func.call(module, CallMode::DefinedExport, self);
+        assert!(!self.needs_cleanup_list);
 
         self.src.push_str("}");
     }
@@ -382,12 +392,26 @@ impl Bindgen for RustWasm {
 
     fn push_block(&mut self) {
         let prev_src = mem::take(&mut self.src);
-        self.block_storage.push(prev_src);
+        let prev_cleanup = mem::take(&mut self.cleanup);
+        self.block_storage.push((prev_src, prev_cleanup));
     }
 
     fn finish_block(&mut self, operands: &mut Vec<String>) {
-        let prev_src = self.block_storage.pop().unwrap();
+        if self.cleanup.len() > 0 {
+            self.needs_cleanup_list = true;
+            self.push_str("cleanup_list.extend_from_slice(&[");
+            for (ptr, layout) in mem::take(&mut self.cleanup) {
+                self.push_str("(");
+                self.push_str(&ptr);
+                self.push_str(",");
+                self.push_str(&layout);
+                self.push_str("),");
+            }
+            self.push_str("]);\n");
+        }
+        let (prev_src, prev_cleanup) = self.block_storage.pop().unwrap();
         let src = mem::replace(&mut self.src, prev_src);
+        self.cleanup = prev_cleanup;
         let expr = match operands.len() {
             0 => "()".to_string(),
             1 => operands.pop().unwrap(),
@@ -578,24 +602,28 @@ impl Bindgen for RustWasm {
                 if malloc.is_none() {
                     self.push_str(&format!("let {} = {};\n", val, operands[0]));
                 } else {
-                    let op0 = match &**element.type_() {
-                        Type::Builtin(BuiltinType::Char) => {
-                            format!("{}.into_bytes()", operands[0])
-                        }
-                        _ => operands.pop().unwrap(),
-                    };
-                    self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
+                    drop(element);
+                    unimplemented!()
+                    // let op0 = match &**element.type_() {
+                    //     Type::Builtin(BuiltinType::Char) => {
+                    //         format!("{}.into_bytes()", operands[0])
+                    //     }
+                    //     _ => operands.pop().unwrap(),
+                    // };
+                    // self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
                 }
                 self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, val));
                 self.push_str(&format!("let {} = {}.len() as i32;\n", len, val));
-                if malloc.is_some() {
-                    self.push_str(&format!("core::mem::forget({});\n", val));
-                }
+                // if malloc.is_some() {
+                //     self.push_str(&format!("core::mem::forget({});\n", val));
+                // }
                 results.push(ptr);
                 results.push(len);
             }
 
             Instruction::ListCanonLift { element, free } => {
+                // This only happens when we're receiving a list from the
+                // outside world, so `free` should always be `Some`.
                 assert!(free.is_some());
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
@@ -616,7 +644,7 @@ impl Bindgen for RustWasm {
                 }
             }
 
-            Instruction::ListLower { element, .. } => {
+            Instruction::ListLower { element, malloc } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let vec = format!("vec{}", tmp);
@@ -650,9 +678,19 @@ impl Bindgen for RustWasm {
                 self.push_str("}");
                 results.push(format!("{} as i32", result));
                 results.push(len);
+
+                if malloc.is_none() {
+                    // If an allocator isn't requested then we must clean up the
+                    // allocation ourselves since our callee isn't taking
+                    // ownership.
+                    self.cleanup.push((result, layout));
+                }
             }
 
-            Instruction::ListLift { element, .. } => {
+            Instruction::ListLift { element, free } => {
+                // This only happens when we're receiving a list from the
+                // outside world, so `free` should always be `Some`.
+                assert!(free.is_some());
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let size_align = element.mem_size_align();
@@ -744,15 +782,27 @@ impl Bindgen for RustWasm {
                 self.push_str(");");
             }
 
-            Instruction::Return { amt } => match amt {
-                0 => {}
-                1 => self.push_str(&operands[0]),
-                _ => {
-                    self.push_str("(");
-                    self.push_str(&operands.join(", "));
-                    self.push_str(")");
+            Instruction::Return { amt } => {
+                for (ptr, layout) in mem::take(&mut self.cleanup) {
+                    self.push_str(&format!("std::alloc::dealloc({}, {});\n", ptr, layout));
                 }
-            },
+                if self.needs_cleanup_list {
+                    self.push_str(
+                        "for (ptr, layout) in cleanup_list {
+                            std::alloc::dealloc(ptr, layout);
+                        }",
+                    );
+                }
+                match amt {
+                    0 => {}
+                    1 => self.push_str(&operands[0]),
+                    _ => {
+                        self.push_str("(");
+                        self.push_str(&operands.join(", "));
+                        self.push_str(")");
+                    }
+                }
+            }
 
             Instruction::I32Load { offset } => {
                 results.push(format!("*(({} + {}) as *const i32)", operands[0], offset));

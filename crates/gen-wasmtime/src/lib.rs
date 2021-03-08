@@ -849,9 +849,9 @@ impl Bindgen for Wasmtime {
                 // Note that the size of a list of `char` is 1 because it's
                 // encoded as utf-8, otherwise it's just normal contiguous array
                 // elements.
-                let malloc = malloc.as_ref().unwrap();
+                let malloc = malloc.unwrap();
                 self.needs_functions
-                    .insert(malloc.clone(), NeededFunction::Malloc);
+                    .insert(malloc.to_string(), NeededFunction::Malloc);
                 let size = match &**element.type_() {
                     Type::Builtin(BuiltinType::Char) => 1,
                     _ => element.mem_size_align().size,
@@ -907,19 +907,15 @@ impl Bindgen for Wasmtime {
                 ));
             }
 
-            Instruction::ListLower {
-                element,
-                owned,
-                malloc,
-            } => {
-                assert!(*owned);
+            Instruction::ListLower { element, malloc } => {
+                let malloc = malloc.unwrap();
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let vec = format!("vec{}", tmp);
                 let result = format!("result{}", tmp);
                 let len = format!("len{}", tmp);
                 self.needs_functions
-                    .insert(malloc.clone(), NeededFunction::Malloc);
+                    .insert(malloc.to_string(), NeededFunction::Malloc);
                 let size_align = element.mem_size_align();
 
                 // first store our vec-to-lower in a temporary since we'll
@@ -977,13 +973,16 @@ impl Bindgen for Wasmtime {
                 self.push_str(&body);
                 self.push_str(");\n");
                 self.push_str("}\n");
-                self.push_str(&format!(
-                    "func_{}({}, {} * {})?;\n",
-                    free, base, len, size_align.size
-                ));
                 results.push(result);
-                self.needs_functions
-                    .insert(free.to_string(), NeededFunction::Free);
+
+                if let Some(free) = free {
+                    self.push_str(&format!(
+                        "func_{}({}, {} * {})?;\n",
+                        free, base, len, size_align.size
+                    ));
+                    self.needs_functions
+                        .insert(free.to_string(), NeededFunction::Free);
+                }
             }
 
             Instruction::IterElem => results.push("e".to_string()),
