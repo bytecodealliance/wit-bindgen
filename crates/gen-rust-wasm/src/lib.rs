@@ -655,8 +655,8 @@ impl Bindgen for RustWasm {
                 self.push_str(&format!("let {} = {}.len() as i32;\n", len, vec));
                 let size_align = element.mem_size_align();
                 self.push_str(&format!(
-                    "let {} = core::alloc::Layout::from_size_align_unchecked({}.len() * {}, 8);\n",
-                    layout, vec, size_align.size,
+                    "let {} = core::alloc::Layout::from_size_align_unchecked({}.len() * {}, {});\n",
+                    layout, vec, size_align.size, size_align.align,
                 ));
                 self.push_str(&format!(
                     "let {} = std::alloc::alloc({});\n",

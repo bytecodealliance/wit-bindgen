@@ -352,8 +352,8 @@ impl Generator for Wasmtime {
                     ",
                     name = name,
                     cvt = match func {
-                        NeededFunction::Malloc => "1::<i32, i32>",
-                        NeededFunction::Free => "2::<i32, i32, ()>",
+                        NeededFunction::Malloc => "2::<i32, i32, i32>",
+                        NeededFunction::Free => "3::<i32, i32, i32, ()>",
                     },
                 ),
             );
@@ -852,9 +852,12 @@ impl Bindgen for Wasmtime {
                 let malloc = malloc.unwrap();
                 self.needs_functions
                     .insert(malloc.to_string(), NeededFunction::Malloc);
-                let size = match &**element.type_() {
-                    Type::Builtin(BuiltinType::Char) => 1,
-                    _ => element.mem_size_align().size,
+                let (size, align) = match &**element.type_() {
+                    Type::Builtin(BuiltinType::Char) => (1, 1),
+                    _ => {
+                        let size = element.mem_size_align();
+                        (size.size, size.align)
+                    }
                 };
 
                 // Store the operand into a temporary...
@@ -865,8 +868,8 @@ impl Bindgen for Wasmtime {
                 // ... and then malloc space for the result in the guest module
                 let ptr = format!("ptr{}", tmp);
                 self.push_str(&format!(
-                    "let {} = func_{}(({}.len() as i32) * {})?;\n",
-                    ptr, malloc, val, size
+                    "let {} = func_{}(({}.len() as i32) * {}, {})?;\n",
+                    ptr, malloc, val, size, align
                 ));
 
                 // ... and then copy over the result.
@@ -925,8 +928,8 @@ impl Bindgen for Wasmtime {
 
                 // ... then malloc space for the result in the guest module
                 self.push_str(&format!(
-                    "let {} = func_{}({} * {})?;\n",
-                    result, malloc, len, size_align.size
+                    "let {} = func_{}({} * {}, {})?;\n",
+                    result, malloc, len, size_align.size, size_align.align,
                 ));
 
                 // ... then consume the vector and use the block to lower the
@@ -977,8 +980,8 @@ impl Bindgen for Wasmtime {
 
                 if let Some(free) = free {
                     self.push_str(&format!(
-                        "func_{}({}, {} * {})?;\n",
-                        free, base, len, size_align.size
+                        "func_{}({}, {} * {}, {})?;\n",
+                        free, base, len, size_align.size, size_align.align,
                     ));
                     self.needs_functions
                         .insert(free.to_string(), NeededFunction::Free);
