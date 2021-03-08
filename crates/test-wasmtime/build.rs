@@ -19,6 +19,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../rust-wasm");
     println!("cargo:rerun-if-changed=../rust-wasm-impl");
     println!("cargo:rerun-if-changed=../../tests/host.witx");
+    println!("cargo:rerun-if-changed=../../tests/wasm.witx");
 }
 
 fn build(out_dir: &Path, unchecked: bool) -> PathBuf {

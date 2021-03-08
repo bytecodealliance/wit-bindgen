@@ -133,7 +133,7 @@ impl TypePrint for RustWasm {
 }
 
 impl Generator for RustWasm {
-    fn preprocess(&mut self, doc: &Document) {
+    fn preprocess(&mut self, doc: &Document, _import: bool) {
         self.types.analyze(doc);
     }
 
@@ -592,21 +592,19 @@ impl Bindgen for RustWasm {
                 if malloc.is_none() {
                     self.push_str(&format!("let {} = {};\n", val, operands[0]));
                 } else {
-                    drop(element);
-                    unimplemented!()
-                    // let op0 = match &**element.type_() {
-                    //     Type::Builtin(BuiltinType::Char) => {
-                    //         format!("{}.into_bytes()", operands[0])
-                    //     }
-                    //     _ => operands.pop().unwrap(),
-                    // };
-                    // self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
+                    let op0 = match &**element.type_() {
+                        Type::Builtin(BuiltinType::Char) => {
+                            format!("{}.into_bytes()", operands[0])
+                        }
+                        _ => operands.pop().unwrap(),
+                    };
+                    self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
                 }
                 self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, val));
                 self.push_str(&format!("let {} = {}.len() as i32;\n", len, val));
-                // if malloc.is_some() {
-                //     self.push_str(&format!("core::mem::forget({});\n", val));
-                // }
+                if malloc.is_some() {
+                    self.push_str(&format!("core::mem::forget({});\n", val));
+                }
                 results.push(ptr);
                 results.push(len);
             }

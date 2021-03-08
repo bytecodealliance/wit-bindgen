@@ -1,5 +1,31 @@
+(typename $f1 (flags $a $b))
+(typename $f2 (flags (@witx repr u64) $c $d $e))
+(typename $r1 (record (field $a u8) (field $b $f1)))
+(typename $e1 (enum $a $b))
+
+;; Variants for testing casting between primitive types
+(typename $c1 (variant (case $a s32) (case $b s64)))
+(typename $c2 (variant (case $a s32) (case $b f32)))
+(typename $c3 (variant (case $a s32) (case $b f64)))
+(typename $c4 (variant (case $a s64) (case $b f32)))
+(typename $c5 (variant (case $a s64) (case $b f64)))
+(typename $c6 (variant (case $a f32) (case $b f64)))
+(typename $casts (tuple $c1 $c2 $c3 $c4 $c5 $c6))
+
+;; Variants for testing zeros can be synthesized
+(typename $z1 (variant (case $a s32) (case $b)))
+(typename $z2 (variant (case $a s64) (case $b)))
+(typename $z3 (variant (case $a f32) (case $b)))
+(typename $z4 (variant (case $a f64) (case $b)))
+(typename $zeros (tuple $z1 $z2 $z3 $z4))
+
+(typename $option_typedef (option u32))
+(typename $bool_typedef bool)
+(typename $result_typedef (expected u32 (error)))
+
 (module $wasm
   (export "run_import_tests" (func))
+  (export "allocated_bytes" (func (result $a u32)))
 
   ;; ===========================================
   ;; scalars
@@ -13,11 +39,51 @@
   (export "roundtrip_s32" (func (param $a s32) (result $b s32)))
   (export "roundtrip_u64" (func (param $a u64) (result $b u64)))
   (export "roundtrip_s64" (func (param $a s64) (result $b s64)))
-
   (export "roundtrip_f32" (func (param $a f32) (result $b f32)))
   (export "roundtrip_f64" (func (param $a f64) (result $b f64)))
-
   (export "roundtrip_char" (func (param $a char) (result $b char)))
-
   (export "multiple_results" (func (result $a u8) (result $b u16)))
+  (export "set_scalar" (func (param $a u32)))
+  (export "get_scalar" (func (result $a u32)))
+
+  ;; ===========================================
+  ;; records
+  ;; ===========================================
+
+  (export "swap_tuple" (func (param $a (tuple u8 u32)) (result $b (tuple u32 u8))))
+  (export "roundtrip_flags1" (func (param $a $f1) (result $b $f1)))
+  (export "roundtrip_flags2" (func (param $a $f2) (result $b $f2)))
+  (export "roundtrip_record1" (func (param $a $r1) (result $b $r1)))
+  (export "tuple0" (func (param $a (tuple)) (result $b (tuple))))
+  (export "tuple1" (func (param $a (tuple u8)) (result $b (tuple u8))))
+
+  ;; ===========================================
+  ;; variants
+  ;; ===========================================
+
+  (export "roundtrip_option" (func (param $a (option f32)) (result $b (option u8))))
+  (export "roundtrip_result" (func
+    (param $a (expected u32 (error f32)))
+    (result $b (expected f64 (error u8)))
+  ))
+  (export "roundtrip_enum" (func (param $a $e1) (result $b $e1)))
+  (export "invert_bool" (func (param $a bool) (result $b bool)))
+  (export "variant_casts" (func (param $a $casts) (result $b $casts)))
+  (export "variant_zeros" (func (param $a $zeros) (result $b $zeros)))
+  (export "variant_typedefs" (func
+    (param $a $option_typedef)
+    (param $b $bool_typedef)
+    (param $c $result_typedef)
+  ))
+
+  ;; ===========================================
+  ;; lists
+  ;; ===========================================
+  (export "list_param" (func (param $a (list u8))))
+  (export "list_param2" (func (param $a string)))
+  (export "list_param3" (func (param $a (list string))))
+  (export "list_param4" (func (param $a (list (list string)))))
+  (export "list_result" (func (result $a (list u8))))
+  (export "list_result2" (func (result $a string)))
+  (export "list_result3" (func (result $a (list string))))
 )

@@ -4,8 +4,8 @@ use witx::*;
 pub use witx;
 
 pub trait Generator {
-    fn preprocess(&mut self, doc: &Document) {
-        drop(doc);
+    fn preprocess(&mut self, doc: &Document, import: bool) {
+        drop((doc, import));
     }
 
     fn type_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str);
@@ -21,7 +21,7 @@ pub trait Generator {
     fn finish(&mut self) -> Files;
 
     fn generate(&mut self, doc: &Document, import: bool) -> Files {
-        self.preprocess(doc);
+        self.preprocess(doc, import);
         for ty in doc.typenames() {
             let t = match &ty.tref {
                 TypeRef::Name(nt) => {

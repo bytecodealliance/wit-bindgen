@@ -22,9 +22,16 @@ unsafe impl GlobalAlloc for A {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // Poison all deallocations to try to catch any use-after-free in the
+        // bindings as early as possible.
+        std::ptr::write_bytes(ptr, 0xde, layout.size());
         ALLOC_AMT.fetch_sub(layout.size(), SeqCst);
         System.dealloc(ptr, layout)
     }
+}
+
+pub fn get() -> usize {
+    ALLOC_AMT.load(SeqCst)
 }
 
 pub fn guard() -> impl Drop {
@@ -32,9 +39,9 @@ pub fn guard() -> impl Drop {
 
     impl Drop for A {
         fn drop(&mut self) {
-            assert_eq!(ALLOC_AMT.load(SeqCst), self.0);
+            assert_eq!(get(), self.0);
         }
     }
 
-    A(ALLOC_AMT.load(SeqCst))
+    A(get())
 }
