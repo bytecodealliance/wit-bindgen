@@ -66,6 +66,70 @@ pub trait TypePrint {
         }
     }
 
+    fn print_signature(
+        &mut self,
+        func: &InterfaceFunc,
+        unsafe_: bool,
+        self_arg: bool,
+        param_mode: TypeMode,
+    ) -> Vec<String> {
+        let params = self.print_docs_and_params(func, unsafe_, self_arg, param_mode);
+        self.push_str(" -> ");
+        self.print_results(func);
+        params
+    }
+
+    fn print_docs_and_params(
+        &mut self,
+        func: &InterfaceFunc,
+        unsafe_: bool,
+        self_arg: bool,
+        param_mode: TypeMode,
+    ) -> Vec<String> {
+        let rust_name = func.name.as_ref().to_snake_case();
+        self.rustdoc(&func.docs);
+        self.rustdoc_params(&func.params, "Parameters");
+        self.rustdoc_params(&func.results, "Return");
+
+        if unsafe_ {
+            self.push_str("unsafe ");
+        }
+        self.push_str("fn ");
+        self.push_str(to_rust_ident(&rust_name));
+
+        self.push_str("(");
+        if self_arg {
+            self.push_str("&self,");
+        }
+        let mut params = Vec::new();
+        for param in func.params.iter() {
+            self.push_str(to_rust_ident(param.name.as_str()));
+            params.push(to_rust_ident(param.name.as_str()).to_string());
+            self.push_str(": ");
+            self.print_tref(&param.tref, param_mode);
+            self.push_str(",");
+        }
+        self.push_str(")");
+        params
+    }
+
+    fn print_results(&mut self, func: &InterfaceFunc) {
+        match func.results.len() {
+            0 => self.push_str("()"),
+            1 => {
+                self.print_tref(&func.results[0].tref, TypeMode::Owned);
+            }
+            _ => {
+                self.push_str("(");
+                for result in func.results.iter() {
+                    self.print_tref(&result.tref, TypeMode::Owned);
+                    self.push_str(", ");
+                }
+                self.push_str(")");
+            }
+        }
+    }
+
     fn print_tref(&mut self, ty: &TypeRef, mode: TypeMode) {
         match ty {
             TypeRef::Name(t) => {

@@ -1,9 +1,10 @@
 use heck::*;
+use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use witx_bindgen_gen_core::{witx::*, Files, Generator, TypeInfo, Types};
-use witx_bindgen_gen_rust::{int_repr, to_rust_ident, wasm_type, TypeMode, TypePrint};
+use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint};
 
 #[derive(Default)]
 pub struct RustWasm {
@@ -18,6 +19,7 @@ pub struct RustWasm {
     in_import: bool,
     needs_cleanup_list: bool,
     cleanup: Vec<(String, String)>,
+    traits: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Default, Debug)]
@@ -251,50 +253,17 @@ impl Generator for RustWasm {
 
     fn import(&mut self, module: &Id, func: &InterfaceFunc) {
         self.in_import = true;
-        let rust_name = func.name.as_ref().to_snake_case();
-        self.rustdoc(&func.docs);
-        self.rustdoc_params(&func.params, "Parameters");
-        self.rustdoc_params(&func.results, "Return");
-
         self.is_dtor = self.types.is_dtor_func(&func.name);
-        if self.is_dtor {
-            self.push_str("unsafe ");
-        }
-        self.push_str("fn ");
-        self.push_str(to_rust_ident(&rust_name));
-
-        self.push_str("(");
-        self.params.truncate(0);
-        let param_mode = if self.is_dtor {
-            TypeMode::Owned
-        } else {
-            TypeMode::AllBorrowed("'_")
-        };
-        for param in func.params.iter() {
-            self.push_str(to_rust_ident(param.name.as_str()));
-            self.params
-                .push(to_rust_ident(param.name.as_str()).to_string());
-            self.push_str(": ");
-            self.print_tref(&param.tref, param_mode);
-            self.push_str(",");
-        }
-        self.push_str(")");
-
-        match func.results.len() {
-            0 => {}
-            1 => {
-                self.push_str(" -> ");
-                self.print_tref(&func.results[0].tref, TypeMode::Owned);
-            }
-            _ => {
-                self.push_str(" -> (");
-                for result in func.results.iter() {
-                    self.print_tref(&result.tref, TypeMode::Owned);
-                    self.push_str(", ");
-                }
-                self.push_str(")");
-            }
-        }
+        self.params = self.print_signature(
+            func,
+            self.is_dtor,
+            false,
+            if self.is_dtor {
+                TypeMode::Owned
+            } else {
+                TypeMode::AllBorrowed("'_")
+            },
+        );
         self.src.push_str("{");
         if !self.is_dtor {
             self.src.push_str("unsafe{");
@@ -317,13 +286,13 @@ impl Generator for RustWasm {
 
     fn export(&mut self, module: &Id, func: &InterfaceFunc) {
         self.in_import = false;
+        self.is_dtor = self.types.is_dtor_func(&func.name);
         let rust_name = func.name.as_ref().to_snake_case();
 
         self.src.push_str("#[export_name = \"");
         self.src.push_str(&rust_name);
         self.src.push_str("\"]\n");
-        self.src
-            .push_str("pub unsafe extern \"C\" fn __witx_bindgen_");
+        self.src.push_str("unsafe extern \"C\" fn __witx_bindgen_");
         self.src.push_str(&rust_name);
         self.src.push_str("(");
         let sig = func.wasm_signature();
@@ -348,17 +317,38 @@ impl Generator for RustWasm {
         }
         self.src.push_str("{");
 
-        self.is_dtor = false;
         func.call(module, CallMode::DefinedExport, self);
         assert!(!self.needs_cleanup_list);
 
         self.src.push_str("}");
+
+        if self.is_dtor {
+            return;
+        }
+
+        let prev = mem::take(&mut self.src);
+        self.print_signature(func, false, true, TypeMode::Owned);
+        self.traits
+            .entry(module.as_str().to_camel_case())
+            .or_insert(Vec::new())
+            .push(mem::replace(&mut self.src, prev));
     }
 
     fn finish(&mut self) -> Files {
         let mut files = Files::default();
 
         let mut src = mem::take(&mut self.src);
+
+        for (name, funcs) in self.traits.iter() {
+            src.push_str("pub trait ");
+            src.push_str(&name);
+            src.push_str(" {\n");
+            for f in funcs {
+                src.push_str(&f);
+                src.push_str(";\n");
+            }
+            src.push_str("}\n");
+        }
 
         if self.opts.rustfmt {
             let mut child = Command::new("rustfmt")
@@ -774,10 +764,15 @@ impl Bindgen for RustWasm {
                 self.push_str(");");
             }
 
-            Instruction::CallInterface { module: _, func } => {
+            Instruction::CallInterface { module, func } => {
                 self.let_results(func.results.len(), results);
+                self.push_str("<_ as ");
+                self.push_str(&module.to_camel_case());
+                self.push_str(">::");
                 self.push_str(func.name.as_str());
                 self.push_str("(");
+                self.push_str(module);
+                self.push_str("(),");
                 self.push_str(&operands.join(", "));
                 self.push_str(");");
             }

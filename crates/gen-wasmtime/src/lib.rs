@@ -1,10 +1,10 @@
 use heck::*;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use witx_bindgen_gen_core::{witx::*, Files, Generator, TypeInfo, Types};
-use witx_bindgen_gen_rust::{int_repr, to_rust_ident, TypeMode, TypePrint};
+use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint};
 
 #[derive(Default)]
 pub struct Wasmtime {
@@ -28,12 +28,14 @@ pub struct Wasmtime {
     handles_for_func: BTreeSet<String>,
     types: Types,
     imports: HashMap<Id, Vec<Import>>,
+    exports: HashMap<Id, Exports>,
     params: Vec<String>,
     block_storage: Vec<String>,
     blocks: Vec<String>,
     is_dtor: bool,
     in_import: bool,
     in_trait: bool,
+    cleanup: Option<String>,
 }
 
 enum NeededFunction {
@@ -45,6 +47,12 @@ struct Import {
     name: String,
     trait_signature: String,
     closure: String,
+}
+
+#[derive(Default)]
+struct Exports {
+    fields: BTreeMap<String, (String, String)>,
+    funcs: Vec<String>,
 }
 
 #[derive(Default, Debug)]
@@ -66,6 +74,118 @@ impl Opts {
 impl Wasmtime {
     pub fn new() -> Wasmtime {
         Wasmtime::default()
+    }
+
+    fn print_intrinsics(&mut self) {
+        if self.needs_store {
+            self.push_str(
+                "
+                    fn store(
+                        mem: &wasmtime::Memory,
+                        offset: i32,
+                        bytes: &[u8],
+                    ) -> Result<(), wasmtime::Trap> {
+                        unsafe {
+                            mem.data_unchecked_mut()
+                                .get_mut(offset as usize..)
+                                .and_then(|s| s.get_mut(..bytes.len()))
+                                .ok_or_else(|| wasmtime::Trap::new(\"out of bounds write\"))?
+                                .copy_from_slice(bytes);
+                        }
+                        //mem.write(offset as usize, bytes)?;
+                        Ok(())
+                    }
+                ",
+            );
+        }
+        if self.needs_load {
+            self.push_str(
+                "
+                    fn load<T: AsMut<[u8]>, U>(
+                        mem: &wasmtime::Memory,
+                        offset: i32,
+                        mut bytes: T,
+                        cvt: impl FnOnce(T) -> U,
+                    ) -> Result<U, wasmtime::Trap> {
+                        unsafe {
+                            let slice = mem.data_unchecked_mut()
+                                .get(offset as usize..)
+                                .and_then(|s| s.get(..bytes.as_mut().len()))
+                                .ok_or_else(|| wasmtime::Trap::new(\"out of bounds read\"))?;
+                            bytes.as_mut().copy_from_slice(slice);
+                        }
+                        //mem.read(offset as usize, bytes.as_mut())?;
+                        Ok(cvt(bytes))
+                    }
+                ",
+            );
+        }
+        if self.needs_char_from_i32 {
+            self.push_str(
+                "
+                    fn char_from_i32(
+                        val: i32,
+                    ) -> Result<char, wasmtime::Trap> {
+                        core::char::from_u32(val as u32)
+                            .ok_or_else(|| {
+                                wasmtime::Trap::new(\"char value out of valid range\")
+                            })
+                    }
+                ",
+            );
+        }
+        if self.needs_invalid_variant {
+            self.push_str(
+                "
+                    fn invalid_variant(name: &str) -> wasmtime::Trap {
+                        let msg = format!(\"invalid discriminant for `{}`\", name);
+                        wasmtime::Trap::new(msg)
+                    }
+                ",
+            );
+        }
+        if self.needs_bad_int {
+            self.push_str("use core::convert::TryFrom;\n");
+            self.push_str(
+                "
+                    fn bad_int(_: core::num::TryFromIntError) -> wasmtime::Trap {
+                        let msg = \"out-of-bounds integer conversion\";
+                        wasmtime::Trap::new(msg)
+                    }
+                ",
+            );
+        }
+        if self.needs_validate_flags {
+            self.push_str(
+                "
+                    fn validate_flags<U>(
+                        bits: i64,
+                        all: i64,
+                        name: &str,
+                        mk: impl FnOnce(i64) -> U,
+                    ) -> Result<U, wasmtime::Trap> {
+                        if bits & !all != 0 {
+                            let msg = format!(\"invalid flags specified for `{}`\", name);
+                            Err(wasmtime::Trap::new(msg))
+                        } else {
+                            Ok(mk(bits))
+                        }
+                    }
+                ",
+            );
+        }
+        if self.needs_slice_as_bytes {
+            self.push_str(
+                "
+                    unsafe fn slice_as_bytes<T: Copy>(slice: &[T]) -> &[u8] {
+                        core::slice::from_raw_parts(
+                            slice.as_ptr() as *const u8,
+                            core::mem::size_of_val(slice),
+                        )
+                    }
+                ",
+            );
+        }
     }
 }
 
@@ -251,43 +371,17 @@ impl Generator for Wasmtime {
         let prev = mem::take(&mut self.src);
         self.is_dtor = self.types.is_dtor_func(&func.name);
 
-        let rust_name = func.name.as_str().to_snake_case();
-        self.rustdoc(&func.docs);
-        self.rustdoc_params(&func.params, "Parameters");
-        self.rustdoc_params(&func.results, "Return");
-        self.push_str("fn ");
-        self.push_str(to_rust_ident(&rust_name));
-
         self.in_trait = true;
-        self.push_str("(&self,");
-        let param_mode = if self.is_dtor {
-            TypeMode::Owned
-        } else {
-            TypeMode::LeafBorrowed("'_")
-        };
-        for param in func.params.iter() {
-            self.push_str(to_rust_ident(param.name.as_str()));
-            self.push_str(": ");
-            self.print_tref(&param.tref, param_mode);
-            self.push_str(",");
-        }
-        self.push_str(")");
-
-        match func.results.len() {
-            0 => {}
-            1 => {
-                self.push_str(" -> ");
-                self.print_tref(&func.results[0].tref, TypeMode::Owned);
-            }
-            _ => {
-                self.push_str(" -> (");
-                for result in func.results.iter() {
-                    self.print_tref(&result.tref, TypeMode::Owned);
-                    self.push_str(", ");
-                }
-                self.push_str(")");
-            }
-        }
+        self.print_signature(
+            func,
+            false,
+            true,
+            if self.is_dtor {
+                TypeMode::Owned
+            } else {
+                TypeMode::LeafBorrowed("'_")
+            },
+        );
         self.in_trait = false;
         let trait_signature = mem::take(&mut self.src);
 
@@ -351,10 +445,7 @@ impl Generator for Wasmtime {
                         let func_{name} = func.get{cvt}()?;
                     ",
                     name = name,
-                    cvt = match func {
-                        NeededFunction::Malloc => "2::<i32, i32, i32>",
-                        NeededFunction::Free => "3::<i32, i32, i32, ()>",
-                    },
+                    cvt = func.cvt(),
                 ),
             );
             self.needs_get_func = true;
@@ -369,109 +460,140 @@ impl Generator for Wasmtime {
                 closure,
                 trait_signature,
             });
+        assert!(self.cleanup.is_none());
     }
 
     fn export(&mut self, module: &Id, func: &InterfaceFunc) {
         self.in_import = false;
-        drop((module, func));
-        unimplemented!()
+        let prev = mem::take(&mut self.src);
+        self.is_dtor = self.types.is_dtor_func(&func.name);
+        self.params = self.print_docs_and_params(func, false, true, TypeMode::AllBorrowed("'_"));
+        self.push_str("-> Result<");
+        self.print_results(func);
+        self.push_str(", wasmtime::Trap> {\n");
+        let pos = self.src.len();
+        func.call(module, CallMode::DeclaredExport, self);
+        self.src.push_str("}");
+
+        let exports = self
+            .exports
+            .entry(module.clone())
+            .or_insert_with(Exports::default);
+
+        assert!(!self.needs_guest_memory);
+        if self.needs_memory {
+            self.needs_memory = false;
+            self.src.insert_str(pos, "let memory = &self.memory;\n");
+            exports.fields.insert(
+                "memory".to_string(),
+                (
+                    "wasmtime::Memory".to_string(),
+                    "get_memory(\"memory\")?".to_string(),
+                ),
+            );
+            self.needs_get_memory = true;
+        }
+        assert!(self.handles_for_func.len() == 0);
+
+        for (name, func) in self.needs_functions.drain() {
+            self.src
+                .insert_str(pos, &format!("let func_{0} = &self.{0};\n", name));
+            let get = format!("Box::new(get_func(\"{}\")?.get{}()?)", name, func.cvt(),);
+            exports.fields.insert(name, (func.ty(), get));
+            self.needs_get_func = true;
+        }
+        exports.funcs.push(mem::replace(&mut self.src, prev));
+
+        // Create the code snippet which will define the type of this field in
+        // the struct that we're exporting and additionally extracts the
+        // function from an instantiated instance.
+        let sig = func.wasm_signature();
+        let mut cvt = format!("{}::<", sig.params.len());
+        let mut ty = "Box<dyn Fn(".to_string();
+        for param in sig.params.iter() {
+            cvt.push_str(wasm_type(*param));
+            cvt.push_str(",");
+            ty.push_str(wasm_type(*param));
+            ty.push_str(",");
+        }
+        ty.push_str(") -> Result<");
+        assert!(sig.results.len() < 2);
+        match sig.results.get(0) {
+            Some(t) => {
+                cvt.push_str(wasm_type(*t));
+                ty.push_str(wasm_type(*t));
+            }
+            None => {
+                cvt.push_str("()");
+                ty.push_str("()");
+            }
+        }
+        cvt.push_str(">");
+        ty.push_str(", wasmtime::Trap>>");
+        exports.fields.insert(
+            func.name.as_str().to_string(),
+            (
+                ty,
+                format!(
+                    "Box::new(get_func(\"{}\")?.get{}()?)",
+                    func.name.as_str(),
+                    cvt
+                ),
+            ),
+        );
+        self.needs_get_func = true;
     }
 
     fn finish(&mut self) -> Files {
         let mut files = Files::default();
 
-        let mut src = mem::take(&mut self.src);
-
-        if self.imports.len() > 0 {
-            src.insert_str(0, "use anyhow::Result;\n");
-        }
-
         let mut has_glue = false;
         if self.needs_borrow_checker || self.all_needed_handles.len() > 0 {
             has_glue = true;
-            src.push_str("\npub trait Glue: Sized {\n");
+            self.push_str("\npub trait Glue: Sized {\n");
             if self.needs_borrow_checker {
-                src.push_str(
+                self.push_str(
                     "fn borrow_checker(&self) -> &witx_bindgen_wasmtime::BorrowChecker;\n",
                 );
             }
-            for handle in self.all_needed_handles.iter() {
-                src.push_str("type ");
-                src.push_str(&handle.to_camel_case());
-                src.push_str(";\n");
+            for handle in mem::take(&mut self.all_needed_handles) {
+                self.push_str("type ");
+                self.push_str(&handle.to_camel_case());
+                self.push_str(";\n");
 
-                src.push_str("fn ");
-                src.push_str(&handle.to_snake_case());
-                src.push_str("_table(&self) -> &witx_bindgen_wasmtime::Table<Self::");
-                src.push_str(&handle.to_camel_case());
-                src.push_str(">;\n");
+                self.push_str("fn ");
+                self.push_str(&handle.to_snake_case());
+                self.push_str("_table(&self) -> &witx_bindgen_wasmtime::Table<Self::");
+                self.push_str(&handle.to_camel_case());
+                self.push_str(">;\n");
             }
-            src.push_str("}\n");
+            self.push_str("}\n");
         }
 
         for (module, funcs) in self.imports.iter() {
-            src.push_str("\npub trait ");
-            src.push_str(&module.as_str().to_camel_case());
+            self.src.push_str("\npub trait ");
+            self.src.push_str(&module.as_str().to_camel_case());
             if has_glue {
-                src.push_str(": Glue");
+                self.src.push_str(": Glue");
             }
-            src.push_str("{\n");
+            self.src.push_str("{\n");
             for f in funcs {
-                src.push_str(&f.trait_signature);
-                src.push_str(";\n\n");
+                self.src.push_str(&f.trait_signature);
+                self.src.push_str(";\n\n");
             }
-            src.push_str("}\n");
+            self.src.push_str("}\n");
         }
 
-        for (module, funcs) in self.imports.iter() {
-            src.push_str("\npub fn add_");
-            src.push_str(module.as_str());
-            src.push_str("_to_linker<T: ");
-            src.push_str(&module.as_str().to_camel_case());
-            src.push_str(" + 'static>(module: T, ");
-            src.push_str("linker: &mut wasmtime::Linker) -> Result<()> {\n");
-            src.push_str("let module = std::rc::Rc::new(module);\n");
-            if self.needs_store {
-                src.push_str(
-                    "
-                        fn store(mem: &wasmtime::Memory, offset: i32, bytes: &[u8]) -> Result<(), wasmtime::Trap> {
-                            unsafe {
-                                mem.data_unchecked_mut()
-                                    .get_mut(offset as usize..)
-                                    .and_then(|s| s.get_mut(..bytes.len()))
-                                    .ok_or_else(|| wasmtime::Trap::new(\"out of bounds write\"))?
-                                    .copy_from_slice(bytes);
-                            }
-                            //mem.write(offset as usize, bytes)?;
-                            Ok(())
-                        }
-                    ",
-                );
-            }
-            if self.needs_load {
-                src.push_str(
-                    "
-                        fn load<T: AsMut<[u8]>, U>(
-                            mem: &wasmtime::Memory,
-                            offset: i32,
-                            mut bytes: T,
-                            cvt: impl FnOnce(T) -> U,
-                        ) -> Result<U, wasmtime::Trap> {
-                            unsafe {
-                                let slice = mem.data_unchecked_mut()
-                                    .get(offset as usize..)
-                                    .and_then(|s| s.get(..bytes.as_mut().len()))
-                                    .ok_or_else(|| wasmtime::Trap::new(\"out of bounds read\"))?;
-                                bytes.as_mut().copy_from_slice(slice);
-                            }
-                            //mem.read(offset as usize, bytes.as_mut())?;
-                            Ok(cvt(bytes))
-                        }
-                    ",
-                );
-            }
+        for (module, funcs) in mem::take(&mut self.imports) {
+            self.push_str("\npub fn add_");
+            self.push_str(module.as_str());
+            self.push_str("_to_linker<T: ");
+            self.push_str(&module.as_str().to_camel_case());
+            self.push_str(" + 'static>(module: T, ");
+            self.push_str("linker: &mut wasmtime::Linker) -> anyhow::Result<()> {\n");
+            self.push_str("let module = std::rc::Rc::new(module);\n");
             if self.needs_get_memory {
-                src.push_str(
+                self.push_str(
                     "
                         fn get_memory(
                             caller: &wasmtime::Caller<'_>,
@@ -493,7 +615,7 @@ impl Generator for Wasmtime {
                 );
             }
             if self.needs_get_func {
-                src.push_str(
+                self.push_str(
                     "
                         fn get_func(
                             caller: &wasmtime::Caller<'_>,
@@ -514,85 +636,94 @@ impl Generator for Wasmtime {
                     ",
                 );
             }
-            if self.needs_char_from_i32 {
-                src.push_str(
-                    "
-                        fn char_from_i32(
-                            val: i32,
-                        ) -> Result<char, wasmtime::Trap> {
-                            core::char::from_u32(val as u32)
-                                .ok_or_else(|| {
-                                    wasmtime::Trap::new(\"char value out of valid range\")
-                                })
-                        }
-                    ",
-                );
-            }
-            if self.needs_invalid_variant {
-                src.push_str(
-                    "
-                        fn invalid_variant(name: &str) -> wasmtime::Trap {
-                            let msg = format!(\"invalid discriminant for `{}`\", name);
-                            wasmtime::Trap::new(msg)
-                        }
-                    ",
-                );
-            }
-            if self.needs_bad_int {
-                src.push_str("use core::convert::TryFrom;\n");
-                src.push_str(
-                    "
-                        fn bad_int(_: core::num::TryFromIntError) -> wasmtime::Trap {
-                            let msg = \"out-of-bounds integer conversion\";
-                            wasmtime::Trap::new(msg)
-                        }
-                    ",
-                );
-            }
-            if self.needs_validate_flags {
-                src.push_str(
-                    "
-                        fn validate_flags<U>(
-                            bits: i64,
-                            all: i64,
-                            name: &str,
-                            mk: impl FnOnce(i64) -> U,
-                        ) -> Result<U, wasmtime::Trap> {
-                            if bits & !all != 0 {
-                                let msg = format!(\"invalid flags specified for `{}`\", name);
-                                Err(wasmtime::Trap::new(msg))
-                            } else {
-                                Ok(mk(bits))
-                            }
-                        }
-                    ",
-                );
-            }
-            if self.needs_slice_as_bytes {
-                src.push_str(
-                    "
-                        unsafe fn slice_as_bytes<T: Copy>(slice: &[T]) -> &[u8] {
-                            core::slice::from_raw_parts(
-                                slice.as_ptr() as *const u8,
-                                core::mem::size_of_val(slice),
-                            )
-                        }
-                    ",
-                );
-            }
-
             for f in funcs {
-                src.push_str("let m = module.clone();\n");
-                src.push_str(&format!(
+                self.push_str("let m = module.clone();\n");
+                self.push_str(&format!(
                     "linker.func(\"{}\", \"{}\", {})?;\n",
                     module.as_str(),
                     f.name,
                     f.closure,
                 ));
             }
-            src.push_str("Ok(())\n}\n");
+            self.push_str("Ok(())\n}\n");
         }
 
+        for (module, exports) in mem::take(&mut self.exports) {
+            let name = module.as_str().to_camel_case();
+            self.push_str("pub struct ");
+            self.push_str(&name);
+            self.push_str("{\n");
+            self.push_str("instance: wasmtime::Instance,\n");
+            for (name, (ty, _)) in exports.fields.iter() {
+                self.push_str(name);
+                self.push_str(": ");
+                self.push_str(ty);
+                self.push_str(",\n");
+            }
+            self.push_str("}\n");
+            self.push_str("impl ");
+            self.push_str(&name);
+            self.push_str(" {\n");
+
+            self.push_str(
+                "pub fn new(
+                    module: &wasmtime::Module,
+                    linker: &mut wasmtime::Linker,
+                ) -> anyhow::Result<Self> {\n",
+            );
+            self.push_str("let instance = linker.instantiate(module)?;\n");
+            if self.needs_get_memory {
+                self.push_str(
+                    "
+                        let get_memory = |mem: &str| -> anyhow::Result<_> {
+                            let mem = instance.get_memory(mem)
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!(\"`{}` export not a memory\", mem)
+                                })?;
+                            Ok(mem)
+                        };
+                    ",
+                );
+            }
+            if self.needs_get_func {
+                self.push_str(
+                    "
+                        let get_func = |func: &str| -> anyhow::Result<_> {
+                            let func = instance.get_func(func)
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!(\"`{}` export not a func\", func)
+                                })?;
+                            Ok(func)
+                        };
+                    ",
+                );
+            }
+            for (name, (_, get)) in exports.fields.iter() {
+                self.push_str("let ");
+                self.push_str(&name);
+                self.push_str("= ");
+                self.push_str(&get);
+                self.push_str(";\n");
+            }
+            self.push_str("Ok(");
+            self.push_str(&name);
+            self.push_str("{ instance,");
+            for (name, _) in exports.fields.iter() {
+                self.push_str(name);
+                self.push_str(",");
+            }
+            self.push_str("})");
+            self.push_str("}\n");
+
+            for func in exports.funcs.iter() {
+                self.push_str(func);
+            }
+
+            self.push_str("}\n");
+        }
+        self.print_intrinsics();
+
+        let mut src = mem::take(&mut self.src);
         if self.opts.rustfmt {
             let mut child = Command::new("rustfmt")
                 .stdin(Stdio::piped())
@@ -643,20 +774,28 @@ impl Bindgen for Wasmtime {
         }
     }
 
-    fn allocate_typed_space(&mut self, ty: &NamedType) -> String {
-        let tmp = self.tmp();
-        self.push_str(&format!("let mut rp{} = core::mem::MaybeUninit::<", tmp));
-        self.push_str(&ty.name.as_str().to_camel_case());
-        self.push_str(">::uninit();");
-        self.push_str(&format!("let ptr{} = rp{0}.as_mut_ptr() as i32;\n", tmp));
-        format!("ptr{}", tmp)
+    fn allocate_typed_space(&mut self, _ty: &NamedType) -> String {
+        unimplemented!()
     }
 
     fn allocate_i64_array(&mut self, amt: usize) -> String {
+        // TODO: this should be a stack allocation, not one that goes through
+        // malloc/free. Using malloc/free is too heavyweight for this purpose.
+        // It's not clear how we can get access to the wasm module's stack,
+        // however...
+        assert!(self.cleanup.is_none());
         let tmp = self.tmp();
-        self.push_str(&format!("let mut space{} = [0i64; {}];\n", tmp, amt));
-        self.push_str(&format!("let ptr{} = space{0}.as_mut_ptr() as i32;\n", tmp));
-        format!("ptr{}", tmp)
+        self.needs_functions
+            .insert("witx_malloc".to_string(), NeededFunction::Malloc);
+        self.needs_functions
+            .insert("witx_free".to_string(), NeededFunction::Free);
+        let ptr = format!("ptr{}", tmp);
+        self.src.push_str(&format!(
+            "let {} = (&self.witx_malloc)({} * 8, 8)?;\n",
+            ptr, amt
+        ));
+        self.cleanup = Some(format!("(&self.witx_free)({}, {} * 8, 8)?;\n", ptr, amt));
+        return ptr;
     }
 
     fn emit(
@@ -993,13 +1132,17 @@ impl Bindgen for Wasmtime {
             Instruction::IterBasePointer => results.push("base".to_string()),
 
             Instruction::CallWasm {
-                module,
+                module: _,
                 name,
-                params,
+                params: _,
                 results: func_results,
             } => {
-                drop((module, name, params, func_results));
-                unimplemented!()
+                self.let_results(func_results.len(), results);
+                self.push_str("(self.");
+                self.push_str(name);
+                self.push_str(")(");
+                self.push_str(&operands.join(", "));
+                self.push_str(")?;");
             }
 
             Instruction::CallInterface { module: _, func } => {
@@ -1011,18 +1154,22 @@ impl Bindgen for Wasmtime {
                 self.push_str(");");
             }
 
-            Instruction::Return { amt: 0 } => {
-                self.push_str("Ok(())");
-            }
-            Instruction::Return { amt: 1 } => {
-                self.push_str("Ok(");
-                self.push_str(&operands[0]);
-                self.push_str(")");
-            }
-            Instruction::Return { .. } => {
-                self.push_str("Ok((");
-                self.push_str(&operands.join(", "));
-                self.push_str("))");
+            Instruction::Return { amt } => {
+                let result = match amt {
+                    0 => format!("Ok(())"),
+                    1 => format!("Ok({})", operands[0]),
+                    _ => format!("Ok(({}))", operands.join(", ")),
+                };
+                match self.cleanup.take() {
+                    Some(cleanup) => {
+                        self.push_str("let ret = ");
+                        self.push_str(&result);
+                        self.push_str(";\n");
+                        self.push_str(&cleanup);
+                        self.push_str("ret");
+                    }
+                    None => self.push_str(&result),
+                }
             }
 
             Instruction::I32Load { offset } => {
@@ -1126,6 +1273,26 @@ impl Bindgen for Wasmtime {
                 }
                 i => unimplemented!("{:?}", i),
             },
+        }
+    }
+}
+
+impl NeededFunction {
+    fn cvt(&self) -> &'static str {
+        match self {
+            NeededFunction::Malloc => "2::<i32, i32, i32>",
+            NeededFunction::Free => "3::<i32, i32, i32, ()>",
+        }
+    }
+
+    fn ty(&self) -> String {
+        match self {
+            NeededFunction::Malloc => {
+                "Box<dyn Fn(i32, i32) -> Result<i32, wasmtime::Trap>>".to_string()
+            }
+            NeededFunction::Free => {
+                "Box<dyn Fn(i32, i32, i32) -> Result<(), wasmtime::Trap>>".to_string()
+            }
         }
     }
 }

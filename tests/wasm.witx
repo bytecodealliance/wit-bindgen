@@ -1,13 +1,23 @@
 (module $wasm
-  (export "roundtrip_u8" (param $a u8) (result $b u8))
-  (export "roundtrip_s8" (param $a s8) (result $b s8))
-  (export "roundtrip_u16" (param $a u16) (result $b u16))
-  (export "roundtrip_s16" (param $a s16) (result $b s16))
-  (export "roundtrip_u32" (param $a u32) (result $b u32))
-  (export "roundtrip_s32" (param $a s32) (result $b s32))
-  (export "roundtrip_u64" (param $a u64) (result $b u64))
-  (export "roundtrip_s64" (param $a s64) (result $b s64))
-  (export "roundtrip_f32" (param $a f32) (result $b f32))
-  (export "roundtrip_f64" (param $a f64) (result $b f64))
-  (export "roundtrip_char" (param $a char) (result $b char))
+  (export "run_import_tests" (func))
+
+  ;; ===========================================
+  ;; scalars
+  ;; ===========================================
+
+  (export "roundtrip_u8" (func (param $a u8) (result $b u8)))
+  (export "roundtrip_s8" (func (param $a s8) (result $b s8)))
+  (export "roundtrip_u16" (func (param $a u16) (result $b u16)))
+  (export "roundtrip_s16" (func (param $a s16) (result $b s16)))
+  (export "roundtrip_u32" (func (param $a u32) (result $b u32)))
+  (export "roundtrip_s32" (func (param $a s32) (result $b s32)))
+  (export "roundtrip_u64" (func (param $a u64) (result $b u64)))
+  (export "roundtrip_s64" (func (param $a s64) (result $b s64)))
+
+  (export "roundtrip_f32" (func (param $a f32) (result $b f32)))
+  (export "roundtrip_f64" (func (param $a f64) (result $b f64)))
+
+  (export "roundtrip_char" (func (param $a char) (result $b char)))
+
+  (export "multiple_results" (func (result $a u8) (result $b u16)))
 )
