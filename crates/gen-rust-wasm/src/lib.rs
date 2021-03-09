@@ -63,10 +63,16 @@ impl TypePrint for RustWasm {
     }
 
     fn default_param_mode(&self) -> TypeMode {
-        // We default to borrowing as much as possible to maximize the ability
-        // for host to take views into our memory without forcing wasm modules
-        // to allocate anything.
-        TypeMode::AllBorrowed("'a")
+        if self.in_import {
+            // We default to borrowing as much as possible to maximize the ability
+            // for host to take views into our memory without forcing wasm modules
+            // to allocate anything.
+            TypeMode::AllBorrowed("'a")
+        } else {
+            // When we're exporting items that means that all our arguments come
+            // from somewhere else so everything is owned, namely lists.
+            TypeMode::Owned
+        }
     }
 
     fn handle_projection(&self) -> Option<&'static str> {
@@ -133,7 +139,8 @@ impl TypePrint for RustWasm {
 }
 
 impl Generator for RustWasm {
-    fn preprocess(&mut self, doc: &Document, _import: bool) {
+    fn preprocess(&mut self, doc: &Document, import: bool) {
+        self.in_import = import;
         self.types.analyze(doc);
     }
 
@@ -252,7 +259,6 @@ impl Generator for RustWasm {
     }
 
     fn import(&mut self, module: &Id, func: &InterfaceFunc) {
-        self.in_import = true;
         self.is_dtor = self.types.is_dtor_func(&func.name);
         self.params = self.print_signature(
             func,
@@ -285,7 +291,6 @@ impl Generator for RustWasm {
     }
 
     fn export(&mut self, module: &Id, func: &InterfaceFunc) {
-        self.in_import = false;
         self.is_dtor = self.types.is_dtor_func(&func.name);
         let rust_name = func.name.as_ref().to_snake_case();
 

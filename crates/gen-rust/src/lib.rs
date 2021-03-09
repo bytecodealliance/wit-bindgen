@@ -1,7 +1,7 @@
 use heck::*;
 use witx_bindgen_gen_core::{witx::*, TypeInfo};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum TypeMode {
     Owned,
     AllBorrowed(&'static str),
@@ -155,11 +155,12 @@ pub trait TypePrint {
                         self.push_str(&t.name.as_str().to_camel_case());
                     }
                     _ => {
-                        if mode.lifetime().is_some() {
-                            self.push_str(&info.param_name(&t.name));
+                        let name = if mode.lifetime().is_some() {
+                            self.param_name(&t.name)
                         } else {
-                            self.push_str(&info.result_name(&t.name));
-                        }
+                            self.result_name(&t.name)
+                        };
+                        self.push_str(&name);
 
                         // If the type recursively owns data and it's a
                         // variant/record/list, then we need to place the
@@ -307,13 +308,13 @@ pub trait TypePrint {
         if info.owns_data() {
             if info.param {
                 let mode = self.default_param_mode();
-                result.push((info.param_name(ty), mode));
+                result.push((self.param_name(ty), mode));
             }
-            if info.result {
-                result.push((info.result_name(ty), TypeMode::Owned));
+            if info.result && !(info.param && self.default_param_mode() == TypeMode::Owned) {
+                result.push((self.result_name(ty), TypeMode::Owned));
             }
         } else {
-            result.push((info.result_name(ty), TypeMode::Owned));
+            result.push((self.result_name(ty), TypeMode::Owned));
         }
         return result;
     }
@@ -486,10 +487,11 @@ pub trait TypePrint {
             self.push_str(&format!("pub type {}", name));
             self.print_generics(&info, mode, true);
             self.push_str(" = ");
-            match mode.lifetime() {
-                Some(_) => self.push_str(&info.param_name(&ty.name)),
-                None => self.push_str(&info.result_name(&ty.name)),
-            }
+            let name = match mode.lifetime() {
+                Some(_) => self.param_name(&ty.name),
+                None => self.result_name(&ty.name),
+            };
+            self.push_str(&name);
             self.print_generics(&info, mode, false);
             self.push_str(";\n");
         }
@@ -527,15 +529,14 @@ pub trait TypePrint {
             self.push_str(operand);
             self.push_str(";\n");
         } else if let Some(name) = name {
-            let info = self.info(&name.name);
             self.push_str("let ");
             let name = match self.call_mode() {
                 // Lowering the result of a defined function means we're
                 // lowering the return value.
-                CallMode::DefinedImport | CallMode::DefinedExport => info.result_name(&name.name),
+                CallMode::DefinedImport | CallMode::DefinedExport => self.result_name(&name.name),
                 // Lowering the result of a declared function means we're
                 // lowering a parameter.
-                CallMode::DeclaredImport | CallMode::DeclaredExport => info.param_name(&name.name),
+                CallMode::DeclaredImport | CallMode::DeclaredExport => self.param_name(&name.name),
             };
             self.push_str(&name);
             self.push_str("{ ");
@@ -569,14 +570,13 @@ pub trait TypePrint {
                 results.push(format!("({})", operands.join(",")));
             }
         } else if let Some(name) = name {
-            let info = self.info(&name.name);
             let mut result = match self.call_mode() {
                 // Lifting to a defined function means that we're lifting into
                 // a parameter
-                CallMode::DefinedImport | CallMode::DefinedExport => info.param_name(&name.name),
+                CallMode::DefinedImport | CallMode::DefinedExport => self.param_name(&name.name),
                 // Lifting for a declared function means we're lifting one of
                 // the return values.
-                CallMode::DeclaredImport | CallMode::DeclaredExport => info.result_name(&name.name),
+                CallMode::DeclaredImport | CallMode::DeclaredExport => self.result_name(&name.name),
             };
             result.push_str("{");
             for (member, val) in ty.members.iter().zip(operands) {
@@ -706,6 +706,26 @@ pub trait TypePrint {
             unimplemented!()
         }
     }
+
+    fn param_name(&self, ty: &Id) -> String {
+        let info = self.info(ty);
+        let name = ty.as_str().to_camel_case();
+        if info.result && info.owns_data() && self.default_param_mode() != TypeMode::Owned {
+            format!("{}Param", name)
+        } else {
+            name
+        }
+    }
+
+    fn result_name(&self, ty: &Id) -> String {
+        let info = self.info(ty);
+        let name = ty.as_str().to_camel_case();
+        if info.param && info.owns_data() && self.default_param_mode() != TypeMode::Owned {
+            format!("{}Result", name)
+        } else {
+            name
+        }
+    }
 }
 
 impl TypeMode {
@@ -744,36 +764,13 @@ pub fn int_repr(repr: IntRepr) -> &'static str {
     }
 }
 
-pub trait TypeInfoExt {
-    fn as_type_info(&self) -> &TypeInfo;
-
-    fn owns_data(&self) -> bool {
-        let info = self.as_type_info();
-        info.has_list || info.has_handle
-    }
-
-    fn param_name(&self, name: &Id) -> String {
-        let name = name.as_str().to_camel_case();
-        if self.as_type_info().result && self.owns_data() {
-            format!("{}Param", name)
-        } else {
-            name
-        }
-    }
-
-    fn result_name(&self, name: &Id) -> String {
-        let name = name.as_str().to_camel_case();
-        if self.as_type_info().param && self.owns_data() {
-            format!("{}Result", name)
-        } else {
-            name
-        }
-    }
+trait TypeInfoExt {
+    fn owns_data(&self) -> bool;
 }
 
 impl TypeInfoExt for TypeInfo {
-    fn as_type_info(&self) -> &TypeInfo {
-        self
+    fn owns_data(&self) -> bool {
+        self.has_list || self.has_handle
     }
 }
 

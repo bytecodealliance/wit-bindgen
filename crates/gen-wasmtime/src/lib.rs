@@ -215,9 +215,16 @@ impl TypePrint for Wasmtime {
     }
 
     fn default_param_mode(&self) -> TypeMode {
-        // The default here is that only leaf values can be borrowed because
-        // otherwise lists and such need to be copied into our own memory.
-        TypeMode::LeafBorrowed("'a")
+        if self.in_import {
+            // The default here is that only leaf values can be borrowed because
+            // otherwise lists and such need to be copied into our own memory.
+            TypeMode::LeafBorrowed("'a")
+        } else {
+            // When we're calling wasm exports, however, there's no need to take
+            // any ownership of anything from the host so everything is borrowed
+            // in the parameter position.
+            TypeMode::AllBorrowed("'a")
+        }
     }
 
     fn handle_projection(&self) -> Option<&'static str> {
@@ -502,6 +509,7 @@ impl Generator for Wasmtime {
     fn export(&mut self, module: &Id, func: &InterfaceFunc) {
         let prev = mem::take(&mut self.src);
         self.is_dtor = self.types.is_dtor_func(&func.name);
+        self.push_str("pub ");
         self.params = self.print_docs_and_params(func, false, true, TypeMode::AllBorrowed("'_"));
         self.push_str("-> Result<");
         self.print_results(func);

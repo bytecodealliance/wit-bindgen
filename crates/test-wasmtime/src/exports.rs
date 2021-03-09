@@ -10,6 +10,7 @@ pub fn test(wasm: &Wasm) -> Result<()> {
     records(wasm)?;
     variants(wasm)?;
     lists(wasm)?;
+    flavorful(wasm)?;
     invalid(wasm)?;
 
     // Ensure that we properly called `free` everywhere in all the glue that we
@@ -161,6 +162,48 @@ fn lists(wasm: &Wasm) -> Result<()> {
     assert_eq!(wasm.list_result()?, [1, 2, 3, 4, 5]);
     assert_eq!(wasm.list_result2()?, "hello!");
     assert_eq!(wasm.list_result3()?, ["hello,", "world!"]);
+    Ok(())
+}
+
+fn flavorful(wasm: &Wasm) -> Result<()> {
+    wasm.list_in_record1(ListInRecord1 {
+        a: "list_in_record1",
+    })?;
+    assert_eq!(wasm.list_in_record2()?.a, "list_in_record2");
+
+    assert_eq!(
+        wasm.list_in_record3(ListInRecord3Param {
+            a: "list_in_record3 input"
+        })?
+        .a,
+        "list_in_record3 output"
+    );
+
+    assert_eq!(
+        wasm.list_in_record4(ListInAliasParam { a: "input4" })?.a,
+        "result4"
+    );
+
+    wasm.list_in_variant1(Some("foo"), Err("bar"), ListInVariant13::V0("baz"))?;
+    assert_eq!(
+        wasm.list_in_variant2()?,
+        Some("list_in_variant2".to_string())
+    );
+    assert_eq!(
+        wasm.list_in_variant3(Some("input3"))?,
+        Some("output3".to_string())
+    );
+
+    assert!(wasm.errno_result()?.is_err());
+    MyErrno::A.to_string();
+    format!("{:?}", MyErrno::A);
+    fn assert_error<T: std::error::Error>() {}
+    assert_error::<MyErrno>();
+
+    let (a, b) = wasm.list_typedefs("typedef1", &["typedef2"])?;
+    assert_eq!(a, b"typedef3");
+    assert_eq!(b.len(), 1);
+    assert_eq!(b[0], "typedef4");
     Ok(())
 }
 
