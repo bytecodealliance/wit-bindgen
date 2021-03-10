@@ -6,6 +6,7 @@ pub enum TypeMode {
     Owned,
     AllBorrowed(&'static str),
     LeafBorrowed(&'static str),
+    HandlesBorrowed(&'static str),
 }
 
 pub trait TypePrint {
@@ -18,7 +19,7 @@ pub trait TypePrint {
     fn print_borrowed_str(&mut self, lifetime: &'static str);
     fn call_mode(&self) -> CallMode;
     fn default_param_mode(&self) -> TypeMode;
-    fn handle_projection(&self) -> Option<&'static str>;
+    fn handle_projection(&self) -> Option<(&'static str, String)>;
 
     fn rustdoc(&mut self, docs: &str) {
         if docs.trim().is_empty() {
@@ -134,13 +135,14 @@ pub trait TypePrint {
         match ty {
             TypeRef::Name(t) => {
                 let info = self.info(&t.name);
+                let lt = self.lifetime_for(&info, mode);
                 let ty = &**t.type_();
 
                 match ty {
                     Type::Handle(_) => {
                         // Borrowed handles are always behind a reference since
                         // in that case we never take ownership of the handle.
-                        if let Some(lt) = mode.lifetime() {
+                        if let Some(lt) = lt {
                             self.push_str("&");
                             if lt != "'_" {
                                 self.push_str(lt);
@@ -148,14 +150,14 @@ pub trait TypePrint {
                             self.push_str(" ");
                         }
 
-                        if let Some(proj) = self.handle_projection() {
+                        if let Some((proj, _)) = self.handle_projection() {
                             self.push_str(proj);
                             self.push_str("::");
                         }
                         self.push_str(&t.name.as_str().to_camel_case());
                     }
                     _ => {
-                        let name = if mode.lifetime().is_some() {
+                        let name = if lt.is_some() {
                             self.param_name(&t.name)
                         } else {
                             self.result_name(&t.name)
@@ -168,7 +170,7 @@ pub trait TypePrint {
                         if info.owns_data() {
                             match ty {
                                 Type::Variant(_) | Type::Record(_) | Type::List(_) => {
-                                    self.print_generics(&info, mode, false);
+                                    self.print_generics(&info, lt, false);
                                 }
                                 _ => {}
                             }
@@ -220,9 +222,11 @@ pub trait TypePrint {
 
     fn print_list(&mut self, ty: &TypeRef, mode: TypeMode) {
         match &**ty.type_() {
-            Type::Builtin(BuiltinType::Char) => match mode.lifetime() {
-                Some(lt) => self.print_borrowed_str(lt),
-                None => self.push_str("String"),
+            Type::Builtin(BuiltinType::Char) => match mode {
+                TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) => {
+                    self.print_borrowed_str(lt)
+                }
+                TypeMode::Owned | TypeMode::HandlesBorrowed(_) => self.push_str("String"),
             },
             t => match mode {
                 TypeMode::AllBorrowed(lt) => {
@@ -237,9 +241,9 @@ pub trait TypePrint {
                         self.push_str(">");
                     }
                 }
-                TypeMode::Owned => {
+                TypeMode::HandlesBorrowed(_) | TypeMode::Owned => {
                     self.push_str("Vec<");
-                    self.print_tref(ty, TypeMode::Owned);
+                    self.print_tref(ty, mode);
                     self.push_str(">");
                 }
             },
@@ -270,8 +274,7 @@ pub trait TypePrint {
         }
     }
 
-    fn print_generics(&mut self, info: &TypeInfo, mode: TypeMode, bound: bool) {
-        let lifetime = mode.lifetime();
+    fn print_generics(&mut self, info: &TypeInfo, lifetime: Option<&str>, bound: bool) {
         let proj = if info.has_handle {
             self.handle_projection()
         } else {
@@ -285,10 +288,11 @@ pub trait TypePrint {
             self.push_str(lt);
             self.push_str(",");
         }
-        if let Some(proj) = proj {
+        if let Some((proj, trait_bound)) = proj {
             self.push_str(proj);
             if bound {
-                self.push_str(": Glue");
+                self.push_str(": ");
+                self.push_str(&trait_bound);
             }
         }
         self.push_str(">");
@@ -305,15 +309,10 @@ pub trait TypePrint {
     fn modes_of(&self, ty: &Id) -> Vec<(String, TypeMode)> {
         let info = self.info(ty);
         let mut result = Vec::new();
-        if info.owns_data() {
-            if info.param {
-                let mode = self.default_param_mode();
-                result.push((self.param_name(ty), mode));
-            }
-            if info.result && !(info.param && self.default_param_mode() == TypeMode::Owned) {
-                result.push((self.result_name(ty), TypeMode::Owned));
-            }
-        } else {
+        if info.param {
+            result.push((self.param_name(ty), self.default_param_mode()));
+        }
+        if info.result && (!info.param || self.uses_two_names(&info)) {
             result.push((self.result_name(ty), TypeMode::Owned));
         }
         return result;
@@ -322,10 +321,11 @@ pub trait TypePrint {
     fn print_typedef_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str) {
         let info = self.info(name);
         for (name, mode) in self.modes_of(name) {
+            let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
             if record.is_tuple() {
                 self.push_str(&format!("pub type {}", name));
-                self.print_generics(&info, mode, true);
+                self.print_generics(&info, lt, true);
                 self.push_str(" = (");
                 for member in record.members.iter() {
                     self.print_tref(&member.tref, mode);
@@ -333,7 +333,7 @@ pub trait TypePrint {
                 }
                 self.push_str(");\n");
             } else {
-                if mode.lifetime().is_some() || !info.owns_data() {
+                if lt.is_some() || !info.owns_data() {
                     self.push_str("#[repr(C)]\n");
                     self.push_str("#[derive(Copy, Clone)]\n");
                 } else if !info.has_handle {
@@ -341,7 +341,7 @@ pub trait TypePrint {
                 }
                 self.push_str("#[derive(Debug)]\n");
                 self.push_str(&format!("pub struct {}\n", name));
-                self.print_generics(&info, mode, true);
+                self.print_generics(&info, lt, true);
                 self.push_str(" {\n");
                 for member in record.members.iter() {
                     self.rustdoc(&member.docs);
@@ -363,19 +363,20 @@ pub trait TypePrint {
 
         for (name, mode) in self.modes_of(name) {
             self.rustdoc(docs);
+            let lt = self.lifetime_for(&info, mode);
             if variant.is_bool() {
                 self.push_str(&format!("pub type {} = bool;\n", name));
                 continue;
             } else if let Some(ty) = variant.as_option() {
                 self.push_str(&format!("pub type {}", name));
-                self.print_generics(&info, mode, true);
+                self.print_generics(&info, lt, true);
                 self.push_str("= Option<");
                 self.print_tref(ty, mode);
                 self.push_str(">;\n");
                 continue;
             } else if let Some((ok, err)) = variant.as_expected() {
                 self.push_str(&format!("pub type {}", name));
-                self.print_generics(&info, mode, true);
+                self.print_generics(&info, lt, true);
                 self.push_str("= Result<");
                 match ok {
                     Some(ty) => self.print_tref(ty, mode),
@@ -393,14 +394,14 @@ pub trait TypePrint {
                 self.push_str("#[repr(");
                 self.int_repr(variant.tag_repr);
                 self.push_str(")]\n#[derive(Clone, Copy, PartialEq, Eq)]\n");
-            } else if mode.lifetime().is_some() || !info.owns_data() {
+            } else if lt.is_some() || !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
             }
             if !is_error {
                 self.push_str("#[derive(Debug)]\n");
             }
             self.push_str(&format!("pub enum {}", name.to_camel_case()));
-            self.print_generics(&info, mode, true);
+            self.print_generics(&info, lt, true);
             self.push_str("{\n");
             for case in variant.cases.iter() {
                 self.rustdoc(&case.docs);
@@ -485,14 +486,15 @@ pub trait TypePrint {
         for (name, mode) in self.modes_of(name) {
             self.rustdoc(docs);
             self.push_str(&format!("pub type {}", name));
-            self.print_generics(&info, mode, true);
+            let lt = self.lifetime_for(&info, mode);
+            self.print_generics(&info, lt, true);
             self.push_str(" = ");
-            let name = match mode.lifetime() {
+            let name = match lt {
                 Some(_) => self.param_name(&ty.name),
                 None => self.result_name(&ty.name),
             };
             self.push_str(&name);
-            self.print_generics(&info, mode, false);
+            self.print_generics(&info, lt, false);
             self.push_str(";\n");
         }
     }
@@ -500,9 +502,10 @@ pub trait TypePrint {
     fn print_type_list(&mut self, name: &Id, ty: &TypeRef, docs: &str) {
         let info = self.info(name);
         for (name, mode) in self.modes_of(name) {
+            let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
             self.push_str(&format!("pub type {}", name));
-            self.print_generics(&info, mode, true);
+            self.print_generics(&info, lt, true);
             self.push_str(" = ");
             self.print_list(ty, mode);
             self.push_str(";\n");
@@ -710,7 +713,7 @@ pub trait TypePrint {
     fn param_name(&self, ty: &Id) -> String {
         let info = self.info(ty);
         let name = ty.as_str().to_camel_case();
-        if info.result && info.owns_data() && self.default_param_mode() != TypeMode::Owned {
+        if self.uses_two_names(&info) {
             format!("{}Param", name)
         } else {
             name
@@ -720,19 +723,33 @@ pub trait TypePrint {
     fn result_name(&self, ty: &Id) -> String {
         let info = self.info(ty);
         let name = ty.as_str().to_camel_case();
-        if info.param && info.owns_data() && self.default_param_mode() != TypeMode::Owned {
+        if self.uses_two_names(&info) {
             format!("{}Result", name)
         } else {
             name
         }
     }
-}
 
-impl TypeMode {
-    fn lifetime(&self) -> Option<&'static str> {
-        match self {
-            TypeMode::Owned => None,
-            TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s) => Some(*s),
+    fn uses_two_names(&self, info: &TypeInfo) -> bool {
+        info.owns_data()
+            && info.param
+            && info.result
+            && match self.default_param_mode() {
+                TypeMode::AllBorrowed(_) | TypeMode::LeafBorrowed(_) => true,
+                TypeMode::HandlesBorrowed(_) => info.has_handle,
+                TypeMode::Owned => false,
+            }
+    }
+
+    fn lifetime_for(&self, info: &TypeInfo, mode: TypeMode) -> Option<&'static str> {
+        match mode {
+            TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s)
+                if info.has_list || info.has_handle =>
+            {
+                Some(s)
+            }
+            TypeMode::HandlesBorrowed(s) if info.has_handle => Some(s),
+            _ => None,
         }
     }
 }

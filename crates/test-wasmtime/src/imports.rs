@@ -14,7 +14,7 @@ pub struct MyHost {
 
 pub struct SuchState(u32);
 
-impl Glue for MyHost {
+impl Host for MyHost {
     type HostState = SuchState;
     type HostState2 = ();
 
@@ -29,9 +29,7 @@ impl Glue for MyHost {
     fn borrow_checker(&self) -> &BorrowChecker {
         &self.borrow_checker
     }
-}
 
-impl Host for MyHost {
     fn roundtrip_u8(&self, val: u8) -> u8 {
         val
     }

@@ -16,6 +16,10 @@ pub fn test(wasm: &Wasm) -> Result<()> {
     // Ensure that we properly called `free` everywhere in all the glue that we
     // needed to.
     assert_eq!(bytes, wasm.allocated_bytes()?);
+
+    // It's known that we have a handle type that leaks here, so it's expected
+    // we leak a few bytes.
+    handles(wasm)?;
     Ok(())
 }
 
@@ -204,6 +208,43 @@ fn flavorful(wasm: &Wasm) -> Result<()> {
     assert_eq!(a, b"typedef3");
     assert_eq!(b.len(), 1);
     assert_eq!(b[0], "typedef4");
+    Ok(())
+}
+
+fn handles(wasm: &Wasm) -> Result<()> {
+    let bytes = wasm.allocated_bytes()?;
+    {
+        let s: WasmState = wasm.wasm_state_create()?;
+        assert_eq!(wasm.wasm_state_get(&s)?, 100);
+        assert_eq!(wasm.wasm_state2_saw_close()?, false);
+        let s: WasmState2 = wasm.wasm_state2_create()?;
+        assert_eq!(wasm.wasm_state2_saw_close()?, false);
+        drop(s);
+        assert_eq!(wasm.wasm_state2_saw_close()?, true);
+
+        let (_a, s2) =
+            wasm.two_wasm_states(&wasm.wasm_state_create()?, &wasm.wasm_state2_create()?)?;
+
+        wasm.wasm_state2_param_record(WasmStateParamRecord { a: &s2 })?;
+        wasm.wasm_state2_param_tuple((&s2,))?;
+        wasm.wasm_state2_param_option(Some(&s2))?;
+        wasm.wasm_state2_param_option(None)?;
+        wasm.wasm_state2_param_result(Ok(&s2))?;
+        wasm.wasm_state2_param_result(Err(2))?;
+        wasm.wasm_state2_param_variant(WasmStateParamVariant::V0(&s2))?;
+        wasm.wasm_state2_param_variant(WasmStateParamVariant::V1(2))?;
+        wasm.wasm_state2_param_list(&[])?;
+        wasm.wasm_state2_param_list(&[&s2])?;
+        wasm.wasm_state2_param_list(&[&s2, &s2])?;
+
+        drop(wasm.wasm_state2_result_record()?.a);
+        drop(wasm.wasm_state2_result_tuple()?.0);
+        drop(wasm.wasm_state2_result_option()?.unwrap());
+        drop(wasm.wasm_state2_result_result()?.unwrap());
+        drop(wasm.wasm_state2_result_variant()?);
+        drop(wasm.wasm_state2_result_list()?);
+    }
+    assert_eq!(bytes + 12, wasm.allocated_bytes()?);
     Ok(())
 }
 

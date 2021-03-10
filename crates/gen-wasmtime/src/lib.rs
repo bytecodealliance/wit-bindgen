@@ -37,6 +37,7 @@ pub struct Wasmtime {
     in_import: bool,
     in_trait: bool,
     cleanup: Option<String>,
+    trait_name: String,
 }
 
 enum NeededFunction {
@@ -227,11 +228,15 @@ impl TypePrint for Wasmtime {
         }
     }
 
-    fn handle_projection(&self) -> Option<&'static str> {
-        if self.in_trait {
-            Some("Self")
+    fn handle_projection(&self) -> Option<(&'static str, String)> {
+        if self.in_import {
+            if self.in_trait {
+                Some(("Self", self.trait_name.clone()))
+            } else {
+                Some(("T", self.trait_name.clone()))
+            }
         } else {
-            Some("T")
+            None
         }
     }
 
@@ -312,8 +317,15 @@ impl TypePrint for Wasmtime {
 
 impl Generator for Wasmtime {
     fn preprocess(&mut self, doc: &Document, import: bool) {
+        assert!(
+            doc.modules().count() <= 1,
+            "only one module supported at this time"
+        );
         self.types.analyze(doc);
         self.in_import = import;
+        if let Some(m) = doc.modules().next() {
+            self.trait_name = m.name.as_str().to_camel_case();
+        }
     }
 
     fn type_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str) {
@@ -364,10 +376,71 @@ impl Generator for Wasmtime {
         self.print_typedef_variant(name, variant, docs);
     }
 
-    fn type_handle(&mut self, _name: &Id, _ty: &HandleDatatype, _docs: &str) {
-        // for now handles are all associated types for imports
-        //
-        // TODO: support exports where we'll print something here.
+    fn type_handle(&mut self, name: &Id, _ty: &HandleDatatype, docs: &str) {
+        // If we're binding imports then all handles are associated types so
+        // there's nothing that we need to do about that.
+        if self.in_import {
+            return;
+        }
+
+        // ... otherwise for exports we generate a newtype wrapper around an
+        // `i32` to manage the resultt.
+        let info = self.info(name);
+        let tyname = name.as_str().to_camel_case();
+        self.rustdoc(docs);
+        if !info.handle_with_dtor {
+            self.src.push_str("#[derive(Debug)]\n");
+        }
+        self.src.push_str(&format!("pub struct {}(i32", tyname));
+        if info.handle_with_dtor {
+            self.src.push_str(
+                ", std::mem::ManuallyDrop<std::rc::Rc<dyn Fn(i32) -> Result<(), wasmtime::Trap>>>",
+            );
+        }
+        self.src.push_str(");\n");
+
+        if info.handle_with_dtor {
+            self.src.push_str("impl ");
+            self.src.push_str(&tyname);
+            self.src.push_str(
+                "{
+                    pub fn close(mut self) -> Result<(), wasmtime::Trap> {
+                        let res = (self.1)(self.0);
+                        unsafe {
+                            std::mem::ManuallyDrop::drop(&mut self.1);
+                            std::mem::forget(self);
+                        }
+                        res
+                    }
+                }",
+            );
+
+            self.src.push_str("impl std::fmt::Debug for ");
+            self.src.push_str(&tyname);
+            self.src.push_str(&format!(
+                "{{
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{
+                        f.debug_struct(\"{}\")
+                            .field(\"handle\", &self.0)
+                            .finish()
+                    }}
+                }}",
+                tyname,
+            ));
+
+            self.src.push_str("impl Drop for ");
+            self.src.push_str(&tyname);
+            self.src.push_str(
+                "{
+                    fn drop(&mut self) {
+                        drop((self.1)(self.0));
+                        unsafe {
+                            std::mem::ManuallyDrop::drop(&mut self.1);
+                        }
+                    }
+                }",
+            );
+        }
     }
 
     fn type_alias(&mut self, name: &Id, ty: &NamedType, docs: &str) {
@@ -509,6 +582,9 @@ impl Generator for Wasmtime {
     fn export(&mut self, module: &Id, func: &InterfaceFunc) {
         let prev = mem::take(&mut self.src);
         self.is_dtor = self.types.is_dtor_func(&func.name);
+        if self.is_dtor {
+            assert_eq!(func.results.len(), 0, "destructors cannot have results");
+        }
         self.push_str("pub ");
         self.params = self.print_docs_and_params(func, false, true, TypeMode::AllBorrowed("'_"));
         self.push_str("-> Result<");
@@ -545,14 +621,19 @@ impl Generator for Wasmtime {
             exports.fields.insert(name, (func.ty(), get));
             self.needs_get_func = true;
         }
-        exports.funcs.push(mem::replace(&mut self.src, prev));
+        let func_body = mem::replace(&mut self.src, prev);
+        if !self.is_dtor {
+            exports.funcs.push(func_body);
+        }
+
+        let ptr = if self.is_dtor { "std::rc::Rc" } else { "Box" };
 
         // Create the code snippet which will define the type of this field in
         // the struct that we're exporting and additionally extracts the
         // function from an instantiated instance.
         let sig = func.wasm_signature();
         let mut cvt = format!("{}::<", sig.params.len());
-        let mut ty = "Box<dyn Fn(".to_string();
+        let mut ty = format!("{}<dyn Fn(", ptr);
         for param in sig.params.iter() {
             cvt.push_str(wasm_type(*param));
             cvt.push_str(",");
@@ -578,7 +659,8 @@ impl Generator for Wasmtime {
             (
                 ty,
                 format!(
-                    "Box::new(get_func(\"{}\")?.get{}()?)",
+                    "{}::new(get_func(\"{}\")?.get{}()?)",
+                    ptr,
                     func.name.as_str(),
                     cvt
                 ),
@@ -590,36 +672,29 @@ impl Generator for Wasmtime {
     fn finish(&mut self) -> Files {
         let mut files = Files::default();
 
-        let mut has_glue = false;
-        if self.needs_borrow_checker || self.all_needed_handles.len() > 0 {
-            has_glue = true;
-            self.push_str("\npub trait Glue: Sized {\n");
-            if self.needs_borrow_checker {
-                self.push_str(
-                    "fn borrow_checker(&self) -> &witx_bindgen_wasmtime::BorrowChecker;\n",
-                );
-            }
-            for handle in mem::take(&mut self.all_needed_handles) {
-                self.push_str("type ");
-                self.push_str(&handle.to_camel_case());
-                self.push_str(";\n");
-
-                self.push_str("fn ");
-                self.push_str(&handle.to_snake_case());
-                self.push_str("_table(&self) -> &witx_bindgen_wasmtime::Table<Self::");
-                self.push_str(&handle.to_camel_case());
-                self.push_str(">;\n");
-            }
-            self.push_str("}\n");
-        }
-
         for (module, funcs) in self.imports.iter() {
             self.src.push_str("\npub trait ");
             self.src.push_str(&module.as_str().to_camel_case());
-            if has_glue {
-                self.src.push_str(": Glue");
+            self.src.push_str(": Sized {\n");
+            if self.needs_borrow_checker || self.all_needed_handles.len() > 0 {
+                if self.needs_borrow_checker {
+                    self.src.push_str(
+                        "fn borrow_checker(&self) -> &witx_bindgen_wasmtime::BorrowChecker;\n",
+                    );
+                }
+                for handle in mem::take(&mut self.all_needed_handles) {
+                    self.src.push_str("type ");
+                    self.src.push_str(&handle.to_camel_case());
+                    self.src.push_str(";\n");
+
+                    self.src.push_str("fn ");
+                    self.src.push_str(&handle.to_snake_case());
+                    self.src
+                        .push_str("_table(&self) -> &witx_bindgen_wasmtime::Table<Self::");
+                    self.src.push_str(&handle.to_camel_case());
+                    self.src.push_str(">;\n");
+                }
             }
-            self.src.push_str("{\n");
             for f in funcs {
                 self.src.push_str(&f.trait_signature);
                 self.src.push_str(";\n\n");
@@ -947,8 +1022,24 @@ impl Bindgen for Wasmtime {
                     ));
                 }
             }
-            Instruction::I32FromBorrowedHandle { .. } => unimplemented!(),
-            Instruction::HandleOwnedFromI32 { .. } => unimplemented!(),
+            Instruction::I32FromBorrowedHandle { .. } => {
+                results.push(format!("{}.0", operands[0]));
+            }
+            Instruction::HandleOwnedFromI32 { ty } => {
+                results.push(format!(
+                    "{}({}{})",
+                    ty.name.as_str().to_camel_case(),
+                    operands[0],
+                    if self.info(&ty.name).handle_with_dtor {
+                        format!(
+                            ", std::mem::ManuallyDrop::new(self.{}_close.clone())",
+                            ty.name.as_str().to_snake_case()
+                        )
+                    } else {
+                        String::new()
+                    }
+                ));
+            }
 
             Instruction::I32FromBitflags { .. } => {
                 results.push(format!("({}).bits as i32", operands[0]));

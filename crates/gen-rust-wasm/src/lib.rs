@@ -1,5 +1,5 @@
 use heck::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
@@ -19,7 +19,10 @@ pub struct RustWasm {
     in_import: bool,
     needs_cleanup_list: bool,
     cleanup: Vec<(String, String)>,
-    traits: BTreeMap<String, Vec<String>>,
+    traits: BTreeMap<String, Trait>,
+    handles_for_func: BTreeSet<String>,
+    in_trait: bool,
+    trait_name: String,
 }
 
 #[derive(Default, Debug)]
@@ -37,6 +40,12 @@ pub struct Opts {
     /// well-formed or whether checks are performed.
     #[cfg_attr(feature = "structopt", structopt(long))]
     pub unchecked: bool,
+}
+
+#[derive(Default)]
+struct Trait {
+    methods: Vec<String>,
+    handles: BTreeSet<String>,
 }
 
 impl Opts {
@@ -71,12 +80,22 @@ impl TypePrint for RustWasm {
         } else {
             // When we're exporting items that means that all our arguments come
             // from somewhere else so everything is owned, namely lists.
-            TypeMode::Owned
+            TypeMode::HandlesBorrowed("'a")
         }
     }
 
-    fn handle_projection(&self) -> Option<&'static str> {
-        None
+    fn handle_projection(&self) -> Option<(&'static str, String)> {
+        if self.in_import {
+            // All handles are defined types when we're importing them
+            None
+        } else {
+            // Handles for exports are associated types on the trait.
+            if self.in_trait {
+                Some(("Self", self.trait_name.clone()))
+            } else {
+                Some(("T", self.trait_name.clone()))
+            }
+        }
     }
 
     fn tmp(&mut self) -> usize {
@@ -142,6 +161,13 @@ impl Generator for RustWasm {
     fn preprocess(&mut self, doc: &Document, import: bool) {
         self.in_import = import;
         self.types.analyze(doc);
+        assert!(
+            doc.modules().count() <= 1,
+            "only one module supported at this time"
+        );
+        if let Some(m) = doc.modules().next() {
+            self.trait_name = m.name.as_str().to_camel_case();
+        }
     }
 
     fn type_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str) {
@@ -173,6 +199,12 @@ impl Generator for RustWasm {
     }
 
     fn type_handle(&mut self, name: &Id, _ty: &HandleDatatype, docs: &str) {
+        // If we're generating types for an exported handle then no type is
+        // generated since this type is provided by the the generated trait.
+        if !self.in_import {
+            return;
+        }
+
         self.rustdoc(docs);
         self.src.push_str("#[derive(Debug)]\n");
         self.src.push_str("#[repr(transparent)]\n");
@@ -278,6 +310,7 @@ impl Generator for RustWasm {
         let start_pos = self.src.len();
 
         func.call(module, CallMode::DeclaredImport, self);
+        assert!(self.handles_for_func.is_empty());
 
         if mem::take(&mut self.needs_cleanup_list) {
             self.src
@@ -327,16 +360,25 @@ impl Generator for RustWasm {
 
         self.src.push_str("}");
 
-        if self.is_dtor {
-            return;
-        }
-
         let prev = mem::take(&mut self.src);
-        self.print_signature(func, false, true, TypeMode::Owned);
-        self.traits
+        self.in_trait = true;
+        self.print_signature(
+            func,
+            false,
+            true,
+            if self.is_dtor {
+                TypeMode::Owned
+            } else {
+                TypeMode::HandlesBorrowed("'_")
+            },
+        );
+        self.in_trait = false;
+        let trait_ = self
+            .traits
             .entry(module.as_str().to_camel_case())
-            .or_insert(Vec::new())
-            .push(mem::replace(&mut self.src, prev));
+            .or_insert(Trait::default());
+        trait_.methods.push(mem::replace(&mut self.src, prev));
+        trait_.handles.extend(mem::take(&mut self.handles_for_func));
     }
 
     fn finish(&mut self) -> Files {
@@ -344,11 +386,16 @@ impl Generator for RustWasm {
 
         let mut src = mem::take(&mut self.src);
 
-        for (name, funcs) in self.traits.iter() {
+        for (name, trait_) in self.traits.iter() {
             src.push_str("pub trait ");
             src.push_str(&name);
-            src.push_str(" {\n");
-            for f in funcs {
+            src.push_str(": Sized {\n");
+            for h in trait_.handles.iter() {
+                src.push_str("type ");
+                src.push_str(&h.to_camel_case());
+                src.push_str(";\n");
+            }
+            for f in trait_.methods.iter() {
                 src.push_str(&f);
                 src.push_str(";\n");
             }
@@ -508,7 +555,10 @@ impl Bindgen for RustWasm {
                 witx_bindgen_gen_rust::bitcast(casts, operands, results)
             }
 
-            Instruction::I32FromOwnedHandle { .. } => unimplemented!(),
+            Instruction::I32FromOwnedHandle { ty } => {
+                self.handles_for_func.insert(ty.name.as_str().to_string());
+                results.push(format!("Box::into_raw(Box::new({})) as i32", operands[0]));
+            }
             Instruction::I32FromBorrowedHandle { .. } => {
                 if self.is_dtor {
                     results.push(format!("{}.into_raw()", operands[0]));
@@ -516,7 +566,14 @@ impl Bindgen for RustWasm {
                     results.push(format!("{}.0", operands[0]));
                 }
             }
-            Instruction::HandleBorrowedFromI32 { .. } => unimplemented!(),
+            Instruction::HandleBorrowedFromI32 { ty } => {
+                self.handles_for_func.insert(ty.name.as_str().to_string());
+                if self.is_dtor {
+                    results.push(format!("*Box::from_raw({} as *mut _)", operands[0],));
+                } else {
+                    results.push(format!("&*({} as *const _)", operands[0],));
+                }
+            }
             Instruction::HandleOwnedFromI32 { ty } => {
                 results.push(format!(
                     "{}({})",

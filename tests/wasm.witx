@@ -41,6 +41,21 @@
 (typename $list_typedef2 (list u8))
 (typename $list_typedef3 (list string))
 
+(typename $wasm_state (handle))
+(typename $wasm_state2 (handle))
+
+(typename $wasm_state_param_record (record (field $a $wasm_state2)))
+(typename $wasm_state_param_tuple (tuple $wasm_state2))
+(typename $wasm_state_param_option (option $wasm_state2))
+(typename $wasm_state_param_result (expected $wasm_state2 (error u32)))
+(typename $wasm_state_param_variant (union $wasm_state2 u32))
+
+(typename $wasm_state_result_record (record (field $a $wasm_state2)))
+(typename $wasm_state_result_tuple (tuple $wasm_state2))
+(typename $wasm_state_result_option (option $wasm_state2))
+(typename $wasm_state_result_result (expected $wasm_state2 (error u32)))
+(typename $wasm_state_result_variant (union $wasm_state2 u32))
+
 (module $wasm
   (export "run_import_tests" (func))
   (export "allocated_bytes" (func (result $a u32)))
@@ -104,6 +119,36 @@
   (export "list_result" (func (result $a (list u8))))
   (export "list_result2" (func (result $a string)))
   (export "list_result3" (func (result $a (list string))))
+
+  ;; ===========================================
+  ;; handles
+  ;; ===========================================
+  (export "wasm_state_create" (func (result $a $wasm_state)))
+  (export "wasm_state_get" (func (param $a $wasm_state) (result $b u32)))
+  (export "wasm_state2_create" (func (result $b $wasm_state2)))
+  (export "wasm_state2_close" (func (param $a $wasm_state2)))
+  (export "wasm_state2_saw_close" (func (result $a bool)))
+
+  (export "two_wasm_states" (func
+    (param $a $wasm_state)
+    (param $b $wasm_state2)
+    (result $c $wasm_state)
+    (result $d $wasm_state2)
+  ))
+
+  (export "wasm_state2_param_record" (func (param $a $wasm_state_param_record)))
+  (export "wasm_state2_param_tuple" (func (param $a $wasm_state_param_tuple)))
+  (export "wasm_state2_param_option" (func (param $a $wasm_state_param_option)))
+  (export "wasm_state2_param_result" (func (param $a $wasm_state_param_result)))
+  (export "wasm_state2_param_variant" (func (param $a $wasm_state_param_variant)))
+  (export "wasm_state2_param_list" (func (param $a (list $wasm_state2))))
+
+  (export "wasm_state2_result_record" (func (result $a $wasm_state_result_record)))
+  (export "wasm_state2_result_tuple" (func (result $a $wasm_state_result_tuple)))
+  (export "wasm_state2_result_option" (func (result $a $wasm_state_result_option)))
+  (export "wasm_state2_result_result" (func (result $a $wasm_state_result_result)))
+  (export "wasm_state2_result_variant" (func (result $a $wasm_state_result_variant)))
+  (export "wasm_state2_result_list" (func (result $a (list $wasm_state2))))
 
   ;; ===========================================
   ;; More flavorful types
