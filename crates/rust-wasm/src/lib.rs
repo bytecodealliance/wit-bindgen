@@ -16,3 +16,6 @@ unsafe extern "C" fn witx_free(ptr: *mut u8, len: usize, align: usize) {
     let layout = Layout::from_size_align_unchecked(len, align);
     alloc::dealloc(ptr, layout);
 }
+
+pub mod exports;
+pub mod imports;

@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use witx_bindgen_wasmtime::imports::{InBuffer, OutBuffer};
 use witx_bindgen_wasmtime::{BorrowChecker, GuestPtr, Table};
 
 witx_bindgen_wasmtime::import!("tests/host.witx");
@@ -13,6 +14,8 @@ pub struct MyHost {
 }
 
 pub struct SuchState(u32);
+
+// TODO: implement propagation of errors instead of `unwrap()` everywhere
 
 impl Host for MyHost {
     type HostState = SuchState;
@@ -330,5 +333,103 @@ impl Host for MyHost {
     }
     fn host_state2_result_list(&self) -> Vec<()> {
         vec![(), ()]
+    }
+
+    fn buffer_u8(&self, in_: GuestPtr<'_, [u8]>, out: GuestPtr<'_, [u8]>) -> u32 {
+        let in_ = in_.borrow().unwrap();
+        assert_eq!(*in_, [0]);
+        let mut out = out.borrow_mut().unwrap();
+        assert_eq!(out.len(), 10);
+        out[0] = 1;
+        out[1] = 2;
+        out[2] = 3;
+        3
+    }
+
+    fn buffer_bool(&self, in_: InBuffer<'_, bool>, mut out: OutBuffer<'_, bool>) -> u32 {
+        assert!(in_.len() < out.capacity());
+        let len = in_.len();
+        for item in in_.iter().unwrap() {
+            let item = item.unwrap();
+            out.write(Some(!item)).unwrap();
+        }
+        len as u32
+    }
+
+    fn buffer_string(
+        &self,
+        in_: InBuffer<'_, GuestPtr<'_, str>>,
+        mut out: OutBuffer<'_, String>,
+    ) -> u32 {
+        assert!(in_.len() < out.capacity());
+        let len = in_.len();
+        for item in in_.iter().unwrap() {
+            let item = item.unwrap();
+            let s = item.borrow().unwrap();
+            out.write(Some(s.to_uppercase())).unwrap();
+        }
+        len as u32
+    }
+
+    fn buffer_list_bool(
+        &self,
+        in_: InBuffer<'_, Vec<bool>>,
+        mut out: OutBuffer<'_, Vec<bool>>,
+    ) -> u32 {
+        assert!(in_.len() < out.capacity());
+        let len = in_.len();
+        for item in in_.iter().unwrap() {
+            let item = item.unwrap();
+            out.write(Some(item.into_iter().map(|b| !b).collect()))
+                .unwrap();
+        }
+        len as u32
+    }
+
+    fn buffer_buffer_bool(&self, in_: InBuffer<'_, InBuffer<'_, bool>>) {
+        assert_eq!(in_.len(), 1);
+        let buf = in_.iter().unwrap().next().unwrap().unwrap();
+        assert_eq!(buf.len(), 5);
+        assert_eq!(
+            buf.iter()
+                .unwrap()
+                .collect::<Result<Vec<bool>, _>>()
+                .unwrap(),
+            [true, false, true, true, false]
+        );
+    }
+
+    fn buffer_mutable1(&self, a: Vec<InBuffer<'_, bool>>) {
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[0].len(), 5);
+        assert_eq!(
+            a[0].iter().unwrap().collect::<Result<Vec<_>, _>>().unwrap(),
+            [true, false, true, true, false]
+        );
+    }
+
+    fn buffer_mutable2(&self, a: Vec<GuestPtr<'_, [u8]>>) -> u32 {
+        assert_eq!(a.len(), 1);
+        assert!(a[0].len() > 4);
+        let mut view = a[0].borrow_mut().unwrap();
+        view[..4].copy_from_slice(&[1, 2, 3, 4]);
+        return 4;
+    }
+
+    fn buffer_mutable3(&self, mut a: Vec<OutBuffer<'_, bool>>) -> u32 {
+        assert_eq!(a.len(), 1);
+        assert!(a[0].capacity() > 3);
+        a[0].write([false, true, false].iter().copied()).unwrap();
+        return 3;
+    }
+
+    fn buffer_in_record(&self, _: BufferInRecord<'_>) {}
+    fn buffer_typedef(
+        &self,
+        _: ParamInBufferU8<'_>,
+        _: ParamOutBufferU8<'_>,
+        _: ParamInBufferBool<'_>,
+        _: ParamOutBufferBool<'_>,
+    ) {
     }
 }

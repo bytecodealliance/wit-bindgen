@@ -1,7 +1,10 @@
 use anyhow::Result;
+use std::iter;
 use wasmtime::Instance;
 
 witx_bindgen_wasmtime::export!("tests/wasm.witx");
+
+use witx_bindgen_wasmtime::exports::{InBuffer, OutBuffer};
 
 pub fn test(wasm: &Wasm) -> Result<()> {
     let bytes = wasm.allocated_bytes()?;
@@ -12,6 +15,7 @@ pub fn test(wasm: &Wasm) -> Result<()> {
     lists(wasm)?;
     flavorful(wasm)?;
     invalid(wasm)?;
+    buffers(wasm)?;
 
     // Ensure that we properly called `free` everywhere in all the glue that we
     // needed to.
@@ -248,6 +252,46 @@ fn handles(wasm: &Wasm) -> Result<()> {
     Ok(())
 }
 
+fn buffers(wasm: &Wasm) -> Result<()> {
+    let mut out = [0; 10];
+    let n = wasm.buffer_u8(&[0u8], &mut out)? as usize;
+    assert_eq!(n, 3);
+    assert_eq!(&out[..n], [1, 2, 3]);
+    assert!(out[n..].iter().all(|x| *x == 0));
+
+    let mut space1 = [0; 200];
+    let mut space2 = [0; 200];
+
+    assert_eq!(
+        wasm.buffer_bool(
+            &mut InBuffer::new(&mut space1, &mut iter::empty()),
+            &mut OutBuffer::new(&mut space2)
+        )?,
+        0
+    );
+    // assert_eq!(
+    //     buffer_string(
+    //         &mut InBuffer::new(&mut space1, &mut iter::empty()),
+    //         &mut OutBuffer::new(&mut space2)
+    //     ),
+    //     0
+    // );
+    // assert_eq!(
+    //     buffer_list_bool(
+    //         &mut InBuffer::new(&mut space1, &mut iter::empty()),
+    //         &mut OutBuffer::new(&mut space2)
+    //     ),
+    //     0
+    // );
+
+    let mut bools = [true, false, true].iter().copied();
+    let mut out = OutBuffer::new(&mut space2);
+    let n = wasm.buffer_bool(&mut InBuffer::new(&mut space1, &mut bools), &mut out)?;
+    assert_eq!(n, 3);
+    // assert_eq!(out.into_iter(3).collect::<Vec<_>>(), [false, true, false]);
+    Ok(())
+}
+
 fn invalid(wasm: &Wasm) -> Result<()> {
     let i = &wasm.instance;
     run_err(i, "invalid_bool", "invalid discriminant for `bool`")?;
@@ -270,9 +314,8 @@ fn invalid(wasm: &Wasm) -> Result<()> {
     }
 
     fn run(i: &Instance, name: &str) -> Result<()> {
-        let run = i.get_func(name).unwrap();
-        let run = run.get0::<()>()?;
-        run()?;
+        let run = i.get_typed_func::<(), ()>(name)?;
+        run.call(())?;
         Ok(())
     }
 }

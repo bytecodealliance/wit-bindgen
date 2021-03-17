@@ -15,6 +15,7 @@ pub trait Generator {
     fn type_list(&mut self, name: &Id, ty: &TypeRef, docs: &str);
     fn type_pointer(&mut self, name: &Id, const_: bool, ty: &TypeRef, docs: &str);
     fn type_builtin(&mut self, name: &Id, ty: BuiltinType, docs: &str);
+    fn type_buffer(&mut self, name: &Id, ty: &Buffer, docs: &str);
     fn const_(&mut self, name: &Id, ty: &Id, val: u64, docs: &str);
     fn import(&mut self, module: &Id, func: &InterfaceFunc);
     fn export(&mut self, module: &Id, func: &InterfaceFunc);
@@ -38,6 +39,7 @@ pub trait Generator {
                 Type::Pointer(t) => self.type_pointer(&ty.name, false, t, &ty.docs),
                 Type::ConstPointer(t) => self.type_pointer(&ty.name, true, t, &ty.docs),
                 Type::Builtin(t) => self.type_builtin(&ty.name, *t, &ty.docs),
+                Type::Buffer(b) => self.type_buffer(&ty.name, b, &ty.docs),
             }
         }
 
@@ -81,25 +83,40 @@ pub struct TypeInfo {
     /// Whether or not this type (transitively) has a handle.
     pub has_handle: bool,
 
+    /// Whether or not this type (transitively) has an out buffer.
+    pub has_out_buffer: bool,
+
+    /// Whether or not this type (transitively) has an in buffer.
+    pub has_in_buffer: bool,
+
     /// Whether or not this type is a handle and has a destructor.
     pub handle_with_dtor: bool,
+}
+
+impl std::ops::BitOrAssign for TypeInfo {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.param |= rhs.param;
+        self.result |= rhs.result;
+        self.has_list |= rhs.has_list;
+        self.has_handle |= rhs.has_handle;
+        self.has_out_buffer |= rhs.has_out_buffer;
+        self.has_in_buffer |= rhs.has_in_buffer;
+    }
 }
 
 impl Types {
     pub fn analyze(&mut self, doc: &Document) {
         for t in doc.typenames() {
-            self.type_info.insert(t.name.clone(), TypeInfo::default());
-        }
-        for t in doc.typenames() {
-            self.register_type_info(&TypeRef::Name(t.clone()), false, false);
+            let info = self.type_ref_info(&t.tref);
+            self.type_info.insert(t.name.clone(), info);
         }
         for m in doc.modules() {
             for f in m.funcs() {
                 for param in f.params.iter() {
-                    self.register_type_info(&param.tref, true, false);
+                    self.set_param_result_tref(&param.tref, true, false);
                 }
                 for param in f.results.iter() {
-                    self.register_type_info(&param.tref, false, true);
+                    self.set_param_result_tref(&param.tref, false, true);
                 }
                 self.maybe_set_dtor(doc, &f);
             }
@@ -156,49 +173,84 @@ impl Types {
         self.handle_dtors.contains(func)
     }
 
-    fn register_type_info(&mut self, ty: &TypeRef, param: bool, result: bool) -> (bool, bool) {
-        let ty = match ty {
-            TypeRef::Name(nt) => {
-                let (list, handle) = self.register_type_info(&nt.tref, param, result);
-                let info = self.type_info.get_mut(&nt.name).unwrap();
-                info.param = info.param || param;
-                info.result = info.result || result;
-                info.has_list = info.has_list || list;
-                info.has_handle = info.has_handle || handle;
-                return (list, handle);
-            }
-            TypeRef::Value(t) => &**t,
-        };
+    pub fn type_ref_info(&mut self, ty: &TypeRef) -> TypeInfo {
         match ty {
-            Type::Builtin(_) => (false, false),
-            Type::Handle(_) => (false, true),
+            TypeRef::Name(nt) => match self.type_info.get(&nt.name) {
+                Some(info) => *info,
+                None => self.type_ref_info(&nt.tref),
+            },
+            TypeRef::Value(t) => self.type_info(t),
+        }
+    }
+
+    pub fn type_info(&mut self, ty: &Type) -> TypeInfo {
+        let mut info = TypeInfo::default();
+        match ty {
+            Type::Builtin(_) => {}
+            Type::Handle(_) => info.has_handle = true,
             Type::List(t) => {
-                let (_list, handle) = self.register_type_info(t, param, result);
-                (true, handle)
+                info |= self.type_ref_info(t);
+                info.has_list = true;
             }
-            Type::Pointer(t) | Type::ConstPointer(t) => self.register_type_info(t, param, result),
+            Type::Pointer(t) | Type::ConstPointer(t) => info = self.type_ref_info(t),
             Type::Variant(v) => {
-                let mut list = false;
-                let mut handle = false;
                 for c in v.cases.iter() {
                     if let Some(ty) = &c.tref {
-                        let pair = self.register_type_info(ty, param, result);
-                        list = list || pair.0;
-                        handle = handle || pair.1;
+                        info |= self.type_ref_info(ty);
                     }
                 }
-                (list, handle)
             }
             Type::Record(r) => {
-                let mut list = false;
-                let mut handle = false;
                 for member in r.members.iter() {
-                    let pair = self.register_type_info(&member.tref, param, result);
-                    list = list || pair.0;
-                    handle = handle || pair.1;
+                    info |= self.type_ref_info(&member.tref);
                 }
-                (list, handle)
             }
+            Type::Buffer(t) => {
+                info |= self.type_ref_info(&t.tref);
+                if t.out {
+                    info.has_out_buffer = true;
+                } else {
+                    info.has_in_buffer = true;
+                }
+            }
+        }
+        info
+    }
+
+    fn set_param_result_tref(&mut self, ty: &TypeRef, param: bool, result: bool) {
+        match ty {
+            TypeRef::Name(nt) => {
+                let info = self.type_info.get_mut(&nt.name).unwrap();
+                if (param && !info.param) || (result && !info.result) {
+                    info.param = info.param || param;
+                    info.result = info.result || result;
+                    self.set_param_result_tref(&nt.tref, param, result);
+                }
+            }
+            TypeRef::Value(t) => self.set_param_result_ty(t, param, result),
+        }
+    }
+
+    fn set_param_result_ty(&mut self, ty: &Type, param: bool, result: bool) {
+        match ty {
+            Type::Builtin(_) => {}
+            Type::Handle(_) => {}
+            Type::List(t) | Type::Pointer(t) | Type::ConstPointer(t) => {
+                self.set_param_result_tref(t, param, result)
+            }
+            Type::Variant(v) => {
+                for c in v.cases.iter() {
+                    if let Some(ty) = &c.tref {
+                        self.set_param_result_tref(ty, param, result)
+                    }
+                }
+            }
+            Type::Record(r) => {
+                for member in r.members.iter() {
+                    self.set_param_result_tref(&member.tref, param, result)
+                }
+            }
+            Type::Buffer(b) => self.set_param_result_tref(&b.tref, param, result),
         }
     }
 }

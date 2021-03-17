@@ -1,7 +1,7 @@
 use heck::*;
-use witx_bindgen_gen_core::{witx::*, TypeInfo};
+use witx_bindgen_gen_core::{witx::*, TypeInfo, Types};
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum TypeMode {
     Owned,
     AllBorrowed(&'static str),
@@ -10,12 +10,14 @@ pub enum TypeMode {
 }
 
 pub trait TypePrint {
+    fn krate(&self) -> &'static str;
     fn tmp(&mut self) -> usize;
     fn push_str(&mut self, s: &str);
     fn info(&self, ty: &Id) -> TypeInfo;
+    fn types_mut(&mut self) -> &mut Types;
     fn print_usize(&mut self);
     fn print_pointer(&mut self, const_: bool, ty: &TypeRef);
-    fn print_borrowed_slice(&mut self, ty: &TypeRef, lifetime: &'static str);
+    fn print_borrowed_slice(&mut self, mutbl: bool, ty: &TypeRef, lifetime: &'static str);
     fn print_borrowed_str(&mut self, lifetime: &'static str);
     fn call_mode(&self) -> CallMode;
     fn default_param_mode(&self) -> TypeMode;
@@ -75,8 +77,10 @@ pub trait TypePrint {
         param_mode: TypeMode,
     ) -> Vec<String> {
         let params = self.print_docs_and_params(func, unsafe_, self_arg, param_mode);
-        self.push_str(" -> ");
-        self.print_results(func);
+        if func.results.len() > 0 {
+            self.push_str(" -> ");
+            self.print_results(func);
+        }
         params
     }
 
@@ -169,7 +173,10 @@ pub trait TypePrint {
                         // lifetime parameter on the type as well.
                         if info.owns_data() {
                             match ty {
-                                Type::Variant(_) | Type::Record(_) | Type::List(_) => {
+                                Type::Variant(_)
+                                | Type::Record(_)
+                                | Type::List(_)
+                                | Type::Buffer(_) => {
                                     self.print_generics(&info, lt, false);
                                 }
                                 _ => {}
@@ -181,8 +188,12 @@ pub trait TypePrint {
             TypeRef::Value(v) => match &**v {
                 Type::Builtin(t) => self.print_builtin(*t),
                 Type::List(t) => self.print_list(t, mode),
+
                 Type::Pointer(t) => self.print_pointer(false, t),
                 Type::ConstPointer(t) => self.print_pointer(true, t),
+
+                // Variants can be printed natively if they're `Option`,
+                // `Result` , or `bool`, otherwise they must be named for now.
                 Type::Variant(v) if v.is_bool() => self.push_str("bool"),
                 Type::Variant(v) => match v.as_expected() {
                     Some((ok, err)) => {
@@ -207,6 +218,10 @@ pub trait TypePrint {
                         None => panic!("unsupported anonymous variant"),
                     },
                 },
+
+                // Tuple-like records are mapped directly to Rust tuples of
+                // types. Note the trailing comma after each member to
+                // appropriately handle 1-tuples.
                 Type::Record(r) if r.is_tuple() => {
                     self.push_str("(");
                     for member in r.members.iter() {
@@ -215,7 +230,12 @@ pub trait TypePrint {
                     }
                     self.push_str(")");
                 }
-                t => panic!("unsupported anonymous type reference: {}", t.kind()),
+
+                Type::Buffer(r) => self.print_buffer(r, mode),
+
+                Type::Record(_) | Type::Handle(_) => {
+                    panic!("unsupported anonymous type reference: {}", v.kind())
+                }
             },
         }
     }
@@ -230,11 +250,13 @@ pub trait TypePrint {
             },
             t => match mode {
                 TypeMode::AllBorrowed(lt) => {
-                    self.print_borrowed_slice(ty, lt);
+                    let mutbl = self.needs_mutable_slice(ty);
+                    self.print_borrowed_slice(mutbl, ty, lt);
                 }
                 TypeMode::LeafBorrowed(lt) => {
                     if t.all_bits_valid() {
-                        self.print_borrowed_slice(ty, lt);
+                        let mutbl = self.needs_mutable_slice(ty);
+                        self.print_borrowed_slice(mutbl, ty, lt);
                     } else {
                         self.push_str("Vec<");
                         self.print_tref(ty, mode);
@@ -248,6 +270,80 @@ pub trait TypePrint {
                 }
             },
         }
+    }
+
+    fn print_buffer(&mut self, b: &Buffer, mode: TypeMode) {
+        let lt = match mode {
+            TypeMode::AllBorrowed(s) | TypeMode::HandlesBorrowed(s) | TypeMode::LeafBorrowed(s) => {
+                s
+            }
+            TypeMode::Owned => unimplemented!(),
+        };
+        let prefix = if b.out { "Out" } else { "In" };
+        match self.call_mode() {
+            // Defined exports means rust-compiled-to-wasm exporting something,
+            // and buffers there are all using handles, so they use special types.
+            CallMode::DefinedExport => {
+                let krate = self.krate();
+                self.push_str(krate);
+                self.push_str("::exports::");
+                self.push_str(prefix);
+                self.push_str("Buffer");
+                if b.tref.type_().all_bits_valid() {
+                    self.push_str("Raw");
+                }
+                self.push_str("<");
+                self.push_str(lt);
+                self.push_str(", ");
+                self.print_tref(&b.tref, if b.out { TypeMode::Owned } else { mode });
+                self.push_str(">");
+            }
+
+            // Declared exports are wasmtime calling Rust, which uses the same
+            // signatures as declared imports (Rust calling host functions).
+            // Defined imports (host defined functions) are similar enough they
+            // can use this code path as well.
+            CallMode::DeclaredExport | CallMode::DeclaredImport | CallMode::DefinedImport => {
+                if b.tref.type_().all_bits_valid() {
+                    self.print_borrowed_slice(b.out, &b.tref, lt);
+                } else {
+                    if let TypeMode::AllBorrowed(_) = mode {
+                        self.push_str("&");
+                        if lt != "'_" {
+                            self.push_str(lt);
+                        }
+                        self.push_str(" mut ");
+                    }
+                    let krate = self.krate();
+                    self.push_str(krate);
+                    if self.call_mode().export() {
+                        self.push_str("::exports::");
+                    } else {
+                        self.push_str("::imports::");
+                    }
+                    self.push_str(prefix);
+                    self.push_str("Buffer<");
+                    self.push_str(lt);
+                    self.push_str(", ");
+                    self.print_tref(&b.tref, if b.out { TypeMode::Owned } else { mode });
+                    self.push_str(">");
+                }
+            }
+        }
+    }
+
+    fn print_rust_slice(&mut self, mutbl: bool, ty: &TypeRef, lifetime: &'static str) {
+        self.push_str("&");
+        if lifetime != "'_" {
+            self.push_str(lifetime);
+            self.push_str(" ");
+        }
+        if mutbl {
+            self.push_str(" mut ");
+        }
+        self.push_str("[");
+        self.print_tref(ty, TypeMode::AllBorrowed(lifetime));
+        self.push_str("]");
     }
 
     fn print_builtin(&mut self, ty: BuiltinType) {
@@ -333,7 +429,9 @@ pub trait TypePrint {
                 }
                 self.push_str(");\n");
             } else {
-                if lt.is_some() || !info.owns_data() {
+                if info.has_in_buffer || info.has_out_buffer {
+                    // skip copy/clone ...
+                } else if lt.is_some() || !info.owns_data() {
                     self.push_str("#[repr(C)]\n");
                     self.push_str("#[derive(Copy, Clone)]\n");
                 } else if !info.has_handle {
@@ -394,6 +492,8 @@ pub trait TypePrint {
                 self.push_str("#[repr(");
                 self.int_repr(variant.tag_repr);
                 self.push_str(")]\n#[derive(Clone, Copy, PartialEq, Eq)]\n");
+            } else if info.has_in_buffer || info.has_out_buffer {
+                // skip copy/clone
             } else if lt.is_some() || !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
             }
@@ -508,6 +608,19 @@ pub trait TypePrint {
             self.print_generics(&info, lt, true);
             self.push_str(" = ");
             self.print_list(ty, mode);
+            self.push_str(";\n");
+        }
+    }
+
+    fn print_typedef_buffer(&mut self, name: &Id, b: &Buffer, docs: &str) {
+        let info = self.info(name);
+        for (name, mode) in self.modes_of(name) {
+            let lt = self.lifetime_for(&info, mode);
+            self.rustdoc(docs);
+            self.push_str(&format!("pub type {}", name));
+            self.print_generics(&info, lt, true);
+            self.push_str(" = ");
+            self.print_buffer(b, mode);
             self.push_str(";\n");
         }
     }
@@ -744,12 +857,47 @@ pub trait TypePrint {
     fn lifetime_for(&self, info: &TypeInfo, mode: TypeMode) -> Option<&'static str> {
         match mode {
             TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s)
-                if info.has_list || info.has_handle =>
+                if info.has_list
+                    || info.has_handle
+                    || info.has_out_buffer
+                    || info.has_in_buffer =>
             {
                 Some(s)
             }
-            TypeMode::HandlesBorrowed(s) if info.has_handle => Some(s),
+            TypeMode::HandlesBorrowed(s)
+                if info.has_handle || info.has_in_buffer || info.has_out_buffer =>
+            {
+                Some(s)
+            }
             _ => None,
+        }
+    }
+
+    fn needs_mutable_slice(&mut self, ty: &TypeRef) -> bool {
+        let info = self.types_mut().type_ref_info(ty);
+        // If there's any out-buffers transitively then a mutable slice is
+        // required because the out-buffers could be modified. Otherwise a
+        // mutable slice is also required if, transitively, `InBuffer` is used
+        // which is used when we're a buffer of a type where not all bits are
+        // valid (e.g. the rust representation and the canonical abi may differ).
+        info.has_out_buffer || self.has_in_buffer_invalid_bits(ty.type_())
+    }
+
+    fn has_in_buffer_invalid_bits(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Record(r) => r
+                .members
+                .iter()
+                .any(|t| self.has_in_buffer_invalid_bits(t.tref.type_())),
+            Type::Variant(v) => v
+                .cases
+                .iter()
+                .filter_map(|c| c.tref.as_ref())
+                .any(|t| self.has_in_buffer_invalid_bits(t.type_())),
+            Type::List(t) => self.has_in_buffer_invalid_bits(t.type_()),
+            Type::Buffer(b) if !b.out && !b.tref.type_().all_bits_valid() => true,
+            Type::Buffer(b) => self.has_in_buffer_invalid_bits(b.tref.type_()),
+            Type::Builtin(_) | Type::Handle(_) | Type::Pointer(_) | Type::ConstPointer(_) => false,
         }
     }
 }
@@ -787,7 +935,7 @@ trait TypeInfoExt {
 
 impl TypeInfoExt for TypeInfo {
     fn owns_data(&self) -> bool {
-        self.has_list || self.has_handle
+        self.has_list || self.has_handle || self.has_in_buffer || self.has_out_buffer
     }
 }
 

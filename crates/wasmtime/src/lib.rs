@@ -4,6 +4,8 @@ pub use witx_bindgen_wasmtime_impl::{export, import};
 pub use {anyhow, bitflags, wasmtime};
 
 mod error;
+pub mod exports;
+pub mod imports;
 mod memory;
 mod ptr;
 mod region;
@@ -56,22 +58,3 @@ unsafe impl<'a> GuestMemory for WasmtimeGuestMemory<'a> {
         self.borrows.shared_unborrow(h)
     }
 }
-
-// /// A runtime-independent way for Wiggle to terminate WebAssembly execution.
-// /// Functions that are marked `(@witx noreturn)` will always return a Trap.
-// /// Other functions that want to Trap can do so via their `UserErrorConversion`
-// /// trait, which transforms the user's own error type into a `Result<abierror, Trap>`.
-// #[derive(Debug, Clone, PartialEq, Eq)]
-// pub enum Trap {
-//     /// A Trap which indicates an i32 (posix-style) exit code. Runtimes may have a
-//     /// special way of dealing with this for WASI embeddings and otherwise.
-//     I32Exit(i32),
-//     /// Any other Trap is just an unstructured String, for reporting and debugging.
-//     String(String),
-// }
-
-// impl From<GuestError> for Trap {
-//     fn from(err: GuestError) -> Trap {
-//         Trap::String(err.to_string())
-//     }
-// }

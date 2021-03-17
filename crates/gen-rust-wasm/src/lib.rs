@@ -63,6 +63,10 @@ impl RustWasm {
 }
 
 impl TypePrint for RustWasm {
+    fn krate(&self) -> &'static str {
+        "witx_bindgen_rust"
+    }
+
     fn call_mode(&self) -> CallMode {
         if self.in_import {
             CallMode::DeclaredImport
@@ -112,6 +116,10 @@ impl TypePrint for RustWasm {
         self.types.get(ty)
     }
 
+    fn types_mut(&mut self) -> &mut Types {
+        &mut self.types
+    }
+
     fn print_usize(&mut self) {
         self.src.push_str("usize");
     }
@@ -127,7 +135,7 @@ impl TypePrint for RustWasm {
             Type::Builtin(_) | Type::Pointer(_) | Type::ConstPointer(_) => {
                 self.print_tref(ty, TypeMode::Owned);
             }
-            Type::List(_) | Type::Variant(_) => panic!("unsupported type"),
+            Type::List(_) | Type::Variant(_) | Type::Buffer(_) => panic!("unsupported type"),
             Type::Handle(_) | Type::Record(_) => {
                 self.push_str("core::mem::ManuallyDrop<");
                 self.print_tref(ty, TypeMode::Owned);
@@ -136,15 +144,8 @@ impl TypePrint for RustWasm {
         }
     }
 
-    fn print_borrowed_slice(&mut self, ty: &TypeRef, lifetime: &'static str) {
-        self.push_str("&");
-        if lifetime != "'_" {
-            self.push_str(lifetime);
-            self.push_str(" ");
-        }
-        self.push_str("[");
-        self.print_tref(ty, TypeMode::AllBorrowed(lifetime));
-        self.push_str("]");
+    fn print_borrowed_slice(&mut self, mutbl: bool, ty: &TypeRef, lifetime: &'static str) {
+        self.print_rust_slice(mutbl, ty, lifetime);
     }
 
     fn print_borrowed_str(&mut self, lifetime: &'static str) {
@@ -279,6 +280,10 @@ impl Generator for RustWasm {
         self.src.push(';');
     }
 
+    fn type_buffer(&mut self, name: &Id, ty: &Buffer, docs: &str) {
+        self.print_typedef_buffer(name, ty, docs);
+    }
+
     fn const_(&mut self, name: &Id, ty: &Id, val: u64, docs: &str) {
         self.rustdoc(docs);
         self.src.push_str(&format!(
@@ -333,7 +338,7 @@ impl Generator for RustWasm {
         self.src.push_str("unsafe extern \"C\" fn __witx_bindgen_");
         self.src.push_str(&rust_name);
         self.src.push_str("(");
-        let sig = func.wasm_signature();
+        let sig = func.wasm_signature(CallMode::DefinedExport);
         self.params.truncate(0);
         for (i, param) in sig.params.iter().enumerate() {
             let name = format!("arg{}", i);
@@ -456,11 +461,13 @@ impl Bindgen for RustWasm {
         self.cleanup = prev_cleanup;
         let expr = match operands.len() {
             0 => "()".to_string(),
-            1 => operands.pop().unwrap(),
+            1 => operands[0].clone(),
             _ => format!("({})", operands.join(", ")),
         };
         if src.is_empty() {
             self.blocks.push(expr);
+        } else if operands.is_empty() {
+            self.blocks.push(format!("{{ {}; }}", src));
         } else {
             self.blocks.push(format!("{{ {}; {} }}", src, expr));
         }
@@ -703,7 +710,7 @@ impl Bindgen for RustWasm {
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {};\n", vec, operands[0]));
                 self.push_str(&format!("let {} = {}.len() as i32;\n", len, vec));
-                let size_align = element.mem_size_align();
+                let size_align = element.mem_size_align(!self.in_import);
                 self.push_str(&format!(
                     "let {} = core::alloc::Layout::from_size_align_unchecked({}.len() * {}, {});\n",
                     layout, vec, size_align.size, size_align.align,
@@ -743,7 +750,7 @@ impl Bindgen for RustWasm {
                 assert!(free.is_some());
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
-                let size_align = element.mem_size_align();
+                let size_align = element.mem_size_align(!self.in_import);
                 let len = format!("len{}", tmp);
                 let base = format!("base{}", tmp);
                 let result = format!("result{}", tmp);
@@ -783,6 +790,86 @@ impl Bindgen for RustWasm {
             Instruction::IterElem => results.push("e".to_string()),
 
             Instruction::IterBasePointer => results.push("base".to_string()),
+
+            // Never used due to the call modes that this binding generator
+            // uses
+            Instruction::BufferLowerHandle { .. } => unimplemented!(),
+            Instruction::BufferLiftPtrLen { .. } => unimplemented!(),
+
+            Instruction::BufferLowerPtrLen { buffer } => {
+                let block = self.blocks.pop().unwrap();
+                let size = buffer.tref.mem_size_align(!self.in_import).size;
+                let tmp = self.tmp();
+                let ptr = format!("ptr{}", tmp);
+                let len = format!("len{}", tmp);
+                if buffer.tref.type_().all_bits_valid() {
+                    let vec = format!("vec{}", tmp);
+                    self.push_str(&format!("let {} = {};\n", vec, operands[0]));
+                    self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, vec));
+                    self.push_str(&format!("let {} = {}.len() as i32;\n", len, vec));
+                } else {
+                    if buffer.out {
+                        self.push_str("let (");
+                        self.push_str(&ptr);
+                        self.push_str(", ");
+                        self.push_str(&len);
+                        self.push_str(") = ");
+                        self.push_str(&operands[0]);
+                        self.push_str(".ptr_len::<");
+                        self.push_str(&size.to_string());
+                        self.push_str(">(|base| {");
+                        self.push_str(&block);
+                        self.push_str("});\n");
+                    } else {
+                        self.push_str("let (");
+                        self.push_str(&ptr);
+                        self.push_str(", ");
+                        self.push_str(&len);
+                        self.push_str(") = ");
+                        self.push_str(&operands[0]);
+                        self.push_str(".serialize::<_, ");
+                        self.push_str(&size.to_string());
+                        self.push_str(">(|e, base| {");
+                        self.push_str(&block);
+                        self.push_str("});\n");
+                    }
+                }
+                results.push(ptr);
+                results.push(len);
+            }
+
+            Instruction::BufferLiftHandle { buffer } => {
+                let block = self.blocks.pop().unwrap();
+                let size = buffer.tref.mem_size_align(!self.in_import).size;
+                let mut result = self.krate().to_string();
+                result.push_str("::exports::");
+                if buffer.out {
+                    result.push_str("Out");
+                } else {
+                    result.push_str("In");
+                }
+                result.push_str("Buffer");
+                if buffer.tref.type_().all_bits_valid() {
+                    result.push_str("Raw::new(");
+                    result.push_str(&operands[0]);
+                    result.push_str(")");
+                } else {
+                    result.push_str("::new(");
+                    result.push_str(&operands[0]);
+                    result.push_str(", ");
+                    result.push_str(&size.to_string());
+                    result.push_str(", ");
+                    if buffer.out {
+                        result.push_str("|base, e|");
+                        result.push_str(&block);
+                    } else {
+                        result.push_str("|base|");
+                        result.push_str(&block);
+                    }
+                    result.push_str(")");
+                }
+                results.push(result);
+            }
 
             Instruction::CallWasm {
                 module,

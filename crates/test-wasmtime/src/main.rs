@@ -12,7 +12,7 @@ fn main() -> Result<()> {
     // project.
     let mut config = Config::new();
     config.cache_config_load_default()?;
-    let engine = Engine::new(&config);
+    let engine = Engine::new(&config)?;
 
     run_test(&engine, CHECKED)?;
     run_test(&engine, UNCHECKED)?;

@@ -4,6 +4,8 @@ witx_bindgen_rust::import!("tests/host.witx");
 #[cfg(feature = "unchecked")]
 witx_bindgen_rust::import!({ paths: ["tests/host.witx"], unchecked });
 
+use std::iter;
+
 use crate::allocator;
 
 pub fn run() {
@@ -18,6 +20,7 @@ pub fn run() {
     host_lists();
     host_flavorful();
     host_handles();
+    host_buffers();
 }
 
 fn host_integers() {
@@ -229,7 +232,7 @@ fn host_handles() {
     drop(s);
     assert_eq!(host_state2_saw_close(), true);
 
-    let (a, s2) = two_host_states(&host_state_create(), &host_state2_create());
+    let (_a, s2) = two_host_states(&host_state_create(), &host_state2_create());
 
     host_state2_param_record(HostStateParamRecord { a: &s2 });
     host_state2_param_tuple((&s2,));
@@ -249,6 +252,92 @@ fn host_handles() {
     drop(host_state2_result_result().unwrap());
     drop(host_state2_result_variant());
     drop(host_state2_result_list());
+}
+
+fn host_buffers() {
+    use witx_bindgen_rust::imports::{InBuffer, OutBuffer};
+
+    let mut out = [0; 10];
+    let n = buffer_u8(&[0u8], &mut out) as usize;
+    assert_eq!(n, 3);
+    assert_eq!(&out[..n], [1, 2, 3]);
+    assert!(out[n..].iter().all(|x| *x == 0));
+
+    let mut space1 = [0; 200];
+    let mut space2 = [0; 200];
+
+    assert_eq!(
+        buffer_bool(
+            &mut InBuffer::new(&mut space1, &mut iter::empty()),
+            &mut OutBuffer::new(&mut space2)
+        ),
+        0
+    );
+    assert_eq!(
+        buffer_string(
+            &mut InBuffer::new(&mut space1, &mut iter::empty()),
+            &mut OutBuffer::new(&mut space2)
+        ),
+        0
+    );
+    assert_eq!(
+        buffer_list_bool(
+            &mut InBuffer::new(&mut space1, &mut iter::empty()),
+            &mut OutBuffer::new(&mut space2)
+        ),
+        0
+    );
+
+    let mut bools = [true, false, true].iter().copied();
+    let mut out = OutBuffer::new(&mut space2);
+    let n = buffer_bool(&mut InBuffer::new(&mut space1, &mut bools), &mut out);
+    unsafe {
+        assert_eq!(n, 3);
+        assert_eq!(out.into_iter(3).collect::<Vec<_>>(), [false, true, false]);
+    }
+
+    let mut strings = ["foo", "bar", "baz"].iter().copied();
+    let mut out = OutBuffer::new(&mut space2);
+    let n = buffer_string(&mut InBuffer::new(&mut space1, &mut strings), &mut out);
+    unsafe {
+        assert_eq!(n, 3);
+        assert_eq!(out.into_iter(3).collect::<Vec<_>>(), ["FOO", "BAR", "BAZ"]);
+    }
+
+    let a = &[true, false, true][..];
+    let b = &[false, false][..];
+    let list = [a, b];
+    let mut lists = list.iter().copied();
+    let mut out = OutBuffer::new(&mut space2);
+    let n = buffer_list_bool(&mut InBuffer::new(&mut space1, &mut lists), &mut out);
+    unsafe {
+        assert_eq!(n, 2);
+        assert_eq!(
+            out.into_iter(2).collect::<Vec<_>>(),
+            [vec![false, true, false], vec![true, true]]
+        );
+    }
+
+    let a = [true, false, true, true, false];
+    let mut bools = a.iter().copied();
+    let mut b = InBuffer::new(&mut space2, &mut bools);
+    let mut list = [&mut b];
+    let mut buffers = &mut list.iter_mut().map(|b| &mut **b);
+    buffer_buffer_bool(&mut InBuffer::new(&mut space1, &mut buffers));
+
+    let mut bools = a.iter().copied();
+    buffer_mutable1(&mut [&mut InBuffer::new(&mut space1, &mut bools)]);
+
+    let n = buffer_mutable2(&mut [&mut space2]) as usize;
+    assert_eq!(n, 4);
+    assert_eq!(&space2[..n], [1, 2, 3, 4]);
+
+    let mut out = OutBuffer::new(&mut space1);
+    let n = buffer_mutable3(&mut [&mut out]);
+    unsafe {
+        assert_eq!(n, 3);
+        assert_eq!(out.into_iter(3).collect::<Vec<_>>(), [false, true, false],);
+    }
 }
 
 mod invalid {

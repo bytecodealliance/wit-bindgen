@@ -56,6 +56,26 @@
 (typename $wasm_state_result_result (expected $wasm_state2 (error u32)))
 (typename $wasm_state_result_variant (union $wasm_state2 u32))
 
+(typename $buffer_in_variant (variant
+  (case $a (in-buffer u8))
+  (case $b (out-buffer u8))
+  (case $c (in-buffer bool))
+  (case $d (out-buffer bool))
+))
+
+(typename $buffer_in_record (record
+  (field $a (in-buffer u8))
+  (field $b (out-buffer u8))
+  (field $c (in-buffer bool))
+  (field $d (out-buffer bool))
+  (field $e $buffer_in_variant)
+))
+
+(typename $param_in_buffer_u8 (in-buffer u8))
+(typename $param_out_buffer_u8 (out-buffer u8))
+(typename $param_in_buffer_bool (in-buffer bool))
+(typename $param_out_buffer_bool (out-buffer bool))
+
 (module $wasm
   (export "run_import_tests" (func))
   (export "allocated_bytes" (func (result $a u32)))
@@ -149,6 +169,27 @@
   (export "wasm_state2_result_result" (func (result $a $wasm_state_result_result)))
   (export "wasm_state2_result_variant" (func (result $a $wasm_state_result_variant)))
   (export "wasm_state2_result_list" (func (result $a (list $wasm_state2))))
+
+  ;; ===========================================
+  ;; buffers
+  ;; ===========================================
+  (export "buffer_u8" (func (param $a (in-buffer u8)) (param $b (out-buffer u8)) (result $r u32)))
+  (export "buffer_bool" (func (param $a (in-buffer bool)) (param $b (out-buffer bool)) (result $r u32)))
+  (;
+  (export "buffer_string" (func (param $a (in-buffer string)) (param $b (out-buffer string)) (result $r u32)))
+  (export "buffer_list_bool" (func (param $a (in-buffer (list bool))) (param $b (out-buffer (list bool))) (result $r u32)))
+  (export "buffer_buffer_bool" (func (param $a (in-buffer (in-buffer bool)))))
+  (export "buffer_mutable1" (func (param $a (list (in-buffer bool)))))
+  (export "buffer_mutable2" (func (param $a (list (out-buffer u8))) (result $r u32)))
+  (export "buffer_mutable3" (func (param $a (list (out-buffer bool))) (result $r u32)))
+  (export "buffer_in_record" (func (param $a $buffer_in_record)))
+  (export "buffer_typedef" (func
+    (param $a $param_in_buffer_u8)
+    (param $b $param_out_buffer_u8)
+    (param $c $param_in_buffer_bool)
+    (param $d $param_out_buffer_bool)
+  ))
+  ;)
 
   ;; ===========================================
   ;; More flavorful types
