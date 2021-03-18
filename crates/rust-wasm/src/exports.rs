@@ -212,7 +212,7 @@ impl<'a, T> OutBuffer<'a, T> {
     /// `scratch` needed can be gauged with the [`OutBuffer::element_size`]
     /// method.
     pub fn write(&self, scratch: &mut [u8], items: impl ExactSizeIterator<Item = T>) {
-        assert!(items.len().checked_mul(self.element_size).unwrap() >= scratch.len());
+        assert!(items.len().checked_mul(self.element_size).unwrap() <= scratch.len());
         let mut len = 0;
         // TODO: if `items` ends up being longer than expected then we leak all
         // items previously serialized.

@@ -263,6 +263,12 @@ fn host_buffers() {
     assert_eq!(&out[..n], [1, 2, 3]);
     assert!(out[n..].iter().all(|x| *x == 0));
 
+    let mut out = [0; 10];
+    let n = buffer_u32(&[0], &mut out) as usize;
+    assert_eq!(n, 3);
+    assert_eq!(&out[..n], [1, 2, 3]);
+    assert!(out[n..].iter().all(|x| *x == 0));
+
     let mut space1 = [0; 200];
     let mut space2 = [0; 200];
 

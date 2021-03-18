@@ -4,8 +4,6 @@ use wasmtime::Instance;
 
 witx_bindgen_wasmtime::export!("tests/wasm.witx");
 
-use witx_bindgen_wasmtime::exports::{InBuffer, OutBuffer};
-
 pub fn test(wasm: &Wasm) -> Result<()> {
     let bytes = wasm.allocated_bytes()?;
     wasm.run_import_tests()?;
@@ -259,36 +257,59 @@ fn buffers(wasm: &Wasm) -> Result<()> {
     assert_eq!(&out[..n], [1, 2, 3]);
     assert!(out[n..].iter().all(|x| *x == 0));
 
-    let mut space1 = [0; 200];
-    let mut space2 = [0; 200];
+    let mut out = [0; 10];
+    let n = wasm.buffer_u32(&[0], &mut out)? as usize;
+    assert_eq!(n, 3);
+    assert_eq!(&out[..n], [1, 2, 3]);
+    assert!(out[n..].iter().all(|x| *x == 0));
 
+    assert_eq!(wasm.buffer_bool(&mut iter::empty(), &mut Vec::new())?, 0);
+    assert_eq!(wasm.buffer_string(&mut iter::empty(), &mut Vec::new())?, 0);
     assert_eq!(
-        wasm.buffer_bool(
-            &mut InBuffer::new(&mut space1, &mut iter::empty()),
-            &mut OutBuffer::new(&mut space2)
-        )?,
+        wasm.buffer_list_bool(&mut iter::empty(), &mut Vec::new())?,
         0
     );
-    // assert_eq!(
-    //     buffer_string(
-    //         &mut InBuffer::new(&mut space1, &mut iter::empty()),
-    //         &mut OutBuffer::new(&mut space2)
-    //     ),
-    //     0
-    // );
-    // assert_eq!(
-    //     buffer_list_bool(
-    //         &mut InBuffer::new(&mut space1, &mut iter::empty()),
-    //         &mut OutBuffer::new(&mut space2)
-    //     ),
-    //     0
-    // );
 
     let mut bools = [true, false, true].iter().copied();
-    let mut out = OutBuffer::new(&mut space2);
-    let n = wasm.buffer_bool(&mut InBuffer::new(&mut space1, &mut bools), &mut out)?;
+    let mut out = Vec::with_capacity(4);
+    let n = wasm.buffer_bool(&mut bools, &mut out)?;
     assert_eq!(n, 3);
-    // assert_eq!(out.into_iter(3).collect::<Vec<_>>(), [false, true, false]);
+    assert_eq!(out, [false, true, false]);
+
+    let mut strings = ["foo", "bar", "baz"].iter().copied();
+    let mut out = Vec::with_capacity(3);
+    let n = wasm.buffer_string(&mut strings, &mut out)?;
+    assert_eq!(n, 3);
+    assert_eq!(out, ["FOO", "BAR", "BAZ"]);
+
+    let a = &[true, false, true][..];
+    let b = &[false, false][..];
+    let list = [a, b];
+    let mut lists = list.iter().copied();
+    let mut out = Vec::with_capacity(4);
+    let n = wasm.buffer_list_bool(&mut lists, &mut out)?;
+    assert_eq!(n, 2);
+    assert_eq!(out, [vec![false, true, false], vec![true, true]]);
+
+    let a = [true, false, true, true, false];
+    // let mut bools = a.iter().copied();
+    // let mut list = [&mut bools as &mut dyn ExactSizeIterator<Item = _>];
+    // let mut buffers = list.iter_mut().map(|b| &mut **b);
+    // wasm.buffer_buffer_bool(&mut buffers)?;
+
+    let mut bools = a.iter().copied();
+    wasm.buffer_mutable1(&mut [&mut bools])?;
+
+    let mut dst = [0; 10];
+    let n = wasm.buffer_mutable2(&mut [&mut dst])? as usize;
+    assert_eq!(n, 4);
+    assert_eq!(&dst[..n], [1, 2, 3, 4]);
+
+    let mut out = Vec::with_capacity(10);
+    let n = wasm.buffer_mutable3(&mut [&mut out])?;
+    assert_eq!(n, 3);
+    assert_eq!(out, [false, true, false]);
+
     Ok(())
 }
 

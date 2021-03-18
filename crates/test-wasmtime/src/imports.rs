@@ -346,6 +346,17 @@ impl Host for MyHost {
         3
     }
 
+    fn buffer_u32(&self, in_: GuestPtr<'_, [u32]>, out: GuestPtr<'_, [u32]>) -> u32 {
+        let in_ = in_.borrow().unwrap();
+        assert_eq!(*in_, [0]);
+        let mut out = out.borrow_mut().unwrap();
+        assert_eq!(out.len(), 10);
+        out[0] = 1;
+        out[1] = 2;
+        out[2] = 3;
+        3
+    }
+
     fn buffer_bool(&self, in_: InBuffer<'_, bool>, mut out: OutBuffer<'_, bool>) -> u32 {
         assert!(in_.len() < out.capacity());
         let len = in_.len();

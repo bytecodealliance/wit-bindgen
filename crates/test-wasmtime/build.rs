@@ -28,7 +28,7 @@ fn build(out_dir: &Path, unchecked: bool) -> PathBuf {
         .current_dir("../test-rust-wasm")
         .arg("--target=wasm32-wasi")
         .env("CARGO_TARGET_DIR", &out_dir)
-        .env("CARGO_PROFILE_DEV_DEBUG", "0");
+        .env("CARGO_PROFILE_DEV_DEBUG", "1");
     if unchecked {
         cmd.arg("--features=unchecked");
     }

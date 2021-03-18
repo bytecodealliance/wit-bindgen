@@ -299,11 +299,38 @@ pub trait TypePrint {
                 self.push_str(">");
             }
 
-            // Declared exports are wasmtime calling Rust, which uses the same
-            // signatures as declared imports (Rust calling host functions).
-            // Defined imports (host defined functions) are similar enough they
-            // can use this code path as well.
-            CallMode::DeclaredExport | CallMode::DeclaredImport | CallMode::DefinedImport => {
+            // Declared exports means host Rust is calling wasm. If all bits are
+            // valid we use raw slices (e.g. u8/u64/etc). Otherwise input
+            // buffers (input to wasm) is `ExactSizeIterator` and output buffers
+            // (output from wasm) is `&mut Vec`
+            CallMode::DeclaredExport => {
+                if b.tref.type_().all_bits_valid() {
+                    self.print_borrowed_slice(b.out, &b.tref, lt);
+                } else if b.out {
+                    self.push_str("&");
+                    if lt != "'_" {
+                        self.push_str(lt);
+                    }
+                    self.push_str(" mut Vec<");
+                    self.print_tref(&b.tref, if b.out { TypeMode::Owned } else { mode });
+                    self.push_str(">");
+                } else {
+                    self.push_str("&");
+                    if lt != "'_" {
+                        self.push_str(lt);
+                    }
+                    self.push_str(" mut (dyn ExactSizeIterator<Item = ");
+                    self.print_tref(&b.tref, if b.out { TypeMode::Owned } else { mode });
+                    self.push_str(">");
+                    if lt != "'_" {
+                        self.push_str(" + ");
+                        self.push_str(lt);
+                    }
+                    self.push_str(")");
+                }
+            }
+
+            CallMode::DeclaredImport | CallMode::DefinedImport => {
                 if b.tref.type_().all_bits_valid() {
                     self.print_borrowed_slice(b.out, &b.tref, lt);
                 } else {
@@ -316,11 +343,7 @@ pub trait TypePrint {
                     }
                     let krate = self.krate();
                     self.push_str(krate);
-                    if self.call_mode().export() {
-                        self.push_str("::exports::");
-                    } else {
-                        self.push_str("::imports::");
-                    }
+                    self.push_str("::imports::");
                     self.push_str(prefix);
                     self.push_str("Buffer<");
                     self.push_str(lt);
@@ -437,7 +460,9 @@ pub trait TypePrint {
                 } else if !info.has_handle {
                     self.push_str("#[derive(Clone)]\n");
                 }
-                self.push_str("#[derive(Debug)]\n");
+                if !info.has_in_buffer {
+                    self.push_str("#[derive(Debug)]\n");
+                }
                 self.push_str(&format!("pub struct {}\n", name));
                 self.print_generics(&info, lt, true);
                 self.push_str(" {\n");
@@ -497,7 +522,7 @@ pub trait TypePrint {
             } else if lt.is_some() || !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
             }
-            if !is_error {
+            if !is_error && !info.has_in_buffer {
                 self.push_str("#[derive(Debug)]\n");
             }
             self.push_str(&format!("pub enum {}", name.to_camel_case()));

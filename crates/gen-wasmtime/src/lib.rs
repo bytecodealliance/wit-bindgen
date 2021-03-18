@@ -23,15 +23,15 @@ pub struct Wasmtime {
     needs_bad_int: bool,
     needs_borrow_checker: bool,
     needs_slice_as_bytes: bool,
-    needs_slice_as_bytes_mut: bool,
     needs_copy_slice: bool,
     needs_functions: HashMap<String, NeededFunction>,
+    needs_buffer_transaction: bool,
     needs_buffer_glue: bool,
     all_needed_handles: BTreeSet<String>,
     handles_for_func: BTreeSet<String>,
     types: Types,
-    imports: HashMap<Id, Vec<Import>>,
-    exports: HashMap<Id, Exports>,
+    imports: HashMap<String, Vec<Import>>,
+    exports: HashMap<String, Exports>,
     params: Vec<String>,
     block_storage: Vec<String>,
     blocks: Vec<String>,
@@ -85,32 +85,13 @@ impl Wasmtime {
         if self.needs_store {
             self.push_str(
                 "
-                    unsafe trait StoreSource<'a> {
-                        fn store_source(self) -> &'a mut [u8];
-                    }
-
-                    unsafe impl<'a> StoreSource<'a> for &'a wasmtime::Memory {
-                        fn store_source(self) -> &'a mut [u8] {
-                            unsafe { self.data_unchecked_mut() }
-                        }
-                    }
-
-                    unsafe impl<'a> StoreSource<'a> for &'a mut [u8] {
-                        fn store_source(self) -> &'a mut [u8] {
-                            self
-                        }
-                    }
-
-                    fn store<'a>(
-                        mem: impl StoreSource<'a>,
+                    fn store(
+                        mem: &wasmtime::Memory,
                         offset: i32,
                         bytes: &[u8],
                     ) -> Result<(), wasmtime::Trap> {
-                        mem.store_source()
-                            .get_mut(offset as usize..)
-                            .and_then(|s| s.get_mut(..bytes.len()))
-                            .ok_or_else(|| wasmtime::Trap::new(\"out of bounds write\"))?
-                            .copy_from_slice(bytes);
+                        mem.write(offset as usize, bytes)
+                            .map_err(|_| wasmtime::Trap::new(\"out of bounds write\"))?;
                         Ok(())
                     }
                 ",
@@ -119,33 +100,14 @@ impl Wasmtime {
         if self.needs_load {
             self.push_str(
                 "
-                    unsafe trait LoadSource<'a> {
-                        fn load_source(self) -> &'a [u8];
-                    }
-
-                    unsafe impl<'a> LoadSource<'a> for &'a wasmtime::Memory {
-                        fn load_source(self) -> &'a [u8] {
-                            unsafe { self.data_unchecked() }
-                        }
-                    }
-
-                    unsafe impl<'a> LoadSource<'a> for &'a [u8] {
-                        fn load_source(self) -> &'a [u8] {
-                            self
-                        }
-                    }
-
-                    fn load<'a, T: AsMut<[u8]>, U>(
-                        mem: impl LoadSource<'a>,
+                    fn load<T: AsMut<[u8]>, U>(
+                        mem: &wasmtime::Memory,
                         offset: i32,
                         mut bytes: T,
                         cvt: impl FnOnce(T) -> U,
                     ) -> Result<U, wasmtime::Trap> {
-                        let src = mem.load_source()
-                            .get(offset as usize..)
-                            .and_then(|s| s.get(..bytes.as_mut().len()))
-                            .ok_or_else(|| wasmtime::Trap::new(\"out of bounds read\"))?;
-                        bytes.as_mut().copy_from_slice(src);
+                        mem.read(offset as usize, bytes.as_mut())
+                            .map_err(|_| wasmtime::Trap::new(\"out of bounds read\"))?;
                         Ok(cvt(bytes))
                     }
                 ",
@@ -211,18 +173,6 @@ impl Wasmtime {
                     unsafe fn slice_as_bytes<T: Copy>(slice: &[T]) -> &[u8] {
                         core::slice::from_raw_parts(
                             slice.as_ptr() as *const u8,
-                            core::mem::size_of_val(slice),
-                        )
-                    }
-                ",
-            );
-        }
-        if self.needs_slice_as_bytes_mut {
-            self.push_str(
-                "
-                    unsafe fn slice_as_bytes_mut<T: Copy>(slice: &mut [T]) -> &mut [u8] {
-                        core::slice::from_raw_parts_mut(
-                            slice.as_mut_ptr() as *mut u8,
                             core::mem::size_of_val(slice),
                         )
                     }
@@ -541,6 +491,7 @@ impl Generator for Wasmtime {
     }
 
     fn import(&mut self, module: &Id, func: &InterfaceFunc) {
+        self.tmp = 0;
         let prev = mem::take(&mut self.src);
         self.is_dtor = self.types.is_dtor_func(&func.name);
 
@@ -595,6 +546,7 @@ impl Generator for Wasmtime {
 
         self.needs_memory = false;
         self.needs_guest_memory = false;
+        assert!(!self.needs_buffer_transaction);
 
         if self.handles_for_func.len() > 0 {
             for handle in self.handles_for_func.iter() {
@@ -610,7 +562,7 @@ impl Generator for Wasmtime {
             self.handles_for_func.clear();
         }
 
-        for (name, func) in self.needs_functions.drain() {
+        for (name, func) in sorted_iter(&self.needs_functions) {
             self.src.insert_str(
                 pos,
                 &format!(
@@ -627,7 +579,7 @@ impl Generator for Wasmtime {
 
         let closure = mem::replace(&mut self.src, prev);
         self.imports
-            .entry(module.clone())
+            .entry(module.as_str().to_string())
             .or_insert(Vec::new())
             .push(Import {
                 name: func.name.as_str().to_string(),
@@ -638,6 +590,7 @@ impl Generator for Wasmtime {
     }
 
     fn export(&mut self, module: &Id, func: &InterfaceFunc) {
+        self.tmp = 0;
         let prev = mem::take(&mut self.src);
         self.is_dtor = self.types.is_dtor_func(&func.name);
         if self.is_dtor {
@@ -651,11 +604,20 @@ impl Generator for Wasmtime {
         let pos = self.src.len();
         func.call(module, CallMode::DeclaredExport, self);
         self.src.push_str("}");
+
+        if mem::take(&mut self.needs_buffer_transaction) {
+            self.needs_buffer_glue = true;
+            self.src.insert_str(
+                pos,
+                "let mut buffer_transaction = self.buffer_glue.transaction();\n",
+            );
+        }
+
         self.src.insert_str(pos, &mem::take(&mut self.closures));
 
         let exports = self
             .exports
-            .entry(module.clone())
+            .entry(module.as_str().to_string())
             .or_insert_with(Exports::default);
 
         assert!(!self.needs_guest_memory);
@@ -715,7 +677,7 @@ impl Generator for Wasmtime {
     fn finish(&mut self) -> Files {
         let mut files = Files::default();
 
-        for (module, funcs) in self.imports.iter() {
+        for (module, funcs) in sorted_iter(&self.imports) {
             self.src.push_str("\npub trait ");
             self.src.push_str(&module.as_str().to_camel_case());
             self.src.push_str(": Sized {\n");
@@ -809,7 +771,7 @@ impl Generator for Wasmtime {
             self.push_str("Ok(())\n}\n");
         }
 
-        for (module, exports) in mem::take(&mut self.exports) {
+        for (module, exports) in sorted_iter(&mem::take(&mut self.exports)) {
             let name = module.as_str().to_camel_case();
             self.push_str("pub struct ");
             self.push_str(&name);
@@ -1434,48 +1396,47 @@ impl Bindgen for Wasmtime {
                 let size = buffer.tref.mem_size_align(!self.in_import).size;
                 let tmp = self.tmp();
                 let handle = format!("handle{}", tmp);
-                self.needs_buffer_glue = true;
-                // Note the unsafety we generate here for calls to
-                // `push_{in,out}_buffer`. This is unsafe because these types
-                // must not be leaked. Our glue here, however, does not leak
-                // them since it keeps them on the stack where they're
-                // guaranteed to be destroyed.
+                let closure = format!("closure{}", tmp);
+                self.needs_buffer_transaction = true;
                 if buffer.tref.type_().all_bits_valid() {
-                    let (method, function) = if buffer.out {
-                        self.needs_slice_as_bytes_mut = true;
-                        ("push_out_buffer", "slice_as_bytes_mut")
+                    let method = if buffer.out {
+                        "push_out_raw"
                     } else {
-                        self.needs_slice_as_bytes = true;
-                        ("push_in_buffer", "slice_as_bytes")
+                        "push_in_raw"
                     };
                     self.push_str(&format!(
-                        "let {} = unsafe {{ self.buffer_glue.{}({}({}), {}) }};\n",
-                        handle, method, function, operands[0], size
+                        "let {} = unsafe {{ buffer_transaction.{}({}) }};\n",
+                        handle, method, operands[0],
                     ));
                 } else if buffer.out {
+                    self.closures.push_str(&format!(
+                        "let {} = |memory: &wasmtime::Memory, base: i32| {{
+                            Ok(({}, {}))
+                        }};\n",
+                        closure, block, size,
+                    ));
                     self.push_str(&format!(
-                        "let {} = unsafe {{ self.buffer_glue.push_out_buffer({}.storage(), {}) }};\n",
-                        handle, operands[0], size
+                        "let {} = unsafe {{ buffer_transaction.push_out({}, &{}) }};\n",
+                        handle, operands[0], closure,
                     ));
                 } else {
-                    let buf = format!("buf{}", tmp);
-                    self.push_str(&format!(
-                        "let {} = {}.serialize::<_, {size}>(|memory, e| {{
-                            let base = 0;
+                    let start = self.src.len();
+                    self.print_tref(&buffer.tref, TypeMode::AllBorrowed("'_"));
+                    let ty = self.src[start..].to_string();
+                    self.src.truncate(start);
+                    self.closures.push_str(&format!(
+                        "let {} = |memory: &wasmtime::Memory, base: i32, e: {}| {{
                             {};
-                            Ok(())
-                        }})?;\n",
-                        buf,
-                        operands[0],
-                        block,
-                        size = size
+                            Ok({})
+                        }};\n",
+                        closure, ty, block, size,
                     ));
                     self.push_str(&format!(
-                        "let {} = unsafe {{ self.buffer_glue.push_in_buffer({}, {}) }};\n",
-                        handle, buf, size,
+                        "let {} = unsafe {{ buffer_transaction.push_in({}, &{}) }};\n",
+                        handle, operands[0], closure,
                     ));
                 }
-                results.push(format!("{}.handle() as i32", handle));
+                results.push(format!("{}", handle));
             }
 
             Instruction::CallWasm {
@@ -1651,4 +1612,10 @@ impl NeededFunction {
             NeededFunction::Free => "wasmtime::TypedFunc<(i32, i32, i32), ()>".to_string(),
         }
     }
+}
+
+fn sorted_iter<K: Ord, V>(map: &HashMap<K, V>) -> impl Iterator<Item = (&K, &V)> {
+    let mut list = map.into_iter().collect::<Vec<_>>();
+    list.sort_by_key(|p| p.0);
+    list.into_iter()
 }

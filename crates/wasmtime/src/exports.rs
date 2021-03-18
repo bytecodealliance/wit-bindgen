@@ -1,10 +1,8 @@
 use std::cell::RefCell;
-use std::convert::{TryFrom, TryInto};
-use std::fmt;
+use std::convert::TryFrom;
 use std::mem;
 use std::rc::Rc;
-use std::slice;
-use wasmtime::Trap;
+use wasmtime::{Memory, Trap};
 
 #[derive(Default, Clone)]
 pub struct BufferGlue {
@@ -13,46 +11,38 @@ pub struct BufferGlue {
 
 #[derive(Default)]
 struct Inner {
-    in_buffers: Slab,
-    out_buffers: Slab,
+    in_buffers: Slab<Buffer<Input>>,
+    out_buffers: Slab<Buffer<Output>>,
+}
+
+struct Buffer<T> {
+    len: u32,
+    kind: T,
+}
+
+enum Input {
+    Bytes(*const u8, usize),
+    General {
+        shim: unsafe fn([usize; 2], *const u8, &Memory, i32, u32, &mut u32) -> Result<(), Trap>,
+        iterator: [usize; 2],
+        serialize: *const u8,
+    },
+}
+
+enum Output {
+    Bytes(*mut u8, usize),
+    General {
+        shim: unsafe fn(*mut u8, *const u8, &Memory, i32, u32) -> Result<(), Trap>,
+        dst: *mut u8,
+        deserialize: *const u8,
+    },
 }
 
 impl BufferGlue {
-    /// Unsafe: must not leak the return value
-    pub unsafe fn push_in_buffer<'a>(
-        &'a self,
-        buffer: &'a [u8],
-        element_size: usize,
-    ) -> InBufferHandle<'_> {
-        let mut inner = self.inner.borrow_mut();
-        let handle = inner.in_buffers.insert(Buffer {
-            ptr: buffer.as_ptr() as usize,
-            len: buffer.len(),
-            element_size,
-        });
-        InBufferHandle {
+    pub fn transaction(&self) -> BufferTransaction<'_> {
+        BufferTransaction {
+            handles: Vec::new(),
             glue: self,
-            _buffer: buffer,
-            handle,
-        }
-    }
-
-    /// Unsafe: must not leak the return value
-    pub unsafe fn push_out_buffer<'a>(
-        &'a self,
-        buffer: &'a mut [u8],
-        element_size: usize,
-    ) -> OutBufferHandle<'_> {
-        let mut inner = self.inner.borrow_mut();
-        let handle = inner.out_buffers.insert(Buffer {
-            ptr: buffer.as_ptr() as usize,
-            len: buffer.len(),
-            element_size,
-        });
-        OutBufferHandle {
-            glue: self,
-            _buffer: buffer,
-            handle,
         }
     }
 
@@ -62,7 +52,7 @@ impl BufferGlue {
             .in_buffers
             .get_mut(handle)
             .ok_or_else(|| Trap::new("invalid in-buffer handle"))?;
-        Ok((b.len / b.element_size).try_into().unwrap())
+        Ok(b.len)
     }
 
     /// Implementation of the canonical abi "in_read" function
@@ -74,44 +64,51 @@ impl BufferGlue {
         len: u32,
     ) -> Result<(), Trap> {
         let mut inner = self.inner.borrow_mut();
-        // Validate `handle` to make sure that it's valid...
         let b = inner
             .in_buffers
             .get_mut(handle)
             .ok_or_else(|| Trap::new("invalid in-buffer handle"))?;
-
-        // Note the unsafety here. This should in theory be valid because a
-        // `Handle` still exist somewhere else in the system which is holding
-        // the buffer alive. This does rely on `Handle` not being leaked, but
-        // that's part of the unsafety of the `push_*` functions.
-        let src = unsafe { slice::from_raw_parts(b.ptr as *const u8, b.len) };
-
-        // Calculate the byte length of the copy that's going to be performed.
-        // This computation can overflow so we need to guard against that.
-        let byte_len = usize::try_from(len)
-            .unwrap()
-            .checked_mul(b.element_size)
-            .ok_or_else(|| Trap::new("overflow in requested size"))?;
-
-        // Validate that we have enough bytes to satisfy the byte length
-        // request. If not then the wasm module requested too many bytes and
-        // that's a trap.
-        let to_write = src
-            .get(..byte_len)
-            .ok_or_else(|| Trap::new("more bytes requested than are available to read"))?;
-
-        // And lastly we actually attempt to copy the memory from the host (us)
-        // to wasm by using `memory.write`. This can fail if the `base` pointer
-        // is out of bounds or otherwise isn't valid.
-        memory
-            .write(usize::try_from(base).unwrap(), to_write)
-            .map_err(|e| Trap::new(format!("invalid write into wasm memory: {}", e)))?;
-
-        // And if we got this far then we finished! Update our ptr/len to
-        // account for the number of bytes consumed.
-        b.ptr += byte_len;
-        b.len -= byte_len;
-        Ok(())
+        if len > b.len {
+            return Err(Trap::new(
+                "more items requested from in-buffer than are available",
+            ));
+        }
+        unsafe {
+            match &mut b.kind {
+                Input::Bytes(ptr, elem_size) => {
+                    let write_size = (len as usize) * *elem_size;
+                    memory
+                        .write(base as usize, std::slice::from_raw_parts(*ptr, write_size))
+                        .map_err(|_| Trap::new("out-of-bounds write while reading in-buffer"))?;
+                    *ptr = (*ptr).add(write_size);
+                    b.len -= len;
+                    Ok(())
+                }
+                &mut Input::General {
+                    shim,
+                    iterator,
+                    serialize,
+                } => {
+                    drop(inner);
+                    let mut processed = 0;
+                    let res = shim(
+                        iterator,
+                        serialize,
+                        memory,
+                        base as i32,
+                        len,
+                        &mut processed,
+                    );
+                    self.inner
+                        .borrow_mut()
+                        .in_buffers
+                        .get_mut(handle)
+                        .expect("should still be there")
+                        .len -= processed;
+                    res
+                }
+            }
+        }
     }
 
     pub fn out_len(&self, handle: u32) -> Result<u32, Trap> {
@@ -119,8 +116,8 @@ impl BufferGlue {
         let b = inner
             .out_buffers
             .get_mut(handle)
-            .ok_or_else(|| Trap::new("invalid out-buffer handle"))?;
-        Ok((b.len / b.element_size).try_into().unwrap())
+            .ok_or_else(|| Trap::new("out in-buffer handle"))?;
+        Ok(b.len)
     }
 
     /// Implementation of the canonical abi "out_write" function
@@ -131,96 +128,190 @@ impl BufferGlue {
         base: u32,
         len: u32,
     ) -> Result<(), Trap> {
-        // The body of this function is quite similar to the above function.
         let mut inner = self.inner.borrow_mut();
         let b = inner
             .out_buffers
             .get_mut(handle)
             .ok_or_else(|| Trap::new("invalid out-buffer handle"))?;
-        let dst = unsafe { slice::from_raw_parts_mut(b.ptr as *mut u8, b.len) };
-        let byte_len = usize::try_from(len)
-            .unwrap()
-            .checked_mul(b.element_size)
-            .ok_or_else(|| Trap::new("overflow in requested size"))?;
-        let dst = dst
-            .get_mut(..byte_len)
-            .ok_or_else(|| Trap::new("more bytes requested than are available to write"))?;
-        memory
-            .read(usize::try_from(base).unwrap(), dst)
-            .map_err(|e| Trap::new(format!("invalid read from wasm memory: {}", e)))?;
-
-        // And if we got this far then we finished! Update our ptr/len to
-        // account for the number of bytes consumed.
-        b.ptr += byte_len;
-        b.len -= byte_len;
-        Ok(())
+        if len > b.len {
+            return Err(Trap::new(
+                "more items written to out-buffer than are available",
+            ));
+        }
+        unsafe {
+            match &mut b.kind {
+                Output::Bytes(ptr, elem_size) => {
+                    let read_size = (len as usize) * *elem_size;
+                    memory
+                        .read(
+                            base as usize,
+                            std::slice::from_raw_parts_mut(*ptr, read_size),
+                        )
+                        .map_err(|_| Trap::new("out-of-bounds read while writing to out-buffer"))?;
+                    *ptr = (*ptr).add(read_size);
+                    b.len -= len;
+                    Ok(())
+                }
+                &mut Output::General {
+                    shim,
+                    dst,
+                    deserialize,
+                } => {
+                    shim(dst, deserialize, memory, base as i32, len)?;
+                    b.len -= len;
+                    Ok(())
+                }
+            }
+        }
     }
 }
 
-pub struct InBufferHandle<'a> {
+pub struct BufferTransaction<'a> {
     glue: &'a BufferGlue,
-    _buffer: &'a [u8],
-    handle: u32,
+    handles: Vec<(bool, u32)>,
 }
 
-impl InBufferHandle<'_> {
-    pub fn handle(&self) -> u32 {
-        self.handle
+impl<'call> BufferTransaction<'call> {
+    pub unsafe fn push_in_raw<'a, T>(&mut self, buffer: &'a [T]) -> i32
+    where
+        'a: 'call,
+    {
+        let mut inner = self.glue.inner.borrow_mut();
+        let handle = inner.in_buffers.insert(Buffer {
+            len: u32::try_from(buffer.len()).unwrap(),
+            kind: Input::Bytes(buffer.as_ptr() as *const u8, mem::size_of::<T>()),
+        });
+        self.handles.push((false, handle));
+        return handle as i32;
+    }
+
+    pub unsafe fn push_in<'a, T, F>(
+        &mut self,
+        iter: &'a mut (dyn ExactSizeIterator<Item = T> + 'a),
+        write: &'a F,
+    ) -> i32
+    where
+        F: Fn(&Memory, i32, T) -> Result<i32, Trap> + 'a,
+        'a: 'call,
+    {
+        let mut inner = self.glue.inner.borrow_mut();
+        let handle = inner.in_buffers.insert(Buffer {
+            len: u32::try_from(iter.len()).unwrap(),
+            kind: Input::General {
+                shim: shim::<T, F>,
+                iterator: mem::transmute(iter),
+                serialize: write as *const F as *const u8,
+            },
+        });
+        self.handles.push((false, handle));
+        return handle as i32;
+
+        unsafe fn shim<T, F>(
+            iter: [usize; 2],
+            serialize: *const u8,
+            memory: &Memory,
+            mut offset: i32,
+            len: u32,
+            processed: &mut u32,
+        ) -> Result<(), Trap>
+        where
+            F: Fn(&Memory, i32, T) -> Result<i32, Trap>,
+        {
+            let iter = mem::transmute::<_, &mut dyn ExactSizeIterator<Item = T>>(iter);
+            let write = &*(serialize as *const F);
+            for _ in 0..len {
+                let item = iter.next().unwrap();
+                offset += write(memory, offset, item)?;
+                *processed += 1;
+            }
+            Ok(())
+        }
+    }
+
+    pub unsafe fn push_out_raw<'a, T>(&mut self, buffer: &'a mut [T]) -> i32
+    where
+        'a: 'call,
+    {
+        let mut inner = self.glue.inner.borrow_mut();
+        let handle = inner.out_buffers.insert(Buffer {
+            len: u32::try_from(buffer.len()).unwrap(),
+            kind: Output::Bytes(buffer.as_mut_ptr() as *mut u8, mem::size_of::<T>()),
+        });
+        self.handles.push((true, handle));
+        return handle as i32;
+    }
+
+    pub unsafe fn push_out<'a, T, F>(&mut self, dst: &'a mut Vec<T>, read: &'a F) -> i32
+    where
+        F: Fn(&Memory, i32) -> Result<(T, i32), Trap> + 'a,
+        'a: 'call,
+    {
+        let mut inner = self.glue.inner.borrow_mut();
+        let handle = inner.out_buffers.insert(Buffer {
+            len: u32::try_from(dst.capacity() - dst.len()).unwrap(),
+            kind: Output::General {
+                shim: shim::<T, F>,
+                dst: dst as *mut Vec<T> as *mut u8,
+                deserialize: read as *const F as *const u8,
+            },
+        });
+        self.handles.push((true, handle));
+        return handle as i32;
+
+        unsafe fn shim<T, F>(
+            dst: *mut u8,
+            deserialize: *const u8,
+            memory: &Memory,
+            mut offset: i32,
+            len: u32,
+        ) -> Result<(), Trap>
+        where
+            F: Fn(&Memory, i32) -> Result<(T, i32), Trap>,
+        {
+            let dst = &mut *(dst as *mut Vec<T>);
+            let read = &*(deserialize as *const F);
+            for _ in 0..len {
+                let (item, size) = read(memory, offset)?;
+                dst.push(item);
+                offset += size;
+            }
+            Ok(())
+        }
     }
 }
 
-impl Drop for InBufferHandle<'_> {
+impl Drop for BufferTransaction<'_> {
     fn drop(&mut self) {
         let mut inner = self.glue.inner.borrow_mut();
-        inner.in_buffers.remove(self.handle);
+        for (out, handle) in self.handles.iter() {
+            if *out {
+                inner.out_buffers.remove(*handle);
+            } else {
+                inner.in_buffers.remove(*handle);
+            }
+        }
     }
 }
 
-pub struct OutBufferHandle<'a> {
-    glue: &'a BufferGlue,
-    _buffer: &'a mut [u8],
-    handle: u32,
-}
-
-impl OutBufferHandle<'_> {
-    pub fn handle(&self) -> u32 {
-        self.handle
-    }
-}
-
-impl Drop for OutBufferHandle<'_> {
-    fn drop(&mut self) {
-        let mut inner = self.glue.inner.borrow_mut();
-        inner.out_buffers.remove(self.handle);
-    }
-}
-
-#[derive(Default)]
-struct Slab {
-    storage: Vec<Entry>,
+struct Slab<T> {
+    storage: Vec<Entry<T>>,
     next: usize,
 }
 
-enum Entry {
-    Buffer(Buffer),
+enum Entry<T> {
+    Full(T),
     Empty { next: usize },
 }
 
-struct Buffer {
-    ptr: usize,
-    len: usize,
-    element_size: usize,
-}
-
-impl Slab {
-    fn insert(&mut self, buffer: Buffer) -> u32 {
+impl<T> Slab<T> {
+    fn insert(&mut self, item: T) -> u32 {
         if self.next == self.storage.len() {
             self.storage.push(Entry::Empty {
                 next: self.next + 1,
             });
         }
         let ret = self.next as u32;
-        let entry = Entry::Buffer(buffer);
+        let entry = Entry::Full(item);
         self.next = match mem::replace(&mut self.storage[self.next], entry) {
             Entry::Empty { next } => next,
             _ => unreachable!(),
@@ -228,9 +319,9 @@ impl Slab {
         return ret;
     }
 
-    fn get_mut(&mut self, idx: u32) -> Option<&mut Buffer> {
+    fn get_mut(&mut self, idx: u32) -> Option<&mut T> {
         match self.storage.get_mut(idx as usize)? {
-            Entry::Buffer(b) => Some(b),
+            Entry::Full(b) => Some(b),
             Entry::Empty { .. } => None,
         }
     }
@@ -241,111 +332,124 @@ impl Slab {
     }
 }
 
-/// Implementation of `(in-buffer T)`.
-///
-/// Holds a region of memory to store into as well as an iterator of items to
-/// serialize when calling an API.
-pub struct InBuffer<'a, T> {
-    storage: &'a mut [u8],
-    items: &'a mut dyn Iterator<Item = T>,
-}
-
-impl<'a, T: 'a> InBuffer<'a, T> {
-    /// Creates a new buffer where `items` are serialized into `storage` when
-    /// this buffer is passed to a function call.
-    ///
-    /// # Panics
-    ///
-    /// `storage` must be large enough to store all the `items`
-    /// provided. This will panic otherwise when passed to a callee.
-    pub fn new(storage: &'a mut [u8], items: &'a mut dyn Iterator<Item = T>) -> InBuffer<'a, T> {
-        InBuffer { storage, items }
-    }
-
-    /// Called from adapters with implementation of how to serialize.
-    #[doc(hidden)]
-    pub fn serialize<F, const N: usize>(&mut self, mut write: F) -> Result<&[u8], Trap>
-    where
-        F: FnMut(&mut [u8], T) -> Result<(), Trap>,
-    {
-        let mut len = 0;
-        for (i, item) in self.items.enumerate() {
-            let storage = &mut self.storage[N * i..][..N];
-            write(storage, item)?;
-            len += 1;
-        }
-        Ok(&self.storage[..len * N])
-    }
-}
-
-impl<T> fmt::Debug for InBuffer<'_, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("InBuffer")
-            .field("bytes", &self.storage.len())
-            .finish()
-    }
-}
-
-/// Implementation of `(out-buffer T)`
-pub struct OutBuffer<'a, T: 'a> {
-    storage: &'a mut [u8],
-    deserialize: fn(&[u8]) -> T,
-    element_size: usize,
-}
-
-impl<'a, T: 'a> OutBuffer<'a, T> {
-    /// Creates a new buffer with `storage` as where to store raw byte given to
-    /// the host from wasm.
-    ///
-    /// The `storage` should be appropriately sized to hold the desired number
-    /// of items to receive.
-    pub fn new(storage: &'a mut [u8]) -> OutBuffer<'a, T> {
-        OutBuffer {
-            storage,
-            deserialize: |_| loop {},
-            element_size: usize::max_value(),
+impl<T> Default for Slab<T> {
+    fn default() -> Slab<T> {
+        Slab {
+            storage: Vec::new(),
+            next: 0,
         }
     }
-
-    #[doc(hidden)]
-    pub fn storage(&mut self) -> &mut [u8] {
-        &mut *self.storage
-    }
-
-    ///// Called from adapters with implementation of how to deserialize.
-    //#[doc(hidden)]
-    //pub fn ptr_len<const N: usize>(&mut self, deserialize: fn(i32) -> T) -> (i32, i32) {
-    //    self.element_size = N;
-    //    self.deserialize = deserialize;
-    //    (
-    //        self.storage.as_ptr() as i32,
-    //        (self.storage.len() / N) as i32,
-    //    )
-    //}
-
-    ///// Consumes this output buffer, returning an iterator of the deserialized
-    ///// version of all items that callee wrote.
-    /////
-    ///// This is `unsafe` because the `amt` here is not known to be valid, and
-    ///// deserializing arbitrary bytes is not safe. The callee should always
-    ///// indicate how many items were written into this output buffer by some
-    ///// other means.
-    //pub unsafe fn into_iter(self, amt: usize) -> impl Iterator<Item = T> + 'a
-    //where
-    //    T: 'a,
-    //{
-    //    let size = self.element_size;
-    //    (0..amt)
-    //        .map(move |i| i * size)
-    //        .map(move |i| (self.deserialize)(self.storage[i..][..size].as_mut_ptr() as i32))
-    //    // TODO: data is leaked if this iterator isn't run in full
-    //}
 }
 
-impl<T> fmt::Debug for OutBuffer<'_, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OutBuffer")
-            .field("bytes", &self.storage.len())
-            .finish()
-    }
-}
+///// Implementation of `(in-buffer T)`.
+/////
+///// Holds a region of memory to store into as well as an iterator of items to
+///// serialize when calling an API.
+//pub struct InBuffer<'a, T> {
+//    storage: &'a mut [u8],
+//    items: &'a mut dyn Iterator<Item = T>,
+//}
+
+//impl<'a, T: 'a> InBuffer<'a, T> {
+//    /// Creates a new buffer where `items` are serialized into `storage` when
+//    /// this buffer is passed to a function call.
+//    ///
+//    /// # Panics
+//    ///
+//    /// `storage` must be large enough to store all the `items`
+//    /// provided. This will panic otherwise when passed to a callee.
+//    pub fn new(storage: &'a mut [u8], items: &'a mut dyn Iterator<Item = T>) -> InBuffer<'a, T> {
+//        InBuffer { storage, items }
+//    }
+
+//    /// Called from adapters with implementation of how to serialize.
+//    #[doc(hidden)]
+//    pub fn serialize<F, const N: usize>(&mut self, mut write: F) -> Result<&[u8], Trap>
+//    where
+//        F: FnMut(&mut [u8], T) -> Result<(), Trap>,
+//    {
+//        let mut len = 0;
+//        for (i, item) in self.items.enumerate() {
+//            let storage = &mut self.storage[N * i..][..N];
+//            write(storage, item)?;
+//            len += 1;
+//        }
+//        Ok(&self.storage[..len * N])
+//    }
+//}
+
+//impl<T> fmt::Debug for InBuffer<'_, T> {
+//    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//        f.debug_struct("InBuffer")
+//            .field("bytes", &self.storage.len())
+//            .finish()
+//    }
+//}
+
+///// Implementation of `(out-buffer T)`
+//pub struct OutBuffer<'a, T: 'a> {
+//    storage: &'a mut [u8],
+//    deserialize: fn(&[u8]) -> T,
+//    element_size: usize,
+//}
+
+//impl<'a, T: 'a> OutBuffer<'a, T> {
+//    /// Creates a new buffer with `storage` as where to store raw byte given to
+//    /// the host from wasm.
+//    ///
+//    /// The `storage` should be appropriately sized to hold the desired number
+//    /// of items to receive.
+//    pub fn new(storage: &'a mut [u8]) -> OutBuffer<'a, T> {
+//        OutBuffer {
+//            storage,
+//            deserialize: |_| loop {},
+//            element_size: usize::max_value(),
+//        }
+//    }
+
+//    #[doc(hidden)]
+//    pub fn storage(
+//        &mut self,
+//        _: usize,
+//        _: impl Fn(&[u8]) -> Result<T, Trap> + Clone + 'static,
+//    ) -> &mut [u8] {
+//        &mut *self.storage
+//    }
+
+//    ///// Called from adapters with implementation of how to deserialize.
+//    //#[doc(hidden)]
+//    //pub fn ptr_len<const N: usize>(&mut self, deserialize: fn(i32) -> T) -> (i32, i32) {
+//    //    self.element_size = N;
+//    //    self.deserialize = deserialize;
+//    //    (
+//    //        self.storage.as_ptr() as i32,
+//    //        (self.storage.len() / N) as i32,
+//    //    )
+//    //}
+
+//    ///// Consumes this output buffer, returning an iterator of the deserialized
+//    ///// version of all items that callee wrote.
+//    /////
+//    ///// This is `unsafe` because the `amt` here is not known to be valid, and
+//    ///// deserializing arbitrary bytes is not safe. The callee should always
+//    ///// indicate how many items were written into this output buffer by some
+//    ///// other means.
+//    //pub unsafe fn into_iter(self, amt: usize) -> impl Iterator<Item = T> + 'a
+//    //where
+//    //    T: 'a,
+//    //{
+//    //    let size = self.element_size;
+//    //    (0..amt)
+//    //        .map(move |i| i * size)
+//    //        .map(move |i| (self.deserialize)(self.storage[i..][..size].as_mut_ptr() as i32))
+//    //    // TODO: data is leaked if this iterator isn't run in full
+//    //}
+//}
+
+//impl<T> fmt::Debug for OutBuffer<'_, T> {
+//    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//        f.debug_struct("OutBuffer")
+//            .field("bytes", &self.storage.len())
+//            .finish()
+//    }
+//}
