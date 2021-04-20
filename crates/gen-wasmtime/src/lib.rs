@@ -324,6 +324,8 @@ impl Generator for Wasmtime {
         self.types.analyze(module);
         self.in_import = import;
         self.trait_name = module.name().as_str().to_camel_case();
+        self.src
+            .push_str(&format!("mod {} {{", module.name().as_str().to_snake_case()));
     }
 
     fn type_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str) {
@@ -668,9 +670,7 @@ impl Generator for Wasmtime {
         );
     }
 
-    fn finish(&mut self) -> Files {
-        let mut files = Files::default();
-
+    fn finish(&mut self, files: &mut Files) {
         for (module, funcs) in sorted_iter(&self.imports) {
             self.src.push_str("\npub trait ");
             self.src.push_str(&module.as_str().to_camel_case());
@@ -895,8 +895,11 @@ impl Generator for Wasmtime {
             let status = child.wait().unwrap();
             assert!(status.success());
         }
+
+        // Close the opening `mod`.
+        src.push_str("}");
+
         files.push("bindings.rs", &src);
-        files
     }
 }
 

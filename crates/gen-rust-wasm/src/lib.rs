@@ -163,6 +163,8 @@ impl Generator for RustWasm {
         self.in_import = import;
         self.types.analyze(module);
         self.trait_name = module.name().as_str().to_camel_case();
+        self.src
+            .push_str(&format!("mod {} {{", module.name().as_str().to_snake_case()));
     }
 
     fn type_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str) {
@@ -380,9 +382,7 @@ impl Generator for RustWasm {
         trait_.handles.extend(mem::take(&mut self.handles_for_func));
     }
 
-    fn finish(&mut self) -> Files {
-        let mut files = Files::default();
-
+    fn finish(&mut self, files: &mut Files) {
         let mut src = mem::take(&mut self.src);
 
         for (name, trait_) in self.traits.iter() {
@@ -423,8 +423,11 @@ impl Generator for RustWasm {
             let status = child.wait().unwrap();
             assert!(status.success());
         }
+
+        // Close the opening `mod`.
+        src.push_str("}");
+
         files.push("bindings.rs", &src);
-        files
     }
 }
 

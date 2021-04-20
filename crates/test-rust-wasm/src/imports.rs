@@ -4,6 +4,8 @@ witx_bindgen_rust::import!("tests/host.witx");
 #[cfg(feature = "unchecked")]
 witx_bindgen_rust::import!({ paths: ["tests/host.witx"], unchecked });
 
+use host::*;
+
 use std::iter;
 
 use crate::allocator;

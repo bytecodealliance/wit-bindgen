@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use syn::parse::{Error, Parse, ParseStream, Result};
-use witx_bindgen_gen_core::{witx, Generator};
+use witx_bindgen_gen_core::{witx, Generator, Files};
 
 #[proc_macro]
 pub fn import(input: TokenStream) -> TokenStream {
@@ -15,7 +15,10 @@ pub fn export(input: TokenStream) -> TokenStream {
 fn run(input: TokenStream, import: bool) -> TokenStream {
     let input = syn::parse_macro_input!(input as Opts);
     let mut gen = input.opts.build();
-    let files = gen.generate(&input.module, import);
+    let mut files = Files::default();
+    for module in input.modules {
+        gen.generate(&module, import, &mut files);
+    }
     let (_, contents) = files.iter().next().unwrap();
 
     let mut header = "
@@ -30,7 +33,7 @@ fn run(input: TokenStream, import: bool) -> TokenStream {
 
 struct Opts {
     opts: witx_bindgen_gen_wasmtime::Opts,
-    module: witx::Module,
+    modules: Vec<witx::Module>,
 }
 
 impl Parse for Opts {
@@ -40,18 +43,15 @@ impl Parse for Opts {
             let s = input.parse::<syn::LitStr>()?;
             paths.push(s.value());
         }
-        if paths.len() != 1 {
-            let call_site = proc_macro2::Span::call_site();
-            return Err(Error::new(
-                call_site,
-                "only exactly one path is supported right now",
-            ));
+        let mut modules = Vec::new();
+        for path in &paths {
+            let module = witx::load(path)
+                .map_err(|e| Error::new(proc_macro2::Span::call_site(), e.report()))?;
+            modules.push(module);
         }
-        let module = witx::load(&paths[0])
-            .map_err(|e| Error::new(proc_macro2::Span::call_site(), e.report()))?;
         Ok(Opts {
             opts: Default::default(),
-            module,
+            modules,
         })
     }
 }

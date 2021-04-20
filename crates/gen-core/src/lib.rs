@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeMap, btree_map::Entry};
 use witx::*;
 
 pub use witx;
@@ -19,9 +19,9 @@ pub trait Generator {
     fn const_(&mut self, name: &Id, ty: &Id, val: u64, docs: &str);
     fn import(&mut self, module: &Id, func: &Function);
     fn export(&mut self, module: &Id, func: &Function);
-    fn finish(&mut self) -> Files;
+    fn finish(&mut self, files: &mut Files);
 
-    fn generate(&mut self, module: &Module, import: bool) -> Files {
+    fn generate(&mut self, module: &Module, import: bool, files: &mut Files) {
         self.preprocess(module, import);
         for ty in module.typenames() {
             let t = match &ty.tref {
@@ -49,13 +49,13 @@ pub trait Generator {
 
         for f in module.funcs() {
             if import {
-                self.import(module.name(), &f);
+                self.import(&module.name(), &f);
             } else {
-                self.export(module.name(), &f);
+                self.export(&module.name(), &f);
             }
         }
 
-        self.finish()
+        self.finish(files)
     }
 }
 
@@ -253,12 +253,19 @@ impl Types {
 
 #[derive(Default)]
 pub struct Files {
-    files: Vec<(String, String)>,
+    files: BTreeMap<String, String>,
 }
 
 impl Files {
     pub fn push(&mut self, name: &str, contents: &str) {
-        self.files.push((name.to_string(), contents.to_string()));
+        match self.files.entry(name.to_owned()) {
+            Entry::Vacant(entry) => {
+                entry.insert(contents.to_owned());
+            }
+            Entry::Occupied(ref mut entry) => {
+                entry.get_mut().push_str(contents);
+            }
+        }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&'_ str, &'_ str)> {
