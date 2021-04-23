@@ -916,7 +916,7 @@ impl Bindgen for RustWasm {
                 self.push_str(&module.to_camel_case());
                 self.push_str(">::");
                 self.push_str(func.name.as_str());
-                self.push_str("(");
+                self.push_str("(super::");
                 self.push_str(module);
                 self.push_str("(),");
                 self.push_str(&operands.join(", "));
