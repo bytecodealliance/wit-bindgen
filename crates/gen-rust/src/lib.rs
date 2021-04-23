@@ -9,6 +9,13 @@ pub enum TypeMode {
     HandlesBorrowed(&'static str),
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum Visibility {
+    Pub,
+    PubSuper,
+    Private,
+}
+
 pub trait TypePrint {
     fn krate(&self) -> &'static str;
     fn tmp(&mut self) -> usize;
@@ -72,11 +79,12 @@ pub trait TypePrint {
     fn print_signature(
         &mut self,
         func: &Function,
+        visibility: Visibility,
         unsafe_: bool,
         self_arg: bool,
         param_mode: TypeMode,
     ) -> Vec<String> {
-        let params = self.print_docs_and_params(func, unsafe_, self_arg, param_mode);
+        let params = self.print_docs_and_params(func, visibility, unsafe_, self_arg, param_mode);
         if func.results.len() > 0 {
             self.push_str(" -> ");
             self.print_results(func);
@@ -87,6 +95,7 @@ pub trait TypePrint {
     fn print_docs_and_params(
         &mut self,
         func: &Function,
+        visibility: Visibility,
         unsafe_: bool,
         self_arg: bool,
         param_mode: TypeMode,
@@ -96,6 +105,11 @@ pub trait TypePrint {
         self.rustdoc_params(&func.params, "Parameters");
         self.rustdoc_params(&func.results, "Return");
 
+        match visibility {
+            Visibility::Pub => self.push_str("pub "),
+            Visibility::PubSuper => self.push_str("pub(super) "),
+            Visibility::Private => (),
+        }
         if unsafe_ {
             self.push_str("unsafe ");
         }

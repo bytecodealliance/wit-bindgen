@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use witx_bindgen_gen_core::{witx::*, Files, Generator, TypeInfo, Types};
-use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint};
+use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint, Visibility};
 
 #[derive(Default)]
 pub struct Wasmtime {
@@ -494,6 +494,7 @@ impl Generator for Wasmtime {
         self.in_trait = true;
         self.print_signature(
             func,
+            Visibility::Private,
             false,
             true,
             if self.is_dtor {
@@ -592,8 +593,13 @@ impl Generator for Wasmtime {
         if self.is_dtor {
             assert_eq!(func.results.len(), 0, "destructors cannot have results");
         }
-        self.push_str("pub ");
-        self.params = self.print_docs_and_params(func, false, true, TypeMode::AllBorrowed("'_"));
+        self.params = self.print_docs_and_params(
+            func,
+            Visibility::Pub,
+            false,
+            true,
+            TypeMode::AllBorrowed("'_"),
+        );
         self.push_str("-> Result<");
         self.print_results(func);
         self.push_str(", wasmtime::Trap> {\n");

@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use witx_bindgen_gen_core::{witx::*, Files, Generator, TypeInfo, Types};
-use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint};
+use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint, Visibility};
 
 #[derive(Default)]
 pub struct RustWasm {
@@ -295,6 +295,7 @@ impl Generator for RustWasm {
         self.is_dtor = self.types.is_dtor_func(&func.name);
         self.params = self.print_signature(
             func,
+            Visibility::PubSuper,
             self.is_dtor,
             false,
             if self.is_dtor {
@@ -365,6 +366,7 @@ impl Generator for RustWasm {
         self.in_trait = true;
         self.print_signature(
             func,
+            Visibility::Private,
             false,
             true,
             if self.is_dtor {
