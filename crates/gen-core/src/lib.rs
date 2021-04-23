@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, BTreeMap, btree_map::Entry};
+use std::collections::{btree_map::Entry, BTreeMap, HashMap, HashSet};
 use witx::*;
 
 pub use witx;

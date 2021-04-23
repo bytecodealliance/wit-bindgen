@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{token, Token};
-use witx_bindgen_gen_core::{witx, Generator, Files};
+use witx_bindgen_gen_core::{witx, Files, Generator};
 
 #[proc_macro]
 pub fn import(input: TokenStream) -> TokenStream {
@@ -54,7 +54,10 @@ impl Parse for Opts {
                 }
             }
             if modules.is_empty() {
-                return Err(Error::new(call_site, "must either specify `src` or `paths` keys"));
+                return Err(Error::new(
+                    call_site,
+                    "must either specify `src` or `paths` keys",
+                ));
             }
             modules
         } else {

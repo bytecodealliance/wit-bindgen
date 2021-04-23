@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use syn::parse::{Error, Parse, ParseStream, Result};
-use witx_bindgen_gen_core::{witx, Generator, Files};
+use witx_bindgen_gen_core::{witx, Files, Generator};
 
 #[proc_macro]
 pub fn import(input: TokenStream) -> TokenStream {
