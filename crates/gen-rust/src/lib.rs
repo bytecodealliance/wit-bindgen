@@ -12,7 +12,6 @@ pub enum TypeMode {
 #[derive(Debug, Copy, Clone)]
 pub enum Visibility {
     Pub,
-    PubSuper,
     Private,
 }
 
@@ -107,7 +106,6 @@ pub trait TypePrint {
 
         match visibility {
             Visibility::Pub => self.push_str("pub "),
-            Visibility::PubSuper => self.push_str("pub(super) "),
             Visibility::Private => (),
         }
         if unsafe_ {

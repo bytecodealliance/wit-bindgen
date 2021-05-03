@@ -295,7 +295,7 @@ impl Generator for RustWasm {
         self.is_dtor = self.types.is_dtor_func(&func.name);
         self.params = self.print_signature(
             func,
-            Visibility::PubSuper,
+            Visibility::Pub,
             self.is_dtor,
             false,
             if self.is_dtor {
