@@ -403,6 +403,9 @@ impl Generator for RustWasm {
             src.push_str("}\n");
         }
 
+        // Close the opening `mod`.
+        src.push_str("}");
+
         if self.opts.rustfmt {
             let mut child = Command::new("rustfmt")
                 .stdin(Stdio::piped())
@@ -425,9 +428,6 @@ impl Generator for RustWasm {
             let status = child.wait().unwrap();
             assert!(status.success());
         }
-
-        // Close the opening `mod`.
-        src.push_str("}");
 
         files.push("bindings.rs", &src);
     }

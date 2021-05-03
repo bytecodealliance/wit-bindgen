@@ -878,6 +878,9 @@ impl Generator for Wasmtime {
         }
         self.print_intrinsics();
 
+        // Close the opening `mod`.
+        self.push_str("}");
+
         let mut src = mem::take(&mut self.src);
         if self.opts.rustfmt {
             let mut child = Command::new("rustfmt")
@@ -901,9 +904,6 @@ impl Generator for Wasmtime {
             let status = child.wait().unwrap();
             assert!(status.success());
         }
-
-        // Close the opening `mod`.
-        src.push_str("}");
 
         files.push("bindings.rs", &src);
     }
