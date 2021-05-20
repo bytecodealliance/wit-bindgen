@@ -54,7 +54,15 @@ fn main() -> Result<()> {
         anyhow::bail!("one of `--import` or `--export` must be used");
     }
 
-    let doc = witx::load(&common.witx)?;
+    anyhow::ensure!(
+        common.witx.len() < 2,
+        "at most one *.witx file is supported right now"
+    );
+    if common.witx.is_empty() {
+        return Ok(());
+    }
+
+    let doc = witx::load(&common.witx[0])?;
     let files = generator.generate(&doc, common.import);
     for (name, contents) in files.iter() {
         let dst = match &common.out_dir {
