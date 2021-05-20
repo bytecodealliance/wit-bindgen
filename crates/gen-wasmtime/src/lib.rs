@@ -320,16 +320,10 @@ impl TypePrint for Wasmtime {
 }
 
 impl Generator for Wasmtime {
-    fn preprocess(&mut self, doc: &Document, import: bool) {
-        assert!(
-            doc.modules().count() <= 1,
-            "only one module supported at this time"
-        );
-        self.types.analyze(doc);
+    fn preprocess(&mut self, module: &Module, import: bool) {
+        self.types.analyze(module);
         self.in_import = import;
-        if let Some(m) = doc.modules().next() {
-            self.trait_name = m.name.as_str().to_camel_case();
-        }
+        self.trait_name = module.name().as_str().to_camel_case();
     }
 
     fn type_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str) {
@@ -490,7 +484,7 @@ impl Generator for Wasmtime {
         ));
     }
 
-    fn import(&mut self, module: &Id, func: &InterfaceFunc) {
+    fn import(&mut self, module: &Id, func: &Function) {
         self.tmp = 0;
         let prev = mem::take(&mut self.src);
         self.is_dtor = self.types.is_dtor_func(&func.name);
@@ -589,7 +583,7 @@ impl Generator for Wasmtime {
         assert!(self.cleanup.is_none());
     }
 
-    fn export(&mut self, module: &Id, func: &InterfaceFunc) {
+    fn export(&mut self, module: &Id, func: &Function) {
         self.tmp = 0;
         let prev = mem::take(&mut self.src);
         self.is_dtor = self.types.is_dtor_func(&func.name);

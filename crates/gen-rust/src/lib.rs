@@ -34,7 +34,7 @@ pub trait TypePrint {
         }
     }
 
-    fn rustdoc_params(&mut self, docs: &[InterfaceFuncParam], header: &str) {
+    fn rustdoc_params(&mut self, docs: &[Param], header: &str) {
         let docs = docs
             .iter()
             .filter(|param| param.docs.trim().len() > 0)
@@ -71,7 +71,7 @@ pub trait TypePrint {
 
     fn print_signature(
         &mut self,
-        func: &InterfaceFunc,
+        func: &Function,
         unsafe_: bool,
         self_arg: bool,
         param_mode: TypeMode,
@@ -86,7 +86,7 @@ pub trait TypePrint {
 
     fn print_docs_and_params(
         &mut self,
-        func: &InterfaceFunc,
+        func: &Function,
         unsafe_: bool,
         self_arg: bool,
         param_mode: TypeMode,
@@ -118,7 +118,7 @@ pub trait TypePrint {
         params
     }
 
-    fn print_results(&mut self, func: &InterfaceFunc) {
+    fn print_results(&mut self, func: &Function) {
         match func.results.len() {
             0 => self.push_str("()"),
             1 => {
