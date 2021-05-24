@@ -41,8 +41,11 @@
 (typename $list_typedef2 (list u8))
 (typename $list_typedef3 (list string))
 
-(typename $wasm_state (handle))
-(typename $wasm_state2 (handle))
+(resource $wasm_state_resource)
+(typename $wasm_state (handle $wasm_state_resource))
+
+(resource $wasm_state_resource2)
+(typename $wasm_state2 (handle $wasm_state_resource2))
 
 (typename $wasm_state_param_record (record (field $a $wasm_state2)))
 (typename $wasm_state_param_tuple (tuple $wasm_state2))
