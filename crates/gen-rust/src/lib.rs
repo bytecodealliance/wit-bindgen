@@ -931,6 +931,7 @@ pub fn to_rust_ident(name: &str) -> &str {
     match name {
         "in" => "in_",
         "type" => "type_",
+        "where" => "where_",
         "yield" => "yield_",
         s => s,
     }
