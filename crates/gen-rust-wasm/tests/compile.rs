@@ -49,17 +49,26 @@ fn integers() {
         r#"
             include!("bindings.rs");
 
-            fn k(
-                _: u8,
-                _: i8,
-                _: u16,
-                _: i16,
-                _: u32,
-                _: i32,
-                _: u64,
-                _: i64,
-            ) -> (u8, u16) {
-                (0, 0)
+            struct MyX {}
+            fn x() -> &'static MyX {
+                static ME: MyX = MyX {};
+                &ME
+            }
+
+            impl x::X for MyX {
+                fn k(
+                    &self,
+                    _: u8,
+                    _: i8,
+                    _: u16,
+                    _: i16,
+                    _: u32,
+                    _: i32,
+                    _: u64,
+                    _: i64,
+                ) -> (u8, u16) {
+                    (0, 0)
+                }
             }
         "#,
     );
