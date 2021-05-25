@@ -1142,6 +1142,7 @@ name = "test-wasmtime"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bitflags",
  "wasi-cap-std-sync",
  "wasmtime",
  "wasmtime-wasi",
