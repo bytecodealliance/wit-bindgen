@@ -776,7 +776,8 @@ impl Generator for Wasmtime {
             self.push_str("pub struct ");
             self.push_str(&name);
             self.push_str("{\n");
-            self.push_str("instance: wasmtime::Instance,\n");
+            // Use `pub(super)` so that crates/test-wasmtime/src/exports.rs can access it.
+            self.push_str("pub(super) instance: wasmtime::Instance,\n");
             for (name, (ty, _)) in exports.fields.iter() {
                 self.push_str(name);
                 self.push_str(": ");

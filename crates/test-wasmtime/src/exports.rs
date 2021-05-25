@@ -3,6 +3,9 @@ use std::iter;
 use wasmtime::Instance;
 
 witx_bindgen_wasmtime::export!("tests/wasm.witx");
+use wasm::*;
+
+pub(crate) use wasm::Wasm;
 
 pub fn test(wasm: &Wasm) -> Result<()> {
     let bytes = wasm.allocated_bytes()?;
