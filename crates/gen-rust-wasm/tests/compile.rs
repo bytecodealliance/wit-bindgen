@@ -9,8 +9,6 @@ use witx_bindgen_gen_core::{witx, Files, Generator};
 
 #[test]
 fn smoke() {
-    import("");
-    export("", "include!(\"bindings.rs\");");
     import("(module $x)");
     export("(module $x)", "include!(\"bindings.rs\");");
     import("(module $x (export \"y\" (func)))");
@@ -125,34 +123,34 @@ fn records() {
     import("(module $x (export \"y\" (func (result $a char) (result $b u32))))");
     import(
         "
-            (typename $a (record))
             (module $x
+                (typename $a (record))
                 (export \"a\" (func (param $a $a) (result $b $a)))
             )
         ",
     );
     import(
         "
-            (typename $a (record (field $a u32) (field $b f32)))
             (module $x
+                (typename $a (record (field $a u32) (field $b f32)))
                 (export \"a\" (func (param $a $a) (result $b $a)))
             )
         ",
     );
     import(
         "
-            (typename $a (record (field $a u32) (field $b f32)))
-            (typename $b (record (field $a $a)))
             (module $x
+                (typename $a (record (field $a u32) (field $b f32)))
+                (typename $b (record (field $a $a)))
                 (export \"a\" (func (param $a $b) (result $b $b)))
             )
         ",
     );
     export(
         "
-            (typename $a (record (field $a u32) (field $b f32)))
-            (typename $b (record (field $a $a)))
             (module $x
+                (typename $a (record (field $a u32) (field $b f32)))
+                (typename $b (record (field $a $a)))
                 (export \"y\" (func
                     (param $a (tuple s32 u32))
                     (result $b (tuple f64))
@@ -183,43 +181,43 @@ fn variants() {
     import("(module $x (export \"y\" (func (param $a (expected (error))) (result $b (expected (error))))))");
     import(
         "
-            (typename $a (enum $a $b $c))
             (module $x
+                (typename $a (enum $a $b $c))
                 (export \"a\" (func (param $a $a) (result $b $a)))
             )
         ",
     );
     import(
         "
-            (typename $a (union f32 f64))
             (module $x
+                (typename $a (union f32 f64))
                 (export \"a\" (func (param $a $a) (result $b $a)))
             )
         ",
     );
     import(
         "
-            (typename $a (variant
-                (case $a s8)
-                (case $b f32)
-                (case $c)
-                (case $d (tuple f64 f64))
-            ))
             (module $x
+                (typename $a (variant
+                    (case $a s8)
+                    (case $b f32)
+                    (case $c)
+                    (case $d (tuple f64 f64))
+                ))
                 (export \"a\" (func (param $a $a) (result $b $a)))
             )
         ",
     );
     export(
         "
-            (typename $a (union f32 u32))
-            (typename $b (variant
-                (case $a s8)
-                (case $b f32)
-                (case $c)
-                (case $d (tuple f64 f64))
-            ))
             (module $x
+                (typename $a (union f32 u32))
+                (typename $b (variant
+                    (case $a s8)
+                    (case $b f32)
+                    (case $c)
+                    (case $d (tuple f64 f64))
+                ))
                 (export \"y\" (func
                     (param $a bool)
                     (result $b $a)
