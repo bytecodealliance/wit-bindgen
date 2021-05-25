@@ -154,7 +154,7 @@ impl<'a, T> OutBufferRaw<'a, T> {
 
     /// Copies elements to the caller from `items`.
     ///
-    /// This will abort the program if `items` is larger than `self.len()`.
+    /// This will abort the program if `items` is larger than `self.capacity()`.
     pub fn write(&self, items: &[T]) {
         unsafe {
             out_write(self.handle, items.len(), items.as_ptr() as *const u8);
