@@ -17,7 +17,15 @@ fn smoke() {
         r#"
             include!("bindings.rs");
 
-            fn y() {}
+            struct MyX {}
+            fn x() -> &'static MyX {
+                static ME: MyX = MyX {};
+                &ME
+            }
+
+            impl x::X for MyX {
+                fn y(&self) {}
+            }
         "#,
     );
 }
@@ -89,11 +97,20 @@ fn floats() {
         r#"
             include!("bindings.rs");
 
-            fn k(
-                a: f32,
-                b: f64,
-            ) -> (f64, f32) {
-                (b, a)
+            struct MyX {}
+            fn x() -> &'static MyX {
+                static ME: MyX = MyX {};
+                &ME
+            }
+
+            impl x::X for MyX {
+                fn k(
+                    &self,
+                    a: f32,
+                    b: f64,
+                ) -> (f64, f32) {
+                    (b, a)
+                }
             }
         "#,
     );
@@ -108,8 +125,16 @@ fn chars() {
         r#"
             include!("bindings.rs");
 
-            fn y() -> char {
-                'x'
+            struct MyX {}
+            fn x() -> &'static MyX {
+                static ME: MyX = MyX {};
+                &ME
+            }
+
+            impl x::X for MyX {
+                fn y(&self) -> char {
+                    'x'
+                }
             }
         "#,
     );
@@ -118,8 +143,16 @@ fn chars() {
         r#"
             include!("bindings.rs");
 
-            fn y(_: char) {
-                // ...
+            struct MyX {}
+            fn x() -> &'static MyX {
+                static ME: MyX = MyX {};
+                &ME
+            }
+
+            impl x::X for MyX {
+                fn y(&self, _: char) {
+                    // ...
+                }
             }
         "#,
     );
@@ -173,12 +206,20 @@ fn records() {
         r#"
             include!("bindings.rs");
 
-            fn y(_: (i32, u32)) -> (f64,) {
-                (0.0,)
+            struct MyX {}
+            fn x() -> &'static MyX {
+                static ME: MyX = MyX {};
+                &ME
             }
 
-            fn z(a: B) -> A {
-                a.a
+            impl x::X for MyX {
+                fn y(&self, _: (i32, u32)) -> (f64,) {
+                    (0.0,)
+                }
+
+                fn z(&self, a: x::B) -> x::A {
+                    a.a
+                }
             }
         "#,
     );
@@ -240,12 +281,20 @@ fn variants() {
         r#"
             include!("bindings.rs");
 
-            fn y(_: bool) -> A {
-                A::V1(1)
+            struct MyX {}
+            fn x() -> &'static MyX {
+                static ME: MyX = MyX {};
+                &ME
             }
 
-            fn z(_: B) -> B {
-                B::C
+            impl x::X for MyX {
+                fn y(&self, _: bool) -> x::A {
+                    x::A::V1(1)
+                }
+
+                fn z(&self, _: x::B) -> x::B {
+                    x::B::C
+                }
             }
         "#,
     );
@@ -275,8 +324,16 @@ fn lists() {
         r#"
             include!("bindings.rs");
 
-            fn y(a: String, b: Vec<u8>) -> (String, Vec<u8>, Vec<Vec<u8>>) {
-                (a, b.clone(), vec![b])
+            struct MyX {}
+            fn x() -> &'static MyX {
+                static ME: MyX = MyX {};
+                &ME
+            }
+
+            impl x::X for MyX {
+                fn y(&self, a: String, b: Vec<u8>) -> (String, Vec<u8>, Vec<Vec<u8>>) {
+                    (a, b.clone(), vec![b])
+                }
             }
         "#,
     );
@@ -298,9 +355,17 @@ fn options() {
         r#"
             include!("bindings.rs");
 
-            fn y(a: Option<String>) -> Option<Option<char>> {
-                drop(a);
-                Some(Some('x'))
+            struct MyX {}
+            fn x() -> &'static MyX {
+                static ME: MyX = MyX {};
+                &ME
+            }
+
+            impl x::X for MyX {
+                fn y(&self, a: Option<String>) -> Option<Option<char>> {
+                    drop(a);
+                    Some(Some('x'))
+                }
             }
         "#,
     );
