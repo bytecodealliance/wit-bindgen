@@ -163,8 +163,10 @@ impl Generator for RustWasm {
         self.in_import = import;
         self.types.analyze(module);
         self.trait_name = module.name().as_str().to_camel_case();
-        self.src
-            .push_str(&format!("mod {} {{", module.name().as_str().to_snake_case()));
+        self.src.push_str(&format!(
+            "mod {} {{",
+            module.name().as_str().to_snake_case()
+        ));
     }
 
     fn type_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str) {
