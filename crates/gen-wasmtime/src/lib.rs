@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use witx_bindgen_gen_core::{witx::*, Files, Generator, TypeInfo, Types};
-use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint};
+use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint, Visibility};
 
 #[derive(Default)]
 pub struct Wasmtime {
@@ -324,6 +324,8 @@ impl Generator for Wasmtime {
         self.types.analyze(module);
         self.in_import = import;
         self.trait_name = module.name().as_str().to_camel_case();
+        self.src
+            .push_str(&format!("mod {} {{", module.name().as_str().to_snake_case()));
     }
 
     fn type_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str) {
@@ -492,6 +494,7 @@ impl Generator for Wasmtime {
         self.in_trait = true;
         self.print_signature(
             func,
+            Visibility::Private,
             false,
             true,
             if self.is_dtor {
@@ -590,8 +593,13 @@ impl Generator for Wasmtime {
         if self.is_dtor {
             assert_eq!(func.results.len(), 0, "destructors cannot have results");
         }
-        self.push_str("pub ");
-        self.params = self.print_docs_and_params(func, false, true, TypeMode::AllBorrowed("'_"));
+        self.params = self.print_docs_and_params(
+            func,
+            Visibility::Pub,
+            false,
+            true,
+            TypeMode::AllBorrowed("'_"),
+        );
         self.push_str("-> Result<");
         self.print_results(func);
         self.push_str(", wasmtime::Trap> {\n");
@@ -668,9 +676,7 @@ impl Generator for Wasmtime {
         );
     }
 
-    fn finish(&mut self) -> Files {
-        let mut files = Files::default();
-
+    fn finish(&mut self, files: &mut Files) {
         for (module, funcs) in sorted_iter(&self.imports) {
             self.src.push_str("\npub trait ");
             self.src.push_str(&module.as_str().to_camel_case());
@@ -770,7 +776,8 @@ impl Generator for Wasmtime {
             self.push_str("pub struct ");
             self.push_str(&name);
             self.push_str("{\n");
-            self.push_str("instance: wasmtime::Instance,\n");
+            // Use `pub(super)` so that crates/test-wasmtime/src/exports.rs can access it.
+            self.push_str("pub(super) instance: wasmtime::Instance,\n");
             for (name, (ty, _)) in exports.fields.iter() {
                 self.push_str(name);
                 self.push_str(": ");
@@ -872,6 +879,9 @@ impl Generator for Wasmtime {
         }
         self.print_intrinsics();
 
+        // Close the opening `mod`.
+        self.push_str("}");
+
         let mut src = mem::take(&mut self.src);
         if self.opts.rustfmt {
             let mut child = Command::new("rustfmt")
@@ -895,8 +905,8 @@ impl Generator for Wasmtime {
             let status = child.wait().unwrap();
             assert!(status.success());
         }
+
         files.push("bindings.rs", &src);
-        files
     }
 }
 

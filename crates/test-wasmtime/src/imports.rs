@@ -3,6 +3,9 @@ use witx_bindgen_wasmtime::imports::{InBuffer, OutBuffer};
 use witx_bindgen_wasmtime::{BorrowChecker, GuestPtr, Table};
 
 witx_bindgen_wasmtime::import!("tests/host.witx");
+use host::*;
+
+pub(crate) use host::add_host_to_linker;
 
 #[derive(Default)]
 pub struct MyHost {

@@ -8,5 +8,5 @@ edition = "2018"
 anyhow = "1.0"
 bitflags = "1.2"
 thiserror = "1.0"
-wasmtime = "0.25"
+wasmtime = "0.26.0"
 witx-bindgen-wasmtime-impl = { path = "../wasmtime-impl", version = "0.1" }

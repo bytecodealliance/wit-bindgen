@@ -5,12 +5,10 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering::SeqCst},
     Once,
 };
-use witx_bindgen_gen_core::{witx, Generator};
+use witx_bindgen_gen_core::{witx, Files, Generator};
 
 #[test]
 fn smoke() {
-    import("");
-    export("", "include!(\"bindings.rs\");");
     import("(module $x)");
     export("(module $x)", "include!(\"bindings.rs\");");
     import("(module $x (export \"y\" (func)))");
@@ -51,17 +49,26 @@ fn integers() {
         r#"
             include!("bindings.rs");
 
-            fn k(
-                _: u8,
-                _: i8,
-                _: u16,
-                _: i16,
-                _: u32,
-                _: i32,
-                _: u64,
-                _: i64,
-            ) -> (u8, u16) {
-                (0, 0)
+            struct MyX {}
+            fn x() -> &'static MyX {
+                static ME: MyX = MyX {};
+                &ME
+            }
+
+            impl x::X for MyX {
+                fn k(
+                    &self,
+                    _: u8,
+                    _: i8,
+                    _: u16,
+                    _: i16,
+                    _: u32,
+                    _: i32,
+                    _: u64,
+                    _: i64,
+                ) -> (u8, u16) {
+                    (0, 0)
+                }
             }
         "#,
     );
@@ -125,34 +132,34 @@ fn records() {
     import("(module $x (export \"y\" (func (result $a char) (result $b u32))))");
     import(
         "
-            (typename $a (record))
             (module $x
+                (typename $a (record))
                 (export \"a\" (func (param $a $a) (result $b $a)))
             )
         ",
     );
     import(
         "
-            (typename $a (record (field $a u32) (field $b f32)))
             (module $x
+                (typename $a (record (field $a u32) (field $b f32)))
                 (export \"a\" (func (param $a $a) (result $b $a)))
             )
         ",
     );
     import(
         "
-            (typename $a (record (field $a u32) (field $b f32)))
-            (typename $b (record (field $a $a)))
             (module $x
+                (typename $a (record (field $a u32) (field $b f32)))
+                (typename $b (record (field $a $a)))
                 (export \"a\" (func (param $a $b) (result $b $b)))
             )
         ",
     );
     export(
         "
-            (typename $a (record (field $a u32) (field $b f32)))
-            (typename $b (record (field $a $a)))
             (module $x
+                (typename $a (record (field $a u32) (field $b f32)))
+                (typename $b (record (field $a $a)))
                 (export \"y\" (func
                     (param $a (tuple s32 u32))
                     (result $b (tuple f64))
@@ -183,43 +190,43 @@ fn variants() {
     import("(module $x (export \"y\" (func (param $a (expected (error))) (result $b (expected (error))))))");
     import(
         "
-            (typename $a (enum $a $b $c))
             (module $x
+                (typename $a (enum $a $b $c))
                 (export \"a\" (func (param $a $a) (result $b $a)))
             )
         ",
     );
     import(
         "
-            (typename $a (union f32 f64))
             (module $x
+                (typename $a (union f32 f64))
                 (export \"a\" (func (param $a $a) (result $b $a)))
             )
         ",
     );
     import(
         "
-            (typename $a (variant
-                (case $a s8)
-                (case $b f32)
-                (case $c)
-                (case $d (tuple f64 f64))
-            ))
             (module $x
+                (typename $a (variant
+                    (case $a s8)
+                    (case $b f32)
+                    (case $c)
+                    (case $d (tuple f64 f64))
+                ))
                 (export \"a\" (func (param $a $a) (result $b $a)))
             )
         ",
     );
     export(
         "
-            (typename $a (union f32 u32))
-            (typename $b (variant
-                (case $a s8)
-                (case $b f32)
-                (case $c)
-                (case $d (tuple f64 f64))
-            ))
             (module $x
+                (typename $a (union f32 u32))
+                (typename $b (variant
+                    (case $a s8)
+                    (case $b f32)
+                    (case $c)
+                    (case $d (tuple f64 f64))
+                ))
                 (export \"y\" (func
                     (param $a bool)
                     (result $b $a)
@@ -318,7 +325,8 @@ fn witx(src: &str, rust: Option<&str>) {
         let mut opts = witx_bindgen_gen_rust_wasm::Opts::default();
         opts.rustfmt = true;
         opts.unchecked = *unchecked;
-        let files = opts.build().generate(&doc, rust.is_none());
+        let mut files = Files::default();
+        opts.build().generate(&doc, rust.is_none(), &mut files);
         let dir = base.join(format!("t{}", me));
         std::fs::create_dir(&dir).unwrap();
         for (file, contents) in files.iter() {

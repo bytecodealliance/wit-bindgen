@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use witx_bindgen_gen_core::{witx::*, Files, Generator, TypeInfo, Types};
-use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint};
+use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint, Visibility};
 
 #[derive(Default)]
 pub struct RustWasm {
@@ -163,6 +163,8 @@ impl Generator for RustWasm {
         self.in_import = import;
         self.types.analyze(module);
         self.trait_name = module.name().as_str().to_camel_case();
+        self.src
+            .push_str(&format!("mod {} {{", module.name().as_str().to_snake_case()));
     }
 
     fn type_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str) {
@@ -293,6 +295,7 @@ impl Generator for RustWasm {
         self.is_dtor = self.types.is_dtor_func(&func.name);
         self.params = self.print_signature(
             func,
+            Visibility::Pub,
             self.is_dtor,
             false,
             if self.is_dtor {
@@ -363,6 +366,7 @@ impl Generator for RustWasm {
         self.in_trait = true;
         self.print_signature(
             func,
+            Visibility::Private,
             false,
             true,
             if self.is_dtor {
@@ -380,9 +384,7 @@ impl Generator for RustWasm {
         trait_.handles.extend(mem::take(&mut self.handles_for_func));
     }
 
-    fn finish(&mut self) -> Files {
-        let mut files = Files::default();
-
+    fn finish(&mut self, files: &mut Files) {
         let mut src = mem::take(&mut self.src);
 
         for (name, trait_) in self.traits.iter() {
@@ -400,6 +402,9 @@ impl Generator for RustWasm {
             }
             src.push_str("}\n");
         }
+
+        // Close the opening `mod`.
+        src.push_str("}");
 
         if self.opts.rustfmt {
             let mut child = Command::new("rustfmt")
@@ -423,8 +428,8 @@ impl Generator for RustWasm {
             let status = child.wait().unwrap();
             assert!(status.success());
         }
+
         files.push("bindings.rs", &src);
-        files
     }
 }
 
@@ -911,7 +916,7 @@ impl Bindgen for RustWasm {
                 self.push_str(&module.to_camel_case());
                 self.push_str(">::");
                 self.push_str(func.name.as_str());
-                self.push_str("(");
+                self.push_str("(super::");
                 self.push_str(module);
                 self.push_str("(),");
                 self.push_str(&operands.join(", "));

@@ -1,108 +1,106 @@
-(typename $f1 (flags $a $b))
-(typename $f2 (flags (@witx repr u64) $c $d $e))
-(typename $r1 (record (field $a u8) (field $b $f1)))
-(typename $e1 (enum $a $b))
-
-;; Variants for testing casting between primitive types
-(typename $c1 (variant (case $a s32) (case $b s64)))
-(typename $c2 (variant (case $a s32) (case $b f32)))
-(typename $c3 (variant (case $a s32) (case $b f64)))
-(typename $c4 (variant (case $a s64) (case $b f32)))
-(typename $c5 (variant (case $a s64) (case $b f64)))
-(typename $c6 (variant (case $a f32) (case $b f64)))
-(typename $casts (tuple $c1 $c2 $c3 $c4 $c5 $c6))
-
-;; Variants for testing zeros can be synthesized
-(typename $z1 (variant (case $a s32) (case $b)))
-(typename $z2 (variant (case $a s64) (case $b)))
-(typename $z3 (variant (case $a f32) (case $b)))
-(typename $z4 (variant (case $a f64) (case $b)))
-(typename $zeros (tuple $z1 $z2 $z3 $z4))
-
-(typename $s8 s8)
-(typename $u8 u8)
-(typename $s16 s16)
-(typename $u16 u16)
-(typename $s32 s32)
-(typename $u32 u32)
-(typename $s64 s64)
-(typename $u64 u64)
-(typename $f32 f32)
-(typename $f64 f64)
-(typename $legacy_result (tuple
-    ;; primitives with varying bit widths and signedness
-    $s8 $u8
-    $s16 $u16
-    $s32 $u32
-    $s64 $u64
-    $f32 $f64
-    ;; records
-    $r1
-))
-
-(typename $unused_type (record (field $a string)))
-
-(typename $list_in_record1 (record (field $a string)))
-(typename $list_in_record2 (record (field $a string)))
-(typename $list_in_record3 (record (field $a string)))
-(typename $list_in_record4 (record (field $a string)))
-
-(typename $option_typedef (option u32))
-(typename $bool_typedef bool)
-(typename $result_typedef (expected u32 (error)))
-
-(typename $list_in_variant1_1 (option string))
-(typename $list_in_variant1_2 (expected (error string)))
-(typename $list_in_variant1_3 (union string f32))
-(typename $list_in_variant2 (option string))
-(typename $list_in_variant3 (option string))
-
-(typename $my_errno (enum $success $a $b))
-
-(typename $list_in_alias $list_in_record4)
-(typename $list_typedef string)
-(typename $list_typedef2 (list u8))
-(typename $list_typedef3 (list string))
-
-(resource $host_state_resource)
-(typename $host_state (handle $host_state_resource))
-
-(resource $host_state_resource2)
-(typename $host_state2 (handle $host_state_resource2))
-
-(typename $host_state_param_record (record (field $a $host_state2)))
-(typename $host_state_param_tuple (tuple $host_state2))
-(typename $host_state_param_option (option $host_state2))
-(typename $host_state_param_result (expected $host_state2 (error u32)))
-(typename $host_state_param_variant (union $host_state2 u32))
-
-(typename $host_state_result_record (record (field $a $host_state2)))
-(typename $host_state_result_tuple (tuple $host_state2))
-(typename $host_state_result_option (option $host_state2))
-(typename $host_state_result_result (expected $host_state2 (error u32)))
-(typename $host_state_result_variant (union $host_state2 u32))
-
-(typename $buffer_in_variant (variant
-  (case $a (in-buffer u8))
-  (case $b (out-buffer u8))
-  (case $c (in-buffer bool))
-  (case $d (out-buffer bool))
-))
-
-(typename $buffer_in_record (record
-  (field $a (in-buffer u8))
-  (field $b (out-buffer u8))
-  (field $c (in-buffer bool))
-  (field $d (out-buffer bool))
-  (field $e $buffer_in_variant)
-))
-
-(typename $param_in_buffer_u8 (in-buffer u8))
-(typename $param_out_buffer_u8 (out-buffer u8))
-(typename $param_in_buffer_bool (in-buffer bool))
-(typename $param_out_buffer_bool (out-buffer bool))
-
 (module $host
+  (typename $f1 (flags $a $b))
+  (typename $f2 (flags (@witx repr u64) $c $d $e))
+  (typename $r1 (record (field $a u8) (field $b $f1)))
+  (typename $e1 (enum $a $b))
+
+  ;; Variants for testing casting between primitive types
+  (typename $c1 (variant (case $a s32) (case $b s64)))
+  (typename $c2 (variant (case $a s32) (case $b f32)))
+  (typename $c3 (variant (case $a s32) (case $b f64)))
+  (typename $c4 (variant (case $a s64) (case $b f32)))
+  (typename $c5 (variant (case $a s64) (case $b f64)))
+  (typename $c6 (variant (case $a f32) (case $b f64)))
+  (typename $casts (tuple $c1 $c2 $c3 $c4 $c5 $c6))
+
+  ;; Variants for testing zeros can be synthesized
+  (typename $z1 (variant (case $a s32) (case $b)))
+  (typename $z2 (variant (case $a s64) (case $b)))
+  (typename $z3 (variant (case $a f32) (case $b)))
+  (typename $z4 (variant (case $a f64) (case $b)))
+  (typename $zeros (tuple $z1 $z2 $z3 $z4))
+
+  (typename $s8 s8)
+  (typename $u8 u8)
+  (typename $s16 s16)
+  (typename $u16 u16)
+  (typename $s32 s32)
+  (typename $u32 u32)
+  (typename $s64 s64)
+  (typename $u64 u64)
+  (typename $f32 f32)
+  (typename $f64 f64)
+  (typename $legacy_result (tuple
+      ;; primitives with varying bit widths and signedness
+      $s8 $u8
+      $s16 $u16
+      $s32 $u32
+      $s64 $u64
+      $f32 $f64
+      ;; records
+      $r1
+  ))
+
+  (typename $unused_type (record (field $a string)))
+
+  (typename $list_in_record1 (record (field $a string)))
+  (typename $list_in_record2 (record (field $a string)))
+  (typename $list_in_record3 (record (field $a string)))
+  (typename $list_in_record4 (record (field $a string)))
+
+  (typename $option_typedef (option u32))
+  (typename $bool_typedef bool)
+  (typename $result_typedef (expected u32 (error)))
+
+  (typename $list_in_variant1_1 (option string))
+  (typename $list_in_variant1_2 (expected (error string)))
+  (typename $list_in_variant1_3 (union string f32))
+  (typename $list_in_variant2 (option string))
+  (typename $list_in_variant3 (option string))
+
+  (typename $my_errno (enum $success $a $b))
+
+  (typename $list_in_alias $list_in_record4)
+  (typename $list_typedef string)
+  (typename $list_typedef2 (list u8))
+  (typename $list_typedef3 (list string))
+
+  (resource $r0)
+  (typename $host_state (handle $r0))
+  (resource $r1)
+  (typename $host_state2 (handle $r1))
+
+  (typename $host_state_param_record (record (field $a $host_state2)))
+  (typename $host_state_param_tuple (tuple $host_state2))
+  (typename $host_state_param_option (option $host_state2))
+  (typename $host_state_param_result (expected $host_state2 (error u32)))
+  (typename $host_state_param_variant (union $host_state2 u32))
+
+  (typename $host_state_result_record (record (field $a $host_state2)))
+  (typename $host_state_result_tuple (tuple $host_state2))
+  (typename $host_state_result_option (option $host_state2))
+  (typename $host_state_result_result (expected $host_state2 (error u32)))
+  (typename $host_state_result_variant (union $host_state2 u32))
+
+  (typename $buffer_in_variant (variant
+    (case $a (in-buffer u8))
+    (case $b (out-buffer u8))
+    (case $c (in-buffer bool))
+    (case $d (out-buffer bool))
+  ))
+
+  (typename $buffer_in_record (record
+    (field $a (in-buffer u8))
+    (field $b (out-buffer u8))
+    (field $c (in-buffer bool))
+    (field $d (out-buffer bool))
+    (field $e $buffer_in_variant)
+  ))
+
+  (typename $param_in_buffer_u8 (in-buffer u8))
+  (typename $param_out_buffer_u8 (out-buffer u8))
+  (typename $param_in_buffer_bool (in-buffer bool))
+  (typename $param_out_buffer_bool (out-buffer bool))
 
   ;; ===========================================
   ;; scalars
