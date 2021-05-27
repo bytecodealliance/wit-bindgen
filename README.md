@@ -1,6 +1,6 @@
 # WebAssembly Module Linker
 
-_Please note: this is en experimental project._
+_Please note: this is an experimental project._
 
 `wasmlink` is a prototype [WebAssembly](https://webassembly.org/) module linker that can link together a module and its dependencies using [module linking](https://github.com/WebAssembly/module-linking).
 
