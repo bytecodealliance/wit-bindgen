@@ -11,3 +11,7 @@ petgraph = "0.5.1"
 wasm-encoder = "0.4.1"
 wasmparser = "0.78.1"
 witx = { git = 'https://github.com/alexcrichton/WASI', branch = 'abi-next' }
+
+[dev-dependencies]
+wasmtime = "0.27.0"
+wasmprinter = "0.2.26"
