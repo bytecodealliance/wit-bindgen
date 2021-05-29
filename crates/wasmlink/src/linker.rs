@@ -153,7 +153,7 @@ impl Linker {
         // performs the check iteratively rather than recursively.
         toposort(&graph, None).map_err(|e| {
             anyhow!(
-                "module `{}` and its dependencies form a cycle in the import graph",
+                "module `{}` and its imports form a cycle in the import graph",
                 graph[e.node_id()].module.name
             )
         })?;
