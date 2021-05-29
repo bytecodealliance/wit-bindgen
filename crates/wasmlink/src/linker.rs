@@ -1,7 +1,7 @@
 use crate::{adapter::ModuleAdapter, Module, Profile};
 use anyhow::{anyhow, bail, Result};
-use petgraph::{graph::NodeIndex, Graph};
-use std::collections::{HashMap, HashSet};
+use petgraph::{algo::toposort, graph::NodeIndex, Graph};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 use wasmparser::{ExternalKind, FuncType, ImportSectionEntryType, Type, TypeDef};
 
 pub fn to_val_type(ty: &Type) -> wasm_encoder::ValType {
@@ -87,7 +87,7 @@ impl Linker {
         imports: &'a HashMap<&str, Module>,
     ) -> Result<Graph<ModuleAdapter<'a>, ()>> {
         let mut queue: Vec<(Option<petgraph::graph::NodeIndex>, &Module)> = Vec::new();
-        let mut seen = HashSet::new();
+        let mut seen = HashMap::new();
         let mut graph: Graph<ModuleAdapter, ()> = Graph::new();
 
         queue.push((None, main));
@@ -95,48 +95,50 @@ impl Linker {
         loop {
             match queue.pop() {
                 Some((predecessor, module)) => {
-                    // The dependency graph must be acyclic
-                    if !seen.insert(module.name) {
-                        bail!(
-                            "module `{}` imported by module `{}` forms a dependency cycle",
-                            module.name,
-                            graph[predecessor.unwrap()].module.name
-                        );
-                    }
+                    let index = match seen.entry(module as *const _) {
+                        Entry::Occupied(e) => *e.get(),
+                        Entry::Vacant(e) => {
+                            let index = graph.add_node(ModuleAdapter::new(module));
 
-                    let index = graph.add_node(ModuleAdapter::new(module));
+                            for import in &module.imports {
+                                let imported_module = imports.get(import.module);
 
-                    for import in &module.imports {
-                        let imported_module = imports.get(import.module);
-
-                        // Check for profile provided function imports before resolving exports on the imported module
-                        if let ImportSectionEntryType::Function(i) = &import.ty {
-                            match module
-                                .types
-                                .get(*i as usize)
-                                .expect("function index must be in range")
-                            {
-                                TypeDef::Func(ft) => {
-                                    if self.profile.provides(import.module, import.field, ft) {
-                                        continue;
+                                // Check for profile provided function imports before resolving exports on the imported module
+                                if let ImportSectionEntryType::Function(i) = &import.ty {
+                                    match module
+                                        .types
+                                        .get(*i as usize)
+                                        .expect("function index must be in range")
+                                    {
+                                        TypeDef::Func(ft) => {
+                                            if self.profile.provides(
+                                                import.module,
+                                                import.field,
+                                                ft,
+                                            ) {
+                                                continue;
+                                            }
+                                        }
+                                        _ => unreachable!("import must be a function"),
                                     }
                                 }
-                                _ => unreachable!("import must be a function"),
+
+                                let imported_module = imported_module.ok_or_else(|| {
+                                    anyhow!(
+                                        "module `{}` imports from unknown module `{}`",
+                                        module.name,
+                                        import.module
+                                    )
+                                })?;
+
+                                imported_module.resolve_import(import, module)?;
+
+                                queue.push((Some(index), imported_module));
                             }
+
+                            *e.insert(index)
                         }
-
-                        let imported_module = imported_module.ok_or_else(|| {
-                            anyhow!(
-                                "module `{}` imports from unknown module `{}`",
-                                module.name,
-                                import.module
-                            )
-                        })?;
-
-                        imported_module.resolve_import(import, module)?;
-
-                        queue.push((Some(index), imported_module));
-                    }
+                    };
 
                     if let Some(predecessor) = predecessor {
                         graph.add_edge(predecessor, index, ());
@@ -145,6 +147,16 @@ impl Linker {
                 None => break,
             }
         }
+
+        // Ensure the graph is acyclic by performing a topographical sort.
+        // This algorithm requires more space than `is_cyclic_directed`, but
+        // performs the check iteratively rather than recursively.
+        toposort(&graph, None).map_err(|e| {
+            anyhow!(
+                "module `{}` and its dependencies form a cycle in the import graph",
+                graph[e.node_id()].module.name
+            )
+        })?;
 
         Ok(graph)
     }
