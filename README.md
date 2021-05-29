@@ -27,7 +27,7 @@ $ cargo run
 To run tests:
 
 ```text
-$ cargo test
+$ cargo test --all
 ```
 
 ## Demo
