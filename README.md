@@ -62,7 +62,7 @@ This module will read input via `stdin`, pass the input as a string to the `rend
 With the two modules now built, it is time to link them together so that they can be run directly with [Wasmtime](https://github.com/bytecodealliance/wasmtime):
 
 ```text
-$ cargo run -q -- -i markdown=demo/markdown/target/wasm32-wasi/debug/markdown.wasm -p wasmtime -o linked.wasm demo/renderer/target/wasm32-wasi/debug/renderer.wasm
+$ cargo run --release -- -i markdown=demo/markdown/target/wasm32-wasi/debug/markdown.wasm -p wasmtime -o linked.wasm demo/renderer/target/wasm32-wasi/debug/renderer.wasm
 ```
 
 This command produces a linked module `linked.wasm` that we can now run directly with Wasmtime:
