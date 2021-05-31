@@ -63,7 +63,10 @@ impl Linker {
             }
             false
         }) {
-            bail!("main module `{}` must export a start function");
+            bail!(
+                "main module `{}` must export a start function that has no parameters or results",
+                main.name
+            );
         }
 
         let graph = self.build_graph(main, imports)?;
@@ -294,7 +297,7 @@ impl Linker {
 
                 if existing != &ty {
                     bail!(
-                        "import `{}` from profile module `{}` has a conflicting type between different importing modules",
+                        "profile import `{}` from module `{}` has a conflicting type between different importing modules",
                         import.field.unwrap_or(""),
                         import.module
                     );
@@ -407,5 +410,170 @@ impl Linker {
         }
 
         (parent_index, false)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn it_errors_on_missing_main_function() -> Result<()> {
+        let bytes = wat::parse_str(r#"(module)"#)?;
+        let main = Module::new("main", &bytes)?;
+
+        let linker = Linker::new(Profile::new());
+
+        assert_eq!(
+            linker.link(&main, &HashMap::new()).unwrap_err().to_string(),
+            "main module `main` must export a start function that has no parameters or results"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_errors_on_incorrect_main_function() -> Result<()> {
+        let bytes = wat::parse_str(r#"(module (func (export "_start") (param i32)))"#)?;
+        let main = Module::new("main", &bytes)?;
+
+        let linker = Linker::new(Profile::new());
+
+        assert_eq!(
+            linker.link(&main, &HashMap::new()).unwrap_err().to_string(),
+            "main module `main` must export a start function that has no parameters or results"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_errors_on_missing_import() -> Result<()> {
+        let bytes = wat::parse_str(
+            r#"(module (import "unknown" "import" (func)) (func (export "_start")))"#,
+        )?;
+        let main = Module::new("main", &bytes)?;
+
+        let linker = Linker::new(Profile::new());
+
+        assert_eq!(
+            linker.link(&main, &HashMap::new()).unwrap_err().to_string(),
+            "module `main` imports from unknown module `unknown`"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_errors_on_an_import_with_missing_export() -> Result<()> {
+        let bytes = wat::parse_str(r#"(module (import "a" "a" (func)) (func (export "_start")))"#)?;
+        let a = wat::parse_str(r#"(module (import "b" "b" (func)))"#)?;
+
+        let main = Module::new("main", &bytes)?;
+
+        let mut imports = HashMap::new();
+        imports.insert("a", Module::new("a", &a)?);
+
+        let linker = Linker::new(Profile::new());
+
+        assert_eq!(
+            linker.link(&main, &imports).unwrap_err().to_string(),
+            "module `a` does not export a function named `a`"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_errors_on_an_import_with_export_mismatch() -> Result<()> {
+        let bytes = wat::parse_str(r#"(module (import "a" "a" (func)) (func (export "_start")))"#)?;
+        let a = wat::parse_str(r#"(module (import "b" "b" (func)) (memory (export "a") 0))"#)?;
+
+        let main = Module::new("main", &bytes)?;
+
+        let mut imports = HashMap::new();
+        imports.insert("a", Module::new("a", &a)?);
+
+        let linker = Linker::new(Profile::new());
+
+        assert_eq!(
+            linker.link(&main, &imports).unwrap_err().to_string(),
+            "expected a function for export `a` from module `a` but found a memory"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_errors_on_an_import_with_export_signature_mismatch() -> Result<()> {
+        let bytes = wat::parse_str(r#"(module (import "a" "a" (func)) (func (export "_start")))"#)?;
+        let a =
+            wat::parse_str(r#"(module (import "b" "b" (func)) (func (export "a") (param i32)))"#)?;
+
+        let main = Module::new("main", &bytes)?;
+
+        let mut imports = HashMap::new();
+        imports.insert("a", Module::new("a", &a)?);
+
+        let linker = Linker::new(Profile::new());
+
+        assert_eq!(
+            linker.link(&main, &imports).unwrap_err().to_string(),
+            "module `main` imports function `a` from module `a` but the types are incompatible"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_errors_on_an_import_cycle() -> Result<()> {
+        let bytes = wat::parse_str(r#"(module (import "a" "a" (func)) (func (export "_start")))"#)?;
+        let a = wat::parse_str(r#"(module (import "b" "b" (func)) (func (export "a")))"#)?;
+        let b = wat::parse_str(r#"(module (import "c" "c" (func)) (func (export "b")))"#)?;
+        let c = wat::parse_str(r#"(module (import "a" "a" (func)) (func (export "c")))"#)?;
+
+        let main = Module::new("main", &bytes)?;
+
+        let mut imports = HashMap::new();
+        imports.insert("a", Module::new("a", &a)?);
+        imports.insert("b", Module::new("b", &b)?);
+        imports.insert("c", Module::new("c", &c)?);
+
+        let linker = Linker::new(Profile::new());
+
+        assert_eq!(
+            linker.link(&main, &imports).unwrap_err().to_string(),
+            "module `c` and its imports form a cycle in the import graph"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_errors_on_incompatible_profile_imports() -> Result<()> {
+        let bytes = wat::parse_str(
+            r#"(module (import "a" "a" (func)) (import "b" "b" (func)) (func (export "_start")))"#,
+        )?;
+        let a = wat::parse_str(
+            r#"(module (import "wasi_snapshot_preview1" "c" (func)) (func (export "a")))"#,
+        )?;
+        let b = wat::parse_str(
+            r#"(module (import "wasi_snapshot_preview1" "c" (func (param i32))) (func (export "b")))"#,
+        )?;
+
+        let main = Module::new("main", &bytes)?;
+
+        let mut imports = HashMap::new();
+        imports.insert("a", Module::new("a", &a)?);
+        imports.insert("b", Module::new("b", &b)?);
+
+        let linker = Linker::new(Profile::new());
+
+        assert_eq!(
+            linker.link(&main, &imports).unwrap_err().to_string(),
+            "profile import `c` from module `wasi_snapshot_preview1` has a conflicting type between different importing modules"
+        );
+
+        Ok(())
     }
 }
