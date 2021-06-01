@@ -343,20 +343,20 @@ impl Host for MyHost {
         len as u32
     }
 
-    fn buffer_string(
-        &mut self,
-        in_: InBuffer<'_, GuestPtr<'_, str>>,
-        mut out: OutBuffer<'_, String>,
-    ) -> u32 {
-        assert!(in_.len() < out.capacity());
-        let len = in_.len();
-        for item in in_.iter().unwrap() {
-            let item = item.unwrap();
-            let s = item.borrow().unwrap();
-            out.write(Some(s.to_uppercase())).unwrap();
-        }
-        len as u32
-    }
+    // fn buffer_string(
+    //     &mut self,
+    //     in_: InBuffer<'_, GuestPtr<'_, str>>,
+    //     mut out: OutBuffer<'_, String>,
+    // ) -> u32 {
+    //     assert!(in_.len() < out.capacity());
+    //     let len = in_.len();
+    //     for item in in_.iter().unwrap() {
+    //         let item = item.unwrap();
+    //         let s = item.borrow().unwrap();
+    //         out.write(Some(s.to_uppercase())).unwrap();
+    //     }
+    //     len as u32
+    // }
 
     // fn buffer_list_bool(
     //     &mut self,
