@@ -908,7 +908,7 @@ impl Generator for Wasmtime {
             assert!(status.success());
         }
 
-        files.push("bindings.rs", &src);
+        files.push("bindings.rs", src.as_bytes());
     }
 }
 
