@@ -257,6 +257,8 @@ impl Resolver {
                     }
                 }
                 Item::Use(_) => {}
+
+                Item::Interface(_) => unimplemented!(),
             }
         }
 

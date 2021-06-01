@@ -1,4 +1,3 @@
-use crate::Interface;
 use anyhow::Result;
 use lex::{Span, Token, Tokenizer};
 use std::borrow::Cow;
@@ -18,6 +17,7 @@ pub enum Item<'a> {
     Resource(Resource<'a>),
     TypeDef(TypeDef<'a>),
     Value(Value<'a>),
+    Interface(Interface<'a>),
 }
 
 pub struct Id<'a> {
@@ -126,17 +126,25 @@ enum ValueKind<'a> {
     Global(Type<'a>),
 }
 
+#[allow(dead_code)] // TODO
+pub struct Interface<'a> {
+    docs: Documentation<'a>,
+    name: Id<'a>,
+    items: Vec<Item<'a>>,
+}
+
 impl<'a> Ast<'a> {
     pub fn parse(input: &'a str) -> Result<Ast<'a>> {
         let mut lexer = Tokenizer::new(input);
         let mut items = Vec::new();
         while lexer.clone().next()?.is_some() {
-            items.push(Item::parse(&mut lexer)?);
+            let docs = parse_docs(&mut lexer)?;
+            items.push(Item::parse(&mut lexer, docs)?);
         }
         Ok(Ast { items })
     }
 
-    pub fn resolve(&self, map: &HashMap<String, Interface>) -> Result<Interface> {
+    pub fn resolve(&self, map: &HashMap<String, crate::Interface>) -> Result<crate::Interface> {
         let mut resolver = resolve::Resolver::default();
         let instance = resolver.resolve(&self.items, map)?;
         Ok(instance)
@@ -144,8 +152,7 @@ impl<'a> Ast<'a> {
 }
 
 impl<'a> Item<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>) -> Result<Item<'a>> {
-        let docs = parse_docs(tokens)?;
+    fn parse(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Item<'a>> {
         match tokens.clone().next()? {
             Some((_span, Token::Use)) => Use::parse(tokens, docs).map(Item::Use),
             Some((_span, Token::Type)) => TypeDef::parse(tokens, docs).map(Item::TypeDef),
@@ -157,6 +164,7 @@ impl<'a> Item<'a> {
             Some((_span, Token::Record)) => TypeDef::parse_record(tokens, docs).map(Item::TypeDef),
             Some((_span, Token::Union)) => TypeDef::parse_union(tokens, docs).map(Item::TypeDef),
             Some((_span, Token::Resource)) => Resource::parse(tokens, docs).map(Item::Resource),
+            Some((_span, Token::Interface)) => Interface::parse(tokens, docs).map(Item::Interface),
             Some((_span, Token::Id)) | Some((_span, Token::StrLit)) => {
                 Value::parse(tokens, docs).map(Item::Value)
             }
@@ -554,6 +562,23 @@ impl<'a> Type<'a> {
                 },
             ],
         })
+    }
+}
+
+impl<'a> Interface<'a> {
+    fn parse(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+        tokens.expect(Token::Interface)?;
+        let name = parse_id(tokens)?;
+        tokens.expect(Token::LeftBrace)?;
+        let mut items = Vec::new();
+        loop {
+            let docs = parse_docs(tokens)?;
+            if tokens.eat(Token::RightBrace)? {
+                break;
+            }
+            items.push(Item::parse(tokens, docs)?);
+        }
+        Ok(Interface { docs, name, items })
     }
 }
 
