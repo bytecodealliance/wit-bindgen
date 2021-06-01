@@ -1,4 +1,4 @@
 // parse-fail
-use a from
+use { a } from
 
 type foo = u32

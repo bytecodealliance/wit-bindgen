@@ -1,2 +1,2 @@
 // parse-fail
-use nonexistent from import-me
+use { nonexistent } from import-me

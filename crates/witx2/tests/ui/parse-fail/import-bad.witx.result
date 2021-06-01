@@ -1,5 +1,5 @@
 name not defined in submodule
-     --> tests/ui/parse-fail/import-bad.witx:2:5
+     --> tests/ui/parse-fail/import-bad.witx:2:7
       |
-    2 | use nonexistent from import-me
-      |     ^----------
+    2 | use { nonexistent } from import-me
+      |       ^----------

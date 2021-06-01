@@ -1,2 +1,2 @@
 // parse-fail
-use foo from bar:baz
+use { foo } from bar:baz

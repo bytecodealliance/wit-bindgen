@@ -1,2 +1,2 @@
 // parse-fail
-use from foo
+use {} from foo

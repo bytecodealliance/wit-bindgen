@@ -1,2 +1,2 @@
 // parse-fail
-use bar, bar from import-me
+use { bar, bar } from import-me

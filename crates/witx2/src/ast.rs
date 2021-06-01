@@ -157,6 +157,7 @@ impl<'a> Use<'a> {
                 if tokens.eat(Token::Star)? {
                     break;
                 }
+                tokens.expect(Token::LeftBrace)?;
                 names = Some(Vec::new());
             }
             let names = names.as_mut().unwrap();
@@ -171,6 +172,9 @@ impl<'a> Use<'a> {
             if !tokens.eat(Token::Comma)? {
                 break;
             }
+        }
+        if !names.is_none() {
+            tokens.expect(Token::RightBrace)?;
         }
         tokens.expect(Token::From_)?;
         let mut from = vec![parse_id(tokens)?];

@@ -1,5 +1,5 @@
 expected ':', found whitespace
-     --> tests/ui/parse-fail/bad-use4.witx:2:18
+     --> tests/ui/parse-fail/bad-use4.witx:2:22
       |
-    2 | use foo from bar:
-      |                  ^
+    2 | use { foo } from bar:
+      |                      ^
