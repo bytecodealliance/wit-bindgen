@@ -1,7 +1,7 @@
 use crate::{adapter::ModuleAdapter, Module, Profile};
 use anyhow::{anyhow, bail, Result};
 use petgraph::{algo::toposort, graph::NodeIndex, Graph};
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::collections::{hash_map::Entry, BTreeMap, HashMap};
 use wasmparser::{ExternalKind, FuncType, ImportSectionEntryType, Type, TypeDef};
 
 pub fn to_val_type(ty: &Type) -> wasm_encoder::ValType {
@@ -20,9 +20,8 @@ pub fn to_val_type(ty: &Type) -> wasm_encoder::ValType {
 }
 
 struct LinkState<'a> {
-    types: HashSet<&'a FuncType>,
-    type_map: HashMap<&'a FuncType, u32>,
-    imports: HashMap<&'a str, HashMap<Option<&'a str>, &'a FuncType>>,
+    types: Vec<&'a FuncType>,
+    imports: BTreeMap<&'a str, BTreeMap<Option<&'a str>, wasm_encoder::EntityType>>,
     num_imported_funcs: u32,
     implicit_instances: HashMap<&'a str, u32>,
     modules: Vec<wasm_encoder::Module>,
@@ -70,6 +69,9 @@ impl Linker {
         }
 
         let graph = self.build_graph(main, imports)?;
+
+        // TODO: validate main module by checking that it has valid adapter exports if it depends
+        // on a module with an interface
 
         let mut state = self.link_state(&graph)?;
 
@@ -167,12 +169,11 @@ impl Linker {
     fn write_type_section(&self, state: &mut LinkState) {
         let mut section = wasm_encoder::TypeSection::new();
 
-        for (index, ty) in state.types.iter().enumerate() {
+        for ty in &state.types {
             section.function(
                 ty.params.iter().map(to_val_type),
                 ty.returns.iter().map(to_val_type),
             );
-            state.type_map.insert(ty, index as u32);
         }
 
         state.module.section(&section);
@@ -183,11 +184,7 @@ impl Linker {
 
         for (module, imports) in &state.imports {
             for (field, ty) in imports {
-                section.import(
-                    module,
-                    *field,
-                    wasm_encoder::EntityType::Function(state.type_map[ty]),
-                );
+                section.import(module, *field, *ty);
             }
         }
 
@@ -258,9 +255,8 @@ impl Linker {
 
     fn link_state<'a>(&self, graph: &'a Graph<ModuleAdapter<'a>, ()>) -> Result<LinkState<'a>> {
         let mut state = LinkState {
-            types: HashSet::new(),
-            type_map: HashMap::new(),
-            imports: HashMap::new(),
+            types: Vec::new(),
+            imports: BTreeMap::new(),
             num_imported_funcs: 0,
             implicit_instances: HashMap::new(),
             modules: Vec::new(),
@@ -273,6 +269,7 @@ impl Linker {
             module: wasm_encoder::Module::new(),
         };
 
+        let mut types = HashMap::new();
         let mut num_imported_funcs = 0;
         for f in graph.node_indices() {
             let adapter = &graph[f];
@@ -288,19 +285,28 @@ impl Linker {
                     continue;
                 }
 
-                let imports = state.imports.entry(import.module).or_default();
-
-                let existing = imports.entry(import.field).or_insert_with(|| {
-                    num_imported_funcs += 1;
-                    ty
+                let type_index = *types.entry(ty).or_insert_with(|| {
+                    let index = state.types.len() as u32;
+                    state.types.push(ty);
+                    index
                 });
 
-                if existing != &ty {
-                    bail!(
-                        "profile import `{}` from module `{}` has a conflicting type between different importing modules",
-                        import.field.unwrap_or(""),
-                        import.module
-                    );
+                let imports = state.imports.entry(import.module).or_default();
+
+                match imports.entry(import.field).or_insert_with(|| {
+                    num_imported_funcs += 1;
+                    wasm_encoder::EntityType::Function(type_index)
+                }) {
+                    wasm_encoder::EntityType::Function(existing) => {
+                        if *existing != type_index {
+                            bail!(
+                                "profile import `{}` from module `{}` has a conflicting type between different importing modules",
+                                import.field.unwrap_or(""),
+                                import.module
+                            );
+                        }
+                    }
+                    _ => panic!("expected a function import"),
                 }
 
                 let len = state.implicit_instances.len();
@@ -308,8 +314,6 @@ impl Linker {
                     .implicit_instances
                     .entry(import.module)
                     .or_insert(len as u32);
-
-                state.types.insert(ty);
             }
 
             let module_index = state.modules.len() as u32;
@@ -572,6 +576,159 @@ mod test {
         assert_eq!(
             linker.link(&main, &imports).unwrap_err().to_string(),
             "profile import `c` from module `wasi_snapshot_preview1` has a conflicting type between different importing modules"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_links() -> Result<()> {
+        let bytes = wat::parse_str(r#"(module (import "a" "a" (func)) (func (export "_start")))"#)?;
+        let a = wat::parse_str(
+            r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a")))"#,
+        )?;
+
+        let main = Module::new("main", &bytes)?;
+
+        let mut imports = HashMap::new();
+        imports.insert("a", Module::new("a", &a)?);
+
+        let linker = Linker::new(Profile::new());
+
+        let bytes = linker.link(&main, &imports)?;
+
+        assert_eq!(
+            wasmprinter::print_bytes(&bytes)?,
+            "\
+(module
+  (type (;0;) (func))
+  (import \"wasi_snapshot_preview1\" \"a\" (func (;0;) (type 0)))
+  (module (;0;)
+    (type (;0;) (func))
+    (import \"a\" \"a\" (func (;0;) (type 0)))
+    (func (;1;) (type 0))
+    (export \"_start\" (func 1)))
+  (module (;1;)
+    (type (;0;) (func))
+    (import \"wasi_snapshot_preview1\" \"a\" (func (;0;) (type 0)))
+    (func (;1;) (type 0))
+    (export \"a\" (func 1)))
+  (instance (;1;)
+    (instantiate 1
+      (import \"wasi_snapshot_preview1\" (instance 0))))
+  (instance (;2;)
+    (instantiate 0
+      (import \"wasi_snapshot_preview1\" (instance 0))
+      (import \"a\" (instance 1))))
+  (alias 2 \"_start\" (func (;1;)))
+  (export \"_start\" (func 1)))"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_links_with_interface() -> Result<()> {
+        let bytes = wat::parse_str(
+            r#"(module (import "a" "a" (func (param i32 i32))) (func (export "_start")))"#,
+        )?;
+        let a = wat::parse_str(
+            r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a") (param i32 i32)) (memory (export "memory") 0) (func (export "witx_malloc") (param i32 i32) (result i32) unreachable) (func (export "witx_free") (param i32 i32 i32)))"#,
+        )?;
+
+        let main = Module::new("main", &bytes)?;
+        let mut a = Module::new("a", &a)?;
+        a.interface = Some(witx::parse(
+            r#"(module $a (export "a" (func (param $p string))))"#,
+        )?);
+
+        let mut imports = HashMap::new();
+        imports.insert("a", a);
+
+        let linker = Linker::new(Profile::new());
+
+        let bytes = linker.link(&main, &imports)?;
+
+        assert_eq!(
+            wasmprinter::print_bytes(&bytes)?,
+            "\
+(module
+  (type (;0;) (func))
+  (import \"wasi_snapshot_preview1\" \"a\" (func (;0;) (type 0)))
+  (module (;0;)
+    (type (;0;) (func (param i32 i32)))
+    (type (;1;) (func))
+    (import \"a\" \"a\" (func (;0;) (type 0)))
+    (func (;1;) (type 1))
+    (export \"_start\" (func 1)))
+  (module (;1;)
+    (type (;0;) (func))
+    (type (;1;) (func (param i32 i32)))
+    (type (;2;) (func (param i32 i32) (result i32)))
+    (import \"wasi_snapshot_preview1\" \"a\" (func (;0;) (type 0)))
+    (import \"$parent\" \"memory\" (memory (;0;) 0))
+    (import \"$parent\" \"witx_malloc\" (func (;1;) (type 2)))
+    (module (;0;)
+      (type (;0;) (func))
+      (type (;1;) (func (param i32 i32)))
+      (type (;2;) (func (param i32 i32) (result i32)))
+      (type (;3;) (func (param i32 i32 i32)))
+      (import \"wasi_snapshot_preview1\" \"a\" (func (;0;) (type 0)))
+      (func (;1;) (type 1) (param i32 i32))
+      (func (;2;) (type 2) (param i32 i32) (result i32)
+        unreachable)
+      (func (;3;) (type 3) (param i32 i32 i32))
+      (memory (;0;) 0)
+      (export \"a\" (func 1))
+      (export \"memory\" (memory 0))
+      (export \"witx_malloc\" (func 2))
+      (export \"witx_free\" (func 3)))
+    (instance (;2;)
+      (instantiate 0
+        (import \"wasi_snapshot_preview1\" (instance 0))))
+    (alias 2 \"memory\" (memory (;1;)))
+    (alias 2 \"witx_malloc\" (func (;2;)))
+    (alias 2 \"witx_free\" (func (;3;)))
+    (alias 2 \"a\" (func (;4;)))
+    (func (;5;) (type 1) (param i32 i32)
+      (local i32)
+      local.get 1
+      i32.const 1
+      call 2
+      local.tee 2
+      local.get 0
+      local.get 1
+      memory.copy 1 0
+      local.get 2
+      local.get 1
+      call 4)
+    (export \"a\" (func 5)))
+  (module (;2;)
+    (type (;0;) (func (param i32 i32)))
+    (func (;0;) (type 0) (param i32 i32)
+      (local i32)
+      local.get 0
+      local.get 1
+      i32.const 0
+      call_indirect (type 0))
+    (table (;0;) 1 1 funcref)
+    (export \"a\" (func 0))
+    (export \"$funcs\" (table 0)))
+  (instance (;1;)
+    (instantiate 2))
+  (instance (;2;)
+    (instantiate 0
+      (import \"wasi_snapshot_preview1\" (instance 0))
+      (import \"a\" (instance 1))))
+  (instance (;3;)
+    (instantiate 1
+      (import \"wasi_snapshot_preview1\" (instance 0))
+      (import \"$parent\" (instance 2))))
+  (alias 3 \"a\" (func (;1;)))
+  (alias 2 \"_start\" (func (;2;)))
+  (alias 1 \"$funcs\" (table (;0;)))
+  (export \"_start\" (func 2))
+  (elem (;0;) (i32.const 0) funcref (ref.func 1)))"
         );
 
         Ok(())
