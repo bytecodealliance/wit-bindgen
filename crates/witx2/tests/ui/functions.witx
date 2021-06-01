@@ -1,8 +1,8 @@
-fn f1()
-fn f2(a: u32)
-fn f3(a: u32,)
-fn f4() -> u32
-fn f5() -> u32, u32
-fn f6() -> (u32, u32)
-fn f7(a: f32, b: f32) -> (u32, u32)
-fn f8(a: option<u32>) -> expected<u32, f32>
+f1: function()
+f2: function(a: u32)
+f3: function(a: u32,)
+f4: function() -> u32
+f5: function() -> u32, u32
+f6: function() -> (u32, u32)
+f7: function(a: f32, b: f32) -> (u32, u32)
+f8: function(a: option<u32>) -> expected<u32, f32>

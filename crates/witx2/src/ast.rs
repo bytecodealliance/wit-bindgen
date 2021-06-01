@@ -17,7 +17,7 @@ pub enum Item<'a> {
     Use(Use<'a>),
     Resource(Resource<'a>),
     TypeDef(TypeDef<'a>),
-    Function(Function<'a>),
+    Value(Value<'a>),
 }
 
 pub struct Id<'a> {
@@ -111,11 +111,18 @@ struct Case<'a> {
     ty: Option<Type<'a>>,
 }
 
-pub struct Function<'a> {
+pub struct Value<'a> {
     docs: Documentation<'a>,
     name: Id<'a>,
-    params: Vec<(Id<'a>, Type<'a>)>,
-    results: Vec<Type<'a>>,
+    kind: ValueKind<'a>,
+}
+
+enum ValueKind<'a> {
+    Function {
+        params: Vec<(Id<'a>, Type<'a>)>,
+        results: Vec<Type<'a>>,
+    },
+    Global(Type<'a>),
 }
 
 impl<'a> Ast<'a> {
@@ -149,7 +156,9 @@ impl<'a> Item<'a> {
             Some((_span, Token::Record)) => TypeDef::parse_record(tokens, docs).map(Item::TypeDef),
             Some((_span, Token::Union)) => TypeDef::parse_union(tokens, docs).map(Item::TypeDef),
             Some((_span, Token::Resource)) => Resource::parse(tokens, docs).map(Item::Resource),
-            Some((_span, Token::Fn_)) => Function::parse(tokens, docs).map(Item::Function),
+            Some((_span, Token::Id)) | Some((_span, Token::StrLit)) => {
+                Value::parse(tokens, docs).map(Item::Value)
+            }
             other => Err(err_expected(tokens, "`type`, `resource`, or `fn`", other).into()),
         }
     }
@@ -322,36 +331,37 @@ impl<'a> Resource<'a> {
     }
 }
 
-impl<'a> Function<'a> {
+impl<'a> Value<'a> {
     fn parse(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
-        tokens.expect(Token::Fn_)?;
         let name = parse_id(tokens)?;
-        let params = parse_list(
-            tokens,
-            Token::LeftParen,
-            Token::RightParen,
-            |_docs, tokens| {
-                let name = parse_id(tokens)?;
-                tokens.expect(Token::Colon)?;
-                let ty = Type::parse(tokens)?;
-                Ok((name, ty))
-            },
-        )?;
-        let mut results = Vec::new();
-        if tokens.eat(Token::RArrow)? {
-            loop {
-                results.push(Type::parse(tokens)?);
-                if !tokens.eat(Token::Comma)? {
-                    break;
+        tokens.expect(Token::Colon)?;
+
+        let kind = if tokens.eat(Token::Function)? {
+            let params = parse_list(
+                tokens,
+                Token::LeftParen,
+                Token::RightParen,
+                |_docs, tokens| {
+                    let name = parse_id(tokens)?;
+                    tokens.expect(Token::Colon)?;
+                    let ty = Type::parse(tokens)?;
+                    Ok((name, ty))
+                },
+            )?;
+            let mut results = Vec::new();
+            if tokens.eat(Token::RArrow)? {
+                loop {
+                    results.push(Type::parse(tokens)?);
+                    if !tokens.eat(Token::Comma)? {
+                        break;
+                    }
                 }
             }
-        }
-        Ok(Function {
-            docs,
-            name,
-            params,
-            results,
-        })
+            ValueKind::Function { params, results }
+        } else {
+            ValueKind::Global(Type::parse(tokens)?)
+        };
+        Ok(Value { docs, name, kind })
     }
 }
 

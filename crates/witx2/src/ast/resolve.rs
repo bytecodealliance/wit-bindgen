@@ -1,4 +1,4 @@
-use super::{Error, Item, Span};
+use super::{Error, Item, Span, Value, ValueKind};
 use crate::*;
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
@@ -12,6 +12,8 @@ pub struct Resolver {
     resources_copied: HashMap<(String, ResourceId), ResourceId>,
     resources: Arena<Resource>,
     anon_types: HashMap<Key, TypeId>,
+    functions: Vec<Function>,
+    globals: Vec<Global>,
 }
 
 #[derive(PartialEq, Eq, Hash)]
@@ -46,32 +48,13 @@ impl Resolver {
             self.types.get_mut(id).unwrap().kind = kind;
         }
 
-        // And finally we can resolve all type references in functions and
-        // additionally validate that types thesmelves are not recursive
-        let mut functions = Vec::new();
+        // And finally we can resolve all type references in functions/globals
+        // and additionally validate that types thesmelves are not recursive
         let mut valid_types = HashSet::new();
         let mut visiting = HashSet::new();
         for field in fields {
             match field {
-                Item::Function(f) => {
-                    let docs = self.docs(&f.docs);
-                    let params = f
-                        .params
-                        .iter()
-                        .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
-                        .collect::<Result<_>>()?;
-                    let results = f
-                        .results
-                        .iter()
-                        .map(|ty| self.resolve_type(ty))
-                        .collect::<Result<_>>()?;
-                    functions.push(Function {
-                        docs,
-                        name: f.name.name.to_string(),
-                        params,
-                        results,
-                    });
-                }
+                Item::Value(v) => self.resolve_value(v)?,
                 Item::TypeDef(t) => {
                     self.validate_type_not_recursive(
                         t.name.span,
@@ -91,7 +74,8 @@ impl Resolver {
             resource_lookup: mem::take(&mut self.resource_lookup),
             interface_lookup: Default::default(),
             interfaces: Default::default(),
-            functions,
+            functions: mem::take(&mut self.functions),
+            globals: mem::take(&mut self.globals),
         })
     }
 
@@ -238,7 +222,7 @@ impl Resolver {
     }
 
     fn register_names(&mut self, fields: &[Item<'_>]) -> Result<()> {
-        let mut functions = HashSet::new();
+        let mut values = HashSet::new();
         for field in fields {
             match field {
                 Item::Resource(r) => {
@@ -262,11 +246,11 @@ impl Resolver {
                     });
                     self.define_type(&t.name.name, t.name.span, id)?;
                 }
-                Item::Function(f) => {
-                    if !functions.insert(&f.name.name) {
+                Item::Value(f) => {
+                    if !values.insert(&f.name.name) {
                         return Err(Error {
                             span: f.name.span,
-                            msg: format!("function {:?} defined twice", f.name.name),
+                            msg: format!("{:?} defined twice", f.name.name),
                         }
                         .into());
                     }
@@ -448,6 +432,37 @@ impl Resolver {
         Documentation {
             contents: Some(docs),
         }
+    }
+
+    fn resolve_value(&mut self, value: &Value<'_>) -> Result<()> {
+        let docs = self.docs(&value.docs);
+        match &value.kind {
+            ValueKind::Function { params, results } => {
+                let params = params
+                    .iter()
+                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
+                    .collect::<Result<_>>()?;
+                let results = results
+                    .iter()
+                    .map(|ty| self.resolve_type(ty))
+                    .collect::<Result<_>>()?;
+                self.functions.push(Function {
+                    docs,
+                    name: value.name.name.to_string(),
+                    params,
+                    results,
+                });
+            }
+            ValueKind::Global(ty) => {
+                let ty = self.resolve_type(ty)?;
+                self.globals.push(Global {
+                    docs,
+                    name: value.name.name.to_string(),
+                    ty,
+                });
+            }
+        }
+        Ok(())
     }
 
     fn validate_type_not_recursive(

@@ -14,6 +14,7 @@ pub struct Interface {
     pub interfaces: Arena<Interface>,
     pub interface_lookup: HashMap<String, InterfaceId>,
     pub functions: Vec<Function>,
+    pub globals: Vec<Global>,
 }
 
 pub type TypeId = Id<TypeDef>;
@@ -86,6 +87,12 @@ pub struct Resource {
     /// `None` if this resource is defined within the containing instance,
     /// otherwise `Some` if it's defined in an instance named here.
     pub foreign_module: Option<String>,
+}
+
+pub struct Global {
+    pub docs: Documentation,
+    pub name: String,
+    pub ty: Type,
 }
 
 pub struct Function {
