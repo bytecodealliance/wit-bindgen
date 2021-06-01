@@ -137,6 +137,8 @@ fn to_json(i: &witx2::Interface) -> String {
         types: Vec<TypeDef>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         functions: Vec<Function>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        globals: Vec<Global>,
     }
 
     #[derive(Serialize)]
@@ -179,6 +181,12 @@ fn to_json(i: &witx2::Interface) -> String {
         results: Vec<String>,
     }
 
+    #[derive(Serialize)]
+    struct Global {
+        name: String,
+        ty: String,
+    }
+
     let resources = i
         .resources
         .iter()
@@ -207,11 +215,20 @@ fn to_json(i: &witx2::Interface) -> String {
             results: f.results.iter().map(translate_type).collect(),
         })
         .collect::<Vec<_>>();
+    let globals = i
+        .globals
+        .iter()
+        .map(|g| Global {
+            name: g.name.clone(),
+            ty: translate_type(&g.ty),
+        })
+        .collect::<Vec<_>>();
 
     let iface = Interface {
         resources,
         types,
         functions,
+        globals,
     };
     return serde_json::to_string_pretty(&iface).unwrap();
 

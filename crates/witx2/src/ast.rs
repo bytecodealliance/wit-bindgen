@@ -56,6 +56,7 @@ struct UseName<'a> {
 pub struct Resource<'a> {
     docs: Documentation<'a>,
     name: Id<'a>,
+    values: Vec<(bool, Value<'a>)>,
 }
 
 #[derive(Default)]
@@ -327,7 +328,18 @@ impl<'a> Resource<'a> {
     fn parse(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
         tokens.expect(Token::Resource)?;
         let name = parse_id(tokens)?;
-        Ok(Resource { docs, name })
+        let mut values = Vec::new();
+        if tokens.eat(Token::LeftBrace)? {
+            loop {
+                let docs = parse_docs(tokens)?;
+                if tokens.eat(Token::RightBrace)? {
+                    break;
+                }
+                let statik = tokens.eat(Token::Static)?;
+                values.push((statik, Value::parse(tokens, docs)?));
+            }
+        }
+        Ok(Resource { docs, name, values })
     }
 }
 

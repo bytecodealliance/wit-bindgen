@@ -8,6 +8,38 @@
     },
     {
       "name": "c"
+    },
+    {
+      "name": "d"
+    },
+    {
+      "name": "e"
+    },
+    {
+      "name": "f"
+    }
+  ],
+  "functions": [
+    {
+      "name": "e::x",
+      "params": [
+        "handle-4"
+      ],
+      "results": []
+    },
+    {
+      "name": "f::x",
+      "params": [
+        "handle-5"
+      ],
+      "results": []
+    },
+    {
+      "name": "f::y",
+      "params": [
+        "handle-5"
+      ],
+      "results": []
     }
   ]
 }

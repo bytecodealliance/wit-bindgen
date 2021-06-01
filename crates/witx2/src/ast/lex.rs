@@ -73,6 +73,7 @@ pub enum Token {
     PullBuffer,
     As,
     From_,
+    Static,
 
     Id,
     StrLit,
@@ -238,6 +239,7 @@ impl<'a> Tokenizer<'a> {
                     "pull-buffer" => PullBuffer,
                     "as" => As,
                     "from" => From_,
+                    "static" => Static,
                     _ => Id,
                 }
             }
@@ -418,6 +420,7 @@ impl Token {
             Star => "`*`",
             As => "keyword `as`",
             From_ => "keyword `from`",
+            Static => "keyword `static`",
         }
     }
 }

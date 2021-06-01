@@ -1,3 +1,11 @@
 resource a
 resource b
 resource c
+resource d {}
+resource e {
+  x: function()
+}
+resource f {
+  x: function()
+  y: function()
+}

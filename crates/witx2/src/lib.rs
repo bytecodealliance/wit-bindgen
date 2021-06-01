@@ -98,6 +98,7 @@ pub struct Global {
 pub struct Function {
     pub docs: Documentation,
     pub name: String,
+    pub kind: FunctionKind,
     pub params: Vec<(String, Type)>,
     pub results: Vec<Type>,
 }

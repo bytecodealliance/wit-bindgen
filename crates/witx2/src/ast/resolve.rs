@@ -55,6 +55,7 @@ impl Resolver {
         for field in fields {
             match field {
                 Item::Value(v) => self.resolve_value(v)?,
+                Item::Resource(r) => self.resolve_resource(r)?,
                 Item::TypeDef(t) => {
                     self.validate_type_not_recursive(
                         t.name.span,
@@ -449,6 +450,7 @@ impl Resolver {
                 self.functions.push(Function {
                     docs,
                     name: value.name.name.to_string(),
+                    kind: FunctionKind::Freestanding,
                     params,
                     results,
                 });
@@ -461,6 +463,53 @@ impl Resolver {
                     ty,
                 });
             }
+        }
+        Ok(())
+    }
+
+    fn resolve_resource(&mut self, resource: &super::Resource<'_>) -> Result<()> {
+        let mut names = HashSet::new();
+        let id = self.resource_lookup[&*resource.name.name];
+        for (statik, value) in resource.values.iter() {
+            let (params, results) = match &value.kind {
+                ValueKind::Function { params, results } => (params, results),
+                ValueKind::Global(_) => {
+                    return Err(Error {
+                        span: value.name.span,
+                        msg: format!("globals not allowed in resources"),
+                    }
+                    .into());
+                }
+            };
+            if !names.insert(&value.name.name) {
+                return Err(Error {
+                    span: value.name.span,
+                    msg: format!("{:?} defined twice in this resource", value.name.name),
+                }
+                .into());
+            }
+            let docs = self.docs(&value.docs);
+            let mut params = params
+                .iter()
+                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
+                .collect::<Result<Vec<_>>>()?;
+            let results = results
+                .iter()
+                .map(|ty| self.resolve_type(ty))
+                .collect::<Result<_>>()?;
+            let kind = if *statik {
+                FunctionKind::Static(id)
+            } else {
+                params.insert(0, ("self".to_string(), Type::Handle(id)));
+                FunctionKind::Method(id)
+            };
+            self.functions.push(Function {
+                docs,
+                name: format!("{}::{}", resource.name.name, value.name.name.to_string()),
+                kind,
+                params,
+                results,
+            });
         }
         Ok(())
     }
