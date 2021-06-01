@@ -162,13 +162,18 @@ impl<'a> Module<'a> {
                     validator.data_section(&data)?;
                     self.add_section(wasm_encoder::SectionId::Data, data.range())
                 }
-                Payload::CodeSectionStart { count, range, size } => {
+                Payload::CodeSectionStart {
+                    count,
+                    range,
+                    size: _,
+                } => {
                     validator.code_section_start(count, &range)?;
-                    parser.skip_section();
-                    data = &data[size as usize..];
                     self.add_section(wasm_encoder::SectionId::Code, range)
                 }
-                Payload::CodeSectionEntry(_) => unreachable!(),
+                Payload::CodeSectionEntry(body) => {
+                    let mut validator = validator.code_section_entry()?;
+                    validator.validate(&body)?;
+                }
                 Payload::ModuleSectionStart { .. } => {
                     bail!("module is already linked as it contains a module section")
                 }

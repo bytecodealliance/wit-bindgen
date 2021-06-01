@@ -1,11 +1,7 @@
 use self::generator::CodeGenerator;
 use crate::{linker::to_val_type, Module};
 use anyhow::{anyhow, bail, Result};
-use std::{
-    collections::{HashMap, HashSet},
-    fmt,
-    rc::Rc,
-};
+use std::{collections::HashMap, fmt, rc::Rc};
 use wasmparser::{ExternalKind, FuncType, Type};
 use witx::{CallMode, Function, WasmType};
 
@@ -275,7 +271,7 @@ impl<'a> ModuleAdapter<'a> {
                             })?;
 
                             if ty != *expected_ty {
-                                bail!("required export `{}` from module `{}` does not have the expected function signature", export.field, self.module.name);
+                                bail!("required export `{}` from module `{}` does not have the expected function signature of {:?} -> {:?}", export.field, self.module.name, expected_ty.params, expected_ty.returns);
                             }
                         }
                         (ExternalKind::Memory, ExpectedExportType::Memory) => {
@@ -307,33 +303,32 @@ impl<'a> ModuleAdapter<'a> {
         Ok(())
     }
 
-    fn write_type_section(&self, state: &mut AdaptionState) {
-        let mut types: HashSet<FuncType> = HashSet::new();
-        for import in &self.module.imports {
-            types.insert(
-                self.module
-                    .import_func_type(import)
-                    .expect("expected import to be a function")
-                    .clone(),
-            );
-        }
-
-        // For importing the parents's malloc
-        types.insert(MALLOC_FUNC_TYPE.clone());
-
-        // Add the adapted function types
-        for f in &self.adapted_funcs {
-            types.insert(f.ty.clone());
-        }
-
+    fn write_type_section(&self, state: &mut AdaptionState<'a>) {
         let mut section = wasm_encoder::TypeSection::new();
 
-        for (index, ty) in types.into_iter().enumerate() {
-            section.function(
-                ty.params.iter().map(to_val_type),
-                ty.returns.iter().map(to_val_type),
-            );
-            state.type_map.insert(ty, index as u32);
+        let mut type_index = 0;
+        for ty in self
+            .module
+            .imports
+            .iter()
+            .map(|i| {
+                self.module
+                    .import_func_type(i)
+                    .expect("expected import to be a function")
+            })
+            .chain(self.adapted_funcs.iter().map(|f| &f.ty))
+            .chain(std::iter::once(&MALLOC_FUNC_TYPE as &FuncType))
+        {
+            state.type_map.entry(ty.clone()).or_insert_with(|| {
+                section.function(
+                    ty.params.iter().map(to_val_type),
+                    ty.returns.iter().map(to_val_type),
+                );
+
+                let index = type_index;
+                type_index += 1;
+                index
+            });
         }
 
         state.module.section(&section);
