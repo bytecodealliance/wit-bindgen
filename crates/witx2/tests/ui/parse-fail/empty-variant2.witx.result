@@ -1,5 +1,5 @@
 empty variant
-     --> tests/ui/parse-fail/empty-variant2.witx:2:10
+     --> tests/ui/parse-fail/empty-variant2.witx:2:6
       |
-    2 | type t = enum {}
-      |          ^---
+    2 | enum t {}
+      |      ^

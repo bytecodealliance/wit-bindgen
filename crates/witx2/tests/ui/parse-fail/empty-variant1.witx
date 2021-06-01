@@ -1,2 +1,2 @@
 // parse-fail
-type t = variant {}
+variant t {}

@@ -19,30 +19,30 @@ type t16 = expected<_, u32>
 type t17 = expected<u32, _>
 type t18 = expected<_, _>
 type t19 = handle x
-type t20 = record {}
-type t21 = record { a: u32 }
-type t22 = record { a: u32, }
-type t23 = record { a: u32, b: u64 }
-type t24 = record { a: u32, b: u64, }
-type t25 = record { "x": u32 }
-type "record" = record {}
+record t20 {}
+record t21 { a: u32 }
+record t22 { a: u32, }
+record t23 { a: u32, b: u64 }
+record t24 { a: u32, b: u64, }
+record t25 { "x": u32 }
+record "record" {}
 type t26 = ()
 type t27 = (u32)
 type t28 = (u32,)
 type t29 = (u32, u64)
-type t30 = flags {}
-type t31 = flags { a, b, c }
-type t32 = flags { a, b, c, }
-type t33 = variant { a }
-type t34 = variant { a, b }
-type t35 = variant { a, b, }
-type t36 = variant { a, b(u32), }
-type t37 = variant { a, b(option<u32>), }
-type t38 = union { u32, u64 }
-type t39 = union { u32, option<u32> }
-type t40 = union { u32, option<u32>, }
-type t41 = enum { a, b, c }
-type t42 = enum { a, b, c, }
+flags t30 {}
+flags t31 { a, b, c }
+flags t32 { a, b, c, }
+variant t33 { a }
+variant t34 { a, b }
+variant t35 { a, b, }
+variant t36 { a, b(u32), }
+variant t37 { a, b(option<u32>), }
+union t38 { u32, u64 }
+union t39 { u32, option<u32> }
+union t40 { u32, option<u32>, }
+enum t41 { a, b, c }
+enum t42 { a, b, c, }
 type t43 = bool
 type t44 = string
 type t45 = list<list<list<t32>>>

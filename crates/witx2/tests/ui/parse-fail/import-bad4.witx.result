@@ -1,5 +1,5 @@
-expected '{', found an identifier
-     --> tests/ui/parse-fail/import-bad4.witx:2:5
+resource "bar" defined twice
+     --> tests/ui/parse-fail/import-bad4.witx:2:12
       |
-    2 | use bar, bar from import-me
-      |     ^
+    2 | use { bar, bar } from import-me
+      |            ^--

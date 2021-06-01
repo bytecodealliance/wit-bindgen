@@ -141,6 +141,13 @@ impl<'a> Item<'a> {
         match tokens.clone().next()? {
             Some((_span, Token::Use)) => Use::parse(tokens, docs).map(Item::Use),
             Some((_span, Token::Type)) => TypeDef::parse(tokens, docs).map(Item::TypeDef),
+            Some((_span, Token::Flags)) => TypeDef::parse_flags(tokens, docs).map(Item::TypeDef),
+            Some((_span, Token::Enum)) => TypeDef::parse_enum(tokens, docs).map(Item::TypeDef),
+            Some((_span, Token::Variant)) => {
+                TypeDef::parse_variant(tokens, docs).map(Item::TypeDef)
+            }
+            Some((_span, Token::Record)) => TypeDef::parse_record(tokens, docs).map(Item::TypeDef),
+            Some((_span, Token::Union)) => TypeDef::parse_union(tokens, docs).map(Item::TypeDef),
             Some((_span, Token::Resource)) => Resource::parse(tokens, docs).map(Item::Resource),
             Some((_span, Token::Fn_)) => Function::parse(tokens, docs).map(Item::Function),
             other => Err(err_expected(tokens, "`type`, `resource`, or `fn`", other).into()),
@@ -192,6 +199,117 @@ impl<'a> TypeDef<'a> {
         let name = parse_id(tokens)?;
         tokens.expect(Token::Equals)?;
         let ty = Type::parse(tokens)?;
+        Ok(TypeDef { docs, name, ty })
+    }
+
+    fn parse_flags(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+        tokens.expect(Token::Flags)?;
+        let name = parse_id(tokens)?;
+        let ty = Type::Record(Record {
+            fields: parse_list(
+                tokens,
+                Token::LeftBrace,
+                Token::RightBrace,
+                |docs, tokens| {
+                    let name = parse_id(tokens)?;
+                    Ok(Field {
+                        docs,
+                        name,
+                        ty: Type::bool(),
+                    })
+                },
+            )?,
+        });
+        Ok(TypeDef { docs, name, ty })
+    }
+
+    fn parse_record(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+        tokens.expect(Token::Record)?;
+        let name = parse_id(tokens)?;
+        let ty = Type::Record(Record {
+            fields: parse_list(
+                tokens,
+                Token::LeftBrace,
+                Token::RightBrace,
+                |docs, tokens| {
+                    let name = parse_id(tokens)?;
+                    tokens.expect(Token::Colon)?;
+                    let ty = Type::parse(tokens)?;
+                    Ok(Field { docs, name, ty })
+                },
+            )?,
+        });
+        Ok(TypeDef { docs, name, ty })
+    }
+
+    fn parse_variant(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+        tokens.expect(Token::Variant)?;
+        let name = parse_id(tokens)?;
+        let ty = Type::Variant(Variant {
+            span: name.span,
+            cases: parse_list(
+                tokens,
+                Token::LeftBrace,
+                Token::RightBrace,
+                |docs, tokens| {
+                    let name = parse_id(tokens)?;
+                    let ty = if tokens.eat(Token::LeftParen)? {
+                        let ty = Type::parse(tokens)?;
+                        tokens.expect(Token::RightParen)?;
+                        Some(ty)
+                    } else {
+                        None
+                    };
+                    Ok(Case { docs, name, ty })
+                },
+            )?,
+        });
+        Ok(TypeDef { docs, name, ty })
+    }
+
+    fn parse_union(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+        tokens.expect(Token::Union)?;
+        let name = parse_id(tokens)?;
+        let mut i = 0;
+        let ty = Type::Variant(Variant {
+            span: name.span,
+            cases: parse_list(
+                tokens,
+                Token::LeftBrace,
+                Token::RightBrace,
+                |docs, tokens| {
+                    let ty = Type::parse(tokens)?;
+                    i += 1;
+                    Ok(Case {
+                        docs,
+                        name: (i - 1).to_string().into(),
+                        ty: Some(ty),
+                    })
+                },
+            )?,
+        });
+        Ok(TypeDef { docs, name, ty })
+    }
+
+    fn parse_enum(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+        tokens.expect(Token::Enum)?;
+        let name = parse_id(tokens)?;
+        let ty = Type::Variant(Variant {
+            span: name.span,
+            cases: parse_list(
+                tokens,
+                Token::LeftBrace,
+                Token::RightBrace,
+                |docs, tokens| {
+                    let name = parse_id(tokens)?;
+                    Ok(Case {
+                        docs,
+                        name,
+                        ty: None,
+                    })
+                },
+            )?,
+        });
         Ok(TypeDef { docs, name, ty })
     }
 }
@@ -284,40 +402,6 @@ impl<'a> Type<'a> {
                 Ok(Type::Handle(name))
             }
 
-            // record { ... }
-            Some((_span, Token::Record)) => {
-                let fields = parse_list(
-                    tokens,
-                    Token::LeftBrace,
-                    Token::RightBrace,
-                    |docs, tokens| {
-                        let name = parse_id(tokens)?;
-                        tokens.expect(Token::Colon)?;
-                        let ty = Type::parse(tokens)?;
-                        Ok(Field { docs, name, ty })
-                    },
-                )?;
-                Ok(Type::Record(Record { fields }))
-            }
-
-            // flags { .. }
-            Some((_span, Token::Flags)) => {
-                let fields = parse_list(
-                    tokens,
-                    Token::LeftBrace,
-                    Token::RightBrace,
-                    |docs, tokens| {
-                        let name = parse_id(tokens)?;
-                        Ok(Field {
-                            docs,
-                            name,
-                            ty: Type::bool(),
-                        })
-                    },
-                )?;
-                Ok(Type::Record(Record { fields }))
-            }
-
             // (...) -- tuples
             Some((_span, Token::LeftParen)) => {
                 let mut fields = Vec::new();
@@ -334,65 +418,6 @@ impl<'a> Type<'a> {
                     }
                 }
                 Ok(Type::Record(Record { fields }))
-            }
-
-            // variant { .. }
-            Some((span, Token::Variant)) => {
-                let cases = parse_list(
-                    tokens,
-                    Token::LeftBrace,
-                    Token::RightBrace,
-                    |docs, tokens| {
-                        let name = parse_id(tokens)?;
-                        let ty = if tokens.eat(Token::LeftParen)? {
-                            let ty = Type::parse(tokens)?;
-                            tokens.expect(Token::RightParen)?;
-                            Some(ty)
-                        } else {
-                            None
-                        };
-                        Ok(Case { docs, name, ty })
-                    },
-                )?;
-                Ok(Type::Variant(Variant { span, cases }))
-            }
-
-            // union { .. }
-            Some((span, Token::Union)) => {
-                let mut i = 0;
-                let cases = parse_list(
-                    tokens,
-                    Token::LeftBrace,
-                    Token::RightBrace,
-                    |docs, tokens| {
-                        let ty = Type::parse(tokens)?;
-                        i += 1;
-                        Ok(Case {
-                            docs,
-                            name: (i - 1).to_string().into(),
-                            ty: Some(ty),
-                        })
-                    },
-                )?;
-                Ok(Type::Variant(Variant { span, cases }))
-            }
-
-            // enum { .. }
-            Some((span, Token::Enum)) => {
-                let cases = parse_list(
-                    tokens,
-                    Token::LeftBrace,
-                    Token::RightBrace,
-                    |docs, tokens| {
-                        let name = parse_id(tokens)?;
-                        Ok(Case {
-                            docs,
-                            name,
-                            ty: None,
-                        })
-                    },
-                )?;
-                Ok(Type::Variant(Variant { span, cases }))
             }
 
             Some((_span, Token::Bool)) => Ok(Type::bool()),
