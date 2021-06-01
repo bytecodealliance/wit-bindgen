@@ -1,5 +1,4 @@
-
-type clockid = enum {
+enum clockid {
   // The clock measuring real time. Time value zero corresponds with
   // 1970-01-01T00:00:00Z.
   realtime,
@@ -17,7 +16,7 @@ type timestamp = u64
 // Not all of these error codes are returned by the functions provided by this
 // API/ some are used in higher-level library layers, and others are provided
 // merely for alignment with POSIX.
-type errno = enum {
+enum errno {
   // No error occurred. System call completed successfully.
   success,
   // Argument list too long.
