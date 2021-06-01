@@ -113,31 +113,7 @@ impl Wasmtime {
             );
         }
         if self.needs_copy_slice {
-            self.push_str(
-                "
-                    unsafe fn copy_slice<T: Copy>(
-                        memory: &wasmtime::Memory,
-                        free: &wasmtime::TypedFunc<(i32, i32, i32), ()>,
-                        base: i32,
-                        len: i32,
-                        align: i32,
-                    ) -> Result<Vec<T>, wasmtime::Trap> {
-                        let mut result = Vec::with_capacity(len as usize);
-                        let size = len * (std::mem::size_of::<T>() as i32);
-                        let slice = memory.data_unchecked()
-                            .get(base as usize..)
-                            .and_then(|s| s.get(..size as usize))
-                            .ok_or_else(|| wasmtime::Trap::new(\"out of bounds read\"))?;
-                        std::slice::from_raw_parts_mut(
-                            result.as_mut_ptr() as *mut u8,
-                            size as usize,
-                        ).copy_from_slice(slice);
-                        result.set_len(size as usize);
-                        free.call((base, size, align))?;
-                        Ok(result)
-                    }
-                ",
-            );
+            self.push_str("use witx_bindgen_wasmtime::rt::copy_slice;");
         }
     }
 
@@ -165,7 +141,8 @@ impl Wasmtime {
             }
             format!("caller_memory")
         } else {
-            panic!()
+            self.needs_memory = true;
+            format!("memory.data_mut(&mut caller)")
         }
     }
 }
@@ -559,7 +536,7 @@ impl Generator for Wasmtime {
             func,
             Visibility::Pub,
             false,
-            Some("&self"),
+            Some("&self, mut caller: impl wasmtime::AsContextMut"),
             TypeMode::AllBorrowed("'_"),
         );
         self.push_str("-> Result<");
@@ -592,10 +569,15 @@ impl Generator for Wasmtime {
                 "memory".to_string(),
                 (
                     "wasmtime::Memory".to_string(),
-                    "get_memory(\"memory\")?".to_string(),
+                    "instance
+                        .get_memory(&mut store, \"memory\")
+                         .ok_or_else(|| {
+                             anyhow::anyhow!(\"`memory` export not a memory\")
+                         })?
+                    "
+                    .to_string(),
                 ),
             );
-            self.needs_get_memory = true;
         }
 
         for (name, func) in self.needs_functions.drain() {
@@ -633,7 +615,7 @@ impl Generator for Wasmtime {
             (
                 format!("wasmtime::TypedFunc<{}>", cvt),
                 format!(
-                    "instance.get_typed_func::<{}>(\"{}\")?",
+                    "instance.get_typed_func::<{}, _>(&mut store, \"{}\")?",
                     cvt,
                     func.name.as_str(),
                 ),
@@ -742,9 +724,10 @@ impl Generator for Wasmtime {
             self.push_str(" {\n");
 
             self.push_str(
-                "pub fn new(
+                "pub fn new<T>(
+                    mut store: impl wasmtime::AsContextMut<Data = T>,
                     module: &wasmtime::Module,
-                    linker: &mut wasmtime::Linker,
+                    linker: &mut wasmtime::Linker<T>,
                 ) -> anyhow::Result<Self> {\n",
             );
             if self.needs_buffer_glue {
@@ -786,20 +769,7 @@ impl Generator for Wasmtime {
                     ",
                 );
             }
-            self.push_str("let instance = linker.instantiate(module)?;\n");
-            if self.needs_get_memory {
-                self.push_str(
-                    "
-                        let get_memory = |mem: &str| -> anyhow::Result<_> {
-                            let mem = instance.get_memory(mem)
-                                .ok_or_else(|| {
-                                    anyhow::anyhow!(\"`{}` export not a memory\", mem)
-                                })?;
-                            Ok(mem)
-                        };
-                    ",
-                );
-            }
+            self.push_str("let instance = linker.instantiate(&mut store, module)?;\n");
             assert!(!self.needs_get_func);
             for (name, (_, get)) in exports.fields.iter() {
                 self.push_str("let ");
@@ -903,11 +873,11 @@ impl Bindgen for Wasmtime {
             .insert("witx_free".to_string(), NeededFunction::Free);
         let ptr = format!("ptr{}", tmp);
         self.src.push_str(&format!(
-            "let {} = self.witx_malloc.call(&mut caller, ({} * 8, 8))?;\n",
+            "let {} = func_witx_malloc.call(&mut caller, ({} * 8, 8))?;\n",
             ptr, amt
         ));
         self.cleanup = Some(format!(
-            "self.witx_free.call(&mut caller, ({}, {} * 8, 8))?;\n",
+            "func_witx_free.call(&mut caller, ({}, {} * 8, 8))?;\n",
             ptr, amt
         ));
         return ptr;
@@ -1175,17 +1145,23 @@ impl Bindgen for Wasmtime {
                             Type::Builtin(BuiltinType::Char) => (true, 1),
                             _ => (false, element.mem_size_align(!self.in_import).align),
                         };
+                        let tmp = self.tmp();
+                        self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
+                        self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
                         let result = format!(
                             "
                                 unsafe {{
                                     copy_slice(
+                                        &mut caller,
                                         memory,
                                         func_{},
-                                        {}, {}, {}
+                                        ptr{tmp}, len{tmp}, {}
                                     )?
                                 }}
                             ",
-                            free, operands[0], operands[1], align,
+                            free,
+                            align,
+                            tmp = tmp
                         );
                         if stringify {
                             results.push(format!(
@@ -1409,7 +1385,7 @@ impl Bindgen for Wasmtime {
                 }
                 self.push_str("self.");
                 self.push_str(name);
-                self.push_str(".call((");
+                self.push_str(".call(&mut caller, (");
                 for operand in operands {
                     self.push_str(operand);
                     self.push_str(", ");

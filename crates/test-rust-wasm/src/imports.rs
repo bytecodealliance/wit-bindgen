@@ -10,11 +10,6 @@ use std::iter;
 
 use crate::allocator;
 
-#[no_mangle]
-pub extern "C" fn wat() {
-    run()
-}
-
 pub fn run() {
     let _guard = allocator::guard();
     host_integers();

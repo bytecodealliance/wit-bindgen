@@ -61,6 +61,7 @@ pub use table::*;
 
 #[doc(hidden)]
 pub mod rt {
+    use std::mem;
     use wasmtime::*;
 
     pub trait RawMem {
@@ -166,5 +167,27 @@ pub mod rt {
     pub fn bad_int(_: std::num::TryFromIntError) -> Trap {
         let msg = "out-of-bounds integer conversion";
         Trap::new(msg)
+    }
+
+    pub unsafe fn copy_slice<T: Copy>(
+        store: impl AsContextMut,
+        memory: &Memory,
+        free: &TypedFunc<(i32, i32, i32), ()>,
+        base: i32,
+        len: i32,
+        align: i32,
+    ) -> Result<Vec<T>, Trap> {
+        let mut result = Vec::with_capacity(len as usize);
+        let size = len * (mem::size_of::<T>() as i32);
+        let slice = memory
+            .data(&store)
+            .get(base as usize..)
+            .and_then(|s| s.get(..size as usize))
+            .ok_or_else(|| Trap::new("out of bounds read"))?;
+        std::slice::from_raw_parts_mut(result.as_mut_ptr() as *mut u8, size as usize)
+            .copy_from_slice(slice);
+        result.set_len(size as usize);
+        free.call(store, (base, size, align))?;
+        Ok(result)
     }
 }

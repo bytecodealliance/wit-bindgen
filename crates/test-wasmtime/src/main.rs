@@ -1,11 +1,11 @@
 use anyhow::Result;
 use wasmtime::*;
 
-// mod exports;
+mod exports;
 mod imports;
 
 #[allow(dead_code, type_alias_bounds)]
-#[path = "../../../tmp/wasmtime/bindings.rs"]
+#[path = "../../../tmp/wasmtime-export/bindings.rs"]
 mod wat;
 
 const CHECKED: &[u8] = include_bytes!(env!("CHECKED"));
@@ -27,13 +27,13 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_test(engine: &Engine, wasm: &[u8]) -> Result<()> {
-    struct Context {
-        wasi: wasmtime_wasi::WasiCtx,
-        imports: imports::MyHost,
-        tables: imports::HostTables<imports::MyHost>,
-    }
+pub struct Context {
+    wasi: wasmtime_wasi::WasiCtx,
+    imports: imports::MyHost,
+    tables: imports::HostTables<imports::MyHost>,
+}
 
+fn run_test(engine: &Engine, wasm: &[u8]) -> Result<()> {
     // Compile our wasm module ...
     let module = Module::new(&engine, wasm)?;
     let mut linker = Linker::<Context>::new(&engine);
@@ -53,11 +53,9 @@ fn run_test(engine: &Engine, wasm: &[u8]) -> Result<()> {
             tables: Default::default(),
         },
     );
-    let instance = linker.instantiate(&mut store, &module)?;
-    let wat = instance.get_typed_func::<(), (), _>(&mut store, "wat")?;
-    wat.call(&mut store, ())?;
+    // let instance = linker.instantiate(&mut store, &module)?;
 
-    // let exports = exports::Wasm::new(&module, &mut linker)?;
-    // exports::test(&exports)?;
+    let exports = exports::Wasm::new(&mut store, &module, &mut linker)?;
+    exports::test(&exports, &mut store)?;
     Ok(())
 }

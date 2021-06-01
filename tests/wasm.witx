@@ -142,6 +142,7 @@
   (export "list_result2" (func (result $a string)))
   (export "list_result3" (func (result $a (list string))))
 
+  (;
   ;; ===========================================
   ;; handles
   ;; ===========================================
@@ -192,6 +193,7 @@
     (param $c $param_in_buffer_bool)
     (param $d $param_out_buffer_bool)
   ))
+  ;)
 
   ;; ===========================================
   ;; More flavorful types
