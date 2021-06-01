@@ -1,0 +1,56 @@
+resource x
+
+type t1 = u8
+type t2 = u16
+type t3 = u32
+type t4 = u64
+type t5 = s8
+type t6 = s16
+type t7 = s32
+type t8 = s64
+type t9 = f32
+type t10 = f64
+type t11 = char
+type t12 = list<char>
+type t13 = string
+type t14 = option<u32>
+type t15 = expected<u32, u32>
+type t16 = expected<_, u32>
+type t17 = expected<u32, _>
+type t18 = expected<_, _>
+type t19 = handle x
+type t20 = record {}
+type t21 = record { a: u32 }
+type t22 = record { a: u32, }
+type t23 = record { a: u32, b: u64 }
+type t24 = record { a: u32, b: u64, }
+type t25 = record { "x": u32 }
+type "record" = record {}
+type t26 = ()
+type t27 = (u32)
+type t28 = (u32,)
+type t29 = (u32, u64)
+type t30 = flags {}
+type t31 = flags { a, b, c }
+type t32 = flags { a, b, c, }
+type t33 = variant { a }
+type t34 = variant { a, b }
+type t35 = variant { a, b, }
+type t36 = variant { a, b(u32), }
+type t37 = variant { a, b(option<u32>), }
+type t38 = union { u32, u64 }
+type t39 = union { u32, option<u32> }
+type t40 = union { u32, option<u32>, }
+type t41 = enum { a, b, c }
+type t42 = enum { a, b, c, }
+type t43 = bool
+type t44 = string
+type t45 = list<list<list<t32>>>
+type t46 = t44
+type t47 = "t44"
+type t48 = push-buffer<u8>
+type t49 = pull-buffer<u8>
+
+// type order doesn't matter
+type foo = bar
+type bar = u32

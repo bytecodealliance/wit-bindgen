@@ -1,0 +1,67 @@
+{
+  "resources": [
+    {
+      "name": "x",
+      "foreign_module": "import-me"
+    },
+    {
+      "name": "x"
+    }
+  ],
+  "types": [
+    {
+      "idx": 0,
+      "name": "foo",
+      "primitive": "u32",
+      "foreign_module": "import-me"
+    },
+    {
+      "idx": 1,
+      "name": "foo",
+      "primitive": "u32",
+      "foreign_module": "import-me"
+    },
+    {
+      "idx": 2,
+      "name": "handle",
+      "primitive": "handle-0",
+      "foreign_module": "import-me"
+    },
+    {
+      "idx": 3,
+      "name": "some_record",
+      "record": {
+        "fields": [
+          [
+            "0",
+            "u32"
+          ],
+          [
+            "1",
+            "u64"
+          ],
+          [
+            "2",
+            "f32"
+          ]
+        ]
+      },
+      "foreign_module": "import-me"
+    },
+    {
+      "idx": 4,
+      "name": "x",
+      "primitive": "type-0"
+    },
+    {
+      "idx": 5,
+      "name": "y",
+      "primitive": "type-1"
+    },
+    {
+      "idx": 6,
+      "name": "my_handle",
+      "primitive": "handle-1"
+    }
+  ]
+}

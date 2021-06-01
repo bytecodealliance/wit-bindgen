@@ -1,0 +1,3 @@
+use * from import-me
+
+type my_handle = handle x

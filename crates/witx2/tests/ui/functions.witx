@@ -1,0 +1,8 @@
+fn f1()
+fn f2(a: u32)
+fn f3(a: u32,)
+fn f4() -> u32
+fn f5() -> u32, u32
+fn f6() -> (u32, u32)
+fn f7(a: f32, b: f32) -> (u32, u32)
+fn f8(a: option<u32>) -> expected<u32, f32>

@@ -1,0 +1,111 @@
+{
+  "types": [
+    {
+      "idx": 0,
+      "record": {
+        "fields": [
+          [
+            "0",
+            "u32"
+          ],
+          [
+            "1",
+            "u32"
+          ]
+        ]
+      }
+    },
+    {
+      "idx": 1,
+      "variant": {
+        "cases": [
+          [
+            "none",
+            null
+          ],
+          [
+            "some",
+            "u32"
+          ]
+        ]
+      }
+    },
+    {
+      "idx": 2,
+      "variant": {
+        "cases": [
+          [
+            "ok",
+            "u32"
+          ],
+          [
+            "err",
+            "f32"
+          ]
+        ]
+      }
+    }
+  ],
+  "functions": [
+    {
+      "name": "f1",
+      "params": [],
+      "results": []
+    },
+    {
+      "name": "f2",
+      "params": [
+        "u32"
+      ],
+      "results": []
+    },
+    {
+      "name": "f3",
+      "params": [
+        "u32"
+      ],
+      "results": []
+    },
+    {
+      "name": "f4",
+      "params": [],
+      "results": [
+        "u32"
+      ]
+    },
+    {
+      "name": "f5",
+      "params": [],
+      "results": [
+        "u32",
+        "u32"
+      ]
+    },
+    {
+      "name": "f6",
+      "params": [],
+      "results": [
+        "type-0"
+      ]
+    },
+    {
+      "name": "f7",
+      "params": [
+        "f32",
+        "f32"
+      ],
+      "results": [
+        "type-0"
+      ]
+    },
+    {
+      "name": "f8",
+      "params": [
+        "type-1"
+      ],
+      "results": [
+        "type-2"
+      ]
+    }
+  ]
+}

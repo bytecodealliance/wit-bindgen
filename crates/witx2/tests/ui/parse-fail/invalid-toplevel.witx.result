@@ -1,0 +1,5 @@
+expected `type`, `resource`, or `fn`, found an identifier
+     --> tests/ui/parse-fail/invalid-toplevel.witx:2:1
+      |
+    2 | abcd
+      | ^---

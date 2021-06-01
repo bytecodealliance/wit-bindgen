@@ -1,0 +1,4 @@
+// parse-fail
+
+fn foo()
+fn foo()

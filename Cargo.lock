@@ -539,6 +539,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "id-arena"
+version = "2.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25a2bc672d1148e28034f176e01fffebb08b35768468cc954630da77a1449005"
+
+[[package]]
 name = "indexmap"
 version = "1.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -929,6 +935,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ryu"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
+
+[[package]]
 name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -990,6 +1002,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "serde_json"
+version = "1.0.64"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "799e97dc9fdae36a5c8b8f2cae9ce2ee9fdce2058c57a93e6099d919fd982f79"
+dependencies = [
+ "itoa",
+ "ryu",
+ "serde",
 ]
 
 [[package]]
@@ -1632,6 +1655,7 @@ name = "witx-bindgen-gen-core"
 version = "0.1.0"
 dependencies = [
  "witx 0.10.0",
+ "witx2",
 ]
 
 [[package]]
@@ -1698,6 +1722,17 @@ dependencies = [
  "syn",
  "witx-bindgen-gen-core",
  "witx-bindgen-gen-wasmtime",
+]
+
+[[package]]
+name = "witx2"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "id-arena",
+ "rayon",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

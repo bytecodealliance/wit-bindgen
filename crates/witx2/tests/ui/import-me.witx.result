@@ -1,0 +1,39 @@
+{
+  "resources": [
+    {
+      "name": "x"
+    }
+  ],
+  "types": [
+    {
+      "idx": 0,
+      "name": "foo",
+      "primitive": "u32"
+    },
+    {
+      "idx": 1,
+      "name": "handle",
+      "primitive": "handle-0"
+    },
+    {
+      "idx": 2,
+      "name": "some_record",
+      "record": {
+        "fields": [
+          [
+            "0",
+            "u32"
+          ],
+          [
+            "1",
+            "u64"
+          ],
+          [
+            "2",
+            "f32"
+          ]
+        ]
+      }
+    }
+  ]
+}
