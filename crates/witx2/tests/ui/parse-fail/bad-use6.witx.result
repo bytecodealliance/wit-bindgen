@@ -1,0 +1,5 @@
+`bar` not defined in `import-me`
+     --> tests/ui/parse-fail/bad-use6.witx:3:25
+      |
+    3 | use foo from import-me::bar
+      |                         ^--

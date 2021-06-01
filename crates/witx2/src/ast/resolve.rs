@@ -27,8 +27,8 @@ impl Resolver {
     pub(super) fn resolve(
         &mut self,
         fields: &[Item<'_>],
-        deps: &HashMap<String, Instance>,
-    ) -> Result<Instance> {
+        deps: &HashMap<String, Interface>,
+    ) -> Result<Interface> {
         // First pull in any names from our dependencies
         self.process_use(fields, deps)?;
         // ... then register our own names
@@ -84,11 +84,13 @@ impl Resolver {
             }
         }
 
-        Ok(Instance {
+        Ok(Interface {
             types: mem::take(&mut self.types),
             type_lookup: mem::take(&mut self.type_lookup),
             resources: mem::take(&mut self.resources),
             resource_lookup: mem::take(&mut self.resource_lookup),
+            interface_lookup: Default::default(),
+            interfaces: Default::default(),
             functions,
         })
     }
@@ -96,14 +98,30 @@ impl Resolver {
     fn process_use<'a>(
         &mut self,
         fields: &[Item<'a>],
-        deps: &'a HashMap<String, Instance>,
+        deps: &'a HashMap<String, Interface>,
     ) -> Result<()> {
         for field in fields {
             let u = match field {
                 Item::Use(u) => u,
                 _ => continue,
             };
-            let dep = &deps[&*u.from.name];
+            let mut dep = &deps[&*u.from[0].name];
+            let mut prev = &*u.from[0].name;
+            for name in u.from[1..].iter() {
+                dep = match dep.interface_lookup.get(&*name.name) {
+                    Some(i) => &dep.interfaces[*i],
+                    None => {
+                        return Err(Error {
+                            span: name.span,
+                            msg: format!("`{}` not defined in `{}`", name.name, prev),
+                        }
+                        .into())
+                    }
+                };
+                prev = &*name.name;
+            }
+
+            let mod_name = &u.from[0];
 
             match &u.names {
                 Some(names) => {
@@ -115,13 +133,13 @@ impl Resolver {
                         let mut found = false;
 
                         if let Some(id) = dep.resource_lookup.get(&*name.name.name) {
-                            let resource = self.copy_resource(&u.from.name, dep, *id);
+                            let resource = self.copy_resource(&mod_name.name, dep, *id);
                             self.define_resource(my_name, span, resource)?;
                             found = true;
                         }
 
                         if let Some(id) = dep.type_lookup.get(&*name.name.name) {
-                            let ty = self.copy_type_def(&u.from.name, dep, *id);
+                            let ty = self.copy_type_def(&mod_name.name, dep, *id);
                             self.define_type(my_name, span, ty)?;
                             found = true;
                         }
@@ -137,13 +155,13 @@ impl Resolver {
                 }
                 None => {
                     for (id, resource) in dep.resources.iter() {
-                        let id = self.copy_resource(&u.from.name, dep, id);
-                        self.define_resource(&resource.name, u.from.span, id)?;
+                        let id = self.copy_resource(&mod_name.name, dep, id);
+                        self.define_resource(&resource.name, mod_name.span, id)?;
                     }
                     for (id, ty) in dep.types.iter() {
                         if let Some(name) = &ty.name {
-                            let ty = self.copy_type_def(&u.from.name, dep, id);
-                            self.define_type(name, u.from.span, ty)?;
+                            let ty = self.copy_type_def(&mod_name.name, dep, id);
+                            self.define_type(name, mod_name.span, ty)?;
                         }
                     }
                 }
@@ -152,7 +170,7 @@ impl Resolver {
         Ok(())
     }
 
-    fn copy_resource(&mut self, dep_name: &str, dep: &Instance, r: ResourceId) -> ResourceId {
+    fn copy_resource(&mut self, dep_name: &str, dep: &Interface, r: ResourceId) -> ResourceId {
         let resources = &mut self.resources;
         *self
             .resources_copied
@@ -168,7 +186,7 @@ impl Resolver {
             })
     }
 
-    fn copy_type_def(&mut self, dep_name: &str, dep: &Instance, ty: TypeId) -> TypeId {
+    fn copy_type_def(&mut self, dep_name: &str, dep: &Interface, ty: TypeId) -> TypeId {
         let ty = &dep.types[ty];
 
         let ty = TypeDef {
@@ -211,7 +229,7 @@ impl Resolver {
         self.types.alloc(ty)
     }
 
-    fn copy_type(&mut self, dep_name: &str, dep: &Instance, ty: Type) -> Type {
+    fn copy_type(&mut self, dep_name: &str, dep: &Interface, ty: Type) -> Type {
         match ty {
             Type::Id(id) => Type::Id(self.copy_type_def(dep_name, dep, id)),
             Type::Handle(id) => Type::Handle(self.copy_resource(dep_name, dep, id)),

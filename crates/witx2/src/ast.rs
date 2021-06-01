@@ -1,4 +1,4 @@
-use crate::Instance;
+use crate::Interface;
 use anyhow::Result;
 use lex::{Span, Token, Tokenizer};
 use std::borrow::Cow;
@@ -44,7 +44,7 @@ impl<'a> From<String> for Id<'a> {
 }
 
 pub struct Use<'a> {
-    pub from: Id<'a>,
+    pub from: Vec<Id<'a>>,
     names: Option<Vec<UseName<'a>>>,
 }
 
@@ -128,7 +128,7 @@ impl<'a> Ast<'a> {
         Ok(Ast { items })
     }
 
-    pub fn resolve(&self, map: &HashMap<String, Instance>) -> Result<Instance> {
+    pub fn resolve(&self, map: &HashMap<String, Interface>) -> Result<Interface> {
         let mut resolver = resolve::Resolver::default();
         let instance = resolver.resolve(&self.items, map)?;
         Ok(instance)
@@ -173,7 +173,11 @@ impl<'a> Use<'a> {
             }
         }
         tokens.expect(Token::From_)?;
-        let from = parse_id(tokens)?;
+        let mut from = vec![parse_id(tokens)?];
+        while tokens.eat(Token::Colon)? {
+            tokens.expect_raw(Token::Colon)?;
+            from.push(parse_id(tokens)?);
+        }
         Ok(Use { from, names })
     }
 }

@@ -95,7 +95,7 @@ impl Runner<'_> {
     fn run(&mut self, test: &Path, contents: &[u8]) -> Result<()> {
         let contents = str::from_utf8(contents)?;
 
-        let result = witx2::Instance::parse_file(test);
+        let result = witx2::Interface::parse_file(test);
 
         let result = if contents.contains("// parse-fail") {
             match result {
@@ -128,9 +128,9 @@ impl Runner<'_> {
     }
 }
 
-fn to_json(i: &witx2::Instance) -> String {
+fn to_json(i: &witx2::Interface) -> String {
     #[derive(Serialize)]
-    struct Instance {
+    struct Interface {
         #[serde(skip_serializing_if = "Vec::is_empty")]
         resources: Vec<Resource>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -208,12 +208,12 @@ fn to_json(i: &witx2::Instance) -> String {
         })
         .collect::<Vec<_>>();
 
-    let instance = Instance {
+    let iface = Interface {
         resources,
         types,
         functions,
     };
-    return serde_json::to_string_pretty(&instance).unwrap();
+    return serde_json::to_string_pretty(&iface).unwrap();
 
     fn translate_typedef(ty: &witx2::TypeDef) -> Type {
         match &ty.kind {

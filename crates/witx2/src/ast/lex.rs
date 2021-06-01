@@ -286,6 +286,27 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
+    pub fn expect_raw(&mut self, expected: Token) -> Result<Span, Error> {
+        match self.next_raw()? {
+            Some((span, found)) => {
+                if expected == found {
+                    Ok(span)
+                } else {
+                    Err(Error::Wanted {
+                        at: usize::try_from(span.start).unwrap(),
+                        expected: expected.describe(),
+                        found: found.describe(),
+                    })
+                }
+            }
+            None => Err(Error::Wanted {
+                at: self.input.len(),
+                expected: expected.describe(),
+                found: "eof",
+            }),
+        }
+    }
+
     fn eatc(&mut self, ch: char) -> bool {
         let mut iter = self.chars.clone();
         match iter.next() {

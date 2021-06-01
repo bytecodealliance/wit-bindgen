@@ -6,16 +6,19 @@ use std::path::{Path, PathBuf};
 
 mod ast;
 
-pub struct Instance {
+pub struct Interface {
     pub types: Arena<TypeDef>,
     pub type_lookup: HashMap<String, TypeId>,
     pub resources: Arena<Resource>,
     pub resource_lookup: HashMap<String, ResourceId>,
+    pub interfaces: Arena<Interface>,
+    pub interface_lookup: HashMap<String, InterfaceId>,
     pub functions: Vec<Function>,
 }
 
 pub type TypeId = Id<TypeDef>;
 pub type ResourceId = Id<Resource>;
+pub type InterfaceId = Id<Interface>;
 
 pub struct TypeDef {
     pub docs: Documentation,
@@ -92,27 +95,33 @@ pub struct Function {
     pub results: Vec<Type>,
 }
 
-impl Instance {
-    pub fn parse(input: &str) -> Result<Instance> {
-        Instance::parse_with("<anon>", input, |f| {
+pub enum FunctionKind {
+    Freestanding,
+    Static(ResourceId),
+    Method(ResourceId),
+}
+
+impl Interface {
+    pub fn parse(input: &str) -> Result<Interface> {
+        Interface::parse_with("<anon>", input, |f| {
             Err(anyhow!("cannot load submodule `{}`", f))
         })
     }
 
-    pub fn parse_file(path: impl AsRef<Path>) -> Result<Instance> {
+    pub fn parse_file(path: impl AsRef<Path>) -> Result<Interface> {
         let path = path.as_ref();
         let parent = path.parent().unwrap();
         let contents = std::fs::read_to_string(&path)
             .with_context(|| format!("failed to read: {}", path.display()))?;
-        Instance::parse_with(path, &contents, |path| load_fs(parent, path))
+        Interface::parse_with(path, &contents, |path| load_fs(parent, path))
     }
 
     pub fn parse_with(
         filename: impl AsRef<Path>,
         contents: &str,
         mut load: impl FnMut(&str) -> Result<(PathBuf, String)>,
-    ) -> Result<Instance> {
-        Instance::_parse_with(
+    ) -> Result<Interface> {
+        Interface::_parse_with(
             filename.as_ref(),
             contents,
             &mut load,
@@ -126,8 +135,8 @@ impl Instance {
         contents: &str,
         load: &mut dyn FnMut(&str) -> Result<(PathBuf, String)>,
         visiting: &mut HashSet<PathBuf>,
-        map: &mut HashMap<String, Instance>,
-    ) -> Result<Instance> {
+        map: &mut HashMap<String, Interface>,
+    ) -> Result<Interface> {
         // Parse the `contents `into an AST
         let ast = match ast::Ast::parse(&contents) {
             Ok(ast) => ast,
@@ -147,14 +156,14 @@ impl Instance {
                 ast::Item::Use(u) => u,
                 _ => continue,
             };
-            if map.contains_key(&*u.from.name) {
+            if map.contains_key(&*u.from[0].name) {
                 continue;
             }
-            let (filename, contents) = load(&u.from.name)
+            let (filename, contents) = load(&u.from[0].name)
                 // TODO: insert context here about `u.name.span` and `filename`
                 ?;
-            let instance = Instance::_parse_with(&filename, &contents, load, visiting, map)?;
-            map.insert(u.from.name.to_string(), instance);
+            let instance = Interface::_parse_with(&filename, &contents, load, visiting, map)?;
+            map.insert(u.from[0].name.to_string(), instance);
         }
         visiting.remove(filename);
 
