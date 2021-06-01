@@ -299,7 +299,7 @@ impl Generator for RustWasm {
             func,
             Visibility::Pub,
             self.is_dtor,
-            false,
+            None,
             if self.is_dtor {
                 TypeMode::Owned
             } else {
@@ -370,7 +370,7 @@ impl Generator for RustWasm {
             func,
             Visibility::Private,
             false,
-            true,
+            Some("&self"),
             if self.is_dtor {
                 TypeMode::Owned
             } else {

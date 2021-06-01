@@ -1,143 +1,83 @@
-use crate::{BorrowHandle, GuestMemory, Region, WasmtimeGuestMemory};
+use crate::BorrowChecker;
 use std::fmt;
-use std::ops::Range;
+use std::mem;
+use wasmtime::Trap;
 
 pub struct InBuffer<'a, T> {
-    mem: &'a WasmtimeGuestMemory<'a>,
-    offset: i32,
-    len: i32,
-    size: i32,
-    deserialize: &'a (dyn Fn(i32) -> Result<T, wasmtime::Trap> + 'a),
+    mem: &'a [u8],
+    size: usize,
+    deserialize: &'a (dyn Fn(&'a [u8]) -> Result<T, Trap> + 'a),
 }
 
 impl<'a, T> InBuffer<'a, T> {
     pub fn new(
-        mem: &'a WasmtimeGuestMemory<'a>,
+        mem: &mut BorrowChecker<'a>,
         offset: i32,
         len: i32,
         size: i32,
-        deserialize: &'a (dyn Fn(i32) -> Result<T, wasmtime::Trap> + 'a),
-    ) -> InBuffer<'a, T> {
-        InBuffer {
-            mem,
-            offset,
-            len,
-            size,
+        deserialize: &'a (dyn Fn(&'a [u8]) -> Result<T, Trap> + 'a),
+    ) -> Result<InBuffer<'a, T>, Trap> {
+        Ok(InBuffer {
+            mem: unsafe { mem.slice(offset, len.saturating_mul(size))? },
+            size: size as usize,
             deserialize,
-        }
+        })
     }
 
     pub fn len(&self) -> usize {
-        self.len as u32 as usize
+        self.mem.len() / self.size
     }
 
-    pub fn iter<'b>(&'b self) -> Result<InBufferIter<'a, 'b, T>, wasmtime::Trap> {
-        let region = Region {
-            start: self.offset as u32,
-            len: (self.len as u32)
-                .checked_mul(self.size as u32)
-                .ok_or_else(|| wasmtime::Trap::new("length overflow"))?,
-        };
-        let borrow = self
-            .mem
-            .shared_borrow(region)
-            .map_err(|e| wasmtime::Trap::new(format!("borrow error: {}", e)))?;
-        Ok(InBufferIter {
-            buffer: self,
-            range: 0..self.len,
-            borrow,
-        })
+    pub fn iter(&self) -> impl Iterator<Item = Result<T, Trap>> + 'a {
+        let deserialize = self.deserialize;
+        self.mem.chunks(self.size).map(deserialize)
     }
 }
 
 impl<T> fmt::Debug for InBuffer<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("InBuffer")
-            .field("offset", &self.offset)
-            .field("len", &self.len)
+            .field("len", &self.len())
             .finish()
     }
 }
 
-pub struct InBufferIter<'a, 'b, T> {
-    buffer: &'b InBuffer<'a, T>,
-    range: Range<i32>,
-    borrow: BorrowHandle,
-}
-
-impl<T> Iterator for InBufferIter<'_, '_, T> {
-    type Item = Result<T, wasmtime::Trap>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let i = self.range.next()?;
-        Some((self.buffer.deserialize)(
-            self.buffer.offset + i * self.buffer.size,
-        ))
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.range.size_hint()
-    }
-}
-
-impl<T> Drop for InBufferIter<'_, '_, T> {
-    fn drop(&mut self) {
-        self.buffer.mem.shared_unborrow(self.borrow);
-    }
-}
-
 pub struct OutBuffer<'a, T> {
-    mem: &'a WasmtimeGuestMemory<'a>,
-    offset: i32,
-    len: i32,
-    size: i32,
-    serialize: &'a (dyn Fn(i32, T) -> Result<(), wasmtime::Trap> + 'a),
+    mem: &'a mut [u8],
+    size: usize,
+    serialize: &'a (dyn Fn(&mut [u8], T) -> Result<(), Trap> + 'a),
 }
 
 impl<'a, T> OutBuffer<'a, T> {
     pub fn new(
-        mem: &'a WasmtimeGuestMemory<'a>,
+        mem: &mut BorrowChecker<'a>,
         offset: i32,
         len: i32,
         size: i32,
-        serialize: &'a (dyn Fn(i32, T) -> Result<(), wasmtime::Trap> + 'a),
-    ) -> OutBuffer<'a, T> {
-        OutBuffer {
+        serialize: &'a (dyn Fn(&mut [u8], T) -> Result<(), Trap> + 'a),
+    ) -> Result<OutBuffer<'a, T>, Trap> {
+        let mem =
+            unsafe { mem.slice_mut(offset, (len as u32).saturating_mul(size as u32) as i32)? };
+        Ok(OutBuffer {
             mem,
-            offset,
-            len,
-            size,
+            size: size as usize,
             serialize,
-        }
+        })
     }
 
     pub fn capacity(&self) -> usize {
-        self.len as u32 as usize
+        self.mem.len() / self.size
     }
 
-    pub fn write(&mut self, iter: impl IntoIterator<Item = T>) -> Result<(), wasmtime::Trap> {
-        let region = Region {
-            start: self.offset as u32,
-            len: (self.len as u32)
-                .checked_mul(self.size as u32)
-                .ok_or_else(|| wasmtime::Trap::new("length overflow"))?,
-        };
-        let borrow = self
-            .mem
-            .mut_borrow(region)
-            .map_err(|e| wasmtime::Trap::new(format!("borrow error: {}", e)))?;
+    pub fn write(&mut self, iter: impl IntoIterator<Item = T>) -> Result<(), Trap> {
         for item in iter {
-            if self.len == 0 {
-                self.mem.mut_unborrow(borrow);
-                return Err(wasmtime::Trap::new(
-                    "too many results in `OutBuffer::write`",
-                ));
+            if self.mem.len() == 0 {
+                return Err(Trap::new("too many results in `OutBuffer::write`"));
             }
-            (self.serialize)(self.offset, item)?;
-            self.len -= 1;
-            self.offset += self.size;
+            let (chunk, rest) = mem::take(&mut self.mem).split_at_mut(self.size);
+            self.mem = rest;
+            (self.serialize)(chunk, item)?;
         }
-        self.mem.mut_unborrow(borrow);
         Ok(())
     }
 }
@@ -145,8 +85,7 @@ impl<'a, T> OutBuffer<'a, T> {
 impl<T> fmt::Debug for OutBuffer<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OutBuffer")
-            .field("offset", &self.offset)
-            .field("len", &self.len)
+            .field("capacity", &self.capacity())
             .finish()
     }
 }

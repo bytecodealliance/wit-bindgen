@@ -12,7 +12,7 @@ pub struct Wasmtime {
     src: String,
     opts: Opts,
     needs_memory: bool,
-    needs_guest_memory: bool,
+    needs_borrow_checker: bool,
     needs_get_memory: bool,
     needs_get_func: bool,
     needs_char_from_i32: bool,
@@ -21,14 +21,12 @@ pub struct Wasmtime {
     needs_store: bool,
     needs_load: bool,
     needs_bad_int: bool,
-    needs_borrow_checker: bool,
     needs_slice_as_bytes: bool,
     needs_copy_slice: bool,
     needs_functions: HashMap<String, NeededFunction>,
     needs_buffer_transaction: bool,
     needs_buffer_glue: bool,
     all_needed_handles: BTreeSet<String>,
-    handles_for_func: BTreeSet<String>,
     types: Types,
     imports: HashMap<String, Vec<Import>>,
     exports: HashMap<String, Exports>,
@@ -41,6 +39,10 @@ pub struct Wasmtime {
     cleanup: Option<String>,
     trait_name: String,
     closures: String,
+    after_call: bool,
+    // Whether or not the `caller_memory` variable has been defined and is
+    // available for use.
+    caller_memory_available: bool,
 }
 
 enum NeededFunction {
@@ -82,90 +84,21 @@ impl Wasmtime {
     }
 
     fn print_intrinsics(&mut self) {
-        if self.needs_store {
-            self.push_str(
-                "
-                    fn store(
-                        mem: &wasmtime::Memory,
-                        offset: i32,
-                        bytes: &[u8],
-                    ) -> Result<(), wasmtime::Trap> {
-                        mem.write(offset as usize, bytes)
-                            .map_err(|_| wasmtime::Trap::new(\"out of bounds write\"))?;
-                        Ok(())
-                    }
-                ",
-            );
-        }
-        if self.needs_load {
-            self.push_str(
-                "
-                    fn load<T: AsMut<[u8]>, U>(
-                        mem: &wasmtime::Memory,
-                        offset: i32,
-                        mut bytes: T,
-                        cvt: impl FnOnce(T) -> U,
-                    ) -> Result<U, wasmtime::Trap> {
-                        mem.read(offset as usize, bytes.as_mut())
-                            .map_err(|_| wasmtime::Trap::new(\"out of bounds read\"))?;
-                        Ok(cvt(bytes))
-                    }
-                ",
-            );
+        if self.needs_store || self.needs_load {
+            self.push_str("use witx_bindgen_wasmtime::rt::RawMem;");
         }
         if self.needs_char_from_i32 {
-            self.push_str(
-                "
-                    fn char_from_i32(
-                        val: i32,
-                    ) -> Result<char, wasmtime::Trap> {
-                        core::char::from_u32(val as u32)
-                            .ok_or_else(|| {
-                                wasmtime::Trap::new(\"char value out of valid range\")
-                            })
-                    }
-                ",
-            );
+            self.push_str("use witx_bindgen_wasmtime::rt::char_from_i32;");
         }
         if self.needs_invalid_variant {
-            self.push_str(
-                "
-                    fn invalid_variant(name: &str) -> wasmtime::Trap {
-                        let msg = format!(\"invalid discriminant for `{}`\", name);
-                        wasmtime::Trap::new(msg)
-                    }
-                ",
-            );
+            self.push_str("use witx_bindgen_wasmtime::rt::invalid_variant;");
         }
         if self.needs_bad_int {
             self.push_str("use core::convert::TryFrom;\n");
-            self.push_str(
-                "
-                    fn bad_int(_: core::num::TryFromIntError) -> wasmtime::Trap {
-                        let msg = \"out-of-bounds integer conversion\";
-                        wasmtime::Trap::new(msg)
-                    }
-                ",
-            );
+            self.push_str("use witx_bindgen_wasmtime::rt::bad_int;");
         }
         if self.needs_validate_flags {
-            self.push_str(
-                "
-                    fn validate_flags<U>(
-                        bits: i64,
-                        all: i64,
-                        name: &str,
-                        mk: impl FnOnce(i64) -> U,
-                    ) -> Result<U, wasmtime::Trap> {
-                        if bits & !all != 0 {
-                            let msg = format!(\"invalid flags specified for `{}`\", name);
-                            Err(wasmtime::Trap::new(msg))
-                        } else {
-                            Ok(mk(bits))
-                        }
-                    }
-                ",
-            );
+            self.push_str("use witx_bindgen_wasmtime::rt::validate_flags;");
         }
         if self.needs_slice_as_bytes {
             self.push_str(
@@ -205,6 +138,34 @@ impl Wasmtime {
                     }
                 ",
             );
+        }
+    }
+
+    fn memory_src(&mut self) -> String {
+        if self.in_import {
+            if !self.after_call {
+                // Before calls we use `_bc` which is a borrow checker used for
+                // getting long-lasting borrows into memory.
+                self.needs_borrow_checker = true;
+                return format!("_bc");
+            }
+
+            if !self.caller_memory_available {
+                self.needs_memory = true;
+                self.caller_memory_available = true;
+                // get separate borrows of `caller_memory` and `_tables` if we
+                // might need handle tables later. If we don't end up using
+                // `_tables` that's ok, it'll almost always be optimized away.
+                if self.all_needed_handles.len() > 0 {
+                    self.push_str("let (caller_memory, data) = witx_bindgen_wasmtime::rt::data_and_memory(&mut caller, memory);");
+                    self.push_str("let (_, _tables) = get(data);");
+                } else {
+                    self.push_str("let caller_memory = memory.data_mut(&mut caller);");
+                }
+            }
+            format!("caller_memory")
+        } else {
+            panic!()
         }
     }
 }
@@ -290,7 +251,7 @@ impl TypePrint for Wasmtime {
     }
 
     fn print_borrowed_slice(&mut self, mutbl: bool, ty: &TypeRef, lifetime: &'static str) {
-        if self.in_import {
+        if self.in_import && false {
             self.push_str("witx_bindgen_wasmtime::GuestPtr<");
             self.push_str(lifetime);
             self.push_str(",[");
@@ -304,7 +265,7 @@ impl TypePrint for Wasmtime {
     }
 
     fn print_borrowed_str(&mut self, lifetime: &'static str) {
-        if self.in_import {
+        if self.in_import && false {
             self.push_str("witx_bindgen_wasmtime::GuestPtr<");
             self.push_str(lifetime);
             self.push_str(",str>");
@@ -379,6 +340,11 @@ impl Generator for Wasmtime {
     }
 
     fn type_handle(&mut self, name: &Id, _ty: &HandleDatatype, docs: &str) {
+        let info = self.info(name);
+        if info.param || info.result {
+            self.all_needed_handles.insert(name.as_str().to_string());
+        }
+
         // If we're binding imports then all handles are associated types so
         // there's nothing that we need to do about that.
         if self.in_import {
@@ -387,7 +353,6 @@ impl Generator for Wasmtime {
 
         // ... otherwise for exports we generate a newtype wrapper around an
         // `i32` to manage the resultt.
-        let info = self.info(name);
         let tyname = name.as_str().to_camel_case();
         self.rustdoc(docs);
         if !info.handle_with_dtor {
@@ -490,6 +455,8 @@ impl Generator for Wasmtime {
 
     fn import(&mut self, module: &Id, func: &Function) {
         self.tmp = 0;
+        self.after_call = false;
+        self.caller_memory_available = false;
         let prev = mem::take(&mut self.src);
         self.is_dtor = self.types.is_dtor_func(&func.name);
 
@@ -498,7 +465,7 @@ impl Generator for Wasmtime {
             func,
             Visibility::Private,
             false,
-            true,
+            Some("&mut self"),
             if self.is_dtor {
                 TypeMode::Owned
             } else {
@@ -510,7 +477,8 @@ impl Generator for Wasmtime {
 
         self.params.truncate(0);
         let sig = func.wasm_signature(CallMode::DefinedImport);
-        self.src.push_str("move |_caller: wasmtime::Caller<'_>");
+        self.src
+            .push_str("move |mut caller: wasmtime::Caller<'_, T>");
         for (i, param) in sig.params.iter().enumerate() {
             let arg = format!("arg{}", i);
             self.src.push_str(",");
@@ -525,49 +493,40 @@ impl Generator for Wasmtime {
         self.src.push_str("}");
         self.src.insert_str(pos, &mem::take(&mut self.closures));
 
-        if self.needs_guest_memory {
-            // TODO: this unsafe isn't justified and it's actually unsafe, we
-            // need a better solution for where to store this.
+        if self.all_needed_handles.len() > 0 {
+            self.src.insert_str(pos, "let (host, _tables) = host;");
+        }
+
+        if self.needs_borrow_checker {
             self.src.insert_str(
                 pos,
-                "let guest_memory = &unsafe { witx_bindgen_wasmtime::WasmtimeGuestMemory::new(
-                    memory,
-                    m.borrow_checker(),
-                ) };\n",
+                "let (mem, data) = witx_bindgen_wasmtime::rt::data_and_memory(&mut caller, memory);
+                let mut _bc = witx_bindgen_wasmtime::BorrowChecker::new(mem);
+                let host = get(data);",
             );
-            self.needs_borrow_checker = true;
-        }
-        if self.needs_memory || self.needs_guest_memory {
+            self.needs_memory = true;
+        } else {
             self.src
-                .insert_str(pos, "let memory = &get_memory(&_caller, \"memory\")?;\n");
+                .insert_str(pos, "let host = get(caller.data_mut());\n");
+        }
+
+        if self.needs_memory {
+            self.src
+                .insert_str(pos, "let memory = &get_memory(&mut caller, \"memory\")?;\n");
             self.needs_get_memory = true;
         }
 
         self.needs_memory = false;
-        self.needs_guest_memory = false;
+        self.needs_borrow_checker = false;
         assert!(!self.needs_buffer_transaction);
 
-        if self.handles_for_func.len() > 0 {
-            for handle in self.handles_for_func.iter() {
-                self.src.insert_str(
-                    pos,
-                    &format!(
-                        "let {0}_table_access = m.{0}_table().access();\n",
-                        handle.as_str().to_snake_case()
-                    ),
-                );
-                self.all_needed_handles.insert(handle.clone());
-            }
-            self.handles_for_func.clear();
-        }
-
-        for (name, func) in sorted_iter(&self.needs_functions) {
+        for (name, func) in self.needs_functions.drain() {
             self.src.insert_str(
                 pos,
                 &format!(
                     "
-                        let func = get_func(&_caller, \"{name}\")?;
-                        let func_{name} = func.typed::<{cvt}>()?;
+                        let func = get_func(&mut caller, \"{name}\")?;
+                        let func_{name} = func.typed::<{cvt}, _>(&caller)?;
                     ",
                     name = name,
                     cvt = func.cvt(),
@@ -590,6 +549,7 @@ impl Generator for Wasmtime {
 
     fn export(&mut self, module: &Id, func: &Function) {
         self.tmp = 0;
+        self.after_call = false;
         let prev = mem::take(&mut self.src);
         self.is_dtor = self.types.is_dtor_func(&func.name);
         if self.is_dtor {
@@ -599,7 +559,7 @@ impl Generator for Wasmtime {
             func,
             Visibility::Pub,
             false,
-            true,
+            Some("&self"),
             TypeMode::AllBorrowed("'_"),
         );
         self.push_str("-> Result<");
@@ -624,7 +584,7 @@ impl Generator for Wasmtime {
             .entry(module.as_str().to_string())
             .or_insert_with(Exports::default);
 
-        assert!(!self.needs_guest_memory);
+        assert!(!self.needs_borrow_checker);
         if self.needs_memory {
             self.needs_memory = false;
             self.src.insert_str(pos, "let memory = &self.memory;\n");
@@ -637,12 +597,15 @@ impl Generator for Wasmtime {
             );
             self.needs_get_memory = true;
         }
-        assert!(self.handles_for_func.len() == 0);
 
         for (name, func) in self.needs_functions.drain() {
             self.src
                 .insert_str(pos, &format!("let func_{0} = &self.{0};\n", name));
-            let get = format!("instance.get_typed_func::<{}>(\"{}\")?", func.cvt(), name);
+            let get = format!(
+                "instance.get_typed_func::<{}, _>(&mut store, \"{}\")?",
+                func.cvt(),
+                name
+            );
             exports.fields.insert(name, (func.ty(), get));
         }
         let func_body = mem::replace(&mut self.src, prev);
@@ -680,26 +643,15 @@ impl Generator for Wasmtime {
 
     fn finish(&mut self, files: &mut Files) {
         for (module, funcs) in sorted_iter(&self.imports) {
+            let module_camel = module.as_str().to_camel_case();
             self.src.push_str("\npub trait ");
-            self.src.push_str(&module.as_str().to_camel_case());
+            self.src.push_str(&module_camel);
             self.src.push_str(": Sized {\n");
-            if self.needs_borrow_checker || self.all_needed_handles.len() > 0 {
-                if self.needs_borrow_checker {
-                    self.src.push_str(
-                        "fn borrow_checker(&self) -> &witx_bindgen_wasmtime::BorrowChecker;\n",
-                    );
-                }
-                for handle in mem::take(&mut self.all_needed_handles) {
+            if self.all_needed_handles.len() > 0 {
+                for handle in self.all_needed_handles.iter() {
                     self.src.push_str("type ");
                     self.src.push_str(&handle.to_camel_case());
                     self.src.push_str(";\n");
-
-                    self.src.push_str("fn ");
-                    self.src.push_str(&handle.to_snake_case());
-                    self.src
-                        .push_str("_table(&self) -> &witx_bindgen_wasmtime::Table<Self::");
-                    self.src.push_str(&handle.to_camel_case());
-                    self.src.push_str(">;\n");
                 }
             }
             for f in funcs {
@@ -707,64 +659,59 @@ impl Generator for Wasmtime {
                 self.src.push_str(";\n\n");
             }
             self.src.push_str("}\n");
+
+            if self.all_needed_handles.len() > 0 {
+                self.src.push_str("\npub struct ");
+                self.src.push_str(&module_camel);
+                self.src.push_str("Tables<T: ");
+                self.src.push_str(&module_camel);
+                self.src.push_str("> {\n");
+                for handle in self.all_needed_handles.iter() {
+                    self.src.push_str(&handle.to_snake_case());
+                    self.src
+                        .push_str("_table: witx_bindgen_wasmtime::Table<T::");
+                    self.src.push_str(&handle.to_camel_case());
+                    self.src.push_str(">,\n");
+                }
+                self.src.push_str("}\n");
+                self.src.push_str("impl<T: ");
+                self.src.push_str(&module_camel);
+                self.src.push_str("> Default for ");
+                self.src.push_str(&module_camel);
+                self.src.push_str("Tables<T> {\n");
+                self.src.push_str("fn default() -> Self { Self {");
+                for handle in self.all_needed_handles.iter() {
+                    self.src.push_str(&handle.to_snake_case());
+                    self.src.push_str("_table: Default::default(),");
+                }
+                self.src.push_str("}}}");
+            }
         }
 
-        let get_memory_from_caller = "
-            fn get_memory(
-                caller: &wasmtime::Caller<'_>,
-                mem: &str,
-            ) -> Result<wasmtime::Memory, wasmtime::Trap> {
-                let mem = caller.get_export(mem)
-                    .ok_or_else(|| {
-                        let msg = format!(\"`{}` export not available\", mem);
-                        wasmtime::Trap::new(msg)
-                    })?
-                    .into_memory()
-                    .ok_or_else(|| {
-                        let msg = format!(\"`{}` export not a memory\", mem);
-                        wasmtime::Trap::new(msg)
-                    })?;
-                Ok(mem)
-            }
-        ";
-
         for (module, funcs) in mem::take(&mut self.imports) {
+            let module_camel = module.as_str().to_camel_case();
             self.push_str("\npub fn add_");
             self.push_str(module.as_str());
-            self.push_str("_to_linker<T: ");
-            self.push_str(&module.as_str().to_camel_case());
-            self.push_str(" + 'static>(module: T, ");
-            self.push_str("linker: &mut wasmtime::Linker) -> anyhow::Result<()> {\n");
-            self.push_str("let module = std::rc::Rc::new(module);\n");
+            self.push_str("_to_linker<T, U>(linker: &mut wasmtime::Linker<T>");
+            self.push_str(", get: impl Fn(&mut T) -> ");
+            if self.all_needed_handles.is_empty() {
+                self.push_str("&mut U");
+            } else {
+                self.push_str(&format!("(&mut U, &mut {}Tables<U>)", module_camel));
+            }
+            self.push_str("+ Send + Sync + Copy + 'static) -> anyhow::Result<()> \n");
+            self.push_str("where U: ");
+            self.push_str(&module_camel);
+            self.push_str("{\n");
             if self.needs_get_memory {
-                self.push_str(get_memory_from_caller);
+                self.push_str("use witx_bindgen_wasmtime::rt::get_memory;");
             }
             if self.needs_get_func {
-                self.push_str(
-                    "
-                        fn get_func(
-                            caller: &wasmtime::Caller<'_>,
-                            func: &str,
-                        ) -> Result<wasmtime::Func, wasmtime::Trap> {
-                            let func = caller.get_export(func)
-                                .ok_or_else(|| {
-                                    let msg = format!(\"`{}` export not available\", func);
-                                    wasmtime::Trap::new(msg)
-                                })?
-                                .into_func()
-                                .ok_or_else(|| {
-                                    let msg = format!(\"`{}` export not a function\", func);
-                                    wasmtime::Trap::new(msg)
-                                })?;
-                            Ok(func)
-                        }
-                    ",
-                );
+                self.push_str("use witx_bindgen_wasmtime::rt::get_func;");
             }
             for f in funcs {
-                self.push_str("let m = module.clone();\n");
                 self.push_str(&format!(
-                    "linker.func(\"{}\", \"{}\", {})?;\n",
+                    "linker.func_wrap(\"{}\", \"{}\", {})?;\n",
                     module.as_str(),
                     f.name,
                     f.closure,
@@ -801,9 +748,10 @@ impl Generator for Wasmtime {
                 ) -> anyhow::Result<Self> {\n",
             );
             if self.needs_buffer_glue {
-                self.push_str(get_memory_from_caller);
                 self.push_str(
                     "
+                        use witx_bindgen_wasmtime::rt::get_memory;
+
                         let buffer_glue = witx_bindgen_wasmtime::exports::BufferGlue::default();
                         let g = buffer_glue.clone();
                         linker.func(
@@ -816,7 +764,7 @@ impl Generator for Wasmtime {
                             \"witx_canonical_buffer_abi\",
                             \"in_read\",
                             move |caller: wasmtime::Caller<'_>, handle: u32, len: u32, offset: u32| {
-                                let memory = get_memory(&caller, \"memory\")?;
+                                let memory = get_memory(&mut caller, \"memory\")?;
                                 g.in_read(handle, &memory, offset, len)
                             },
                         )?;
@@ -831,7 +779,7 @@ impl Generator for Wasmtime {
                             \"witx_canonical_buffer_abi\",
                             \"out_write\",
                             move |caller: wasmtime::Caller<'_>, handle: u32, len: u32, offset: u32| {
-                                let memory = get_memory(&caller, \"memory\")?;
+                                let memory = get_memory(&mut caller, \"memory\")?;
                                 g.out_write(handle, &memory, offset, len)
                             },
                         )?;
@@ -935,6 +883,7 @@ impl Bindgen for Wasmtime {
         } else {
             self.blocks.push(format!("{{ {}; {} }}", src, expr));
         }
+        self.caller_memory_available = false;
     }
 
     fn allocate_typed_space(&mut self, _ty: &NamedType) -> String {
@@ -954,11 +903,11 @@ impl Bindgen for Wasmtime {
             .insert("witx_free".to_string(), NeededFunction::Free);
         let ptr = format!("ptr{}", tmp);
         self.src.push_str(&format!(
-            "let {} = self.witx_malloc.call(({} * 8, 8))?;\n",
+            "let {} = self.witx_malloc.call(&mut caller, ({} * 8, 8))?;\n",
             ptr, amt
         ));
         self.cleanup = Some(format!(
-            "self.witx_free.call(({}, {} * 8, 8))?;\n",
+            "self.witx_free.call(&mut caller, ({}, {} * 8, 8))?;\n",
             ptr, amt
         ));
         return ptr;
@@ -1042,27 +991,24 @@ impl Bindgen for Wasmtime {
             }
 
             Instruction::I32FromOwnedHandle { ty } => {
-                self.all_needed_handles.insert(ty.name.as_str().to_string());
                 results.push(format!(
-                    "m.{}_table().insert({}) as i32",
+                    "_tables.{}_table.insert({}) as i32",
                     ty.name.as_str().to_snake_case(),
                     operands[0]
                 ));
             }
             Instruction::HandleBorrowedFromI32 { ty } => {
                 if self.is_dtor {
-                    self.all_needed_handles.insert(ty.name.as_str().to_string());
                     results.push(format!(
-                        "m.{}_table().remove(({}) as u32).map_err(|e| {{
+                        "_tables.{}_table.remove(({}) as u32).map_err(|e| {{
                             wasmtime::Trap::new(format!(\"failed to remove handle: {{}}\", e))
                         }})?",
                         ty.name.as_str().to_snake_case(),
                         operands[0]
                     ));
                 } else {
-                    self.handles_for_func.insert(ty.name.as_str().to_string());
                     results.push(format!(
-                        "{}_table_access.get(({}) as u32).ok_or_else(|| {{
+                        "_tables.{}_table.get(({}) as u32).ok_or_else(|| {{
                             wasmtime::Trap::new(\"invalid handle index\")
                         }})?",
                         ty.name.as_str().to_snake_case(),
@@ -1189,9 +1135,10 @@ impl Bindgen for Wasmtime {
                 // ... and then malloc space for the result in the guest module
                 let ptr = format!("ptr{}", tmp);
                 self.push_str(&format!(
-                    "let {} = func_{}.call((({}.len() as i32) * {}, {}))?;\n",
+                    "let {} = func_{}.call(&mut caller, (({}.len() as i32) * {}, {}))?;\n",
                     ptr, malloc, val, size, align
                 ));
+                self.caller_memory_available = false; // invalidated from above
 
                 // ... and then copy over the result.
                 //
@@ -1200,9 +1147,10 @@ impl Bindgen for Wasmtime {
                 // this case we should be able to get away with it since
                 // canonical lowerings have the same memory representation on
                 // the host as in the guest.
+                let mem = self.memory_src();
                 self.push_str(&format!(
-                    "store(memory, {}, unsafe {{ slice_as_bytes({}.as_ref()) }})?;\n",
-                    ptr, val
+                    "{}.store({}, unsafe {{ slice_as_bytes({}.as_ref()) }})?;\n",
+                    mem, ptr, val
                 ));
                 self.needs_store = true;
                 self.needs_memory = true;
@@ -1250,18 +1198,19 @@ impl Bindgen for Wasmtime {
                         }
                     }
                     None => {
-                        self.needs_guest_memory = true;
-                        results.push(format!(
-                            "
-                                unsafe {{
-                                    witx_bindgen_wasmtime::GuestPtr::new(
-                                        guest_memory,
-                                        (({}) as u32, ({}) as u32),
-                                    )
-                                }}
-                            ",
-                            operands[0], operands[1]
-                        ));
+                        self.needs_borrow_checker = true;
+                        let method = match &**element.type_() {
+                            Type::Builtin(BuiltinType::Char) => "slice_str",
+                            _ => "slice",
+                        };
+                        let tmp = self.tmp();
+                        self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
+                        self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
+                        let mut slice = format!("_bc.{}(ptr{1}, len{1})?", method, tmp);
+                        if method == "slice" {
+                            slice = format!("unsafe {{ {} }}", slice);
+                        }
+                        results.push(slice);
                     }
                 }
             }
@@ -1284,9 +1233,10 @@ impl Bindgen for Wasmtime {
 
                 // ... then malloc space for the result in the guest module
                 self.push_str(&format!(
-                    "let {} = func_{}.call(({} * {}, {}))?;\n",
+                    "let {} = func_{}.call(&mut caller, ({} * {}, {}))?;\n",
                     result, malloc, len, size_align.size, size_align.align,
                 ));
+                self.caller_memory_available = false; // invalidated by call
 
                 // ... then consume the vector and use the block to lower the
                 // result.
@@ -1336,7 +1286,7 @@ impl Bindgen for Wasmtime {
 
                 if let Some(free) = free {
                     self.push_str(&format!(
-                        "func_{}.call(({}, {} * {}, {}))?;\n",
+                        "func_{}.call(&mut caller, ({}, {} * {}, {}))?;\n",
                         free, base, len, size_align.size, size_align.align,
                     ));
                     self.needs_functions
@@ -1355,43 +1305,38 @@ impl Bindgen for Wasmtime {
 
             Instruction::BufferLiftPtrLen { buffer } => {
                 let block = self.blocks.pop().unwrap();
-                self.needs_guest_memory = true;
+                self.needs_borrow_checker = true;
+                let tmp = self.tmp();
+                self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
+                self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
                 if buffer.tref.type_().all_bits_valid() {
-                    results.push(format!(
-                        "
-                            unsafe {{
-                                witx_bindgen_wasmtime::GuestPtr::new(
-                                    guest_memory,
-                                    (({}) as u32, ({}) as u32),
-                                )
-                            }}
-                        ",
-                        operands[0], operands[1]
-                    ));
+                    let method = if buffer.out { "slice_mut" } else { "slice" };
+                    results.push(format!("unsafe {{ _bc.{}(ptr{1}, len{1})? }}", method, tmp));
                 } else {
                     let size = buffer.tref.mem_size_align(!self.in_import).size;
-                    let tmp = self.tmp();
                     let closure = format!("closure{}", tmp);
                     self.closures.push_str(&format!("let {} = ", closure));
                     if buffer.out {
-                        self.closures.push_str("|base: i32, e:");
+                        self.closures.push_str("|_bc: &mut [u8], e:");
                         mem::swap(&mut self.closures, &mut self.src);
                         self.print_tref(&buffer.tref, TypeMode::Owned);
                         mem::swap(&mut self.closures, &mut self.src);
-                        self.closures.push_str("| {\n");
+                        self.closures.push_str("| {let base = 0;\n");
                         self.closures.push_str(&block);
                         self.closures.push_str("; Ok(()) };\n");
                         results.push(format!(
-                            "witx_bindgen_wasmtime::imports::OutBuffer::new(guest_memory, {}, {}, {}, &{})",
-                            operands[0], operands[1], size, closure
+                            "witx_bindgen_wasmtime::imports::OutBuffer::new(
+                                &mut _bc, ptr{}, len{}, {}, &{})?",
+                            tmp, tmp, size, closure
                         ));
                     } else {
-                        self.closures.push_str("|base: i32| { Ok(");
+                        self.closures.push_str("|_bc: &[u8]| { let base = 0;Ok(");
                         self.closures.push_str(&block);
                         self.closures.push_str(") };\n");
                         results.push(format!(
-                            "witx_bindgen_wasmtime::imports::InBuffer::new(guest_memory, {}, {}, {}, &{})",
-                            operands[0], operands[1], size, closure
+                            "witx_bindgen_wasmtime::imports::InBuffer::new(
+                                &mut _bc, ptr{}, len{}, {}, &{})?",
+                            tmp, tmp, size, closure
                         ));
                     }
                 }
@@ -1470,15 +1415,23 @@ impl Bindgen for Wasmtime {
                     self.push_str(", ");
                 }
                 self.push_str("))?;");
+                self.after_call = true;
+                self.caller_memory_available = false; // invalidated by call
             }
 
             Instruction::CallInterface { module: _, func } => {
+                for (i, operand) in operands.iter().enumerate() {
+                    self.push_str(&format!("let param{} = {};\n", i, operand));
+                }
                 self.let_results(func.results.len(), results);
-                self.push_str("m.");
+                self.push_str("host.");
                 self.push_str(func.name.as_str());
                 self.push_str("(");
-                self.push_str(&operands.join(", "));
+                for i in 0..operands.len() {
+                    self.push_str(&format!("param{}, ", i));
+                }
                 self.push_str(");");
+                self.after_call = true;
             }
 
             Instruction::Return { amt } => {
@@ -1500,94 +1453,94 @@ impl Bindgen for Wasmtime {
             }
 
             Instruction::I32Load { offset } => {
-                self.needs_memory = true;
+                let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "load(memory, {} + {}, [0u8; 4], i32::from_le_bytes)?",
-                    operands[0], offset,
+                    "{}.load({} + {}, [0u8; 4], i32::from_le_bytes)?",
+                    mem, operands[0], offset,
                 ));
             }
             Instruction::I32Load8U { offset } => {
-                self.needs_memory = true;
+                let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "i32::from(load(memory, {} + {}, [0u8; 1], u8::from_le_bytes)?)",
-                    operands[0], offset,
+                    "i32::from({}.load({} + {}, [0u8; 1], u8::from_le_bytes)?)",
+                    mem, operands[0], offset,
                 ));
             }
             Instruction::I32Load8S { offset } => {
-                self.needs_memory = true;
+                let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "i32::from(load(memory, {} + {}, [0u8; 1], i8::from_le_bytes)?)",
-                    operands[0], offset,
+                    "i32::from({}.load({} + {}, [0u8; 1], i8::from_le_bytes)?)",
+                    mem, operands[0], offset,
                 ));
             }
             Instruction::I32Load16U { offset } => {
-                self.needs_memory = true;
+                let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "i32::from(load(memory, {} + {}, [0u8; 2], u16::from_le_bytes)?)",
-                    operands[0], offset,
+                    "i32::from({}.load({} + {}, [0u8; 2], u16::from_le_bytes)?)",
+                    mem, operands[0], offset,
                 ));
             }
             Instruction::I32Load16S { offset } => {
-                self.needs_memory = true;
+                let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "i32::from(load(memory, {} + {}, [0u8; 2], i16::from_le_bytes)?)",
-                    operands[0], offset,
+                    "i32::from({}.load({} + {}, [0u8; 2], i16::from_le_bytes)?)",
+                    mem, operands[0], offset,
                 ));
             }
             Instruction::I64Load { offset } => {
-                self.needs_memory = true;
+                let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "load(memory, {} + {}, [0u8; 8], i64::from_le_bytes)?",
-                    operands[0], offset,
+                    "{}.load({} + {}, [0u8; 8], i64::from_le_bytes)?",
+                    mem, operands[0], offset,
                 ));
             }
             Instruction::F32Load { offset } => {
-                self.needs_memory = true;
+                let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "load(memory, {} + {}, [0u8; 4], f32::from_le_bytes)?",
-                    operands[0], offset,
+                    "{}.load({} + {}, [0u8; 4], f32::from_le_bytes)?",
+                    mem, operands[0], offset,
                 ));
             }
             Instruction::F64Load { offset } => {
-                self.needs_memory = true;
+                let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "load(memory, {} + {}, [0u8; 8], f64::from_le_bytes)?",
-                    operands[0], offset,
+                    "{}.load({} + {}, [0u8; 8], f64::from_le_bytes)?",
+                    mem, operands[0], offset,
                 ));
             }
             Instruction::I32Store { offset }
             | Instruction::I64Store { offset }
             | Instruction::F32Store { offset }
             | Instruction::F64Store { offset } => {
-                self.needs_memory = true;
+                let mem = self.memory_src();
                 self.needs_store = true;
                 self.push_str(&format!(
-                    "store(memory, {} + {}, &({}).to_le_bytes())?;\n",
-                    operands[1], offset, operands[0]
+                    "{}.store({} + {}, &({}).to_le_bytes())?;\n",
+                    mem, operands[1], offset, operands[0]
                 ));
             }
             Instruction::I32Store8 { offset } => {
-                self.needs_memory = true;
+                let mem = self.memory_src();
                 self.needs_store = true;
                 self.push_str(&format!(
-                    "store(memory, {} + {}, &(({}) as u8).to_le_bytes())?;\n",
-                    operands[1], offset, operands[0]
+                    "{}.store({} + {}, &(({}) as u8).to_le_bytes())?;\n",
+                    mem, operands[1], offset, operands[0]
                 ));
             }
             Instruction::I32Store16 { offset } => {
-                self.needs_memory = true;
+                let mem = self.memory_src();
                 self.needs_store = true;
                 self.push_str(&format!(
-                    "store(memory, {} + {}, &(({}) as u16).to_le_bytes())?;\n",
-                    operands[1], offset, operands[0]
+                    "{}.store({} + {}, &(({}) as u16).to_le_bytes())?;\n",
+                    mem, operands[1], offset, operands[0]
                 ));
             }
 

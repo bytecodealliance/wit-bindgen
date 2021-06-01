@@ -80,7 +80,7 @@ pub trait TypePrint {
         func: &Function,
         visibility: Visibility,
         unsafe_: bool,
-        self_arg: bool,
+        self_arg: Option<&str>,
         param_mode: TypeMode,
     ) -> Vec<String> {
         let params = self.print_docs_and_params(func, visibility, unsafe_, self_arg, param_mode);
@@ -96,7 +96,7 @@ pub trait TypePrint {
         func: &Function,
         visibility: Visibility,
         unsafe_: bool,
-        self_arg: bool,
+        self_arg: Option<&str>,
         param_mode: TypeMode,
     ) -> Vec<String> {
         let rust_name = func.name.as_ref().to_snake_case();
@@ -115,8 +115,9 @@ pub trait TypePrint {
         self.push_str(to_rust_ident(&rust_name));
 
         self.push_str("(");
-        if self_arg {
-            self.push_str("&self,");
+        if let Some(arg) = self_arg {
+            self.push_str(arg);
+            self.push_str(",");
         }
         let mut params = Vec::new();
         for param in func.params.iter() {
