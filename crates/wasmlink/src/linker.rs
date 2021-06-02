@@ -1,4 +1,7 @@
-use crate::{adapter::ModuleAdapter, Module, Profile};
+use crate::{
+    adapter::{ModuleAdapter, MALLOC_EXPORT_NAME, MALLOC_FUNC_TYPE},
+    Module, Profile,
+};
 use anyhow::{anyhow, bail, Result};
 use petgraph::{algo::toposort, graph::NodeIndex, Graph};
 use std::collections::{hash_map::Entry, BTreeMap, HashMap};
@@ -69,10 +72,6 @@ impl Linker {
         }
 
         let graph = self.build_graph(main, imports)?;
-
-        // TODO: validate main module by checking that it has valid adapter exports if it depends
-        // on a module with an interface
-
         let mut state = self.link_state(&graph)?;
 
         self.write_type_section(&mut state);
@@ -331,7 +330,7 @@ impl Linker {
         state.num_imported_funcs = num_imported_funcs;
 
         // Instantiate the main module
-        let (main_index, _) = self.instantiate(&mut state, &graph, NodeIndex::new(0), None);
+        let (main_index, _) = self.instantiate(&mut state, &graph, NodeIndex::new(0), None)?;
 
         // Re-export the start function
         let start_index = state.func_aliases.len() as u32;
@@ -350,7 +349,7 @@ impl Linker {
         graph: &'a Graph<ModuleAdapter<'a>, ()>,
         current: NodeIndex,
         parent: Option<u32>,
-    ) -> (u32, bool) {
+    ) -> Result<(u32, bool)> {
         // TODO: make this iterative instead of recursive?
 
         // If a parent module was specified and this is a shim module, just instantiate it
@@ -360,7 +359,7 @@ impl Linker {
             if let Some(shim_index) = shim_index {
                 let index = (state.instances.len() + state.implicit_instances.len()) as u32;
                 state.instances.push((shim_index, Vec::new()));
-                return (index, true);
+                return Ok((index, true));
             }
         }
 
@@ -379,7 +378,7 @@ impl Linker {
         let mut shims = Vec::new();
         let mut neighbors = graph.neighbors(current).detach();
         while let Some(neighbor) = neighbors.next_node(graph) {
-            let (index, is_shim) = self.instantiate(state, graph, neighbor, None);
+            let (index, is_shim) = self.instantiate(state, graph, neighbor, None)?;
             args.push((graph[neighbor].module.name, index));
             if is_shim {
                 shims.push((neighbor, index));
@@ -390,9 +389,44 @@ impl Linker {
         let parent_index = (state.instances.len() + state.implicit_instances.len()) as u32;
         state.instances.push((module_index, args));
 
+        // If there are shims, ensure the parent exports the required malloc function
+        if !shims.is_empty() {
+            let module = graph[current].module;
+
+            let export = module
+                .exports
+                .iter()
+                .find(|e| {
+                    e.field == MALLOC_EXPORT_NAME
+                        && match e.kind {
+                            ExternalKind::Function => true,
+                            _ => false,
+                        }
+                })
+                .ok_or_else(|| {
+                    anyhow!(
+                        "module `{}` does not export the required function `{}`",
+                        module.name,
+                        MALLOC_EXPORT_NAME
+                    )
+                })?;
+
+            if module
+                .func_type(export.index)
+                .expect("function index must be in range")
+                != &MALLOC_FUNC_TYPE as &FuncType
+            {
+                bail!(
+                    "module `{}` exports function `{}` but it is not the expected type",
+                    module.name,
+                    MALLOC_EXPORT_NAME
+                );
+            }
+        }
+
         // For each shim that was instantiated, instantiate the real module passing in the parent
         for (shim, shim_index) in shims {
-            let (child_index, _) = self.instantiate(state, graph, shim, Some(parent_index));
+            let (child_index, _) = self.instantiate(state, graph, shim, Some(parent_index))?;
 
             // Emit the shim function table
             let adapter = &graph[shim];
@@ -413,7 +447,7 @@ impl Linker {
             state.segments.push((table_index, segments));
         }
 
-        (parent_index, false)
+        Ok((parent_index, false))
     }
 }
 
@@ -628,9 +662,65 @@ mod test {
     }
 
     #[test]
-    fn it_links_with_interface() -> Result<()> {
+    fn it_errors_with_missing_parent_malloc() -> Result<()> {
         let bytes = wat::parse_str(
             r#"(module (import "a" "a" (func (param i32 i32))) (func (export "_start")))"#,
+        )?;
+        let a = wat::parse_str(
+            r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a") (param i32 i32)) (memory (export "memory") 0) (func (export "witx_malloc") (param i32 i32) (result i32) unreachable) (func (export "witx_free") (param i32 i32 i32)))"#,
+        )?;
+
+        let main = Module::new("main", &bytes)?;
+        let mut a = Module::new("a", &a)?;
+        a.interface = Some(witx::parse(
+            r#"(module $a (export "a" (func (param $p string))))"#,
+        )?);
+
+        let mut imports = HashMap::new();
+        imports.insert("a", a);
+
+        let linker = Linker::new(Profile::new());
+
+        assert_eq!(
+            linker.link(&main, &imports).unwrap_err().to_string(),
+            "module `main` does not export the required function `witx_malloc`"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_errors_with_incorrect_parent_malloc() -> Result<()> {
+        let bytes = wat::parse_str(
+            r#"(module (import "a" "a" (func (param i32 i32))) (func (export "_start")) (func (export "witx_malloc") (param i32 i32)))"#,
+        )?;
+        let a = wat::parse_str(
+            r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a") (param i32 i32)) (memory (export "memory") 0) (func (export "witx_malloc") (param i32 i32) (result i32) unreachable) (func (export "witx_free") (param i32 i32 i32)))"#,
+        )?;
+
+        let main = Module::new("main", &bytes)?;
+        let mut a = Module::new("a", &a)?;
+        a.interface = Some(witx::parse(
+            r#"(module $a (export "a" (func (param $p string))))"#,
+        )?);
+
+        let mut imports = HashMap::new();
+        imports.insert("a", a);
+
+        let linker = Linker::new(Profile::new());
+
+        assert_eq!(
+            linker.link(&main, &imports).unwrap_err().to_string(),
+            "module `main` exports function `witx_malloc` but it is not the expected type"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_links_with_interface() -> Result<()> {
+        let bytes = wat::parse_str(
+            r#"(module (import "a" "a" (func (param i32 i32))) (func (export "_start")) (func (export "witx_malloc") (param i32 i32) (result i32) unreachable))"#,
         )?;
         let a = wat::parse_str(
             r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a") (param i32 i32)) (memory (export "memory") 0) (func (export "witx_malloc") (param i32 i32) (result i32) unreachable) (func (export "witx_free") (param i32 i32 i32)))"#,
@@ -658,9 +748,13 @@ mod test {
   (module (;0;)
     (type (;0;) (func (param i32 i32)))
     (type (;1;) (func))
+    (type (;2;) (func (param i32 i32) (result i32)))
     (import \"a\" \"a\" (func (;0;) (type 0)))
     (func (;1;) (type 1))
-    (export \"_start\" (func 1)))
+    (func (;2;) (type 2) (param i32 i32) (result i32)
+      unreachable)
+    (export \"_start\" (func 1))
+    (export \"witx_malloc\" (func 2)))
   (module (;1;)
     (type (;0;) (func))
     (type (;1;) (func (param i32 i32)))
