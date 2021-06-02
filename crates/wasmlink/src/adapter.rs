@@ -9,12 +9,12 @@ mod generator;
 
 pub const PARENT_MODULE_NAME: &str = "$parent";
 const MEMORY_EXPORT_NAME: &str = "memory";
-const MALLOC_EXPORT_NAME: &str = "witx_malloc";
+pub const MALLOC_EXPORT_NAME: &str = "witx_malloc";
 const FREE_EXPORT_NAME: &str = "witx_free";
 pub const FUNCTION_TABLE_NAME: &str = "$funcs";
 
 lazy_static::lazy_static! {
-    static ref MALLOC_FUNC_TYPE: FuncType = {
+    pub static ref MALLOC_FUNC_TYPE: FuncType = {
         FuncType {
             params: Box::new([Type::I32, Type::I32]),
             returns: Box::new([Type::I32])
