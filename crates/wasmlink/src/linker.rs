@@ -145,7 +145,9 @@ impl Linker {
                     };
 
                     if let Some(predecessor) = predecessor {
-                        graph.add_edge(predecessor, index, ());
+                        if !graph.contains_edge(predecessor, index) {
+                            graph.add_edge(predecessor, index, ());
+                        }
                     };
                 }
                 None => break,
