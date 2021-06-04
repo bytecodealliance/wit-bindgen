@@ -22,5 +22,5 @@ witx-bindgen-gen-wasmtime = { path = 'crates/gen-wasmtime', features = ['structo
 #witx = { path = '../WASI/tools/witx' }
 witx = { git = 'https://github.com/alexcrichton/WASI', branch = 'abi-next' }
 
-wasmtime = { git = 'https://github.com/alexcrichton/wasmtime', branch = 'new-api' }
-wasmtime-wasi = { git = 'https://github.com/alexcrichton/wasmtime', branch = 'new-api' }
+wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'main' }
+wasmtime-wasi = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'main' }
