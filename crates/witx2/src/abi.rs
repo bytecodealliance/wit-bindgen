@@ -608,8 +608,8 @@ def_instruction! {
 
         I32FromBitflags : [1] => [1],
         I64FromBitflags : [1] => [1],
-        BitflagsFromI32 { record: &'a Record } : [1] => [1],
-        BitflagsFromI64 : [1] => [1],
+        BitflagsFromI32 { record: &'a Record, name: &'a str } : [1] => [1],
+        BitflagsFromI64 { record: &'a Record, name: &'a str } : [1] => [1],
 
         /// This is a special instruction specifically for the original ABI of
         /// WASI.  The raw return `i32` of a function is re-pushed onto the
@@ -1812,9 +1812,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
                 TypeDefKind::Record(record) => match self.abi {
                     Abi::Preview1 if record.is_flags() => {
+                        let name = self.iface.types[id].name.as_ref().unwrap();
                         match self.iface.preview1_flags_repr(record) {
-                            Int::U64 => self.witx(&BitflagsFromI64),
-                            _ => self.witx(&BitflagsFromI32 { record }),
+                            Int::U64 => self.witx(&BitflagsFromI64 { record, name }),
+                            _ => self.witx(&BitflagsFromI32 { record, name }),
                         }
                     }
                     Abi::Preview1 => {
@@ -2004,13 +2005,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Record(r) if r.is_flags() => {
-                    assert_eq!(self.abi, Abi::Canonical);
                     self.lower(ty, None);
-                    for i in 0..r.num_i32s() {
-                        self.stack.push(addr.clone());
-                        self.emit(&I32Store {
-                            offset: offset + (i as i32) * 4,
-                        });
+                    match self.abi {
+                        Abi::Preview1 => {
+                            let repr = self.iface.preview1_flags_repr(r);
+                            self.stack.push(addr);
+                            self.store_intrepr(offset, repr);
+                        }
+                        Abi::Canonical => {
+                            for i in 0..r.num_i32s() {
+                                self.stack.push(addr.clone());
+                                self.emit(&I32Store {
+                                    offset: offset + (i as i32) * 4,
+                                });
+                            }
+                        }
                     }
                 }
 

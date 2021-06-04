@@ -3,7 +3,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
-use witx_bindgen_gen_core::{witx::*, Files, Generator, TypeInfo, Types};
+use witx_bindgen_gen_core::witx2::abi::{
+    Bindgen, CallMode, Instruction, WasmType, WitxInstruction,
+};
+use witx_bindgen_gen_core::{witx2::*, Files, Generator, TypeInfo, Types};
 use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint, Visibility};
 
 #[derive(Default)]
@@ -43,10 +46,11 @@ pub struct Wasmtime {
     // Whether or not the `caller_memory` variable has been defined and is
     // available for use.
     caller_memory_available: bool,
+    sizes: SizeAlign,
 }
 
 enum NeededFunction {
-    Malloc,
+    Realloc,
     Free,
 }
 
@@ -154,9 +158,9 @@ impl TypePrint for Wasmtime {
 
     fn call_mode(&self) -> CallMode {
         if self.in_import {
-            CallMode::DefinedImport
+            CallMode::NativeImport
         } else {
-            CallMode::DeclaredExport
+            CallMode::WasmExport
         }
     }
 
@@ -195,7 +199,7 @@ impl TypePrint for Wasmtime {
         self.src.push_str(s);
     }
 
-    fn info(&self, ty: &Id) -> TypeInfo {
+    fn info(&self, ty: TypeId) -> TypeInfo {
         self.types.get(ty)
     }
 
@@ -207,81 +211,62 @@ impl TypePrint for Wasmtime {
         self.src.push_str("u32");
     }
 
-    fn print_pointer(&mut self, const_: bool, ty: &TypeRef) {
-        self.push_str("*");
-        if const_ {
-            self.push_str("const ");
-        } else {
-            self.push_str("mut ");
-        }
-        match &**ty.type_() {
-            Type::Builtin(_) | Type::Pointer(_) | Type::ConstPointer(_) => {
-                self.print_tref(ty, TypeMode::Owned);
-            }
-            Type::List(_) | Type::Variant(_) | Type::Buffer(_) => panic!("unsupported type"),
-            Type::Handle(_) | Type::Record(_) => {
-                self.push_str("core::mem::ManuallyDrop<");
-                self.print_tref(ty, TypeMode::Owned);
-                self.push_str(">");
-            }
-        }
+    fn print_pointer(&mut self, _iface: &Interface, _const_: bool, _ty: &Type) {
+        self.push_str("u32");
     }
 
-    fn print_borrowed_slice(&mut self, mutbl: bool, ty: &TypeRef, lifetime: &'static str) {
-        if self.in_import && false {
-            self.push_str("witx_bindgen_wasmtime::GuestPtr<");
-            self.push_str(lifetime);
-            self.push_str(",[");
-            // This should only ever be used on types without lifetimes, so use
-            // invalid syntax here to catch bugs where that's not the case.
-            self.print_tref(ty, TypeMode::AllBorrowed("INVALID"));
-            self.push_str("]>");
-        } else {
-            self.print_rust_slice(mutbl, ty, lifetime);
-        }
+    fn print_borrowed_slice(
+        &mut self,
+        iface: &Interface,
+        mutbl: bool,
+        ty: &Type,
+        lifetime: &'static str,
+    ) {
+        self.print_rust_slice(iface, mutbl, ty, lifetime);
     }
 
     fn print_borrowed_str(&mut self, lifetime: &'static str) {
-        if self.in_import && false {
-            self.push_str("witx_bindgen_wasmtime::GuestPtr<");
+        self.push_str("&");
+        if lifetime != "'_" {
             self.push_str(lifetime);
-            self.push_str(",str>");
-        } else {
-            self.push_str("&");
-            if lifetime != "'_" {
-                self.push_str(lifetime);
-                self.push_str(" ");
-            }
-            self.push_str(" str");
+            self.push_str(" ");
         }
+        self.push_str(" str");
     }
 }
 
 impl Generator for Wasmtime {
-    fn preprocess(&mut self, module: &Module, import: bool) {
-        self.types.analyze(module);
+    fn preprocess(&mut self, iface: &Interface, import: bool) {
+        self.types.analyze(iface);
         self.in_import = import;
-        self.trait_name = module.name().as_str().to_camel_case();
-        self.src.push_str(&format!(
-            "mod {} {{",
-            module.name().as_str().to_snake_case()
-        ));
+        self.trait_name = iface.name.to_camel_case();
+        self.src
+            .push_str(&format!("mod {} {{", iface.name.to_snake_case()));
+        let mode = self.call_mode();
+        self.sizes.fill(mode, iface);
     }
 
-    fn type_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str) {
-        if let Some(repr) = record.bitflags_repr() {
-            let name = name.as_str();
+    fn type_record(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        record: &Record,
+        docs: &Docs,
+    ) {
+        if record.is_flags() {
             self.src.push_str("bitflags::bitflags! {\n");
             self.rustdoc(docs);
             self.src
                 .push_str(&format!("pub struct {}: ", name.to_camel_case()));
+            let repr = self.flags_repr(record);
             self.int_repr(repr);
             self.src.push_str(" {\n");
-            for (i, member) in record.members.iter().enumerate() {
-                self.rustdoc(&member.docs);
+            for (i, field) in record.fields.iter().enumerate() {
+                self.rustdoc(&field.docs);
                 self.src.push_str(&format!(
                     "const {} = 1 << {};\n",
-                    member.name.as_str().to_camel_case(),
+                    field.name.to_camel_case(),
                     i
                 ));
             }
@@ -309,18 +294,23 @@ impl Generator for Wasmtime {
             return;
         }
 
-        self.print_typedef_record(name, record, docs);
+        self.print_typedef_record(iface, id, record, docs);
     }
 
-    fn type_variant(&mut self, name: &Id, variant: &Variant, docs: &str) {
-        self.print_typedef_variant(name, variant, docs);
+    fn type_variant(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        variant: &Variant,
+        docs: &Docs,
+    ) {
+        self.print_typedef_variant(iface, id, name, variant, docs);
     }
 
-    fn type_handle(&mut self, name: &Id, _ty: &HandleDatatype, docs: &str) {
-        let info = self.info(name);
-        if info.param || info.result {
-            self.all_needed_handles.insert(name.as_str().to_string());
-        }
+    fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
+        let name = &iface.resources[ty].name;
+        self.all_needed_handles.insert(name.to_string());
 
         // If we're binding imports then all handles are associated types so
         // there's nothing that we need to do about that.
@@ -330,115 +320,132 @@ impl Generator for Wasmtime {
 
         // ... otherwise for exports we generate a newtype wrapper around an
         // `i32` to manage the resultt.
-        let tyname = name.as_str().to_camel_case();
-        self.rustdoc(docs);
-        if !info.handle_with_dtor {
-            self.src.push_str("#[derive(Debug)]\n");
-        }
+        let tyname = name.to_camel_case();
+        self.rustdoc(&iface.resources[ty].docs);
         self.src.push_str(&format!("pub struct {}(i32", tyname));
-        if info.handle_with_dtor {
-            self.src
-                .push_str(", std::mem::ManuallyDrop<wasmtime::TypedFunc<(i32,), ()>>");
-        }
+        self.src
+            .push_str(", std::mem::ManuallyDrop<wasmtime::TypedFunc<(i32,), ()>>");
         self.src.push_str(");\n");
 
-        if info.handle_with_dtor {
-            self.src.push_str("impl ");
-            self.src.push_str(&tyname);
-            self.src.push_str(
-                "{
-                    pub fn close(mut self) -> Result<(), wasmtime::Trap> {
-                        let res = self.1.call((self.0,));
-                        unsafe {
-                            std::mem::ManuallyDrop::drop(&mut self.1);
-                            std::mem::forget(self);
-                        }
-                        res
+        self.src.push_str("impl ");
+        self.src.push_str(&tyname);
+        self.src.push_str(
+            "{
+                pub fn close(mut self) -> Result<(), wasmtime::Trap> {
+                    let res = self.1.call((self.0,));
+                    unsafe {
+                        std::mem::ManuallyDrop::drop(&mut self.1);
+                        std::mem::forget(self);
                     }
-                }",
-            );
+                    res
+                }
+            }",
+        );
 
-            self.src.push_str("impl std::fmt::Debug for ");
-            self.src.push_str(&tyname);
-            self.src.push_str(&format!(
-                "{{
-                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{
-                        f.debug_struct(\"{}\")
-                            .field(\"handle\", &self.0)
-                            .finish()
-                    }}
-                }}",
-                tyname,
-            ));
+        self.src.push_str("impl std::fmt::Debug for ");
+        self.src.push_str(&tyname);
+        self.src.push_str(&format!(
+            "{{
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{
+                    f.debug_struct(\"{}\")
+                        .field(\"handle\", &self.0)
+                        .finish()
+                }}
+            }}",
+            tyname,
+        ));
 
-            self.src.push_str("impl Drop for ");
-            self.src.push_str(&tyname);
-            self.src.push_str(
-                "{
-                    fn drop(&mut self) {
-                        drop(self.1.call((self.0,)));
-                        unsafe {
-                            std::mem::ManuallyDrop::drop(&mut self.1);
-                        }
+        self.src.push_str("impl Drop for ");
+        self.src.push_str(&tyname);
+        self.src.push_str(
+            "{
+                fn drop(&mut self) {
+                    drop(self.1.call((self.0,)));
+                    unsafe {
+                        std::mem::ManuallyDrop::drop(&mut self.1);
                     }
-                }",
-            );
-        }
+                }
+            }",
+        );
     }
 
-    fn type_alias(&mut self, name: &Id, ty: &NamedType, docs: &str) {
-        self.print_typedef_alias(name, ty, docs);
+    fn type_alias(&mut self, iface: &Interface, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
+        self.print_typedef_alias(iface, id, ty, docs);
     }
 
-    fn type_list(&mut self, name: &Id, ty: &TypeRef, docs: &str) {
-        self.print_type_list(name, ty, docs);
+    fn type_list(&mut self, iface: &Interface, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
+        self.print_type_list(iface, id, ty, docs);
     }
 
-    fn type_pointer(&mut self, name: &Id, const_: bool, ty: &TypeRef, docs: &str) {
+    fn type_pointer(
+        &mut self,
+        iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        const_: bool,
+        ty: &Type,
+        docs: &Docs,
+    ) {
         self.rustdoc(docs);
         let mutbl = if const_ { "const" } else { "mut" };
-        self.src.push_str(&format!(
-            "pub type {} = *{} ",
-            name.as_str().to_camel_case(),
-            mutbl,
-        ));
-        self.print_tref(ty, TypeMode::Owned);
+        self.src
+            .push_str(&format!("pub type {} = *{} ", name.to_camel_case(), mutbl,));
+        self.print_ty(iface, ty, TypeMode::Owned);
         self.src.push(';');
     }
 
-    fn type_builtin(&mut self, name: &Id, ty: BuiltinType, docs: &str) {
+    fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.rustdoc(docs);
         self.src
-            .push_str(&format!("pub type {}", name.as_str().to_camel_case()));
+            .push_str(&format!("pub type {}", name.to_camel_case()));
         self.src.push_str(" = ");
-        self.print_builtin(ty);
+        self.print_ty(iface, ty, TypeMode::Owned);
         self.src.push(';');
     }
 
-    fn type_buffer(&mut self, name: &Id, ty: &Buffer, docs: &str) {
-        self.print_typedef_buffer(name, ty, docs);
+    fn type_push_buffer(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        _name: &str,
+        ty: &Type,
+        docs: &Docs,
+    ) {
+        self.print_typedef_buffer(iface, id, true, ty, docs);
     }
 
-    fn const_(&mut self, name: &Id, ty: &Id, val: u64, docs: &str) {
-        self.rustdoc(docs);
-        self.src.push_str(&format!(
-            "pub const {}_{}: {} = {};\n",
-            ty.as_str().to_shouty_snake_case(),
-            name.as_str().to_shouty_snake_case(),
-            ty.as_str().to_camel_case(),
-            val
-        ));
+    fn type_pull_buffer(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        _name: &str,
+        ty: &Type,
+        docs: &Docs,
+    ) {
+        self.print_typedef_buffer(iface, id, false, ty, docs);
     }
 
-    fn import(&mut self, module: &Id, func: &Function) {
+    // fn const_(&mut self, name: &Id, ty: &Id, val: u64, docs: &str) {
+    //     self.rustdoc(docs);
+    //     self.src.push_str(&format!(
+    //         "pub const {}_{}: {} = {};\n",
+    //         ty.to_shouty_snake_case(),
+    //         name.to_shouty_snake_case(),
+    //         ty.to_camel_case(),
+    //         val
+    //     ));
+    // }
+
+    fn import(&mut self, iface: &Interface, func: &Function) {
         self.tmp = 0;
         self.after_call = false;
         self.caller_memory_available = false;
         let prev = mem::take(&mut self.src);
-        self.is_dtor = self.types.is_dtor_func(&func.name);
+        self.is_dtor = self.types.is_preview1_dtor_func(func);
 
         self.in_trait = true;
         self.print_signature(
+            iface,
             func,
             Visibility::Private,
             false,
@@ -453,7 +460,7 @@ impl Generator for Wasmtime {
         let trait_signature = mem::take(&mut self.src);
 
         self.params.truncate(0);
-        let sig = func.wasm_signature(CallMode::DefinedImport);
+        let sig = iface.wasm_signature(CallMode::NativeImport, func);
         self.src
             .push_str("move |mut caller: wasmtime::Caller<'_, T>");
         for (i, param) in sig.params.iter().enumerate() {
@@ -466,7 +473,7 @@ impl Generator for Wasmtime {
         }
         self.src.push_str("| -> Result<_, wasmtime::Trap> {\n");
         let pos = self.src.len();
-        func.call(module, CallMode::DefinedImport, self);
+        iface.call(self.call_mode(), func, self);
         self.src.push_str("}");
         self.src.insert_str(pos, &mem::take(&mut self.closures));
 
@@ -514,25 +521,26 @@ impl Generator for Wasmtime {
 
         let closure = mem::replace(&mut self.src, prev);
         self.imports
-            .entry(module.as_str().to_string())
+            .entry(iface.name.to_string())
             .or_insert(Vec::new())
             .push(Import {
-                name: func.name.as_str().to_string(),
+                name: func.name.to_string(),
                 closure,
                 trait_signature,
             });
         assert!(self.cleanup.is_none());
     }
 
-    fn export(&mut self, module: &Id, func: &Function) {
+    fn export(&mut self, iface: &Interface, func: &Function) {
         self.tmp = 0;
         self.after_call = false;
         let prev = mem::take(&mut self.src);
-        self.is_dtor = self.types.is_dtor_func(&func.name);
+        self.is_dtor = self.types.is_preview1_dtor_func(func);
         if self.is_dtor {
             assert_eq!(func.results.len(), 0, "destructors cannot have results");
         }
         self.params = self.print_docs_and_params(
+            iface,
             func,
             Visibility::Pub,
             false,
@@ -540,10 +548,10 @@ impl Generator for Wasmtime {
             TypeMode::AllBorrowed("'_"),
         );
         self.push_str("-> Result<");
-        self.print_results(func);
+        self.print_results(iface, func);
         self.push_str(", wasmtime::Trap> {\n");
         let pos = self.src.len();
-        func.call(module, CallMode::DeclaredExport, self);
+        iface.call(self.call_mode(), func, self);
         self.src.push_str("}");
 
         if mem::take(&mut self.needs_buffer_transaction) {
@@ -558,7 +566,7 @@ impl Generator for Wasmtime {
 
         let exports = self
             .exports
-            .entry(module.as_str().to_string())
+            .entry(iface.name.to_string())
             .or_insert_with(Exports::default);
 
         assert!(!self.needs_borrow_checker);
@@ -598,7 +606,7 @@ impl Generator for Wasmtime {
         // Create the code snippet which will define the type of this field in
         // the struct that we're exporting and additionally extracts the
         // function from an instantiated instance.
-        let sig = func.wasm_signature(CallMode::DeclaredExport);
+        let sig = iface.wasm_signature(CallMode::WasmExport, func);
         let mut cvt = "(".to_string();
         for param in sig.params.iter() {
             cvt.push_str(wasm_type(*param));
@@ -611,13 +619,12 @@ impl Generator for Wasmtime {
         }
         cvt.push_str(")");
         exports.fields.insert(
-            func.name.as_str().to_string(),
+            func.name.to_string(),
             (
                 format!("wasmtime::TypedFunc<{}>", cvt),
                 format!(
                     "instance.get_typed_func::<{}, _>(&mut store, \"{}\")?",
-                    cvt,
-                    func.name.as_str(),
+                    cvt, func.name,
                 ),
             ),
         );
@@ -625,7 +632,7 @@ impl Generator for Wasmtime {
 
     fn finish(&mut self, files: &mut Files) {
         for (module, funcs) in sorted_iter(&self.imports) {
-            let module_camel = module.as_str().to_camel_case();
+            let module_camel = module.to_camel_case();
             self.src.push_str("\npub trait ");
             self.src.push_str(&module_camel);
             self.src.push_str(": Sized {\n");
@@ -671,9 +678,9 @@ impl Generator for Wasmtime {
         }
 
         for (module, funcs) in mem::take(&mut self.imports) {
-            let module_camel = module.as_str().to_camel_case();
+            let module_camel = module.to_camel_case();
             self.push_str("\npub fn add_");
-            self.push_str(module.as_str());
+            self.push_str(&module);
             self.push_str("_to_linker<T, U>(linker: &mut wasmtime::Linker<T>");
             self.push_str(", get: impl Fn(&mut T) -> ");
             if self.all_needed_handles.is_empty() {
@@ -694,16 +701,14 @@ impl Generator for Wasmtime {
             for f in funcs {
                 self.push_str(&format!(
                     "linker.func_wrap(\"{}\", \"{}\", {})?;\n",
-                    module.as_str(),
-                    f.name,
-                    f.closure,
+                    module, f.name, f.closure,
                 ));
             }
             self.push_str("Ok(())\n}\n");
         }
 
         for (module, exports) in sorted_iter(&mem::take(&mut self.exports)) {
-            let name = module.as_str().to_camel_case();
+            let name = module.to_camel_case();
             self.push_str("pub struct ");
             self.push_str(&name);
             self.push_str("{\n");
@@ -833,6 +838,10 @@ impl Generator for Wasmtime {
 impl Bindgen for Wasmtime {
     type Operand = String;
 
+    fn sizes(&self) -> &SizeAlign {
+        &self.sizes
+    }
+
     fn push_block(&mut self) {
         let prev = mem::take(&mut self.src);
         self.block_storage.push(prev);
@@ -856,35 +865,37 @@ impl Bindgen for Wasmtime {
         self.caller_memory_available = false;
     }
 
-    fn allocate_typed_space(&mut self, _ty: &NamedType) -> String {
+    fn allocate_typed_space(&mut self, _iface: &Interface, _ty: TypeId) -> String {
         unimplemented!()
     }
 
-    fn allocate_i64_array(&mut self, amt: usize) -> String {
+    fn i64_return_pointer_area(&mut self, _amt: usize) -> String {
+        unimplemented!()
         // TODO: this should be a stack allocation, not one that goes through
         // malloc/free. Using malloc/free is too heavyweight for this purpose.
         // It's not clear how we can get access to the wasm module's stack,
         // however...
-        assert!(self.cleanup.is_none());
-        let tmp = self.tmp();
-        self.needs_functions
-            .insert("witx_malloc".to_string(), NeededFunction::Malloc);
-        self.needs_functions
-            .insert("witx_free".to_string(), NeededFunction::Free);
-        let ptr = format!("ptr{}", tmp);
-        self.src.push_str(&format!(
-            "let {} = func_witx_malloc.call(&mut caller, ({} * 8, 8))?;\n",
-            ptr, amt
-        ));
-        self.cleanup = Some(format!(
-            "func_witx_free.call(&mut caller, ({}, {} * 8, 8))?;\n",
-            ptr, amt
-        ));
-        return ptr;
+        // assert!(self.cleanup.is_none());
+        // let tmp = self.tmp();
+        // self.needs_functions
+        //     .insert("witx_malloc".to_string(), NeededFunction::Malloc);
+        // self.needs_functions
+        //     .insert("witx_free".to_string(), NeededFunction::Free);
+        // let ptr = format!("ptr{}", tmp);
+        // self.src.push_str(&format!(
+        //     "let {} = func_witx_malloc.call(&mut caller, ({} * 8, 8))?;\n",
+        //     ptr, amt
+        // ));
+        // self.cleanup = Some(format!(
+        //     "func_witx_free.call(&mut caller, ({}, {} * 8, 8))?;\n",
+        //     ptr, amt
+        // ));
+        // return ptr;
     }
 
     fn emit(
         &mut self,
+        iface: &Interface,
         inst: &Instruction<'_>,
         operands: &mut Vec<String>,
         results: &mut Vec<String>,
@@ -961,19 +972,21 @@ impl Bindgen for Wasmtime {
             }
 
             Instruction::I32FromOwnedHandle { ty } => {
+                let name = &iface.resources[*ty].name;
                 results.push(format!(
                     "_tables.{}_table.insert({}) as i32",
-                    ty.name.as_str().to_snake_case(),
+                    name.to_snake_case(),
                     operands[0]
                 ));
             }
             Instruction::HandleBorrowedFromI32 { ty } => {
+                let name = &iface.resources[*ty].name;
                 if self.is_dtor {
                     results.push(format!(
                         "_tables.{}_table.remove(({}) as u32).map_err(|e| {{
                             wasmtime::Trap::new(format!(\"failed to remove handle: {{}}\", e))
                         }})?",
-                        ty.name.as_str().to_snake_case(),
+                        name.to_snake_case(),
                         operands[0]
                     ));
                 } else {
@@ -981,7 +994,7 @@ impl Bindgen for Wasmtime {
                         "_tables.{}_table.get(({}) as u32).ok_or_else(|| {{
                             wasmtime::Trap::new(\"invalid handle index\")
                         }})?",
-                        ty.name.as_str().to_snake_case(),
+                        name.to_snake_case(),
                         operands[0]
                     ));
                 }
@@ -990,81 +1003,87 @@ impl Bindgen for Wasmtime {
                 results.push(format!("{}.0", operands[0]));
             }
             Instruction::HandleOwnedFromI32 { ty } => {
+                let name = &iface.resources[*ty].name;
                 results.push(format!(
-                    "{}({}{})",
-                    ty.name.as_str().to_camel_case(),
+                    "{}({}, std::mem::ManuallyDrop::new(self.{}_close.clone()))",
+                    name.to_camel_case(),
                     operands[0],
-                    if self.info(&ty.name).handle_with_dtor {
-                        format!(
-                            ", std::mem::ManuallyDrop::new(self.{}_close.clone())",
-                            ty.name.as_str().to_snake_case()
-                        )
-                    } else {
-                        String::new()
-                    }
+                    name.to_snake_case(),
                 ));
             }
 
-            Instruction::I32FromBitflags { .. } => {
-                results.push(format!("({}).bits as i32", operands[0]));
+            Instruction::RecordLower { ty, record, .. } => {
+                self.record_lower(iface, *ty, record, &operands[0], results);
             }
-            Instruction::I64FromBitflags { .. } => {
-                results.push(format!("({}).bits as i64", operands[0]));
+            Instruction::RecordLift { ty, record, .. } => {
+                self.record_lift(iface, *ty, record, operands, results);
             }
-            Instruction::BitflagsFromI32 { repr, name, .. }
-            | Instruction::BitflagsFromI64 { repr, name, .. } => {
+
+            Instruction::FlagsLower { record, .. } => {
+                assert!(record.num_i32s() <= 2);
+                let tmp = self.tmp();
+                self.push_str(&format!("let flags{} = {};\n", tmp, operands[0]));
+                for i in 0..record.num_i32s() {
+                    results.push(format!("(flags{}.bits >> {}) as i32", tmp, i * 32));
+                }
+            }
+            Instruction::FlagsLift { record, name, .. } => {
+                assert!(record.num_i32s() <= 2);
                 self.needs_validate_flags = true;
+                let repr = self.flags_repr(record);
+                let mut flags = String::from("0");
+                for (i, op) in operands.iter().enumerate() {
+                    flags.push_str(&format!("| (i64::from({}) << {})", op, i * 32));
+                }
                 results.push(format!(
                     "validate_flags(
-                        i64::from({}),
+                        {},
                         {name}::all().bits() as i64,
                         \"{name}\",
                         |b| {name} {{ bits: b as {ty} }}
                     )?",
-                    operands[0],
-                    name = name.name.as_str().to_camel_case(),
-                    ty = int_repr(*repr),
+                    flags,
+                    name = name.to_camel_case(),
+                    ty = int_repr(repr),
                 ));
-            }
-
-            Instruction::RecordLower { ty, name } => {
-                self.record_lower(ty, *name, &operands[0], results);
-            }
-            Instruction::RecordLift { ty, name } => {
-                self.record_lift(ty, *name, operands, results);
             }
 
             Instruction::VariantPayload => results.push("e".to_string()),
 
-            Instruction::VariantLower { ty, name, nresults } => {
+            Instruction::VariantLower {
+                variant,
+                name,
+                nresults,
+                ..
+            } => {
                 let blocks = self
                     .blocks
-                    .drain(self.blocks.len() - ty.cases.len()..)
+                    .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
-                self.variant_lower(ty, *name, *nresults, &operands[0], results, blocks);
+                self.variant_lower(variant, *name, *nresults, &operands[0], results, blocks);
             }
 
-            Instruction::VariantLift { ty, name } => {
+            Instruction::VariantLift { variant, name, .. } => {
                 let blocks = self
                     .blocks
-                    .drain(self.blocks.len() - ty.cases.len()..)
+                    .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
                 let mut result = format!("match ");
                 result.push_str(&operands[0]);
                 result.push_str(" {\n");
-                for (i, (case, block)) in ty.cases.iter().zip(blocks).enumerate() {
+                for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
                     result.push_str(&i.to_string());
                     result.push_str(" => ");
-                    self.variant_lift_case(ty, *name, case, &block, &mut result);
+                    self.variant_lift_case(variant, *name, case, &block, &mut result);
                     result.push_str(",\n");
                 }
-                let variant_name = name.map(|s| s.name.as_str().to_camel_case());
+                let variant_name = name.map(|s| s.to_camel_case());
                 let variant_name = variant_name.as_deref().unwrap_or_else(|| {
-                    if ty.is_bool() {
+                    if variant.is_bool() {
                         "bool"
-                    } else if ty.as_expected().is_some() {
+                    } else if variant.as_expected().is_some() {
                         "Result"
-                    } else if ty.as_option().is_some() {
+                    } else if variant.as_option().is_some() {
                         "Option"
                     } else {
                         unimplemented!()
@@ -1078,7 +1097,7 @@ impl Bindgen for Wasmtime {
                 self.needs_invalid_variant = true;
             }
 
-            Instruction::ListCanonLower { element, malloc } => {
+            Instruction::ListCanonLower { element, realloc } => {
                 // Lowering only happens when we're passing lists into wasm,
                 // which forces us to always allocate, so this should always be
                 // `Some`.
@@ -1086,15 +1105,12 @@ impl Bindgen for Wasmtime {
                 // Note that the size of a list of `char` is 1 because it's
                 // encoded as utf-8, otherwise it's just normal contiguous array
                 // elements.
-                let malloc = malloc.unwrap();
+                let realloc = realloc.unwrap();
                 self.needs_functions
-                    .insert(malloc.to_string(), NeededFunction::Malloc);
-                let (size, align) = match &**element.type_() {
-                    Type::Builtin(BuiltinType::Char) => (1, 1),
-                    _ => {
-                        let size = element.mem_size_align(!self.in_import);
-                        (size.size, size.align)
-                    }
+                    .insert(realloc.to_string(), NeededFunction::Realloc);
+                let (size, align) = match element {
+                    Type::Char => (1, 1),
+                    _ => (self.sizes.size(element), self.sizes.align(element)),
                 };
 
                 // Store the operand into a temporary...
@@ -1102,11 +1118,11 @@ impl Bindgen for Wasmtime {
                 let val = format!("vec{}", tmp);
                 self.push_str(&format!("let {} = {};\n", val, operands[0]));
 
-                // ... and then malloc space for the result in the guest module
+                // ... and then realloc space for the result in the guest module
                 let ptr = format!("ptr{}", tmp);
                 self.push_str(&format!(
                     "let {} = func_{}.call(&mut caller, (({}.len() as i32) * {}, {}))?;\n",
-                    ptr, malloc, val, size, align
+                    ptr, realloc, val, size, align
                 ));
                 self.caller_memory_available = false; // invalidated from above
 
@@ -1141,9 +1157,9 @@ impl Bindgen for Wasmtime {
                         self.needs_copy_slice = true;
                         self.needs_functions
                             .insert(free.to_string(), NeededFunction::Free);
-                        let (stringify, align) = match &**element.type_() {
-                            Type::Builtin(BuiltinType::Char) => (true, 1),
-                            _ => (false, element.mem_size_align(!self.in_import).align),
+                        let (stringify, align) = match element {
+                            Type::Char => (true, 1),
+                            _ => (false, self.sizes.align(element)),
                         };
                         let tmp = self.tmp();
                         self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
@@ -1175,8 +1191,8 @@ impl Bindgen for Wasmtime {
                     }
                     None => {
                         self.needs_borrow_checker = true;
-                        let method = match &**element.type_() {
-                            Type::Builtin(BuiltinType::Char) => "slice_str",
+                        let method = match element {
+                            Type::Char => "slice_str",
                             _ => "slice",
                         };
                         let tmp = self.tmp();
@@ -1191,26 +1207,27 @@ impl Bindgen for Wasmtime {
                 }
             }
 
-            Instruction::ListLower { element, malloc } => {
-                let malloc = malloc.unwrap();
+            Instruction::ListLower { element, realloc } => {
+                let realloc = realloc.unwrap();
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let vec = format!("vec{}", tmp);
                 let result = format!("result{}", tmp);
                 let len = format!("len{}", tmp);
                 self.needs_functions
-                    .insert(malloc.to_string(), NeededFunction::Malloc);
-                let size_align = element.mem_size_align(!self.in_import);
+                    .insert(realloc.to_string(), NeededFunction::Realloc);
+                let size = self.sizes.size(element);
+                let align = self.sizes.align(element);
 
                 // first store our vec-to-lower in a temporary since we'll
                 // reference it multiple times.
                 self.push_str(&format!("let {} = {};\n", vec, operands[0]));
                 self.push_str(&format!("let {} = {}.len() as i32;\n", len, vec));
 
-                // ... then malloc space for the result in the guest module
+                // ... then realloc space for the result in the guest module
                 self.push_str(&format!(
                     "let {} = func_{}.call(&mut caller, ({} * {}, {}))?;\n",
-                    result, malloc, len, size_align.size, size_align.align,
+                    result, realloc, len, size, align,
                 ));
                 self.caller_memory_available = false; // invalidated by call
 
@@ -1220,10 +1237,7 @@ impl Bindgen for Wasmtime {
                     "for (i, e) in {}.into_iter().enumerate() {{\n",
                     vec
                 ));
-                self.push_str(&format!(
-                    "let base = {} + (i as i32) * {};\n",
-                    result, size_align.size,
-                ));
+                self.push_str(&format!("let base = {} + (i as i32) * {};\n", result, size));
                 self.push_str(&body);
                 self.push_str("}");
 
@@ -1234,7 +1248,8 @@ impl Bindgen for Wasmtime {
             Instruction::ListLift { element, free } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
-                let size_align = element.mem_size_align(!self.in_import);
+                let size = self.sizes.size(element);
+                let align = self.sizes.align(element);
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {};\n", len, operands[1]));
                 let base = format!("base{}", tmp);
@@ -1251,7 +1266,7 @@ impl Bindgen for Wasmtime {
                 self.push_str("let base = ");
                 self.push_str(&base);
                 self.push_str(" + i *");
-                self.push_str(&size_align.size.to_string());
+                self.push_str(&size.to_string());
                 self.push_str(";\n");
                 self.push_str(&result);
                 self.push_str(".push(");
@@ -1263,7 +1278,7 @@ impl Bindgen for Wasmtime {
                 if let Some(free) = free {
                     self.push_str(&format!(
                         "func_{}.call(&mut caller, ({}, {} * {}, {}))?;\n",
-                        free, base, len, size_align.size, size_align.align,
+                        free, base, len, size, align,
                     ));
                     self.needs_functions
                         .insert(free.to_string(), NeededFunction::Free);
@@ -1279,23 +1294,23 @@ impl Bindgen for Wasmtime {
             Instruction::BufferLowerPtrLen { .. } => unreachable!(),
             Instruction::BufferLiftHandle { .. } => unimplemented!(),
 
-            Instruction::BufferLiftPtrLen { buffer } => {
+            Instruction::BufferLiftPtrLen { push, ty } => {
                 let block = self.blocks.pop().unwrap();
                 self.needs_borrow_checker = true;
                 let tmp = self.tmp();
                 self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
                 self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
-                if buffer.tref.type_().all_bits_valid() {
-                    let method = if buffer.out { "slice_mut" } else { "slice" };
+                if iface.all_bits_valid(ty) {
+                    let method = if *push { "slice_mut" } else { "slice" };
                     results.push(format!("unsafe {{ _bc.{}(ptr{1}, len{1})? }}", method, tmp));
                 } else {
-                    let size = buffer.tref.mem_size_align(!self.in_import).size;
+                    let size = self.sizes.size(ty);
                     let closure = format!("closure{}", tmp);
                     self.closures.push_str(&format!("let {} = ", closure));
-                    if buffer.out {
+                    if *push {
                         self.closures.push_str("|_bc: &mut [u8], e:");
                         mem::swap(&mut self.closures, &mut self.src);
-                        self.print_tref(&buffer.tref, TypeMode::Owned);
+                        self.print_ty(iface, ty, TypeMode::Owned);
                         mem::swap(&mut self.closures, &mut self.src);
                         self.closures.push_str("| {let base = 0;\n");
                         self.closures.push_str(&block);
@@ -1318,24 +1333,20 @@ impl Bindgen for Wasmtime {
                 }
             }
 
-            Instruction::BufferLowerHandle { buffer } => {
+            Instruction::BufferLowerHandle { push, ty } => {
                 let block = self.blocks.pop().unwrap();
-                let size = buffer.tref.mem_size_align(!self.in_import).size;
+                let size = self.sizes.size(ty);
                 let tmp = self.tmp();
                 let handle = format!("handle{}", tmp);
                 let closure = format!("closure{}", tmp);
                 self.needs_buffer_transaction = true;
-                if buffer.tref.type_().all_bits_valid() {
-                    let method = if buffer.out {
-                        "push_out_raw"
-                    } else {
-                        "push_in_raw"
-                    };
+                if iface.all_bits_valid(ty) {
+                    let method = if *push { "push_out_raw" } else { "push_in_raw" };
                     self.push_str(&format!(
                         "let {} = unsafe {{ buffer_transaction.{}({}) }};\n",
                         handle, method, operands[0],
                     ));
-                } else if buffer.out {
+                } else if *push {
                     self.closures.push_str(&format!(
                         "let {} = |memory: &wasmtime::Memory, base: i32| {{
                             Ok(({}, {}))
@@ -1348,7 +1359,7 @@ impl Bindgen for Wasmtime {
                     ));
                 } else {
                     let start = self.src.len();
-                    self.print_tref(&buffer.tref, TypeMode::AllBorrowed("'_"));
+                    self.print_ty(iface, ty, TypeMode::AllBorrowed("'_"));
                     let ty = self.src[start..].to_string();
                     self.src.truncate(start);
                     self.closures.push_str(&format!(
@@ -1369,13 +1380,12 @@ impl Bindgen for Wasmtime {
             Instruction::CallWasm {
                 module: _,
                 name,
-                params: _,
-                results: func_results,
+                sig,
             } => {
-                if func_results.len() > 0 {
+                if sig.results.len() > 0 {
                     let tmp = self.tmp();
                     self.push_str("let (");
-                    for i in 0..func_results.len() {
+                    for i in 0..sig.results.len() {
                         let arg = format!("result{}_{}", tmp, i);
                         self.push_str(&arg);
                         self.push_str(",");
@@ -1401,7 +1411,7 @@ impl Bindgen for Wasmtime {
                 }
                 self.let_results(func.results.len(), results);
                 self.push_str("host.");
-                self.push_str(func.name.as_str());
+                self.push_str(&func.name);
                 self.push_str("(");
                 for i in 0..operands.len() {
                     self.push_str(&format!("param{}, ", i));
@@ -1527,6 +1537,28 @@ impl Bindgen for Wasmtime {
                         results.push("XXX".to_string());
                     }
                 }
+                WitxInstruction::I32FromBitflags { .. } => {
+                    results.push(format!("({}).bits as i32", operands[0]));
+                }
+                WitxInstruction::I64FromBitflags { .. } => {
+                    results.push(format!("({}).bits as i64", operands[0]));
+                }
+                WitxInstruction::BitflagsFromI32 { record, name, .. }
+                | WitxInstruction::BitflagsFromI64 { record, name, .. } => {
+                    self.needs_validate_flags = true;
+                    let repr = self.flags_repr(record);
+                    results.push(format!(
+                        "validate_flags(
+                            i64::from({}),
+                            {name}::all().bits() as i64,
+                            \"{name}\",
+                            |b| {name} {{ bits: b as {ty} }}
+                        )?",
+                        operands[0],
+                        name = name.to_camel_case(),
+                        ty = int_repr(repr),
+                    ));
+                }
                 i => unimplemented!("{:?}", i),
             },
         }
@@ -1536,16 +1568,13 @@ impl Bindgen for Wasmtime {
 impl NeededFunction {
     fn cvt(&self) -> &'static str {
         match self {
-            NeededFunction::Malloc => "(i32, i32), i32",
+            NeededFunction::Realloc => "(i32, i32, i32, i32), i32",
             NeededFunction::Free => "(i32, i32, i32), ()",
         }
     }
 
     fn ty(&self) -> String {
-        match self {
-            NeededFunction::Malloc => "wasmtime::TypedFunc<(i32, i32), i32>".to_string(),
-            NeededFunction::Free => "wasmtime::TypedFunc<(i32, i32, i32), ()>".to_string(),
-        }
+        format!("wasmtime::TypedFunc<{}>", self.cvt())
     }
 }
 

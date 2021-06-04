@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use syn::parse::{Error, Parse, ParseStream, Result};
-use witx_bindgen_gen_core::{witx, Files, Generator};
+use witx_bindgen_gen_core::{witx2, Files, Generator};
 
 #[proc_macro]
 pub fn import(input: TokenStream) -> TokenStream {
@@ -33,7 +33,7 @@ fn run(input: TokenStream, import: bool) -> TokenStream {
 
 struct Opts {
     opts: witx_bindgen_gen_wasmtime::Opts,
-    modules: Vec<witx::Module>,
+    modules: Vec<witx2::Interface>,
 }
 
 impl Parse for Opts {
@@ -45,8 +45,8 @@ impl Parse for Opts {
         }
         let mut modules = Vec::new();
         for path in &paths {
-            let module = witx::load(path)
-                .map_err(|e| Error::new(proc_macro2::Span::call_site(), e.report()))?;
+            let module = witx2::Interface::parse_file(path)
+                .map_err(|e| Error::new(proc_macro2::Span::call_site(), e))?;
             modules.push(module);
         }
         Ok(Opts {

@@ -65,20 +65,6 @@ impl RustWasm {
     pub fn new() -> RustWasm {
         RustWasm::default()
     }
-
-    fn flags_repr(&self, record: &Record) -> Int {
-        if record.fields.len() <= 8 {
-            Int::U8
-        } else if record.fields.len() <= 16 {
-            Int::U16
-        } else if record.fields.len() <= 32 {
-            Int::U32
-        } else if record.fields.len() <= 64 {
-            Int::U64
-        } else {
-            unimplemented!()
-        }
-    }
 }
 
 impl TypePrint for RustWasm {
@@ -705,13 +691,15 @@ impl Bindgen for RustWasm {
             }
 
             Instruction::FlagsLower { record, .. } => {
+                assert!(record.num_i32s() <= 2);
                 let tmp = self.tmp();
                 self.push_str(&format!("let flags{} = {};\n", tmp, operands[0]));
                 for i in 0..record.num_i32s() {
                     results.push(format!("(flags{} >> {}) as i32", tmp, i * 32));
                 }
             }
-            Instruction::FlagsLift { name, .. } => {
+            Instruction::FlagsLift { name, record, .. } => {
+                assert!(record.num_i32s() <= 2);
                 let name = name.to_camel_case();
                 let mut result = String::from("0");
                 for (i, op) in operands.iter().enumerate() {
@@ -1158,11 +1146,11 @@ impl Bindgen for RustWasm {
                     self.push_str(&format!("let t{} = {};\n", i, operands[0]));
                     results.push(format!("&t{} as *const _ as i32", i));
                 }
-                WitxInstruction::BitflagsFromI32 { record } => {
+                WitxInstruction::BitflagsFromI32 { record, .. } => {
                     let repr = self.flags_repr(record);
                     top_as(int_repr(repr))
                 }
-                WitxInstruction::BitflagsFromI64 => top_as("u64"),
+                WitxInstruction::BitflagsFromI64 { .. } => top_as("u64"),
                 WitxInstruction::I32FromBitflags => top_as("i32"),
                 WitxInstruction::I64FromBitflags => top_as("i64"),
                 i => unimplemented!("{:?}", i),
