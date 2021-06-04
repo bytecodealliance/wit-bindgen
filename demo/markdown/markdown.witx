@@ -1,3 +1,1 @@
-(module $markdown
-    (export "render" (func (param $input string) (result $output string)))
-)
+render: function(markdown: string) -> string

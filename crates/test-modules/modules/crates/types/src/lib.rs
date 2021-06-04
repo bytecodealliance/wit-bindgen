@@ -29,6 +29,9 @@ impl types::Types for Component {
     fn f(&self) -> (u32, String, u64) {
         (13, "hi".into(), 37)
     }
+    fn g(&self, p0: u32) -> u32 {
+        p0
+    }
 }
 
 fn types() -> &'static impl types::Types {

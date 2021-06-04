@@ -2,9 +2,9 @@
 # It is not intended for manual editing.
 [[package]]
 name = "addr2line"
-version = "0.15.1"
+version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03345e98af8f3d786b6d9f656ccfa6ac316d954e92bc4841f0bba20789d5fb5a"
+checksum = "e7a2e47a1fbe209ee101dd6d61285226744c6c8d3c21c8dc878ba6cb9f467f3a"
 dependencies = [
  "gimli",
 ]
@@ -78,7 +78,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "miniz_oxide",
- "object 0.25.1",
+ "object 0.25.2",
  "rustc-demangle",
 ]
 
@@ -584,6 +584,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
+name = "id-arena"
+version = "2.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25a2bc672d1148e28034f176e01fffebb08b35768468cc954630da77a1449005"
+
+[[package]]
 name = "indexmap"
 version = "1.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -719,9 +725,9 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.25.1"
+version = "0.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9023c1c0973b327f073c7f2fceb9bcc049862f93a7d14c6feb46c8a56460a0d5"
+checksum = "f8bc1d42047cf336f0f939c99e97183cf31551bf0f2865a2ec9c8d91fd4ffb5e"
 dependencies = [
  "memchr",
 ]
@@ -1362,7 +1368,7 @@ dependencies = [
  "wasmparser",
  "wasmprinter",
  "wat",
- "witx 0.10.0",
+ "witx2",
 ]
 
 [[package]]
@@ -1635,7 +1641,7 @@ dependencies = [
  "quote",
  "syn",
  "wiggle-generate",
- "witx 0.9.0",
+ "witx",
 ]
 
 [[package]]
@@ -1676,7 +1682,7 @@ dependencies = [
  "thiserror",
  "tracing",
  "wiggle-macro",
- "witx 0.9.0",
+ "witx",
 ]
 
 [[package]]
@@ -1700,7 +1706,7 @@ dependencies = [
  "quote",
  "shellexpand",
  "syn",
- "witx 0.9.0",
+ "witx",
 ]
 
 [[package]]
@@ -1713,7 +1719,7 @@ dependencies = [
  "quote",
  "syn",
  "wiggle-generate",
- "witx 0.9.0",
+ "witx",
 ]
 
 [[package]]
@@ -1770,14 +1776,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "witx"
-version = "0.10.0"
-source = "git+https://github.com/alexcrichton/WASI?branch=abi-next#70a8c6363fb26be655e59a2587bd191e7baee59b"
+name = "witx2"
+version = "0.1.0"
+source = "git+https://github.com/alexcrichton/witx-bindgen?branch=new-api#c526e4fe0f8158fc1e17d73346d02df6f5ed3304"
 dependencies = [
  "anyhow",
- "log",
- "thiserror",
- "wast 33.0.0",
+ "id-arena",
 ]
 
 [[package]]
