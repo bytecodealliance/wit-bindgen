@@ -1,5 +1,6 @@
 use heck::*;
-use witx_bindgen_gen_core::{witx::*, TypeInfo, Types};
+use witx_bindgen_gen_core::witx2::abi::{Bitcast, CallMode, WasmType};
+use witx_bindgen_gen_core::{witx2::*, TypeInfo, Types};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum TypeMode {
@@ -19,90 +20,101 @@ pub trait TypePrint {
     fn krate(&self) -> &'static str;
     fn tmp(&mut self) -> usize;
     fn push_str(&mut self, s: &str);
-    fn info(&self, ty: &Id) -> TypeInfo;
+    fn info(&self, ty: TypeId) -> TypeInfo;
     fn types_mut(&mut self) -> &mut Types;
     fn print_usize(&mut self);
-    fn print_pointer(&mut self, const_: bool, ty: &TypeRef);
-    fn print_borrowed_slice(&mut self, mutbl: bool, ty: &TypeRef, lifetime: &'static str);
+    fn print_pointer(&mut self, iface: &Interface, const_: bool, ty: &Type);
+    fn print_borrowed_slice(
+        &mut self,
+        iface: &Interface,
+        mutbl: bool,
+        ty: &Type,
+        lifetime: &'static str,
+    );
     fn print_borrowed_str(&mut self, lifetime: &'static str);
     fn call_mode(&self) -> CallMode;
     fn default_param_mode(&self) -> TypeMode;
     fn handle_projection(&self) -> Option<(&'static str, String)>;
 
-    fn rustdoc(&mut self, docs: &str) {
-        if docs.trim().is_empty() {
-            return;
-        }
-        for line in docs.lines() {
+    fn rustdoc(&mut self, docs: &Docs) {
+        let docs = match &docs.contents {
+            Some(docs) => docs,
+            None => return,
+        };
+        for line in docs.trim().lines() {
             self.push_str("/// ");
             self.push_str(line);
             self.push_str("\n");
         }
     }
 
-    fn rustdoc_params(&mut self, docs: &[Param], header: &str) {
-        let docs = docs
-            .iter()
-            .filter(|param| param.docs.trim().len() > 0)
-            .collect::<Vec<_>>();
-        if docs.len() == 0 {
-            return;
-        }
+    fn rustdoc_params(&mut self, docs: &[(String, Type)], header: &str) {
+        drop((docs, header));
+        // let docs = docs
+        //     .iter()
+        //     .filter(|param| param.docs.trim().len() > 0)
+        //     .collect::<Vec<_>>();
+        // if docs.len() == 0 {
+        //     return;
+        // }
 
-        self.push_str("///\n");
-        self.push_str("/// ## ");
-        self.push_str(header);
-        self.push_str("\n");
-        self.push_str("///\n");
+        // self.push_str("///\n");
+        // self.push_str("/// ## ");
+        // self.push_str(header);
+        // self.push_str("\n");
+        // self.push_str("///\n");
 
-        for param in docs {
-            for (i, line) in param.docs.lines().enumerate() {
-                self.push_str("/// ");
-                // Currently wasi only has at most one return value, so there's no
-                // need to indent it or name it.
-                if header != "Return" {
-                    if i == 0 {
-                        self.push_str("* `");
-                        self.push_str(to_rust_ident(param.name.as_str()));
-                        self.push_str("` - ");
-                    } else {
-                        self.push_str("  ");
-                    }
-                }
-                self.push_str(line);
-                self.push_str("\n");
-            }
-        }
+        // for param in docs {
+        //     for (i, line) in param.docs.lines().enumerate() {
+        //         self.push_str("/// ");
+        //         // Currently wasi only has at most one return value, so there's no
+        //         // need to indent it or name it.
+        //         if header != "Return" {
+        //             if i == 0 {
+        //                 self.push_str("* `");
+        //                 self.push_str(to_rust_ident(param.name.as_str()));
+        //                 self.push_str("` - ");
+        //             } else {
+        //                 self.push_str("  ");
+        //             }
+        //         }
+        //         self.push_str(line);
+        //         self.push_str("\n");
+        //     }
+        // }
     }
 
     fn print_signature(
         &mut self,
+        iface: &Interface,
         func: &Function,
         visibility: Visibility,
         unsafe_: bool,
         self_arg: Option<&str>,
         param_mode: TypeMode,
     ) -> Vec<String> {
-        let params = self.print_docs_and_params(func, visibility, unsafe_, self_arg, param_mode);
+        let params =
+            self.print_docs_and_params(iface, func, visibility, unsafe_, self_arg, param_mode);
         if func.results.len() > 0 {
             self.push_str(" -> ");
-            self.print_results(func);
+            self.print_results(iface, func);
         }
         params
     }
 
     fn print_docs_and_params(
         &mut self,
+        iface: &Interface,
         func: &Function,
         visibility: Visibility,
         unsafe_: bool,
         self_arg: Option<&str>,
         param_mode: TypeMode,
     ) -> Vec<String> {
-        let rust_name = func.name.as_ref().to_snake_case();
+        let rust_name = func.name.to_snake_case();
         self.rustdoc(&func.docs);
         self.rustdoc_params(&func.params, "Parameters");
-        self.rustdoc_params(&func.results, "Return");
+        // self.rustdoc_params(&func.results, "Return"); // TODO
 
         match visibility {
             Visibility::Pub => self.push_str("pub "),
@@ -120,27 +132,27 @@ pub trait TypePrint {
             self.push_str(",");
         }
         let mut params = Vec::new();
-        for param in func.params.iter() {
-            self.push_str(to_rust_ident(param.name.as_str()));
-            params.push(to_rust_ident(param.name.as_str()).to_string());
+        for (name, param) in func.params.iter() {
+            self.push_str(to_rust_ident(name.as_str()));
+            params.push(to_rust_ident(name.as_str()).to_string());
             self.push_str(": ");
-            self.print_tref(&param.tref, param_mode);
+            self.print_ty(iface, param, param_mode);
             self.push_str(",");
         }
         self.push_str(")");
         params
     }
 
-    fn print_results(&mut self, func: &Function) {
+    fn print_results(&mut self, iface: &Interface, func: &Function) {
         match func.results.len() {
             0 => self.push_str("()"),
             1 => {
-                self.print_tref(&func.results[0].tref, TypeMode::Owned);
+                self.print_ty(iface, &func.results[0], TypeMode::Owned);
             }
             _ => {
                 self.push_str("(");
                 for result in func.results.iter() {
-                    self.print_tref(&result.tref, TypeMode::Owned);
+                    self.print_ty(iface, result, TypeMode::Owned);
                     self.push_str(", ");
                 }
                 self.push_str(")");
@@ -148,114 +160,139 @@ pub trait TypePrint {
         }
     }
 
-    fn print_tref(&mut self, ty: &TypeRef, mode: TypeMode) {
+    fn print_ty(&mut self, iface: &Interface, ty: &Type, mode: TypeMode) {
         match ty {
-            TypeRef::Name(t) => {
-                let info = self.info(&t.name);
+            Type::Id(t) => self.print_tyid(iface, *t, mode),
+            Type::Handle(r) => {
+                let mut info = TypeInfo::default();
+                info.has_handle = true;
                 let lt = self.lifetime_for(&info, mode);
-                let ty = &**t.type_();
-
-                match ty {
-                    Type::Handle(_) => {
-                        // Borrowed handles are always behind a reference since
-                        // in that case we never take ownership of the handle.
-                        if let Some(lt) = lt {
-                            self.push_str("&");
-                            if lt != "'_" {
-                                self.push_str(lt);
-                            }
-                            self.push_str(" ");
-                        }
-
-                        if let Some((proj, _)) = self.handle_projection() {
-                            self.push_str(proj);
-                            self.push_str("::");
-                        }
-                        self.push_str(&t.name.as_str().to_camel_case());
+                // Borrowed handles are always behind a reference since
+                // in that case we never take ownership of the handle.
+                if let Some(lt) = lt {
+                    self.push_str("&");
+                    if lt != "'_" {
+                        self.push_str(lt);
                     }
-                    _ => {
-                        let name = if lt.is_some() {
-                            self.param_name(&t.name)
-                        } else {
-                            self.result_name(&t.name)
-                        };
-                        self.push_str(&name);
-
-                        // If the type recursively owns data and it's a
-                        // variant/record/list, then we need to place the
-                        // lifetime parameter on the type as well.
-                        if info.owns_data() {
-                            match ty {
-                                Type::Variant(_)
-                                | Type::Record(_)
-                                | Type::List(_)
-                                | Type::Buffer(_) => {
-                                    self.print_generics(&info, lt, false);
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
+                    self.push_str(" ");
                 }
+
+                if let Some((proj, _)) = self.handle_projection() {
+                    self.push_str(proj);
+                    self.push_str("::");
+                }
+                self.push_str(&iface.resources[*r].name.to_camel_case());
             }
-            TypeRef::Value(v) => match &**v {
-                Type::Builtin(t) => self.print_builtin(*t),
-                Type::List(t) => self.print_list(t, mode),
 
-                Type::Pointer(t) => self.print_pointer(false, t),
-                Type::ConstPointer(t) => self.print_pointer(true, t),
-
-                // Variants can be printed natively if they're `Option`,
-                // `Result` , or `bool`, otherwise they must be named for now.
-                Type::Variant(v) if v.is_bool() => self.push_str("bool"),
-                Type::Variant(v) => match v.as_expected() {
-                    Some((ok, err)) => {
-                        self.push_str("Result<");
-                        match ok {
-                            Some(ty) => self.print_tref(ty, mode),
-                            None => self.push_str("()"),
-                        }
-                        self.push_str(",");
-                        match err {
-                            Some(ty) => self.print_tref(ty, mode),
-                            None => self.push_str("()"),
-                        }
-                        self.push_str(">");
-                    }
-                    None => match v.as_option() {
-                        Some(ty) => {
-                            self.push_str("Option<");
-                            self.print_tref(ty, mode);
-                            self.push_str(">");
-                        }
-                        None => panic!("unsupported anonymous variant"),
-                    },
-                },
-
-                // Tuple-like records are mapped directly to Rust tuples of
-                // types. Note the trailing comma after each member to
-                // appropriately handle 1-tuples.
-                Type::Record(r) if r.is_tuple() => {
-                    self.push_str("(");
-                    for member in r.members.iter() {
-                        self.print_tref(&member.tref, mode);
-                        self.push_str(",");
-                    }
-                    self.push_str(")");
-                }
-
-                Type::Buffer(r) => self.print_buffer(r, mode),
-
-                Type::Record(_) | Type::Handle(_) => {
-                    panic!("unsupported anonymous type reference: {}", v.kind())
-                }
-            },
+            Type::U8 => self.push_str("u8"),
+            Type::CChar => self.push_str("u8"),
+            Type::U16 => self.push_str("u16"),
+            Type::U32 => self.push_str("u32"),
+            Type::Usize => self.print_usize(),
+            Type::U64 => self.push_str("u64"),
+            Type::S8 => self.push_str("i8"),
+            Type::S16 => self.push_str("i16"),
+            Type::S32 => self.push_str("i32"),
+            Type::S64 => self.push_str("i64"),
+            Type::F32 => self.push_str("f32"),
+            Type::F64 => self.push_str("f64"),
+            Type::Char => self.push_str("char"),
         }
     }
 
-    fn print_list(&mut self, ty: &TypeRef, mode: TypeMode) {
-        match &**ty.type_() {
-            Type::Builtin(BuiltinType::Char) => match mode {
+    fn print_tyid(&mut self, iface: &Interface, id: TypeId, mode: TypeMode) {
+        let info = self.info(id);
+        let lt = self.lifetime_for(&info, mode);
+        let ty = &iface.types[id];
+        if ty.name.is_some() {
+            let name = if lt.is_some() {
+                self.param_name(iface, id)
+            } else {
+                self.result_name(iface, id)
+            };
+            self.push_str(&name);
+
+            // If the type recursively owns data and it's a
+            // variant/record/list, then we need to place the
+            // lifetime parameter on the type as well.
+            if info.owns_data() && needs_generics(iface, &ty.kind) {
+                self.print_generics(&info, lt, false);
+            }
+
+            return;
+
+            fn needs_generics(iface: &Interface, ty: &TypeDefKind) -> bool {
+                match ty {
+                    TypeDefKind::Variant(_)
+                    | TypeDefKind::Record(_)
+                    | TypeDefKind::List(_)
+                    | TypeDefKind::PushBuffer(_)
+                    | TypeDefKind::PullBuffer(_) => true,
+                    TypeDefKind::Type(Type::Id(t)) => needs_generics(iface, &iface.types[*t].kind),
+                    TypeDefKind::Type(Type::Handle(_)) => true,
+                    _ => false,
+                }
+            }
+        }
+
+        match &ty.kind {
+            TypeDefKind::List(t) => self.print_list(iface, t, mode),
+
+            TypeDefKind::Pointer(t) => self.print_pointer(iface, false, t),
+            TypeDefKind::ConstPointer(t) => self.print_pointer(iface, true, t),
+
+            // Variants can be printed natively if they're `Option`,
+            // `Result` , or `bool`, otherwise they must be named for now.
+            TypeDefKind::Variant(v) if v.is_bool() => self.push_str("bool"),
+            TypeDefKind::Variant(v) => match v.as_expected() {
+                Some((ok, err)) => {
+                    self.push_str("Result<");
+                    match ok {
+                        Some(ty) => self.print_ty(iface, ty, mode),
+                        None => self.push_str("()"),
+                    }
+                    self.push_str(",");
+                    match err {
+                        Some(ty) => self.print_ty(iface, ty, mode),
+                        None => self.push_str("()"),
+                    }
+                    self.push_str(">");
+                }
+                None => match v.as_option() {
+                    Some(ty) => {
+                        self.push_str("Option<");
+                        self.print_ty(iface, ty, mode);
+                        self.push_str(">");
+                    }
+                    None => panic!("unsupported anonymous variant"),
+                },
+            },
+
+            // Tuple-like records are mapped directly to Rust tuples of
+            // types. Note the trailing comma after each member to
+            // appropriately handle 1-tuples.
+            TypeDefKind::Record(r) if r.is_tuple() => {
+                self.push_str("(");
+                for field in r.fields.iter() {
+                    self.print_ty(iface, &field.ty, mode);
+                    self.push_str(",");
+                }
+                self.push_str(")");
+            }
+            TypeDefKind::Record(_) => {
+                panic!("unsupported anonymous type reference: record")
+            }
+
+            TypeDefKind::PushBuffer(r) => self.print_buffer(iface, true, r, mode),
+            TypeDefKind::PullBuffer(r) => self.print_buffer(iface, false, r, mode),
+
+            TypeDefKind::Type(t) => self.print_ty(iface, t, mode),
+        }
+    }
+
+    fn print_list(&mut self, iface: &Interface, ty: &Type, mode: TypeMode) {
+        match ty {
+            Type::Char => match mode {
                 TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) => {
                     self.print_borrowed_str(lt)
                 }
@@ -263,69 +300,69 @@ pub trait TypePrint {
             },
             t => match mode {
                 TypeMode::AllBorrowed(lt) => {
-                    let mutbl = self.needs_mutable_slice(ty);
-                    self.print_borrowed_slice(mutbl, ty, lt);
+                    let mutbl = self.needs_mutable_slice(iface, ty);
+                    self.print_borrowed_slice(iface, mutbl, ty, lt);
                 }
                 TypeMode::LeafBorrowed(lt) => {
-                    if t.all_bits_valid() {
-                        let mutbl = self.needs_mutable_slice(ty);
-                        self.print_borrowed_slice(mutbl, ty, lt);
+                    if iface.all_bits_valid(t) {
+                        let mutbl = self.needs_mutable_slice(iface, ty);
+                        self.print_borrowed_slice(iface, mutbl, ty, lt);
                     } else {
                         self.push_str("Vec<");
-                        self.print_tref(ty, mode);
+                        self.print_ty(iface, ty, mode);
                         self.push_str(">");
                     }
                 }
                 TypeMode::HandlesBorrowed(_) | TypeMode::Owned => {
                     self.push_str("Vec<");
-                    self.print_tref(ty, mode);
+                    self.print_ty(iface, ty, mode);
                     self.push_str(">");
                 }
             },
         }
     }
 
-    fn print_buffer(&mut self, b: &Buffer, mode: TypeMode) {
+    fn print_buffer(&mut self, iface: &Interface, push: bool, ty: &Type, mode: TypeMode) {
         let lt = match mode {
             TypeMode::AllBorrowed(s) | TypeMode::HandlesBorrowed(s) | TypeMode::LeafBorrowed(s) => {
                 s
             }
             TypeMode::Owned => unimplemented!(),
         };
-        let prefix = if b.out { "Out" } else { "In" };
+        let prefix = if push { "Push" } else { "Pull" };
         match self.call_mode() {
-            // Defined exports means rust-compiled-to-wasm exporting something,
+            // Native exports means rust-compiled-to-wasm exporting something,
             // and buffers there are all using handles, so they use special types.
-            CallMode::DefinedExport => {
+            CallMode::NativeExport => {
                 let krate = self.krate();
                 self.push_str(krate);
                 self.push_str("::exports::");
                 self.push_str(prefix);
                 self.push_str("Buffer");
-                if b.tref.type_().all_bits_valid() {
+                if iface.all_bits_valid(ty) {
                     self.push_str("Raw");
                 }
                 self.push_str("<");
                 self.push_str(lt);
                 self.push_str(", ");
-                self.print_tref(&b.tref, if b.out { TypeMode::Owned } else { mode });
+                self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
                 self.push_str(">");
             }
 
-            // Declared exports means host Rust is calling wasm. If all bits are
+            // Wasm exports means host Rust is calling wasm. If all bits are
             // valid we use raw slices (e.g. u8/u64/etc). Otherwise input
             // buffers (input to wasm) is `ExactSizeIterator` and output buffers
             // (output from wasm) is `&mut Vec`
-            CallMode::DeclaredExport => {
-                if b.tref.type_().all_bits_valid() {
-                    self.print_borrowed_slice(b.out, &b.tref, lt);
-                } else if b.out {
+            CallMode::WasmExport => {
+                if iface.all_bits_valid(ty) {
+                    self.print_borrowed_slice(iface, push, ty, lt);
+                } else if push {
                     self.push_str("&");
                     if lt != "'_" {
                         self.push_str(lt);
                     }
                     self.push_str(" mut Vec<");
-                    self.print_tref(&b.tref, if b.out { TypeMode::Owned } else { mode });
+                    self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
                     self.push_str(">");
                 } else {
                     self.push_str("&");
@@ -333,7 +370,7 @@ pub trait TypePrint {
                         self.push_str(lt);
                     }
                     self.push_str(" mut (dyn ExactSizeIterator<Item = ");
-                    self.print_tref(&b.tref, if b.out { TypeMode::Owned } else { mode });
+                    self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
                     self.push_str(">");
                     if lt != "'_" {
                         self.push_str(" + ");
@@ -343,9 +380,9 @@ pub trait TypePrint {
                 }
             }
 
-            CallMode::DeclaredImport | CallMode::DefinedImport => {
-                if b.tref.type_().all_bits_valid() {
-                    self.print_borrowed_slice(b.out, &b.tref, lt);
+            CallMode::NativeImport | CallMode::WasmImport => {
+                if iface.all_bits_valid(ty) {
+                    self.print_borrowed_slice(iface, push, ty, lt);
                 } else {
                     if let TypeMode::AllBorrowed(_) = mode {
                         self.push_str("&");
@@ -361,14 +398,20 @@ pub trait TypePrint {
                     self.push_str("Buffer<");
                     self.push_str(lt);
                     self.push_str(", ");
-                    self.print_tref(&b.tref, if b.out { TypeMode::Owned } else { mode });
+                    self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
                     self.push_str(">");
                 }
             }
         }
     }
 
-    fn print_rust_slice(&mut self, mutbl: bool, ty: &TypeRef, lifetime: &'static str) {
+    fn print_rust_slice(
+        &mut self,
+        iface: &Interface,
+        mutbl: bool,
+        ty: &Type,
+        lifetime: &'static str,
+    ) {
         self.push_str("&");
         if lifetime != "'_" {
             self.push_str(lifetime);
@@ -378,32 +421,8 @@ pub trait TypePrint {
             self.push_str(" mut ");
         }
         self.push_str("[");
-        self.print_tref(ty, TypeMode::AllBorrowed(lifetime));
+        self.print_ty(iface, ty, TypeMode::AllBorrowed(lifetime));
         self.push_str("]");
-    }
-
-    fn print_builtin(&mut self, ty: BuiltinType) {
-        match ty {
-            // A C `char` in Rust we just interpret always as `u8`. It's
-            // technically possible to use `std::os::raw::c_char` but that's
-            // overkill for the purposes that we'll be using this type for.
-            BuiltinType::U8 { lang_c_char: _ } => self.push_str("u8"),
-            BuiltinType::U16 => self.push_str("u16"),
-            BuiltinType::U32 {
-                lang_ptr_size: false,
-            } => self.push_str("u32"),
-            BuiltinType::U32 {
-                lang_ptr_size: true,
-            } => self.print_usize(),
-            BuiltinType::U64 => self.push_str("u64"),
-            BuiltinType::S8 => self.push_str("i8"),
-            BuiltinType::S16 => self.push_str("i16"),
-            BuiltinType::S32 => self.push_str("i32"),
-            BuiltinType::S64 => self.push_str("i64"),
-            BuiltinType::F32 => self.push_str("f32"),
-            BuiltinType::F64 => self.push_str("f64"),
-            BuiltinType::Char => self.push_str("char"),
-        }
     }
 
     fn print_generics(&mut self, info: &TypeInfo, lifetime: Option<&str>, bound: bool) {
@@ -430,7 +449,7 @@ pub trait TypePrint {
         self.push_str(">");
     }
 
-    fn int_repr(&mut self, repr: IntRepr) {
+    fn int_repr(&mut self, repr: Int) {
         self.push_str(int_repr(repr));
     }
 
@@ -438,34 +457,40 @@ pub trait TypePrint {
         self.push_str(wasm_type(ty));
     }
 
-    fn modes_of(&self, ty: &Id) -> Vec<(String, TypeMode)> {
+    fn modes_of(&self, iface: &Interface, ty: TypeId) -> Vec<(String, TypeMode)> {
         let info = self.info(ty);
         let mut result = Vec::new();
         if info.param {
-            result.push((self.param_name(ty), self.default_param_mode()));
+            result.push((self.param_name(iface, ty), self.default_param_mode()));
         }
         if info.result && (!info.param || self.uses_two_names(&info)) {
-            result.push((self.result_name(ty), TypeMode::Owned));
+            result.push((self.result_name(iface, ty), TypeMode::Owned));
         }
         return result;
     }
 
-    fn print_typedef_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str) {
-        let info = self.info(name);
-        for (name, mode) in self.modes_of(name) {
+    fn print_typedef_record(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        record: &Record,
+        docs: &Docs,
+    ) {
+        let info = self.info(id);
+        for (name, mode) in self.modes_of(iface, id) {
             let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
             if record.is_tuple() {
                 self.push_str(&format!("pub type {}", name));
                 self.print_generics(&info, lt, true);
                 self.push_str(" = (");
-                for member in record.members.iter() {
-                    self.print_tref(&member.tref, mode);
+                for field in record.fields.iter() {
+                    self.print_ty(iface, &field.ty, mode);
                     self.push_str(",");
                 }
                 self.push_str(");\n");
             } else {
-                if info.has_in_buffer || info.has_out_buffer {
+                if info.has_pull_buffer || info.has_push_buffer {
                     // skip copy/clone ...
                 } else if lt.is_some() || !info.owns_data() {
                     self.push_str("#[repr(C)]\n");
@@ -473,18 +498,18 @@ pub trait TypePrint {
                 } else if !info.has_handle {
                     self.push_str("#[derive(Clone)]\n");
                 }
-                if !info.has_in_buffer {
+                if !info.has_pull_buffer {
                     self.push_str("#[derive(Debug)]\n");
                 }
                 self.push_str(&format!("pub struct {}\n", name));
                 self.print_generics(&info, lt, true);
                 self.push_str(" {\n");
-                for member in record.members.iter() {
-                    self.rustdoc(&member.docs);
+                for field in record.fields.iter() {
+                    self.rustdoc(&field.docs);
                     self.push_str("pub ");
-                    self.push_str(to_rust_ident(member.name.as_str()));
+                    self.push_str(to_rust_ident(&field.name));
                     self.push_str(": ");
-                    self.print_tref(&member.tref, mode);
+                    self.print_ty(iface, &field.ty, mode);
                     self.push_str(",\n");
                 }
                 self.push_str("}\n");
@@ -492,12 +517,19 @@ pub trait TypePrint {
         }
     }
 
-    fn print_typedef_variant(&mut self, name: &Id, variant: &Variant, docs: &str) {
+    fn print_typedef_variant(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        variant: &Variant,
+        docs: &Docs,
+    ) {
         // TODO: should this perhaps be an attribute in the witx file?
-        let is_error = name.as_str().contains("errno") && variant.is_enum();
-        let info = self.info(name);
+        let is_error = name.contains("errno") && variant.is_enum();
+        let info = self.info(id);
 
-        for (name, mode) in self.modes_of(name) {
+        for (name, mode) in self.modes_of(iface, id) {
             self.rustdoc(docs);
             let lt = self.lifetime_for(&info, mode);
             if variant.is_bool() {
@@ -507,7 +539,7 @@ pub trait TypePrint {
                 self.push_str(&format!("pub type {}", name));
                 self.print_generics(&info, lt, true);
                 self.push_str("= Option<");
-                self.print_tref(ty, mode);
+                self.print_ty(iface, ty, mode);
                 self.push_str(">;\n");
                 continue;
             } else if let Some((ok, err)) = variant.as_expected() {
@@ -515,12 +547,12 @@ pub trait TypePrint {
                 self.print_generics(&info, lt, true);
                 self.push_str("= Result<");
                 match ok {
-                    Some(ty) => self.print_tref(ty, mode),
+                    Some(ty) => self.print_ty(iface, ty, mode),
                     None => self.push_str("()"),
                 }
                 self.push_str(",");
                 match err {
-                    Some(ty) => self.print_tref(ty, mode),
+                    Some(ty) => self.print_ty(iface, ty, mode),
                     None => self.push_str("()"),
                 }
                 self.push_str(">;\n");
@@ -528,14 +560,14 @@ pub trait TypePrint {
             }
             if variant.is_enum() {
                 self.push_str("#[repr(");
-                self.int_repr(variant.tag_repr);
+                self.int_repr(variant.tag);
                 self.push_str(")]\n#[derive(Clone, Copy, PartialEq, Eq)]\n");
-            } else if info.has_in_buffer || info.has_out_buffer {
+            } else if info.has_pull_buffer || info.has_push_buffer {
                 // skip copy/clone
             } else if lt.is_some() || !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
             }
-            if !is_error && !info.has_in_buffer {
+            if !is_error && !info.has_pull_buffer {
                 self.push_str("#[derive(Debug)]\n");
             }
             self.push_str(&format!("pub enum {}", name.to_camel_case()));
@@ -544,9 +576,9 @@ pub trait TypePrint {
             for case in variant.cases.iter() {
                 self.rustdoc(&case.docs);
                 self.push_str(&case_name(&case.name));
-                if let Some(ty) = &case.tref {
+                if let Some(ty) = &case.ty {
                     self.push_str("(");
-                    self.print_tref(ty, mode);
+                    self.print_ty(iface, ty, mode);
                     self.push_str(")")
                 }
                 self.push_str(",\n");
@@ -580,7 +612,9 @@ pub trait TypePrint {
                     self.push_str("::");
                     self.push_str(&case_name(&case.name));
                     self.push_str(" => \"");
-                    self.push_str(case.docs.trim());
+                    if let Some(contents) = &case.docs.contents {
+                        self.push_str(contents.trim());
+                    }
                     self.push_str("\",");
                 }
                 self.push_str("}\n");
@@ -619,61 +653,64 @@ pub trait TypePrint {
         }
     }
 
-    fn print_typedef_alias(&mut self, name: &Id, ty: &NamedType, docs: &str) {
-        let info = self.info(&ty.name);
-        for (name, mode) in self.modes_of(name) {
+    fn print_typedef_alias(&mut self, iface: &Interface, id: TypeId, ty: &Type, docs: &Docs) {
+        let info = self.info(id);
+        for (name, mode) in self.modes_of(iface, id) {
             self.rustdoc(docs);
             self.push_str(&format!("pub type {}", name));
             let lt = self.lifetime_for(&info, mode);
             self.print_generics(&info, lt, true);
             self.push_str(" = ");
-            let name = match lt {
-                Some(_) => self.param_name(&ty.name),
-                None => self.result_name(&ty.name),
-            };
-            self.push_str(&name);
-            self.print_generics(&info, lt, false);
+            self.print_ty(iface, ty, mode);
             self.push_str(";\n");
         }
     }
 
-    fn print_type_list(&mut self, name: &Id, ty: &TypeRef, docs: &str) {
-        let info = self.info(name);
-        for (name, mode) in self.modes_of(name) {
+    fn print_type_list(&mut self, iface: &Interface, id: TypeId, ty: &Type, docs: &Docs) {
+        let info = self.info(id);
+        for (name, mode) in self.modes_of(iface, id) {
             let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
             self.push_str(&format!("pub type {}", name));
             self.print_generics(&info, lt, true);
             self.push_str(" = ");
-            self.print_list(ty, mode);
+            self.print_list(iface, ty, mode);
             self.push_str(";\n");
         }
     }
 
-    fn print_typedef_buffer(&mut self, name: &Id, b: &Buffer, docs: &str) {
-        let info = self.info(name);
-        for (name, mode) in self.modes_of(name) {
+    fn print_typedef_buffer(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        push: bool,
+        ty: &Type,
+        docs: &Docs,
+    ) {
+        let info = self.info(id);
+        for (name, mode) in self.modes_of(iface, id) {
             let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
             self.push_str(&format!("pub type {}", name));
             self.print_generics(&info, lt, true);
             self.push_str(" = ");
-            self.print_buffer(b, mode);
+            self.print_buffer(iface, push, ty, mode);
             self.push_str(";\n");
         }
     }
 
     fn record_lower(
         &mut self,
-        ty: &RecordDatatype,
-        name: Option<&NamedType>,
+        iface: &Interface,
+        id: TypeId,
+        record: &Record,
         operand: &str,
         results: &mut Vec<String>,
     ) {
         let tmp = self.tmp();
-        if ty.is_tuple() {
+        if record.is_tuple() {
             self.push_str("let (");
-            for i in 0..ty.members.len() {
+            for i in 0..record.fields.len() {
                 let arg = format!("t{}_{}", tmp, i);
                 self.push_str(&arg);
                 self.push_str(",");
@@ -682,21 +719,22 @@ pub trait TypePrint {
             self.push_str(") = ");
             self.push_str(operand);
             self.push_str(";\n");
-        } else if let Some(name) = name {
+        } else {
             self.push_str("let ");
-            let name = match self.call_mode() {
-                // Lowering the result of a defined function means we're
-                // lowering the return value.
-                CallMode::DefinedImport | CallMode::DefinedExport => self.result_name(&name.name),
-                // Lowering the result of a declared function means we're
+            let name = if self.call_mode().wasm() {
+                // Lowering the result of a wasm function means we're
                 // lowering a parameter.
-                CallMode::DeclaredImport | CallMode::DeclaredExport => self.param_name(&name.name),
+                self.param_name(iface, id)
+            } else {
+                // Lowering the result of a non-wasm function means we're
+                // lowering the return value.
+                self.result_name(iface, id)
             };
             self.push_str(&name);
             self.push_str("{ ");
-            for member in ty.members.iter() {
-                let arg = format!("{}{}", member.name.as_str(), tmp);
-                self.push_str(to_rust_ident(member.name.as_str()));
+            for field in record.fields.iter() {
+                let arg = format!("{}{}", field.name.as_str(), tmp);
+                self.push_str(to_rust_ident(field.name.as_str()));
                 self.push_str(":");
                 self.push_str(&arg);
                 self.push_str(",");
@@ -705,15 +743,14 @@ pub trait TypePrint {
             self.push_str("} = ");
             self.push_str(operand);
             self.push_str(";\n");
-        } else {
-            unimplemented!()
         }
     }
 
     fn record_lift(
         &mut self,
-        ty: &RecordDatatype,
-        name: Option<&NamedType>,
+        iface: &Interface,
+        id: TypeId,
+        ty: &Record,
         operands: &[String],
         results: &mut Vec<String>,
     ) {
@@ -723,26 +760,25 @@ pub trait TypePrint {
             } else {
                 results.push(format!("({})", operands.join(",")));
             }
-        } else if let Some(name) = name {
-            let mut result = match self.call_mode() {
-                // Lifting to a defined function means that we're lifting into
-                // a parameter
-                CallMode::DefinedImport | CallMode::DefinedExport => self.param_name(&name.name),
-                // Lifting for a declared function means we're lifting one of
+        } else {
+            let mut result = if self.call_mode().wasm() {
+                // Lifting for a wasm function means we're lifting one of
                 // the return values.
-                CallMode::DeclaredImport | CallMode::DeclaredExport => self.result_name(&name.name),
+                self.result_name(iface, id)
+            } else {
+                // Lifting to a non-wasm function means that we're lifting into
+                // a parameter
+                self.param_name(iface, id)
             };
             result.push_str("{");
-            for (member, val) in ty.members.iter().zip(operands) {
-                result.push_str(to_rust_ident(member.name.as_str()));
+            for (field, val) in ty.fields.iter().zip(operands) {
+                result.push_str(to_rust_ident(&field.name));
                 result.push_str(":");
                 result.push_str(&val);
                 result.push_str(",");
             }
             result.push_str("}");
             results.push(result);
-        } else {
-            unimplemented!()
         }
     }
 
@@ -774,7 +810,7 @@ pub trait TypePrint {
     fn variant_lower(
         &mut self,
         ty: &Variant,
-        name: Option<&NamedType>,
+        name: Option<&str>,
         nresults: usize,
         operand: &str,
         results: &mut Vec<String>,
@@ -786,7 +822,7 @@ pub trait TypePrint {
         // this scenario we can optimize a bit and use just `as i32`
         // instead of letting LLVM figure out it can do the same with
         // optimizing the `match` generated below.
-        if nresults == 1 && name.is_some() && ty.cases.iter().all(|c| c.tref.is_none()) {
+        if nresults == 1 && name.is_some() && ty.cases.iter().all(|c| c.ty.is_none()) {
             results.push(format!("{} as i32", operand));
             return;
         }
@@ -799,20 +835,20 @@ pub trait TypePrint {
             if ty.is_bool() {
                 self.push_str(case.name.as_str());
             } else if ty.as_expected().is_some() {
-                self.push_str(&case.name.as_str().to_camel_case());
+                self.push_str(&case.name.to_camel_case());
                 self.push_str("(");
-                self.push_str(if case.tref.is_some() { "e" } else { "()" });
+                self.push_str(if case.ty.is_some() { "e" } else { "()" });
                 self.push_str(")");
             } else if ty.as_option().is_some() {
-                self.push_str(&case.name.as_str().to_camel_case());
-                if case.tref.is_some() {
+                self.push_str(&case.name.to_camel_case());
+                if case.ty.is_some() {
                     self.push_str("(e)");
                 }
             } else if let Some(name) = name {
-                self.push_str(&name.name.as_str().to_camel_case());
+                self.push_str(&name.to_camel_case());
                 self.push_str("::");
                 self.push_str(&case_name(&case.name));
-                if case.tref.is_some() {
+                if case.ty.is_some() {
                     self.push_str("(e)");
                 }
             } else {
@@ -828,7 +864,7 @@ pub trait TypePrint {
     fn variant_lift_case(
         &mut self,
         ty: &Variant,
-        name: Option<&NamedType>,
+        name: Option<&str>,
         case: &Case,
         block: &str,
         result: &mut String,
@@ -836,22 +872,22 @@ pub trait TypePrint {
         if ty.is_bool() {
             result.push_str(case.name.as_str());
         } else if ty.as_expected().is_some() {
-            result.push_str(&case.name.as_str().to_camel_case());
+            result.push_str(&case.name.to_camel_case());
             result.push_str("(");
             result.push_str(block);
             result.push_str(")");
         } else if ty.as_option().is_some() {
-            result.push_str(&case.name.as_str().to_camel_case());
-            if case.tref.is_some() {
+            result.push_str(&case.name.to_camel_case());
+            if case.ty.is_some() {
                 result.push_str("(");
                 result.push_str(block);
                 result.push_str(")");
             }
         } else if let Some(name) = name {
-            result.push_str(&name.name.as_str().to_camel_case());
+            result.push_str(&name.to_camel_case());
             result.push_str("::");
             result.push_str(&case_name(&case.name));
-            if case.tref.is_some() {
+            if case.ty.is_some() {
                 result.push_str("(");
                 result.push_str(block);
                 result.push_str(")");
@@ -861,9 +897,9 @@ pub trait TypePrint {
         }
     }
 
-    fn param_name(&self, ty: &Id) -> String {
+    fn param_name(&self, iface: &Interface, ty: TypeId) -> String {
         let info = self.info(ty);
-        let name = ty.as_str().to_camel_case();
+        let name = iface.types[ty].name.as_ref().unwrap().to_camel_case();
         if self.uses_two_names(&info) {
             format!("{}Param", name)
         } else {
@@ -871,9 +907,9 @@ pub trait TypePrint {
         }
     }
 
-    fn result_name(&self, ty: &Id) -> String {
+    fn result_name(&self, iface: &Interface, ty: TypeId) -> String {
         let info = self.info(ty);
-        let name = ty.as_str().to_camel_case();
+        let name = iface.types[ty].name.as_ref().unwrap().to_camel_case();
         if self.uses_two_names(&info) {
             format!("{}Result", name)
         } else {
@@ -897,13 +933,13 @@ pub trait TypePrint {
             TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s)
                 if info.has_list
                     || info.has_handle
-                    || info.has_out_buffer
-                    || info.has_in_buffer =>
+                    || info.has_push_buffer
+                    || info.has_pull_buffer =>
             {
                 Some(s)
             }
             TypeMode::HandlesBorrowed(s)
-                if info.has_handle || info.has_in_buffer || info.has_out_buffer =>
+                if info.has_handle || info.has_pull_buffer || info.has_push_buffer =>
             {
                 Some(s)
             }
@@ -911,31 +947,39 @@ pub trait TypePrint {
         }
     }
 
-    fn needs_mutable_slice(&mut self, ty: &TypeRef) -> bool {
-        let info = self.types_mut().type_ref_info(ty);
+    fn needs_mutable_slice(&mut self, iface: &Interface, ty: &Type) -> bool {
+        let info = self.types_mut().type_info(iface, ty);
         // If there's any out-buffers transitively then a mutable slice is
         // required because the out-buffers could be modified. Otherwise a
         // mutable slice is also required if, transitively, `InBuffer` is used
         // which is used when we're a buffer of a type where not all bits are
         // valid (e.g. the rust representation and the canonical abi may differ).
-        info.has_out_buffer || self.has_in_buffer_invalid_bits(ty.type_())
+        info.has_push_buffer || self.has_pull_buffer_invalid_bits(iface, ty)
     }
 
-    fn has_in_buffer_invalid_bits(&self, ty: &Type) -> bool {
-        match ty {
-            Type::Record(r) => r
-                .members
+    fn has_pull_buffer_invalid_bits(&self, iface: &Interface, ty: &Type) -> bool {
+        let id = match ty {
+            Type::Id(id) => *id,
+            _ => return false,
+        };
+        match &iface.types[id].kind {
+            TypeDefKind::Type(t)
+            | TypeDefKind::Pointer(t)
+            | TypeDefKind::ConstPointer(t)
+            | TypeDefKind::PushBuffer(t)
+            | TypeDefKind::List(t) => self.has_pull_buffer_invalid_bits(iface, t),
+            TypeDefKind::Record(r) => r
+                .fields
                 .iter()
-                .any(|t| self.has_in_buffer_invalid_bits(t.tref.type_())),
-            Type::Variant(v) => v
+                .any(|t| self.has_pull_buffer_invalid_bits(iface, &t.ty)),
+            TypeDefKind::Variant(v) => v
                 .cases
                 .iter()
-                .filter_map(|c| c.tref.as_ref())
-                .any(|t| self.has_in_buffer_invalid_bits(t.type_())),
-            Type::List(t) => self.has_in_buffer_invalid_bits(t.type_()),
-            Type::Buffer(b) if !b.out && !b.tref.type_().all_bits_valid() => true,
-            Type::Buffer(b) => self.has_in_buffer_invalid_bits(b.tref.type_()),
-            Type::Builtin(_) | Type::Handle(_) | Type::Pointer(_) | Type::ConstPointer(_) => false,
+                .filter_map(|c| c.ty.as_ref())
+                .any(|t| self.has_pull_buffer_invalid_bits(iface, t)),
+            TypeDefKind::PullBuffer(t) => {
+                !iface.all_bits_valid(t) || self.has_pull_buffer_invalid_bits(iface, t)
+            }
         }
     }
 }
@@ -959,12 +1003,12 @@ pub fn wasm_type(ty: WasmType) -> &'static str {
     }
 }
 
-pub fn int_repr(repr: IntRepr) -> &'static str {
+pub fn int_repr(repr: Int) -> &'static str {
     match repr {
-        IntRepr::U8 => "u8",
-        IntRepr::U16 => "u16",
-        IntRepr::U32 => "u32",
-        IntRepr::U64 => "u64",
+        Int::U8 => "u8",
+        Int::U16 => "u16",
+        Int::U32 => "u32",
+        Int::U64 => "u64",
     }
 }
 
@@ -974,16 +1018,15 @@ trait TypeInfoExt {
 
 impl TypeInfoExt for TypeInfo {
     fn owns_data(&self) -> bool {
-        self.has_list || self.has_handle || self.has_in_buffer || self.has_out_buffer
+        self.has_list || self.has_handle || self.has_pull_buffer || self.has_push_buffer
     }
 }
 
-pub fn case_name(id: &Id) -> String {
-    let s = id.as_str();
-    if s.chars().next().unwrap().is_alphabetic() {
-        s.to_camel_case()
+pub fn case_name(id: &str) -> String {
+    if id.chars().next().unwrap().is_alphabetic() {
+        id.to_camel_case()
     } else {
-        format!("V{}", s)
+        format!("V{}", id)
     }
 }
 

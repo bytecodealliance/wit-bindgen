@@ -1,57 +1,104 @@
+use anyhow::Result;
 use std::collections::{btree_map::Entry, BTreeMap, HashMap, HashSet};
-use witx::*;
+use std::path::Path;
+use witx2::abi::Abi;
+use witx2::*;
 
-pub use witx;
+// pub use witx;
+pub use witx2;
 
 pub trait Generator {
-    fn preprocess(&mut self, module: &Module, import: bool) {
-        drop((module, import));
+    fn preprocess(&mut self, iface: &Interface, import: bool) {
+        drop((iface, import));
     }
 
-    fn type_record(&mut self, name: &Id, record: &RecordDatatype, docs: &str);
-    fn type_variant(&mut self, name: &Id, variant: &Variant, docs: &str);
-    fn type_handle(&mut self, name: &Id, ty: &HandleDatatype, docs: &str);
-    fn type_alias(&mut self, name: &Id, ty: &NamedType, docs: &str);
-    fn type_list(&mut self, name: &Id, ty: &TypeRef, docs: &str);
-    fn type_pointer(&mut self, name: &Id, const_: bool, ty: &TypeRef, docs: &str);
-    fn type_builtin(&mut self, name: &Id, ty: BuiltinType, docs: &str);
-    fn type_buffer(&mut self, name: &Id, ty: &Buffer, docs: &str);
-    fn const_(&mut self, name: &Id, ty: &Id, val: u64, docs: &str);
-    fn import(&mut self, module: &Id, func: &Function);
-    fn export(&mut self, module: &Id, func: &Function);
+    fn type_record(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        record: &Record,
+        docs: &Docs,
+    );
+    fn type_variant(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        variant: &Variant,
+        docs: &Docs,
+    );
+    fn type_resource(&mut self, iface: &Interface, ty: ResourceId);
+    fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+    fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+    fn type_pointer(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        const_: bool,
+        ty: &Type,
+        docs: &Docs,
+    );
+    fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+    fn type_push_buffer(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        ty: &Type,
+        docs: &Docs,
+    );
+    fn type_pull_buffer(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        ty: &Type,
+        docs: &Docs,
+    );
+    // fn const_(&mut self, iface: &Interface, name: &str, ty: &str, val: u64, docs: &Docs);
+    fn import(&mut self, iface: &Interface, func: &Function);
+    fn export(&mut self, iface: &Interface, func: &Function);
     fn finish(&mut self, files: &mut Files);
 
-    fn generate(&mut self, module: &Module, import: bool, files: &mut Files) {
-        self.preprocess(module, import);
-        for ty in module.typenames() {
-            let t = match &ty.tref {
-                TypeRef::Name(nt) => {
-                    self.type_alias(&ty.name, &nt, &ty.docs);
-                    continue;
-                }
-                TypeRef::Value(t) => t,
+    fn generate(&mut self, iface: &Interface, import: bool, files: &mut Files) {
+        self.preprocess(iface, import);
+        for (id, ty) in iface.types.iter() {
+            assert!(ty.foreign_module.is_none()); // TODO
+            let name = match &ty.name {
+                Some(name) => name,
+                None => continue,
             };
-            match &**t {
-                Type::Record(t) => self.type_record(&ty.name, &t, &ty.docs),
-                Type::Variant(t) => self.type_variant(&ty.name, &t, &ty.docs),
-                Type::Handle(t) => self.type_handle(&ty.name, &t, &ty.docs),
-                Type::List(t) => self.type_list(&ty.name, &t, &ty.docs),
-                Type::Pointer(t) => self.type_pointer(&ty.name, false, &t, &ty.docs),
-                Type::ConstPointer(t) => self.type_pointer(&ty.name, true, &t, &ty.docs),
-                Type::Builtin(t) => self.type_builtin(&ty.name, *t, &ty.docs),
-                Type::Buffer(b) => self.type_buffer(&ty.name, &b, &ty.docs),
+            match &ty.kind {
+                TypeDefKind::Record(record) => self.type_record(iface, id, name, record, &ty.docs),
+                TypeDefKind::Variant(variant) => {
+                    self.type_variant(iface, id, name, variant, &ty.docs)
+                }
+                TypeDefKind::List(t) => self.type_list(iface, id, name, t, &ty.docs),
+                TypeDefKind::PushBuffer(t) => self.type_push_buffer(iface, id, name, t, &ty.docs),
+                TypeDefKind::PullBuffer(t) => self.type_pull_buffer(iface, id, name, t, &ty.docs),
+                TypeDefKind::Type(t) => self.type_alias(iface, id, name, t, &ty.docs),
+                TypeDefKind::Pointer(t) => self.type_pointer(iface, id, name, false, t, &ty.docs),
+                TypeDefKind::ConstPointer(t) => {
+                    self.type_pointer(iface, id, name, true, t, &ty.docs)
+                }
             }
         }
 
-        for c in module.constants() {
-            self.const_(&c.name, &c.ty, c.value, &c.docs);
+        for (id, _resource) in iface.resources.iter() {
+            self.type_resource(iface, id);
         }
 
-        for f in module.funcs() {
+        // for c in module.constants() {
+        //     self.const_(&c.name, &c.ty, c.value, &c.docs);
+        // }
+
+        for f in iface.functions.iter() {
             if import {
-                self.import(&module.name(), &f);
+                self.import(iface, &f);
             } else {
-                self.export(&module.name(), &f);
+                self.export(iface, &f);
             }
         }
 
@@ -61,8 +108,9 @@ pub trait Generator {
 
 #[derive(Default)]
 pub struct Types {
-    type_info: HashMap<Id, TypeInfo>,
-    handle_dtors: HashSet<Id>,
+    type_info: HashMap<TypeId, TypeInfo>,
+    handle_dtors: HashSet<ResourceId>,
+    dtor_funcs: HashSet<String>,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -81,14 +129,11 @@ pub struct TypeInfo {
     /// Whether or not this type (transitively) has a handle.
     pub has_handle: bool,
 
-    /// Whether or not this type (transitively) has an out buffer.
-    pub has_out_buffer: bool,
+    /// Whether or not this type (transitively) has a push buffer.
+    pub has_push_buffer: bool,
 
-    /// Whether or not this type (transitively) has an in buffer.
-    pub has_in_buffer: bool,
-
-    /// Whether or not this type is a handle and has a destructor.
-    pub handle_with_dtor: bool,
+    /// Whether or not this type (transitively) has a pull buffer.
+    pub has_pull_buffer: bool,
 }
 
 impl std::ops::BitOrAssign for TypeInfo {
@@ -97,41 +142,39 @@ impl std::ops::BitOrAssign for TypeInfo {
         self.result |= rhs.result;
         self.has_list |= rhs.has_list;
         self.has_handle |= rhs.has_handle;
-        self.has_out_buffer |= rhs.has_out_buffer;
-        self.has_in_buffer |= rhs.has_in_buffer;
+        self.has_push_buffer |= rhs.has_push_buffer;
+        self.has_pull_buffer |= rhs.has_pull_buffer;
     }
 }
 
 impl Types {
-    pub fn analyze(&mut self, module: &Module) {
-        for t in module.typenames() {
-            let info = self.type_ref_info(&t.tref);
-            self.type_info.insert(t.name.clone(), info);
+    pub fn analyze(&mut self, iface: &Interface) {
+        for (t, _) in iface.types.iter() {
+            self.type_id_info(iface, t);
         }
-        for f in module.funcs() {
-            for param in f.params.iter() {
-                self.set_param_result_tref(&param.tref, true, false);
+        for f in iface.functions.iter() {
+            for (_, ty) in f.params.iter() {
+                self.set_param_result_ty(iface, ty, true, false);
             }
-            for param in f.results.iter() {
-                self.set_param_result_tref(&param.tref, false, true);
+            for ty in f.results.iter() {
+                self.set_param_result_ty(iface, ty, false, true);
             }
-            self.maybe_set_dtor(module, &f);
+            self.maybe_set_preview1_dtor(iface, f);
         }
     }
 
-    fn maybe_set_dtor(&mut self, module: &Module, f: &Function) {
+    fn maybe_set_preview1_dtor(&mut self, iface: &Interface, f: &Function) {
+        match f.abi {
+            Abi::Preview1 => {}
+            _ => return,
+        }
+
         // Dtors only happen when the function has a singular parameter
         if f.params.len() != 1 {
             return;
         }
-        let param_ty_name = match &f.params[0].tref {
-            TypeRef::Name(n) => &n.name,
-            _ => return,
-        };
 
-        // Dtors are inferred to be `${type}_close` right now, but we should
-        // probably use some sort of configuration/witx attribute for this in
-        // the future.
+        // Dtors are inferred to be `${type}_close` right now.
         let name = f.name.as_str();
         let prefix = match name.strip_suffix("_close") {
             Some(prefix) => prefix,
@@ -140,113 +183,124 @@ impl Types {
 
         // The singular parameter type name must be the prefix of this
         // function's own name.
-        if param_ty_name.as_str() != prefix {
+        let resource = match find_handle(iface, &f.params[0].1) {
+            Some(id) => id,
+            None => return,
+        };
+        if iface.resources[resource].name != prefix {
             return;
         }
 
-        // ... and finally the actual type of this value must be a `(handle)`
-        let id = Id::new(prefix);
-        let ty = match module.typename(&id) {
-            Some(ty) => ty,
-            None => return,
-        };
-        match &**ty.type_() {
-            Type::Handle(_) => {}
-            _ => return,
-        }
+        self.handle_dtors.insert(resource);
+        self.dtor_funcs.insert(f.name.to_string());
 
-        // ... and if we got this far then `id` is a handle type which has a
-        // destructor in this module.
-        self.type_info.get_mut(&id).unwrap().handle_with_dtor = true;
-        self.handle_dtors.insert(f.name.clone());
-    }
-
-    pub fn get(&self, id: &Id) -> TypeInfo {
-        self.type_info[id]
-    }
-
-    pub fn is_dtor_func(&self, func: &Id) -> bool {
-        self.handle_dtors.contains(func)
-    }
-
-    pub fn type_ref_info(&mut self, ty: &TypeRef) -> TypeInfo {
-        match ty {
-            TypeRef::Name(nt) => match self.type_info.get(&nt.name) {
-                Some(info) => *info,
-                None => self.type_ref_info(&nt.tref),
-            },
-            TypeRef::Value(t) => self.type_info(t),
-        }
-    }
-
-    pub fn type_info(&mut self, ty: &Type) -> TypeInfo {
-        let mut info = TypeInfo::default();
-        match ty {
-            Type::Builtin(_) => {}
-            Type::Handle(_) => info.has_handle = true,
-            Type::List(t) => {
-                info |= self.type_ref_info(t);
-                info.has_list = true;
+        fn find_handle(iface: &Interface, ty: &Type) -> Option<ResourceId> {
+            match ty {
+                Type::Handle(r) => Some(*r),
+                Type::Id(id) => match &iface.types[*id].kind {
+                    TypeDefKind::Type(t) => find_handle(iface, t),
+                    _ => None,
+                },
+                _ => None,
             }
-            Type::Pointer(t) | Type::ConstPointer(t) => info = self.type_ref_info(t),
-            Type::Variant(v) => {
-                for c in v.cases.iter() {
-                    if let Some(ty) = &c.tref {
-                        info |= self.type_ref_info(ty);
+        }
+    }
+
+    pub fn get(&self, id: TypeId) -> TypeInfo {
+        self.type_info[&id]
+    }
+
+    pub fn has_preview1_dtor(&self, resource: ResourceId) -> bool {
+        self.handle_dtors.contains(&resource)
+    }
+
+    pub fn is_preview1_dtor_func(&self, func: &Function) -> bool {
+        self.dtor_funcs.contains(&func.name)
+    }
+
+    pub fn type_id_info(&mut self, iface: &Interface, ty: TypeId) -> TypeInfo {
+        if let Some(info) = self.type_info.get(&ty) {
+            return *info;
+        }
+        let mut info = TypeInfo::default();
+        match &iface.types[ty].kind {
+            TypeDefKind::Record(r) => {
+                for field in r.fields.iter() {
+                    info |= self.type_info(iface, &field.ty);
+                }
+            }
+            TypeDefKind::Variant(v) => {
+                for case in v.cases.iter() {
+                    if let Some(ty) = &case.ty {
+                        info |= self.type_info(iface, ty);
                     }
                 }
             }
-            Type::Record(r) => {
-                for member in r.members.iter() {
-                    info |= self.type_ref_info(&member.tref);
-                }
+            TypeDefKind::List(ty) => {
+                info = self.type_info(iface, ty);
+                info.has_list = true;
             }
-            Type::Buffer(t) => {
-                info |= self.type_ref_info(&t.tref);
-                if t.out {
-                    info.has_out_buffer = true;
-                } else {
-                    info.has_in_buffer = true;
-                }
+            TypeDefKind::PushBuffer(ty) => {
+                info = self.type_info(iface, ty);
+                info.has_push_buffer = true;
             }
+            TypeDefKind::PullBuffer(ty) => {
+                info = self.type_info(iface, ty);
+                info.has_pull_buffer = true;
+            }
+            TypeDefKind::ConstPointer(ty) | TypeDefKind::Pointer(ty) | TypeDefKind::Type(ty) => {
+                info = self.type_info(iface, ty)
+            }
+        }
+        self.type_info.insert(ty, info);
+        return info;
+    }
+
+    pub fn type_info(&mut self, iface: &Interface, ty: &Type) -> TypeInfo {
+        let mut info = TypeInfo::default();
+        match ty {
+            Type::Handle(_) => info.has_handle = true,
+            Type::Id(id) => return self.type_id_info(iface, *id),
+            _ => {}
         }
         info
     }
 
-    fn set_param_result_tref(&mut self, ty: &TypeRef, param: bool, result: bool) {
-        match ty {
-            TypeRef::Name(nt) => {
-                let info = self.type_info.get_mut(&nt.name).unwrap();
-                if (param && !info.param) || (result && !info.result) {
-                    info.param = info.param || param;
-                    info.result = info.result || result;
-                    self.set_param_result_tref(&nt.tref, param, result);
+    fn set_param_result_id(&mut self, iface: &Interface, ty: TypeId, param: bool, result: bool) {
+        match &iface.types[ty].kind {
+            TypeDefKind::Record(r) => {
+                for field in r.fields.iter() {
+                    self.set_param_result_ty(iface, &field.ty, param, result)
                 }
             }
-            TypeRef::Value(t) => self.set_param_result_ty(t, param, result),
-        }
-    }
-
-    fn set_param_result_ty(&mut self, ty: &Type, param: bool, result: bool) {
-        match ty {
-            Type::Builtin(_) => {}
-            Type::Handle(_) => {}
-            Type::List(t) | Type::Pointer(t) | Type::ConstPointer(t) => {
-                self.set_param_result_tref(t, param, result)
-            }
-            Type::Variant(v) => {
-                for c in v.cases.iter() {
-                    if let Some(ty) = &c.tref {
-                        self.set_param_result_tref(ty, param, result)
+            TypeDefKind::Variant(v) => {
+                for case in v.cases.iter() {
+                    if let Some(ty) = &case.ty {
+                        self.set_param_result_ty(iface, ty, param, result)
                     }
                 }
             }
-            Type::Record(r) => {
-                for member in r.members.iter() {
-                    self.set_param_result_tref(&member.tref, param, result)
+            TypeDefKind::List(ty)
+            | TypeDefKind::PushBuffer(ty)
+            | TypeDefKind::PullBuffer(ty)
+            | TypeDefKind::Pointer(ty)
+            | TypeDefKind::ConstPointer(ty) => self.set_param_result_ty(iface, ty, param, result),
+            TypeDefKind::Type(ty) => self.set_param_result_ty(iface, ty, param, result),
+        }
+    }
+
+    fn set_param_result_ty(&mut self, iface: &Interface, ty: &Type, param: bool, result: bool) {
+        match ty {
+            Type::Id(id) => {
+                self.type_id_info(iface, *id);
+                let info = self.type_info.get_mut(id).unwrap();
+                if (param && !info.param) || (result && !info.result) {
+                    info.param = info.param || param;
+                    info.result = info.result || result;
+                    self.set_param_result_id(iface, *id, param, result);
                 }
             }
-            Type::Buffer(b) => self.set_param_result_tref(&b.tref, param, result),
+            _ => {}
         }
     }
 }
@@ -271,4 +325,8 @@ impl Files {
     pub fn iter(&self) -> impl Iterator<Item = (&'_ str, &'_ str)> {
         self.files.iter().map(|p| (p.0.as_str(), p.1.as_str()))
     }
+}
+
+pub fn load(path: impl AsRef<Path>) -> Result<Interface> {
+    Interface::parse_file(path)
 }

@@ -4,13 +4,13 @@ use std::fmt;
 ///
 /// Holds a region of memory to store into as well as an iterator of items to
 /// serialize when calling an imported API.
-pub struct InBuffer<'a, T: 'a> {
+pub struct PullBuffer<'a, T: 'a> {
     storage: &'a mut [u8],
     items: &'a mut dyn ExactSizeIterator<Item = T>,
     len: usize,
 }
 
-impl<'a, T: 'a> InBuffer<'a, T> {
+impl<'a, T: 'a> PullBuffer<'a, T> {
     /// Creates a new buffer where `items` are serialized into `storage` when
     /// this buffer is passed to a function call.
     ///
@@ -19,8 +19,8 @@ impl<'a, T: 'a> InBuffer<'a, T> {
     pub fn new(
         storage: &'a mut [u8],
         items: &'a mut dyn ExactSizeIterator<Item = T>,
-    ) -> InBuffer<'a, T> {
-        InBuffer {
+    ) -> PullBuffer<'a, T> {
+        PullBuffer {
             len: items.len(),
             storage,
             items,
@@ -41,9 +41,9 @@ impl<'a, T: 'a> InBuffer<'a, T> {
     }
 }
 
-impl<T> fmt::Debug for InBuffer<'_, T> {
+impl<T> fmt::Debug for PullBuffer<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("InBuffer")
+        f.debug_struct("PullBuffer")
             .field("bytes", &self.storage.len())
             .field("items", &self.items.len())
             .finish()
@@ -51,15 +51,15 @@ impl<T> fmt::Debug for InBuffer<'_, T> {
 }
 
 /// Implementation of `(out-buffer T)`
-pub struct OutBuffer<'a, T: 'a> {
+pub struct PushBuffer<'a, T: 'a> {
     storage: &'a mut [u8],
     deserialize: fn(i32) -> T,
     element_size: usize,
 }
 
-impl<'a, T: 'a> OutBuffer<'a, T> {
-    pub fn new(storage: &'a mut [u8]) -> OutBuffer<'a, T> {
-        OutBuffer {
+impl<'a, T: 'a> PushBuffer<'a, T> {
+    pub fn new(storage: &'a mut [u8]) -> PushBuffer<'a, T> {
+        PushBuffer {
             storage,
             deserialize: |_| loop {},
             element_size: usize::max_value(),
@@ -96,9 +96,9 @@ impl<'a, T: 'a> OutBuffer<'a, T> {
     }
 }
 
-impl<T> fmt::Debug for OutBuffer<'_, T> {
+impl<T> fmt::Debug for PushBuffer<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OutBuffer")
+        f.debug_struct("PushBuffer")
             .field("bytes", &self.storage.len())
             .finish()
     }

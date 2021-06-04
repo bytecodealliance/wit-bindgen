@@ -7,6 +7,8 @@ edition = "2018"
 [dependencies]
 id-arena = "2"
 anyhow = "1.0"
+witx = { git = 'https://github.com/alexcrichton/WASI', branch = 'abi-next', optional = true }
+wast = { version = "33", default-features = false, optional = true }
 
 [dev-dependencies]
 rayon = "1"
@@ -16,3 +18,6 @@ serde = { version = "1", features = ['derive'] }
 [[test]]
 name = "all"
 harness = false
+
+[features]
+old-witx-compat = ['witx', 'wast']

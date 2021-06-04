@@ -9,7 +9,7 @@ publish = false
 crate-type = ['cdylib']
 
 [dependencies]
-witx-bindgen-rust = { path = "../rust-wasm" }
+witx-bindgen-rust = { path = "../rust-wasm", features = ['old-witx-compat'] }
 
 [features]
 unchecked = []

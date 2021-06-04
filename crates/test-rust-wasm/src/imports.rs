@@ -102,6 +102,15 @@ fn host_records() {
     assert_eq!(roundtrip_flags2(F2_D), F2_D);
     assert_eq!(roundtrip_flags2(F2_C | F2_E), F2_C | F2_E);
 
+    assert_eq!(
+        roundtrip_flags3(FLAG8_B0, FLAG16_B1, FLAG32_B2, FLAG64_B3),
+        (FLAG8_B0, FLAG16_B1, FLAG32_B2, FLAG64_B3)
+    );
+    assert_eq!(legacy_flags1(FLAG8_B4), FLAG8_B4);
+    assert_eq!(legacy_flags2(FLAG16_B5), FLAG16_B5);
+    assert_eq!(legacy_flags3(FLAG32_B6), FLAG32_B6);
+    assert_eq!(legacy_flags4(FLAG64_B7), FLAG64_B7);
+
     let r = roundtrip_record1(R1 { a: 8, b: 0 });
     assert_eq!(r.a, 8);
     assert_eq!(r.b, 0);
@@ -257,7 +266,7 @@ fn host_handles() {
 }
 
 fn host_buffers() {
-    use witx_bindgen_rust::imports::{InBuffer, OutBuffer};
+    use witx_bindgen_rust::imports::{PullBuffer, PushBuffer};
 
     let mut out = [0; 10];
     let n = buffer_u8(&[0u8], &mut out) as usize;
@@ -276,37 +285,37 @@ fn host_buffers() {
 
     assert_eq!(
         buffer_bool(
-            &mut InBuffer::new(&mut space1, &mut iter::empty()),
-            &mut OutBuffer::new(&mut space2)
+            &mut PullBuffer::new(&mut space1, &mut iter::empty()),
+            &mut PushBuffer::new(&mut space2)
         ),
         0
     );
     // assert_eq!(
     //     buffer_string(
-    //         &mut InBuffer::new(&mut space1, &mut iter::empty()),
-    //         &mut OutBuffer::new(&mut space2)
+    //         &mut PullBuffer::new(&mut space1, &mut iter::empty()),
+    //         &mut PushBuffer::new(&mut space2)
     //     ),
     //     0
     // );
     // assert_eq!(
     //     buffer_list_bool(
-    //         &mut InBuffer::new(&mut space1, &mut iter::empty()),
-    //         &mut OutBuffer::new(&mut space2)
+    //         &mut PullBuffer::new(&mut space1, &mut iter::empty()),
+    //         &mut PushBuffer::new(&mut space2)
     //     ),
     //     0
     // );
 
     let mut bools = [true, false, true].iter().copied();
-    let mut out = OutBuffer::new(&mut space2);
-    let n = buffer_bool(&mut InBuffer::new(&mut space1, &mut bools), &mut out);
+    let mut out = PushBuffer::new(&mut space2);
+    let n = buffer_bool(&mut PullBuffer::new(&mut space1, &mut bools), &mut out);
     unsafe {
         assert_eq!(n, 3);
         assert_eq!(out.into_iter(3).collect::<Vec<_>>(), [false, true, false]);
     }
 
     // let mut strings = ["foo", "bar", "baz"].iter().copied();
-    // let mut out = OutBuffer::new(&mut space2);
-    // let n = buffer_string(&mut InBuffer::new(&mut space1, &mut strings), &mut out);
+    // let mut out = PushBuffer::new(&mut space2);
+    // let n = buffer_string(&mut PullBuffer::new(&mut space1, &mut strings), &mut out);
     // unsafe {
     //     assert_eq!(n, 3);
     //     assert_eq!(out.into_iter(3).collect::<Vec<_>>(), ["FOO", "BAR", "BAZ"]);
@@ -316,8 +325,8 @@ fn host_buffers() {
     // let b = &[false, false][..];
     // let list = [a, b];
     // let mut lists = list.iter().copied();
-    // let mut out = OutBuffer::new(&mut space2);
-    // let n = buffer_list_bool(&mut InBuffer::new(&mut space1, &mut lists), &mut out);
+    // let mut out = PushBuffer::new(&mut space2);
+    // let n = buffer_list_bool(&mut PullBuffer::new(&mut space1, &mut lists), &mut out);
     // unsafe {
     //     assert_eq!(n, 2);
     //     assert_eq!(
@@ -328,19 +337,19 @@ fn host_buffers() {
 
     let a = [true, false, true, true, false];
     // let mut bools = a.iter().copied();
-    // let mut b = InBuffer::new(&mut space2, &mut bools);
+    // let mut b = PullBuffer::new(&mut space2, &mut bools);
     // let mut list = [&mut b];
     // let mut buffers = &mut list.iter_mut().map(|b| &mut **b);
-    // buffer_buffer_bool(&mut InBuffer::new(&mut space1, &mut buffers));
+    // buffer_buffer_bool(&mut PullBuffer::new(&mut space1, &mut buffers));
 
     let mut bools = a.iter().copied();
-    buffer_mutable1(&mut [&mut InBuffer::new(&mut space1, &mut bools)]);
+    buffer_mutable1(&mut [&mut PullBuffer::new(&mut space1, &mut bools)]);
 
     let n = buffer_mutable2(&mut [&mut space2]) as usize;
     assert_eq!(n, 4);
     assert_eq!(&space2[..n], [1, 2, 3, 4]);
 
-    let mut out = OutBuffer::new(&mut space1);
+    let mut out = PushBuffer::new(&mut space1);
     let n = buffer_mutable3(&mut [&mut out]);
     unsafe {
         assert_eq!(n, 3);

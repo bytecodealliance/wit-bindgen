@@ -7,3 +7,7 @@ edition = "2018"
 [dependencies]
 witx = { git = 'https://github.com/alexcrichton/WASI', branch = 'abi-next' }
 witx2 = { path = '../witx2' }
+anyhow = "1"
+
+[features]
+old-witx-compat = ['witx2/old-witx-compat']

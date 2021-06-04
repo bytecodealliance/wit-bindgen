@@ -23,11 +23,14 @@ enum Key {
     List(Type),
     PushBuffer(Type),
     PullBuffer(Type),
+    Pointer(Type),
+    ConstPointer(Type),
 }
 
 impl Resolver {
     pub(super) fn resolve(
         &mut self,
+        name: &str,
         fields: &[Item<'_>],
         deps: &HashMap<String, Interface>,
     ) -> Result<Interface> {
@@ -69,6 +72,7 @@ impl Resolver {
         }
 
         Ok(Interface {
+            name: name.to_string(),
             types: mem::take(&mut self.types),
             type_lookup: mem::take(&mut self.type_lookup),
             resources: mem::take(&mut self.resources),
@@ -190,6 +194,7 @@ impl Resolver {
                             ty: self.copy_type(dep_name, dep, field.ty),
                         })
                         .collect(),
+                    kind: r.kind,
                 }),
                 TypeDefKind::Variant(v) => TypeDefKind::Variant(Variant {
                     cases: v
@@ -201,6 +206,7 @@ impl Resolver {
                             ty: case.ty.map(|t| self.copy_type(dep_name, dep, t)),
                         })
                         .collect(),
+                    tag: v.tag,
                 }),
                 TypeDefKind::List(t) => TypeDefKind::List(self.copy_type(dep_name, dep, *t)),
                 TypeDefKind::PullBuffer(t) => {
@@ -208,6 +214,10 @@ impl Resolver {
                 }
                 TypeDefKind::PushBuffer(t) => {
                     TypeDefKind::PushBuffer(self.copy_type(dep_name, dep, *t))
+                }
+                TypeDefKind::Pointer(t) => TypeDefKind::Pointer(self.copy_type(dep_name, dep, *t)),
+                TypeDefKind::ConstPointer(t) => {
+                    TypeDefKind::ConstPointer(self.copy_type(dep_name, dep, *t))
                 }
             },
         };
@@ -302,6 +312,8 @@ impl Resolver {
             super::Type::F32 => TypeDefKind::Type(Type::F32),
             super::Type::F64 => TypeDefKind::Type(Type::F64),
             super::Type::Char => TypeDefKind::Type(Type::Char),
+            super::Type::CChar => TypeDefKind::Type(Type::CChar),
+            super::Type::Usize => TypeDefKind::Type(Type::Usize),
             super::Type::Handle(resource) => {
                 let id = match self.resource_lookup.get(&*resource.name) {
                     Some(id) => *id,
@@ -332,6 +344,14 @@ impl Resolver {
                 let ty = self.resolve_type(list)?;
                 TypeDefKind::List(ty)
             }
+            super::Type::Pointer(list) => {
+                let ty = self.resolve_type(list)?;
+                TypeDefKind::Pointer(ty)
+            }
+            super::Type::ConstPointer(list) => {
+                let ty = self.resolve_type(list)?;
+                TypeDefKind::ConstPointer(ty)
+            }
             super::Type::PushBuffer(ty) => {
                 let ty = self.resolve_type(ty)?;
                 TypeDefKind::PushBuffer(ty)
@@ -352,7 +372,22 @@ impl Resolver {
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
-                TypeDefKind::Record(Record { fields })
+                TypeDefKind::Record(Record {
+                    kind: if record.tuple_hint {
+                        RecordKind::Tuple
+                    } else if let Some(hint) = &record.flags_repr {
+                        RecordKind::Flags(Some(match &**hint {
+                            super::Type::U8 => Int::U8,
+                            super::Type::U16 => Int::U16,
+                            super::Type::U32 => Int::U32,
+                            super::Type::U64 => Int::U64,
+                            _ => panic!("unknown explicit flags repr"),
+                        }))
+                    } else {
+                        RecordKind::infer(&self.types, &fields)
+                    },
+                    fields,
+                })
             }
             super::Type::Variant(variant) => {
                 if variant.cases.is_empty() {
@@ -376,7 +411,19 @@ impl Resolver {
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
-                TypeDefKind::Variant(Variant { cases })
+                TypeDefKind::Variant(Variant {
+                    tag: match &variant.tag {
+                        Some(ty) => match &**ty {
+                            super::Type::U8 => Int::U8,
+                            super::Type::U16 => Int::U16,
+                            super::Type::U32 => Int::U32,
+                            super::Type::U64 => Int::U64,
+                            _ => panic!("unknown explicit variant tag"),
+                        },
+                        None => Variant::infer_tag(cases.len()),
+                    },
+                    cases,
+                })
             }
         })
     }
@@ -386,7 +433,7 @@ impl Resolver {
         Ok(self.anon_type_def(TypeDef {
             kind,
             name: None,
-            docs: Documentation::default(),
+            docs: Docs::default(),
             foreign_module: None,
         }))
     }
@@ -407,6 +454,8 @@ impl Resolver {
                     .collect::<Vec<_>>(),
             ),
             TypeDefKind::List(ty) => Key::List(*ty),
+            TypeDefKind::Pointer(ty) => Key::Pointer(*ty),
+            TypeDefKind::ConstPointer(ty) => Key::ConstPointer(*ty),
             TypeDefKind::PushBuffer(ty) => Key::PushBuffer(*ty),
             TypeDefKind::PullBuffer(ty) => Key::PullBuffer(*ty),
         };
@@ -418,9 +467,9 @@ impl Resolver {
         Type::Id(*id)
     }
 
-    fn docs(&mut self, doc: &super::Documentation<'_>) -> Documentation {
+    fn docs(&mut self, doc: &super::Docs<'_>) -> Docs {
         if doc.docs.is_empty() {
-            return Documentation { contents: None };
+            return Docs { contents: None };
         }
         let mut docs = String::new();
         for doc in doc.docs.iter() {
@@ -432,7 +481,7 @@ impl Resolver {
                 docs.push_str(&doc[2..doc.len() - 2])
             }
         }
-        Documentation {
+        Docs {
             contents: Some(docs),
         }
     }
@@ -440,7 +489,11 @@ impl Resolver {
     fn resolve_value(&mut self, value: &Value<'_>) -> Result<()> {
         let docs = self.docs(&value.docs);
         match &value.kind {
-            ValueKind::Function { params, results } => {
+            ValueKind::Function {
+                abi,
+                params,
+                results,
+            } => {
                 let params = params
                     .iter()
                     .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
@@ -450,6 +503,7 @@ impl Resolver {
                     .map(|ty| self.resolve_type(ty))
                     .collect::<Result<_>>()?;
                 self.functions.push(Function {
+                    abi: *abi,
                     docs,
                     name: value.name.name.to_string(),
                     kind: FunctionKind::Freestanding,
@@ -473,8 +527,12 @@ impl Resolver {
         let mut names = HashSet::new();
         let id = self.resource_lookup[&*resource.name.name];
         for (statik, value) in resource.values.iter() {
-            let (params, results) = match &value.kind {
-                ValueKind::Function { params, results } => (params, results),
+            let (abi, params, results) = match &value.kind {
+                ValueKind::Function {
+                    abi,
+                    params,
+                    results,
+                } => (*abi, params, results),
                 ValueKind::Global(_) => {
                     return Err(Error {
                         span: value.name.span,
@@ -506,6 +564,7 @@ impl Resolver {
                 FunctionKind::Method(id)
             };
             self.functions.push(Function {
+                abi,
                 docs,
                 name: format!("{}::{}", resource.name.name, value.name.name.to_string()),
                 kind,
@@ -536,6 +595,8 @@ impl Resolver {
 
         match &self.types[ty].kind {
             TypeDefKind::List(Type::Id(id))
+            | TypeDefKind::Pointer(Type::Id(id))
+            | TypeDefKind::ConstPointer(Type::Id(id))
             | TypeDefKind::PushBuffer(Type::Id(id))
             | TypeDefKind::PullBuffer(Type::Id(id))
             | TypeDefKind::Type(Type::Id(id)) => {
@@ -557,6 +618,8 @@ impl Resolver {
             }
 
             TypeDefKind::List(_)
+            | TypeDefKind::Pointer(_)
+            | TypeDefKind::ConstPointer(_)
             | TypeDefKind::PushBuffer(_)
             | TypeDefKind::PullBuffer(_)
             | TypeDefKind::Type(_) => {}

@@ -106,6 +106,10 @@ impl Wasm for MyWasm {
         a
     }
 
+    fn roundtrip_flags3(&self, a: F8, b: F16, c: F32, d: F64) -> (F8, F16, F32, F64) {
+        (a, b, c, d)
+    }
+
     fn roundtrip_record1(&self, a: R1) -> R1 {
         a
     }

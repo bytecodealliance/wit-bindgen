@@ -1654,6 +1654,7 @@ dependencies = [
 name = "witx-bindgen-gen-core"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "witx 0.10.0",
  "witx2",
 ]
@@ -1733,6 +1734,8 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "wast 33.0.0",
+ "witx 0.10.0",
 ]
 
 [[package]]

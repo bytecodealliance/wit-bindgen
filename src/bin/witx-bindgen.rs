@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use structopt::StructOpt;
-use witx_bindgen_gen_core::{witx, Files, Generator};
+use witx_bindgen_gen_core::{witx2, Files, Generator};
 
 #[derive(Debug, StructOpt)]
 struct Opt {
@@ -56,7 +56,7 @@ fn main() -> Result<()> {
 
     let mut files = Files::default();
     for witx in common.witx {
-        let module = witx::load(witx)?;
+        let module = witx2::Interface::parse_file(witx)?;
         generator.generate(&module, common.import, &mut files);
     }
 

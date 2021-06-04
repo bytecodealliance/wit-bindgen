@@ -1,3 +1,4 @@
+use crate::abi::Abi;
 use anyhow::Result;
 use lex::{Span, Token, Tokenizer};
 use std::borrow::Cow;
@@ -54,18 +55,18 @@ struct UseName<'a> {
 }
 
 pub struct Resource<'a> {
-    docs: Documentation<'a>,
+    docs: Docs<'a>,
     name: Id<'a>,
     values: Vec<(bool, Value<'a>)>,
 }
 
 #[derive(Default)]
-struct Documentation<'a> {
-    docs: Vec<&'a str>,
+struct Docs<'a> {
+    docs: Vec<Cow<'a, str>>,
 }
 
 pub struct TypeDef<'a> {
-    docs: Documentation<'a>,
+    docs: Docs<'a>,
     name: Id<'a>,
     ty: Type<'a>,
 }
@@ -82,6 +83,10 @@ enum Type<'a> {
     F32,
     F64,
     Char,
+    #[allow(dead_code)]
+    Usize,
+    #[allow(dead_code)]
+    CChar,
     Handle(Id<'a>),
     Name(Id<'a>),
     List(Box<Type<'a>>),
@@ -89,37 +94,45 @@ enum Type<'a> {
     Variant(Variant<'a>),
     PushBuffer(Box<Type<'a>>),
     PullBuffer(Box<Type<'a>>),
+    #[allow(dead_code)]
+    Pointer(Box<Type<'a>>),
+    #[allow(dead_code)]
+    ConstPointer(Box<Type<'a>>),
 }
 
 struct Record<'a> {
+    tuple_hint: bool,
+    flags_repr: Option<Box<Type<'a>>>,
     fields: Vec<Field<'a>>,
 }
 
 struct Field<'a> {
-    docs: Documentation<'a>,
+    docs: Docs<'a>,
     name: Id<'a>,
     ty: Type<'a>,
 }
 
 struct Variant<'a> {
+    tag: Option<Box<Type<'a>>>,
     span: Span,
     cases: Vec<Case<'a>>,
 }
 
 struct Case<'a> {
-    docs: Documentation<'a>,
+    docs: Docs<'a>,
     name: Id<'a>,
     ty: Option<Type<'a>>,
 }
 
 pub struct Value<'a> {
-    docs: Documentation<'a>,
+    docs: Docs<'a>,
     name: Id<'a>,
     kind: ValueKind<'a>,
 }
 
 enum ValueKind<'a> {
     Function {
+        abi: crate::abi::Abi,
         params: Vec<(Id<'a>, Type<'a>)>,
         results: Vec<Type<'a>>,
     },
@@ -128,7 +141,7 @@ enum ValueKind<'a> {
 
 #[allow(dead_code)] // TODO
 pub struct Interface<'a> {
-    docs: Documentation<'a>,
+    docs: Docs<'a>,
     name: Id<'a>,
     items: Vec<Item<'a>>,
 }
@@ -136,6 +149,10 @@ pub struct Interface<'a> {
 impl<'a> Ast<'a> {
     pub fn parse(input: &'a str) -> Result<Ast<'a>> {
         let mut lexer = Tokenizer::new(input);
+        #[cfg(feature = "old-witx-compat")]
+        if lexer.eat(Token::Semicolon)? || lexer.eat(Token::LeftParen)? {
+            return Ast::parse_old_witx(input);
+        }
         let mut items = Vec::new();
         while lexer.clone().next()?.is_some() {
             let docs = parse_docs(&mut lexer)?;
@@ -144,15 +161,286 @@ impl<'a> Ast<'a> {
         Ok(Ast { items })
     }
 
-    pub fn resolve(&self, map: &HashMap<String, crate::Interface>) -> Result<crate::Interface> {
+    pub fn resolve(
+        &self,
+        name: &str,
+        map: &HashMap<String, crate::Interface>,
+    ) -> Result<crate::Interface> {
         let mut resolver = resolve::Resolver::default();
-        let instance = resolver.resolve(&self.items, map)?;
+        let instance = resolver.resolve(name, &self.items, map)?;
         Ok(instance)
+    }
+
+    #[cfg(feature = "old-witx-compat")]
+    fn parse_old_witx(input: &'a str) -> Result<Ast<'a>> {
+        use witx::parser as old;
+        let buf = wast::parser::ParseBuffer::new(&input)?;
+        let doc = wast::parser::parse::<old::TopLevelModule>(&buf)?;
+        let mut items = Vec::new();
+        for d in doc.decls {
+            let item = match d.item {
+                old::TopLevelSyntax::Use(u) => Item::Use(Use {
+                    from: vec![id(&u.from)],
+                    names: match u.names {
+                        old::UsedNames::All(_) => None,
+                        old::UsedNames::List(names) => Some(
+                            names
+                                .iter()
+                                .map(|n| UseName {
+                                    name: id(&n.other_name),
+                                    as_: Some(id(&n.our_name)),
+                                })
+                                .collect(),
+                        ),
+                    },
+                }),
+                old::TopLevelSyntax::Decl(u) => match u {
+                    old::DeclSyntax::Typename(t) => Item::TypeDef(TypeDef {
+                        docs: docs(&d.comments),
+                        name: id(&t.ident),
+                        ty: ty(&t.def),
+                    }),
+                    old::DeclSyntax::Resource(r) => Item::Resource(Resource {
+                        docs: docs(&d.comments),
+                        name: id(&r.ident),
+                        values: Vec::new(),
+                    }),
+                    old::DeclSyntax::Const(_) => unimplemented!(),
+                },
+            };
+            items.push(item);
+        }
+
+        for f in doc.functions {
+            let item = Item::Value(Value {
+                docs: docs(&f.comments),
+                name: Id {
+                    name: f.item.export.to_string().into(),
+                    span: span(f.item.export_loc),
+                },
+                kind: ValueKind::Function {
+                    abi: match f.item.abi {
+                        witx::Abi::Next => Abi::Canonical,
+                        witx::Abi::Preview1 => Abi::Preview1,
+                    },
+                    params: f
+                        .item
+                        .params
+                        .iter()
+                        .map(|p| (id(&p.item.name), ty(&p.item.type_)))
+                        .collect(),
+                    results: f.item.results.iter().map(|p| ty(&p.item.type_)).collect(),
+                },
+            });
+            items.push(item);
+        }
+
+        return Ok(Ast { items });
+
+        fn ty(t: &old::TypedefSyntax<'_>) -> Type<'static> {
+            match t {
+                old::TypedefSyntax::Record(e) => Type::Record(Record {
+                    tuple_hint: false,
+                    flags_repr: None,
+                    fields: e
+                        .fields
+                        .iter()
+                        .map(|f| Field {
+                            docs: docs(&f.comments),
+                            name: id(&f.item.name),
+                            ty: ty(&f.item.type_),
+                        })
+                        .collect(),
+                }),
+                old::TypedefSyntax::Flags(e) => Type::Record(Record {
+                    tuple_hint: false,
+                    flags_repr: e.repr.as_ref().map(|t| Box::new(builtin(t))),
+                    fields: e
+                        .flags
+                        .iter()
+                        .map(|f| Field {
+                            docs: docs(&f.comments),
+                            name: id(&f.item),
+                            ty: Type::bool(),
+                        })
+                        .collect(),
+                }),
+                old::TypedefSyntax::Tuple(e) => Type::Record(Record {
+                    tuple_hint: true,
+                    flags_repr: None,
+                    fields: e
+                        .types
+                        .iter()
+                        .enumerate()
+                        .map(|(i, t)| Field {
+                            docs: Docs::default(),
+                            name: Id::from(i.to_string()),
+                            ty: ty(t),
+                        })
+                        .collect(),
+                }),
+
+                old::TypedefSyntax::Variant(e) => Type::Variant(Variant {
+                    tag: e.tag.as_ref().map(|t| Box::new(ty(t))),
+                    span: Span { start: 0, end: 0 },
+                    cases: e
+                        .cases
+                        .iter()
+                        .map(|c| Case {
+                            docs: docs(&c.comments),
+                            name: id(&c.item.name),
+                            ty: c.item.ty.as_ref().map(ty),
+                        })
+                        .collect(),
+                }),
+                old::TypedefSyntax::Enum(e) => Type::Variant(Variant {
+                    tag: e.repr.as_ref().map(|t| Box::new(builtin(t))),
+                    span: Span { start: 0, end: 0 },
+                    cases: e
+                        .members
+                        .iter()
+                        .map(|c| Case {
+                            docs: docs(&c.comments),
+                            name: id(&c.item),
+                            ty: None,
+                        })
+                        .collect(),
+                }),
+                old::TypedefSyntax::Expected(e) => Type::Variant(Variant {
+                    tag: None,
+                    span: Span { start: 0, end: 0 },
+                    cases: vec![
+                        Case {
+                            docs: Docs::default(),
+                            name: "ok".into(),
+                            ty: e.ok.as_ref().map(|t| ty(t)),
+                        },
+                        Case {
+                            docs: Docs::default(),
+                            name: "err".into(),
+                            ty: e.err.as_ref().map(|t| ty(t)),
+                        },
+                    ],
+                }),
+                old::TypedefSyntax::Option(e) => Type::Variant(Variant {
+                    tag: None,
+                    span: Span { start: 0, end: 0 },
+                    cases: vec![
+                        Case {
+                            docs: Docs::default(),
+                            name: "none".into(),
+                            ty: None,
+                        },
+                        Case {
+                            docs: Docs::default(),
+                            name: "some".into(),
+                            ty: Some(ty(&e.ty)),
+                        },
+                    ],
+                }),
+                old::TypedefSyntax::Union(e) => Type::Variant(Variant {
+                    tag: e.tag.as_ref().map(|t| Box::new(ty(t))),
+                    span: Span { start: 0, end: 0 },
+                    cases: e
+                        .fields
+                        .iter()
+                        .enumerate()
+                        .map(|(i, c)| Case {
+                            docs: docs(&c.comments),
+                            name: i.to_string().into(),
+                            ty: Some(ty(&c.item)),
+                        })
+                        .collect(),
+                }),
+
+                old::TypedefSyntax::Handle(e) => Type::Handle(id(&e.resource)),
+                old::TypedefSyntax::List(e) => Type::List(Box::new(ty(e))),
+                old::TypedefSyntax::Pointer(e) => Type::Pointer(Box::new(ty(e))),
+                old::TypedefSyntax::ConstPointer(e) => Type::ConstPointer(Box::new(ty(e))),
+                old::TypedefSyntax::Buffer(e) => {
+                    if e.out {
+                        Type::PushBuffer(Box::new(ty(&e.ty)))
+                    } else {
+                        Type::PullBuffer(Box::new(ty(&e.ty)))
+                    }
+                }
+                old::TypedefSyntax::Builtin(e) => builtin(e),
+                old::TypedefSyntax::Ident(e) => Type::Name(id(e)),
+                old::TypedefSyntax::String => Type::List(Box::new(Type::Char)),
+                old::TypedefSyntax::Bool => Type::bool(),
+            }
+        }
+
+        fn builtin(e: &witx::BuiltinType) -> Type<'static> {
+            use witx::BuiltinType::*;
+            match e {
+                Char => Type::Char,
+                U8 { lang_c_char: false } => Type::U8,
+                U8 { lang_c_char: true } => Type::CChar,
+                S8 => Type::S8,
+                U16 => Type::U16,
+                S16 => Type::S16,
+                U32 {
+                    lang_ptr_size: false,
+                } => Type::U32,
+                U32 {
+                    lang_ptr_size: true,
+                } => Type::Usize,
+                S32 => Type::S32,
+                U64 => Type::U64,
+                S64 => Type::S64,
+                F32 => Type::F32,
+                F64 => Type::F64,
+            }
+        }
+
+        fn docs(docs: &old::CommentSyntax<'_>) -> Docs<'static> {
+            Docs {
+                docs: docs
+                    .comments
+                    .iter()
+                    .map(|c| format!("// {}", c).into())
+                    .collect(),
+            }
+        }
+
+        fn id(id: &wast::Id<'_>) -> Id<'static> {
+            Id {
+                name: id.name().to_string().into(),
+                span: span(id.span()),
+            }
+        }
+
+        // TODO: should add an `offset` accessor to `wast::Span` upstream...
+        fn span(span: wast::Span) -> Span {
+            let mut low = 0;
+            let mut high = 1024;
+            while span > wast::Span::from_offset(high) {
+                high *= 2;
+            }
+            while low != high {
+                let val = (high + low) / 2;
+                let mid = wast::Span::from_offset(val);
+                if span < mid {
+                    high = val - 1;
+                } else if span > mid {
+                    low = val + 1;
+                } else {
+                    low = val;
+                    high = val;
+                }
+            }
+            let low = low as u32;
+            Span {
+                start: low,
+                end: low + 1,
+            }
+        }
     }
 }
 
 impl<'a> Item<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Item<'a>> {
+    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Item<'a>> {
         match tokens.clone().next()? {
             Some((_span, Token::Use)) => Use::parse(tokens, docs).map(Item::Use),
             Some((_span, Token::Type)) => TypeDef::parse(tokens, docs).map(Item::TypeDef),
@@ -174,7 +462,7 @@ impl<'a> Item<'a> {
 }
 
 impl<'a> Use<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, _docs: Documentation<'a>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a>, _docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Use)?;
         let mut names = None;
         loop {
@@ -212,7 +500,7 @@ impl<'a> Use<'a> {
 }
 
 impl<'a> TypeDef<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Type)?;
         let name = parse_id(tokens)?;
         tokens.expect(Token::Equals)?;
@@ -220,10 +508,12 @@ impl<'a> TypeDef<'a> {
         Ok(TypeDef { docs, name, ty })
     }
 
-    fn parse_flags(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+    fn parse_flags(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Flags)?;
         let name = parse_id(tokens)?;
         let ty = Type::Record(Record {
+            flags_repr: None,
+            tuple_hint: false,
             fields: parse_list(
                 tokens,
                 Token::LeftBrace,
@@ -241,10 +531,12 @@ impl<'a> TypeDef<'a> {
         Ok(TypeDef { docs, name, ty })
     }
 
-    fn parse_record(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+    fn parse_record(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Record)?;
         let name = parse_id(tokens)?;
         let ty = Type::Record(Record {
+            flags_repr: None,
+            tuple_hint: false,
             fields: parse_list(
                 tokens,
                 Token::LeftBrace,
@@ -260,10 +552,11 @@ impl<'a> TypeDef<'a> {
         Ok(TypeDef { docs, name, ty })
     }
 
-    fn parse_variant(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+    fn parse_variant(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Variant)?;
         let name = parse_id(tokens)?;
         let ty = Type::Variant(Variant {
+            tag: None,
             span: name.span,
             cases: parse_list(
                 tokens,
@@ -285,11 +578,12 @@ impl<'a> TypeDef<'a> {
         Ok(TypeDef { docs, name, ty })
     }
 
-    fn parse_union(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+    fn parse_union(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Union)?;
         let name = parse_id(tokens)?;
         let mut i = 0;
         let ty = Type::Variant(Variant {
+            tag: None,
             span: name.span,
             cases: parse_list(
                 tokens,
@@ -309,10 +603,11 @@ impl<'a> TypeDef<'a> {
         Ok(TypeDef { docs, name, ty })
     }
 
-    fn parse_enum(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+    fn parse_enum(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Enum)?;
         let name = parse_id(tokens)?;
         let ty = Type::Variant(Variant {
+            tag: None,
             span: name.span,
             cases: parse_list(
                 tokens,
@@ -333,7 +628,7 @@ impl<'a> TypeDef<'a> {
 }
 
 impl<'a> Resource<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Resource)?;
         let name = parse_id(tokens)?;
         let mut values = Vec::new();
@@ -352,7 +647,7 @@ impl<'a> Resource<'a> {
 }
 
 impl<'a> Value<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         let name = parse_id(tokens)?;
         tokens.expect(Token::Colon)?;
 
@@ -377,7 +672,11 @@ impl<'a> Value<'a> {
                     }
                 }
             }
-            ValueKind::Function { params, results }
+            ValueKind::Function {
+                abi: Abi::Canonical, // TODO
+                params,
+                results,
+            }
         } else {
             ValueKind::Global(Type::parse(tokens)?)
         };
@@ -399,13 +698,13 @@ fn parse_id<'a>(tokens: &mut Tokenizer<'a>) -> Result<Id<'a>> {
     }
 }
 
-fn parse_docs<'a>(tokens: &mut Tokenizer<'a>) -> Result<Documentation<'a>> {
-    let mut docs = Documentation::default();
+fn parse_docs<'a>(tokens: &mut Tokenizer<'a>) -> Result<Docs<'a>> {
+    let mut docs = Docs::default();
     let mut clone = tokens.clone();
     while let Some((span, token)) = clone.next_raw()? {
         match token {
             Token::Whitespace => {}
-            Token::Comment => docs.docs.push(tokens.get_span(span)),
+            Token::Comment => docs.docs.push(tokens.get_span(span).into()),
             _ => break,
         };
         *tokens = clone.clone();
@@ -437,7 +736,7 @@ impl<'a> Type<'a> {
                 let mut fields = Vec::new();
                 while !tokens.eat(Token::RightParen)? {
                     let field = Field {
-                        docs: Documentation::default(),
+                        docs: Docs::default(),
                         name: fields.len().to_string().into(),
                         ty: Type::parse(tokens)?,
                     };
@@ -447,7 +746,11 @@ impl<'a> Type<'a> {
                         break;
                     }
                 }
-                Ok(Type::Record(Record { fields }))
+                Ok(Type::Record(Record {
+                    fields,
+                    flags_repr: None,
+                    tuple_hint: true,
+                }))
             }
 
             Some((_span, Token::Bool)) => Ok(Type::bool()),
@@ -467,15 +770,16 @@ impl<'a> Type<'a> {
                 let ty = Type::parse(tokens)?;
                 tokens.expect(Token::GreaterThan)?;
                 Ok(Type::Variant(Variant {
+                    tag: None,
                     span,
                     cases: vec![
                         Case {
-                            docs: Documentation::default(),
+                            docs: Docs::default(),
                             name: "none".into(),
                             ty: None,
                         },
                         Case {
-                            docs: Documentation::default(),
+                            docs: Docs::default(),
                             name: "some".into(),
                             ty: Some(ty),
                         },
@@ -499,15 +803,16 @@ impl<'a> Type<'a> {
                 };
                 tokens.expect(Token::GreaterThan)?;
                 Ok(Type::Variant(Variant {
+                    tag: None,
                     span,
                     cases: vec![
                         Case {
-                            docs: Documentation::default(),
+                            docs: Docs::default(),
                             name: "ok".into(),
                             ty: ok,
                         },
                         Case {
-                            docs: Documentation::default(),
+                            docs: Docs::default(),
                             name: "err".into(),
                             ty: err,
                         },
@@ -548,15 +853,16 @@ impl<'a> Type<'a> {
 
     fn bool() -> Type<'static> {
         Type::Variant(Variant {
+            tag: None,
             span: Span { start: 0, end: 0 },
             cases: vec![
                 Case {
-                    docs: Documentation::default(),
+                    docs: Docs::default(),
                     name: "false".into(),
                     ty: None,
                 },
                 Case {
-                    docs: Documentation::default(),
+                    docs: Docs::default(),
                     name: "true".into(),
                     ty: None,
                 },
@@ -566,7 +872,7 @@ impl<'a> Type<'a> {
 }
 
 impl<'a> Interface<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, docs: Documentation<'a>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Interface)?;
         let name = parse_id(tokens)?;
         tokens.expect(Token::LeftBrace)?;
@@ -586,7 +892,7 @@ fn parse_list<'a, T>(
     tokens: &mut Tokenizer<'a>,
     start: Token,
     end: Token,
-    mut parse: impl FnMut(Documentation<'a>, &mut Tokenizer<'a>) -> Result<T>,
+    mut parse: impl FnMut(Docs<'a>, &mut Tokenizer<'a>) -> Result<T>,
 ) -> Result<Vec<T>> {
     tokens.expect(start)?;
     let mut items = Vec::new();
@@ -647,6 +953,12 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 
 pub fn rewrite_error(err: &mut anyhow::Error, file: &str, contents: &str) {
+    #[cfg(feature = "old-witx-compat")]
+    if let Some(err) = err.downcast_mut::<wast::Error>() {
+        err.set_path(file.as_ref());
+        err.set_text(contents);
+        return;
+    }
     let parse = match err.downcast_mut::<Error>() {
         Some(err) => err,
         None => return lex::rewrite_error(err, file, contents),
