@@ -506,6 +506,11 @@ def_instruction! {
             name: &'a str,
             ty: TypeId,
         } : [1] => [record.num_i32s()],
+        FlagsLower64 {
+            record: &'a Record,
+            name: &'a str,
+            ty: TypeId,
+        } : [1] => [1],
         /// Converts a list of native wasm `i32` to a language-specific
         /// record-of-bools.
         FlagsLift {
@@ -513,6 +518,11 @@ def_instruction! {
             name: &'a str,
             ty: TypeId,
         } : [record.num_i32s()] => [1],
+        FlagsLift64 {
+            record: &'a Record,
+            name: &'a str,
+            ty: TypeId,
+        } : [1] => [1],
 
         // variants
 
@@ -605,11 +615,6 @@ def_instruction! {
         PointerFromI32 { ty: &'a Type }: [1] => [1],
         /// Converts a native wasm `i32` to a language-specific pointer.
         ConstPointerFromI32 { ty: &'a Type } : [1] => [1],
-
-        I32FromBitflags : [1] => [1],
-        I64FromBitflags : [1] => [1],
-        BitflagsFromI32 { record: &'a Record, name: &'a str } : [1] => [1],
-        BitflagsFromI64 { record: &'a Record, name: &'a str } : [1] => [1],
 
         /// This is a special instruction specifically for the original ABI of
         /// WASI.  The raw return `i32` of a function is re-pushed onto the
@@ -1014,9 +1019,9 @@ impl Interface {
             Type::Id(id) => match &self.types[*id].kind {
                 TypeDefKind::Type(t) => self.push_wasm(abi, mode, t, result),
 
-                TypeDefKind::Record(r) if r.is_flags() => match abi {
-                    Abi::Preview1 => result.push(self.preview1_flags_repr(r).into()),
-                    Abi::Canonical => {
+                TypeDefKind::Record(r) if r.is_flags() => match self.flags_repr(r) {
+                    Some(int) => result.push(int.into()),
+                    None => {
                         for _ in 0..r.num_i32s() {
                             result.push(WasmType::I32);
                         }
@@ -1076,14 +1081,15 @@ impl Interface {
         }
     }
 
-    fn preview1_flags_repr(&self, record: &Record) -> Int {
+    pub fn flags_repr(&self, record: &Record) -> Option<Int> {
         match record.kind {
-            RecordKind::Flags(Some(hint)) => hint,
-            _ => match record.num_i32s() {
-                1 => Int::U32,
-                2 => Int::U64,
-                _ => panic!("wrong size of flags in preview1"),
-            },
+            RecordKind::Flags(Some(hint)) => Some(hint),
+            RecordKind::Flags(None) if record.fields.len() <= 8 => Some(Int::U8),
+            RecordKind::Flags(None) if record.fields.len() <= 16 => Some(Int::U16),
+            RecordKind::Flags(None) if record.fields.len() <= 32 => Some(Int::U32),
+            RecordKind::Flags(None) if record.fields.len() <= 64 => Some(Int::U64),
+            RecordKind::Flags(None) => None,
+            _ => panic!("not a flags record"),
         }
     }
 
@@ -1516,22 +1522,22 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.emit(&BufferLowerHandle { push, ty });
                     }
                 }
-                TypeDefKind::Record(record) => match self.abi {
-                    Abi::Preview1 if record.is_flags() => {
-                        match self.iface.preview1_flags_repr(record) {
-                            Int::U64 => self.witx(&I64FromBitflags),
-                            _ => self.witx(&I32FromBitflags),
-                        }
-                    }
-                    Abi::Preview1 => self.witx(&AddrOf),
-
-                    Abi::Canonical if record.is_flags() => {
-                        self.emit(&FlagsLower {
+                TypeDefKind::Record(record) if record.is_flags() => {
+                    match self.iface.flags_repr(record) {
+                        Some(Int::U64) => self.emit(&FlagsLower64 {
                             record,
                             ty: id,
                             name: self.iface.types[id].name.as_ref().unwrap(),
-                        });
+                        }),
+                        _ => self.emit(&FlagsLower {
+                            record,
+                            ty: id,
+                            name: self.iface.types[id].name.as_ref().unwrap(),
+                        }),
                     }
+                }
+                TypeDefKind::Record(record) => match self.abi {
+                    Abi::Preview1 => self.witx(&AddrOf),
 
                     Abi::Canonical => {
                         self.emit(&RecordLower {
@@ -1810,24 +1816,24 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.emit(&BufferLiftHandle { push, ty })
                     }
                 }
-                TypeDefKind::Record(record) => match self.abi {
-                    Abi::Preview1 if record.is_flags() => {
-                        let name = self.iface.types[id].name.as_ref().unwrap();
-                        match self.iface.preview1_flags_repr(record) {
-                            Int::U64 => self.witx(&BitflagsFromI64 { record, name }),
-                            _ => self.witx(&BitflagsFromI32 { record, name }),
-                        }
-                    }
-                    Abi::Preview1 => {
-                        let addr = self.stack.pop().unwrap();
-                        self.read_from_memory(ty, addr, 0);
-                    }
-                    Abi::Canonical if record.is_flags() => {
-                        self.emit(&FlagsLift {
+                TypeDefKind::Record(record) if record.is_flags() => {
+                    match self.iface.flags_repr(record) {
+                        Some(Int::U64) => self.emit(&FlagsLift64 {
                             record,
                             ty: id,
                             name: self.iface.types[id].name.as_ref().unwrap(),
-                        });
+                        }),
+                        _ => self.emit(&FlagsLift {
+                            record,
+                            ty: id,
+                            name: self.iface.types[id].name.as_ref().unwrap(),
+                        }),
+                    }
+                }
+                TypeDefKind::Record(record) => match self.abi {
+                    Abi::Preview1 => {
+                        let addr = self.stack.pop().unwrap();
+                        self.read_from_memory(ty, addr, 0);
                     }
                     Abi::Canonical => {
                         let mut temp = Vec::new();
@@ -2006,13 +2012,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 TypeDefKind::Record(r) if r.is_flags() => {
                     self.lower(ty, None);
-                    match self.abi {
-                        Abi::Preview1 => {
-                            let repr = self.iface.preview1_flags_repr(r);
+                    match self.iface.flags_repr(r) {
+                        Some(repr) => {
                             self.stack.push(addr);
                             self.store_intrepr(offset, repr);
                         }
-                        Abi::Canonical => {
+                        None => {
                             for i in 0..r.num_i32s() {
                                 self.stack.push(addr.clone());
                                 self.emit(&I32Store {
@@ -2132,13 +2137,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Record(r) if r.is_flags() => {
-                    match self.abi {
-                        Abi::Preview1 => {
-                            let repr = self.iface.preview1_flags_repr(r);
+                    match self.iface.flags_repr(r) {
+                        Some(repr) => {
                             self.stack.push(addr);
                             self.load_intrepr(offset, repr);
                         }
-                        Abi::Canonical => {
+                        None => {
                             for i in 0..r.num_i32s() {
                                 self.stack.push(addr.clone());
                                 self.emit(&I32Load {

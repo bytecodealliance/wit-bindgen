@@ -1,5 +1,5 @@
 use crate::abi::CallMode;
-use crate::{Int, Interface, Record, Type, TypeDef, TypeDefKind, Variant};
+use crate::{Int, Interface, Record, RecordKind, Type, TypeDef, TypeDefKind, Variant};
 
 #[derive(Default)]
 pub struct SizeAlign {
@@ -28,24 +28,28 @@ impl SizeAlign {
                 }
             }
             TypeDefKind::Record(r) => {
-                if r.is_flags() {
-                    return (r.num_i32s() * 4, 4);
+                if let RecordKind::Flags(repr) = r.kind {
+                    return match repr {
+                        Some(i) => int_size_align(i),
+                        None if r.fields.len() <= 8 => (1, 1),
+                        None if r.fields.len() <= 16 => (2, 2),
+                        None if r.fields.len() <= 32 => (4, 4),
+                        None if r.fields.len() <= 64 => (8, 8),
+                        None => (r.num_i32s() * 4, 4),
+                    };
                 }
                 let mut size = 0;
                 let mut align = 1;
                 for f in r.fields.iter() {
-                    size = align_to(size, self.align(&f.ty)) + self.size(&f.ty);
-                    align = align.max(self.align(&f.ty));
+                    let field_size = self.size(&f.ty);
+                    let field_align = self.align(&f.ty);
+                    size = align_to(size, field_align) + field_size;
+                    align = align.max(field_align);
                 }
                 (align_to(size, align), size)
             }
             TypeDefKind::Variant(v) => {
-                let (discrim_size, discrim_align) = match v.tag {
-                    Int::U8 => (1, 1),
-                    Int::U16 => (2, 2),
-                    Int::U32 => (4, 4),
-                    Int::U64 => (8, 8),
-                };
+                let (discrim_size, discrim_align) = int_size_align(v.tag);
                 let mut size = discrim_size;
                 let mut align = discrim_align;
                 for c in v.cases.iter() {
@@ -101,13 +105,17 @@ impl SizeAlign {
                 max_align = max_align.max(self.align(ty));
             }
         }
-        let tag_size = match variant.tag {
-            Int::U8 => 1,
-            Int::U16 => 2,
-            Int::U32 => 4,
-            Int::U64 => 8,
-        };
+        let tag_size = int_size_align(variant.tag).0;
         align_to(tag_size, max_align)
+    }
+}
+
+fn int_size_align(i: Int) -> (usize, usize) {
+    match i {
+        Int::U8 => (1, 1),
+        Int::U16 => (2, 2),
+        Int::U32 => (4, 4),
+        Int::U64 => (8, 8),
     }
 }
 

@@ -209,7 +209,9 @@ impl Generator for RustWasm {
             self.rustdoc(docs);
             self.src
                 .push_str(&format!("pub type {} = ", name.to_camel_case()));
-            let repr = self.flags_repr(record);
+            let repr = iface
+                .flags_repr(record)
+                .expect("unsupported number of flags");
             self.src.push_str(int_repr(repr));
             self.src.push(';');
             for (i, field) in record.fields.iter().enumerate() {
@@ -691,15 +693,14 @@ impl Bindgen for RustWasm {
             }
 
             Instruction::FlagsLower { record, .. } => {
-                assert!(record.num_i32s() <= 2);
                 let tmp = self.tmp();
                 self.push_str(&format!("let flags{} = {};\n", tmp, operands[0]));
                 for i in 0..record.num_i32s() {
                     results.push(format!("(flags{} >> {}) as i32", tmp, i * 32));
                 }
             }
-            Instruction::FlagsLift { name, record, .. } => {
-                assert!(record.num_i32s() <= 2);
+            Instruction::FlagsLower64 { .. } => top_as("i64"),
+            Instruction::FlagsLift { name, .. } | Instruction::FlagsLift64 { name, .. } => {
                 let name = name.to_camel_case();
                 let mut result = String::from("0");
                 for (i, op) in operands.iter().enumerate() {
@@ -1146,13 +1147,6 @@ impl Bindgen for RustWasm {
                     self.push_str(&format!("let t{} = {};\n", i, operands[0]));
                     results.push(format!("&t{} as *const _ as i32", i));
                 }
-                WitxInstruction::BitflagsFromI32 { record, .. } => {
-                    let repr = self.flags_repr(record);
-                    top_as(int_repr(repr))
-                }
-                WitxInstruction::BitflagsFromI64 { .. } => top_as("u64"),
-                WitxInstruction::I32FromBitflags => top_as("i32"),
-                WitxInstruction::I64FromBitflags => top_as("i64"),
                 i => unimplemented!("{:?}", i),
             },
         }

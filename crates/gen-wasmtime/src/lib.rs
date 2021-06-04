@@ -259,7 +259,9 @@ impl Generator for Wasmtime {
             self.rustdoc(docs);
             self.src
                 .push_str(&format!("pub struct {}: ", name.to_camel_case()));
-            let repr = self.flags_repr(record);
+            let repr = iface
+                .flags_repr(record)
+                .expect("unsupported number of flags");
             self.int_repr(repr);
             self.src.push_str(" {\n");
             for (i, field) in record.fields.iter().enumerate() {
@@ -1049,17 +1051,21 @@ impl Bindgen for Wasmtime {
             }
 
             Instruction::FlagsLower { record, .. } => {
-                assert!(record.num_i32s() <= 2);
                 let tmp = self.tmp();
                 self.push_str(&format!("let flags{} = {};\n", tmp, operands[0]));
                 for i in 0..record.num_i32s() {
                     results.push(format!("(flags{}.bits >> {}) as i32", tmp, i * 32));
                 }
             }
-            Instruction::FlagsLift { record, name, .. } => {
-                assert!(record.num_i32s() <= 2);
+            Instruction::FlagsLower64 { .. } => {
+                results.push(format!("({}).bits as i64", operands[0]));
+            }
+            Instruction::FlagsLift { record, name, .. }
+            | Instruction::FlagsLift64 { record, name, .. } => {
                 self.needs_validate_flags = true;
-                let repr = self.flags_repr(record);
+                let repr = iface
+                    .flags_repr(record)
+                    .expect("unsupported number of flags");
                 let mut flags = String::from("0");
                 for (i, op) in operands.iter().enumerate() {
                     flags.push_str(&format!("| (i64::from({}) << {})", op, i * 32));
@@ -1566,28 +1572,6 @@ impl Bindgen for Wasmtime {
                     for _ in 0..instr.results_len() {
                         results.push("XXX".to_string());
                     }
-                }
-                WitxInstruction::I32FromBitflags { .. } => {
-                    results.push(format!("({}).bits as i32", operands[0]));
-                }
-                WitxInstruction::I64FromBitflags { .. } => {
-                    results.push(format!("({}).bits as i64", operands[0]));
-                }
-                WitxInstruction::BitflagsFromI32 { record, name, .. }
-                | WitxInstruction::BitflagsFromI64 { record, name, .. } => {
-                    self.needs_validate_flags = true;
-                    let repr = self.flags_repr(record);
-                    results.push(format!(
-                        "validate_flags(
-                            i64::from({}),
-                            {name}::all().bits() as i64,
-                            \"{name}\",
-                            |b| {name} {{ bits: b as {ty} }}
-                        )?",
-                        operands[0],
-                        name = name.to_camel_case(),
-                        ty = int_repr(repr),
-                    ));
                 }
                 i => unimplemented!("{:?}", i),
             },

@@ -36,20 +36,6 @@ pub trait TypePrint {
     fn default_param_mode(&self) -> TypeMode;
     fn handle_projection(&self) -> Option<(&'static str, String)>;
 
-    fn flags_repr(&self, record: &Record) -> Int {
-        if record.fields.len() <= 8 {
-            Int::U8
-        } else if record.fields.len() <= 16 {
-            Int::U16
-        } else if record.fields.len() <= 32 {
-            Int::U32
-        } else if record.fields.len() <= 64 {
-            Int::U64
-        } else {
-            unimplemented!()
-        }
-    }
-
     fn rustdoc(&mut self, docs: &Docs) {
         let docs = match &docs.contents {
             Some(docs) => docs,
