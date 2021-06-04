@@ -227,7 +227,7 @@
   (export "host_state_create" (func (result $a $host_state)))
   (export "host_state_get" (func (param $a $host_state) (result $b u32)))
   (export "host_state2_create" (func (result $b $host_state2)))
-  (export "host_state2_close" (func (param $a $host_state2)))
+  ;;(export "host_state2_close" (func (param $a $host_state2)))
   (export "host_state2_saw_close" (func (result $a bool)))
   (export "two_host_states" (func
     (param $a $host_state)

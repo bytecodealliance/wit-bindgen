@@ -364,7 +364,10 @@ mod invalid {
         fn roundtrip_char(a: i32) -> i32;
         fn roundtrip_enum(a: i32) -> i32;
         fn host_state_get(a: i32) -> i32;
-        fn host_state2_close(a: i32);
+    }
+    #[link(wasm_import_module = "canonical_abi")]
+    extern "C" {
+        fn resource_drop_host_state2(a: i32);
     }
     #[no_mangle]
     pub unsafe extern "C" fn invalid_bool() {
@@ -408,6 +411,6 @@ mod invalid {
 
     #[no_mangle]
     pub unsafe extern "C" fn invalid_handle_close() {
-        host_state2_close(100);
+        resource_drop_host_state2(100);
     }
 }

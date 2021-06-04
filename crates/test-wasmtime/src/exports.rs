@@ -1,6 +1,5 @@
 use anyhow::Result;
-use std::iter;
-use wasmtime::{Instance, Store};
+use wasmtime::Store;
 
 witx_bindgen_wasmtime::export!("tests/wasm.witx");
 

@@ -647,6 +647,15 @@ impl Generator for Wasmtime {
                 self.src.push_str(&f.trait_signature);
                 self.src.push_str(";\n\n");
             }
+            for handle in self.all_needed_handles.iter() {
+                self.src.push_str(&format!(
+                    "fn drop_{}(&mut self, state: Self::{}) {{
+                        drop(state);
+                    }}",
+                    handle,
+                    handle.to_camel_case(),
+                ));
+            }
             self.src.push_str("}\n");
 
             if self.all_needed_handles.len() > 0 {
@@ -702,6 +711,26 @@ impl Generator for Wasmtime {
                 self.push_str(&format!(
                     "linker.func_wrap(\"{}\", \"{}\", {})?;\n",
                     module, f.name, f.closure,
+                ));
+            }
+            for handle in self.all_needed_handles.iter() {
+                self.src.push_str(&format!(
+                    "linker.func_wrap(
+                        \"canonical_abi\",
+                        \"resource_drop_{}\",
+                        move |mut caller: wasmtime::Caller<'_, T>, handle: u32| {{
+                            let (host, tables) = get(caller.data_mut());
+                            let handle = tables
+                                .{0}_table
+                                .remove(handle)
+                                .map_err(|e| {{
+                                    wasmtime::Trap::new(format!(\"failed to remove handle: {{}}\", e))
+                                }})?;
+                            host.drop_{0}(handle);
+                            Ok(())
+                        }}
+                    )?;\n",
+                    handle
                 ));
             }
             self.push_str("Ok(())\n}\n");
@@ -1298,8 +1327,9 @@ impl Bindgen for Wasmtime {
                 let block = self.blocks.pop().unwrap();
                 self.needs_borrow_checker = true;
                 let tmp = self.tmp();
-                self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
-                self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
+                self.push_str(&format!("let _ = {};\n", operands[0]));
+                self.push_str(&format!("let ptr{} = {};\n", tmp, operands[1]));
+                self.push_str(&format!("let len{} = {};\n", tmp, operands[2]));
                 if iface.all_bits_valid(ty) {
                     let method = if *push { "slice_mut" } else { "slice" };
                     results.push(format!("unsafe {{ _bc.{}(ptr{1}, len{1})? }}", method, tmp));
@@ -1316,7 +1346,7 @@ impl Bindgen for Wasmtime {
                         self.closures.push_str(&block);
                         self.closures.push_str("; Ok(()) };\n");
                         results.push(format!(
-                            "witx_bindgen_wasmtime::imports::OutBuffer::new(
+                            "witx_bindgen_wasmtime::imports::PushBuffer::new(
                                 &mut _bc, ptr{}, len{}, {}, &{})?",
                             tmp, tmp, size, closure
                         ));
@@ -1325,7 +1355,7 @@ impl Bindgen for Wasmtime {
                         self.closures.push_str(&block);
                         self.closures.push_str(") };\n");
                         results.push(format!(
-                            "witx_bindgen_wasmtime::imports::InBuffer::new(
+                            "witx_bindgen_wasmtime::imports::PullBuffer::new(
                                 &mut _bc, ptr{}, len{}, {}, &{})?",
                             tmp, tmp, size, closure
                         ));

@@ -512,7 +512,7 @@ pub trait TypePrint {
                 } else if !info.has_handle {
                     self.push_str("#[derive(Clone)]\n");
                 }
-                if !info.has_pull_buffer {
+                if !info.has_pull_buffer && !info.has_handle {
                     self.push_str("#[derive(Debug)]\n");
                 }
                 self.push_str(&format!("pub struct {}\n", name));
@@ -581,7 +581,7 @@ pub trait TypePrint {
             } else if lt.is_some() || !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
             }
-            if !is_error && !info.has_pull_buffer {
+            if !is_error && !info.has_pull_buffer && !info.has_handle {
                 self.push_str("#[derive(Debug)]\n");
             }
             self.push_str(&format!("pub enum {}", name.to_camel_case()));

@@ -64,6 +64,7 @@
   (typename $list_typedef2 (list u8))
   (typename $list_typedef3 (list string))
 
+(;
   (resource $wasm_state)
   (typename $wasm_state (handle $wasm_state))
   (resource $wasm_state2)
@@ -80,6 +81,7 @@
   (typename $wasm_state_result_option (option $wasm_state2))
   (typename $wasm_state_result_result (expected $wasm_state2 (error u32)))
   (typename $wasm_state_result_variant (union $wasm_state2 u32))
+;)
 
   (typename $buffer_in_variant (variant
     (case $a (in-buffer u8))
@@ -178,6 +180,7 @@
   ;; ===========================================
   ;; handles
   ;; ===========================================
+  (;
   (export "wasm_state_create" (func (result $a $wasm_state)))
   (export "wasm_state_get" (func (param $a $wasm_state) (result $b u32)))
   (export "wasm_state2_create" (func (result $b $wasm_state2)))
@@ -204,6 +207,7 @@
   (export "wasm_state2_result_result" (func (result $a $wasm_state_result_result)))
   (export "wasm_state2_result_variant" (func (result $a $wasm_state_result_variant)))
   (export "wasm_state2_result_list" (func (result $a (list $wasm_state2))))
+  ;)
 
   ;; ===========================================
   ;; buffers

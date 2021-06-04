@@ -1,4 +1,4 @@
-use witx_bindgen_wasmtime::imports::{InBuffer, OutBuffer};
+use witx_bindgen_wasmtime::imports::{PullBuffer, PushBuffer};
 
 witx_bindgen_wasmtime::import!("tests/host.witx");
 use host::*;
@@ -91,6 +91,32 @@ impl Host for MyHost {
     }
 
     fn roundtrip_flags2(&mut self, a: F2) -> F2 {
+        a
+    }
+
+    fn roundtrip_flags3(
+        &mut self,
+        a: Flag8,
+        b: Flag16,
+        c: Flag32,
+        d: Flag64,
+    ) -> (Flag8, Flag16, Flag32, Flag64) {
+        (a, b, c, d)
+    }
+
+    fn legacy_flags1(&mut self, a: Flag8) -> Flag8 {
+        a
+    }
+
+    fn legacy_flags2(&mut self, a: Flag16) -> Flag16 {
+        a
+    }
+
+    fn legacy_flags3(&mut self, a: Flag32) -> Flag32 {
+        a
+    }
+
+    fn legacy_flags4(&mut self, a: Flag64) -> Flag64 {
         a
     }
 
@@ -281,7 +307,7 @@ impl Host for MyHost {
         self.host_state2_closed
     }
 
-    fn host_state2_close(&mut self, _state: ()) {
+    fn drop_host_state2(&mut self, _state: ()) {
         self.host_state2_closed = true;
     }
 
@@ -333,7 +359,7 @@ impl Host for MyHost {
         3
     }
 
-    fn buffer_bool(&mut self, in_: InBuffer<'_, bool>, mut out: OutBuffer<'_, bool>) -> u32 {
+    fn buffer_bool(&mut self, in_: PullBuffer<'_, bool>, mut out: PushBuffer<'_, bool>) -> u32 {
         assert!(in_.len() < out.capacity());
         let len = in_.len();
         for item in in_.iter() {
@@ -345,8 +371,8 @@ impl Host for MyHost {
 
     // fn buffer_string(
     //     &mut self,
-    //     in_: InBuffer<'_, GuestPtr<'_, str>>,
-    //     mut out: OutBuffer<'_, String>,
+    //     in_: PullBuffer<'_, GuestPtr<'_, str>>,
+    //     mut out: PushBuffer<'_, String>,
     // ) -> u32 {
     //     assert!(in_.len() < out.capacity());
     //     let len = in_.len();
@@ -360,8 +386,8 @@ impl Host for MyHost {
 
     // fn buffer_list_bool(
     //     &mut self,
-    //     in_: InBuffer<'_, Vec<bool>>,
-    //     mut out: OutBuffer<'_, Vec<bool>>,
+    //     in_: PullBuffer<'_, Vec<bool>>,
+    //     mut out: PushBuffer<'_, Vec<bool>>,
     // ) -> u32 {
     //     assert!(in_.len() < out.capacity());
     //     let len = in_.len();
@@ -373,7 +399,7 @@ impl Host for MyHost {
     //     len as u32
     // }
 
-    // fn buffer_buffer_bool(&mut self, in_: InBuffer<'_, InBuffer<'_, bool>>) {
+    // fn buffer_buffer_bool(&mut self, in_: PullBuffer<'_, PullBuffer<'_, bool>>) {
     //     assert_eq!(in_.len(), 1);
     //     let buf = in_.iter().unwrap().next().unwrap().unwrap();
     //     assert_eq!(buf.len(), 5);
@@ -386,7 +412,7 @@ impl Host for MyHost {
     //     );
     // }
 
-    fn buffer_mutable1(&mut self, a: Vec<InBuffer<'_, bool>>) {
+    fn buffer_mutable1(&mut self, a: Vec<PullBuffer<'_, bool>>) {
         assert_eq!(a.len(), 1);
         assert_eq!(a[0].len(), 5);
         assert_eq!(
@@ -402,7 +428,7 @@ impl Host for MyHost {
         return 4;
     }
 
-    fn buffer_mutable3(&mut self, mut a: Vec<OutBuffer<'_, bool>>) -> u32 {
+    fn buffer_mutable3(&mut self, mut a: Vec<PushBuffer<'_, bool>>) -> u32 {
         assert_eq!(a.len(), 1);
         assert!(a[0].capacity() > 3);
         a[0].write([false, true, false].iter().copied()).unwrap();
