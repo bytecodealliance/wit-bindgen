@@ -17,4 +17,6 @@ env_logger = "0.8.3"
 wat = "1.0.37"
 
 [workspace]
-members = []
+members = [
+    "crates/test-modules"
+]
