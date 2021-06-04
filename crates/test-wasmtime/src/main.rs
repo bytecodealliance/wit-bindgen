@@ -5,7 +5,7 @@ mod exports;
 mod imports;
 
 #[allow(dead_code, type_alias_bounds)]
-#[path = "../../../tmp/wasmtime-export/bindings.rs"]
+#[path = "../../../tmp/wasmtime/bindings.rs"]
 mod wat;
 
 const CHECKED: &[u8] = include_bytes!(env!("CHECKED"));

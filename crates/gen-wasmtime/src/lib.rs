@@ -1121,7 +1121,7 @@ impl Bindgen for Wasmtime {
                 // ... and then realloc space for the result in the guest module
                 let ptr = format!("ptr{}", tmp);
                 self.push_str(&format!(
-                    "let {} = func_{}.call(&mut caller, (({}.len() as i32) * {}, {}))?;\n",
+                    "let {} = func_{}.call(&mut caller, (0, 0, ({}.len() as i32) * {}, {}))?;\n",
                     ptr, realloc, val, size, align
                 ));
                 self.caller_memory_available = false; // invalidated from above
@@ -1226,7 +1226,7 @@ impl Bindgen for Wasmtime {
 
                 // ... then realloc space for the result in the guest module
                 self.push_str(&format!(
-                    "let {} = func_{}.call(&mut caller, ({} * {}, {}))?;\n",
+                    "let {} = func_{}.call(&mut caller, (0, 0, {} * {}, {}))?;\n",
                     result, realloc, len, size, align,
                 ));
                 self.caller_memory_available = false; // invalidated by call
