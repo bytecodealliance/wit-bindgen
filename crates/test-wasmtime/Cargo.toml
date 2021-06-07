@@ -14,4 +14,4 @@ anyhow = "1.0"
 bitflags = "1.2.1"
 wasmtime = "0.27.0"
 wasmtime-wasi = "0.27.0"
-witx-bindgen-wasmtime = { path = "../wasmtime" }
+witx-bindgen-wasmtime = { path = "../wasmtime", features = ['old-witx-compat'] }

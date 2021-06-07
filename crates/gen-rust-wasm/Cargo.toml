@@ -21,3 +21,6 @@ test-codegen = { path = '../test-codegen', features = ['witx-bindgen-gen-rust-wa
 [[test]]
 name = "run"
 harness = false
+
+[features]
+old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']
