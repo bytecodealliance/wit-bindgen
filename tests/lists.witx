@@ -36,3 +36,16 @@ record other_record {
   c: list<u8>,
 }
 record_list: function(x: list<some_record>) -> list<other_record>
+
+variant some_variant {
+  a(string),
+  b,
+  c(u32),
+  d(list<other_variant>),
+}
+variant other_variant {
+  a,
+  b(u32),
+  c(string),
+}
+variant_list: function(x: list<some_variant>) -> list<other_variant>

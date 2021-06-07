@@ -728,15 +728,23 @@ impl Bindgen for RustWasm {
 
             Instruction::VariantLower {
                 variant,
-                name,
                 nresults,
+                ty,
                 ..
             } => {
                 let blocks = self
                     .blocks
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
-                self.variant_lower(variant, *name, *nresults, &operands[0], results, blocks);
+                self.variant_lower(
+                    iface,
+                    *ty,
+                    variant,
+                    *nresults,
+                    &operands[0],
+                    results,
+                    blocks,
+                );
             }
 
             // In unchecked mode when this type is a named enum then we know we
@@ -757,7 +765,7 @@ impl Bindgen for RustWasm {
                 results.push(result);
             }
 
-            Instruction::VariantLift { name, variant, .. } => {
+            Instruction::VariantLift { variant, ty, .. } => {
                 let blocks = self
                     .blocks
                     .drain(self.blocks.len() - variant.cases.len()..)
@@ -772,7 +780,7 @@ impl Bindgen for RustWasm {
                         result.push_str(&i.to_string());
                     }
                     result.push_str(" => ");
-                    self.variant_lift_case(variant, *name, case, &block, &mut result);
+                    self.variant_lift_case(iface, *ty, variant, case, &block, &mut result);
                     result.push_str(",\n");
                 }
                 if !unchecked {

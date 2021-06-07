@@ -564,7 +564,7 @@ pub trait TypePrint {
                 self.push_str(")]\n#[derive(Clone, Copy, PartialEq, Eq)]\n");
             } else if info.has_pull_buffer || info.has_push_buffer {
                 // skip copy/clone
-            } else if lt.is_some() || !info.owns_data() {
+            } else if !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
             }
             if !is_error && !info.has_pull_buffer && !info.has_handle {
@@ -721,15 +721,7 @@ pub trait TypePrint {
             self.push_str(";\n");
         } else {
             self.push_str("let ");
-            let name = if self.call_mode().wasm() {
-                // Lowering the result of a wasm function means we're
-                // lowering a parameter.
-                self.param_name(iface, id)
-            } else {
-                // Lowering the result of a non-wasm function means we're
-                // lowering the return value.
-                self.result_name(iface, id)
-            };
+            let name = self.typename_lower(iface, id);
             self.push_str(&name);
             self.push_str("{ ");
             for field in record.fields.iter() {
@@ -761,15 +753,7 @@ pub trait TypePrint {
                 results.push(format!("({})", operands.join(",")));
             }
         } else {
-            let mut result = if self.call_mode().wasm() {
-                // Lifting for a wasm function means we're lifting one of
-                // the return values.
-                self.result_name(iface, id)
-            } else {
-                // Lifting to a non-wasm function means that we're lifting into
-                // a parameter
-                self.param_name(iface, id)
-            };
+            let mut result = self.typename_lift(iface, id);
             result.push_str("{");
             for (field, val) in ty.fields.iter().zip(operands) {
                 result.push_str(to_rust_ident(&field.name));
@@ -779,6 +763,30 @@ pub trait TypePrint {
             }
             result.push_str("}");
             results.push(result);
+        }
+    }
+
+    fn typename_lower(&self, iface: &Interface, id: TypeId) -> String {
+        if self.call_mode().wasm() {
+            // Lowering the result of a wasm function means we're
+            // lowering a parameter.
+            self.param_name(iface, id)
+        } else {
+            // Lowering the result of a non-wasm function means we're
+            // lowering the return value.
+            self.result_name(iface, id)
+        }
+    }
+
+    fn typename_lift(&self, iface: &Interface, id: TypeId) -> String {
+        if self.call_mode().wasm() {
+            // Lifting for a wasm function means we're lifting one of
+            // the return values.
+            self.result_name(iface, id)
+        } else {
+            // Lifting to a non-wasm function means that we're lifting into
+            // a parameter
+            self.param_name(iface, id)
         }
     }
 
@@ -809,8 +817,9 @@ pub trait TypePrint {
 
     fn variant_lower(
         &mut self,
+        iface: &Interface,
+        id: TypeId,
         ty: &Variant,
-        name: Option<&str>,
         nresults: usize,
         operand: &str,
         results: &mut Vec<String>,
@@ -822,7 +831,8 @@ pub trait TypePrint {
         // this scenario we can optimize a bit and use just `as i32`
         // instead of letting LLVM figure out it can do the same with
         // optimizing the `match` generated below.
-        if nresults == 1 && name.is_some() && ty.cases.iter().all(|c| c.ty.is_none()) {
+        let has_name = iface.types[id].name.is_some();
+        if nresults == 1 && has_name && ty.cases.iter().all(|c| c.ty.is_none()) {
             results.push(format!("{} as i32", operand));
             return;
         }
@@ -844,8 +854,9 @@ pub trait TypePrint {
                 if case.ty.is_some() {
                     self.push_str("(e)");
                 }
-            } else if let Some(name) = name {
-                self.push_str(&name.to_camel_case());
+            } else if has_name {
+                let name = self.typename_lower(iface, id);
+                self.push_str(&name);
                 self.push_str("::");
                 self.push_str(&case_name(&case.name));
                 if case.ty.is_some() {
@@ -863,8 +874,9 @@ pub trait TypePrint {
 
     fn variant_lift_case(
         &mut self,
+        iface: &Interface,
+        id: TypeId,
         ty: &Variant,
-        name: Option<&str>,
         case: &Case,
         block: &str,
         result: &mut String,
@@ -883,8 +895,8 @@ pub trait TypePrint {
                 result.push_str(block);
                 result.push_str(")");
             }
-        } else if let Some(name) = name {
-            result.push_str(&name.to_camel_case());
+        } else if iface.types[id].name.is_some() {
+            result.push_str(&self.typename_lift(iface, id));
             result.push_str("::");
             result.push_str(&case_name(&case.name));
             if case.ty.is_some() {

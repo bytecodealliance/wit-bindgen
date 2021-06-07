@@ -1095,18 +1095,26 @@ impl Bindgen for Wasmtime {
 
             Instruction::VariantLower {
                 variant,
-                name,
                 nresults,
+                ty,
                 ..
             } => {
                 let blocks = self
                     .blocks
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
-                self.variant_lower(variant, *name, *nresults, &operands[0], results, blocks);
+                self.variant_lower(
+                    iface,
+                    *ty,
+                    variant,
+                    *nresults,
+                    &operands[0],
+                    results,
+                    blocks,
+                );
             }
 
-            Instruction::VariantLift { variant, name, .. } => {
+            Instruction::VariantLift { variant, name, ty } => {
                 let blocks = self
                     .blocks
                     .drain(self.blocks.len() - variant.cases.len()..)
@@ -1117,7 +1125,7 @@ impl Bindgen for Wasmtime {
                 for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
                     result.push_str(&i.to_string());
                     result.push_str(" => ");
-                    self.variant_lift_case(variant, *name, case, &block, &mut result);
+                    self.variant_lift_case(iface, *ty, variant, case, &block, &mut result);
                     result.push_str(",\n");
                 }
                 let variant_name = name.map(|s| s.to_camel_case());
