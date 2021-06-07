@@ -16,7 +16,7 @@ structopt = { version = "0.3", default-features = false, optional = true }
 
 [dev-dependencies]
 witx-bindgen-rust = { path = '../rust-wasm' }
-test-codegen = { path = '../test-codegen' }
+test-codegen = { path = '../test-codegen', features = ['witx-bindgen-gen-rust-wasm'] }
 
 [[test]]
 name = "run"

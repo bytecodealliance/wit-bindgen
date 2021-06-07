@@ -242,6 +242,8 @@ impl Generator for Wasmtime {
         self.trait_name = iface.name.to_camel_case();
         self.src
             .push_str(&format!("mod {} {{", iface.name.to_snake_case()));
+        self.src
+            .push_str("#[allow(unused_imports)] use witx_bindgen_wasmtime::{wasmtime, anyhow};\n");
         let mode = self.call_mode();
         self.sizes.fill(mode, iface);
     }
@@ -255,7 +257,8 @@ impl Generator for Wasmtime {
         docs: &Docs,
     ) {
         if record.is_flags() {
-            self.src.push_str("bitflags::bitflags! {\n");
+            self.src
+                .push_str("witx_bindgen_wasmtime::bitflags::bitflags! {\n");
             self.rustdoc(docs);
             self.src
                 .push_str(&format!("pub struct {}: ", name.to_camel_case()));

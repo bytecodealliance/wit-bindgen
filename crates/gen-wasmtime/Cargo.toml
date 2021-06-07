@@ -15,4 +15,9 @@ heck = "0.3"
 structopt = { version = "0.3", default-features = false, optional = true }
 
 [dev-dependencies]
-#wasmtime = "0.23.0"
+witx-bindgen-wasmtime = { path = '../wasmtime' }
+test-codegen = { path = '../test-codegen', features = ['witx-bindgen-gen-wasmtime'] }
+
+[[test]]
+name = "run"
+harness = false

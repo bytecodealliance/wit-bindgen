@@ -9,6 +9,7 @@ members = [
   "crates/test-rust-wasm",
   "crates/test-wasmtime",
 ]
+resolver = "2"
 
 [dependencies]
 anyhow = "1.0"

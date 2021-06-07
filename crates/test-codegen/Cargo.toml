@@ -12,5 +12,10 @@ test = false
 
 [dependencies]
 witx-bindgen-gen-core = { path = '../gen-core' }
-witx-bindgen-gen-rust-wasm = { path = '../gen-rust-wasm' }
-witx2 = { path = '../witx2' }
+witx-bindgen-gen-rust-wasm = { path = '../gen-rust-wasm', optional = true }
+witx-bindgen-gen-wasmtime = { path = '../gen-wasmtime', optional = true }
+witx2 = { path = '../witx2', features = ['old-witx-compat'] }
+ignore = "0.4"
+quote = "1.0.9"
+heck = "0.3"
+proc-macro2 = "1.0.27"

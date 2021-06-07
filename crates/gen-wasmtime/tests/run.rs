@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, type_alias_bounds)]
 
 fn main() {
     println!("compiled successfully!")
@@ -6,7 +6,7 @@ fn main() {
 
 #[rustfmt::skip]
 mod imports {
-    test_codegen::rust_wasm_import!(
+    test_codegen::wasmtime_import!(
         "*.witx"
 
         // If you want to exclude a specific test you can include it here with
@@ -22,7 +22,7 @@ mod imports {
 }
 
 mod exports {
-    test_codegen::rust_wasm_export!(
+    test_codegen::wasmtime_export!(
         "*.witx"
 
         // This uses preview1 ABI things which are only supported for imports
