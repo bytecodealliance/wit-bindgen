@@ -918,26 +918,6 @@ impl Bindgen for Wasmtime {
 
     fn i64_return_pointer_area(&mut self, _amt: usize) -> String {
         unimplemented!()
-        // TODO: this should be a stack allocation, not one that goes through
-        // malloc/free. Using malloc/free is too heavyweight for this purpose.
-        // It's not clear how we can get access to the wasm module's stack,
-        // however...
-        // assert!(self.cleanup.is_none());
-        // let tmp = self.tmp();
-        // self.needs_functions
-        //     .insert("witx_malloc".to_string(), NeededFunction::Malloc);
-        // self.needs_functions
-        //     .insert("witx_free".to_string(), NeededFunction::Free);
-        // let ptr = format!("ptr{}", tmp);
-        // self.src.push_str(&format!(
-        //     "let {} = func_witx_malloc.call(&mut caller, ({} * 8, 8))?;\n",
-        //     ptr, amt
-        // ));
-        // self.cleanup = Some(format!(
-        //     "func_witx_free.call(&mut caller, ({}, {} * 8, 8))?;\n",
-        //     ptr, amt
-        // ));
-        // return ptr;
     }
 
     fn emit(
