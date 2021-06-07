@@ -26,6 +26,7 @@ fn run(input: TokenStream, import: bool) -> TokenStream {
     "
     .parse::<TokenStream>()
     .unwrap();
+    let contents = std::str::from_utf8(contents).unwrap();
     let contents = contents.parse::<TokenStream>().unwrap();
     header.extend(contents);
     return header;

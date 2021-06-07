@@ -22,6 +22,7 @@ fn run(input: TokenStream, import: bool) -> TokenStream {
         gen.generate(&iface, import, &mut files);
     }
     let (_, contents) = files.iter().next().unwrap();
+    let contents = std::str::from_utf8(contents).unwrap();
     contents.parse().unwrap()
 }
 

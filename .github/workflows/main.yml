@@ -17,6 +17,7 @@ jobs:
     - uses: actions/checkout@v2
     - run: rustup update stable --no-self-update && rustup default stable
     - run: rustup target add wasm32-wasi
+    - run: cargo test --workspace
     - run: cargo run -p test-wasmtime
 
   rustfmt:
