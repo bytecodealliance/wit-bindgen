@@ -12,6 +12,6 @@ test = false
 [dependencies]
 anyhow = "1.0"
 bitflags = "1.2.1"
-wasmtime = "0.27.0"
-wasmtime-wasi = "0.27.0"
+wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'main' }
+wasmtime-wasi = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'main' }
 witx-bindgen-wasmtime = { path = "../wasmtime", features = ['old-witx-compat'] }
