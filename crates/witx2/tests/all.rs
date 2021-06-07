@@ -172,6 +172,8 @@ fn to_json(i: &witx2::Interface) -> String {
         List(String),
         PushBuffer(String),
         PullBuffer(String),
+        Pointer(String),
+        ConstPointer(String),
     }
 
     #[derive(Serialize)]
@@ -252,14 +254,18 @@ fn to_json(i: &witx2::Interface) -> String {
             witx2::TypeDefKind::PushBuffer(ty) => Type::PushBuffer(translate_type(ty)),
             witx2::TypeDefKind::PullBuffer(ty) => Type::PullBuffer(translate_type(ty)),
             witx2::TypeDefKind::List(ty) => Type::List(translate_type(ty)),
+            witx2::TypeDefKind::Pointer(ty) => Type::Pointer(translate_type(ty)),
+            witx2::TypeDefKind::ConstPointer(ty) => Type::ConstPointer(translate_type(ty)),
         }
     }
 
     fn translate_type(ty: &witx2::Type) -> String {
         match ty {
             witx2::Type::U8 => format!("u8"),
+            witx2::Type::CChar => format!("c_char"),
             witx2::Type::U16 => format!("u16"),
             witx2::Type::U32 => format!("u32"),
+            witx2::Type::Usize => format!("usize"),
             witx2::Type::U64 => format!("u64"),
             witx2::Type::S8 => format!("s8"),
             witx2::Type::S16 => format!("s16"),

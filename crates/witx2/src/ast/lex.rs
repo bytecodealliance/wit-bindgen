@@ -201,15 +201,15 @@ impl<'a> Tokenizer<'a> {
                 StrLit
             }
             ch if is_keylike(ch) => {
-                let mut end = start + ch.len_utf8();
+                let remaining = self.chars.chars.as_str().len();
                 let mut iter = self.chars.clone();
-                while let Some((i, ch)) = iter.next() {
+                while let Some((_, ch)) = iter.next() {
                     if !is_keylike(ch) {
-                        end = i;
                         break;
                     }
                     self.chars = iter.clone();
                 }
+                let end = start + ch.len_utf8() + (remaining - self.chars.chars.as_str().len());
                 match &self.input[start..end] {
                     "use" => Use,
                     "type" => Type,

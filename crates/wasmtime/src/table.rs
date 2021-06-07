@@ -114,27 +114,22 @@ mod tests {
 
     #[test]
     fn simple() {
-        let table = Table::new();
+        let mut table = Table::new();
         assert_eq!(table.insert(0), 0);
         assert_eq!(table.insert(100), 1);
         assert_eq!(table.insert(200), 2);
 
-        let borrows = table.access();
-        assert_eq!(*borrows.get(0).unwrap(), 0);
-        assert_eq!(*borrows.get(1).unwrap(), 100);
-        assert_eq!(*borrows.get(2).unwrap(), 200);
-        assert!(borrows.get(100).is_none());
-        drop(borrows);
+        assert_eq!(*table.get(0).unwrap(), 0);
+        assert_eq!(*table.get(1).unwrap(), 100);
+        assert_eq!(*table.get(2).unwrap(), 200);
+        assert!(table.get(100).is_none());
 
         assert!(table.remove(0).is_ok());
-        assert!(table.access().get(0).is_none());
+        assert!(table.get(0).is_none());
         assert_eq!(table.insert(1), 0);
-        assert!(table.access().get(0).is_some());
+        assert!(table.get(0).is_some());
 
-        let borrows = table.access();
-        borrows.get(1).unwrap();
-        assert!(table.remove(1).is_err());
-        drop(borrows);
+        table.get(1).unwrap();
         assert!(table.remove(1).is_ok());
         assert!(table.remove(1).is_err());
 
@@ -145,15 +140,5 @@ mod tests {
         assert_eq!(table.insert(100), 2);
         assert_eq!(table.insert(100), 1);
         assert_eq!(table.insert(100), 3);
-
-        let borrows1 = table.access();
-        borrows1.get(3);
-        let borrows2 = table.access();
-        borrows2.get(3);
-        assert!(table.remove(3).is_err());
-        drop(borrows2);
-        assert!(table.remove(3).is_err());
-        drop(borrows1);
-        assert!(table.remove(3).is_ok());
     }
 }

@@ -1124,6 +1124,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-codegen"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-gen-core",
+ "witx-bindgen-gen-rust-wasm",
+ "witx2",
+]
+
+[[package]]
 name = "test-rust-wasm"
 version = "0.1.0"
 dependencies = [
@@ -1680,8 +1689,10 @@ version = "0.1.0"
 dependencies = [
  "heck",
  "structopt",
+ "test-codegen",
  "witx-bindgen-gen-core",
  "witx-bindgen-gen-rust",
+ "witx-bindgen-rust",
 ]
 
 [[package]]

@@ -578,10 +578,7 @@ impl Bindgen for RustWasm {
     fn i64_return_pointer_area(&mut self, amt: usize) -> String {
         assert!(amt <= self.i64_return_pointer_area_size);
         let tmp = self.tmp();
-        self.push_str(&format!(
-            "let ptr{} = unsafe {{ RET_AREA.as_mut_ptr() as i32 }};\n",
-            tmp
-        ));
+        self.push_str(&format!("let ptr{} = RET_AREA.as_mut_ptr() as i32;\n", tmp));
         format!("ptr{}", tmp)
     }
 
