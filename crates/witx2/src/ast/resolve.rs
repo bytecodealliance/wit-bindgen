@@ -10,6 +10,7 @@ pub struct Resolver {
     types: Arena<TypeDef>,
     resource_lookup: HashMap<String, ResourceId>,
     resources_copied: HashMap<(String, ResourceId), ResourceId>,
+    types_copied: HashMap<(String, TypeId), TypeId>,
     resources: Arena<Resource>,
     anon_types: HashMap<Key, TypeId>,
     functions: Vec<Function>,
@@ -175,8 +176,11 @@ impl Resolver {
             })
     }
 
-    fn copy_type_def(&mut self, dep_name: &str, dep: &Interface, ty: TypeId) -> TypeId {
-        let ty = &dep.types[ty];
+    fn copy_type_def(&mut self, dep_name: &str, dep: &Interface, dep_id: TypeId) -> TypeId {
+        if let Some(id) = self.types_copied.get(&(dep_name.to_string(), dep_id)) {
+            return *id;
+        }
+        let ty = &dep.types[dep_id];
 
         let ty = TypeDef {
             docs: ty.docs.clone(),
@@ -221,7 +225,9 @@ impl Resolver {
                 }
             },
         };
-        self.types.alloc(ty)
+        let id = self.types.alloc(ty);
+        self.types_copied.insert((dep_name.to_string(), dep_id), id);
+        return id;
     }
 
     fn copy_type(&mut self, dep_name: &str, dep: &Interface, ty: Type) -> Type {
@@ -413,19 +419,39 @@ impl Resolver {
                     .collect::<Result<Vec<_>>>()?;
                 TypeDefKind::Variant(Variant {
                     tag: match &variant.tag {
-                        Some(ty) => match &**ty {
-                            super::Type::U8 => Int::U8,
-                            super::Type::U16 => Int::U16,
-                            super::Type::U32 => Int::U32,
-                            super::Type::U64 => Int::U64,
-                            _ => panic!("unknown explicit variant tag"),
-                        },
+                        Some(ty) => self.get_variant_tag(ty),
                         None => Variant::infer_tag(cases.len()),
                     },
                     cases,
                 })
             }
         })
+    }
+
+    fn get_variant_tag(&self, tag: &super::Type) -> Int {
+        match tag {
+            super::Type::U8 => Int::U8,
+            super::Type::U16 => Int::U16,
+            super::Type::U32 => Int::U32,
+            super::Type::U64 => Int::U64,
+            super::Type::Name(name) => {
+                let ty = self.type_lookup[&*name.name];
+                self.get_variant_tag_id(ty)
+            }
+            _ => panic!("unknown explicit variant tag"),
+        }
+    }
+
+    fn get_variant_tag_id(&self, ty: TypeId) -> Int {
+        match &self.types[ty].kind {
+            TypeDefKind::Type(Type::U8) => Int::U8,
+            TypeDefKind::Type(Type::U16) => Int::U16,
+            TypeDefKind::Type(Type::U32) => Int::U32,
+            TypeDefKind::Type(Type::U64) => Int::U64,
+            TypeDefKind::Type(Type::Id(id)) => self.get_variant_tag_id(*id),
+            TypeDefKind::Variant(v) => v.tag,
+            _ => panic!("unknown typedef"),
+        }
     }
 
     fn resolve_type(&mut self, ty: &super::Type<'_>) -> Result<Type> {

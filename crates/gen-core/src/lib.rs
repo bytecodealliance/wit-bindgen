@@ -65,7 +65,7 @@ pub trait Generator {
     fn generate(&mut self, iface: &Interface, import: bool, files: &mut Files) {
         self.preprocess(iface, import);
         for (id, ty) in iface.types.iter() {
-            assert!(ty.foreign_module.is_none()); // TODO
+            // assert!(ty.foreign_module.is_none()); // TODO
             let name = match &ty.name {
                 Some(name) => name,
                 None => continue,

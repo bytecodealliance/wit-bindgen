@@ -395,12 +395,9 @@ impl<'a> Ast<'a> {
         }
 
         fn docs(docs: &old::CommentSyntax<'_>) -> Docs<'static> {
+            let docs = docs.docs();
             Docs {
-                docs: docs
-                    .comments
-                    .iter()
-                    .map(|c| format!("// {}", c).into())
-                    .collect(),
+                docs: docs.lines().map(|s| format!("//{}\n", s).into()).collect(),
             }
         }
 

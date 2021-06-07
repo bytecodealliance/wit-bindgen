@@ -287,7 +287,7 @@ impl Generator for RustWasm {
                 "{{
                     fn drop(&mut self) {{
                         unsafe {{
-                            {}_close({}(self.0));
+                            drop({}_close({}(self.0)));
                         }}
                     }}
                 }}",

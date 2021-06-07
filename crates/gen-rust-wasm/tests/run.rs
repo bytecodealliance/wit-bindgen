@@ -25,8 +25,9 @@ mod exports {
     test_codegen::rust_wasm_export!(
         "*.witx"
 
-        // This uses preview1 ABI things which are only supported for imports
+        // These use preview1 ABI things which are only supported for imports
         "!host.witx"
+        "!wasi_snapshot_preview1.witx"
 
         // If you want to exclude other test you can include it here with
         // gitignore glob syntax:

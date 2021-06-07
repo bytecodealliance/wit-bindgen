@@ -492,7 +492,7 @@ pub trait TypePrint {
             } else {
                 if info.has_pull_buffer || info.has_push_buffer {
                     // skip copy/clone ...
-                } else if lt.is_some() || !info.owns_data() {
+                } else if !info.owns_data() {
                     self.push_str("#[repr(C)]\n");
                     self.push_str("#[derive(Copy, Clone)]\n");
                 } else if !info.has_handle {

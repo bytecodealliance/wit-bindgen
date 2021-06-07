@@ -392,7 +392,7 @@ impl Interface {
                 | TypeDefKind::PullBuffer(_) => false,
                 TypeDefKind::Type(t) => self.all_bits_valid(t),
                 TypeDefKind::Record(r) => r.fields.iter().all(|f| self.all_bits_valid(&f.ty)),
-                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => false,
+                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => true,
             },
         }
     }

@@ -271,8 +271,8 @@ impl Generator for Wasmtime {
                 self.rustdoc(&field.docs);
                 self.src.push_str(&format!(
                     "const {} = 1 << {};\n",
-                    field.name.to_camel_case(),
-                    i
+                    field.name.to_shouty_snake_case(),
+                    i,
                 ));
             }
             self.src.push_str("}\n");
@@ -1584,11 +1584,7 @@ impl Bindgen for Wasmtime {
 
             Instruction::Witx { instr } => match instr {
                 WitxInstruction::PointerFromI32 { .. }
-                | WitxInstruction::ConstPointerFromI32 { .. } => {
-                    for _ in 0..instr.results_len() {
-                        results.push("XXX".to_string());
-                    }
-                }
+                | WitxInstruction::ConstPointerFromI32 { .. } => top_as("u32"),
                 i => unimplemented!("{:?}", i),
             },
         }
