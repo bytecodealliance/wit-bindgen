@@ -62,7 +62,7 @@ pub enum Abi {
     /// only return 0 results or one `Result<T, enum>` lookalike.
     Preview1,
 
-    /// TODO
+    /// In-progress "canonical ABI" as proposed for interface types.
     Canonical,
 }
 
@@ -769,7 +769,7 @@ pub trait Bindgen {
     /// use later.
     fn finish_block(&mut self, operand: &mut Vec<Self::Operand>);
 
-    /// TODO
+    /// Returns size information that was previously calculated for all types.
     fn sizes(&self) -> &crate::sizealign::SizeAlign;
 }
 

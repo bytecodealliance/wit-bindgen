@@ -670,7 +670,7 @@ impl<'a> Value<'a> {
                 }
             }
             ValueKind::Function {
-                abi: Abi::Canonical, // TODO
+                abi: Abi::Canonical,
                 params,
                 results,
             }
