@@ -8,15 +8,28 @@ use witx_bindgen_gen_core::Generator;
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-rust-wasm")]
 pub fn rust_wasm_import(input: TokenStream) -> TokenStream {
-    generate_tests(
+    let checked = generate_tests(
+        input.clone(),
+        "import-checked",
+        |_path| (witx_bindgen_gen_rust_wasm::Opts::default().build(), true),
+        |_, _| {},
+    );
+    let unchecked = generate_tests(
         input,
-        |path| {
+        "import-unchecked",
+        |_path| {
             let mut opts = witx_bindgen_gen_rust_wasm::Opts::default();
-            opts.unchecked = path.to_str().unwrap().contains("unchecked");
+            opts.unchecked = true;
             (opts.build(), true)
         },
         |_, _| {},
-    )
+    );
+
+    return quote::quote! {
+        mod checked { #checked }
+        mod unchecked { #unchecked }
+    }
+    .into();
 }
 
 #[proc_macro]
@@ -24,47 +37,63 @@ pub fn rust_wasm_import(input: TokenStream) -> TokenStream {
 pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
     use heck::*;
 
-    return generate_tests(
+    let checked = generate_tests(
+        input.clone(),
+        "export-checked",
+        |_path| (witx_bindgen_gen_rust_wasm::Opts::default().build(), false),
+        gen_extra,
+    );
+    let unchecked = generate_tests(
         input,
-        |path| {
+        "export-unchecked",
+        |_path| {
             let mut opts = witx_bindgen_gen_rust_wasm::Opts::default();
-            opts.unchecked = path.to_str().unwrap().contains("unchecked");
+            opts.unchecked = true;
+            opts.symbol_namespace = "unchecked".to_string();
             (opts.build(), false)
         },
-        |iface, ret| {
-            if iface.functions.len() == 0 {
-                return;
-            }
-
-            let methods = iface.functions.iter().map(|f| {
-                let name = quote::format_ident!("{}", f.name.to_snake_case());
-                let params = f.params.iter().map(|(_, t)| quote_ty(iface, t));
-                let mut results = f.results.iter().map(|t| quote_ty(iface, t));
-                let ret = match f.results.len() {
-                    0 => quote::quote! { () },
-                    1 => results.next().unwrap(),
-                    _ => quote::quote! { (#(#results),*) },
-                };
-                quote::quote! {
-                    fn #name(&self, #(_: #params),*) -> #ret {
-                        loop {}
-                    }
-                }
-            });
-
-            let fnname = quote::format_ident!("{}", iface.name.to_snake_case());
-            let the_trait = quote::format_ident!("{}", iface.name.to_camel_case());
-            ret.extend(TokenStream::from(quote::quote! {
-                fn #fnname() -> &'static impl #fnname::#the_trait {
-                    struct A;
-                    impl #fnname::#the_trait for A {
-                        #(#methods)*
-                    }
-                    &A
-                }
-            }));
-        },
+        gen_extra,
     );
+
+    return quote::quote! {
+        mod checked { #checked }
+        mod unchecked { #unchecked }
+    }
+    .into();
+
+    fn gen_extra(iface: &witx2::Interface, ret: &mut proc_macro2::TokenStream) {
+        if iface.functions.len() == 0 {
+            return;
+        }
+
+        let methods = iface.functions.iter().map(|f| {
+            let name = quote::format_ident!("{}", f.name.to_snake_case());
+            let params = f.params.iter().map(|(_, t)| quote_ty(iface, t));
+            let mut results = f.results.iter().map(|t| quote_ty(iface, t));
+            let ret = match f.results.len() {
+                0 => quote::quote! { () },
+                1 => results.next().unwrap(),
+                _ => quote::quote! { (#(#results),*) },
+            };
+            quote::quote! {
+                fn #name(&self, #(_: #params),*) -> #ret {
+                    loop {}
+                }
+            }
+        });
+
+        let fnname = quote::format_ident!("{}", iface.name.to_snake_case());
+        let the_trait = quote::format_ident!("{}", iface.name.to_camel_case());
+        ret.extend(quote::quote! {
+            fn #fnname() -> &'static impl #fnname::#the_trait {
+                struct A;
+                impl #fnname::#the_trait for A {
+                    #(#methods)*
+                }
+                &A
+            }
+        });
+    }
 
     fn quote_ty(iface: &witx2::Interface, ty: &witx2::Type) -> proc_macro2::TokenStream {
         use witx2::Type;
@@ -152,9 +181,11 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
 pub fn wasmtime_import(input: TokenStream) -> TokenStream {
     generate_tests(
         input,
+        "import",
         |_path| (witx_bindgen_gen_wasmtime::Opts::default().build(), true),
         |_, _| {},
     )
+    .into()
 }
 
 #[proc_macro]
@@ -162,16 +193,19 @@ pub fn wasmtime_import(input: TokenStream) -> TokenStream {
 pub fn wasmtime_export(input: TokenStream) -> TokenStream {
     generate_tests(
         input,
+        "export",
         |_path| (witx_bindgen_gen_wasmtime::Opts::default().build(), false),
         |_, _| {},
     )
+    .into()
 }
 
 fn generate_tests<G>(
     input: TokenStream,
+    dir: &str,
     mkgen: impl Fn(&Path) -> (G, bool),
-    mkaux: impl Fn(&witx2::Interface, &mut TokenStream),
-) -> TokenStream
+    mkaux: impl Fn(&witx2::Interface, &mut proc_macro2::TokenStream),
+) -> proc_macro2::TokenStream
 where
     G: Generator,
 {
@@ -195,8 +229,9 @@ where
             ignore::Match::Whitelist(_) => None,
         }
     });
-    let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR not set"));
-    let mut ret = TokenStream::new();
+    let mut out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR not set"));
+    out_dir.push(dir);
+    let mut ret = proc_macro2::TokenStream::new();
     let mut sources = Vec::new();
     for test in tests {
         let (mut gen, import) = mkgen(&test);
@@ -204,11 +239,7 @@ where
         let iface = witx2::Interface::parse_file(&test).unwrap();
         gen.generate(&iface, import, &mut files);
 
-        let dst = out_dir.join(format!(
-            "{}-{}",
-            test.file_stem().unwrap().to_str().unwrap(),
-            if import { "import" } else { "export" }
-        ));
+        let dst = out_dir.join(test.file_stem().unwrap());
         drop(fs::remove_dir_all(&dst));
         fs::create_dir_all(&dst).unwrap();
         for (file, contents) in files.iter() {
@@ -217,18 +248,18 @@ where
         sources.push(dst.join("bindings.rs"));
         ret.extend(
             format!("include!(\"{}\");", dst.join("bindings.rs").display())
-                .parse::<TokenStream>()
+                .parse::<proc_macro2::TokenStream>()
                 .unwrap(),
         );
 
-        let mut temp = TokenStream::new();
+        let mut temp = proc_macro2::TokenStream::new();
         mkaux(&iface, &mut temp);
         if !temp.is_empty() {
             let path = dst.join("extra.rs");
             fs::write(&path, temp.to_string()).unwrap();
             ret.extend(
                 format!("include!(\"{}\");", path.display())
-                    .parse::<TokenStream>()
+                    .parse::<proc_macro2::TokenStream>()
                     .unwrap(),
             );
             sources.push(path);

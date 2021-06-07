@@ -45,6 +45,11 @@ pub struct Opts {
     /// well-formed or whether checks are performed.
     #[cfg_attr(feature = "structopt", structopt(long))]
     pub unchecked: bool,
+
+    /// A prefix to prepend to all exported symbols. Note that this is only
+    /// intended for testing because it breaks the general form of the ABI.
+    #[cfg_attr(feature = "structopt", structopt(skip))]
+    pub symbol_namespace: String,
 }
 
 #[derive(Default)]
@@ -415,6 +420,7 @@ impl Generator for RustWasm {
         let rust_name = func.name.to_snake_case();
 
         self.src.push_str("#[export_name = \"");
+        self.src.push_str(&self.opts.symbol_namespace);
         self.src.push_str(&rust_name);
         self.src.push_str("\"]\n");
         self.src.push_str("unsafe extern \"C\" fn __witx_bindgen_");
