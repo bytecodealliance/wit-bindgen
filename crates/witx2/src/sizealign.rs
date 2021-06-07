@@ -46,7 +46,7 @@ impl SizeAlign {
                     size = align_to(size, field_align) + field_size;
                     align = align.max(field_align);
                 }
-                (align_to(size, align), size)
+                (align_to(size, align), align)
             }
             TypeDefKind::Variant(v) => {
                 let (discrim_size, discrim_align) = int_size_align(v.tag);

@@ -1,0 +1,4 @@
+f32_param: function(x: f32)
+f64_param: function(x: f64)
+f32_result: function() -> f32
+f64_result: function() -> f64
