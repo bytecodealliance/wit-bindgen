@@ -1,0 +1,562 @@
+// Type names used by low-level WASI interfaces.
+//
+// Some content here is derived from [CloudABI](https://github.com/NuxiNL/cloudabi).
+//
+// This is a `witx` file. See [here](https://github.com/WebAssembly/WASI/tree/master/docs/witx.md)
+// for an explanation of what that means.
+
+type size = u32
+
+/// Non-negative file size or length of a region within a file.
+type filesize = u64
+
+/// Timestamp in nanoseconds.
+type timestamp = u64
+
+/// Identifiers for clocks.
+enum clockid {
+  /// The clock measuring real time. Time value zero corresponds with
+  /// 1970-01-01T00:00:00Z.
+  realtime,
+  /// The store-wide monotonic clock, which is defined as a clock measuring
+  /// real time, whose value cannot be adjusted and which cannot have negative
+  /// clock jumps. The epoch of this clock is undefined. The absolute time
+  /// value of this clock therefore has no meaning.
+  monotonic,
+  /// The CPU-time clock associated with the current process.
+  process_cputime_id,
+  /// The CPU-time clock associated with the current thread.
+  thread_cputime_id,
+}
+
+/// Error codes returned by functions.
+/// Not all of these error codes are returned by the functions provided by this
+/// API/ some are used in higher-level library layers, and others are provided
+/// merely for alignment with POSIX.
+enum errno {
+  /// No error occurred. System call completed successfully.
+  success,
+  /// Argument list too long.
+  2big,
+  /// Permission denied.
+  acces,
+  /// Address in use.
+  addrinuse,
+  /// Address not available.
+  addrnotavail,
+  /// Address family not supported.
+  afnosupport,
+  /// Resource unavailable, or operation would block.
+  again,
+  /// Connection already in progress.
+  already,
+  /// Bad file descriptor.
+  badf,
+  /// Bad message.
+  badmsg,
+  /// Device or resource busy.
+  busy,
+  /// Operation canceled.
+  canceled,
+  /// No child processes.
+  child,
+  /// Connection aborted.
+  connaborted,
+  /// Connection refused.
+  connrefused,
+  /// Connection reset.
+  connreset,
+  /// Resource deadlock would occur.
+  deadlk,
+  /// Destination address required.
+  destaddrreq,
+  /// Mathematics argument out of domain of function.
+  dom,
+  /// Reserved.
+  dquot,
+  /// File exists.
+  exist,
+  /// Bad address.
+  fault,
+  /// File too large.
+  fbig,
+  /// Host is unreachable.
+  hostunreach,
+  /// Identifier removed.
+  idrm,
+  /// Illegal byte sequence.
+  ilseq,
+  /// Operation in progress.
+  inprogress,
+  /// Interrupted function.
+  intr,
+  /// Invalid argument.
+  inval,
+  /// I/O error.
+  io,
+  /// Socket is connected.
+  isconn,
+  /// Is a directory.
+  isdir,
+  /// Too many levels of symbolic links.
+  loop,
+  /// File descriptor value too large.
+  mfile,
+  /// Too many links.
+  mlink,
+  /// Message too large.
+  msgsize,
+  /// Reserved.
+  multihop,
+  /// Filename too long.
+  nametoolong,
+  /// Network is down.
+  netdown,
+  /// Connection aborted by network.
+  netreset,
+  /// Network unreachable.
+  netunreach,
+  /// Too many files open in system.
+  nfile,
+  /// No buffer space available.
+  nobufs,
+  /// No such device.
+  nodev,
+  /// No such file or directory.
+  noent,
+  /// Executable file format error.
+  noexec,
+  /// No locks available.
+  nolck,
+  /// Reserved.
+  nolink,
+  /// Not enough space.
+  nomem,
+  /// No message of the desired type.
+  nomsg,
+  /// Protocol not available.
+  noprotoopt,
+  /// No space left on device.
+  nospc,
+  /// Function not supported.
+  nosys,
+  /// The socket is not connected.
+  notconn,
+  /// Not a directory or a symbolic link to a directory.
+  notdir,
+  /// Directory not empty.
+  notempty,
+  /// State not recoverable.
+  notrecoverable,
+  /// Not a socket.
+  notsock,
+  /// Not supported, or operation not supported on socket.
+  notsup,
+  /// Inappropriate I/O control operation.
+  notty,
+  /// No such device or address.
+  nxio,
+  /// Value too large to be stored in data type.
+  overflow,
+  /// Previous owner died.
+  ownerdead,
+  /// Operation not permitted.
+  perm,
+  /// Broken pipe.
+  pipe,
+  /// Protocol error.
+  proto,
+  /// Protocol not supported.
+  protonosupport,
+  /// Protocol wrong type for socket.
+  prototype,
+  /// Result too large.
+  range,
+  /// Read-only file system.
+  rofs,
+  /// Invalid seek.
+  spipe,
+  /// No such process.
+  srch,
+  /// Reserved.
+  stale,
+  /// Connection timed out.
+  timedout,
+  /// Text file busy.
+  txtbsy,
+  /// Cross-device link.
+  xdev,
+  /// Extension: Capabilities insufficient.
+  notcapable,
+}
+
+/// File descriptor rights, determining which actions may be performed.
+flags rights {
+  /// The right to invoke `fd_datasync`.
+  //
+  /// If `path_open` is set, includes the right to invoke
+  /// `path_open` with `fdflags::dsync`.
+  fd_datasync,
+  /// The right to invoke `fd_read` and `sock_recv`.
+  //
+  /// If `rights::fd_seek` is set, includes the right to invoke `fd_pread`.
+  fd_read,
+  /// The right to invoke `fd_seek`. This flag implies `rights::fd_tell`.
+  fd_seek,
+  /// The right to invoke `fd_fdstat_set_flags`.
+  fd_fdstat_set_flags,
+  /// The right to invoke `fd_sync`.
+  //
+  /// If `path_open` is set, includes the right to invoke
+  /// `path_open` with `fdflags::rsync` and `fdflags::dsync`.
+  fd_sync,
+  /// The right to invoke `fd_seek` in such a way that the file offset
+  /// remains unaltered (i.e., `whence::cur` with offset zero), or to
+  /// invoke `fd_tell`.
+  fd_tell,
+  /// The right to invoke `fd_write` and `sock_send`.
+  /// If `rights::fd_seek` is set, includes the right to invoke `fd_pwrite`.
+  fd_write,
+  /// The right to invoke `fd_advise`.
+  fd_advise,
+  /// The right to invoke `fd_allocate`.
+  fd_allocate,
+  /// The right to invoke `path_create_directory`.
+  path_create_directory,
+  /// If `path_open` is set, the right to invoke `path_open` with `oflags::creat`.
+  path_create_file,
+  /// The right to invoke `path_link` with the file descriptor as the
+  /// source directory.
+  path_link_source,
+  /// The right to invoke `path_link` with the file descriptor as the
+  /// target directory.
+  path_link_target,
+  /// The right to invoke `path_open`.
+  path_open,
+  /// The right to invoke `fd_readdir`.
+  fd_readdir,
+  /// The right to invoke `path_readlink`.
+  path_readlink,
+  /// The right to invoke `path_rename` with the file descriptor as the source directory.
+  path_rename_source,
+  /// The right to invoke `path_rename` with the file descriptor as the target directory.
+  path_rename_target,
+  /// The right to invoke `path_filestat_get`.
+  path_filestat_get,
+  /// The right to change a file's size (there is no `path_filestat_set_size`).
+  /// If `path_open` is set, includes the right to invoke `path_open` with `oflags::trunc`.
+  path_filestat_set_size,
+  /// The right to invoke `path_filestat_set_times`.
+  path_filestat_set_times,
+  /// The right to invoke `fd_filestat_get`.
+  fd_filestat_get,
+  /// The right to invoke `fd_filestat_set_size`.
+  fd_filestat_set_size,
+  /// The right to invoke `fd_filestat_set_times`.
+  fd_filestat_set_times,
+  /// The right to invoke `path_symlink`.
+  path_symlink,
+  /// The right to invoke `path_remove_directory`.
+  path_remove_directory,
+  /// The right to invoke `path_unlink_file`.
+  path_unlink_file,
+  /// If `rights::fd_read` is set, includes the right to invoke `poll_oneoff` to subscribe to `eventtype::fd_read`.
+  /// If `rights::fd_write` is set, includes the right to invoke `poll_oneoff` to subscribe to `eventtype::fd_write`.
+  poll_fd_readwrite,
+  /// The right to invoke `sock_shutdown`.
+  sock_shutdown,
+}
+
+resource file_descriptor
+/// A file descriptor handle.
+type fd = handle file_descriptor
+
+/// Relative offset within a file.
+type filedelta = s64
+
+
+/// The position relative to which to set the offset of the file descriptor.
+enum whence {
+  /// Seek relative to start-of-file.
+  set,
+  /// Seek relative to current position.
+  cur,
+  /// Seek relative to end-of-file.
+  end,
+}
+
+/// A reference to the offset of a directory entry.
+///
+/// The value 0 signifies the start of the directory.
+type dircookie = u64
+
+/// The type for the `dirent::d_namlen` field of `dirent` struct.
+type dirnamlen = u32
+
+/// File serial number that is unique within its file system.
+type inode = u64
+
+/// The type of a file descriptor or file.
+enum filetype {
+  /// The type of the file descriptor or file is unknown or is different from any of the other types specified.
+  unknown,
+  /// The file descriptor or file refers to a block device inode.
+  block_device,
+  /// The file descriptor or file refers to a character device inode.
+  character_device,
+  /// The file descriptor or file refers to a directory inode.
+  directory,
+  /// The file descriptor or file refers to a regular file inode.
+  regular_file,
+  /// The file descriptor or file refers to a datagram socket.
+  socket_dgram,
+  /// The file descriptor or file refers to a byte-stream socket.
+  socket_stream,
+  /// The file refers to a symbolic link inode.
+  symbolic_link,
+}
+
+/// A directory entry.
+record dirent {
+  /// The offset of the next directory entry stored in this directory.
+  d_next: dircookie,
+  /// The serial number of the file referred to by this directory entry.
+  d_ino: inode,
+  /// The length of the name of the directory entry.
+  d_namlen: dirnamlen,
+  /// The type of the file referred to by this directory entry.
+  d_type: filetype,
+}
+
+/// File or memory access pattern advisory information.
+enum advice {
+  /// The application has no advice to give on its behavior with respect to the specified data.
+  normal,
+  /// The application expects to access the specified data sequentially from lower offsets to higher offsets.
+  sequential,
+  /// The application expects to access the specified data in a random order.
+  random,
+  /// The application expects to access the specified data in the near future.
+  willneed,
+  /// The application expects that it will not access the specified data in the near future.
+  dontneed,
+  /// The application expects to access the specified data once and then not reuse it thereafter.
+  noreuse,
+}
+
+/// File descriptor flags.
+flags fdflags {
+  /// Append mode: Data written to the file is always appended to the file's end.
+  append,
+  /// Write according to synchronized I/O data integrity completion. Only the data stored in the file is synchronized.
+  dsync,
+  /// Non-blocking mode.
+  nonblock,
+  /// Synchronized read I/O operations.
+  rsync,
+  /// Write according to synchronized I/O file integrity completion. In
+  /// addition to synchronizing the data stored in the file, the implementation
+  /// may also synchronously update the file's metadata.
+  sync,
+}
+
+/// File descriptor attributes.
+record fdstat {
+  /// File type.
+  fs_filetype: filetype,
+  /// File descriptor flags.
+  fs_flags: fdflags,
+  /// Rights that apply to this file descriptor.
+  fs_rights_base: rights,
+  /// Maximum set of rights that may be installed on new file descriptors that
+  /// are created through this file descriptor, e.g., through `path_open`.
+  fs_rights_inheriting: rights,
+}
+
+/// Identifier for a device containing a file system. Can be used in combination
+/// with `inode` to uniquely identify a file or directory in the filesystem.
+type device = u64
+
+/// Which file time attributes to adjust.
+flags fstflags {
+  /// Adjust the last data access timestamp to the value stored in `filestat::atim`.
+  atim,
+  /// Adjust the last data access timestamp to the time of clock `clockid::realtime`.
+  atim_now,
+  /// Adjust the last data modification timestamp to the value stored in `filestat::mtim`.
+  mtim,
+  /// Adjust the last data modification timestamp to the time of clock `clockid::realtime`.
+  mtim_now,
+}
+
+
+/// Flags determining the method of how paths are resolved.
+flags lookupflags {
+  /// As long as the resolved path corresponds to a symbolic link, it is expanded.
+  symlink_follow,
+}
+
+/// Open flags used by `path_open`.
+flags oflags {
+  /// Create file if it does not exist.
+  creat,
+  /// Fail if not a directory.
+  directory,
+  /// Fail if file already exists.
+  excl,
+  /// Truncate file to size 0.
+  trunc,
+}
+
+/// Number of hard links to an inode.
+type linkcount = u64
+
+/// File attributes.
+record filestat {
+  /// Device ID of device containing the file.
+  dev: device,
+  /// File serial number.
+  ino: inode,
+  /// File type.
+  filetype: filetype,
+  /// Number of hard links to the file.
+  nlink: linkcount,
+  /// For regular files, the file size in bytes. For symbolic links, the length in bytes of the pathname contained in the symbolic link.
+  size: filesize,
+  /// Last data access timestamp.
+  atim: timestamp,
+  /// Last data modification timestamp.
+  mtim: timestamp,
+  /// Last file status change timestamp.
+  ctim: timestamp,
+}
+
+
+/// User-provided value that may be attached to objects that is retained when
+/// extracted from the implementation.
+type userdata = u64
+
+/// The state of the file descriptor subscribed to with
+/// `eventtype::fd_read` or `eventtype::fd_write`.
+flags eventrwflags {
+  /// The peer of this socket has closed or disconnected.
+  fd_readwrite_hangup,
+}
+
+/// The contents of an `event` when type is `fd_read` or
+/// `fd_write`.
+record event_fd_readwrite {
+  /// The number of bytes available for reading or writing.
+  nbytes: filesize,
+  /// The state of the file descriptor.
+  "flags": eventrwflags,
+}
+
+variant event_u {
+  clock,
+  fd_read(event_fd_readwrite),
+  fd_write(event_fd_readwrite),
+}
+
+/// An event that occurred.
+record event {
+  /// User-provided value that got attached to `subscription::userdata`.
+  userdata: userdata,
+  /// If non-zero, an error that occurred while processing the subscription request.
+  error: errno,
+  /// The type of event that occured, along with the contents of the event.
+  "type": event_u,
+}
+
+/// Flags determining how to interpret the timestamp provided in
+/// `subscription_clock::timeout`.
+flags subclockflags {
+  /// If set, treat the timestamp provided in
+  /// `subscription_clock::timeout` as an absolute timestamp of clock
+  /// `subscription_clock::id`. If clear, treat the timestamp
+  /// provided in `subscription_clock::timeout` relative to the
+  /// current time value of clock `subscription_clock::id`.
+  subscription_clock_abstime,
+}
+
+/// The contents of a `subscription` when type is `eventtype::clock`.
+record subscription_clock {
+  /// The clock against which to compare the timestamp.
+  id: clockid,
+  /// The absolute or relative timestamp.
+  timeout: timestamp,
+  /// The amount of time that the implementation may wait additionally
+  /// to coalesce with other events.
+  precision: timestamp,
+  /// Flags specifying whether the timeout is absolute or relative
+  "flags": subclockflags,
+}
+
+/// The contents of a `subscription` when type is type is
+/// `fd_read` or `fd_write`.
+record subscription_fd_readwrite {
+  /// The file descriptor on which to wait for it to become ready for reading or
+  /// writing.
+  file_descriptor: fd,
+}
+
+/// The contents of a `subscription`.
+variant subscription_u {
+  /// The time value of clock `subscription_clock::id` has
+  /// reached timestamp `subscription_clock::timeout`.
+  clock(subscription_clock),
+  /// File descriptor `subscription_fd_readwrite::file_descriptor` has data
+  /// available for reading. This event always triggers for regular files.
+  fd_read(subscription_fd_readwrite),
+  /// File descriptor `subscription_fd_readwrite::file_descriptor` has capacity
+  /// available for writing. This event always triggers for regular files.
+  fd_write(subscription_fd_readwrite),
+}
+
+/// Subscription to an event.
+record subscription {
+  /// User-provided value that is attached to the subscription in the
+  /// implementation and returned through `event::userdata`.
+  userdata: userdata,
+  /// The type of the event to which to subscribe, and its contents
+  u: subscription_u,
+}
+
+
+/// Exit code generated by a process when exiting.
+type exitcode = u32
+
+/// Flags provided to `sock_recv`.
+flags riflags {
+  /// Returns the message without removing it from the socket's receive queue.
+  recv_peek,
+  /// On byte-stream sockets, block until the full amount of data can be returned.
+  recv_waitall,
+}
+
+
+/// Flags returned by `sock_recv`.
+flags roflags {
+  /// Returned by `sock_recv`: Message data has been truncated.
+  recv_data_truncated,
+}
+
+
+/// Flags provided to `sock_send`. As there are currently no flags
+/// defined, it must be set to zero.
+flags siflags {}
+
+/// Which channels on a socket to shut down.
+flags sdflags {
+  /// Disables further receive operations.
+  rd,
+  /// Disables further send operations.
+  wr,
+}
+
+/// Information about a pre-opened capability.
+variant prestat {
+  /// A pre-opened directory with the length of the directory name for use with
+  /// `fd_prestat_dir_name`.
+  dir(size),
+}

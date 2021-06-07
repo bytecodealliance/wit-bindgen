@@ -1019,9 +1019,14 @@ impl Bindgen for RustWasm {
                 self.push_str(module);
                 self.push_str("\")]\n");
                 self.push_str("extern \"C\" {\n");
-                self.push_str("#[link_name = \"");
+                self.push_str("#[cfg_attr(target_arch = \"wasm32\", link_name = \"");
                 self.push_str(name);
-                self.push_str("\"]\n");
+                self.push_str("\")]\n");
+                self.push_str("#[cfg_attr(not(target_arch = \"wasm32\"), link_name = \"");
+                self.push_str(module);
+                self.push_str("_");
+                self.push_str(name);
+                self.push_str("\")]\n");
                 self.push_str("fn witx_import(");
                 for param in sig.params.iter() {
                     self.push_str("_: ");
