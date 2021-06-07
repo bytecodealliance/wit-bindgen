@@ -190,4 +190,58 @@ pub mod rt {
         free.call(store, (base, size, align))?;
         Ok(result)
     }
+
+    pub fn as_i32<T: AsI32>(t: T) -> i32 {
+        t.as_i32()
+    }
+
+    pub fn as_i64<T: AsI64>(t: T) -> i64 {
+        t.as_i64()
+    }
+
+    pub trait AsI32 {
+        fn as_i32(self) -> i32;
+    }
+
+    pub trait AsI64 {
+        fn as_i64(self) -> i64;
+    }
+
+    impl<'a, T: Copy + AsI32> AsI32 for &'a T {
+        fn as_i32(self) -> i32 {
+            (*self).as_i32()
+        }
+    }
+
+    impl<'a, T: Copy + AsI64> AsI64 for &'a T {
+        fn as_i64(self) -> i64 {
+            (*self).as_i64()
+        }
+    }
+
+    macro_rules! as_i32 {
+        ($($i:ident)*) => ($(
+            impl AsI32 for $i {
+                #[inline]
+                fn as_i32(self) -> i32 {
+                    self as i32
+                }
+            }
+        )*)
+    }
+
+    as_i32!(char i8 u8 i16 u16 i32 u32);
+
+    macro_rules! as_i64 {
+        ($($i:ident)*) => ($(
+            impl AsI64 for $i {
+                #[inline]
+                fn as_i64(self) -> i64 {
+                    self as i64
+                }
+            }
+        )*)
+    }
+
+    as_i64!(i64 u64);
 }

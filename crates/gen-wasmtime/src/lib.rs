@@ -961,7 +961,10 @@ impl Bindgen for Wasmtime {
                 }
             }
 
-            Instruction::I64FromU64 => top_as("i64"),
+            Instruction::I64FromU64 | Instruction::I64FromS64 => {
+                let s = operands.pop().unwrap();
+                results.push(format!("witx_bindgen_wasmtime::rt::as_i64({})", s));
+            }
             Instruction::I32FromUsize
             | Instruction::I32FromChar
             | Instruction::I32FromU8
@@ -969,14 +972,16 @@ impl Bindgen for Wasmtime {
             | Instruction::I32FromChar8
             | Instruction::I32FromU16
             | Instruction::I32FromS16
-            | Instruction::I32FromU32 => top_as("i32"),
+            | Instruction::I32FromU32
+            | Instruction::I32FromS32 => {
+                let s = operands.pop().unwrap();
+                results.push(format!("witx_bindgen_wasmtime::rt::as_i32({})", s));
+            }
 
             Instruction::F32FromIf32
             | Instruction::F64FromIf64
             | Instruction::If32FromF32
             | Instruction::If64FromF64
-            | Instruction::I64FromS64
-            | Instruction::I32FromS32
             | Instruction::S32FromI32
             | Instruction::S64FromI64 => {
                 results.push(operands.pop().unwrap());
