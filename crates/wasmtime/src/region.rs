@@ -137,6 +137,10 @@ impl<'a> BorrowChecker<'a> {
     fn is_mut_borrowed(&self, r: Region) -> bool {
         self.mut_borrows.iter().any(|b| b.overlaps(r))
     }
+
+    pub fn raw(&self) -> *mut [u8] {
+        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
+    }
 }
 
 impl crate::rt::RawMem for BorrowChecker<'_> {

@@ -396,6 +396,24 @@ impl Interface {
             },
         }
     }
+
+    pub fn has_preview1_pointer(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Id(id) => match &self.types[*id].kind {
+                TypeDefKind::List(t) | TypeDefKind::PushBuffer(t) | TypeDefKind::PullBuffer(t) => {
+                    self.has_preview1_pointer(t)
+                }
+                TypeDefKind::Type(t) => self.has_preview1_pointer(t),
+                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => true,
+                TypeDefKind::Record(r) => r.fields.iter().any(|f| self.has_preview1_pointer(&f.ty)),
+                TypeDefKind::Variant(v) => v.cases.iter().any(|c| match &c.ty {
+                    Some(ty) => self.has_preview1_pointer(ty),
+                    None => false,
+                }),
+            },
+            _ => false,
+        }
+    }
 }
 
 fn load_fs(root: &Path, name: &str) -> Result<(PathBuf, String)> {

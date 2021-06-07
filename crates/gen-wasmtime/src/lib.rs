@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use witx_bindgen_gen_core::witx2::abi::{
-    Bindgen, CallMode, Instruction, WasmType, WitxInstruction,
+    Abi, Bindgen, CallMode, Instruction, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator, TypeInfo, Types};
 use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint, Visibility};
@@ -47,6 +47,9 @@ pub struct Wasmtime {
     // available for use.
     caller_memory_available: bool,
     sizes: SizeAlign,
+    // Only present for preview1 ABIs where some arguments might be a `pointer`
+    // type.
+    func_takes_all_memory: bool,
 }
 
 enum NeededFunction {
@@ -447,6 +450,16 @@ impl Generator for Wasmtime {
         self.caller_memory_available = false;
         let prev = mem::take(&mut self.src);
         self.is_dtor = self.types.is_preview1_dtor_func(func);
+        self.func_takes_all_memory = func.abi == Abi::Preview1
+            && func
+                .params
+                .iter()
+                .any(|(_, t)| iface.has_preview1_pointer(t));
+
+        let mut self_arg = "&mut self".to_string();
+        if self.func_takes_all_memory {
+            self_arg.push_str(", mem: *mut [u8]");
+        }
 
         self.in_trait = true;
         self.print_signature(
@@ -454,7 +467,7 @@ impl Generator for Wasmtime {
             func,
             Visibility::Private,
             false,
-            Some("&mut self"),
+            Some(&self_arg),
             if self.is_dtor {
                 TypeMode::Owned
             } else {
@@ -1465,6 +1478,11 @@ impl Bindgen for Wasmtime {
                 self.push_str("host.");
                 self.push_str(&func.name);
                 self.push_str("(");
+                if self.func_takes_all_memory {
+                    let mem = self.memory_src();
+                    self.push_str(&mem);
+                    self.push_str(".raw(),");
+                }
                 for i in 0..operands.len() {
                     self.push_str(&format!("param{}, ", i));
                 }
