@@ -22,6 +22,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "id-arena"
+version = "2.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25a2bc672d1148e28034f176e01fffebb08b35768468cc954630da77a1449005"
+
+[[package]]
 name = "leb128"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -134,15 +140,17 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-gen-core"
 version = "0.1.0"
-source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#585025e48cd2eca4ab96903b393219e118b6673b"
+source = "git+https://github.com/alexcrichton/witx-bindgen?branch=new-api#dddcd9f6efdd67e9ad7422b9cdd3fbd694fbf01d"
 dependencies = [
+ "anyhow",
  "witx",
+ "witx2",
 ]
 
 [[package]]
 name = "witx-bindgen-gen-rust"
 version = "0.1.0"
-source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#585025e48cd2eca4ab96903b393219e118b6673b"
+source = "git+https://github.com/alexcrichton/witx-bindgen?branch=new-api#dddcd9f6efdd67e9ad7422b9cdd3fbd694fbf01d"
 dependencies = [
  "heck",
  "witx-bindgen-gen-core",
@@ -151,7 +159,7 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-gen-rust-wasm"
 version = "0.1.0"
-source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#585025e48cd2eca4ab96903b393219e118b6673b"
+source = "git+https://github.com/alexcrichton/witx-bindgen?branch=new-api#dddcd9f6efdd67e9ad7422b9cdd3fbd694fbf01d"
 dependencies = [
  "heck",
  "witx-bindgen-gen-core",
@@ -161,7 +169,7 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-rust"
 version = "0.1.0"
-source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#585025e48cd2eca4ab96903b393219e118b6673b"
+source = "git+https://github.com/alexcrichton/witx-bindgen?branch=new-api#dddcd9f6efdd67e9ad7422b9cdd3fbd694fbf01d"
 dependencies = [
  "witx-bindgen-rust-impl",
 ]
@@ -169,10 +177,19 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-rust-impl"
 version = "0.1.0"
-source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#585025e48cd2eca4ab96903b393219e118b6673b"
+source = "git+https://github.com/alexcrichton/witx-bindgen?branch=new-api#dddcd9f6efdd67e9ad7422b9cdd3fbd694fbf01d"
 dependencies = [
  "proc-macro2",
  "syn",
  "witx-bindgen-gen-core",
  "witx-bindgen-gen-rust-wasm",
+]
+
+[[package]]
+name = "witx2"
+version = "0.1.0"
+source = "git+https://github.com/alexcrichton/witx-bindgen?branch=new-api#dddcd9f6efdd67e9ad7422b9cdd3fbd694fbf01d"
+dependencies = [
+ "anyhow",
+ "id-arena",
 ]

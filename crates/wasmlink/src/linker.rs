@@ -1,10 +1,13 @@
 use crate::{
-    adapter::{ModuleAdapter, MALLOC_EXPORT_NAME, MALLOC_FUNC_TYPE},
+    adapted::{
+        AdaptedModule, ModuleShim, FUNCTION_TABLE_NAME, PARENT_MODULE_NAME, REALLOC_EXPORT_NAME,
+        REALLOC_FUNC_TYPE,
+    },
     Module, Profile,
 };
 use anyhow::{anyhow, bail, Result};
 use petgraph::{algo::toposort, graph::NodeIndex, Graph};
-use std::collections::{hash_map::Entry, BTreeMap, HashMap};
+use std::collections::{hash_map::Entry, HashMap};
 use wasmparser::{ExternalKind, FuncType, ImportSectionEntryType, Type, TypeDef};
 
 pub fn to_val_type(ty: &Type) -> wasm_encoder::ValType {
@@ -22,19 +25,317 @@ pub fn to_val_type(ty: &Type) -> wasm_encoder::ValType {
     }
 }
 
-struct LinkState<'a> {
+/// Represents a linked module built from a dependency graph.
+struct LinkedModule<'a> {
     types: Vec<&'a FuncType>,
-    imports: BTreeMap<&'a str, BTreeMap<Option<&'a str>, wasm_encoder::EntityType>>,
-    num_imported_funcs: u32,
+    imports: Vec<(&'a str, Option<&'a str>, wasm_encoder::EntityType)>,
     implicit_instances: HashMap<&'a str, u32>,
     modules: Vec<wasm_encoder::Module>,
-    module_map: HashMap<&'a ModuleAdapter<'a>, (u32, Option<u32>)>,
+    module_map: HashMap<&'a AdaptedModule<'a>, (u32, Option<u32>)>,
     instances: Vec<(u32, Vec<(&'a str, u32)>)>,
     func_aliases: Vec<(u32, &'a str)>,
     table_aliases: Vec<(u32, &'a str)>,
     segments: Vec<(u32, Vec<wasm_encoder::Element>)>,
     exports: Vec<(&'a str, wasm_encoder::Export)>,
-    module: wasm_encoder::Module,
+}
+
+impl<'a> LinkedModule<'a> {
+    /// Creates a new linked module from the given dependency graph.
+    fn new(graph: &'a Graph<AdaptedModule<'a>, ()>, profile: &Profile) -> Result<Self> {
+        let mut linked = Self {
+            types: Vec::new(),
+            imports: Vec::new(),
+            implicit_instances: HashMap::new(),
+            modules: Vec::new(),
+            module_map: HashMap::new(),
+            instances: Vec::new(),
+            func_aliases: Vec::new(),
+            table_aliases: Vec::new(),
+            segments: Vec::new(),
+            exports: Vec::new(),
+        };
+
+        let mut types = HashMap::new();
+        let mut profile_imports = HashMap::new();
+        for f in graph.node_indices() {
+            let adapted = &graph[f];
+
+            // Add all profile imports to the base set of types and imports
+            for import in &adapted.module.imports {
+                let ty = adapted
+                    .module
+                    .import_func_type(import)
+                    .expect("expected import to be a function");
+
+                if !profile.provides(import.module, import.field, ty) {
+                    continue;
+                }
+
+                let type_index = *types.entry(ty).or_insert_with(|| {
+                    let index = linked.types.len() as u32;
+                    linked.types.push(ty);
+                    index
+                });
+
+                match profile_imports.insert((import.module, import.field), type_index) {
+                    Some(previous) => {
+                        if previous != type_index {
+                            bail!(
+                                "profile import `{}` from module `{}` has a conflicting type between different importing modules",
+                                import.field.unwrap_or(""),
+                                import.module
+                            );
+                        }
+                    }
+                    None => {
+                        linked.imports.push((
+                            import.module,
+                            import.field,
+                            wasm_encoder::EntityType::Function(type_index),
+                        ));
+
+                        let len = linked.implicit_instances.len();
+                        linked
+                            .implicit_instances
+                            .entry(import.module)
+                            .or_insert(len as u32);
+                    }
+                }
+            }
+
+            let module_index = linked.modules.len() as u32;
+            linked.modules.push(adapted.encode()?);
+
+            let shim_index = ModuleShim::new(adapted.module).encode().map(|m| {
+                let index = linked.modules.len() as u32;
+                linked.modules.push(m);
+                index
+            });
+
+            linked
+                .module_map
+                .insert(adapted, (module_index, shim_index));
+        }
+
+        // Instantiate the main module
+        let (main_index, _) = linked.instantiate(graph, NodeIndex::new(0), None)?;
+
+        // Re-export the start function
+        let start_index = linked.func_aliases.len() as u32;
+        linked.func_aliases.push((main_index, "_start"));
+        linked.exports.push((
+            "_start",
+            wasm_encoder::Export::Function(linked.imports.len() as u32 + start_index),
+        ));
+
+        Ok(linked)
+    }
+
+    fn instantiate(
+        &mut self,
+        graph: &'a Graph<AdaptedModule<'a>, ()>,
+        current: NodeIndex,
+        parent: Option<u32>,
+    ) -> Result<(u32, bool)> {
+        // TODO: make this iterative instead of recursive?
+
+        // If a parent module was specified and this is a shim module, just instantiate it
+        let (module_index, shim_index) = self.module_map[&graph[current]];
+        if parent.is_none() {
+            // Instantiate shims for adapted modules
+            if let Some(shim_index) = shim_index {
+                let index = (self.instances.len() + self.implicit_instances.len()) as u32;
+                self.instances.push((shim_index, Vec::new()));
+                return Ok((index, true));
+            }
+        }
+
+        // Add the implicit instances to the instantiation args
+        let mut args = Vec::new();
+        for (name, index) in &self.implicit_instances {
+            args.push((*name, *index));
+        }
+
+        // Add the parent instance
+        if let Some(parent) = parent {
+            args.push((PARENT_MODULE_NAME, parent));
+        }
+
+        // Recurse on each direct dependency in the graph
+        let mut shims = Vec::new();
+        let mut neighbors = graph.neighbors(current).detach();
+        while let Some(neighbor) = neighbors.next_node(graph) {
+            let (index, is_shim) = self.instantiate(graph, neighbor, None)?;
+            args.push((graph[neighbor].module.name, index));
+            if is_shim {
+                shims.push((neighbor, index));
+            }
+        }
+
+        // Instantiate the current module
+        let parent_index = (self.instances.len() + self.implicit_instances.len()) as u32;
+        self.instances.push((module_index, args));
+
+        // If there are shims, ensure the parent exports the required realloc function
+        if !shims.is_empty() {
+            let adapted = &graph[current];
+
+            let export = adapted
+                .module
+                .exports
+                .iter()
+                .find(|e| {
+                    e.field == REALLOC_EXPORT_NAME
+                        && match e.kind {
+                            ExternalKind::Function => true,
+                            _ => false,
+                        }
+                })
+                .ok_or_else(|| {
+                    anyhow!(
+                        "module `{}` does not export the required function `{}`",
+                        adapted.module.name,
+                        REALLOC_EXPORT_NAME
+                    )
+                })?;
+
+            if adapted
+                .module
+                .func_type(export.index)
+                .expect("function index must be in range")
+                != &REALLOC_FUNC_TYPE as &FuncType
+            {
+                bail!(
+                    "module `{}` exports function `{}` but it is not the expected type",
+                    adapted.module.name,
+                    REALLOC_EXPORT_NAME
+                );
+            }
+        }
+
+        // For each shim that was instantiated, instantiate the real module passing in the parent
+        for (shim, shim_index) in shims {
+            let (child_index, _) = self.instantiate(graph, shim, Some(parent_index))?;
+
+            // Emit the shim function table
+            let adapted = &graph[shim];
+            let table_index = self.table_aliases.len() as u32;
+            self.table_aliases.push((shim_index, FUNCTION_TABLE_NAME));
+
+            // Emit the segments populating the function table
+            let mut segments = Vec::new();
+            for (func, _, _) in adapted.module.interface.as_ref().unwrap().iter() {
+                let func_index = self.imports.len() as u32 + self.func_aliases.len() as u32;
+                self.func_aliases.push((child_index, func.name.as_ref()));
+
+                segments.push(wasm_encoder::Element::Func(func_index));
+            }
+
+            self.segments.push((table_index, segments));
+        }
+
+        Ok((parent_index, false))
+    }
+
+    fn encode(&self) -> wasm_encoder::Module {
+        let mut module = wasm_encoder::Module::new();
+
+        self.write_type_section(&mut module);
+        self.write_import_section(&mut module);
+        self.write_module_section(&mut module);
+        self.write_instance_section(&mut module);
+        self.write_alias_section(&mut module);
+        self.write_export_section(&mut module);
+        self.write_element_section(&mut module);
+
+        module
+    }
+
+    fn write_type_section(&self, module: &mut wasm_encoder::Module) {
+        let mut section = wasm_encoder::TypeSection::new();
+
+        for ty in &self.types {
+            section.function(
+                ty.params.iter().map(to_val_type),
+                ty.returns.iter().map(to_val_type),
+            );
+        }
+
+        module.section(&section);
+    }
+
+    fn write_import_section(&self, module: &mut wasm_encoder::Module) {
+        let mut section = wasm_encoder::ImportSection::new();
+
+        for (module, field, ty) in &self.imports {
+            section.import(module, *field, *ty);
+        }
+
+        module.section(&section);
+    }
+
+    fn write_module_section(&self, module: &mut wasm_encoder::Module) {
+        let mut section = wasm_encoder::ModuleSection::new();
+
+        for module in &self.modules {
+            section.module(module);
+        }
+
+        module.section(&section);
+    }
+
+    fn write_instance_section(&self, module: &mut wasm_encoder::Module) {
+        let mut section = wasm_encoder::InstanceSection::new();
+
+        for (module, args) in &self.instances {
+            section.instantiate(
+                *module,
+                args.iter()
+                    .map(|(name, index)| (*name, wasm_encoder::Export::Instance(*index))),
+            );
+        }
+
+        module.section(&section);
+    }
+
+    fn write_alias_section(&self, module: &mut wasm_encoder::Module) {
+        let mut section = wasm_encoder::AliasSection::new();
+
+        for (index, name) in &self.func_aliases {
+            section.instance_export(*index, wasm_encoder::ItemKind::Function, name);
+        }
+
+        for (index, name) in &self.table_aliases {
+            section.instance_export(*index, wasm_encoder::ItemKind::Table, name);
+        }
+
+        module.section(&section);
+    }
+
+    fn write_export_section(&self, module: &mut wasm_encoder::Module) {
+        let mut section = wasm_encoder::ExportSection::new();
+
+        for (name, export) in &self.exports {
+            section.export(name, *export);
+        }
+
+        module.section(&section);
+    }
+
+    fn write_element_section(&self, module: &mut wasm_encoder::Module) {
+        let mut section = wasm_encoder::ElementSection::new();
+
+        for (table_index, elements) in &self.segments {
+            section.active(
+                Some(*table_index),
+                wasm_encoder::Instruction::I32Const(0),
+                wasm_encoder::ValType::FuncRef,
+                wasm_encoder::Elements::Expressions(&elements),
+            );
+        }
+
+        module.section(&section);
+    }
 }
 
 /// Implements a WebAssembly module linker.
@@ -53,17 +354,12 @@ impl Linker {
     ///
     /// On success, returns a vector of bytes representing the linked module
     pub fn link(&self, main: &Module, imports: &HashMap<&str, Module>) -> Result<Vec<u8>> {
-        if !main.exports.iter().any(|e| {
-            if e.field == "_start" {
-                return match e.kind {
-                    ExternalKind::Function => {
-                        let ty = main.func_type(e.index).unwrap();
-                        ty.params.is_empty() && ty.returns.is_empty()
-                    }
-                    _ => false,
-                };
+        if !main.exports.iter().any(|e| match (e.field, e.kind) {
+            ("_start", ExternalKind::Function) => {
+                let ty = main.func_type(e.index).unwrap();
+                ty.params.is_empty() && ty.returns.is_empty()
             }
-            false
+            _ => false,
         }) {
             bail!(
                 "main module `{}` must export a start function that has no parameters or results",
@@ -72,27 +368,20 @@ impl Linker {
         }
 
         let graph = self.build_graph(main, imports)?;
-        let mut state = self.link_state(&graph)?;
 
-        self.write_type_section(&mut state);
-        self.write_import_section(&mut state);
-        self.write_module_section(&mut state);
-        self.write_instance_section(&mut state);
-        self.write_alias_section(&mut state);
-        self.write_export_section(&mut state);
-        self.write_element_section(&mut state);
+        let module = LinkedModule::new(&graph, &self.profile)?;
 
-        Ok(state.module.finish())
+        Ok(module.encode().finish())
     }
 
     fn build_graph<'a>(
         &self,
         main: &'a Module,
         imports: &'a HashMap<&str, Module>,
-    ) -> Result<Graph<ModuleAdapter<'a>, ()>> {
+    ) -> Result<Graph<AdaptedModule<'a>, ()>> {
         let mut queue: Vec<(Option<petgraph::graph::NodeIndex>, &Module)> = Vec::new();
         let mut seen = HashMap::new();
-        let mut graph: Graph<ModuleAdapter, ()> = Graph::new();
+        let mut graph: Graph<AdaptedModule, ()> = Graph::new();
 
         queue.push((None, main));
 
@@ -102,7 +391,7 @@ impl Linker {
                     let index = match seen.entry(module as *const _) {
                         Entry::Occupied(e) => *e.get(),
                         Entry::Vacant(e) => {
-                            let index = graph.add_node(ModuleAdapter::new(module));
+                            let index = graph.add_node(AdaptedModule::new(module)?);
 
                             for import in &module.imports {
                                 let imported_module = imports.get(import.module);
@@ -166,295 +455,12 @@ impl Linker {
 
         Ok(graph)
     }
-
-    fn write_type_section(&self, state: &mut LinkState) {
-        let mut section = wasm_encoder::TypeSection::new();
-
-        for ty in &state.types {
-            section.function(
-                ty.params.iter().map(to_val_type),
-                ty.returns.iter().map(to_val_type),
-            );
-        }
-
-        state.module.section(&section);
-    }
-
-    fn write_import_section(&self, state: &mut LinkState) {
-        let mut section = wasm_encoder::ImportSection::new();
-
-        for (module, imports) in &state.imports {
-            for (field, ty) in imports {
-                section.import(module, *field, *ty);
-            }
-        }
-
-        state.module.section(&section);
-    }
-
-    fn write_module_section(&self, state: &mut LinkState) {
-        let mut section = wasm_encoder::ModuleSection::new();
-
-        for module in &state.modules {
-            section.module(module);
-        }
-
-        state.module.section(&section);
-    }
-
-    fn write_instance_section(&self, state: &mut LinkState) {
-        let mut section = wasm_encoder::InstanceSection::new();
-
-        for (module, args) in &state.instances {
-            section.instantiate(
-                *module,
-                args.iter()
-                    .map(|(name, index)| (*name, wasm_encoder::Export::Instance(*index))),
-            );
-        }
-
-        state.module.section(&section);
-    }
-
-    fn write_alias_section(&self, state: &mut LinkState) {
-        let mut section = wasm_encoder::AliasSection::new();
-
-        for (index, name) in &state.func_aliases {
-            section.instance_export(*index, wasm_encoder::ItemKind::Function, name);
-        }
-
-        for (index, name) in &state.table_aliases {
-            section.instance_export(*index, wasm_encoder::ItemKind::Table, name);
-        }
-
-        state.module.section(&section);
-    }
-
-    fn write_export_section(&self, state: &mut LinkState) {
-        let mut section = wasm_encoder::ExportSection::new();
-
-        for (name, export) in &state.exports {
-            section.export(name, *export);
-        }
-        state.module.section(&section);
-    }
-
-    fn write_element_section(&self, state: &mut LinkState) {
-        let mut section = wasm_encoder::ElementSection::new();
-
-        for (table_index, elements) in &state.segments {
-            section.active(
-                Some(*table_index),
-                wasm_encoder::Instruction::I32Const(0),
-                wasm_encoder::ValType::FuncRef,
-                wasm_encoder::Elements::Expressions(&elements),
-            );
-        }
-
-        state.module.section(&section);
-    }
-
-    fn link_state<'a>(&self, graph: &'a Graph<ModuleAdapter<'a>, ()>) -> Result<LinkState<'a>> {
-        let mut state = LinkState {
-            types: Vec::new(),
-            imports: BTreeMap::new(),
-            num_imported_funcs: 0,
-            implicit_instances: HashMap::new(),
-            modules: Vec::new(),
-            module_map: HashMap::new(),
-            instances: Vec::new(),
-            func_aliases: Vec::new(),
-            table_aliases: Vec::new(),
-            segments: Vec::new(),
-            exports: Vec::new(),
-            module: wasm_encoder::Module::new(),
-        };
-
-        let mut types = HashMap::new();
-        let mut num_imported_funcs = 0;
-        for f in graph.node_indices() {
-            let adapter = &graph[f];
-            let module = adapter.module;
-
-            // Add all profile imports to the base set of types and imports
-            for import in &module.imports {
-                let ty = module
-                    .import_func_type(import)
-                    .expect("expected import to be a function");
-
-                if !self.profile.provides(import.module, import.field, ty) {
-                    continue;
-                }
-
-                let type_index = *types.entry(ty).or_insert_with(|| {
-                    let index = state.types.len() as u32;
-                    state.types.push(ty);
-                    index
-                });
-
-                let imports = state.imports.entry(import.module).or_default();
-
-                match imports.entry(import.field).or_insert_with(|| {
-                    num_imported_funcs += 1;
-                    wasm_encoder::EntityType::Function(type_index)
-                }) {
-                    wasm_encoder::EntityType::Function(existing) => {
-                        if *existing != type_index {
-                            bail!(
-                                "profile import `{}` from module `{}` has a conflicting type between different importing modules",
-                                import.field.unwrap_or(""),
-                                import.module
-                            );
-                        }
-                    }
-                    _ => panic!("expected a function import"),
-                }
-
-                let len = state.implicit_instances.len();
-                state
-                    .implicit_instances
-                    .entry(import.module)
-                    .or_insert(len as u32);
-            }
-
-            let module_index = state.modules.len() as u32;
-            state.modules.push(adapter.adapt()?);
-
-            let shim_index = adapter.shim().map(|m| {
-                let index = state.modules.len() as u32;
-                state.modules.push(m);
-                index
-            });
-
-            state.module_map.insert(adapter, (module_index, shim_index));
-        }
-
-        state.num_imported_funcs = num_imported_funcs;
-
-        // Instantiate the main module
-        let (main_index, _) = self.instantiate(&mut state, &graph, NodeIndex::new(0), None)?;
-
-        // Re-export the start function
-        let start_index = state.func_aliases.len() as u32;
-        state.func_aliases.push((main_index, "_start"));
-        state.exports.push((
-            "_start",
-            wasm_encoder::Export::Function(state.num_imported_funcs + start_index),
-        ));
-
-        Ok(state)
-    }
-
-    fn instantiate<'a>(
-        &self,
-        state: &mut LinkState<'a>,
-        graph: &'a Graph<ModuleAdapter<'a>, ()>,
-        current: NodeIndex,
-        parent: Option<u32>,
-    ) -> Result<(u32, bool)> {
-        // TODO: make this iterative instead of recursive?
-
-        // If a parent module was specified and this is a shim module, just instantiate it
-        let (module_index, shim_index) = state.module_map[&graph[current]];
-        if parent.is_none() {
-            // Instantiate shims for adapted modules
-            if let Some(shim_index) = shim_index {
-                let index = (state.instances.len() + state.implicit_instances.len()) as u32;
-                state.instances.push((shim_index, Vec::new()));
-                return Ok((index, true));
-            }
-        }
-
-        // Add the implicit instances to the instantiation args
-        let mut args = Vec::new();
-        for (name, index) in &state.implicit_instances {
-            args.push((*name, *index));
-        }
-
-        // Add the parent instance
-        if let Some(parent) = parent {
-            args.push((crate::adapter::PARENT_MODULE_NAME, parent));
-        }
-
-        // Recurse on each direct dependency in the graph
-        let mut shims = Vec::new();
-        let mut neighbors = graph.neighbors(current).detach();
-        while let Some(neighbor) = neighbors.next_node(graph) {
-            let (index, is_shim) = self.instantiate(state, graph, neighbor, None)?;
-            args.push((graph[neighbor].module.name, index));
-            if is_shim {
-                shims.push((neighbor, index));
-            }
-        }
-
-        // Instantiate the current module
-        let parent_index = (state.instances.len() + state.implicit_instances.len()) as u32;
-        state.instances.push((module_index, args));
-
-        // If there are shims, ensure the parent exports the required malloc function
-        if !shims.is_empty() {
-            let module = graph[current].module;
-
-            let export = module
-                .exports
-                .iter()
-                .find(|e| {
-                    e.field == MALLOC_EXPORT_NAME
-                        && match e.kind {
-                            ExternalKind::Function => true,
-                            _ => false,
-                        }
-                })
-                .ok_or_else(|| {
-                    anyhow!(
-                        "module `{}` does not export the required function `{}`",
-                        module.name,
-                        MALLOC_EXPORT_NAME
-                    )
-                })?;
-
-            if module
-                .func_type(export.index)
-                .expect("function index must be in range")
-                != &MALLOC_FUNC_TYPE as &FuncType
-            {
-                bail!(
-                    "module `{}` exports function `{}` but it is not the expected type",
-                    module.name,
-                    MALLOC_EXPORT_NAME
-                );
-            }
-        }
-
-        // For each shim that was instantiated, instantiate the real module passing in the parent
-        for (shim, shim_index) in shims {
-            let (child_index, _) = self.instantiate(state, graph, shim, Some(parent_index))?;
-
-            // Emit the shim function table
-            let adapter = &graph[shim];
-            let table_index = state.table_aliases.len() as u32;
-            state
-                .table_aliases
-                .push((shim_index, crate::adapter::FUNCTION_TABLE_NAME));
-
-            // Emit the segments populating the function table
-            let mut segments = Vec::new();
-            for func in adapter.adapted_funcs() {
-                let func_index = state.num_imported_funcs + state.func_aliases.len() as u32;
-                state.func_aliases.push((child_index, func));
-
-                segments.push(wasm_encoder::Element::Func(func_index));
-            }
-
-            state.segments.push((table_index, segments));
-        }
-
-        Ok((parent_index, false))
-    }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::module::Interface;
+
     use super::*;
 
     #[test]
@@ -664,19 +670,17 @@ mod test {
     }
 
     #[test]
-    fn it_errors_with_missing_parent_malloc() -> Result<()> {
+    fn it_errors_with_missing_parent_realloc() -> Result<()> {
         let bytes = wat::parse_str(
             r#"(module (import "a" "a" (func (param i32 i32))) (func (export "_start")))"#,
         )?;
         let a = wat::parse_str(
-            r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a") (param i32 i32)) (memory (export "memory") 0) (func (export "witx_malloc") (param i32 i32) (result i32) unreachable) (func (export "witx_free") (param i32 i32 i32)))"#,
+            r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a") (param i32 i32)) (memory (export "memory") 0) (func (export "canonical_abi_realloc") (param i32 i32 i32 i32) (result i32) unreachable) (func (export "canonical_abi_free") (param i32 i32 i32)))"#,
         )?;
 
         let main = Module::new("main", &bytes)?;
         let mut a = Module::new("a", &a)?;
-        a.interface = Some(witx::parse(
-            r#"(module $a (export "a" (func (param $p string))))"#,
-        )?);
+        a.interface = Some(Interface::parse("a", "a: function(p: string)")?);
 
         let mut imports = HashMap::new();
         imports.insert("a", a);
@@ -685,26 +689,24 @@ mod test {
 
         assert_eq!(
             linker.link(&main, &imports).unwrap_err().to_string(),
-            "module `main` does not export the required function `witx_malloc`"
+            "module `main` does not export the required function `canonical_abi_realloc`"
         );
 
         Ok(())
     }
 
     #[test]
-    fn it_errors_with_incorrect_parent_malloc() -> Result<()> {
+    fn it_errors_with_incorrect_parent_realloc() -> Result<()> {
         let bytes = wat::parse_str(
-            r#"(module (import "a" "a" (func (param i32 i32))) (func (export "_start")) (func (export "witx_malloc") (param i32 i32)))"#,
+            r#"(module (import "a" "a" (func (param i32 i32))) (func (export "_start")) (func (export "canonical_abi_realloc") (param i32 i32 i32 i32)))"#,
         )?;
         let a = wat::parse_str(
-            r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a") (param i32 i32)) (memory (export "memory") 0) (func (export "witx_malloc") (param i32 i32) (result i32) unreachable) (func (export "witx_free") (param i32 i32 i32)))"#,
+            r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a") (param i32 i32)) (memory (export "memory") 0) (func (export "canonical_abi_realloc") (param i32 i32 i32 i32) (result i32) unreachable) (func (export "canonical_abi_free") (param i32 i32 i32)))"#,
         )?;
 
         let main = Module::new("main", &bytes)?;
         let mut a = Module::new("a", &a)?;
-        a.interface = Some(witx::parse(
-            r#"(module $a (export "a" (func (param $p string))))"#,
-        )?);
+        a.interface = Some(Interface::parse("a", "a: function(p: string)")?);
 
         let mut imports = HashMap::new();
         imports.insert("a", a);
@@ -713,7 +715,7 @@ mod test {
 
         assert_eq!(
             linker.link(&main, &imports).unwrap_err().to_string(),
-            "module `main` exports function `witx_malloc` but it is not the expected type"
+            "module `main` exports function `canonical_abi_realloc` but it is not the expected type"
         );
 
         Ok(())
@@ -722,17 +724,15 @@ mod test {
     #[test]
     fn it_links_with_interface() -> Result<()> {
         let bytes = wat::parse_str(
-            r#"(module (import "a" "a" (func (param i32 i32))) (func (export "_start")) (func (export "witx_malloc") (param i32 i32) (result i32) unreachable))"#,
+            r#"(module (import "a" "a" (func (param i32 i32))) (func (export "_start")) (func (export "canonical_abi_realloc") (param i32 i32 i32 i32) (result i32) unreachable))"#,
         )?;
         let a = wat::parse_str(
-            r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a") (param i32 i32)) (memory (export "memory") 0) (func (export "witx_malloc") (param i32 i32) (result i32) unreachable) (func (export "witx_free") (param i32 i32 i32)))"#,
+            r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a") (param i32 i32)) (memory (export "memory") 0) (func (export "canonical_abi_realloc") (param i32 i32 i32 i32) (result i32) unreachable) (func (export "canonical_abi_free") (param i32 i32 i32)))"#,
         )?;
 
         let main = Module::new("main", &bytes)?;
         let mut a = Module::new("a", &a)?;
-        a.interface = Some(witx::parse(
-            r#"(module $a (export "a" (func (param $p string))))"#,
-        )?);
+        a.interface = Some(Interface::parse("a", "a: function(p: string)")?);
 
         let mut imports = HashMap::new();
         imports.insert("a", a);
@@ -750,44 +750,46 @@ mod test {
   (module (;0;)
     (type (;0;) (func (param i32 i32)))
     (type (;1;) (func))
-    (type (;2;) (func (param i32 i32) (result i32)))
+    (type (;2;) (func (param i32 i32 i32 i32) (result i32)))
     (import \"a\" \"a\" (func (;0;) (type 0)))
     (func (;1;) (type 1))
-    (func (;2;) (type 2) (param i32 i32) (result i32)
+    (func (;2;) (type 2) (param i32 i32 i32 i32) (result i32)
       unreachable)
     (export \"_start\" (func 1))
-    (export \"witx_malloc\" (func 2)))
+    (export \"canonical_abi_realloc\" (func 2)))
   (module (;1;)
     (type (;0;) (func))
     (type (;1;) (func (param i32 i32)))
-    (type (;2;) (func (param i32 i32) (result i32)))
+    (type (;2;) (func (param i32 i32 i32 i32) (result i32)))
     (import \"wasi_snapshot_preview1\" \"a\" (func (;0;) (type 0)))
     (import \"$parent\" \"memory\" (memory (;0;) 0))
-    (import \"$parent\" \"witx_malloc\" (func (;1;) (type 2)))
+    (import \"$parent\" \"canonical_abi_realloc\" (func (;1;) (type 2)))
     (module (;0;)
       (type (;0;) (func))
       (type (;1;) (func (param i32 i32)))
-      (type (;2;) (func (param i32 i32) (result i32)))
+      (type (;2;) (func (param i32 i32 i32 i32) (result i32)))
       (type (;3;) (func (param i32 i32 i32)))
       (import \"wasi_snapshot_preview1\" \"a\" (func (;0;) (type 0)))
       (func (;1;) (type 1) (param i32 i32))
-      (func (;2;) (type 2) (param i32 i32) (result i32)
+      (func (;2;) (type 2) (param i32 i32 i32 i32) (result i32)
         unreachable)
       (func (;3;) (type 3) (param i32 i32 i32))
       (memory (;0;) 0)
       (export \"a\" (func 1))
       (export \"memory\" (memory 0))
-      (export \"witx_malloc\" (func 2))
-      (export \"witx_free\" (func 3)))
+      (export \"canonical_abi_realloc\" (func 2))
+      (export \"canonical_abi_free\" (func 3)))
     (instance (;2;)
       (instantiate 0
         (import \"wasi_snapshot_preview1\" (instance 0))))
     (alias 2 \"memory\" (memory (;1;)))
-    (alias 2 \"witx_malloc\" (func (;2;)))
-    (alias 2 \"witx_free\" (func (;3;)))
+    (alias 2 \"canonical_abi_realloc\" (func (;2;)))
+    (alias 2 \"canonical_abi_free\" (func (;3;)))
     (alias 2 \"a\" (func (;4;)))
     (func (;5;) (type 1) (param i32 i32)
       (local i32)
+      i32.const 0
+      i32.const 0
       local.get 1
       i32.const 1
       call 2

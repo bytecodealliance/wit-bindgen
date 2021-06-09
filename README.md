@@ -50,6 +50,12 @@ $ cargo install cargo-wasi
 
 The `markdown` module exposes an interface consisting of a `render` function that takes a string (the [Markdown](https://en.wikipedia.org/wiki/Markdown)) as an argument and returns a string (the rendered HTML).
 
+The interface for the `markdown` module is:
+
+```witx
+render: function(markdown: string) -> string
+```
+
 To build the `markdown` module:
 
 ```text

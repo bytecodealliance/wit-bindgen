@@ -1,8 +1,7 @@
-(module $types
-    (export "a" (func))
-    (export "b" (func (param $p0 u8) (param $p1 s8) (param $p2 u16) (param $p3 s16) (param $p4 u32) (param $p5 s32) (param $p6 u64) (param $p7 s64) (result $r0 u8) (result $r1 s8) (result $r2 u16) (result $r3 s16) (result $r4 u32) (result $r5 s32) (result $r6 u64) (result $r7 s64)))
-    (export "c" (func (param $p0 f32) (param $p1 f64) (result $r0 f32) (result $r1 f64)))
-    (export "d" (func (param $p0 string) (result $r0 string)))
-    (export "e" (func (result $r0 string)))
-    (export "f" (func (result $r0 u32) (result $r1 string) (result $r2 u64)))
-)
+a: function()
+b: function(p0: u8, p1: s8, p2: u16, p3: s16, p4: u32, p5: s32, p6: u64, p7: s64) -> (u8, s8, u16, s16, u32, s32, u64, s64)
+c: function(p0: f32, p1: f64) -> (f32, f64)
+d: function(p0: string) -> string
+e: function() -> string
+f: function() -> (u32, string, u64)
+g: function(p0: u32) -> u32

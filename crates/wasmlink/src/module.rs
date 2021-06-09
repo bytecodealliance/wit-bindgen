@@ -1,9 +1,12 @@
-use std::path::Path;
-
 use anyhow::{anyhow, bail, Context, Result};
+use std::path::Path;
 use wasmparser::{
     Chunk, Export, ExternalKind, FuncType, Import, ImportSectionEntryType, Parser, Payload, Range,
-    SectionReader, TypeDef, Validator,
+    SectionReader, Type, TypeDef, Validator,
+};
+use witx2::{
+    abi::{CallMode, WasmSignature, WasmType},
+    Function,
 };
 
 const INTERFACE_SECTION_NAME: &str = ".interface";
@@ -35,8 +38,70 @@ fn export_kind(kind: ExternalKind) -> &'static str {
     }
 }
 
+pub(crate) struct Interface {
+    pub inner: witx2::Interface,
+    func_types: Vec<(FuncType, FuncType)>,
+}
+
+impl Interface {
+    pub fn parse(name: &str, source: &str) -> Result<Self> {
+        let inner = witx2::Interface::parse(name, source)
+            .map_err(|e| anyhow!("failed to parse interface definition: {}", e))?;
+
+        let func_types = inner
+            .functions
+            .iter()
+            .map(|f| {
+                let import = Self::sig_to_type(&inner.wasm_signature(CallMode::WasmImport, f));
+                let export = Self::sig_to_type(&inner.wasm_signature(CallMode::WasmExport, f));
+                (import, export)
+            })
+            .collect();
+
+        Ok(Self { inner, func_types })
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&Function, &FuncType, &FuncType)> {
+        self.inner
+            .functions
+            .iter()
+            .zip(self.func_types.iter())
+            .map(|(f, ty)| (f, &ty.0, &ty.1))
+    }
+
+    pub fn lookup_type(&self, name: &str) -> Option<&(FuncType, FuncType)> {
+        Some(&self.func_types[self.inner.functions.iter().position(|f| f.name == name)?])
+    }
+
+    fn sig_to_type(signature: &WasmSignature) -> FuncType {
+        fn from_witx_type(ty: &WasmType) -> Type {
+            match ty {
+                WasmType::I32 => Type::I32,
+                WasmType::I64 => Type::I64,
+                WasmType::F32 => Type::F32,
+                WasmType::F64 => Type::F64,
+            }
+        }
+
+        let params = signature
+            .params
+            .iter()
+            .map(from_witx_type)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+
+        let returns = signature
+            .results
+            .iter()
+            .map(from_witx_type)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+
+        FuncType { params, returns }
+    }
+}
+
 /// Represents a parsed WebAssembly module.
-#[derive(Debug)]
 pub struct Module<'a> {
     /// The name of the parsed module.
     pub name: &'a str,
@@ -47,7 +112,7 @@ pub struct Module<'a> {
     pub(crate) exports: Vec<Export<'a>>,
     functions: Vec<u32>,
     sections: Vec<wasm_encoder::RawSection<'a>>,
-    pub(crate) interface: Option<witx::Module>,
+    pub(crate) interface: Option<Interface>,
 }
 
 impl<'a> Module<'a> {
@@ -63,7 +128,9 @@ impl<'a> Module<'a> {
             sections: Vec::new(),
             interface: None,
         };
+
         module.parse()?;
+
         Ok(module)
     }
 
@@ -185,14 +252,14 @@ impl<'a> Module<'a> {
                         if self.interface.is_some() {
                             bail!("module contains multiple interface sections");
                         }
-                        self.interface = Some(
-                            witx::parse(
-                                std::str::from_utf8(data)
-                                    .map_err(|e| anyhow!("invalid interface section: {}", e))?,
-                            )
-                            .map_err(|e| anyhow!("failed to parse interface section: {}", e))?,
-                        );
+
+                        self.interface = Some(Interface::parse(
+                            self.name,
+                            std::str::from_utf8(data)
+                                .map_err(|e| anyhow!("invalid interface section: {}", e))?,
+                        )?);
                     }
+
                     self.add_section(wasm_encoder::SectionId::Custom, range)
                 }
                 Payload::UnknownSection { id, .. } => {
@@ -220,10 +287,7 @@ impl<'a> Module<'a> {
             )
         })?;
 
-        self.interface = Some(
-            witx::parse(&source)
-                .map_err(|e| anyhow!("failed to parse interface section: {}", e))?,
-        );
+        self.interface = Some(Interface::parse(self.name, &source)?);
 
         Ok(true)
     }
@@ -267,13 +331,27 @@ impl<'a> Module<'a> {
                 )
             })?;
 
+        // For adapted functions, resolve by the function's import type and not the actual wasm type
+        let func_type = if let Some(interface) = &self.interface {
+            let (import_type, _) = interface
+                .lookup_type(import.field.unwrap_or(""))
+                .ok_or_else(|| {
+                    anyhow!(
+                        "module `{}` does not export a function named `{}` in its interface",
+                        self.name,
+                        import.field.unwrap_or("")
+                    )
+                })?;
+
+            Some(import_type)
+        } else {
+            self.func_type(export.index)
+        };
+
         match (import.ty, export.kind) {
             (ImportSectionEntryType::Function(_), ExternalKind::Function) => {
-                let compatible = match (
-                    module.import_func_type(import),
-                    self.func_type(export.index),
-                ) {
-                    (Some(i), Some(e)) => i == e,
+                let compatible = match (module.import_func_type(import), func_type) {
+                    (Some(i), Some(e)) => e == i,
                     _ => false,
                 };
 

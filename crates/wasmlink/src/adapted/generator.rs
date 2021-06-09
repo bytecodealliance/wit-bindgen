@@ -1,43 +1,14 @@
-use witx::{
-    Bindgen, BuiltinType, CallMode, Function, Instruction, NamedType, Type, WasmSignature, WasmType,
+use witx2::{
+    abi::{Bindgen, CallMode, Instruction, WasmSignature, WasmType},
+    Function, Interface, SizeAlign, Type, TypeDefKind, TypeId,
 };
+
+use crate::adapted::FREE_EXPORT_NAME;
 
 // The parent's memory is imported, so it is always index 0 for the adapter logic
 const PARENT_MEMORY_INDEX: u32 = 0;
 // The adapted module's memory is aliased, so it is always index 1 for the adapter logic
 const ADAPTED_MEMORY_INDEX: u32 = 1;
-
-fn sizeof(ty: &Type) -> usize {
-    match ty {
-        Type::Record(_) => unimplemented!("support for records is not yet implemented"),
-        Type::Variant(_) => unimplemented!("support for variants is not yet implemented"),
-        Type::Handle(_) => 4,
-        Type::List(l) => sizeof(l.type_()),
-        Type::Pointer(_) | Type::ConstPointer(_) | Type::Buffer(_) => 4, // WASM32,
-        Type::Builtin(t) => match t {
-            BuiltinType::Char | BuiltinType::U8 { .. } | BuiltinType::S8 => 1,
-            BuiltinType::U16 | BuiltinType::S16 => 2,
-            BuiltinType::U32 { .. } | BuiltinType::S32 | BuiltinType::F32 => 4,
-            BuiltinType::U64 | BuiltinType::S64 | BuiltinType::F64 => 8,
-        },
-    }
-}
-
-fn alignment(ty: &Type) -> usize {
-    match ty {
-        Type::Record(_) => unimplemented!("support for records is not yet implemented"),
-        Type::Variant(_) => unimplemented!("support for variants is not yet implemented"),
-        Type::Handle(_) => 4,
-        Type::List(l) => alignment(l.type_()),
-        Type::Pointer(_) | Type::ConstPointer(_) | Type::Buffer(_) => 4, // WASM32,
-        Type::Builtin(t) => match t {
-            BuiltinType::Char | BuiltinType::U8 { .. } | BuiltinType::S8 => 1,
-            BuiltinType::U16 | BuiltinType::S16 => 2,
-            BuiltinType::U32 { .. } | BuiltinType::S32 | BuiltinType::F32 => 4,
-            BuiltinType::U64 | BuiltinType::S64 | BuiltinType::F64 => 8,
-        },
-    }
-}
 
 fn to_val_type(ty: &WasmType) -> wasm_encoder::ValType {
     match ty {
@@ -79,7 +50,6 @@ impl From<&WasmType> for StoreType {
     }
 }
 
-#[derive(Debug)]
 pub struct CodeGenerator<'a> {
     params: Vec<Operand>,
     signature: WasmSignature,
@@ -87,44 +57,45 @@ pub struct CodeGenerator<'a> {
     instructions: Vec<wasm_encoder::Instruction<'a>>,
     locals_start_index: u32,
     func_index: u32,
-    parent_malloc_index: u32,
-    malloc_index: u32,
-    free_index: u32,
-    retptr_alloc: Option<(u32, u32)>,
+    parent_realloc_index: u32,
+    realloc_index: u32,
+    sizes: SizeAlign,
 }
 
 impl<'a> CodeGenerator<'a> {
     pub fn new(
+        interface: &Interface,
         func: &Function,
         func_index: u32,
-        parent_malloc_index: u32,
-        malloc_index: u32,
-        free_index: u32,
+        parent_realloc_index: u32,
+        realloc_index: u32,
     ) -> Self {
-        let signature = func.wasm_signature(CallMode::DeclaredExport);
+        let signature = interface.wasm_signature(CallMode::WasmImport, func);
 
         let mut locals_start_index = 0;
         let params = func
             .params
             .iter()
-            .map(|p| {
+            .map(|(_, ty)| {
                 let i = locals_start_index;
                 locals_start_index += 1;
-                match p.tref.type_().as_ref() {
-                    Type::Record(_) => unimplemented!(),
-                    Type::Variant(_) => unimplemented!(),
-                    Type::Handle(_) => Operand::Local(i),
-                    Type::List(_) => {
-                        locals_start_index += 1;
-                        Operand::List {
-                            addr: i,
-                            len: i + 1,
+                match ty {
+                    Type::Id(id) => match interface.types.get(*id).unwrap().kind {
+                        TypeDefKind::Record(_) => todo!(),
+                        TypeDefKind::Variant(_) => todo!(),
+                        TypeDefKind::List(_) => {
+                            locals_start_index += 1;
+                            Operand::List {
+                                addr: i,
+                                len: i + 1,
+                            }
                         }
-                    }
-                    Type::Pointer(_) => Operand::Local(i),
-                    Type::ConstPointer(_) => Operand::Local(i),
-                    Type::Buffer(_) => Operand::Local(i),
-                    Type::Builtin(_) => Operand::Local(i),
+                        TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => Operand::Local(i),
+                        TypeDefKind::PushBuffer(_) => todo!(),
+                        TypeDefKind::PullBuffer(_) => todo!(),
+                        TypeDefKind::Type(_) => todo!(),
+                    },
+                    _ => Operand::Local(i),
                 }
             })
             .collect();
@@ -134,6 +105,9 @@ impl<'a> CodeGenerator<'a> {
             locals_start_index += 1;
         }
 
+        let mut sizes = SizeAlign::default();
+        sizes.fill(CallMode::WasmImport, interface);
+
         Self {
             params,
             signature,
@@ -141,10 +115,9 @@ impl<'a> CodeGenerator<'a> {
             instructions: Vec::new(),
             locals_start_index,
             func_index,
-            parent_malloc_index,
-            malloc_index,
-            free_index,
-            retptr_alloc: None,
+            parent_realloc_index,
+            realloc_index,
+            sizes,
         }
     }
 
@@ -181,7 +154,14 @@ impl<'a> CodeGenerator<'a> {
 
                 let memarg = wasm_encoder::MemArg {
                     offset: offset as u32,
-                    align: 2,
+                    align: match ty {
+                        LoadType::I32 => 2,
+                        LoadType::I32_8S | LoadType::I32_8U => 0,
+                        LoadType::I32_16S | LoadType::I32_16U => 1,
+                        LoadType::I64 => 3,
+                        LoadType::F32 => 2,
+                        LoadType::F64 => 3,
+                    },
                     memory_index: *memory,
                 };
 
@@ -227,7 +207,14 @@ impl<'a> CodeGenerator<'a> {
             Operand::Pointer { memory, .. } => {
                 let memarg = wasm_encoder::MemArg {
                     offset: offset as u32,
-                    align: 2,
+                    align: match ty {
+                        StoreType::I32 => 2,
+                        StoreType::I32_8 => 0,
+                        StoreType::I32_16 => 1,
+                        StoreType::I64 => 3,
+                        StoreType::F32 => 2,
+                        StoreType::F64 => 3,
+                    },
                     memory_index: *memory,
                 };
 
@@ -253,6 +240,7 @@ pub enum Operand {
     I32Const(i32),
     Pointer { addr: u32, memory: u32 },
     List { addr: u32, len: u32 },
+    Record { fields: Vec<Box<Operand>> },
 }
 
 impl Operand {
@@ -272,6 +260,41 @@ impl Operand {
                 instructions.push(wasm_encoder::Instruction::I32Const(*i));
             }
             Self::List { .. } => panic!("list operands must be split"),
+            Self::Record { fields } => {
+                for field in fields {
+                    field.load(instructions);
+                }
+            }
+        }
+    }
+
+    fn store<'a>(
+        &self,
+        generator: &mut CodeGenerator<'_>,
+        addr: &Operand,
+        types: &mut impl Iterator<Item = &'a WasmType>,
+        offset: &mut u32,
+        alignment: u32,
+    ) {
+        match self {
+            Self::Local(i) | Self::Pointer { addr: i, .. } => {
+                let ty = types.next().expect("incorrect number of types");
+                assert!(*ty == generator.local_type(*i));
+
+                generator.emit_store(addr, *offset, self, ty.into());
+                *offset += alignment;
+            }
+            Self::List { .. } => {
+                let (list, len) = self.split_list();
+                list.store(generator, addr, types, offset, alignment);
+                len.store(generator, addr, types, offset, alignment);
+            }
+            Self::Record { fields } => {
+                for field in fields {
+                    field.store(generator, addr, types, offset, alignment);
+                }
+            }
+            _ => panic!("expected a local, list, or record"),
         }
     }
 
@@ -283,11 +306,12 @@ impl Operand {
     }
 }
 
-impl Bindgen for CodeGenerator<'_> {
+impl<'a> Bindgen for CodeGenerator<'a> {
     type Operand = Operand;
 
     fn emit(
         &mut self,
+        _iface: &Interface,
         inst: &Instruction<'_>,
         operands: &mut Vec<Self::Operand>,
         results: &mut Vec<Self::Operand>,
@@ -299,8 +323,8 @@ impl Bindgen for CodeGenerator<'_> {
             Instruction::I32Const { val } => {
                 results.push(Operand::I32Const(*val));
             }
-            Instruction::Bitcasts { .. } => unimplemented!(),
-            Instruction::ConstZero { .. } => unimplemented!(),
+            Instruction::Bitcasts { .. } => todo!(),
+            Instruction::ConstZero { .. } => todo!(),
             Instruction::I32Load { offset } => {
                 results.push(Operand::Local(self.emit_load(
                     &operands[0],
@@ -412,21 +436,27 @@ impl Bindgen for CodeGenerator<'_> {
                     _ => panic!("expected a local"),
                 });
             }
-            Instruction::I32FromBorrowedHandle { .. } => unimplemented!(),
-            Instruction::I32FromOwnedHandle { .. } => unimplemented!(),
-            Instruction::HandleOwnedFromI32 { .. } => unimplemented!(),
-            Instruction::HandleBorrowedFromI32 { .. } => unimplemented!(),
-            Instruction::ListCanonLower { element, malloc } => {
+            Instruction::I32FromBorrowedHandle { .. } => todo!(),
+            Instruction::I32FromOwnedHandle { .. } => todo!(),
+            Instruction::HandleOwnedFromI32 { .. } => todo!(),
+            Instruction::HandleBorrowedFromI32 { .. } => todo!(),
+            Instruction::ListCanonLower { element, realloc } => {
                 // Lifting goes from parent module to adapted module
-                assert_eq!(*malloc, Some("witx_malloc"));
+                assert_eq!(*realloc, Some(super::REALLOC_EXPORT_NAME));
 
-                let size = sizeof(element.type_());
-                let alignment = alignment(element.type_());
+                let (size, alignment) = match element {
+                    Type::Char => (1, 1), // UTF-8
+                    _ => (self.sizes.size(element), self.sizes.align(element)),
+                };
+
+                self.instructions
+                    .push(wasm_encoder::Instruction::I32Const(0)); // Previous ptr
+                self.instructions
+                    .push(wasm_encoder::Instruction::I32Const(0)); // Previous size
 
                 let (operand, operand_len) = operands[0].split_list();
 
                 let ptr = self.alloc_local(WasmType::I32);
-
                 operand_len.load(&mut self.instructions);
                 if size > 1 {
                     self.instructions
@@ -436,8 +466,9 @@ impl Bindgen for CodeGenerator<'_> {
                 self.instructions
                     .push(wasm_encoder::Instruction::I32Const(alignment as i32));
                 self.instructions
-                    .push(wasm_encoder::Instruction::Call(self.malloc_index));
-                // TODO: trap on malloc failure
+                    .push(wasm_encoder::Instruction::Call(self.realloc_index));
+
+                // TODO: trap on alloc failure
                 self.instructions
                     .push(wasm_encoder::Instruction::LocalTee(ptr));
                 operand.load(&mut self.instructions);
@@ -457,10 +488,17 @@ impl Bindgen for CodeGenerator<'_> {
             Instruction::ListLower { .. } => unreachable!(),
             Instruction::ListCanonLift { element, free } => {
                 // Lifting goes from adapted module to parent module
-                assert_eq!(*free, Some("witx_free"));
+                assert_eq!(*free, Some(FREE_EXPORT_NAME));
 
-                let size = sizeof(element.type_());
-                let alignment = alignment(element.type_());
+                let (size, alignment) = match element {
+                    Type::Char => (1, 1), // UTF-8
+                    _ => (self.sizes.size(element), self.sizes.align(element)),
+                };
+
+                self.instructions
+                    .push(wasm_encoder::Instruction::I32Const(0)); // Previous ptr
+                self.instructions
+                    .push(wasm_encoder::Instruction::I32Const(0)); // Previous size
 
                 let ptr = self.alloc_local(WasmType::I32);
 
@@ -474,8 +512,8 @@ impl Bindgen for CodeGenerator<'_> {
                 self.instructions
                     .push(wasm_encoder::Instruction::I32Const(alignment as i32));
                 self.instructions
-                    .push(wasm_encoder::Instruction::Call(self.parent_malloc_index));
-                // TODO: trap on malloc failure
+                    .push(wasm_encoder::Instruction::Call(self.parent_realloc_index));
+                // TODO: trap on alloc failure
                 self.instructions
                     .push(wasm_encoder::Instruction::LocalTee(ptr));
                 operands[0].load(&mut self.instructions);
@@ -494,55 +532,57 @@ impl Bindgen for CodeGenerator<'_> {
                 });
             }
             Instruction::ListLift { .. } => unreachable!(),
-            Instruction::IterElem => unimplemented!(),
-            Instruction::IterBasePointer => unimplemented!(),
-            Instruction::BufferLowerPtrLen { .. } => unimplemented!(),
-            Instruction::BufferLowerHandle { .. } => unimplemented!(),
-            Instruction::BufferLiftPtrLen { .. } => unimplemented!(),
-            Instruction::BufferLiftHandle { .. } => unimplemented!(),
-            Instruction::RecordLower { .. } => unimplemented!(),
-            Instruction::RecordLift { .. } => unimplemented!(),
-            Instruction::I32FromBitflags { .. } => unimplemented!(),
-            Instruction::I64FromBitflags { .. } => unimplemented!(),
-            Instruction::BitflagsFromI32 { .. } => unimplemented!(),
-            Instruction::BitflagsFromI64 { .. } => unimplemented!(),
-            Instruction::VariantPayload => unimplemented!(),
-            Instruction::VariantLower { .. } => unimplemented!(),
-            Instruction::VariantLift { .. } => unimplemented!(),
+            Instruction::IterElem => todo!(),
+            Instruction::IterBasePointer => todo!(),
+            Instruction::BufferLowerPtrLen { .. } => todo!(),
+            Instruction::BufferLowerHandle { .. } => todo!(),
+            Instruction::BufferLiftPtrLen { .. } => todo!(),
+            Instruction::BufferLiftHandle { .. } => todo!(),
+            Instruction::RecordLower { .. } => todo!(),
+            Instruction::RecordLift { .. } => {
+                results.push(Operand::Record {
+                    fields: operands.iter().map(|o| Box::new(o.clone())).collect(),
+                });
+            }
+            Instruction::FlagsLower { .. } => todo!(),
+            Instruction::FlagsLower64 { .. } => todo!(),
+            Instruction::FlagsLift { .. } => todo!(),
+            Instruction::FlagsLift64 { .. } => todo!(),
+            Instruction::VariantPayload => todo!(),
+            Instruction::VariantLower { .. } => todo!(),
+            Instruction::VariantLift { .. } => todo!(),
             Instruction::CallWasm {
                 module: _,
                 name: _,
-                params,
-                results: returns,
+                sig,
             } => {
-                assert_eq!(operands.len(), params.len());
+                assert_eq!(operands.len(), sig.params.len());
                 for operand in operands.iter() {
                     operand.load(&mut self.instructions);
                 }
                 self.instructions
                     .push(wasm_encoder::Instruction::Call(self.func_index));
 
-                for ty in returns.iter() {
-                    let local = self.alloc_local(*ty);
+                if sig.retptr.is_some() {
+                    assert_eq!(sig.results.len(), 1);
+                    let local = self.alloc_local(sig.results[0]);
                     self.instructions
                         .push(wasm_encoder::Instruction::LocalSet(local));
-                    results.push(Operand::Local(local));
+                    results.push(Operand::Pointer {
+                        addr: local,
+                        memory: ADAPTED_MEMORY_INDEX,
+                    });
+                } else {
+                    for ty in sig.results.iter() {
+                        let local = self.alloc_local(*ty);
+                        self.instructions
+                            .push(wasm_encoder::Instruction::LocalSet(local));
+                        results.push(Operand::Local(local));
+                    }
                 }
             }
-            Instruction::CallInterface { .. } => unimplemented!(),
+            Instruction::CallInterface { .. } => todo!(),
             Instruction::Return { amt } => {
-                // Clean up any retptr allocation in the adapted module
-                if let Some((ptr, len)) = &self.retptr_alloc {
-                    self.instructions
-                        .push(wasm_encoder::Instruction::LocalGet(*ptr));
-                    self.instructions
-                        .push(wasm_encoder::Instruction::I32Const((len * 8) as i32));
-                    self.instructions
-                        .push(wasm_encoder::Instruction::I32Const(8));
-                    self.instructions
-                        .push(wasm_encoder::Instruction::Call(self.free_index));
-                }
-
                 assert!(operands.len() == *amt);
 
                 if let Some(retptr) = self.signature.retptr.clone() {
@@ -550,58 +590,19 @@ impl Bindgen for CodeGenerator<'_> {
                     let mut offset = 0;
                     let mut types = retptr.iter();
 
-                    for operand in operands {
-                        match operand {
-                            Operand::Local(i) => {
-                                let ty = types.next().expect("incorrect number of types");
-                                assert!(*ty == self.local_type(*i));
-
-                                self.emit_store(
-                                    &Operand::Pointer {
-                                        addr: retptr_index,
-                                        memory: PARENT_MEMORY_INDEX,
-                                    },
-                                    offset,
-                                    operand,
-                                    ty.into(),
-                                );
-
-                                offset += 8;
-                            }
-                            Operand::List { addr, len } => {
-                                let ty = types.next().expect("incorrect number of types");
-                                assert!(*ty == self.local_type(*addr));
-
-                                self.emit_store(
-                                    &Operand::Pointer {
-                                        addr: retptr_index,
-                                        memory: PARENT_MEMORY_INDEX,
-                                    },
-                                    offset,
-                                    &Operand::Local(*addr),
-                                    ty.into(),
-                                );
-
-                                offset += 8;
-
-                                let ty = types.next().expect("incorrect number of types");
-                                assert!(*ty == self.local_type(*addr));
-
-                                self.emit_store(
-                                    &Operand::Pointer {
-                                        addr: retptr_index,
-                                        memory: PARENT_MEMORY_INDEX,
-                                    },
-                                    offset,
-                                    &Operand::Local(*len),
-                                    ty.into(),
-                                );
-
-                                offset += 8;
-                            }
-                            _ => panic!("expected a local or list"),
-                        }
+                    for o in operands {
+                        o.store(
+                            self,
+                            &Operand::Pointer {
+                                addr: retptr_index,
+                                memory: PARENT_MEMORY_INDEX,
+                            },
+                            &mut types,
+                            &mut offset,
+                            8,
+                        );
                     }
+
                     assert!(types.next().is_none());
                 } else {
                     for operand in operands {
@@ -615,43 +616,29 @@ impl Bindgen for CodeGenerator<'_> {
         }
     }
 
-    fn allocate_typed_space(&mut self, _ty: &NamedType) -> Self::Operand {
-        unimplemented!()
+    fn allocate_typed_space(&mut self, _iface: &Interface, _ty: TypeId) -> Self::Operand {
+        unreachable!("should not be called")
     }
 
-    fn allocate_i64_array(&mut self, amt: usize) -> Self::Operand {
-        assert!(self.signature.retptr.is_some());
-        use wasm_encoder::Instruction;
-        // TODO: use shadow stack space from the original module rather than alloc?
-        // this would require changing the original module to export the stack global
-
-        let ptr = self.alloc_local(WasmType::I32);
-        self.instructions
-            .push(Instruction::I32Const(amt as i32 * 8));
-        self.instructions.push(Instruction::I32Const(8));
-        self.instructions.push(Instruction::Call(self.malloc_index));
-        self.instructions.push(Instruction::LocalSet(ptr));
-
-        self.retptr_alloc = Some((ptr, amt as u32));
-
-        Operand::Pointer {
-            addr: ptr,
-            memory: ADAPTED_MEMORY_INDEX,
-        }
+    fn i64_return_pointer_area(&mut self, _amt: usize) -> Self::Operand {
+        unreachable!("should not be called")
     }
 
     fn push_block(&mut self) {
-        unimplemented!()
+        unreachable!("should not be called")
     }
 
-    fn finish_block(&mut self, _operand: &mut Vec<Self::Operand>) {
-        unimplemented!()
+    fn finish_block(&mut self, _operand: &mut Vec<Self::Operand>) {}
+
+    fn sizes(&self) -> &SizeAlign {
+        &self.sizes
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::{to_val_type, CodeGenerator};
+    use super::*;
+    use crate::adapted::{FREE_EXPORT_NAME, REALLOC_EXPORT_NAME};
     use anyhow::Result;
     use wasm_encoder::{
         CodeSection, EntityType, FunctionSection, ImportSection, Limits, MemoryType, Module,
@@ -659,66 +646,64 @@ mod test {
     };
 
     fn generate_adapter(interface: &str) -> Result<String> {
-        let module = witx::parse(interface)?;
+        let interface = Interface::parse("test", interface)?;
 
-        let func = module.func(&"test".into()).unwrap();
-
-        let mut generator =
-            CodeGenerator::new(module.func(&"test".into()).unwrap().as_ref(), 0, 1, 2, 3);
-
-        func.call(
-            &"test".into(),
-            witx::CallMode::DeclaredExport,
-            &mut generator,
-        );
-
-        let params = generator
-            .signature
-            .params
+        let func = interface
+            .functions
             .iter()
-            .map(to_val_type)
-            .collect::<Vec<_>>();
-        let results = generator
-            .signature
-            .results
-            .iter()
-            .map(to_val_type)
-            .collect::<Vec<_>>();
+            .find(|f| f.name == "test")
+            .unwrap();
+
+        let mut generator = CodeGenerator::new(&interface, func, 0, 1, 2);
+
+        interface.call(CallMode::WasmExport, func, &mut generator);
+
+        let import_signature = interface.wasm_signature(CallMode::WasmImport, func);
+        let export_signature = interface.wasm_signature(CallMode::WasmExport, func);
         let func = generator.into_function();
 
         let mut module = Module::new();
 
         let mut s = TypeSection::new();
-        s.function(params, results);
-        // witx_malloc's type
         s.function(
-            crate::adapter::MALLOC_FUNC_TYPE
-                .params
-                .iter()
-                .map(crate::adapter::to_val_type),
-            crate::adapter::MALLOC_FUNC_TYPE
-                .returns
-                .iter()
-                .map(crate::adapter::to_val_type),
+            export_signature.params.iter().map(to_val_type),
+            export_signature.results.iter().map(to_val_type),
         );
-        // witx_free's type
         s.function(
-            crate::adapter::FREE_FUNC_TYPE
+            crate::adapted::REALLOC_FUNC_TYPE
                 .params
                 .iter()
-                .map(crate::adapter::to_val_type),
-            crate::adapter::FREE_FUNC_TYPE
+                .map(crate::adapted::to_val_type),
+            crate::adapted::REALLOC_FUNC_TYPE
                 .returns
                 .iter()
-                .map(crate::adapter::to_val_type),
+                .map(crate::adapted::to_val_type),
+        );
+        s.function(
+            crate::adapted::FREE_FUNC_TYPE
+                .params
+                .iter()
+                .map(crate::adapted::to_val_type),
+            crate::adapted::FREE_FUNC_TYPE
+                .returns
+                .iter()
+                .map(crate::adapted::to_val_type),
+        );
+        s.function(
+            import_signature.params.iter().map(to_val_type),
+            import_signature.results.iter().map(to_val_type),
         );
         module.section(&s);
 
         let mut s = ImportSection::new();
         s.import("inner", Some("test"), EntityType::Function(0));
-        s.import("$parent", Some("witx_malloc"), EntityType::Function(1));
-        s.import("inner", Some("witx_malloc"), EntityType::Function(1));
-        s.import("inner", Some("witx_free"), EntityType::Function(2));
+        s.import(
+            "$parent",
+            Some(REALLOC_EXPORT_NAME),
+            EntityType::Function(1),
+        );
+        s.import("inner", Some(REALLOC_EXPORT_NAME), EntityType::Function(1));
+        s.import("inner", Some(FREE_EXPORT_NAME), EntityType::Function(2));
         s.import(
             "$parent",
             Some("memory"),
@@ -736,7 +721,7 @@ mod test {
         module.section(&s);
 
         let mut s = FunctionSection::new();
-        s.function(0);
+        s.function(3);
         module.section(&s);
 
         let mut s = CodeSection::new();
@@ -754,29 +739,30 @@ mod test {
         wasmprinter::print_bytes(bytes)
     }
 
-    fn expected_output(ty: &str, func: &str) -> String {
+    fn expected_output(export_ty: &str, import_ty: &str, func: &str) -> String {
         format!(
             "\
 (module
   (type (;0;) {})
-  (type (;1;) (func (param i32 i32) (result i32)))
+  (type (;1;) (func (param i32 i32 i32 i32) (result i32)))
   (type (;2;) (func (param i32 i32 i32)))
+  (type (;3;) {})
   (import \"inner\" \"test\" (func (;0;) (type 0)))
-  (import \"$parent\" \"witx_malloc\" (func (;1;) (type 1)))
-  (import \"inner\" \"witx_malloc\" (func (;2;) (type 1)))
-  (import \"inner\" \"witx_free\" (func (;3;) (type 2)))
+  (import \"$parent\" \"canonical_abi_realloc\" (func (;1;) (type 1)))
+  (import \"inner\" \"canonical_abi_realloc\" (func (;2;) (type 1)))
+  (import \"inner\" \"canonical_abi_free\" (func (;3;) (type 2)))
   (import \"$parent\" \"memory\" (memory (;0;) 0))
   (import \"inner\" \"memory\" (memory (;1;) 0))
   {})",
-            ty, func
+            export_ty, import_ty, func
         )
     }
 
     #[test]
     fn generates_with_no_parameters() -> Result<()> {
         assert_eq!(
-            generate_adapter(r#"(module (export "test" (func)))"#)?,
-            expected_output("(func)", "(func (;4;) (type 0)\n    call 0)")
+            generate_adapter("test: function()")?,
+            expected_output("(func)", "(func)", "(func (;4;) (type 3)\n    call 0)")
         );
 
         Ok(())
@@ -785,13 +771,12 @@ mod test {
     #[test]
     fn generates_with_unsigned_integer_params() -> Result<()> {
         assert_eq!(
-            generate_adapter(
-                r#"(module (export "test" (func (param $p0 u8) (param $p1 u16) (param $p2 u32) (param $p3 u64))))"#
-            )?,
+            generate_adapter("test: function(p0: u8, p1: u16, p2: u32, p3: u64)")?,
             expected_output(
                 "(func (param i32 i32 i32 i64))",
+                "(func (param i32 i32 i32 i64))",
                 "\
-(func (;4;) (type 0) (param i32 i32 i32 i64)
+(func (;4;) (type 3) (param i32 i32 i32 i64)
     local.get 0
     local.get 1
     local.get 2
@@ -806,13 +791,12 @@ mod test {
     #[test]
     fn generates_with_signed_integer_params() -> Result<()> {
         assert_eq!(
-            generate_adapter(
-                r#"(module (export "test" (func (param $p0 s8) (param $p1 s16) (param $p2 s32) (param $p3 s64))))"#
-            )?,
+            generate_adapter("test: function(p0: s8, p1: s16, p2: s32, p3: s64)")?,
             expected_output(
                 "(func (param i32 i32 i32 i64))",
+                "(func (param i32 i32 i32 i64))",
                 "\
-(func (;4;) (type 0) (param i32 i32 i32 i64)
+(func (;4;) (type 3) (param i32 i32 i32 i64)
     local.get 0
     local.get 1
     local.get 2
@@ -827,11 +811,12 @@ mod test {
     #[test]
     fn generates_with_float_params() -> Result<()> {
         assert_eq!(
-            generate_adapter(r#"(module (export "test" (func (param $p0 f32) (param $p1 f64))))"#)?,
+            generate_adapter("test: function(p0: f32, p1: f64)")?,
             expected_output(
                 "(func (param f32 f64))",
+                "(func (param f32 f64))",
                 "\
-(func (;4;) (type 0) (param f32 f64)
+(func (;4;) (type 3) (param f32 f64)
     local.get 0
     local.get 1
     call 0)"
@@ -845,14 +830,12 @@ mod test {
     fn generates_with_integer_result() -> Result<()> {
         for ty in &["u8", "s8", "u16", "s16", "u32", "s32"] {
             assert_eq!(
-                generate_adapter(&format!(
-                    r#"(module (export "test" (func (result $p0 {}))))"#,
-                    ty
-                ))?,
+                generate_adapter(&format!("test: function() -> {}", ty))?,
                 expected_output(
                     "(func (result i32))",
+                    "(func (result i32))",
                     "\
-(func (;4;) (type 0) (result i32)
+(func (;4;) (type 3) (result i32)
     (local i32)
     call 0
     local.set 0
@@ -866,18 +849,24 @@ mod test {
 
     #[test]
     fn generates_with_float_result() -> Result<()> {
-        assert_eq!(
-            generate_adapter(r#"(module (export "test" (func (result $p0 f32))))"#)?,
-            expected_output(
-                "(func (result f32))",
-                "\
-(func (;4;) (type 0) (result f32)
-    (local f32)
+        for ty in &["f32", "f64"] {
+            assert_eq!(
+                generate_adapter(&format!("test: function() -> {}", ty))?,
+                expected_output(
+                    &format!("(func (result {}))", ty),
+                    &format!("(func (result {}))", ty),
+                    &format!(
+                        "\
+(func (;4;) (type 3) (result {0})
+    (local {0})
     call 0
     local.set 0
-    local.get 0)"
-            )
-        );
+    local.get 0)",
+                        ty
+                    )
+                )
+            );
+        }
 
         Ok(())
     }
@@ -885,14 +874,15 @@ mod test {
     #[test]
     fn generates_with_strings() -> Result<()> {
         assert_eq!(
-            generate_adapter(
-                r#"(module (export "test" (func (param $p0 u32) (param $p1 string) (result $r0 string))))"#
-            )?,
+            generate_adapter("test: function(p0: u32, p1: string) -> string")?,
             expected_output(
+                "(func (param i32 i32 i32) (result i32))",
                 "(func (param i32 i32 i32 i32))",
                 "\
-(func (;4;) (type 0) (param i32 i32 i32 i32)
+(func (;4;) (type 3) (param i32 i32 i32 i32)
     (local i32 i32 i32 i32 i32)
+    i32.const 0
+    i32.const 0
     local.get 2
     i32.const 1
     call 2
@@ -900,21 +890,19 @@ mod test {
     local.get 1
     local.get 2
     memory.copy 1 0
-    i32.const 16
-    i32.const 8
-    call 2
-    local.set 5
     local.get 0
     local.get 4
     local.get 2
-    local.get 5
     call 0
+    local.set 5
     local.get 5
     i32.load (memory 1)
     local.set 6
     local.get 5
     i32.load (memory 1) offset=8
     local.set 7
+    i32.const 0
+    i32.const 0
     local.get 7
     i32.const 1
     call 1
@@ -922,10 +910,6 @@ mod test {
     local.get 6
     local.get 7
     memory.copy 0 1
-    local.get 5
-    i32.const 16
-    i32.const 8
-    call 3
     local.get 3
     local.get 8
     i32.store
@@ -941,27 +925,22 @@ mod test {
     #[test]
     fn generates_with_multiple_returns() -> Result<()> {
         assert_eq!(
-            generate_adapter(
-                r#"(module (export "test" (func (param $p0 s32) (param $p1 s16) (result $r0 s8) (result $r1 s64) (result $r2 string) (result $r3 f64) (result $r4 f32))))"#
-            )?,
+            generate_adapter("test: function(p0: s32, p1: s16) -> (s8, s64, string, f64, f32)")?,
             expected_output(
+                "(func (param i32 i32) (result i32))",
                 "(func (param i32 i32 i32))",
                 "\
-(func (;4;) (type 0) (param i32 i32 i32)
+(func (;4;) (type 3) (param i32 i32 i32)
     (local i32 i32 i64 i32 i32 f64 f32 i32)
-    i32.const 48
-    i32.const 8
-    call 2
-    local.set 3
     local.get 0
     local.get 1
-    local.get 3
     call 0
+    local.set 3
     local.get 3
     i32.load (memory 1)
     local.set 4
     local.get 3
-    i64.load (memory 1) offset=8 align=4
+    i64.load (memory 1) offset=8
     local.set 5
     local.get 3
     i32.load (memory 1) offset=16
@@ -970,11 +949,13 @@ mod test {
     i32.load (memory 1) offset=24
     local.set 7
     local.get 3
-    f64.load (memory 1) offset=32 align=4
+    f64.load (memory 1) offset=32
     local.set 8
     local.get 3
     f32.load (memory 1) offset=40
     local.set 9
+    i32.const 0
+    i32.const 0
     local.get 7
     i32.const 1
     call 1
@@ -982,16 +963,12 @@ mod test {
     local.get 6
     local.get 7
     memory.copy 0 1
-    local.get 3
-    i32.const 48
-    i32.const 8
-    call 3
     local.get 2
     local.get 4
     i32.store
     local.get 2
     local.get 5
-    i64.store offset=8 align=4
+    i64.store offset=8
     local.get 2
     local.get 10
     i32.store offset=16
@@ -1000,7 +977,7 @@ mod test {
     i32.store offset=24
     local.get 2
     local.get 8
-    f64.store offset=32 align=4
+    f64.store offset=32
     local.get 2
     local.get 9
     f32.store offset=40)"

@@ -2,7 +2,7 @@
 
 #![deny(missing_docs)]
 
-mod adapter;
+mod adapted;
 mod linker;
 mod module;
 mod profile;
