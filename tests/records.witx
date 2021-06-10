@@ -1,5 +1,5 @@
-tuple_arg: function(x: (char, u32))
-tuple_result: function() -> (char, u32)
+tuple_arg: function(x: tuple<char, u32>)
+tuple_result: function() -> tuple<char, u32>
 
 record empty {}
 

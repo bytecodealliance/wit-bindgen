@@ -69,7 +69,7 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
         let methods = iface.functions.iter().map(|f| {
             let name = quote::format_ident!("{}", f.name.to_snake_case());
             let params = f.params.iter().map(|(_, t)| quote_ty(iface, t));
-            let mut results = f.results.iter().map(|t| quote_ty(iface, t));
+            let mut results = f.results.iter().map(|(_, t)| quote_ty(iface, t));
             let ret = match f.results.len() {
                 0 => quote::quote! { () },
                 1 => results.next().unwrap(),

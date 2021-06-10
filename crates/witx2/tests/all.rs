@@ -214,7 +214,7 @@ fn to_json(i: &witx2::Interface) -> String {
         .map(|f| Function {
             name: f.name.clone(),
             params: f.params.iter().map(|(_, ty)| translate_type(ty)).collect(),
-            results: f.results.iter().map(translate_type).collect(),
+            results: f.results.iter().map(|(_, ty)| translate_type(ty)).collect(),
         })
         .collect::<Vec<_>>();
     let globals = i

@@ -783,7 +783,7 @@ impl Interface {
         for (_, ty) in func.params.iter() {
             self.validate_abi_ty(func.abi, ty, true)?;
         }
-        for ty in func.results.iter() {
+        for (_, ty) in func.results.iter() {
             self.validate_abi_ty(func.abi, ty, false)?;
         }
         match func.abi {
@@ -794,7 +794,7 @@ impl Interface {
         }
         match func.results.len() {
             0 => Ok(()),
-            1 => self.validate_preview1_return(&func.results[0]),
+            1 => self.validate_preview1_return(&func.results[0].1),
             _ => Err("more than one result".to_string()),
         }
     }
@@ -946,7 +946,7 @@ impl Interface {
             self.push_wasm(func.abi, mode, param, &mut params);
         }
 
-        for result in func.results.iter() {
+        for (_, result) in func.results.iter() {
             if let (Abi::Preview1, Type::Id(id)) = (func.abi, result) {
                 match &self.types[*id].kind {
                     TypeDefKind::Variant(v) => {
@@ -1154,7 +1154,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             for nth in 0..func.params.len() {
                 self.emit(&Instruction::GetArg { nth });
             }
-            self.lower_all(func.params.iter().map(|p| &p.1), None);
+            self.lower_all(&func.params, None);
 
             // If necessary we may need to prepare a return pointer for this
             // ABI. The `Preview1` ABI has most return values returned
@@ -1223,7 +1223,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
             // Once everything is on the stack we can lift all arguments
             // one-by-one into their interface-types equivalent.
-            self.lift_all(&func.params.iter().map(|p| p.1).collect::<Vec<_>>());
+            self.lift_all(&func.params);
 
             // ... and that allows us to call the interface types function
             self.emit(&Instruction::CallInterface {
@@ -1233,7 +1233,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
             // ... and at the end we lower everything back into return
             // values.
-            self.lower_all(func.results.iter(), Some(nargs));
+            self.lower_all(&func.results, Some(nargs));
 
             // Our ABI dictates that a list of returned types are returned
             // through memories, so after we've got all the values on the
@@ -1284,12 +1284,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     ///
     /// Inserts instructions necesesary to lift those types into their
     /// interface types equivalent.
-    fn lift_all(&mut self, tys: &[Type]) {
+    fn lift_all(&mut self, tys: &[(String, Type)]) {
         let mut temp = Vec::new();
         let operands = tys
             .iter()
             .rev()
-            .map(|ty| {
+            .map(|(_, ty)| {
                 let ntys = match self.abi {
                     Abi::Preview1 => match ty {
                         Type::Id(id) => match &self.iface.types[*id].kind {
@@ -1309,7 +1309,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        for (operands, ty) in operands.into_iter().rev().zip(tys) {
+        for (operands, (_, ty)) in operands.into_iter().rev().zip(tys) {
             self.stack.extend(operands);
             self.lift(ty);
         }
@@ -1318,16 +1318,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     /// Assumes that the value for `tys` is already on the stack, and then
     /// converts all of those values into their wasm types by lowering each
     /// argument in-order.
-    fn lower_all<'b>(
-        &mut self,
-        tys: impl ExactSizeIterator<Item = &'b Type>,
-        mut nargs: Option<usize>,
-    ) {
+    fn lower_all<'b>(&mut self, tys: &[(String, Type)], mut nargs: Option<usize>) {
         let operands = self
             .stack
             .drain(self.stack.len() - tys.len()..)
             .collect::<Vec<_>>();
-        for (operand, ty) in operands.into_iter().zip(tys) {
+        for (operand, (_, ty)) in operands.into_iter().zip(tys) {
             self.stack.push(operand);
             self.lower(ty, nargs.as_mut());
         }
@@ -1677,12 +1673,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         }
     }
 
-    fn prep_return_pointer(&mut self, sig: &WasmSignature, results: &[Type]) {
+    fn prep_return_pointer(&mut self, sig: &WasmSignature, results: &[(String, Type)]) {
         match self.abi {
             Abi::Preview1 => {
                 assert!(results.len() <= 1);
                 let ty = match results.get(0) {
-                    Some(ty) => ty,
+                    Some((_, ty)) => ty,
                     None => return,
                 };
                 // Return pointers are only needed for `Result<T, _>`...

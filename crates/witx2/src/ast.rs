@@ -134,7 +134,7 @@ enum ValueKind<'a> {
     Function {
         abi: crate::abi::Abi,
         params: Vec<(Id<'a>, Type<'a>)>,
-        results: Vec<Type<'a>>,
+        results: Vec<(Id<'a>, Type<'a>)>,
     },
     Global(Type<'a>),
 }
@@ -229,7 +229,12 @@ impl<'a> Ast<'a> {
                         .iter()
                         .map(|p| (id(&p.item.name), ty(&p.item.type_)))
                         .collect(),
-                    results: f.item.results.iter().map(|p| ty(&p.item.type_)).collect(),
+                    results: f
+                        .item
+                        .results
+                        .iter()
+                        .map(|p| (id(&p.item.name), ty(&p.item.type_)))
+                        .collect(),
                 },
             });
             items.push(item);
@@ -662,11 +667,16 @@ impl<'a> Value<'a> {
             )?;
             let mut results = Vec::new();
             if tokens.eat(Token::RArrow)? {
-                loop {
-                    results.push(Type::parse(tokens)?);
-                    if !tokens.eat(Token::Comma)? {
-                        break;
+                if tokens.eat(Token::LeftParen)? {
+                    while !tokens.eat(Token::RightParen)? {
+                        results.push(parse_return_val(tokens)?);
+                        if !tokens.eat(Token::Comma)? {
+                            tokens.expect(Token::RightParen)?;
+                            break;
+                        }
                     }
+                } else {
+                    results.push(parse_return_val(tokens)?);
                 }
             }
             ValueKind::Function {
@@ -677,7 +687,23 @@ impl<'a> Value<'a> {
         } else {
             ValueKind::Global(Type::parse(tokens)?)
         };
-        Ok(Value { docs, name, kind })
+        return Ok(Value { docs, name, kind });
+
+        fn parse_return_val<'a>(tokens: &mut Tokenizer<'a>) -> Result<(Id<'a>, Type<'a>)> {
+            let mut other = tokens.clone();
+            let id = match parse_opt_id(&mut other)? {
+                Some(id) => {
+                    if other.eat(Token::Colon)? {
+                        *tokens = other;
+                        id
+                    } else {
+                        "".into()
+                    }
+                }
+                None => "".into(),
+            };
+            Ok((id, Type::parse(tokens)?))
+        }
     }
 }
 
@@ -692,6 +718,27 @@ fn parse_id<'a>(tokens: &mut Tokenizer<'a>) -> Result<Id<'a>> {
             span,
         }),
         other => Err(err_expected(tokens, "an identifier or string", other).into()),
+    }
+}
+
+fn parse_opt_id<'a>(tokens: &mut Tokenizer<'a>) -> Result<Option<Id<'a>>> {
+    let mut other = tokens.clone();
+    match other.next()? {
+        Some((span, Token::Id)) => {
+            *tokens = other;
+            Ok(Some(Id {
+                name: tokens.get_span(span).into(),
+                span,
+            }))
+        }
+        Some((span, Token::StrLit)) => {
+            *tokens = other;
+            Ok(Some(Id {
+                name: tokens.parse_str(span).into(),
+                span,
+            }))
+        }
+        _ => Ok(None),
     }
 }
 
@@ -728,21 +775,22 @@ impl<'a> Type<'a> {
                 Ok(Type::Handle(name))
             }
 
-            // (...) -- tuples
-            Some((_span, Token::LeftParen)) => {
-                let mut fields = Vec::new();
-                while !tokens.eat(Token::RightParen)? {
-                    let field = Field {
-                        docs: Docs::default(),
-                        name: fields.len().to_string().into(),
-                        ty: Type::parse(tokens)?,
-                    };
-                    fields.push(field);
-                    if !tokens.eat(Token::Comma)? {
-                        tokens.expect(Token::RightParen)?;
-                        break;
-                    }
-                }
+            // tuple<T, U, ...>
+            Some((_span, Token::Tuple)) => {
+                let mut i = 0;
+                let fields = parse_list(
+                    tokens,
+                    Token::LessThan,
+                    Token::GreaterThan,
+                    |docs, tokens| {
+                        i += 1;
+                        Ok(Field {
+                            docs,
+                            name: (i - 1).to_string().into(),
+                            ty: Type::parse(tokens)?,
+                        })
+                    },
+                )?;
                 Ok(Type::Record(Record {
                     fields,
                     flags_repr: None,

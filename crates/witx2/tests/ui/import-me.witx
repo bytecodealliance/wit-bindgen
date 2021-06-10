@@ -4,4 +4,4 @@ resource x
 
 type "handle" = handle x
 
-type some_record = (u32, u64, f32)
+type some_record = tuple<u32, u64, f32>

@@ -526,7 +526,7 @@ impl Resolver {
                     .collect::<Result<_>>()?;
                 let results = results
                     .iter()
-                    .map(|ty| self.resolve_type(ty))
+                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
                     .collect::<Result<_>>()?;
                 self.functions.push(Function {
                     abi: *abi,
@@ -581,7 +581,7 @@ impl Resolver {
                 .collect::<Result<Vec<_>>>()?;
             let results = results
                 .iter()
-                .map(|ty| self.resolve_type(ty))
+                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
                 .collect::<Result<_>>()?;
             let kind = if *statik {
                 FunctionKind::Static(id)

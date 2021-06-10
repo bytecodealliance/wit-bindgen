@@ -16,7 +16,7 @@ list_s16_ret: function() -> list<s16>
 list_s32_ret: function() -> list<s32>
 list_s64_ret: function() -> list<s64>
 
-tuple_list: function(x: list<(u8, s8)>) -> list<(s64, u32)>
+tuple_list: function(x: list<tuple<u8, s8>>) -> list<tuple<s64, u32>>
 string_list: function(x: list<string>) -> list<string>
 
 record some_record {

@@ -76,6 +76,7 @@ pub enum Token {
     From_,
     Static,
     Interface,
+    Tuple,
 
     Id,
     StrLit,
@@ -244,6 +245,7 @@ impl<'a> Tokenizer<'a> {
                     "from" => From_,
                     "static" => Static,
                     "interface" => Interface,
+                    "tuple" => Tuple,
                     _ => Id,
                 }
             }
@@ -427,6 +429,7 @@ impl Token {
             From_ => "keyword `from`",
             Static => "keyword `static`",
             Interface => "keyword `interface`",
+            Tuple => "keyword `tuple`",
         }
     }
 }

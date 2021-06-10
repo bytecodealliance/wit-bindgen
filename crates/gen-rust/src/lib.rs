@@ -147,11 +147,11 @@ pub trait TypePrint {
         match func.results.len() {
             0 => self.push_str("()"),
             1 => {
-                self.print_ty(iface, &func.results[0], TypeMode::Owned);
+                self.print_ty(iface, &func.results[0].1, TypeMode::Owned);
             }
             _ => {
                 self.push_str("(");
-                for result in func.results.iter() {
+                for (_, result) in func.results.iter() {
                     self.print_ty(iface, result, TypeMode::Owned);
                     self.push_str(", ");
                 }

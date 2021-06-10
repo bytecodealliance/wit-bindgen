@@ -16,7 +16,7 @@ args_get: function(buf: push-buffer<u8>) -> expected<_, errno>
 ///
 /// Returns the number of arguments and the size of the argument string
 /// data, or an error.
-args_sizes_get: function() -> expected<(size, size), errno>
+args_sizes_get: function() -> expected<tuple<size, size>, errno>
 
 
 /// Read environment variable data.
@@ -28,7 +28,7 @@ environ_get: function(buf: push-buffer<u8>) -> expected<_, errno>
 ///
 /// Returns the number of environment variable arguments and the size of the
 /// environment variable data.
-environ_sizes_get: function() -> expected<(size, size), errno>
+environ_sizes_get: function() -> expected<tuple<size, size>, errno>
 
 /// Return the resolution of a clock.
 /// Implementations are required to provide a non-zero value for supported clocks. For unsupported clocks,
@@ -390,7 +390,7 @@ sock_recv: function(
   ri_flags: riflags,
 )
   /// Number of bytes stored in ri_data and message flags.
-  -> expected<(size, roflags), errno>
+  -> expected<tuple<size, roflags>, errno>
 
 /// Send a message on a socket.
 /// Note: This is similar to `send` in POSIX, though it also supports writing

@@ -156,7 +156,7 @@ impl Types {
             for (_, ty) in f.params.iter() {
                 self.set_param_result_ty(iface, ty, true, false);
             }
-            for ty in f.results.iter() {
+            for (_, ty) in f.results.iter() {
                 self.set_param_result_ty(iface, ty, false, true);
             }
             self.maybe_set_preview1_dtor(iface, f);
