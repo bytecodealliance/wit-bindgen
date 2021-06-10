@@ -88,9 +88,7 @@
   (typename $list_typedef3 (list string))
 
   (resource $host_state)
-  (typename $host_state (handle $host_state))
   (resource $host_state2)
-  (typename $host_state2 (handle $host_state2))
 
   (typename $host_state_param_record (record (field $a $host_state2)))
   (typename $host_state_param_tuple (tuple $host_state2))

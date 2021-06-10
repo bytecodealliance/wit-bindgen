@@ -1175,6 +1175,7 @@ dependencies = [
 name = "test-codegen"
 version = "0.1.0"
 dependencies = [
+ "backtrace",
  "heck",
  "ignore",
  "proc-macro2",

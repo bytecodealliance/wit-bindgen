@@ -7,71 +7,75 @@
   "types": [
     {
       "idx": 0,
+      "primitive": "handle-0"
+    },
+    {
+      "idx": 1,
       "name": "t1",
       "primitive": "u8"
     },
     {
-      "idx": 1,
+      "idx": 2,
       "name": "t2",
       "primitive": "u16"
     },
     {
-      "idx": 2,
+      "idx": 3,
       "name": "t3",
       "primitive": "u32"
     },
     {
-      "idx": 3,
+      "idx": 4,
       "name": "t4",
       "primitive": "u64"
     },
     {
-      "idx": 4,
+      "idx": 5,
       "name": "t5",
       "primitive": "s8"
     },
     {
-      "idx": 5,
+      "idx": 6,
       "name": "t6",
       "primitive": "s16"
     },
     {
-      "idx": 6,
+      "idx": 7,
       "name": "t7",
       "primitive": "s32"
     },
     {
-      "idx": 7,
+      "idx": 8,
       "name": "t8",
       "primitive": "s64"
     },
     {
-      "idx": 8,
+      "idx": 9,
       "name": "t9",
       "primitive": "f32"
     },
     {
-      "idx": 9,
+      "idx": 10,
       "name": "t10",
       "primitive": "f64"
     },
     {
-      "idx": 10,
+      "idx": 11,
       "name": "t11",
       "primitive": "char"
     },
     {
-      "idx": 11,
+      "idx": 12,
       "name": "t12",
       "list": "char"
     },
     {
-      "idx": 12,
+      "idx": 13,
       "name": "t13",
       "list": "char"
     },
     {
-      "idx": 13,
+      "idx": 14,
       "name": "t14",
       "variant": {
         "cases": [
@@ -87,7 +91,7 @@
       }
     },
     {
-      "idx": 14,
+      "idx": 15,
       "name": "t15",
       "variant": {
         "cases": [
@@ -103,7 +107,7 @@
       }
     },
     {
-      "idx": 15,
+      "idx": 16,
       "name": "t16",
       "variant": {
         "cases": [
@@ -119,7 +123,7 @@
       }
     },
     {
-      "idx": 16,
+      "idx": 17,
       "name": "t17",
       "variant": {
         "cases": [
@@ -135,7 +139,7 @@
       }
     },
     {
-      "idx": 17,
+      "idx": 18,
       "name": "t18",
       "variant": {
         "cases": [
@@ -151,19 +155,19 @@
       }
     },
     {
-      "idx": 18,
+      "idx": 19,
       "name": "t19",
       "primitive": "handle-0"
     },
     {
-      "idx": 19,
+      "idx": 20,
       "name": "t20",
       "record": {
         "fields": []
       }
     },
     {
-      "idx": 20,
+      "idx": 21,
       "name": "t21",
       "record": {
         "fields": [
@@ -175,7 +179,7 @@
       }
     },
     {
-      "idx": 21,
+      "idx": 22,
       "name": "t22",
       "record": {
         "fields": [
@@ -187,7 +191,7 @@
       }
     },
     {
-      "idx": 22,
+      "idx": 23,
       "name": "t23",
       "record": {
         "fields": [
@@ -203,7 +207,7 @@
       }
     },
     {
-      "idx": 23,
+      "idx": 24,
       "name": "t24",
       "record": {
         "fields": [
@@ -219,7 +223,7 @@
       }
     },
     {
-      "idx": 24,
+      "idx": 25,
       "name": "t25",
       "record": {
         "fields": [
@@ -231,21 +235,21 @@
       }
     },
     {
-      "idx": 25,
+      "idx": 26,
       "name": "record",
       "record": {
         "fields": []
       }
     },
     {
-      "idx": 26,
+      "idx": 27,
       "name": "t26",
       "record": {
         "fields": []
       }
     },
     {
-      "idx": 27,
+      "idx": 28,
       "name": "t27",
       "record": {
         "fields": [
@@ -257,7 +261,7 @@
       }
     },
     {
-      "idx": 28,
+      "idx": 29,
       "name": "t28",
       "record": {
         "fields": [
@@ -269,7 +273,7 @@
       }
     },
     {
-      "idx": 29,
+      "idx": 30,
       "name": "t29",
       "record": {
         "fields": [
@@ -285,54 +289,54 @@
       }
     },
     {
-      "idx": 30,
+      "idx": 31,
       "name": "t30",
       "record": {
         "fields": []
       }
     },
     {
-      "idx": 31,
+      "idx": 32,
       "name": "t31",
       "record": {
         "fields": [
           [
             "a",
-            "type-52"
+            "type-53"
           ],
           [
             "b",
-            "type-52"
+            "type-53"
           ],
           [
             "c",
-            "type-52"
-          ]
-        ]
-      }
-    },
-    {
-      "idx": 32,
-      "name": "t32",
-      "record": {
-        "fields": [
-          [
-            "a",
-            "type-52"
-          ],
-          [
-            "b",
-            "type-52"
-          ],
-          [
-            "c",
-            "type-52"
+            "type-53"
           ]
         ]
       }
     },
     {
       "idx": 33,
+      "name": "t32",
+      "record": {
+        "fields": [
+          [
+            "a",
+            "type-53"
+          ],
+          [
+            "b",
+            "type-53"
+          ],
+          [
+            "c",
+            "type-53"
+          ]
+        ]
+      }
+    },
+    {
+      "idx": 34,
       "name": "t33",
       "variant": {
         "cases": [
@@ -344,7 +348,7 @@
       }
     },
     {
-      "idx": 34,
+      "idx": 35,
       "name": "t34",
       "variant": {
         "cases": [
@@ -360,7 +364,7 @@
       }
     },
     {
-      "idx": 35,
+      "idx": 36,
       "name": "t35",
       "variant": {
         "cases": [
@@ -376,7 +380,7 @@
       }
     },
     {
-      "idx": 36,
+      "idx": 37,
       "name": "t36",
       "variant": {
         "cases": [
@@ -392,7 +396,7 @@
       }
     },
     {
-      "idx": 37,
+      "idx": 38,
       "name": "t37",
       "variant": {
         "cases": [
@@ -402,13 +406,13 @@
           ],
           [
             "b",
-            "type-53"
+            "type-54"
           ]
         ]
       }
     },
     {
-      "idx": 38,
+      "idx": 39,
       "name": "t38",
       "variant": {
         "cases": [
@@ -424,7 +428,7 @@
       }
     },
     {
-      "idx": 39,
+      "idx": 40,
       "name": "t39",
       "variant": {
         "cases": [
@@ -434,13 +438,13 @@
           ],
           [
             "1",
-            "type-53"
+            "type-54"
           ]
         ]
       }
     },
     {
-      "idx": 40,
+      "idx": 41,
       "name": "t40",
       "variant": {
         "cases": [
@@ -450,13 +454,13 @@
           ],
           [
             "1",
-            "type-53"
+            "type-54"
           ]
         ]
       }
     },
     {
-      "idx": 41,
+      "idx": 42,
       "name": "t41",
       "variant": {
         "cases": [
@@ -476,7 +480,7 @@
       }
     },
     {
-      "idx": 42,
+      "idx": 43,
       "name": "t42",
       "variant": {
         "cases": [
@@ -496,7 +500,7 @@
       }
     },
     {
-      "idx": 43,
+      "idx": 44,
       "name": "t43",
       "variant": {
         "cases": [
@@ -512,47 +516,47 @@
       }
     },
     {
-      "idx": 44,
+      "idx": 45,
       "name": "t44",
       "list": "char"
     },
     {
-      "idx": 45,
-      "name": "t45",
-      "list": "type-55"
-    },
-    {
       "idx": 46,
-      "name": "t46",
-      "primitive": "type-44"
+      "name": "t45",
+      "list": "type-56"
     },
     {
       "idx": 47,
-      "name": "t47",
-      "primitive": "type-44"
+      "name": "t46",
+      "primitive": "type-45"
     },
     {
       "idx": 48,
+      "name": "t47",
+      "primitive": "type-45"
+    },
+    {
+      "idx": 49,
       "name": "t48",
       "push-buffer": "u8"
     },
     {
-      "idx": 49,
+      "idx": 50,
       "name": "t49",
       "pull-buffer": "u8"
     },
     {
-      "idx": 50,
+      "idx": 51,
       "name": "foo",
-      "primitive": "type-51"
+      "primitive": "type-52"
     },
     {
-      "idx": 51,
+      "idx": 52,
       "name": "bar",
       "primitive": "u32"
     },
     {
-      "idx": 52,
+      "idx": 53,
       "variant": {
         "cases": [
           [
@@ -567,7 +571,7 @@
       }
     },
     {
-      "idx": 53,
+      "idx": 54,
       "variant": {
         "cases": [
           [
@@ -582,12 +586,12 @@
       }
     },
     {
-      "idx": 54,
-      "list": "type-32"
+      "idx": 55,
+      "list": "type-33"
     },
     {
-      "idx": 55,
-      "list": "type-54"
+      "idx": 56,
+      "list": "type-55"
     }
   ]
 }

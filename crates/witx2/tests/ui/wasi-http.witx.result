@@ -16,6 +16,22 @@
   "types": [
     {
       "idx": 0,
+      "primitive": "handle-0"
+    },
+    {
+      "idx": 1,
+      "primitive": "handle-1"
+    },
+    {
+      "idx": 2,
+      "primitive": "handle-2"
+    },
+    {
+      "idx": 3,
+      "primitive": "handle-3"
+    },
+    {
+      "idx": 4,
       "name": "Error",
       "variant": {
         "cases": [
@@ -31,7 +47,7 @@
       }
     },
     {
-      "idx": 1,
+      "idx": 5,
       "name": "Timestamp",
       "record": {
         "fields": [
@@ -47,11 +63,11 @@
       }
     },
     {
-      "idx": 2,
+      "idx": 6,
       "list": "char"
     },
     {
-      "idx": 3,
+      "idx": 7,
       "variant": {
         "cases": [
           [
@@ -60,17 +76,17 @@
           ],
           [
             "some",
-            "type-2"
+            "type-6"
           ]
         ]
       }
     },
     {
-      "idx": 4,
+      "idx": 8,
       "push-buffer": "u8"
     },
     {
-      "idx": 5,
+      "idx": 9,
       "variant": {
         "cases": [
           [
@@ -79,13 +95,13 @@
           ],
           [
             "err",
-            "type-0"
+            "type-4"
           ]
         ]
       }
     },
     {
-      "idx": 6,
+      "idx": 10,
       "pull-buffer": "u8"
     }
   ],
@@ -112,7 +128,7 @@
         "handle-0"
       ],
       "results": [
-        "type-2"
+        "type-6"
       ]
     },
     {
@@ -164,37 +180,37 @@
       "name": "Headers::get",
       "params": [
         "handle-2",
-        "type-2"
+        "type-6"
       ],
       "results": [
-        "type-3"
+        "type-7"
       ]
     },
     {
       "name": "Body::read",
       "params": [
         "handle-3",
-        "type-4"
+        "type-8"
       ],
       "results": [
-        "type-5"
+        "type-9"
       ]
     },
     {
       "name": "Body::write",
       "params": [
         "handle-3",
-        "type-6"
+        "type-10"
       ],
       "results": [
-        "type-5"
+        "type-9"
       ]
     },
     {
       "name": "maybe_number",
       "params": [],
       "results": [
-        "type-5"
+        "type-9"
       ]
     }
   ],

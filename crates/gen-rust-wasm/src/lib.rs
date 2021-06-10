@@ -571,12 +571,15 @@ impl Bindgen for RustWasm {
         }
     }
 
-    fn allocate_typed_space(&mut self, iface: &Interface, ty: TypeId) -> String {
+    fn allocate_typed_space(&mut self, _iface: &Interface, ty: TypeId) -> String {
         let tmp = self.tmp();
-        self.push_str(&format!("let mut rp{} = core::mem::MaybeUninit::<", tmp));
-        let name = iface.types[ty].name.as_ref().unwrap();
-        self.push_str(&name.to_camel_case());
-        self.push_str(">::uninit();");
+        self.push_str(&format!(
+            "let mut rp{} = core::mem::MaybeUninit::<[u8;",
+            tmp
+        ));
+        let size = self.sizes.size(&Type::Id(ty));
+        self.push_str(&size.to_string());
+        self.push_str("]>::uninit();");
         self.push_str(&format!("let ptr{} = rp{0}.as_mut_ptr() as i32;\n", tmp));
         format!("ptr{}", tmp)
     }

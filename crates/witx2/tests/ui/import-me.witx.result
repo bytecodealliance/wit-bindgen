@@ -12,11 +12,15 @@
     },
     {
       "idx": 1,
-      "name": "handle",
       "primitive": "handle-0"
     },
     {
       "idx": 2,
+      "name": "handle",
+      "primitive": "handle-0"
+    },
+    {
+      "idx": 3,
       "name": "some_record",
       "record": {
         "fields": [

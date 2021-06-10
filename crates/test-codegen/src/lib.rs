@@ -209,6 +209,15 @@ fn generate_tests<G>(
 where
     G: Generator,
 {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        let prev = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            eprintln!("panic: {:?}", backtrace::Backtrace::new());
+            prev(info);
+        }));
+    });
+
     let mut builder = GitignoreBuilder::new("tests");
     for token in input {
         let lit = match token {

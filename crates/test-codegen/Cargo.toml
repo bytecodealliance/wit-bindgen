@@ -11,11 +11,12 @@ doctest = false
 test = false
 
 [dependencies]
+backtrace = "0.3"
+heck = "0.3"
+ignore = "0.4"
+proc-macro2 = "1.0.27"
+quote = "1.0.9"
 witx-bindgen-gen-core = { path = '../gen-core' }
 witx-bindgen-gen-rust-wasm = { path = '../gen-rust-wasm', optional = true }
 witx-bindgen-gen-wasmtime = { path = '../gen-wasmtime', optional = true }
 witx2 = { path = '../witx2', features = ['old-witx-compat'] }
-ignore = "0.4"
-quote = "1.0.9"
-heck = "0.3"
-proc-macro2 = "1.0.27"

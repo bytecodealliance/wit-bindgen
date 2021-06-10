@@ -148,11 +148,9 @@ impl Resolver {
                         let id = self.copy_resource(&mod_name.name, dep, id);
                         self.define_resource(&resource.name, mod_name.span, id)?;
                     }
-                    for (id, ty) in dep.types.iter() {
-                        if let Some(name) = &ty.name {
-                            let ty = self.copy_type_def(&mod_name.name, dep, id);
-                            self.define_type(name, mod_name.span, ty)?;
-                        }
+                    for (name, id) in dep.type_lookup.iter() {
+                        let ty = self.copy_type_def(&mod_name.name, dep, *id);
+                        self.define_type(name, mod_name.span, ty)?;
                     }
                 }
             }
@@ -250,6 +248,13 @@ impl Resolver {
                         foreign_module: None,
                     });
                     self.define_resource(&r.name.name, r.name.span, id)?;
+                    let type_id = self.types.alloc(TypeDef {
+                        docs: Docs::default(),
+                        kind: TypeDefKind::Type(Type::Handle(id)),
+                        name: None,
+                        foreign_module: None,
+                    });
+                    self.define_type(&r.name.name, r.name.span, type_id)?;
                 }
                 Item::TypeDef(t) => {
                     let docs = self.docs(&t.docs);

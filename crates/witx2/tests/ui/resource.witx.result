@@ -19,6 +19,32 @@
       "name": "f"
     }
   ],
+  "types": [
+    {
+      "idx": 0,
+      "primitive": "handle-0"
+    },
+    {
+      "idx": 1,
+      "primitive": "handle-1"
+    },
+    {
+      "idx": 2,
+      "primitive": "handle-2"
+    },
+    {
+      "idx": 3,
+      "primitive": "handle-3"
+    },
+    {
+      "idx": 4,
+      "primitive": "handle-4"
+    },
+    {
+      "idx": 5,
+      "primitive": "handle-5"
+    }
+  ],
   "functions": [
     {
       "name": "e::x",
