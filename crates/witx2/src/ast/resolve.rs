@@ -148,7 +148,9 @@ impl Resolver {
                         let id = self.copy_resource(&mod_name.name, dep, id);
                         self.define_resource(&resource.name, mod_name.span, id)?;
                     }
-                    for (name, id) in dep.type_lookup.iter() {
+                    let mut names = dep.type_lookup.iter().collect::<Vec<_>>();
+                    names.sort(); // produce a stable order by which to add names
+                    for (name, id) in names {
                         let ty = self.copy_type_def(&mod_name.name, dep, *id);
                         self.define_type(name, mod_name.span, ty)?;
                     }

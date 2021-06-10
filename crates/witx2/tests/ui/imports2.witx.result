@@ -8,12 +8,13 @@
   "types": [
     {
       "idx": 0,
-      "name": "handle",
-      "primitive": "handle-0",
+      "name": "foo",
+      "primitive": "u32",
       "foreign_module": "import-me"
     },
     {
       "idx": 1,
+      "name": "handle",
       "primitive": "handle-0",
       "foreign_module": "import-me"
     },
@@ -40,8 +41,7 @@
     },
     {
       "idx": 3,
-      "name": "foo",
-      "primitive": "u32",
+      "primitive": "handle-0",
       "foreign_module": "import-me"
     },
     {
@@ -52,7 +52,7 @@
     {
       "idx": 5,
       "name": "my_handle2",
-      "primitive": "type-1"
+      "primitive": "type-3"
     }
   ]
 }
