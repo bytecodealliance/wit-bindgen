@@ -60,7 +60,7 @@ pub trait Generator {
     // fn const_(&mut self, iface: &Interface, name: &str, ty: &str, val: u64, docs: &Docs);
     fn import(&mut self, iface: &Interface, func: &Function);
     fn export(&mut self, iface: &Interface, func: &Function);
-    fn finish(&mut self, files: &mut Files);
+    fn finish(&mut self, iface: &Interface, files: &mut Files);
 
     fn generate(&mut self, iface: &Interface, import: bool, files: &mut Files) {
         self.preprocess(iface, import);
@@ -102,7 +102,7 @@ pub trait Generator {
             }
         }
 
-        self.finish(files)
+        self.finish(iface, files)
     }
 }
 

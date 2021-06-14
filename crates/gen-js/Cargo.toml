@@ -1,0 +1,31 @@
+[package]
+name = "witx-bindgen-gen-js"
+version = "0.1.0"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+edition = "2018"
+
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+witx-bindgen-gen-core = { path = '../gen-core', version = '0.1.0' }
+heck = "0.3"
+structopt = { version = "0.3", default-features = false, optional = true }
+
+[dev-dependencies]
+test-build-rust-wasm = { path = '../test-build-rust-wasm' }
+test-codegen = { path = '../test-codegen', features = ['witx-bindgen-gen-js'] }
+rayon = "1.0"
+
+[[test]]
+name = "eslint"
+harness = false
+
+[[test]]
+name = "run"
+harness = false
+required-features = ['old-witx-compat']
+
+[features]
+old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']

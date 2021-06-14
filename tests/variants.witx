@@ -38,6 +38,7 @@ option_arg: function(
   d: option<e1>,
   e: option<f32>,
   f: option<u1>,
+  g: option<option<bool>>,
 )
 option_result: function() -> (
   option<bool>,
@@ -46,6 +47,53 @@ option_result: function() -> (
   option<e1>,
   option<f32>,
   option<u1>,
+  option<option<bool>>,
+)
+
+variant casts1 {
+  a(s32),
+  b(f32),
+}
+
+variant casts2 {
+  a(f64),
+  b(f32),
+}
+
+variant casts3 {
+  a(f64),
+  b(u64),
+}
+
+variant casts4 {
+  a(u32),
+  b(s64),
+}
+
+variant casts5 {
+  a(f32),
+  b(s64),
+}
+
+variant casts6 {
+  a(tuple<f32, u32>),
+  b(tuple<u32, u32>),
+}
+
+casts: function(
+  a: casts1,
+  b: casts2,
+  c: casts3,
+  d: casts4,
+  e: casts5,
+  f: casts6,
+) -> (
+  casts1,
+  casts2,
+  casts3,
+  casts4,
+  casts5,
+  casts6,
 )
 
 expected_arg: function(

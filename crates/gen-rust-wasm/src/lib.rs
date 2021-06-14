@@ -476,7 +476,7 @@ impl Generator for RustWasm {
         trait_.handles.extend(mem::take(&mut self.handles_for_func));
     }
 
-    fn finish(&mut self, files: &mut Files) {
+    fn finish(&mut self, _iface: &Interface, files: &mut Files) {
         let mut src = mem::take(&mut self.src);
 
         for (name, trait_) in self.traits.iter() {
@@ -595,6 +595,10 @@ impl Bindgen for RustWasm {
         &self.sizes
     }
 
+    fn is_list_canonical(&self, iface: &Interface, ty: &Type) -> bool {
+        iface.all_bits_valid(ty)
+    }
+
     fn emit(
         &mut self,
         iface: &Interface,
@@ -641,9 +645,15 @@ impl Bindgen for RustWasm {
                 results.push(format!("witx_bindgen_rust::rt::as_i32({})", s));
             }
 
-            Instruction::F32FromIf32
-            | Instruction::F64FromIf64
-            | Instruction::If32FromF32
+            Instruction::F32FromIf32 => {
+                let s = operands.pop().unwrap();
+                results.push(format!("witx_bindgen_rust::rt::as_f32({})", s));
+            }
+            Instruction::F64FromIf64 => {
+                let s = operands.pop().unwrap();
+                results.push(format!("witx_bindgen_rust::rt::as_f64({})", s));
+            }
+            Instruction::If32FromF32
             | Instruction::If64FromF64
             | Instruction::S32FromI32
             | Instruction::S64FromI64 => {

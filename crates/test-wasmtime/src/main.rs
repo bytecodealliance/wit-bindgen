@@ -1,11 +1,9 @@
 use anyhow::Result;
+use test_build_rust_wasm::*;
 use wasmtime::*;
 
 mod exports;
 mod imports;
-
-const CHECKED: &[u8] = include_bytes!(env!("CHECKED"));
-const UNCHECKED: &[u8] = include_bytes!(env!("UNCHECKED"));
 
 fn main() -> Result<()> {
     // Create an engine with caching enabled to assist with iteration in this
@@ -29,9 +27,9 @@ pub struct Context {
     tables: imports::HostTables<imports::MyHost>,
 }
 
-fn run_test(engine: &Engine, wasm: &[u8]) -> Result<()> {
+fn run_test(engine: &Engine, wasm: &str) -> Result<()> {
     // Compile our wasm module ...
-    let module = Module::new(&engine, wasm)?;
+    let module = Module::from_file(&engine, wasm)?;
     let mut linker = Linker::<Context>::new(&engine);
 
     // Add WASI/witx functions to the linker

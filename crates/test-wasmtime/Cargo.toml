@@ -15,3 +15,4 @@ bitflags = "1.2.1"
 wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'main' }
 wasmtime-wasi = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'main' }
 witx-bindgen-wasmtime = { path = "../wasmtime", features = ['old-witx-compat'] }
+test-build-rust-wasm = { path = '../test-build-rust-wasm' }

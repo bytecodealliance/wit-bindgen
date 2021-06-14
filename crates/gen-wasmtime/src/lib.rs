@@ -648,7 +648,7 @@ impl Generator for Wasmtime {
         );
     }
 
-    fn finish(&mut self, files: &mut Files) {
+    fn finish(&mut self, _iface: &Interface, files: &mut Files) {
         for (module, funcs) in sorted_iter(&self.imports) {
             let module_camel = module.to_camel_case();
             self.src.push_str("\npub trait ");
@@ -918,6 +918,10 @@ impl Bindgen for Wasmtime {
 
     fn i64_return_pointer_area(&mut self, _amt: usize) -> String {
         unimplemented!()
+    }
+
+    fn is_list_canonical(&self, iface: &Interface, ty: &Type) -> bool {
+        iface.all_bits_valid(ty)
     }
 
     fn emit(

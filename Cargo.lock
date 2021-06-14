@@ -1172,6 +1172,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-build-rust-wasm"
+version = "0.1.0"
+
+[[package]]
 name = "test-codegen"
 version = "0.1.0"
 dependencies = [
@@ -1181,6 +1185,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "witx-bindgen-gen-core",
+ "witx-bindgen-gen-js",
  "witx-bindgen-gen-rust-wasm",
  "witx-bindgen-gen-wasmtime",
  "witx2",
@@ -1199,6 +1204,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bitflags",
+ "test-build-rust-wasm",
  "wasmtime",
  "wasmtime-wasi",
  "witx-bindgen-wasmtime",
@@ -1736,6 +1742,7 @@ dependencies = [
  "anyhow",
  "structopt",
  "witx-bindgen-gen-core",
+ "witx-bindgen-gen-js",
  "witx-bindgen-gen-rust-wasm",
  "witx-bindgen-gen-wasmtime",
 ]
@@ -1747,6 +1754,18 @@ dependencies = [
  "anyhow",
  "witx 0.10.0",
  "witx2",
+]
+
+[[package]]
+name = "witx-bindgen-gen-js"
+version = "0.1.0"
+dependencies = [
+ "heck",
+ "rayon",
+ "structopt",
+ "test-build-rust-wasm",
+ "test-codegen",
+ "witx-bindgen-gen-core",
 ]
 
 [[package]]

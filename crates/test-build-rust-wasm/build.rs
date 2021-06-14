@@ -11,8 +11,14 @@ fn main() {
     let unchecked = build(&out_dir, true);
     fs::copy(&unchecked, out_dir.join("unchecked.wasm")).unwrap();
 
-    println!("cargo:rustc-env=CHECKED={}", checked.display());
-    println!("cargo:rustc-env=UNCHECKED={}", unchecked.display());
+    println!(
+        "cargo:rustc-env=CHECKED={}",
+        out_dir.join("checked.wasm").display()
+    );
+    println!(
+        "cargo:rustc-env=UNCHECKED={}",
+        out_dir.join("unchecked.wasm").display()
+    );
     println!("cargo:rerun-if-changed=../test-rust-wasm");
     println!("cargo:rerun-if-changed=../gen-rust-wasm");
     println!("cargo:rerun-if-changed=../gen-rust");
