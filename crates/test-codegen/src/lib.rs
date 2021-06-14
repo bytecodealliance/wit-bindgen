@@ -8,22 +8,16 @@ use witx_bindgen_gen_core::Generator;
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-rust-wasm")]
 pub fn rust_wasm_import(input: TokenStream) -> TokenStream {
-    let checked = generate_tests(
-        input.clone(),
-        "import-checked",
-        |_path| (witx_bindgen_gen_rust_wasm::Opts::default().build(), true),
-        |_, _| {},
-    );
-    let unchecked = generate_tests(
-        input,
-        "import-unchecked",
-        |_path| {
-            let mut opts = witx_bindgen_gen_rust_wasm::Opts::default();
-            opts.unchecked = true;
-            (opts.build(), true)
-        },
-        |_, _| {},
-    );
+    let checked = generate_tests(input.clone(), "import-checked", |_path| {
+        (witx_bindgen_gen_rust_wasm::Opts::default().build(), true)
+    });
+    let checked = include_rust_sources(checked.iter().map(|p| p.1.join("bindings.rs")));
+    let unchecked = generate_tests(input, "import-unchecked", |_path| {
+        let mut opts = witx_bindgen_gen_rust_wasm::Opts::default();
+        opts.unchecked = true;
+        (opts.build(), true)
+    });
+    let unchecked = include_rust_sources(unchecked.iter().map(|p| p.1.join("bindings.rs")));
 
     return quote::quote! {
         mod checked { #checked }
@@ -37,33 +31,36 @@ pub fn rust_wasm_import(input: TokenStream) -> TokenStream {
 pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
     use heck::*;
 
-    let checked = generate_tests(
-        input.clone(),
-        "export-checked",
-        |_path| (witx_bindgen_gen_rust_wasm::Opts::default().build(), false),
-        gen_extra,
-    );
-    let unchecked = generate_tests(
-        input,
-        "export-unchecked",
-        |_path| {
-            let mut opts = witx_bindgen_gen_rust_wasm::Opts::default();
-            opts.unchecked = true;
-            opts.symbol_namespace = "unchecked".to_string();
-            (opts.build(), false)
-        },
-        gen_extra,
-    );
+    let checked = generate_tests(input.clone(), "export-checked", |_path| {
+        (witx_bindgen_gen_rust_wasm::Opts::default().build(), false)
+    });
+    let checked_extra = checked.iter().map(|p| gen_extra(&p.0));
+    let checked = include_rust_sources(checked.iter().map(|p| p.1.join("bindings.rs")));
+
+    let unchecked = generate_tests(input, "export-unchecked", |_path| {
+        let mut opts = witx_bindgen_gen_rust_wasm::Opts::default();
+        opts.unchecked = true;
+        opts.symbol_namespace = "unchecked".to_string();
+        (opts.build(), false)
+    });
+    let unchecked_extra = unchecked.iter().map(|p| gen_extra(&p.0));
+    let unchecked = include_rust_sources(unchecked.iter().map(|p| p.1.join("bindings.rs")));
 
     return quote::quote! {
-        mod checked { #checked }
-        mod unchecked { #unchecked }
+        mod checked {
+            #checked
+            #(#checked_extra)*
+        }
+        mod unchecked {
+            #unchecked
+            #(#unchecked_extra)*
+        }
     }
     .into();
 
-    fn gen_extra(iface: &witx2::Interface, ret: &mut proc_macro2::TokenStream) {
+    fn gen_extra(iface: &witx2::Interface) -> proc_macro2::TokenStream {
         if iface.functions.len() == 0 {
-            return;
+            return quote::quote! {};
         }
 
         let methods = iface.functions.iter().map(|f| {
@@ -84,7 +81,7 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
 
         let fnname = quote::format_ident!("{}", iface.name.to_snake_case());
         let the_trait = quote::format_ident!("{}", iface.name.to_camel_case());
-        ret.extend(quote::quote! {
+        quote::quote! {
             fn #fnname() -> &'static impl #fnname::#the_trait {
                 struct A;
                 impl #fnname::#the_trait for A {
@@ -92,7 +89,7 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
                 }
                 &A
             }
-        });
+        }
     }
 
     fn quote_ty(iface: &witx2::Interface, ty: &witx2::Type) -> proc_macro2::TokenStream {
@@ -179,24 +176,62 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-wasmtime")]
 pub fn wasmtime_import(input: TokenStream) -> TokenStream {
-    generate_tests(
-        input,
-        "import",
-        |_path| (witx_bindgen_gen_wasmtime::Opts::default().build(), true),
-        |_, _| {},
-    )
-    .into()
+    let tests = generate_tests(input, "import", |_path| {
+        (witx_bindgen_gen_wasmtime::Opts::default().build(), true)
+    });
+    include_rust_sources(tests.iter().map(|p| p.1.join("bindings.rs"))).into()
 }
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-wasmtime")]
 pub fn wasmtime_export(input: TokenStream) -> TokenStream {
-    generate_tests(
-        input,
-        "export",
-        |_path| (witx_bindgen_gen_wasmtime::Opts::default().build(), false),
-        |_, _| {},
-    )
+    let tests = generate_tests(input, "export", |_path| {
+        (witx_bindgen_gen_wasmtime::Opts::default().build(), false)
+    });
+    include_rust_sources(tests.iter().map(|p| p.1.join("bindings.rs"))).into()
+}
+
+#[proc_macro]
+#[cfg(feature = "witx-bindgen-gen-js")]
+pub fn js_import(input: TokenStream) -> TokenStream {
+    let tests = generate_tests(input, "import", |_path| {
+        (witx_bindgen_gen_js::Opts::default().build(), true)
+    });
+    let tests = tests.iter().map(|(_iface, test, witx)| {
+        let test = test.display().to_string();
+        let witx = witx.display().to_string();
+        quote::quote! {
+            {
+                const _: &str = include_str!(#witx);
+                #test
+            }
+        }
+    });
+    (quote::quote! {
+        pub const TESTS: &[&str] = &[#(#tests),*];
+    })
+    .into()
+}
+
+#[proc_macro]
+#[cfg(feature = "witx-bindgen-gen-js")]
+pub fn js_export(input: TokenStream) -> TokenStream {
+    let tests = generate_tests(input, "import", |_path| {
+        (witx_bindgen_gen_js::Opts::default().build(), false)
+    });
+    let tests = tests.iter().map(|(_iface, test, witx)| {
+        let test = test.display().to_string();
+        let witx = witx.display().to_string();
+        quote::quote! {
+            {
+                const _: &str = include_str!(#witx);
+                #test
+            }
+        }
+    });
+    (quote::quote! {
+        pub const TESTS: &[&str] = &[#(#tests),*];
+    })
     .into()
 }
 
@@ -204,8 +239,7 @@ fn generate_tests<G>(
     input: TokenStream,
     dir: &str,
     mkgen: impl Fn(&Path) -> (G, bool),
-    mkaux: impl Fn(&witx2::Interface, &mut proc_macro2::TokenStream),
-) -> proc_macro2::TokenStream
+) -> Vec<(witx2::Interface, PathBuf, PathBuf)>
 where
     G: Generator,
 {
@@ -240,8 +274,8 @@ where
     });
     let mut out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR not set"));
     out_dir.push(dir);
-    let mut ret = proc_macro2::TokenStream::new();
     let mut sources = Vec::new();
+    let cwd = env::current_dir().unwrap();
     for test in tests {
         let (mut gen, import) = mkgen(&test);
         let mut files = Default::default();
@@ -254,30 +288,25 @@ where
         for (file, contents) in files.iter() {
             fs::write(dst.join(file), contents).unwrap();
         }
-        sources.push(dst.join("bindings.rs"));
+        sources.push((iface, dst, cwd.join(test)));
+    }
+    sources
+}
+
+#[allow(dead_code)]
+fn include_rust_sources(srcs: impl Iterator<Item = PathBuf>) -> proc_macro2::TokenStream {
+    let mut ret = proc_macro2::TokenStream::new();
+
+    let mut rustfmt = std::process::Command::new("rustfmt");
+    for src in srcs {
+        rustfmt.arg(&src);
         ret.extend(
-            format!("include!(\"{}\");", dst.join("bindings.rs").display())
+            format!("include!(\"{}\");", src.display())
                 .parse::<proc_macro2::TokenStream>()
                 .unwrap(),
         );
-
-        let mut temp = proc_macro2::TokenStream::new();
-        mkaux(&iface, &mut temp);
-        if !temp.is_empty() {
-            let path = dst.join("extra.rs");
-            fs::write(&path, temp.to_string()).unwrap();
-            ret.extend(
-                format!("include!(\"{}\");", path.display())
-                    .parse::<proc_macro2::TokenStream>()
-                    .unwrap(),
-            );
-            sources.push(path);
-        }
     }
-    drop(
-        std::process::Command::new("rustfmt")
-            .args(&sources)
-            .output(),
-    );
-    ret
+    drop(rustfmt.output());
+
+    return ret;
 }

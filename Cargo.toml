@@ -18,3 +18,4 @@ structopt = { version = "0.3", default-features = false }
 witx-bindgen-gen-core = { path = 'crates/gen-core', features = ['old-witx-compat'] }
 witx-bindgen-gen-rust-wasm = { path = 'crates/gen-rust-wasm', features = ['structopt'] }
 witx-bindgen-gen-wasmtime = { path = 'crates/gen-wasmtime', features = ['structopt'] }
+witx-bindgen-gen-js = { path = 'crates/gen-js', features = ['structopt'] }

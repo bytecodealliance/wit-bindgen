@@ -19,4 +19,5 @@ quote = "1.0.9"
 witx-bindgen-gen-core = { path = '../gen-core' }
 witx-bindgen-gen-rust-wasm = { path = '../gen-rust-wasm', optional = true }
 witx-bindgen-gen-wasmtime = { path = '../gen-wasmtime', optional = true }
+witx-bindgen-gen-js = { path = '../gen-js', optional = true }
 witx2 = { path = '../witx2', features = ['old-witx-compat'] }
