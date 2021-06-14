@@ -1,0 +1,2 @@
+// parse-fail
+use { foo } from import-cycle-2-3

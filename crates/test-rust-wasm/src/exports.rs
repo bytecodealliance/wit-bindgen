@@ -27,8 +27,8 @@ struct MyType(u32);
 struct MyType2(u32);
 
 impl Wasm for MyWasm {
-    type WasmState = MyType;
-    type WasmState2 = MyType2;
+    // type WasmState = MyType;
+    // type WasmState2 = MyType2;
 
     fn allocated_bytes(&self) -> u32 {
         crate::allocator::get() as u32
@@ -104,6 +104,10 @@ impl Wasm for MyWasm {
 
     fn roundtrip_flags2(&self, a: F2) -> F2 {
         a
+    }
+
+    fn roundtrip_flags3(&self, a: F8, b: F16, c: F32, d: F64) -> (F8, F16, F32, F64) {
+        (a, b, c, d)
     }
 
     fn roundtrip_record1(&self, a: R1) -> R1 {
@@ -237,155 +241,155 @@ impl Wasm for MyWasm {
         (b"typedef3".to_vec(), vec!["typedef4".to_string()])
     }
 
-    fn wasm_state_create(&self) -> MyType {
-        MyType(100)
-    }
+    // fn wasm_state_create(&self) -> MyType {
+    //     MyType(100)
+    // }
 
-    fn wasm_state_get(&self, state: &MyType) -> u32 {
-        state.0
-    }
+    // fn wasm_state_get(&self, state: &MyType) -> u32 {
+    //     state.0
+    // }
 
-    fn wasm_state2_create(&self) -> MyType2 {
-        MyType2(33)
-    }
+    // fn wasm_state2_create(&self) -> MyType2 {
+    //     MyType2(33)
+    // }
 
-    fn wasm_state2_saw_close(&self) -> bool {
-        self.wasm_state2_closed.load(SeqCst) != 0
-    }
+    // fn wasm_state2_saw_close(&self) -> bool {
+    //     self.wasm_state2_closed.load(SeqCst) != 0
+    // }
 
-    fn wasm_state2_close(&self, _state: MyType2) {
-        self.wasm_state2_closed.store(1, SeqCst);
-    }
+    // fn wasm_state2_close(&self, _state: MyType2) {
+    //     self.wasm_state2_closed.store(1, SeqCst);
+    // }
 
-    fn two_wasm_states(&self, _a: &MyType, _b: &MyType2) -> (MyType, MyType2) {
-        (MyType(101), MyType2(102))
-    }
+    // fn two_wasm_states(&self, _a: &MyType, _b: &MyType2) -> (MyType, MyType2) {
+    //     (MyType(101), MyType2(102))
+    // }
 
-    fn wasm_state2_param_record(&self, _a: WasmStateParamRecord<'_, Self>) {}
-    fn wasm_state2_param_tuple(&self, _a: (&'_ MyType2,)) {}
-    fn wasm_state2_param_option(&self, _a: Option<&'_ MyType2>) {}
-    fn wasm_state2_param_result(&self, _a: Result<&'_ MyType2, u32>) {}
-    fn wasm_state2_param_variant(&self, _a: WasmStateParamVariant<'_, Self>) {}
-    fn wasm_state2_param_list(&self, _a: Vec<&MyType2>) {}
+    // fn wasm_state2_param_record(&self, _a: WasmStateParamRecord<'_, Self>) {}
+    // fn wasm_state2_param_tuple(&self, _a: (&'_ MyType2,)) {}
+    // fn wasm_state2_param_option(&self, _a: Option<&'_ MyType2>) {}
+    // fn wasm_state2_param_result(&self, _a: Result<&'_ MyType2, u32>) {}
+    // fn wasm_state2_param_variant(&self, _a: WasmStateParamVariant<'_, Self>) {}
+    // fn wasm_state2_param_list(&self, _a: Vec<&MyType2>) {}
 
-    fn wasm_state2_result_record(&self) -> WasmStateResultRecord<Self> {
-        WasmStateResultRecord { a: MyType2(222) }
-    }
-    fn wasm_state2_result_tuple(&self) -> (MyType2,) {
-        (MyType2(333),)
-    }
-    fn wasm_state2_result_option(&self) -> Option<MyType2> {
-        Some(MyType2(444))
-    }
-    fn wasm_state2_result_result(&self) -> Result<MyType2, u32> {
-        Ok(MyType2(555))
-    }
-    fn wasm_state2_result_variant(&self) -> WasmStateResultVariant<Self> {
-        WasmStateResultVariant::V0(MyType2(666))
-    }
-    fn wasm_state2_result_list(&self) -> Vec<MyType2> {
-        vec![MyType2(777), MyType2(888)]
-    }
+    // fn wasm_state2_result_record(&self) -> WasmStateResultRecord<Self> {
+    //     WasmStateResultRecord { a: MyType2(222) }
+    // }
+    // fn wasm_state2_result_tuple(&self) -> (MyType2,) {
+    //     (MyType2(333),)
+    // }
+    // fn wasm_state2_result_option(&self) -> Option<MyType2> {
+    //     Some(MyType2(444))
+    // }
+    // fn wasm_state2_result_result(&self) -> Result<MyType2, u32> {
+    //     Ok(MyType2(555))
+    // }
+    // fn wasm_state2_result_variant(&self) -> WasmStateResultVariant<Self> {
+    //     WasmStateResultVariant::V0(MyType2(666))
+    // }
+    // fn wasm_state2_result_list(&self) -> Vec<MyType2> {
+    //     vec![MyType2(777), MyType2(888)]
+    // }
 
-    fn buffer_u8(&self, in_: InBufferRaw<'_, u8>, out: OutBufferRaw<'_, u8>) -> u32 {
-        assert_eq!(in_.len(), 1);
-        let mut input = [0];
-        in_.copy(&mut input);
-        assert_eq!(input, [0]);
-
-        assert_eq!(out.capacity(), 10);
-        out.write(&[1, 2, 3]);
-        3
-    }
-
-    fn buffer_u32(&self, in_: InBufferRaw<'_, u32>, out: OutBufferRaw<'_, u32>) -> u32 {
-        assert_eq!(in_.len(), 1);
-        let mut input = [0];
-        in_.copy(&mut input);
-        assert_eq!(input, [0]);
-
-        assert_eq!(out.capacity(), 10);
-        out.write(&[1, 2, 3]);
-        3
-    }
-
-    fn buffer_bool(&self, in_: InBuffer<'_, bool>, out: OutBuffer<'_, bool>) -> u32 {
-        assert!(in_.len() <= out.capacity());
-        let len = in_.len();
-        let mut storage = vec![0; in_.len() * in_.element_size()];
-        let items = in_.iter(&mut storage).map(|b| !b).collect::<Vec<_>>();
-        out.write(&mut storage, items.into_iter());
-        len as u32
-    }
-
-    fn buffer_string(&self, in_: InBuffer<'_, String>, out: OutBuffer<'_, String>) -> u32 {
-        assert!(in_.len() <= out.capacity());
-        let len = in_.len();
-        let mut storage = vec![0; in_.len() * in_.element_size()];
-        let items = in_
-            .iter(&mut storage)
-            .map(|s| s.to_uppercase())
-            .collect::<Vec<_>>();
-        out.write(&mut storage, items.into_iter());
-        len as u32
-    }
-
-    fn buffer_list_bool(&self, in_: InBuffer<'_, Vec<bool>>, out: OutBuffer<'_, Vec<bool>>) -> u32 {
-        assert!(in_.len() <= out.capacity());
-        let len = in_.len();
-        let mut storage = vec![0; in_.len() * in_.element_size()];
-        let items = in_
-            .iter(&mut storage)
-            .map(|s| s.into_iter().map(|b| !b).collect::<Vec<_>>())
-            .collect::<Vec<_>>();
-        out.write(&mut storage, items.into_iter());
-        len as u32
-    }
-
-    // fn buffer_buffer_bool(&self, in_: InBuffer<'_, InBuffer<'_, bool>>) {
+    // fn buffer_u8(&self, in_: InBufferRaw<'_, u8>, out: OutBufferRaw<'_, u8>) -> u32 {
     //     assert_eq!(in_.len(), 1);
+    //     let mut input = [0];
+    //     in_.copy(&mut input);
+    //     assert_eq!(input, [0]);
+
+    //     assert_eq!(out.capacity(), 10);
+    //     out.write(&[1, 2, 3]);
+    //     3
+    // }
+
+    // fn buffer_u32(&self, in_: InBufferRaw<'_, u32>, out: OutBufferRaw<'_, u32>) -> u32 {
+    //     assert_eq!(in_.len(), 1);
+    //     let mut input = [0];
+    //     in_.copy(&mut input);
+    //     assert_eq!(input, [0]);
+
+    //     assert_eq!(out.capacity(), 10);
+    //     out.write(&[1, 2, 3]);
+    //     3
+    // }
+
+    // fn buffer_bool(&self, in_: InBuffer<'_, bool>, out: OutBuffer<'_, bool>) -> u32 {
+    //     assert!(in_.len() <= out.capacity());
+    //     let len = in_.len();
     //     let mut storage = vec![0; in_.len() * in_.element_size()];
-    //     let buf = in_.iter(&mut storage).next().unwrap();
-    //     assert_eq!(buf.len(), 5);
-    //     let mut storage2 = vec![0; buf.len() * buf.element_size()];
+    //     let items = in_.iter(&mut storage).map(|b| !b).collect::<Vec<_>>();
+    //     out.write(&mut storage, items.into_iter());
+    //     len as u32
+    // }
+
+    // fn buffer_string(&self, in_: InBuffer<'_, String>, out: OutBuffer<'_, String>) -> u32 {
+    //     assert!(in_.len() <= out.capacity());
+    //     let len = in_.len();
+    //     let mut storage = vec![0; in_.len() * in_.element_size()];
+    //     let items = in_
+    //         .iter(&mut storage)
+    //         .map(|s| s.to_uppercase())
+    //         .collect::<Vec<_>>();
+    //     out.write(&mut storage, items.into_iter());
+    //     len as u32
+    // }
+
+    // fn buffer_list_bool(&self, in_: InBuffer<'_, Vec<bool>>, out: OutBuffer<'_, Vec<bool>>) -> u32 {
+    //     assert!(in_.len() <= out.capacity());
+    //     let len = in_.len();
+    //     let mut storage = vec![0; in_.len() * in_.element_size()];
+    //     let items = in_
+    //         .iter(&mut storage)
+    //         .map(|s| s.into_iter().map(|b| !b).collect::<Vec<_>>())
+    //         .collect::<Vec<_>>();
+    //     out.write(&mut storage, items.into_iter());
+    //     len as u32
+    // }
+
+    // // fn buffer_buffer_bool(&self, in_: InBuffer<'_, InBuffer<'_, bool>>) {
+    // //     assert_eq!(in_.len(), 1);
+    // //     let mut storage = vec![0; in_.len() * in_.element_size()];
+    // //     let buf = in_.iter(&mut storage).next().unwrap();
+    // //     assert_eq!(buf.len(), 5);
+    // //     let mut storage2 = vec![0; buf.len() * buf.element_size()];
+    // //     assert_eq!(
+    // //         buf.iter(&mut storage2).collect::<Vec<bool>>(),
+    // //         [true, false, true, true, false]
+    // //     );
+    // // }
+
+    // fn buffer_mutable1(&self, a: Vec<InBuffer<'_, bool>>) {
+    //     assert_eq!(a.len(), 1);
+    //     assert_eq!(a[0].len(), 5);
+    //     let mut storage = vec![0; a[0].len() * a[0].element_size()];
     //     assert_eq!(
-    //         buf.iter(&mut storage2).collect::<Vec<bool>>(),
+    //         a[0].iter(&mut storage).collect::<Vec<_>>(),
     //         [true, false, true, true, false]
     //     );
     // }
 
-    fn buffer_mutable1(&self, a: Vec<InBuffer<'_, bool>>) {
-        assert_eq!(a.len(), 1);
-        assert_eq!(a[0].len(), 5);
-        let mut storage = vec![0; a[0].len() * a[0].element_size()];
-        assert_eq!(
-            a[0].iter(&mut storage).collect::<Vec<_>>(),
-            [true, false, true, true, false]
-        );
-    }
+    // fn buffer_mutable2(&self, a: Vec<OutBufferRaw<'_, u8>>) -> u32 {
+    //     assert_eq!(a.len(), 1);
+    //     assert!(a[0].capacity() > 4);
+    //     a[0].write(&[1, 2, 3, 4]);
+    //     return 4;
+    // }
 
-    fn buffer_mutable2(&self, a: Vec<OutBufferRaw<'_, u8>>) -> u32 {
-        assert_eq!(a.len(), 1);
-        assert!(a[0].capacity() > 4);
-        a[0].write(&[1, 2, 3, 4]);
-        return 4;
-    }
+    // fn buffer_mutable3(&self, a: Vec<OutBuffer<'_, bool>>) -> u32 {
+    //     assert_eq!(a.len(), 1);
+    //     assert!(a[0].capacity() > 3);
+    //     let mut storage = [0; 200];
+    //     a[0].write(&mut storage, [false, true, false].iter().copied());
+    //     return 3;
+    // }
 
-    fn buffer_mutable3(&self, a: Vec<OutBuffer<'_, bool>>) -> u32 {
-        assert_eq!(a.len(), 1);
-        assert!(a[0].capacity() > 3);
-        let mut storage = [0; 200];
-        a[0].write(&mut storage, [false, true, false].iter().copied());
-        return 3;
-    }
-
-    fn buffer_in_record(&self, _: BufferInRecord<'_>) {}
-    fn buffer_typedef(
-        &self,
-        _: ParamInBufferU8<'_>,
-        _: ParamOutBufferU8<'_>,
-        _: ParamInBufferBool<'_>,
-        _: ParamOutBufferBool<'_>,
-    ) {
-    }
+    // fn buffer_in_record(&self, _: BufferInRecord<'_>) {}
+    // fn buffer_typedef(
+    //     &self,
+    //     _: ParamInBufferU8<'_>,
+    //     _: ParamOutBufferU8<'_>,
+    //     _: ParamInBufferBool<'_>,
+    //     _: ParamOutBufferBool<'_>,
+    // ) {
+    // }
 }

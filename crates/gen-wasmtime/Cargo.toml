@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 edition = "2018"
 
+[lib]
+test = false
+doctest = false
+
 [dependencies]
 witx-bindgen-gen-core = { path = '../gen-core', version = '0.1.0' }
 witx-bindgen-gen-rust = { path = '../gen-rust', version = '0.1.0' }
@@ -11,4 +15,12 @@ heck = "0.3"
 structopt = { version = "0.3", default-features = false, optional = true }
 
 [dev-dependencies]
-#wasmtime = "0.23.0"
+witx-bindgen-wasmtime = { path = '../wasmtime' }
+test-codegen = { path = '../test-codegen', features = ['witx-bindgen-gen-wasmtime'] }
+
+[[test]]
+name = "run"
+harness = false
+
+[features]
+old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']

@@ -59,6 +59,7 @@ impl BufferGlue {
     pub fn in_read(
         &self,
         handle: u32,
+        store: impl wasmtime::AsContextMut,
         memory: &wasmtime::Memory,
         base: u32,
         len: u32,
@@ -78,7 +79,11 @@ impl BufferGlue {
                 Input::Bytes(ptr, elem_size) => {
                     let write_size = (len as usize) * *elem_size;
                     memory
-                        .write(base as usize, std::slice::from_raw_parts(*ptr, write_size))
+                        .write(
+                            store,
+                            base as usize,
+                            std::slice::from_raw_parts(*ptr, write_size),
+                        )
                         .map_err(|_| Trap::new("out-of-bounds write while reading in-buffer"))?;
                     *ptr = (*ptr).add(write_size);
                     b.len -= len;
@@ -124,6 +129,7 @@ impl BufferGlue {
     pub fn out_write(
         &self,
         handle: u32,
+        store: impl wasmtime::AsContext,
         memory: &wasmtime::Memory,
         base: u32,
         len: u32,
@@ -144,6 +150,7 @@ impl BufferGlue {
                     let read_size = (len as usize) * *elem_size;
                     memory
                         .read(
+                            &store,
                             base as usize,
                             std::slice::from_raw_parts_mut(*ptr, read_size),
                         )

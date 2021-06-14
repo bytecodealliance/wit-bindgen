@@ -6,9 +6,14 @@ edition = "2018"
 
 [lib]
 proc-macro = true
+doctest = false
+test = false
 
 [dependencies]
 proc-macro2 = "1.0"
 syn = "1.0"
 witx-bindgen-gen-core = { path = "../gen-core", version = "0.1" }
 witx-bindgen-gen-rust-wasm = { path = "../gen-rust-wasm", version = "0.1" }
+
+[features]
+old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']

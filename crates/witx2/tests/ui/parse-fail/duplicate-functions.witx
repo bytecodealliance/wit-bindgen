@@ -1,0 +1,4 @@
+// parse-fail
+
+foo: function()
+foo: function()

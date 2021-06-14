@@ -5,10 +5,13 @@ authors = ["Alex Crichton <alex@alexcrichton.com>"]
 edition = "2018"
 publish = false
 
+[[bin]]
+name = "test-wasmtime"
+test = false
+
 [dependencies]
 anyhow = "1.0"
 bitflags = "1.2.1"
-wasmtime = "0.26.0"
-wasmtime-wasi = "0.26.0"
-wasi-cap-std-sync = "0.26.0"
-witx-bindgen-wasmtime = { path = "../wasmtime" }
+wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'main' }
+wasmtime-wasi = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'main' }
+witx-bindgen-wasmtime = { path = "../wasmtime", features = ['old-witx-compat'] }

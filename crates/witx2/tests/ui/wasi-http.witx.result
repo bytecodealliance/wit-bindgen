@@ -1,0 +1,227 @@
+{
+  "resources": [
+    {
+      "name": "Request"
+    },
+    {
+      "name": "Response"
+    },
+    {
+      "name": "Headers"
+    },
+    {
+      "name": "Body"
+    }
+  ],
+  "types": [
+    {
+      "idx": 0,
+      "primitive": "handle-0"
+    },
+    {
+      "idx": 1,
+      "primitive": "handle-1"
+    },
+    {
+      "idx": 2,
+      "primitive": "handle-2"
+    },
+    {
+      "idx": 3,
+      "primitive": "handle-3"
+    },
+    {
+      "idx": 4,
+      "name": "Error",
+      "variant": {
+        "cases": [
+          [
+            "Overflow",
+            null
+          ],
+          [
+            "Unavailable",
+            null
+          ]
+        ]
+      }
+    },
+    {
+      "idx": 5,
+      "name": "Timestamp",
+      "record": {
+        "fields": [
+          [
+            "seconds",
+            "u64"
+          ],
+          [
+            "nanoseconds",
+            "u64"
+          ]
+        ]
+      }
+    },
+    {
+      "idx": 6,
+      "list": "char"
+    },
+    {
+      "idx": 7,
+      "variant": {
+        "cases": [
+          [
+            "none",
+            null
+          ],
+          [
+            "some",
+            "type-6"
+          ]
+        ]
+      }
+    },
+    {
+      "idx": 8,
+      "push-buffer": "u8"
+    },
+    {
+      "idx": 9,
+      "variant": {
+        "cases": [
+          [
+            "ok",
+            "u64"
+          ],
+          [
+            "err",
+            "type-4"
+          ]
+        ]
+      }
+    },
+    {
+      "idx": 10,
+      "pull-buffer": "u8"
+    }
+  ],
+  "functions": [
+    {
+      "name": "fetch",
+      "params": [
+        "handle-0"
+      ],
+      "results": [
+        "handle-1"
+      ]
+    },
+    {
+      "name": "Request::Request",
+      "params": [],
+      "results": [
+        "handle-0"
+      ]
+    },
+    {
+      "name": "Request::method",
+      "params": [
+        "handle-0"
+      ],
+      "results": [
+        "type-6"
+      ]
+    },
+    {
+      "name": "Request::headers",
+      "params": [
+        "handle-0"
+      ],
+      "results": [
+        "handle-2"
+      ]
+    },
+    {
+      "name": "Request::body",
+      "params": [
+        "handle-0"
+      ],
+      "results": [
+        "handle-3"
+      ]
+    },
+    {
+      "name": "Response::status",
+      "params": [
+        "handle-1"
+      ],
+      "results": [
+        "u16"
+      ]
+    },
+    {
+      "name": "Response::headers",
+      "params": [
+        "handle-1"
+      ],
+      "results": [
+        "handle-2"
+      ]
+    },
+    {
+      "name": "Response::body",
+      "params": [
+        "handle-1"
+      ],
+      "results": [
+        "handle-3"
+      ]
+    },
+    {
+      "name": "Headers::get",
+      "params": [
+        "handle-2",
+        "type-6"
+      ],
+      "results": [
+        "type-7"
+      ]
+    },
+    {
+      "name": "Body::read",
+      "params": [
+        "handle-3",
+        "type-8"
+      ],
+      "results": [
+        "type-9"
+      ]
+    },
+    {
+      "name": "Body::write",
+      "params": [
+        "handle-3",
+        "type-10"
+      ],
+      "results": [
+        "type-9"
+      ]
+    },
+    {
+      "name": "maybe_number",
+      "params": [],
+      "results": [
+        "type-9"
+      ]
+    }
+  ],
+  "globals": [
+    {
+      "name": "my_int",
+      "ty": "u32"
+    },
+    {
+      "name": "my_request",
+      "ty": "handle-0"
+    }
+  ]
+}

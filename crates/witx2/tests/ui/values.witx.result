@@ -1,0 +1,46 @@
+{
+  "types": [
+    {
+      "idx": 0,
+      "name": "a",
+      "record": {
+        "fields": []
+      }
+    },
+    {
+      "idx": 1,
+      "record": {
+        "fields": []
+      }
+    },
+    {
+      "idx": 2,
+      "record": {
+        "fields": [
+          [
+            "0",
+            "u32"
+          ],
+          [
+            "1",
+            "type-0"
+          ]
+        ]
+      }
+    }
+  ],
+  "globals": [
+    {
+      "name": "a",
+      "ty": "s32"
+    },
+    {
+      "name": "b",
+      "ty": "type-1"
+    },
+    {
+      "name": "c",
+      "ty": "type-2"
+    }
+  ]
+}

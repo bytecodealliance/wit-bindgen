@@ -1,0 +1,2 @@
+take_char: function(x: char)
+return_char: function() -> char

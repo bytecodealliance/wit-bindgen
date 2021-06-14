@@ -4,6 +4,28 @@
   (typename $r1 (record (field $a u8) (field $b $f1)))
   (typename $e1 (enum $a $b))
 
+  (typename $f8 (flags $b0 $b1 $b2 $b3 $b4 $b5 $b6 $b7))
+  (typename $f16 (flags
+    $b0 $b1 $b2 $b3 $b4 $b5 $b6 $b7
+    $b8 $b9 $b10 $b11 $b12 $b13 $b14 $b15
+  ))
+  (typename $f32 (flags
+    $b0 $b1 $b2 $b3 $b4 $b5 $b6 $b7
+    $b8 $b9 $b10 $b11 $b12 $b13 $b14 $b15
+    $b16 $b17 $b18 $b19 $b20 $b21 $b22 $b23
+    $b24 $b25 $b26 $b27 $b28 $b29 $b30 $b31
+  ))
+  (typename $f64 (flags
+    $b0 $b1 $b2 $b3 $b4 $b5 $b6 $b7
+    $b8 $b9 $b10 $b11 $b12 $b13 $b14 $b15
+    $b16 $b17 $b18 $b19 $b20 $b21 $b22 $b23
+    $b24 $b25 $b26 $b27 $b28 $b29 $b30 $b31
+    $b32 $b33 $b34 $b35 $b36 $b37 $b38 $b39
+    $b40 $b41 $b42 $b43 $b44 $b45 $b46 $b47
+    $b48 $b49 $b50 $b51 $b52 $b53 $b54 $b55
+    $b56 $b57 $b58 $b59 $b60 $b61 $b62 $b63
+  ))
+
   ;; Variants for testing casting between primitive types
   (typename $c1 (variant (case $a s32) (case $b s64)))
   (typename $c2 (variant (case $a s32) (case $b f32)))
@@ -42,10 +64,11 @@
   (typename $list_typedef2 (list u8))
   (typename $list_typedef3 (list string))
 
-  (resource $r0)
-  (typename $wasm_state (handle $r0))
-  (resource $r1)
-  (typename $wasm_state2 (handle $r1))
+(;
+  (resource $wasm_state)
+  (typename $wasm_state (handle $wasm_state))
+  (resource $wasm_state2)
+  (typename $wasm_state2 (handle $wasm_state2))
 
   (typename $wasm_state_param_record (record (field $a $wasm_state2)))
   (typename $wasm_state_param_tuple (tuple $wasm_state2))
@@ -58,6 +81,7 @@
   (typename $wasm_state_result_option (option $wasm_state2))
   (typename $wasm_state_result_result (expected $wasm_state2 (error u32)))
   (typename $wasm_state_result_variant (union $wasm_state2 u32))
+;)
 
   (typename $buffer_in_variant (variant
     (case $a (in-buffer u8))
@@ -108,6 +132,16 @@
   (export "swap_tuple" (func (param $a (tuple u8 u32)) (result $b (tuple u32 u8))))
   (export "roundtrip_flags1" (func (param $a $f1) (result $b $f1)))
   (export "roundtrip_flags2" (func (param $a $f2) (result $b $f2)))
+  (export "roundtrip_flags3" (func
+    (param $a $f8)
+    (param $b $f16)
+    (param $c $f32)
+    (param $d $f64)
+    (result $r0 $f8)
+    (result $r1 $f16)
+    (result $r2 $f32)
+    (result $r3 $f64)
+  ))
   (export "roundtrip_record1" (func (param $a $r1) (result $b $r1)))
   (export "tuple0" (func (param $a (tuple)) (result $b (tuple))))
   (export "tuple1" (func (param $a (tuple u8)) (result $b (tuple u8))))
@@ -142,9 +176,11 @@
   (export "list_result2" (func (result $a string)))
   (export "list_result3" (func (result $a (list string))))
 
+  (;
   ;; ===========================================
   ;; handles
   ;; ===========================================
+  (;
   (export "wasm_state_create" (func (result $a $wasm_state)))
   (export "wasm_state_get" (func (param $a $wasm_state) (result $b u32)))
   (export "wasm_state2_create" (func (result $b $wasm_state2)))
@@ -171,6 +207,7 @@
   (export "wasm_state2_result_result" (func (result $a $wasm_state_result_result)))
   (export "wasm_state2_result_variant" (func (result $a $wasm_state_result_variant)))
   (export "wasm_state2_result_list" (func (result $a (list $wasm_state2))))
+  ;)
 
   ;; ===========================================
   ;; buffers
@@ -192,6 +229,7 @@
     (param $c $param_in_buffer_bool)
     (param $d $param_out_buffer_bool)
   ))
+  ;)
 
   ;; ===========================================
   ;; More flavorful types
