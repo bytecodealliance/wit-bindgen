@@ -1181,7 +1181,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "witx-bindgen-gen-core",
- "witx-bindgen-gen-js",
  "witx-bindgen-gen-rust-wasm",
  "witx-bindgen-gen-wasmtime",
  "witx2",
@@ -1737,7 +1736,6 @@ dependencies = [
  "anyhow",
  "structopt",
  "witx-bindgen-gen-core",
- "witx-bindgen-gen-js",
  "witx-bindgen-gen-rust-wasm",
  "witx-bindgen-gen-wasmtime",
 ]
@@ -1749,17 +1747,6 @@ dependencies = [
  "anyhow",
  "witx 0.10.0",
  "witx2",
-]
-
-[[package]]
-name = "witx-bindgen-gen-js"
-version = "0.1.0"
-dependencies = [
- "heck",
- "rayon",
- "structopt",
- "test-codegen",
- "witx-bindgen-gen-core",
 ]
 
 [[package]]
