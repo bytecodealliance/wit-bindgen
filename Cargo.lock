@@ -1778,7 +1778,7 @@ dependencies = [
 [[package]]
 name = "witx2"
 version = "0.1.0"
-source = "git+https://github.com/alexcrichton/witx-bindgen?branch=new-api#c526e4fe0f8158fc1e17d73346d02df6f5ed3304"
+source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#19c908abbfebe07c6a23dfd0d36ac954a2b32fbf"
 dependencies = [
  "anyhow",
  "id-arena",
