@@ -140,7 +140,7 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-gen-core"
 version = "0.1.0"
-source = "git+https://github.com/alexcrichton/witx-bindgen?branch=new-api#dddcd9f6efdd67e9ad7422b9cdd3fbd694fbf01d"
+source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#19c908abbfebe07c6a23dfd0d36ac954a2b32fbf"
 dependencies = [
  "anyhow",
  "witx",
@@ -150,7 +150,7 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-gen-rust"
 version = "0.1.0"
-source = "git+https://github.com/alexcrichton/witx-bindgen?branch=new-api#dddcd9f6efdd67e9ad7422b9cdd3fbd694fbf01d"
+source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#19c908abbfebe07c6a23dfd0d36ac954a2b32fbf"
 dependencies = [
  "heck",
  "witx-bindgen-gen-core",
@@ -159,7 +159,7 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-gen-rust-wasm"
 version = "0.1.0"
-source = "git+https://github.com/alexcrichton/witx-bindgen?branch=new-api#dddcd9f6efdd67e9ad7422b9cdd3fbd694fbf01d"
+source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#19c908abbfebe07c6a23dfd0d36ac954a2b32fbf"
 dependencies = [
  "heck",
  "witx-bindgen-gen-core",
@@ -169,7 +169,7 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-rust"
 version = "0.1.0"
-source = "git+https://github.com/alexcrichton/witx-bindgen?branch=new-api#dddcd9f6efdd67e9ad7422b9cdd3fbd694fbf01d"
+source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#19c908abbfebe07c6a23dfd0d36ac954a2b32fbf"
 dependencies = [
  "witx-bindgen-rust-impl",
 ]
@@ -177,7 +177,7 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-rust-impl"
 version = "0.1.0"
-source = "git+https://github.com/alexcrichton/witx-bindgen?branch=new-api#dddcd9f6efdd67e9ad7422b9cdd3fbd694fbf01d"
+source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#19c908abbfebe07c6a23dfd0d36ac954a2b32fbf"
 dependencies = [
  "proc-macro2",
  "syn",
@@ -188,7 +188,7 @@ dependencies = [
 [[package]]
 name = "witx2"
 version = "0.1.0"
-source = "git+https://github.com/alexcrichton/witx-bindgen?branch=new-api#dddcd9f6efdd67e9ad7422b9cdd3fbd694fbf01d"
+source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#19c908abbfebe07c6a23dfd0d36ac954a2b32fbf"
 dependencies = [
  "anyhow",
  "id-arena",
