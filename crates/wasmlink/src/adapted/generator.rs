@@ -1,6 +1,6 @@
 use witx2::{
     abi::{Bindgen, CallMode, Instruction, WasmSignature, WasmType},
-    Function, Interface, SizeAlign, Type, TypeDefKind, TypeId,
+    Function, Interface, RecordKind, SizeAlign, Type, TypeDefKind, TypeId,
 };
 
 use crate::adapted::FREE_EXPORT_NAME;
@@ -62,6 +62,39 @@ pub struct CodeGenerator<'a> {
     sizes: SizeAlign,
 }
 
+fn arg_to_operand(interface: &Interface, index: u32, ty: &Type) -> (u32, Operand) {
+    match ty {
+        Type::Id(id) => match &interface.types.get(*id).unwrap().kind {
+            TypeDefKind::Record(r) => match r.kind {
+                RecordKind::Flags(f) => todo!(),
+                RecordKind::Tuple | RecordKind::Other => {
+                    let mut offset = 0;
+                    let mut fields = Vec::new();
+                    for f in &r.fields {
+                        let (count, operand) = arg_to_operand(interface, index + offset, &f.ty);
+                        fields.push(Box::new(operand));
+                        offset += count;
+                    }
+                    (offset, Operand::Record { fields })
+                }
+            },
+            TypeDefKind::Variant(_) => todo!(),
+            TypeDefKind::List(_) => (
+                2,
+                Operand::List {
+                    addr: index,
+                    len: index + 1,
+                },
+            ),
+            TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => (1, Operand::Local(index)),
+            TypeDefKind::PushBuffer(_) => todo!(),
+            TypeDefKind::PullBuffer(_) => todo!(),
+            TypeDefKind::Type(t) => arg_to_operand(interface, index, t),
+        },
+        _ => (1, Operand::Local(index)),
+    }
+}
+
 impl<'a> CodeGenerator<'a> {
     pub fn new(
         interface: &Interface,
@@ -77,26 +110,9 @@ impl<'a> CodeGenerator<'a> {
             .params
             .iter()
             .map(|(_, ty)| {
-                let i = locals_start_index;
-                locals_start_index += 1;
-                match ty {
-                    Type::Id(id) => match interface.types.get(*id).unwrap().kind {
-                        TypeDefKind::Record(_) => todo!(),
-                        TypeDefKind::Variant(_) => todo!(),
-                        TypeDefKind::List(_) => {
-                            locals_start_index += 1;
-                            Operand::List {
-                                addr: i,
-                                len: i + 1,
-                            }
-                        }
-                        TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => Operand::Local(i),
-                        TypeDefKind::PushBuffer(_) => todo!(),
-                        TypeDefKind::PullBuffer(_) => todo!(),
-                        TypeDefKind::Type(_) => todo!(),
-                    },
-                    _ => Operand::Local(i),
-                }
+                let (count, operand) = arg_to_operand(interface, locals_start_index, ty);
+                locals_start_index += count;
+                operand
             })
             .collect();
 
@@ -538,10 +554,17 @@ impl<'a> Bindgen for CodeGenerator<'a> {
             Instruction::BufferLowerHandle { .. } => todo!(),
             Instruction::BufferLiftPtrLen { .. } => todo!(),
             Instruction::BufferLiftHandle { .. } => todo!(),
-            Instruction::RecordLower { .. } => todo!(),
+            Instruction::RecordLower { .. } => match operands.swap_remove(0) {
+                Operand::Record { fields } => {
+                    for f in fields {
+                        results.push(*f);
+                    }
+                }
+                _ => panic!("expected a record operand"),
+            },
             Instruction::RecordLift { .. } => {
                 results.push(Operand::Record {
-                    fields: operands.iter().map(|o| Box::new(o.clone())).collect(),
+                    fields: operands.into_iter().map(|o| Box::new(o.clone())).collect(),
                 });
             }
             Instruction::FlagsLower { .. } => todo!(),

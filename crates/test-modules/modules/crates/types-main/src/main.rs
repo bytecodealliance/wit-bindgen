@@ -2,7 +2,10 @@ witx_bindgen_rust::import!("crates/types/types.witx");
 
 fn main() {
     types::a();
-    assert_eq!(types::b(1, -2, 3, 4, 5, -6, 7, 8), (1, -2, 3, 4, 5, -6, 7, 8));
+    assert_eq!(
+        types::b(1, -2, 3, 4, 5, -6, 7, 8),
+        (1, -2, 3, 4, 5, -6, 7, 8)
+    );
     assert_eq!(types::c(1.7, 2.6), (1.7, 2.6));
     assert_eq!(types::d("this is a string"), "this is a string");
     assert_eq!(types::e(), "hello world!");

@@ -61,6 +61,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "records"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-rust",
+]
+
+[[package]]
+name = "records-main"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-rust",
+]
+
+[[package]]
 name = "syn"
 version = "1.0.72"
 source = "registry+https://github.com/rust-lang/crates.io-index"

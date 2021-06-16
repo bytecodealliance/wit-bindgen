@@ -1,5 +1,7 @@
 [workspace]
 members = [
     "crates/types",
-    "crates/types-main"
+    "crates/types-main",
+    "crates/records",
+    "crates/records-main",
 ]
