@@ -14,11 +14,27 @@ record scalars {
 scalar_arg: function(x: scalars)
 scalar_result: function() -> scalars
 
+record really_flags {
+    a: bool,
+    b: bool,
+    c: bool,
+    d: bool,
+    e: bool,
+    f: bool,
+    g: bool,
+    h: bool,
+    i: bool,
+}
+
+flags_arg: function(x: really_flags)
+flags_result: function() -> really_flags
+
 record aggregates {
     a: scalars,
     b: u32,
     c: empty,
     d: string,
+    e: really_flags,
 }
 
 aggregate_arg: function(x: aggregates)

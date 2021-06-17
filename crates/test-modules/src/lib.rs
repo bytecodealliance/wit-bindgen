@@ -80,15 +80,16 @@ mod tests {
 
     #[test]
     fn basic_types() -> Result<()> {
-        run(&link("types-main", &["types"])?)?;
-
-        Ok(())
+        run(&link("types-main", &["types"])?)
     }
 
     #[test]
     fn records() -> Result<()> {
-        run(&link("records-main", &["records"])?)?;
+        run(&link("records-main", &["records"])?)
+    }
 
-        Ok(())
+    #[test]
+    fn flags() -> Result<()> {
+        run(&link("flags-main", &["flags"])?)
     }
 }

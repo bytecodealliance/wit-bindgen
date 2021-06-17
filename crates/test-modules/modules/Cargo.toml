@@ -4,4 +4,6 @@ members = [
     "crates/types-main",
     "crates/records",
     "crates/records-main",
+    "crates/flags",
+    "crates/flags-main",
 ]

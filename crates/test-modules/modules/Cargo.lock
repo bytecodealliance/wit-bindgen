@@ -13,6 +13,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "flags"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-rust",
+]
+
+[[package]]
+name = "flags-main"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-rust",
+]
+
+[[package]]
 name = "heck"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
