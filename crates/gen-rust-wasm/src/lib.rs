@@ -1077,7 +1077,7 @@ impl Bindgen for RustWasm {
                 self.push_str(");");
             }
 
-            Instruction::Return { amt } => {
+            Instruction::Return { amt, .. } => {
                 for (ptr, layout) in mem::take(&mut self.cleanup) {
                     self.push_str(&format!("std::alloc::dealloc({}, {});\n", ptr, layout));
                 }

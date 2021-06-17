@@ -57,7 +57,8 @@ struct Exports {
 #[derive(Default, Debug)]
 #[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
 pub struct Opts {
-    // ...
+    #[cfg_attr(feature = "structopt", structopt(long = "no-typescript"))]
+    pub no_typescript: bool,
 }
 
 impl Opts {
@@ -726,7 +727,9 @@ impl Generator for Js {
         }
 
         files.push("bindings.js", self.src.js.as_bytes());
-        files.push("bindings.d.ts", self.src.ts.as_bytes());
+        if !self.opts.no_typescript {
+            files.push("bindings.d.ts", self.src.ts.as_bytes());
+        }
     }
 }
 

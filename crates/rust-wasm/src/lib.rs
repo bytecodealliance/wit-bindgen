@@ -30,6 +30,9 @@ pub mod rt {
 
     #[no_mangle]
     unsafe extern "C" fn canonical_abi_free(ptr: *mut u8, len: usize, align: usize) {
+        if len == 0 {
+            return;
+        }
         let layout = Layout::from_size_align_unchecked(len, align);
         alloc::dealloc(ptr, layout);
     }

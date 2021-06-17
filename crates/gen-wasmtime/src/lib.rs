@@ -1474,7 +1474,7 @@ impl Bindgen for Wasmtime {
                 self.after_call = true;
             }
 
-            Instruction::Return { amt } => {
+            Instruction::Return { amt, .. } => {
                 let result = match amt {
                     0 => format!("Ok(())"),
                     1 => format!("Ok({})", operands[0]),
