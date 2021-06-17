@@ -7,7 +7,7 @@ mod tests {
         path::{Path, PathBuf},
     };
     use wasmlink::{Linker, Module, Profile};
-    use wasmtime_wasi::{Wasi, WasiCtxBuilder};
+    use wasmtime_wasi::WasiCtxBuilder;
 
     fn module_path(name: &str) -> PathBuf {
         Path::new("modules/target/wasm32-wasi")
@@ -63,27 +63,33 @@ mod tests {
         config.wasm_module_linking(true);
         config.wasm_multi_memory(true);
 
-        Wasi::add_to_config(&mut config);
-
         let engine = Engine::new(&config)?;
+        let mut linker = wasmtime::Linker::new(&engine);
+        wasmtime_wasi::add_to_linker(&mut linker, |s| s)?;
+
         let module = Module::new(&engine, module)?;
-        let store = Store::new(&engine);
+        let mut store = Store::new(&engine, WasiCtxBuilder::new().inherit_stdout().build());
 
-        assert!(Wasi::set_context(&store, WasiCtxBuilder::new().build()).is_ok());
+        let instance = linker.instantiate(&mut store, &module)?;
+        let start = instance.get_typed_func::<(), (), _>(&mut store, "_start")?;
 
-        let linker = wasmtime::Linker::new(&store);
-        let instance = linker.instantiate(&module)?;
-        let start = instance.get_typed_func::<(), ()>("_start")?;
-
-        start.call(())?;
+        start.call(store, ())?;
 
         Ok(())
     }
 
     #[test]
     fn basic_types() -> Result<()> {
-        run(&link("types-main", &["types"])?)?;
+        run(&link("types-main", &["types"])?)
+    }
 
-        Ok(())
+    #[test]
+    fn records() -> Result<()> {
+        run(&link("records-main", &["records"])?)
+    }
+
+    #[test]
+    fn flags() -> Result<()> {
+        run(&link("flags-main", &["flags"])?)
     }
 }

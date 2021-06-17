@@ -1,6 +1,6 @@
 use witx2::{
     abi::{Bindgen, CallMode, Instruction, WasmSignature, WasmType},
-    Function, Interface, SizeAlign, Type, TypeDefKind, TypeId,
+    Function, Interface, RecordKind, SizeAlign, Type, TypeDefKind, TypeId,
 };
 
 use crate::adapted::FREE_EXPORT_NAME;
@@ -16,6 +16,52 @@ fn to_val_type(ty: &WasmType) -> wasm_encoder::ValType {
         WasmType::I64 => wasm_encoder::ValType::I64,
         WasmType::F32 => wasm_encoder::ValType::F32,
         WasmType::F64 => wasm_encoder::ValType::F64,
+    }
+}
+
+fn param_to_operand(interface: &Interface, index: u32, ty: &Type) -> (u32, Operand) {
+    match ty {
+        Type::Id(id) => match &interface.types.get(*id).unwrap().kind {
+            TypeDefKind::Record(r) => {
+                let (count, fields) = match r.kind {
+                    RecordKind::Flags(_) => match interface.flags_repr(r) {
+                        Some(_) => (1, vec![Box::new(Operand::Local(index))]),
+                        None => {
+                            let mut fields = Vec::with_capacity(r.num_i32s());
+                            for i in 0..fields.len() as u32 {
+                                fields.push(Box::new(Operand::Local(index + i)));
+                            }
+                            (fields.len() as u32, fields)
+                        }
+                    },
+                    RecordKind::Tuple | RecordKind::Other => {
+                        let mut fields = Vec::new();
+                        let mut count = 0;
+                        for f in &r.fields {
+                            let (local, operand) =
+                                param_to_operand(interface, index + count, &f.ty);
+                            fields.push(Box::new(operand));
+                            count += local;
+                        }
+                        (count, fields)
+                    }
+                };
+                (count, Operand::Record { fields })
+            }
+            TypeDefKind::Variant(_) => todo!(),
+            TypeDefKind::List(_) => (
+                2,
+                Operand::List {
+                    addr: index,
+                    len: index + 1,
+                },
+            ),
+            TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => (1, Operand::Local(index)),
+            TypeDefKind::PushBuffer(_) => todo!(),
+            TypeDefKind::PullBuffer(_) => todo!(),
+            TypeDefKind::Type(t) => param_to_operand(interface, index, t),
+        },
+        _ => (1, Operand::Local(index)),
     }
 }
 
@@ -50,6 +96,78 @@ impl From<&WasmType> for StoreType {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum Operand {
+    Local(u32),
+    I32Const(i32),
+    Pointer { addr: u32, memory: u32 },
+    List { addr: u32, len: u32 },
+    Record { fields: Vec<Box<Operand>> },
+}
+
+impl Operand {
+    fn local(&self) -> Option<u32> {
+        match self {
+            Operand::Local(i) => Some(*i),
+            _ => None,
+        }
+    }
+
+    fn load(&self, instructions: &mut Vec<wasm_encoder::Instruction>) {
+        match self {
+            Self::Local(i) | Self::Pointer { addr: i, .. } => {
+                instructions.push(wasm_encoder::Instruction::LocalGet(*i));
+            }
+            Self::I32Const(i) => {
+                instructions.push(wasm_encoder::Instruction::I32Const(*i));
+            }
+            Self::List { .. } => panic!("list operands must be split"),
+            Self::Record { fields } => {
+                for field in fields {
+                    field.load(instructions);
+                }
+            }
+        }
+    }
+
+    fn store<'a>(
+        &self,
+        generator: &mut CodeGenerator<'_>,
+        addr: &Operand,
+        types: &mut impl Iterator<Item = &'a WasmType>,
+        offset: &mut u32,
+        alignment: u32,
+    ) {
+        match self {
+            Self::Local(i) | Self::Pointer { addr: i, .. } => {
+                let ty = types.next().expect("incorrect number of types");
+                assert!(*ty == generator.local_type(*i));
+
+                generator.emit_store(addr, *offset, self, ty.into());
+                *offset += alignment;
+            }
+            Self::List { .. } => {
+                let (list, len) = self.split_list();
+                list.store(generator, addr, types, offset, alignment);
+                len.store(generator, addr, types, offset, alignment);
+            }
+            Self::Record { fields } => {
+                for field in fields {
+                    field.store(generator, addr, types, offset, alignment);
+                }
+            }
+            _ => panic!("expected a local, list, or record"),
+        }
+    }
+
+    fn split_list(&self) -> (Self, Self) {
+        match self {
+            Self::List { addr, len } => (Self::Local(*addr), Self::Local(*len)),
+            _ => panic!("expected a list operand to split"),
+        }
+    }
+}
+
 pub struct CodeGenerator<'a> {
     params: Vec<Operand>,
     signature: WasmSignature,
@@ -77,26 +195,9 @@ impl<'a> CodeGenerator<'a> {
             .params
             .iter()
             .map(|(_, ty)| {
-                let i = locals_start_index;
-                locals_start_index += 1;
-                match ty {
-                    Type::Id(id) => match interface.types.get(*id).unwrap().kind {
-                        TypeDefKind::Record(_) => todo!(),
-                        TypeDefKind::Variant(_) => todo!(),
-                        TypeDefKind::List(_) => {
-                            locals_start_index += 1;
-                            Operand::List {
-                                addr: i,
-                                len: i + 1,
-                            }
-                        }
-                        TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => Operand::Local(i),
-                        TypeDefKind::PushBuffer(_) => todo!(),
-                        TypeDefKind::PullBuffer(_) => todo!(),
-                        TypeDefKind::Type(_) => todo!(),
-                    },
-                    _ => Operand::Local(i),
-                }
+                let (count, operand) = param_to_operand(interface, locals_start_index, ty);
+                locals_start_index += count;
+                operand
             })
             .collect();
 
@@ -230,78 +331,6 @@ impl<'a> CodeGenerator<'a> {
                 self.instructions.push(inst);
             }
             _ => panic!("expected a pointer for first operand"),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Operand {
-    Local(u32),
-    I32Const(i32),
-    Pointer { addr: u32, memory: u32 },
-    List { addr: u32, len: u32 },
-    Record { fields: Vec<Box<Operand>> },
-}
-
-impl Operand {
-    fn local(&self) -> Option<u32> {
-        match self {
-            Operand::Local(i) => Some(*i),
-            _ => None,
-        }
-    }
-
-    fn load(&self, instructions: &mut Vec<wasm_encoder::Instruction>) {
-        match self {
-            Self::Local(i) | Self::Pointer { addr: i, .. } => {
-                instructions.push(wasm_encoder::Instruction::LocalGet(*i));
-            }
-            Self::I32Const(i) => {
-                instructions.push(wasm_encoder::Instruction::I32Const(*i));
-            }
-            Self::List { .. } => panic!("list operands must be split"),
-            Self::Record { fields } => {
-                for field in fields {
-                    field.load(instructions);
-                }
-            }
-        }
-    }
-
-    fn store<'a>(
-        &self,
-        generator: &mut CodeGenerator<'_>,
-        addr: &Operand,
-        types: &mut impl Iterator<Item = &'a WasmType>,
-        offset: &mut u32,
-        alignment: u32,
-    ) {
-        match self {
-            Self::Local(i) | Self::Pointer { addr: i, .. } => {
-                let ty = types.next().expect("incorrect number of types");
-                assert!(*ty == generator.local_type(*i));
-
-                generator.emit_store(addr, *offset, self, ty.into());
-                *offset += alignment;
-            }
-            Self::List { .. } => {
-                let (list, len) = self.split_list();
-                list.store(generator, addr, types, offset, alignment);
-                len.store(generator, addr, types, offset, alignment);
-            }
-            Self::Record { fields } => {
-                for field in fields {
-                    field.store(generator, addr, types, offset, alignment);
-                }
-            }
-            _ => panic!("expected a local, list, or record"),
-        }
-    }
-
-    fn split_list(&self) -> (Self, Self) {
-        match self {
-            Self::List { addr, len } => (Self::Local(*addr), Self::Local(*len)),
-            _ => panic!("expected a list operand to split"),
         }
     }
 }
@@ -538,16 +567,23 @@ impl<'a> Bindgen for CodeGenerator<'a> {
             Instruction::BufferLowerHandle { .. } => todo!(),
             Instruction::BufferLiftPtrLen { .. } => todo!(),
             Instruction::BufferLiftHandle { .. } => todo!(),
-            Instruction::RecordLower { .. } => todo!(),
-            Instruction::RecordLift { .. } => {
+            Instruction::RecordLower { .. }
+            | Instruction::FlagsLower { .. }
+            | Instruction::FlagsLower64 { .. } => match operands.swap_remove(0) {
+                Operand::Record { fields } => {
+                    for f in fields {
+                        results.push(*f);
+                    }
+                }
+                _ => panic!("expected a record operand"),
+            },
+            Instruction::RecordLift { .. }
+            | Instruction::FlagsLift { .. }
+            | Instruction::FlagsLift64 { .. } => {
                 results.push(Operand::Record {
-                    fields: operands.iter().map(|o| Box::new(o.clone())).collect(),
+                    fields: operands.into_iter().map(|o| Box::new(o.clone())).collect(),
                 });
             }
-            Instruction::FlagsLower { .. } => todo!(),
-            Instruction::FlagsLower64 { .. } => todo!(),
-            Instruction::FlagsLift { .. } => todo!(),
-            Instruction::FlagsLift64 { .. } => todo!(),
             Instruction::VariantPayload => todo!(),
             Instruction::VariantLower { .. } => todo!(),
             Instruction::VariantLift { .. } => todo!(),
