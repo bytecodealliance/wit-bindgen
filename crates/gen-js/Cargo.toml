@@ -28,4 +28,5 @@ harness = false
 required-features = ['old-witx-compat']
 
 [features]
+default = ['old-witx-compat'] # TODO: rewrite host.witx in new syntax
 old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']

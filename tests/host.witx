@@ -192,6 +192,15 @@
     (param $c $result_typedef)
   ))
 
+  (export "variant_enums" (func
+    (param $p1 bool)
+    (param $p2 (expected (error)))
+    (param $p3 $my_errno)
+    (result $r1 bool)
+    (result $r2 (expected (error)))
+    (result $r3 $my_errno)
+  ))
+
   ;; ===========================================
   ;; old WASI abi support
   ;; ===========================================
@@ -293,5 +302,14 @@
     (param $c $list_typedef3)
     (result $r1 $list_typedef2)
     (result $r2 $list_typedef3)
+  ))
+
+  (export "list_of_variants" (func
+    (param $p1 (list bool))
+    (param $p2 (list (expected (error))))
+    (param $p3 (list $my_errno))
+    (result $r1 (list bool))
+    (result $r2 (list (expected (error))))
+    (result $r3 (list $my_errno))
   ))
 )

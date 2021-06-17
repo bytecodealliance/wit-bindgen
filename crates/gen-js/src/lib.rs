@@ -860,22 +860,20 @@ impl Bindgen for Js {
                 self.src
                     .js(&format!("const variant{} = {};\n", tmp, operands[0]));
 
-                // TODO: can this optimization be done sometimes?
-                // if variant.is_enum() && name.is_some() && !variant.is_bool() {
-                //     assert_eq!(*nresults, 1);
-                //     let name = name.unwrap().to_camel_case();
-                //     self.src
-                //         .js(&format!("if (!(variant{} in {}))\n", tmp, name));
-                //     self.src.js(&format!(
-                //         "throw new RangeError(\"invalid variant specified for {}\");\n",
-                //         name,
-                //     ));
-                //     results.push(format!(
-                //         "Number.isInteger(variant{}) ? variant{0} : {}[variant{0}]",
-                //         tmp, name
-                //     ));
-                //     return;
-                // }
+                if *nresults == 1 && variant.is_enum() && name.is_some() && !variant.is_bool() {
+                    let name = name.unwrap().to_camel_case();
+                    self.src
+                        .js(&format!("if (!(variant{} in {}))\n", tmp, name));
+                    self.src.js(&format!(
+                        "throw new RangeError(\"invalid variant specified for {}\");\n",
+                        name,
+                    ));
+                    results.push(format!(
+                        "Number.isInteger(variant{}) ? variant{0} : {}[variant{0}]",
+                        tmp, name
+                    ));
+                    return;
+                }
 
                 for i in 0..*nresults {
                     self.src.js(&format!("let variant{}_{};\n", tmp, i));
@@ -883,8 +881,8 @@ impl Bindgen for Js {
                 }
 
                 let expr_to_match = if variant.is_bool()
-                    || variant.is_enum()
                     || self.is_nullable_option(iface, variant)
+                    || (variant.is_enum() && name.is_some())
                 {
                     format!("variant{}", tmp)
                 } else {
@@ -906,6 +904,9 @@ impl Bindgen for Js {
                             self.src.js(&format!("const e = variant{};\n", tmp));
                             use_default = false;
                         }
+                    } else if variant.is_enum() && name.is_some() {
+                        self.src.js(&format!("case {}: {{\n", i));
+                        self.src.js(&format!("const e = variant{};\n", tmp));
                     } else {
                         self.src
                             .js(&format!("case \"{}\": {{\n", case.name.as_str()));
@@ -975,10 +976,9 @@ impl Bindgen for Js {
                         assert!(block_results.is_empty());
                         self.src
                             .js(&format!("variant{} = {};\n", tmp, case.name.as_str()));
-                    } else if variant.is_enum() {
+                    } else if variant.is_enum() && name.is_some() {
                         assert!(block_results.is_empty());
-                        self.src
-                            .js(&format!("variant{} = \"{}\";\n", tmp, case.name.as_str()));
+                        self.src.js(&format!("variant{} = tag{0};\n", tmp));
                     } else if self.is_nullable_option(iface, variant) {
                         if case.ty.is_none() {
                             assert!(block_results.is_empty());

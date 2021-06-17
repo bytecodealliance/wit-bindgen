@@ -66,6 +66,16 @@ function host(): bindings.Host {
     variant_casts(x) { return x; },
     variant_zeros(x) { return x; },
     variant_typedefs(x, y, z) {},
+    variant_enums(a, b, c) {
+      assert.deepStrictEqual(a, true);
+      assert.deepStrictEqual(b, { tag: 'ok' });
+      assert.deepStrictEqual(c, bindings.MyErrno.Success);
+      return {
+        r1: false,
+        r2: { tag: 'err', val: undefined },
+        r3: bindings.MyErrno.A,
+      };
+    },
     legacy_params(a, b, c) {},
     legacy_result(succeed) {
       if (succeed) {
@@ -213,6 +223,17 @@ function host(): bindings.Host {
       assert.strictEqual(x, 'typedef1');
       assert.deepStrictEqual(y, ['typedef2']);
       return { r1: (new TextEncoder).encode('typedef3'), r2: ['typedef4'] };
+    },
+
+    list_of_variants(bools, results, enums) {
+      assert.deepStrictEqual(bools, [true, false]);
+      assert.deepStrictEqual(results, [{ tag: 'ok' }, { tag: 'err' }]);
+      assert.deepStrictEqual(enums, [bindings.MyErrno.Success, bindings.MyErrno.A]);
+      return {
+        r1: [false, true],
+        r2: [{ tag: 'err', val: undefined }, { tag: 'ok', val: undefined }],
+        r3: [bindings.MyErrno.A, bindings.MyErrno.B],
+      };
     },
   };
 }

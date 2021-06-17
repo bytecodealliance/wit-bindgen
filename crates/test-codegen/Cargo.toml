@@ -21,3 +21,6 @@ witx-bindgen-gen-rust-wasm = { path = '../gen-rust-wasm', optional = true }
 witx-bindgen-gen-wasmtime = { path = '../gen-wasmtime', optional = true }
 witx-bindgen-gen-js = { path = '../gen-js', optional = true }
 witx2 = { path = '../witx2', features = ['old-witx-compat'] }
+
+[features]
+old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']
