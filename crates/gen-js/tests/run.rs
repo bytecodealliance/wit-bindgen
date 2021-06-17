@@ -9,6 +9,8 @@ fn main() {
     dir.push("run");
     drop(fs::remove_dir_all(&dir));
     fs::create_dir_all(&dir).unwrap();
+    fs::create_dir_all(&dir.join("imports")).unwrap();
+    fs::create_dir_all(&dir.join("exports")).unwrap();
 
     println!("OUT_DIR = {:?}", dir);
     println!("Generating bindings...");
@@ -19,8 +21,19 @@ fn main() {
         .build()
         .generate(&iface, true, &mut files);
     for (file, contents) in files.iter() {
-        fs::write(dir.join(file), contents).unwrap();
+        fs::write(dir.join("imports").join(file), contents).unwrap();
     }
+
+    let iface =
+        witx_bindgen_gen_core::witx2::Interface::parse_file("../../tests/wasm.witx").unwrap();
+    let mut files = Default::default();
+    witx_bindgen_gen_js::Opts::default()
+        .build()
+        .generate(&iface, false, &mut files);
+    for (file, contents) in files.iter() {
+        fs::write(dir.join("exports").join(file), contents).unwrap();
+    }
+
     println!("Running tsc...");
     fs::copy("tests/run.ts", dir.join("run.ts")).unwrap();
     let status = Command::new("npx")

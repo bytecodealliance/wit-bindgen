@@ -10,6 +10,7 @@ pub struct Js {
     src: Source,
     opts: Opts,
     imports: HashMap<String, Vec<Import>>,
+    exports: HashMap<String, Exports>,
     block_storage: Vec<String>,
     blocks: Vec<(String, Vec<String>)>,
     in_import: bool,
@@ -46,6 +47,11 @@ pub struct Js {
 struct Import {
     name: String,
     src: Source,
+}
+
+#[derive(Default)]
+struct Exports {
+    funcs: Vec<Source>,
 }
 
 #[derive(Default, Debug)]
@@ -185,7 +191,7 @@ impl Js {
                     TypeDefKind::Variant(v) => {
                         if self.is_nullable_option(iface, v) {
                             self.print_ty(iface, v.cases[1].ty.as_ref().unwrap());
-                            self.src.ts.push_str(" | null");
+                            self.src.ts(" | null");
                         } else if let Some(t) = v.as_option() {
                             self.needs_ty_option = true;
                             self.src.ts("Option<");
@@ -198,7 +204,7 @@ impl Js {
                                 Some(ok) => self.print_ty(iface, ok),
                                 None => self.src.ts("undefined"),
                             }
-                            self.src.ts.push_str(", ");
+                            self.src.ts(", ");
                             match err {
                                 Some(err) => self.print_ty(iface, err),
                                 None => self.src.ts("undefined"),
@@ -237,7 +243,7 @@ impl Js {
         self.src.ts("[");
         for (i, field) in record.fields.iter().enumerate() {
             if i > 0 {
-                self.src.ts.push_str(", ");
+                self.src.ts(", ");
             }
             self.print_ty(iface, &field.ty);
         }
@@ -271,6 +277,48 @@ impl Js {
             self.src.ts(&format!("// {}\n", line));
         }
     }
+
+    fn ts_func(&mut self, iface: &Interface, func: &Function) {
+        self.src.ts(&func.name.to_snake_case());
+        self.src.ts("(");
+        for (i, (name, ty)) in func.params.iter().enumerate() {
+            if i > 0 {
+                self.src.ts(", ");
+            }
+            self.src.ts(&name.to_snake_case());
+            self.src.ts(": ");
+            self.print_ty(iface, ty);
+        }
+        self.src.ts("): ");
+        match func.results.len() {
+            0 => self.src.ts("void"),
+            1 => self.print_ty(iface, &func.results[0].1),
+            _ => {
+                if func.results.iter().any(|(n, _)| n.is_empty()) {
+                    self.src.ts("[");
+                    for (i, (_, ty)) in func.results.iter().enumerate() {
+                        if i > 0 {
+                            self.src.ts(", ");
+                        }
+                        self.print_ty(iface, ty);
+                    }
+                    self.src.ts("]");
+                } else {
+                    self.src.ts("{ ");
+                    for (i, (name, ty)) in func.results.iter().enumerate() {
+                        if i > 0 {
+                            self.src.ts(", ");
+                        }
+                        self.src.ts(&name.to_snake_case());
+                        self.src.ts(": ");
+                        self.print_ty(iface, ty);
+                    }
+                    self.src.ts(" }");
+                }
+            }
+        }
+        self.src.ts(";\n");
+    }
 }
 
 impl Generator for Js {
@@ -294,21 +342,36 @@ impl Generator for Js {
             self.print_tuple(iface, record);
             self.src.ts(";\n");
         } else if record.is_flags() {
-            if record.fields.len() <= 32 {
-                self.src
-                    .ts(&format!("export type {} = number;\n", name.to_camel_case()));
-            } else {
+            let repr = iface
+                .flags_repr(record)
+                .expect("unsupported number of flags");
+            let suffix = if repr == Int::U64 {
                 self.src
                     .ts(&format!("export type {} = bigint;\n", name.to_camel_case()));
+                "n"
+            } else {
+                self.src
+                    .ts(&format!("export type {} = number;\n", name.to_camel_case()));
+                ""
+            };
+            let name = name.to_shouty_snake_case();
+            for (i, field) in record.fields.iter().enumerate() {
+                let field = field.name.to_shouty_snake_case();
+                self.src.js(&format!(
+                    "export const {}_{} = {}{};\n",
+                    name, field, i, suffix,
+                ));
+                self.src.ts(&format!(
+                    "export const {}_{} = {}{};\n",
+                    name, field, i, suffix,
+                ));
             }
         } else {
             self.src
                 .ts(&format!("export interface {} {{\n", name.to_camel_case()));
             for field in record.fields.iter() {
                 self.docs(&field.docs);
-                self.src
-                    .ts
-                    .push_str(&format!("{}: ", field.name.to_snake_case()));
+                self.src.ts(&format!("{}: ", field.name.to_snake_case()));
                 self.print_ty(iface, &field.ty);
                 self.src.ts(",\n");
             }
@@ -360,7 +423,7 @@ impl Generator for Js {
                 .ts(&format!("export type {} = ", name.to_camel_case()));
             for (i, case) in variant.cases.iter().enumerate() {
                 if i > 0 {
-                    self.src.ts.push_str(" | ");
+                    self.src.ts(" | ");
                 }
                 self.src
                     .ts(&format!("{}_{}", name, case.name).to_camel_case());
@@ -376,7 +439,7 @@ impl Generator for Js {
                 self.src.ts(&case.name);
                 self.src.ts("\",\n");
                 if let Some(ty) = &case.ty {
-                    self.src.ts.push_str("val: ");
+                    self.src.ts("val: ");
                     self.print_ty(iface, ty);
                     self.src.ts(",\n");
                 }
@@ -465,46 +528,7 @@ impl Generator for Js {
         let start = self.src.js.len();
         iface.call(self.call_mode(), func, self);
         self.src.js("}");
-
-        self.src.ts(&func.name.to_snake_case());
-        self.src.ts("(");
-        for (i, (name, ty)) in func.params.iter().enumerate() {
-            if i > 0 {
-                self.src.ts.push_str(", ");
-            }
-            self.src.ts(&name.to_snake_case());
-            self.src.ts.push_str(": ");
-            self.print_ty(iface, ty);
-        }
-        self.src.ts.push_str("): ");
-        match func.results.len() {
-            0 => self.src.ts("void"),
-            1 => self.print_ty(iface, &func.results[0].1),
-            _ => {
-                if func.results.iter().any(|(n, _)| n.is_empty()) {
-                    self.src.ts("[");
-                    for (i, (_, ty)) in func.results.iter().enumerate() {
-                        if i > 0 {
-                            self.src.ts(", ");
-                        }
-                        self.print_ty(iface, ty);
-                    }
-                    self.src.ts("]");
-                } else {
-                    self.src.ts("{ ");
-                    for (i, (name, ty)) in func.results.iter().enumerate() {
-                        if i > 0 {
-                            self.src.ts.push_str(", ");
-                        }
-                        self.src.ts(&name.to_snake_case());
-                        self.src.ts.push_str(": ");
-                        self.print_ty(iface, ty);
-                    }
-                    self.src.ts.push_str(" }");
-                }
-            }
-        }
-        self.src.ts(";\n");
+        self.ts_func(iface, func);
 
         if self.needs_memory {
             self.needs_memory = false;
@@ -541,14 +565,61 @@ impl Generator for Js {
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
-        drop((iface, func));
-        panic!()
+        self.in_import = false;
+        self.tmp = 0;
+        let prev = mem::take(&mut self.src);
+
+        self.src.js(&format!(
+            "{}({}) {{\n",
+            func.name.to_snake_case(),
+            func.params
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("arg{}", i))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        let start = self.src.js.len();
+        iface.call(self.call_mode(), func, self);
+        self.src.js("}\n");
+        self.ts_func(iface, func);
+
+        if self.needs_memory {
+            self.needs_memory = false;
+            // TODO: hardcoding "memory"
+            self.src
+                .js
+                .insert_str(start, "const memory = this._exports.memory;\n");
+        }
+
+        if let Some(name) = self.needs_realloc.take() {
+            self.src.js.insert_str(
+                start,
+                &format!("const realloc = this._exports[\"{}\"];\n", name),
+            );
+        }
+
+        if let Some(name) = self.needs_free.take() {
+            self.src.js.insert_str(
+                start,
+                &format!("const free = this._exports[\"{}\"];\n", name),
+            );
+        }
+
+        let exports = self
+            .exports
+            .entry(iface.name.to_string())
+            .or_insert_with(Exports::default);
+
+        let func_body = mem::replace(&mut self.src, prev);
+        exports.funcs.push(func_body);
     }
 
     fn finish(&mut self, iface: &Interface, files: &mut Files) {
+        self.print_intrinsics();
+
         for (module, funcs) in mem::take(&mut self.imports) {
             let module = module.to_snake_case();
-            self.print_global_intrinsics();
             // TODO: `module.exports` vs `export function`
             self.src.js(&format!(
                 "export function add_{}_to_imports(imports, obj{}) {{\n",
@@ -569,7 +640,6 @@ impl Generator for Js {
                     ""
                 },
             ));
-            self.print_intrinsics();
             self.src.js(&format!(
                 "if (!(\"{0}\" in imports)) imports[\"{0}\"] = {{}};\n",
                 module,
@@ -611,6 +681,48 @@ impl Generator for Js {
             }
             self.src.js("}");
             self.src.ts("}\n");
+        }
+
+        for (module, exports) in mem::take(&mut self.exports) {
+            let module = module.to_camel_case();
+            // TODO: `module.exports` vs `export function`
+            self.src.js(&format!("export class {} {{\n", module));
+
+            self.src.js("static async instantiate(module, imports) {\n");
+            self.src.js(&format!("const me = new {}();\n", module));
+            self.src.js("
+                let ret;
+                if (module instanceof WebAssembly.Module) {
+                    ret = {
+                        module,
+                        instance: await WebAssembly.instantiate(module, imports),
+                    };
+                } else if (module instanceof ArrayBuffer || module instanceof Uint8Array) {
+                    ret = await WebAssembly.instantiate(module, imports);
+                } else {
+                    ret = await WebAssembly.instantiateStreaming(module, imports);
+                }
+                me.module = ret.module;
+                me.instance = ret.instance;
+                me._exports = me.instance.exports;
+                return me;
+            ");
+            self.src.js("}\n");
+
+            self.src.ts(&format!("export class {} {{\n", module));
+            self.src.ts(&format!(
+                "static instantiate(module: WebAssembly.Module | BufferSource | Promise<Response> | Response, imports: any): Promise<{}>;\n",
+                module
+            ));
+            self.src.ts("instance: WebAssembly.Instance;\n");
+            self.src.ts("module: WebAssembly.Module;\n");
+
+            for func in exports.funcs.iter() {
+                self.src.js(&func.js);
+                self.src.ts(&func.ts);
+            }
+            self.src.ts("}\n");
+            self.src.js("}");
         }
 
         files.push("bindings.js", self.src.js.as_bytes());
@@ -1076,27 +1188,45 @@ impl Bindgen for Js {
             }
             Instruction::ListCanonLift { element, free } => {
                 self.needs_memory = true;
-                let result = match element {
+                let tmp = self.tmp();
+                self.src
+                    .js(&format!("const ptr{} = {};\n", tmp, operands[0]));
+                self.src
+                    .js(&format!("const len{} = {};\n", tmp, operands[1]));
+                let (result, align) = match element {
                     Type::Char => {
                         self.needs_utf8_decoder = true;
-                        format!(
-                            "UTF8_DECODER.decode(new Uint8Array(memory.buffer, {}, {}))",
-                            operands[0], operands[1],
+                        (
+                            format!(
+                                "UTF8_DECODER.decode(new Uint8Array(memory.buffer, ptr{}, len{0}))",
+                                tmp,
+                            ),
+                            1,
                         )
                     }
                     _ => {
                         let array_ty = self.array_ty(iface, element).unwrap();
-                        format!(
-                            "new {}(memory.buffer.slice({}, {1} + {} * {}))",
-                            array_ty,
-                            operands[0],
-                            operands[1],
-                            self.sizes.size(element),
+                        (
+                            format!(
+                                "new {}(memory.buffer.slice(ptr{}, ptr{1} + len{1} * {}))",
+                                array_ty,
+                                tmp,
+                                self.sizes.size(element),
+                            ),
+                            self.sizes.align(element),
                         )
                     }
                 };
-                results.push(result);
-                assert!(free.is_none());
+                match free {
+                    Some(free) => {
+                        self.needs_free = Some(free.to_string());
+                        self.src.js(&format!("const list{} = {};\n", tmp, result));
+                        self.src
+                            .js(&format!("free(ptr{}, len{0}, {});\n", tmp, align));
+                        results.push(format!("list{}", tmp));
+                    }
+                    None => results.push(result),
+                }
             }
 
             Instruction::ListLower { element, realloc } => {
@@ -1249,31 +1379,36 @@ impl Bindgen for Js {
             //        }
             //        results.push(format!("{}", handle));
             //    }
-            // Instruction::CallWasm {
-            //     module: _,
-            //     name,
-            //     sig,
-            // } => {
-            //     // if sig.results.len() > 0 {
-            //     //     let tmp = self.tmp();
-            //     //     self.push_str("let (");
-            //     //     for i in 0..sig.results.len() {
-            //     //         let arg = format!("result{}_{}", tmp, i);
-            //     //         self.push_str(&arg);
-            //     //         self.push_str(",");
-            //     //         results.push(arg);
-            //     //     }
-            //     //     self.push_str(") = ");
-            //     // }
-            //     self.src.js("obj.");
-            //     self.src.js(&name.to_snake_case());
-            //     self.src.js("(");
-            //     self.src.js(&operands.join(", "));
-            //     self.src.js(");");
-            //     // self.push_str(");");
-            //     // self.after_call = true;
-            //     // self.caller_memory_available = false; // invalidated by call
-            // }
+            Instruction::CallWasm {
+                module: _,
+                name,
+                sig,
+            } => {
+                match sig.results.len() {
+                    0 => {}
+                    1 => {
+                        self.src.js("const ret = ");
+                        results.push("ret".to_string());
+                    }
+                    n => {
+                        self.src.js("const [");
+                        for i in 0..n {
+                            if i > 0 {
+                                self.src.js(", ");
+                            }
+                            self.src.js(&format!("ret{}", i));
+                            results.push(format!("ret{}", i));
+                        }
+                        self.src.js("] = ");
+                    }
+                }
+                self.src.js("this._exports['");
+                self.src.js(&name);
+                self.src.js("'](");
+                self.src.js(&operands.join(", "));
+                self.src.js(");\n");
+            }
+
             Instruction::CallInterface { module: _, func } => {
                 if func.results.len() > 0 {
                     if func.results.len() == 1 {
@@ -1299,7 +1434,7 @@ impl Bindgen for Js {
                             self.src.js(name);
                             results.push(name.clone());
                         }
-                        self.src.js.push_str("} = ");
+                        self.src.js("} = ");
                     }
                 }
                 self.src.js("obj.");
@@ -1309,10 +1444,25 @@ impl Bindgen for Js {
                 self.src.js(");\n");
             }
 
-            Instruction::Return { amt } => match amt {
+            Instruction::Return { amt, func } => match amt {
                 0 => {}
                 1 => self.src.js(&format!("return {};\n", operands[0])),
-                _ => self.src.js(&format!("return [{}];\n", operands.join(", "))),
+                _ => {
+                    if self.in_import || func.results.iter().any(|p| p.0.is_empty()) {
+                        self.src.js(&format!("return [{}];\n", operands.join(", ")));
+                    } else {
+                        assert_eq!(func.results.len(), operands.len());
+                        self.src.js(&format!(
+                            "return {{ {} }};\n",
+                            func.results
+                                .iter()
+                                .zip(operands)
+                                .map(|((name, _), op)| format!("{}: {}", name.to_snake_case(), op))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ));
+                    }
+                }
             },
 
             Instruction::I32Load { offset } => self.load("getInt32", *offset, operands, results),
@@ -1574,9 +1724,7 @@ impl Js {
                 }
             ")
         }
-    }
 
-    fn print_global_intrinsics(&mut self) {
         if self.needs_push_buffer {
             self.src.js("
                 class PushBuffer {
@@ -1673,16 +1821,22 @@ impl Source {
     }
 
     fn push(dst: &mut String, level: &mut usize, src: &str) {
-        let lines = src.lines().map(str::trim).collect::<Vec<_>>();
+        let lines = src.lines().collect::<Vec<_>>();
         for (i, line) in lines.iter().enumerate() {
-            if line.starts_with("}") {
+            let trimmed = line.trim();
+            if trimmed.starts_with("}") && dst.ends_with("  ") {
                 dst.pop();
                 dst.pop();
             }
-            dst.push_str(line);
-            if line.ends_with('{') {
+            dst.push_str(if lines.len() == 1 {
+                line
+            } else {
+                line.trim_start()
+            });
+            if trimmed.ends_with('{') {
                 *level += 1;
-            } else if line.starts_with('}') {
+            }
+            if trimmed.starts_with('}') {
                 *level -= 1;
             }
             if i != lines.len() - 1 || src.ends_with("\n") {
@@ -1696,5 +1850,54 @@ impl Source {
         for _ in 0..*level {
             dst.push_str("  ");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Source;
+
+    #[test]
+    fn simple_append() {
+        let mut s = Source::default();
+        s.js("x");
+        assert_eq!(s.js, "x");
+        s.js("y");
+        assert_eq!(s.js, "xy");
+        s.js("z ");
+        assert_eq!(s.js, "xyz ");
+        s.js(" a ");
+        assert_eq!(s.js, "xyz  a ");
+        s.js("\na");
+        assert_eq!(s.js, "xyz  a \na");
+    }
+
+    #[test]
+    fn newline_remap() {
+        let mut s = Source::default();
+        s.js("function() {\n");
+        s.js("y\n");
+        s.js("}\n");
+        assert_eq!(s.js, "function() {\n  y\n}\n");
+    }
+
+    #[test]
+    fn if_else() {
+        let mut s = Source::default();
+        s.js("if() {\n");
+        s.js("y\n");
+        s.js("} else if () {\n");
+        s.js("z\n");
+        s.js("}\n");
+        assert_eq!(s.js, "if() {\n  y\n} else if () {\n  z\n}\n");
+    }
+
+    #[test]
+    fn trim_ws() {
+        let mut s = Source::default();
+        s.js("function() {
+                x
+        }");
+        assert_eq!(s.js, "function() {\n  x\n}");
     }
 }

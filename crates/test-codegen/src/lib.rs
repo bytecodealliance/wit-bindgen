@@ -216,7 +216,7 @@ pub fn js_import(input: TokenStream) -> TokenStream {
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-js")]
 pub fn js_export(input: TokenStream) -> TokenStream {
-    let tests = generate_tests(input, "import", |_path| {
+    let tests = generate_tests(input, "export", |_path| {
         (witx_bindgen_gen_js::Opts::default().build(), false)
     });
     let tests = tests.iter().map(|(_iface, test, witx)| {

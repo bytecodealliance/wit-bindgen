@@ -64,7 +64,7 @@ pub enum Type {
     Id(TypeId),
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(PartialEq, Debug, Copy, Clone)]
 pub enum Int {
     U8,
     U16,

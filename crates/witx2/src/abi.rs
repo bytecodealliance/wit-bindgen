@@ -569,7 +569,7 @@ def_instruction! {
 
         /// Returns `amt` values on the stack. This is always the last
         /// instruction.
-        Return { amt: usize } : [*amt] => [0],
+        Return { amt: usize, func: &'a Function } : [*amt] => [0],
 
         // ...
 
@@ -1195,6 +1195,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             self.lift_all(&func.results);
 
             self.emit(&Instruction::Return {
+                func,
                 amt: func.results.len(),
             });
         } else {
@@ -1259,6 +1260,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             }
 
             self.emit(&Instruction::Return {
+                func,
                 amt: sig.results.len(),
             });
         }
