@@ -363,6 +363,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "demo"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-gen-core",
+ "witx-bindgen-gen-js",
+ "witx-bindgen-gen-rust-wasm",
+ "witx-bindgen-gen-wasmtime",
+]
+
+[[package]]
 name = "digest"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
