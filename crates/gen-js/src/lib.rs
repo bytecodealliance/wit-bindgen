@@ -280,6 +280,7 @@ impl Js {
     }
 
     fn ts_func(&mut self, iface: &Interface, func: &Function) {
+        self.docs(&func.docs);
         self.src.ts(&func.name.to_snake_case());
         self.src.ts("(");
         for (i, (name, ty)) in func.params.iter().enumerate() {

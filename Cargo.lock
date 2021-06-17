@@ -370,6 +370,7 @@ dependencies = [
  "witx-bindgen-gen-js",
  "witx-bindgen-gen-rust-wasm",
  "witx-bindgen-gen-wasmtime",
+ "witx-bindgen-rust",
 ]
 
 [[package]]

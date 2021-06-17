@@ -24,6 +24,8 @@ const outputEditor = ace.edit("output");
 inputEditor.setValue(input.value);
 inputEditor.clearSelection();
 outputEditor.setReadOnly(true);
+inputEditor.setOption("useWorker", false);
+outputEditor.setOption("useWorker", false);
 
 let generatedFiles = {};
 
@@ -43,6 +45,7 @@ async function render() {
     return;
   }
   generatedFiles = {};
+  const selectedFile = files.value;
   files.options.length = 0;
   for (let i = 0; i < result.val.length; i++) {
     const name = result.val[i][0];
@@ -50,6 +53,8 @@ async function render() {
     files.options[i] = new Option(name, name);
     generatedFiles[name] = contents;
   }
+  if (selectedFile in generatedFiles)
+    files.value = selectedFile;
 
   updateSelectedFile();
 }
