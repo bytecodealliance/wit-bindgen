@@ -1,14 +1,8 @@
-#![allow(warnings)]
-
 use heck::*;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::io::{Read, Write};
+use std::collections::{BTreeSet, HashMap};
 use std::mem;
-use std::process::{Command, Stdio};
-use witx_bindgen_gen_core::witx2::abi::{
-    Abi, Bindgen, Bitcast, CallMode, Instruction, WasmType, WitxInstruction,
-};
-use witx_bindgen_gen_core::{witx2::*, Files, Generator, TypeInfo, Types};
+use witx_bindgen_gen_core::witx2::abi::{Bindgen, Bitcast, CallMode, Instruction, WitxInstruction};
+use witx_bindgen_gen_core::{witx2::*, Files, Generator};
 
 #[derive(Default)]
 pub struct Js {
@@ -267,10 +261,20 @@ impl Js {
             }
         }
     }
+
+    fn docs(&mut self, docs: &Docs) {
+        let docs = match &docs.contents {
+            Some(docs) => docs,
+            None => return,
+        };
+        for line in docs.lines() {
+            self.src.ts(&format!("// {}\n", line));
+        }
+    }
 }
 
 impl Generator for Js {
-    fn preprocess(&mut self, iface: &Interface, import: bool) {
+    fn preprocess(&mut self, iface: &Interface, _import: bool) {
         let mode = self.call_mode();
         self.sizes.fill(mode, iface);
     }
@@ -283,6 +287,7 @@ impl Generator for Js {
         record: &Record,
         docs: &Docs,
     ) {
+        self.docs(docs);
         if record.is_tuple() {
             self.src
                 .ts(&format!("export type {} = ", name.to_camel_case()));
@@ -297,10 +302,10 @@ impl Generator for Js {
                     .ts(&format!("export type {} = bigint;\n", name.to_camel_case()));
             }
         } else {
-            // TODO: flags
             self.src
                 .ts(&format!("export interface {} {{\n", name.to_camel_case()));
             for field in record.fields.iter() {
+                self.docs(&field.docs);
                 self.src
                     .ts
                     .push_str(&format!("{}: ", field.name.to_snake_case()));
@@ -314,11 +319,12 @@ impl Generator for Js {
     fn type_variant(
         &mut self,
         iface: &Interface,
-        id: TypeId,
+        _id: TypeId,
         name: &str,
         variant: &Variant,
         docs: &Docs,
     ) {
+        self.docs(docs);
         if variant.is_bool() {
             self.src.ts(&format!(
                 "export type {} = boolean;\n",
@@ -333,6 +339,7 @@ impl Generator for Js {
             self.src
                 .ts(&format!("export enum {} {{\n", name.to_camel_case()));
             for case in variant.cases.iter() {
+                self.docs(&case.docs);
                 self.src.ts(&case.name.to_camel_case());
                 self.src.ts(",\n");
             }
@@ -359,7 +366,8 @@ impl Generator for Js {
                     .ts(&format!("{}_{}", name, case.name).to_camel_case());
             }
             self.src.ts(";\n");
-            for (i, case) in variant.cases.iter().enumerate() {
+            for case in variant.cases.iter() {
+                self.docs(&case.docs);
                 self.src.ts(&format!(
                     "export interface {} {{\n",
                     format!("{}_{}", name, case.name).to_camel_case()
@@ -383,6 +391,7 @@ impl Generator for Js {
     }
 
     fn type_alias(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        self.docs(docs);
         self.src
             .ts(&format!("export type {} = ", name.to_camel_case()));
         self.print_ty(iface, ty);
@@ -390,6 +399,7 @@ impl Generator for Js {
     }
 
     fn type_list(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        self.docs(docs);
         self.src
             .ts(&format!("export type {} = ", name.to_camel_case()));
         self.print_list(iface, ty);
@@ -420,6 +430,7 @@ impl Generator for Js {
         ty: &Type,
         docs: &Docs,
     ) {
+        self.docs(docs);
         self.src
             .ts(&format!("export type {} = ", name.to_camel_case()));
         self.print_buffer(iface, true, ty);
@@ -434,6 +445,7 @@ impl Generator for Js {
         ty: &Type,
         docs: &Docs,
     ) {
+        self.docs(docs);
         self.src
             .ts(&format!("export type {} = ", name.to_camel_case()));
         self.print_buffer(iface, false, ty);
@@ -468,7 +480,7 @@ impl Generator for Js {
         match func.results.len() {
             0 => self.src.ts("void"),
             1 => self.print_ty(iface, &func.results[0].1),
-            n => {
+            _ => {
                 if func.results.iter().any(|(n, _)| n.is_empty()) {
                     self.src.ts("[");
                     for (i, (_, ty)) in func.results.iter().enumerate() {
@@ -529,6 +541,7 @@ impl Generator for Js {
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
+        drop((iface, func));
         panic!()
     }
 
@@ -551,7 +564,7 @@ impl Generator for Js {
                 module,
                 module.to_camel_case(),
                 if self.needs_get_export {
-                    ", get_export: (string) => any"
+                    ", get_export: (string) => WebAssembly.ExportValue"
                 } else {
                     ""
                 },
@@ -563,7 +576,7 @@ impl Generator for Js {
             ));
 
             self.src
-                .ts(&format!("interface {} {{\n", module.to_camel_case()));
+                .ts(&format!("export interface {} {{\n", module.to_camel_case()));
 
             for f in funcs {
                 let func = f.name.to_snake_case();
@@ -776,7 +789,7 @@ impl Bindgen for Js {
             //            name.to_snake_case(),
             //        ));
             //    }
-            Instruction::RecordLower { ty, record, .. } => {
+            Instruction::RecordLower { record, .. } => {
                 if record.is_tuple() {
                     // Tuples are represented as an array, sowe can use
                     // destructuring assignment to lower the tuple into its
@@ -811,7 +824,7 @@ impl Bindgen for Js {
                 }
             }
 
-            Instruction::RecordLift { ty, record, .. } => {
+            Instruction::RecordLift { record, .. } => {
                 if record.is_tuple() {
                     // Tuples are represented as an array, so we just shove all
                     // the operands into an array.
@@ -849,8 +862,8 @@ impl Bindgen for Js {
             Instruction::VariantLower {
                 variant,
                 nresults,
-                ty,
                 name,
+                ..
             } => {
                 let blocks = self
                     .blocks
@@ -944,7 +957,7 @@ impl Bindgen for Js {
                 self.src.js("}\n");
             }
 
-            Instruction::VariantLift { variant, name, ty } => {
+            Instruction::VariantLift { variant, name, .. } => {
                 let blocks = self
                     .blocks
                     .drain(self.blocks.len() - variant.cases.len()..)
@@ -1628,7 +1641,7 @@ impl Js {
             self.src.ts("
                 export class PushBuffer<T> {
                     length: number;
-                    push(T): void;
+                    push(T): boolean;
                 }
             ");
         }
@@ -1636,7 +1649,7 @@ impl Js {
             self.src.ts("
                 export class PullBuffer<T> {
                     length: number;
-                    pull(): T;
+                    pull(): T | undefined;
                 }
             ");
         }
@@ -1680,7 +1693,7 @@ impl Source {
 
     fn newline(dst: &mut String, level: &mut usize) {
         dst.push_str("\n");
-        for i in 0..*level {
+        for _ in 0..*level {
             dst.push_str("  ");
         }
     }

@@ -15,7 +15,9 @@ function run() {
   };
   let instance: WebAssembly.Instance | null = null;
   bindings.add_host_to_imports(imports, host(), name => {
-    return instance ? instance.exports[name] : null;
+    if (instance === null)
+      throw new Error("instance not ready yet");
+    return instance.exports[name];
   });
   instance = new WebAssembly.Instance(module, imports);
   wasi.initialize(instance);
