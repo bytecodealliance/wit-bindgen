@@ -7,6 +7,8 @@ publish = false
 
 [lib]
 crate-type = ['cdylib']
+test = false
+doctest = false
 
 [dependencies]
 witx-bindgen-gen-core = { path = '../gen-core', features = ['old-witx-compat'] }
