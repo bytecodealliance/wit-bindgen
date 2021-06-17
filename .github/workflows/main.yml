@@ -9,6 +9,8 @@ jobs:
     - uses: actions/checkout@v2
     - run: rustup update stable --no-self-update && rustup default stable
     - run: rustup target add wasm32-wasi
+    - run: npm install
+      working-directory: crates/gen-js
     - run: cargo test --workspace
 
   rustfmt:
