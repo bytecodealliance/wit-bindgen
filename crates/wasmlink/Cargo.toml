@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0.40"
+itertools = "0.10.1"
 lazy_static = "1.4.0"
 petgraph = "0.5.1"
 wasm-encoder = "0.4.1"

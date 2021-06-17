@@ -48,6 +48,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3576a87f2ba00f6f106fdfcd16db1d698d648a26ad8e0573cad8537c3c362d2a"
 
 [[package]]
+name = "lists"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-rust",
+]
+
+[[package]]
+name = "lists-main"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-rust",
+]
+
+[[package]]
 name = "log"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
