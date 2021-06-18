@@ -348,6 +348,7 @@ impl Generator for Wasmtime {
             self.src.push_str("impl witx_bindgen_wasmtime::Endian for ");
             self.src.push_str(&name.to_camel_case());
             self.src.push_str(" {\n");
+
             self.src.push_str("fn into_le(self) -> Self {\n");
             self.src.push_str("Self {\n");
             for field in record.fields.iter() {
@@ -358,30 +359,27 @@ impl Generator for Wasmtime {
             }
             self.src.push_str("}\n");
             self.src.push_str("}\n");
-            self.src
-                .push_str("unsafe fn read_unaligned_le(_ptr: *const Self) -> Self {\n");
+
+            self.src.push_str("fn from_le(self) -> Self {\n");
             self.src.push_str("Self {\n");
             for field in record.fields.iter() {
                 self.src.push_str(&field.name.to_snake_case());
-                self.src
-                    .push_str(": <_>::read_unaligned_le(std::ptr::addr_of!((*_ptr).");
+                self.src.push_str(": self.");
                 self.src.push_str(&field.name.to_snake_case());
-                self.src.push_str(")),\n");
+                self.src.push_str(".from_le(),\n");
             }
             self.src.push_str("}\n");
             self.src.push_str("}\n");
+
+            self.src.push_str("}\n");
+
+            // Also add an `AllBytesValid` valid impl since this structure's
+            // byte representations are valid (guarded by the `all_bits_valid`
+            // predicate).
             self.src
-                .push_str("unsafe fn write_unaligned_le(self, _ptr: *mut Self) {\n");
-            for field in record.fields.iter() {
-                self.src.push_str("self.");
-                self.src.push_str(&field.name.to_snake_case());
-                self.src
-                    .push_str(".write_unaligned_le(std::ptr::addr_of_mut!((*_ptr).");
-                self.src.push_str(&field.name.to_snake_case());
-                self.src.push_str("));\n");
-            }
-            self.src.push_str("}\n");
-            self.src.push_str("}\n");
+                .push_str("unsafe impl witx_bindgen_wasmtime::AllBytesValid for ");
+            self.src.push_str(&name.to_camel_case());
+            self.src.push_str(" {}\n");
         }
     }
 
@@ -1337,10 +1335,7 @@ impl Bindgen for Wasmtime {
                         let tmp = self.tmp();
                         self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
                         self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
-                        let mut slice = format!("_bc.{}(ptr{1}, len{1})?", method, tmp);
-                        if method == "slice" {
-                            slice = format!("unsafe {{ {} }}", slice);
-                        }
+                        let slice = format!("_bc.{}(ptr{1}, len{1})?", method, tmp);
                         results.push(slice);
                     }
                 }
@@ -1442,7 +1437,7 @@ impl Bindgen for Wasmtime {
                 self.push_str(&format!("let len{} = {};\n", tmp, operands[2]));
                 if iface.all_bits_valid(ty) {
                     let method = if *push { "slice_mut" } else { "slice" };
-                    results.push(format!("unsafe {{ _bc.{}(ptr{1}, len{1})? }}", method, tmp));
+                    results.push(format!("_bc.{}(ptr{1}, len{1})?", method, tmp));
                 } else {
                     let size = self.sizes.size(ty);
                     let closure = format!("closure{}", tmp);

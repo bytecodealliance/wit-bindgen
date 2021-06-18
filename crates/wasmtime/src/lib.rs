@@ -12,7 +12,7 @@ mod table;
 
 pub use error::GuestError;
 pub use le::{Endian, Le};
-pub use region::{BorrowChecker, Region};
+pub use region::{AllBytesValid, BorrowChecker, Region};
 pub use table::*;
 
 #[doc(hidden)]

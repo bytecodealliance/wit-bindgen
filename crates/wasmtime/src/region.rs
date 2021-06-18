@@ -18,9 +18,6 @@ pub struct BorrowChecker<'a> {
     len: usize,
 }
 
-// unsafe impl Send for BorrowChecker<'_> {}
-// unsafe impl Sync for BorrowChecker<'_> {}
-
 fn to_trap(err: impl std::error::Error + Send + Sync + 'static) -> Trap {
     Trap::from(Box::new(err) as Box<dyn std::error::Error + Send + Sync>)
 }
@@ -36,47 +33,47 @@ impl<'a> BorrowChecker<'a> {
         }
     }
 
-    pub unsafe fn slice<T>(&mut self, ptr: i32, len: i32) -> Result<&'a [T], Trap> {
+    pub fn slice<T: AllBytesValid>(&mut self, ptr: i32, len: i32) -> Result<&'a [T], Trap> {
         let (ret, r) = self.get_slice(ptr, len)?;
         self.shared_borrows.insert(r);
         Ok(ret)
     }
 
-    pub unsafe fn slice_mut<T>(&mut self, ptr: i32, len: i32) -> Result<&'a mut [T], Trap> {
+    pub fn slice_mut<T: AllBytesValid>(&mut self, ptr: i32, len: i32) -> Result<&'a mut [T], Trap> {
         let (ret, r) = self.get_slice_mut(ptr, len)?;
         self.mut_borrows.insert(r);
         Ok(ret)
     }
 
-    unsafe fn get_slice<T>(&self, ptr: i32, len: i32) -> Result<(&'a [T], Region), Trap> {
+    fn get_slice<T: AllBytesValid>(&self, ptr: i32, len: i32) -> Result<(&'a [T], Region), Trap> {
         let r = self.region::<T>(ptr, len)?;
         if self.is_mut_borrowed(r) {
             Err(to_trap(GuestError::PtrBorrowed(r)))
         } else {
             Ok((
-                std::slice::from_raw_parts(
-                    self.ptr.add(r.start as usize) as *const T,
-                    len as usize,
-                ),
+                unsafe {
+                    std::slice::from_raw_parts(
+                        self.ptr.add(r.start as usize) as *const T,
+                        len as usize,
+                    )
+                },
                 r,
             ))
         }
     }
 
-    unsafe fn get_slice_mut<T>(
-        &mut self,
-        ptr: i32,
-        len: i32,
-    ) -> Result<(&'a mut [T], Region), Trap> {
+    fn get_slice_mut<T>(&mut self, ptr: i32, len: i32) -> Result<(&'a mut [T], Region), Trap> {
         let r = self.region::<T>(ptr, len)?;
         if self.is_mut_borrowed(r) || self.is_shared_borrowed(r) {
             Err(to_trap(GuestError::PtrBorrowed(r)))
         } else {
             Ok((
-                std::slice::from_raw_parts_mut(
-                    self.ptr.add(r.start as usize) as *mut T,
-                    len as usize,
-                ),
+                unsafe {
+                    std::slice::from_raw_parts_mut(
+                        self.ptr.add(r.start as usize) as *mut T,
+                        len as usize,
+                    )
+                },
                 r,
             ))
         }
@@ -95,7 +92,7 @@ impl<'a> BorrowChecker<'a> {
     }
 
     pub fn slice_str(&mut self, ptr: i32, len: i32) -> Result<&'a str, Trap> {
-        let bytes = unsafe { self.slice::<u8>(ptr, len)? };
+        let bytes = self.slice(ptr, len)?;
         std::str::from_utf8(bytes).map_err(to_trap)
     }
 
@@ -120,17 +117,15 @@ impl<'a> BorrowChecker<'a> {
     }
 
     pub fn raw(&self) -> *mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
+        std::ptr::slice_from_raw_parts_mut(self.ptr, self.len)
     }
 }
 
 impl crate::rt::RawMem for BorrowChecker<'_> {
     fn store(&mut self, offset: i32, bytes: &[u8]) -> Result<(), Trap> {
-        unsafe {
-            let (slice, _) = self.get_slice_mut::<u8>(offset, bytes.len() as i32)?;
-            slice.copy_from_slice(bytes);
-            Ok(())
-        }
+        let (slice, _) = self.get_slice_mut::<u8>(offset, bytes.len() as i32)?;
+        slice.copy_from_slice(bytes);
+        Ok(())
     }
 
     fn load<T: AsMut<[u8]>, U>(
@@ -139,12 +134,48 @@ impl crate::rt::RawMem for BorrowChecker<'_> {
         mut bytes: T,
         cvt: impl FnOnce(T) -> U,
     ) -> Result<U, Trap> {
-        unsafe {
-            let (slice, _) = self.get_slice::<u8>(offset, bytes.as_mut().len() as i32)?;
-            bytes.as_mut().copy_from_slice(slice);
-            Ok(cvt(bytes))
-        }
+        let (slice, _) = self.get_slice::<u8>(offset, bytes.as_mut().len() as i32)?;
+        bytes.as_mut().copy_from_slice(slice);
+        Ok(cvt(bytes))
     }
+}
+
+/// Unsafe trait representing types where every byte pattern is valid for their
+/// representation.
+///
+/// This is the set of types which wasmtime can have a raw pointer to for
+/// values which reside in wasm linear memory.
+pub unsafe trait AllBytesValid {}
+
+unsafe impl AllBytesValid for u8 {}
+unsafe impl AllBytesValid for u16 {}
+unsafe impl AllBytesValid for u32 {}
+unsafe impl AllBytesValid for u64 {}
+unsafe impl AllBytesValid for i8 {}
+unsafe impl AllBytesValid for i16 {}
+unsafe impl AllBytesValid for i32 {}
+unsafe impl AllBytesValid for i64 {}
+unsafe impl AllBytesValid for f32 {}
+unsafe impl AllBytesValid for f64 {}
+
+macro_rules! tuples {
+    ($(($($t:ident)*))*) => ($(
+        unsafe impl <$($t:AllBytesValid,)*> AllBytesValid for ($($t,)*) {}
+    )*)
+}
+
+tuples! {
+    ()
+    (T1)
+    (T1 T2)
+    (T1 T2 T3)
+    (T1 T2 T3 T4)
+    (T1 T2 T3 T4 T5)
+    (T1 T2 T3 T4 T5 T6)
+    (T1 T2 T3 T4 T5 T6 T7)
+    (T1 T2 T3 T4 T5 T6 T7 T8)
+    (T1 T2 T3 T4 T5 T6 T7 T8 T9)
+    (T1 T2 T3 T4 T5 T6 T7 T8 T9 T10)
 }
 
 /// Represents a contiguous region in memory.
@@ -156,7 +187,7 @@ pub struct Region {
 
 impl Region {
     /// Checks if this `Region` overlaps with `rhs` `Region`.
-    pub fn overlaps(&self, rhs: Region) -> bool {
+    fn overlaps(&self, rhs: Region) -> bool {
         // Zero-length regions can never overlap!
         if self.len == 0 || rhs.len == 0 {
             return false;
@@ -176,160 +207,67 @@ impl Region {
     }
 }
 
-// #[cfg(test)]
-// mod test {
-//     use super::*;
+#[cfg(test)]
+mod test {
+    use super::*;
 
-//     #[test]
-//     fn nonoverlapping() {
-//         let mut bs = InnerBorrowChecker::default();
-//         let r1 = Region::new(0, 10);
-//         let r2 = Region::new(10, 10);
-//         assert!(!r1.overlaps(r2));
-//         bs.mut_borrow(r1).expect("can borrow r1");
-//         bs.mut_borrow(r2).expect("can borrow r2");
+    #[test]
+    fn nonoverlapping() {
+        let mut bytes = [0; 100];
+        let mut bc = BorrowChecker::new(&mut bytes);
+        bc.slice::<u8>(0, 10).unwrap();
+        bc.slice::<u8>(10, 10).unwrap();
 
-//         let mut bs = InnerBorrowChecker::default();
-//         let r1 = Region::new(10, 10);
-//         let r2 = Region::new(0, 10);
-//         assert!(!r1.overlaps(r2));
-//         bs.mut_borrow(r1).expect("can borrow r1");
-//         bs.mut_borrow(r2).expect("can borrow r2");
-//     }
+        let mut bc = BorrowChecker::new(&mut bytes);
+        bc.slice::<u8>(10, 10).unwrap();
+        bc.slice::<u8>(0, 10).unwrap();
 
-//     #[test]
-//     fn overlapping() {
-//         let mut bs = InnerBorrowChecker::default();
-//         let r1 = Region::new(0, 10);
-//         let r2 = Region::new(9, 10);
-//         assert!(r1.overlaps(r2));
-//         bs.shared_borrow(r1).expect("can borrow r1");
-//         assert!(bs.mut_borrow(r2).is_err(), "cant mut borrow r2");
-//         bs.shared_borrow(r2).expect("can shared borrow r2");
+        let mut bc = BorrowChecker::new(&mut bytes);
+        bc.slice_mut::<u8>(0, 10).unwrap();
+        bc.slice_mut::<u8>(10, 10).unwrap();
 
-//         let mut bs = InnerBorrowChecker::default();
-//         let r1 = Region::new(0, 10);
-//         let r2 = Region::new(2, 5);
-//         assert!(r1.overlaps(r2));
-//         bs.shared_borrow(r1).expect("can borrow r1");
-//         assert!(bs.mut_borrow(r2).is_err(), "cant borrow r2");
-//         bs.shared_borrow(r2).expect("can shared borrow r2");
+        let mut bc = BorrowChecker::new(&mut bytes);
+        bc.slice_mut::<u8>(10, 10).unwrap();
+        bc.slice_mut::<u8>(0, 10).unwrap();
+    }
 
-//         let mut bs = InnerBorrowChecker::default();
-//         let r1 = Region::new(9, 10);
-//         let r2 = Region::new(0, 10);
-//         assert!(r1.overlaps(r2));
-//         bs.shared_borrow(r1).expect("can borrow r1");
-//         assert!(bs.mut_borrow(r2).is_err(), "cant borrow r2");
-//         bs.shared_borrow(r2).expect("can shared borrow r2");
+    #[test]
+    fn overlapping() {
+        let mut bytes = [0; 100];
+        let mut bc = BorrowChecker::new(&mut bytes);
+        bc.slice::<u8>(0, 10).unwrap();
+        bc.slice_mut::<u8>(9, 10).unwrap_err();
+        bc.slice::<u8>(9, 10).unwrap();
 
-//         let mut bs = InnerBorrowChecker::default();
-//         let r1 = Region::new(2, 5);
-//         let r2 = Region::new(0, 10);
-//         assert!(r1.overlaps(r2));
-//         bs.shared_borrow(r1).expect("can borrow r1");
-//         assert!(bs.mut_borrow(r2).is_err(), "cant borrow r2");
-//         bs.shared_borrow(r2).expect("can shared borrow r2");
+        let mut bc = BorrowChecker::new(&mut bytes);
+        bc.slice::<u8>(0, 10).unwrap();
+        bc.slice_mut::<u8>(2, 5).unwrap_err();
+        bc.slice::<u8>(2, 5).unwrap();
 
-//         let mut bs = InnerBorrowChecker::default();
-//         let r1 = Region::new(2, 5);
-//         let r2 = Region::new(10, 5);
-//         let r3 = Region::new(15, 5);
-//         let r4 = Region::new(0, 10);
-//         assert!(r1.overlaps(r4));
-//         bs.shared_borrow(r1).expect("can borrow r1");
-//         bs.shared_borrow(r2).expect("can borrow r2");
-//         bs.shared_borrow(r3).expect("can borrow r3");
-//         assert!(bs.mut_borrow(r4).is_err(), "cant mut borrow r4");
-//         bs.shared_borrow(r4).expect("can shared borrow r4");
-//     }
+        let mut bc = BorrowChecker::new(&mut bytes);
+        bc.slice::<u8>(9, 10).unwrap();
+        bc.slice_mut::<u8>(0, 10).unwrap_err();
+        bc.slice::<u8>(0, 10).unwrap();
 
-//     #[test]
-//     fn unborrowing() {
-//         let mut bs = InnerBorrowChecker::default();
-//         let r1 = Region::new(0, 10);
-//         let r2 = Region::new(10, 10);
-//         assert!(!r1.overlaps(r2));
-//         assert_eq!(bs.has_outstanding_borrows(), false, "start with no borrows");
-//         let h1 = bs.mut_borrow(r1).expect("can borrow r1");
-//         assert_eq!(bs.has_outstanding_borrows(), true, "h1 is outstanding");
-//         let h2 = bs.mut_borrow(r2).expect("can borrow r2");
+        let mut bc = BorrowChecker::new(&mut bytes);
+        bc.slice::<u8>(2, 5).unwrap();
+        bc.slice_mut::<u8>(0, 10).unwrap_err();
+        bc.slice::<u8>(0, 10).unwrap();
 
-//         assert!(bs.mut_borrow(r2).is_err(), "can't borrow r2 twice");
-//         bs.mut_unborrow(h2);
-//         assert_eq!(
-//             bs.has_outstanding_borrows(),
-//             true,
-//             "h1 is still outstanding"
-//         );
-//         bs.mut_unborrow(h1);
-//         assert_eq!(bs.has_outstanding_borrows(), false, "no remaining borrows");
+        let mut bc = BorrowChecker::new(&mut bytes);
+        bc.slice::<u8>(2, 5).unwrap();
+        bc.slice::<u8>(10, 5).unwrap();
+        bc.slice::<u8>(15, 5).unwrap();
+        bc.slice_mut::<u8>(0, 10).unwrap_err();
+        bc.slice::<u8>(0, 10).unwrap();
+    }
 
-//         let _h3 = bs
-//             .mut_borrow(r2)
-//             .expect("can borrow r2 again now that its been unborrowed");
-
-//         // Lets try again with shared:
-
-//         let mut bs = InnerBorrowChecker::default();
-//         let r1 = Region::new(0, 10);
-//         let r2 = Region::new(10, 10);
-//         assert!(!r1.overlaps(r2));
-//         assert_eq!(bs.has_outstanding_borrows(), false, "start with no borrows");
-//         let h1 = bs.shared_borrow(r1).expect("can borrow r1");
-//         assert_eq!(bs.has_outstanding_borrows(), true, "h1 is outstanding");
-//         let h2 = bs.shared_borrow(r2).expect("can borrow r2");
-//         let h3 = bs.shared_borrow(r2).expect("can shared borrow r2 twice");
-
-//         bs.shared_unborrow(h2);
-//         assert_eq!(
-//             bs.has_outstanding_borrows(),
-//             true,
-//             "h1, h3 still outstanding"
-//         );
-//         bs.shared_unborrow(h1);
-//         bs.shared_unborrow(h3);
-//         assert_eq!(bs.has_outstanding_borrows(), false, "no remaining borrows");
-//     }
-
-//     #[test]
-//     fn zero_length() {
-//         let r1 = Region::new(0, 0);
-//         let r2 = Region::new(0, 1);
-//         assert!(!r1.overlaps(r2));
-
-//         let r1 = Region::new(0, 1);
-//         let r2 = Region::new(0, 0);
-//         assert!(!r1.overlaps(r2));
-//     }
-
-//     #[test]
-//     fn nonoverlapping_region() {
-//         let r1 = Region::new(0, 10);
-//         let r2 = Region::new(10, 10);
-//         assert!(!r1.overlaps(r2));
-
-//         let r1 = Region::new(10, 10);
-//         let r2 = Region::new(0, 10);
-//         assert!(!r1.overlaps(r2));
-//     }
-
-//     #[test]
-//     fn overlapping_region() {
-//         let r1 = Region::new(0, 10);
-//         let r2 = Region::new(9, 10);
-//         assert!(r1.overlaps(r2));
-
-//         let r1 = Region::new(0, 10);
-//         let r2 = Region::new(2, 5);
-//         assert!(r1.overlaps(r2));
-
-//         let r1 = Region::new(9, 10);
-//         let r2 = Region::new(0, 10);
-//         assert!(r1.overlaps(r2));
-
-//         let r1 = Region::new(2, 5);
-//         let r2 = Region::new(0, 10);
-//         assert!(r1.overlaps(r2));
-//     }
-// }
+    #[test]
+    fn zero_length() {
+        let mut bytes = [0; 100];
+        let mut bc = BorrowChecker::new(&mut bytes);
+        bc.slice_mut::<u8>(0, 0).unwrap();
+        bc.slice_mut::<u8>(0, 0).unwrap();
+        bc.slice::<u8>(0, 1).unwrap();
+    }
+}
