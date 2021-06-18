@@ -83,8 +83,7 @@ impl<'a> BorrowChecker<'a> {
     }
 
     fn region<T>(&self, ptr: i32, len: i32) -> Result<Region, Trap> {
-        // TODO: the align of `T` should alwasy be 1
-        assert!(ptr % (std::mem::align_of::<T>() as i32) == 0);
+        assert!(std::mem::align_of::<T>() == 1);
         let r = Region {
             start: ptr as u32,
             len: (len as u32)
