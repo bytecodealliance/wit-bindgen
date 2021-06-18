@@ -184,6 +184,10 @@ impl Wasm for MyWasm {
         vec!["hello,".to_string(), "world!".to_string()]
     }
 
+    fn string_roundtrip(&self, x: String) -> String {
+        x.clone()
+    }
+
     fn list_in_record1(&self, ty: ListInRecord1) {
         assert_eq!(ty.a, "list_in_record1");
     }

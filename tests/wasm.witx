@@ -175,6 +175,7 @@
   (export "list_result" (func (result $a (list u8))))
   (export "list_result2" (func (result $a string)))
   (export "list_result3" (func (result $a (list string))))
+  (export "string_roundtrip" (func (param $a string) (result $b string)))
 
   (;
   ;; ===========================================

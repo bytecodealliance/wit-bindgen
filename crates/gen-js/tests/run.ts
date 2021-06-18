@@ -125,6 +125,7 @@ function host(): imports.Host {
     },
     list_result2() { return 'hello!'; },
     list_result3() { return ['hello,', 'world!']; },
+    string_roundtrip(x) { return x; },
     host_state_create() { return 100; },
     host_state_get(x) { return x; },
     host_state2_create() { return 101; },
@@ -411,6 +412,10 @@ function test_lists(wasm: exports.Wasm) {
     assert.deepStrictEqual(Array.from(wasm.list_result()), [1, 2, 3, 4, 5]);
     assert.deepStrictEqual(wasm.list_result2(), "hello!");
     assert.deepStrictEqual(wasm.list_result3(), ["hello,", "world!"]);
+
+    assert.deepStrictEqual(wasm.string_roundtrip("x"), "x");
+    assert.deepStrictEqual(wasm.string_roundtrip(""), "");
+    assert.deepStrictEqual(wasm.string_roundtrip("hello ⚑ world"), "hello ⚑ world");
 }
 
 function test_flavorful(wasm: exports.Wasm) {

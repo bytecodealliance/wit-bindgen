@@ -239,6 +239,10 @@ impl Host for MyHost {
         vec!["hello,".to_string(), "world!".to_string()]
     }
 
+    fn string_roundtrip(&mut self, s: &str) -> String {
+        s.to_string()
+    }
+
     fn list_in_record1(&mut self, ty: ListInRecord1<'_>) {
         assert_eq!(ty.a, "list_in_record1");
     }

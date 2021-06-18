@@ -16,6 +16,9 @@ pub mod rt {
     ) -> *mut u8 {
         let layout;
         let ptr = if old_len == 0 {
+            if len == 0 {
+                return align as *mut u8;
+            }
             layout = Layout::from_size_align_unchecked(len, align);
             alloc::alloc(layout)
         } else {
