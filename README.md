@@ -106,6 +106,23 @@ specified in the `*.witx` file. This generates a `struct` which is a typed
 representation of the WebAssembly instance and typed methods using native Rust
 types are provided to interact with the WebAssembly module.
 
+#### `witx-bindgen js --import *.witx`
+
+This generation mode is intended for consuming a WebAssembly module in a JS
+environment (in theory either Node or the Web). This mode generates bindings
+suitable for supplying as part of an import object to satisfy the imports of a
+wasm module. JS is responsible for creating an object with all the appropriate
+functions. This also generates a TypeScript file for type definitions by
+default.
+
+#### `witx-bindgen js --export *.witx`
+
+This is intended for calling the exports of a WebAssembly module in a JS
+environment. This generates a wrapper class which will perform instantiation
+with a provided import object and then provides typed view of the wasm module's
+exports (dealing in JS types as well, automatically converting for you). This
+also generates a TypeScript file by default.
+
 ## Format of `*.witx` files
 
 This repository supports the s-expression-based `*.witx` format pioneered in the
