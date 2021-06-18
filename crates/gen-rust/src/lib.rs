@@ -501,7 +501,7 @@ pub trait TypePrint {
                 if !info.has_pull_buffer && !info.has_handle {
                     self.push_str("#[derive(Debug)]\n");
                 }
-                self.push_str(&format!("pub struct {}\n", name));
+                self.push_str(&format!("pub struct {}", name));
                 self.print_generics(&info, lt, true);
                 self.push_str(" {\n");
                 for field in record.fields.iter() {
@@ -713,7 +713,7 @@ pub trait TypePrint {
             for i in 0..record.fields.len() {
                 let arg = format!("t{}_{}", tmp, i);
                 self.push_str(&arg);
-                self.push_str(",");
+                self.push_str(", ");
                 results.push(arg);
             }
             self.push_str(") = ");
@@ -729,7 +729,7 @@ pub trait TypePrint {
                 self.push_str(to_rust_ident(field.name.as_str()));
                 self.push_str(":");
                 self.push_str(&arg);
-                self.push_str(",");
+                self.push_str(", ");
                 results.push(arg);
             }
             self.push_str("} = ");
@@ -750,7 +750,7 @@ pub trait TypePrint {
             if operands.len() == 1 {
                 results.push(format!("({},)", operands[0]));
             } else {
-                results.push(format!("({})", operands.join(",")));
+                results.push(format!("({})", operands.join(", ")));
             }
         } else {
             let mut result = self.typename_lift(iface, id);
@@ -759,7 +759,7 @@ pub trait TypePrint {
                 result.push_str(to_rust_ident(&field.name));
                 result.push_str(":");
                 result.push_str(&val);
-                result.push_str(",");
+                result.push_str(", ");
             }
             result.push_str("}");
             results.push(result);

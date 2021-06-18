@@ -11,7 +11,7 @@ pub struct Js {
     opts: Opts,
     imports: HashMap<String, Vec<Import>>,
     exports: HashMap<String, Exports>,
-    block_storage: Vec<String>,
+    block_storage: Vec<witx_bindgen_gen_core::Source>,
     blocks: Vec<(String, Vec<String>)>,
     in_import: bool,
     sizes: SizeAlign,
@@ -538,12 +538,13 @@ impl Generator for Js {
             // TODO: hardcoding "memory"
             self.src
                 .js
+                .as_mut_string()
                 .insert_str(start, "const memory = get_export(\"memory\");\n");
         }
 
         if let Some(name) = self.needs_realloc.take() {
             self.needs_get_export = true;
-            self.src.js.insert_str(
+            self.src.js.as_mut_string().insert_str(
                 start,
                 &format!("const realloc = get_export(\"{}\");\n", name),
             );
@@ -553,6 +554,7 @@ impl Generator for Js {
             self.needs_get_export = true;
             self.src
                 .js
+                .as_mut_string()
                 .insert_str(start, &format!("const free = get_export(\"{}\");\n", name));
         }
 
@@ -591,18 +593,19 @@ impl Generator for Js {
             // TODO: hardcoding "memory"
             self.src
                 .js
+                .as_mut_string()
                 .insert_str(start, "const memory = this._exports.memory;\n");
         }
 
         if let Some(name) = self.needs_realloc.take() {
-            self.src.js.insert_str(
+            self.src.js.as_mut_string().insert_str(
                 start,
                 &format!("const realloc = this._exports[\"{}\"];\n", name),
             );
         }
 
         if let Some(name) = self.needs_free.take() {
-            self.src.js.insert_str(
+            self.src.js.as_mut_string().insert_str(
                 start,
                 &format!("const free = this._exports[\"{}\"];\n", name),
             );
@@ -749,7 +752,7 @@ impl Bindgen for Js {
     fn finish_block(&mut self, operands: &mut Vec<String>) {
         let to_restore = self.block_storage.pop().unwrap();
         let src = mem::replace(&mut self.src.js, to_restore);
-        self.blocks.push((src, mem::take(operands)));
+        self.blocks.push((src.into(), mem::take(operands)));
     }
 
     fn allocate_typed_space(&mut self, _iface: &Interface, _ty: TypeId) -> String {
@@ -1810,98 +1813,15 @@ impl Js {
 
 #[derive(Default)]
 struct Source {
-    js: String,
-    js_level: usize,
-    ts: String,
-    ts_level: usize,
+    js: witx_bindgen_gen_core::Source,
+    ts: witx_bindgen_gen_core::Source,
 }
 
 impl Source {
     fn js(&mut self, s: &str) {
-        Source::push(&mut self.js, &mut self.js_level, s)
+        self.js.push_str(s);
     }
     fn ts(&mut self, s: &str) {
-        Source::push(&mut self.ts, &mut self.ts_level, s)
-    }
-
-    fn push(dst: &mut String, level: &mut usize, src: &str) {
-        let lines = src.lines().collect::<Vec<_>>();
-        for (i, line) in lines.iter().enumerate() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("}") && dst.ends_with("  ") {
-                dst.pop();
-                dst.pop();
-            }
-            dst.push_str(if lines.len() == 1 {
-                line
-            } else {
-                line.trim_start()
-            });
-            if trimmed.ends_with('{') {
-                *level += 1;
-            }
-            if trimmed.starts_with('}') {
-                *level -= 1;
-            }
-            if i != lines.len() - 1 || src.ends_with("\n") {
-                Source::newline(dst, level);
-            }
-        }
-    }
-
-    fn newline(dst: &mut String, level: &mut usize) {
-        dst.push_str("\n");
-        for _ in 0..*level {
-            dst.push_str("  ");
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Source;
-
-    #[test]
-    fn simple_append() {
-        let mut s = Source::default();
-        s.js("x");
-        assert_eq!(s.js, "x");
-        s.js("y");
-        assert_eq!(s.js, "xy");
-        s.js("z ");
-        assert_eq!(s.js, "xyz ");
-        s.js(" a ");
-        assert_eq!(s.js, "xyz  a ");
-        s.js("\na");
-        assert_eq!(s.js, "xyz  a \na");
-    }
-
-    #[test]
-    fn newline_remap() {
-        let mut s = Source::default();
-        s.js("function() {\n");
-        s.js("y\n");
-        s.js("}\n");
-        assert_eq!(s.js, "function() {\n  y\n}\n");
-    }
-
-    #[test]
-    fn if_else() {
-        let mut s = Source::default();
-        s.js("if() {\n");
-        s.js("y\n");
-        s.js("} else if () {\n");
-        s.js("z\n");
-        s.js("}\n");
-        assert_eq!(s.js, "if() {\n  y\n} else if () {\n  z\n}\n");
-    }
-
-    #[test]
-    fn trim_ws() {
-        let mut s = Source::default();
-        s.js("function() {
-                x
-        }");
-        assert_eq!(s.js, "function() {\n  x\n}");
+        self.ts.push_str(s);
     }
 }
