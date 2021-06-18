@@ -50,6 +50,15 @@ Generated language bindings all use the canonical ABI for communication,
 enabling WebAssembly modules to be written in any language with support and for
 WebAssembly modules to be consumed in any environment with language support.
 
+## Demo
+
+[View generated bindings
+online!](https://bytecodealliance.github.io/witx-bindgen/)
+
+If you're curious to poke around and see what generated bindings look like for a
+given input `*.witx`, you can explore the generated code online to get an idea
+of what's being generated and what the glue code looks like.
+
 ## Installation
 
 At this time a CLI tool is provided mostly for debugging and exploratory
