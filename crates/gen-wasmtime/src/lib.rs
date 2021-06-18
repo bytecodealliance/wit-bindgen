@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use witx_bindgen_gen_core::witx2::abi::{
-    Abi, Bindgen, CallMode, Instruction, WasmType, WitxInstruction,
+    Abi, Bindgen, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
 use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint, Visibility};
@@ -159,11 +159,18 @@ impl TypePrint for Wasmtime {
         "witx_bindgen_wasmtime"
     }
 
-    fn call_mode(&self) -> CallMode {
+    fn direction(&self) -> Direction {
         if self.in_import {
-            CallMode::NativeImport
+            Direction::Import
         } else {
-            CallMode::WasmExport
+            Direction::Export
+        }
+    }
+
+    fn lift_lower(&self) -> LiftLower {
+        match self.direction() {
+            Direction::Import => LiftLower::LiftArgsLowerResults,
+            Direction::Export => LiftLower::LowerArgsLiftResults,
         }
     }
 
@@ -247,8 +254,7 @@ impl Generator for Wasmtime {
             .push_str(&format!("mod {} {{\n", iface.name.to_snake_case()));
         self.src
             .push_str("#[allow(unused_imports)]\nuse witx_bindgen_wasmtime::{wasmtime, anyhow};\n");
-        let mode = self.call_mode();
-        self.sizes.fill(mode, iface);
+        self.sizes.fill(self.direction(), iface);
     }
 
     fn type_record(
@@ -478,7 +484,7 @@ impl Generator for Wasmtime {
         let trait_signature = mem::take(&mut self.src).into();
 
         self.params.truncate(0);
-        let sig = iface.wasm_signature(CallMode::NativeImport, func);
+        let sig = iface.wasm_signature(Direction::Import, func);
         self.src
             .push_str("move |mut caller: wasmtime::Caller<'_, T>");
         for (i, param) in sig.params.iter().enumerate() {
@@ -491,7 +497,7 @@ impl Generator for Wasmtime {
         }
         self.src.push_str("| -> Result<_, wasmtime::Trap> {\n");
         let pos = self.src.len();
-        iface.call(self.call_mode(), func, self);
+        iface.call(self.direction(), self.lift_lower(), func, self);
         self.src.push_str("}");
         self.src
             .as_mut_string()
@@ -575,7 +581,7 @@ impl Generator for Wasmtime {
         self.print_results(iface, func);
         self.push_str(", wasmtime::Trap> {\n");
         let pos = self.src.len();
-        iface.call(self.call_mode(), func, self);
+        iface.call(self.direction(), self.lift_lower(), func, self);
         self.src.push_str("}\n");
 
         if mem::take(&mut self.needs_buffer_transaction) {
@@ -635,7 +641,7 @@ impl Generator for Wasmtime {
         // Create the code snippet which will define the type of this field in
         // the struct that we're exporting and additionally extracts the
         // function from an instantiated instance.
-        let sig = iface.wasm_signature(CallMode::WasmExport, func);
+        let sig = iface.wasm_signature(Direction::Export, func);
         let mut cvt = "(".to_string();
         for param in sig.params.iter() {
             cvt.push_str(wasm_type(*param));
