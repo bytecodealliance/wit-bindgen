@@ -1,7 +1,9 @@
 use heck::*;
 use std::collections::{BTreeSet, HashMap};
 use std::mem;
-use witx_bindgen_gen_core::witx2::abi::{Bindgen, Bitcast, CallMode, Instruction, WitxInstruction};
+use witx_bindgen_gen_core::witx2::abi::{
+    Bindgen, Bitcast, Direction, Instruction, LiftLower, WitxInstruction,
+};
 use witx_bindgen_gen_core::{witx2::*, Files, Generator};
 
 #[derive(Default)]
@@ -74,11 +76,18 @@ impl Js {
         Js::default()
     }
 
-    fn call_mode(&self) -> CallMode {
+    fn direction(&self) -> Direction {
         if self.in_import {
-            CallMode::NativeImport
+            Direction::Import
         } else {
-            CallMode::WasmExport
+            Direction::Export
+        }
+    }
+
+    fn lift_lower(&self) -> LiftLower {
+        match self.direction() {
+            Direction::Import => LiftLower::LiftArgsLowerResults,
+            Direction::Export => LiftLower::LowerArgsLiftResults,
         }
     }
 
@@ -325,8 +334,7 @@ impl Js {
 
 impl Generator for Js {
     fn preprocess(&mut self, iface: &Interface, _import: bool) {
-        let mode = self.call_mode();
-        self.sizes.fill(mode, iface);
+        self.sizes.fill(self.direction(), iface);
     }
 
     fn type_record(
@@ -521,14 +529,14 @@ impl Generator for Js {
         self.in_import = true;
         self.tmp = 0;
         let prev = mem::take(&mut self.src);
-        let sig = iface.wasm_signature(self.call_mode(), func);
+        let sig = iface.wasm_signature(self.direction(), func);
         let args = (0..sig.params.len())
             .map(|i| format!("arg{}", i))
             .collect::<Vec<_>>()
             .join(", ");
         self.src.js(&format!("function({}) {{\n", args));
         let start = self.src.js.len();
-        iface.call(self.call_mode(), func, self);
+        iface.call(self.direction(), self.lift_lower(), func, self);
         self.src.js("}");
         self.ts_func(iface, func);
 
@@ -584,7 +592,7 @@ impl Generator for Js {
                 .join(", ")
         ));
         let start = self.src.js.len();
-        iface.call(self.call_mode(), func, self);
+        iface.call(self.direction(), self.lift_lower(), func, self);
         self.src.js("}\n");
         self.ts_func(iface, func);
 

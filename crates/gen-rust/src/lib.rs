@@ -1,5 +1,5 @@
 use heck::*;
-use witx_bindgen_gen_core::witx2::abi::{Bitcast, CallMode, WasmType};
+use witx_bindgen_gen_core::witx2::abi::{Bitcast, Direction, LiftLower, WasmType};
 use witx_bindgen_gen_core::{witx2::*, TypeInfo, Types};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -32,7 +32,8 @@ pub trait TypePrint {
         lifetime: &'static str,
     );
     fn print_borrowed_str(&mut self, lifetime: &'static str);
-    fn call_mode(&self) -> CallMode;
+    fn direction(&self) -> Direction;
+    fn lift_lower(&self) -> LiftLower;
     fn default_param_mode(&self) -> TypeMode;
     fn handle_projection(&self) -> Option<(&'static str, String)>;
 
@@ -330,10 +331,10 @@ pub trait TypePrint {
             TypeMode::Owned => unimplemented!(),
         };
         let prefix = if push { "Push" } else { "Pull" };
-        match self.call_mode() {
+        match (self.direction(), self.lift_lower()) {
             // Native exports means rust-compiled-to-wasm exporting something,
             // and buffers there are all using handles, so they use special types.
-            CallMode::NativeExport => {
+            (Direction::Export, LiftLower::LiftArgsLowerResults) => {
                 let krate = self.krate();
                 self.push_str(krate);
                 self.push_str("::exports::");
@@ -353,7 +354,7 @@ pub trait TypePrint {
             // valid we use raw slices (e.g. u8/u64/etc). Otherwise input
             // buffers (input to wasm) is `ExactSizeIterator` and output buffers
             // (output from wasm) is `&mut Vec`
-            CallMode::WasmExport => {
+            (Direction::Export, LiftLower::LowerArgsLiftResults) => {
                 if iface.all_bits_valid(ty) {
                     self.print_borrowed_slice(iface, push, ty, lt);
                 } else if push {
@@ -380,7 +381,7 @@ pub trait TypePrint {
                 }
             }
 
-            CallMode::NativeImport | CallMode::WasmImport => {
+            (Direction::Import, _) => {
                 if iface.all_bits_valid(ty) {
                     self.print_borrowed_slice(iface, push, ty, lt);
                 } else {
@@ -767,26 +768,16 @@ pub trait TypePrint {
     }
 
     fn typename_lower(&self, iface: &Interface, id: TypeId) -> String {
-        if self.call_mode().wasm() {
-            // Lowering the result of a wasm function means we're
-            // lowering a parameter.
-            self.param_name(iface, id)
-        } else {
-            // Lowering the result of a non-wasm function means we're
-            // lowering the return value.
-            self.result_name(iface, id)
+        match self.lift_lower() {
+            LiftLower::LowerArgsLiftResults => self.param_name(iface, id),
+            LiftLower::LiftArgsLowerResults => self.result_name(iface, id),
         }
     }
 
     fn typename_lift(&self, iface: &Interface, id: TypeId) -> String {
-        if self.call_mode().wasm() {
-            // Lifting for a wasm function means we're lifting one of
-            // the return values.
-            self.result_name(iface, id)
-        } else {
-            // Lifting to a non-wasm function means that we're lifting into
-            // a parameter
-            self.param_name(iface, id)
+        match self.lift_lower() {
+            LiftLower::LiftArgsLowerResults => self.param_name(iface, id),
+            LiftLower::LowerArgsLiftResults => self.result_name(iface, id),
         }
     }
 

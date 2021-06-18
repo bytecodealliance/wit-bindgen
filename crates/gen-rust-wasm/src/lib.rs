@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use witx_bindgen_gen_core::witx2::abi::{
-    Bindgen, CallMode, Instruction, WasmType, WitxInstruction,
+    Bindgen, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
 use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint, Visibility};
@@ -77,11 +77,18 @@ impl TypePrint for RustWasm {
         "witx_bindgen_rust"
     }
 
-    fn call_mode(&self) -> CallMode {
+    fn direction(&self) -> Direction {
         if self.in_import {
-            CallMode::WasmImport
+            Direction::Import
         } else {
-            CallMode::NativeExport
+            Direction::Export
+        }
+    }
+
+    fn lift_lower(&self) -> LiftLower {
+        match self.direction() {
+            abi::Direction::Import => LiftLower::LowerArgsLiftResults,
+            abi::Direction::Export => LiftLower::LiftArgsLowerResults,
         }
     }
 
@@ -192,14 +199,13 @@ impl Generator for RustWasm {
             .push_str(&format!("mod {} {{\n", iface.name.to_snake_case()));
 
         for func in iface.functions.iter() {
-            let sig = iface.wasm_signature(self.call_mode(), func);
+            let sig = iface.wasm_signature(self.direction(), func);
             if let Some(results) = sig.retptr {
                 self.i64_return_pointer_area_size =
                     self.i64_return_pointer_area_size.max(results.len());
             }
         }
-        let mode = self.call_mode();
-        self.sizes.fill(mode, iface);
+        self.sizes.fill(self.direction(), iface);
     }
 
     fn type_record(
@@ -401,7 +407,7 @@ impl Generator for RustWasm {
 
         let start_pos = self.src.len();
 
-        iface.call(self.call_mode(), func, self);
+        iface.call(self.direction(), self.lift_lower(), func, self);
         assert!(self.handles_for_func.is_empty());
 
         if mem::take(&mut self.needs_cleanup_list) {
@@ -427,7 +433,7 @@ impl Generator for RustWasm {
         self.src.push_str("unsafe extern \"C\" fn __witx_bindgen_");
         self.src.push_str(&rust_name);
         self.src.push_str("(");
-        let sig = iface.wasm_signature(self.call_mode(), func);
+        let sig = iface.wasm_signature(self.direction(), func);
         self.params.truncate(0);
         for (i, param) in sig.params.iter().enumerate() {
             let name = format!("arg{}", i);
@@ -449,7 +455,7 @@ impl Generator for RustWasm {
         }
         self.src.push_str("{\n");
 
-        iface.call(self.call_mode(), func, self);
+        iface.call(self.direction(), self.lift_lower(), func, self);
         assert!(!self.needs_cleanup_list);
 
         self.src.push_str("}\n");

@@ -623,71 +623,31 @@ def_instruction! {
     }
 }
 
-/// Modes of calling a WebAssembly or host function.
-///
-/// Each mode may have a slightly different codegen for some types, so
-/// [`Function::call`] takes this as a parameter to know in what context
-/// the invocation is happening within.
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum CallMode {
-    /// A defined export is being called.
+/// Whether the glue code surrounding a call is lifting arguments and lowering
+/// results or vice versa.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum LiftLower {
+    /// When the glue code lifts arguments and lowers results.
     ///
-    /// This typically means that a code generator is generating a shim function
-    /// to get exported from a WebAssembly module and the shim is calling a
-    /// native language function defined within the wasm module. In this mode
-    /// arguments are being lifted from wasm types to interface types, and
-    /// results are being lowered.
-    NativeExport,
-
-    /// A declared export is being called.
+    /// ```text
+    /// Wasm --lift-args--> SourceLanguage; call; SourceLanguage --lower-results--> Wasm
+    /// ```
+    LiftArgsLowerResults,
+    /// When the glue code lowers arguments and lifts results.
     ///
-    /// This typically means that a code generator is generating calls to a
-    /// WebAssembly module, for example a JS host calling a WebAssembly
-    /// instance. In this mode the native language's arguments are being lowered
-    /// to wasm values and the results of the function are lifted back into the
-    /// native language.
-    WasmExport,
-
-    /// A defined import is being called.
-    ///
-    /// This is typically used for code generators that are creating bindings in
-    /// a host for a function imported by WebAssembly. In this mode a function
-    /// with a wasm signature is generated and that function's wasm arguments
-    /// are lifted into the native language's arguments. The results are then
-    /// lowered back into wasm arguments to return.
-    NativeImport,
-
-    /// A declared import is being called
-    ///
-    /// This is typically used for code generators that are calling an imported
-    /// function from within a wasm module. In this mode native language
-    /// arguments are lowered to wasm values, and the results of the import are
-    /// lifted back into the native language.
-    WasmImport,
+    /// ```text
+    /// SourceLanguage --lower-args--> Wasm; call; Wasm --lift-results--> SourceLanguage
+    /// ```
+    LowerArgsLiftResults,
 }
 
-impl CallMode {
-    pub fn export(&self) -> bool {
-        match self {
-            CallMode::WasmExport | CallMode::NativeExport => true,
-            CallMode::WasmImport | CallMode::NativeImport => false,
-        }
-    }
-
-    pub fn import(&self) -> bool {
-        !self.export()
-    }
-
-    pub fn wasm(&self) -> bool {
-        match self {
-            CallMode::WasmExport | CallMode::WasmImport => true,
-            CallMode::NativeExport | CallMode::NativeImport => false,
-        }
-    }
-
-    pub fn native(&self) -> bool {
-        !self.wasm()
-    }
+/// Whether we are generating glue code to call an import or an export.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    /// We are generating glue code to call an import.
+    Import,
+    /// We are generating glue code to call an export.
+    Export,
 }
 
 /// Trait for language implementors to use to generate glue code between native
@@ -931,7 +891,7 @@ impl Interface {
     ///
     /// The first entry returned is the list of parameters and the second entry
     /// is the list of results for the wasm function signature.
-    pub fn wasm_signature(&self, mode: CallMode, func: &Function) -> WasmSignature {
+    pub fn wasm_signature(&self, dir: Direction, func: &Function) -> WasmSignature {
         let mut params = Vec::new();
         let mut results = Vec::new();
         for (_, param) in func.params.iter() {
@@ -948,7 +908,7 @@ impl Interface {
                     _ => {}
                 }
             }
-            self.push_wasm(func.abi, mode, param, &mut params);
+            self.push_wasm(func.abi, dir, param, &mut params);
         }
 
         for (_, result) in func.results.iter() {
@@ -970,7 +930,7 @@ impl Interface {
                     _ => {}
                 }
             }
-            self.push_wasm(func.abi, mode, result, &mut results);
+            self.push_wasm(func.abi, dir, result, &mut results);
         }
 
         // Rust/C don't support multi-value well right now, so if a function
@@ -980,10 +940,13 @@ impl Interface {
         let mut retptr = None;
         if results.len() > 1 {
             retptr = Some(mem::take(&mut results));
-            if mode.import() {
-                params.push(WasmType::I32);
-            } else {
-                results.push(WasmType::I32);
+            match dir {
+                Direction::Import => {
+                    params.push(WasmType::I32);
+                }
+                Direction::Export => {
+                    results.push(WasmType::I32);
+                }
             }
         }
 
@@ -1004,7 +967,7 @@ impl Interface {
         }
     }
 
-    fn push_wasm(&self, abi: Abi, mode: CallMode, ty: &Type, result: &mut Vec<WasmType>) {
+    fn push_wasm(&self, abi: Abi, dir: Direction, ty: &Type, result: &mut Vec<WasmType>) {
         match ty {
             Type::S8
             | Type::U8
@@ -1022,7 +985,7 @@ impl Interface {
             Type::F64 => result.push(WasmType::F64),
 
             Type::Id(id) => match &self.types[*id].kind {
-                TypeDefKind::Type(t) => self.push_wasm(abi, mode, t, result),
+                TypeDefKind::Type(t) => self.push_wasm(abi, dir, t, result),
 
                 TypeDefKind::Record(r) if r.is_flags() => match self.flags_repr(r) {
                     Some(int) => result.push(int.into()),
@@ -1035,7 +998,7 @@ impl Interface {
 
                 TypeDefKind::Record(r) => {
                     for field in r.fields.iter() {
-                        self.push_wasm(abi, mode, &field.ty, result);
+                        self.push_wasm(abi, dir, &field.ty, result);
                     }
                 }
 
@@ -1050,7 +1013,7 @@ impl Interface {
 
                 TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {
                     result.push(WasmType::I32);
-                    if mode.import() {
+                    if dir == Direction::Import {
                         result.push(WasmType::I32);
                         result.push(WasmType::I32);
                     }
@@ -1072,7 +1035,7 @@ impl Interface {
                             Some(ty) => ty,
                             None => continue,
                         };
-                        self.push_wasm(abi, mode, ty, &mut temp);
+                        self.push_wasm(abi, dir, ty, &mut temp);
 
                         for (i, ty) in temp.drain(..).enumerate() {
                             match result.get_mut(start + i) {
@@ -1113,21 +1076,28 @@ impl Interface {
     /// language-specific values into the wasm types to call a WASI function,
     /// and it will also automatically convert the results of the WASI function
     /// back to a language-specific value.
-    pub fn call(&self, mode: CallMode, func: &Function, bindgen: &mut impl Bindgen) {
+    pub fn call(
+        &self,
+        dir: Direction,
+        lift_lower: LiftLower,
+        func: &Function,
+        bindgen: &mut impl Bindgen,
+    ) {
         if Abi::Preview1 == func.abi {
             // The Preview1 ABI only works with WASI which is only intended
             // for use with these modes.
-            if mode.export() {
+            if dir == Direction::Export {
                 panic!("the preview1 ABI only supports import modes");
             }
         }
-        Generator::new(self, func.abi, mode, bindgen).call(func);
+        Generator::new(self, func.abi, dir, lift_lower, bindgen).call(func);
     }
 }
 
 struct Generator<'a, B: Bindgen> {
     abi: Abi,
-    mode: CallMode,
+    dir: Direction,
+    lift_lower: LiftLower,
     bindgen: &'a mut B,
     iface: &'a Interface,
     operands: Vec<B::Operand>,
@@ -1137,11 +1107,18 @@ struct Generator<'a, B: Bindgen> {
 }
 
 impl<'a, B: Bindgen> Generator<'a, B> {
-    fn new(iface: &'a Interface, abi: Abi, mode: CallMode, bindgen: &'a mut B) -> Generator<'a, B> {
+    fn new(
+        iface: &'a Interface,
+        abi: Abi,
+        dir: Direction,
+        lift_lower: LiftLower,
+        bindgen: &'a mut B,
+    ) -> Generator<'a, B> {
         Generator {
             iface,
             abi,
-            mode,
+            dir,
+            lift_lower,
             bindgen,
             operands: Vec::new(),
             results: Vec::new(),
@@ -1151,118 +1128,125 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 
     fn call(&mut self, func: &Function) {
-        let sig = self.iface.wasm_signature(self.mode, func);
+        let sig = self.iface.wasm_signature(self.dir, func);
 
-        if self.mode.wasm() {
-            // Push all parameters for this function onto the stack, and
-            // then batch-lower everything all at once.
-            for nth in 0..func.params.len() {
-                self.emit(&Instruction::GetArg { nth });
-            }
-            self.lower_all(&func.params, None);
-
-            // If necessary we may need to prepare a return pointer for this
-            // ABI. The `Preview1` ABI has most return values returned
-            // through pointers, and the `Canonical` ABI returns more-than-one
-            // values through a return pointer.
-            if self.mode.import() {
-                self.prep_return_pointer(&sig, &func.results);
-            }
-
-            // Now that all the wasm args are prepared we can call the
-            // actual wasm function.
-            assert_eq!(self.stack.len(), sig.params.len());
-            self.emit(&Instruction::CallWasm {
-                module: &self.iface.name,
-                name: &func.name,
-                sig: &sig,
-            });
-
-            // In the `Canonical` ABI we model multiple return values by going
-            // through memory. Remove that indirection here by loading
-            // everything to simulate the function having many return values
-            // in our stack discipline.
-            if let Some(actual) = &sig.retptr {
-                if self.mode.import() {
-                    assert_eq!(self.return_pointers.len(), 1);
-                    self.stack.push(self.return_pointers.pop().unwrap());
+        match self.lift_lower {
+            LiftLower::LowerArgsLiftResults => {
+                // Push all parameters for this function onto the stack, and
+                // then batch-lower everything all at once.
+                for nth in 0..func.params.len() {
+                    self.emit(&Instruction::GetArg { nth });
                 }
-                self.load_retptr(actual);
+                self.lower_all(&func.params, None);
+
+                // If necessary we may need to prepare a return pointer for this
+                // ABI. The `Preview1` ABI has most return values returned
+                // through pointers, and the `Canonical` ABI returns more-than-one
+                // values through a return pointer.
+                if self.dir == Direction::Import {
+                    self.prep_return_pointer(&sig, &func.results);
+                }
+
+                // Now that all the wasm args are prepared we can call the
+                // actual wasm function.
+                assert_eq!(self.stack.len(), sig.params.len());
+                self.emit(&Instruction::CallWasm {
+                    module: &self.iface.name,
+                    name: &func.name,
+                    sig: &sig,
+                });
+
+                // In the `Canonical` ABI we model multiple return values by going
+                // through memory. Remove that indirection here by loading
+                // everything to simulate the function having many return values
+                // in our stack discipline.
+                if let Some(actual) = &sig.retptr {
+                    if self.dir == Direction::Import {
+                        assert_eq!(self.return_pointers.len(), 1);
+                        self.stack.push(self.return_pointers.pop().unwrap());
+                    }
+                    self.load_retptr(actual);
+                }
+
+                // Batch-lift all result values now that all the function's return
+                // values are on the stack.
+                self.lift_all(&func.results);
+
+                self.emit(&Instruction::Return {
+                    func,
+                    amt: func.results.len(),
+                });
             }
-
-            // Batch-lift all result values now that all the function's return
-            // values are on the stack.
-            self.lift_all(&func.results);
-
-            self.emit(&Instruction::Return {
-                func,
-                amt: func.results.len(),
-            });
-        } else {
-            // Use `GetArg` to push all relevant arguments onto the stack.
-            // Note that we can't use the signature of this function
-            // directly due to various conversions and return pointers, so
-            // we need to somewhat manually calculate all the arguments
-            // which are converted as interface types arguments below.
-            let nargs = match self.abi {
-                Abi::Preview1 => {
-                    func.params.len()
-                        + func
-                            .params
-                            .iter()
-                            .filter(|(_, t)| match t {
-                                Type::Id(id) => match &self.iface.types[*id].kind {
-                                    TypeDefKind::List(_) => true,
+            LiftLower::LiftArgsLowerResults => {
+                // Use `GetArg` to push all relevant arguments onto the stack.
+                // Note that we can't use the signature of this function
+                // directly due to various conversions and return pointers, so
+                // we need to somewhat manually calculate all the arguments
+                // which are converted as interface types arguments below.
+                let nargs = match self.abi {
+                    Abi::Preview1 => {
+                        func.params.len()
+                            + func
+                                .params
+                                .iter()
+                                .filter(|(_, t)| match t {
+                                    Type::Id(id) => match &self.iface.types[*id].kind {
+                                        TypeDefKind::List(_) => true,
+                                        _ => false,
+                                    },
                                     _ => false,
-                                },
-                                _ => false,
-                            })
-                            .count()
+                                })
+                                .count()
+                    }
+                    Abi::Canonical => {
+                        sig.params.len()
+                            - (self.dir == Direction::Import && sig.retptr.is_some()) as usize
+                    }
+                };
+                for nth in 0..nargs {
+                    self.emit(&Instruction::GetArg { nth });
                 }
-                Abi::Canonical => {
-                    sig.params.len() - (self.mode.import() && sig.retptr.is_some()) as usize
+
+                // Once everything is on the stack we can lift all arguments
+                // one-by-one into their interface-types equivalent.
+                self.lift_all(&func.params);
+
+                // ... and that allows us to call the interface types function
+                self.emit(&Instruction::CallInterface {
+                    module: &self.iface.name,
+                    func,
+                });
+
+                // ... and at the end we lower everything back into return
+                // values.
+                self.lower_all(&func.results, Some(nargs));
+
+                // Our ABI dictates that a list of returned types are returned
+                // through memories, so after we've got all the values on the
+                // stack perform all of the stores here.
+                if let Some(tys) = &sig.retptr {
+                    match self.dir {
+                        Direction::Import => {
+                            self.emit(&Instruction::GetArg {
+                                nth: sig.params.len() - 1,
+                            });
+                        }
+                        Direction::Export => {
+                            let op = self.bindgen.i64_return_pointer_area(tys.len());
+                            self.stack.push(op);
+                        }
+                    }
+                    let retptr = self.store_retptr(tys);
+                    if self.dir == Direction::Export {
+                        self.stack.push(retptr);
+                    }
                 }
-            };
-            for nth in 0..nargs {
-                self.emit(&Instruction::GetArg { nth });
+
+                self.emit(&Instruction::Return {
+                    func,
+                    amt: sig.results.len(),
+                });
             }
-
-            // Once everything is on the stack we can lift all arguments
-            // one-by-one into their interface-types equivalent.
-            self.lift_all(&func.params);
-
-            // ... and that allows us to call the interface types function
-            self.emit(&Instruction::CallInterface {
-                module: &self.iface.name,
-                func,
-            });
-
-            // ... and at the end we lower everything back into return
-            // values.
-            self.lower_all(&func.results, Some(nargs));
-
-            // Our ABI dictates that a list of returned types are returned
-            // through memories, so after we've got all the values on the
-            // stack perform all of the stores here.
-            if let Some(tys) = &sig.retptr {
-                if self.mode.import() {
-                    self.emit(&Instruction::GetArg {
-                        nth: sig.params.len() - 1,
-                    });
-                } else {
-                    let op = self.bindgen.i64_return_pointer_area(tys.len());
-                    self.stack.push(op);
-                }
-                let retptr = self.store_retptr(tys);
-                if self.mode.export() {
-                    self.stack.push(retptr);
-                }
-            }
-
-            self.emit(&Instruction::Return {
-                func,
-                amt: sig.results.len(),
-            });
         }
 
         assert!(
@@ -1307,7 +1291,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     },
                     Abi::Canonical => {
                         temp.truncate(0);
-                        self.iface.push_wasm(self.abi, self.mode, ty, &mut temp);
+                        self.iface.push_wasm(self.abi, self.dir, ty, &mut temp);
                         temp.len()
                     }
                 };
@@ -1421,7 +1405,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::F32 => self.emit(&F32FromIf32),
             Type::F64 => self.emit(&F64FromIf64),
             Type::Handle(ty) => {
-                let borrowed = match self.mode {
+                let borrowed = match self.lift_lower {
+                    // This means that a return value is being lowered, which is
+                    // never borrowed.
+                    LiftLower::LiftArgsLowerResults => false,
                     // There's one of three possible situations we're in:
                     //
                     // * The handle is defined by the wasm module itself. This
@@ -1443,27 +1430,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // Note, again, only the first bullet here is possible
                     // today, hence the hardcoded `true` value. We'll need to
                     // refactor `witx` to expose the other possibilities.
-                    CallMode::WasmExport => true,
-
-                    // Like above there's one of three possibilities. This means
-                    // a wasm module is calling an imported function with a
-                    // handle, and the handle is owned by either the wasm
-                    // module, the imported function we're calling, or neither.
-                    //
-                    // An owned value is only used when the wasm module passes
-                    // its own handle to the import. Otherwise a borrowed value
-                    // is always used because the wasm module retains ownership
-                    // of the original handle since it's a reference to
-                    // something owned elsewhere.
-                    //
-                    // Today the only expressible case is that an imported
-                    // function receives a handle that it itself defined, so
-                    // it's always borrowed.
-                    CallMode::WasmImport => true,
-
-                    // This means that a return value is being lowered, which is
-                    // never borrowed.
-                    CallMode::NativeExport | CallMode::NativeImport => false,
+                    LiftLower::LowerArgsLiftResults => true,
                 };
                 if borrowed {
                     self.emit(&I32FromBorrowedHandle { ty });
@@ -1484,8 +1451,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // Lowering parameters calling a wasm import means
                         // we don't need to pass ownership, but we pass
                         // ownership in all other cases.
-                        let realloc = match self.mode {
-                            CallMode::WasmImport => None,
+                        let realloc = match (self.dir, self.lift_lower) {
+                            (Direction::Import, LiftLower::LowerArgsLiftResults) => None,
                             _ => Some("canonical_abi_realloc"),
                         };
                         if self.is_char(element)
@@ -1510,21 +1477,24 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     };
                     self.translate_buffer(push, ty);
 
-                    // Buffers are only used in the parameter position, which
-                    // means lowering a buffer should only happen when we're
-                    // calling wasm functions.
-                    assert!(self.mode.wasm());
+                    // Buffers are only used in the parameter position, so if we
+                    // are lowering them, then we had better be lowering args
+                    // and lifting results.
+                    assert!(self.lift_lower == LiftLower::LowerArgsLiftResults);
 
-                    if self.mode.import() {
-                        // When calling an imported function we're passing a raw view
-                        // into memory, and the adapter will convert it into something
-                        // else if necessary.
-                        self.emit(&BufferLowerPtrLen { push, ty });
-                    } else {
-                        // When calling an exported function we're passing a handle to
-                        // the caller's memory, and this part of the adapter is
-                        // responsible for converting it into something that's a handle.
-                        self.emit(&BufferLowerHandle { push, ty });
+                    match self.dir {
+                        Direction::Import => {
+                            // When calling an imported function we're passing a raw view
+                            // into memory, and the adapter will convert it into something
+                            // else if necessary.
+                            self.emit(&BufferLowerPtrLen { push, ty });
+                        }
+                        Direction::Export => {
+                            // When calling an exported function we're passing a handle to
+                            // the caller's memory, and this part of the adapter is
+                            // responsible for converting it into something that's a handle.
+                            self.emit(&BufferLowerHandle { push, ty });
+                        }
                     }
                 }
                 TypeDefKind::Record(record) if record.is_flags() => {
@@ -1566,7 +1536,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // pieces are.
                 TypeDefKind::Variant(v)
                     if self.abi == Abi::Preview1
-                        && self.mode == CallMode::NativeImport
+                        && self.dir == Direction::Import
+                        && self.lift_lower == LiftLower::LiftArgsLowerResults
                         && !v.is_enum() =>
                 {
                     let retptr = retptr.unwrap();
@@ -1620,7 +1591,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // Variant arguments in the Preview1 ABI are all passed by pointer
                 TypeDefKind::Variant(v)
                     if self.abi == Abi::Preview1
-                        && self.mode == CallMode::WasmImport
+                        && self.dir == Direction::Import
+                        && self.lift_lower == LiftLower::LowerArgsLiftResults
                         && !v.is_enum() =>
                 {
                     self.witx(&AddrOf)
@@ -1630,7 +1602,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let mut results = Vec::new();
                     let mut temp = Vec::new();
                     let mut casts = Vec::new();
-                    self.iface.push_wasm(self.abi, self.mode, ty, &mut results);
+                    self.iface.push_wasm(self.abi, self.dir, ty, &mut results);
                     for (i, case) in v.cases.iter().enumerate() {
                         self.push_block();
                         self.emit(&I32Const { val: i as i32 });
@@ -1645,7 +1617,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             // pushed, and record how many. If we pushed too few
                             // then we'll need to push some zeros after this.
                             temp.truncate(0);
-                            self.iface.push_wasm(self.abi, self.mode, ty, &mut temp);
+                            self.iface.push_wasm(self.abi, self.dir, ty, &mut temp);
                             pushed += temp.len();
 
                             // For all the types pushed we may need to insert some
@@ -1760,9 +1732,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::Handle(ty) => {
                 // For more information on these values see the comments in
                 // `lower` above.
-                let borrowed = match self.mode {
-                    CallMode::NativeExport | CallMode::NativeImport => true,
-                    CallMode::WasmExport | CallMode::WasmImport => false,
+                let borrowed = match self.lift_lower {
+                    LiftLower::LiftArgsLowerResults => true,
+                    LiftLower::LowerArgsLiftResults => false,
                 };
                 if borrowed {
                     self.emit(&HandleBorrowedFromI32 { ty });
@@ -1783,8 +1755,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // Lifting the arguments of a defined import means that, if
                         // possible, the caller still retains ownership and we don't
                         // free anything.
-                        let free = match self.mode {
-                            CallMode::NativeImport => None,
+                        let free = match (self.dir, self.lift_lower) {
+                            (Direction::Import, LiftLower::LiftArgsLowerResults) => None,
                             _ => Some("canonical_abi_free"),
                         };
                         if self.is_char(element)
@@ -1808,19 +1780,22 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     };
                     self.translate_buffer(push, ty);
                     // Buffers are only used in the parameter position, which
-                    // means lifting a buffer should only happen in native
-                    // contexts.
-                    assert!(self.mode.native());
+                    // means lifting a buffer should only happen when we are
+                    // lifting arguments and lowering results.
+                    assert!(self.lift_lower == LiftLower::LiftArgsLowerResults);
 
-                    if self.mode.import() {
-                        // When calling a defined imported function then we're coming
-                        // from a pointer/length, and the embedding context will figure
-                        // out what to do with that pointer/length.
-                        self.emit(&BufferLiftPtrLen { push, ty })
-                    } else {
-                        // When calling an exported function we're given a handle to the
-                        // buffer, which is then interpreted in the calling context.
-                        self.emit(&BufferLiftHandle { push, ty })
+                    match self.dir {
+                        Direction::Import => {
+                            // When calling a defined imported function then we're coming
+                            // from a pointer/length, and the embedding context will figure
+                            // out what to do with that pointer/length.
+                            self.emit(&BufferLiftPtrLen { push, ty })
+                        }
+                        Direction::Export => {
+                            // When calling an exported function we're given a handle to the
+                            // buffer, which is then interpreted in the calling context.
+                            self.emit(&BufferLiftHandle { push, ty })
+                        }
                     }
                 }
                 TypeDefKind::Record(record) if record.is_flags() => {
@@ -1844,7 +1819,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                     Abi::Canonical => {
                         let mut temp = Vec::new();
-                        self.iface.push_wasm(self.abi, self.mode, ty, &mut temp);
+                        self.iface.push_wasm(self.abi, self.dir, ty, &mut temp);
                         let mut args = self
                             .stack
                             .drain(self.stack.len() - temp.len()..)
@@ -1852,7 +1827,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         for field in record.fields.iter() {
                             temp.truncate(0);
                             self.iface
-                                .push_wasm(self.abi, self.mode, &field.ty, &mut temp);
+                                .push_wasm(self.abi, self.dir, &field.ty, &mut temp);
                             self.stack.extend(args.drain(..temp.len()));
                             self.lift(&field.ty);
                         }
@@ -1869,7 +1844,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // pieces are.
                 TypeDefKind::Variant(v)
                     if self.abi == Abi::Preview1
-                        && self.mode == CallMode::WasmImport
+                        && self.dir == Direction::Import
+                        && self.lift_lower == LiftLower::LowerArgsLiftResults
                         && !v.is_enum() =>
                 {
                     let (ok, err) = v.as_expected().unwrap();
@@ -1917,7 +1893,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // so we read them here.
                 TypeDefKind::Variant(v)
                     if self.abi == Abi::Preview1
-                        && self.mode == CallMode::NativeImport
+                        && self.dir == Direction::Import
+                        && self.lift_lower == LiftLower::LiftArgsLowerResults
                         && !v.is_enum() =>
                 {
                     let addr = self.stack.pop().unwrap();
@@ -1928,7 +1905,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let mut params = Vec::new();
                     let mut temp = Vec::new();
                     let mut casts = Vec::new();
-                    self.iface.push_wasm(self.abi, self.mode, ty, &mut params);
+                    self.iface.push_wasm(self.abi, self.dir, ty, &mut params);
                     let block_inputs = self
                         .stack
                         .drain(self.stack.len() + 1 - params.len()..)
@@ -1939,7 +1916,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             // Push only the values we need for this variant onto
                             // the stack.
                             temp.truncate(0);
-                            self.iface.push_wasm(self.abi, self.mode, ty, &mut temp);
+                            self.iface.push_wasm(self.abi, self.dir, ty, &mut temp);
                             self.stack
                                 .extend(block_inputs[..temp.len()].iter().cloned());
 
@@ -2003,11 +1980,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 // Lower the buffer to its raw values, and then write the values
-                // into memory, which may be more than one value depending on our
-                // call mode.
+                // into memory, which may be more than one value depending on
+                // our import/export direction.
                 TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {
                     self.lower(ty, None);
-                    if self.mode.import() {
+                    if self.dir == Direction::Import {
                         self.stack.push(addr.clone());
                         self.emit(&I32Store { offset: offset + 8 });
                         self.stack.push(addr.clone());
@@ -2134,7 +2111,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {
                     self.stack.push(addr.clone());
                     self.emit(&I32Load { offset });
-                    if let CallMode::NativeImport = self.mode {
+                    if self.dir == Direction::Import
+                        && self.lift_lower == LiftLower::LiftArgsLowerResults
+                    {
                         self.stack.push(addr.clone());
                         self.emit(&I32Load { offset: offset + 4 });
                         self.stack.push(addr);
@@ -2236,17 +2215,17 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 
     fn translate_buffer(&mut self, push: bool, ty: &Type) {
-        let do_write = match self.mode {
+        let do_write = match self.lift_lower {
             // For declared items, input/output is defined in the context of
             // what the callee will do. The callee will read input buffers,
-            // meaning we write to them, and write to ouptut buffers, meaning
+            // meaning we write to them, and write to output buffers, meaning
             // we'll read from them.
-            CallMode::WasmImport | CallMode::WasmExport => !push,
+            LiftLower::LowerArgsLiftResults => !push,
 
             // Defined item mirror declared imports because buffers are
             // defined from the caller's perspective, so we don't invert the
             // `out` setting like above.
-            CallMode::NativeImport | CallMode::NativeExport => push,
+            LiftLower::LiftArgsLowerResults => push,
         };
         self.emit(&Instruction::IterBasePointer);
         let addr = self.stack.pop().unwrap();
