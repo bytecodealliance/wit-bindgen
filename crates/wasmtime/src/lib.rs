@@ -80,17 +80,6 @@ pub mod rt {
         }
     }
 
-    pub fn data_and_memory<'a, T>(
-        mut caller: &'a mut Caller<'_, T>,
-        memory: &Memory,
-    ) -> (&'a mut [u8], &'a mut T) {
-        // TODO: comment unsafe
-        unsafe {
-            let memory = &mut *(memory.data_mut(&mut caller) as *mut [u8]);
-            (memory, caller.data_mut())
-        }
-    }
-
     pub fn get_func<T>(caller: &mut Caller<'_, T>, func: &str) -> Result<Func, wasmtime::Trap> {
         let func = caller
             .get_export(func)

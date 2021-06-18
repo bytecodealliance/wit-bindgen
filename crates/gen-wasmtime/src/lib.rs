@@ -135,7 +135,9 @@ impl Wasmtime {
                 // might need handle tables later. If we don't end up using
                 // `_tables` that's ok, it'll almost always be optimized away.
                 if self.all_needed_handles.len() > 0 {
-                    self.push_str("let (caller_memory, data) = witx_bindgen_wasmtime::rt::data_and_memory(&mut caller, memory);\n");
+                    self.push_str(
+                        "let (caller_memory, data) = memory.data_and_store_mut(&mut caller);\n",
+                    );
                     self.push_str("let (_, _tables) = get(data);\n");
                 } else {
                     self.push_str("let caller_memory = memory.data_mut(&mut caller);\n");
@@ -575,7 +577,7 @@ impl Generator for Wasmtime {
         if self.needs_borrow_checker {
             self.src.as_mut_string().insert_str(
                 pos,
-                "let (mem, data) = witx_bindgen_wasmtime::rt::data_and_memory(&mut caller, memory);
+                "let (mem, data) = memory.data_and_store_mut(&mut caller);
                 let mut _bc = witx_bindgen_wasmtime::BorrowChecker::new(mem);
                 let host = get(data);\n",
             );
