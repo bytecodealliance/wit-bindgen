@@ -248,7 +248,7 @@ function host(): imports.Host {
       assert.deepStrictEqual(flag64, [imports.FLAG64_B9]);
     },
     unaligned_roundtrip2(record, f32, f64, string, list) {
-      assert.deepStrictEqual(Array.from(record), [{ a: 10, b: 11n, c: 12 }]);
+      assert.deepStrictEqual(Array.from(record), [{ a: 10, b: 11n }]);
       assert.deepStrictEqual(Array.from(f32), [100]);
       assert.deepStrictEqual(Array.from(f64), [101]);
       assert.deepStrictEqual(string, ['foo']);
