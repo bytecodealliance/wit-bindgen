@@ -111,24 +111,6 @@ impl<'a> BorrowChecker<'a> {
         }
     }
 
-    // pub unsafe fn shared_borrow<T>(&mut self, ptr: i32) -> Result<(), GuestError> {
-    //     if self.is_mut_borrowed(r) {
-    //         Err(GuestError::PtrBorrowed(r))
-    //     } else {
-    //         self.shared_borrows.insert(r);
-    //         Ok(())
-    //     }
-    // }
-
-    // pub unsafe fn mut_borrow(&mut self, r: Region) -> Result<(), GuestError> {
-    //     if self.is_shared_borrowed(r) || self.is_mut_borrowed(r) {
-    //         Err(GuestError::PtrBorrowed(r))
-    //     } else {
-    //         self.mut_borrows.insert(r);
-    //         Ok(())
-    //     }
-    // }
-
     fn is_shared_borrowed(&self, r: Region) -> bool {
         self.shared_borrows.iter().any(|b| b.overlaps(r))
     }
@@ -165,57 +147,6 @@ impl crate::rt::RawMem for BorrowChecker<'_> {
     }
 }
 
-// #[derive(Default, Debug)]
-// struct InnerBorrowChecker {}
-
-// impl InnerBorrowChecker {
-//     fn has_outstanding_borrows(&self) -> bool {
-//         !(self.shared_borrows.is_empty() && self.mut_borrows.is_empty())
-//     }
-
-//     fn is_shared_borrowed(&self, r: Region) -> bool {}
-//     fn is_mut_borrowed(&self, r: Region) -> bool {}
-
-//     fn new_handle(&mut self) -> Result<BorrowHandle, GuestError> {
-//         // Reset handles to 0 if all handles have been returned.
-//         if self.shared_borrows.is_empty() && self.mut_borrows.is_empty() {
-//             self.next_handle = BorrowHandle(0);
-//         }
-//         let h = self.next_handle;
-//         // Get the next handle. Since we don't recycle handles until all of
-//         // them have been returned, there is a pathological case where a user
-//         // may make a Very Large (usize::MAX) number of valid borrows and
-//         // unborrows while always keeping at least one borrow outstanding, and
-//         // we will run out of borrow handles.
-//         self.next_handle = BorrowHandle(
-//             h.0.checked_add(1)
-//                 .ok_or_else(|| GuestError::BorrowCheckerOutOfHandles)?,
-//         );
-//         Ok(h)
-//     }
-
-//     fn shared_borrow(&mut self, r: Region) -> Result<BorrowHandle, GuestError> {}
-
-//     fn mut_borrow(&mut self, r: Region) -> Result<BorrowHandle, GuestError> {
-//         if self.is_shared_borrowed(r) || self.is_mut_borrowed(r) {
-//             return Err(GuestError::PtrBorrowed(r));
-//         }
-//         let h = self.new_handle()?;
-//         self.mut_borrows.insert(h, r);
-//         Ok(h)
-//     }
-
-//     fn shared_unborrow(&mut self, h: BorrowHandle) {
-//         let removed = self.shared_borrows.remove(&h);
-//         debug_assert!(removed.is_some(), "double-freed shared borrow");
-//     }
-
-//     fn mut_unborrow(&mut self, h: BorrowHandle) {
-//         let removed = self.mut_borrows.remove(&h);
-//         debug_assert!(removed.is_some(), "double-freed mut borrow");
-//     }
-// }
-
 /// Represents a contiguous region in memory.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Region {
@@ -224,10 +155,6 @@ pub struct Region {
 }
 
 impl Region {
-    //     pub fn new(start: u32, len: u32) -> Self {
-    //         Self { start, len }
-    //     }
-
     /// Checks if this `Region` overlaps with `rhs` `Region`.
     pub fn overlaps(&self, rhs: Region) -> bool {
         // Zero-length regions can never overlap!
@@ -247,14 +174,6 @@ impl Region {
             rhs_end >= self_start
         }
     }
-
-    //     pub fn extend(&self, times: u32) -> Self {
-    //         let len = self.len * times;
-    //         Self {
-    //             start: self.start,
-    //             len,
-    //         }
-    //     }
 }
 
 // #[cfg(test)]
