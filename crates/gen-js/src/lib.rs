@@ -1643,7 +1643,7 @@ impl Js {
                         alloc_len += s.length;
                         const { read, written } = UTF8_ENCODER.encodeInto(
                             s,
-                            new Uint8Array(memory.buffer, ptr, alloc_len),
+                            new Uint8Array(memory.buffer, ptr + writtenTotal, alloc_len - writtenTotal),
                         );
                         writtenTotal += written;
                         s = s.slice(read);
