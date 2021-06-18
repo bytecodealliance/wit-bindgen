@@ -369,11 +369,17 @@ impl Generator for Js {
                 let field = field.name.to_shouty_snake_case();
                 self.src.js(&format!(
                     "export const {}_{} = {}{};\n",
-                    name, field, i, suffix,
+                    name,
+                    field,
+                    1u64 << i,
+                    suffix,
                 ));
                 self.src.ts(&format!(
                     "export const {}_{} = {}{};\n",
-                    name, field, i, suffix,
+                    name,
+                    field,
+                    1u64 << i,
+                    suffix,
                 ));
             }
         } else {

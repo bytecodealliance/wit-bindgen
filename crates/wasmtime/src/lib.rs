@@ -6,12 +6,14 @@ pub use {anyhow, bitflags, wasmtime};
 mod error;
 pub mod exports;
 pub mod imports;
+mod le;
 mod memory;
 mod ptr;
 mod region;
 mod table;
 
 pub use error::GuestError;
+pub use le::{Endian, Le};
 pub use memory::{BorrowHandle, GuestMemory};
 pub use ptr::{GuestPtr, Pointee};
 pub use region::{BorrowChecker, Region};

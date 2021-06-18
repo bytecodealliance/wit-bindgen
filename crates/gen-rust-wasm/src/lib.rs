@@ -729,7 +729,10 @@ impl Bindgen for RustWasm {
                     results.push(format!("(flags{} >> {}) as i32", tmp, i * 32));
                 }
             }
-            Instruction::FlagsLower64 { .. } => top_as("i64"),
+            Instruction::FlagsLower64 { .. } => {
+                let s = operands.pop().unwrap();
+                results.push(format!("witx_bindgen_rust::rt::as_i64({})", s));
+            }
             Instruction::FlagsLift { name, .. } | Instruction::FlagsLift64 { name, .. } => {
                 let name = name.to_camel_case();
                 let mut result = String::from("0");

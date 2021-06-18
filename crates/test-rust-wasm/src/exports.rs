@@ -7,7 +7,7 @@ witx_bindgen_rust::export!({ paths: ["tests/wasm.witx"], unchecked });
 use wasm::*;
 
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
-use witx_bindgen_rust::exports::{InBuffer, InBufferRaw, OutBuffer, OutBufferRaw};
+// use witx_bindgen_rust::exports::{InBuffer, InBufferRaw, OutBuffer, OutBufferRaw};
 
 struct MyWasm {
     scalar: AtomicU32,

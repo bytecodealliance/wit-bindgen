@@ -29,6 +29,7 @@ pub struct Wasmtime {
     needs_functions: HashMap<String, NeededFunction>,
     needs_buffer_transaction: bool,
     needs_buffer_glue: bool,
+    needs_le: bool,
     all_needed_handles: BTreeSet<String>,
     types: Types,
     imports: HashMap<String, Vec<Import>>,
@@ -106,6 +107,9 @@ impl Wasmtime {
         }
         if self.needs_validate_flags {
             self.push_str("use witx_bindgen_wasmtime::rt::validate_flags;\n");
+        }
+        if self.needs_le {
+            self.push_str("use witx_bindgen_wasmtime::Le;\n");
         }
         if self.needs_slice_as_bytes {
             self.push_str(
@@ -232,7 +236,32 @@ impl TypePrint for Wasmtime {
         ty: &Type,
         lifetime: &'static str,
     ) {
-        self.print_rust_slice(iface, mutbl, ty, lifetime);
+        if self.sizes.align(ty) > 1 && self.in_import {
+            // If we're generating bindings for an import we ideally want to
+            // hand out raw pointers into memory. We can't guarantee anything
+            // about alignment in memory, though, so if the alignment
+            // requirement is bigger than one then we have to use slices where
+            // the type has a `Le<...>` wrapper.
+            //
+            // For exports we're generating functions that take values from
+            // Rust, so we can assume alignment and use raw slices. For types
+            // with an align of 1, then raw pointers are fine since Rust will
+            // have the same alignment requirement.
+            self.needs_le = true;
+            self.push_str("&");
+            if lifetime != "'_" {
+                self.push_str(lifetime);
+                self.push_str(" ");
+            }
+            if mutbl {
+                self.push_str(" mut ");
+            }
+            self.push_str("[Le<");
+            self.print_ty(iface, ty, TypeMode::AllBorrowed(lifetime));
+            self.push_str(">]");
+        } else {
+            self.print_rust_slice(iface, mutbl, ty, lifetime);
+        }
     }
 
     fn print_borrowed_str(&mut self, lifetime: &'static str) {
@@ -309,6 +338,51 @@ impl Generator for Wasmtime {
         }
 
         self.print_typedef_record(iface, id, record, docs);
+
+        // If this record might be used as a slice type in various places then
+        // we synthesize an `Endian` implementation for it so `&[Le<ThisType>]`
+        // is usable.
+        if self.modes_of(iface, id).len() > 0
+            && record.fields.iter().all(|f| iface.all_bits_valid(&f.ty))
+        {
+            self.src.push_str("impl witx_bindgen_wasmtime::Endian for ");
+            self.src.push_str(&name.to_camel_case());
+            self.src.push_str(" {\n");
+            self.src.push_str("fn into_le(self) -> Self {\n");
+            self.src.push_str("Self {\n");
+            for field in record.fields.iter() {
+                self.src.push_str(&field.name.to_snake_case());
+                self.src.push_str(": self.");
+                self.src.push_str(&field.name.to_snake_case());
+                self.src.push_str(".into_le(),\n");
+            }
+            self.src.push_str("}\n");
+            self.src.push_str("}\n");
+            self.src
+                .push_str("unsafe fn read_unaligned_le(_ptr: *const Self) -> Self {\n");
+            self.src.push_str("Self {\n");
+            for field in record.fields.iter() {
+                self.src.push_str(&field.name.to_snake_case());
+                self.src
+                    .push_str(": <_>::read_unaligned_le(std::ptr::addr_of!((*_ptr).");
+                self.src.push_str(&field.name.to_snake_case());
+                self.src.push_str(")),\n");
+            }
+            self.src.push_str("}\n");
+            self.src.push_str("}\n");
+            self.src
+                .push_str("unsafe fn write_unaligned_le(self, _ptr: *mut Self) {\n");
+            for field in record.fields.iter() {
+                self.src.push_str("self.");
+                self.src.push_str(&field.name.to_snake_case());
+                self.src
+                    .push_str(".write_unaligned_le(std::ptr::addr_of_mut!((*_ptr).");
+                self.src.push_str(&field.name.to_snake_case());
+                self.src.push_str("));\n");
+            }
+            self.src.push_str("}\n");
+            self.src.push_str("}\n");
+        }
     }
 
     fn type_variant(

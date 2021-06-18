@@ -239,6 +239,21 @@ function host(): imports.Host {
         r3: [imports.MyErrno.A, imports.MyErrno.B],
       };
     },
+
+    unaligned_roundtrip1(u16, u32, u64, flag32, flag64) {
+      assert.deepStrictEqual(Array.from(u16), [1]);
+      assert.deepStrictEqual(Array.from(u32), [2]);
+      assert.deepStrictEqual(Array.from(u64), [3n]);
+      assert.deepStrictEqual(flag32, [imports.FLAG32_B8]);
+      assert.deepStrictEqual(flag64, [imports.FLAG64_B9]);
+    },
+    unaligned_roundtrip2(record, f32, f64, string, list) {
+      assert.deepStrictEqual(Array.from(record), [{ a: 10, b: 11n, c: 12 }]);
+      assert.deepStrictEqual(Array.from(f32), [100]);
+      assert.deepStrictEqual(Array.from(f64), [101]);
+      assert.deepStrictEqual(string, ['foo']);
+      assert.deepStrictEqual(list, [new Uint8Array([102])]);
+    },
   };
 }
 

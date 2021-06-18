@@ -1,9 +1,11 @@
-use witx_bindgen_wasmtime::imports::{PullBuffer, PushBuffer};
-
 witx_bindgen_wasmtime::import!("tests/host.witx");
-use host::*;
 
+use host::*;
 pub(crate) use host::{add_host_to_linker, HostTables};
+use witx_bindgen_wasmtime::{
+    imports::{PullBuffer, PushBuffer},
+    Le,
+};
 
 #[derive(Default)]
 pub struct MyHost {
@@ -366,12 +368,13 @@ impl Host for MyHost {
         3
     }
 
-    fn buffer_u32(&mut self, in_: &[u32], out: &mut [u32]) -> u32 {
-        assert_eq!(in_, [0]);
+    fn buffer_u32(&mut self, in_: &[Le<u32>], out: &mut [Le<u32>]) -> u32 {
+        assert_eq!(in_.len(), 1);
+        assert_eq!(in_[0].get(), 0);
         assert_eq!(out.len(), 10);
-        out[0] = 1;
-        out[1] = 2;
-        out[2] = 3;
+        out[0].set(1);
+        out[1].set(2);
+        out[2].set(3);
         3
     }
 
@@ -475,5 +478,37 @@ impl Host for MyHost {
             vec![Err(()), Ok(())],
             vec![MyErrno::A, MyErrno::B],
         )
+    }
+
+    fn unaligned_roundtrip1(
+        &mut self,
+        u16s: &[Le<u16>],
+        u32s: &[Le<u32>],
+        u64s: &[Le<u64>],
+        flag32s: Vec<Flag32>,
+        flag64s: Vec<Flag64>,
+    ) {
+        assert_eq!(u16s, [1.into()]);
+        assert_eq!(u32s, [2.into()]);
+        assert_eq!(u64s, [3.into()]);
+        assert_eq!(flag32s, [Flag32::B8]);
+        assert_eq!(flag64s, [Flag64::B9]);
+    }
+
+    fn unaligned_roundtrip2(
+        &mut self,
+        records: &[Le<UnalignedRecord>],
+        f32s: &[Le<f32>],
+        f64s: &[Le<f64>],
+        strings: Vec<&str>,
+        lists: Vec<&[u8]>,
+    ) {
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].get().a, 10);
+        assert_eq!(records[0].get().b, 11);
+        assert_eq!(f32s, [100.0.into()]);
+        assert_eq!(f64s, [101.0.into()]);
+        assert_eq!(strings, ["foo"]);
+        assert_eq!(lists, [&[102][..]]);
     }
 }

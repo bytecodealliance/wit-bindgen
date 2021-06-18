@@ -122,6 +122,11 @@
   (typename $param_in_buffer_bool (in-buffer bool))
   (typename $param_out_buffer_bool (out-buffer bool))
 
+  (typename $unaligned_record (record
+    (field $a u32)
+    (field $b u64)
+  ))
+
   ;; ===========================================
   ;; scalars
   ;; ===========================================
@@ -228,6 +233,20 @@
   (export "list_result3" (func (result $a (list string))))
   (export "string_roundtrip" (func (param $a string) (result $b string)))
 
+  (export "unaligned_roundtrip1" (func
+    (param $a (list u16))
+    (param $b (list u32))
+    (param $c (list u64))
+    (param $d (list $flag32))
+    (param $e (list $flag64))
+  ))
+  (export "unaligned_roundtrip2" (func
+    (param $f (list $unaligned_record))
+    (param $g (list f32))
+    (param $h (list f64))
+    (param $i (list string))
+    (param $j (list (list u8)))
+  ))
 
   ;; ===========================================
   ;; handles
