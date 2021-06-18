@@ -112,16 +112,7 @@ impl Wasmtime {
             self.push_str("use witx_bindgen_wasmtime::Le;\n");
         }
         if self.needs_slice_as_bytes {
-            self.push_str(
-                "
-                    unsafe fn slice_as_bytes<T: Copy>(slice: &[T]) -> &[u8] {
-                        core::slice::from_raw_parts(
-                            slice.as_ptr() as *const u8,
-                            core::mem::size_of_val(slice),
-                        )
-                    }
-                ",
-            );
+            self.push_str("use witx_bindgen_wasmtime::rt::slice_as_bytes;\n");
         }
         if self.needs_copy_slice {
             self.push_str("use witx_bindgen_wasmtime::rt::copy_slice;\n");
@@ -144,7 +135,9 @@ impl Wasmtime {
                 // might need handle tables later. If we don't end up using
                 // `_tables` that's ok, it'll almost always be optimized away.
                 if self.all_needed_handles.len() > 0 {
-                    self.push_str("let (caller_memory, data) = witx_bindgen_wasmtime::rt::data_and_memory(&mut caller, memory);\n");
+                    self.push_str(
+                        "let (caller_memory, data) = memory.data_and_store_mut(&mut caller);\n",
+                    );
                     self.push_str("let (_, _tables) = get(data);\n");
                 } else {
                     self.push_str("let caller_memory = memory.data_mut(&mut caller);\n");
@@ -348,6 +341,7 @@ impl Generator for Wasmtime {
             self.src.push_str("impl witx_bindgen_wasmtime::Endian for ");
             self.src.push_str(&name.to_camel_case());
             self.src.push_str(" {\n");
+
             self.src.push_str("fn into_le(self) -> Self {\n");
             self.src.push_str("Self {\n");
             for field in record.fields.iter() {
@@ -358,30 +352,27 @@ impl Generator for Wasmtime {
             }
             self.src.push_str("}\n");
             self.src.push_str("}\n");
-            self.src
-                .push_str("unsafe fn read_unaligned_le(_ptr: *const Self) -> Self {\n");
+
+            self.src.push_str("fn from_le(self) -> Self {\n");
             self.src.push_str("Self {\n");
             for field in record.fields.iter() {
                 self.src.push_str(&field.name.to_snake_case());
-                self.src
-                    .push_str(": <_>::read_unaligned_le(std::ptr::addr_of!((*_ptr).");
+                self.src.push_str(": self.");
                 self.src.push_str(&field.name.to_snake_case());
-                self.src.push_str(")),\n");
+                self.src.push_str(".from_le(),\n");
             }
             self.src.push_str("}\n");
             self.src.push_str("}\n");
+
+            self.src.push_str("}\n");
+
+            // Also add an `AllBytesValid` valid impl since this structure's
+            // byte representations are valid (guarded by the `all_bits_valid`
+            // predicate).
             self.src
-                .push_str("unsafe fn write_unaligned_le(self, _ptr: *mut Self) {\n");
-            for field in record.fields.iter() {
-                self.src.push_str("self.");
-                self.src.push_str(&field.name.to_snake_case());
-                self.src
-                    .push_str(".write_unaligned_le(std::ptr::addr_of_mut!((*_ptr).");
-                self.src.push_str(&field.name.to_snake_case());
-                self.src.push_str("));\n");
-            }
-            self.src.push_str("}\n");
-            self.src.push_str("}\n");
+                .push_str("unsafe impl witx_bindgen_wasmtime::AllBytesValid for ");
+            self.src.push_str(&name.to_camel_case());
+            self.src.push_str(" {}\n");
         }
     }
 
@@ -586,7 +577,7 @@ impl Generator for Wasmtime {
         if self.needs_borrow_checker {
             self.src.as_mut_string().insert_str(
                 pos,
-                "let (mem, data) = witx_bindgen_wasmtime::rt::data_and_memory(&mut caller, memory);
+                "let (mem, data) = memory.data_and_store_mut(&mut caller);
                 let mut _bc = witx_bindgen_wasmtime::BorrowChecker::new(mem);
                 let host = get(data);\n",
             );
@@ -1266,15 +1257,9 @@ impl Bindgen for Wasmtime {
                 self.caller_memory_available = false; // invalidated from above
 
                 // ... and then copy over the result.
-                //
-                // Note the unsafety here, in general it's not safe to copy
-                // from arbitrary types on the host as a slice of bytes, but in
-                // this case we should be able to get away with it since
-                // canonical lowerings have the same memory representation on
-                // the host as in the guest.
                 let mem = self.memory_src();
                 self.push_str(&format!(
-                    "{}.store({}, unsafe {{ slice_as_bytes({}.as_ref()) }})?;\n",
+                    "{}.store({}, slice_as_bytes({}.as_ref()))?;\n",
                     mem, ptr, val
                 ));
                 self.needs_store = true;
@@ -1284,67 +1269,55 @@ impl Bindgen for Wasmtime {
                 results.push(format!("{}.len() as i32", val));
             }
 
-            Instruction::ListCanonLift { element, free } => {
-                // Note the unsafety here. This is possibly an unsafe operation
-                // because the representation of the target must match the
-                // representation on the host, but `ListCanonLift` is only
-                // generated for types where that's true, so this should be
-                // safe.
-                match free {
-                    Some(free) => {
-                        self.needs_memory = true;
-                        self.needs_copy_slice = true;
-                        self.needs_functions
-                            .insert(free.to_string(), NeededFunction::Free);
-                        let (stringify, align) = match element {
-                            Type::Char => (true, 1),
-                            _ => (false, self.sizes.align(element)),
-                        };
-                        let tmp = self.tmp();
-                        self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
-                        self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
-                        let result = format!(
-                            "
-                                unsafe {{
-                                    copy_slice(
-                                        &mut caller,
-                                        memory,
-                                        func_{},
-                                        ptr{tmp}, len{tmp}, {}
-                                    )?
-                                }}
+            Instruction::ListCanonLift { element, free } => match free {
+                Some(free) => {
+                    self.needs_memory = true;
+                    self.needs_copy_slice = true;
+                    self.needs_functions
+                        .insert(free.to_string(), NeededFunction::Free);
+                    let (stringify, align) = match element {
+                        Type::Char => (true, 1),
+                        _ => (false, self.sizes.align(element)),
+                    };
+                    let tmp = self.tmp();
+                    self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
+                    self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
+                    let result = format!(
+                        "
+                                copy_slice(
+                                    &mut caller,
+                                    memory,
+                                    func_{},
+                                    ptr{tmp}, len{tmp}, {}
+                                )?
                             ",
-                            free,
-                            align,
-                            tmp = tmp
-                        );
-                        if stringify {
-                            results.push(format!(
-                                "String::from_utf8({})
+                        free,
+                        align,
+                        tmp = tmp
+                    );
+                    if stringify {
+                        results.push(format!(
+                            "String::from_utf8({})
                                     .map_err(|_| wasmtime::Trap::new(\"invalid utf-8\"))?",
-                                result
-                            ));
-                        } else {
-                            results.push(result);
-                        }
-                    }
-                    None => {
-                        self.needs_borrow_checker = true;
-                        let method = match element {
-                            Type::Char => "slice_str",
-                            _ => "slice",
-                        };
-                        let tmp = self.tmp();
-                        self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
-                        self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
-                        let mut slice = format!("_bc.{}(ptr{1}, len{1})?", method, tmp);
-                        if method == "slice" {
-                            slice = format!("unsafe {{ {} }}", slice);
-                        }
-                        results.push(slice);
+                            result
+                        ));
+                    } else {
+                        results.push(result);
                     }
                 }
-            }
+                None => {
+                    self.needs_borrow_checker = true;
+                    let method = match element {
+                        Type::Char => "slice_str",
+                        _ => "slice",
+                    };
+                    let tmp = self.tmp();
+                    self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
+                    self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
+                    let slice = format!("_bc.{}(ptr{1}, len{1})?", method, tmp);
+                    results.push(slice);
+                }
+            },
 
             Instruction::ListLower { element, realloc } => {
                 let realloc = realloc.unwrap();
@@ -1442,7 +1415,7 @@ impl Bindgen for Wasmtime {
                 self.push_str(&format!("let len{} = {};\n", tmp, operands[2]));
                 if iface.all_bits_valid(ty) {
                     let method = if *push { "slice_mut" } else { "slice" };
-                    results.push(format!("unsafe {{ _bc.{}(ptr{1}, len{1})? }}", method, tmp));
+                    results.push(format!("_bc.{}(ptr{1}, len{1})?", method, tmp));
                 } else {
                     let size = self.sizes.size(ty);
                     let closure = format!("closure{}", tmp);

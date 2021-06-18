@@ -18,7 +18,7 @@ impl<'a, T> PullBuffer<'a, T> {
         deserialize: &'a (dyn Fn(&'a [u8]) -> Result<T, Trap> + 'a),
     ) -> Result<PullBuffer<'a, T>, Trap> {
         Ok(PullBuffer {
-            mem: unsafe { mem.slice(offset, len.saturating_mul(size))? },
+            mem: mem.slice(offset, len.saturating_mul(size))?,
             size: size as usize,
             deserialize,
         })
@@ -56,8 +56,7 @@ impl<'a, T> PushBuffer<'a, T> {
         size: i32,
         serialize: &'a (dyn Fn(&mut [u8], T) -> Result<(), Trap> + 'a),
     ) -> Result<PushBuffer<'a, T>, Trap> {
-        let mem =
-            unsafe { mem.slice_mut(offset, (len as u32).saturating_mul(size as u32) as i32)? };
+        let mem = mem.slice_mut(offset, (len as u32).saturating_mul(size as u32) as i32)?;
         Ok(PushBuffer {
             mem,
             size: size as usize,
