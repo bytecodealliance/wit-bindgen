@@ -731,10 +731,10 @@ impl Generator for Wasmtime {
             self.push_str(&module_camel);
             self.push_str("\n{\n");
             if self.needs_get_memory {
-                self.push_str("use witx_bindgen_wasmtime::rt::get_memory;");
+                self.push_str("use witx_bindgen_wasmtime::rt::get_memory;\n");
             }
             if self.needs_get_func {
-                self.push_str("use witx_bindgen_wasmtime::rt::get_func;");
+                self.push_str("use witx_bindgen_wasmtime::rt::get_func;\n");
             }
             for f in funcs {
                 self.push_str(&format!(
