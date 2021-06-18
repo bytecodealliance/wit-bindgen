@@ -38,3 +38,4 @@ jobs:
         branch: gh-pages
         folder: static
         single-commit: true
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
