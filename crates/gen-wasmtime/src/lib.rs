@@ -1255,12 +1255,6 @@ impl Bindgen for Wasmtime {
                 self.caller_memory_available = false; // invalidated from above
 
                 // ... and then copy over the result.
-                //
-                // Note the unsafety here, in general it's not safe to copy
-                // from arbitrary types on the host as a slice of bytes, but in
-                // this case we should be able to get away with it since
-                // canonical lowerings have the same memory representation on
-                // the host as in the guest.
                 let mem = self.memory_src();
                 self.push_str(&format!(
                     "{}.store({}, slice_as_bytes({}.as_ref()))?;\n",
@@ -1273,27 +1267,21 @@ impl Bindgen for Wasmtime {
                 results.push(format!("{}.len() as i32", val));
             }
 
-            Instruction::ListCanonLift { element, free } => {
-                // Note the unsafety here. This is possibly an unsafe operation
-                // because the representation of the target must match the
-                // representation on the host, but `ListCanonLift` is only
-                // generated for types where that's true, so this should be
-                // safe.
-                match free {
-                    Some(free) => {
-                        self.needs_memory = true;
-                        self.needs_copy_slice = true;
-                        self.needs_functions
-                            .insert(free.to_string(), NeededFunction::Free);
-                        let (stringify, align) = match element {
-                            Type::Char => (true, 1),
-                            _ => (false, self.sizes.align(element)),
-                        };
-                        let tmp = self.tmp();
-                        self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
-                        self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
-                        let result = format!(
-                            "
+            Instruction::ListCanonLift { element, free } => match free {
+                Some(free) => {
+                    self.needs_memory = true;
+                    self.needs_copy_slice = true;
+                    self.needs_functions
+                        .insert(free.to_string(), NeededFunction::Free);
+                    let (stringify, align) = match element {
+                        Type::Char => (true, 1),
+                        _ => (false, self.sizes.align(element)),
+                    };
+                    let tmp = self.tmp();
+                    self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
+                    self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
+                    let result = format!(
+                        "
                                 copy_slice(
                                     &mut caller,
                                     memory,
@@ -1301,34 +1289,33 @@ impl Bindgen for Wasmtime {
                                     ptr{tmp}, len{tmp}, {}
                                 )?
                             ",
-                            free,
-                            align,
-                            tmp = tmp
-                        );
-                        if stringify {
-                            results.push(format!(
-                                "String::from_utf8({})
+                        free,
+                        align,
+                        tmp = tmp
+                    );
+                    if stringify {
+                        results.push(format!(
+                            "String::from_utf8({})
                                     .map_err(|_| wasmtime::Trap::new(\"invalid utf-8\"))?",
-                                result
-                            ));
-                        } else {
-                            results.push(result);
-                        }
-                    }
-                    None => {
-                        self.needs_borrow_checker = true;
-                        let method = match element {
-                            Type::Char => "slice_str",
-                            _ => "slice",
-                        };
-                        let tmp = self.tmp();
-                        self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
-                        self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
-                        let slice = format!("_bc.{}(ptr{1}, len{1})?", method, tmp);
-                        results.push(slice);
+                            result
+                        ));
+                    } else {
+                        results.push(result);
                     }
                 }
-            }
+                None => {
+                    self.needs_borrow_checker = true;
+                    let method = match element {
+                        Type::Char => "slice_str",
+                        _ => "slice",
+                    };
+                    let tmp = self.tmp();
+                    self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
+                    self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
+                    let slice = format!("_bc.{}(ptr{1}, len{1})?", method, tmp);
+                    results.push(slice);
+                }
+            },
 
             Instruction::ListLower { element, realloc } => {
                 let realloc = realloc.unwrap();
