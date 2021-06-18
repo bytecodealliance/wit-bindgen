@@ -1,0 +1,13 @@
+enum lang {
+  rust,
+  js,
+  wasmtime,
+}
+
+type files = list<tuple<string, string>>
+
+render: function(
+  input: string,
+  language: lang,
+  import: bool,
+) -> expected<files, string>

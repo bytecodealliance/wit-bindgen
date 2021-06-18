@@ -161,6 +161,18 @@ impl Host for MyHost {
 
     fn variant_typedefs(&mut self, _: Option<u32>, _: bool, _: Result<u32, ()>) {}
 
+    fn variant_enums(
+        &mut self,
+        a: bool,
+        b: Result<(), ()>,
+        c: MyErrno,
+    ) -> (bool, Result<(), ()>, MyErrno) {
+        assert_eq!(a, true);
+        assert_eq!(b, Ok(()));
+        assert_eq!(c, MyErrno::Success);
+        (false, Err(()), MyErrno::A)
+    }
+
     fn legacy_params(
         &mut self,
         a: (u32, u32),
@@ -225,6 +237,10 @@ impl Host for MyHost {
 
     fn list_result3(&mut self) -> Vec<String> {
         vec!["hello,".to_string(), "world!".to_string()]
+    }
+
+    fn string_roundtrip(&mut self, s: &str) -> String {
+        s.to_string()
     }
 
     fn list_in_record1(&mut self, ty: ListInRecord1<'_>) {
@@ -443,5 +459,21 @@ impl Host for MyHost {
         _: ParamInBufferBool<'_>,
         _: ParamOutBufferBool<'_>,
     ) {
+    }
+
+    fn list_of_variants(
+        &mut self,
+        bools: Vec<bool>,
+        results: Vec<Result<(), ()>>,
+        enums: Vec<MyErrno>,
+    ) -> (Vec<bool>, Vec<Result<(), ()>>, Vec<MyErrno>) {
+        assert_eq!(bools, [true, false]);
+        assert_eq!(results, [Ok(()), Err(())]);
+        assert_eq!(enums, [MyErrno::Success, MyErrno::A]);
+        (
+            vec![false, true],
+            vec![Err(()), Ok(())],
+            vec![MyErrno::A, MyErrno::B],
+        )
     }
 }

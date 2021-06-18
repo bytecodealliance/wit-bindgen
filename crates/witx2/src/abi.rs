@@ -569,7 +569,7 @@ def_instruction! {
 
         /// Returns `amt` values on the stack. This is always the last
         /// instruction.
-        Return { amt: usize } : [*amt] => [0],
+        Return { amt: usize, func: &'a Function } : [*amt] => [0],
 
         // ...
 
@@ -771,6 +771,11 @@ pub trait Bindgen {
 
     /// Returns size information that was previously calculated for all types.
     fn sizes(&self) -> &crate::sizealign::SizeAlign;
+
+    /// Returns whether or not the specified element type is represented in a
+    /// "canonical" form for lists. This dictates whether the `ListCanonLower`
+    /// and `ListCanonLift` instructions are used or not.
+    fn is_list_canonical(&self, iface: &Interface, element: &Type) -> bool;
 }
 
 impl Interface {
@@ -1190,6 +1195,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             self.lift_all(&func.results);
 
             self.emit(&Instruction::Return {
+                func,
                 amt: func.results.len(),
             });
         } else {
@@ -1254,6 +1260,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             }
 
             self.emit(&Instruction::Return {
+                func,
                 amt: sig.results.len(),
             });
         }
@@ -1481,7 +1488,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             CallMode::WasmImport => None,
                             _ => Some("canonical_abi_realloc"),
                         };
-                        if self.iface.all_bits_valid(element) || self.is_char(element) {
+                        if self.is_char(element)
+                            || self.bindgen.is_list_canonical(self.iface, element)
+                        {
                             self.emit(&ListCanonLower { element, realloc });
                         } else {
                             self.push_block();
@@ -1778,7 +1787,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             CallMode::NativeImport => None,
                             _ => Some("canonical_abi_free"),
                         };
-                        if self.iface.all_bits_valid(element) || self.is_char(element) {
+                        if self.is_char(element)
+                            || self.bindgen.is_list_canonical(self.iface, element)
+                        {
                             self.emit(&ListCanonLift { element, free });
                         } else {
                             self.push_block();

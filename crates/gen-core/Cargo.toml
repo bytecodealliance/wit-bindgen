@@ -6,7 +6,6 @@ edition = "2018"
 
 [lib]
 doctest = false
-test = false
 
 [dependencies]
 witx = { git = 'https://github.com/alexcrichton/WASI', branch = 'abi-next' }

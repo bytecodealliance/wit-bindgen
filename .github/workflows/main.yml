@@ -8,17 +8,13 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - run: rustup update stable --no-self-update && rustup default stable
-    - run: cargo test --all
-
-  test-wasmtime:
-    name: Test Wasmtime
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - run: rustup update stable --no-self-update && rustup default stable
     - run: rustup target add wasm32-wasi
+    - uses: actions/setup-node@v2
+      with:
+        node-version: '16'
+    - run: npm install
+      working-directory: crates/gen-js
     - run: cargo test --workspace
-    - run: cargo run -p test-wasmtime
 
   rustfmt:
     name: Rustfmt
@@ -28,3 +24,18 @@ jobs:
     - name: Install Rust
       run: rustup update stable && rustup default stable && rustup component add rustfmt
     - run: cargo fmt -- --check
+
+  demo:
+    name: Demo
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - run: rustup update stable --no-self-update && rustup default stable
+    - run: rustup target add wasm32-unknown-unknown
+    - run: ./build-demo.sh
+    - uses: JamesIves/github-pages-deploy-action@4.1.4
+      with:
+        branch: gh-pages
+        folder: static
+        single-commit: true
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'

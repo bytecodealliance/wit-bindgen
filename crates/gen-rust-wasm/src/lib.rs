@@ -6,18 +6,18 @@ use std::process::{Command, Stdio};
 use witx_bindgen_gen_core::witx2::abi::{
     Bindgen, CallMode, Instruction, WasmType, WitxInstruction,
 };
-use witx_bindgen_gen_core::{witx2::*, Files, Generator, TypeInfo, Types};
+use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
 use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint, Visibility};
 
 #[derive(Default)]
 pub struct RustWasm {
     tmp: usize,
-    src: String,
+    src: Source,
     opts: Opts,
     types: Types,
     params: Vec<String>,
     blocks: Vec<String>,
-    block_storage: Vec<(String, Vec<(String, String)>)>,
+    block_storage: Vec<(Source, Vec<(String, String)>)>,
     is_dtor: bool,
     in_import: bool,
     needs_cleanup_list: bool,
@@ -189,7 +189,7 @@ impl Generator for RustWasm {
         self.types.analyze(iface);
         self.trait_name = iface.name.to_camel_case();
         self.src
-            .push_str(&format!("mod {} {{", iface.name.to_snake_case()));
+            .push_str(&format!("mod {} {{\n", iface.name.to_snake_case()));
 
         for func in iface.functions.iter() {
             let sig = iface.wasm_signature(self.call_mode(), func);
@@ -218,7 +218,7 @@ impl Generator for RustWasm {
                 .flags_repr(record)
                 .expect("unsupported number of flags");
             self.src.push_str(int_repr(repr));
-            self.src.push(';');
+            self.src.push_str(";\n");
             for (i, field) in record.fields.iter().enumerate() {
                 self.rustdoc(&field.docs);
                 self.src.push_str(&format!(
@@ -259,7 +259,7 @@ impl Generator for RustWasm {
         self.src.push_str("#[derive(Debug)]\n");
         self.src.push_str("#[repr(transparent)]\n");
         self.src
-            .push_str(&format!("pub struct {}(i32);", name.to_camel_case()));
+            .push_str(&format!("pub struct {}(i32);\n", name.to_camel_case()));
         self.src.push_str("impl ");
         self.src.push_str(&name.to_camel_case());
         self.src.push_str(
@@ -335,7 +335,7 @@ impl Generator for RustWasm {
         self.src
             .push_str(&format!("pub type {} = *{} ", name.to_camel_case(), mutbl,));
         self.print_ty(iface, ty, TypeMode::Owned);
-        self.src.push(';');
+        self.src.push_str(";\n");
     }
 
     fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
@@ -344,7 +344,7 @@ impl Generator for RustWasm {
             .push_str(&format!("pub type {}", name.to_camel_case()));
         self.src.push_str(" = ");
         self.print_ty(iface, ty, TypeMode::Owned);
-        self.src.push(';');
+        self.src.push_str(";\n");
     }
 
     fn type_push_buffer(
@@ -394,9 +394,9 @@ impl Generator for RustWasm {
                 TypeMode::AllBorrowed("'_")
             },
         );
-        self.src.push_str("{");
+        self.src.push_str("{\n");
         if !self.is_dtor {
-            self.src.push_str("unsafe{");
+            self.src.push_str("unsafe {\n");
         }
 
         let start_pos = self.src.len();
@@ -406,13 +406,14 @@ impl Generator for RustWasm {
 
         if mem::take(&mut self.needs_cleanup_list) {
             self.src
+                .as_mut_string()
                 .insert_str(start_pos, "let mut cleanup_list = Vec::new();\n");
         }
 
         if !self.is_dtor {
-            self.src.push_str("}");
+            self.src.push_str("}\n");
         }
-        self.src.push_str("}");
+        self.src.push_str("}\n");
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
@@ -433,7 +434,7 @@ impl Generator for RustWasm {
             self.src.push_str(&name);
             self.src.push_str(": ");
             self.wasm_type(*param);
-            self.src.push_str(",");
+            self.src.push_str(", ");
             self.params.push(name);
         }
         self.src.push_str(")");
@@ -446,12 +447,12 @@ impl Generator for RustWasm {
             }
             _ => unimplemented!(),
         }
-        self.src.push_str("{");
+        self.src.push_str("{\n");
 
         iface.call(self.call_mode(), func, self);
         assert!(!self.needs_cleanup_list);
 
-        self.src.push_str("}");
+        self.src.push_str("}\n");
 
         let prev = mem::take(&mut self.src);
         self.in_trait = true;
@@ -472,11 +473,13 @@ impl Generator for RustWasm {
             .traits
             .entry(iface.name.to_camel_case())
             .or_insert(Trait::default());
-        trait_.methods.push(mem::replace(&mut self.src, prev));
+        trait_
+            .methods
+            .push(mem::replace(&mut self.src, prev).into());
         trait_.handles.extend(mem::take(&mut self.handles_for_func));
     }
 
-    fn finish(&mut self, files: &mut Files) {
+    fn finish(&mut self, _iface: &Interface, files: &mut Files) {
         let mut src = mem::take(&mut self.src);
 
         for (name, trait_) in self.traits.iter() {
@@ -503,7 +506,7 @@ impl Generator for RustWasm {
         }
 
         // Close the opening `mod`.
-        src.push_str("}");
+        src.push_str("}\n");
 
         if self.opts.rustfmt {
             let mut child = Command::new("rustfmt")
@@ -517,12 +520,12 @@ impl Generator for RustWasm {
                 .unwrap()
                 .write_all(src.as_bytes())
                 .unwrap();
-            src.truncate(0);
+            src.as_mut_string().truncate(0);
             child
                 .stdout
                 .take()
                 .unwrap()
-                .read_to_string(&mut src)
+                .read_to_string(src.as_mut_string())
                 .unwrap();
             let status = child.wait().unwrap();
             assert!(status.success());
@@ -548,7 +551,7 @@ impl Bindgen for RustWasm {
             for (ptr, layout) in mem::take(&mut self.cleanup) {
                 self.push_str("(");
                 self.push_str(&ptr);
-                self.push_str(",");
+                self.push_str(", ");
                 self.push_str(&layout);
                 self.push_str("),");
             }
@@ -565,9 +568,9 @@ impl Bindgen for RustWasm {
         if src.is_empty() {
             self.blocks.push(expr);
         } else if operands.is_empty() {
-            self.blocks.push(format!("{{ {}; }}", src));
+            self.blocks.push(format!("{{\n{};\n}}", &src[..]));
         } else {
-            self.blocks.push(format!("{{ {}; {} }}", src, expr));
+            self.blocks.push(format!("{{\n{};\n{}\n}}", &src[..], expr));
         }
     }
 
@@ -579,7 +582,7 @@ impl Bindgen for RustWasm {
         ));
         let size = self.sizes.size(&Type::Id(ty));
         self.push_str(&size.to_string());
-        self.push_str("]>::uninit();");
+        self.push_str("]>::uninit();\n");
         self.push_str(&format!("let ptr{} = rp{0}.as_mut_ptr() as i32;\n", tmp));
         format!("ptr{}", tmp)
     }
@@ -593,6 +596,10 @@ impl Bindgen for RustWasm {
 
     fn sizes(&self) -> &SizeAlign {
         &self.sizes
+    }
+
+    fn is_list_canonical(&self, iface: &Interface, ty: &Type) -> bool {
+        iface.all_bits_valid(ty)
     }
 
     fn emit(
@@ -641,9 +648,15 @@ impl Bindgen for RustWasm {
                 results.push(format!("witx_bindgen_rust::rt::as_i32({})", s));
             }
 
-            Instruction::F32FromIf32
-            | Instruction::F64FromIf64
-            | Instruction::If32FromF32
+            Instruction::F32FromIf32 => {
+                let s = operands.pop().unwrap();
+                results.push(format!("witx_bindgen_rust::rt::as_f32({})", s));
+            }
+            Instruction::F64FromIf64 => {
+                let s = operands.pop().unwrap();
+                results.push(format!("witx_bindgen_rust::rt::as_f64({})", s));
+            }
+            Instruction::If32FromF32
             | Instruction::If64FromF64
             | Instruction::S32FromI32
             | Instruction::S64FromI64 => {
@@ -787,7 +800,7 @@ impl Bindgen for RustWasm {
                     result.push_str(",\n");
                 }
                 if !unchecked {
-                    result.push_str("_ => panic!(\"invalid enum discriminant\"),");
+                    result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
                 }
                 result.push_str("}");
                 results.push(result);
@@ -873,7 +886,7 @@ impl Bindgen for RustWasm {
                     result, size,
                 ));
                 self.push_str(&body);
-                self.push_str("}");
+                self.push_str("}\n");
                 results.push(format!("{} as i32", result));
                 results.push(len);
 
@@ -924,7 +937,7 @@ impl Bindgen for RustWasm {
                             ({} as usize) * {},
                             {},
                         ),
-                    );",
+                    );\n",
                     base, len, size, align
                 ));
             }
@@ -959,7 +972,7 @@ impl Bindgen for RustWasm {
                         self.push_str(&operands[0]);
                         self.push_str(".ptr_len::<");
                         self.push_str(&size.to_string());
-                        self.push_str(">(|base| {");
+                        self.push_str(">(|base| {\n");
                         self.push_str(&block);
                         self.push_str("});\n");
                     } else {
@@ -971,7 +984,7 @@ impl Bindgen for RustWasm {
                         self.push_str(&operands[0]);
                         self.push_str(".serialize::<_, ");
                         self.push_str(&size.to_string());
-                        self.push_str(">(|e, base| {");
+                        self.push_str(">(|e, base| {\n");
                         self.push_str(&block);
                         self.push_str("});\n");
                     }
@@ -1034,11 +1047,11 @@ impl Bindgen for RustWasm {
                 for param in sig.params.iter() {
                     self.push_str("_: ");
                     self.push_str(wasm_type(*param));
-                    self.push_str(",");
+                    self.push_str(", ");
                 }
                 self.push_str(")");
                 for result in sig.results.iter() {
-                    self.push_str("->");
+                    self.push_str(" -> ");
                     self.push_str(wasm_type(*result));
                 }
                 self.push_str(";\n}\n");
@@ -1051,7 +1064,7 @@ impl Bindgen for RustWasm {
                 self.push_str("witx_import");
                 self.push_str("(");
                 self.push_str(&operands.join(", "));
-                self.push_str(");");
+                self.push_str(");\n");
             }
 
             Instruction::CallInterface { module, func } => {
@@ -1064,10 +1077,10 @@ impl Bindgen for RustWasm {
                 self.push_str(module);
                 self.push_str("(),");
                 self.push_str(&operands.join(", "));
-                self.push_str(");");
+                self.push_str(");\n");
             }
 
-            Instruction::Return { amt } => {
+            Instruction::Return { amt, .. } => {
                 for (ptr, layout) in mem::take(&mut self.cleanup) {
                     self.push_str(&format!("std::alloc::dealloc({}, {});\n", ptr, layout));
                 }
@@ -1075,16 +1088,19 @@ impl Bindgen for RustWasm {
                     self.push_str(
                         "for (ptr, layout) in cleanup_list {
                             std::alloc::dealloc(ptr, layout);
-                        }",
+                        }\n",
                     );
                 }
                 match amt {
                     0 => {}
-                    1 => self.push_str(&operands[0]),
+                    1 => {
+                        self.push_str(&operands[0]);
+                        self.push_str("\n");
+                    }
                     _ => {
                         self.push_str("(");
                         self.push_str(&operands.join(", "));
-                        self.push_str(")");
+                        self.push_str(")\n");
                     }
                 }
             }

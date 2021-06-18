@@ -256,6 +256,12 @@ fn lists(wasm: &Wasm, store: &mut Store<Context>) -> Result<()> {
     assert_eq!(wasm.list_result(&mut *store)?, [1, 2, 3, 4, 5]);
     assert_eq!(wasm.list_result2(&mut *store)?, "hello!");
     assert_eq!(wasm.list_result3(&mut *store)?, ["hello,", "world!"]);
+    assert_eq!(wasm.string_roundtrip(&mut *store, "x")?, "x");
+    assert_eq!(wasm.string_roundtrip(&mut *store, "")?, "");
+    assert_eq!(
+        wasm.string_roundtrip(&mut *store, "hello ⚑ world")?,
+        "hello ⚑ world"
+    );
     Ok(())
 }
 

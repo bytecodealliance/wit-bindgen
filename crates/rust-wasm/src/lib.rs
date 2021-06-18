@@ -16,6 +16,9 @@ pub mod rt {
     ) -> *mut u8 {
         let layout;
         let ptr = if old_len == 0 {
+            if len == 0 {
+                return align as *mut u8;
+            }
             layout = Layout::from_size_align_unchecked(len, align);
             alloc::alloc(layout)
         } else {
@@ -30,61 +33,45 @@ pub mod rt {
 
     #[no_mangle]
     unsafe extern "C" fn canonical_abi_free(ptr: *mut u8, len: usize, align: usize) {
+        if len == 0 {
+            return;
+        }
         let layout = Layout::from_size_align_unchecked(len, align);
         alloc::dealloc(ptr, layout);
     }
 
-    pub fn as_i32<T: AsI32>(t: T) -> i32 {
-        t.as_i32()
-    }
+    macro_rules! as_traits {
+        ($(($trait_:ident $func:ident $ty:ident <=> $($tys:ident)*))*) => ($(
+            pub fn $func<T: $trait_>(t: T) -> $ty {
+                t.$func()
+            }
 
-    pub fn as_i64<T: AsI64>(t: T) -> i64 {
-        t.as_i64()
-    }
+            pub trait $trait_ {
+                fn $func(self) -> $ty;
+            }
 
-    pub trait AsI32 {
-        fn as_i32(self) -> i32;
-    }
-
-    pub trait AsI64 {
-        fn as_i64(self) -> i64;
-    }
-
-    impl<'a, T: Copy + AsI32> AsI32 for &'a T {
-        fn as_i32(self) -> i32 {
-            (*self).as_i32()
-        }
-    }
-
-    impl<'a, T: Copy + AsI64> AsI64 for &'a T {
-        fn as_i64(self) -> i64 {
-            (*self).as_i64()
-        }
-    }
-
-    macro_rules! as_i32 {
-        ($($i:ident)*) => ($(
-            impl AsI32 for $i {
-                #[inline]
-                fn as_i32(self) -> i32 {
-                    self as i32
+            impl<'a, T: Copy + $trait_> $trait_ for &'a T {
+                fn $func(self) -> $ty{
+                    (*self).$func()
                 }
             }
+
+            $(
+                impl $trait_ for $tys {
+                    #[inline]
+                    fn $func(self) -> $ty {
+                        self as $ty
+                    }
+                }
+            )*
+
         )*)
     }
 
-    as_i32!(char i8 u8 i16 u16 i32 u32 usize);
-
-    macro_rules! as_i64 {
-        ($($i:ident)*) => ($(
-            impl AsI64 for $i {
-                #[inline]
-                fn as_i64(self) -> i64 {
-                    self as i64
-                }
-            }
-        )*)
+    as_traits! {
+        (AsI64 as_i64 i64 <=> i64 u64)
+        (AsI32 as_i32 i32 <=> i32 u32 i16 u16 i8 u8 char usize)
+        (AsF32 as_f32 f32 <=> f32)
+        (AsF64 as_f64 f64 <=> f64)
     }
-
-    as_i64!(i64 u64);
 }

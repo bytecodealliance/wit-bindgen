@@ -171,6 +171,11 @@ fn host_variants() {
     assert!(matches!(a4, Z4::A(b) if b == 4.0));
 
     variant_typedefs(None, false, Err(()));
+
+    assert_eq!(
+        variant_enums(true, Ok(()), MyErrno::Success),
+        (false, Err(()), MyErrno::A)
+    );
 }
 
 fn host_legacy() {
@@ -194,6 +199,11 @@ fn host_lists() {
     assert_eq!(list_result(), [1, 2, 3, 4, 5]);
     assert_eq!(list_result2(), "hello!");
     assert_eq!(list_result3(), ["hello,", "world!"]);
+
+    assert_eq!(string_roundtrip("x"), "x");
+    assert_eq!(string_roundtrip(""), "");
+    assert_eq!(string_roundtrip("hello"), "hello");
+    assert_eq!(string_roundtrip("hello ⚑ world"), "hello ⚑ world");
 }
 
 fn host_flavorful() {
@@ -232,6 +242,15 @@ fn host_flavorful() {
     assert_eq!(a, b"typedef3");
     assert_eq!(b.len(), 1);
     assert_eq!(b[0], "typedef4");
+
+    let (a, b, c) = list_of_variants(
+        &[true, false],
+        &[Ok(()), Err(())],
+        &[MyErrno::Success, MyErrno::A],
+    );
+    assert_eq!(a, [false, true]);
+    assert_eq!(b, [Err(()), Ok(())]);
+    assert_eq!(c, [MyErrno::A, MyErrno::B]);
 }
 
 fn host_handles() {

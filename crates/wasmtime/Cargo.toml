@@ -11,5 +11,14 @@ thiserror = "1.0"
 wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'main' }
 witx-bindgen-wasmtime-impl = { path = "../wasmtime-impl", version = "0.1" }
 
+[dev-dependencies]
+wasmtime-wasi = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'main' }
+test-build-rust-wasm = { path = '../test-build-rust-wasm' }
+
 [features]
+default = ['old-witx-compat'] # TODO: rewrite {host,wasm}.witx with new syntax
 old-witx-compat = ['witx-bindgen-wasmtime-impl/old-witx-compat']
+
+[[test]]
+name = "run"
+harness = false
