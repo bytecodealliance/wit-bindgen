@@ -112,16 +112,7 @@ impl Wasmtime {
             self.push_str("use witx_bindgen_wasmtime::Le;\n");
         }
         if self.needs_slice_as_bytes {
-            self.push_str(
-                "
-                    unsafe fn slice_as_bytes<T: Copy>(slice: &[T]) -> &[u8] {
-                        core::slice::from_raw_parts(
-                            slice.as_ptr() as *const u8,
-                            core::mem::size_of_val(slice),
-                        )
-                    }
-                ",
-            );
+            self.push_str("use witx_bindgen_wasmtime::rt::slice_as_bytes;\n");
         }
         if self.needs_copy_slice {
             self.push_str("use witx_bindgen_wasmtime::rt::copy_slice;\n");
@@ -1272,7 +1263,7 @@ impl Bindgen for Wasmtime {
                 // the host as in the guest.
                 let mem = self.memory_src();
                 self.push_str(&format!(
-                    "{}.store({}, unsafe {{ slice_as_bytes({}.as_ref()) }})?;\n",
+                    "{}.store({}, slice_as_bytes({}.as_ref()))?;\n",
                     mem, ptr, val
                 ));
                 self.needs_store = true;
@@ -1303,14 +1294,12 @@ impl Bindgen for Wasmtime {
                         self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
                         let result = format!(
                             "
-                                unsafe {{
-                                    copy_slice(
-                                        &mut caller,
-                                        memory,
-                                        func_{},
-                                        ptr{tmp}, len{tmp}, {}
-                                    )?
-                                }}
+                                copy_slice(
+                                    &mut caller,
+                                    memory,
+                                    func_{},
+                                    ptr{tmp}, len{tmp}, {}
+                                )?
                             ",
                             free,
                             align,

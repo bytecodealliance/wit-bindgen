@@ -18,6 +18,7 @@ pub use table::*;
 #[doc(hidden)]
 pub mod rt {
     use std::mem;
+    use std::slice;
     use wasmtime::*;
 
     pub trait RawMem {
@@ -125,7 +126,7 @@ pub mod rt {
         Trap::new(msg)
     }
 
-    pub unsafe fn copy_slice<T: Copy>(
+    pub fn copy_slice<T: crate::AllBytesValid>(
         store: impl AsContextMut,
         memory: &Memory,
         free: &TypedFunc<(i32, i32, i32), ()>,
@@ -140,11 +141,17 @@ pub mod rt {
             .get(base as usize..)
             .and_then(|s| s.get(..size as usize))
             .ok_or_else(|| Trap::new("out of bounds read"))?;
-        std::slice::from_raw_parts_mut(result.as_mut_ptr() as *mut u8, size as usize)
-            .copy_from_slice(slice);
-        result.set_len(size as usize);
+        unsafe {
+            slice::from_raw_parts_mut(result.as_mut_ptr() as *mut u8, size as usize)
+                .copy_from_slice(slice);
+            result.set_len(size as usize);
+        }
         free.call(store, (base, size, align))?;
         Ok(result)
+    }
+
+    pub fn slice_as_bytes<T: crate::AllBytesValid>(slice: &[T]) -> &[u8] {
+        unsafe { slice::from_raw_parts(slice.as_ptr() as *const u8, mem::size_of_val(slice)) }
     }
 
     pub fn as_i32<T: AsI32>(t: T) -> i32 {
