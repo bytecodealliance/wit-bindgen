@@ -92,4 +92,9 @@ mod tests {
     fn flags() -> Result<()> {
         run(&link("flags-main", &["flags"])?)
     }
+
+    #[test]
+    fn lists() -> Result<()> {
+        run(&link("lists-main", &["lists"])?)
+    }
 }

@@ -1,3 +1,4 @@
+use crate::adapted::must_adapt_type;
 use anyhow::{anyhow, bail, Context, Result};
 use std::path::Path;
 use wasmparser::{
@@ -38,9 +39,17 @@ fn export_kind(kind: ExternalKind) -> &'static str {
     }
 }
 
+pub(crate) struct FunctionInfo {
+    pub import_signature: WasmSignature,
+    pub import_type: FuncType,
+    pub export_type: FuncType,
+    pub must_adapt: bool,
+}
+
 pub(crate) struct Interface {
-    pub inner: witx2::Interface,
-    func_types: Vec<(FuncType, FuncType)>,
+    inner: witx2::Interface,
+    func_infos: Vec<FunctionInfo>,
+    must_adapt: bool,
 }
 
 impl Interface {
@@ -48,29 +57,50 @@ impl Interface {
         let inner = witx2::Interface::parse(name, source)
             .map_err(|e| anyhow!("failed to parse interface definition: {}", e))?;
 
-        let func_types = inner
+        let mut must_adapt = false;
+
+        let func_infos = inner
             .functions
             .iter()
             .map(|f| {
-                let import = Self::sig_to_type(&inner.wasm_signature(CallMode::WasmImport, f));
-                let export = Self::sig_to_type(&inner.wasm_signature(CallMode::WasmExport, f));
-                (import, export)
+                let import_signature = inner.wasm_signature(CallMode::WasmImport, f);
+                let export_signature = inner.wasm_signature(CallMode::WasmExport, f);
+                let import_type = Self::sig_to_type(&import_signature);
+                let export_type = Self::sig_to_type(&export_signature);
+
+                // A function must be adapted if it has a return pointer or has any parameter that needs
+                // to be adapted
+                let func_must_adapt = import_signature.retptr.is_some()
+                    || f.params.iter().any(|(_, ty)| must_adapt_type(&inner, ty));
+
+                must_adapt |= func_must_adapt;
+
+                FunctionInfo {
+                    import_signature,
+                    import_type,
+                    export_type,
+                    must_adapt: func_must_adapt,
+                }
             })
             .collect();
 
-        Ok(Self { inner, func_types })
+        Ok(Self {
+            inner,
+            func_infos,
+            must_adapt,
+        })
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&Function, &FuncType, &FuncType)> {
-        self.inner
-            .functions
-            .iter()
-            .zip(self.func_types.iter())
-            .map(|(f, ty)| (f, &ty.0, &ty.1))
+    pub fn inner(&self) -> &witx2::Interface {
+        &self.inner
     }
 
-    pub fn lookup_type(&self, name: &str) -> Option<&(FuncType, FuncType)> {
-        Some(&self.func_types[self.inner.functions.iter().position(|f| f.name == name)?])
+    pub fn iter(&self) -> impl Iterator<Item = (&Function, &FunctionInfo)> {
+        self.inner.functions.iter().zip(self.func_infos.iter())
+    }
+
+    pub fn lookup_info(&self, name: &str) -> Option<&FunctionInfo> {
+        Some(&self.func_infos[self.inner.functions.iter().position(|f| f.name == name)?])
     }
 
     fn sig_to_type(signature: &WasmSignature) -> FuncType {
@@ -132,6 +162,13 @@ impl<'a> Module<'a> {
         module.parse()?;
 
         Ok(module)
+    }
+
+    pub(crate) fn must_adapt(&self) -> bool {
+        self.interface
+            .as_ref()
+            .map(|i| i.must_adapt)
+            .unwrap_or(false)
     }
 
     fn add_section(&mut self, id: wasm_encoder::SectionId, range: Range) {
@@ -333,8 +370,8 @@ impl<'a> Module<'a> {
 
         // For adapted functions, resolve by the function's import type and not the actual wasm type
         let func_type = if let Some(interface) = &self.interface {
-            let (import_type, _) = interface
-                .lookup_type(import.field.unwrap_or(""))
+            let info = interface
+                .lookup_info(import.field.unwrap_or(""))
                 .ok_or_else(|| {
                     anyhow!(
                         "module `{}` does not export a function named `{}` in its interface",
@@ -343,7 +380,7 @@ impl<'a> Module<'a> {
                     )
                 })?;
 
-            Some(import_type)
+            Some(&info.import_type)
         } else {
             self.func_type(export.index)
         };

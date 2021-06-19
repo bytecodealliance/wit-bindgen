@@ -1,0 +1,11 @@
+[package]
+name = "lists"
+version = "0.1.0"
+authors = ["Peter Huene <peter@huene.dev>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+witx-bindgen-rust = { git = "https://github.com/bytecodealliance/witx-bindgen", branch = "main" }

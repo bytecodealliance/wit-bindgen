@@ -224,7 +224,7 @@ impl<'a> LinkedModule<'a> {
 
             // Emit the segments populating the function table
             let mut segments = Vec::new();
-            for (func, _, _) in adapted.module.interface.as_ref().unwrap().iter() {
+            for (func, _) in adapted.module.interface.as_ref().unwrap().iter() {
                 let func_index = self.imports.len() as u32 + self.func_aliases.len() as u32;
                 self.func_aliases.push((child_index, func.name.as_ref()));
 

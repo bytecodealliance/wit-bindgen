@@ -32,6 +32,41 @@ lazy_static::lazy_static! {
     };
 }
 
+pub fn must_adapt_type(interface: &witx2::Interface, ty: &witx2::Type) -> bool {
+    match ty {
+        witx2::Type::U8
+        | witx2::Type::S8
+        | witx2::Type::U16
+        | witx2::Type::S16
+        | witx2::Type::U32
+        | witx2::Type::S32
+        | witx2::Type::U64
+        | witx2::Type::S64
+        | witx2::Type::F32
+        | witx2::Type::F64
+        | witx2::Type::CChar
+        | witx2::Type::Usize
+        | witx2::Type::Char
+        | witx2::Type::Handle(_) => false,
+
+        witx2::Type::Id(id) => match &interface.types[*id].kind {
+            witx2::TypeDefKind::List(_)
+            | witx2::TypeDefKind::PushBuffer(_)
+            | witx2::TypeDefKind::PullBuffer(_) => true,
+            witx2::TypeDefKind::Variant(v) => v
+                .cases
+                .iter()
+                .filter_map(|c| c.ty.as_ref())
+                .any(|t| must_adapt_type(interface, t)),
+            witx2::TypeDefKind::Type(t) => must_adapt_type(interface, t),
+            witx2::TypeDefKind::Record(r) => {
+                r.fields.iter().any(|f| must_adapt_type(interface, &f.ty))
+            }
+            witx2::TypeDefKind::Pointer(_) | witx2::TypeDefKind::ConstPointer(_) => false,
+        },
+    }
+}
+
 pub struct AdaptedModule<'a> {
     pub module: &'a Module<'a>,
     types: Vec<&'a FuncType>,
@@ -69,7 +104,13 @@ impl<'a> AdaptedModule<'a> {
                         .import_func_type(i)
                         .expect("expected import to be a function")
                 })
-                .chain(interface.iter().map(|(_, import_type, _)| import_type))
+                .chain(interface.iter().filter_map(|(_, info)| {
+                    if info.must_adapt {
+                        Some(&info.import_type)
+                    } else {
+                        None
+                    }
+                }))
                 .chain(std::iter::once(&REALLOC_FUNC_TYPE as &FuncType))
             {
                 type_map.entry(ty).or_insert_with(|| {
@@ -133,8 +174,10 @@ impl<'a> AdaptedModule<'a> {
             adapted.free_index = Some(num_imported_funcs + 1);
 
             // Populate the adapted functions
-            for (_, import_type, _) in interface.iter() {
-                adapted.functions.push(type_map[import_type]);
+            for (_, info) in interface.iter() {
+                if info.must_adapt {
+                    adapted.functions.push(type_map[&info.import_type]);
+                }
             }
         }
 
@@ -170,15 +213,20 @@ impl<'a> AdaptedModule<'a> {
             ),
         ];
 
-        expected.extend(self.module.interface.as_ref().unwrap().iter().map(
-            |(f, _, export_type)| {
-                (
-                    f.name.as_str(),
-                    ExpectedExportType::Function(export_type),
-                    false,
-                )
-            },
-        ));
+        expected.extend(
+            self.module
+                .interface
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|(f, info)| {
+                    (
+                        f.name.as_str(),
+                        ExpectedExportType::Function(&info.export_type),
+                        false,
+                    )
+                }),
+        );
 
         for export in &self.module.exports {
             for (expected_name, expected_type, seen) in &mut expected {
@@ -228,7 +276,7 @@ impl<'a> AdaptedModule<'a> {
     }
 
     pub fn encode(&self) -> Result<wasm_encoder::Module> {
-        if self.module.interface.is_none() {
+        if !self.module.must_adapt() {
             return Ok(self.module.encode());
         }
 
@@ -314,7 +362,7 @@ impl<'a> AdaptedModule<'a> {
         section.instance_export(instance, wasm_encoder::ItemKind::Function, FREE_EXPORT_NAME);
 
         // Add the adapted function aliases
-        for (f, _, _) in self.module.interface.as_ref().unwrap().iter() {
+        for (f, _) in self.module.interface.as_ref().unwrap().iter() {
             section.instance_export(instance, wasm_encoder::ItemKind::Function, f.name.as_str());
         }
 
@@ -337,13 +385,23 @@ impl<'a> AdaptedModule<'a> {
 
         let interface = self.module.interface.as_ref().unwrap();
 
-        let start_index = self.free_index.unwrap() + interface.inner.functions.len() as u32 + 1;
+        let alias_start_index = self.free_index.unwrap() + 1;
+        let func_start_index = alias_start_index + interface.inner().functions.len() as u32;
+        let mut adapted_count = 0;
 
-        for (index, (f, _, _)) in interface.iter().enumerate() {
+        for (index, (f, info)) in interface.iter().enumerate() {
             section.export(
                 f.name.as_str(),
-                wasm_encoder::Export::Function(start_index + index as u32),
+                wasm_encoder::Export::Function(if info.must_adapt {
+                    func_start_index + adapted_count
+                } else {
+                    alias_start_index + index as u32
+                }),
             );
+
+            if info.must_adapt {
+                adapted_count += 1;
+            }
         }
 
         module.section(&section);
@@ -358,17 +416,21 @@ impl<'a> AdaptedModule<'a> {
 
         let interface = self.module.interface.as_ref().unwrap();
 
-        for (index, (f, _, _)) in interface.iter().enumerate() {
+        for (index, (f, info)) in interface.iter().enumerate() {
+            if !info.must_adapt {
+                continue;
+            }
             let mut generator = CodeGenerator::new(
-                &interface.inner,
+                interface.inner(),
                 f,
+                &info.import_signature,
                 index as u32 + free_index + 1,
                 parent_realloc_index,
                 realloc_index,
             );
 
             interface
-                .inner
+                .inner()
                 .call(CallMode::WasmExport, f, &mut generator);
 
             section.function(&generator.into_function());
@@ -402,11 +464,11 @@ impl<'a> ModuleShim<'a> {
     }
 
     pub fn encode(&self) -> Option<wasm_encoder::Module> {
-        let interface = self.module.interface.as_ref()?;
-        if interface.inner.functions.is_empty() {
+        if !self.module.must_adapt() {
             return None;
         }
 
+        let interface = self.module.interface.as_ref()?;
         let mut type_map = HashMap::new();
         let mut types = wasm_encoder::TypeSection::new();
         let mut functions = wasm_encoder::FunctionSection::new();
@@ -415,11 +477,11 @@ impl<'a> ModuleShim<'a> {
         let mut code = wasm_encoder::CodeSection::new();
 
         let mut index = 0u32;
-        for (func_index, (f, import_type, _)) in interface.iter().enumerate() {
-            let type_index = type_map.entry(import_type).or_insert_with(|| {
+        for (func_index, (f, info)) in interface.iter().enumerate() {
+            let type_index = type_map.entry(&info.import_type).or_insert_with(|| {
                 types.function(
-                    import_type.params.iter().map(to_val_type),
-                    import_type.returns.iter().map(to_val_type),
+                    info.import_type.params.iter().map(to_val_type),
+                    info.import_type.returns.iter().map(to_val_type),
                 );
                 let i = index;
                 index += 1;
@@ -434,14 +496,14 @@ impl<'a> ModuleShim<'a> {
             );
 
             let mut func = wasm_encoder::Function::new(
-                import_type
+                info.import_type
                     .params
                     .iter()
                     .enumerate()
                     .map(|(index, ty)| (index as u32, to_val_type(ty))),
             );
 
-            for i in 0..import_type.params.len() as u32 {
+            for i in 0..info.import_type.params.len() as u32 {
                 func.instruction(wasm_encoder::Instruction::LocalGet(i));
             }
 
@@ -456,7 +518,7 @@ impl<'a> ModuleShim<'a> {
             code.function(&func);
         }
 
-        let funcs_len = interface.inner.functions.len() as u32;
+        let funcs_len = interface.inner().functions.len() as u32;
 
         tables.table(wasm_encoder::TableType {
             element_type: wasm_encoder::ValType::FuncRef,
