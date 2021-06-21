@@ -17,43 +17,46 @@ pub use table::*;
 
 #[doc(hidden)]
 pub mod rt {
+    use crate::{Endian, Le};
     use std::mem;
-    use std::slice;
     use wasmtime::*;
 
     pub trait RawMem {
-        fn store(&mut self, offset: i32, bytes: &[u8]) -> Result<(), Trap>;
-        fn load<T: AsMut<[u8]>, U>(
-            &self,
-            offset: i32,
-            bytes: T,
-            cvt: impl FnOnce(T) -> U,
-        ) -> Result<U, Trap>;
+        fn store<T: Endian>(&mut self, offset: i32, val: T) -> Result<(), Trap>;
+        fn store_many<T: Endian>(&mut self, offset: i32, vals: &[T]) -> Result<(), Trap>;
+        fn load<T: Endian>(&self, offset: i32) -> Result<T, Trap>;
     }
 
     impl RawMem for [u8] {
-        fn store(&mut self, offset: i32, bytes: &[u8]) -> Result<(), Trap> {
+        fn store<T: Endian>(&mut self, offset: i32, val: T) -> Result<(), Trap> {
             let mem = self
                 .get_mut(offset as usize..)
-                .and_then(|m| m.get_mut(..bytes.len()))
+                .and_then(|m| m.get_mut(..mem::size_of::<T>()))
                 .ok_or_else(|| Trap::new("out of bounds write"))?;
-            mem.copy_from_slice(bytes);
+            Le::from_slice_mut(mem)[0].set(val);
             Ok(())
         }
 
-        fn load<T: AsMut<[u8]>, U>(
-            &self,
-            offset: i32,
-            mut bytes: T,
-            cvt: impl FnOnce(T) -> U,
-        ) -> Result<U, Trap> {
-            let dst = bytes.as_mut();
+        fn store_many<T: Endian>(&mut self, offset: i32, val: &[T]) -> Result<(), Trap> {
+            let mem = self
+                .get_mut(offset as usize..)
+                .and_then(|m| {
+                    let len = mem::size_of::<T>().checked_mul(val.len())?;
+                    m.get_mut(..len)
+                })
+                .ok_or_else(|| Trap::new("out of bounds write"))?;
+            for (slot, val) in Le::from_slice_mut(mem).iter_mut().zip(val) {
+                slot.set(*val);
+            }
+            Ok(())
+        }
+
+        fn load<T: Endian>(&self, offset: i32) -> Result<T, Trap> {
             let mem = self
                 .get(offset as usize..)
-                .and_then(|m| m.get(..dst.len()))
+                .and_then(|m| m.get(..mem::size_of::<Le<T>>()))
                 .ok_or_else(|| Trap::new("out of bounds read"))?;
-            dst.copy_from_slice(mem);
-            Ok(cvt(bytes))
+            Ok(Le::from_slice(mem)[0].get())
         }
     }
 
@@ -115,7 +118,7 @@ pub mod rt {
         Trap::new(msg)
     }
 
-    pub fn copy_slice<T: crate::AllBytesValid>(
+    pub fn copy_slice<T: Endian>(
         store: impl AsContextMut,
         memory: &Memory,
         free: &TypedFunc<(i32, i32, i32), ()>,
@@ -123,77 +126,50 @@ pub mod rt {
         len: i32,
         align: i32,
     ) -> Result<Vec<T>, Trap> {
-        let mut result = Vec::with_capacity(len as usize);
-        let size = len * (mem::size_of::<T>() as i32);
+        let size = (len as u32)
+            .checked_mul(mem::size_of::<T>() as u32)
+            .ok_or_else(|| Trap::new("array too large to fit in wasm memory"))?;
         let slice = memory
             .data(&store)
             .get(base as usize..)
             .and_then(|s| s.get(..size as usize))
             .ok_or_else(|| Trap::new("out of bounds read"))?;
-        unsafe {
-            slice::from_raw_parts_mut(result.as_mut_ptr() as *mut u8, size as usize)
-                .copy_from_slice(slice);
-            result.set_len(size as usize);
-        }
-        free.call(store, (base, size, align))?;
+        let result = Le::from_slice(slice).iter().map(|s| s.get()).collect();
+        free.call(store, (base, size as i32, align))?;
         Ok(result)
     }
 
-    pub fn slice_as_bytes<T: crate::AllBytesValid>(slice: &[T]) -> &[u8] {
-        unsafe { slice::from_raw_parts(slice.as_ptr() as *const u8, mem::size_of_val(slice)) }
-    }
+    macro_rules! as_traits {
+        ($(($name:ident $tr:ident $ty:ident ($($tys:ident)*)))*) => ($(
+            pub fn $name<T: $tr>(t: T) -> $ty {
+                t.$name()
+            }
 
-    pub fn as_i32<T: AsI32>(t: T) -> i32 {
-        t.as_i32()
-    }
+            pub trait $tr {
+                fn $name(self) -> $ty;
+            }
 
-    pub fn as_i64<T: AsI64>(t: T) -> i64 {
-        t.as_i64()
-    }
-
-    pub trait AsI32 {
-        fn as_i32(self) -> i32;
-    }
-
-    pub trait AsI64 {
-        fn as_i64(self) -> i64;
-    }
-
-    impl<'a, T: Copy + AsI32> AsI32 for &'a T {
-        fn as_i32(self) -> i32 {
-            (*self).as_i32()
-        }
-    }
-
-    impl<'a, T: Copy + AsI64> AsI64 for &'a T {
-        fn as_i64(self) -> i64 {
-            (*self).as_i64()
-        }
-    }
-
-    macro_rules! as_i32 {
-        ($($i:ident)*) => ($(
-            impl AsI32 for $i {
-                #[inline]
-                fn as_i32(self) -> i32 {
-                    self as i32
+            impl<'a, T: Copy + $tr> $tr for &'a T {
+                fn $name(self) -> $ty {
+                    (*self).$name()
                 }
             }
+
+            $(
+                impl $tr for $tys {
+                    #[inline]
+                    fn $name(self) -> $ty {
+                        self as $ty
+                    }
+                }
+            )*
         )*)
     }
 
-    as_i32!(char i8 u8 i16 u16 i32 u32);
-
-    macro_rules! as_i64 {
-        ($($i:ident)*) => ($(
-            impl AsI64 for $i {
-                #[inline]
-                fn as_i64(self) -> i64 {
-                    self as i64
-                }
-            }
-        )*)
+    as_traits! {
+        (as_i32 AsI32 i32 (char i8 u8 i16 u16 i32 u32))
+        (as_i64 AsI64 i64 (i64 u64))
+        (as_f32 AsF32 f32 (f32))
+        (as_f64 AsF64 f64 (f64))
     }
-
-    as_i64!(i64 u64);
 }

@@ -1,6 +1,8 @@
 use crate::AllBytesValid;
 use std::cmp::Ordering;
 use std::fmt;
+use std::mem;
+use std::slice;
 
 /// Helper type representing a 1-byte-aligned little-endian value in memory.
 ///
@@ -37,6 +39,44 @@ where
     /// appropriate for WebAssembly (little-endian).
     pub fn set(&mut self, val: T) {
         self.0 = val.into_le();
+    }
+
+    pub(crate) fn from_slice(bytes: &[u8]) -> &[Le<T>] {
+        // SAFETY: The invariants we uphold here are:
+        //
+        // * the lifetime of the input is the same as the output, so we're only
+        //   dealing with valid memory.
+        // * the alignment of the input is the same as the output (1)
+        // * the input isn't being truncated and we're consuming all of it (it
+        //   must be a multiple of the size of `Le<T>`)
+        // * all byte-patterns for `Le<T>` are valid. This is guaranteed by the
+        //   `AllBytesValid` supertrait of `Endian`.
+        unsafe {
+            assert_eq!(mem::align_of::<Le<T>>(), 1);
+            assert!(bytes.len() % mem::size_of::<Le<T>>() == 0);
+            fn all_bytes_valid<T>() {}
+            all_bytes_valid::<Le<T>>();
+
+            slice::from_raw_parts(
+                bytes.as_ptr().cast::<Le<T>>(),
+                bytes.len() / mem::size_of::<Le<T>>(),
+            )
+        }
+    }
+
+    pub(crate) fn from_slice_mut(bytes: &mut [u8]) -> &mut [Le<T>] {
+        // SAFETY: see `from_slice` above
+        //
+        // Note that both the input and the output are `mut`, helping to
+        // maintain the guarantee of uniqueness.
+        unsafe {
+            assert_eq!(mem::align_of::<Le<T>>(), 1);
+            assert!(bytes.len() % mem::size_of::<Le<T>>() == 0);
+            slice::from_raw_parts_mut(
+                bytes.as_mut_ptr().cast::<Le<T>>(),
+                bytes.len() / mem::size_of::<Le<T>>(),
+            )
+        }
     }
 }
 
@@ -83,7 +123,7 @@ impl<T: Endian> From<T> for Le<T> {
 unsafe impl<T: AllBytesValid> AllBytesValid for Le<T> {}
 
 /// Trait used for the implementation of the `Le` type.
-pub trait Endian: Copy + Sized {
+pub trait Endian: AllBytesValid + Copy + Sized {
     /// Converts this value and any aggregate fields (if any) into little-endian
     /// byte order
     fn into_le(self) -> Self;
@@ -109,6 +149,7 @@ macro_rules! primitives {
 }
 
 primitives! {
+    u8 i8
     u16 i16
     u32 i32
     u64 i64

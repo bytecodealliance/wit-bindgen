@@ -1,5 +1,7 @@
-use crate::GuestError;
+use crate::rt::RawMem;
+use crate::{Endian, GuestError, Le};
 use std::collections::HashSet;
+use std::convert::TryInto;
 use std::marker;
 use std::mem;
 use wasmtime::Trap;
@@ -35,22 +37,45 @@ impl<'a> BorrowChecker<'a> {
 
     pub fn slice<T: AllBytesValid>(&mut self, ptr: i32, len: i32) -> Result<&'a [T], Trap> {
         let (ret, r) = self.get_slice(ptr, len)?;
+        // SAFETY: We're promoting the valid lifetime of `ret` from a temporary
+        // borrow on `self` to `'a` on this `BorrowChecker`. At the same time
+        // we're recording that this is a persistent shared borrow (until this
+        // borrow checker is deleted), which disallows future mutable borrows
+        // of the same data.
+        let ret = unsafe { &*(ret as *const [T]) };
         self.shared_borrows.insert(r);
         Ok(ret)
     }
 
     pub fn slice_mut<T: AllBytesValid>(&mut self, ptr: i32, len: i32) -> Result<&'a mut [T], Trap> {
         let (ret, r) = self.get_slice_mut(ptr, len)?;
+        // SAFETY: see `slice` for how we're extending the lifetime by
+        // recording the borrow here. Note that the `mut_borrows` list is
+        // checked on both shared and mutable borrows in the future since a
+        // mutable borrow can't alias with anything.
+        let ret = unsafe { &mut *(ret as *mut [T]) };
         self.mut_borrows.insert(r);
         Ok(ret)
     }
 
-    fn get_slice<T: AllBytesValid>(&self, ptr: i32, len: i32) -> Result<(&'a [T], Region), Trap> {
+    fn get_slice<T: AllBytesValid>(&self, ptr: i32, len: i32) -> Result<(&[T], Region), Trap> {
         let r = self.region::<T>(ptr, len)?;
         if self.is_mut_borrowed(r) {
             Err(to_trap(GuestError::PtrBorrowed(r)))
         } else {
             Ok((
+                // SAFETY: invariants to uphold:
+                //
+                // * The lifetime of the input is valid for the lifetime of the
+                //   output. In this case we're threading through the lifetime
+                //   of `&self` to the output.
+                // * The actual output is valid, which is guaranteed with the
+                //   `AllBytesValid` bound.
+                // * We uphold Rust's borrowing guarantees, namely that this
+                //   borrow we're returning isn't overlapping with any mutable
+                //   borrows.
+                // * The region `r` we're returning accurately describes the
+                //   slice we're returning in wasm linear memory.
                 unsafe {
                     std::slice::from_raw_parts(
                         self.ptr.add(r.start as usize) as *const T,
@@ -62,12 +87,14 @@ impl<'a> BorrowChecker<'a> {
         }
     }
 
-    fn get_slice_mut<T>(&mut self, ptr: i32, len: i32) -> Result<(&'a mut [T], Region), Trap> {
+    fn get_slice_mut<T>(&mut self, ptr: i32, len: i32) -> Result<(&mut [T], Region), Trap> {
         let r = self.region::<T>(ptr, len)?;
         if self.is_mut_borrowed(r) || self.is_shared_borrowed(r) {
             Err(to_trap(GuestError::PtrBorrowed(r)))
         } else {
             Ok((
+                // SAFETY: same as `get_slice`, except for that we're threading
+                // through `&mut` properties as well.
                 unsafe {
                     std::slice::from_raw_parts_mut(
                         self.ptr.add(r.start as usize) as *mut T,
@@ -80,7 +107,7 @@ impl<'a> BorrowChecker<'a> {
     }
 
     fn region<T>(&self, ptr: i32, len: i32) -> Result<Region, Trap> {
-        assert!(std::mem::align_of::<T>() == 1);
+        assert_eq!(std::mem::align_of::<T>(), 1);
         let r = Region {
             start: ptr as u32,
             len: (len as u32)
@@ -121,22 +148,29 @@ impl<'a> BorrowChecker<'a> {
     }
 }
 
-impl crate::rt::RawMem for BorrowChecker<'_> {
-    fn store(&mut self, offset: i32, bytes: &[u8]) -> Result<(), Trap> {
-        let (slice, _) = self.get_slice_mut::<u8>(offset, bytes.len() as i32)?;
-        slice.copy_from_slice(bytes);
+impl RawMem for BorrowChecker<'_> {
+    fn store<T: Endian>(&mut self, offset: i32, val: T) -> Result<(), Trap> {
+        let (slice, _) = self.get_slice_mut::<Le<T>>(offset, 1)?;
+        slice[0].set(val);
         Ok(())
     }
 
-    fn load<T: AsMut<[u8]>, U>(
-        &self,
-        offset: i32,
-        mut bytes: T,
-        cvt: impl FnOnce(T) -> U,
-    ) -> Result<U, Trap> {
-        let (slice, _) = self.get_slice::<u8>(offset, bytes.as_mut().len() as i32)?;
-        bytes.as_mut().copy_from_slice(slice);
-        Ok(cvt(bytes))
+    fn store_many<T: Endian>(&mut self, offset: i32, val: &[T]) -> Result<(), Trap> {
+        let (slice, _) = self.get_slice_mut::<Le<T>>(
+            offset,
+            val.len()
+                .try_into()
+                .map_err(|_| to_trap(GuestError::PtrOverflow))?,
+        )?;
+        for (slot, val) in slice.iter_mut().zip(val) {
+            slot.set(*val);
+        }
+        Ok(())
+    }
+
+    fn load<T: Endian>(&self, offset: i32) -> Result<T, Trap> {
+        let (slice, _) = self.get_slice::<Le<T>>(offset, 1)?;
+        Ok(slice[0].get())
     }
 }
 
