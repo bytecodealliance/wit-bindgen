@@ -24,7 +24,6 @@ pub struct Wasmtime {
     needs_store: bool,
     needs_load: bool,
     needs_bad_int: bool,
-    needs_slice_as_bytes: bool,
     needs_copy_slice: bool,
     needs_functions: HashMap<String, NeededFunction>,
     needs_buffer_transaction: bool,
@@ -110,9 +109,6 @@ impl Wasmtime {
         }
         if self.needs_le {
             self.push_str("use witx_bindgen_wasmtime::Le;\n");
-        }
-        if self.needs_slice_as_bytes {
-            self.push_str("use witx_bindgen_wasmtime::rt::slice_as_bytes;\n");
         }
         if self.needs_copy_slice {
             self.push_str("use witx_bindgen_wasmtime::rt::copy_slice;\n");
@@ -1259,12 +1255,11 @@ impl Bindgen for Wasmtime {
                 // ... and then copy over the result.
                 let mem = self.memory_src();
                 self.push_str(&format!(
-                    "{}.store({}, slice_as_bytes({}.as_ref()))?;\n",
+                    "{}.store_many({}, {}.as_ref())?;\n",
                     mem, ptr, val
                 ));
                 self.needs_store = true;
                 self.needs_memory = true;
-                self.needs_slice_as_bytes = true;
                 results.push(ptr);
                 results.push(format!("{}.len() as i32", val));
             }
@@ -1560,7 +1555,7 @@ impl Bindgen for Wasmtime {
                 let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "{}.load({} + {}, [0u8; 4], i32::from_le_bytes)?",
+                    "{}.load::<i32>({} + {})?",
                     mem, operands[0], offset,
                 ));
             }
@@ -1568,7 +1563,7 @@ impl Bindgen for Wasmtime {
                 let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "i32::from({}.load({} + {}, [0u8; 1], u8::from_le_bytes)?)",
+                    "i32::from({}.load::<u8>({} + {})?)",
                     mem, operands[0], offset,
                 ));
             }
@@ -1576,7 +1571,7 @@ impl Bindgen for Wasmtime {
                 let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "i32::from({}.load({} + {}, [0u8; 1], i8::from_le_bytes)?)",
+                    "i32::from({}.load::<i8>({} + {})?)",
                     mem, operands[0], offset,
                 ));
             }
@@ -1584,7 +1579,7 @@ impl Bindgen for Wasmtime {
                 let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "i32::from({}.load({} + {}, [0u8; 2], u16::from_le_bytes)?)",
+                    "i32::from({}.load::<u16>({} + {})?)",
                     mem, operands[0], offset,
                 ));
             }
@@ -1592,7 +1587,7 @@ impl Bindgen for Wasmtime {
                 let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "i32::from({}.load({} + {}, [0u8; 2], i16::from_le_bytes)?)",
+                    "i32::from({}.load::<i16>({} + {})?)",
                     mem, operands[0], offset,
                 ));
             }
@@ -1600,7 +1595,7 @@ impl Bindgen for Wasmtime {
                 let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "{}.load({} + {}, [0u8; 8], i64::from_le_bytes)?",
+                    "{}.load::<i64>({} + {})?",
                     mem, operands[0], offset,
                 ));
             }
@@ -1608,7 +1603,7 @@ impl Bindgen for Wasmtime {
                 let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "{}.load({} + {}, [0u8; 4], f32::from_le_bytes)?",
+                    "{}.load::<f32>({} + {})?",
                     mem, operands[0], offset,
                 ));
             }
@@ -1616,7 +1611,7 @@ impl Bindgen for Wasmtime {
                 let mem = self.memory_src();
                 self.needs_load = true;
                 results.push(format!(
-                    "{}.load({} + {}, [0u8; 8], f64::from_le_bytes)?",
+                    "{}.load::<f64>({} + {})?",
                     mem, operands[0], offset,
                 ));
             }
@@ -1624,18 +1619,25 @@ impl Bindgen for Wasmtime {
             | Instruction::I64Store { offset }
             | Instruction::F32Store { offset }
             | Instruction::F64Store { offset } => {
+                let ty = match inst {
+                    Instruction::I32Store { .. } => "i32",
+                    Instruction::I64Store { .. } => "i64",
+                    Instruction::F32Store { .. } => "f32",
+                    Instruction::F64Store { .. } => "f64",
+                    _ => unreachable!(),
+                };
                 let mem = self.memory_src();
                 self.needs_store = true;
                 self.push_str(&format!(
-                    "{}.store({} + {}, &({}).to_le_bytes())?;\n",
-                    mem, operands[1], offset, operands[0]
+                    "{}.store({} + {}, witx_bindgen_wasmtime::rt::as_{}({}))?;\n",
+                    mem, operands[1], offset, ty, operands[0]
                 ));
             }
             Instruction::I32Store8 { offset } => {
                 let mem = self.memory_src();
                 self.needs_store = true;
                 self.push_str(&format!(
-                    "{}.store({} + {}, &(({}) as u8).to_le_bytes())?;\n",
+                    "{}.store({} + {}, witx_bindgen_wasmtime::rt::as_i32({}) as u8)?;\n",
                     mem, operands[1], offset, operands[0]
                 ));
             }
@@ -1643,7 +1645,7 @@ impl Bindgen for Wasmtime {
                 let mem = self.memory_src();
                 self.needs_store = true;
                 self.push_str(&format!(
-                    "{}.store({} + {}, &(({}) as u16).to_le_bytes())?;\n",
+                    "{}.store({} + {}, witx_bindgen_wasmtime::rt::as_i32({}) as u16)?;\n",
                     mem, operands[1], offset, operands[0]
                 ));
             }
