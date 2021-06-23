@@ -8,6 +8,21 @@
 
 * Needs more testing on big-endian.
 
+* Features from wiggle:
+  * `tracing` support
+    - log entry into module/function at TRACE level
+    - `event!` on each call into the trait
+    - `event!` the result
+  * `async`
+  * use `GuestError::InFunc` more liberally
+    - stores/loads
+    - `try_from` conversions
+  * user-defined conversion from user-defined type to the actual type
+    - used for converting `anyhow::Error` into either an errno or a trap
+    - check for specific type of error, otherwise assume trap
+    - conversion receives context to optionally store the error message
+  * generate just the trait (??? what to do about `wasmtime` dep ???)
+
 # JS
 
 * Is there a better representation for general `variant` types? Currently it's
