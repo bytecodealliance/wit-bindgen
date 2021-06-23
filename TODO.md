@@ -9,7 +9,6 @@
 * Needs more testing on big-endian.
 
 * Features from wiggle:
-  * `async`
   * use `GuestError::InFunc` more liberally
     - stores/loads
     - `try_from` conversions

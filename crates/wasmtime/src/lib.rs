@@ -1,5 +1,7 @@
 pub use witx_bindgen_wasmtime_impl::{export, import};
 
+#[cfg(feature = "async")]
+pub use async_trait::async_trait;
 #[cfg(feature = "tracing-lib")]
 pub use tracing_lib as tracing;
 #[doc(hidden)]
@@ -16,6 +18,16 @@ pub use error::GuestError;
 pub use le::{Endian, Le};
 pub use region::{AllBytesValid, BorrowChecker, Region};
 pub use table::*;
+
+pub struct RawMemory {
+    pub slice: *mut [u8],
+}
+
+// This type is threadsafe despite its internal pointer because it allows no
+// safe access to the internal pointer. Consumers must uphold Send/Sync
+// guarantees themselves.
+unsafe impl Send for RawMemory {}
+unsafe impl Sync for RawMemory {}
 
 #[doc(hidden)]
 pub mod rt {

@@ -193,6 +193,15 @@ pub fn wasmtime_import(input: TokenStream) -> TokenStream {
                 },
                 |_| quote::quote!(),
             ),
+            (
+                "import-async",
+                || {
+                    let mut opts = witx_bindgen_gen_wasmtime::Opts::default();
+                    opts.async_ = witx_bindgen_gen_wasmtime::Async::All;
+                    opts.build()
+                },
+                |_| quote::quote!(),
+            ),
         ],
     )
 }
@@ -203,11 +212,22 @@ pub fn wasmtime_export(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
         false,
-        &[(
-            "export",
-            || witx_bindgen_gen_wasmtime::Opts::default().build(),
-            |_| quote::quote!(),
-        )],
+        &[
+            (
+                "export",
+                || witx_bindgen_gen_wasmtime::Opts::default().build(),
+                |_| quote::quote!(),
+            ),
+            (
+                "export-async",
+                || {
+                    let mut opts = witx_bindgen_gen_wasmtime::Opts::default();
+                    opts.async_ = witx_bindgen_gen_wasmtime::Async::All;
+                    opts.build()
+                },
+                |_| quote::quote!(),
+            ),
+        ],
     )
 }
 
@@ -332,6 +352,7 @@ fn gen_rust<G: Generator>(
 ) -> TokenStream {
     let mut ret = proc_macro2::TokenStream::new();
     let mut rustfmt = std::process::Command::new("rustfmt");
+    rustfmt.arg("--edition=2018");
     for (name, mk, extra) in tests {
         let tests = generate_tests(input.clone(), name, |_path| (mk(), import));
         let mut sources = proc_macro2::TokenStream::new();
