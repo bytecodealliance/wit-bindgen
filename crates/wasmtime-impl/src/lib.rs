@@ -50,9 +50,8 @@ impl Parse for Opts {
                 .map_err(|e| Error::new(proc_macro2::Span::call_site(), e))?;
             modules.push(module);
         }
-        Ok(Opts {
-            opts: Default::default(),
-            modules,
-        })
+        let mut opts = witx_bindgen_gen_wasmtime::Opts::default();
+        opts.tracing = cfg!(feature = "tracing");
+        Ok(Opts { opts, modules })
     }
 }

@@ -7,7 +7,7 @@ use witx_bindgen_gen_core::witx2::abi::{
     Abi, Bindgen, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
-use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint, Visibility};
+use witx_bindgen_gen_rust::{int_repr, to_rust_ident, wasm_type, TypeMode, TypePrint, Visibility};
 
 #[derive(Default)]
 pub struct Wasmtime {
@@ -74,7 +74,11 @@ struct Exports {
 pub struct Opts {
     /// Whether or not `rustfmt` is executed to format generated code.
     #[cfg_attr(feature = "structopt", structopt(long))]
-    rustfmt: bool,
+    pub rustfmt: bool,
+
+    /// Whether or not to emit `tracing` macro calls on function entry/exit.
+    #[cfg_attr(feature = "structopt", structopt(long))]
+    pub tracing: bool,
 }
 
 impl Opts {
@@ -557,6 +561,20 @@ impl Generator for Wasmtime {
             self.params.push(arg);
         }
         self.src.push_str("| -> Result<_, wasmtime::Trap> {\n");
+        if self.opts.tracing {
+            self.src.push_str(&format!(
+                "
+                    let span = witx_bindgen_wasmtime::tracing::span!(
+                        witx_bindgen_wasmtime::tracing::Level::TRACE,
+                        \"witx-bindgen abi\",
+                        module = \"{}\",
+                        function = \"{}\",
+                    );
+                    let _enter = span.enter();
+                ",
+                iface.name, func.name,
+            ));
+        }
         let pos = self.src.len();
         iface.call(self.direction(), self.lift_lower(), func, self);
         self.src.push_str("}");
@@ -736,6 +754,7 @@ impl Generator for Wasmtime {
                 for handle in self.all_needed_handles.iter() {
                     self.src.push_str("type ");
                     self.src.push_str(&handle.to_camel_case());
+                    self.src.push_str(": std::fmt::Debug");
                     self.src.push_str(";\n");
                 }
             }
@@ -1517,6 +1536,18 @@ impl Bindgen for Wasmtime {
                 for (i, operand) in operands.iter().enumerate() {
                     self.push_str(&format!("let param{} = {};\n", i, operand));
                 }
+                if self.opts.tracing && func.params.len() > 0 {
+                    self.push_str("witx_bindgen_wasmtime::tracing::event!(\n");
+                    self.push_str("witx_bindgen_wasmtime::tracing::Level::TRACE,\n");
+                    for (i, (name, _ty)) in func.params.iter().enumerate() {
+                        self.push_str(&format!(
+                            "{} = witx_bindgen_wasmtime::tracing::field::debug(&param{}),\n",
+                            to_rust_ident(name),
+                            i
+                        ));
+                    }
+                    self.push_str(");\n");
+                }
                 self.let_results(func.results.len(), results);
                 self.push_str("host.");
                 self.push_str(&func.name);
@@ -1531,6 +1562,17 @@ impl Bindgen for Wasmtime {
                 }
                 self.push_str(");\n");
                 self.after_call = true;
+                if self.opts.tracing && func.results.len() > 0 {
+                    self.push_str("witx_bindgen_wasmtime::tracing::event!(\n");
+                    self.push_str("witx_bindgen_wasmtime::tracing::Level::TRACE,\n");
+                    for name in results.iter() {
+                        self.push_str(&format!(
+                            "{} = witx_bindgen_wasmtime::tracing::field::debug(&{0}),\n",
+                            name,
+                        ));
+                    }
+                    self.push_str(");\n");
+                }
             }
 
             Instruction::Return { amt, .. } => {
