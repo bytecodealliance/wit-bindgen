@@ -499,9 +499,6 @@ pub trait TypePrint {
                 } else if !info.has_handle {
                     self.push_str("#[derive(Clone)]\n");
                 }
-                if !info.has_pull_buffer && !info.has_handle {
-                    self.push_str("#[derive(Debug)]\n");
-                }
                 self.push_str(&format!("pub struct {}", name));
                 self.print_generics(&info, lt, true);
                 self.push_str(" {\n");
@@ -513,6 +510,27 @@ pub trait TypePrint {
                     self.print_ty(iface, &field.ty, mode);
                     self.push_str(",\n");
                 }
+                self.push_str("}\n");
+
+                self.push_str("impl");
+                self.print_generics(&info, lt, true);
+                self.push_str(" std::fmt::Debug for ");
+                self.push_str(&name);
+                self.print_generics(&info, lt, false);
+                self.push_str(" {\n");
+                self.push_str(
+                    "fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
+                );
+                self.push_str(&format!("f.debug_struct(\"{}\")", name));
+                for field in record.fields.iter() {
+                    self.push_str(&format!(
+                        ".field(\"{}\", &self.{})",
+                        field.name,
+                        to_rust_ident(&field.name)
+                    ));
+                }
+                self.push_str(".finish()");
+                self.push_str("}\n");
                 self.push_str("}\n");
             }
         }
@@ -567,9 +585,6 @@ pub trait TypePrint {
                 // skip copy/clone
             } else if !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
-            }
-            if !is_error && !info.has_pull_buffer && !info.has_handle {
-                self.push_str("#[derive(Debug)]\n");
             }
             self.push_str(&format!("pub enum {}", name.to_camel_case()));
             self.print_generics(&info, lt, true);
@@ -650,6 +665,39 @@ pub trait TypePrint {
                 self.push_str("impl std::error::Error for ");
                 self.push_str(&name);
                 self.push_str("{}\n");
+            } else {
+                self.push_str("impl");
+                self.print_generics(&info, lt, true);
+                self.push_str(" std::fmt::Debug for ");
+                self.push_str(&name);
+                self.print_generics(&info, lt, false);
+                self.push_str(" {\n");
+                self.push_str(
+                    "fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
+                );
+                self.push_str("match self {\n");
+                for case in variant.cases.iter() {
+                    self.push_str(&name);
+                    self.push_str("::");
+                    self.push_str(&case_name(&case.name));
+                    if case.ty.is_some() {
+                        self.push_str("(e)");
+                    }
+                    self.push_str(" => {\n");
+                    self.push_str(&format!(
+                        "f.debug_tuple(\"{}::{}\")",
+                        name,
+                        case_name(&case.name)
+                    ));
+                    if case.ty.is_some() {
+                        self.push_str(".field(e)");
+                    }
+                    self.push_str(".finish()\n");
+                    self.push_str("}\n");
+                }
+                self.push_str("}\n");
+                self.push_str("}\n");
+                self.push_str("}\n");
             }
         }
     }

@@ -1,5 +1,7 @@
 pub use witx_bindgen_wasmtime_impl::{export, import};
 
+#[cfg(feature = "tracing-lib")]
+pub use tracing_lib as tracing;
 #[doc(hidden)]
 pub use {anyhow, bitflags, wasmtime};
 

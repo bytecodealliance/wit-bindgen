@@ -13,6 +13,7 @@ pub struct MyHost {
     host_state2_closed: bool,
 }
 
+#[derive(Debug)]
 pub struct SuchState(u32);
 
 // TODO: implement propagation of errors instead of `unwrap()` everywhere

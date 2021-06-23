@@ -9,10 +9,6 @@
 * Needs more testing on big-endian.
 
 * Features from wiggle:
-  * `tracing` support
-    - log entry into module/function at TRACE level
-    - `event!` on each call into the trait
-    - `event!` the result
   * `async`
   * use `GuestError::InFunc` more liberally
     - stores/loads

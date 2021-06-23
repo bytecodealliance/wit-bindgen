@@ -17,3 +17,4 @@ witx-bindgen-gen-wasmtime = { path = "../gen-wasmtime", version = "0.1" }
 
 [features]
 old-witx-compat = ['witx-bindgen-gen-wasmtime/old-witx-compat']
+tracing = []
