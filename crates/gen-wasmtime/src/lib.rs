@@ -1,13 +1,16 @@
 use heck::*;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
+use std::str::FromStr;
 use witx_bindgen_gen_core::witx2::abi::{
     Abi, Bindgen, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
-use witx_bindgen_gen_rust::{int_repr, to_rust_ident, wasm_type, TypeMode, TypePrint, Visibility};
+use witx_bindgen_gen_rust::{
+    int_repr, to_rust_ident, wasm_type, TypeMode, TypePrint, Unsafe, Visibility,
+};
 
 #[derive(Default)]
 pub struct Wasmtime {
@@ -50,6 +53,7 @@ pub struct Wasmtime {
     // Only present for preview1 ABIs where some arguments might be a `pointer`
     // type.
     func_takes_all_memory: bool,
+    async_intrinsic_called: bool,
 }
 
 enum NeededFunction {
@@ -58,8 +62,10 @@ enum NeededFunction {
 }
 
 struct Import {
+    is_async: bool,
     name: String,
     trait_signature: String,
+    num_wasm_params: usize,
     closure: String,
 }
 
@@ -79,6 +85,54 @@ pub struct Opts {
     /// Whether or not to emit `tracing` macro calls on function entry/exit.
     #[cfg_attr(feature = "structopt", structopt(long))]
     pub tracing: bool,
+
+    /// Indicates which functions should be `async`: `all`, `none`, or a
+    /// comma-separated list.
+    #[cfg_attr(feature = "structopt", structopt(long = "async"))]
+    pub async_: Async,
+}
+
+#[derive(Debug)]
+pub enum Async {
+    None,
+    All,
+    Only(HashSet<String>),
+}
+
+impl Async {
+    fn includes(&self, name: &str) -> bool {
+        match self {
+            Async::None => false,
+            Async::All => true,
+            Async::Only(list) => list.contains(name),
+        }
+    }
+
+    fn is_none(&self) -> bool {
+        match self {
+            Async::None => true,
+            _ => false,
+        }
+    }
+}
+
+impl Default for Async {
+    fn default() -> Async {
+        Async::None
+    }
+}
+
+impl FromStr for Async {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Async, String> {
+        Ok(if s == "all" {
+            Async::All
+        } else if s == "none" {
+            Async::None
+        } else {
+            Async::Only(s.split(',').map(|s| s.trim().to_string()).collect())
+        })
+    }
 }
 
 impl Opts {
@@ -148,6 +202,20 @@ impl Wasmtime {
             self.needs_memory = true;
             format!("memory.data_mut(&mut caller)")
         }
+    }
+
+    fn call_intrinsic(&mut self, name: &str, args: String) {
+        let (method, suffix) = if self.opts.async_.is_none() {
+            ("call", "")
+        } else {
+            self.async_intrinsic_called = true;
+            ("call_async", ".await")
+        };
+        self.push_str(&format!(
+            "func_{}.{}(&mut caller, {}){}?;\n",
+            name, method, args, suffix
+        ));
+        self.caller_memory_available = false; // invalidated by call
     }
 }
 
@@ -516,10 +584,13 @@ impl Generator for Wasmtime {
     // }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
+        let prev = mem::take(&mut self.src);
+
+        // Reset internal state between functions and then generate the source
+        // code of this adapter.
         self.tmp = 0;
         self.after_call = false;
         self.caller_memory_available = false;
-        let prev = mem::take(&mut self.src);
         self.is_dtor = self.types.is_preview1_dtor_func(func);
         self.func_takes_all_memory = func.abi == Abi::Preview1
             && func
@@ -527,17 +598,32 @@ impl Generator for Wasmtime {
                 .iter()
                 .any(|(_, t)| iface.has_preview1_pointer(t));
 
+        // Generate the closure that's passed to a `Linker`, the final piece of
+        // codegen here.
+        self.params.truncate(0);
+        let sig = iface.wasm_signature(Direction::Import, func);
+        for i in 0..sig.params.len() {
+            self.params.push(format!("arg{}", i));
+        }
+        iface.call(self.direction(), self.lift_lower(), func, self);
+        let body = mem::take(&mut self.src);
+
+        // Generate the signature this function will have in the final trait
         let mut self_arg = "&mut self".to_string();
         if self.func_takes_all_memory {
-            self_arg.push_str(", mem: *mut [u8]");
+            self_arg.push_str(", mem: witx_bindgen_wasmtime::RawMemory");
         }
-
         self.in_trait = true;
         self.print_signature(
             iface,
             func,
             Visibility::Private,
-            false,
+            Unsafe::No,
+            if self.opts.async_.includes(&func.name) {
+                witx_bindgen_gen_rust::Async::Yes
+            } else {
+                witx_bindgen_gen_rust::Async::No
+            },
             Some(&self_arg),
             if self.is_dtor {
                 TypeMode::Owned
@@ -548,8 +634,8 @@ impl Generator for Wasmtime {
         self.in_trait = false;
         let trait_signature = mem::take(&mut self.src).into();
 
-        self.params.truncate(0);
-        let sig = iface.wasm_signature(Direction::Import, func);
+        // Generate the closure that's passed to a `Linker`, the final piece of
+        // codegen here.
         self.src
             .push_str("move |mut caller: wasmtime::Caller<'_, T>");
         for (i, param) in sig.params.iter().enumerate() {
@@ -558,9 +644,25 @@ impl Generator for Wasmtime {
             self.src.push_str(&arg);
             self.src.push_str(":");
             self.wasm_type(*param);
-            self.params.push(arg);
         }
-        self.src.push_str("| -> Result<_, wasmtime::Trap> {\n");
+        self.src.push_str("| {\n");
+
+        // If an intrinsic was called asynchronously, which happens if anything
+        // in the module could be asynchronous, then we must wrap this host
+        // import with an async block. Otherwise if the function is itself
+        // explicitly async then we must also wrap it in an async block.
+        //
+        // If none of that happens, then this is fine to be sync because
+        // everything is sync.
+        let is_async = if mem::take(&mut self.async_intrinsic_called)
+            || self.opts.async_.includes(&func.name)
+        {
+            self.src.push_str("Box::new(async move {\n");
+            true
+        } else {
+            false
+        };
+
         if self.opts.tracing {
             self.src.push_str(&format!(
                 "
@@ -575,64 +677,58 @@ impl Generator for Wasmtime {
                 iface.name, func.name,
             ));
         }
-        let pos = self.src.len();
-        iface.call(self.direction(), self.lift_lower(), func, self);
-        self.src.push_str("}");
-        self.src
-            .as_mut_string()
-            .insert_str(pos, &mem::take(&mut self.closures));
+        self.src.push_str(&mem::take(&mut self.closures));
 
-        if self.all_needed_handles.len() > 0 {
+        for (name, func) in self.needs_functions.drain() {
+            self.src.push_str(&format!(
+                "
+                    let func = get_func(&mut caller, \"{name}\")?;
+                    let func_{name} = func.typed::<{cvt}, _>(&caller)?;
+                ",
+                name = name,
+                cvt = func.cvt(),
+            ));
+            self.needs_get_func = true;
+        }
+
+        if self.needs_memory || self.needs_borrow_checker {
             self.src
-                .as_mut_string()
-                .insert_str(pos, "let (host, _tables) = host;\n");
+                .push_str("let memory = &get_memory(&mut caller, \"memory\")?;\n");
+            self.needs_get_memory = true;
         }
 
         if self.needs_borrow_checker {
-            self.src.as_mut_string().insert_str(
-                pos,
+            self.src.push_str(
                 "let (mem, data) = memory.data_and_store_mut(&mut caller);
                 let mut _bc = witx_bindgen_wasmtime::BorrowChecker::new(mem);
                 let host = get(data);\n",
             );
-            self.needs_memory = true;
         } else {
-            self.src
-                .as_mut_string()
-                .insert_str(pos, "let host = get(caller.data_mut());\n");
+            self.src.push_str("let host = get(caller.data_mut());\n");
         }
 
-        if self.needs_memory {
-            self.src
-                .as_mut_string()
-                .insert_str(pos, "let memory = &get_memory(&mut caller, \"memory\")?;\n");
-            self.needs_get_memory = true;
+        if self.all_needed_handles.len() > 0 {
+            self.src.push_str("let (host, _tables) = host;\n");
         }
 
         self.needs_memory = false;
         self.needs_borrow_checker = false;
         assert!(!self.needs_buffer_transaction);
 
-        for (name, func) in self.needs_functions.drain() {
-            self.src.as_mut_string().insert_str(
-                pos,
-                &format!(
-                    "
-                        let func = get_func(&mut caller, \"{name}\")?;
-                        let func_{name} = func.typed::<{cvt}, _>(&caller)?;
-                    ",
-                    name = name,
-                    cvt = func.cvt(),
-                ),
-            );
-            self.needs_get_func = true;
-        }
+        self.src.push_str(&String::from(body));
 
+        if is_async {
+            self.src.push_str("})\n");
+        }
+        self.src.push_str("}");
         let closure = mem::replace(&mut self.src, prev).into();
+
         self.imports
             .entry(iface.name.to_string())
             .or_insert(Vec::new())
             .push(Import {
+                is_async,
+                num_wasm_params: sig.params.len(),
                 name: func.name.to_string(),
                 closure,
                 trait_signature,
@@ -648,44 +744,66 @@ impl Generator for Wasmtime {
         if self.is_dtor {
             assert_eq!(func.results.len(), 0, "destructors cannot have results");
         }
-        self.params = self.print_docs_and_params(
-            iface,
-            func,
-            Visibility::Pub,
-            false,
-            Some("&self, mut caller: impl wasmtime::AsContextMut"),
-            TypeMode::AllBorrowed("'_"),
-        );
+        self.params = func
+            .params
+            .iter()
+            .map(|(name, _)| to_rust_ident(name).to_string())
+            .collect();
+        iface.call(self.direction(), self.lift_lower(), func, self);
+        let body = mem::take(&mut self.src);
+
+        // If anything is asynchronous on exports then everything must be
+        // asynchronous, Wasmtime can't intermix async and sync calls because
+        // it's unknown whether the wasm module will make an async host call.
+        let is_async = !self.opts.async_.is_none();
+        if is_async {
+            self.print_docs_and_params(
+                iface,
+                func,
+                Visibility::Pub,
+                Unsafe::No,
+                witx_bindgen_gen_rust::Async::Yes,
+                Some("<T: Send>"),
+                Some("&self, mut caller: impl wasmtime::AsContextMut<Data = T>"),
+                TypeMode::AllBorrowed("'_"),
+            );
+        } else {
+            self.print_docs_and_params(
+                iface,
+                func,
+                Visibility::Pub,
+                Unsafe::No,
+                witx_bindgen_gen_rust::Async::No,
+                None,
+                Some("&self, mut caller: impl wasmtime::AsContextMut"),
+                TypeMode::AllBorrowed("'_"),
+            );
+        }
         self.push_str("-> Result<");
         self.print_results(iface, func);
         self.push_str(", wasmtime::Trap> {\n");
-        let pos = self.src.len();
-        iface.call(self.direction(), self.lift_lower(), func, self);
-        self.src.push_str("}\n");
-
-        if mem::take(&mut self.needs_buffer_transaction) {
-            self.needs_buffer_glue = true;
-            self.src.as_mut_string().insert_str(
-                pos,
-                "let mut buffer_transaction = self.buffer_glue.transaction();\n",
-            );
-        }
-
-        self.src
-            .as_mut_string()
-            .insert_str(pos, &mem::take(&mut self.closures));
 
         let exports = self
             .exports
             .entry(iface.name.to_string())
             .or_insert_with(Exports::default);
+        for (name, func) in self.needs_functions.drain() {
+            self.src
+                .push_str(&format!("let func_{0} = &self.{0};\n", name));
+            let get = format!(
+                "instance.get_typed_func::<{}, _>(&mut store, \"{}\")?",
+                func.cvt(),
+                name
+            );
+            exports.fields.insert(name, (func.ty(), get));
+        }
+
+        self.src.push_str(&mem::take(&mut self.closures));
 
         assert!(!self.needs_borrow_checker);
         if self.needs_memory {
             self.needs_memory = false;
-            self.src
-                .as_mut_string()
-                .insert_str(pos, "let memory = &self.memory;\n");
+            self.src.push_str("let memory = &self.memory;\n");
             exports.fields.insert(
                 "memory".to_string(),
                 (
@@ -701,17 +819,14 @@ impl Generator for Wasmtime {
             );
         }
 
-        for (name, func) in self.needs_functions.drain() {
+        if mem::take(&mut self.needs_buffer_transaction) {
+            self.needs_buffer_glue = true;
             self.src
-                .as_mut_string()
-                .insert_str(pos, &format!("let func_{0} = &self.{0};\n", name));
-            let get = format!(
-                "instance.get_typed_func::<{}, _>(&mut store, \"{}\")?",
-                func.cvt(),
-                name
-            );
-            exports.fields.insert(name, (func.ty(), get));
+                .push_str("let mut buffer_transaction = self.buffer_glue.transaction();\n");
         }
+
+        self.src.push_str(&String::from(body));
+        self.src.push_str("}\n");
         let func_body = mem::replace(&mut self.src, prev);
         if !self.is_dtor {
             exports.funcs.push(func_body.into());
@@ -747,14 +862,25 @@ impl Generator for Wasmtime {
     fn finish(&mut self, _iface: &Interface, files: &mut Files) {
         for (module, funcs) in sorted_iter(&self.imports) {
             let module_camel = module.to_camel_case();
-            self.src.push_str("\npub trait ");
+            let is_async = funcs.iter().any(|f| self.opts.async_.includes(&f.name));
+            if is_async {
+                self.src.push_str("#[witx_bindgen_wasmtime::async_trait]\n");
+            }
+            self.src.push_str("pub trait ");
             self.src.push_str(&module_camel);
-            self.src.push_str(": Sized {\n");
+            self.src.push_str(": Sized ");
+            if is_async {
+                self.src.push_str(" + Send");
+            }
+            self.src.push_str("{\n");
             if self.all_needed_handles.len() > 0 {
                 for handle in self.all_needed_handles.iter() {
                     self.src.push_str("type ");
                     self.src.push_str(&handle.to_camel_case());
                     self.src.push_str(": std::fmt::Debug");
+                    if is_async {
+                        self.src.push_str(" + Send + Sync");
+                    }
                     self.src.push_str(";\n");
                 }
             }
@@ -803,6 +929,7 @@ impl Generator for Wasmtime {
 
         for (module, funcs) in mem::take(&mut self.imports) {
             let module_camel = module.to_camel_case();
+            let is_async = funcs.iter().any(|f| self.opts.async_.includes(&f.name));
             self.push_str("\npub fn add_");
             self.push_str(&module);
             self.push_str("_to_linker<T, U>(linker: &mut wasmtime::Linker<T>");
@@ -815,6 +942,9 @@ impl Generator for Wasmtime {
             self.push_str("+ Send + Sync + Copy + 'static) -> anyhow::Result<()> \n");
             self.push_str("where U: ");
             self.push_str(&module_camel);
+            if is_async {
+                self.push_str(", T: Send,");
+            }
             self.push_str("\n{\n");
             if self.needs_get_memory {
                 self.push_str("use witx_bindgen_wasmtime::rt::get_memory;\n");
@@ -823,9 +953,14 @@ impl Generator for Wasmtime {
                 self.push_str("use witx_bindgen_wasmtime::rt::get_func;\n");
             }
             for f in funcs {
+                let method = if f.is_async {
+                    format!("func_wrap{}_async", f.num_wasm_params)
+                } else {
+                    String::from("func_wrap")
+                };
                 self.push_str(&format!(
-                    "linker.func_wrap(\"{}\", \"{}\", {})?;\n",
-                    module, f.name, f.closure,
+                    "linker.{}(\"{}\", \"{}\", {})?;\n",
+                    method, module, f.name, f.closure,
                 ));
             }
             for handle in self.all_needed_handles.iter() {
@@ -954,6 +1089,7 @@ impl Generator for Wasmtime {
         let mut src = mem::take(&mut self.src);
         if self.opts.rustfmt {
             let mut child = Command::new("rustfmt")
+                .arg("--edition=2018")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .spawn()
@@ -1002,9 +1138,9 @@ impl Bindgen for Wasmtime {
         if src.is_empty() {
             self.blocks.push(expr);
         } else if operands.is_empty() {
-            self.blocks.push(format!("{{\n{};\n}}", &src[..]));
+            self.blocks.push(format!("{{\n{}}}", &src[..]));
         } else {
-            self.blocks.push(format!("{{\n{};\n{}\n}}", &src[..], expr));
+            self.blocks.push(format!("{{\n{}{}\n}}", &src[..], expr));
         }
         self.caller_memory_available = false;
     }
@@ -1265,11 +1401,11 @@ impl Bindgen for Wasmtime {
 
                 // ... and then realloc space for the result in the guest module
                 let ptr = format!("ptr{}", tmp);
-                self.push_str(&format!(
-                    "let {} = func_{}.call(&mut caller, (0, 0, ({}.len() as i32) * {}, {}))?;\n",
-                    ptr, realloc, val, size, align
-                ));
-                self.caller_memory_available = false; // invalidated from above
+                self.push_str(&format!("let {} = ", ptr));
+                self.call_intrinsic(
+                    realloc,
+                    format!("(0, 0, ({}.len() as i32) * {}, {})", val, size, align),
+                );
 
                 // ... and then copy over the result.
                 let mem = self.memory_src();
@@ -1351,11 +1487,8 @@ impl Bindgen for Wasmtime {
                 self.push_str(&format!("let {} = {}.len() as i32;\n", len, vec));
 
                 // ... then realloc space for the result in the guest module
-                self.push_str(&format!(
-                    "let {} = func_{}.call(&mut caller, (0, 0, {} * {}, {}))?;\n",
-                    result, realloc, len, size, align,
-                ));
-                self.caller_memory_available = false; // invalidated by call
+                self.push_str(&format!("let {} = ", result));
+                self.call_intrinsic(realloc, format!("(0, 0, {} * {}, {})", len, size, align));
 
                 // ... then consume the vector and use the block to lower the
                 // result.
@@ -1402,10 +1535,7 @@ impl Bindgen for Wasmtime {
                 results.push(result);
 
                 if let Some(free) = free {
-                    self.push_str(&format!(
-                        "func_{}.call(&mut caller, ({}, {} * {}, {}))?;\n",
-                        free, base, len, size, align,
-                    ));
+                    self.call_intrinsic(free, format!("({}, {} * {}, {})", base, len, size, align));
                     self.needs_functions
                         .insert(free.to_string(), NeededFunction::Free);
                 }
@@ -1522,12 +1652,21 @@ impl Bindgen for Wasmtime {
                 }
                 self.push_str("self.");
                 self.push_str(name);
-                self.push_str(".call(&mut caller, (");
+                if self.opts.async_.includes(name) {
+                    self.push_str(".call_async(");
+                } else {
+                    self.push_str(".call(");
+                }
+                self.push_str("&mut caller, (");
                 for operand in operands {
                     self.push_str(operand);
                     self.push_str(", ");
                 }
-                self.push_str("))?;\n");
+                self.push_str("))");
+                if self.opts.async_.includes(name) {
+                    self.push_str(".await");
+                }
+                self.push_str("?;\n");
                 self.after_call = true;
                 self.caller_memory_available = false; // invalidated by call
             }
@@ -1548,19 +1687,28 @@ impl Bindgen for Wasmtime {
                     }
                     self.push_str(");\n");
                 }
+
+                if self.func_takes_all_memory {
+                    let mem = self.memory_src();
+                    self.push_str("let raw_memory = witx_bindgen_wasmtime::RawMemory { slice: ");
+                    self.push_str(&mem);
+                    self.push_str(".raw() };\n");
+                }
                 self.let_results(func.results.len(), results);
                 self.push_str("host.");
                 self.push_str(&func.name);
                 self.push_str("(");
                 if self.func_takes_all_memory {
-                    let mem = self.memory_src();
-                    self.push_str(&mem);
-                    self.push_str(".raw(),");
+                    self.push_str("raw_memory, ");
                 }
                 for i in 0..operands.len() {
                     self.push_str(&format!("param{}, ", i));
                 }
-                self.push_str(");\n");
+                self.push_str(")");
+                if self.opts.async_.includes(&func.name) {
+                    self.push_str(".await");
+                }
+                self.push_str(";\n");
                 self.after_call = true;
                 if self.opts.tracing && func.results.len() > 0 {
                     self.push_str("witx_bindgen_wasmtime::tracing::event!(\n");

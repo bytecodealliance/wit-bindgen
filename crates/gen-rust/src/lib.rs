@@ -16,6 +16,18 @@ pub enum Visibility {
     Private,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum Unsafe {
+    Yes,
+    No,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum Async {
+    Yes,
+    No,
+}
+
 pub trait TypePrint {
     fn krate(&self) -> &'static str;
     fn tmp(&mut self) -> usize;
@@ -90,12 +102,14 @@ pub trait TypePrint {
         iface: &Interface,
         func: &Function,
         visibility: Visibility,
-        unsafe_: bool,
+        unsafe_: Unsafe,
+        async_: Async,
         self_arg: Option<&str>,
         param_mode: TypeMode,
     ) -> Vec<String> {
-        let params =
-            self.print_docs_and_params(iface, func, visibility, unsafe_, self_arg, param_mode);
+        let params = self.print_docs_and_params(
+            iface, func, visibility, unsafe_, async_, None, self_arg, param_mode,
+        );
         if func.results.len() > 0 {
             self.push_str(" -> ");
             self.print_results(iface, func);
@@ -108,7 +122,9 @@ pub trait TypePrint {
         iface: &Interface,
         func: &Function,
         visibility: Visibility,
-        unsafe_: bool,
+        unsafe_: Unsafe,
+        async_: Async,
+        generics: Option<&str>,
         self_arg: Option<&str>,
         param_mode: TypeMode,
     ) -> Vec<String> {
@@ -121,12 +137,17 @@ pub trait TypePrint {
             Visibility::Pub => self.push_str("pub "),
             Visibility::Private => (),
         }
-        if unsafe_ {
+        if let Unsafe::Yes = unsafe_ {
             self.push_str("unsafe ");
+        }
+        if let Async::Yes = async_ {
+            self.push_str("async ");
         }
         self.push_str("fn ");
         self.push_str(to_rust_ident(&rust_name));
-
+        if let Some(generics) = generics {
+            self.push_str(generics);
+        }
         self.push_str("(");
         if let Some(arg) = self_arg {
             self.push_str(arg);

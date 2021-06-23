@@ -20,6 +20,11 @@ pub struct BorrowChecker<'a> {
     len: usize,
 }
 
+// These are not automatically implemented with our storage of `*mut u8`, so we
+// need to manually declare that this type is threadsafe.
+unsafe impl Send for BorrowChecker<'_> {}
+unsafe impl Sync for BorrowChecker<'_> {}
+
 fn to_trap(err: impl std::error::Error + Send + Sync + 'static) -> Trap {
     Trap::from(Box::new(err) as Box<dyn std::error::Error + Send + Sync>)
 }

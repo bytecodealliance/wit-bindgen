@@ -7,7 +7,7 @@ use witx_bindgen_gen_core::witx2::abi::{
     Bindgen, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
-use witx_bindgen_gen_rust::{int_repr, wasm_type, TypeMode, TypePrint, Visibility};
+use witx_bindgen_gen_rust::{int_repr, wasm_type, Async, TypeMode, TypePrint, Unsafe, Visibility};
 
 #[derive(Default)]
 pub struct RustWasm {
@@ -392,7 +392,12 @@ impl Generator for RustWasm {
             iface,
             func,
             Visibility::Pub,
-            self.is_dtor,
+            if self.is_dtor {
+                Unsafe::Yes
+            } else {
+                Unsafe::No
+            },
+            Async::No,
             None,
             if self.is_dtor {
                 TypeMode::Owned
@@ -466,7 +471,8 @@ impl Generator for RustWasm {
             iface,
             func,
             Visibility::Private,
-            false,
+            Unsafe::No,
+            Async::No,
             Some("&self"),
             if self.is_dtor {
                 TypeMode::Owned

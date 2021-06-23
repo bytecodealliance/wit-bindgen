@@ -41,3 +41,47 @@ mod exports {
         // "!wasm.witx"
     );
 }
+
+mod async_tests {
+    mod not_async {
+        witx_bindgen_wasmtime::import!({
+            src["x"]: "foo: function()",
+            async: ["bar"],
+        });
+
+        struct Me;
+
+        impl x::X for Me {
+            fn foo(&mut self) {}
+        }
+    }
+    mod one_async {
+        witx_bindgen_wasmtime::import!({
+            src["x"]: "
+                foo: function() -> list<u8>
+                bar: function()
+            ",
+            async: ["bar"],
+        });
+
+        struct Me;
+
+        #[witx_bindgen_wasmtime::async_trait]
+        impl x::X for Me {
+            fn foo(&mut self) -> Vec<u8> {
+                Vec::new()
+            }
+
+            async fn bar(&mut self) {}
+        }
+    }
+    mod one_async_export {
+        witx_bindgen_wasmtime::export!({
+            src["x"]: "
+                foo: function(x: list<string>)
+                bar: function()
+            ",
+            async: ["bar"],
+        });
+    }
+}

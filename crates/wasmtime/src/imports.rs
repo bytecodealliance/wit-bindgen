@@ -6,7 +6,7 @@ use wasmtime::Trap;
 pub struct PullBuffer<'a, T> {
     mem: &'a [u8],
     size: usize,
-    deserialize: &'a (dyn Fn(&'a [u8]) -> Result<T, Trap> + 'a),
+    deserialize: &'a (dyn Fn(&'a [u8]) -> Result<T, Trap> + Send + Sync + 'a),
 }
 
 impl<'a, T> PullBuffer<'a, T> {
@@ -15,7 +15,7 @@ impl<'a, T> PullBuffer<'a, T> {
         offset: i32,
         len: i32,
         size: i32,
-        deserialize: &'a (dyn Fn(&'a [u8]) -> Result<T, Trap> + 'a),
+        deserialize: &'a (dyn Fn(&'a [u8]) -> Result<T, Trap> + Send + Sync + 'a),
     ) -> Result<PullBuffer<'a, T>, Trap> {
         Ok(PullBuffer {
             mem: mem.slice(offset, len.saturating_mul(size))?,
@@ -45,7 +45,7 @@ impl<T> fmt::Debug for PullBuffer<'_, T> {
 pub struct PushBuffer<'a, T> {
     mem: &'a mut [u8],
     size: usize,
-    serialize: &'a (dyn Fn(&mut [u8], T) -> Result<(), Trap> + 'a),
+    serialize: &'a (dyn Fn(&mut [u8], T) -> Result<(), Trap> + Send + Sync + 'a),
 }
 
 impl<'a, T> PushBuffer<'a, T> {
@@ -54,7 +54,7 @@ impl<'a, T> PushBuffer<'a, T> {
         offset: i32,
         len: i32,
         size: i32,
-        serialize: &'a (dyn Fn(&mut [u8], T) -> Result<(), Trap> + 'a),
+        serialize: &'a (dyn Fn(&mut [u8], T) -> Result<(), Trap> + Send + Sync + 'a),
     ) -> Result<PushBuffer<'a, T>, Trap> {
         let mem = mem.slice_mut(offset, (len as u32).saturating_mul(size as u32) as i32)?;
         Ok(PushBuffer {
