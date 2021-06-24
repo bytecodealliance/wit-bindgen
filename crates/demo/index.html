@@ -23,6 +23,11 @@ body {
 .options {
   margin-bottom: 10px;
 }
+
+.lang-configure {
+  display: none;
+}
+
 </style>
   </head>
   <body>
@@ -30,7 +35,11 @@ body {
         <h1>Input <code>*.witx</code></h1>
         <div class='editor' id='input'></div>
         <textarea id='input-raw' style='display:none'>
-hello: function(name: string) -&gt; string
+record person {
+  name: string,
+  age: u32,
+}
+hello: function(who: person) -&gt; string
 </textarea>
       </div>
       <div class='area'>
@@ -45,6 +54,8 @@ hello: function(name: string) -&gt; string
             <option value="wasmtime">Wasmtime</option>
           </select>
 
+          &middot;
+
           <label for="mode-select">Mode:</label>
 
           <select name="mode" id="mode-select">
@@ -52,9 +63,31 @@ hello: function(name: string) -&gt; string
             <option value="export">export</option>
           </select>
 
+          &middot;
+
           <label for="file-select">File:</label>
           <select name="file" id="file-select">
           </select>
+
+          <div id='configure-js' class='lang-configure'>
+          </div>
+          <div id='configure-rust' class='lang-configure'>
+            &middot;
+
+            <input type="checkbox" id="rust-unchecked" name="unchecked">
+            <label for="rust-unchecked">Unchecked</label>
+          </div>
+          <div id='configure-wasmtime' class='lang-configure'>
+            &middot;
+
+            <input type="checkbox" id="wasmtime-tracing" name="tracing">
+            <label for="wasmtime-tracing"><code>tracing</code></label>
+
+            &middot;
+
+            <input type="checkbox" id="wasmtime-async" name="async">
+            <label for="wasmtime-async"><code>async</code></label>
+          </div>
         </div>
 
         <div class='editor' id='output'></div>

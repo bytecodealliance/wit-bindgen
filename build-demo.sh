@@ -6,11 +6,12 @@ mkdir static
 cargo build -p demo --target wasm32-unknown-unknown --release
 cp target/wasm32-unknown-unknown/release/demo.wasm static/
 
-cargo run -- js --import crates/demo/browser.witx --no-typescript --out-dir static/browser
-cargo run -- js --export crates/demo/demo.witx --no-typescript --out-dir static/demo
+cargo run -- js --import crates/demo/browser.witx --out-dir static/browser
+cargo run -- js --export crates/demo/demo.witx --out-dir static/demo
 
 cp crates/demo/index.html static/
-cp crates/demo/main.js static/
+cp crates/demo/main.ts static/
+(cd crates/demo && npx tsc ../../static/main.ts --target es6)
 
 if [ ! -d ace ]; then
   mkdir ace

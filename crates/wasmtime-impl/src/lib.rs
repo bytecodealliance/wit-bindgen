@@ -32,12 +32,28 @@ fn run(input: TokenStream, import: bool) -> TokenStream {
     let contents = std::str::from_utf8(contents).unwrap();
     let contents = contents.parse::<TokenStream>().unwrap();
     header.extend(contents);
+
+    // Include a dummy `include_str!` for any files we read so rustc knows that
+    // we depend on the contents of those files.
+    let cwd = std::env::current_dir().unwrap();
+    for file in input.files.iter() {
+        header.extend(
+            format!(
+                "const _: &str = include_str!(\"{}\");\n",
+                cwd.join(file).display()
+            )
+            .parse::<TokenStream>()
+            .unwrap(),
+        );
+    }
+
     return header;
 }
 
 struct Opts {
     opts: witx_bindgen_gen_wasmtime::Opts,
     interfaces: Vec<witx2::Interface>,
+    files: Vec<String>,
 }
 
 mod kw {
@@ -49,6 +65,7 @@ impl Parse for Opts {
     fn parse(input: ParseStream<'_>) -> Result<Opts> {
         let call_site = proc_macro2::Span::call_site();
         let mut opts = witx_bindgen_gen_wasmtime::Opts::default();
+        let mut files = Vec::new();
         opts.tracing = cfg!(feature = "tracing");
 
         let interfaces = if input.peek(token::Brace) {
@@ -70,20 +87,23 @@ impl Parse for Opts {
             }
             interfaces
         } else {
-            let mut paths = Vec::new();
             while !input.is_empty() {
                 let s = input.parse::<syn::LitStr>()?;
-                paths.push(s.value());
+                files.push(s.value());
             }
             let mut interfaces = Vec::new();
-            for path in &paths {
+            for path in files.iter() {
                 let iface =
-                    witx2::Interface::parse_file(&path).map_err(|e| Error::new(call_site, e))?;
+                    witx2::Interface::parse_file(path).map_err(|e| Error::new(call_site, e))?;
                 interfaces.push(iface);
             }
             interfaces
         };
-        Ok(Opts { opts, interfaces })
+        Ok(Opts {
+            opts,
+            interfaces,
+            files,
+        })
     }
 }
 

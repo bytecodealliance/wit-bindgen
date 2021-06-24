@@ -1062,6 +1062,7 @@ pub fn to_rust_ident(name: &str) -> &str {
         "type" => "type_",
         "where" => "where_",
         "yield" => "yield_",
+        "async" => "async_",
         s => s,
     }
 }
