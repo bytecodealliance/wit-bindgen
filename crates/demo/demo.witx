@@ -1,13 +1,25 @@
-enum lang {
-  rust,
-  js,
-  wasmtime,
-}
-
 type files = list<tuple<string, string>>
 
-render: function(
+variant async {
+  all,
+  none,
+  only(list<string>),
+}
+
+render_js: function(
   input: string,
-  language: lang,
   import: bool,
+) -> expected<files, string>
+
+render_rust: function(
+  input: string,
+  import: bool,
+  unchecked: bool,
+) -> expected<files, string>
+
+render_wasmtime: function(
+  input: string,
+  import: bool,
+  tracing: bool,
+  async: async,
 ) -> expected<files, string>

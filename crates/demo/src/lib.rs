@@ -19,24 +19,55 @@ fn demo() -> &'static Demo {
     &Demo
 }
 
-impl demo::Demo for Demo {
-    fn render(
+impl Demo {
+    fn generate<G: Generator>(
         &self,
-        witx: String,
-        language: demo::Lang,
+        witx: &str,
         import: bool,
+        mut gen: G,
     ) -> Result<Vec<(String, String)>, String> {
-        let iface = witx2::Interface::parse("input", &witx).map_err(|e| format!("{:?}", e))?;
-        let mut generator: Box<dyn Generator> = match language {
-            demo::Lang::Rust => Box::new(witx_bindgen_gen_rust_wasm::Opts::default().build()),
-            demo::Lang::Js => Box::new(witx_bindgen_gen_js::Opts::default().build()),
-            demo::Lang::Wasmtime => Box::new(witx_bindgen_gen_wasmtime::Opts::default().build()),
-        };
+        let iface = witx2::Interface::parse("input", witx).map_err(|e| format!("{:?}", e))?;
         let mut files = Default::default();
-        generator.generate(&iface, import, &mut files);
+        gen.generate(&iface, import, &mut files);
         Ok(files
             .iter()
             .map(|(name, contents)| (name.to_string(), String::from_utf8_lossy(&contents).into()))
             .collect())
+    }
+}
+
+impl demo::Demo for Demo {
+    fn render_js(&self, witx: String, import: bool) -> Result<Vec<(String, String)>, String> {
+        self.generate(&witx, import, witx_bindgen_gen_js::Opts::default().build())
+    }
+
+    fn render_rust(
+        &self,
+        witx: String,
+        import: bool,
+        unchecked: bool,
+    ) -> Result<Vec<(String, String)>, String> {
+        let mut opts = witx_bindgen_gen_rust_wasm::Opts::default();
+        opts.unchecked = unchecked;
+        self.generate(&witx, import, opts.build())
+    }
+
+    fn render_wasmtime(
+        &self,
+        witx: String,
+        import: bool,
+        tracing: bool,
+        async_: demo::Async,
+    ) -> Result<Vec<(String, String)>, String> {
+        use witx_bindgen_gen_wasmtime::Async;
+
+        let mut opts = witx_bindgen_gen_wasmtime::Opts::default();
+        opts.tracing = tracing;
+        opts.async_ = match async_ {
+            demo::Async::All => Async::All,
+            demo::Async::None => Async::None,
+            demo::Async::Only(list) => Async::Only(list.into_iter().collect()),
+        };
+        self.generate(&witx, import, opts.build())
     }
 }

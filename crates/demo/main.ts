@@ -14,10 +14,13 @@ const wasmPromise = demo.Demo.instantiate(fetch('./demo.wasm'), imports)
     return demo;
   });
 
-const input = document.getElementById('input-raw');
-const language = document.getElementById('language-select');
-const mode = document.getElementById('mode-select');
-const files = document.getElementById('file-select');
+const input = document.getElementById('input-raw') as HTMLTextAreaElement;
+const language = document.getElementById('language-select') as HTMLSelectElement;
+const mode = document.getElementById('mode-select') as HTMLSelectElement;
+const files = document.getElementById('file-select') as HTMLSelectElement;
+const rustUnchecked = document.getElementById('rust-unchecked') as HTMLInputElement;
+const wasmtimeTracing = document.getElementById('wasmtime-tracing') as HTMLInputElement;
+const wasmtimeAsync = document.getElementById('wasmtime-async') as HTMLInputElement;
 
 const inputEditor = ace.edit("input");
 const outputEditor = ace.edit("output");
@@ -31,14 +34,35 @@ let generatedFiles = {};
 
 async function render() {
   const wasm = await wasmPromise;
-  let lang;
+
+  for (let div of document.querySelectorAll('.lang-configure')) {
+    (div as HTMLDivElement).style.display = 'none';
+  }
+
+  const config = document.getElementById(`configure-${language.value}`);
+  config.style.display = 'inline-block';
+
+  const witx = inputEditor.getValue();
+  const is_import = mode.value === 'import';
+  let result;
   switch (language.value) {
-    case "js": lang = demo.Lang.Js; break;
-    case "rust": lang = demo.Lang.Rust; break;
-    case "wasmtime": lang = demo.Lang.Wasmtime; break;
+    case "js":
+      result = wasm.render_js(witx, is_import);
+      break;
+    case "rust":
+      result = wasm.render_rust(witx, is_import, rustUnchecked.checked);
+      break;
+    case "wasmtime":
+      let async_;
+      if (wasmtimeAsync.checked)
+        async_ = { tag: 'all' };
+      else
+        async_ = { tag: 'none' };
+      result = wasm.render_wasmtime(witx, is_import, wasmtimeTracing.checked, async_);
+      break;
     default: return;
   }
-  const result = wasm.render(inputEditor.getValue(), lang, mode.value === 'import');
+
   if (result.tag === 'err') {
     outputEditor.setValue(result.val);
     outputEditor.clearSelection();
@@ -70,7 +94,6 @@ function updateSelectedFile() {
     outputEditor.session.setMode("ace/mode/rust");
   else if (files.value.endsWith('.rs'))
     outputEditor.session.setMode(null);
-
 }
 
 let rerender = null;
@@ -83,6 +106,9 @@ inputEditor.on('change', function(){
 
 language.addEventListener('change', render);
 mode.addEventListener('change', render);
+rustUnchecked.addEventListener('change', render);
+wasmtimeTracing.addEventListener('change', render);
+wasmtimeAsync.addEventListener('change', render);
 files.addEventListener('change', updateSelectedFile);
 
 

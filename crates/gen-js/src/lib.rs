@@ -296,7 +296,7 @@ impl Js {
             if i > 0 {
                 self.src.ts(", ");
             }
-            self.src.ts(&name.to_snake_case());
+            self.src.ts(to_js_ident(&name.to_snake_case()));
             self.src.ts(": ");
             self.print_ty(iface, ty);
         }
@@ -1822,6 +1822,14 @@ impl Js {
                 }
             ");
         }
+    }
+}
+
+pub fn to_js_ident(name: &str) -> &str {
+    match name {
+        "in" => "in_",
+        "import" => "import_",
+        s => s,
     }
 }
 
