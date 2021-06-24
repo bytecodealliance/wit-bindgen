@@ -45,6 +45,7 @@ pub struct Wasmtime {
     cleanup: Option<String>,
     trait_name: String,
     closures: Source,
+    has_preview1_dtor: bool,
     after_call: bool,
     // Whether or not the `caller_memory` variable has been defined and is
     // available for use.
@@ -592,6 +593,7 @@ impl Generator for Wasmtime {
         self.after_call = false;
         self.caller_memory_available = false;
         self.is_dtor = self.types.is_preview1_dtor_func(func);
+        self.has_preview1_dtor = self.has_preview1_dtor || self.is_dtor;
         self.func_takes_all_memory = func.abi == Abi::Preview1
             && func
                 .params
@@ -963,25 +965,27 @@ impl Generator for Wasmtime {
                     method, module, f.name, f.closure,
                 ));
             }
-            for handle in self.all_needed_handles.iter() {
-                self.src.push_str(&format!(
-                    "linker.func_wrap(
-                        \"canonical_abi\",
-                        \"resource_drop_{}\",
-                        move |mut caller: wasmtime::Caller<'_, T>, handle: u32| {{
-                            let (host, tables) = get(caller.data_mut());
-                            let handle = tables
-                                .{0}_table
-                                .remove(handle)
-                                .map_err(|e| {{
-                                    wasmtime::Trap::new(format!(\"failed to remove handle: {{}}\", e))
-                                }})?;
-                            host.drop_{0}(handle);
-                            Ok(())
-                        }}
-                    )?;\n",
-                    handle
-                ));
+            if !self.has_preview1_dtor {
+                for handle in self.all_needed_handles.iter() {
+                    self.src.push_str(&format!(
+                        "linker.func_wrap(
+                            \"canonical_abi\",
+                            \"resource_drop_{}\",
+                            move |mut caller: wasmtime::Caller<'_, T>, handle: u32| {{
+                                let (host, tables) = get(caller.data_mut());
+                                let handle = tables
+                                    .{0}_table
+                                    .remove(handle)
+                                    .map_err(|e| {{
+                                        wasmtime::Trap::new(format!(\"failed to remove handle: {{}}\", e))
+                                    }})?;
+                                host.drop_{0}(handle);
+                                Ok(())
+                            }}
+                        )?;\n",
+                        handle
+                    ));
+                }
             }
             self.push_str("Ok(())\n}\n");
         }
