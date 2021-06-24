@@ -1,3 +1,9 @@
+# All generators
+
+* handle support in exports
+
+* push/pull-buffer support in exports
+
 # wasmtime
 
 * Functions need to be able to at least optionally return a trap, e.g.
