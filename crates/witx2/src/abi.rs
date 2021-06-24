@@ -4,7 +4,7 @@ use crate::{
 use std::mem;
 
 /// A raw WebAssembly signature with params and results.
-#[derive(Debug)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct WasmSignature {
     /// The WebAssembly parameters of this function.
     pub params: Vec<WasmType>,
@@ -16,7 +16,7 @@ pub struct WasmSignature {
 }
 
 /// Enumerates wasm types used by interface types when lowering/lifting.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum WasmType {
     I32,
     I64,
