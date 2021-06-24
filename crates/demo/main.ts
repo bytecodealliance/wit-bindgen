@@ -92,7 +92,7 @@ function updateSelectedFile() {
     outputEditor.session.setMode("ace/mode/javascript");
   else if (files.value.endsWith('.rs'))
     outputEditor.session.setMode("ace/mode/rust");
-  else if (files.value.endsWith('.rs'))
+  else
     outputEditor.session.setMode(null);
 }
 
