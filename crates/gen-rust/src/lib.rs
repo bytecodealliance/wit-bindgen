@@ -565,20 +565,20 @@ pub trait RustGenerator {
                 self.push_str("{\n");
 
                 self.push_str("pub fn name(&self) -> &'static str {\n");
-                self.push_str("match self {");
+                self.push_str("match self {\n");
                 for case in variant.cases.iter() {
                     self.push_str(&name);
                     self.push_str("::");
                     self.push_str(&case_name(&case.name));
                     self.push_str(" => \"");
                     self.push_str(case.name.as_str());
-                    self.push_str("\",");
+                    self.push_str("\",\n");
                 }
                 self.push_str("}\n");
                 self.push_str("}\n");
 
                 self.push_str("pub fn message(&self) -> &'static str {\n");
-                self.push_str("match self {");
+                self.push_str("match self {\n");
                 for case in variant.cases.iter() {
                     self.push_str(&name);
                     self.push_str("::");
@@ -587,7 +587,7 @@ pub trait RustGenerator {
                     if let Some(contents) = &case.docs.contents {
                         self.push_str(contents.trim());
                     }
-                    self.push_str("\",");
+                    self.push_str("\",\n");
                 }
                 self.push_str("}\n");
                 self.push_str("}\n");
@@ -601,11 +601,11 @@ pub trait RustGenerator {
                 );
                 self.push_str("f.debug_struct(\"");
                 self.push_str(&name);
-                self.push_str("\")");
-                self.push_str(".field(\"code\", &(*self as i32))");
-                self.push_str(".field(\"name\", &self.name())");
-                self.push_str(".field(\"message\", &self.message())");
-                self.push_str(".finish()");
+                self.push_str("\")\n");
+                self.push_str(".field(\"code\", &(*self as i32))\n");
+                self.push_str(".field(\"name\", &self.name())\n");
+                self.push_str(".field(\"message\", &self.message())\n");
+                self.push_str(".finish()\n");
                 self.push_str("}\n");
                 self.push_str("}\n");
 

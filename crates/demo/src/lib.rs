@@ -67,6 +67,7 @@ impl demo::Demo for Demo {
         import: bool,
         tracing: bool,
         async_: demo::Async,
+        custom_error: bool,
     ) -> Result<Vec<(String, String)>, String> {
         use witx_bindgen_gen_wasmtime::Async;
 
@@ -77,6 +78,7 @@ impl demo::Demo for Demo {
             demo::Async::None => Async::None,
             demo::Async::Only(list) => Async::Only(list.into_iter().collect()),
         };
+        opts.custom_error = custom_error;
         self.generate(&witx, import, opts.build())
     }
 }

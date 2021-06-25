@@ -21,6 +21,7 @@ const files = document.getElementById('file-select') as HTMLSelectElement;
 const rustUnchecked = document.getElementById('rust-unchecked') as HTMLInputElement;
 const wasmtimeTracing = document.getElementById('wasmtime-tracing') as HTMLInputElement;
 const wasmtimeAsync = document.getElementById('wasmtime-async') as HTMLInputElement;
+const wasmtimeCustomError = document.getElementById('wasmtime-custom-error') as HTMLInputElement;
 
 const inputEditor = ace.edit("input");
 const outputEditor = ace.edit("output");
@@ -58,7 +59,13 @@ async function render() {
         async_ = { tag: 'all' };
       else
         async_ = { tag: 'none' };
-      result = wasm.render_wasmtime(witx, is_import, wasmtimeTracing.checked, async_);
+      result = wasm.render_wasmtime(
+        witx,
+        is_import,
+        wasmtimeTracing.checked,
+        async_,
+        wasmtimeCustomError.checked,
+      );
       break;
     default: return;
   }
@@ -109,6 +116,7 @@ mode.addEventListener('change', render);
 rustUnchecked.addEventListener('change', render);
 wasmtimeTracing.addEventListener('change', render);
 wasmtimeAsync.addEventListener('change', render);
+wasmtimeCustomError.addEventListener('change', render);
 files.addEventListener('change', updateSelectedFile);
 
 

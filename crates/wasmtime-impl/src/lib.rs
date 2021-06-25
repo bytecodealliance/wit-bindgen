@@ -60,6 +60,7 @@ struct Opts {
 mod kw {
     syn::custom_keyword!(src);
     syn::custom_keyword!(paths);
+    syn::custom_keyword!(custom_error);
 }
 
 impl Parse for Opts {
@@ -78,6 +79,7 @@ impl Parse for Opts {
                 match field.into_value() {
                     ConfigField::Interfaces(v) => interfaces = v,
                     ConfigField::Async(v) => opts.async_ = v,
+                    ConfigField::CustomError(v) => opts.custom_error = v,
                 }
             }
             if interfaces.is_empty() {
@@ -111,6 +113,7 @@ impl Parse for Opts {
 enum ConfigField {
     Interfaces(Vec<witx2::Interface>),
     Async(witx_bindgen_gen_wasmtime::Async),
+    CustomError(bool),
 }
 
 impl Parse for ConfigField {
@@ -158,6 +161,12 @@ impl Parse for ConfigField {
                 Async::Only(values)
             };
             Ok(ConfigField::Async(val))
+        } else if l.peek(kw::custom_error) {
+            input.parse::<kw::custom_error>()?;
+            input.parse::<Token![:]>()?;
+            Ok(ConfigField::CustomError(
+                input.parse::<syn::LitBool>()?.value,
+            ))
         } else {
             Err(l.error())
         }

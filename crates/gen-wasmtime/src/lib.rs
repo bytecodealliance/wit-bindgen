@@ -27,6 +27,8 @@ pub struct Wasmtime {
     needs_copy_slice: bool,
     needs_buffer_glue: bool,
     needs_le: bool,
+    needs_custom_error_to_trap: bool,
+    needs_custom_error_to_types: BTreeSet<String>,
     all_needed_handles: BTreeSet<String>,
     types: Types,
     imports: HashMap<String, Vec<Import>>,
@@ -72,6 +74,11 @@ pub struct Opts {
     /// comma-separated list.
     #[cfg_attr(feature = "structopt", structopt(long = "async"))]
     pub async_: Async,
+
+    /// A flag to indicate that all trait methods in imports should return a
+    /// custom trait-defined error. Applicable for import bindings.
+    #[cfg_attr(feature = "structopt", structopt(long))]
+    pub custom_error: bool,
 }
 
 #[derive(Debug)]
@@ -125,6 +132,19 @@ impl Opts {
     }
 }
 
+enum FunctionRet {
+    /// The function return is normal and needs to extra handling.
+    Normal,
+    /// The function return was wrapped in a `Result` in Rust. The `Ok` variant
+    /// is the actual value that will be lowered, and the `Err`, if present,
+    /// means that a trap has occurred.
+    CustomToTrap,
+    /// The function returns a `Result` in both wasm and in Rust, but the
+    /// Rust error type is a custom error and must be converted to `err`. The
+    /// `ok` variant payload is provided here too.
+    CustomToError { ok: Option<Type>, err: String },
+}
+
 impl Wasmtime {
     pub fn new() -> Wasmtime {
         Wasmtime::default()
@@ -153,6 +173,37 @@ impl Wasmtime {
         if self.needs_copy_slice {
             self.push_str("use witx_bindgen_wasmtime::rt::copy_slice;\n");
         }
+    }
+
+    /// Classifies the return value of a function to see if it needs handling
+    /// with respect to the `custom_error` configuration option.
+    fn classify_fn_ret(&mut self, iface: &Interface, f: &Function) -> FunctionRet {
+        if !self.opts.custom_error {
+            return FunctionRet::Normal;
+        }
+
+        if f.results.len() != 1 {
+            self.needs_custom_error_to_trap = true;
+            return FunctionRet::CustomToTrap;
+        }
+        if let Type::Id(id) = &f.results[0].1 {
+            if let TypeDefKind::Variant(v) = &iface.types[*id].kind {
+                if let Some((ok, Some(err))) = v.as_expected() {
+                    if let Type::Id(err) = err {
+                        if let Some(name) = &iface.types[*err].name {
+                            self.needs_custom_error_to_types.insert(name.clone());
+                            return FunctionRet::CustomToError {
+                                ok: ok.cloned(),
+                                err: name.to_string(),
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        self.needs_custom_error_to_trap = true;
+        FunctionRet::CustomToTrap
     }
 }
 
@@ -592,7 +643,8 @@ impl Generator for Wasmtime {
             self_arg.push_str(", mem: witx_bindgen_wasmtime::RawMemory");
         }
         self.in_trait = true;
-        self.print_signature(
+
+        self.print_docs_and_params(
             iface,
             func,
             Visibility::Private,
@@ -602,6 +654,7 @@ impl Generator for Wasmtime {
             } else {
                 witx_bindgen_gen_rust::Async::No
             },
+            None,
             Some(&self_arg),
             if is_dtor {
                 TypeMode::Owned
@@ -609,6 +662,29 @@ impl Generator for Wasmtime {
                 TypeMode::LeafBorrowed("'_")
             },
         );
+        // The Rust return type may differ from the wasm return type based on
+        // the `custom_error` configuration of this code generator.
+        match self.classify_fn_ret(iface, func) {
+            FunctionRet::Normal => {
+                if func.results.len() > 0 {
+                    self.push_str(" -> ");
+                    self.print_results(iface, func);
+                }
+            }
+            FunctionRet::CustomToTrap => {
+                self.push_str(" -> Result<");
+                self.print_results(iface, func);
+                self.push_str(", Self::Error>");
+            }
+            FunctionRet::CustomToError { ok, .. } => {
+                self.push_str(" -> Result<");
+                match ok {
+                    Some(ty) => self.print_ty(iface, &ty, TypeMode::Owned),
+                    None => self.push_str("()"),
+                }
+                self.push_str(", Self::Error>");
+            }
+        }
         self.in_trait = false;
         let trait_signature = mem::take(&mut self.src).into();
 
@@ -865,6 +941,21 @@ impl Generator for Wasmtime {
                         self.src.push_str(" + Send + Sync");
                     }
                     self.src.push_str(";\n");
+                }
+            }
+            if self.opts.custom_error {
+                self.src.push_str("type Error;\n");
+                if self.needs_custom_error_to_trap {
+                    self.src.push_str(
+                        "fn error_to_trap(&mut self, err: Self::Error) -> wasmtime::Trap;\n",
+                    );
+                }
+                for ty in self.needs_custom_error_to_types.iter() {
+                    self.src.push_str(&format!(
+                        "fn error_to_{}(&mut self, err: Self::Error) -> Result<{}, wasmtime::Trap>;\n",
+                        ty.to_snake_case(),
+                        ty.to_camel_case(),
+                    ));
                 }
             }
             for f in funcs {
@@ -1839,19 +1930,43 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.push_str(&mem);
                     self.push_str(".raw() };\n");
                 }
-                self.let_results(func.results.len(), results);
-                self.push_str("host.");
-                self.push_str(&func.name);
-                self.push_str("(");
+
+                let mut call = format!("host.{}(", func.name);
                 if self.func_takes_all_memory {
-                    self.push_str("raw_memory, ");
+                    call.push_str("raw_memory, ");
                 }
                 for i in 0..operands.len() {
-                    self.push_str(&format!("param{}, ", i));
+                    call.push_str(&format!("param{}, ", i));
                 }
-                self.push_str(")");
+                call.push_str(")");
                 if self.gen.opts.async_.includes(&func.name) {
-                    self.push_str(".await");
+                    call.push_str(".await");
+                }
+
+                self.let_results(func.results.len(), results);
+                match self.gen.classify_fn_ret(iface, func) {
+                    FunctionRet::Normal => self.push_str(&call),
+                    // Unwrap the result, translating errors to unconditional
+                    // traps
+                    FunctionRet::CustomToTrap => {
+                        self.push_str("match ");
+                        self.push_str(&call);
+                        self.push_str("{\n");
+                        self.push_str("Ok(val) => val,\n");
+                        self.push_str("Err(e) => return Err(host.error_to_trap(e)),\n");
+                        self.push_str("}");
+                    }
+                    // Keep the `Result` as a `Result`, but convert the error
+                    // to either the expected destination value or a trap,
+                    // propagating a trap outwards.
+                    FunctionRet::CustomToError { err, .. } => {
+                        self.push_str("match ");
+                        self.push_str(&call);
+                        self.push_str("{\n");
+                        self.push_str("Ok(val) => Ok(val),\n");
+                        self.push_str(&format!("Err(e) => Err(host.error_to_{}(e)?),\n", err));
+                        self.push_str("}");
+                    }
                 }
                 self.push_str(";\n");
                 self.after_call = true;
