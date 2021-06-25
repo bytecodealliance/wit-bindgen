@@ -186,10 +186,11 @@ pub fn wasmtime_import(input: TokenStream) -> TokenStream {
                 |_| quote::quote!(),
             ),
             (
-                "import-tracing",
+                "import-tracing-and-custom-error",
                 || {
                     let mut opts = witx_bindgen_gen_wasmtime::Opts::default();
                     opts.tracing = true;
+                    opts.custom_error = true;
                     opts.build()
                 },
                 |_| quote::quote!(),

@@ -6,9 +6,6 @@
 
 # wasmtime
 
-* Functions need to be able to at least optionally return a trap, e.g.
-  `proc_raise` or they were passed an invalid buffer.
-
 * buffer-in-buffer doesn't work. Doesn't work because we can't get a re-access
   of the transaction to add more buffers into it after-the-fact.
 
@@ -18,10 +15,6 @@
   * use `GuestError::InFunc` more liberally
     - stores/loads
     - `try_from` conversions
-  * user-defined conversion from user-defined type to the actual type
-    - used for converting `anyhow::Error` into either an errno or a trap
-    - check for specific type of error, otherwise assume trap
-    - conversion receives context to optionally store the error message
   * generate just the trait (??? what to do about `wasmtime` dep ???)
 
 # JS

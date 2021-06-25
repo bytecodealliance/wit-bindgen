@@ -85,3 +85,18 @@ mod async_tests {
         });
     }
 }
+
+mod custom_errors {
+    witx_bindgen_wasmtime::import!({
+        src["x"]: "
+            foo: function()
+            bar: function() -> expected<_, u32>
+            enum errno {
+                bad1,
+                bad2,
+            }
+            baz: function() -> expected<u32, errno>
+        ",
+        custom_error: true,
+    });
+}

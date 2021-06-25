@@ -22,4 +22,5 @@ render_wasmtime: function(
   import: bool,
   tracing: bool,
   async: async,
+  custom_error: bool,
 ) -> expected<files, string>
