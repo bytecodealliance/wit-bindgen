@@ -8,13 +8,13 @@ edition = "2018"
 anyhow = "1.0"
 bitflags = "1.2"
 thiserror = "1.0"
-wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'main' }
+wasmtime = "0.28"
 witx-bindgen-wasmtime-impl = { path = "../wasmtime-impl", version = "0.1" }
 tracing-lib = { version = "0.1.26", optional = true, package = 'tracing' }
 async-trait = { version = "0.1.50", optional = true }
 
 [dev-dependencies]
-wasmtime-wasi = { git = 'https://github.com/bytecodealliance/wasmtime', branch = 'main' }
+wasmtime-wasi = "0.28"
 test-build-rust-wasm = { path = '../test-build-rust-wasm' }
 
 [features]
