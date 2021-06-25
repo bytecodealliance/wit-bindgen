@@ -3,6 +3,7 @@ use proc_macro::{TokenStream, TokenTree};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use witx_bindgen_gen_core::witx2::abi::Direction;
 use witx_bindgen_gen_core::Generator;
 
 #[proc_macro]
@@ -10,7 +11,7 @@ use witx_bindgen_gen_core::Generator;
 pub fn rust_wasm_import(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
-        true,
+        Direction::Import,
         &[
             (
                 "import",
@@ -37,7 +38,7 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
 
     return gen_rust(
         input,
-        false,
+        Direction::Export,
         &[
             (
                 "export",
@@ -177,7 +178,7 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
 pub fn wasmtime_import(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
-        true,
+        Direction::Import,
         &[
             (
                 "import",
@@ -211,7 +212,7 @@ pub fn wasmtime_import(input: TokenStream) -> TokenStream {
 pub fn wasmtime_export(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
-        false,
+        Direction::Export,
         &[
             (
                 "export",
@@ -235,7 +236,10 @@ pub fn wasmtime_export(input: TokenStream) -> TokenStream {
 #[cfg(feature = "witx-bindgen-gen-js")]
 pub fn js_import(input: TokenStream) -> TokenStream {
     let tests = generate_tests(input, "import", |_path| {
-        (witx_bindgen_gen_js::Opts::default().build(), true)
+        (
+            witx_bindgen_gen_js::Opts::default().build(),
+            Direction::Import,
+        )
     });
     let tests = tests.iter().map(|(_iface, test, witx)| {
         let test = test.display().to_string();
@@ -257,7 +261,10 @@ pub fn js_import(input: TokenStream) -> TokenStream {
 #[cfg(feature = "witx-bindgen-gen-js")]
 pub fn js_export(input: TokenStream) -> TokenStream {
     let tests = generate_tests(input, "export", |_path| {
-        (witx_bindgen_gen_js::Opts::default().build(), false)
+        (
+            witx_bindgen_gen_js::Opts::default().build(),
+            Direction::Export,
+        )
     });
     let tests = tests.iter().map(|(_iface, test, witx)| {
         let test = test.display().to_string();
@@ -278,7 +285,7 @@ pub fn js_export(input: TokenStream) -> TokenStream {
 fn generate_tests<G>(
     input: TokenStream,
     dir: &str,
-    mkgen: impl Fn(&Path) -> (G, bool),
+    mkgen: impl Fn(&Path) -> (G, Direction),
 ) -> Vec<(witx2::Interface, PathBuf, PathBuf)>
 where
     G: Generator,
@@ -317,10 +324,10 @@ where
     let mut sources = Vec::new();
     let cwd = env::current_dir().unwrap();
     for test in tests {
-        let (mut gen, import) = mkgen(&test);
+        let (mut gen, dir) = mkgen(&test);
         let mut files = Default::default();
         let iface = witx2::Interface::parse_file(&test).unwrap();
-        gen.generate(&iface, import, &mut files);
+        gen.generate(&iface, dir, &mut files);
 
         let dst = out_dir.join(test.file_stem().unwrap());
         drop(fs::remove_dir_all(&dst));
@@ -338,7 +345,7 @@ fn gen_rust<G: Generator>(
     // input to the original procedural macro
     input: TokenStream,
     // whether we're generating bindings for imports or exports
-    import: bool,
+    dir: Direction,
     // a list of tests, tuples of:
     //  * name of the test (directory to generate code into)
     //  * method to create the `G` which will generate code
@@ -354,7 +361,7 @@ fn gen_rust<G: Generator>(
     let mut rustfmt = std::process::Command::new("rustfmt");
     rustfmt.arg("--edition=2018");
     for (name, mk, extra) in tests {
-        let tests = generate_tests(input.clone(), name, |_path| (mk(), import));
+        let tests = generate_tests(input.clone(), name, |_path| (mk(), dir));
         let mut sources = proc_macro2::TokenStream::new();
         for (iface, gen_dir, _input_witx) in tests.iter() {
             let test = gen_dir.join("bindings.rs");

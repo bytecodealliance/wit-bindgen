@@ -2,15 +2,15 @@ use anyhow::Result;
 use std::collections::{btree_map::Entry, BTreeMap, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
-use witx2::abi::Abi;
+use witx2::abi::{Abi, Direction};
 use witx2::*;
 
 // pub use witx;
 pub use witx2;
 
 pub trait Generator {
-    fn preprocess(&mut self, iface: &Interface, import: bool) {
-        drop((iface, import));
+    fn preprocess(&mut self, iface: &Interface, dir: Direction) {
+        drop((iface, dir));
     }
 
     fn type_record(
@@ -63,8 +63,8 @@ pub trait Generator {
     fn export(&mut self, iface: &Interface, func: &Function);
     fn finish(&mut self, iface: &Interface, files: &mut Files);
 
-    fn generate(&mut self, iface: &Interface, import: bool, files: &mut Files) {
-        self.preprocess(iface, import);
+    fn generate(&mut self, iface: &Interface, dir: Direction, files: &mut Files) {
+        self.preprocess(iface, dir);
         for (id, ty) in iface.types.iter() {
             // assert!(ty.foreign_module.is_none()); // TODO
             let name = match &ty.name {
@@ -96,10 +96,9 @@ pub trait Generator {
         // }
 
         for f in iface.functions.iter() {
-            if import {
-                self.import(iface, &f);
-            } else {
-                self.export(iface, &f);
+            match dir {
+                Direction::Import => self.import(iface, &f),
+                Direction::Export => self.export(iface, &f),
             }
         }
 

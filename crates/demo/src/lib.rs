@@ -1,4 +1,5 @@
 use std::sync::Once;
+use witx2::abi::Direction;
 use witx_bindgen_gen_core::{witx2, Generator};
 
 witx_bindgen_rust::export!("./crates/demo/demo.witx");
@@ -28,7 +29,15 @@ impl Demo {
     ) -> Result<Vec<(String, String)>, String> {
         let iface = witx2::Interface::parse("input", witx).map_err(|e| format!("{:?}", e))?;
         let mut files = Default::default();
-        gen.generate(&iface, import, &mut files);
+        gen.generate(
+            &iface,
+            if import {
+                Direction::Import
+            } else {
+                Direction::Export
+            },
+            &mut files,
+        );
         Ok(files
             .iter()
             .map(|(name, contents)| (name.to_string(), String::from_utf8_lossy(&contents).into()))

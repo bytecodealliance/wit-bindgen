@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use witx_bindgen_gen_core::witx2::abi::Direction;
 use witx_bindgen_gen_core::Generator;
 
 fn main() {
@@ -19,7 +20,7 @@ fn main() {
     let mut files = Default::default();
     witx_bindgen_gen_js::Opts::default()
         .build()
-        .generate(&iface, true, &mut files);
+        .generate(&iface, Direction::Import, &mut files);
     for (file, contents) in files.iter() {
         fs::write(dir.join("imports").join(file), contents).unwrap();
     }
@@ -29,7 +30,7 @@ fn main() {
     let mut files = Default::default();
     witx_bindgen_gen_js::Opts::default()
         .build()
-        .generate(&iface, false, &mut files);
+        .generate(&iface, Direction::Export, &mut files);
     for (file, contents) in files.iter() {
         fs::write(dir.join("exports").join(file), contents).unwrap();
     }

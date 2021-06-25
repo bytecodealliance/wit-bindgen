@@ -8,14 +8,10 @@ use witx_bindgen_gen_core::{witx2::*, Files, Generator};
 
 #[derive(Default)]
 pub struct Js {
-    tmp: usize,
     src: Source,
     opts: Opts,
     imports: HashMap<String, Vec<Import>>,
     exports: HashMap<String, Exports>,
-    block_storage: Vec<witx_bindgen_gen_core::Source>,
-    blocks: Vec<(String, Vec<String>)>,
-    in_import: bool,
     sizes: SizeAlign,
     needs_clamp_guest: bool,
     needs_clamp_host: bool,
@@ -32,9 +28,6 @@ pub struct Js {
     needs_f64_to_i64: bool,
     needs_utf8_decoder: bool,
     needs_utf8_encode: bool,
-    needs_memory: bool,
-    needs_realloc: Option<String>,
-    needs_free: Option<String>,
     needed_resources: BTreeSet<ResourceId>,
     needs_validate_flags: bool,
     needs_validate_flags64: bool,
@@ -74,69 +67,6 @@ impl Opts {
 impl Js {
     pub fn new() -> Js {
         Js::default()
-    }
-
-    fn direction(&self) -> Direction {
-        if self.in_import {
-            Direction::Import
-        } else {
-            Direction::Export
-        }
-    }
-
-    fn lift_lower(&self) -> LiftLower {
-        match self.direction() {
-            Direction::Import => LiftLower::LiftArgsLowerResults,
-            Direction::Export => LiftLower::LowerArgsLiftResults,
-        }
-    }
-
-    fn tmp(&mut self) -> usize {
-        let ret = self.tmp;
-        self.tmp += 1;
-        ret
-    }
-
-    fn clamp_guest<T>(&mut self, results: &mut Vec<String>, operands: &[String], min: T, max: T)
-    where
-        T: std::fmt::Display,
-    {
-        self.needs_clamp_guest = true;
-        results.push(format!("clamp_guest({}, {}, {})", operands[0], min, max));
-    }
-
-    fn clamp_host<T>(&mut self, results: &mut Vec<String>, operands: &[String], min: T, max: T)
-    where
-        T: std::fmt::Display,
-    {
-        self.needs_clamp_host = true;
-        results.push(format!("clamp_host({}, {}, {})", operands[0], min, max));
-    }
-
-    fn clamp_host64<T>(&mut self, results: &mut Vec<String>, operands: &[String], min: T, max: T)
-    where
-        T: std::fmt::Display,
-    {
-        self.needs_clamp_host64 = true;
-        results.push(format!("clamp_host64({}, {}n, {}n)", operands[0], min, max));
-    }
-
-    fn load(&mut self, method: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
-        self.needs_memory = true;
-        self.needs_data_view = true;
-        results.push(format!(
-            "data_view(memory).{}({} + {}, true)",
-            method, operands[0], offset,
-        ));
-    }
-
-    fn store(&mut self, method: &str, offset: i32, operands: &[String]) {
-        self.needs_memory = true;
-        self.needs_data_view = true;
-        self.src.js(&format!(
-            "data_view(memory).{}({} + {}, {}, true);\n",
-            method, operands[1], offset, operands[0]
-        ));
     }
 
     fn is_nullable_option(&self, iface: &Interface, variant: &Variant) -> bool {
@@ -333,8 +263,8 @@ impl Js {
 }
 
 impl Generator for Js {
-    fn preprocess(&mut self, iface: &Interface, _import: bool) {
-        self.sizes.fill(self.direction(), iface);
+    fn preprocess(&mut self, iface: &Interface, dir: Direction) {
+        self.sizes.fill(dir, iface);
     }
 
     fn type_record(
@@ -532,45 +462,51 @@ impl Generator for Js {
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
-        self.in_import = true;
-        self.tmp = 0;
         let prev = mem::take(&mut self.src);
-        let sig = iface.wasm_signature(self.direction(), func);
+
+        let sig = iface.wasm_signature(Direction::Import, func);
         let args = (0..sig.params.len())
             .map(|i| format!("arg{}", i))
             .collect::<Vec<_>>()
             .join(", ");
         self.src.js(&format!("function({}) {{\n", args));
-        let start = self.src.js.len();
-        iface.call(self.direction(), self.lift_lower(), func, self);
-        self.src.js("}");
         self.ts_func(iface, func);
 
-        if self.needs_memory {
-            self.needs_memory = false;
+        let mut f = FunctionBindgen::new(self, false);
+        iface.call(
+            Direction::Import,
+            LiftLower::LiftArgsLowerResults,
+            func,
+            &mut f,
+        );
+
+        let FunctionBindgen {
+            src,
+            needs_memory,
+            needs_realloc,
+            needs_free,
+            ..
+        } = f;
+
+        if needs_memory {
             self.needs_get_export = true;
             // TODO: hardcoding "memory"
-            self.src
-                .js
-                .as_mut_string()
-                .insert_str(start, "const memory = get_export(\"memory\");\n");
+            self.src.js("const memory = get_export(\"memory\");\n");
         }
 
-        if let Some(name) = self.needs_realloc.take() {
-            self.needs_get_export = true;
-            self.src.js.as_mut_string().insert_str(
-                start,
-                &format!("const realloc = get_export(\"{}\");\n", name),
-            );
-        }
-
-        if let Some(name) = self.needs_free.take() {
+        if let Some(name) = needs_realloc {
             self.needs_get_export = true;
             self.src
-                .js
-                .as_mut_string()
-                .insert_str(start, &format!("const free = get_export(\"{}\");\n", name));
+                .js(&format!("const realloc = get_export(\"{}\");\n", name));
         }
+
+        if let Some(name) = needs_free {
+            self.needs_get_export = true;
+            self.src
+                .js(&format!("const free = get_export(\"{}\");\n", name));
+        }
+        self.src.js(&src.js);
+        self.src.js("}");
 
         let src = mem::replace(&mut self.src, prev);
         self.imports
@@ -583,8 +519,6 @@ impl Generator for Js {
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
-        self.in_import = false;
-        self.tmp = 0;
         let prev = mem::take(&mut self.src);
 
         self.src.js(&format!(
@@ -597,33 +531,39 @@ impl Generator for Js {
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
-        let start = self.src.js.len();
-        iface.call(self.direction(), self.lift_lower(), func, self);
-        self.src.js("}\n");
         self.ts_func(iface, func);
 
-        if self.needs_memory {
-            self.needs_memory = false;
+        let mut f = FunctionBindgen::new(self, false);
+        iface.call(
+            Direction::Export,
+            LiftLower::LowerArgsLiftResults,
+            func,
+            &mut f,
+        );
+
+        let FunctionBindgen {
+            src,
+            needs_memory,
+            needs_realloc,
+            needs_free,
+            ..
+        } = f;
+        if needs_memory {
             // TODO: hardcoding "memory"
+            self.src.js("const memory = this._exports.memory;\n");
+        }
+
+        if let Some(name) = needs_realloc {
             self.src
-                .js
-                .as_mut_string()
-                .insert_str(start, "const memory = this._exports.memory;\n");
+                .js(&format!("const realloc = this._exports[\"{}\"];\n", name));
         }
 
-        if let Some(name) = self.needs_realloc.take() {
-            self.src.js.as_mut_string().insert_str(
-                start,
-                &format!("const realloc = this._exports[\"{}\"];\n", name),
-            );
+        if let Some(name) = needs_free {
+            self.src
+                .js(&format!("const free = this._exports[\"{}\"];\n", name));
         }
-
-        if let Some(name) = self.needs_free.take() {
-            self.src.js.as_mut_string().insert_str(
-                start,
-                &format!("const free = this._exports[\"{}\"];\n", name),
-            );
-        }
+        self.src.js(&src.js);
+        self.src.js("}\n");
 
         let exports = self
             .exports
@@ -751,11 +691,87 @@ impl Generator for Js {
     }
 }
 
-impl Bindgen for Js {
+struct FunctionBindgen<'a> {
+    gen: &'a mut Js,
+    tmp: usize,
+    src: Source,
+    block_storage: Vec<witx_bindgen_gen_core::Source>,
+    blocks: Vec<(String, Vec<String>)>,
+    in_import: bool,
+    needs_memory: bool,
+    needs_realloc: Option<String>,
+    needs_free: Option<String>,
+}
+
+impl FunctionBindgen<'_> {
+    fn new(gen: &mut Js, in_import: bool) -> FunctionBindgen<'_> {
+        FunctionBindgen {
+            gen,
+            tmp: 0,
+            src: Source::default(),
+            block_storage: Vec::new(),
+            blocks: Vec::new(),
+            in_import,
+            needs_memory: false,
+            needs_realloc: None,
+            needs_free: None,
+        }
+    }
+
+    fn tmp(&mut self) -> usize {
+        let ret = self.tmp;
+        self.tmp += 1;
+        ret
+    }
+
+    fn clamp_guest<T>(&mut self, results: &mut Vec<String>, operands: &[String], min: T, max: T)
+    where
+        T: std::fmt::Display,
+    {
+        self.gen.needs_clamp_guest = true;
+        results.push(format!("clamp_guest({}, {}, {})", operands[0], min, max));
+    }
+
+    fn clamp_host<T>(&mut self, results: &mut Vec<String>, operands: &[String], min: T, max: T)
+    where
+        T: std::fmt::Display,
+    {
+        self.gen.needs_clamp_host = true;
+        results.push(format!("clamp_host({}, {}, {})", operands[0], min, max));
+    }
+
+    fn clamp_host64<T>(&mut self, results: &mut Vec<String>, operands: &[String], min: T, max: T)
+    where
+        T: std::fmt::Display,
+    {
+        self.gen.needs_clamp_host64 = true;
+        results.push(format!("clamp_host64({}, {}n, {}n)", operands[0], min, max));
+    }
+
+    fn load(&mut self, method: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
+        self.needs_memory = true;
+        self.gen.needs_data_view = true;
+        results.push(format!(
+            "data_view(memory).{}({} + {}, true)",
+            method, operands[0], offset,
+        ));
+    }
+
+    fn store(&mut self, method: &str, offset: i32, operands: &[String]) {
+        self.needs_memory = true;
+        self.gen.needs_data_view = true;
+        self.src.js(&format!(
+            "data_view(memory).{}({} + {}, {}, true);\n",
+            method, operands[1], offset, operands[0]
+        ));
+    }
+}
+
+impl Bindgen for FunctionBindgen<'_> {
     type Operand = String;
 
     fn sizes(&self) -> &SizeAlign {
-        &self.sizes
+        &self.gen.sizes
     }
 
     fn push_block(&mut self) {
@@ -778,7 +794,7 @@ impl Bindgen for Js {
     }
 
     fn is_list_canonical(&self, iface: &Interface, ty: &Type) -> bool {
-        self.array_ty(iface, ty).is_some()
+        self.gen.array_ty(iface, ty).is_some()
     }
 
     fn emit(
@@ -843,27 +859,27 @@ impl Bindgen for Js {
             // is indeed a number and that the 32-bit value matches the
             // original value.
             Instruction::F32FromIf32 => {
-                self.needs_validate_f32 = true;
+                self.gen.needs_validate_f32 = true;
                 results.push(format!("validate_f32({})", operands[0]));
             }
 
             // Similar to f32, but no range checks, just checks it's a number
             Instruction::F64FromIf64 => {
-                self.needs_validate_f64 = true;
+                self.gen.needs_validate_f64 = true;
                 results.push(format!("validate_f64({})", operands[0]));
             }
 
             // Validate that i32 values coming from wasm are indeed valid code
             // points.
             Instruction::CharFromI32 => {
-                self.needs_validate_guest_char = true;
+                self.gen.needs_validate_guest_char = true;
                 results.push(format!("validate_guest_char({})", operands[0]));
             }
 
             // Validate that strings are indeed 1 character long and valid
             // unicode.
             Instruction::I32FromChar => {
-                self.needs_validate_host_char = true;
+                self.gen.needs_validate_host_char = true;
                 results.push(format!("validate_host_char({})", operands[0]));
             }
 
@@ -871,30 +887,30 @@ impl Bindgen for Js {
                 for (cast, op) in casts.iter().zip(operands) {
                     match cast {
                         Bitcast::I32ToF32 => {
-                            self.needs_i32_to_f32 = true;
+                            self.gen.needs_i32_to_f32 = true;
                             results.push(format!("i32ToF32({})", op));
                         }
                         Bitcast::F32ToI32 => {
-                            self.needs_f32_to_i32 = true;
+                            self.gen.needs_f32_to_i32 = true;
                             results.push(format!("f32ToI32({})", op));
                         }
                         Bitcast::F32ToF64 | Bitcast::F64ToF32 => results.push(op.clone()),
                         Bitcast::I64ToF64 => {
-                            self.needs_i64_to_f64 = true;
+                            self.gen.needs_i64_to_f64 = true;
                             results.push(format!("i64ToF64({})", op));
                         }
                         Bitcast::F64ToI64 => {
-                            self.needs_f64_to_i64 = true;
+                            self.gen.needs_f64_to_i64 = true;
                             results.push(format!("f64ToI64({})", op));
                         }
                         Bitcast::I32ToI64 => results.push(format!("BigInt({})", op)),
                         Bitcast::I64ToI32 => results.push(format!("Number({})", op)),
                         Bitcast::I64ToF32 => {
-                            self.needs_i32_to_f32 = true;
+                            self.gen.needs_i32_to_f32 = true;
                             results.push(format!("i32ToF32(Number({}))", op));
                         }
                         Bitcast::F32ToI64 => {
-                            self.needs_f32_to_i32 = true;
+                            self.gen.needs_f32_to_i32 = true;
                             results.push(format!("BigInt(f32ToI32({}))", op));
                         }
                         Bitcast::None => results.push(op.clone()),
@@ -903,11 +919,11 @@ impl Bindgen for Js {
             }
 
             Instruction::I32FromOwnedHandle { ty } => {
-                self.needed_resources.insert(*ty);
+                self.gen.needed_resources.insert(*ty);
                 results.push(format!("resources{}.insert({})", ty.index(), operands[0]));
             }
             Instruction::HandleBorrowedFromI32 { ty } => {
-                self.needed_resources.insert(*ty);
+                self.gen.needed_resources.insert(*ty);
                 results.push(format!("resources{}.get({})", ty.index(), operands[0]));
             }
             //    Instruction::I32FromBorrowedHandle { .. } => {
@@ -978,7 +994,7 @@ impl Bindgen for Js {
             Instruction::FlagsLower { record, .. } | Instruction::FlagsLift { record, .. } => {
                 match record.num_i32s() {
                     0 | 1 => {
-                        self.needs_validate_flags = true;
+                        self.gen.needs_validate_flags = true;
                         let mask = (1u64 << record.fields.len()) - 1;
                         results.push(format!("validate_flags({}, {})", operands[0], mask));
                     }
@@ -986,7 +1002,7 @@ impl Bindgen for Js {
                 }
             }
             Instruction::FlagsLower64 { record, .. } | Instruction::FlagsLift64 { record, .. } => {
-                self.needs_validate_flags64 = true;
+                self.gen.needs_validate_flags64 = true;
                 let mask = (1u128 << record.fields.len()) - 1;
                 results.push(format!("validate_flags64({}, {}n)", operands[0], mask));
             }
@@ -1027,7 +1043,7 @@ impl Bindgen for Js {
                 }
 
                 let expr_to_match = if variant.is_bool()
-                    || self.is_nullable_option(iface, variant)
+                    || self.gen.is_nullable_option(iface, variant)
                     || (variant.is_enum() && name.is_some())
                 {
                     format!("variant{}", tmp)
@@ -1042,7 +1058,7 @@ impl Bindgen for Js {
                 {
                     if variant.is_bool() {
                         self.src.js(&format!("case {}: {{\n", case.name.as_str()));
-                    } else if self.is_nullable_option(iface, variant) {
+                    } else if self.gen.is_nullable_option(iface, variant) {
                         if case.ty.is_none() {
                             self.src.js("case null: {\n");
                         } else {
@@ -1125,7 +1141,7 @@ impl Bindgen for Js {
                     } else if variant.is_enum() && name.is_some() {
                         assert!(block_results.is_empty());
                         self.src.js(&format!("variant{} = tag{0};\n", tmp));
-                    } else if self.is_nullable_option(iface, variant) {
+                    } else if self.gen.is_nullable_option(iface, variant) {
                         if case.ty.is_none() {
                             assert!(block_results.is_empty());
                             self.src.js(&format!("variant{} = null;\n", tmp));
@@ -1173,14 +1189,14 @@ impl Bindgen for Js {
                 // which forces us to always allocate, so this should always be
                 // `Some`.
                 let realloc = realloc.unwrap();
-                self.needs_get_export = true;
+                self.gen.needs_get_export = true;
                 self.needs_memory = true;
                 self.needs_realloc = Some(realloc.to_string());
                 let tmp = self.tmp();
 
                 match element {
                     Type::Char => {
-                        self.needs_utf8_encode = true;
+                        self.gen.needs_utf8_encode = true;
                         self.src.js(&format!(
                             "const ptr{} = utf8_encode({}, realloc, memory);\n",
                             tmp, operands[0],
@@ -1189,8 +1205,8 @@ impl Bindgen for Js {
                             .js(&format!("const len{} = UTF8_ENCODED_LEN;\n", tmp));
                     }
                     _ => {
-                        let size = self.sizes.size(element);
-                        let align = self.sizes.align(element);
+                        let size = self.gen.sizes.size(element);
+                        let align = self.gen.sizes.align(element);
                         self.src
                             .js(&format!("const val{} = {};\n", tmp, operands[0]));
                         self.src.js(&format!("const len{} = val{0}.length;\n", tmp));
@@ -1216,7 +1232,7 @@ impl Bindgen for Js {
                     .js(&format!("const len{} = {};\n", tmp, operands[1]));
                 let (result, align) = match element {
                     Type::Char => {
-                        self.needs_utf8_decoder = true;
+                        self.gen.needs_utf8_decoder = true;
                         (
                             format!(
                                 "UTF8_DECODER.decode(new Uint8Array(memory.buffer, ptr{}, len{0}))",
@@ -1226,15 +1242,15 @@ impl Bindgen for Js {
                         )
                     }
                     _ => {
-                        let array_ty = self.array_ty(iface, element).unwrap();
+                        let array_ty = self.gen.array_ty(iface, element).unwrap();
                         (
                             format!(
                                 "new {}(memory.buffer.slice(ptr{}, ptr{1} + len{1} * {}))",
                                 array_ty,
                                 tmp,
-                                self.sizes.size(element),
+                                self.gen.sizes.size(element),
                             ),
-                            self.sizes.align(element),
+                            self.gen.sizes.align(element),
                         )
                     }
                 };
@@ -1259,8 +1275,8 @@ impl Bindgen for Js {
                 let result = format!("result{}", tmp);
                 let len = format!("len{}", tmp);
                 self.needs_realloc = Some(realloc.to_string());
-                let size = self.sizes.size(element);
-                let align = self.sizes.align(element);
+                let size = self.gen.sizes.size(element);
+                let align = self.gen.sizes.align(element);
 
                 // first store our vec-to-lower in a temporary since we'll
                 // reference it multiple times.
@@ -1290,8 +1306,8 @@ impl Bindgen for Js {
             Instruction::ListLift { element, free } => {
                 let (body, body_results) = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
-                let size = self.sizes.size(element);
-                let align = self.sizes.align(element);
+                let size = self.gen.sizes.size(element);
+                let align = self.gen.sizes.align(element);
                 let len = format!("len{}", tmp);
                 self.src.js(&format!("const {} = {};\n", len, operands[1]));
                 let base = format!("base{}", tmp);
@@ -1330,12 +1346,12 @@ impl Bindgen for Js {
                     .js(&format!("const ptr{} = {};\n", tmp, operands[1]));
                 self.src
                     .js(&format!("const len{} = {};\n", tmp, operands[2]));
-                if let Some(ty) = self.array_ty(iface, ty) {
+                if let Some(ty) = self.gen.array_ty(iface, ty) {
                     results.push(format!("new {}(memory.buffer, ptr{}, len{1})", ty, tmp));
                 } else {
-                    let size = self.sizes.size(ty);
+                    let size = self.gen.sizes.size(ty);
                     if *push {
-                        self.needs_push_buffer = true;
+                        self.gen.needs_push_buffer = true;
                         assert!(block_results.is_empty());
                         results.push(format!(
                             "new PushBuffer(ptr{}, len{0}, {}, (e, base) => {{
@@ -1344,7 +1360,7 @@ impl Bindgen for Js {
                             tmp, size, block
                         ));
                     } else {
-                        self.needs_pull_buffer = true;
+                        self.gen.needs_pull_buffer = true;
                         assert_eq!(block_results.len(), 1);
                         results.push(format!(
                             "new PullBuffer(ptr{}, len{0}, {}, (base) => {{
