@@ -41,7 +41,9 @@ fn main() {
         .arg(dir.join("run.ts"))
         .arg("--strictNullChecks")
         .arg("--target")
-        .arg("ES2020")
+        .arg("es2020")
+        .arg("--module")
+        .arg("esnext")
         .status()
         .unwrap();
     assert!(status.success());

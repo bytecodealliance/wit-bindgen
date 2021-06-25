@@ -572,4 +572,4 @@ function test_invalid(wasm: exports.Wasm) {
   assert.throws(exports.invalid_handle_close, /handle index not valid/);
 }
 
-run()
+await run()
