@@ -263,15 +263,8 @@ impl Js {
 }
 
 impl Generator for Js {
-    fn preprocess(&mut self, iface: &Interface, import: bool) {
-        self.sizes.fill(
-            if import {
-                Direction::Import
-            } else {
-                Direction::Export
-            },
-            iface,
-        );
+    fn preprocess(&mut self, iface: &Interface, dir: Direction) {
+        self.sizes.fill(dir, iface);
     }
 
     fn type_record(

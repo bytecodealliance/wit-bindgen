@@ -1,5 +1,5 @@
 use heck::*;
-use witx_bindgen_gen_core::witx2::abi::{Bitcast, Direction, LiftLower, WasmType};
+use witx_bindgen_gen_core::witx2::abi::{Bitcast, LiftLower, WasmType};
 use witx_bindgen_gen_core::{witx2::*, TypeInfo, Types};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -29,7 +29,6 @@ pub enum Async {
 }
 
 pub trait RustGenerator {
-    fn krate(&self) -> &'static str;
     fn push_str(&mut self, s: &str);
     fn info(&self, ty: TypeId) -> TypeInfo;
     fn types_mut(&mut self) -> &mut Types;
@@ -43,8 +42,14 @@ pub trait RustGenerator {
         lifetime: &'static str,
     );
     fn print_borrowed_str(&mut self, lifetime: &'static str);
-    fn direction(&self) -> Direction;
-    fn lift_lower(&self) -> LiftLower;
+    fn print_lib_buffer(
+        &mut self,
+        iface: &Interface,
+        push: bool,
+        ty: &Type,
+        mode: TypeMode,
+        lt: &'static str,
+    );
     fn default_param_mode(&self) -> TypeMode;
     fn handle_projection(&self) -> Option<(&'static str, String)>;
 
@@ -350,79 +355,10 @@ pub trait RustGenerator {
             }
             TypeMode::Owned => unimplemented!(),
         };
-        let prefix = if push { "Push" } else { "Pull" };
-        match (self.direction(), self.lift_lower()) {
-            // Native exports means rust-compiled-to-wasm exporting something,
-            // and buffers there are all using handles, so they use special types.
-            (Direction::Export, LiftLower::LiftArgsLowerResults) => {
-                let krate = self.krate();
-                self.push_str(krate);
-                self.push_str("::exports::");
-                self.push_str(prefix);
-                self.push_str("Buffer");
-                if iface.all_bits_valid(ty) {
-                    self.push_str("Raw");
-                }
-                self.push_str("<");
-                self.push_str(lt);
-                self.push_str(", ");
-                self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
-                self.push_str(">");
-            }
-
-            // Wasm exports means host Rust is calling wasm. If all bits are
-            // valid we use raw slices (e.g. u8/u64/etc). Otherwise input
-            // buffers (input to wasm) is `ExactSizeIterator` and output buffers
-            // (output from wasm) is `&mut Vec`
-            (Direction::Export, LiftLower::LowerArgsLiftResults) => {
-                if iface.all_bits_valid(ty) {
-                    self.print_borrowed_slice(iface, push, ty, lt);
-                } else if push {
-                    self.push_str("&");
-                    if lt != "'_" {
-                        self.push_str(lt);
-                    }
-                    self.push_str(" mut Vec<");
-                    self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
-                    self.push_str(">");
-                } else {
-                    self.push_str("&");
-                    if lt != "'_" {
-                        self.push_str(lt);
-                    }
-                    self.push_str(" mut (dyn ExactSizeIterator<Item = ");
-                    self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
-                    self.push_str(">");
-                    if lt != "'_" {
-                        self.push_str(" + ");
-                        self.push_str(lt);
-                    }
-                    self.push_str(")");
-                }
-            }
-
-            (Direction::Import, _) => {
-                if iface.all_bits_valid(ty) {
-                    self.print_borrowed_slice(iface, push, ty, lt);
-                } else {
-                    if let TypeMode::AllBorrowed(_) = mode {
-                        self.push_str("&");
-                        if lt != "'_" {
-                            self.push_str(lt);
-                        }
-                        self.push_str(" mut ");
-                    }
-                    let krate = self.krate();
-                    self.push_str(krate);
-                    self.push_str("::imports::");
-                    self.push_str(prefix);
-                    self.push_str("Buffer<");
-                    self.push_str(lt);
-                    self.push_str(", ");
-                    self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
-                    self.push_str(">");
-                }
-            }
+        if iface.all_bits_valid(ty) {
+            self.print_borrowed_slice(iface, push, ty, lt)
+        } else {
+            self.print_lib_buffer(iface, push, ty, mode, lt)
         }
     }
 
@@ -859,6 +795,7 @@ pub trait RustFunctionGenerator {
     fn push_str(&mut self, s: &str);
     fn tmp(&mut self) -> usize;
     fn rust_gen(&self) -> &dyn RustGenerator;
+    fn lift_lower(&self) -> LiftLower;
 
     fn let_results(&mut self, amt: usize, results: &mut Vec<String>) {
         match amt {
@@ -953,14 +890,14 @@ pub trait RustFunctionGenerator {
     }
 
     fn typename_lower(&self, iface: &Interface, id: TypeId) -> String {
-        match self.rust_gen().lift_lower() {
+        match self.lift_lower() {
             LiftLower::LowerArgsLiftResults => self.rust_gen().param_name(iface, id),
             LiftLower::LiftArgsLowerResults => self.rust_gen().result_name(iface, id),
         }
     }
 
     fn typename_lift(&self, iface: &Interface, id: TypeId) -> String {
-        match self.rust_gen().lift_lower() {
+        match self.lift_lower() {
             LiftLower::LiftArgsLowerResults => self.rust_gen().param_name(iface, id),
             LiftLower::LowerArgsLiftResults => self.rust_gen().result_name(iface, id),
         }

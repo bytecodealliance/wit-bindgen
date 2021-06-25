@@ -7,23 +7,17 @@ use witx_bindgen_gen_core::witx2::abi::{
     Bindgen, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
-use witx_bindgen_gen_rust::{int_repr, wasm_type, Async, TypeMode, TypePrint, Unsafe, Visibility};
+use witx_bindgen_gen_rust::{
+    int_repr, wasm_type, Async, RustFunctionGenerator, RustGenerator, TypeMode, Unsafe, Visibility,
+};
 
 #[derive(Default)]
 pub struct RustWasm {
-    tmp: usize,
     src: Source,
     opts: Opts,
     types: Types,
-    params: Vec<String>,
-    blocks: Vec<String>,
-    block_storage: Vec<(Source, Vec<(String, String)>)>,
-    is_dtor: bool,
     in_import: bool,
-    needs_cleanup_list: bool,
-    cleanup: Vec<(String, String)>,
     traits: BTreeMap<String, Trait>,
-    handles_for_func: BTreeSet<String>,
     in_trait: bool,
     trait_name: String,
     i64_return_pointer_area_size: usize,
@@ -72,26 +66,7 @@ impl RustWasm {
     }
 }
 
-impl TypePrint for RustWasm {
-    fn krate(&self) -> &'static str {
-        "witx_bindgen_rust"
-    }
-
-    fn direction(&self) -> Direction {
-        if self.in_import {
-            Direction::Import
-        } else {
-            Direction::Export
-        }
-    }
-
-    fn lift_lower(&self) -> LiftLower {
-        match self.direction() {
-            abi::Direction::Import => LiftLower::LowerArgsLiftResults,
-            abi::Direction::Export => LiftLower::LiftArgsLowerResults,
-        }
-    }
-
+impl RustGenerator for RustWasm {
     fn default_param_mode(&self) -> TypeMode {
         if self.in_import {
             // We default to borrowing as much as possible to maximize the ability
@@ -117,12 +92,6 @@ impl TypePrint for RustWasm {
                 Some(("T", self.trait_name.clone()))
             }
         }
-    }
-
-    fn tmp(&mut self) -> usize {
-        let ret = self.tmp;
-        self.tmp += 1;
-        ret
     }
 
     fn push_str(&mut self, s: &str) {
@@ -188,24 +157,62 @@ impl TypePrint for RustWasm {
         }
         self.push_str(" str");
     }
+
+    fn print_lib_buffer(
+        &mut self,
+        iface: &Interface,
+        push: bool,
+        ty: &Type,
+        mode: TypeMode,
+        lt: &'static str,
+    ) {
+        let prefix = if push { "Push" } else { "Pull" };
+        if self.in_import {
+            if let TypeMode::AllBorrowed(_) = mode {
+                self.push_str("&");
+                if lt != "'_" {
+                    self.push_str(lt);
+                }
+                self.push_str(" mut ");
+            }
+            self.push_str(&format!(
+                "witx_bindgen_rust::imports::{}Buffer<{}, ",
+                prefix, lt,
+            ));
+            self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
+            self.push_str(">");
+        } else {
+            // Buffers in exports are represented with special types from the
+            // library support crate since they're wrappers around
+            // externally-provided handles.
+            self.push_str("witx_bindgen_rust::exports::");
+            self.push_str(prefix);
+            self.push_str("Buffer");
+            self.push_str("<");
+            self.push_str(lt);
+            self.push_str(", ");
+            self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
+            self.push_str(">");
+        }
+    }
 }
 
 impl Generator for RustWasm {
-    fn preprocess(&mut self, iface: &Interface, import: bool) {
-        self.in_import = import;
+    fn preprocess(&mut self, iface: &Interface, dir: Direction) {
+        self.in_import = dir == Direction::Import;
         self.types.analyze(iface);
         self.trait_name = iface.name.to_camel_case();
         self.src
             .push_str(&format!("mod {} {{\n", iface.name.to_snake_case()));
 
         for func in iface.functions.iter() {
-            let sig = iface.wasm_signature(self.direction(), func);
+            let sig = iface.wasm_signature(dir, func);
             if let Some(results) = sig.retptr {
                 self.i64_return_pointer_area_size =
                     self.i64_return_pointer_area_size.max(results.len());
             }
         }
-        self.sizes.fill(self.direction(), iface);
+        self.sizes.fill(dir, iface);
     }
 
     fn type_record(
@@ -387,48 +394,53 @@ impl Generator for RustWasm {
     // }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
-        self.is_dtor = self.types.is_preview1_dtor_func(func);
-        self.params = self.print_signature(
+        let is_dtor = self.types.is_preview1_dtor_func(func);
+        let params = self.print_signature(
             iface,
             func,
             Visibility::Pub,
-            if self.is_dtor {
-                Unsafe::Yes
-            } else {
-                Unsafe::No
-            },
+            if is_dtor { Unsafe::Yes } else { Unsafe::No },
             Async::No,
             None,
-            if self.is_dtor {
+            if is_dtor {
                 TypeMode::Owned
             } else {
                 TypeMode::AllBorrowed("'_")
             },
         );
         self.src.push_str("{\n");
-        if !self.is_dtor {
+        if !is_dtor {
             self.src.push_str("unsafe {\n");
         }
 
-        let start_pos = self.src.len();
+        let mut f = FunctionBindgen::new(self, is_dtor, params);
+        iface.call(
+            Direction::Import,
+            LiftLower::LowerArgsLiftResults,
+            func,
+            &mut f,
+        );
+        let FunctionBindgen {
+            needs_cleanup_list,
+            src,
+            handles_for_func,
+            ..
+        } = f;
+        assert!(handles_for_func.is_empty());
 
-        iface.call(self.direction(), self.lift_lower(), func, self);
-        assert!(self.handles_for_func.is_empty());
-
-        if mem::take(&mut self.needs_cleanup_list) {
-            self.src
-                .as_mut_string()
-                .insert_str(start_pos, "let mut cleanup_list = Vec::new();\n");
+        if needs_cleanup_list {
+            self.src.push_str("let mut cleanup_list = Vec::new();\n");
         }
+        self.src.push_str(&String::from(src));
 
-        if !self.is_dtor {
+        if !is_dtor {
             self.src.push_str("}\n");
         }
         self.src.push_str("}\n");
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
-        self.is_dtor = self.types.is_preview1_dtor_func(func);
+        let is_dtor = self.types.is_preview1_dtor_func(func);
         let rust_name = func.name.to_snake_case();
 
         self.src.push_str("#[export_name = \"");
@@ -438,15 +450,15 @@ impl Generator for RustWasm {
         self.src.push_str("unsafe extern \"C\" fn __witx_bindgen_");
         self.src.push_str(&rust_name);
         self.src.push_str("(");
-        let sig = iface.wasm_signature(self.direction(), func);
-        self.params.truncate(0);
+        let sig = iface.wasm_signature(Direction::Export, func);
+        let mut params = Vec::new();
         for (i, param) in sig.params.iter().enumerate() {
             let name = format!("arg{}", i);
             self.src.push_str(&name);
             self.src.push_str(": ");
             self.wasm_type(*param);
             self.src.push_str(", ");
-            self.params.push(name);
+            params.push(name);
         }
         self.src.push_str(")");
 
@@ -460,9 +472,21 @@ impl Generator for RustWasm {
         }
         self.src.push_str("{\n");
 
-        iface.call(self.direction(), self.lift_lower(), func, self);
-        assert!(!self.needs_cleanup_list);
-
+        let mut f = FunctionBindgen::new(self, is_dtor, params);
+        iface.call(
+            Direction::Export,
+            LiftLower::LiftArgsLowerResults,
+            func,
+            &mut f,
+        );
+        let FunctionBindgen {
+            needs_cleanup_list,
+            src,
+            handles_for_func,
+            ..
+        } = f;
+        assert!(!needs_cleanup_list);
+        self.src.push_str(&String::from(src));
         self.src.push_str("}\n");
 
         let prev = mem::take(&mut self.src);
@@ -474,7 +498,7 @@ impl Generator for RustWasm {
             Unsafe::No,
             Async::No,
             Some("&self"),
-            if self.is_dtor {
+            if is_dtor {
                 TypeMode::Owned
             } else {
                 TypeMode::HandlesBorrowed("'_")
@@ -488,7 +512,7 @@ impl Generator for RustWasm {
         trait_
             .methods
             .push(mem::replace(&mut self.src, prev).into());
-        trait_.handles.extend(mem::take(&mut self.handles_for_func));
+        trait_.handles.extend(handles_for_func);
     }
 
     fn finish(&mut self, _iface: &Interface, files: &mut Files) {
@@ -547,7 +571,61 @@ impl Generator for RustWasm {
     }
 }
 
-impl Bindgen for RustWasm {
+struct FunctionBindgen<'a> {
+    gen: &'a mut RustWasm,
+    params: Vec<String>,
+    src: Source,
+    blocks: Vec<String>,
+    block_storage: Vec<(Source, Vec<(String, String)>)>,
+    tmp: usize,
+    needs_cleanup_list: bool,
+    cleanup: Vec<(String, String)>,
+    is_dtor: bool,
+    handles_for_func: BTreeSet<String>,
+}
+
+impl FunctionBindgen<'_> {
+    fn new(gen: &mut RustWasm, is_dtor: bool, params: Vec<String>) -> FunctionBindgen<'_> {
+        FunctionBindgen {
+            gen,
+            params,
+            is_dtor,
+            src: Default::default(),
+            blocks: Vec::new(),
+            block_storage: Vec::new(),
+            tmp: 0,
+            needs_cleanup_list: false,
+            cleanup: Vec::new(),
+            handles_for_func: BTreeSet::new(),
+        }
+    }
+}
+
+impl RustFunctionGenerator for FunctionBindgen<'_> {
+    fn push_str(&mut self, s: &str) {
+        self.src.push_str(s);
+    }
+
+    fn tmp(&mut self) -> usize {
+        let ret = self.tmp;
+        self.tmp += 1;
+        ret
+    }
+
+    fn rust_gen(&self) -> &dyn RustGenerator {
+        self.gen
+    }
+
+    fn lift_lower(&self) -> LiftLower {
+        if self.gen.in_import {
+            LiftLower::LowerArgsLiftResults
+        } else {
+            LiftLower::LiftArgsLowerResults
+        }
+    }
+}
+
+impl Bindgen for FunctionBindgen<'_> {
     type Operand = String;
 
     fn push_block(&mut self) {
@@ -592,7 +670,7 @@ impl Bindgen for RustWasm {
             "let mut rp{} = core::mem::MaybeUninit::<[u8;",
             tmp
         ));
-        let size = self.sizes.size(&Type::Id(ty));
+        let size = self.gen.sizes.size(&Type::Id(ty));
         self.push_str(&size.to_string());
         self.push_str("]>::uninit();\n");
         self.push_str(&format!("let ptr{} = rp{0}.as_mut_ptr() as i32;\n", tmp));
@@ -600,14 +678,14 @@ impl Bindgen for RustWasm {
     }
 
     fn i64_return_pointer_area(&mut self, amt: usize) -> String {
-        assert!(amt <= self.i64_return_pointer_area_size);
+        assert!(amt <= self.gen.i64_return_pointer_area_size);
         let tmp = self.tmp();
         self.push_str(&format!("let ptr{} = RET_AREA.as_mut_ptr() as i32;\n", tmp));
         format!("ptr{}", tmp)
     }
 
     fn sizes(&self) -> &SizeAlign {
-        &self.sizes
+        &self.gen.sizes
     }
 
     fn is_list_canonical(&self, iface: &Interface, ty: &Type) -> bool {
@@ -621,7 +699,7 @@ impl Bindgen for RustWasm {
         operands: &mut Vec<String>,
         results: &mut Vec<String>,
     ) {
-        let unchecked = self.opts.unchecked;
+        let unchecked = self.gen.opts.unchecked;
         let mut top_as = |cvt: &str| {
             let mut s = operands.pop().unwrap();
             s.push_str(" as ");
@@ -878,8 +956,8 @@ impl Bindgen for RustWasm {
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {};\n", vec, operands[0]));
                 self.push_str(&format!("let {} = {}.len() as i32;\n", len, vec));
-                let size = self.sizes.size(element);
-                let align = self.sizes.align(element);
+                let size = self.gen.sizes.size(element);
+                let align = self.gen.sizes.align(element);
                 self.push_str(&format!(
                     "let {} = core::alloc::Layout::from_size_align_unchecked({}.len() * {}, {});\n",
                     layout, vec, size, align,
@@ -919,8 +997,8 @@ impl Bindgen for RustWasm {
                 assert!(free.is_some());
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
-                let size = self.sizes.size(element);
-                let align = self.sizes.align(element);
+                let size = self.gen.sizes.size(element);
+                let align = self.gen.sizes.align(element);
                 let len = format!("len{}", tmp);
                 let base = format!("base{}", tmp);
                 let result = format!("result{}", tmp);
@@ -968,7 +1046,7 @@ impl Bindgen for RustWasm {
 
             Instruction::BufferLowerPtrLen { push, ty } => {
                 let block = self.blocks.pop().unwrap();
-                let size = self.sizes.size(ty);
+                let size = self.gen.sizes.size(ty);
                 let tmp = self.tmp();
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
@@ -1011,9 +1089,8 @@ impl Bindgen for RustWasm {
 
             Instruction::BufferLiftHandle { push, ty } => {
                 let block = self.blocks.pop().unwrap();
-                let size = self.sizes.size(ty);
-                let mut result = self.krate().to_string();
-                result.push_str("::exports::");
+                let size = self.gen.sizes.size(ty);
+                let mut result = String::from("witx_bindgen_rust::exports::");
                 if *push {
                     result.push_str("Push");
                 } else {

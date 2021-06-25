@@ -157,25 +157,6 @@ impl Wasmtime {
 }
 
 impl RustGenerator for Wasmtime {
-    fn krate(&self) -> &'static str {
-        "witx_bindgen_wasmtime"
-    }
-
-    fn direction(&self) -> Direction {
-        if self.in_import {
-            Direction::Import
-        } else {
-            Direction::Export
-        }
-    }
-
-    fn lift_lower(&self) -> LiftLower {
-        match self.direction() {
-            Direction::Import => LiftLower::LiftArgsLowerResults,
-            Direction::Export => LiftLower::LowerArgsLiftResults,
-        }
-    }
-
     fn default_param_mode(&self) -> TypeMode {
         if self.in_import {
             // The default here is that only leaf values can be borrowed because
@@ -264,18 +245,70 @@ impl RustGenerator for Wasmtime {
         }
         self.push_str(" str");
     }
+
+    fn print_lib_buffer(
+        &mut self,
+        iface: &Interface,
+        push: bool,
+        ty: &Type,
+        mode: TypeMode,
+        lt: &'static str,
+    ) {
+        if self.in_import {
+            if let TypeMode::AllBorrowed(_) = mode {
+                self.push_str("&");
+                if lt != "'_" {
+                    self.push_str(lt);
+                }
+                self.push_str(" mut ");
+            }
+            self.push_str(&format!(
+                "witx_bindgen_wasmtime::imports::{}Buffer<{}, ",
+                if push { "Push" } else { "Pull" },
+                lt,
+            ));
+            self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
+            self.push_str(">");
+        } else {
+            if push {
+                // Push buffers, where wasm pushes, are a `Vec` which is pushed onto
+                self.push_str("&");
+                if lt != "'_" {
+                    self.push_str(lt);
+                }
+                self.push_str(" mut Vec<");
+                self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
+                self.push_str(">");
+            } else {
+                // Pull buffers, which wasm pulls from, are modeled as iterators
+                // in Rust.
+                self.push_str("&");
+                if lt != "'_" {
+                    self.push_str(lt);
+                }
+                self.push_str(" mut (dyn ExactSizeIterator<Item = ");
+                self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
+                self.push_str(">");
+                if lt != "'_" {
+                    self.push_str(" + ");
+                    self.push_str(lt);
+                }
+                self.push_str(")");
+            }
+        }
+    }
 }
 
 impl Generator for Wasmtime {
-    fn preprocess(&mut self, iface: &Interface, import: bool) {
+    fn preprocess(&mut self, iface: &Interface, dir: Direction) {
         self.types.analyze(iface);
-        self.in_import = import;
+        self.in_import = dir == Direction::Import;
         self.trait_name = iface.name.to_camel_case();
         self.src
             .push_str(&format!("mod {} {{\n", iface.name.to_snake_case()));
         self.src
             .push_str("#[allow(unused_imports)]\nuse witx_bindgen_wasmtime::{wasmtime, anyhow};\n");
-        self.sizes.fill(self.direction(), iface);
+        self.sizes.fill(dir, iface);
     }
 
     fn type_record(
@@ -1220,6 +1253,14 @@ impl RustFunctionGenerator for FunctionBindgen<'_> {
 
     fn rust_gen(&self) -> &dyn RustGenerator {
         self.gen
+    }
+
+    fn lift_lower(&self) -> LiftLower {
+        if self.gen.in_import {
+            LiftLower::LiftArgsLowerResults
+        } else {
+            LiftLower::LowerArgsLiftResults
+        }
     }
 }
 
