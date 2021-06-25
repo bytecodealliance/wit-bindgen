@@ -9,52 +9,33 @@ use witx_bindgen_gen_core::witx2::abi::{
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
 use witx_bindgen_gen_rust::{
-    int_repr, to_rust_ident, wasm_type, TypeMode, TypePrint, Unsafe, Visibility,
+    int_repr, to_rust_ident, wasm_type, RustFunctionGenerator, RustGenerator, TypeMode, Unsafe,
+    Visibility,
 };
 
 #[derive(Default)]
 pub struct Wasmtime {
-    tmp: usize,
     src: Source,
     opts: Opts,
-    needs_memory: bool,
-    needs_borrow_checker: bool,
     needs_get_memory: bool,
     needs_get_func: bool,
     needs_char_from_i32: bool,
     needs_invalid_variant: bool,
     needs_validate_flags: bool,
-    needs_store: bool,
-    needs_load: bool,
+    needs_raw_mem: bool,
     needs_bad_int: bool,
     needs_copy_slice: bool,
-    needs_functions: HashMap<String, NeededFunction>,
-    needs_buffer_transaction: bool,
     needs_buffer_glue: bool,
     needs_le: bool,
     all_needed_handles: BTreeSet<String>,
     types: Types,
     imports: HashMap<String, Vec<Import>>,
     exports: HashMap<String, Exports>,
-    params: Vec<String>,
-    block_storage: Vec<Source>,
-    blocks: Vec<String>,
-    is_dtor: bool,
     in_import: bool,
     in_trait: bool,
-    cleanup: Option<String>,
     trait_name: String,
-    closures: Source,
     has_preview1_dtor: bool,
-    after_call: bool,
-    // Whether or not the `caller_memory` variable has been defined and is
-    // available for use.
-    caller_memory_available: bool,
     sizes: SizeAlign,
-    // Only present for preview1 ABIs where some arguments might be a `pointer`
-    // type.
-    func_takes_all_memory: bool,
-    async_intrinsic_called: bool,
 }
 
 enum NeededFunction {
@@ -150,7 +131,7 @@ impl Wasmtime {
     }
 
     fn print_intrinsics(&mut self) {
-        if self.needs_store || self.needs_load {
+        if self.needs_raw_mem {
             self.push_str("use witx_bindgen_wasmtime::rt::RawMem;\n");
         }
         if self.needs_char_from_i32 {
@@ -173,54 +154,9 @@ impl Wasmtime {
             self.push_str("use witx_bindgen_wasmtime::rt::copy_slice;\n");
         }
     }
-
-    fn memory_src(&mut self) -> String {
-        if self.in_import {
-            if !self.after_call {
-                // Before calls we use `_bc` which is a borrow checker used for
-                // getting long-lasting borrows into memory.
-                self.needs_borrow_checker = true;
-                return format!("_bc");
-            }
-
-            if !self.caller_memory_available {
-                self.needs_memory = true;
-                self.caller_memory_available = true;
-                // get separate borrows of `caller_memory` and `_tables` if we
-                // might need handle tables later. If we don't end up using
-                // `_tables` that's ok, it'll almost always be optimized away.
-                if self.all_needed_handles.len() > 0 {
-                    self.push_str(
-                        "let (caller_memory, data) = memory.data_and_store_mut(&mut caller);\n",
-                    );
-                    self.push_str("let (_, _tables) = get(data);\n");
-                } else {
-                    self.push_str("let caller_memory = memory.data_mut(&mut caller);\n");
-                }
-            }
-            format!("caller_memory")
-        } else {
-            self.needs_memory = true;
-            format!("memory.data_mut(&mut caller)")
-        }
-    }
-
-    fn call_intrinsic(&mut self, name: &str, args: String) {
-        let (method, suffix) = if self.opts.async_.is_none() {
-            ("call", "")
-        } else {
-            self.async_intrinsic_called = true;
-            ("call_async", ".await")
-        };
-        self.push_str(&format!(
-            "func_{}.{}(&mut caller, {}){}?;\n",
-            name, method, args, suffix
-        ));
-        self.caller_memory_available = false; // invalidated by call
-    }
 }
 
-impl TypePrint for Wasmtime {
+impl RustGenerator for Wasmtime {
     fn krate(&self) -> &'static str {
         "witx_bindgen_wasmtime"
     }
@@ -263,12 +199,6 @@ impl TypePrint for Wasmtime {
         } else {
             None
         }
-    }
-
-    fn tmp(&mut self) -> usize {
-        let ret = self.tmp;
-        self.tmp += 1;
-        ret
     }
 
     fn push_str(&mut self, s: &str) {
@@ -587,32 +517,45 @@ impl Generator for Wasmtime {
     fn import(&mut self, iface: &Interface, func: &Function) {
         let prev = mem::take(&mut self.src);
 
-        // Reset internal state between functions and then generate the source
-        // code of this adapter.
-        self.tmp = 0;
-        self.after_call = false;
-        self.caller_memory_available = false;
-        self.is_dtor = self.types.is_preview1_dtor_func(func);
-        self.has_preview1_dtor = self.has_preview1_dtor || self.is_dtor;
-        self.func_takes_all_memory = func.abi == Abi::Preview1
+        let is_dtor = self.types.is_preview1_dtor_func(func);
+        self.has_preview1_dtor = self.has_preview1_dtor || is_dtor;
+
+        // Generate the closure that's passed to a `Linker`, the final piece of
+        // codegen here.
+        let sig = iface.wasm_signature(Direction::Import, func);
+        let params = (0..sig.params.len())
+            .map(|i| format!("arg{}", i))
+            .collect::<Vec<_>>();
+        let mut f = FunctionBindgen::new(self, is_dtor, params);
+        f.func_takes_all_memory = func.abi == Abi::Preview1
             && func
                 .params
                 .iter()
                 .any(|(_, t)| iface.has_preview1_pointer(t));
-
-        // Generate the closure that's passed to a `Linker`, the final piece of
-        // codegen here.
-        self.params.truncate(0);
-        let sig = iface.wasm_signature(Direction::Import, func);
-        for i in 0..sig.params.len() {
-            self.params.push(format!("arg{}", i));
-        }
-        iface.call(self.direction(), self.lift_lower(), func, self);
-        let body = mem::take(&mut self.src);
+        iface.call(
+            Direction::Import,
+            LiftLower::LiftArgsLowerResults,
+            func,
+            &mut f,
+        );
+        let FunctionBindgen {
+            src,
+            cleanup,
+            needs_borrow_checker,
+            needs_memory,
+            needs_buffer_transaction,
+            needs_functions,
+            closures,
+            async_intrinsic_called,
+            func_takes_all_memory,
+            ..
+        } = f;
+        assert!(cleanup.is_none());
+        assert!(!needs_buffer_transaction);
 
         // Generate the signature this function will have in the final trait
         let mut self_arg = "&mut self".to_string();
-        if self.func_takes_all_memory {
+        if func_takes_all_memory {
             self_arg.push_str(", mem: witx_bindgen_wasmtime::RawMemory");
         }
         self.in_trait = true;
@@ -627,7 +570,7 @@ impl Generator for Wasmtime {
                 witx_bindgen_gen_rust::Async::No
             },
             Some(&self_arg),
-            if self.is_dtor {
+            if is_dtor {
                 TypeMode::Owned
             } else {
                 TypeMode::LeafBorrowed("'_")
@@ -656,9 +599,7 @@ impl Generator for Wasmtime {
         //
         // If none of that happens, then this is fine to be sync because
         // everything is sync.
-        let is_async = if mem::take(&mut self.async_intrinsic_called)
-            || self.opts.async_.includes(&func.name)
-        {
+        let is_async = if async_intrinsic_called || self.opts.async_.includes(&func.name) {
             self.src.push_str("Box::new(async move {\n");
             true
         } else {
@@ -679,9 +620,9 @@ impl Generator for Wasmtime {
                 iface.name, func.name,
             ));
         }
-        self.src.push_str(&mem::take(&mut self.closures));
+        self.src.push_str(&closures);
 
-        for (name, func) in self.needs_functions.drain() {
+        for (name, func) in needs_functions {
             self.src.push_str(&format!(
                 "
                     let func = get_func(&mut caller, \"{name}\")?;
@@ -693,13 +634,13 @@ impl Generator for Wasmtime {
             self.needs_get_func = true;
         }
 
-        if self.needs_memory || self.needs_borrow_checker {
+        if needs_memory || needs_borrow_checker {
             self.src
                 .push_str("let memory = &get_memory(&mut caller, \"memory\")?;\n");
             self.needs_get_memory = true;
         }
 
-        if self.needs_borrow_checker {
+        if needs_borrow_checker {
             self.src.push_str(
                 "let (mem, data) = memory.data_and_store_mut(&mut caller);
                 let mut _bc = witx_bindgen_wasmtime::BorrowChecker::new(mem);
@@ -713,11 +654,7 @@ impl Generator for Wasmtime {
             self.src.push_str("let (host, _tables) = host;\n");
         }
 
-        self.needs_memory = false;
-        self.needs_borrow_checker = false;
-        assert!(!self.needs_buffer_transaction);
-
-        self.src.push_str(&String::from(body));
+        self.src.push_str(&String::from(src));
 
         if is_async {
             self.src.push_str("})\n");
@@ -735,24 +672,10 @@ impl Generator for Wasmtime {
                 closure,
                 trait_signature,
             });
-        assert!(self.cleanup.is_none());
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
-        self.tmp = 0;
-        self.after_call = false;
         let prev = mem::take(&mut self.src);
-        self.is_dtor = self.types.is_preview1_dtor_func(func);
-        if self.is_dtor {
-            assert_eq!(func.results.len(), 0, "destructors cannot have results");
-        }
-        self.params = func
-            .params
-            .iter()
-            .map(|(name, _)| to_rust_ident(name).to_string())
-            .collect();
-        iface.call(self.direction(), self.lift_lower(), func, self);
-        let body = mem::take(&mut self.src);
 
         // If anything is asynchronous on exports then everything must be
         // asynchronous, Wasmtime can't intermix async and sync calls because
@@ -785,11 +708,37 @@ impl Generator for Wasmtime {
         self.print_results(iface, func);
         self.push_str(", wasmtime::Trap> {\n");
 
+        let is_dtor = self.types.is_preview1_dtor_func(func);
+        if is_dtor {
+            assert_eq!(func.results.len(), 0, "destructors cannot have results");
+        }
+        let params = func
+            .params
+            .iter()
+            .map(|(name, _)| to_rust_ident(name).to_string())
+            .collect();
+        let mut f = FunctionBindgen::new(self, is_dtor, params);
+        iface.call(
+            Direction::Export,
+            LiftLower::LowerArgsLiftResults,
+            func,
+            &mut f,
+        );
+        let FunctionBindgen {
+            needs_memory,
+            src,
+            needs_borrow_checker,
+            needs_buffer_transaction,
+            closures,
+            needs_functions,
+            ..
+        } = f;
+
         let exports = self
             .exports
             .entry(iface.name.to_string())
             .or_insert_with(Exports::default);
-        for (name, func) in self.needs_functions.drain() {
+        for (name, func) in needs_functions {
             self.src
                 .push_str(&format!("let func_{0} = &self.{0};\n", name));
             let get = format!(
@@ -800,11 +749,10 @@ impl Generator for Wasmtime {
             exports.fields.insert(name, (func.ty(), get));
         }
 
-        self.src.push_str(&mem::take(&mut self.closures));
+        self.src.push_str(&closures);
 
-        assert!(!self.needs_borrow_checker);
-        if self.needs_memory {
-            self.needs_memory = false;
+        assert!(!needs_borrow_checker);
+        if needs_memory {
             self.src.push_str("let memory = &self.memory;\n");
             exports.fields.insert(
                 "memory".to_string(),
@@ -821,16 +769,16 @@ impl Generator for Wasmtime {
             );
         }
 
-        if mem::take(&mut self.needs_buffer_transaction) {
+        if needs_buffer_transaction {
             self.needs_buffer_glue = true;
             self.src
                 .push_str("let mut buffer_transaction = self.buffer_glue.transaction();\n");
         }
 
-        self.src.push_str(&String::from(body));
+        self.src.push_str(&String::from(src));
         self.src.push_str("}\n");
         let func_body = mem::replace(&mut self.src, prev);
-        if !self.is_dtor {
+        if !is_dtor {
             exports.funcs.push(func_body.into());
         }
 
@@ -1119,11 +1067,167 @@ impl Generator for Wasmtime {
     }
 }
 
-impl Bindgen for Wasmtime {
+struct FunctionBindgen<'a> {
+    gen: &'a mut Wasmtime,
+
+    // Number used to assign unique names to temporary variables.
+    tmp: usize,
+
+    // Destination where source code is pushed onto for this function
+    src: Source,
+
+    // Whether or not this function is a preview1 dtor
+    is_dtor: bool,
+
+    // The named parameters that are available to this function
+    params: Vec<String>,
+
+    // Management of block scopes used by `Bindgen`.
+    block_storage: Vec<Source>,
+    blocks: Vec<String>,
+
+    // Whether or not the code generator is after the invocation of wasm or the
+    // host, used for knowing where to acquire memory from.
+    after_call: bool,
+    // Whether or not the `caller_memory` variable has been defined and is
+    // available for use.
+    caller_memory_available: bool,
+    // Whether or not a helper function was called in an async fashion. If so
+    // and this is an import, then the import must be defined asynchronously as
+    // well.
+    async_intrinsic_called: bool,
+    // Code that must be executed before a return, generated during instruction
+    // lowering.
+    cleanup: Option<String>,
+    // Only present for preview1 ABIs where some arguments might be a `pointer`
+    // type.
+    func_takes_all_memory: bool,
+
+    // Rust clousures for buffers that must be placed at the front of the
+    // function.
+    closures: Source,
+
+    // Various intrinsic properties this function's codegen required, must be
+    // satisfied in the function header if any are set.
+    needs_buffer_transaction: bool,
+    needs_borrow_checker: bool,
+    needs_memory: bool,
+    needs_functions: HashMap<String, NeededFunction>,
+}
+
+impl FunctionBindgen<'_> {
+    fn new(gen: &mut Wasmtime, is_dtor: bool, params: Vec<String>) -> FunctionBindgen<'_> {
+        FunctionBindgen {
+            gen,
+            block_storage: Vec::new(),
+            blocks: Vec::new(),
+            src: Source::default(),
+            after_call: false,
+            caller_memory_available: false,
+            async_intrinsic_called: false,
+            tmp: 0,
+            cleanup: None,
+            func_takes_all_memory: false,
+            closures: Source::default(),
+            needs_buffer_transaction: false,
+            needs_borrow_checker: false,
+            needs_memory: false,
+            needs_functions: HashMap::new(),
+            is_dtor,
+            params,
+        }
+    }
+
+    fn memory_src(&mut self) -> String {
+        if self.gen.in_import {
+            if !self.after_call {
+                // Before calls we use `_bc` which is a borrow checker used for
+                // getting long-lasting borrows into memory.
+                self.needs_borrow_checker = true;
+                return format!("_bc");
+            }
+
+            if !self.caller_memory_available {
+                self.needs_memory = true;
+                self.caller_memory_available = true;
+                // get separate borrows of `caller_memory` and `_tables` if we
+                // might need handle tables later. If we don't end up using
+                // `_tables` that's ok, it'll almost always be optimized away.
+                if self.gen.all_needed_handles.len() > 0 {
+                    self.push_str(
+                        "let (caller_memory, data) = memory.data_and_store_mut(&mut caller);\n",
+                    );
+                    self.push_str("let (_, _tables) = get(data);\n");
+                } else {
+                    self.push_str("let caller_memory = memory.data_mut(&mut caller);\n");
+                }
+            }
+            format!("caller_memory")
+        } else {
+            self.needs_memory = true;
+            format!("memory.data_mut(&mut caller)")
+        }
+    }
+
+    fn call_intrinsic(&mut self, name: &str, args: String) {
+        let (method, suffix) = if self.gen.opts.async_.is_none() {
+            ("call", "")
+        } else {
+            self.async_intrinsic_called = true;
+            ("call_async", ".await")
+        };
+        self.push_str(&format!(
+            "func_{}.{}(&mut caller, {}){}?;\n",
+            name, method, args, suffix
+        ));
+        self.caller_memory_available = false; // invalidated by call
+    }
+
+    fn type_string(&mut self, iface: &Interface, ty: &Type, mode: TypeMode) -> String {
+        let start = self.gen.src.len();
+        self.gen.print_ty(iface, ty, mode);
+        let ty = self.gen.src[start..].to_string();
+        self.gen.src.as_mut_string().truncate(start);
+        ty
+    }
+
+    fn load(&mut self, offset: i32, ty: &str, operands: &[String]) -> String {
+        let mem = self.memory_src();
+        self.gen.needs_raw_mem = true;
+        format!("{}.load::<{}>({} + {})?", mem, ty, operands[0], offset)
+    }
+
+    fn store(&mut self, offset: i32, method: &str, extra: &str, operands: &[String]) {
+        let mem = self.memory_src();
+        self.gen.needs_raw_mem = true;
+        self.push_str(&format!(
+            "{}.store({} + {}, witx_bindgen_wasmtime::rt::{}({}){})?;\n",
+            mem, operands[1], offset, method, operands[0], extra
+        ));
+    }
+}
+
+impl RustFunctionGenerator for FunctionBindgen<'_> {
+    fn push_str(&mut self, s: &str) {
+        self.src.push_str(s);
+    }
+
+    fn tmp(&mut self) -> usize {
+        let ret = self.tmp;
+        self.tmp += 1;
+        ret
+    }
+
+    fn rust_gen(&self) -> &dyn RustGenerator {
+        self.gen
+    }
+}
+
+impl Bindgen for FunctionBindgen<'_> {
     type Operand = String;
 
     fn sizes(&self) -> &SizeAlign {
-        &self.sizes
+        &self.gen.sizes
     }
 
     fn push_block(&mut self) {
@@ -1176,7 +1280,7 @@ impl Bindgen for Wasmtime {
         };
 
         let mut try_from = |cvt: &str, operands: &[String], results: &mut Vec<String>| {
-            self.needs_bad_int = true;
+            self.gen.needs_bad_int = true;
             let result = format!("{}::try_from({}).map_err(bad_int)?", cvt, operands[0]);
             results.push(result);
         };
@@ -1236,7 +1340,7 @@ impl Bindgen for Wasmtime {
             Instruction::U64FromI64 => top_as("u64"),
 
             Instruction::CharFromI32 => {
-                self.needs_char_from_i32 = true;
+                self.gen.needs_char_from_i32 = true;
                 results.push(format!("char_from_i32({})?", operands[0]));
             }
 
@@ -1304,7 +1408,7 @@ impl Bindgen for Wasmtime {
             }
             Instruction::FlagsLift { record, name, .. }
             | Instruction::FlagsLift64 { record, name, .. } => {
-                self.needs_validate_flags = true;
+                self.gen.needs_validate_flags = true;
                 let repr = iface
                     .flags_repr(record)
                     .expect("unsupported number of flags");
@@ -1379,7 +1483,7 @@ impl Bindgen for Wasmtime {
                 result.push_str("\")),\n");
                 result.push_str("}");
                 results.push(result);
-                self.needs_invalid_variant = true;
+                self.gen.needs_invalid_variant = true;
             }
 
             Instruction::ListCanonLower { element, realloc } => {
@@ -1395,7 +1499,7 @@ impl Bindgen for Wasmtime {
                     .insert(realloc.to_string(), NeededFunction::Realloc);
                 let (size, align) = match element {
                     Type::Char => (1, 1),
-                    _ => (self.sizes.size(element), self.sizes.align(element)),
+                    _ => (self.gen.sizes.size(element), self.gen.sizes.align(element)),
                 };
 
                 // Store the operand into a temporary...
@@ -1417,7 +1521,7 @@ impl Bindgen for Wasmtime {
                     "{}.store_many({}, {}.as_ref())?;\n",
                     mem, ptr, val
                 ));
-                self.needs_store = true;
+                self.gen.needs_raw_mem = true;
                 self.needs_memory = true;
                 results.push(ptr);
                 results.push(format!("{}.len() as i32", val));
@@ -1426,12 +1530,12 @@ impl Bindgen for Wasmtime {
             Instruction::ListCanonLift { element, free } => match free {
                 Some(free) => {
                     self.needs_memory = true;
-                    self.needs_copy_slice = true;
+                    self.gen.needs_copy_slice = true;
                     self.needs_functions
                         .insert(free.to_string(), NeededFunction::Free);
                     let (stringify, align) = match element {
                         Type::Char => (true, 1),
-                        _ => (false, self.sizes.align(element)),
+                        _ => (false, self.gen.sizes.align(element)),
                     };
                     let tmp = self.tmp();
                     self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
@@ -1482,8 +1586,8 @@ impl Bindgen for Wasmtime {
                 let len = format!("len{}", tmp);
                 self.needs_functions
                     .insert(realloc.to_string(), NeededFunction::Realloc);
-                let size = self.sizes.size(element);
-                let align = self.sizes.align(element);
+                let size = self.gen.sizes.size(element);
+                let align = self.gen.sizes.align(element);
 
                 // first store our vec-to-lower in a temporary since we'll
                 // reference it multiple times.
@@ -1511,8 +1615,8 @@ impl Bindgen for Wasmtime {
             Instruction::ListLift { element, free } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
-                let size = self.sizes.size(element);
-                let align = self.sizes.align(element);
+                let size = self.gen.sizes.size(element);
+                let align = self.gen.sizes.align(element);
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {};\n", len, operands[1]));
                 let base = format!("base{}", tmp);
@@ -1565,14 +1669,13 @@ impl Bindgen for Wasmtime {
                     let method = if *push { "slice_mut" } else { "slice" };
                     results.push(format!("_bc.{}(ptr{1}, len{1})?", method, tmp));
                 } else {
-                    let size = self.sizes.size(ty);
+                    let size = self.gen.sizes.size(ty);
                     let closure = format!("closure{}", tmp);
                     self.closures.push_str(&format!("let {} = ", closure));
                     if *push {
                         self.closures.push_str("|_bc: &mut [u8], e:");
-                        mem::swap(&mut self.closures, &mut self.src);
-                        self.print_ty(iface, ty, TypeMode::Owned);
-                        mem::swap(&mut self.closures, &mut self.src);
+                        let ty = self.type_string(iface, ty, TypeMode::Owned);
+                        self.closures.push_str(&ty);
                         self.closures.push_str("| {let base = 0;\n");
                         self.closures.push_str(&block);
                         self.closures.push_str("; Ok(()) };\n");
@@ -1596,7 +1699,7 @@ impl Bindgen for Wasmtime {
 
             Instruction::BufferLowerHandle { push, ty } => {
                 let block = self.blocks.pop().unwrap();
-                let size = self.sizes.size(ty);
+                let size = self.gen.sizes.size(ty);
                 let tmp = self.tmp();
                 let handle = format!("handle{}", tmp);
                 let closure = format!("closure{}", tmp);
@@ -1619,10 +1722,7 @@ impl Bindgen for Wasmtime {
                         handle, operands[0], closure,
                     ));
                 } else {
-                    let start = self.src.len();
-                    self.print_ty(iface, ty, TypeMode::AllBorrowed("'_"));
-                    let ty = self.src[start..].to_string();
-                    self.src.as_mut_string().truncate(start);
+                    let ty = self.type_string(iface, ty, TypeMode::AllBorrowed("'_"));
                     self.closures.push_str(&format!(
                         "let {} = |memory: &wasmtime::Memory, base: i32, e: {}| {{
                             {};
@@ -1656,7 +1756,7 @@ impl Bindgen for Wasmtime {
                 }
                 self.push_str("self.");
                 self.push_str(name);
-                if self.opts.async_.includes(name) {
+                if self.gen.opts.async_.includes(name) {
                     self.push_str(".call_async(");
                 } else {
                     self.push_str(".call(");
@@ -1667,7 +1767,7 @@ impl Bindgen for Wasmtime {
                     self.push_str(", ");
                 }
                 self.push_str("))");
-                if self.opts.async_.includes(name) {
+                if self.gen.opts.async_.includes(name) {
                     self.push_str(".await");
                 }
                 self.push_str("?;\n");
@@ -1679,7 +1779,7 @@ impl Bindgen for Wasmtime {
                 for (i, operand) in operands.iter().enumerate() {
                     self.push_str(&format!("let param{} = {};\n", i, operand));
                 }
-                if self.opts.tracing && func.params.len() > 0 {
+                if self.gen.opts.tracing && func.params.len() > 0 {
                     self.push_str("witx_bindgen_wasmtime::tracing::event!(\n");
                     self.push_str("witx_bindgen_wasmtime::tracing::Level::TRACE,\n");
                     for (i, (name, _ty)) in func.params.iter().enumerate() {
@@ -1709,12 +1809,12 @@ impl Bindgen for Wasmtime {
                     self.push_str(&format!("param{}, ", i));
                 }
                 self.push_str(")");
-                if self.opts.async_.includes(&func.name) {
+                if self.gen.opts.async_.includes(&func.name) {
                     self.push_str(".await");
                 }
                 self.push_str(";\n");
                 self.after_call = true;
-                if self.opts.tracing && func.results.len() > 0 {
+                if self.gen.opts.tracing && func.results.len() > 0 {
                     self.push_str("witx_bindgen_wasmtime::tracing::event!(\n");
                     self.push_str("witx_bindgen_wasmtime::tracing::Level::TRACE,\n");
                     for name in results.iter() {
@@ -1745,103 +1845,36 @@ impl Bindgen for Wasmtime {
                 }
             }
 
-            Instruction::I32Load { offset } => {
-                let mem = self.memory_src();
-                self.needs_load = true;
-                results.push(format!(
-                    "{}.load::<i32>({} + {})?",
-                    mem, operands[0], offset,
-                ));
-            }
+            Instruction::I32Load { offset } => results.push(self.load(*offset, "i32", operands)),
             Instruction::I32Load8U { offset } => {
-                let mem = self.memory_src();
-                self.needs_load = true;
-                results.push(format!(
-                    "i32::from({}.load::<u8>({} + {})?)",
-                    mem, operands[0], offset,
-                ));
+                results.push(format!("i32::from({})", self.load(*offset, "u8", operands)));
             }
             Instruction::I32Load8S { offset } => {
-                let mem = self.memory_src();
-                self.needs_load = true;
-                results.push(format!(
-                    "i32::from({}.load::<i8>({} + {})?)",
-                    mem, operands[0], offset,
-                ));
+                results.push(format!("i32::from({})", self.load(*offset, "i8", operands)));
             }
             Instruction::I32Load16U { offset } => {
-                let mem = self.memory_src();
-                self.needs_load = true;
                 results.push(format!(
-                    "i32::from({}.load::<u16>({} + {})?)",
-                    mem, operands[0], offset,
+                    "i32::from({})",
+                    self.load(*offset, "u16", operands)
                 ));
             }
             Instruction::I32Load16S { offset } => {
-                let mem = self.memory_src();
-                self.needs_load = true;
                 results.push(format!(
-                    "i32::from({}.load::<i16>({} + {})?)",
-                    mem, operands[0], offset,
+                    "i32::from({})",
+                    self.load(*offset, "i16", operands)
                 ));
             }
-            Instruction::I64Load { offset } => {
-                let mem = self.memory_src();
-                self.needs_load = true;
-                results.push(format!(
-                    "{}.load::<i64>({} + {})?",
-                    mem, operands[0], offset,
-                ));
-            }
-            Instruction::F32Load { offset } => {
-                let mem = self.memory_src();
-                self.needs_load = true;
-                results.push(format!(
-                    "{}.load::<f32>({} + {})?",
-                    mem, operands[0], offset,
-                ));
-            }
-            Instruction::F64Load { offset } => {
-                let mem = self.memory_src();
-                self.needs_load = true;
-                results.push(format!(
-                    "{}.load::<f64>({} + {})?",
-                    mem, operands[0], offset,
-                ));
-            }
-            Instruction::I32Store { offset }
-            | Instruction::I64Store { offset }
-            | Instruction::F32Store { offset }
-            | Instruction::F64Store { offset } => {
-                let ty = match inst {
-                    Instruction::I32Store { .. } => "i32",
-                    Instruction::I64Store { .. } => "i64",
-                    Instruction::F32Store { .. } => "f32",
-                    Instruction::F64Store { .. } => "f64",
-                    _ => unreachable!(),
-                };
-                let mem = self.memory_src();
-                self.needs_store = true;
-                self.push_str(&format!(
-                    "{}.store({} + {}, witx_bindgen_wasmtime::rt::as_{}({}))?;\n",
-                    mem, operands[1], offset, ty, operands[0]
-                ));
-            }
-            Instruction::I32Store8 { offset } => {
-                let mem = self.memory_src();
-                self.needs_store = true;
-                self.push_str(&format!(
-                    "{}.store({} + {}, witx_bindgen_wasmtime::rt::as_i32({}) as u8)?;\n",
-                    mem, operands[1], offset, operands[0]
-                ));
-            }
+            Instruction::I64Load { offset } => results.push(self.load(*offset, "i64", operands)),
+            Instruction::F32Load { offset } => results.push(self.load(*offset, "f32", operands)),
+            Instruction::F64Load { offset } => results.push(self.load(*offset, "f64", operands)),
+
+            Instruction::I32Store { offset } => self.store(*offset, "as_i32", "", operands),
+            Instruction::I64Store { offset } => self.store(*offset, "as_i64", "", operands),
+            Instruction::F32Store { offset } => self.store(*offset, "as_f32", "", operands),
+            Instruction::F64Store { offset } => self.store(*offset, "as_f64", "", operands),
+            Instruction::I32Store8 { offset } => self.store(*offset, "as_i32", " as u8", operands),
             Instruction::I32Store16 { offset } => {
-                let mem = self.memory_src();
-                self.needs_store = true;
-                self.push_str(&format!(
-                    "{}.store({} + {}, witx_bindgen_wasmtime::rt::as_i32({}) as u16)?;\n",
-                    mem, operands[1], offset, operands[0]
-                ));
+                self.store(*offset, "as_i32", " as u16", operands)
             }
 
             Instruction::Witx { instr } => match instr {

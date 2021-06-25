@@ -28,9 +28,8 @@ pub enum Async {
     No,
 }
 
-pub trait TypePrint {
+pub trait RustGenerator {
     fn krate(&self) -> &'static str;
-    fn tmp(&mut self) -> usize;
     fn push_str(&mut self, s: &str);
     fn info(&self, ty: TypeId) -> TypeInfo;
     fn types_mut(&mut self) -> &mut Types;
@@ -769,6 +768,123 @@ pub trait TypePrint {
         }
     }
 
+    fn param_name(&self, iface: &Interface, ty: TypeId) -> String {
+        let info = self.info(ty);
+        let name = iface.types[ty].name.as_ref().unwrap().to_camel_case();
+        if self.uses_two_names(&info) {
+            format!("{}Param", name)
+        } else {
+            name
+        }
+    }
+
+    fn result_name(&self, iface: &Interface, ty: TypeId) -> String {
+        let info = self.info(ty);
+        let name = iface.types[ty].name.as_ref().unwrap().to_camel_case();
+        if self.uses_two_names(&info) {
+            format!("{}Result", name)
+        } else {
+            name
+        }
+    }
+
+    fn uses_two_names(&self, info: &TypeInfo) -> bool {
+        info.owns_data()
+            && info.param
+            && info.result
+            && match self.default_param_mode() {
+                TypeMode::AllBorrowed(_) | TypeMode::LeafBorrowed(_) => true,
+                TypeMode::HandlesBorrowed(_) => info.has_handle,
+                TypeMode::Owned => false,
+            }
+    }
+
+    fn lifetime_for(&self, info: &TypeInfo, mode: TypeMode) -> Option<&'static str> {
+        match mode {
+            TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s)
+                if info.has_list
+                    || info.has_handle
+                    || info.has_push_buffer
+                    || info.has_pull_buffer =>
+            {
+                Some(s)
+            }
+            TypeMode::HandlesBorrowed(s)
+                if info.has_handle || info.has_pull_buffer || info.has_push_buffer =>
+            {
+                Some(s)
+            }
+            _ => None,
+        }
+    }
+
+    fn needs_mutable_slice(&mut self, iface: &Interface, ty: &Type) -> bool {
+        let info = self.types_mut().type_info(iface, ty);
+        // If there's any out-buffers transitively then a mutable slice is
+        // required because the out-buffers could be modified. Otherwise a
+        // mutable slice is also required if, transitively, `InBuffer` is used
+        // which is used when we're a buffer of a type where not all bits are
+        // valid (e.g. the rust representation and the canonical abi may differ).
+        info.has_push_buffer || self.has_pull_buffer_invalid_bits(iface, ty)
+    }
+
+    fn has_pull_buffer_invalid_bits(&self, iface: &Interface, ty: &Type) -> bool {
+        let id = match ty {
+            Type::Id(id) => *id,
+            _ => return false,
+        };
+        match &iface.types[id].kind {
+            TypeDefKind::Type(t)
+            | TypeDefKind::Pointer(t)
+            | TypeDefKind::ConstPointer(t)
+            | TypeDefKind::PushBuffer(t)
+            | TypeDefKind::List(t) => self.has_pull_buffer_invalid_bits(iface, t),
+            TypeDefKind::Record(r) => r
+                .fields
+                .iter()
+                .any(|t| self.has_pull_buffer_invalid_bits(iface, &t.ty)),
+            TypeDefKind::Variant(v) => v
+                .cases
+                .iter()
+                .filter_map(|c| c.ty.as_ref())
+                .any(|t| self.has_pull_buffer_invalid_bits(iface, t)),
+            TypeDefKind::PullBuffer(t) => {
+                !iface.all_bits_valid(t) || self.has_pull_buffer_invalid_bits(iface, t)
+            }
+        }
+    }
+}
+
+pub trait RustFunctionGenerator {
+    fn push_str(&mut self, s: &str);
+    fn tmp(&mut self) -> usize;
+    fn rust_gen(&self) -> &dyn RustGenerator;
+
+    fn let_results(&mut self, amt: usize, results: &mut Vec<String>) {
+        match amt {
+            0 => {}
+            1 => {
+                let tmp = self.tmp();
+                let res = format!("result{}", tmp);
+                self.push_str("let ");
+                self.push_str(&res);
+                results.push(res);
+                self.push_str(" = ");
+            }
+            n => {
+                let tmp = self.tmp();
+                self.push_str("let (");
+                for i in 0..n {
+                    let arg = format!("result{}_{}", tmp, i);
+                    self.push_str(&arg);
+                    self.push_str(",");
+                    results.push(arg);
+                }
+                self.push_str(") = ");
+            }
+        }
+    }
+
     fn record_lower(
         &mut self,
         iface: &Interface,
@@ -837,41 +953,16 @@ pub trait TypePrint {
     }
 
     fn typename_lower(&self, iface: &Interface, id: TypeId) -> String {
-        match self.lift_lower() {
-            LiftLower::LowerArgsLiftResults => self.param_name(iface, id),
-            LiftLower::LiftArgsLowerResults => self.result_name(iface, id),
+        match self.rust_gen().lift_lower() {
+            LiftLower::LowerArgsLiftResults => self.rust_gen().param_name(iface, id),
+            LiftLower::LiftArgsLowerResults => self.rust_gen().result_name(iface, id),
         }
     }
 
     fn typename_lift(&self, iface: &Interface, id: TypeId) -> String {
-        match self.lift_lower() {
-            LiftLower::LiftArgsLowerResults => self.param_name(iface, id),
-            LiftLower::LowerArgsLiftResults => self.result_name(iface, id),
-        }
-    }
-
-    fn let_results(&mut self, amt: usize, results: &mut Vec<String>) {
-        match amt {
-            0 => {}
-            1 => {
-                let tmp = self.tmp();
-                let res = format!("result{}", tmp);
-                self.push_str("let ");
-                self.push_str(&res);
-                results.push(res);
-                self.push_str(" = ");
-            }
-            n => {
-                let tmp = self.tmp();
-                self.push_str("let (");
-                for i in 0..n {
-                    let arg = format!("result{}_{}", tmp, i);
-                    self.push_str(&arg);
-                    self.push_str(",");
-                    results.push(arg);
-                }
-                self.push_str(") = ");
-            }
+        match self.rust_gen().lift_lower() {
+            LiftLower::LiftArgsLowerResults => self.rust_gen().param_name(iface, id),
+            LiftLower::LowerArgsLiftResults => self.rust_gen().result_name(iface, id),
         }
     }
 
@@ -966,92 +1057,6 @@ pub trait TypePrint {
             }
         } else {
             unimplemented!()
-        }
-    }
-
-    fn param_name(&self, iface: &Interface, ty: TypeId) -> String {
-        let info = self.info(ty);
-        let name = iface.types[ty].name.as_ref().unwrap().to_camel_case();
-        if self.uses_two_names(&info) {
-            format!("{}Param", name)
-        } else {
-            name
-        }
-    }
-
-    fn result_name(&self, iface: &Interface, ty: TypeId) -> String {
-        let info = self.info(ty);
-        let name = iface.types[ty].name.as_ref().unwrap().to_camel_case();
-        if self.uses_two_names(&info) {
-            format!("{}Result", name)
-        } else {
-            name
-        }
-    }
-
-    fn uses_two_names(&self, info: &TypeInfo) -> bool {
-        info.owns_data()
-            && info.param
-            && info.result
-            && match self.default_param_mode() {
-                TypeMode::AllBorrowed(_) | TypeMode::LeafBorrowed(_) => true,
-                TypeMode::HandlesBorrowed(_) => info.has_handle,
-                TypeMode::Owned => false,
-            }
-    }
-
-    fn lifetime_for(&self, info: &TypeInfo, mode: TypeMode) -> Option<&'static str> {
-        match mode {
-            TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s)
-                if info.has_list
-                    || info.has_handle
-                    || info.has_push_buffer
-                    || info.has_pull_buffer =>
-            {
-                Some(s)
-            }
-            TypeMode::HandlesBorrowed(s)
-                if info.has_handle || info.has_pull_buffer || info.has_push_buffer =>
-            {
-                Some(s)
-            }
-            _ => None,
-        }
-    }
-
-    fn needs_mutable_slice(&mut self, iface: &Interface, ty: &Type) -> bool {
-        let info = self.types_mut().type_info(iface, ty);
-        // If there's any out-buffers transitively then a mutable slice is
-        // required because the out-buffers could be modified. Otherwise a
-        // mutable slice is also required if, transitively, `InBuffer` is used
-        // which is used when we're a buffer of a type where not all bits are
-        // valid (e.g. the rust representation and the canonical abi may differ).
-        info.has_push_buffer || self.has_pull_buffer_invalid_bits(iface, ty)
-    }
-
-    fn has_pull_buffer_invalid_bits(&self, iface: &Interface, ty: &Type) -> bool {
-        let id = match ty {
-            Type::Id(id) => *id,
-            _ => return false,
-        };
-        match &iface.types[id].kind {
-            TypeDefKind::Type(t)
-            | TypeDefKind::Pointer(t)
-            | TypeDefKind::ConstPointer(t)
-            | TypeDefKind::PushBuffer(t)
-            | TypeDefKind::List(t) => self.has_pull_buffer_invalid_bits(iface, t),
-            TypeDefKind::Record(r) => r
-                .fields
-                .iter()
-                .any(|t| self.has_pull_buffer_invalid_bits(iface, &t.ty)),
-            TypeDefKind::Variant(v) => v
-                .cases
-                .iter()
-                .filter_map(|c| c.ty.as_ref())
-                .any(|t| self.has_pull_buffer_invalid_bits(iface, t)),
-            TypeDefKind::PullBuffer(t) => {
-                !iface.all_bits_valid(t) || self.has_pull_buffer_invalid_bits(iface, t)
-            }
         }
     }
 }
