@@ -54,7 +54,7 @@ where
         unsafe {
             assert_eq!(mem::align_of::<Le<T>>(), 1);
             assert!(bytes.len() % mem::size_of::<Le<T>>() == 0);
-            fn all_bytes_valid<T>() {}
+            fn all_bytes_valid<T: AllBytesValid>() {}
             all_bytes_valid::<Le<T>>();
 
             slice::from_raw_parts(
