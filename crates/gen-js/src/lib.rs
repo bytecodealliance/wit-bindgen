@@ -347,10 +347,10 @@ impl Generator for Js {
         } else if variant.is_enum() {
             self.src
                 .ts(&format!("export enum {} {{\n", name.to_camel_case()));
-            for case in variant.cases.iter() {
+            for (i, case) in variant.cases.iter().enumerate() {
                 self.docs(&case.docs);
-                self.src.ts(&case.name.to_camel_case());
-                self.src.ts(",\n");
+                let name = case.name.to_camel_case();
+                self.src.ts(&format!("{} = {},\n", name, i));
             }
             self.src.ts("}\n");
 
