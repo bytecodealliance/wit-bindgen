@@ -371,6 +371,11 @@ function test_variants(wasm: exports.Wasm) {
   assert.deepStrictEqual(wasm.invert_bool(false), true);
 
   {
+    const a: exports.E1.A = exports.E1.A;
+    const b: exports.E1.B = exports.E1.B;
+  }
+
+  {
     const [a1, a2, a3, a4, a5, a6] = wasm.variant_casts([
       { tag: 'a', val: 1 },
       { tag: 'a', val: 2 },
