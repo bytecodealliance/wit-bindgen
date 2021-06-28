@@ -1,6 +1,21 @@
-# WebAssembly Module Linker
+<div align="center">
+  <h1><code>wasmlink</code></h1>
 
-_Please note: this is an experimental project._
+  <p>
+    <strong>A WebAssembly module linker that uses the module linking proposal.</strong>
+  </p>
+
+  <strong>A <a href="https://bytecodealliance.org/">Bytecode Alliance</a> project</strong>
+
+  <p>
+    <a href="https://github.com/peterhuene/wasmlink/actions?query=workflow%3ACI"><img src="https://github.com/peterhuene/wasmlink/workflows/CI/badge.svg" alt="build status" /></a>
+    <img src="https://img.shields.io/badge/rustc-stable+-green.svg" alt="supported rustc stable" />
+  </p>
+</div>
+
+# Wasmlink
+
+_Please note: this is currently an experimental project._
 
 `wasmlink` is a prototype [WebAssembly](https://webassembly.org/) module linker that can link together a module and its dependencies using [module linking](https://github.com/WebAssembly/module-linking) and the [Canonical Interface Types ABI](https://github.com/WebAssembly/interface-types/pull/132).
 
@@ -59,9 +74,8 @@ render: function(markdown: string) -> string
 To build the `markdown` module:
 
 ```text
-$ cd demo/markdown
-$ cargo wasi build
-$ cp markdown.witx target/wasm32-wasi/debug/markdown.witx
+$ cargo wasi build --manifest-path demo/markdown/Cargo.toml
+$ cp demo/markdown/markdown.witx demo/markdown/target/wasm32-wasi/debug/markdown.witx
 ```
 
 _Note: the linker currently expects either an embedded witx file in a custom section of the module or a witx file of the same name next to the input wasm module, so we copy the witx file to the target directory above._
@@ -73,8 +87,7 @@ The `renderer` module will read input via `stdin`, pass the input as a string to
 To build the `renderer` module:
 
 ```text
-$ cd demo/renderer
-$ cargo wasi build
+$ cargo wasi build --manifest-path demo/renderer/Cargo.toml
 ```
 
 ### Linking the two modules together
@@ -94,7 +107,7 @@ As the linked module uses features from both the [module linking](https://github
 To run the linked module:
 
 ```text
-$ echo '# Hello\nworld' | wasmtime --enable-module-linking --enable-multi-memory linked.wasm
+$ printf '# Hello\nworld' | wasmtime --enable-module-linking --enable-multi-memory linked.wasm
 ```
 
 If everything worked correctly, this should render the Markdown echoed on the command line:
