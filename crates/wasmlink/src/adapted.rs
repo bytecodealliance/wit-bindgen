@@ -1,4 +1,4 @@
-use self::generator::CodeGenerator;
+use crate::adapted::call::CallAdapter;
 use crate::{linker::to_val_type, Module};
 use anyhow::{anyhow, bail, Result};
 use std::{
@@ -7,9 +7,8 @@ use std::{
     fmt,
 };
 use wasmparser::{ExternalKind, FuncType, Type};
-use witx2::abi::CallMode;
 
-mod generator;
+mod call;
 
 pub const PARENT_MODULE_NAME: &str = "$parent";
 const MEMORY_EXPORT_NAME: &str = "memory";
@@ -416,24 +415,21 @@ impl<'a> AdaptedModule<'a> {
 
         let interface = self.module.interface.as_ref().unwrap();
 
-        for (index, (f, info)) in interface.iter().enumerate() {
+        for (index, (func, info)) in interface.iter().enumerate() {
             if !info.must_adapt {
                 continue;
             }
-            let mut generator = CodeGenerator::new(
-                interface.inner(),
-                f,
+
+            let adapter = CallAdapter::new(
+                interface,
                 &info.import_signature,
+                func,
                 index as u32 + free_index + 1,
-                parent_realloc_index,
                 realloc_index,
+                parent_realloc_index,
             );
 
-            interface
-                .inner()
-                .call(CallMode::WasmExport, f, &mut generator);
-
-            section.function(&generator.into_function());
+            section.function(&adapter.adapt());
         }
 
         module.section(&section);

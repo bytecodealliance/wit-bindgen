@@ -6,8 +6,8 @@ use wasmparser::{
     SectionReader, Type, TypeDef, Validator,
 };
 use witx2::{
-    abi::{CallMode, WasmSignature, WasmType},
-    Function,
+    abi::{Direction, WasmSignature, WasmType},
+    Function, SizeAlign,
 };
 
 const INTERFACE_SECTION_NAME: &str = ".interface";
@@ -48,6 +48,7 @@ pub(crate) struct FunctionInfo {
 
 pub(crate) struct Interface {
     inner: witx2::Interface,
+    sizes: SizeAlign,
     func_infos: Vec<FunctionInfo>,
     must_adapt: bool,
 }
@@ -63,8 +64,8 @@ impl Interface {
             .functions
             .iter()
             .map(|f| {
-                let import_signature = inner.wasm_signature(CallMode::WasmImport, f);
-                let export_signature = inner.wasm_signature(CallMode::WasmExport, f);
+                let import_signature = inner.wasm_signature(Direction::Import, f);
+                let export_signature = inner.wasm_signature(Direction::Export, f);
                 let import_type = Self::sig_to_type(&import_signature);
                 let export_type = Self::sig_to_type(&export_signature);
 
@@ -84,8 +85,12 @@ impl Interface {
             })
             .collect();
 
+        let mut sizes = SizeAlign::default();
+        sizes.fill(Direction::Export, &inner);
+
         Ok(Self {
             inner,
+            sizes,
             func_infos,
             must_adapt,
         })
@@ -93,6 +98,10 @@ impl Interface {
 
     pub fn inner(&self) -> &witx2::Interface {
         &self.inner
+    }
+
+    pub fn sizes(&self) -> &SizeAlign {
+        &self.sizes
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&Function, &FunctionInfo)> {

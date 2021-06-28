@@ -788,12 +788,17 @@ mod test {
     (alias 2 \"a\" (func (;4;)))
     (func (;5;) (type 1) (param i32 i32)
       (local i32)
-      i32.const 0
-      i32.const 0
-      local.get 1
-      i32.const 1
-      call 2
-      local.tee 2
+      block  ;; label = @1
+        i32.const 0
+        i32.const 0
+        local.get 1
+        i32.const 1
+        call 2
+        local.tee 2
+        br_if 0 (;@1;)
+        unreachable
+      end
+      local.get 2
       local.get 0
       local.get 1
       memory.copy 1 0

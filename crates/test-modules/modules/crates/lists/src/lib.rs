@@ -149,6 +149,48 @@ impl Lists for Component {
             c: vec![1, 2, 3, 4, 5],
         }]
     }
+    fn variant_list(
+        &self,
+        mut x: Vec<SomeVariant>,
+    ) -> (u64, Vec<OtherVariant>, u16, SomeVariant, Vec<SomeVariant>) {
+        assert_eq!(x.len(), 4);
+        match &x[0] {
+            SomeVariant::A(x) => assert_eq!(x, "first"),
+            _ => panic!(),
+        }
+        match &x[1] {
+            SomeVariant::A(x) => assert_eq!(x, "second"),
+            _ => panic!(),
+        }
+        match &x[2] {
+            SomeVariant::B => {}
+            _ => panic!(),
+        }
+        match &x[3] {
+            SomeVariant::C(x) => assert_eq!(*x, 1244),
+            _ => panic!(),
+        }
+
+        (
+            112233,
+            vec![
+                OtherVariant::C(vec![
+                    "".to_string(),
+                    "1".to_string(),
+                    "21".to_string(),
+                    "321".to_string(),
+                ]),
+                OtherVariant::A(332211),
+                OtherVariant::B(SomeVariant::A("nested!".to_string())),
+            ],
+            42,
+            x.swap_remove(0),
+            x,
+        )
+    }
+    fn load_store_everything(&self, a: LoadStoreAllSizes) -> LoadStoreAllSizes {
+        a
+    }
 }
 
 fn lists() -> &'static impl Lists {

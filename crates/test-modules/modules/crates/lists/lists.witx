@@ -39,15 +39,30 @@ record other_record {
 }
 record_list: function(x: list<some_record>) -> list<other_record>
 
-// variant some_variant {
-//   a(string),
-//   b,
-//   c(u32),
-//   d(list<other_variant>),
-// }
-// variant other_variant {
-//   a,
-//   b(u32),
-//   c(tuple<string, string>),
-// }
-// variant_list: function(x: other_variant) -> list<other_variant>
+variant some_variant {
+  a(string),
+  b,
+  c(u32),
+}
+variant other_variant {
+  a(u32),
+  b(some_variant),
+  c(list<string>),
+}
+variant_list: function(x: list<some_variant>) -> (u64, list<other_variant>, u16, some_variant, list<some_variant>)
+
+type load_store_all_sizes = list<tuple<
+  string,
+  u8,
+  s8,
+  u16,
+  s16,
+  u32,
+  s32,
+  u64,
+  s64,
+  //f32,
+  //f64,
+  char,
+>>
+load_store_everything: function(a: load_store_all_sizes) -> load_store_all_sizes
