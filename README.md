@@ -4,7 +4,7 @@ _Please note: this is an experimental project._
 
 `wasmlink` is a prototype [WebAssembly](https://webassembly.org/) module linker that can link together a module and its dependencies using [module linking](https://github.com/WebAssembly/module-linking) and the [Canonical Interface Types ABI](https://github.com/WebAssembly/interface-types/pull/132).
 
-When used in combination with [witx-bindgen](https://github.com/bytecodealliance/witx-bindgen), it is capable of generating interface adapter functions in WebAssembly that enables WebAssembly modules to exchange interface types such as strings, records, and lists.
+When used in combination with [witx-bindgen](https://github.com/bytecodealliance/witx-bindgen), it is capable of generating interface adapter functions in WebAssembly that enables WebAssembly modules to exchange interface types such as strings, records, lists, and variants.
 
 ## Building
 
