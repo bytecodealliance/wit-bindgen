@@ -426,6 +426,7 @@ impl<'a> AdaptedModule<'a> {
                 func,
                 index as u32 + free_index + 1,
                 realloc_index,
+                free_index,
                 parent_realloc_index,
             );
 

@@ -97,4 +97,9 @@ mod tests {
     fn lists() -> Result<()> {
         run(&link("lists-main", &["lists"])?)
     }
+
+    #[test]
+    fn variants() -> Result<()> {
+        run(&link("variants-main", &["variants"])?)
+    }
 }
