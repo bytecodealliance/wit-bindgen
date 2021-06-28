@@ -51,3 +51,10 @@
 
 * Enums are handled in lowering as either strings or numbers, but should only
   numbers be handled here? Does anyone pass around strings as enum values?
+
+* Exported handle types in JS aren't nominal. As of this writing they all only
+  have a `drop` and a `clone` method so they're interchangeable from `tsc`'s
+  perspective. Ideally these would be nominal separate types.
+
+* Imported handle types show up as `any` in TS, unsure how to plumb through
+  actual types to get that actually typed.

@@ -59,14 +59,19 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
     );
 
     fn gen_extra(iface: &witx2::Interface) -> proc_macro2::TokenStream {
-        if iface.functions.len() == 0 {
-            return quote::quote! {};
+        if iface.resources.len() == 0 && iface.functions.len() == 0 {
+            return quote::quote!();
         }
+
+        let resources = iface.resources.iter().map(|(_, r)| {
+            let name = quote::format_ident!("{}", r.name.to_camel_case());
+            quote::quote!(pub struct #name;)
+        });
 
         let methods = iface.functions.iter().map(|f| {
             let name = quote::format_ident!("{}", f.name.to_snake_case());
-            let params = f.params.iter().map(|(_, t)| quote_ty(iface, t));
-            let mut results = f.results.iter().map(|(_, t)| quote_ty(iface, t));
+            let params = f.params.iter().map(|(_, t)| quote_ty(true, iface, t));
+            let mut results = f.results.iter().map(|(_, t)| quote_ty(false, iface, t));
             let ret = match f.results.len() {
                 0 => quote::quote! { () },
                 1 => results.next().unwrap(),
@@ -82,6 +87,7 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
         let fnname = quote::format_ident!("{}", iface.name.to_snake_case());
         let the_trait = quote::format_ident!("{}", iface.name.to_camel_case());
         quote::quote! {
+            #(#resources)*
             fn #fnname() -> &'static impl #fnname::#the_trait {
                 struct A;
                 impl #fnname::#the_trait for A {
@@ -92,7 +98,11 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
         }
     }
 
-    fn quote_ty(iface: &witx2::Interface, ty: &witx2::Type) -> proc_macro2::TokenStream {
+    fn quote_ty(
+        param: bool,
+        iface: &witx2::Interface,
+        ty: &witx2::Type,
+    ) -> proc_macro2::TokenStream {
         use witx2::Type;
         match *ty {
             Type::U8 => quote::quote! { u8 },
@@ -111,13 +121,17 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
             Type::Handle(resource) => {
                 let name =
                     quote::format_ident!("{}", iface.resources[resource].name.to_camel_case());
-                quote::quote! { &#name }
+                quote::quote! { witx_bindgen_rust::Handle<#name> }
             }
-            Type::Id(id) => quote_id(iface, id),
+            Type::Id(id) => quote_id(param, iface, id),
         }
     }
 
-    fn quote_id(iface: &witx2::Interface, ty: witx2::TypeId) -> proc_macro2::TokenStream {
+    fn quote_id(
+        param: bool,
+        iface: &witx2::Interface,
+        ty: witx2::TypeId,
+    ) -> proc_macro2::TokenStream {
         use witx2::{Type, TypeDefKind};
         let ty = &iface.types[ty];
         if let Some(name) = &ty.name {
@@ -126,42 +140,42 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
             return quote::quote! { #module::#name };
         }
         match &ty.kind {
-            TypeDefKind::Type(t) => quote_ty(iface, t),
+            TypeDefKind::Type(t) => quote_ty(param, iface, t),
             TypeDefKind::Pointer(t) => {
-                let t = quote_ty(iface, t);
+                let t = quote_ty(param, iface, t);
                 quote::quote! { *mut #t }
             }
             TypeDefKind::ConstPointer(t) => {
-                let t = quote_ty(iface, t);
+                let t = quote_ty(param, iface, t);
                 quote::quote! { *const #t }
             }
             TypeDefKind::List(t) => {
                 if *t == Type::Char {
                     quote::quote! { String }
                 } else {
-                    let t = quote_ty(iface, t);
+                    let t = quote_ty(param, iface, t);
                     quote::quote! { Vec<#t> }
                 }
             }
             TypeDefKind::PushBuffer(_) => panic!("unimplemented push-buffer"),
             TypeDefKind::PullBuffer(_) => panic!("unimplemented pull-buffer"),
             TypeDefKind::Record(r) => {
-                let fields = r.fields.iter().map(|f| quote_ty(iface, &f.ty));
+                let fields = r.fields.iter().map(|f| quote_ty(param, iface, &f.ty));
                 quote::quote! { (#(#fields,)*) }
             }
             TypeDefKind::Variant(v) => {
                 if v.is_bool() {
                     quote::quote! { bool }
                 } else if let Some(ty) = v.as_option() {
-                    let ty = quote_ty(iface, ty);
+                    let ty = quote_ty(param, iface, ty);
                     quote::quote! { Option<#ty> }
                 } else if let Some((ok, err)) = v.as_expected() {
                     let ok = match ok {
-                        Some(ok) => quote_ty(iface, ok),
+                        Some(ok) => quote_ty(param, iface, ok),
                         None => quote::quote! { () },
                     };
                     let err = match err {
-                        Some(err) => quote_ty(iface, err),
+                        Some(err) => quote_ty(param, iface, err),
                         None => quote::quote! { () },
                     };
                     quote::quote! { Result<#ok, #err> }
@@ -369,7 +383,15 @@ fn gen_rust<G: Generator>(
             rustfmt.arg(&test);
             let test = test.display().to_string();
             sources.extend(quote::quote!(include!(#test);));
-            sources.extend(extra(iface));
+            let extra = extra(iface);
+            if extra.is_empty() {
+                continue;
+            }
+            let test = gen_dir.join("extra.rs");
+            rustfmt.arg(&test);
+            let test = test.display().to_string();
+            sources.extend(quote::quote!(include!(#test);));
+            fs::write(&test, extra.to_string()).unwrap();
         }
         let name = quote::format_ident!("{}", name.replace("-", "_"));
         ret.extend(quote::quote!( mod #name { #sources } ));

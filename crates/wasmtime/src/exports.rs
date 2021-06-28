@@ -1,3 +1,4 @@
+use crate::slab::Slab;
 use std::cell::RefCell;
 use std::convert::TryFrom;
 use std::mem;
@@ -296,54 +297,6 @@ impl Drop for BufferTransaction<'_> {
             } else {
                 inner.in_buffers.remove(*handle);
             }
-        }
-    }
-}
-
-struct Slab<T> {
-    storage: Vec<Entry<T>>,
-    next: usize,
-}
-
-enum Entry<T> {
-    Full(T),
-    Empty { next: usize },
-}
-
-impl<T> Slab<T> {
-    fn insert(&mut self, item: T) -> u32 {
-        if self.next == self.storage.len() {
-            self.storage.push(Entry::Empty {
-                next: self.next + 1,
-            });
-        }
-        let ret = self.next as u32;
-        let entry = Entry::Full(item);
-        self.next = match mem::replace(&mut self.storage[self.next], entry) {
-            Entry::Empty { next } => next,
-            _ => unreachable!(),
-        };
-        return ret;
-    }
-
-    fn get_mut(&mut self, idx: u32) -> Option<&mut T> {
-        match self.storage.get_mut(idx as usize)? {
-            Entry::Full(b) => Some(b),
-            Entry::Empty { .. } => None,
-        }
-    }
-
-    fn remove(&mut self, idx: u32) {
-        self.storage[idx as usize] = Entry::Empty { next: self.next };
-        self.next = idx as usize;
-    }
-}
-
-impl<T> Default for Slab<T> {
-    fn default() -> Slab<T> {
-        Slab {
-            storage: Vec::new(),
-            next: 0,
         }
     }
 }

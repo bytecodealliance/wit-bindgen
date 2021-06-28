@@ -34,10 +34,5 @@ mod exports {
         //
         // TODO: should fix this
         "!wasi_next.witx"
-
-        // If you want to exclude other test you can include it here with
-        // gitignore glob syntax:
-        //
-        // "!wasm.witx"
     );
 }

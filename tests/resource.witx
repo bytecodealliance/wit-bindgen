@@ -1,0 +1,4 @@
+resource x
+
+acquire_an_x: function() -> x
+receive_an_x: function(val: x)
