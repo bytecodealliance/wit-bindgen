@@ -41,6 +41,10 @@ impl Locals {
     fn lookup(&self, old: u32) -> Option<u32> {
         self.map.get(&old).copied()
     }
+
+    fn take(&mut self, old: u32) -> u32 {
+        self.map.remove(&old).unwrap()
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -170,6 +174,7 @@ pub(crate) struct CallAdapter<'a> {
     results: Vec<Operand>,
     call_index: u32,
     realloc_index: u32,
+    free_index: u32,
     parent_realloc_index: u32,
 }
 
@@ -180,6 +185,7 @@ impl<'a> CallAdapter<'a> {
         func: &Function,
         call_index: u32,
         realloc_index: u32,
+        free_index: u32,
         parent_realloc_index: u32,
     ) -> Self {
         let inner = interface.inner();
@@ -231,6 +237,7 @@ impl<'a> CallAdapter<'a> {
             results,
             call_index,
             realloc_index,
+            free_index,
             parent_realloc_index,
         }
     }
@@ -255,7 +262,7 @@ impl<'a> CallAdapter<'a> {
 
     fn copy_parameters(&self, function: &mut wasm_encoder::Function, locals: &mut Locals) {
         for param in &self.params {
-            self.copy_operand(function, locals, Direction::In, param, None, None);
+            self.emit_copy_operand(function, locals, Direction::In, param, None, None);
         }
     }
 
@@ -323,7 +330,7 @@ impl<'a> CallAdapter<'a> {
         };
 
         for result in &self.results {
-            self.copy_operand(
+            self.emit_copy_operand(
                 function,
                 locals,
                 Direction::Out,
@@ -450,17 +457,19 @@ impl<'a> CallAdapter<'a> {
                         }
                     }
 
-                    operands.push(Operand::Variant {
-                        discriminant: (
-                            if is_retptr {
-                                ValueRef::RetPtr(discriminant)
-                            } else {
-                                ValueRef::Local(discriminant)
-                            },
-                            v.tag.into(),
-                        ),
-                        cases,
-                    });
+                    if !cases.is_empty() {
+                        operands.push(Operand::Variant {
+                            discriminant: (
+                                if is_retptr {
+                                    ValueRef::RetPtr(discriminant)
+                                } else {
+                                    ValueRef::Local(discriminant)
+                                },
+                                v.tag.into(),
+                            ),
+                            cases,
+                        });
+                    }
 
                     for _ in 0..count {
                         params.next().unwrap();
@@ -563,10 +572,12 @@ impl<'a> CallAdapter<'a> {
                         }
                     }
 
-                    operands.push(Operand::Variant {
-                        discriminant: (ValueRef::ElementOffset(offset), v.tag.into()),
-                        cases,
-                    });
+                    if !cases.is_empty() {
+                        operands.push(Operand::Variant {
+                            discriminant: (ValueRef::ElementOffset(offset), v.tag.into()),
+                            cases,
+                        });
+                    }
                 }
                 TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => return,
                 TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => todo!(),
@@ -575,7 +586,7 @@ impl<'a> CallAdapter<'a> {
         }
     }
 
-    fn copy_operand(
+    fn emit_copy_operand(
         &self,
         function: &mut wasm_encoder::Function,
         locals: &mut Locals,
@@ -600,7 +611,17 @@ impl<'a> CallAdapter<'a> {
                     function.instruction(Instruction::BrIf(0));
 
                     for operand in operands {
-                        self.copy_operand(function, locals, direction, operand, src_base, dst_base);
+                        self.emit_copy_operand(
+                            function, locals, direction, operand, src_base, dst_base,
+                        );
+
+                        // If the operand was a list with a local for the address, we assign the original conditionally here
+                        if let Operand::List { addr, .. } = operand {
+                            if let ValueRef::Local(i) = addr {
+                                function.instruction(Instruction::LocalGet(locals.take(*i)));
+                                function.instruction(Instruction::LocalSet(*i));
+                            }
+                        }
                     }
 
                     function.instruction(Instruction::End);
@@ -656,7 +677,17 @@ impl<'a> CallAdapter<'a> {
                     );
                 }
 
-                // TODO: when direction is "out", free the source list
+                // Free the source list for retptr values
+                if let ValueRef::RetPtr(_) = addr {
+                    addr.emit_load(function, src_base, LoadType::I32);
+                    len.emit_load(function, src_base, LoadType::I32);
+                    if *element_size > 1 {
+                        function.instruction(Instruction::I32Const(*element_size as i32));
+                        function.instruction(Instruction::I32Mul);
+                    }
+                    function.instruction(Instruction::I32Const(*element_alignment as i32));
+                    function.instruction(Instruction::Call(self.free_index));
+                }
             }
         }
     }
@@ -705,7 +736,7 @@ impl<'a> CallAdapter<'a> {
         function.instruction(Instruction::BrIf(1));
 
         for operand in operands {
-            self.copy_operand(
+            self.emit_copy_operand(
                 function,
                 locals,
                 direction,

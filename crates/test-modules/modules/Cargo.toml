@@ -8,4 +8,6 @@ members = [
     "crates/flags-main",
     "crates/lists",
     "crates/lists-main",
+    "crates/variants",
+    "crates/variants-main",
 ]
