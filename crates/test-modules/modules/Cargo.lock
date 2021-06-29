@@ -4,9 +4,9 @@ version = 3
 
 [[package]]
 name = "anyhow"
-version = "1.0.40"
+version = "1.0.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28b2cd92db5cbd74e8e5028f7e27dd7aa3090e89e4f2a197cc7c8dfb69c7063b"
+checksum = "15af2628f6890fe2609a3b91bef4c83450512802e59489f9c1cb1fa5df064a61"
 
 [[package]]
 name = "cfg-if"
@@ -106,9 +106,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "1.0.72"
+version = "1.0.73"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1e8cdbefb79a9a5a65e0db8b47b723ee907b7c7f8496c76a1770b5c310bab82"
+checksum = "f71489ff30030d2ae598524f61326b902466f72a0fb1a8564c001cc63425bcc7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -198,7 +198,7 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-gen-core"
 version = "0.1.0"
-source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#19c908abbfebe07c6a23dfd0d36ac954a2b32fbf"
+source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#a2f2d54e439c8263d811ba276865bd7ad131c3e6"
 dependencies = [
  "anyhow",
  "witx",
@@ -208,7 +208,7 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-gen-rust"
 version = "0.1.0"
-source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#19c908abbfebe07c6a23dfd0d36ac954a2b32fbf"
+source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#a2f2d54e439c8263d811ba276865bd7ad131c3e6"
 dependencies = [
  "heck",
  "witx-bindgen-gen-core",
@@ -217,7 +217,7 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-gen-rust-wasm"
 version = "0.1.0"
-source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#19c908abbfebe07c6a23dfd0d36ac954a2b32fbf"
+source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#a2f2d54e439c8263d811ba276865bd7ad131c3e6"
 dependencies = [
  "heck",
  "witx-bindgen-gen-core",
@@ -227,7 +227,7 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-rust"
 version = "0.1.0"
-source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#19c908abbfebe07c6a23dfd0d36ac954a2b32fbf"
+source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#a2f2d54e439c8263d811ba276865bd7ad131c3e6"
 dependencies = [
  "witx-bindgen-rust-impl",
 ]
@@ -235,7 +235,7 @@ dependencies = [
 [[package]]
 name = "witx-bindgen-rust-impl"
 version = "0.1.0"
-source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#19c908abbfebe07c6a23dfd0d36ac954a2b32fbf"
+source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#a2f2d54e439c8263d811ba276865bd7ad131c3e6"
 dependencies = [
  "proc-macro2",
  "syn",
@@ -246,7 +246,7 @@ dependencies = [
 [[package]]
 name = "witx2"
 version = "0.1.0"
-source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#19c908abbfebe07c6a23dfd0d36ac954a2b32fbf"
+source = "git+https://github.com/bytecodealliance/witx-bindgen?branch=main#a2f2d54e439c8263d811ba276865bd7ad131c3e6"
 dependencies = [
  "anyhow",
  "id-arena",
