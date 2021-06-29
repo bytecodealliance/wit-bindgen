@@ -61,8 +61,8 @@ type load_store_all_sizes = list<tuple<
   s32,
   u64,
   s64,
-  //f32,
-  //f64,
+  f32,
+  f64,
   char,
 >>
 load_store_everything: function(a: load_store_all_sizes) -> load_store_all_sizes

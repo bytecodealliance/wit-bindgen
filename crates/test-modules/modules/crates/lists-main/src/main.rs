@@ -168,9 +168,9 @@ fn main() {
     }
 
     let x = load_store_everything(&[
-        ("I", 0, 1, 2, 3, 4, 5, 6, 7, 'a'),
-        ("love", 8, 9, 10, 11, 12, 13, 14, 15, 'b'),
-        ("wasm", 16, 17, 18, 19, 20, 21, 22, 23, 'c'),
+        ("I", 0, 1, 2, 3, 4, 5, 6, 7, 7.1, 7.2, 'a'),
+        ("love", 8, 9, 10, 11, 12, 13, 14, 15, 15.1, 15.2, 'b'),
+        ("wasm", 16, 17, 18, 19, 20, 21, 22, 23, 23.1, 23.2, 'c'),
     ]);
 
     assert_eq!(x.len(), 3);
@@ -183,7 +183,9 @@ fn main() {
     assert_eq!(x[0].6, 5);
     assert_eq!(x[0].7, 6);
     assert_eq!(x[0].8, 7);
-    assert_eq!(x[0].9, 'a');
+    assert_eq!(x[0].9, 7.1);
+    assert_eq!(x[0].10, 7.2);
+    assert_eq!(x[0].11, 'a');
     assert_eq!(x[1].0, "love");
     assert_eq!(x[1].1, 8);
     assert_eq!(x[1].2, 9);
@@ -193,7 +195,9 @@ fn main() {
     assert_eq!(x[1].6, 13);
     assert_eq!(x[1].7, 14);
     assert_eq!(x[1].8, 15);
-    assert_eq!(x[1].9, 'b');
+    assert_eq!(x[1].9, 15.1);
+    assert_eq!(x[1].10, 15.2);
+    assert_eq!(x[1].11, 'b');
     assert_eq!(x[2].0, "wasm");
     assert_eq!(x[2].1, 16);
     assert_eq!(x[2].2, 17);
@@ -203,5 +207,7 @@ fn main() {
     assert_eq!(x[2].6, 21);
     assert_eq!(x[2].7, 22);
     assert_eq!(x[2].8, 23);
-    assert_eq!(x[2].9, 'c');
+    assert_eq!(x[2].9, 23.1);
+    assert_eq!(x[2].10, 23.2);
+    assert_eq!(x[2].11, 'c');
 }

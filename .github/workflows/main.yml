@@ -18,7 +18,9 @@ jobs:
     name: Test
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Disable Windows CI for the moment.
+        # os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
         mode: [debug, release]
     runs-on: ${{ matrix.os }}
     steps:
