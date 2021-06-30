@@ -9,6 +9,7 @@ use witx_bindgen_gen_core::{witx2::*, Files, Generator};
 #[derive(Default)]
 pub struct Js {
     src: Source,
+    in_import: bool,
     opts: Opts,
     imports: HashMap<String, Vec<Import>>,
     exports: HashMap<String, Exports>,
@@ -28,7 +29,8 @@ pub struct Js {
     needs_f64_to_i64: bool,
     needs_utf8_decoder: bool,
     needs_utf8_encode: bool,
-    needed_resources: BTreeSet<ResourceId>,
+    imported_resources: BTreeSet<ResourceId>,
+    exported_resources: BTreeSet<ResourceId>,
     needs_validate_flags: bool,
     needs_validate_flags64: bool,
     needs_push_buffer: bool,
@@ -49,7 +51,7 @@ struct Exports {
     funcs: Vec<Source>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
 pub struct Opts {
     #[cfg_attr(feature = "structopt", structopt(long = "no-typescript"))]
@@ -117,7 +119,14 @@ impl Js {
             | Type::F64 => self.src.ts("number"),
             Type::U64 | Type::S64 => self.src.ts("bigint"),
             Type::Char => self.src.ts("string"),
-            Type::Handle(_) => self.src.ts("any"), // TODO
+            // For imports handles represent host objects, so any host object
+            // can be provided
+            //
+            // TODO: we still have distinct types of handles and this shouldn't
+            // be `any`, that loses more type information than I'd like.
+            Type::Handle(_) if self.in_import => self.src.ts("any"),
+            // For exports handles are specific types of exports
+            Type::Handle(id) => self.src.ts(&iface.resources[*id].name.to_camel_case()),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
                 if let Some(name) = &ty.name {
@@ -265,6 +274,7 @@ impl Js {
 impl Generator for Js {
     fn preprocess(&mut self, iface: &Interface, dir: Direction) {
         self.sizes.fill(dir, iface);
+        self.in_import = dir == Direction::Import;
     }
 
     fn type_record(
@@ -395,8 +405,73 @@ impl Generator for Js {
     }
 
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
-        // panic!()
-        drop((iface, ty));
+        if self.in_import {
+            return;
+        }
+        self.exported_resources.insert(ty);
+        self.src.js(&format!(
+            "
+                export class {} {{
+                    constructor(wasm_val, dtor, registry) {{
+                        this._wasm_val = wasm_val;
+                        this._registry = registry;
+                        this._dtor = dtor;
+                        this._refcnt = 1;
+                        registry.register(this, wasm_val, this);
+                    }}
+
+                    clone() {{
+                        this._refcnt += 1;
+                        return this;
+                    }}
+
+                    drop() {{
+                        this._refcnt -= 1;
+                        if (this._refcnt !== 0)
+                            return;
+                        this._registry.unregister(this);
+                        const dtor = this._dtor;
+                        const wasm_val = this._wasm_val;
+                        delete this._dtor;
+                        delete this._refcnt;
+                        delete this._registry;
+                        delete this._wasm_val;
+                        dtor(wasm_val);
+                    }}
+                }}
+            ",
+            iface.resources[ty].name.to_camel_case(),
+        ));
+        self.src.ts(&format!(
+            "
+                export class {} {{
+                    // Creates a new strong reference count as a new object.
+                    // This is only required if you're also calling `drop`
+                    // below and want to manually manage the reference count
+                    // from JS.
+                    //
+                    // If you don't call `drop`, you don't need to call this
+                    // and can simply use the object from JS.
+                    clone(): {0};
+
+                    // Explicitly indicate that this JS object will no longer
+                    // be used. If the internal reference count reaches zero
+                    // then this will deterministically destroy the underlying
+                    // wasm object.
+                    //
+                    // This is not required to be called from JS. Wasm
+                    // destructors will be automatically called for you if
+                    // this is not called using the JS `FinalizationRegistry`.
+                    //
+                    // Calling this method does not guarantee that the
+                    // underlying wasm object is deallocated. Something else
+                    // (including wasm) may be holding onto a strong reference
+                    // count.
+                    drop(): void;
+                }}
+            ",
+            iface.resources[ty].name.to_camel_case(),
+        ));
     }
 
     fn type_alias(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
@@ -618,11 +693,11 @@ impl Generator for Js {
                 self.src.ts(&f.src.ts);
             }
 
-            if self.needed_resources.len() > 0 {
+            if self.imported_resources.len() > 0 {
                 self.src
                     .js("if (!(\"canonical_abi\" in imports)) imports[\"canonical_abi\"] = {};\n");
             }
-            for resource in self.needed_resources.iter() {
+            for resource in self.imported_resources.iter() {
                 self.src.js(&format!(
                     "imports.canonical_abi[\"resource_drop_{}\"] = (i) => {{
                         const val = resources{}.remove(i);
@@ -644,44 +719,156 @@ impl Generator for Js {
 
         for (module, exports) in mem::take(&mut self.exports) {
             let module = module.to_camel_case();
-            // TODO: `module.exports` vs `export function`
+            self.src.ts(&format!("export class {} {{\n", module));
             self.src.js(&format!("export class {} {{\n", module));
 
-            self.src.js("static async instantiate(module, imports) {\n");
-            self.src.js(&format!("const me = new {}();\n", module));
-            self.src.js("
-                let ret;
-                if (module instanceof WebAssembly.Module) {
-                    ret = {
-                        module,
-                        instance: await WebAssembly.instantiate(module, imports),
-                    };
-                } else if (module instanceof ArrayBuffer || module instanceof Uint8Array) {
-                    ret = await WebAssembly.instantiate(module, imports);
-                } else {
-                    ret = await WebAssembly.instantiateStreaming(module, imports);
-                }
-                me.module = ret.module;
-                me.instance = ret.instance;
-                me._exports = me.instance.exports;
-                return me;
+            self.src.ts("
+                // The WebAssembly instance that this class is operating with.
+                // This is only available after the `instantiate` method has
+                // been called.
+                instance: WebAssembly.Instance;
             ");
+
+            self.src.ts("
+                // Constructs a new instance with internal state necessary to
+                // manage a wasm instance.
+                //
+                // Note that this does not actually instantiate the WebAssembly
+                // instance or module, you'll need to call the `instantiate`
+                // method below to \"activate\" this class.
+                constructor();
+            ");
+            if self.exported_resources.len() > 0 {
+                self.src.js("constructor() {\n");
+                for r in self.exported_resources.iter() {
+                    self.src
+                        .js(&format!("this._resource{}_slab = new Slab();\n", r.index()));
+                }
+                self.src.js("}\n");
+            }
+
+            self.src.ts("
+                // This is a low-level method which can be used to add any
+                // intrinsics necessary for this instance to operate to an
+                // import object.
+                //
+                // The `import` object given here is expected to be used later
+                // to actually instantiate the module this class corresponds to.
+                // If the `instantiate` method below actually does the
+                // instantiation then there's no need to call this method, but
+                // if you're instantiating manually elsewhere then this can be
+                // used to prepare the import object for external instantiation.
+                add_to_imports(imports: any);
+            ");
+            self.src.js("add_to_imports(imports) {\n");
+            if self.exported_resources.len() > 0 {
+                self.src
+                    .js("if (!(\"canonical_abi\" in imports)) imports[\"canonical_abi\"] = {};\n");
+            }
+            for r in self.exported_resources.iter() {
+                self.src.js(&format!(
+                    "
+                        imports.canonical_abi['resource_drop_{name}'] = i => {{
+                            this._resource{idx}_slab.remove(i).drop();
+                        }};
+                        imports.canonical_abi['resource_clone_{name}'] = i => {{
+                            const obj = this._resource{idx}_slab.get(i);
+                            return this._resource{idx}_slab.insert(obj.clone())
+                        }};
+                        imports.canonical_abi['resource_get_{name}'] = i => {{
+                            return this._resource{idx}_slab.get(i)._wasm_val;
+                        }};
+                        imports.canonical_abi['resource_new_{name}'] = i => {{
+                            const dtor = this._exports['canonical_abi_drop_{name}'];
+                            const registry = this._registry{idx};
+                            return this._resource{idx}_slab.insert(new {class}(i, dtor, registry));
+                        }};
+                    ",
+                    name = iface.resources[*r].name,
+                    idx = r.index(),
+                    class = iface.resources[*r].name.to_camel_case(),
+                ));
+            }
             self.src.js("}\n");
 
-            self.src.ts(&format!("export class {} {{\n", module));
             self.src.ts(&format!(
-                "static instantiate(module: WebAssembly.Module | BufferSource | Promise<Response> | Response, imports: any): Promise<{}>;\n",
-                module
+                "
+                    // Initializes this object with the provided WebAssembly
+                    // module/instance.
+                    //
+                    // This is intended to be a flexible method of instantiating
+                    // and completion of the initialization of this class. This
+                    // method must be called before interacting with the
+                    // WebAssembly object.
+                    //
+                    // The first argument to this method is where to get the
+                    // wasm from. This can be a whole bunch of different types,
+                    // for example:
+                    //
+                    // * A precompiled `WebAssembly.Module`
+                    // * A typed array buffer containing the wasm bytecode.
+                    // * A `Promise` of a `Response` which is used with
+                    //   `instantiateStreaming`
+                    // * A `Response` itself used with `instantiateStreaming`.
+                    // * An already instantiated `WebAssembly.Instance`
+                    //
+                    // If necessary the module is compiled, and if necessary the
+                    // module is instantiated. Whether or not it's necessary
+                    // depends on the type of argument provided to
+                    // instantiation.
+                    //
+                    // If instantiation is performed then the `imports` object
+                    // passed here is the list of imports used to instantiate
+                    // the instance. This method may add its own intrinsics to
+                    // this `imports` object too.
+                    instantiate(
+                        module: WebAssembly.Module | BufferSource | Promise<Response> | Response | WebAssembly.Instance,
+                        imports?: any,
+                    ): Promise<void>;
+                ",
             ));
-            self.src.ts("instance: WebAssembly.Instance;\n");
-            self.src.ts("module: WebAssembly.Module;\n");
+            self.src.js("
+                async instantiate(module, imports) {
+                    imports = imports || {};
+                    this.add_to_imports(imports);
+            ");
+
+            // With intrinsics prep'd we can now instantiate the module. JS has
+            // a ... variety of methods of instantiation, so we basically just
+            // try to be flexible here.
+            self.src.js("
+                if (module instanceof WebAssembly.Instance) {
+                    this.instance = module;
+                } else if (module instanceof WebAssembly.Module) {
+                    this.instance = await WebAssembly.instantiate(module, imports);
+                } else if (module instanceof ArrayBuffer || module instanceof Uint8Array) {
+                    const { instance } = await WebAssembly.instantiate(module, imports);
+                    this.instance = instance;
+                } else {
+                    const { instance } = await WebAssembly.instantiateStreaming(module, imports);
+                    this.instance = instance;
+                }
+                this._exports = this.instance.exports;
+            ");
+
+            // Exported resources all get a finalization registry, and we
+            // created them after instantiation so we can pass the raw wasm
+            // export as the destructor callback.
+            for r in self.exported_resources.iter() {
+                self.src.js(&format!(
+                    "this._registry{} = new FinalizationRegistry(this._exports['canonical_abi_drop_{}']);\n",
+                    r.index(),
+                    iface.resources[*r].name,
+                ));
+            }
+            self.src.js("}\n");
 
             for func in exports.funcs.iter() {
                 self.src.js(&func.js);
                 self.src.ts(&func.ts);
             }
             self.src.ts("}\n");
-            self.src.js("}");
+            self.src.js("}\n");
         }
 
         files.push("bindings.js", self.src.js.as_bytes());
@@ -918,26 +1105,48 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
+            // These instructions are used with handles when we're implementing
+            // imports. This means we interact with the `resources` slabs to
+            // translate the wasm-provided index into a JS value.
             Instruction::I32FromOwnedHandle { ty } => {
-                self.gen.needed_resources.insert(*ty);
+                self.gen.imported_resources.insert(*ty);
                 results.push(format!("resources{}.insert({})", ty.index(), operands[0]));
             }
             Instruction::HandleBorrowedFromI32 { ty } => {
-                self.gen.needed_resources.insert(*ty);
+                self.gen.imported_resources.insert(*ty);
                 results.push(format!("resources{}.get({})", ty.index(), operands[0]));
             }
-            //    Instruction::I32FromBorrowedHandle { .. } => {
-            //        results.push(format!("{}.0", operands[0]));
-            //    }
-            //    Instruction::HandleOwnedFromI32 { ty } => {
-            //        let name = &iface.resources[*ty].name;
-            //        results.push(format!(
-            //            "{}({}, std::mem::ManuallyDrop::new(self.{}_close.clone()))",
-            //            name.to_camel_case(),
-            //            operands[0],
-            //            name.to_snake_case(),
-            //        ));
-            //    }
+
+            // These instructions are used for handles to objects owned in wasm.
+            // This means that they're interacting with a wrapper class defined
+            // in JS.
+            Instruction::I32FromBorrowedHandle { ty } => {
+                let tmp = self.tmp();
+                self.src
+                    .js(&format!("const obj{} = {};\n", tmp, operands[0]));
+                self.src.js(&format!(
+                    "if (!(obj{} instanceof {})) ",
+                    tmp,
+                    iface.resources[*ty].name.to_camel_case()
+                ));
+                self.src.js(&format!(
+                    "throw new TypeError('expected instance of {}');\n",
+                    iface.resources[*ty].name.to_camel_case()
+                ));
+                results.push(format!(
+                    "this._resource{}_slab.insert(obj{}.clone())",
+                    ty.index(),
+                    tmp,
+                ));
+            }
+            Instruction::HandleOwnedFromI32 { ty } => {
+                results.push(format!(
+                    "this._resource{}_slab.remove({})",
+                    ty.index(),
+                    operands[0],
+                ));
+            }
+
             Instruction::RecordLower { record, .. } => {
                 if record.is_tuple() {
                     // Tuples are represented as an array, sowe can use
@@ -1689,7 +1898,7 @@ impl Js {
             ");
         }
 
-        if self.needed_resources.len() > 0 {
+        if self.imported_resources.len() > 0 || self.exported_resources.len() > 0 {
             self.src.js("
                 class Slab {
                     constructor() {
@@ -1733,7 +1942,7 @@ impl Js {
                 }
             ");
         }
-        for r in self.needed_resources.iter() {
+        for r in self.imported_resources.iter() {
             self.src
                 .js(&format!("const resources{} = new Slab();\n", r.index()));
         }

@@ -1,123 +1,147 @@
-import * as demo from './demo/bindings.js';
+import { Demo, Lang, Config } from './demo/bindings.js';
 import * as browser from './browser/bindings.js';
 
-const imports = {};
-const obj = {
-  log: console.log,
-  error: console.error,
-};
-let instance = null;
-browser.add_browser_to_imports(imports, obj, name => instance.exports[name]);
-const wasmPromise = demo.Demo.instantiate(fetch('./demo.wasm'), imports)
-  .then(demo => {
-    instance = demo.instance;
-    return demo;
-  });
+class Editor {
+  input: HTMLTextAreaElement;
+  language: HTMLSelectElement;
+  mode: HTMLSelectElement;
+  files: HTMLSelectElement
+  rustUnchecked: HTMLInputElement;
+  wasmtimeTracing: HTMLInputElement;
+  wasmtimeAsync: HTMLInputElement;
+  wasmtimeCustomError: HTMLInputElement;
+  generatedFiles: Record<string, string>;
+  demo: Demo;
+  config: Config | null;
+  rerender: number | null;
+  inputEditor: AceAjax.Editor;
+  outputEditor: AceAjax.Editor;
 
-const input = document.getElementById('input-raw') as HTMLTextAreaElement;
-const language = document.getElementById('language-select') as HTMLSelectElement;
-const mode = document.getElementById('mode-select') as HTMLSelectElement;
-const files = document.getElementById('file-select') as HTMLSelectElement;
-const rustUnchecked = document.getElementById('rust-unchecked') as HTMLInputElement;
-const wasmtimeTracing = document.getElementById('wasmtime-tracing') as HTMLInputElement;
-const wasmtimeAsync = document.getElementById('wasmtime-async') as HTMLInputElement;
-const wasmtimeCustomError = document.getElementById('wasmtime-custom-error') as HTMLInputElement;
+  constructor() {
+    this.input = document.getElementById('input-raw') as HTMLTextAreaElement;
+    this.language = document.getElementById('language-select') as HTMLSelectElement;
+    this.mode = document.getElementById('mode-select') as HTMLSelectElement;
+    this.files = document.getElementById('file-select') as HTMLSelectElement;
+    this.rustUnchecked = document.getElementById('rust-unchecked') as HTMLInputElement;
+    this.wasmtimeTracing = document.getElementById('wasmtime-tracing') as HTMLInputElement;
+    this.wasmtimeAsync = document.getElementById('wasmtime-async') as HTMLInputElement;
+    this.wasmtimeCustomError = document.getElementById('wasmtime-custom-error') as HTMLInputElement;
 
-const inputEditor = ace.edit("input");
-const outputEditor = ace.edit("output");
-inputEditor.setValue(input.value);
-inputEditor.clearSelection();
-outputEditor.setReadOnly(true);
-inputEditor.setOption("useWorker", false);
-outputEditor.setOption("useWorker", false);
+    this.inputEditor = ace.edit("input");
+    this.outputEditor = ace.edit("output");
+    this.inputEditor.setValue(this.input.value);
+    this.inputEditor.clearSelection();
+    this.outputEditor.setReadOnly(true);
+    this.inputEditor.setOption("useWorker", false);
+    this.outputEditor.setOption("useWorker", false);
 
-let generatedFiles = {};
-
-async function render() {
-  const wasm = await wasmPromise;
-
-  for (let div of document.querySelectorAll('.lang-configure')) {
-    (div as HTMLDivElement).style.display = 'none';
+    this.generatedFiles = {};
+    this.demo = new Demo();
+    this.config = null;
+    this.rerender = null;
   }
 
-  const config = document.getElementById(`configure-${language.value}`);
-  config.style.display = 'inline-block';
+  async instantiate() {
+    const imports = {};
+    const obj = {
+      log: console.log,
+      error: console.error,
+    };
+    browser.add_browser_to_imports(imports, obj, name => this.demo.instance.exports[name]);
+    await this.demo.instantiate(fetch('./demo.wasm'), imports);
+    this.config = this.demo.config_new();
+    this.installListeners();
+    this.render();
+  }
 
-  const witx = inputEditor.getValue();
-  const is_import = mode.value === 'import';
-  let result;
-  switch (language.value) {
-    case "js":
-      result = wasm.render_js(witx, is_import);
-      break;
-    case "rust":
-      result = wasm.render_rust(witx, is_import, rustUnchecked.checked);
-      break;
-    case "wasmtime":
+  installListeners() {
+    this.inputEditor.on('change', () => {
+      this.input.value = this.inputEditor.getValue();
+      if (this.rerender !== null)
+        clearTimeout(this.rerender);
+      this.rerender = setTimeout(() => this.render(), 500);
+    });
+
+    this.language.addEventListener('change', () => this.render());
+    this.mode.addEventListener('change', () => this.render());
+
+    this.rustUnchecked.addEventListener('change', () => {
+      this.demo.set_rust_unchecked(this.config, this.rustUnchecked.checked);
+      this.render();
+    });
+
+    this.wasmtimeTracing.addEventListener('change', () => {
+      this.demo.set_wasmtime_tracing(this.config, this.wasmtimeTracing.checked);
+      this.render();
+    });
+    this.wasmtimeAsync.addEventListener('change', () => {
       let async_;
-      if (wasmtimeAsync.checked)
+      if (this.wasmtimeAsync.checked)
         async_ = { tag: 'all' };
       else
         async_ = { tag: 'none' };
-      result = wasm.render_wasmtime(
-        witx,
-        is_import,
-        wasmtimeTracing.checked,
-        async_,
-        wasmtimeCustomError.checked,
-      );
-      break;
-    default: return;
+      this.demo.set_wasmtime_async(this.config, async_);
+      this.render();
+    });
+    this.wasmtimeCustomError.addEventListener('change', () => {
+      this.demo.set_wasmtime_custom_error(this.config, this.wasmtimeCustomError.checked);
+      this.render();
+    });
+    this.files.addEventListener('change', () => this.updateSelectedFile());
   }
 
-  if (result.tag === 'err') {
-    outputEditor.setValue(result.val);
-    outputEditor.clearSelection();
-    return;
-  }
-  generatedFiles = {};
-  const selectedFile = files.value;
-  files.options.length = 0;
-  for (let i = 0; i < result.val.length; i++) {
-    const name = result.val[i][0];
-    const contents = result.val[i][1];
-    files.options[i] = new Option(name, name);
-    generatedFiles[name] = contents;
-  }
-  if (selectedFile in generatedFiles)
-    files.value = selectedFile;
 
-  updateSelectedFile();
+  render() {
+    for (let div of document.querySelectorAll('.lang-configure')) {
+      (div as HTMLDivElement).style.display = 'none';
+    }
+
+    const config = document.getElementById(`configure-${this.language.value}`);
+    config.style.display = 'inline-block';
+
+    const witx = this.inputEditor.getValue();
+    const is_import = this.mode.value === 'import';
+    let lang;
+    switch (this.language.value) {
+      case "js": lang = Lang.Js; break;
+      case "rust": lang = Lang.Rust; break;
+      case "wasmtime": lang = Lang.Wasmtime; break;
+      default: return;
+    }
+    const result = this.demo.render(this.config, lang, witx, is_import);
+    if (result.tag === 'err') {
+      this.outputEditor.setValue(result.val);
+      this.outputEditor.clearSelection();
+      return;
+    }
+    this.generatedFiles = {};
+    const selectedFile = this.files.value;
+    this.files.options.length = 0;
+    for (let i = 0; i < result.val.length; i++) {
+      const name = result.val[i][0];
+      const contents = result.val[i][1];
+      this.files.options[i] = new Option(name, name);
+      this.generatedFiles[name] = contents;
+    }
+    if (selectedFile in this.generatedFiles)
+      this.files.value = selectedFile;
+
+    this.updateSelectedFile();
+  }
+
+  updateSelectedFile() {
+    this.outputEditor.setValue(this.generatedFiles[this.files.value]);
+    this.outputEditor.clearSelection();
+    if (this.files.value.endsWith('.d.ts'))
+      this.outputEditor.session.setMode("ace/mode/typescript");
+    else if (this.files.value.endsWith('.js'))
+      this.outputEditor.session.setMode("ace/mode/javascript");
+    else if (this.files.value.endsWith('.rs'))
+      this.outputEditor.session.setMode("ace/mode/rust");
+    else
+      this.outputEditor.session.setMode(null);
+  }
 }
 
-function updateSelectedFile() {
-  outputEditor.setValue(generatedFiles[files.value]);
-  outputEditor.clearSelection();
-  if (files.value.endsWith('.d.ts'))
-    outputEditor.session.setMode("ace/mode/typescript");
-  else if (files.value.endsWith('.js'))
-    outputEditor.session.setMode("ace/mode/javascript");
-  else if (files.value.endsWith('.rs'))
-    outputEditor.session.setMode("ace/mode/rust");
-  else
-    outputEditor.session.setMode(null);
-}
 
-let rerender = null;
-inputEditor.on('change', function(){
-  input.value = inputEditor.getValue();
-  if (rerender !== null)
-    clearTimeout(rerender);
-  rerender = setTimeout(render, 500);
-});
-
-language.addEventListener('change', render);
-mode.addEventListener('change', render);
-rustUnchecked.addEventListener('change', render);
-wasmtimeTracing.addEventListener('change', render);
-wasmtimeAsync.addEventListener('change', render);
-wasmtimeCustomError.addEventListener('change', render);
-files.addEventListener('change', updateSelectedFile);
-
-
-render()
+(new Editor()).instantiate()

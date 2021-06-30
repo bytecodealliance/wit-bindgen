@@ -12,6 +12,7 @@ pub mod exports;
 pub mod imports;
 mod le;
 mod region;
+mod slab;
 mod table;
 
 pub use error::GuestError;
@@ -31,6 +32,7 @@ unsafe impl Sync for RawMemory {}
 
 #[doc(hidden)]
 pub mod rt {
+    use crate::slab::Slab;
     use crate::{Endian, Le};
     use std::mem;
     use wasmtime::*;
@@ -185,5 +187,74 @@ pub mod rt {
         (as_i64 AsI64 i64 (i64 u64))
         (as_f32 AsF32 f32 (f32))
         (as_f64 AsF64 f64 (f64))
+    }
+
+    #[derive(Default, Debug)]
+    pub struct IndexSlab {
+        slab: Slab<ResourceIndex>,
+    }
+
+    impl IndexSlab {
+        pub fn insert(&mut self, resource: ResourceIndex) -> u32 {
+            self.slab.insert(resource)
+        }
+
+        pub fn get(&self, slab_idx: u32) -> Result<ResourceIndex, Trap> {
+            match self.slab.get(slab_idx) {
+                Some(idx) => Ok(*idx),
+                None => Err(Trap::new("invalid index specified for handle")),
+            }
+        }
+
+        pub fn remove(&mut self, slab_idx: u32) -> Result<ResourceIndex, Trap> {
+            match self.slab.remove(slab_idx) {
+                Some(idx) => Ok(idx),
+                None => Err(Trap::new("invalid index specified for handle")),
+            }
+        }
+    }
+
+    #[derive(Default, Debug)]
+    pub struct ResourceSlab {
+        slab: Slab<Resource>,
+    }
+
+    #[derive(Debug)]
+    struct Resource {
+        wasm: i32,
+        refcnt: u32,
+    }
+
+    #[derive(Debug, Copy, Clone)]
+    pub struct ResourceIndex(u32);
+
+    impl ResourceSlab {
+        pub fn insert(&mut self, wasm: i32) -> ResourceIndex {
+            ResourceIndex(self.slab.insert(Resource { wasm, refcnt: 1 }))
+        }
+
+        pub fn get(&self, idx: ResourceIndex) -> i32 {
+            self.slab.get(idx.0).unwrap().wasm
+        }
+
+        pub fn clone(&mut self, idx: ResourceIndex) -> Result<(), Trap> {
+            let resource = self.slab.get_mut(idx.0).unwrap();
+            resource.refcnt = match resource.refcnt.checked_add(1) {
+                Some(cnt) => cnt,
+                None => return Err(Trap::new("resource index count overflow")),
+            };
+            Ok(())
+        }
+
+        pub fn drop(&mut self, idx: ResourceIndex) -> Option<i32> {
+            let resource = self.slab.get_mut(idx.0).unwrap();
+            assert!(resource.refcnt > 0);
+            resource.refcnt -= 1;
+            if resource.refcnt != 0 {
+                return None;
+            }
+            let resource = self.slab.remove(idx.0).unwrap();
+            Some(resource.wasm)
+        }
     }
 }

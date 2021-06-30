@@ -281,6 +281,10 @@ def_instruction! {
 
         /// Converts a "borrowed" handle into a wasm `i32` value.
         ///
+        /// > **Note**: this documentation is outdated and does not reflect the
+        /// > current implementation of the canonical ABI. This needs to be
+        /// > updated.
+        ///
         /// A "borrowed" handle in this case means one where ownership is not
         /// being relinquished. This is only used for lowering interface types
         /// parameters.
@@ -304,6 +308,10 @@ def_instruction! {
         I32FromBorrowedHandle { ty: ResourceId } : [1] => [1],
 
         /// Converts an "owned" handle into a wasm `i32` value.
+        ///
+        /// > **Note**: this documentation is outdated and does not reflect the
+        /// > current implementation of the canonical ABI. This needs to be
+        /// > updated.
         ///
         /// This conversion is used for handle values which are crossing a
         /// module boundary for perhaps the first time. Some example cases of
@@ -340,6 +348,10 @@ def_instruction! {
 
         /// Converts a native wasm `i32` into an owned handle value.
         ///
+        /// > **Note**: this documentation is outdated and does not reflect the
+        /// > current implementation of the canonical ABI. This needs to be
+        /// > updated.
+        ///
         /// This is the converse of `I32FromOwnedHandle` and is used in similar
         /// situations:
         ///
@@ -358,6 +370,10 @@ def_instruction! {
         HandleOwnedFromI32 { ty: ResourceId } : [1] => [1],
 
         /// Converts a native wasm `i32` into a borrowedhandle value.
+        ///
+        /// > **Note**: this documentation is outdated and does not reflect the
+        /// > current implementation of the canonical ABI. This needs to be
+        /// > updated.
         ///
         /// This is the converse of `I32FromBorrowedHandle` and is used in similar
         /// situations:

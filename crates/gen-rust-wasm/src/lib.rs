@@ -22,9 +22,10 @@ pub struct RustWasm {
     trait_name: String,
     i64_return_pointer_area_size: usize,
     sizes: SizeAlign,
+    imported_handles: BTreeSet<String>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
 pub struct Opts {
     /// Whether or not `rustfmt` is executed to format generated code.
@@ -49,7 +50,6 @@ pub struct Opts {
 #[derive(Default)]
 struct Trait {
     methods: Vec<String>,
-    handles: BTreeSet<String>,
 }
 
 impl Opts {
@@ -74,23 +74,21 @@ impl RustGenerator for RustWasm {
             // to allocate anything.
             TypeMode::AllBorrowed("'a")
         } else {
-            // When we're exporting items that means that all our arguments come
-            // from somewhere else so everything is owned, namely lists.
-            TypeMode::HandlesBorrowed("'a")
+            // In exports everythig is always owned, slices and handles and all.
+            // Nothing is borrowed.
+            TypeMode::Owned
         }
     }
 
     fn handle_projection(&self) -> Option<(&'static str, String)> {
+        None
+    }
+
+    fn handle_wrapper(&self) -> Option<&'static str> {
         if self.in_import {
-            // All handles are defined types when we're importing them
             None
         } else {
-            // Handles for exports are associated types on the trait.
-            if self.in_trait {
-                Some(("Self", self.trait_name.clone()))
-            } else {
-                Some(("T", self.trait_name.clone()))
-            }
+            Some("witx_bindgen_rust::Handle")
         }
     }
 
@@ -260,11 +258,86 @@ impl Generator for RustWasm {
     }
 
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
-        // If we're generating types for an exported handle then no type is
-        // generated since this type is provided by the the generated trait.
+        // For exported handles we synthesize some trait implementations
+        // automatically for runtime-required traits.
         if !self.in_import {
+            self.src.push_str(&format!(
+                "
+                    unsafe impl witx_bindgen_rust::HandleType for super::{ty} {{
+                        #[inline]
+                        fn clone(val: i32) -> i32 {{
+                            #[link(wasm_import_module = \"canonical_abi\")]
+                            extern \"C\" {{
+                                #[link_name = \"resource_clone_{name}\"]
+                                fn clone(val: i32) -> i32;
+                            }}
+                            unsafe {{ clone(val) }}
+                        }}
+
+                        #[inline]
+                        fn drop(val: i32) {{
+                            #[link(wasm_import_module = \"canonical_abi\")]
+                            extern \"C\" {{
+                                #[link_name = \"resource_drop_{name}\"]
+                                fn drop(val: i32);
+                            }}
+                            unsafe {{ drop(val) }}
+                        }}
+                    }}
+
+                    unsafe impl witx_bindgen_rust::LocalHandle for super::{ty} {{
+                        #[inline]
+                        fn new(val: i32) -> i32 {{
+                            #[link(wasm_import_module = \"canonical_abi\")]
+                            extern \"C\" {{
+                                #[link_name = \"resource_new_{name}\"]
+                                fn new(val: i32) -> i32;
+                            }}
+                            unsafe {{ new(val) }}
+                        }}
+
+                        #[inline]
+                        fn get(val: i32) -> i32 {{
+                            #[link(wasm_import_module = \"canonical_abi\")]
+                            extern \"C\" {{
+                                #[link_name = \"resource_get_{name}\"]
+                                fn get(val: i32) -> i32;
+                            }}
+                            unsafe {{ get(val) }}
+                        }}
+                    }}
+
+                    const _: () = {{
+                        #[export_name = \"{ns}canonical_abi_drop_{name}\"]
+                        extern \"C\" fn drop(ty: Box<super::{ty}>) {{
+                            super::{iface}().drop_{name_snake}(*ty)
+                        }}
+                    }};
+                ",
+                ty = iface.resources[ty].name.to_camel_case(),
+                name = iface.resources[ty].name,
+                name_snake = iface.resources[ty].name.to_snake_case(),
+                iface = iface.name.to_snake_case(),
+                ns = self.opts.symbol_namespace,
+            ));
+            let trait_ = self
+                .traits
+                .entry(iface.name.to_camel_case())
+                .or_insert(Trait::default());
+            trait_.methods.push(format!(
+                "
+                    /// An optional callback invoked when a handle is finalized
+                    /// and destroyed.
+                    fn drop_{}(&self, val: super::{}) {{
+                        drop(val);
+                    }}
+                ",
+                iface.resources[ty].name.to_snake_case(),
+                iface.resources[ty].name.to_camel_case(),
+            ));
             return;
         }
+
         let resource = &iface.resources[ty];
         let name = &resource.name;
 
@@ -290,7 +363,7 @@ impl Generator for RustWasm {
                 pub fn as_raw(&self) -> i32 {
                     self.0
                 }
-            }",
+            }\n",
         );
 
         self.src.push_str("impl Drop for ");
@@ -303,7 +376,7 @@ impl Generator for RustWasm {
                             drop({}_close({}(self.0)));
                         }}
                     }}
-                }}",
+                }}\n",
                 name,
                 name.to_camel_case(),
             ));
@@ -320,7 +393,7 @@ impl Generator for RustWasm {
                             close(self.0);
                         }}
                     }}
-                }}",
+                }}\n",
                 name,
             ));
         }
@@ -423,10 +496,8 @@ impl Generator for RustWasm {
         let FunctionBindgen {
             needs_cleanup_list,
             src,
-            handles_for_func,
             ..
         } = f;
-        assert!(handles_for_func.is_empty());
 
         if needs_cleanup_list {
             self.src.push_str("let mut cleanup_list = Vec::new();\n");
@@ -445,7 +516,7 @@ impl Generator for RustWasm {
 
         self.src.push_str("#[export_name = \"");
         self.src.push_str(&self.opts.symbol_namespace);
-        self.src.push_str(&rust_name);
+        self.src.push_str(&func.name);
         self.src.push_str("\"]\n");
         self.src.push_str("unsafe extern \"C\" fn __witx_bindgen_");
         self.src.push_str(&rust_name);
@@ -482,7 +553,6 @@ impl Generator for RustWasm {
         let FunctionBindgen {
             needs_cleanup_list,
             src,
-            handles_for_func,
             ..
         } = f;
         assert!(!needs_cleanup_list);
@@ -498,12 +568,9 @@ impl Generator for RustWasm {
             Unsafe::No,
             Async::No,
             Some("&self"),
-            if is_dtor {
-                TypeMode::Owned
-            } else {
-                TypeMode::HandlesBorrowed("'_")
-            },
+            TypeMode::Owned,
         );
+        self.src.push_str(";");
         self.in_trait = false;
         let trait_ = self
             .traits
@@ -512,24 +579,24 @@ impl Generator for RustWasm {
         trait_
             .methods
             .push(mem::replace(&mut self.src, prev).into());
-        trait_.handles.extend(handles_for_func);
     }
 
     fn finish(&mut self, _iface: &Interface, files: &mut Files) {
         let mut src = mem::take(&mut self.src);
 
+        for handle in self.imported_handles.iter() {
+            src.push_str("use super::");
+            src.push_str(handle);
+            src.push_str(";\n");
+        }
+
         for (name, trait_) in self.traits.iter() {
             src.push_str("pub trait ");
             src.push_str(&name);
             src.push_str(": Sized {\n");
-            for h in trait_.handles.iter() {
-                src.push_str("type ");
-                src.push_str(&h.to_camel_case());
-                src.push_str(";\n");
-            }
             for f in trait_.methods.iter() {
                 src.push_str(&f);
-                src.push_str(";\n");
+                src.push_str("\n");
             }
             src.push_str("}\n");
         }
@@ -581,7 +648,6 @@ struct FunctionBindgen<'a> {
     needs_cleanup_list: bool,
     cleanup: Vec<(String, String)>,
     is_dtor: bool,
-    handles_for_func: BTreeSet<String>,
 }
 
 impl FunctionBindgen<'_> {
@@ -596,7 +662,6 @@ impl FunctionBindgen<'_> {
             tmp: 0,
             needs_cleanup_list: false,
             cleanup: Vec::new(),
-            handles_for_func: BTreeSet::new(),
         }
     }
 }
@@ -777,25 +842,33 @@ impl Bindgen for FunctionBindgen<'_> {
                 witx_bindgen_gen_rust::bitcast(casts, operands, results)
             }
 
+            // handles in exports
             Instruction::I32FromOwnedHandle { ty } => {
-                self.handles_for_func
-                    .insert(iface.resources[*ty].name.to_string());
-                results.push(format!("Box::into_raw(Box::new({})) as i32", operands[0]));
+                self.gen
+                    .imported_handles
+                    .insert(iface.resources[*ty].name.to_camel_case());
+                results.push(format!(
+                    "witx_bindgen_rust::Handle::into_raw({})",
+                    operands[0]
+                ));
             }
+            Instruction::HandleBorrowedFromI32 { ty } => {
+                assert!(!self.is_dtor);
+                self.gen
+                    .imported_handles
+                    .insert(iface.resources[*ty].name.to_camel_case());
+                results.push(format!(
+                    "witx_bindgen_rust::Handle::from_raw({})",
+                    operands[0],
+                ));
+            }
+
+            // handles in imports
             Instruction::I32FromBorrowedHandle { .. } => {
                 if self.is_dtor {
                     results.push(format!("{}.into_raw()", operands[0]));
                 } else {
                     results.push(format!("{}.0", operands[0]));
-                }
-            }
-            Instruction::HandleBorrowedFromI32 { ty } => {
-                self.handles_for_func
-                    .insert(iface.resources[*ty].name.to_string());
-                if self.is_dtor {
-                    results.push(format!("*Box::from_raw({} as *mut _)", operands[0],));
-                } else {
-                    results.push(format!("&*({} as *const _)", operands[0],));
                 }
             }
             Instruction::HandleOwnedFromI32 { ty } => {

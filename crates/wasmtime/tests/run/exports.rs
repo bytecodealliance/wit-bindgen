@@ -1,14 +1,14 @@
 use anyhow::Result;
-use wasmtime::Store;
+use wasmtime::{Instance, Store};
 
 witx_bindgen_wasmtime::export!("tests/wasm.witx");
 
 use crate::Context;
 use wasm::*;
 
-pub(crate) use wasm::Wasm;
+pub(crate) use wasm::{Wasm, WasmData};
 
-pub fn test(wasm: &Wasm, store: &mut Store<Context>) -> Result<()> {
+pub fn test(wasm: &Wasm<Context>, instance: Instance, store: &mut Store<Context>) -> Result<()> {
     let bytes = wasm.allocated_bytes(&mut *store)?;
     wasm.run_import_tests(&mut *store)?;
     scalars(wasm, store)?;
@@ -16,20 +16,17 @@ pub fn test(wasm: &Wasm, store: &mut Store<Context>) -> Result<()> {
     variants(wasm, store)?;
     lists(wasm, store)?;
     flavorful(wasm, store)?;
-    // invalid(wasm)?;
+    invalid(&instance, store)?;
     // buffers(wasm)?;
+    handles(wasm, store)?;
 
     // Ensure that we properly called `free` everywhere in all the glue that we
     // needed to.
     assert_eq!(bytes, wasm.allocated_bytes(&mut *store)?);
-
-    // // It's known that we have a handle type that leaks here, so it's expected
-    // // we leak a few bytes.
-    // handles(wasm)?;
     Ok(())
 }
 
-fn scalars(wasm: &Wasm, store: &mut Store<Context>) -> Result<()> {
+fn scalars(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
     assert_eq!(wasm.roundtrip_u8(&mut *store, 1)?, 1);
     assert_eq!(
         wasm.roundtrip_u8(&mut *store, u8::min_value())?,
@@ -145,7 +142,7 @@ fn scalars(wasm: &Wasm, store: &mut Store<Context>) -> Result<()> {
     Ok(())
 }
 
-fn records(wasm: &Wasm, store: &mut Store<Context>) -> Result<()> {
+fn records(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
     assert_eq!(wasm.swap_tuple(&mut *store, (1u8, 2u32))?, (2u32, 1u8));
     assert_eq!(wasm.roundtrip_flags1(&mut *store, F1::A)?, F1::A);
     assert_eq!(
@@ -194,7 +191,7 @@ fn records(wasm: &Wasm, store: &mut Store<Context>) -> Result<()> {
     Ok(())
 }
 
-fn variants(wasm: &Wasm, store: &mut Store<Context>) -> Result<()> {
+fn variants(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
     assert_eq!(wasm.roundtrip_option(&mut *store, Some(1.0))?, Some(1));
     assert_eq!(wasm.roundtrip_option(&mut *store, None)?, None);
     assert_eq!(wasm.roundtrip_option(&mut *store, Some(2.0))?, Some(2));
@@ -248,7 +245,7 @@ fn variants(wasm: &Wasm, store: &mut Store<Context>) -> Result<()> {
     Ok(())
 }
 
-fn lists(wasm: &Wasm, store: &mut Store<Context>) -> Result<()> {
+fn lists(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
     wasm.list_param(&mut *store, &[1, 2, 3, 4])?;
     wasm.list_param2(&mut *store, "foo")?;
     wasm.list_param3(&mut *store, &["foo", "bar", "baz"])?;
@@ -265,7 +262,7 @@ fn lists(wasm: &Wasm, store: &mut Store<Context>) -> Result<()> {
     Ok(())
 }
 
-fn flavorful(wasm: &Wasm, store: &mut Store<Context>) -> Result<()> {
+fn flavorful(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
     wasm.list_in_record1(
         &mut *store,
         ListInRecord1 {
@@ -319,44 +316,56 @@ fn flavorful(wasm: &Wasm, store: &mut Store<Context>) -> Result<()> {
     Ok(())
 }
 
-// fn handles(wasm: &Wasm) -> Result<()> {
-//     let bytes = wasm.allocated_bytes()?;
-//     {
-//         let s: WasmState = wasm.wasm_state_create()?;
-//         assert_eq!(wasm.wasm_state_get(&s)?, 100);
-//         assert_eq!(wasm.wasm_state2_saw_close()?, false);
-//         let s: WasmState2 = wasm.wasm_state2_create()?;
-//         assert_eq!(wasm.wasm_state2_saw_close()?, false);
-//         drop(s);
-//         assert_eq!(wasm.wasm_state2_saw_close()?, true);
+fn handles(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
+    let s: WasmState = wasm.wasm_state_create(&mut *store)?;
+    assert_eq!(wasm.wasm_state_get(&mut *store, &s)?, 100);
+    wasm.drop_wasm_state(&mut *store, s)?;
 
-//         let (_a, s2) =
-//             wasm.two_wasm_states(&wasm.wasm_state_create()?, &wasm.wasm_state2_create()?)?;
+    assert_eq!(wasm.wasm_state2_saw_close(&mut *store)?, false);
+    let s: WasmState2 = wasm.wasm_state2_create(&mut *store)?;
+    assert_eq!(wasm.wasm_state2_saw_close(&mut *store)?, false);
+    wasm.drop_wasm_state2(&mut *store, s)?;
+    assert_eq!(wasm.wasm_state2_saw_close(&mut *store)?, true);
 
-//         wasm.wasm_state2_param_record(WasmStateParamRecord { a: &s2 })?;
-//         wasm.wasm_state2_param_tuple((&s2,))?;
-//         wasm.wasm_state2_param_option(Some(&s2))?;
-//         wasm.wasm_state2_param_option(None)?;
-//         wasm.wasm_state2_param_result(Ok(&s2))?;
-//         wasm.wasm_state2_param_result(Err(2))?;
-//         wasm.wasm_state2_param_variant(WasmStateParamVariant::V0(&s2))?;
-//         wasm.wasm_state2_param_variant(WasmStateParamVariant::V1(2))?;
-//         wasm.wasm_state2_param_list(&[])?;
-//         wasm.wasm_state2_param_list(&[&s2])?;
-//         wasm.wasm_state2_param_list(&[&s2, &s2])?;
+    let a = wasm.wasm_state_create(&mut *store)?;
+    let b = wasm.wasm_state2_create(&mut *store)?;
+    let (s1, s2) = wasm.two_wasm_states(&mut *store, &a, &b)?;
+    wasm.drop_wasm_state(&mut *store, a)?;
+    wasm.drop_wasm_state(&mut *store, s1)?;
+    wasm.drop_wasm_state2(&mut *store, b)?;
 
-//         drop(wasm.wasm_state2_result_record()?.a);
-//         drop(wasm.wasm_state2_result_tuple()?.0);
-//         drop(wasm.wasm_state2_result_option()?.unwrap());
-//         drop(wasm.wasm_state2_result_result()?.unwrap());
-//         drop(wasm.wasm_state2_result_variant()?);
-//         drop(wasm.wasm_state2_result_list()?);
-//     }
-//     assert_eq!(bytes + 12, wasm.allocated_bytes()?);
-//     Ok(())
-// }
+    wasm.wasm_state2_param_record(&mut *store, WasmStateParamRecord { a: &s2 })?;
+    wasm.wasm_state2_param_tuple(&mut *store, (&s2,))?;
+    wasm.wasm_state2_param_option(&mut *store, Some(&s2))?;
+    wasm.wasm_state2_param_option(&mut *store, None)?;
+    wasm.wasm_state2_param_result(&mut *store, Ok(&s2))?;
+    wasm.wasm_state2_param_result(&mut *store, Err(2))?;
+    wasm.wasm_state2_param_variant(&mut *store, WasmStateParamVariant::V0(&s2))?;
+    wasm.wasm_state2_param_variant(&mut *store, WasmStateParamVariant::V1(2))?;
+    wasm.wasm_state2_param_list(&mut *store, &[])?;
+    wasm.wasm_state2_param_list(&mut *store, &[&s2])?;
+    wasm.wasm_state2_param_list(&mut *store, &[&s2, &s2])?;
+    wasm.drop_wasm_state2(&mut *store, s2)?;
 
-// fn buffers(wasm: &Wasm) -> Result<()> {
+    let s = wasm.wasm_state2_result_record(&mut *store)?.a;
+    wasm.drop_wasm_state2(&mut *store, s)?;
+    let s = wasm.wasm_state2_result_tuple(&mut *store)?.0;
+    wasm.drop_wasm_state2(&mut *store, s)?;
+    let s = wasm.wasm_state2_result_option(&mut *store)?.unwrap();
+    wasm.drop_wasm_state2(&mut *store, s)?;
+    let s = wasm.wasm_state2_result_result(&mut *store)?.unwrap();
+    match wasm.wasm_state2_result_variant(&mut *store)? {
+        WasmStateResultVariant::V0(s) => wasm.drop_wasm_state2(&mut *store, s)?,
+        WasmStateResultVariant::V1(_) => panic!(),
+    }
+    wasm.drop_wasm_state2(&mut *store, s)?;
+    for s in wasm.wasm_state2_result_list(&mut *store)? {
+        wasm.drop_wasm_state2(&mut *store, s)?;
+    }
+    Ok(())
+}
+
+// fn buffers(wasm: &Wasm<Context>) -> Result<()> {
 //     let mut out = [0; 10];
 //     let n = wasm.buffer_u8(&[0u8], &mut out)? as usize;
 //     assert_eq!(n, 3);
@@ -419,30 +428,29 @@ fn flavorful(wasm: &Wasm, store: &mut Store<Context>) -> Result<()> {
 //     Ok(())
 // }
 
-// fn invalid(wasm: &Wasm) -> Result<()> {
-//     let i = &wasm.instance;
-//     run_err(i, "invalid_bool", "invalid discriminant for `bool`")?;
-//     run_err(i, "invalid_u8", "out-of-bounds integer conversion")?;
-//     run_err(i, "invalid_s8", "out-of-bounds integer conversion")?;
-//     run_err(i, "invalid_u16", "out-of-bounds integer conversion")?;
-//     run_err(i, "invalid_s16", "out-of-bounds integer conversion")?;
-//     run_err(i, "invalid_char", "char value out of valid range")?;
-//     run_err(i, "invalid_e1", "invalid discriminant for `E1`")?;
-//     run_err(i, "invalid_handle", "invalid handle index")?;
-//     run_err(i, "invalid_handle_close", "invalid handle index")?;
-//     return Ok(());
+fn invalid(i: &Instance, store: &mut Store<Context>) -> Result<()> {
+    run_err(i, store, "invalid_bool", "invalid discriminant for `bool`")?;
+    run_err(i, store, "invalid_u8", "out-of-bounds integer conversion")?;
+    run_err(i, store, "invalid_s8", "out-of-bounds integer conversion")?;
+    run_err(i, store, "invalid_u16", "out-of-bounds integer conversion")?;
+    run_err(i, store, "invalid_s16", "out-of-bounds integer conversion")?;
+    run_err(i, store, "invalid_char", "char value out of valid range")?;
+    run_err(i, store, "invalid_e1", "invalid discriminant for `E1`")?;
+    run_err(i, store, "invalid_handle", "invalid handle index")?;
+    run_err(i, store, "invalid_handle_close", "invalid handle index")?;
+    return Ok(());
 
-//     fn run_err(i: &Instance, name: &str, err: &str) -> Result<()> {
-//         match run(i, name) {
-//             Ok(()) => anyhow::bail!("export `{}` didn't trap", name),
-//             Err(e) if e.to_string().contains(err) => Ok(()),
-//             Err(e) => Err(e),
-//         }
-//     }
+    fn run_err(i: &Instance, store: &mut Store<Context>, name: &str, err: &str) -> Result<()> {
+        match run(i, store, name) {
+            Ok(()) => anyhow::bail!("export `{}` didn't trap", name),
+            Err(e) if e.to_string().contains(err) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
 
-//     fn run(i: &Instance, name: &str) -> Result<()> {
-//         let run = i.get_typed_func::<(), ()>(name)?;
-//         run.call(())?;
-//         Ok(())
-//     }
-// }
+    fn run(i: &Instance, store: &mut Store<Context>, name: &str) -> Result<()> {
+        let run = i.get_typed_func::<(), (), _>(&mut *store, name)?;
+        run.call(store, ())?;
+        Ok(())
+    }
+}

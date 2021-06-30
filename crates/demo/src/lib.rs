@@ -1,6 +1,8 @@
+use std::cell::RefCell;
 use std::sync::Once;
 use witx2::abi::Direction;
 use witx_bindgen_gen_core::{witx2, Generator};
+use witx_bindgen_rust::Handle;
 
 witx_bindgen_rust::export!("./crates/demo/demo.witx");
 witx_bindgen_rust::import!("./crates/demo/browser.witx");
@@ -20,14 +22,31 @@ fn demo() -> &'static Demo {
     &Demo
 }
 
-impl Demo {
-    fn generate<G: Generator>(
+#[derive(Default)]
+pub struct Config {
+    js: RefCell<witx_bindgen_gen_js::Opts>,
+    rust: RefCell<witx_bindgen_gen_rust_wasm::Opts>,
+    wasmtime: RefCell<witx_bindgen_gen_wasmtime::Opts>,
+}
+
+impl demo::Demo for Demo {
+    fn config_new(&self) -> Handle<Config> {
+        Config::default().into()
+    }
+
+    fn render(
         &self,
-        witx: &str,
+        config: Handle<Config>,
+        lang: demo::Lang,
+        witx: String,
         import: bool,
-        mut gen: G,
     ) -> Result<Vec<(String, String)>, String> {
-        let iface = witx2::Interface::parse("input", witx).map_err(|e| format!("{:?}", e))?;
+        let mut gen: Box<dyn Generator> = match lang {
+            demo::Lang::Rust => Box::new(config.rust.borrow().clone().build()),
+            demo::Lang::Wasmtime => Box::new(config.wasmtime.borrow().clone().build()),
+            demo::Lang::Js => Box::new(config.js.borrow().clone().build()),
+        };
+        let iface = witx2::Interface::parse("input", &witx).map_err(|e| format!("{:?}", e))?;
         let mut files = Default::default();
         gen.generate(
             &iface,
@@ -43,42 +62,24 @@ impl Demo {
             .map(|(name, contents)| (name.to_string(), String::from_utf8_lossy(&contents).into()))
             .collect())
     }
-}
 
-impl demo::Demo for Demo {
-    fn render_js(&self, witx: String, import: bool) -> Result<Vec<(String, String)>, String> {
-        self.generate(&witx, import, witx_bindgen_gen_js::Opts::default().build())
+    fn set_rust_unchecked(&self, config: Handle<Config>, unchecked: bool) {
+        config.rust.borrow_mut().unchecked = unchecked;
     }
-
-    fn render_rust(
-        &self,
-        witx: String,
-        import: bool,
-        unchecked: bool,
-    ) -> Result<Vec<(String, String)>, String> {
-        let mut opts = witx_bindgen_gen_rust_wasm::Opts::default();
-        opts.unchecked = unchecked;
-        self.generate(&witx, import, opts.build())
+    fn set_wasmtime_tracing(&self, config: Handle<Config>, tracing: bool) {
+        config.wasmtime.borrow_mut().tracing = tracing;
     }
-
-    fn render_wasmtime(
-        &self,
-        witx: String,
-        import: bool,
-        tracing: bool,
-        async_: demo::Async,
-        custom_error: bool,
-    ) -> Result<Vec<(String, String)>, String> {
+    fn set_wasmtime_custom_error(&self, config: Handle<Config>, custom_error: bool) {
+        browser::log("custom error");
+        config.wasmtime.borrow_mut().custom_error = custom_error;
+    }
+    fn set_wasmtime_async(&self, config: Handle<Config>, async_: demo::Async) {
         use witx_bindgen_gen_wasmtime::Async;
 
-        let mut opts = witx_bindgen_gen_wasmtime::Opts::default();
-        opts.tracing = tracing;
-        opts.async_ = match async_ {
+        config.wasmtime.borrow_mut().async_ = match async_ {
             demo::Async::All => Async::All,
             demo::Async::None => Async::None,
             demo::Async::Only(list) => Async::Only(list.into_iter().collect()),
         };
-        opts.custom_error = custom_error;
-        self.generate(&witx, import, opts.build())
     }
 }

@@ -25,6 +25,7 @@ pub struct Context {
     wasi: wasmtime_wasi::WasiCtx,
     imports: imports::MyHost,
     tables: imports::HostTables<imports::MyHost>,
+    export_data: exports::WasmData,
 }
 
 fn run_test(engine: &Engine, wasm: &str) -> Result<()> {
@@ -45,11 +46,14 @@ fn run_test(engine: &Engine, wasm: &str) -> Result<()> {
                 .build(),
             imports: Default::default(),
             tables: Default::default(),
+            export_data: Default::default(),
         },
     );
-    // let instance = linker.instantiate(&mut store, &module)?;
 
-    let exports = exports::Wasm::new(&mut store, &module, &mut linker)?;
-    exports::test(&exports, &mut store)?;
+    let (exports, instance) =
+        exports::Wasm::instantiate(&mut store, &module, &mut linker, |state| {
+            &mut state.export_data
+        })?;
+    exports::test(&exports, instance, &mut store)?;
     Ok(())
 }

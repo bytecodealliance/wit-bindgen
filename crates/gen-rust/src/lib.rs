@@ -52,6 +52,7 @@ pub trait RustGenerator {
     );
     fn default_param_mode(&self) -> TypeMode;
     fn handle_projection(&self) -> Option<(&'static str, String)>;
+    fn handle_wrapper(&self) -> Option<&'static str>;
 
     fn rustdoc(&mut self, docs: &Docs) {
         let docs = match &docs.contents {
@@ -203,11 +204,20 @@ pub trait RustGenerator {
                     self.push_str(" ");
                 }
 
+                let suffix = match self.handle_wrapper() {
+                    Some(wrapper) => {
+                        self.push_str(wrapper);
+                        self.push_str("<");
+                        ">"
+                    }
+                    None => "",
+                };
                 if let Some((proj, _)) = self.handle_projection() {
                     self.push_str(proj);
                     self.push_str("::");
                 }
                 self.push_str(&iface.resources[*r].name.to_camel_case());
+                self.push_str(suffix);
             }
 
             Type::U8 => self.push_str("u8"),

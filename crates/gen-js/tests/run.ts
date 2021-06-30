@@ -19,11 +19,22 @@ async function run() {
       throw new Error("instance not ready yet");
     return instance.exports[name];
   });
-  const wasmObj = await exports.Wasm.instantiate(wasm, importObj);
+  const wasmObj = new exports.Wasm();
+  await wasmObj.instantiate(wasm, importObj);
   instance = wasmObj.instance;
   wasi.initialize(instance);
 
   run_tests(wasmObj);
+
+  // test other methods of creating a wasm wrapper
+  (new exports.Wasm()).instantiate(wasm.buffer, importObj);
+  (new exports.Wasm()).instantiate(new Uint8Array(wasm), importObj);
+  (new exports.Wasm()).instantiate(new WebAssembly.Module(wasm), importObj);
+  {
+    const obj = new exports.Wasm();
+    obj.add_to_imports(importObj);
+    obj.instantiate(new WebAssembly.Instance(new WebAssembly.Module(wasm), importObj));
+  }
 }
 
 function host(): imports.Host {
@@ -266,15 +277,12 @@ function run_tests(wasm: exports.Wasm) {
   test_lists(wasm);
   test_flavorful(wasm);
   test_invalid(wasm);
+  test_handles(wasm);
   // buffers(wasm);
 
   // Ensure that we properly called `free` everywhere in all the glue that we
   // needed to.
   assert.strictEqual(bytes, wasm.allocated_bytes());
-
-  // // It's known that we have a handle type that leaks here, so it's expected
-  // // we leak a few bytes.
-  // handles(wasm)?;
 }
 
 function test_scalars(wasm: exports.Wasm) {
@@ -464,42 +472,62 @@ function test_flavorful(wasm: exports.Wasm) {
   assert.deepStrictEqual(r2, ['typedef4']);
 }
 
-// fn handles(wasm: &Wasm) -> Result<()> {
-//     let bytes = wasm.allocated_bytes()?;
-//     {
-//         let s: WasmState = wasm.wasm_state_create()?;
-//         assert_eq!(wasm.wasm_state_get(&s)?, 100);
-//         assert_eq!(wasm.wasm_state2_saw_close()?, false);
-//         let s: WasmState2 = wasm.wasm_state2_create()?;
-//         assert_eq!(wasm.wasm_state2_saw_close()?, false);
-//         drop(s);
-//         assert_eq!(wasm.wasm_state2_saw_close()?, true);
+function test_handles(wasm: exports.Wasm) {
+  const bytes = wasm.allocated_bytes();
 
-//         let (_a, s2) =
-//             wasm.two_wasm_states(&wasm.wasm_state_create()?, &wasm.wasm_state2_create()?)?;
+  // Param/result of a handle works in a simple fashion
+  const s: exports.WasmState = wasm.wasm_state_create();
+  assert.strictEqual(wasm.wasm_state_get(s), 100);
 
-//         wasm.wasm_state2_param_record(WasmStateParamRecord { a: &s2 })?;
-//         wasm.wasm_state2_param_tuple((&s2,))?;
-//         wasm.wasm_state2_param_option(Some(&s2))?;
-//         wasm.wasm_state2_param_option(None)?;
-//         wasm.wasm_state2_param_result(Ok(&s2))?;
-//         wasm.wasm_state2_param_result(Err(2))?;
-//         wasm.wasm_state2_param_variant(WasmStateParamVariant::V0(&s2))?;
-//         wasm.wasm_state2_param_variant(WasmStateParamVariant::V1(2))?;
-//         wasm.wasm_state2_param_list(&[])?;
-//         wasm.wasm_state2_param_list(&[&s2])?;
-//         wasm.wasm_state2_param_list(&[&s2, &s2])?;
+  // Deterministic destruction is possible
+  assert.strictEqual(wasm.wasm_state2_saw_close(), false);
+  const s2: exports.WasmState2 = wasm.wasm_state2_create();
+  assert.strictEqual(wasm.wasm_state2_saw_close(), false);
+  s2.drop();
+  assert.strictEqual(wasm.wasm_state2_saw_close(), true);
 
-//         drop(wasm.wasm_state2_result_record()?.a);
-//         drop(wasm.wasm_state2_result_tuple()?.0);
-//         drop(wasm.wasm_state2_result_option()?.unwrap());
-//         drop(wasm.wasm_state2_result_result()?.unwrap());
-//         drop(wasm.wasm_state2_result_variant()?);
-//         drop(wasm.wasm_state2_result_list()?);
-//     }
-//     assert_eq!(bytes + 12, wasm.allocated_bytes()?);
-//     Ok(())
-// }
+  const arg1 = wasm.wasm_state_create();
+  const arg2 = wasm.wasm_state2_create();
+  const { c, d } = wasm.two_wasm_states(arg1, arg2);
+  arg1.drop();
+  arg2.drop();
+
+  wasm.wasm_state2_param_record({ a: d });
+  wasm.wasm_state2_param_tuple([d]);
+  wasm.wasm_state2_param_option(d);
+  wasm.wasm_state2_param_option(null);
+  wasm.wasm_state2_param_result({ tag: 'ok', val: d });
+  wasm.wasm_state2_param_result({ tag: 'err', val: 2 });
+  wasm.wasm_state2_param_variant({ tag: '0', val: d });
+  wasm.wasm_state2_param_variant({ tag: '1', val: 2 });
+  wasm.wasm_state2_param_list([]);
+  wasm.wasm_state2_param_list([d]);
+  wasm.wasm_state2_param_list([d, d]);
+
+  c.drop();
+  d.drop();
+
+  wasm.wasm_state2_result_record().a.drop();
+  wasm.wasm_state2_result_tuple()[0].drop();
+  const opt = wasm.wasm_state2_result_option();
+  if (opt === null)
+    throw new Error('should be some');
+  opt.drop();
+  const result = wasm.wasm_state2_result_result();
+  if (result.tag === 'err')
+    throw new Error('should be ok');
+  result.val.drop();
+  const variant = wasm.wasm_state2_result_variant();
+  if (variant.tag === '1')
+    throw new Error('should be 0');
+  variant.val.drop();
+  for (let val of wasm.wasm_state2_result_list())
+    val.drop();
+
+  assert.strictEqual(bytes + 4, wasm.allocated_bytes());
+  s.drop();
+  assert.strictEqual(bytes, wasm.allocated_bytes());
+}
 
 // fn buffers(wasm: &Wasm) -> Result<()> {
 //     let mut out = [0; 10];

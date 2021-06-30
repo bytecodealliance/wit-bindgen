@@ -5,6 +5,7 @@ witx_bindgen_rust::export!("tests/wasm.witx");
 witx_bindgen_rust::export!({ paths: ["tests/wasm.witx"], unchecked });
 
 use wasm::*;
+use witx_bindgen_rust::Handle;
 
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
 // use witx_bindgen_rust::exports::{InBuffer, InBufferRaw, OutBuffer, OutBufferRaw};
@@ -22,14 +23,11 @@ fn wasm() -> &'static impl Wasm {
     &ME
 }
 
-struct MyType(u32);
+pub struct WasmState(u32);
 
-struct MyType2(u32);
+pub struct WasmState2(u32);
 
 impl Wasm for MyWasm {
-    // type WasmState = MyType;
-    // type WasmState2 = MyType2;
-
     fn allocated_bytes(&self) -> u32 {
         crate::allocator::get() as u32
     }
@@ -245,55 +243,61 @@ impl Wasm for MyWasm {
         (b"typedef3".to_vec(), vec!["typedef4".to_string()])
     }
 
-    // fn wasm_state_create(&self) -> MyType {
-    //     MyType(100)
-    // }
+    fn wasm_state_create(&self) -> Handle<WasmState> {
+        WasmState(100).into()
+    }
 
-    // fn wasm_state_get(&self, state: &MyType) -> u32 {
-    //     state.0
-    // }
+    fn wasm_state_get(&self, state: Handle<WasmState>) -> u32 {
+        state.0
+    }
 
-    // fn wasm_state2_create(&self) -> MyType2 {
-    //     MyType2(33)
-    // }
+    fn wasm_state2_create(&self) -> Handle<WasmState2> {
+        WasmState2(33).into()
+    }
 
-    // fn wasm_state2_saw_close(&self) -> bool {
-    //     self.wasm_state2_closed.load(SeqCst) != 0
-    // }
+    fn wasm_state2_saw_close(&self) -> bool {
+        self.wasm_state2_closed.load(SeqCst) != 0
+    }
 
-    // fn wasm_state2_close(&self, _state: MyType2) {
-    //     self.wasm_state2_closed.store(1, SeqCst);
-    // }
+    fn drop_wasm_state2(&self, _state: WasmState2) {
+        self.wasm_state2_closed.store(1, SeqCst);
+    }
 
-    // fn two_wasm_states(&self, _a: &MyType, _b: &MyType2) -> (MyType, MyType2) {
-    //     (MyType(101), MyType2(102))
-    // }
+    fn two_wasm_states(
+        &self,
+        _a: Handle<WasmState>,
+        _b: Handle<WasmState2>,
+    ) -> (Handle<WasmState>, Handle<WasmState2>) {
+        (WasmState(101).into(), WasmState2(102).into())
+    }
 
-    // fn wasm_state2_param_record(&self, _a: WasmStateParamRecord<'_, Self>) {}
-    // fn wasm_state2_param_tuple(&self, _a: (&'_ MyType2,)) {}
-    // fn wasm_state2_param_option(&self, _a: Option<&'_ MyType2>) {}
-    // fn wasm_state2_param_result(&self, _a: Result<&'_ MyType2, u32>) {}
-    // fn wasm_state2_param_variant(&self, _a: WasmStateParamVariant<'_, Self>) {}
-    // fn wasm_state2_param_list(&self, _a: Vec<&MyType2>) {}
+    fn wasm_state2_param_record(&self, _a: WasmStateParamRecord) {}
+    fn wasm_state2_param_tuple(&self, _a: (Handle<WasmState2>,)) {}
+    fn wasm_state2_param_option(&self, _a: Option<Handle<WasmState2>>) {}
+    fn wasm_state2_param_result(&self, _a: Result<Handle<WasmState2>, u32>) {}
+    fn wasm_state2_param_variant(&self, _a: WasmStateParamVariant) {}
+    fn wasm_state2_param_list(&self, _a: Vec<Handle<WasmState2>>) {}
 
-    // fn wasm_state2_result_record(&self) -> WasmStateResultRecord<Self> {
-    //     WasmStateResultRecord { a: MyType2(222) }
-    // }
-    // fn wasm_state2_result_tuple(&self) -> (MyType2,) {
-    //     (MyType2(333),)
-    // }
-    // fn wasm_state2_result_option(&self) -> Option<MyType2> {
-    //     Some(MyType2(444))
-    // }
-    // fn wasm_state2_result_result(&self) -> Result<MyType2, u32> {
-    //     Ok(MyType2(555))
-    // }
-    // fn wasm_state2_result_variant(&self) -> WasmStateResultVariant<Self> {
-    //     WasmStateResultVariant::V0(MyType2(666))
-    // }
-    // fn wasm_state2_result_list(&self) -> Vec<MyType2> {
-    //     vec![MyType2(777), MyType2(888)]
-    // }
+    fn wasm_state2_result_record(&self) -> WasmStateResultRecord {
+        WasmStateResultRecord {
+            a: WasmState2(222).into(),
+        }
+    }
+    fn wasm_state2_result_tuple(&self) -> (Handle<WasmState2>,) {
+        (WasmState2(333).into(),)
+    }
+    fn wasm_state2_result_option(&self) -> Option<Handle<WasmState2>> {
+        Some(WasmState2(444).into())
+    }
+    fn wasm_state2_result_result(&self) -> Result<Handle<WasmState2>, u32> {
+        Ok(WasmState2(555).into())
+    }
+    fn wasm_state2_result_variant(&self) -> WasmStateResultVariant {
+        WasmStateResultVariant::V0(Handle::new(WasmState2(666)))
+    }
+    fn wasm_state2_result_list(&self) -> Vec<Handle<WasmState2>> {
+        vec![WasmState2(777).into(), WasmState2(888).into()]
+    }
 
     // fn buffer_u8(&self, in_: InBufferRaw<'_, u8>, out: OutBufferRaw<'_, u8>) -> u32 {
     //     assert_eq!(in_.len(), 1);
