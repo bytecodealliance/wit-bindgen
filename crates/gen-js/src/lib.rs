@@ -51,7 +51,7 @@ struct Exports {
     funcs: Vec<Source>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
 pub struct Opts {
     #[cfg_attr(feature = "structopt", structopt(long = "no-typescript"))]

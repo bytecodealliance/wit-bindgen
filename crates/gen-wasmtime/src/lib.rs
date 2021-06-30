@@ -60,7 +60,7 @@ struct Exports {
     funcs: Vec<String>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
 pub struct Opts {
     /// Whether or not `rustfmt` is executed to format generated code.
@@ -85,7 +85,7 @@ pub struct Opts {
     pub custom_error: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Async {
     None,
     All,
@@ -927,7 +927,7 @@ impl Generator for Wasmtime {
                 self.src.push_str(&format!(
                     "fn drop_{}(&mut self, state: Self::{}) {{
                         drop(state);
-                    }}",
+                    }}\n",
                     handle,
                     handle.to_camel_case(),
                 ));

@@ -25,7 +25,7 @@ pub struct RustWasm {
     imported_handles: BTreeSet<String>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
 pub struct Opts {
     /// Whether or not `rustfmt` is executed to format generated code.

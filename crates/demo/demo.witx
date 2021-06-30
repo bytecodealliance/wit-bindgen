@@ -6,21 +6,20 @@ variant async {
   only(list<string>),
 }
 
-render_js: function(
-  input: string,
-  import: bool,
-) -> expected<files, string>
+enum lang {
+  js,
+  rust,
+  wasmtime,
+}
 
-render_rust: function(
-  input: string,
-  import: bool,
-  unchecked: bool,
-) -> expected<files, string>
 
-render_wasmtime: function(
-  input: string,
-  import: bool,
-  tracing: bool,
-  async: async,
-  custom_error: bool,
-) -> expected<files, string>
+resource config
+
+config_new: function() -> config
+
+render: function(c: config, lang: lang, witx: string, import: bool) -> expected<files, string>
+
+set_rust_unchecked: function(c: config, unchecked: bool)
+set_wasmtime_tracing: function(c: config, unchecked: bool)
+set_wasmtime_async: function(c: config, async: async)
+set_wasmtime_custom_error: function(c: config, custom: bool)
