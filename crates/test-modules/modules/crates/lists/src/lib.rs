@@ -1,4 +1,4 @@
-witx_bindgen_rust::export!("crates/lists/lists.witx");
+witx_bindgen_rust::export!("../../../tests/lists.witx");
 
 use lists::*;
 
@@ -38,6 +38,12 @@ impl Lists for Component {
             &[-1, 2, -3, 4, -5, 6, -7, 8, -9, 10, -11, 12, -13, 14, -15, 16, -17, 18, -19, 20]
         );
     }
+    fn list_f32_param(&self, x: Vec<f32>) {
+        assert_eq!(x, &[-1.1, 2.2, -3.3, 4.4, -5.5]);
+    }
+    fn list_f64_param(&self, x: Vec<f64>) {
+        assert_eq!(x, &[-1.1, 2.2, -3.3, 4.4, -5.5]);
+    }
     fn list_u8_ret(&self) -> Vec<u8> {
         vec![5, 4, 3, 2, 1]
     }
@@ -65,6 +71,12 @@ impl Lists for Component {
         vec![
             -1, 2, -3, 4, -5, 6, -7, 8, -9, 10, -11, 12, -13, 14, -15, 16, -17, 18, -19, 20,
         ]
+    }
+    fn list_f32_ret(&self) -> Vec<f32> {
+        vec![1.1, -2.2, 3.3, -4.4, 5.5]
+    }
+    fn list_f64_ret(&self) -> Vec<f64> {
+        vec![1.1, -2.2, 3.3, -4.4, 5.5]
     }
     fn tuple_list(&self, x: Vec<(u8, i8)>) -> Vec<(i64, u32)> {
         assert_eq!(
@@ -111,7 +123,6 @@ impl Lists for Component {
     fn record_list(&self, x: Vec<SomeRecord>) -> Vec<OtherRecord> {
         assert_eq!(x.len(), 2);
         assert_eq!(x[0].x, "guten tag!");
-        assert_eq!(x[0].y.a0, 1);
         assert_eq!(x[0].y.a1, 2);
         assert_eq!(x[0].y.a2, 3);
         assert_eq!(x[0].y.a3, 4);
@@ -124,7 +135,6 @@ impl Lists for Component {
         assert_eq!(x[0].c3, 10);
         assert_eq!(x[0].c4, 11);
         assert_eq!(x[1].x, "guten morgen!");
-        assert_eq!(x[1].y.a0, 12);
         assert_eq!(x[1].y.a1, 13);
         assert_eq!(x[1].y.a2, 14);
         assert_eq!(x[1].y.a3, 15);
@@ -140,7 +150,6 @@ impl Lists for Component {
         assert_eq!(x[1].c4, 24);
 
         vec![OtherRecord {
-            a0: 1,
             a1: 5,
             a2: 2,
             a3: 7,
@@ -149,44 +158,48 @@ impl Lists for Component {
             c: vec![1, 2, 3, 4, 5],
         }]
     }
-    fn variant_list(
-        &self,
-        mut x: Vec<SomeVariant>,
-    ) -> (u64, Vec<OtherVariant>, u16, SomeVariant, Vec<SomeVariant>) {
-        assert_eq!(x.len(), 4);
+    fn variant_list(&self, mut x: Vec<SomeVariant>) -> Vec<OtherVariant> {
+        assert_eq!(x.len(), 5);
         match &x[0] {
-            SomeVariant::A(x) => assert_eq!(x, "first"),
-            _ => panic!(),
-        }
-        match &x[1] {
-            SomeVariant::A(x) => assert_eq!(x, "second"),
-            _ => panic!(),
-        }
-        match &x[2] {
             SomeVariant::B => {}
             _ => panic!(),
         }
+        match &x[1] {
+            SomeVariant::A(x) => assert_eq!(x, "first"),
+            _ => panic!(),
+        }
+        match &x[2] {
+            SomeVariant::C(1244) => {}
+            _ => panic!(),
+        }
         match &x[3] {
-            SomeVariant::C(x) => assert_eq!(*x, 1244),
+            SomeVariant::A(x) => assert_eq!(x, "second"),
+            _ => panic!(),
+        }
+        match &x[4] {
+            SomeVariant::D(x) => {
+                assert_eq!(x.len(), 3);
+                match &x[0] {
+                    OtherVariant::B(4321) => {}
+                    _ => panic!(),
+                }
+                match &x[1] {
+                    OtherVariant::A => {}
+                    _ => panic!(),
+                }
+                match &x[2] {
+                    OtherVariant::C(x) => assert_eq!(x, "third"),
+                    _ => panic!(),
+                }
+            }
             _ => panic!(),
         }
 
-        (
-            112233,
-            vec![
-                OtherVariant::C(vec![
-                    "".to_string(),
-                    "1".to_string(),
-                    "21".to_string(),
-                    "321".to_string(),
-                ]),
-                OtherVariant::A(332211),
-                OtherVariant::B(SomeVariant::A("nested!".to_string())),
-            ],
-            42,
-            x.swap_remove(0),
-            x,
-        )
+        vec![
+            OtherVariant::C("a string".into()),
+            OtherVariant::A,
+            OtherVariant::B(332211),
+        ]
     }
     fn load_store_everything(&self, a: LoadStoreAllSizes) -> LoadStoreAllSizes {
         a

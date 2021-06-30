@@ -1,4 +1,4 @@
-witx_bindgen_rust::import!("crates/lists/lists.witx");
+witx_bindgen_rust::import!("../../../tests/lists.witx");
 
 use lists::*;
 
@@ -15,6 +15,8 @@ fn main() {
     list_s64_param(&[
         -1, 2, -3, 4, -5, 6, -7, 8, -9, 10, -11, 12, -13, 14, -15, 16, -17, 18, -19, 20,
     ]);
+    list_f32_param(&[-1.1, 2.2, -3.3, 4.4, -5.5]);
+    list_f64_param(&[-1.1, 2.2, -3.3, 4.4, -5.5]);
 
     assert_eq!(list_u8_ret(), &[5, 4, 3, 2, 1]);
     assert_eq!(list_u16_ret(), &[10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
@@ -36,6 +38,8 @@ fn main() {
         list_s64_ret(),
         &[-1, 2, -3, 4, -5, 6, -7, 8, -9, 10, -11, 12, -13, 14, -15, 16, -17, 18, -19, 20]
     );
+    assert_eq!(list_f32_ret(), &[1.1, -2.2, 3.3, -4.4, 5.5]);
+    assert_eq!(list_f64_ret(), &[1.1, -2.2, 3.3, -4.4, 5.5]);
 
     assert_eq!(
         tuple_list(&[
@@ -76,7 +80,6 @@ fn main() {
         SomeRecord {
             x: "guten tag!",
             y: OtherRecordParam {
-                a0: 1,
                 a1: 2,
                 a2: 3,
                 a3: 4,
@@ -92,7 +95,6 @@ fn main() {
         SomeRecord {
             x: "guten morgen!",
             y: OtherRecordParam {
-                a0: 12,
                 a1: 13,
                 a2: 14,
                 a3: 15,
@@ -108,7 +110,6 @@ fn main() {
     ]);
 
     assert_eq!(x.len(), 1);
-    assert_eq!(x[0].a0, 1);
     assert_eq!(x[0].a1, 5);
     assert_eq!(x[0].a2, 2);
     assert_eq!(x[0].a3, 7);
@@ -117,53 +118,28 @@ fn main() {
     assert_eq!(x[0].c, &[1, 2, 3, 4, 5]);
 
     let x = variant_list(&[
-        SomeVariantParam::A("first"),
-        SomeVariantParam::A("second"),
-        SomeVariantParam::B,
-        SomeVariantParam::C(1244),
+        SomeVariant::B,
+        SomeVariant::A("first"),
+        SomeVariant::C(1244),
+        SomeVariant::A("second"),
+        SomeVariant::D(&[
+            OtherVariantParam::B(4321),
+            OtherVariantParam::A,
+            OtherVariantParam::C("third"),
+        ]),
     ]);
 
-    assert_eq!(x.0, 112233);
-    assert_eq!(x.1.len(), 3);
-    match &x.1[0] {
-        OtherVariant::C(x) => {
-            assert_eq!(x, &["", "1", "21", "321"]);
-        }
+    assert_eq!(x.len(), 3);
+    match &x[0] {
+        OtherVariantResult::C(x) => assert_eq!(x, "a string"),
         _ => panic!(),
     }
-    match &x.1[1] {
-        OtherVariant::A(x) => {
-            assert_eq!(*x, 332211);
-        }
+    match &x[1] {
+        OtherVariantResult::A => {}
         _ => panic!(),
     }
-    match &x.1[2] {
-        OtherVariant::B(x) => match x {
-            SomeVariantResult::A(x) => {
-                assert_eq!(x, "nested!");
-            }
-            _ => panic!(),
-        },
-        _ => panic!(),
-    }
-    assert_eq!(x.2, 42);
-    match &x.3 {
-        SomeVariantResult::A(x) => {
-            assert_eq!(x, "first");
-        }
-        _ => panic!(),
-    }
-    assert_eq!(x.4.len(), 3);
-    match &x.4[0] {
-        SomeVariantResult::C(x) => assert_eq!(*x, 1244),
-        _ => panic!(),
-    }
-    match &x.4[1] {
-        SomeVariantResult::A(x) => assert_eq!(x, "second"),
-        _ => panic!(),
-    }
-    match &x.4[2] {
-        SomeVariantResult::B => {}
+    match &x[2] {
+        OtherVariantResult::B(332211) => {}
         _ => panic!(),
     }
 
