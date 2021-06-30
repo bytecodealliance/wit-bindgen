@@ -1,0 +1,68 @@
+list_u8_param: function(x: list<u8>)
+list_u16_param: function(x: list<u16>)
+list_u32_param: function(x: list<u32>)
+list_u64_param: function(x: list<u64>)
+list_s8_param: function(x: list<s8>)
+list_s16_param: function(x: list<s16>)
+list_s32_param: function(x: list<s32>)
+list_s64_param: function(x: list<s64>)
+
+list_u8_ret: function() -> list<u8>
+list_u16_ret: function() -> list<u16>
+list_u32_ret: function() -> list<u32>
+list_u64_ret: function() -> list<u64>
+list_s8_ret: function() -> list<s8>
+list_s16_ret: function() -> list<s16>
+list_s32_ret: function() -> list<s32>
+list_s64_ret: function() -> list<s64>
+
+tuple_list: function(x: list<tuple<u8, s8>>) -> list<tuple<s64, u32>>
+tuple_string_list: function(x: list<tuple<u8, string>>) -> list<tuple<string, u8>>
+string_list: function(x: list<string>) -> list<string>
+
+record some_record {
+  x: string,
+  y: other_record,
+  c1: u32,
+  c2: u64,
+  c3: s32,
+  c4: s64,
+}
+record other_record {
+  a0: u64,
+  a1: u32,
+  a2: u64,
+  a3: s32,
+  a4: s64,
+  b: string,
+  c: list<u8>,
+}
+record_list: function(x: list<some_record>) -> list<other_record>
+
+variant some_variant {
+  a(string),
+  b,
+  c(u32),
+}
+variant other_variant {
+  a(u32),
+  b(some_variant),
+  c(list<string>),
+}
+variant_list: function(x: list<some_variant>) -> (u64, list<other_variant>, u16, some_variant, list<some_variant>)
+
+type load_store_all_sizes = list<tuple<
+  string,
+  u8,
+  s8,
+  u16,
+  s16,
+  u32,
+  s32,
+  u64,
+  s64,
+  f32,
+  f64,
+  char,
+>>
+load_store_everything: function(a: load_store_all_sizes) -> load_store_all_sizes

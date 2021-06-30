@@ -1,0 +1,10 @@
+[package]
+name = "renderer"
+version = "0.1.0"
+authors = ["Peter Huene <peter@huene.dev>"]
+edition = "2018"
+
+[dependencies]
+witx-bindgen-rust = { git = "https://github.com/bytecodealliance/witx-bindgen", branch = "main" }
+
+[workspace]

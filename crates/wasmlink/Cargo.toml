@@ -1,0 +1,17 @@
+[package]
+name = "wasmlink"
+version = "0.1.0"
+authors = ["Peter Huene <peter@huene.dev>"]
+edition = "2018"
+
+[dependencies]
+anyhow = "1.0.40"
+lazy_static = "1.4.0"
+petgraph = "0.5.1"
+wasm-encoder = "0.4.1"
+wasmparser = "0.78.1"
+witx2 = { git = "https://github.com/bytecodealliance/witx-bindgen", branch = "main" }
+
+[dev-dependencies]
+wasmprinter = "0.2.26"
+wat = "1.0.37"
