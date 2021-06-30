@@ -44,11 +44,18 @@ mod exports {
     );
 }
 fn main() {
+    let (cmd, args) = if cfg!(windows) {
+        ("cmd.exe", &["/c", "npx.cmd"] as &[&str])
+    } else {
+        ("npx", &[] as &[&str])
+    };
+
     imports::TESTS
         .par_iter()
         .chain(exports::TESTS)
         .for_each(|test| {
-            let status = Command::new("npx")
+            let status = Command::new(cmd)
+                .args(args)
                 .arg("eslint")
                 .arg("-c")
                 .arg(".eslintrc.js")

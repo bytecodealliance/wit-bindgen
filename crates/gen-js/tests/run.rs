@@ -35,9 +35,16 @@ fn main() {
         fs::write(dir.join("exports").join(file), contents).unwrap();
     }
 
+    let (cmd, args) = if cfg!(windows) {
+        ("cmd.exe", &["/c", "npx.cmd"] as &[&str])
+    } else {
+        ("npx", &[] as &[&str])
+    };
+
     println!("Running tsc...");
     fs::copy("tests/run.ts", dir.join("run.ts")).unwrap();
-    let status = Command::new("npx")
+    let status = Command::new(cmd)
+        .args(args)
         .arg("tsc")
         .arg(dir.join("run.ts"))
         .arg("--strictNullChecks")

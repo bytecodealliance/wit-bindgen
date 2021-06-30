@@ -1,0 +1,8 @@
+[package]
+name = "records-main"
+version = "0.1.0"
+authors = ["Peter Huene <peter@huene.dev>"]
+edition = "2018"
+
+[dependencies]
+witx-bindgen-rust = { path = "../../../../rust-wasm" }

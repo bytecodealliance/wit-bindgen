@@ -30,7 +30,7 @@ fn run(input: TokenStream, dir: Direction) -> TokenStream {
     let cwd = std::env::current_dir().unwrap();
     for file in input.files.iter() {
         contents.push_str(&format!(
-            "const _: &str = include_str!(\"{}\");\n",
+            "const _: &str = include_str!(r#\"{}\"#);\n",
             cwd.join(file).display()
         ));
     }

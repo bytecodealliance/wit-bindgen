@@ -40,7 +40,7 @@ fn run(input: TokenStream, dir: Direction) -> TokenStream {
     for file in input.files.iter() {
         header.extend(
             format!(
-                "const _: &str = include_str!(\"{}\");\n",
+                "const _: &str = include_str!(r#\"{}\"#);\n",
                 cwd.join(file).display()
             )
             .parse::<TokenStream>()

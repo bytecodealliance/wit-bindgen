@@ -8,6 +8,8 @@ edition = "2018"
 members = [
   "crates/test-rust-wasm",
   "crates/demo",
+  "crates/wasmlink-cli",
+  "crates/test-modules",
 ]
 resolver = "2"
 
