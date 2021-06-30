@@ -261,49 +261,68 @@ impl Generator for RustWasm {
         // For exported handles we synthesize some trait implementations
         // automatically for runtime-required traits.
         if !self.in_import {
+            let panic = "
+                #[cfg(not(target_arch = \"wasm32\"))]
+                {
+                    panic!(\"handles can only be used on wasm32\");
+                }
+                #[cfg(target_arch = \"wasm32\")]
+            ";
             self.src.push_str(&format!(
                 "
                     unsafe impl witx_bindgen_rust::HandleType for super::{ty} {{
                         #[inline]
-                        fn clone(val: i32) -> i32 {{
-                            #[link(wasm_import_module = \"canonical_abi\")]
-                            extern \"C\" {{
-                                #[link_name = \"resource_clone_{name}\"]
-                                fn clone(val: i32) -> i32;
+                        fn clone(_val: i32) -> i32 {{
+                            {panic_not_wasm}
+                            {{
+                                #[link(wasm_import_module = \"canonical_abi\")]
+                                extern \"C\" {{
+                                    #[link_name = \"resource_clone_{name}\"]
+                                    fn clone(val: i32) -> i32;
+                                }}
+                                unsafe {{ clone(_val) }}
                             }}
-                            unsafe {{ clone(val) }}
                         }}
 
                         #[inline]
-                        fn drop(val: i32) {{
-                            #[link(wasm_import_module = \"canonical_abi\")]
-                            extern \"C\" {{
-                                #[link_name = \"resource_drop_{name}\"]
-                                fn drop(val: i32);
+                        fn drop(_val: i32) {{
+                            {panic_not_wasm}
+                            {{
+                                #[link(wasm_import_module = \"canonical_abi\")]
+                                extern \"C\" {{
+                                    #[link_name = \"resource_drop_{name}\"]
+                                    fn drop(val: i32);
+                                }}
+                                unsafe {{ drop(_val) }}
                             }}
-                            unsafe {{ drop(val) }}
                         }}
                     }}
 
                     unsafe impl witx_bindgen_rust::LocalHandle for super::{ty} {{
                         #[inline]
-                        fn new(val: i32) -> i32 {{
-                            #[link(wasm_import_module = \"canonical_abi\")]
-                            extern \"C\" {{
-                                #[link_name = \"resource_new_{name}\"]
-                                fn new(val: i32) -> i32;
+                        fn new(_val: i32) -> i32 {{
+                            {panic_not_wasm}
+                            {{
+                                #[link(wasm_import_module = \"canonical_abi\")]
+                                extern \"C\" {{
+                                    #[link_name = \"resource_new_{name}\"]
+                                    fn new(val: i32) -> i32;
+                                }}
+                                unsafe {{ new(_val) }}
                             }}
-                            unsafe {{ new(val) }}
                         }}
 
                         #[inline]
-                        fn get(val: i32) -> i32 {{
-                            #[link(wasm_import_module = \"canonical_abi\")]
-                            extern \"C\" {{
-                                #[link_name = \"resource_get_{name}\"]
-                                fn get(val: i32) -> i32;
+                        fn get(_val: i32) -> i32 {{
+                            {panic_not_wasm}
+                            {{
+                                #[link(wasm_import_module = \"canonical_abi\")]
+                                extern \"C\" {{
+                                    #[link_name = \"resource_get_{name}\"]
+                                    fn get(val: i32) -> i32;
+                                }}
+                                unsafe {{ get(_val) }}
                             }}
-                            unsafe {{ get(val) }}
                         }}
                     }}
 
@@ -319,6 +338,7 @@ impl Generator for RustWasm {
                 name_snake = iface.resources[ty].name.to_snake_case(),
                 iface = iface.name.to_snake_case(),
                 ns = self.opts.symbol_namespace,
+                panic_not_wasm = panic,
             ));
             let trait_ = self
                 .traits
