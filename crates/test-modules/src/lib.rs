@@ -20,9 +20,15 @@ mod tests {
     }
 
     fn witx_path(name: &str) -> PathBuf {
-        Path::new("modules/crates")
+        let path = Path::new("modules/crates")
             .join(name)
-            .join(format!("{}.witx", name))
+            .join(format!("{}.witx", name));
+
+        if path.is_file() {
+            return path;
+        }
+
+        Path::new("../../tests").join(format!("{}.witx", name))
     }
 
     pub fn link(main: &str, imports: &[&str]) -> Result<Vec<u8>> {
