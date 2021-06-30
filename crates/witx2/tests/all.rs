@@ -12,6 +12,7 @@ use rayon::prelude::*;
 use serde::Serialize;
 use std::env;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
@@ -100,7 +101,15 @@ impl Runner<'_> {
         let result = if contents.contains("// parse-fail") {
             match result {
                 Ok(_) => bail!("expected test to not parse but it did"),
-                Err(e) => normalize(test, &format!("{:?}", e)),
+                Err(mut e) => {
+                    if let Some(err) = e.downcast_mut::<io::Error>() {
+                        *err = io::Error::new(
+                            io::ErrorKind::Other,
+                            "some generic platform-agnostic error message",
+                        );
+                    }
+                    normalize(test, &format!("{:?}", e))
+                }
             }
         } else {
             let instance = result?;
