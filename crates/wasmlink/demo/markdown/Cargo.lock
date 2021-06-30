@@ -9,23 +9,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15af2628f6890fe2609a3b91bef4c83450512802e59489f9c1cb1fa5df064a61"
 
 [[package]]
+name = "bitflags"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
+
+[[package]]
 name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
-name = "flags"
-version = "0.1.0"
+name = "getopts"
+version = "0.2.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14dbbfd5c71d70241ecf9e6f13737f7b5ce823821063188d7e46c41d371eebd5"
 dependencies = [
- "witx-bindgen-rust",
-]
-
-[[package]]
-name = "flags-main"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
+ "unicode-width",
 ]
 
 [[package]]
@@ -50,20 +51,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3576a87f2ba00f6f106fdfcd16db1d698d648a26ad8e0573cad8537c3c362d2a"
 
 [[package]]
-name = "lists"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
-]
-
-[[package]]
-name = "lists-main"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
-]
-
-[[package]]
 name = "log"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -71,6 +58,20 @@ checksum = "51b9bbe6c47d51fc3e1a9b945965946b4c44142ab8792c50835a980d362c2710"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "markdown"
+version = "0.1.0"
+dependencies = [
+ "pulldown-cmark",
+ "witx-bindgen-rust",
+]
+
+[[package]]
+name = "memchr"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b16bd47d9e329435e309c58469fe0791c2d0d1ba96ec0954152a5ae2b04387dc"
 
 [[package]]
 name = "proc-macro2"
@@ -82,26 +83,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulldown-cmark"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffade02495f22453cd593159ea2f59827aae7f53fa8323f756799b670881dcf8"
+dependencies = [
+ "bitflags",
+ "getopts",
+ "memchr",
+ "unicase",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d0b9745dc2debf507c8422de05d7226cc1f0644216dfdfead988f9b1ab32a7"
 dependencies = [
  "proc-macro2",
-]
-
-[[package]]
-name = "records"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
-]
-
-[[package]]
-name = "records-main"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
 ]
 
 [[package]]
@@ -136,17 +135,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "types"
-version = "0.1.0"
+name = "unicase"
+version = "2.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50f37be617794602aabbeee0be4f259dc1778fabe05e2d67ee8f79326d5cb4f6"
 dependencies = [
- "witx-bindgen-rust",
-]
-
-[[package]]
-name = "types-main"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
+ "version_check",
 ]
 
 [[package]]
@@ -156,24 +150,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb0d2e7be6ae3a5fa87eed5fb451aff96f2573d2694942e40543ae0bbe19c796"
 
 [[package]]
+name = "unicode-width"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9337591893a19b88d8d87f2cec1e73fad5cdfd10e5a6f349f498ad6ea2ffb1e3"
+
+[[package]]
 name = "unicode-xid"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ccb82d61f80a663efe1f787a51b16b5a51e3314d6ac365b08639f52387b33f3"
 
 [[package]]
-name = "variants"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
-]
-
-[[package]]
-name = "variants-main"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
-]
+name = "version_check"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fecdca9a5291cc2b8dcf7dc02453fee791a280f3743cb0905f8822ae463b3fe"
 
 [[package]]
 name = "wast"

@@ -9,6 +9,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pulldown-cmark = "0.8.0"
-witx-bindgen-rust = { git = "https://github.com/bytecodealliance/witx-bindgen", branch = "main" }
+witx-bindgen-rust = { path = "../../../rust-wasm" }
 
 [workspace]

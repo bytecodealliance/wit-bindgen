@@ -15,20 +15,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
-name = "flags"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
-]
-
-[[package]]
-name = "flags-main"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
-]
-
-[[package]]
 name = "heck"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -48,20 +34,6 @@ name = "leb128"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3576a87f2ba00f6f106fdfcd16db1d698d648a26ad8e0573cad8537c3c362d2a"
-
-[[package]]
-name = "lists"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
-]
-
-[[package]]
-name = "lists-main"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
-]
 
 [[package]]
 name = "log"
@@ -91,14 +63,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "records"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
-]
-
-[[package]]
-name = "records-main"
+name = "renderer"
 version = "0.1.0"
 dependencies = [
  "witx-bindgen-rust",
@@ -136,20 +101,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "types"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
-]
-
-[[package]]
-name = "types-main"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
-]
-
-[[package]]
 name = "unicode-segmentation"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -160,20 +111,6 @@ name = "unicode-xid"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ccb82d61f80a663efe1f787a51b16b5a51e3314d6ac365b08639f52387b33f3"
-
-[[package]]
-name = "variants"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
-]
-
-[[package]]
-name = "variants-main"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-rust",
-]
 
 [[package]]
 name = "wast"

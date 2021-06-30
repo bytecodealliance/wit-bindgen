@@ -5,6 +5,6 @@ authors = ["Peter Huene <peter@huene.dev>"]
 edition = "2018"
 
 [dependencies]
-witx-bindgen-rust = { git = "https://github.com/bytecodealliance/witx-bindgen", branch = "main" }
+witx-bindgen-rust = { path = "../../../rust-wasm" }
 
 [workspace]
