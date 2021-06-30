@@ -100,19 +100,7 @@ impl Runner<'_> {
         let result = if contents.contains("// parse-fail") {
             match result {
                 Ok(_) => bail!("expected test to not parse but it did"),
-                Err(e) => {
-                    if cfg!(windows) {
-                        // Normalize path separator and system error on Windows
-                        format!("{:?}", e)
-                            .replace("\\parse-fail\\", "/parse-fail/")
-                            .replace(
-                                "The system cannot find the file specified.",
-                                "No such file or directory",
-                            )
-                    } else {
-                        format!("{:?}", e)
-                    }
-                }
+                Err(e) => normalize(test, &format!("{:?}", e)),
             }
         } else {
             let instance = result?;
@@ -121,20 +109,13 @@ impl Runner<'_> {
 
         let result_file = test.with_extension("witx.result");
         if env::var_os("BLESS").is_some() {
-            if cfg!(windows) {
-                panic!("Test results should not be blessed on Windows due to various differences in output");
-            }
             fs::write(&result_file, result)?;
         } else {
             let expected = fs::read_to_string(&result_file).context(format!(
                 "failed to read test expectation file {:?}\nthis can be fixed with BLESS=1",
                 result_file
             ))?;
-
-            // Normalize line endings on Windows
-            #[cfg(windows)]
-            let expected = expected.replace("\r\n", "\n");
-
+            let expected = normalize(test, &expected);
             if expected != result {
                 bail!(
                     "failed test: expected `{:?}` but found `{:?}`",
@@ -144,7 +125,15 @@ impl Runner<'_> {
             }
         }
         self.bump_ntests();
-        Ok(())
+        return Ok(());
+
+        fn normalize(test: &Path, s: &str) -> String {
+            s.replace(
+                &test.display().to_string(),
+                &test.display().to_string().replace("\\", "/"),
+            )
+            .replace("\r\n", "\n")
+        }
     }
 
     fn bump_ntests(&self) {
