@@ -100,7 +100,19 @@ impl Runner<'_> {
         let result = if contents.contains("// parse-fail") {
             match result {
                 Ok(_) => bail!("expected test to not parse but it did"),
-                Err(e) => format!("{:?}", e),
+                Err(e) => {
+                    if cfg!(windows) {
+                        // Normalize path separator and system error on Windows
+                        format!("{:?}", e)
+                            .replace("\\parse-fail\\", "/parse-fail/")
+                            .replace(
+                                "The system cannot find the file specified.",
+                                "No such file or directory",
+                            )
+                    } else {
+                        format!("{:?}", e)
+                    }
+                }
             }
         } else {
             let instance = result?;
@@ -109,14 +121,26 @@ impl Runner<'_> {
 
         let result_file = test.with_extension("witx.result");
         if env::var_os("BLESS").is_some() {
+            if cfg!(windows) {
+                panic!("Test results should not be blessed on Windows due to various differences in output");
+            }
             fs::write(&result_file, result)?;
         } else {
             let expected = fs::read_to_string(&result_file).context(format!(
                 "failed to read test expectation file {:?}\nthis can be fixed with BLESS=1",
                 result_file
             ))?;
+
+            // Normalize line endings on Windows
+            #[cfg(windows)]
+            let expected = expected.replace("\r\n", "\n");
+
             if expected != result {
-                bail!("failed test");
+                bail!(
+                    "failed test: expected `{:?}` but found `{:?}`",
+                    expected,
+                    result
+                );
             }
         }
         self.bump_ntests();
