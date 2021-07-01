@@ -141,6 +141,7 @@ impl Runner<'_> {
                 &test.display().to_string(),
                 &test.display().to_string().replace("\\", "/"),
             )
+            .replace("\\parse-fail\\", "/parse-fail/")
             .replace("\r\n", "\n")
         }
     }
