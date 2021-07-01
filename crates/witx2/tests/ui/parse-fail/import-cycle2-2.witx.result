@@ -1,4 +1,4 @@
 failed to read `tests/ui/parse-fail/import-cycle-2-3.witx`
 
 Caused by:
-    No such file or directory (os error 2)
+    some generic platform-agnostic error message
