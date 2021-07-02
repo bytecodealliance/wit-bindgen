@@ -21,6 +21,8 @@ list_f32_ret: function() -> list<f32>
 list_f64_ret: function() -> list<f64>
 
 tuple_list: function(x: list<tuple<u8, s8>>) -> list<tuple<s64, u32>>
+string_list_arg: function(a: list<string>)
+string_list_ret: function() -> list<string>
 tuple_string_list: function(x: list<tuple<u8, string>>) -> list<tuple<string, u8>>
 string_list: function(x: list<string>) -> list<string>
 

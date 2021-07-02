@@ -35,6 +35,14 @@ pub struct C {
     // Type definitions for the given `TypeId`. This is printed topologically
     // at the end.
     types: HashMap<TypeId, witx_bindgen_gen_core::Source>,
+
+    intrinsics: HashMap<Intrinsic, String>,
+    needs_string: bool,
+}
+
+#[derive(Copy, Clone, Hash, PartialEq, Eq)]
+enum Intrinsic {
+    StringRealloc,
 }
 
 struct Import {
@@ -254,8 +262,11 @@ impl C {
                         self.print_ty(iface, t);
                         self.src.h("*");
                     }
-                    TypeDefKind::List(Type::Char) => self.src.h("char*"),
-
+                    TypeDefKind::List(Type::Char) => {
+                        self.src
+                            .h(&format!("{}_string", iface.name.to_snake_case()));
+                        self.needs_string = true;
+                    }
                     TypeDefKind::Record(_)
                     | TypeDefKind::List(_)
                     | TypeDefKind::PushBuffer(_)
@@ -271,16 +282,16 @@ impl C {
 
     fn print_ty_name(&mut self, iface: &Interface, ty: &Type) {
         match ty {
-            Type::Char => self.src.h("char"),
+            Type::Char => self.src.h("char32"),
             Type::U8 => self.src.h("u8"),
             Type::S8 => self.src.h("s8"),
-            Type::U16 => self.src.h("u8"),
+            Type::U16 => self.src.h("u16"),
             Type::S16 => self.src.h("s16"),
             Type::U32 => self.src.h("u32"),
             Type::S32 => self.src.h("s32"),
             Type::U64 => self.src.h("u64"),
-            Type::S64 => self.src.h("s32"),
-            Type::CChar => self.src.h("cchar"),
+            Type::S64 => self.src.h("s64"),
+            Type::CChar => self.src.h("char"),
             Type::F32 => self.src.h("f32"),
             Type::F64 => self.src.h("f64"),
             Type::Usize => self.src.h("usize"),
@@ -332,7 +343,7 @@ impl C {
                     }
                     TypeDefKind::List(Type::Char) => self.src.h("string"),
                     TypeDefKind::List(t) => {
-                        self.src.h("tuple_");
+                        self.src.h("list_");
                         self.print_ty_name(iface, t);
                     }
                     TypeDefKind::PushBuffer(t) => {
@@ -400,7 +411,11 @@ impl C {
                 }
             }
             TypeDefKind::List(t) => {
-                unimplemented!();
+                self.src.h("struct {\n");
+                self.print_ty(iface, t);
+                self.src.h(" *ptr;\n");
+                self.src.h("size_t len;\n");
+                self.src.h("}");
             }
             TypeDefKind::PushBuffer(t) => {
                 unimplemented!();
@@ -425,6 +440,40 @@ impl C {
             TypeDefKind::Type(t) => self.is_empty_type(iface, t),
             TypeDefKind::Record(r) => r.fields.is_empty(),
             _ => false,
+        }
+    }
+
+    fn intrinsic(&mut self, i: Intrinsic) -> String {
+        if let Some(name) = self.intrinsics.get(&i) {
+            return name.clone();
+        }
+        let name = match i {
+            Intrinsic::StringRealloc => "__string_realloc",
+        };
+        let name = self.names.tmp(name);
+        self.intrinsics.insert(i, name.clone());
+        name
+    }
+
+    fn print_intrinsics(&mut self) {
+        for (i, name) in self.intrinsics.drain() {
+            match i {
+                Intrinsic::StringRealloc => {
+                    self.src.c(&format!(
+                        "
+                            static char *{}(int32_t ptr, int32_t len) {{
+                                if (len == 0) {{
+                                    return strdup(\"\");
+                                }}
+                                char *ret = realloc((char*) ptr, len + 1);
+                                ret[len] = 0;
+                                return ret;
+                            }}
+                        ",
+                        name,
+                    ));
+                }
+            }
         }
     }
 }
@@ -619,9 +668,29 @@ impl Generator for C {
 
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {}
 
-    fn type_alias(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {}
+    fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        let prev = mem::take(&mut self.src.header);
+        self.src.h("typedef ");
+        self.print_ty(iface, ty);
+        self.src.h(" ");
+        self.src.h(&name.to_snake_case());
+        self.src.h(";\n");
+        self.types
+            .insert(id, mem::replace(&mut self.src.header, prev));
+    }
 
-    fn type_list(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {}
+    fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        let prev = mem::take(&mut self.src.header);
+        self.src.h("typedef struct {\n");
+        self.print_ty(iface, ty);
+        self.src.h(" *ptr;\n");
+        self.src.h("size_t len;\n");
+        self.src.h("} ");
+        self.src.h(&name.to_snake_case());
+        self.src.h(";\n");
+        self.types
+            .insert(id, mem::replace(&mut self.src.header, prev));
+    }
 
     fn type_pointer(
         &mut self,
@@ -692,13 +761,6 @@ impl Generator for C {
         self.src.c(");\n");
 
         let c_sig = self.print_sig(iface, func);
-
-        // let args = (0..sig.params.len())
-        //     .map(|i| format!("arg{}", i))
-        //     .collect::<Vec<_>>()
-        //     .join(", ");
-        // self.src.js(&format!("function({}) {{\n", args));
-        // self.ts_func(iface, func);
 
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         iface.call(
@@ -783,6 +845,7 @@ impl Generator for C {
         self.src.h("#include <stdint.h>\n");
         self.src.h("#include <stdbool.h>\n");
         self.src.c("#include <bindings.h>\n");
+        self.src.c("#include <stdlib.h>\n");
 
         // Continuously generate anonymous types while we continue to find more
         //
@@ -808,6 +871,30 @@ impl Generator for C {
             }
         }
 
+        if self.needs_string {
+            self.src.h(&format!(
+                "
+                    typedef struct {{
+                        uint8_t *ptr;
+                        size_t len;
+                    }} {0}_string;
+
+                    void {0}_string_init({0}_string *ret, const char *s);
+                ",
+                iface.name.to_snake_case(),
+            ));
+            self.src.c("#include <string.h>\n");
+            self.src.c(&format!(
+                "
+                    void {0}_string_init({0}_string *ret, const char *s) {{
+                        ret->ptr = (uint8_t*) s;
+                        ret->len = strlen(s);
+                    }}
+                ",
+                iface.name.to_snake_case(),
+            ));
+        }
+
         // Afterwards print all types. Note that this print must be in a
         // topological order, so we
         for id in iface.topological_types() {
@@ -827,73 +914,13 @@ impl Generator for C {
             ));
         }
 
+        self.print_intrinsics();
+
         for (module, funcs) in mem::take(&mut self.imports) {
             for func in funcs {
                 self.src.h(&func.src.header);
                 self.src.c(&func.src.src);
             }
-            //    let module = module.to_snake_case();
-            //    // TODO: `module.exports` vs `export function`
-            //    self.src.js(&format!(
-            //        "export function add_{}_to_imports(imports, obj{}) {{\n",
-            //        module,
-            //        if self.needs_get_export {
-            //            ", get_export"
-            //        } else {
-            //            ""
-            //        },
-            //    ));
-            //    self.src.ts(&format!(
-            //        "export function add_{}_to_imports(imports: any, obj: {}{}): void;\n",
-            //        module,
-            //        module.to_camel_case(),
-            //        if self.needs_get_export {
-            //            ", get_export: (string) => WebAssembly.ExportValue"
-            //        } else {
-            //            ""
-            //        },
-            //    ));
-            //    self.src.js(&format!(
-            //        "if (!(\"{0}\" in imports)) imports[\"{0}\"] = {{}};\n",
-            //        module,
-            //    ));
-
-            //    self.src
-            //        .ts(&format!("export interface {} {{\n", module.to_camel_case()));
-
-            //    for f in funcs {
-            //        let func = f.name.to_snake_case();
-            //        self.src.js(&format!(
-            //            "imports[\"{}\"][\"{}\"] = {};\n",
-            //            module,
-            //            func,
-            //            f.src.js.trim(),
-            //        ));
-            //        self.src.ts(&f.src.ts);
-            //    }
-
-            //    if self.imported_resources.len() > 0 {
-            //        self.src
-            //            .js("if (!(\"canonical_abi\" in imports)) imports[\"canonical_abi\"] = {};\n");
-            //    }
-            //    for resource in self.imported_resources.iter() {
-            //        self.src.js(&format!(
-            //            "imports.canonical_abi[\"resource_drop_{}\"] = (i) => {{
-            //                const val = resources{}.remove(i);
-            //                if (obj.drop_{})
-            //                    obj.drop_{2}(val);
-            //            }};\n",
-            //            iface.resources[*resource].name,
-            //            resource.index(),
-            //            iface.resources[*resource].name.to_snake_case(),
-            //        ));
-            //        self.src.ts(&format!(
-            //            "drop_{}?: (any) => void;\n",
-            //            iface.resources[*resource].name.to_snake_case()
-            //        ));
-            //    }
-            //    self.src.js("}");
-            //    self.src.ts("}\n");
         }
 
         //for (module, exports) in mem::take(&mut self.exports) {
@@ -1088,7 +1115,7 @@ impl<'a> FunctionBindgen<'a> {
         }
     }
 
-    fn store(&mut self, op: &str, loc: &str) {
+    fn store_op(&mut self, op: &str, loc: &str) {
         self.src.push_str(loc);
         self.src.push_str(" = ");
         self.src.push_str(op);
@@ -1099,27 +1126,25 @@ impl<'a> FunctionBindgen<'a> {
         results.push(format!("*(({}*) ({} + {}))", ty, operands[0], offset));
     }
 
-    // fn store(&mut self, method: &str, offset: i32, operands: &[String]) {
-    //     self.needs_memory = true;
-    //     self.gen.needs_data_view = true;
-    //     self.src.js(&format!(
-    //         "data_view(memory).{}({} + {}, {}, true);\n",
-    //         method, operands[1], offset, operands[0]
-    //     ));
-    // }
-    //
+    fn store(&mut self, ty: &str, offset: i32, operands: &[String]) {
+        self.src.push_str(&format!(
+            "*(({}*)({} + {})) = {};\n",
+            ty, operands[1], offset, operands[0]
+        ));
+    }
+
     fn store_in_retptrs(&mut self, operands: &[String]) {
         if self.sig.ret.splat_tuple {
             assert_eq!(operands.len(), 1);
             let op = &operands[0];
             for (i, ptr) in self.sig.retptrs.clone().into_iter().enumerate() {
-                self.store(&format!("{}.f{}", op, i), &format!("*{}", ptr));
+                self.store_op(&format!("{}.f{}", op, i), &format!("*{}", ptr));
             }
             // ...
         } else {
             assert_eq!(operands.len(), self.sig.retptrs.len());
             for (op, ptr) in operands.iter().zip(self.sig.retptrs.clone()) {
-                self.store(op, &format!("*{}", ptr));
+                self.store_op(op, &format!("*{}", ptr));
             }
         }
     }
@@ -1156,8 +1181,7 @@ impl Bindgen for FunctionBindgen<'_> {
     }
 
     fn is_list_canonical(&self, iface: &Interface, ty: &Type) -> bool {
-        panic!()
-        // self.gen.array_ty(iface, ty).is_some()
+        iface.all_bits_valid(ty)
     }
 
     fn emit(
@@ -1435,7 +1459,7 @@ impl Bindgen for FunctionBindgen<'_> {
                             dst.push_str(".");
                             dst.push_str(&case_field_name(case));
                         }
-                        self.store(&block_results[0], &dst);
+                        self.store_op(&block_results[0], &dst);
                     } else {
                         assert!(block_results.is_empty());
                     }
@@ -1445,158 +1469,42 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(result);
             }
 
-            // Instruction::ListCanonLower { element, realloc } => {
-            //     // Lowering only happens when we're passing lists into wasm,
-            //     // which forces us to always allocate, so this should always be
-            //     // `Some`.
-            //     let realloc = realloc.unwrap();
-            //     self.gen.needs_get_export = true;
-            //     self.needs_memory = true;
-            //     self.needs_realloc = Some(realloc.to_string());
-            //     let tmp = self.tmp();
+            Instruction::ListCanonLower { element, .. } => {
+                results.push(format!("(int32_t) ({}).ptr", operands[0]));
+                results.push(format!("(int32_t) ({}).len", operands[0]));
+            }
+            Instruction::ListCanonLift { element, ty, .. } => {
+                let list_name = self.gen.type_string(iface, &Type::Id(*ty));
+                let elem_name = match element {
+                    Type::Char => "uint8_t".into(),
+                    _ => self.gen.type_string(iface, element),
+                };
+                results.push(format!(
+                    "({}) {{ ({}*)({}), (size_t)({}) }}",
+                    list_name, elem_name, operands[0], operands[1]
+                ));
+            }
 
-            //     match element {
-            //         Type::Char => {
-            //             self.gen.needs_utf8_encode = true;
-            //             self.src.js(&format!(
-            //                 "const ptr{} = utf8_encode({}, realloc, memory);\n",
-            //                 tmp, operands[0],
-            //             ));
-            //             self.src
-            //                 .js(&format!("const len{} = UTF8_ENCODED_LEN;\n", tmp));
-            //         }
-            //         _ => {
-            //             let size = self.gen.sizes.size(element);
-            //             let align = self.gen.sizes.align(element);
-            //             self.src
-            //                 .js(&format!("const val{} = {};\n", tmp, operands[0]));
-            //             self.src.js(&format!("const len{} = val{0}.length;\n", tmp));
-            //             self.src.js(&format!(
-            //                 "const ptr{} = realloc(0, 0, len{0} * {}, {});\n",
-            //                 tmp, size, align
-            //             ));
-            //             self.src.js(&format!(
-            //                 "(new Uint8Array(memory.buffer, ptr{}, len{0} * {})).set(new Uint8Array(val{0}));\n",
-            //                 tmp, size,
-            //             ));
-            //         }
-            //     };
-            //     results.push(format!("ptr{}", tmp));
-            //     results.push(format!("len{}", tmp));
-            // }
-            // Instruction::ListCanonLift { element, free } => {
-            //     self.needs_memory = true;
-            //     let tmp = self.tmp();
-            //     self.src
-            //         .js(&format!("const ptr{} = {};\n", tmp, operands[0]));
-            //     self.src
-            //         .js(&format!("const len{} = {};\n", tmp, operands[1]));
-            //     let (result, align) = match element {
-            //         Type::Char => {
-            //             self.gen.needs_utf8_decoder = true;
-            //             (
-            //                 format!(
-            //                     "UTF8_DECODER.decode(new Uint8Array(memory.buffer, ptr{}, len{0}))",
-            //                     tmp,
-            //                 ),
-            //                 1,
-            //             )
-            //         }
-            //         _ => {
-            //             let array_ty = self.gen.array_ty(iface, element).unwrap();
-            //             (
-            //                 format!(
-            //                     "new {}(memory.buffer.slice(ptr{}, ptr{1} + len{1} * {}))",
-            //                     array_ty,
-            //                     tmp,
-            //                     self.gen.sizes.size(element),
-            //                 ),
-            //                 self.gen.sizes.align(element),
-            //             )
-            //         }
-            //     };
-            //     match free {
-            //         Some(free) => {
-            //             self.needs_free = Some(free.to_string());
-            //             self.src.js(&format!("const list{} = {};\n", tmp, result));
-            //             self.src
-            //                 .js(&format!("free(ptr{}, len{0}, {});\n", tmp, align));
-            //             results.push(format!("list{}", tmp));
-            //         }
-            //         None => results.push(result),
-            //     }
-            // }
+            Instruction::ListLower { element, .. } => {
+                let _body = self.blocks.pop().unwrap();
+                results.push(format!("(int32_t) ({}).ptr", operands[0]));
+                results.push(format!("(int32_t) ({}).len", operands[0]));
+            }
 
-            // Instruction::ListLower { element, realloc } => {
-            //     let realloc = realloc.unwrap();
-            //     let (body, body_results) = self.blocks.pop().unwrap();
-            //     assert!(body_results.is_empty());
-            //     let tmp = self.tmp();
-            //     let vec = format!("vec{}", tmp);
-            //     let result = format!("result{}", tmp);
-            //     let len = format!("len{}", tmp);
-            //     self.needs_realloc = Some(realloc.to_string());
-            //     let size = self.gen.sizes.size(element);
-            //     let align = self.gen.sizes.align(element);
-
-            //     // first store our vec-to-lower in a temporary since we'll
-            //     // reference it multiple times.
-            //     self.src.js(&format!("const {} = {};\n", vec, operands[0]));
-            //     self.src.js(&format!("const {} = {}.length;\n", len, vec));
-
-            //     // ... then realloc space for the result in the guest module
-            //     self.src.js(&format!(
-            //         "const {} = realloc(0, 0, {} * {}, {});\n",
-            //         result, len, size, align,
-            //     ));
-
-            //     // ... then consume the vector and use the block to lower the
-            //     // result.
-            //     self.src
-            //         .js(&format!("for (let i = 0; i < {}.length; i++) {{\n", vec));
-            //     self.src.js(&format!("const e = {}[i];\n", vec));
-            //     self.src
-            //         .js(&format!("const base = {} + i * {};\n", result, size));
-            //     self.src.js(&body);
-            //     self.src.js("}\n");
-
-            //     results.push(result);
-            //     results.push(len);
-            // }
-
-            // Instruction::ListLift { element, free } => {
-            //     let (body, body_results) = self.blocks.pop().unwrap();
-            //     let tmp = self.tmp();
-            //     let size = self.gen.sizes.size(element);
-            //     let align = self.gen.sizes.align(element);
-            //     let len = format!("len{}", tmp);
-            //     self.src.js(&format!("const {} = {};\n", len, operands[1]));
-            //     let base = format!("base{}", tmp);
-            //     self.src.js(&format!("const {} = {};\n", base, operands[0]));
-            //     let result = format!("result{}", tmp);
-            //     self.src.js(&format!("const {} = [];\n", result));
-            //     results.push(result.clone());
-
-            //     self.src
-            //         .js(&format!("for (let i = 0; i < {}; i++) {{\n", len));
-            //     self.src
-            //         .js(&format!("const base = {} + i * {};\n", base, size));
-            //     self.src.js(&body);
-            //     assert_eq!(body_results.len(), 1);
-            //     self.src
-            //         .js(&format!("{}.push({});\n", result, body_results[0]));
-            //     self.src.js("}\n");
-
-            //     if let Some(free) = free {
-            //         self.needs_free = Some(free.to_string());
-            //         self.src
-            //             .js(&format!("free({}, {} * {}, {});\n", base, len, size, align,));
-            //     }
-            // }
-
-            // Instruction::IterElem => results.push("e".to_string()),
-
-            // Instruction::IterBasePointer => results.push("base".to_string()),
+            Instruction::ListLift { element, free, ty } => {
+                let _body = self.blocks.pop().unwrap();
+                let list_name = self.gen.type_string(iface, &Type::Id(*ty));
+                let elem_name = match element {
+                    Type::Char => "uint8_t".into(),
+                    _ => self.gen.type_string(iface, element),
+                };
+                results.push(format!(
+                    "({}) {{ ({}*)({}), (size_t)({}) }}",
+                    list_name, elem_name, operands[0], operands[1]
+                ));
+            }
+            Instruction::IterElem => results.push("e".to_string()),
+            Instruction::IterBasePointer => results.push("base".to_string()),
 
             // Instruction::BufferLiftPtrLen { push, ty } => {
             //     let (block, block_results) = self.blocks.pop().unwrap();
@@ -1769,18 +1677,24 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::I64Load { offset } => self.load("int64_t", *offset, operands, results),
             Instruction::F32Load { offset } => self.load("float", *offset, operands, results),
             Instruction::F64Load { offset } => self.load("double", *offset, operands, results),
-            // Instruction::I32Load8U { offset } => self.load("getUint8", *offset, operands, results),
-            // Instruction::I32Load8S { offset } => self.load("getInt8", *offset, operands, results),
-            // Instruction::I32Load16U { offset } => {
-            //     self.load("getUint16", *offset, operands, results)
-            // }
-            // Instruction::I32Load16S { offset } => self.load("getInt16", *offset, operands, results),
-            // Instruction::I32Store { offset } => self.store("setInt32", *offset, operands),
-            // Instruction::I64Store { offset } => self.store("setBigInt64", *offset, operands),
-            // Instruction::F32Store { offset } => self.store("setFloat32", *offset, operands),
-            // Instruction::F64Store { offset } => self.store("setFloat64", *offset, operands),
-            // Instruction::I32Store8 { offset } => self.store("setInt8", *offset, operands),
-            // Instruction::I32Store16 { offset } => self.store("setInt16", *offset, operands),
+            Instruction::I32Store { offset } => self.store("int32_t", *offset, operands),
+
+            Instruction::I32Load8U { offset }
+            | Instruction::I32Load8S { offset }
+            | Instruction::I32Load16U { offset }
+            | Instruction::I32Load16S { offset } => {
+                drop(offset);
+                self.src.push_str("INVALID");
+                results.push("INVALID".to_string());
+            }
+            Instruction::I64Store { offset }
+            | Instruction::F32Store { offset }
+            | Instruction::F64Store { offset }
+            | Instruction::I32Store8 { offset }
+            | Instruction::I32Store16 { offset } => {
+                drop(offset);
+                self.src.push_str("INVALID");
+            }
 
             // Instruction::Witx { instr } => match instr {
             //     WitxInstruction::PointerFromI32 { .. } => results.push(operands[0].clone()),

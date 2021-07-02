@@ -457,6 +457,7 @@ def_instruction! {
         ListCanonLift {
             element: &'a Type,
             free: Option<&'a str>,
+            ty: TypeId,
         } : [2] => [1],
 
         /// Lifts a list which into an interface types value.
@@ -471,6 +472,7 @@ def_instruction! {
         ListLift {
             element: &'a Type,
             free: Option<&'a str>,
+            ty: TypeId,
         } : [2] => [1],
 
         /// Pushes an operand onto the stack representing the list item from
@@ -1771,6 +1773,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     Abi::Preview1 => self.emit(&ListCanonLift {
                         element,
                         free: None,
+                        ty: id,
                     }),
                     Abi::Canonical => {
                         // Lifting the arguments of a defined import means that, if
@@ -1783,14 +1786,22 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         if self.is_char(element)
                             || self.bindgen.is_list_canonical(self.iface, element)
                         {
-                            self.emit(&ListCanonLift { element, free });
+                            self.emit(&ListCanonLift {
+                                element,
+                                free,
+                                ty: id,
+                            });
                         } else {
                             self.push_block();
                             self.emit(&IterBasePointer);
                             let addr = self.stack.pop().unwrap();
                             self.read_from_memory(element, addr, 0);
                             self.finish_block(1);
-                            self.emit(&ListLift { element, free });
+                            self.emit(&ListLift {
+                                element,
+                                free,
+                                ty: id,
+                            });
                         }
                     }
                 },

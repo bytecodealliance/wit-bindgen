@@ -14,6 +14,9 @@ mod imports {
         "records.witx"
         "variants.witx"
         "flags.witx"
+        "char.witx"
+        "strings.witx"
+        "lists.witx"
     );
 }
 
