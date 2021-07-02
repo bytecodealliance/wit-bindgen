@@ -389,6 +389,7 @@ dependencies = [
 name = "demo"
 version = "0.1.0"
 dependencies = [
+ "witx-bindgen-gen-c",
  "witx-bindgen-gen-core",
  "witx-bindgen-gen-js",
  "witx-bindgen-gen-rust-wasm",
@@ -1274,6 +1275,7 @@ dependencies = [
  "ignore",
  "proc-macro2",
  "quote",
+ "witx-bindgen-gen-c",
  "witx-bindgen-gen-core",
  "witx-bindgen-gen-js",
  "witx-bindgen-gen-rust-wasm",
@@ -1904,10 +1906,21 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "structopt",
+ "witx-bindgen-gen-c",
  "witx-bindgen-gen-core",
  "witx-bindgen-gen-js",
  "witx-bindgen-gen-rust-wasm",
  "witx-bindgen-gen-wasmtime",
+]
+
+[[package]]
+name = "witx-bindgen-gen-c"
+version = "0.1.0"
+dependencies = [
+ "heck",
+ "structopt",
+ "test-codegen",
+ "witx-bindgen-gen-core",
 ]
 
 [[package]]

@@ -297,6 +297,57 @@ pub fn js_export(input: TokenStream) -> TokenStream {
     .into()
 }
 
+#[proc_macro]
+#[cfg(feature = "witx-bindgen-gen-c")]
+pub fn c_import(input: TokenStream) -> TokenStream {
+    use heck::*;
+
+    let tests = generate_tests(input, "import", |_path| {
+        (
+            witx_bindgen_gen_c::Opts::default().build(),
+            Direction::Import,
+        )
+    });
+    let tests = tests.iter().map(|(iface, test, witx)| {
+        let test = test.display().to_string();
+        let witx = witx.display().to_string();
+        let name = quote::format_ident!("{}", iface.name.to_snake_case());
+        quote::quote! {
+            #[test]
+            fn #name() {
+                const _: &str = include_str!(#witx);
+                verify(#test);
+            }
+        }
+    });
+    (quote::quote!(#(#tests)*)).into()
+}
+
+// #[proc_macro]
+// #[cfg(feature = "witx-bindgen-gen-js")]
+// pub fn js_export(input: TokenStream) -> TokenStream {
+//     let tests = generate_tests(input, "export", |_path| {
+//         (
+//             witx_bindgen_gen_js::Opts::default().build(),
+//             Direction::Export,
+//         )
+//     });
+//     let tests = tests.iter().map(|(_iface, test, witx)| {
+//         let test = test.display().to_string();
+//         let witx = witx.display().to_string();
+//         quote::quote! {
+//             {
+//                 const _: &str = include_str!(#witx);
+//                 #test
+//             }
+//         }
+//     });
+//     (quote::quote! {
+//         pub const TESTS: &[&str] = &[#(#tests),*];
+//     })
+//     .into()
+// }
+
 fn generate_tests<G>(
     input: TokenStream,
     dir: &str,

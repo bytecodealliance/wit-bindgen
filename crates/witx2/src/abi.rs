@@ -542,10 +542,11 @@ def_instruction! {
 
         // variants
 
-        /// This is a special instruction used at the entry of blocks used as
-        /// part of `ResultLower`, representing that the payload of that variant
-        /// being matched on should be pushed onto the stack.
-        VariantPayload : [0] => [1],
+        /// This is a special instruction used just before a `VariantLower`
+        /// instruction to determine the name of the payload, if present, to use
+        /// within each block. Each sub-block which lowers a payload will expect
+        /// something bound to this name.
+        VariantPayloadName : [0] => [1],
 
         /// Pops a variant off the stack as well as `ty.cases.len()` blocks
         /// from the code generator. Uses each of those blocks and the value
@@ -554,8 +555,8 @@ def_instruction! {
             variant: &'a Variant,
             name: Option<&'a str>,
             ty: TypeId,
-            nresults: usize,
-        } : [1] => [*nresults],
+            results: &'a [WasmType],
+        } : [1] => [results.len()],
 
         /// Pops an `i32` off the stack as well as `ty.cases.len()` blocks
         /// from the code generator. Uses each of those blocks and the value
@@ -1558,9 +1559,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 {
                     let retptr = retptr.unwrap();
                     let (ok, err) = v.as_expected().unwrap();
+                    self.emit(&VariantPayloadName);
+                    let payload_name = self.stack.pop().unwrap();
                     self.push_block();
                     if let Some(ok) = ok {
-                        self.emit(&VariantPayload);
+                        self.stack.push(payload_name.clone());
                         let store = |me: &mut Self, ty: &Type, n| {
                             me.emit(&GetArg { nth: *retptr + n });
                             let addr = me.stack.pop().unwrap();
@@ -1591,7 +1594,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                     self.push_block();
                     if let Some(ty) = err {
-                        self.emit(&VariantPayload);
+                        self.stack.push(payload_name.clone());
                         self.lower(ty, None);
                     }
                     self.finish_block(1);
@@ -1600,7 +1603,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         variant: v,
                         ty: id,
                         name: self.iface.types[id].name.as_deref(),
-                        nresults: 1,
+                        results: &[WasmType::I32],
                     });
                 }
 
@@ -1619,6 +1622,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let mut temp = Vec::new();
                     let mut casts = Vec::new();
                     self.iface.push_wasm(self.abi, self.dir, ty, &mut results);
+                    self.emit(&VariantPayloadName);
+                    let payload_name = self.stack.pop().unwrap();
                     for (i, case) in v.cases.iter().enumerate() {
                         self.push_block();
                         self.emit(&I32Const { val: i as i32 });
@@ -1626,7 +1631,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         if let Some(ty) = &case.ty {
                             // Using the payload of this block we lower the type to
                             // raw wasm values.
-                            self.emit(&VariantPayload);
+                            self.stack.push(payload_name.clone());
                             self.lower(ty, None);
 
                             // Determine the types of all the wasm values we just
@@ -1662,7 +1667,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&VariantLower {
                         variant: v,
                         ty: id,
-                        nresults: results.len(),
+                        results: &results,
                         name: self.iface.types[id].name.as_deref(),
                     });
                 }
@@ -2063,13 +2068,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // to the type's alignment.
                 TypeDefKind::Variant(v) => {
                     let payload_offset = offset + (self.bindgen.sizes().payload_offset(v) as i32);
+                    self.emit(&VariantPayloadName);
+                    let payload_name = self.stack.pop().unwrap();
                     for (i, case) in v.cases.iter().enumerate() {
                         self.push_block();
                         self.emit(&I32Const { val: i as i32 });
                         self.stack.push(addr.clone());
                         self.store_intrepr(offset, v.tag);
                         if let Some(ty) = &case.ty {
-                            self.emit(&VariantPayload);
+                            self.stack.push(payload_name.clone());
                             self.write_to_memory(ty, addr.clone(), payload_offset);
                         }
                         self.finish_block(0);
@@ -2077,7 +2084,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&VariantLower {
                         variant: v,
                         ty: id,
-                        nresults: 0,
+                        results: &[],
                         name: self.iface.types[id].name.as_deref(),
                     });
                 }
@@ -2247,7 +2254,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         let addr = self.stack.pop().unwrap();
         if do_write {
             self.push_block();
-            self.emit(&Instruction::VariantPayload);
+            self.emit(&Instruction::VariantPayloadName);
             self.write_to_memory(ty, addr, 0);
             self.finish_block(0);
         } else {

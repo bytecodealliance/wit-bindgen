@@ -1760,11 +1760,11 @@ impl Bindgen for FunctionBindgen<'_> {
                 ));
             }
 
-            Instruction::VariantPayload => results.push("e".to_string()),
+            Instruction::VariantPayloadName => results.push("e".to_string()),
 
             Instruction::VariantLower {
                 variant,
-                nresults,
+                results: result_types,
                 ty,
                 ..
             } => {
@@ -1776,7 +1776,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     iface,
                     *ty,
                     variant,
-                    *nresults,
+                    result_types.len(),
                     &operands[0],
                     results,
                     blocks,

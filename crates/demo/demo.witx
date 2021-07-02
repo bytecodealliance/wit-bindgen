@@ -10,6 +10,7 @@ enum lang {
   js,
   rust,
   wasmtime,
+  c,
 }
 
 

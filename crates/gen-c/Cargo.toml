@@ -1,0 +1,30 @@
+[package]
+name = "witx-bindgen-gen-c"
+version = "0.1.0"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+edition = "2018"
+
+[lib]
+doctest = false
+test = false
+
+[dependencies]
+witx-bindgen-gen-core = { path = '../gen-core', version = '0.1.0' }
+heck = "0.3"
+structopt = { version = "0.3", default-features = false, optional = true }
+
+[dev-dependencies]
+test-codegen = { path = '../test-codegen', features = ['witx-bindgen-gen-c'] }
+
+# [[test]]
+# name = "eslint"
+# harness = false
+
+# [[test]]
+# name = "run"
+# harness = false
+# required-features = ['old-witx-compat']
+
+# [features]
+# default = ['old-witx-compat'] # TODO: rewrite host.witx in new syntax
+# old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']

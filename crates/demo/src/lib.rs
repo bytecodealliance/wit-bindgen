@@ -25,6 +25,7 @@ fn demo() -> &'static Demo {
 #[derive(Default)]
 pub struct Config {
     js: RefCell<witx_bindgen_gen_js::Opts>,
+    c: RefCell<witx_bindgen_gen_c::Opts>,
     rust: RefCell<witx_bindgen_gen_rust_wasm::Opts>,
     wasmtime: RefCell<witx_bindgen_gen_wasmtime::Opts>,
 }
@@ -45,6 +46,7 @@ impl demo::Demo for Demo {
             demo::Lang::Rust => Box::new(config.rust.borrow().clone().build()),
             demo::Lang::Wasmtime => Box::new(config.wasmtime.borrow().clone().build()),
             demo::Lang::Js => Box::new(config.js.borrow().clone().build()),
+            demo::Lang::C => Box::new(config.c.borrow().clone().build()),
         };
         let iface = witx2::Interface::parse("input", &witx).map_err(|e| format!("{:?}", e))?;
         let mut files = Default::default();

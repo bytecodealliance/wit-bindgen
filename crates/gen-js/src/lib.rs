@@ -1216,10 +1216,10 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("validate_flags64({}, {}n)", operands[0], mask));
             }
 
-            Instruction::VariantPayload => results.push("e".to_string()),
+            Instruction::VariantPayloadName => results.push("e".to_string()),
             Instruction::VariantLower {
                 variant,
-                nresults,
+                results: result_types,
                 name,
                 ..
             } => {
@@ -1231,7 +1231,11 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src
                     .js(&format!("const variant{} = {};\n", tmp, operands[0]));
 
-                if *nresults == 1 && variant.is_enum() && name.is_some() && !variant.is_bool() {
+                if result_types.len() == 1
+                    && variant.is_enum()
+                    && name.is_some()
+                    && !variant.is_bool()
+                {
                     let name = name.unwrap().to_camel_case();
                     self.src
                         .js(&format!("if (!(variant{} in {}))\n", tmp, name));
@@ -1246,7 +1250,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     return;
                 }
 
-                for i in 0..*nresults {
+                for i in 0..result_types.len() {
                     self.src.js(&format!("let variant{}_{};\n", tmp, i));
                     results.push(format!("variant{}_{}", tmp, i));
                 }
