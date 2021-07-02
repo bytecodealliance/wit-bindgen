@@ -158,7 +158,7 @@ impl Lists for Component {
             c: vec![1, 2, 3, 4, 5],
         }]
     }
-    fn variant_list(&self, mut x: Vec<SomeVariant>) -> Vec<OtherVariant> {
+    fn variant_list(&self, x: Vec<SomeVariant>) -> Vec<OtherVariant> {
         assert_eq!(x.len(), 5);
         match &x[0] {
             SomeVariant::B => {}

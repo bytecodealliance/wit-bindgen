@@ -108,4 +108,9 @@ mod tests {
     fn variants() -> Result<()> {
         run(&link("variants-main", &["variants"])?)
     }
+
+    #[test]
+    fn resource() -> Result<()> {
+        run(&link("resource-main", &["resource"])?)
+    }
 }

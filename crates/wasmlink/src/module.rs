@@ -1,4 +1,3 @@
-use crate::adapted::must_adapt_type;
 use anyhow::{anyhow, bail, Context, Result};
 use std::path::Path;
 use wasmparser::{
@@ -69,10 +68,11 @@ impl Interface {
                 let import_type = Self::sig_to_type(&import_signature);
                 let export_type = Self::sig_to_type(&export_signature);
 
-                // A function must be adapted if it has a return pointer or has any parameter that needs
-                // to be adapted
+                // A function must be adapted if it has a return pointer or any parameter or result
+                // needs to be adapted.
                 let func_must_adapt = import_signature.retptr.is_some()
-                    || f.params.iter().any(|(_, ty)| must_adapt_type(&inner, ty));
+                    || f.params.iter().any(|(_, ty)| !inner.all_bits_valid(ty))
+                    || f.results.iter().any(|(_, ty)| !inner.all_bits_valid(ty));
 
                 must_adapt |= func_must_adapt;
 

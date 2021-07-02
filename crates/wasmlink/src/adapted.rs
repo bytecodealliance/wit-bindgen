@@ -31,41 +31,6 @@ lazy_static::lazy_static! {
     };
 }
 
-pub fn must_adapt_type(interface: &witx2::Interface, ty: &witx2::Type) -> bool {
-    match ty {
-        witx2::Type::U8
-        | witx2::Type::S8
-        | witx2::Type::U16
-        | witx2::Type::S16
-        | witx2::Type::U32
-        | witx2::Type::S32
-        | witx2::Type::U64
-        | witx2::Type::S64
-        | witx2::Type::F32
-        | witx2::Type::F64
-        | witx2::Type::CChar
-        | witx2::Type::Usize
-        | witx2::Type::Char
-        | witx2::Type::Handle(_) => false,
-
-        witx2::Type::Id(id) => match &interface.types[*id].kind {
-            witx2::TypeDefKind::List(_)
-            | witx2::TypeDefKind::PushBuffer(_)
-            | witx2::TypeDefKind::PullBuffer(_) => true,
-            witx2::TypeDefKind::Variant(v) => v
-                .cases
-                .iter()
-                .filter_map(|c| c.ty.as_ref())
-                .any(|t| must_adapt_type(interface, t)),
-            witx2::TypeDefKind::Type(t) => must_adapt_type(interface, t),
-            witx2::TypeDefKind::Record(r) => {
-                r.fields.iter().any(|f| must_adapt_type(interface, &f.ty))
-            }
-            witx2::TypeDefKind::Pointer(_) | witx2::TypeDefKind::ConstPointer(_) => false,
-        },
-    }
-}
-
 pub struct AdaptedModule<'a> {
     pub module: &'a Module<'a>,
     types: Vec<&'a FuncType>,

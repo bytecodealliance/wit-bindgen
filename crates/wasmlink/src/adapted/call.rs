@@ -243,8 +243,10 @@ impl<'a> CallAdapter<'a> {
     }
 
     pub fn adapt(&self) -> wasm_encoder::Function {
-        // Should always have at least one list being copied
-        assert!(self.locals_count > 0);
+        // This is no longer true as we will adapt types which don't require locals to marshal,
+        // but will need validation in the adapter logic
+        // TODO: fix this before merging
+        //assert!(self.locals_count > 0);
 
         let mut locals = Locals::new(self.signature.params.len() as u32, self.locals_count);
         let mut function = wasm_encoder::Function::new([(self.locals_count, ValType::I32)]);
