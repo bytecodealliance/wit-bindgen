@@ -712,7 +712,11 @@ impl Generator for C {
     fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let prev = mem::take(&mut self.src.header);
         self.src.h("typedef struct {\n");
-        self.print_ty(iface, ty);
+        if *ty == Type::Char {
+            self.src.h("uint8_t");
+        } else {
+            self.print_ty(iface, ty);
+        }
         self.src.h(" *ptr;\n");
         self.src.h("size_t len;\n");
         self.src.h("} ");
