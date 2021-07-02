@@ -13,6 +13,7 @@ mod imports {
         "smoke.witx"
         "records.witx"
         "variants.witx"
+        "flags.witx"
     );
 }
 

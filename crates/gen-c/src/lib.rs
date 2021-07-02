@@ -1329,11 +1329,10 @@ impl Bindgen for FunctionBindgen<'_> {
                     _ => panic!("unsupported bitflags"),
                 }
             }
-            // Instruction::FlagsLower64 { record, .. } | Instruction::FlagsLift64 { record, .. } => {
-            //     self.gen.needs_validate_flags64 = true;
-            //     let mask = (1u128 << record.fields.len()) - 1;
-            //     results.push(format!("validate_flags64({}, {}n)", operands[0], mask));
-            // }
+            Instruction::FlagsLower64 { record, .. } | Instruction::FlagsLift64 { record, .. } => {
+                results.push(operands.pop().unwrap());
+            }
+
             Instruction::VariantPayloadName => {
                 let name = self.locals.tmp("payload");
                 results.push(format!("*{}", name));
