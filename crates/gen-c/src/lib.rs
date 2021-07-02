@@ -15,8 +15,7 @@ pub struct C {
     src: Source,
     in_import: bool,
     opts: Opts,
-    imports: HashMap<String, Vec<Import>>,
-    exports: HashMap<String, Exports>,
+    funcs: HashMap<String, Vec<Func>>,
     i64_return_pointer_area_size: usize,
     sizes: SizeAlign,
     names: Ns,
@@ -43,14 +42,9 @@ pub struct C {
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 enum Intrinsic {}
 
-struct Import {
+struct Func {
     name: String,
     src: Source,
-}
-
-#[derive(Default)]
-struct Exports {
-    funcs: Vec<Source>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -749,6 +743,9 @@ impl Generator for C {
         let prev = mem::take(&mut self.src);
         let sig = iface.wasm_signature(Direction::Import, func);
 
+        // In the private C file, print a function declaration which is the
+        // actual wasm import that we'll be calling, and this has the raw wasm
+        // signature.
         self.src.c(&format!(
             "__attribute__((import_module(\"{}\"), import_name(\"{}\")))\n",
             iface.name, func.name
@@ -777,6 +774,8 @@ impl Generator for C {
         }
         self.src.c(");\n");
 
+        // Print the public facing signature into the header, and since that's
+        // what we are defining also print it into the C file.
         let c_sig = self.print_sig(iface, func);
         self.src.c(&c_sig.sig);
         self.src.c(" {\n");
@@ -807,12 +806,12 @@ impl Generator for C {
         self.src.c("}\n");
 
         let src = mem::replace(&mut self.src, prev);
-        self.imports
+        self.funcs
             .entry(iface.name.to_string())
             .or_insert(Vec::new())
-            .push(Import {
+            .push(Func {
                 name: func.name.to_string(),
-                src: src,
+                src,
             });
     }
 
@@ -820,6 +819,12 @@ impl Generator for C {
         let prev = mem::take(&mut self.src);
         let sig = iface.wasm_signature(Direction::Export, func);
 
+        // Print the actual header for this function into the header file, and
+        // it's what we'll be calling.
+        let c_sig = self.print_sig(iface, func);
+
+        // Generate, in the C source file, the raw wasm signature that has the
+        // canonical ABI.
         self.src.c(&format!(
             "__attribute__((export_name(\"{}\")))\n",
             func.name
@@ -830,7 +835,6 @@ impl Generator for C {
             func.name.to_snake_case()
         ));
 
-        let c_sig = self.print_sig(iface, func);
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         match sig.results.len() {
             0 => f.gen.src.c("void"),
@@ -853,25 +857,24 @@ impl Generator for C {
         }
         f.gen.src.c(") {\n");
 
+        // Perform all lifting/lowering and append it to our src.
         iface.call(
             Direction::Export,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
         );
-
         let FunctionBindgen { src, .. } = f;
-
-        self.src.c(&String::from(src));
+        self.src.c(&src);
         self.src.c("}\n");
 
         let src = mem::replace(&mut self.src, prev);
-        self.imports
+        self.funcs
             .entry(iface.name.to_string())
             .or_insert(Vec::new())
-            .push(Import {
+            .push(Func {
                 name: func.name.to_string(),
-                src: src,
+                src,
             });
     }
 
@@ -961,166 +964,12 @@ impl Generator for C {
 
         self.print_intrinsics();
 
-        for (module, funcs) in mem::take(&mut self.imports) {
+        for (module, funcs) in mem::take(&mut self.funcs) {
             for func in funcs {
                 self.src.h(&func.src.header);
                 self.src.c(&func.src.src);
             }
         }
-
-        //for (module, exports) in mem::take(&mut self.exports) {
-        //    let module = module.to_camel_case();
-        //    self.src.ts(&format!("export class {} {{\n", module));
-        //    self.src.js(&format!("export class {} {{\n", module));
-
-        //    self.src.ts("
-        //        // The WebAssembly instance that this class is operating with.
-        //        // This is only available after the `instantiate` method has
-        //        // been called.
-        //        instance: WebAssembly.Instance;
-        //    ");
-
-        //    self.src.ts("
-        //        // Constructs a new instance with internal state necessary to
-        //        // manage a wasm instance.
-        //        //
-        //        // Note that this does not actually instantiate the WebAssembly
-        //        // instance or module, you'll need to call the `instantiate`
-        //        // method below to \"activate\" this class.
-        //        constructor();
-        //    ");
-        //    if self.exported_resources.len() > 0 {
-        //        self.src.js("constructor() {\n");
-        //        for r in self.exported_resources.iter() {
-        //            self.src
-        //                .js(&format!("this._resource{}_slab = new Slab();\n", r.index()));
-        //        }
-        //        self.src.js("}\n");
-        //    }
-
-        //    self.src.ts("
-        //        // This is a low-level method which can be used to add any
-        //        // intrinsics necessary for this instance to operate to an
-        //        // import object.
-        //        //
-        //        // The `import` object given here is expected to be used later
-        //        // to actually instantiate the module this class corresponds to.
-        //        // If the `instantiate` method below actually does the
-        //        // instantiation then there's no need to call this method, but
-        //        // if you're instantiating manually elsewhere then this can be
-        //        // used to prepare the import object for external instantiation.
-        //        add_to_imports(imports: any);
-        //    ");
-        //    self.src.js("add_to_imports(imports) {\n");
-        //    if self.exported_resources.len() > 0 {
-        //        self.src
-        //            .js("if (!(\"canonical_abi\" in imports)) imports[\"canonical_abi\"] = {};\n");
-        //    }
-        //    for r in self.exported_resources.iter() {
-        //        self.src.js(&format!(
-        //            "
-        //                imports.canonical_abi['resource_drop_{name}'] = i => {{
-        //                    this._resource{idx}_slab.remove(i).drop();
-        //                }};
-        //                imports.canonical_abi['resource_clone_{name}'] = i => {{
-        //                    const obj = this._resource{idx}_slab.get(i);
-        //                    return this._resource{idx}_slab.insert(obj.clone())
-        //                }};
-        //                imports.canonical_abi['resource_get_{name}'] = i => {{
-        //                    return this._resource{idx}_slab.get(i)._wasm_val;
-        //                }};
-        //                imports.canonical_abi['resource_new_{name}'] = i => {{
-        //                    const dtor = this._exports['canonical_abi_drop_{name}'];
-        //                    const registry = this._registry{idx};
-        //                    return this._resource{idx}_slab.insert(new {class}(i, dtor, registry));
-        //                }};
-        //            ",
-        //            name = iface.resources[*r].name,
-        //            idx = r.index(),
-        //            class = iface.resources[*r].name.to_camel_case(),
-        //        ));
-        //    }
-        //    self.src.js("}\n");
-
-        //    self.src.ts(&format!(
-        //        "
-        //            // Initializes this object with the provided WebAssembly
-        //            // module/instance.
-        //            //
-        //            // This is intended to be a flexible method of instantiating
-        //            // and completion of the initialization of this class. This
-        //            // method must be called before interacting with the
-        //            // WebAssembly object.
-        //            //
-        //            // The first argument to this method is where to get the
-        //            // wasm from. This can be a whole bunch of different types,
-        //            // for example:
-        //            //
-        //            // * A precompiled `WebAssembly.Module`
-        //            // * A typed array buffer containing the wasm bytecode.
-        //            // * A `Promise` of a `Response` which is used with
-        //            //   `instantiateStreaming`
-        //            // * A `Response` itself used with `instantiateStreaming`.
-        //            // * An already instantiated `WebAssembly.Instance`
-        //            //
-        //            // If necessary the module is compiled, and if necessary the
-        //            // module is instantiated. Whether or not it's necessary
-        //            // depends on the type of argument provided to
-        //            // instantiation.
-        //            //
-        //            // If instantiation is performed then the `imports` object
-        //            // passed here is the list of imports used to instantiate
-        //            // the instance. This method may add its own intrinsics to
-        //            // this `imports` object too.
-        //            instantiate(
-        //                module: WebAssembly.Module | BufferSource | Promise<Response> | Response | WebAssembly.Instance,
-        //                imports?: any,
-        //            ): Promise<void>;
-        //        ",
-        //    ));
-        //    self.src.js("
-        //        async instantiate(module, imports) {
-        //            imports = imports || {};
-        //            this.add_to_imports(imports);
-        //    ");
-
-        //    // With intrinsics prep'd we can now instantiate the module. JS has
-        //    // a ... variety of methods of instantiation, so we basically just
-        //    // try to be flexible here.
-        //    self.src.js("
-        //        if (module instanceof WebAssembly.Instance) {
-        //            this.instance = module;
-        //        } else if (module instanceof WebAssembly.Module) {
-        //            this.instance = await WebAssembly.instantiate(module, imports);
-        //        } else if (module instanceof ArrayBuffer || module instanceof Uint8Array) {
-        //            const { instance } = await WebAssembly.instantiate(module, imports);
-        //            this.instance = instance;
-        //        } else {
-        //            const { instance } = await WebAssembly.instantiateStreaming(module, imports);
-        //            this.instance = instance;
-        //        }
-        //        this._exports = this.instance.exports;
-        //    ");
-
-        //    // Exported resources all get a finalization registry, and we
-        //    // created them after instantiation so we can pass the raw wasm
-        //    // export as the destructor callback.
-        //    for r in self.exported_resources.iter() {
-        //        self.src.js(&format!(
-        //            "this._registry{} = new FinalizationRegistry(this._exports['canonical_abi_drop_{}']);\n",
-        //            r.index(),
-        //            iface.resources[*r].name,
-        //        ));
-        //    }
-        //    self.src.js("}\n");
-
-        //    for func in exports.funcs.iter() {
-        //        self.src.js(&func.js);
-        //        self.src.ts(&func.ts);
-        //    }
-        //    self.src.ts("}\n");
-        //    self.src.js("}\n");
-        //}
 
         files.push("bindings.c", self.src.src.as_bytes());
         files.push("bindings.h", self.src.header.as_bytes());
