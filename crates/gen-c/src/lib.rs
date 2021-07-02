@@ -171,6 +171,7 @@ impl C {
                 TypeDefKind::Pointer(t) => false,
                 TypeDefKind::ConstPointer(t) => false,
                 TypeDefKind::List(Type::Char) => false,
+                TypeDefKind::Record(r) if r.is_flags() => false,
                 TypeDefKind::Record(_)
                 | TypeDefKind::List(_)
                 | TypeDefKind::PushBuffer(_)
