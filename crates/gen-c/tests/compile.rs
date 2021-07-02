@@ -5,18 +5,7 @@ use std::process::Command;
 mod imports {
     test_codegen::c_import!(
         // ...
-        // "*.witx"
-        "integers.witx"
-        "empty.witx"
-        "floats.witx"
-        "smoke.witx"
-        "records.witx"
-        "variants.witx"
-        "flags.witx"
-        "char.witx"
-        "strings.witx"
-        "lists.witx"
-        "resource.witx"
+        "*.witx"
     );
 }
 

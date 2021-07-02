@@ -1217,6 +1217,7 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::VariantPayloadName => results.push("e".to_string()),
+            Instruction::BufferPayloadName => results.push("e".to_string()),
             Instruction::VariantLower {
                 variant,
                 results: result_types,

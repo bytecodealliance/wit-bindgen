@@ -550,6 +550,9 @@ def_instruction! {
         /// something bound to this name.
         VariantPayloadName : [0] => [1],
 
+        /// TODO
+        BufferPayloadName : [0] => [1],
+
         /// Pops a variant off the stack as well as `ty.cases.len()` blocks
         /// from the code generator. Uses each of those blocks and the value
         /// from the stack to produce `nresults` of items.
@@ -1896,8 +1899,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                     }
                                     self.emit(&RecordLift {
                                         record,
-                                        ty: id,
-                                        name: self.iface.types[id].name.as_deref(),
+                                        ty: okid,
+                                        name: self.iface.types[okid].name.as_deref(),
                                     });
                                 }
                                 _ => load(self, ok),
@@ -2265,7 +2268,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         let addr = self.stack.pop().unwrap();
         if do_write {
             self.push_block();
-            self.emit(&Instruction::VariantPayloadName);
+            self.emit(&Instruction::BufferPayloadName);
             self.write_to_memory(ty, addr, 0);
             self.finish_block(0);
         } else {

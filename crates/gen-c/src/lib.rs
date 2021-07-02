@@ -299,7 +299,7 @@ impl C {
             Type::F32 => self.src.h("f32"),
             Type::F64 => self.src.h("f64"),
             Type::Usize => self.src.h("usize"),
-            Type::Handle(id) => unimplemented!(),
+            Type::Handle(id) => self.src.h(&iface.resources[*id].name.to_snake_case()),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
                 if let Some(name) = &ty.name {
@@ -421,11 +421,13 @@ impl C {
                 self.src.h("size_t len;\n");
                 self.src.h("}");
             }
-            TypeDefKind::PushBuffer(t) => {
-                unimplemented!();
-            }
-            TypeDefKind::PullBuffer(t) => {
-                unimplemented!();
+            TypeDefKind::PushBuffer(t) | TypeDefKind::PullBuffer(t) => {
+                self.src.h("struct {\n");
+                self.src.h("int32_t is_handle;\n");
+                self.print_ty(iface, t);
+                self.src.h(" *ptr;\n");
+                self.src.h("size_t len;\n");
+                self.src.h("}");
             }
         }
         self.src.h(" ");
@@ -616,6 +618,9 @@ impl Generator for C {
             for field in record.fields.iter() {
                 self.print_ty(iface, &field.ty);
                 self.src.h(" ");
+                if record.is_tuple() {
+                    self.src.h("f");
+                }
                 self.src.h(&field.name.to_snake_case());
                 self.src.h(";\n");
             }
@@ -648,16 +653,24 @@ impl Generator for C {
             self.src.h("typedef struct {\n");
             self.src.h(int_repr(variant.tag));
             self.src.h(" tag;\n");
-            self.src.h("union {\n");
-            for case in variant.cases.iter() {
-                if let Some(ty) = &case.ty {
+            match variant.as_option() {
+                Some(ty) => {
                     self.print_ty(iface, ty);
-                    self.src.h(" ");
-                    self.src.h(&case_field_name(case));
-                    self.src.h(";\n");
+                    self.src.h(" val;\n");
+                }
+                None => {
+                    self.src.h("union {\n");
+                    for case in variant.cases.iter() {
+                        if let Some(ty) = &case.ty {
+                            self.print_ty(iface, ty);
+                            self.src.h(" ");
+                            self.src.h(&case_field_name(case));
+                            self.src.h(";\n");
+                        }
+                    }
+                    self.src.h("} val;\n");
                 }
             }
-            self.src.h("} val;\n");
             self.src.h("} ");
             self.src.h(&name.to_snake_case());
             self.src.h("_t;\n");
@@ -680,6 +693,12 @@ impl Generator for C {
     }
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        // Skip this since it's used in WASI and there's no need to redefine it
+        // here.
+        if name == "size" && (*ty == Type::Usize || *ty == Type::U32) {
+            return;
+        }
+
         let prev = mem::take(&mut self.src.header);
         self.src.h("typedef ");
         self.print_ty(iface, ty);
@@ -722,21 +741,33 @@ impl Generator for C {
     fn type_push_buffer(
         &mut self,
         iface: &Interface,
-        _id: TypeId,
+        id: TypeId,
         name: &str,
         ty: &Type,
         docs: &Docs,
     ) {
+        self.type_pull_buffer(iface, id, name, ty, docs);
     }
 
     fn type_pull_buffer(
         &mut self,
         iface: &Interface,
-        _id: TypeId,
+        id: TypeId,
         name: &str,
         ty: &Type,
         docs: &Docs,
     ) {
+        let prev = mem::take(&mut self.src.header);
+        self.src.h("typedef struct {\n");
+        self.src.h("int32_t is_handle;\n");
+        self.print_ty(iface, ty);
+        self.src.h(" *ptr;\n");
+        self.src.h("size_t len;\n");
+        self.src.h("} ");
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
+        self.types
+            .insert(id, mem::replace(&mut self.src.header, prev));
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
@@ -987,6 +1018,7 @@ struct FunctionBindgen<'a> {
     blocks: Vec<(String, Vec<String>)>,
     payloads: Vec<String>,
     params: Vec<String>,
+    wasm_return: Option<String>,
 }
 
 impl<'a> FunctionBindgen<'a> {
@@ -1001,6 +1033,7 @@ impl<'a> FunctionBindgen<'a> {
             blocks: Vec::new(),
             payloads: Vec::new(),
             params: Vec::new(),
+            wasm_return: None,
         }
     }
 
@@ -1013,6 +1046,12 @@ impl<'a> FunctionBindgen<'a> {
 
     fn load(&mut self, ty: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
         results.push(format!("*(({}*) ({} + {}))", ty, operands[0], offset));
+    }
+
+    fn load_ext(&mut self, ty: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
+        self.load(ty, offset, operands, results);
+        let result = results.pop().unwrap();
+        results.push(format!("(int32_t) ({})", result));
     }
 
     fn store(&mut self, ty: &str, offset: i32, operands: &[String]) {
@@ -1057,8 +1096,11 @@ impl Bindgen for FunctionBindgen<'_> {
         self.blocks.push((src.into(), mem::take(operands)));
     }
 
-    fn allocate_typed_space(&mut self, _iface: &Interface, _ty: TypeId) -> String {
-        unimplemented!()
+    fn allocate_typed_space(&mut self, iface: &Interface, ty: TypeId) -> String {
+        let ty = self.gen.type_string(iface, &Type::Id(ty));
+        let name = self.locals.tmp("tmp");
+        self.src.push_str(&format!("{} {};\n", ty, name));
+        format!("(int32_t) (&{})", name)
     }
 
     fn i64_return_pointer_area(&mut self, amt: usize) -> String {
@@ -1097,8 +1139,10 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::U32FromI32 => results.push(format!("(uint32_t) ({})", operands[0])),
             Instruction::S32FromI32 | Instruction::S64FromI64 => results.push(operands[0].clone()),
             Instruction::U64FromI64 => results.push(format!("(uint64_t) ({})", operands[0])),
+            Instruction::UsizeFromI32 => results.push(format!("(size_t) ({})", operands[0])),
 
-            Instruction::I32FromU8
+            Instruction::I32FromUsize
+            | Instruction::I32FromU8
             | Instruction::I32FromS8
             | Instruction::I32FromU16
             | Instruction::I32FromS16
@@ -1193,9 +1237,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 record, name, ty, ..
             } => {
                 let name = self.gen.type_string(iface, &Type::Id(*ty));
-                let mut result = format!("({}) {{", name);
+                let mut result = format!("({}) {{\n", name);
                 for op in operands {
-                    result.push_str(&format!("{},", op));
+                    result.push_str(&format!("{},\n", op));
                 }
                 result.push_str("}");
                 results.push(result);
@@ -1360,85 +1404,18 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::IterElem => results.push("e".to_string()),
             Instruction::IterBasePointer => results.push("base".to_string()),
 
-            // Instruction::BufferLiftPtrLen { push, ty } => {
-            //     let (block, block_results) = self.blocks.pop().unwrap();
-            //     // assert_eq!(block_results.len(), 1);
-            //     let tmp = self.tmp();
-            //     self.needs_memory = true;
-            //     self.src
-            //         .js(&format!("const ptr{} = {};\n", tmp, operands[1]));
-            //     self.src
-            //         .js(&format!("const len{} = {};\n", tmp, operands[2]));
-            //     if let Some(ty) = self.gen.array_ty(iface, ty) {
-            //         results.push(format!("new {}(memory.buffer, ptr{}, len{1})", ty, tmp));
-            //     } else {
-            //         let size = self.gen.sizes.size(ty);
-            //         if *push {
-            //             self.gen.needs_push_buffer = true;
-            //             assert!(block_results.is_empty());
-            //             results.push(format!(
-            //                 "new PushBuffer(ptr{}, len{0}, {}, (e, base) => {{
-            //                     {}
-            //                 }})",
-            //                 tmp, size, block
-            //             ));
-            //         } else {
-            //             self.gen.needs_pull_buffer = true;
-            //             assert_eq!(block_results.len(), 1);
-            //             results.push(format!(
-            //                 "new PullBuffer(ptr{}, len{0}, {}, (base) => {{
-            //                     {}
-            //                     return {};
-            //                 }})",
-            //                 tmp, size, block, block_results[0],
-            //             ));
-            //         }
-            //     }
-            // }
+            Instruction::BufferLowerPtrLen { .. } => {
+                drop(self.blocks.pop().unwrap());
+                results.push(format!("({}).is_handle", operands[0]));
+                results.push(format!("(int32_t) ({}).ptr", operands[0]));
+                results.push(format!("({}).len", operands[0]));
+            }
 
-            //    Instruction::BufferLowerHandle { push, ty } => {
-            //        let block = self.blocks.pop().unwrap();
-            //        let size = self.sizes.size(ty);
-            //        let tmp = self.tmp();
-            //        let handle = format!("handle{}", tmp);
-            //        let closure = format!("closure{}", tmp);
-            //        self.needs_buffer_transaction = true;
-            //        if iface.all_bits_valid(ty) {
-            //            let method = if *push { "push_out_raw" } else { "push_in_raw" };
-            //            self.push_str(&format!(
-            //                "let {} = unsafe {{ buffer_transaction.{}({}) }};\n",
-            //                handle, method, operands[0],
-            //            ));
-            //        } else if *push {
-            //            self.closures.push_str(&format!(
-            //                "let {} = |memory: &wasmtime::Memory, base: i32| {{
-            //                    Ok(({}, {}))
-            //                }};\n",
-            //                closure, block, size,
-            //            ));
-            //            self.push_str(&format!(
-            //                "let {} = unsafe {{ buffer_transaction.push_out({}, &{}) }};\n",
-            //                handle, operands[0], closure,
-            //            ));
-            //        } else {
-            //            let start = self.src.len();
-            //            self.print_ty(iface, ty, TypeMode::AllBorrowed("'_"));
-            //            let ty = self.src[start..].to_string();
-            //            self.src.truncate(start);
-            //            self.closures.push_str(&format!(
-            //                "let {} = |memory: &wasmtime::Memory, base: i32, e: {}| {{
-            //                    {};
-            //                    Ok({})
-            //                }};\n",
-            //                closure, ty, block, size,
-            //            ));
-            //            self.push_str(&format!(
-            //                "let {} = unsafe {{ buffer_transaction.push_in({}, &{}) }};\n",
-            //                handle, operands[0], closure,
-            //            ));
-            //        }
-            //        results.push(format!("{}", handle));
-            //    }
+            Instruction::BufferLiftHandle { .. } => {
+                drop(self.blocks.pop().unwrap());
+                results.push(format!("({}).idx", operands[0]));
+            }
+
             Instruction::CallWasm {
                 module: _,
                 name,
@@ -1449,6 +1426,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     1 => {
                         self.src.push_str(wasm_type(sig.results[0]));
                         let ret = self.locals.tmp("ret");
+                        self.wasm_return = Some(ret.clone());
                         self.src.push_str(&format!(" {} = ", ret));
                         results.push(ret);
                     }
@@ -1637,23 +1615,39 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::F32Store { offset } => self.store("float", *offset, operands),
             Instruction::F64Store { offset } => self.store("double", *offset, operands),
 
-            Instruction::I32Load8U { offset }
-            | Instruction::I32Load8S { offset }
-            | Instruction::I32Load16U { offset }
-            | Instruction::I32Load16S { offset } => {
-                drop(offset);
-                self.src.push_str("INVALID");
-                results.push("INVALID".to_string());
+            Instruction::I32Load8U { offset } => {
+                self.load_ext("uint8_t", *offset, operands, results)
             }
-            Instruction::I32Store8 { offset } | Instruction::I32Store16 { offset } => {
-                drop(offset);
-                self.src.push_str("INVALID");
+            Instruction::I32Load8S { offset } => {
+                self.load_ext("int8_t", *offset, operands, results)
+            }
+            Instruction::I32Load16U { offset } => {
+                self.load_ext("uint16_t", *offset, operands, results)
+            }
+            Instruction::I32Load16S { offset } => {
+                self.load_ext("int16_t", *offset, operands, results)
             }
 
-            // Instruction::Witx { instr } => match instr {
-            //     WitxInstruction::PointerFromI32 { .. } => results.push(operands[0].clone()),
-            //     i => unimplemented!("{:?}", i),
-            // },
+            Instruction::I32Store8 { offset } | Instruction::I32Store16 { offset } => {
+                drop(offset);
+                self.src.push_str("INVALIDSTORE");
+            }
+
+            Instruction::Witx { instr } => match instr {
+                WitxInstruction::I32FromPointer | WitxInstruction::I32FromConstPointer => {
+                    results.push(format!("(int32_t) ({})", operands[0]))
+                }
+                WitxInstruction::AddrOf => {
+                    results.push(format!("(int32_t) (&{})", operands[0]));
+                }
+                WitxInstruction::ReuseReturn => {
+                    results.push(self.wasm_return.clone().unwrap());
+                }
+                i => unimplemented!("{:?}", i),
+            },
+
+            Instruction::BufferPayloadName => results.push("INVALID".into()),
+
             i => unimplemented!("{:?}", i),
         }
     }
