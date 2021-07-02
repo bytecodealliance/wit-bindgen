@@ -76,6 +76,7 @@ struct Return {
 
 struct CSig {
     name: String,
+    sig: String,
     params: Vec<(bool, String)>,
     ret: Return,
     retptrs: Vec<String>,
@@ -83,8 +84,12 @@ struct CSig {
 
 #[derive(Debug)]
 enum Scalar {
-    OptionBool,
-    ExpectedEnum(TypeId),
+    OptionBool(Type),
+    ExpectedEnum {
+        err: TypeId,
+        ok: Option<Type>,
+        max_err: usize,
+    },
     Type(Type),
 }
 
@@ -119,8 +124,8 @@ impl C {
         let ret = self.classify_ret(iface, func);
         match &ret.scalar {
             None => self.src.h("void"),
-            Some(Scalar::OptionBool) => self.src.h("bool"),
-            Some(Scalar::ExpectedEnum(id)) => self.print_ty(iface, &Type::Id(*id)),
+            Some(Scalar::OptionBool(_id)) => self.src.h("bool"),
+            Some(Scalar::ExpectedEnum { err, .. }) => self.print_ty(iface, &Type::Id(*err)),
             Some(Scalar::Type(ty)) => self.print_ty(iface, ty),
         }
         self.src.h(" ");
@@ -157,11 +162,11 @@ impl C {
         }
         self.src.h(")");
 
-        self.src.src.push_str(&self.src.header[start..]);
+        let sig = self.src.header[start..].to_string();
         self.src.h(";\n");
-        self.src.c(" {\n");
 
         CSig {
+            sig,
             name,
             params,
             ret,
@@ -235,11 +240,16 @@ impl C {
             Type::F32 => self.src.h("float"),
             Type::F64 => self.src.h("double"),
             Type::Usize => self.src.h("size_t"),
-            Type::Handle(id) => unimplemented!(),
+            Type::Handle(id) => {
+                self.src.h(&iface.resources[*id].name.to_snake_case());
+                self.src.h("_t");
+            }
             Type::Id(id) => {
                 let ty = &iface.types[*id];
                 if let Some(name) = &ty.name {
-                    return self.src.h(&name.to_snake_case());
+                    self.src.h(&name.to_snake_case());
+                    self.src.h("_t");
+                    return;
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty(iface, t),
@@ -250,6 +260,7 @@ impl C {
                         self.public_anonymous_types.insert(*id);
                         self.private_anonymous_types.remove(id);
                         self.print_ty_name(iface, &Type::Id(*id));
+                        self.src.h("_t");
                     }
                     TypeDefKind::Pointer(t) => {
                         self.print_ty(iface, t);
@@ -262,7 +273,7 @@ impl C {
                     }
                     TypeDefKind::List(Type::Char) => {
                         self.src
-                            .h(&format!("{}_string", iface.name.to_snake_case()));
+                            .h(&format!("{}_string_t", iface.name.to_snake_case()));
                         self.needs_string = true;
                     }
                     TypeDefKind::Record(_)
@@ -272,6 +283,7 @@ impl C {
                         self.public_anonymous_types.insert(*id);
                         self.private_anonymous_types.remove(id);
                         self.print_ty_name(iface, &Type::Id(*id));
+                        self.src.h("_t");
                     }
                 }
             }
@@ -424,7 +436,7 @@ impl C {
         }
         self.src.h(" ");
         self.print_ty_name(iface, &Type::Id(ty));
-        self.src.h(";\n");
+        self.src.h("_t;\n");
         self.types
             .insert(ty, mem::replace(&mut self.src.header, prev));
     }
@@ -512,7 +524,7 @@ impl Return {
                 // returned and then the actual type returned is returned
                 // through a return pointer.
                 if let Some(ty) = r.as_option() {
-                    self.scalar = Some(Scalar::OptionBool);
+                    self.scalar = Some(Scalar::OptionBool(*ty));
                     self.retptrs.push(*ty);
                     return;
                 }
@@ -524,7 +536,11 @@ impl Return {
                     if let Some(Type::Id(err)) = err {
                         if let TypeDefKind::Variant(e) = &iface.types[*err].kind {
                             if e.is_enum() {
-                                self.scalar = Some(Scalar::ExpectedEnum(*err));
+                                self.scalar = Some(Scalar::ExpectedEnum {
+                                    ok: ok.cloned(),
+                                    err: *err,
+                                    max_err: e.cases.len(),
+                                });
                                 if let Some(ok) = ok {
                                     self.splat_tuples(iface, ok, ok);
                                 }
@@ -591,7 +607,7 @@ impl Generator for C {
             self.src.h(int_repr(repr));
             self.src.h(" ");
             self.src.h(&name.to_snake_case());
-            self.src.h(";\n");
+            self.src.h("_t;\n");
 
             for (i, field) in record.fields.iter().enumerate() {
                 self.src.h(&format!(
@@ -611,7 +627,7 @@ impl Generator for C {
             }
             self.src.h("} ");
             self.src.h(&name.to_snake_case());
-            self.src.h(";\n");
+            self.src.h("_t;\n");
         }
 
         self.types
@@ -633,7 +649,7 @@ impl Generator for C {
             self.src.h(int_repr(variant.tag));
             self.src.h(" ");
             self.src.h(&name.to_snake_case());
-            self.src.h(";\n");
+            self.src.h("_t;\n");
         } else {
             self.src.h("typedef struct {\n");
             self.src.h(int_repr(variant.tag));
@@ -650,7 +666,7 @@ impl Generator for C {
             self.src.h("} val;\n");
             self.src.h("} ");
             self.src.h(&name.to_snake_case());
-            self.src.h(";\n");
+            self.src.h("_t;\n");
         }
         for (i, case) in variant.cases.iter().enumerate() {
             self.src.h(&format!(
@@ -665,7 +681,9 @@ impl Generator for C {
             .insert(id, mem::replace(&mut self.src.header, prev));
     }
 
-    fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {}
+    fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
+        drop((iface, ty));
+    }
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let prev = mem::take(&mut self.src.header);
@@ -673,7 +691,7 @@ impl Generator for C {
         self.print_ty(iface, ty);
         self.src.h(" ");
         self.src.h(&name.to_snake_case());
-        self.src.h(";\n");
+        self.src.h("_t;\n");
         self.types
             .insert(id, mem::replace(&mut self.src.header, prev));
     }
@@ -686,7 +704,7 @@ impl Generator for C {
         self.src.h("size_t len;\n");
         self.src.h("} ");
         self.src.h(&name.to_snake_case());
-        self.src.h(";\n");
+        self.src.h("_t;\n");
         self.types
             .insert(id, mem::replace(&mut self.src.header, prev));
     }
@@ -760,8 +778,22 @@ impl Generator for C {
         self.src.c(");\n");
 
         let c_sig = self.print_sig(iface, func);
+        self.src.c(&c_sig.sig);
+        self.src.c(" {\n");
 
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
+        for (pointer, param) in f.sig.params.iter() {
+            f.locals.insert(param).unwrap();
+
+            if *pointer {
+                f.params.push(format!("*{}", param));
+            } else {
+                f.params.push(param.clone());
+            }
+        }
+        for ptr in f.sig.retptrs.iter() {
+            f.locals.insert(ptr).unwrap();
+        }
         iface.call(
             Direction::Import,
             LiftLower::LowerArgsLiftResults,
@@ -785,59 +817,62 @@ impl Generator for C {
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
-        // let prev = mem::take(&mut self.src);
+        let prev = mem::take(&mut self.src);
+        let sig = iface.wasm_signature(Direction::Export, func);
 
-        // self.src.js(&format!(
-        //     "{}({}) {{\n",
-        //     func.name.to_snake_case(),
-        //     func.params
-        //         .iter()
-        //         .enumerate()
-        //         .map(|(i, _)| format!("arg{}", i))
-        //         .collect::<Vec<_>>()
-        //         .join(", ")
-        // ));
-        // self.ts_func(iface, func);
+        self.src.c(&format!(
+            "__attribute__((export_name(\"{}\")))\n",
+            func.name
+        ));
+        let import_name = self.names.tmp(&format!(
+            "__wasm_export_{}_{}",
+            iface.name.to_snake_case(),
+            func.name.to_snake_case()
+        ));
 
-        // let mut f = FunctionBindgen::new(self, false);
-        // iface.call(
-        //     Direction::Export,
-        //     LiftLower::LowerArgsLiftResults,
-        //     func,
-        //     &mut f,
-        // );
+        let c_sig = self.print_sig(iface, func);
+        let mut f = FunctionBindgen::new(self, c_sig, &import_name);
+        match sig.results.len() {
+            0 => f.gen.src.c("void"),
+            1 => f.gen.src.c(wasm_type(sig.results[0])),
+            _ => unimplemented!("multi-value return not supported"),
+        }
+        f.gen.src.c(" ");
+        f.gen.src.c(&import_name);
+        f.gen.src.c("(");
+        for (i, param) in sig.params.iter().enumerate() {
+            if i > 0 {
+                f.gen.src.c(", ");
+            }
+            let name = f.locals.tmp("arg");
+            f.gen.src.c(&format!("{} {}", wasm_type(*param), name));
+            f.params.push(name);
+        }
+        if sig.params.len() == 0 {
+            f.gen.src.c("void");
+        }
+        f.gen.src.c(") {\n");
 
-        // let FunctionBindgen {
-        //     src,
-        //     needs_memory,
-        //     needs_realloc,
-        //     needs_free,
-        //     ..
-        // } = f;
-        // if needs_memory {
-        //     // TODO: hardcoding "memory"
-        //     self.src.js("const memory = this._exports.memory;\n");
-        // }
+        iface.call(
+            Direction::Export,
+            LiftLower::LiftArgsLowerResults,
+            func,
+            &mut f,
+        );
 
-        // if let Some(name) = needs_realloc {
-        //     self.src
-        //         .js(&format!("const realloc = this._exports[\"{}\"];\n", name));
-        // }
+        let FunctionBindgen { src, .. } = f;
 
-        // if let Some(name) = needs_free {
-        //     self.src
-        //         .js(&format!("const free = this._exports[\"{}\"];\n", name));
-        // }
-        // self.src.js(&src.js);
-        // self.src.js("}\n");
+        self.src.c(&String::from(src));
+        self.src.c("}\n");
 
-        // let exports = self
-        //     .exports
-        //     .entry(iface.name.to_string())
-        //     .or_insert_with(Exports::default);
-
-        // let func_body = mem::replace(&mut self.src, prev);
-        // exports.funcs.push(func_body);
+        let src = mem::replace(&mut self.src, prev);
+        self.imports
+            .entry(iface.name.to_string())
+            .or_insert(Vec::new())
+            .push(Import {
+                name: func.name.to_string(),
+                src: src,
+            });
     }
 
     fn finish(&mut self, iface: &Interface, files: &mut Files) {
@@ -845,6 +880,17 @@ impl Generator for C {
         self.src.h("#include <stdbool.h>\n");
         self.src.c("#include <bindings.h>\n");
         self.src.c("#include <stdlib.h>\n");
+
+        for (_, resource) in iface.resources.iter() {
+            self.src.h(&format!(
+                "
+                    typedef struct {{
+                        uint32_t idx;
+                    }} {}_t;
+                ",
+                resource.name.to_snake_case()
+            ));
+        }
 
         // Continuously generate anonymous types while we continue to find more
         //
@@ -876,16 +922,16 @@ impl Generator for C {
                     typedef struct {{
                         uint8_t *ptr;
                         size_t len;
-                    }} {0}_string;
+                    }} {0}_string_t;
 
-                    void {0}_string_init({0}_string *ret, const char *s);
+                    void {0}_string_init({0}_string_t *ret, const char *s);
                 ",
                 iface.name.to_snake_case(),
             ));
             self.src.c("#include <string.h>\n");
             self.src.c(&format!(
                 "
-                    void {0}_string_init({0}_string *ret, const char *s) {{
+                    void {0}_string_init({0}_string_t *ret, const char *s) {{
                         ret->ptr = (uint8_t*) s;
                         ret->len = strlen(s);
                     }}
@@ -1091,26 +1137,21 @@ struct FunctionBindgen<'a> {
     block_storage: Vec<witx_bindgen_gen_core::Source>,
     blocks: Vec<(String, Vec<String>)>,
     payloads: Vec<String>,
+    params: Vec<String>,
 }
 
 impl<'a> FunctionBindgen<'a> {
     fn new(gen: &'a mut C, sig: CSig, func_to_call: &'a str) -> FunctionBindgen<'a> {
-        let mut locals = Ns::default();
-        for (_, param) in sig.params.iter() {
-            locals.insert(param).unwrap();
-        }
-        for ptr in sig.retptrs.iter() {
-            locals.insert(ptr).unwrap();
-        }
         FunctionBindgen {
             gen,
             sig,
-            locals,
+            locals: Default::default(),
             src: Default::default(),
             func_to_call,
             block_storage: Vec::new(),
             blocks: Vec::new(),
             payloads: Vec::new(),
+            params: Vec::new(),
         }
     }
 
@@ -1191,14 +1232,7 @@ impl Bindgen for FunctionBindgen<'_> {
         results: &mut Vec<String>,
     ) {
         match inst {
-            Instruction::GetArg { nth } => {
-                let (pointer, name) = &self.sig.params[*nth];
-                if *pointer {
-                    results.push(format!("*{}", name));
-                } else {
-                    results.push(name.clone());
-                }
-            }
+            Instruction::GetArg { nth } => results.push(self.params[*nth].clone()),
             Instruction::I32Const { val } => results.push(val.to_string()),
             Instruction::ConstZero { tys } => {
                 for _ in tys.iter() {
@@ -1280,47 +1314,19 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            // // These instructions are used with handles when we're implementing
-            // // imports. This means we interact with the `resources` slabs to
-            // // translate the wasm-provided index into a JS value.
-            // Instruction::I32FromOwnedHandle { ty } => {
-            //     self.gen.imported_resources.insert(*ty);
-            //     results.push(format!("resources{}.insert({})", ty.index(), operands[0]));
-            // }
-            // Instruction::HandleBorrowedFromI32 { ty } => {
-            //     self.gen.imported_resources.insert(*ty);
-            //     results.push(format!("resources{}.get({})", ty.index(), operands[0]));
-            // }
+            Instruction::I32FromOwnedHandle { .. } | Instruction::I32FromBorrowedHandle { .. } => {
+                results.push(format!("({}).idx", operands[0]));
+            }
 
-            // // These instructions are used for handles to objects owned in wasm.
-            // // This means that they're interacting with a wrapper class defined
-            // // in JS.
-            // Instruction::I32FromBorrowedHandle { ty } => {
-            //     let tmp = self.tmp();
-            //     self.src
-            //         .js(&format!("const obj{} = {};\n", tmp, operands[0]));
-            //     self.src.js(&format!(
-            //         "if (!(obj{} instanceof {})) ",
-            //         tmp,
-            //         iface.resources[*ty].name.to_camel_case()
-            //     ));
-            //     self.src.js(&format!(
-            //         "throw new TypeError('expected instance of {}');\n",
-            //         iface.resources[*ty].name.to_camel_case()
-            //     ));
-            //     results.push(format!(
-            //         "this._resource{}_slab.insert(obj{}.clone())",
-            //         ty.index(),
-            //         tmp,
-            //     ));
-            // }
-            // Instruction::HandleOwnedFromI32 { ty } => {
-            //     results.push(format!(
-            //         "this._resource{}_slab.remove({})",
-            //         ty.index(),
-            //         operands[0],
-            //     ));
-            // }
+            Instruction::HandleBorrowedFromI32 { ty, .. }
+            | Instruction::HandleOwnedFromI32 { ty, .. } => {
+                results.push(format!(
+                    "({}_t){{ {} }}",
+                    iface.resources[*ty].name.to_snake_case(),
+                    operands[0],
+                ));
+            }
+
             Instruction::RecordLower { record, .. } => {
                 if record.is_tuple() {
                     let op = &operands[0];
@@ -1610,41 +1616,137 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.push_str(");\n");
             }
 
-            // Instruction::CallInterface { module: _, func } => {
-            //     if func.results.len() > 0 {
-            //         if func.results.len() == 1 {
-            //             self.src.js("const ret = ");
-            //             results.push("ret".to_string());
-            //         } else if func.results.iter().any(|p| p.0.is_empty()) {
-            //             self.src.js("const [");
-            //             for i in 0..func.results.len() {
-            //                 if i > 0 {
-            //                     self.src.js(", ")
-            //                 }
-            //                 let name = format!("ret{}", i);
-            //                 self.src.js(&name);
-            //                 results.push(name);
-            //             }
-            //             self.src.js("] = ");
-            //         } else {
-            //             self.src.js("const {");
-            //             for (i, (name, _)) in func.results.iter().enumerate() {
-            //                 if i > 0 {
-            //                     self.src.js(", ")
-            //                 }
-            //                 self.src.js(name);
-            //                 results.push(name.clone());
-            //             }
-            //             self.src.js("} = ");
-            //         }
-            //     }
-            //     self.src.js("obj.");
-            //     self.src.js(&func.name.to_snake_case());
-            //     self.src.js("(");
-            //     self.src.js(&operands.join(", "));
-            //     self.src.js(");\n");
-            // }
-            Instruction::Return { amt, func } => match self.sig.ret.scalar {
+            Instruction::CallInterface { module: _, func } => {
+                let mut args = String::new();
+                for (i, (op, (byref, _))) in operands.iter().zip(&self.sig.params).enumerate() {
+                    if i > 0 {
+                        args.push_str(", ");
+                    }
+                    if *byref {
+                        let name = self.locals.tmp("arg");
+                        let ty = self.gen.type_string(iface, &func.params[i].1);
+                        self.src.push_str(&format!("{} {} = {};\n", ty, name, op));
+                        args.push_str("&");
+                        args.push_str(&name);
+                    } else {
+                        args.push_str(op);
+                    }
+                }
+                match &self.sig.ret.scalar {
+                    None => {
+                        let mut retptrs = Vec::new();
+                        for ty in self.sig.ret.retptrs.iter() {
+                            let name = self.locals.tmp("ret");
+                            let ty = self.gen.type_string(iface, ty);
+                            self.src.push_str(&format!("{} {};\n", ty, name));
+                            if args.len() > 0 {
+                                args.push_str(", ");
+                            }
+                            args.push_str("&");
+                            args.push_str(&name);
+                            retptrs.push(name);
+                        }
+                        self.src
+                            .push_str(&format!("{}({});\n", self.sig.name, args));
+                        if self.sig.ret.splat_tuple {
+                            let ty = self.gen.type_string(iface, &func.results[0].1);
+                            results.push(format!("({}){{ {} }}", ty, retptrs.join(", ")));
+                        } else if self.sig.retptrs.len() > 0 {
+                            results.extend(retptrs);
+                        }
+                    }
+                    Some(Scalar::Type(_)) => {
+                        assert_eq!(func.results.len(), 1);
+                        let ret = self.locals.tmp("ret");
+                        let ty = self.gen.type_string(iface, &func.results[0].1);
+                        self.src
+                            .push_str(&format!("{} {} = {}({});\n", ty, ret, self.sig.name, args));
+                        results.push(ret);
+                    }
+                    Some(Scalar::OptionBool(ty)) => {
+                        let ret = self.locals.tmp("ret");
+                        let val = self.locals.tmp("val");
+                        if args.len() > 0 {
+                            args.push_str(", ");
+                        }
+                        args.push_str("&");
+                        args.push_str(&val);
+                        let payload_ty = self.gen.type_string(iface, ty);
+                        self.src.push_str(&format!("{} {};\n", payload_ty, val));
+                        self.src
+                            .push_str(&format!("bool {} = {}({});\n", ret, self.sig.name, args));
+                        let option_ty = self.gen.type_string(iface, &func.results[0].1);
+                        let option_ret = self.locals.tmp("ret");
+                        self.src.push_str(&format!(
+                            "
+                                {ty} {ret};
+                                {ret}.tag = {tag};
+                                {ret}.val = {val};
+                            ",
+                            ty = option_ty,
+                            ret = option_ret,
+                            tag = ret,
+                            val = val,
+                        ));
+                        results.push(option_ret);
+                    }
+                    Some(Scalar::ExpectedEnum { ok, err, max_err }) => {
+                        let ret = self.locals.tmp("ret");
+                        let mut ok_names = Vec::new();
+                        for ty in self.sig.ret.retptrs.iter() {
+                            let val = self.locals.tmp("ok");
+                            if args.len() > 0 {
+                                args.push_str(", ");
+                            }
+                            args.push_str("&");
+                            args.push_str(&val);
+                            let ty = self.gen.type_string(iface, ty);
+                            self.src.push_str(&format!("{} {};\n", ty, val));
+                            ok_names.push(val);
+                        }
+                        let err_ty = self.gen.type_string(iface, &Type::Id(*err));
+                        self.src.push_str(&format!(
+                            "{} {} = {}({});\n",
+                            err_ty, ret, self.sig.name, args,
+                        ));
+                        let expected_ty = self.gen.type_string(iface, &func.results[0].1);
+                        let expected_ret = self.locals.tmp("ret");
+                        self.src.push_str(&format!(
+                            "
+                                {ty} {ret};
+                                if ({tag} <= {max}) {{
+                                    {ret}.tag = 1;
+                                    {ret}.val.err = {tag};
+                                }} else {{
+                                    {ret}.tag = 0;
+                                    {set_ok}
+                                }}
+                            ",
+                            ty = expected_ty,
+                            ret = expected_ret,
+                            tag = ret,
+                            max = max_err,
+                            set_ok = if self.sig.ret.retptrs.len() == 0 {
+                                String::new()
+                            } else if self.sig.ret.splat_tuple {
+                                let mut s = String::new();
+                                for (i, name) in ok_names.iter().enumerate() {
+                                    s.push_str(&format!(
+                                        "{}.val.ok.f{} = {};\n",
+                                        expected_ret, i, name,
+                                    ));
+                                }
+                                s
+                            } else {
+                                let name = ok_names.pop().unwrap();
+                                format!("{}.val.ok = {};", expected_ret, name)
+                            },
+                        ));
+                        results.push(expected_ret);
+                    }
+                }
+            }
+            Instruction::Return { amt, func } if self.gen.in_import => match self.sig.ret.scalar {
                 None => self.store_in_retptrs(operands),
                 Some(Scalar::Type(_)) => {
                     assert_eq!(operands.len(), 1);
@@ -1652,7 +1754,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.push_str(&operands[0]);
                     self.src.push_str(";\n");
                 }
-                Some(Scalar::OptionBool) => {
+                Some(Scalar::OptionBool(_)) => {
                     assert_eq!(operands.len(), 1);
                     let variant = &operands[0];
                     self.store_in_retptrs(&[format!("{}.val", variant)]);
@@ -1660,23 +1762,31 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.push_str(&variant);
                     self.src.push_str(".tag;\n");
                 }
-                Some(Scalar::ExpectedEnum(_)) => {
+                Some(Scalar::ExpectedEnum { .. }) => {
                     assert_eq!(operands.len(), 1);
                     let variant = &operands[0];
                     if self.sig.retptrs.len() > 0 {
                         self.store_in_retptrs(&[format!("{}.val.ok", variant)]);
                     }
-                    self.src.push_str("return ");
-                    self.src.push_str(&variant);
-                    self.src.push_str(".tag;\n");
+                    self.src
+                        .push_str(&format!("return {}.tag ? {0}.val.err : -1;\n", variant,));
                 }
             },
+            Instruction::Return { amt, .. } => {
+                assert!(*amt <= 1);
+                if *amt == 1 {
+                    self.src.push_str(&format!("return {};\n", operands[0]));
+                }
+            }
 
             Instruction::I32Load { offset } => self.load("int32_t", *offset, operands, results),
             Instruction::I64Load { offset } => self.load("int64_t", *offset, operands, results),
             Instruction::F32Load { offset } => self.load("float", *offset, operands, results),
             Instruction::F64Load { offset } => self.load("double", *offset, operands, results),
             Instruction::I32Store { offset } => self.store("int32_t", *offset, operands),
+            Instruction::I64Store { offset } => self.store("int64_t", *offset, operands),
+            Instruction::F32Store { offset } => self.store("float", *offset, operands),
+            Instruction::F64Store { offset } => self.store("double", *offset, operands),
 
             Instruction::I32Load8U { offset }
             | Instruction::I32Load8S { offset }
@@ -1686,11 +1796,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.push_str("INVALID");
                 results.push("INVALID".to_string());
             }
-            Instruction::I64Store { offset }
-            | Instruction::F32Store { offset }
-            | Instruction::F64Store { offset }
-            | Instruction::I32Store8 { offset }
-            | Instruction::I32Store16 { offset } => {
+            Instruction::I32Store8 { offset } | Instruction::I32Store16 { offset } => {
                 drop(offset);
                 self.src.push_str("INVALID");
             }

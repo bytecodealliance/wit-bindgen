@@ -16,11 +16,6 @@ structopt = { version = "0.3", default-features = false, optional = true }
 [dev-dependencies]
 test-build-rust-wasm = { path = '../test-build-rust-wasm' }
 test-codegen = { path = '../test-codegen', features = ['witx-bindgen-gen-js'] }
-rayon = "1.0"
-
-[[test]]
-name = "eslint"
-harness = false
 
 [[test]]
 name = "run"

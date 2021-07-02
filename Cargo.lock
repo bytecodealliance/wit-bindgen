@@ -1937,7 +1937,6 @@ name = "witx-bindgen-gen-js"
 version = "0.1.0"
 dependencies = [
  "heck",
- "rayon",
  "structopt",
  "test-build-rust-wasm",
  "test-codegen",

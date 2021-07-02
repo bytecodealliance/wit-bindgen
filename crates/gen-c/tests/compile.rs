@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod imports {
-    use super::verify;
     test_codegen::c_import!(
         // ...
         // "*.witx"
@@ -17,23 +16,27 @@ mod imports {
         "char.witx"
         "strings.witx"
         "lists.witx"
+        "resource.witx"
     );
 }
 
-// mod exports {
-//     test_codegen::js_export!(
-//         "*.witx"
-
-//         // These use preview1 ABI things which are only supported for imports
-//         "!host.witx"
-//         "!typenames.witx"
-//         "!wasi_snapshot_preview1.witx"
-
-//         // This uses buffers, which we don't support in exports just yet
-//         // TODO: should support this
-//         "!wasi_next.witx"
-//     );
-// }
+mod exports {
+    test_codegen::c_export!(
+        // ...
+        // "*.witx"
+        "integers.witx"
+        "empty.witx"
+        "floats.witx"
+        "smoke.witx"
+        "records.witx"
+        "variants.witx"
+        "flags.witx"
+        "char.witx"
+        "strings.witx"
+        "lists.witx"
+        "resource.witx"
+    );
+}
 
 fn verify(dir: &str) {
     let dir = Path::new(dir);
