@@ -1436,7 +1436,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("ptr{}", tmp));
                 results.push(format!("len{}", tmp));
             }
-            Instruction::ListCanonLift { element, free } => {
+            Instruction::ListCanonLift { element, free, .. } => {
                 self.needs_memory = true;
                 let tmp = self.tmp();
                 self.src
@@ -1516,7 +1516,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(len);
             }
 
-            Instruction::ListLift { element, free } => {
+            Instruction::ListLift { element, free, .. } => {
                 let (body, body_results) = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let size = self.gen.sizes.size(element);

@@ -1858,7 +1858,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("{}.len() as i32", val));
             }
 
-            Instruction::ListCanonLift { element, free } => match free {
+            Instruction::ListCanonLift { element, free, .. } => match free {
                 Some(free) => {
                     self.needs_memory = true;
                     self.gen.needs_copy_slice = true;
@@ -1943,7 +1943,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(len);
             }
 
-            Instruction::ListLift { element, free } => {
+            Instruction::ListLift { element, free, .. } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let size = self.gen.sizes.size(element);

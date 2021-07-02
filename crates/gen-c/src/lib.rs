@@ -41,9 +41,7 @@ pub struct C {
 }
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
-enum Intrinsic {
-    StringRealloc,
-}
+enum Intrinsic {}
 
 struct Import {
     name: String,
@@ -444,35 +442,36 @@ impl C {
     }
 
     fn intrinsic(&mut self, i: Intrinsic) -> String {
-        if let Some(name) = self.intrinsics.get(&i) {
-            return name.clone();
-        }
-        let name = match i {
-            Intrinsic::StringRealloc => "__string_realloc",
-        };
-        let name = self.names.tmp(name);
-        self.intrinsics.insert(i, name.clone());
-        name
+        match i {}
+        // if let Some(name) = self.intrinsics.get(&i) {
+        //     return name.clone();
+        // }
+        // let name = match i {
+        //     // Intrinsic::StringRealloc => "__string_realloc",
+        // };
+        // let name = self.names.tmp(name);
+        // self.intrinsics.insert(i, name.clone());
+        // name
     }
 
     fn print_intrinsics(&mut self) {
         for (i, name) in self.intrinsics.drain() {
             match i {
-                Intrinsic::StringRealloc => {
-                    self.src.c(&format!(
-                        "
-                            static char *{}(int32_t ptr, int32_t len) {{
-                                if (len == 0) {{
-                                    return strdup(\"\");
-                                }}
-                                char *ret = realloc((char*) ptr, len + 1);
-                                ret[len] = 0;
-                                return ret;
-                            }}
-                        ",
-                        name,
-                    ));
-                }
+                // Intrinsic::StringRealloc => {
+                //     self.src.c(&format!(
+                //         "
+                //             static char *{}(int32_t ptr, int32_t len) {{
+                //                 if (len == 0) {{
+                //                     return strdup(\"\");
+                //                 }}
+                //                 char *ret = realloc((char*) ptr, len + 1);
+                //                 ret[len] = 0;
+                //                 return ret;
+                //             }}
+                //         ",
+                //         name,
+                //     ));
+                // }
             }
         }
     }
