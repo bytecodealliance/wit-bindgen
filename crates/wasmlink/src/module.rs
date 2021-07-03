@@ -25,7 +25,7 @@ fn import_kind(ty: ImportSectionEntryType) -> &'static str {
     }
 }
 
-fn export_kind(kind: ExternalKind) -> &'static str {
+pub(crate) fn export_kind(kind: ExternalKind) -> &'static str {
     match kind {
         ExternalKind::Function => "function",
         ExternalKind::Table => "table",
@@ -50,6 +50,7 @@ pub(crate) struct Interface {
     sizes: SizeAlign,
     func_infos: Vec<FunctionInfo>,
     must_adapt: bool,
+    has_resources: bool,
 }
 
 impl Interface {
@@ -69,7 +70,7 @@ impl Interface {
                 let export_type = Self::sig_to_type(&export_signature);
 
                 // A function must be adapted if it has a return pointer or any parameter or result
-                // needs to be adapted.
+                // that needs to be adapted.
                 let func_must_adapt = import_signature.retptr.is_some()
                     || f.params.iter().any(|(_, ty)| !inner.all_bits_valid(ty))
                     || f.results.iter().any(|(_, ty)| !inner.all_bits_valid(ty));
@@ -88,11 +89,17 @@ impl Interface {
         let mut sizes = SizeAlign::default();
         sizes.fill(Direction::Export, &inner);
 
+        let has_resources = inner
+            .resources
+            .iter()
+            .any(|(_, r)| r.foreign_module.is_none());
+
         Ok(Self {
             inner,
             sizes,
             func_infos,
             must_adapt,
+            has_resources,
         })
     }
 
@@ -110,6 +117,10 @@ impl Interface {
 
     pub fn lookup_info(&self, name: &str) -> Option<&FunctionInfo> {
         Some(&self.func_infos[self.inner.functions.iter().position(|f| f.name == name)?])
+    }
+
+    pub fn has_resources(&self) -> bool {
+        self.has_resources
     }
 
     fn sig_to_type(signature: &WasmSignature) -> FuncType {
@@ -177,6 +188,13 @@ impl<'a> Module<'a> {
         self.interface
             .as_ref()
             .map(|i| i.must_adapt)
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn has_resources(&self) -> bool {
+        self.interface
+            .as_ref()
+            .map(|i| i.has_resources())
             .unwrap_or(false)
     }
 

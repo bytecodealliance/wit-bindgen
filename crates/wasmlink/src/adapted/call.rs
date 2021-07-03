@@ -89,16 +89,18 @@ impl From<witx2::Int> for LoadType {
 enum ValueRef {
     /// A reference to a 32-bit value stored in a function local (by index).
     Local(u32),
-    /// A reference to 32-bit value via an offset from an element base address.
+    /// A reference to a 32-bit value via an offset from an element base address.
     ElementOffset(u32),
-    /// A reference to a 32-bit value via an index into the retptr array.
+    /// A reference to a 32-bit value returned from a function stored in a local (single-value return).
+    Return(u32),
+    /// A reference to a 32-bit value via an index into the retptr array (multi-value return).
     RetPtr(u32),
 }
 
 impl ValueRef {
     fn offset(&self) -> Option<u32> {
         match self {
-            ValueRef::Local(_) => None,
+            ValueRef::Local(_) | ValueRef::Return(_) => None,
             ValueRef::ElementOffset(o) => Some(*o),
             ValueRef::RetPtr(i) => Some(*i * 8),
         }
@@ -110,9 +112,12 @@ impl ValueRef {
         base: Option<ElementBase>,
         ty: LoadType,
     ) {
-        if let Self::Local(i) = self {
-            function.instruction(Instruction::LocalGet(*i));
-            return;
+        match self {
+            ValueRef::Local(i) | ValueRef::Return(i) => {
+                function.instruction(Instruction::LocalGet(*i));
+                return;
+            }
+            ValueRef::RetPtr(_) | ValueRef::ElementOffset(_) => {}
         }
 
         let base = base.expect("cannot load via an element offset without a base");
@@ -145,24 +150,61 @@ impl ValueRef {
 }
 
 #[derive(Debug)]
-enum Operand {
+enum Operand<'a> {
     Variant {
         discriminant: (ValueRef, LoadType),
-        cases: Vec<(u32, Vec<Operand>)>,
+        cases: Vec<(u32, Vec<Operand<'a>>)>,
     },
     List {
         addr: ValueRef,
         len: ValueRef,
         element_size: u32,
         element_alignment: u32,
-        operands: Vec<Operand>,
+        operands: Vec<Operand<'a>>,
+    },
+    Handle {
+        addr: ValueRef,
+        name: &'a str,
     },
 }
 
-fn is_char(ty: &Type) -> bool {
+impl Operand<'_> {
+    fn local(&self) -> Option<u32> {
+        match self {
+            Operand::List { addr, .. } | Operand::Handle { addr, .. } => match addr {
+                ValueRef::Local(i) => Some(*i),
+                _ => None,
+            },
+            Operand::Variant { .. } => None,
+        }
+    }
+}
+
+fn is_char(interface: &witx2::Interface, ty: &Type) -> bool {
     match ty {
         Type::Char => true,
+        Type::Id(id) => match &interface.types[*id].kind {
+            TypeDefKind::Type(t) => is_char(interface, t),
+            _ => false,
+        },
         _ => false,
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PushMode {
+    Params,
+    Return,
+    RetPtr,
+}
+
+impl PushMode {
+    fn create_value_ref(self, val: u32) -> ValueRef {
+        match self {
+            Self::Params => ValueRef::Local(val),
+            Self::Return => ValueRef::Return(val),
+            Self::RetPtr => ValueRef::RetPtr(val),
+        }
     }
 }
 
@@ -170,23 +212,25 @@ fn is_char(ty: &Type) -> bool {
 pub(crate) struct CallAdapter<'a> {
     signature: &'a WasmSignature,
     locals_count: u32,
-    params: Vec<Operand>,
-    results: Vec<Operand>,
+    params: Vec<Operand<'a>>,
+    results: Vec<Operand<'a>>,
     call_index: u32,
     realloc_index: u32,
     free_index: u32,
     parent_realloc_index: u32,
+    resource_functions: &'a HashMap<&'a str, (u32, u32)>,
 }
 
 impl<'a> CallAdapter<'a> {
     pub fn new(
-        interface: &Interface,
+        interface: &'a Interface,
         signature: &'a WasmSignature,
         func: &Function,
         call_index: u32,
         realloc_index: u32,
         free_index: u32,
         parent_realloc_index: u32,
+        resource_functions: &'a HashMap<&'a str, (u32, u32)>,
     ) -> Self {
         let inner = interface.inner();
         let sizes = interface.sizes();
@@ -201,7 +245,7 @@ impl<'a> CallAdapter<'a> {
                 sizes,
                 ty,
                 &mut iter,
-                false,
+                PushMode::Params,
                 &mut locals_count,
                 &mut params,
             );
@@ -219,10 +263,32 @@ impl<'a> CallAdapter<'a> {
                     sizes,
                     ty,
                     &mut iter,
-                    true,
+                    PushMode::RetPtr,
                     &mut locals_count,
                     &mut results,
                 );
+            }
+
+            results
+        } else if func.results.len() == 1 {
+            // Use the possible index for the return value local
+            let index = signature.params.len() as u32 + locals_count;
+
+            let mut iter = (index..index + 1).into_iter();
+            let mut results = Vec::new();
+            Self::push_operands(
+                inner,
+                sizes,
+                &func.results[0].1,
+                &mut iter,
+                PushMode::Return,
+                &mut locals_count,
+                &mut results,
+            );
+
+            if !results.is_empty() {
+                // There's an operand to copy, so we'll need a local for the return value
+                locals_count += 1;
             }
 
             results
@@ -239,15 +305,11 @@ impl<'a> CallAdapter<'a> {
             realloc_index,
             free_index,
             parent_realloc_index,
+            resource_functions,
         }
     }
 
     pub fn adapt(&self) -> wasm_encoder::Function {
-        // This is no longer true as we will adapt types which don't require locals to marshal,
-        // but will need validation in the adapter logic
-        // TODO: fix this before merging
-        //assert!(self.locals_count > 0);
-
         let mut locals = Locals::new(self.signature.params.len() as u32, self.locals_count);
         let mut function = wasm_encoder::Function::new([(self.locals_count, ValType::I32)]);
 
@@ -283,100 +345,127 @@ impl<'a> CallAdapter<'a> {
     }
 
     fn copy_results(&self, function: &mut wasm_encoder::Function, locals: &mut Locals) {
-        if self.signature.retptr.is_none() {
+        if self.signature.retptr.is_some() {
+            let src_retptr = locals.allocate();
+            let dst_retptr = self.signature.params.len() as u32 - 1;
+
+            // Store the retptr returned from the call
+            function.instruction(Instruction::LocalSet(src_retptr));
+
+            // Copy each 8 byte value in the return space
+            for i in 0..self
+                .signature
+                .retptr
+                .as_ref()
+                .expect("function must have a retptr")
+                .len()
+            {
+                function.instruction(Instruction::LocalGet(dst_retptr));
+                function.instruction(Instruction::LocalGet(src_retptr));
+                function.instruction(Instruction::I64Load(MemArg {
+                    offset: (i * 8) as u32,
+                    align: 3,
+                    memory_index: ADAPTED_MEMORY_INDEX,
+                }));
+                function.instruction(Instruction::I64Store(MemArg {
+                    offset: (i * 8) as u32,
+                    align: 3,
+                    memory_index: PARENT_MEMORY_INDEX,
+                }));
+            }
+
+            if self.results.is_empty() {
+                return;
+            }
+
+            let src_base = ElementBase {
+                base: src_retptr,
+                index_and_size: None,
+                memory: ADAPTED_MEMORY_INDEX,
+            };
+
+            let dst_base = ElementBase {
+                base: dst_retptr,
+                index_and_size: None,
+                memory: PARENT_MEMORY_INDEX,
+            };
+
+            for result in &self.results {
+                self.emit_copy_operand(
+                    function,
+                    locals,
+                    Direction::Out,
+                    result,
+                    Some(src_base),
+                    Some(dst_base),
+                );
+            }
+
             return;
-        }
-
-        let src_retptr = locals.allocate();
-        let dst_retptr = self.signature.params.len() as u32 - 1;
-
-        // Store the retptr returned from the call
-        function.instruction(Instruction::LocalSet(src_retptr));
-
-        // Copy each 8 byte value in the return space
-        for i in 0..self
-            .signature
-            .retptr
-            .as_ref()
-            .expect("function must have a retptr")
-            .len()
-        {
-            function.instruction(Instruction::LocalGet(dst_retptr));
-            function.instruction(Instruction::LocalGet(src_retptr));
-            function.instruction(Instruction::I64Load(MemArg {
-                offset: (i * 8) as u32,
-                align: 3,
-                memory_index: ADAPTED_MEMORY_INDEX,
-            }));
-            function.instruction(Instruction::I64Store(MemArg {
-                offset: (i * 8) as u32,
-                align: 3,
-                memory_index: PARENT_MEMORY_INDEX,
-            }));
         }
 
         if self.results.is_empty() {
             return;
         }
 
-        let src_base = ElementBase {
-            base: src_retptr,
-            index_and_size: None,
-            memory: ADAPTED_MEMORY_INDEX,
-        };
+        assert_eq!(self.results.len(), 1);
 
-        let dst_base = ElementBase {
-            base: dst_retptr,
-            index_and_size: None,
-            memory: PARENT_MEMORY_INDEX,
-        };
+        let src = locals.allocate();
 
-        for result in &self.results {
-            self.emit_copy_operand(
-                function,
-                locals,
-                Direction::Out,
-                result,
-                Some(src_base),
-                Some(dst_base),
-            );
-        }
+        // Store the value returned from the call
+        function.instruction(Instruction::LocalSet(src));
+
+        self.emit_copy_operand(
+            function,
+            locals,
+            Direction::Out,
+            &self.results[0],
+            None,
+            None,
+        );
+
+        function.instruction(Instruction::LocalGet(locals.lookup(src).unwrap_or(src)));
     }
 
     fn push_operands<T>(
-        interface: &witx2::Interface,
+        interface: &'a witx2::Interface,
         sizes: &SizeAlign,
         ty: &Type,
         params: &mut T,
-        is_retptr: bool,
+        mode: PushMode,
         locals_count: &mut u32,
-        operands: &mut Vec<Operand>,
+        operands: &mut Vec<Operand<'a>>,
     ) where
         T: ExactSizeIterator<Item = u32> + Clone,
     {
         match ty {
             Type::Id(id) => match &interface.types[*id].kind {
                 TypeDefKind::Type(t) => {
-                    Self::push_operands(interface, sizes, t, params, false, locals_count, operands)
+                    Self::push_operands(interface, sizes, t, params, mode, locals_count, operands)
                 }
                 TypeDefKind::List(element) => {
                     let addr = params.next().unwrap();
                     let len = params.next().unwrap();
 
                     let mut element_operands = Vec::new();
-                    if !interface.all_bits_valid(element) && !is_char(element) {
+                    if !interface.all_bits_valid(element) && !is_char(interface, element) {
                         Self::push_element_operands(
                             interface,
                             sizes,
                             element,
                             0,
+                            mode,
                             locals_count,
                             &mut element_operands,
                         );
                     }
 
                     // Every list copied needs a destination local (and a source for retptr)
-                    *locals_count += if is_retptr { 2 } else { 1 };
+                    *locals_count += match mode {
+                        PushMode::Params => 1,
+                        PushMode::RetPtr => 2,
+                        PushMode::Return => unreachable!(),
+                    };
 
                     // Lists that copy elements with lists need a local for the counter
                     if !element_operands.is_empty() {
@@ -389,16 +478,8 @@ impl<'a> CallAdapter<'a> {
                     };
 
                     operands.push(Operand::List {
-                        addr: if is_retptr {
-                            ValueRef::RetPtr(addr)
-                        } else {
-                            ValueRef::Local(addr)
-                        },
-                        len: if is_retptr {
-                            ValueRef::RetPtr(len)
-                        } else {
-                            ValueRef::Local(len)
-                        },
+                        addr: mode.create_value_ref(addr),
+                        len: mode.create_value_ref(len),
                         element_size,
                         element_alignment,
                         operands: element_operands,
@@ -422,7 +503,7 @@ impl<'a> CallAdapter<'a> {
                                 sizes,
                                 &f.ty,
                                 params,
-                                is_retptr,
+                                mode,
                                 locals_count,
                                 operands,
                             );
@@ -446,7 +527,7 @@ impl<'a> CallAdapter<'a> {
                                 sizes,
                                 ty,
                                 &mut iter,
-                                is_retptr,
+                                mode,
                                 locals_count,
                                 &mut operands,
                             );
@@ -461,14 +542,7 @@ impl<'a> CallAdapter<'a> {
 
                     if !cases.is_empty() {
                         operands.push(Operand::Variant {
-                            discriminant: (
-                                if is_retptr {
-                                    ValueRef::RetPtr(discriminant)
-                                } else {
-                                    ValueRef::Local(discriminant)
-                                },
-                                v.tag.into(),
-                            ),
+                            discriminant: (mode.create_value_ref(discriminant), v.tag.into()),
                             cases,
                         });
                     }
@@ -482,6 +556,20 @@ impl<'a> CallAdapter<'a> {
                 }
                 TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => todo!(),
             },
+            Type::Handle(id) => {
+                let addr = params.next().unwrap();
+
+                // Params need to be cloned, so add a local
+                *locals_count += match mode {
+                    PushMode::Params => 1,
+                    PushMode::RetPtr | PushMode::Return => 0,
+                };
+
+                operands.push(Operand::Handle {
+                    addr: mode.create_value_ref(addr),
+                    name: interface.resources[*id].name.as_str(),
+                });
+            }
             _ => {
                 params.next().unwrap();
             }
@@ -489,32 +577,40 @@ impl<'a> CallAdapter<'a> {
     }
 
     fn push_element_operands(
-        interface: &witx2::Interface,
+        interface: &'a witx2::Interface,
         sizes: &SizeAlign,
         ty: &Type,
         offset: u32,
+        mode: PushMode,
         locals_count: &mut u32,
-        operands: &mut Vec<Operand>,
+        operands: &mut Vec<Operand<'a>>,
     ) {
         match ty {
             Type::Id(id) => match &interface.types[*id].kind {
-                TypeDefKind::Type(t) => {
-                    Self::push_element_operands(interface, sizes, t, offset, locals_count, operands)
-                }
+                TypeDefKind::Type(t) => Self::push_element_operands(
+                    interface,
+                    sizes,
+                    t,
+                    offset,
+                    mode,
+                    locals_count,
+                    operands,
+                ),
                 TypeDefKind::List(element) => {
                     let mut element_operands = Vec::new();
-                    if !interface.all_bits_valid(element) && !is_char(element) {
+                    if !interface.all_bits_valid(element) && !is_char(interface, element) {
                         Self::push_element_operands(
                             interface,
                             sizes,
                             element,
                             0,
+                            mode,
                             locals_count,
                             &mut element_operands,
                         );
                     }
 
-                    // Every list copied needs a source and destination local,
+                    // Every list copied needs a source and destination local
                     *locals_count += 2;
 
                     // Lists with elements containing lists need a local for the loop counter
@@ -546,6 +642,7 @@ impl<'a> CallAdapter<'a> {
                                 sizes,
                                 &f.ty,
                                 offset + o as u32,
+                                mode,
                                 locals_count,
                                 operands,
                             );
@@ -565,6 +662,7 @@ impl<'a> CallAdapter<'a> {
                                 sizes,
                                 ty,
                                 offset + payload_offset,
+                                mode,
                                 locals_count,
                                 &mut operands,
                             );
@@ -584,8 +682,42 @@ impl<'a> CallAdapter<'a> {
                 TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => return,
                 TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => todo!(),
             },
+            Type::Handle(id) => {
+                // Params need to be cloned, so add a local
+                *locals_count += match mode {
+                    PushMode::Params => 1,
+                    PushMode::RetPtr | PushMode::Return => 0,
+                };
+
+                operands.push(Operand::Handle {
+                    addr: ValueRef::ElementOffset(offset),
+                    name: interface.resources[*id].name.as_str(),
+                });
+            }
             _ => return,
         }
+    }
+
+    fn emit_store_from_base(
+        &self,
+        function: &mut wasm_encoder::Function,
+        base: &ElementBase,
+        offset: u32,
+        value: u32,
+    ) {
+        function.instruction(Instruction::LocalGet(base.base));
+        if let Some((index, size)) = base.index_and_size {
+            function.instruction(Instruction::LocalGet(index));
+            function.instruction(Instruction::I32Const(size as i32));
+            function.instruction(Instruction::I32Mul);
+            function.instruction(Instruction::I32Add);
+        }
+        function.instruction(Instruction::LocalGet(value));
+        function.instruction(Instruction::I32Store(MemArg {
+            offset,
+            align: 2,
+            memory_index: base.memory,
+        }));
     }
 
     fn emit_copy_operand(
@@ -593,7 +725,7 @@ impl<'a> CallAdapter<'a> {
         function: &mut wasm_encoder::Function,
         locals: &mut Locals,
         direction: Direction,
-        operand: &Operand,
+        operand: &'a Operand,
         src_base: Option<ElementBase>,
         dst_base: Option<ElementBase>,
     ) {
@@ -617,12 +749,11 @@ impl<'a> CallAdapter<'a> {
                             function, locals, direction, operand, src_base, dst_base,
                         );
 
-                        // If the operand was a list with a local for the address, we assign the original conditionally here
-                        if let Operand::List { addr, .. } = operand {
-                            if let ValueRef::Local(i) = addr {
-                                function.instruction(Instruction::LocalGet(locals.take(*i)));
-                                function.instruction(Instruction::LocalSet(*i));
-                            }
+                        // If the operand had a local value, take from the map and assign it here as part of the
+                        // variant's block.
+                        if let Some(i) = operand.local() {
+                            function.instruction(Instruction::LocalGet(locals.take(i)));
+                            function.instruction(Instruction::LocalSet(i));
                         }
                     }
 
@@ -649,20 +780,12 @@ impl<'a> CallAdapter<'a> {
 
                 // Now that the list has been copied, update the element in the parent list
                 if let Some(offset) = addr.offset() {
-                    let base = dst_base.expect("destination base should be present");
-                    function.instruction(Instruction::LocalGet(base.base));
-                    if let Some((index, size)) = base.index_and_size {
-                        function.instruction(Instruction::LocalGet(index));
-                        function.instruction(Instruction::I32Const(size as i32));
-                        function.instruction(Instruction::I32Mul);
-                        function.instruction(Instruction::I32Add);
-                    }
-                    function.instruction(Instruction::LocalGet(dst_list));
-                    function.instruction(Instruction::I32Store(MemArg {
+                    self.emit_store_from_base(
+                        function,
+                        &dst_base.expect("destination base should be present"),
                         offset,
-                        align: 2,
-                        memory_index: base.memory,
-                    }));
+                        dst_list,
+                    );
                 }
 
                 if !operands.is_empty() {
@@ -679,8 +802,8 @@ impl<'a> CallAdapter<'a> {
                     );
                 }
 
-                // Free the source list for retptr values
-                if let ValueRef::RetPtr(_) = addr {
+                // Free the source list for returned values
+                if let Direction::Out = direction {
                     addr.emit_load(function, src_base, LoadType::I32);
                     len.emit_load(function, src_base, LoadType::I32);
                     if *element_size > 1 {
@@ -689,6 +812,42 @@ impl<'a> CallAdapter<'a> {
                     }
                     function.instruction(Instruction::I32Const(*element_alignment as i32));
                     function.instruction(Instruction::Call(self.free_index));
+                }
+            }
+            Operand::Handle { addr, name } => {
+                addr.emit_load(function, src_base, LoadType::I32);
+
+                let (clone_func_index, get_func_index) = self.resource_functions[name];
+
+                match direction {
+                    Direction::In => {
+                        // For resources being passed to a function, the callee owns
+                        // the handle, so do a clone
+                        function.instruction(Instruction::Call(clone_func_index));
+
+                        let dst = match addr {
+                            ValueRef::Local(i) | ValueRef::Return(i) => locals.map(*i),
+                            ValueRef::ElementOffset(_) | ValueRef::RetPtr(_) => locals.allocate(),
+                        };
+
+                        function.instruction(Instruction::LocalSet(dst));
+
+                        // Now that the handle has been cloned, update the element in the parent list
+                        if let Some(offset) = addr.offset() {
+                            self.emit_store_from_base(
+                                function,
+                                &dst_base.expect("destination base should be present"),
+                                offset,
+                                dst,
+                            );
+                        }
+                    }
+                    Direction::Out => {
+                        // For returned handles, ownership is transferring to the caller, so just validate
+                        // that the handle is valid with a call to get the underlying resource
+                        function.instruction(Instruction::Call(get_func_index));
+                        function.instruction(Instruction::Drop);
+                    }
                 }
             }
         }
@@ -790,6 +949,7 @@ impl<'a> CallAdapter<'a> {
                 function.instruction(Instruction::LocalSet(src));
                 (src, locals.allocate())
             }
+            ValueRef::Return(_) => unreachable!(),
         };
 
         function.instruction(Instruction::Block(BlockType::Empty));

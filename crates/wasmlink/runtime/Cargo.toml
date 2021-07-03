@@ -1,0 +1,12 @@
+[package]
+name = "wasmlink-runtime"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+lazy_static = "1.4.0"
+
+[workspace]
