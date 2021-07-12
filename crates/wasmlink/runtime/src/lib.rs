@@ -131,6 +131,12 @@ impl ResourceSlab {
 // In the future this may need to be properly synchronized.
 static mut SLABS: Vec<(IndexSlab, ResourceSlab)> = Vec::new();
 
+// This exists to indicate to users that an invalid handle value was passed
+// Thus the problem comes from user code and *not* the runtime
+fn invalid_handle_trap() -> ! {
+    unreachable!()
+}
+
 #[no_mangle]
 pub extern "C" fn resource_insert(id: usize, res: u32) -> u32 {
     let (indexes, resources) = unsafe {
@@ -155,7 +161,10 @@ pub extern "C" fn resource_get(id: usize, idx: u32) -> u32 {
         SLABS.get(id).unwrap()
     };
 
-    let res_idx = indexes.get(idx).unwrap();
+    let res_idx = indexes
+        .get(idx)
+        .ok_or_else(|| invalid_handle_trap())
+        .unwrap();
     resources.get(res_idx)
 }
 
@@ -169,7 +178,10 @@ pub extern "C" fn resource_clone(id: usize, idx: u32) -> u32 {
         SLABS.get_mut(id).unwrap()
     };
 
-    let res_idx = indexes.get(idx).unwrap();
+    let res_idx = indexes
+        .get(idx)
+        .ok_or_else(|| invalid_handle_trap())
+        .unwrap();
     resources.clone(res_idx);
     indexes.insert(res_idx)
 }
@@ -184,7 +196,10 @@ pub extern "C" fn resource_remove(id: usize, idx: u32) -> u64 {
         SLABS.get_mut(id).unwrap()
     };
 
-    let res_idx = indexes.remove(idx).unwrap();
+    let res_idx = indexes
+        .remove(idx)
+        .ok_or_else(|| invalid_handle_trap())
+        .unwrap();
 
     // The return value's upper 32-bits is a flag to denote if the resource is still alive.
     // If the upper 32-bits are 0, the lower 32-bits are expected to be the resource to drop.
