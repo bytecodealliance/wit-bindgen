@@ -1,6 +1,6 @@
-witx_bindgen_rust::import!("../../../tests/resource.witx");
+witx_bindgen_rust::import!("crates/resources/resources.witx");
 
-use resource::*;
+use resources::*;
 
 fn main() {
     {

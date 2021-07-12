@@ -1,6 +1,6 @@
-witx_bindgen_rust::export!("../../../tests/resource.witx");
+witx_bindgen_rust::export!("crates/resources/resources.witx");
 
-use resource::*;
+use resources::*;
 use std::sync::{Arc, Mutex};
 use witx_bindgen_rust::Handle;
 
@@ -14,7 +14,7 @@ impl Drop for X {
     }
 }
 
-impl Resource for Component {
+impl Resources for Component {
     fn acquire_an_x(&self, s: String) -> Handle<X> {
         *self.0.lock().unwrap() += 1;
         X(s, self.0.clone()).into()
@@ -43,6 +43,6 @@ lazy_static::lazy_static! {
     static ref INSTANCE: Component = Component(Arc::new(Mutex::new(0)));
 }
 
-fn resource() -> &'static impl Resource {
+fn resources() -> &'static impl Resources {
     &INSTANCE as &Component
 }

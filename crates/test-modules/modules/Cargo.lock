@@ -111,7 +111,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "resource"
+name = "resources"
 version = "0.1.0"
 dependencies = [
  "lazy_static",
@@ -119,7 +119,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "resource-main"
+name = "resources-main"
 version = "0.1.0"
 dependencies = [
  "witx-bindgen-rust",

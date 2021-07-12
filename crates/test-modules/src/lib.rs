@@ -111,6 +111,6 @@ mod tests {
 
     #[test]
     fn resource() -> Result<()> {
-        run(&link("resource-main", &["resource"])?)
+        run(&link("resources-main", &["resources"])?)
     }
 }

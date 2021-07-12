@@ -1,4 +1,4 @@
-witx_bindgen_rust::export!("../../../tests/flags.witx");
+witx_bindgen_rust::export!("crates/flags/flags.witx");
 
 struct Component;
 

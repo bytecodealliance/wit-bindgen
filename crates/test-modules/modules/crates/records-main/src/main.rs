@@ -1,4 +1,4 @@
-witx_bindgen_rust::import!("../../../tests/records.witx");
+witx_bindgen_rust::import!("crates/records/records.witx");
 
 use records::*;
 
