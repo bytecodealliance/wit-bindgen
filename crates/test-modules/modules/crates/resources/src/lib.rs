@@ -16,12 +16,14 @@ impl Drop for X {
 
 impl Resources for Component {
     fn acquire_an_x(&self, s: String) -> Handle<X> {
-        *self.0.lock().unwrap() += 1;
+        // Increment by two: decremented in `drop_x` and in the `Drop` impl
+        *self.0.lock().unwrap() += 2;
         X(s, self.0.clone()).into()
     }
 
     fn acquire_lots_of_x(&self, s: Vec<String>) -> Vec<Handle<X>> {
-        *self.0.lock().unwrap() += s.len() as u32;
+        // Increment by a factor of 2: decremented for each call to `drop_x` and the `Drop` impl
+        *self.0.lock().unwrap() += (s.len() as u32) * 2;
 
         s.into_iter().map(|s| X(s, self.0.clone()).into()).collect()
     }
@@ -36,6 +38,10 @@ impl Resources for Component {
 
     fn all_dropped(&self) -> bool {
         *self.0.lock().unwrap() == 0
+    }
+
+    fn drop_x(&self, x: X) {
+        *self.0.lock().unwrap() -= 1;
     }
 }
 
