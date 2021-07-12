@@ -38,7 +38,7 @@ mod exports {
     );
 }
 
-fn verify(dir: &str) {
+fn verify(dir: &str, _name: &str) {
     let (cmd, args) = if cfg!(windows) {
         ("cmd.exe", &["/c", "npx.cmd"] as &[&str])
     } else {

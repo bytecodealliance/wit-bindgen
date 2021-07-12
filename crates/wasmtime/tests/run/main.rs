@@ -1,5 +1,4 @@
 use anyhow::Result;
-use test_build_rust_wasm::*;
 use wasmtime::*;
 
 mod exports;
@@ -12,10 +11,10 @@ fn main() -> Result<()> {
     config.cache_config_load_default()?;
     let engine = Engine::new(&config)?;
 
-    println!("Using CHECKED...");
-    run_test(&engine, CHECKED)?;
-    println!("Using UNCHECKED...");
-    run_test(&engine, UNCHECKED)?;
+    for (_name, wasm) in build_test_wasm::WASMS {
+        println!("Running {}...", wasm);
+        run_test(&engine, wasm)?;
+    }
     println!("Success!");
 
     Ok(())

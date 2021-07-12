@@ -1844,7 +1844,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str(&format!("let {} = ", ptr));
                 self.call_intrinsic(
                     realloc,
-                    format!("(0, 0, ({}.len() as i32) * {}, {})", val, size, align),
+                    format!("(0, 0, {}, ({}.len() as i32) * {})", align, val, size),
                 );
 
                 // ... and then copy over the result.
@@ -1928,7 +1928,7 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 // ... then realloc space for the result in the guest module
                 self.push_str(&format!("let {} = ", result));
-                self.call_intrinsic(realloc, format!("(0, 0, {} * {}, {})", len, size, align));
+                self.call_intrinsic(realloc, format!("(0, 0, {}, {} * {})", align, len, size));
 
                 // ... then consume the vector and use the block to lower the
                 // result.

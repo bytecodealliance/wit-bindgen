@@ -124,6 +124,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "build-test-wasm"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-gen-c",
+ "witx-bindgen-gen-core",
+]
+
+[[package]]
 name = "cap-fs-ext"
 version = "0.13.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1263,10 +1271,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "test-build-rust-wasm"
-version = "0.1.0"
-
-[[package]]
 name = "test-codegen"
 version = "0.1.0"
 dependencies = [
@@ -1936,9 +1940,9 @@ dependencies = [
 name = "witx-bindgen-gen-js"
 version = "0.1.0"
 dependencies = [
+ "build-test-wasm",
  "heck",
  "structopt",
- "test-build-rust-wasm",
  "test-codegen",
  "witx-bindgen-gen-core",
 ]
@@ -1999,7 +2003,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bitflags",
- "test-build-rust-wasm",
+ "build-test-wasm",
  "thiserror",
  "tracing",
  "wasmtime",

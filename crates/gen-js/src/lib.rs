@@ -1425,8 +1425,8 @@ impl Bindgen for FunctionBindgen<'_> {
                             .js(&format!("const val{} = {};\n", tmp, operands[0]));
                         self.src.js(&format!("const len{} = val{0}.length;\n", tmp));
                         self.src.js(&format!(
-                            "const ptr{} = realloc(0, 0, len{0} * {}, {});\n",
-                            tmp, size, align
+                            "const ptr{} = realloc(0, 0, {}, len{0} * {});\n",
+                            tmp, align, size,
                         ));
                         self.src.js(&format!(
                             "(new Uint8Array(memory.buffer, ptr{}, len{0} * {})).set(new Uint8Array(val{0}));\n",
@@ -1499,8 +1499,8 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 // ... then realloc space for the result in the guest module
                 self.src.js(&format!(
-                    "const {} = realloc(0, 0, {} * {}, {});\n",
-                    result, len, size, align,
+                    "const {} = realloc(0, 0, {}, {} * {});\n",
+                    result, align, len, size,
                 ));
 
                 // ... then consume the vector and use the block to lower the
@@ -1886,7 +1886,7 @@ impl Js {
                     let ptr = 0;
                     let writtenTotal = 0;
                     while (s.length > 0) {
-                        ptr = realloc(ptr, alloc_len, alloc_len + s.length, 1);
+                        ptr = realloc(ptr, alloc_len, 1, alloc_len + s.length);
                         alloc_len += s.length;
                         const { read, written } = UTF8_ENCODER.encodeInto(
                             s,
@@ -1896,7 +1896,7 @@ impl Js {
                         s = s.slice(read);
                     }
                     if (alloc_len > writtenTotal)
-                        ptr = realloc(ptr, alloc_len, writtenTotal, 1);
+                        ptr = realloc(ptr, alloc_len, 1, writtenTotal);
                     UTF8_ENCODED_LEN = writtenTotal;
                     return ptr;
                 }

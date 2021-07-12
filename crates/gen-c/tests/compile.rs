@@ -25,12 +25,12 @@ mod exports {
     );
 }
 
-fn verify(dir: &str) {
+fn verify(dir: &str, name: &str) {
     let dir = Path::new(dir);
     let path = PathBuf::from(env::var_os("WASI_SDK_PATH").unwrap());
     let mut cmd = Command::new(path.join("bin/clang"));
     cmd.arg("--sysroot").arg(path.join("share/wasi-sysroot"));
-    cmd.arg(dir.join("bindings.c"));
+    cmd.arg(dir.join(format!("{}.c", name)));
     cmd.arg("-I").arg(dir);
     cmd.arg("-Wall")
         .arg("-Wextra")

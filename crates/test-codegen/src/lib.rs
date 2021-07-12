@@ -396,11 +396,12 @@ fn gen_verify<G: Generator>(
         let test = test.display().to_string();
         let witx = witx.display().to_string();
         let name = quote::format_ident!("{}", iface.name.to_snake_case());
+        let iface_name = iface.name.to_snake_case();
         quote::quote! {
             #[test]
             fn #name() {
                 const _: &str = include_str!(#witx);
-                crate::verify(#test);
+                crate::verify(#test, #iface_name);
             }
         }
     });

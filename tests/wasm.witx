@@ -177,7 +177,7 @@
   ;; handles
   ;; ===========================================
   (export "wasm_state_create" (func (result $a $wasm_state)))
-  (export "wasm_state_get" (func (param $a $wasm_state) (result $b u32)))
+  (export "wasm_state_get_val" (func (param $a $wasm_state) (result $b u32)))
   (export "wasm_state2_create" (func (result $b $wasm_state2)))
   (export "wasm_state2_saw_close" (func (result $a bool)))
 

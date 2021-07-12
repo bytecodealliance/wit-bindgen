@@ -477,7 +477,7 @@ function test_handles(wasm: exports.Wasm) {
 
   // Param/result of a handle works in a simple fashion
   const s: exports.WasmState = wasm.wasm_state_create();
-  assert.strictEqual(wasm.wasm_state_get(s), 100);
+  assert.strictEqual(wasm.wasm_state_get_val(s), 100);
 
   // Deterministic destruction is possible
   assert.strictEqual(wasm.wasm_state2_saw_close(), false);
@@ -524,7 +524,6 @@ function test_handles(wasm: exports.Wasm) {
   for (let val of wasm.wasm_state2_result_list())
     val.drop();
 
-  assert.strictEqual(bytes + 4, wasm.allocated_bytes());
   s.drop();
   assert.strictEqual(bytes, wasm.allocated_bytes());
 }

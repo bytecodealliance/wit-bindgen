@@ -54,9 +54,9 @@ pub struct Opts {
 }
 
 impl Opts {
-    pub fn build(self) -> C {
+    pub fn build(&self) -> C {
         let mut r = C::new();
-        r.opts = self;
+        r.opts = self.clone();
         r
     }
 }
@@ -175,7 +175,6 @@ impl C {
                 TypeDefKind::Variant(v) => !v.is_enum(),
                 TypeDefKind::Pointer(t) => false,
                 TypeDefKind::ConstPointer(t) => false,
-                TypeDefKind::List(Type::Char) => false,
                 TypeDefKind::Record(r) if r.is_flags() => false,
                 TypeDefKind::Record(_)
                 | TypeDefKind::List(_)
@@ -235,12 +234,14 @@ impl C {
             Type::F64 => self.src.h("double"),
             Type::Usize => self.src.h("size_t"),
             Type::Handle(id) => {
+                self.print_namespace(iface);
                 self.src.h(&iface.resources[*id].name.to_snake_case());
                 self.src.h("_t");
             }
             Type::Id(id) => {
                 let ty = &iface.types[*id];
                 if let Some(name) = &ty.name {
+                    self.print_namespace(iface);
                     self.src.h(&name.to_snake_case());
                     self.src.h("_t");
                     return;
@@ -253,6 +254,7 @@ impl C {
                         }
                         self.public_anonymous_types.insert(*id);
                         self.private_anonymous_types.remove(id);
+                        self.print_namespace(iface);
                         self.print_ty_name(iface, &Type::Id(*id));
                         self.src.h("_t");
                     }
@@ -266,8 +268,8 @@ impl C {
                         self.src.h("*");
                     }
                     TypeDefKind::List(Type::Char) => {
-                        self.src
-                            .h(&format!("{}_string_t", iface.name.to_snake_case()));
+                        self.print_namespace(iface);
+                        self.src.h("string_t");
                         self.needs_string = true;
                     }
                     TypeDefKind::Record(_)
@@ -276,6 +278,7 @@ impl C {
                     | TypeDefKind::PullBuffer(_) => {
                         self.public_anonymous_types.insert(*id);
                         self.private_anonymous_types.remove(id);
+                        self.print_namespace(iface);
                         self.print_ty_name(iface, &Type::Id(*id));
                         self.src.h("_t");
                     }
@@ -395,8 +398,8 @@ impl C {
                         self.src.h("uint8_t");
                     } else {
                         self.src.h("struct {
-                            // `true` if `val` is `ok`, `false` otherwise
-                            bool tag;
+                            // 0 if `val` is `ok`, 1 otherwise
+                            uint8_t tag;
                             union {
                         ");
                         if let Some(ok) = ok {
@@ -431,6 +434,7 @@ impl C {
             }
         }
         self.src.h(" ");
+        self.print_namespace(iface);
         self.print_ty_name(iface, &Type::Id(ty));
         self.src.h("_t;\n");
         self.types
@@ -482,6 +486,156 @@ impl C {
                 // }
             }
         }
+
+        // Note that these intrinsics are declared as `weak` so they can be
+        // overridden from some other symbol.
+        self.src.c("
+            __attribute__((weak, export_name(\"canonical_abi_realloc\")))
+            void *canonical_abi_realloc(
+                void *ptr,
+                size_t orig_size,
+                size_t org_align,
+                size_t new_size
+            ) {
+                void *ret = realloc(ptr, new_size);
+                if (!ret)
+                    abort();
+                return ret;
+            }
+
+            __attribute__((weak, export_name(\"canonical_abi_free\")))
+            void canonical_abi_free(
+                void *ptr,
+                size_t size,
+                size_t align
+            ) {
+                free(ptr);
+            }
+        ");
+    }
+
+    fn print_namespace(&mut self, iface: &Interface) {
+        self.src.h(&iface.name.to_snake_case());
+        self.src.h("_");
+    }
+
+    fn print_dtor(&mut self, iface: &Interface, id: TypeId) {
+        let ty = Type::Id(id);
+        if !self.owns_anything(iface, &ty) {
+            return;
+        }
+        let pos = self.src.header.len();
+        self.src.h("void ");
+        self.print_namespace(iface);
+        self.print_ty_name(iface, &ty);
+        self.src.h("_free(");
+        self.print_namespace(iface);
+        self.print_ty_name(iface, &ty);
+        self.src.h("_t *ptr)");
+
+        self.src.c(&self.src.header[pos..].to_string());
+        self.src.h(";\n");
+        self.src.c(" {\n");
+        match &iface.types[id].kind {
+            TypeDefKind::Type(t) => self.free(iface, t, "ptr"),
+
+            TypeDefKind::Record(r) => {
+                for field in r.fields.iter() {
+                    if !self.owns_anything(iface, &field.ty) {
+                        continue;
+                    }
+                    self.free(
+                        iface,
+                        &field.ty,
+                        &format!(
+                            "&ptr->{}{}",
+                            if r.is_tuple() { "f" } else { "" },
+                            field.name.to_snake_case()
+                        ),
+                    );
+                }
+            }
+
+            TypeDefKind::List(t) => {
+                if self.owns_anything(iface, t) {
+                    self.src.c("for (size_t i = 0; i < ptr->len; i++) {\n");
+                    self.free(iface, t, "&ptr->ptr[i]");
+                    self.src.c("}\n");
+                }
+                let (size, align) = if *t == Type::Char {
+                    (1, 1)
+                } else {
+                    (self.sizes.size(t), self.sizes.align(t))
+                };
+                self.src.c(&format!(
+                    "canonical_abi_free(ptr->ptr, ptr->len * {}, {});\n",
+                    size, align,
+                ));
+            }
+
+            // TODO
+            TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {}
+
+            TypeDefKind::Variant(v) => {
+                self.src.c("switch (ptr->tag) {\n");
+                for (i, case) in v.cases.iter().enumerate() {
+                    let case_ty = match &case.ty {
+                        Some(ty) => ty,
+                        None => continue,
+                    };
+                    if !self.owns_anything(iface, case_ty) {
+                        continue;
+                    }
+                    self.src.c(&format!("case {}: {{\n", i));
+                    let expr = if v.as_option().is_some() {
+                        String::from("&ptr->val")
+                    } else {
+                        format!("&ptr->val.{}", case_field_name(case))
+                    };
+                    self.free(iface, case_ty, &expr);
+                    self.src.c("break;\n");
+                    self.src.c("}\n");
+                }
+                self.src.c("}\n");
+            }
+            TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {}
+        }
+        self.src.c("}\n");
+    }
+
+    fn owns_anything(&self, iface: &Interface, ty: &Type) -> bool {
+        let id = match ty {
+            Type::Id(id) => *id,
+            Type::Handle(_) => return true,
+            _ => return false,
+        };
+        match &iface.types[id].kind {
+            TypeDefKind::Type(t) => self.owns_anything(iface, t),
+            TypeDefKind::Record(r) => r.fields.iter().any(|t| self.owns_anything(iface, &t.ty)),
+            // Lists/buffers are only owned for exports. For imports they're
+            // all pointing to allocations/handles owned by this module
+            TypeDefKind::List(_) | TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {
+                !self.in_import
+            }
+            TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => false,
+            TypeDefKind::Variant(v) => v
+                .cases
+                .iter()
+                .filter_map(|c| c.ty.as_ref())
+                .any(|t| self.owns_anything(iface, t)),
+        }
+    }
+
+    fn free(&mut self, iface: &Interface, ty: &Type, expr: &str) {
+        let prev = mem::take(&mut self.src.header);
+        self.print_namespace(iface);
+        self.print_ty_name(iface, ty);
+        let name = mem::replace(&mut self.src.header, prev);
+
+        self.src.c(&name);
+        self.src.c("_free(");
+        self.src.c(expr);
+        self.src.c(");\n");
     }
 }
 
@@ -496,6 +650,11 @@ impl Return {
         };
         match &iface.types[id].kind {
             TypeDefKind::Type(t) => self.return_single(iface, t, orig_ty),
+
+            // Flags are returned as their bare values
+            TypeDefKind::Record(r) if r.is_flags() => {
+                self.scalar = Some(Scalar::Type(*orig_ty));
+            }
 
             // record returns may become many return pointers with tuples
             TypeDefKind::Record(_) => self.splat_tuples(iface, ty, orig_ty),
@@ -602,12 +761,14 @@ impl Generator for C {
                 .expect("unsupported number of flags");
             self.src.h(int_repr(repr));
             self.src.h(" ");
+            self.print_namespace(iface);
             self.src.h(&name.to_snake_case());
             self.src.h("_t;\n");
 
             for (i, field) in record.fields.iter().enumerate() {
                 self.src.h(&format!(
-                    "#define {}_{} (1 << {})\n",
+                    "#define {}_{}_{} (1 << {})\n",
+                    iface.name.to_shouty_snake_case(),
                     name.to_shouty_snake_case(),
                     field.name.to_shouty_snake_case(),
                     i,
@@ -625,6 +786,7 @@ impl Generator for C {
                 self.src.h(";\n");
             }
             self.src.h("} ");
+            self.print_namespace(iface);
             self.src.h(&name.to_snake_case());
             self.src.h("_t;\n");
         }
@@ -647,6 +809,7 @@ impl Generator for C {
             self.src.h("typedef ");
             self.src.h(int_repr(variant.tag));
             self.src.h(" ");
+            self.print_namespace(iface);
             self.src.h(&name.to_snake_case());
             self.src.h("_t;\n");
         } else {
@@ -672,12 +835,14 @@ impl Generator for C {
                 }
             }
             self.src.h("} ");
+            self.print_namespace(iface);
             self.src.h(&name.to_snake_case());
             self.src.h("_t;\n");
         }
         for (i, case) in variant.cases.iter().enumerate() {
             self.src.h(&format!(
-                "#define {}_{} {}\n",
+                "#define {}_{}_{} {}\n",
+                iface.name.to_shouty_snake_case(),
                 name.to_shouty_snake_case(),
                 case.name.to_shouty_snake_case(),
                 i,
@@ -695,14 +860,15 @@ impl Generator for C {
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         // Skip this since it's used in WASI and there's no need to redefine it
         // here.
-        if name == "size" && (*ty == Type::Usize || *ty == Type::U32) {
-            return;
-        }
+        // if name == "size" && (*ty == Type::Usize || *ty == Type::U32) {
+        //     return;
+        // }
 
         let prev = mem::take(&mut self.src.header);
         self.src.h("typedef ");
         self.print_ty(iface, ty);
         self.src.h(" ");
+        self.print_namespace(iface);
         self.src.h(&name.to_snake_case());
         self.src.h("_t;\n");
         self.types
@@ -711,15 +877,18 @@ impl Generator for C {
 
     fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let prev = mem::take(&mut self.src.header);
-        self.src.h("typedef struct {\n");
         if *ty == Type::Char {
-            self.src.h("uint8_t");
+            self.src.h("typedef ");
+            self.print_namespace(iface);
+            self.src.h("string_t ");
         } else {
+            self.src.h("typedef struct {\n");
             self.print_ty(iface, ty);
+            self.src.h(" *ptr;\n");
+            self.src.h("size_t len;\n");
+            self.src.h("} ");
         }
-        self.src.h(" *ptr;\n");
-        self.src.h("size_t len;\n");
-        self.src.h("} ");
+        self.print_namespace(iface);
         self.src.h(&name.to_snake_case());
         self.src.h("_t;\n");
         self.types
@@ -768,6 +937,7 @@ impl Generator for C {
         self.src.h(" *ptr;\n");
         self.src.h("size_t len;\n");
         self.src.h("} ");
+        self.print_namespace(iface);
         self.src.h(&name.to_snake_case());
         self.src.h("_t;\n");
         self.types
@@ -914,20 +1084,104 @@ impl Generator for C {
     }
 
     fn finish(&mut self, iface: &Interface, files: &mut Files) {
-        self.src.h("#include <stdint.h>\n");
-        self.src.h("#include <stdbool.h>\n");
-        self.src.c("#include <bindings.h>\n");
-        self.src.c("#include <stdlib.h>\n");
+        self.src.h(&format!(
+            "\
+                #ifndef __BINDINGS_{0}_H
+                #define __BINDINGS_{0}_H
+
+                #include <stdint.h>
+                #include <stdbool.h>
+            ",
+            iface.name.to_shouty_snake_case(),
+        ));
+        self.src.c(&format!(
+            "\
+                #include <stdlib.h>
+                #include <{}.h>
+            ",
+            iface.name.to_snake_case(),
+        ));
+
+        self.print_intrinsics();
 
         for (_, resource) in iface.resources.iter() {
+            let ns = iface.name.to_snake_case();
+            let name = resource.name.to_snake_case();
             self.src.h(&format!(
                 "
                     typedef struct {{
                         uint32_t idx;
-                    }} {}_t;
+                    }} {ns}_{name}_t;
+                    void {ns}_{name}_free({ns}_{name}_t *ptr);
+                    {ns}_{name}_t {ns}_{name}_clone({ns}_{name}_t *ptr);
                 ",
-                resource.name.to_snake_case()
+                ns = ns,
+                name = name,
             ));
+            self.src.c(&format!(
+                "
+                    __attribute__((import_module(\"canonical_abi\"), import_name(\"resource_drop_{name_orig}\")))
+                    void __resource_{name}_drop(uint32_t idx);
+
+                    void {ns}_{name}_free({ns}_{name}_t *ptr) {{
+                        __resource_{name}_drop(ptr->idx);
+                    }}
+
+                    __attribute__((import_module(\"canonical_abi\"), import_name(\"resource_clone_{name_orig}\")))
+                    uint32_t __resource_{name}_clone(uint32_t idx);
+
+                    {ns}_{name}_t {ns}_{name}_clone({ns}_{name}_t *ptr) {{
+                        return ({ns}_{name}_t){{__resource_{name}_clone(ptr->idx)}};
+                    }}
+                ",
+                ns = ns,
+                name = name,
+                name_orig = resource.name,
+            ));
+
+            // Exported resources have more capabilities, they can create new
+            // resources and get the private value that it was created with.
+            // Furthermore we also define the destructor which delegates to the
+            // actual user-defined destructor, if any.
+            if !self.in_import {
+                self.src.h(&format!(
+                    "\
+                        {ns}_{name}_t {ns}_{name}_new(void *data);
+                        void* {ns}_{name}_get({ns}_{name}_t *ptr);
+
+                        __attribute__((weak))
+                        void {ns}_{name}_dtor(void *data);
+                    ",
+                    ns = ns,
+                    name = name,
+                ));
+                self.src.c(&format!(
+                    "
+                        __attribute__((import_module(\"canonical_abi\"), import_name(\"resource_new_{name_orig}\")))
+                        uint32_t __resource_{name}_new(uint32_t val);
+
+                        {ns}_{name}_t {ns}_{name}_new(void *data) {{
+                            return ({ns}_{name}_t){{__resource_{name}_new((uint32_t) data)}};
+                        }}
+
+                        __attribute__((import_module(\"canonical_abi\"), import_name(\"resource_get_{name_orig}\")))
+                        uint32_t __resource_{name}_get(uint32_t idx);
+
+                        void* {ns}_{name}_get({ns}_{name}_t *ptr) {{
+                            return (void*) __resource_{name}_get(ptr->idx);
+                        }}
+
+                        __attribute__((export_name(\"canonical_abi_drop_{name_orig}\")))
+                        void __resource_{name}_dtor(uint32_t val) {{
+                            if ({ns}_{name}_dtor)
+                                {ns}_{name}_dtor((void*) val);
+                        }}
+                    ",
+                    ns = ns,
+                    name = name,
+                    name_orig = resource.name,
+                ));
+            }
         }
 
         // Continuously generate anonymous types while we continue to find more
@@ -958,20 +1212,34 @@ impl Generator for C {
             self.src.h(&format!(
                 "
                     typedef struct {{
-                        uint8_t *ptr;
+                        char *ptr;
                         size_t len;
                     }} {0}_string_t;
 
-                    void {0}_string_init({0}_string_t *ret, const char *s);
+                    void {0}_string_set({0}_string_t *ret, const char *s);
+                    void {0}_string_dup({0}_string_t *ret, const char *s);
+                    void {0}_string_free({0}_string_t *ret);
                 ",
                 iface.name.to_snake_case(),
             ));
             self.src.c("#include <string.h>\n");
             self.src.c(&format!(
                 "
-                    void {0}_string_init({0}_string_t *ret, const char *s) {{
-                        ret->ptr = (uint8_t*) s;
+                    void {0}_string_set({0}_string_t *ret, const char *s) {{
+                        ret->ptr = (char*) s;
                         ret->len = strlen(s);
+                    }}
+
+                    void {0}_string_dup({0}_string_t *ret, const char *s) {{
+                        ret->len = strlen(s);
+                        ret->ptr = canonical_abi_realloc(NULL, 0, 1, ret->len);
+                        memcpy(ret->ptr, s, ret->len);
+                    }}
+
+                    void {0}_string_free({0}_string_t *ret) {{
+                        canonical_abi_free(ret->ptr, ret->len, 1);
+                        ret->ptr = NULL;
+                        ret->len = 0;
                     }}
                 ",
                 iface.name.to_snake_case(),
@@ -986,6 +1254,7 @@ impl Generator for C {
                     self.src.c(ty);
                 } else {
                     self.src.h(ty);
+                    self.print_dtor(iface, id);
                 }
             }
         }
@@ -997,8 +1266,6 @@ impl Generator for C {
             ));
         }
 
-        self.print_intrinsics();
-
         for (module, funcs) in mem::take(&mut self.funcs) {
             for func in funcs {
                 self.src.h(&func.src.header);
@@ -1006,8 +1273,10 @@ impl Generator for C {
             }
         }
 
-        files.push("bindings.c", self.src.src.as_bytes());
-        files.push("bindings.h", self.src.header.as_bytes());
+        self.src.h("#endif\n");
+
+        files.push(&format!("{}.c", iface.name), self.src.src.as_bytes());
+        files.push(&format!("{}.h", iface.name), self.src.header.as_bytes());
     }
 }
 
@@ -1218,7 +1487,8 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::HandleBorrowedFromI32 { ty, .. }
             | Instruction::HandleOwnedFromI32 { ty, .. } => {
                 results.push(format!(
-                    "({}_t){{ {} }}",
+                    "({}_{}_t){{ {} }}",
+                    iface.name.to_snake_case(),
                     iface.resources[*ty].name.to_snake_case(),
                     operands[0],
                 ));
@@ -1378,7 +1648,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::ListCanonLift { element, ty, .. } => {
                 let list_name = self.gen.type_string(iface, &Type::Id(*ty));
                 let elem_name = match element {
-                    Type::Char => "uint8_t".into(),
+                    Type::Char => "char".into(),
                     _ => self.gen.type_string(iface, element),
                 };
                 results.push(format!(
@@ -1397,7 +1667,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let _body = self.blocks.pop().unwrap();
                 let list_name = self.gen.type_string(iface, &Type::Id(*ty));
                 let elem_name = match element {
-                    Type::Char => "uint8_t".into(),
+                    Type::Char => "char".into(),
                     _ => self.gen.type_string(iface, element),
                 };
                 results.push(format!(

@@ -15,7 +15,7 @@ async-trait = { version = "0.1.50", optional = true }
 
 [dev-dependencies]
 wasmtime-wasi = "0.28"
-test-build-rust-wasm = { path = '../test-build-rust-wasm' }
+build-test-wasm = { path = '../build-test-wasm' }
 
 [features]
 default = ['old-witx-compat'] # TODO: rewrite {host,wasm}.witx with new syntax
