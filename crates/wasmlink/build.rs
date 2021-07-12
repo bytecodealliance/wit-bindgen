@@ -7,13 +7,15 @@ fn main() {
 
     let mut cmd = Command::new("cargo");
 
-    cmd.args(&["build", "--target=wasm32-wasi"]);
+    cmd.args(&["build", "--target=wasm32-unknown-unknown"]);
 
     if !cfg!(debug_assertions) {
         cmd.arg("--release");
-        println!("cargo:rustc-env=RUNTIME_WASM_PATH=../runtime/target/wasm32-wasi/release/wasmlink_runtime.wasm");
+        cmd.env("CARGO_PROFILE_RELEASE_LTO", "true");
+
+        println!("cargo:rustc-env=RUNTIME_WASM_PATH=../runtime/target/wasm32-unknown-unknown/release/wasmlink_runtime.wasm");
     } else {
-        println!("cargo:rustc-env=RUNTIME_WASM_PATH=../runtime/target/wasm32-wasi/debug/wasmlink_runtime.wasm");
+        println!("cargo:rustc-env=RUNTIME_WASM_PATH=../runtime/target/wasm32-unknown-unknown/debug/wasmlink_runtime.wasm");
     };
 
     cmd.stdout(Stdio::inherit())
