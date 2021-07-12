@@ -57,6 +57,9 @@ jobs:
     - name: Format test module source code
       run: cargo fmt -- --check
       working-directory: crates/test-modules/modules
+    - name: Format wasmlink runtime module source code
+      run: cargo fmt -- --check
+      working-directory: crates/wasmlink/runtime
 
   demo:
     name: Build witx-bindgen demo
