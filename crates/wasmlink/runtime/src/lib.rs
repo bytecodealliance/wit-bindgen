@@ -1,5 +1,4 @@
 use std::mem;
-use std::sync::Mutex;
 
 pub struct Slab<T> {
     storage: Vec<Entry<T>>,
@@ -127,45 +126,49 @@ impl ResourceSlab {
     }
 }
 
-lazy_static::lazy_static! {
-    static ref SLABS: Mutex<Vec<(IndexSlab, ResourceSlab)>> = Mutex::new(Vec::new());
-}
+// Currently we assume the runtime cannot be used from multiple threads
+// because we don't support Wasm threading.
+// In the future this may need to be properly synchronized.
+static mut SLABS: Vec<(IndexSlab, ResourceSlab)> = Vec::new();
 
 #[no_mangle]
 pub extern "C" fn resource_insert(id: usize, res: u32) -> u32 {
-    let mut slabs = SLABS.lock().unwrap();
+    let (indexes, resources) = unsafe {
+        if SLABS.len() <= id {
+            SLABS.resize_with(id + 1, Default::default);
+        }
 
-    if slabs.len() <= id as usize {
-        slabs.resize_with(id as usize + 1, Default::default);
-    }
+        SLABS.get_mut(id).unwrap()
+    };
 
-    let (indexes, resources) = slabs.get_mut(id).unwrap();
     let index = resources.insert(res);
     indexes.insert(index)
 }
 
 #[no_mangle]
 pub extern "C" fn resource_get(id: usize, idx: u32) -> u32 {
-    let mut slabs = SLABS.lock().unwrap();
+    let (indexes, resources) = unsafe {
+        if SLABS.len() <= id {
+            SLABS.resize_with(id + 1, Default::default);
+        }
 
-    if slabs.len() <= id {
-        slabs.resize_with(id + 1, Default::default);
-    }
+        SLABS.get(id).unwrap()
+    };
 
-    let (indexes, resources) = slabs.get(id).unwrap();
     let res_idx = indexes.get(idx).unwrap();
     resources.get(res_idx)
 }
 
 #[no_mangle]
 pub extern "C" fn resource_clone(id: usize, idx: u32) -> u32 {
-    let mut slabs = SLABS.lock().unwrap();
+    let (indexes, resources) = unsafe {
+        if SLABS.len() <= id {
+            SLABS.resize_with(id + 1, Default::default);
+        }
 
-    if slabs.len() <= id {
-        slabs.resize_with(id + 1, Default::default);
-    }
+        SLABS.get_mut(id).unwrap()
+    };
 
-    let (indexes, resources) = slabs.get_mut(id).unwrap();
     let res_idx = indexes.get(idx).unwrap();
     resources.clone(res_idx);
     indexes.insert(res_idx)
@@ -173,13 +176,14 @@ pub extern "C" fn resource_clone(id: usize, idx: u32) -> u32 {
 
 #[no_mangle]
 pub extern "C" fn resource_remove(id: usize, idx: u32) -> u64 {
-    let mut slabs = SLABS.lock().unwrap();
+    let (indexes, resources) = unsafe {
+        if SLABS.len() <= id {
+            SLABS.resize_with(id + 1, Default::default);
+        }
 
-    if slabs.len() <= id {
-        slabs.resize_with(id + 1, Default::default);
-    }
+        SLABS.get_mut(id).unwrap()
+    };
 
-    let (indexes, resources) = slabs.get_mut(id as usize).unwrap();
     let res_idx = indexes.remove(idx).unwrap();
 
     // The return value's upper 32-bits is a flag to denote if the resource is still alive.
