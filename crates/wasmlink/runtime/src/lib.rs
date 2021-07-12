@@ -132,51 +132,51 @@ lazy_static::lazy_static! {
 }
 
 #[no_mangle]
-pub extern "C" fn resource_insert(id: u32, res: u32) -> u32 {
+pub extern "C" fn resource_insert(id: usize, res: u32) -> u32 {
     let mut slabs = SLABS.lock().unwrap();
 
     if slabs.len() <= id as usize {
         slabs.resize_with(id as usize + 1, Default::default);
     }
 
-    let (indexes, resources) = slabs.get_mut(id as usize).unwrap();
+    let (indexes, resources) = slabs.get_mut(id).unwrap();
     let index = resources.insert(res);
     indexes.insert(index)
 }
 
 #[no_mangle]
-pub extern "C" fn resource_get(id: u32, idx: u32) -> u32 {
+pub extern "C" fn resource_get(id: usize, idx: u32) -> u32 {
     let mut slabs = SLABS.lock().unwrap();
 
-    if slabs.len() <= id as usize {
-        slabs.resize_with(id as usize + 1, Default::default);
+    if slabs.len() <= id {
+        slabs.resize_with(id + 1, Default::default);
     }
 
-    let (indexes, resources) = slabs.get(id as usize).unwrap();
+    let (indexes, resources) = slabs.get(id).unwrap();
     let res_idx = indexes.get(idx).unwrap();
     resources.get(res_idx)
 }
 
 #[no_mangle]
-pub extern "C" fn resource_clone(id: u32, idx: u32) -> u32 {
+pub extern "C" fn resource_clone(id: usize, idx: u32) -> u32 {
     let mut slabs = SLABS.lock().unwrap();
 
-    if slabs.len() <= id as usize {
-        slabs.resize_with(id as usize + 1, Default::default);
+    if slabs.len() <= id {
+        slabs.resize_with(id + 1, Default::default);
     }
 
-    let (indexes, resources) = slabs.get_mut(id as usize).unwrap();
+    let (indexes, resources) = slabs.get_mut(id).unwrap();
     let res_idx = indexes.get(idx).unwrap();
     resources.clone(res_idx);
     indexes.insert(res_idx)
 }
 
 #[no_mangle]
-pub extern "C" fn resource_remove(id: u32, idx: u32) -> u64 {
+pub extern "C" fn resource_remove(id: usize, idx: u32) -> u64 {
     let mut slabs = SLABS.lock().unwrap();
 
-    if slabs.len() <= id as usize {
-        slabs.resize_with(id as usize + 1, Default::default);
+    if slabs.len() <= id {
+        slabs.resize_with(id + 1, Default::default);
     }
 
     let (indexes, resources) = slabs.get_mut(id as usize).unwrap();
