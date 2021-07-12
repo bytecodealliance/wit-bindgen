@@ -1,7 +1,7 @@
 use crate::{
     adapted::{
-        AdaptedModule, ModuleShim, FUNCTION_TABLE_NAME, PARENT_MODULE_NAME, REALLOC_EXPORT_NAME,
-        REALLOC_FUNC_TYPE,
+        AdaptedModule, FUNCTION_TABLE_NAME, PARENT_MODULE_NAME, REALLOC_EXPORT_NAME,
+        REALLOC_FUNC_TYPE, RUNTIME_MODULE_NAME,
     },
     Module, Profile,
 };
@@ -9,6 +9,8 @@ use anyhow::{anyhow, bail, Result};
 use petgraph::{algo::toposort, graph::NodeIndex, Graph};
 use std::collections::{hash_map::Entry, HashMap};
 use wasmparser::{ExternalKind, FuncType, ImportSectionEntryType, Type, TypeDef};
+
+pub const CANONICAL_ABI_MODULE_NAME: &str = "canonical_abi";
 
 pub fn to_val_type(ty: &Type) -> wasm_encoder::ValType {
     match ty {
@@ -41,7 +43,11 @@ struct LinkedModule<'a> {
 
 impl<'a> LinkedModule<'a> {
     /// Creates a new linked module from the given dependency graph.
-    fn new(graph: &'a Graph<AdaptedModule<'a>, ()>, profile: &Profile) -> Result<Self> {
+    fn new(
+        graph: &'a Graph<AdaptedModule<'a>, ()>,
+        needs_runtime: bool,
+        profile: &Profile,
+    ) -> Result<Self> {
         let mut linked = Self {
             types: Vec::new(),
             imports: Vec::new(),
@@ -106,7 +112,7 @@ impl<'a> LinkedModule<'a> {
             let module_index = linked.modules.len() as u32;
             linked.modules.push(adapted.encode()?);
 
-            let shim_index = ModuleShim::new(adapted.module).encode().map(|m| {
+            let shim_index = adapted.encode_shim().map(|m| {
                 let index = linked.modules.len() as u32;
                 linked.modules.push(m);
                 index
@@ -115,6 +121,19 @@ impl<'a> LinkedModule<'a> {
             linked
                 .module_map
                 .insert(adapted, (module_index, shim_index));
+        }
+
+        if needs_runtime {
+            let bytes = include_bytes!(env!("RUNTIME_WASM_PATH"));
+            let module = Module::new(RUNTIME_MODULE_NAME, bytes)?;
+            let index = linked.modules.len() as u32;
+            linked.modules.push(module.encode());
+            let mut args = Vec::new();
+            for (name, index) in &linked.implicit_instances {
+                args.push((*name, *index));
+            }
+            assert!(linked.instances.is_empty());
+            linked.instances.push((index, args));
         }
 
         // Instantiate the main module
@@ -161,12 +180,25 @@ impl<'a> LinkedModule<'a> {
             args.push((PARENT_MODULE_NAME, parent));
         }
 
+        // If the module has resources, import the runtime module
+        if graph[current].module.has_resources() {
+            args.push((RUNTIME_MODULE_NAME, self.implicit_instances.len() as u32));
+        }
+
         // Recurse on each direct dependency in the graph
         let mut shims = Vec::new();
         let mut neighbors = graph.neighbors(current).detach();
         while let Some(neighbor) = neighbors.next_node(graph) {
             let (index, is_shim) = self.instantiate(graph, neighbor, None)?;
-            args.push((graph[neighbor].module.name, index));
+            let neighbor_adapted = &graph[neighbor];
+
+            args.push((neighbor_adapted.module.name, index));
+
+            // If the adapted module has resources, import it as the canonical ABI module too
+            if neighbor_adapted.module.has_resources() {
+                args.push((CANONICAL_ABI_MODULE_NAME, index));
+            }
+
             if is_shim {
                 shims.push((neighbor, index));
             }
@@ -224,10 +256,9 @@ impl<'a> LinkedModule<'a> {
 
             // Emit the segments populating the function table
             let mut segments = Vec::new();
-            for (func, _) in adapted.module.interface.as_ref().unwrap().iter() {
+            for name in adapted.aliases() {
                 let func_index = self.imports.len() as u32 + self.func_aliases.len() as u32;
-                self.func_aliases.push((child_index, func.name.as_ref()));
-
+                self.func_aliases.push((child_index, name));
                 segments.push(wasm_encoder::Element::Func(func_index));
             }
 
@@ -367,9 +398,9 @@ impl Linker {
             );
         }
 
-        let graph = self.build_graph(main, imports)?;
+        let (graph, needs_runtime) = self.build_graph(main, imports)?;
 
-        let module = LinkedModule::new(&graph, &self.profile)?;
+        let module = LinkedModule::new(&graph, needs_runtime, &self.profile)?;
 
         Ok(module.encode().finish())
     }
@@ -378,10 +409,12 @@ impl Linker {
         &self,
         main: &'a Module,
         imports: &'a HashMap<&str, Module>,
-    ) -> Result<Graph<AdaptedModule<'a>, ()>> {
+    ) -> Result<(Graph<AdaptedModule<'a>, ()>, bool)> {
         let mut queue: Vec<(Option<petgraph::graph::NodeIndex>, &Module)> = Vec::new();
         let mut seen = HashMap::new();
         let mut graph: Graph<AdaptedModule, ()> = Graph::new();
+
+        let mut needs_runtime = main.has_resources();
 
         queue.push((None, main));
 
@@ -391,7 +424,8 @@ impl Linker {
                     let index = match seen.entry(module as *const _) {
                         Entry::Occupied(e) => *e.get(),
                         Entry::Vacant(e) => {
-                            let index = graph.add_node(AdaptedModule::new(module)?);
+                            needs_runtime |= module.has_resources();
+                            let index = graph.add_node(AdaptedModule::new(module));
 
                             for import in &module.imports {
                                 let imported_module = imports.get(import.module);
@@ -404,11 +438,13 @@ impl Linker {
                                         .expect("function index must be in range")
                                     {
                                         TypeDef::Func(ft) => {
-                                            if self.profile.provides(
-                                                import.module,
-                                                import.field,
-                                                ft,
-                                            ) {
+                                            if import.module == CANONICAL_ABI_MODULE_NAME
+                                                || self.profile.provides(
+                                                    import.module,
+                                                    import.field,
+                                                    ft,
+                                                )
+                                            {
                                                 continue;
                                             }
                                         }
@@ -453,7 +489,7 @@ impl Linker {
             )
         })?;
 
-        Ok(graph)
+        Ok((graph, needs_runtime))
     }
 }
 
@@ -809,7 +845,6 @@ mod test {
   (module (;2;)
     (type (;0;) (func (param i32 i32)))
     (func (;0;) (type 0) (param i32 i32)
-      (local i32)
       local.get 0
       local.get 1
       i32.const 0

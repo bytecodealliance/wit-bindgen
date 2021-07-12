@@ -44,6 +44,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25a2bc672d1148e28034f176e01fffebb08b35768468cc954630da77a1449005"
 
 [[package]]
+name = "lazy_static"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
+
+[[package]]
 name = "leb128"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -99,6 +105,28 @@ dependencies = [
 
 [[package]]
 name = "records-main"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-rust",
+]
+
+[[package]]
+name = "resources"
+version = "0.1.0"
+dependencies = [
+ "lazy_static",
+ "witx-bindgen-rust",
+]
+
+[[package]]
+name = "resources-invalid-main"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-rust",
+]
+
+[[package]]
+name = "resources-main"
 version = "0.1.0"
 dependencies = [
  "witx-bindgen-rust",

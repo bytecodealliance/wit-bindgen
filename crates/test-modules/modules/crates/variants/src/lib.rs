@@ -1,4 +1,4 @@
-witx_bindgen_rust::export!("../../../tests/variants.witx");
+witx_bindgen_rust::export!("crates/variants/variants.witx");
 
 use variants::*;
 

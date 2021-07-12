@@ -108,4 +108,18 @@ mod tests {
     fn variants() -> Result<()> {
         run(&link("variants-main", &["variants"])?)
     }
+
+    #[test]
+    fn resources() -> Result<()> {
+        run(&link("resources-main", &["resources"])?)
+    }
+
+    #[test]
+    fn resources_with_invalid_handle() -> Result<()> {
+        let e = run(&link("resources-invalid-main", &["resources"])?).expect_err("should trap");
+
+        assert!(e.to_string().contains("invalid_handle_trap"));
+
+        Ok(())
+    }
 }

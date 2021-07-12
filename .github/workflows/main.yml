@@ -28,6 +28,8 @@ jobs:
     - uses: actions/checkout@v2
     - name: Install Rust
       run: rustup update stable --no-self-update && rustup default stable
+    - name: Install wasm32-unknown-unknown target
+      run: rustup target add wasm32-unknown-unknown
     - name: Install wasm32-wasi target
       run: rustup target add wasm32-wasi
     - uses: actions/setup-node@v2
@@ -55,6 +57,9 @@ jobs:
     - name: Format test module source code
       run: cargo fmt -- --check
       working-directory: crates/test-modules/modules
+    - name: Format wasmlink runtime module source code
+      run: cargo fmt -- --check
+      working-directory: crates/wasmlink/runtime
 
   demo:
     name: Build witx-bindgen demo
@@ -88,6 +93,8 @@ jobs:
         tar xvf /tmp/wasmtime.tar.xz --strip-components=1 -C /tmp/wasmtime
     - name: Install Rust
       run: rustup update stable --no-self-update && rustup default stable
+    - name: Install wasm32-unknown-unknown target
+      run: rustup target add wasm32-unknown-unknown
     - name: Install cargo-wasi
       run: cargo install cargo-wasi
     - name: Build the markdown component

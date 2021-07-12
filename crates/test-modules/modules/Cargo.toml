@@ -10,4 +10,7 @@ members = [
     "crates/lists-main",
     "crates/variants",
     "crates/variants-main",
+    "crates/resources",
+    "crates/resources-main",
+    "crates/resources-invalid-main",
 ]
