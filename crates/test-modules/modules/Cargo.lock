@@ -119,6 +119,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "resources-invalid-main"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-rust",
+]
+
+[[package]]
 name = "resources-main"
 version = "0.1.0"
 dependencies = [
