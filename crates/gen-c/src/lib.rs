@@ -1,7 +1,3 @@
-#![allow(unused_variables)] // TODO
-#![allow(unused_imports)] // TODO
-#![allow(dead_code)] // TODO
-
 use heck::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::mem;
@@ -39,7 +35,6 @@ pub struct C {
 }
 
 struct Func {
-    name: String,
     src: Source,
 }
 
@@ -169,10 +164,10 @@ impl C {
             Type::Id(id) => match &iface.types[*id].kind {
                 TypeDefKind::Type(t) => self.is_arg_by_pointer(iface, t),
                 TypeDefKind::Variant(v) => !v.is_enum(),
-                TypeDefKind::Pointer(t) => false,
-                TypeDefKind::ConstPointer(t) => false,
                 TypeDefKind::Record(r) if r.is_flags() => false,
-                TypeDefKind::Record(_)
+                TypeDefKind::Pointer(_)
+                | TypeDefKind::ConstPointer(_)
+                | TypeDefKind::Record(_)
                 | TypeDefKind::List(_)
                 | TypeDefKind::PushBuffer(_)
                 | TypeDefKind::PullBuffer(_) => true,
@@ -602,13 +597,25 @@ impl C {
         self.src.c(expr);
         self.src.c(");\n");
     }
+
+    fn docs(&mut self, docs: &Docs) {
+        let docs = match &docs.contents {
+            Some(docs) => docs,
+            None => return,
+        };
+        for line in docs.trim().lines() {
+            self.src.h("// ");
+            self.src.h(line);
+            self.src.h("\n");
+        }
+    }
 }
 
 impl Return {
     fn return_single(&mut self, iface: &Interface, ty: &Type, orig_ty: &Type) {
         let id = match ty {
             Type::Id(id) => *id,
-            other => {
+            _ => {
                 self.scalar = Some(Scalar::Type(*orig_ty));
                 return;
             }
@@ -680,7 +687,7 @@ impl Return {
     fn splat_tuples(&mut self, iface: &Interface, ty: &Type, orig_ty: &Type) {
         let id = match ty {
             Type::Id(id) => *id,
-            other => {
+            _ => {
                 self.retptrs.push(*orig_ty);
                 return;
             }
@@ -718,6 +725,7 @@ impl Generator for C {
         docs: &Docs,
     ) {
         let prev = mem::take(&mut self.src.header);
+        self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
         if record.is_flags() {
             self.src.h("typedef ");
@@ -769,6 +777,7 @@ impl Generator for C {
         docs: &Docs,
     ) {
         let prev = mem::take(&mut self.src.header);
+        self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
         if variant.is_bool() {
             self.src.h("typedef bool ");
@@ -829,6 +838,7 @@ impl Generator for C {
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let prev = mem::take(&mut self.src.header);
+        self.docs(docs);
         self.src.h("typedef ");
         self.print_ty(iface, ty);
         self.src.h(" ");
@@ -841,6 +851,7 @@ impl Generator for C {
 
     fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let prev = mem::take(&mut self.src.header);
+        self.docs(docs);
         if *ty == Type::Char {
             self.src.h("typedef ");
             self.print_namespace(iface);
@@ -895,6 +906,7 @@ impl Generator for C {
         docs: &Docs,
     ) {
         let prev = mem::take(&mut self.src.header);
+        self.docs(docs);
         self.src.h("typedef struct {\n");
         self.src.h("int32_t is_handle;\n");
         self.print_ty(iface, ty);
@@ -978,10 +990,7 @@ impl Generator for C {
         self.funcs
             .entry(iface.name.to_string())
             .or_insert(Vec::new())
-            .push(Func {
-                name: func.name.to_string(),
-                src,
-            });
+            .push(Func { src });
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
@@ -1041,10 +1050,7 @@ impl Generator for C {
         self.funcs
             .entry(iface.name.to_string())
             .or_insert(Vec::new())
-            .push(Func {
-                name: func.name.to_string(),
-                src,
-            });
+            .push(Func { src });
     }
 
     fn finish(&mut self, iface: &Interface, files: &mut Files) {
@@ -1230,7 +1236,7 @@ impl Generator for C {
             ));
         }
 
-        for (module, funcs) in mem::take(&mut self.funcs) {
+        for (_module, funcs) in mem::take(&mut self.funcs) {
             for func in funcs {
                 self.src.h(&func.src.header);
                 self.src.c(&func.src.src);
@@ -1471,9 +1477,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     }
                 }
             }
-            Instruction::RecordLift {
-                record, name, ty, ..
-            } => {
+            Instruction::RecordLift { ty, .. } => {
                 let name = self.gen.type_string(iface, &Type::Id(*ty));
                 let mut result = format!("({}) {{\n", name);
                 for op in operands {
@@ -1490,7 +1494,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     _ => panic!("unsupported bitflags"),
                 }
             }
-            Instruction::FlagsLower64 { record, .. } | Instruction::FlagsLift64 { record, .. } => {
+            Instruction::FlagsLower64 { .. } | Instruction::FlagsLift64 { .. } => {
                 results.push(operands.pop().unwrap());
             }
 
@@ -1502,7 +1506,6 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::VariantLower {
                 variant,
                 results: result_types,
-                name,
                 ..
             } => {
                 let blocks = self
@@ -1563,9 +1566,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.push_str("}\n");
             }
 
-            Instruction::VariantLift {
-                variant, name, ty, ..
-            } => {
+            Instruction::VariantLift { variant, ty, .. } => {
                 let blocks = self
                     .blocks
                     .drain(self.blocks.len() - variant.cases.len()..)
@@ -1605,7 +1606,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(result);
             }
 
-            Instruction::ListCanonLower { element, .. } => {
+            Instruction::ListCanonLower { .. } => {
                 results.push(format!("(int32_t) ({}).ptr", operands[0]));
                 results.push(format!("(int32_t) ({}).len", operands[0]));
             }
@@ -1621,13 +1622,13 @@ impl Bindgen for FunctionBindgen<'_> {
                 ));
             }
 
-            Instruction::ListLower { element, .. } => {
+            Instruction::ListLower { .. } => {
                 let _body = self.blocks.pop().unwrap();
                 results.push(format!("(int32_t) ({}).ptr", operands[0]));
                 results.push(format!("(int32_t) ({}).len", operands[0]));
             }
 
-            Instruction::ListLift { element, free, ty } => {
+            Instruction::ListLift { element, ty, .. } => {
                 let _body = self.blocks.pop().unwrap();
                 let list_name = self.gen.type_string(iface, &Type::Id(*ty));
                 let elem_name = match element {
@@ -1654,11 +1655,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("({}).idx", operands[0]));
             }
 
-            Instruction::CallWasm {
-                module: _,
-                name,
-                sig,
-            } => {
+            Instruction::CallWasm { sig, .. } => {
                 match sig.results.len() {
                     0 => {}
                     1 => {
@@ -1755,7 +1752,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         ));
                         results.push(option_ret);
                     }
-                    Some(Scalar::ExpectedEnum { ok, err, max_err }) => {
+                    Some(Scalar::ExpectedEnum { err, max_err, .. }) => {
                         let ret = self.locals.tmp("ret");
                         let mut ok_names = Vec::new();
                         for ty in self.sig.ret.retptrs.iter() {
@@ -1811,7 +1808,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     }
                 }
             }
-            Instruction::Return { amt, func } if self.gen.in_import => match self.sig.ret.scalar {
+            Instruction::Return { .. } if self.gen.in_import => match self.sig.ret.scalar {
                 None => self.store_in_retptrs(operands),
                 Some(Scalar::Type(_)) => {
                     assert_eq!(operands.len(), 1);
