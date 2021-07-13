@@ -926,11 +926,12 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.record_lift(iface, *ty, record, operands, results);
             }
 
-            Instruction::VariantPayload => results.push("e".to_string()),
+            Instruction::VariantPayloadName => results.push("e".to_string()),
+            Instruction::BufferPayloadName => results.push("e".to_string()),
 
             Instruction::VariantLower {
                 variant,
-                nresults,
+                results: result_types,
                 ty,
                 ..
             } => {
@@ -942,7 +943,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     iface,
                     *ty,
                     variant,
-                    *nresults,
+                    result_types.len(),
                     &operands[0],
                     results,
                     blocks,
@@ -1017,7 +1018,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(len);
             }
 
-            Instruction::ListCanonLift { element, free } => {
+            Instruction::ListCanonLift { element, free, .. } => {
                 // This only happens when we're receiving a list from the
                 // outside world, so `free` should always be `Some`.
                 assert!(free.is_some());
@@ -1084,7 +1085,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::ListLift { element, free } => {
+            Instruction::ListLift { element, free, .. } => {
                 // This only happens when we're receiving a list from the
                 // outside world, so `free` should always be `Some`.
                 assert!(free.is_some());

@@ -171,6 +171,12 @@ fn host_variants() {
     assert!(matches!(a3, Z3::A(b) if b == 3.0));
     assert!(matches!(a4, Z4::A(b) if b == 4.0));
 
+    let (a1, a2, a3, a4) = variant_zeros((Z1::B, Z2::B, Z3::B, Z4::B));
+    assert!(matches!(a1, Z1::B));
+    assert!(matches!(a2, Z2::B));
+    assert!(matches!(a3, Z3::B));
+    assert!(matches!(a4, Z4::B));
+
     variant_typedefs(None, false, Err(()));
 
     assert_eq!(

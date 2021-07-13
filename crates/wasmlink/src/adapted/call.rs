@@ -955,12 +955,12 @@ impl<'a> CallAdapter<'a> {
         function.instruction(Instruction::Block(BlockType::Empty));
         function.instruction(Instruction::I32Const(0)); // Previous ptr
         function.instruction(Instruction::I32Const(0)); // Previous size
+        function.instruction(Instruction::I32Const(element_alignment as i32));
         len.emit_load(function, src_base, LoadType::I32);
         if element_size > 1 {
             function.instruction(Instruction::I32Const(element_size as i32));
             function.instruction(Instruction::I32Mul);
         }
-        function.instruction(Instruction::I32Const(element_alignment as i32));
         function.instruction(Instruction::Call(realloc));
         function.instruction(Instruction::LocalTee(dst));
         function.instruction(Instruction::BrIf(0));

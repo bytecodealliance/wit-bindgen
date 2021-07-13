@@ -7,6 +7,9 @@ use witx2::*;
 
 // pub use witx;
 pub use witx2;
+mod ns;
+
+pub use ns::Ns;
 
 pub trait Generator {
     fn preprocess(&mut self, iface: &Interface, dir: Direction) {

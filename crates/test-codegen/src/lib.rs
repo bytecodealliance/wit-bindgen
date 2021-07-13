@@ -250,51 +250,33 @@ pub fn wasmtime_export(input: TokenStream) -> TokenStream {
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-js")]
 pub fn js_import(input: TokenStream) -> TokenStream {
-    let tests = generate_tests(input, "import", |_path| {
-        (
-            witx_bindgen_gen_js::Opts::default().build(),
-            Direction::Import,
-        )
-    });
-    let tests = tests.iter().map(|(_iface, test, witx)| {
-        let test = test.display().to_string();
-        let witx = witx.display().to_string();
-        quote::quote! {
-            {
-                const _: &str = include_str!(#witx);
-                #test
-            }
-        }
-    });
-    (quote::quote! {
-        pub const TESTS: &[&str] = &[#(#tests),*];
+    gen_verify(input, Direction::Import, "import", || {
+        witx_bindgen_gen_js::Opts::default().build()
     })
-    .into()
 }
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-js")]
 pub fn js_export(input: TokenStream) -> TokenStream {
-    let tests = generate_tests(input, "export", |_path| {
-        (
-            witx_bindgen_gen_js::Opts::default().build(),
-            Direction::Export,
-        )
-    });
-    let tests = tests.iter().map(|(_iface, test, witx)| {
-        let test = test.display().to_string();
-        let witx = witx.display().to_string();
-        quote::quote! {
-            {
-                const _: &str = include_str!(#witx);
-                #test
-            }
-        }
-    });
-    (quote::quote! {
-        pub const TESTS: &[&str] = &[#(#tests),*];
+    gen_verify(input, Direction::Export, "export", || {
+        witx_bindgen_gen_js::Opts::default().build()
     })
-    .into()
+}
+
+#[proc_macro]
+#[cfg(feature = "witx-bindgen-gen-c")]
+pub fn c_import(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Import, "import", || {
+        witx_bindgen_gen_c::Opts::default().build()
+    })
+}
+
+#[proc_macro]
+#[cfg(feature = "witx-bindgen-gen-c")]
+pub fn c_export(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Export, "export", || {
+        witx_bindgen_gen_c::Opts::default().build()
+    })
 }
 
 fn generate_tests<G>(
@@ -398,4 +380,30 @@ fn gen_rust<G: Generator>(
     }
     drop(rustfmt.output());
     ret.into()
+}
+
+#[allow(dead_code)]
+fn gen_verify<G: Generator>(
+    input: TokenStream,
+    dir: Direction,
+    name: &str,
+    mkgen: fn() -> G,
+) -> TokenStream {
+    use heck::*;
+
+    let tests = generate_tests(input, name, |_path| (mkgen(), dir));
+    let tests = tests.iter().map(|(iface, test, witx)| {
+        let test = test.display().to_string();
+        let witx = witx.display().to_string();
+        let name = quote::format_ident!("{}", iface.name.to_snake_case());
+        let iface_name = iface.name.to_snake_case();
+        quote::quote! {
+            #[test]
+            fn #name() {
+                const _: &str = include_str!(#witx);
+                crate::verify(#test, #iface_name);
+            }
+        }
+    });
+    (quote::quote!(#(#tests)*)).into()
 }

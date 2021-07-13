@@ -1,4 +1,4 @@
-use rayon::prelude::*;
+use std::path::Path;
 use std::process::Command;
 
 mod imports {
@@ -37,25 +37,21 @@ mod exports {
         "!wasi_next.witx"
     );
 }
-fn main() {
+
+fn verify(dir: &str, _name: &str) {
     let (cmd, args) = if cfg!(windows) {
         ("cmd.exe", &["/c", "npx.cmd"] as &[&str])
     } else {
         ("npx", &[] as &[&str])
     };
 
-    imports::TESTS
-        .par_iter()
-        .chain(exports::TESTS)
-        .for_each(|test| {
-            let status = Command::new(cmd)
-                .args(args)
-                .arg("eslint")
-                .arg("-c")
-                .arg(".eslintrc.js")
-                .arg(test)
-                .status()
-                .unwrap();
-            assert!(status.success());
-        });
+    let status = Command::new(cmd)
+        .args(args)
+        .arg("eslint")
+        .arg("-c")
+        .arg(".eslintrc.js")
+        .arg(Path::new(dir).join("bindings.js"))
+        .status()
+        .unwrap();
+    assert!(status.success());
 }

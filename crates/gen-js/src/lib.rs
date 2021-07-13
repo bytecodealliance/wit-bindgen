@@ -2,7 +2,7 @@ use heck::*;
 use std::collections::{BTreeSet, HashMap};
 use std::mem;
 use witx_bindgen_gen_core::witx2::abi::{
-    Bindgen, Bitcast, Direction, Instruction, LiftLower, WitxInstruction,
+    Bindgen, Bitcast, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator};
 
@@ -995,8 +995,13 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::GetArg { nth } => results.push(format!("arg{}", nth)),
             Instruction::I32Const { val } => results.push(val.to_string()),
             Instruction::ConstZero { tys } => {
-                for _ in tys.iter() {
-                    results.push("0".to_string());
+                for t in tys.iter() {
+                    match t {
+                        WasmType::I64 => results.push("0n".to_string()),
+                        WasmType::I32 | WasmType::F32 | WasmType::F64 => {
+                            results.push("0".to_string());
+                        }
+                    }
                 }
             }
 
@@ -1216,10 +1221,11 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("validate_flags64({}, {}n)", operands[0], mask));
             }
 
-            Instruction::VariantPayload => results.push("e".to_string()),
+            Instruction::VariantPayloadName => results.push("e".to_string()),
+            Instruction::BufferPayloadName => results.push("e".to_string()),
             Instruction::VariantLower {
                 variant,
-                nresults,
+                results: result_types,
                 name,
                 ..
             } => {
@@ -1231,7 +1237,11 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src
                     .js(&format!("const variant{} = {};\n", tmp, operands[0]));
 
-                if *nresults == 1 && variant.is_enum() && name.is_some() && !variant.is_bool() {
+                if result_types.len() == 1
+                    && variant.is_enum()
+                    && name.is_some()
+                    && !variant.is_bool()
+                {
                     let name = name.unwrap().to_camel_case();
                     self.src
                         .js(&format!("if (!(variant{} in {}))\n", tmp, name));
@@ -1246,7 +1256,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     return;
                 }
 
-                for i in 0..*nresults {
+                for i in 0..result_types.len() {
                     self.src.js(&format!("let variant{}_{};\n", tmp, i));
                     results.push(format!("variant{}_{}", tmp, i));
                 }
@@ -1420,8 +1430,8 @@ impl Bindgen for FunctionBindgen<'_> {
                             .js(&format!("const val{} = {};\n", tmp, operands[0]));
                         self.src.js(&format!("const len{} = val{0}.length;\n", tmp));
                         self.src.js(&format!(
-                            "const ptr{} = realloc(0, 0, len{0} * {}, {});\n",
-                            tmp, size, align
+                            "const ptr{} = realloc(0, 0, {}, len{0} * {});\n",
+                            tmp, align, size,
                         ));
                         self.src.js(&format!(
                             "(new Uint8Array(memory.buffer, ptr{}, len{0} * {})).set(new Uint8Array(val{0}));\n",
@@ -1432,7 +1442,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("ptr{}", tmp));
                 results.push(format!("len{}", tmp));
             }
-            Instruction::ListCanonLift { element, free } => {
+            Instruction::ListCanonLift { element, free, .. } => {
                 self.needs_memory = true;
                 let tmp = self.tmp();
                 self.src
@@ -1494,8 +1504,8 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 // ... then realloc space for the result in the guest module
                 self.src.js(&format!(
-                    "const {} = realloc(0, 0, {} * {}, {});\n",
-                    result, len, size, align,
+                    "const {} = realloc(0, 0, {}, {} * {});\n",
+                    result, align, len, size,
                 ));
 
                 // ... then consume the vector and use the block to lower the
@@ -1512,7 +1522,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(len);
             }
 
-            Instruction::ListLift { element, free } => {
+            Instruction::ListLift { element, free, .. } => {
                 let (body, body_results) = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let size = self.gen.sizes.size(element);
@@ -1881,7 +1891,7 @@ impl Js {
                     let ptr = 0;
                     let writtenTotal = 0;
                     while (s.length > 0) {
-                        ptr = realloc(ptr, alloc_len, alloc_len + s.length, 1);
+                        ptr = realloc(ptr, alloc_len, 1, alloc_len + s.length);
                         alloc_len += s.length;
                         const { read, written } = UTF8_ENCODER.encodeInto(
                             s,
@@ -1891,7 +1901,7 @@ impl Js {
                         s = s.slice(read);
                     }
                     if (alloc_len > writtenTotal)
-                        ptr = realloc(ptr, alloc_len, writtenTotal, 1);
+                        ptr = realloc(ptr, alloc_len, 1, writtenTotal);
                     UTF8_ENCODED_LEN = writtenTotal;
                     return ptr;
                 }

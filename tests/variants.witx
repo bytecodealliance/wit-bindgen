@@ -112,3 +112,17 @@ expected_result: function() -> (
   expected<u32, v1>,
   expected<string, list<u8>>,
 )
+
+enum my_errno {
+  bad1,
+  bad2,
+}
+
+return_expected_sugar: function() -> expected<s32, my_errno>
+return_expected_sugar2: function() -> expected<_, my_errno>
+return_expected_sugar3: function() -> expected<my_errno, my_errno>
+return_expected_sugar4: function() -> expected<tuple<s32, u32>, my_errno>
+return_option_sugar: function() -> option<s32>
+return_option_sugar2: function() -> option<my_errno>
+
+expected_simple: function() -> expected<u32, s32>

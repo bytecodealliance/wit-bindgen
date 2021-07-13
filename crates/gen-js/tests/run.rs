@@ -57,17 +57,18 @@ fn main() {
     assert!(status.success());
     fs::write(dir.join("package.json"), "{\"type\":\"module\"}").unwrap();
 
-    let run_node = |wasm: &str| {
+    for (_name, wasm) in build_test_wasm::WASMS {
         println!("Running {}...", wasm);
         let status = Command::new("node")
             .arg("--experimental-wasi-unstable-preview1")
             .arg(dir.join("run.js"))
-            .arg(test_build_rust_wasm::CHECKED)
+            .arg(wasm)
             .status()
             .unwrap();
-        assert!(status.success());
-    };
-
-    run_node(test_build_rust_wasm::CHECKED);
-    run_node(test_build_rust_wasm::UNCHECKED);
+        if status.success() {
+            continue;
+        }
+        println!("status: {:?}", status);
+        panic!("failed");
+    }
 }

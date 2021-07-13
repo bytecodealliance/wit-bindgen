@@ -326,7 +326,7 @@ impl Interface {
         }
     }
 
-    fn topological_types(&self) -> Vec<TypeId> {
+    pub fn topological_types(&self) -> Vec<TypeId> {
         let mut ret = Vec::new();
         let mut visited = HashSet::new();
         for (id, _) in self.types.iter() {

@@ -132,6 +132,16 @@ with a provided import object and then provides typed view of the wasm module's
 exports (dealing in JS types as well, automatically converting for you). This
 also generates a TypeScript file by default.
 
+#### `witx-bindgen c --import *.witx`
+
+This is the same as `rust-wasm --import`, but intended for C. C code compiled to
+WebAssembly can use this to import APIs.
+
+#### `witx-bindgen c --export *.witx`
+
+This is the same as `rust-wasm --export`, but intended for C. C code compiled to
+WebAssembly can use this to export specific APIs.
+
 ## Format of `*.witx` files
 
 This repository supports the s-expression-based `*.witx` format pioneered in the

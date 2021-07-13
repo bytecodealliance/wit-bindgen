@@ -29,3 +29,4 @@ r7: function() -> u64
 r8: function() -> s64
 
 pair_ret: function() -> tuple<s64, u8>
+multi_ret: function() -> (s64, u8)

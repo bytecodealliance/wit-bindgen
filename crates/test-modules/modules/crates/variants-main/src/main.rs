@@ -6,7 +6,6 @@ fn main() {
     e1_arg(E1::A);
     match e1_result() {
         E1::A => {}
-        _ => panic!(),
     }
 
     u1_arg(U1::V0(1234));

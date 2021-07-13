@@ -8,7 +8,6 @@ impl Variants for Component {
     fn e1_arg(&self, x: E1) {
         match x {
             E1::A => {}
-            _ => panic!(),
         }
     }
     fn e1_result(&self) -> E1 {

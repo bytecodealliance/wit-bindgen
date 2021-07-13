@@ -1760,11 +1760,12 @@ impl Bindgen for FunctionBindgen<'_> {
                 ));
             }
 
-            Instruction::VariantPayload => results.push("e".to_string()),
+            Instruction::VariantPayloadName => results.push("e".to_string()),
+            Instruction::BufferPayloadName => results.push("e".to_string()),
 
             Instruction::VariantLower {
                 variant,
-                nresults,
+                results: result_types,
                 ty,
                 ..
             } => {
@@ -1776,7 +1777,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     iface,
                     *ty,
                     variant,
-                    *nresults,
+                    result_types.len(),
                     &operands[0],
                     results,
                     blocks,
@@ -1843,7 +1844,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str(&format!("let {} = ", ptr));
                 self.call_intrinsic(
                     realloc,
-                    format!("(0, 0, ({}.len() as i32) * {}, {})", val, size, align),
+                    format!("(0, 0, {}, ({}.len() as i32) * {})", align, val, size),
                 );
 
                 // ... and then copy over the result.
@@ -1858,7 +1859,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("{}.len() as i32", val));
             }
 
-            Instruction::ListCanonLift { element, free } => match free {
+            Instruction::ListCanonLift { element, free, .. } => match free {
                 Some(free) => {
                     self.needs_memory = true;
                     self.gen.needs_copy_slice = true;
@@ -1927,7 +1928,7 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 // ... then realloc space for the result in the guest module
                 self.push_str(&format!("let {} = ", result));
-                self.call_intrinsic(realloc, format!("(0, 0, {} * {}, {})", len, size, align));
+                self.call_intrinsic(realloc, format!("(0, 0, {}, {} * {})", align, len, size));
 
                 // ... then consume the vector and use the block to lower the
                 // result.
@@ -1943,7 +1944,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(len);
             }
 
-            Instruction::ListLift { element, free } => {
+            Instruction::ListLift { element, free, .. } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let size = self.gen.sizes.size(element);

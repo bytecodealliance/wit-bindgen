@@ -106,6 +106,7 @@ class Editor {
       case "js": lang = Lang.Js; break;
       case "rust": lang = Lang.Rust; break;
       case "wasmtime": lang = Lang.Wasmtime; break;
+      case "c": lang = Lang.C; break;
       default: return;
     }
     const result = this.demo.render(this.config, lang, witx, is_import);
@@ -138,6 +139,10 @@ class Editor {
       this.outputEditor.session.setMode("ace/mode/javascript");
     else if (this.files.value.endsWith('.rs'))
       this.outputEditor.session.setMode("ace/mode/rust");
+    else if (this.files.value.endsWith('.c'))
+      this.outputEditor.session.setMode("ace/mode/c_cpp");
+    else if (this.files.value.endsWith('.h'))
+      this.outputEditor.session.setMode("ace/mode/c_cpp");
     else
       this.outputEditor.session.setMode(null);
   }

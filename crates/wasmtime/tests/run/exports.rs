@@ -318,7 +318,7 @@ fn flavorful(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
 
 fn handles(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
     let s: WasmState = wasm.wasm_state_create(&mut *store)?;
-    assert_eq!(wasm.wasm_state_get(&mut *store, &s)?, 100);
+    assert_eq!(wasm.wasm_state_get_val(&mut *store, &s)?, 100);
     wasm.drop_wasm_state(&mut *store, s)?;
 
     assert_eq!(wasm.wasm_state2_saw_close(&mut *store)?, false);

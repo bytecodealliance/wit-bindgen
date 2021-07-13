@@ -74,7 +74,13 @@ mod tests {
         wasmtime_wasi::add_to_linker(&mut linker, |s| s)?;
 
         let module = Module::new(&engine, module)?;
-        let mut store = Store::new(&engine, WasiCtxBuilder::new().inherit_stdout().build());
+        let mut store = Store::new(
+            &engine,
+            WasiCtxBuilder::new()
+                .inherit_stdout()
+                .inherit_stderr()
+                .build(),
+        );
 
         let instance = linker.instantiate(&mut store, &module)?;
         let start = instance.get_typed_func::<(), (), _>(&mut store, "_start")?;

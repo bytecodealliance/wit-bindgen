@@ -247,7 +247,7 @@ impl Wasm for MyWasm {
         WasmState(100).into()
     }
 
-    fn wasm_state_get(&self, state: Handle<WasmState>) -> u32 {
+    fn wasm_state_get_val(&self, state: Handle<WasmState>) -> u32 {
         state.0
     }
 
