@@ -42,6 +42,9 @@ fn wasmlink_file_tests() -> Result<()> {
                         baseline_path.display()
                     ))?;
 
+                    // Normalize line endings
+                    let expected = expected.replace("\r\n", "\n");
+
                     if expected != output {
                         bail!(
                             "file test `{}` failed: expected `{:?}` but found `{:?}`",
