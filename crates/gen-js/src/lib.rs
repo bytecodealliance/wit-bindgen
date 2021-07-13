@@ -683,11 +683,10 @@ impl Generator for Js {
                 .ts(&format!("export interface {} {{\n", module.to_camel_case()));
 
             for f in funcs {
-                let func = f.name.to_snake_case();
                 self.src.js(&format!(
                     "imports[\"{}\"][\"{}\"] = {};\n",
                     module,
-                    func,
+                    f.name,
                     f.src.js.trim(),
                 ));
                 self.src.ts(&f.src.ts);

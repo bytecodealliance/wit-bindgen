@@ -1,0 +1,32 @@
+camelCase: function()
+snake_case: function()
+SHOUTY_SNAKE_CASE: function()
+
+record LUDICROUS_speed {
+  howFastAreYouGoing: u32,
+  "I am going extremely slow": u64,
+}
+
+foo: function(x: LUDICROUS_speed)
+"function with space": function()
+"function~with$weird&characters": function()
+
+type "type with space" = u64
+
+record "record with space" {
+  "field with space": "type with space",
+}
+
+variant "variant with space" {
+  "case with space",
+  "case2 with space"("record with space"),
+  "case3 with space"("type with space"),
+}
+
+resource "resource with space"
+
+"function again with space": function(
+  "a 1": "record with space",
+  "a 2": "variant with space",
+  "a 3": "resource with space",
+)
