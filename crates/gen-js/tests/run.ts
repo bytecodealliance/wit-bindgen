@@ -174,7 +174,7 @@ function host(): imports.Host {
       return 3;
     },
     buffer_bool(x, out) {
-      assert.ok(x.length < out.length);
+      assert.ok(x.length <= out.length);
       let amt = 0;
       while (true) {
         const val = x.pull();

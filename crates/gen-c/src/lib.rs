@@ -365,7 +365,8 @@ impl C {
     fn print_anonymous_type(&mut self, iface: &Interface, ty: TypeId) {
         let prev = mem::take(&mut self.src.header);
         self.src.h("typedef ");
-        match &iface.types[ty].kind {
+        let kind = &iface.types[ty].kind;
+        match kind {
             TypeDefKind::Type(_) | TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {
                 unreachable!()
             }
@@ -423,6 +424,9 @@ impl C {
             TypeDefKind::PushBuffer(t) | TypeDefKind::PullBuffer(t) => {
                 self.src.h("struct {\n");
                 self.src.h("int32_t is_handle;\n");
+                if let TypeDefKind::PullBuffer(_) = kind {
+                    self.src.h("const ");
+                }
                 self.print_ty(iface, t);
                 self.src.h(" *ptr;\n");
                 self.src.h("size_t len;\n");
@@ -536,9 +540,6 @@ impl C {
                 ));
             }
 
-            // TODO
-            TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {}
-
             TypeDefKind::Variant(v) => {
                 self.src.c("switch (ptr->tag) {\n");
                 for (i, case) in v.cases.iter().enumerate() {
@@ -561,7 +562,11 @@ impl C {
                 }
                 self.src.c("}\n");
             }
-            TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {}
+
+            TypeDefKind::PushBuffer(_)
+            | TypeDefKind::PullBuffer(_)
+            | TypeDefKind::Pointer(_)
+            | TypeDefKind::ConstPointer(_) => {}
         }
         self.src.c("}\n");
     }
@@ -575,7 +580,8 @@ impl C {
         match &iface.types[id].kind {
             TypeDefKind::Type(t) => self.owns_anything(iface, t),
             TypeDefKind::Record(r) => r.fields.iter().any(|t| self.owns_anything(iface, &t.ty)),
-            TypeDefKind::List(_) | TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => true,
+            TypeDefKind::List(_) => true,
+            TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => false,
             TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => false,
             TypeDefKind::Variant(v) => v
                 .cases
