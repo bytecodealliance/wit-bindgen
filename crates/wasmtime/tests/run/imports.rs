@@ -380,7 +380,7 @@ impl Host for MyHost {
     }
 
     fn buffer_bool(&mut self, in_: PullBuffer<'_, bool>, mut out: PushBuffer<'_, bool>) -> u32 {
-        assert!(in_.len() < out.capacity());
+        assert!(in_.len() <= out.capacity());
         let len = in_.len();
         for item in in_.iter() {
             let item = item.unwrap();
