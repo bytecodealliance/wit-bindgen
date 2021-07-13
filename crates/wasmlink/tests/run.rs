@@ -1,4 +1,5 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
+use pretty_assertions::assert_eq;
 use std::{env, ffi::OsStr, fs};
 use wasmlink::{Module, ModuleAdapter};
 use wasmprinter::print_bytes;
@@ -37,21 +38,49 @@ fn wasmlink_file_tests() -> Result<()> {
                 if env::var_os("BLESS").is_some() {
                     fs::write(&baseline_path, output)?;
                 } else {
-                    let expected = fs::read_to_string(&baseline_path).context(format!(
-                        "failed to read test baseline file {}\nthis can be fixed with BLESS=1",
-                        baseline_path.display()
-                    ))?;
+                    let expected = fs::read_to_string(&baseline_path)
+                        .context(format!(
+                            "failed to read test baseline file {}\nthis can be fixed with BLESS=1",
+                            baseline_path.display()
+                        ))?
+                        .replace("\r\n", "\n");
 
-                    // Normalize line endings
-                    let expected = expected.replace("\r\n", "\n");
+                    let expected: Vec<_> = expected.split("\n").collect();
+                    let output: Vec<_> = output.split("\n").collect();
 
-                    if expected != output {
-                        bail!(
-                            "file test `{}` failed: expected `{:?}` but found `{:?}`",
-                            stem,
-                            expected,
-                            output
+                    let mut line = 0;
+
+                    for (expected, output) in expected.iter().zip(output.iter()) {
+                        line += 1;
+                        assert_eq!(
+                            expected, output,
+                            "file test `{}` failed on line {}",
+                            stem, line
                         );
+                    }
+
+                    if line < expected.len() {
+                        // Output was too short
+                        assert_eq!(
+                            expected[line],
+                            "<EOF>",
+                            "file test `{}` failed on line {} (not in output)",
+                            stem,
+                            line + 1
+                        );
+                        unreachable!()
+                    }
+
+                    if line < output.len() {
+                        // Output was too long
+                        assert_eq!(
+                            "<EOF>",
+                            output[line],
+                            "file test `{}` failed on line {} of the output (not in baseline)",
+                            stem,
+                            line + 1
+                        );
+                        unreachable!()
                     }
                 }
             }
