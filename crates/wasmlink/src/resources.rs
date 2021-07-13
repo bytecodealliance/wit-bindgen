@@ -1,5 +1,5 @@
 use crate::{
-    adapted::{FUNCTION_TABLE_NAME, RUNTIME_MODULE_NAME},
+    adapter::{FUNCTION_TABLE_NAME, RUNTIME_MODULE_NAME},
     linker::to_val_type,
     module::export_kind,
     Module,

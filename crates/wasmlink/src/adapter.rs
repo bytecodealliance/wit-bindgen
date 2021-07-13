@@ -1,5 +1,5 @@
 use crate::{
-    adapted::call::CallAdapter,
+    adapter::call::CallAdapter,
     linker::{to_val_type, CANONICAL_ABI_MODULE_NAME},
     module::Interface,
     resources::Resources,
@@ -7,7 +7,6 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Result};
 use std::{
-    array::IntoIter,
     collections::{BTreeMap, HashMap},
     fmt,
 };
@@ -40,12 +39,14 @@ lazy_static::lazy_static! {
     };
 }
 
-pub struct AdaptedModule<'a> {
-    pub module: &'a Module<'a>,
+/// Responsible for adapting a WebAssembly module.
+pub struct ModuleAdapter<'a> {
+    pub(crate) module: &'a Module<'a>,
     resources: Resources<'a>,
 }
 
-impl<'a> AdaptedModule<'a> {
+impl<'a> ModuleAdapter<'a> {
+    /// Constructs a new adapter for the given module.
     pub fn new(module: &'a Module) -> Self {
         Self {
             module,
@@ -68,66 +69,82 @@ impl<'a> AdaptedModule<'a> {
             }
         }
 
-        let mut expected = vec![
-            (MEMORY_EXPORT_NAME, ExpectedExportType::Memory, false),
-            (
-                REALLOC_EXPORT_NAME,
-                ExpectedExportType::Function(&REALLOC_FUNC_TYPE),
-                false,
-            ),
-            (
-                FREE_EXPORT_NAME,
-                ExpectedExportType::Function(&FREE_FUNC_TYPE),
-                false,
-            ),
-        ];
+        let mut expected = Vec::new();
 
-        expected.extend(
-            self.module
-                .interface
-                .as_ref()
-                .unwrap()
-                .iter()
-                .map(|(f, info)| {
+        if let Some(interface) = self.module.interface.as_ref() {
+            if interface.needs_memory() {
+                expected.push((MEMORY_EXPORT_NAME, ExpectedExportType::Memory, false));
+            }
+
+            if interface.needs_realloc_free() {
+                expected.extend([
                     (
-                        f.name.as_str(),
-                        ExpectedExportType::Function(&info.export_type),
+                        REALLOC_EXPORT_NAME,
+                        ExpectedExportType::Function(&REALLOC_FUNC_TYPE),
                         false,
-                    )
-                }),
-        );
+                    ),
+                    (
+                        FREE_EXPORT_NAME,
+                        ExpectedExportType::Function(&FREE_FUNC_TYPE),
+                        false,
+                    ),
+                ]);
+            }
 
-        for export in &self.module.exports {
-            for (expected_name, expected_type, seen) in &mut expected {
-                if export.field == *expected_name {
-                    *seen = true;
-                    match (export.kind, &expected_type) {
-                        (ExternalKind::Function, ExpectedExportType::Function(expected_ty)) => {
-                            let ty = self.module.func_type(export.index).ok_or_else(|| {
-                                anyhow!(
-                                    "required export `{}` from module `{}` is not a function",
-                                    export.field,
-                                    self.module.name
-                                )
-                            })?;
+            expected.extend(interface.iter().map(|(f, info)| {
+                (
+                    f.name.as_str(),
+                    ExpectedExportType::Function(&info.export_type),
+                    false,
+                )
+            }));
+        }
 
-                            if ty != *expected_ty {
-                                bail!("required export `{}` from module `{}` does not have the expected function signature of {:?} -> {:?}", export.field, self.module.name, expected_ty.params, expected_ty.returns);
+        for (expected_name, expected_type, seen) in &mut expected {
+            match self
+                .module
+                .exports
+                .iter()
+                .find(|e| e.field == *expected_name)
+            {
+                Some(e) => {
+                    if e.field == *expected_name {
+                        *seen = true;
+                        match (e.kind, &expected_type) {
+                            (ExternalKind::Function, ExpectedExportType::Function(expected_ty)) => {
+                                let ty = self.module.func_type(e.index).ok_or_else(|| {
+                                    anyhow!(
+                                        "required export `{}` from module `{}` is not a function",
+                                        e.field,
+                                        self.module.name
+                                    )
+                                })?;
+
+                                if ty != *expected_ty {
+                                    bail!(
+                                        "required export `{}` from module `{}` does not have the expected function signature of {:?} -> {:?}",
+                                        e.field,
+                                        self.module.name,
+                                        expected_ty.params,
+                                        expected_ty.returns
+                                    );
+                                }
                             }
-                        }
-                        (ExternalKind::Memory, ExpectedExportType::Memory) => {
-                            // No further validation required for the memory's type
-                        }
-                        _ => {
-                            bail!(
-                                "required export `{}` from module `{}` is not a {}",
-                                export.field,
-                                self.module.name,
-                                expected_type
-                            )
+                            (ExternalKind::Memory, ExpectedExportType::Memory) => {
+                                // No further validation required for the memory's type
+                            }
+                            _ => {
+                                bail!(
+                                    "required export `{}` from module `{}` is not a {}",
+                                    e.field,
+                                    self.module.name,
+                                    expected_type
+                                )
+                            }
                         }
                     }
                 }
+                None => continue,
             }
         }
 
@@ -144,17 +161,18 @@ impl<'a> AdaptedModule<'a> {
         Ok(())
     }
 
-    pub fn encode(&self) -> Result<wasm_encoder::Module> {
+    /// Adapts the module and returns the resulting encoded module.
+    pub fn adapt(&self) -> Result<wasm_encoder::Module> {
+        self.validate()?;
+
         if !self.module.must_adapt() {
             return Ok(self.module.encode());
         }
 
-        self.validate()?;
-
         let interface = self.module.interface.as_ref().unwrap();
         let mut module = wasm_encoder::Module::new();
         let mut types = HashMap::new();
-        let mut parent_realloc_index = u32::MAX;
+        let mut parent_realloc_index = None;
         let mut num_imported_funcs = 0;
         let mut num_aliased_funcs = 0;
         let mut num_adapted_func_aliases = 0;
@@ -165,12 +183,12 @@ impl<'a> AdaptedModule<'a> {
         self.write_type_section(&mut module, interface, &mut types);
         self.write_import_section(
             &mut module,
+            interface,
             &mut types,
             &mut num_imported_funcs,
             &mut parent_realloc_index,
             &mut implicit_instances,
         );
-        assert!(parent_realloc_index != u32::MAX);
         self.write_module_section(&mut module)?;
         self.write_instance_section(&mut module, &implicit_instances);
         self.write_alias_section(
@@ -190,7 +208,12 @@ impl<'a> AdaptedModule<'a> {
             num_aliased_funcs,
             num_adapted_func_aliases,
         );
-        self.write_element_section(&mut module, num_imported_funcs, num_adapted_func_aliases);
+        self.write_element_section(
+            &mut module,
+            interface,
+            num_imported_funcs,
+            num_adapted_func_aliases,
+        );
         self.write_code_section(
             &mut module,
             interface,
@@ -204,7 +227,7 @@ impl<'a> AdaptedModule<'a> {
         Ok(module)
     }
 
-    pub fn encode_shim(&self) -> Option<wasm_encoder::Module> {
+    pub(crate) fn encode_shim(&self) -> Option<wasm_encoder::Module> {
         if !self.module.must_adapt() {
             return None;
         }
@@ -285,7 +308,7 @@ impl<'a> AdaptedModule<'a> {
         Some(module)
     }
 
-    pub fn aliases(&self) -> impl Iterator<Item = &str> {
+    pub(crate) fn aliases(&self) -> impl Iterator<Item = &str> {
         self.module
             .interface
             .as_ref()
@@ -326,13 +349,23 @@ impl<'a> AdaptedModule<'a> {
                     None
                 }
             }))
-            .chain(std::iter::once(&REALLOC_FUNC_TYPE as &FuncType))
         {
             let index = types.len() as u32;
             types.entry(ty).or_insert_with(|| {
                 section.function(
                     ty.params.iter().map(to_val_type),
                     ty.returns.iter().map(to_val_type),
+                );
+                index
+            });
+        }
+
+        if interface.needs_realloc_free() {
+            let index = types.len() as u32;
+            types.entry(&REALLOC_FUNC_TYPE).or_insert_with(|| {
+                section.function(
+                    REALLOC_FUNC_TYPE.params.iter().map(to_val_type),
+                    REALLOC_FUNC_TYPE.returns.iter().map(to_val_type),
                 );
                 index
             });
@@ -347,60 +380,67 @@ impl<'a> AdaptedModule<'a> {
     fn write_import_section(
         &self,
         module: &mut wasm_encoder::Module,
+        interface: &Interface,
         types: &HashMap<&'a FuncType, u32>,
         num_imported_funcs: &mut u32,
-        parent_realloc_index: &mut u32,
+        parent_realloc_index: &mut Option<u32>,
         implicit_instances: &mut BTreeMap<&'a str, u32>,
     ) {
         let mut section = wasm_encoder::ImportSection::new();
 
-        for (import_module, import_field, entity) in self
-            .module
-            .imports
-            .iter()
-            .filter_map(|i| {
-                // The adapter will implement canonical ABI imports
-                if i.module == CANONICAL_ABI_MODULE_NAME {
-                    None
-                } else {
-                    let ty = self
-                        .module
-                        .import_func_type(i)
-                        .expect("import should be a function");
-                    Some((
-                        i.module,
-                        i.field,
-                        wasm_encoder::EntityType::Function(types[ty]),
-                    ))
-                }
-            })
-            .chain(IntoIter::new([
-                (
-                    PARENT_MODULE_NAME,
-                    Some(MEMORY_EXPORT_NAME),
-                    wasm_encoder::EntityType::Memory(wasm_encoder::MemoryType {
-                        limits: wasm_encoder::Limits { min: 0, max: None },
-                    }),
-                ),
-                (
-                    PARENT_MODULE_NAME,
-                    Some(REALLOC_EXPORT_NAME),
-                    wasm_encoder::EntityType::Function(types[&REALLOC_FUNC_TYPE as &FuncType]),
-                ),
-            ]))
-        {
-            if let wasm_encoder::EntityType::Function(_) = &entity {
-                if import_module == PARENT_MODULE_NAME && import_field == Some(REALLOC_EXPORT_NAME)
-                {
-                    *parent_realloc_index = *num_imported_funcs;
-                }
-                *num_imported_funcs += 1;
+        for (import_module, import_field, entity) in self.module.imports.iter().filter_map(|i| {
+            // The adapter will implement canonical ABI imports
+            if i.module == CANONICAL_ABI_MODULE_NAME {
+                None
+            } else {
+                let ty = self
+                    .module
+                    .import_func_type(i)
+                    .expect("import should be a function");
+                Some((
+                    i.module,
+                    i.field,
+                    wasm_encoder::EntityType::Function(types[ty]),
+                ))
             }
+        }) {
+            *num_imported_funcs += 1;
 
             section.import(import_module, import_field, entity);
 
             let index = implicit_instances.len() as u32;
             implicit_instances.entry(import_module).or_insert(index);
+        }
+
+        if interface.needs_memory() {
+            section.import(
+                PARENT_MODULE_NAME,
+                Some(MEMORY_EXPORT_NAME),
+                wasm_encoder::EntityType::Memory(wasm_encoder::MemoryType {
+                    limits: wasm_encoder::Limits { min: 0, max: None },
+                }),
+            );
+
+            let index = implicit_instances.len() as u32;
+            implicit_instances
+                .entry(PARENT_MODULE_NAME)
+                .or_insert(index);
+        }
+
+        if interface.needs_realloc_free() {
+            *parent_realloc_index = Some(*num_imported_funcs);
+            *num_imported_funcs += 1;
+
+            section.import(
+                PARENT_MODULE_NAME,
+                Some(REALLOC_EXPORT_NAME),
+                wasm_encoder::EntityType::Function(types[&REALLOC_FUNC_TYPE as &FuncType]),
+            );
+
+            let index = implicit_instances.len() as u32;
+            implicit_instances
+                .entry(PARENT_MODULE_NAME)
+                .or_insert(index);
         }
 
         self.resources.write_adapter_import_section(
@@ -482,24 +522,28 @@ impl<'a> AdaptedModule<'a> {
             (implicit_instances.len() as u32, None)
         };
 
-        section.instance_export(
-            original_instance,
-            wasm_encoder::ItemKind::Memory,
-            MEMORY_EXPORT_NAME,
-        );
+        if interface.needs_memory() {
+            section.instance_export(
+                original_instance,
+                wasm_encoder::ItemKind::Memory,
+                MEMORY_EXPORT_NAME,
+            );
+        }
 
         // Order here matters: realloc, then free, then adapted functions
-        section.instance_export(
-            original_instance,
-            wasm_encoder::ItemKind::Function,
-            REALLOC_EXPORT_NAME,
-        );
+        if interface.needs_realloc_free() {
+            section.instance_export(
+                original_instance,
+                wasm_encoder::ItemKind::Function,
+                REALLOC_EXPORT_NAME,
+            );
 
-        section.instance_export(
-            original_instance,
-            wasm_encoder::ItemKind::Function,
-            FREE_EXPORT_NAME,
-        );
+            section.instance_export(
+                original_instance,
+                wasm_encoder::ItemKind::Function,
+                FREE_EXPORT_NAME,
+            );
+        }
 
         // Add the adapted function aliases
         for (f, _) in interface.iter() {
@@ -519,7 +563,9 @@ impl<'a> AdaptedModule<'a> {
                 original_instance,
                 resources_instance,
                 num_aliased_funcs,
-                num_imported_funcs + *num_adapted_func_aliases + 2, /* realloc and free */
+                num_imported_funcs
+                    + *num_adapted_func_aliases
+                    + if interface.needs_realloc_free() { 2 } else { 0 },
                 resource_functions,
                 &mut section,
             );
@@ -560,7 +606,8 @@ impl<'a> AdaptedModule<'a> {
     ) {
         let mut section = wasm_encoder::ExportSection::new();
 
-        let alias_start_index = num_imported_funcs + 2 /* realloc and free */;
+        let alias_start_index =
+            num_imported_funcs + if interface.needs_realloc_free() { 2 } else { 0 };
         let defined_start_index = alias_start_index + num_aliased_funcs;
         let mut adapted_count = 0;
 
@@ -590,6 +637,7 @@ impl<'a> AdaptedModule<'a> {
     fn write_element_section(
         &self,
         module: &mut wasm_encoder::Module,
+        interface: &Interface,
         num_imported_funcs: u32,
         num_adapted_func_aliases: u32,
     ) {
@@ -599,7 +647,8 @@ impl<'a> AdaptedModule<'a> {
 
         let mut section = wasm_encoder::ElementSection::new();
 
-        let alias_start_index = num_imported_funcs + 2 /* realloc and free */;
+        let alias_start_index =
+            num_imported_funcs + if interface.needs_realloc_free() { 2 } else { 0 };
 
         self.resources.write_adapter_element_section(
             alias_start_index + num_adapted_func_aliases,
@@ -613,15 +662,22 @@ impl<'a> AdaptedModule<'a> {
         &self,
         module: &mut wasm_encoder::Module,
         interface: &Interface,
-        parent_realloc_index: u32,
+        parent_realloc_index: Option<u32>,
         num_imported_funcs: u32,
         resource_functions: &HashMap<&'a str, (u32, u32)>,
     ) {
         let mut section = wasm_encoder::CodeSection::new();
 
         // Realloc and free are the first functions aliased after imports
-        let realloc_index = num_imported_funcs;
-        let free_index = realloc_index + 1;
+        let (realloc_index, free_index, alias_start_index) = if interface.needs_realloc_free() {
+            (
+                Some(num_imported_funcs),
+                Some(num_imported_funcs + 1),
+                num_imported_funcs + 2,
+            )
+        } else {
+            (None, None, num_imported_funcs)
+        };
 
         for (index, (func, info)) in interface.iter().enumerate() {
             if !info.must_adapt {
@@ -632,7 +688,7 @@ impl<'a> AdaptedModule<'a> {
                 interface,
                 &info.import_signature,
                 func,
-                index as u32 + free_index + 1,
+                alias_start_index + index as u32,
                 realloc_index,
                 free_index,
                 parent_realloc_index,
@@ -646,15 +702,15 @@ impl<'a> AdaptedModule<'a> {
     }
 }
 
-impl PartialEq for AdaptedModule<'_> {
+impl PartialEq for ModuleAdapter<'_> {
     fn eq(&self, rhs: &Self) -> bool {
         std::ptr::eq(self.module, rhs.module)
     }
 }
 
-impl Eq for AdaptedModule<'_> {}
+impl Eq for ModuleAdapter<'_> {}
 
-impl std::hash::Hash for AdaptedModule<'_> {
+impl std::hash::Hash for ModuleAdapter<'_> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         std::ptr::hash(self.module, state);
     }

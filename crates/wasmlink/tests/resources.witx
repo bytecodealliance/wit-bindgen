@@ -1,0 +1,9 @@
+resource x
+
+acquire_an_x: function(s: string) -> x
+acquire_lots_of_x: function(s: list<string>) -> list<x>
+
+receive_an_x: function(val: x) -> string
+receive_lots_of_x: function(vals: list<x>) -> list<string>
+
+all_dropped: function() -> bool
