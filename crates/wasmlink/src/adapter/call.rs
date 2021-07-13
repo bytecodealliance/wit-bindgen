@@ -215,9 +215,9 @@ pub(crate) struct CallAdapter<'a> {
     params: Vec<Operand<'a>>,
     results: Vec<Operand<'a>>,
     call_index: u32,
-    realloc_index: u32,
-    free_index: u32,
-    parent_realloc_index: u32,
+    realloc_index: Option<u32>,
+    free_index: Option<u32>,
+    parent_realloc_index: Option<u32>,
     resource_functions: &'a HashMap<&'a str, (u32, u32)>,
 }
 
@@ -227,9 +227,9 @@ impl<'a> CallAdapter<'a> {
         signature: &'a WasmSignature,
         func: &Function,
         call_index: u32,
-        realloc_index: u32,
-        free_index: u32,
-        parent_realloc_index: u32,
+        realloc_index: Option<u32>,
+        free_index: Option<u32>,
+        parent_realloc_index: Option<u32>,
         resource_functions: &'a HashMap<&'a str, (u32, u32)>,
     ) -> Self {
         let inner = interface.inner();
@@ -811,7 +811,10 @@ impl<'a> CallAdapter<'a> {
                         function.instruction(Instruction::I32Mul);
                     }
                     function.instruction(Instruction::I32Const(*element_alignment as i32));
-                    function.instruction(Instruction::Call(self.free_index));
+                    function.instruction(Instruction::Call(
+                        self.free_index
+                            .expect("must be given an index to copy lists"),
+                    ));
                 }
             }
             Operand::Handle { addr, name } => {
@@ -932,12 +935,14 @@ impl<'a> CallAdapter<'a> {
             Direction::In => (
                 PARENT_MEMORY_INDEX,
                 ADAPTED_MEMORY_INDEX,
-                self.realloc_index,
+                self.realloc_index
+                    .expect("must be given an index to copy lists"),
             ),
             Direction::Out => (
                 ADAPTED_MEMORY_INDEX,
                 PARENT_MEMORY_INDEX,
-                self.parent_realloc_index,
+                self.parent_realloc_index
+                    .expect("must be given an index to copy lists"),
             ),
         };
 

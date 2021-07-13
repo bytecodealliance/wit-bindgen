@@ -38,6 +38,25 @@ pub(crate) fn export_kind(kind: ExternalKind) -> &'static str {
     }
 }
 
+fn has_list(interface: &witx2::Interface, ty: &witx2::Type) -> bool {
+    use witx2::{Type, TypeDefKind};
+
+    match ty {
+        Type::Id(id) => match &interface.types[*id].kind {
+            TypeDefKind::List(_) => true,
+            TypeDefKind::Type(t) => has_list(interface, t),
+            TypeDefKind::Record(r) => r.fields.iter().any(|f| has_list(interface, &f.ty)),
+            TypeDefKind::Variant(v) => v.cases.iter().any(|c| {
+                c.ty.as_ref()
+                    .map(|t| has_list(interface, t))
+                    .unwrap_or(false)
+            }),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 pub(crate) struct FunctionInfo {
     pub import_signature: WasmSignature,
     pub import_type: FuncType,
@@ -50,6 +69,8 @@ pub(crate) struct Interface {
     sizes: SizeAlign,
     func_infos: Vec<FunctionInfo>,
     must_adapt: bool,
+    needs_memory: bool,
+    needs_realloc_free: bool,
     has_resources: bool,
 }
 
@@ -58,7 +79,9 @@ impl Interface {
         let inner = witx2::Interface::parse(name, source)
             .map_err(|e| anyhow!("failed to parse interface definition: {}", e))?;
 
-        let mut must_adapt = false;
+        let mut must_adapt_module = false;
+        let mut needs_memory = false;
+        let mut needs_realloc_free = false;
 
         let func_infos = inner
             .functions
@@ -69,19 +92,29 @@ impl Interface {
                 let import_type = Self::sig_to_type(&import_signature);
                 let export_type = Self::sig_to_type(&export_signature);
 
+                let has_retptr = import_signature.retptr.is_some();
+
                 // A function must be adapted if it has a return pointer or any parameter or result
                 // that needs to be adapted.
-                let func_must_adapt = import_signature.retptr.is_some()
+                let must_adapt_func = has_retptr
                     || f.params.iter().any(|(_, ty)| !inner.all_bits_valid(ty))
                     || f.results.iter().any(|(_, ty)| !inner.all_bits_valid(ty));
 
-                must_adapt |= func_must_adapt;
+                if must_adapt_func {
+                    if !needs_realloc_free {
+                        needs_realloc_free = f.params.iter().any(|(_, ty)| has_list(&inner, ty))
+                            || f.results.iter().any(|(_, ty)| has_list(&inner, ty));
+                    }
+
+                    needs_memory |= has_retptr | needs_realloc_free;
+                    must_adapt_module = true;
+                }
 
                 FunctionInfo {
                     import_signature,
                     import_type,
                     export_type,
-                    must_adapt: func_must_adapt,
+                    must_adapt: must_adapt_func,
                 }
             })
             .collect();
@@ -98,7 +131,9 @@ impl Interface {
             inner,
             sizes,
             func_infos,
-            must_adapt,
+            must_adapt: must_adapt_module,
+            needs_memory,
+            needs_realloc_free,
             has_resources,
         })
     }
@@ -117,6 +152,14 @@ impl Interface {
 
     pub fn lookup_info(&self, name: &str) -> Option<&FunctionInfo> {
         Some(&self.func_infos[self.inner.functions.iter().position(|f| f.name == name)?])
+    }
+
+    pub fn needs_memory(&self) -> bool {
+        self.needs_memory
+    }
+
+    pub fn needs_realloc_free(&self) -> bool {
+        self.needs_realloc_free
     }
 
     pub fn has_resources(&self) -> bool {

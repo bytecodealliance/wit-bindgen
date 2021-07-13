@@ -1,6 +1,6 @@
 use crate::{
-    adapted::{
-        AdaptedModule, FUNCTION_TABLE_NAME, PARENT_MODULE_NAME, REALLOC_EXPORT_NAME,
+    adapter::{
+        ModuleAdapter, FUNCTION_TABLE_NAME, PARENT_MODULE_NAME, REALLOC_EXPORT_NAME,
         REALLOC_FUNC_TYPE, RUNTIME_MODULE_NAME,
     },
     Module, Profile,
@@ -33,7 +33,7 @@ struct LinkedModule<'a> {
     imports: Vec<(&'a str, Option<&'a str>, wasm_encoder::EntityType)>,
     implicit_instances: HashMap<&'a str, u32>,
     modules: Vec<wasm_encoder::Module>,
-    module_map: HashMap<&'a AdaptedModule<'a>, (u32, Option<u32>)>,
+    module_map: HashMap<&'a ModuleAdapter<'a>, (u32, Option<u32>)>,
     instances: Vec<(u32, Vec<(&'a str, u32)>)>,
     func_aliases: Vec<(u32, &'a str)>,
     table_aliases: Vec<(u32, &'a str)>,
@@ -44,7 +44,7 @@ struct LinkedModule<'a> {
 impl<'a> LinkedModule<'a> {
     /// Creates a new linked module from the given dependency graph.
     fn new(
-        graph: &'a Graph<AdaptedModule<'a>, ()>,
+        graph: &'a Graph<ModuleAdapter<'a>, ()>,
         needs_runtime: bool,
         profile: &Profile,
     ) -> Result<Self> {
@@ -64,11 +64,11 @@ impl<'a> LinkedModule<'a> {
         let mut types = HashMap::new();
         let mut profile_imports = HashMap::new();
         for f in graph.node_indices() {
-            let adapted = &graph[f];
+            let adapter = &graph[f];
 
             // Add all profile imports to the base set of types and imports
-            for import in &adapted.module.imports {
-                let ty = adapted
+            for import in &adapter.module.imports {
+                let ty = adapter
                     .module
                     .import_func_type(import)
                     .expect("expected import to be a function");
@@ -110,9 +110,9 @@ impl<'a> LinkedModule<'a> {
             }
 
             let module_index = linked.modules.len() as u32;
-            linked.modules.push(adapted.encode()?);
+            linked.modules.push(adapter.adapt()?);
 
-            let shim_index = adapted.encode_shim().map(|m| {
+            let shim_index = adapter.encode_shim().map(|m| {
                 let index = linked.modules.len() as u32;
                 linked.modules.push(m);
                 index
@@ -120,7 +120,7 @@ impl<'a> LinkedModule<'a> {
 
             linked
                 .module_map
-                .insert(adapted, (module_index, shim_index));
+                .insert(adapter, (module_index, shim_index));
         }
 
         if needs_runtime {
@@ -152,7 +152,7 @@ impl<'a> LinkedModule<'a> {
 
     fn instantiate(
         &mut self,
-        graph: &'a Graph<AdaptedModule<'a>, ()>,
+        graph: &'a Graph<ModuleAdapter<'a>, ()>,
         current: NodeIndex,
         parent: Option<u32>,
     ) -> Result<(u32, bool)> {
@@ -190,12 +190,12 @@ impl<'a> LinkedModule<'a> {
         let mut neighbors = graph.neighbors(current).detach();
         while let Some(neighbor) = neighbors.next_node(graph) {
             let (index, is_shim) = self.instantiate(graph, neighbor, None)?;
-            let neighbor_adapted = &graph[neighbor];
+            let neighbor_adapter = &graph[neighbor];
 
-            args.push((neighbor_adapted.module.name, index));
+            args.push((neighbor_adapter.module.name, index));
 
             // If the adapted module has resources, import it as the canonical ABI module too
-            if neighbor_adapted.module.has_resources() {
+            if neighbor_adapter.module.has_resources() {
                 args.push((CANONICAL_ABI_MODULE_NAME, index));
             }
 
@@ -210,9 +210,9 @@ impl<'a> LinkedModule<'a> {
 
         // If there are shims, ensure the parent exports the required realloc function
         if !shims.is_empty() {
-            let adapted = &graph[current];
+            let adapter = &graph[current];
 
-            let export = adapted
+            let export = adapter
                 .module
                 .exports
                 .iter()
@@ -226,12 +226,12 @@ impl<'a> LinkedModule<'a> {
                 .ok_or_else(|| {
                     anyhow!(
                         "module `{}` does not export the required function `{}`",
-                        adapted.module.name,
+                        adapter.module.name,
                         REALLOC_EXPORT_NAME
                     )
                 })?;
 
-            if adapted
+            if adapter
                 .module
                 .func_type(export.index)
                 .expect("function index must be in range")
@@ -239,7 +239,7 @@ impl<'a> LinkedModule<'a> {
             {
                 bail!(
                     "module `{}` exports function `{}` but it is not the expected type",
-                    adapted.module.name,
+                    adapter.module.name,
                     REALLOC_EXPORT_NAME
                 );
             }
@@ -250,13 +250,13 @@ impl<'a> LinkedModule<'a> {
             let (child_index, _) = self.instantiate(graph, shim, Some(parent_index))?;
 
             // Emit the shim function table
-            let adapted = &graph[shim];
+            let adapter = &graph[shim];
             let table_index = self.table_aliases.len() as u32;
             self.table_aliases.push((shim_index, FUNCTION_TABLE_NAME));
 
             // Emit the segments populating the function table
             let mut segments = Vec::new();
-            for name in adapted.aliases() {
+            for name in adapter.aliases() {
                 let func_index = self.imports.len() as u32 + self.func_aliases.len() as u32;
                 self.func_aliases.push((child_index, name));
                 segments.push(wasm_encoder::Element::Func(func_index));
@@ -409,14 +409,16 @@ impl Linker {
         &self,
         main: &'a Module,
         imports: &'a HashMap<&str, Module>,
-    ) -> Result<(Graph<AdaptedModule<'a>, ()>, bool)> {
+    ) -> Result<(Graph<ModuleAdapter<'a>, ()>, bool)> {
         let mut queue: Vec<(Option<petgraph::graph::NodeIndex>, &Module)> = Vec::new();
         let mut seen = HashMap::new();
-        let mut graph: Graph<AdaptedModule, ()> = Graph::new();
+        let mut graph: Graph<ModuleAdapter, ()> = Graph::new();
 
         let mut needs_runtime = main.has_resources();
 
         queue.push((None, main));
+
+        let mut next_resource_id = 0;
 
         loop {
             match queue.pop() {
@@ -425,7 +427,8 @@ impl Linker {
                         Entry::Occupied(e) => *e.get(),
                         Entry::Vacant(e) => {
                             needs_runtime |= module.has_resources();
-                            let index = graph.add_node(AdaptedModule::new(module));
+                            let index =
+                                graph.add_node(ModuleAdapter::new(module, &mut next_resource_id));
 
                             for import in &module.imports {
                                 let imported_module = imports.get(import.module);

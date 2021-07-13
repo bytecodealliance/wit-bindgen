@@ -1,0 +1,3 @@
+resource x
+
+acquire_an_x: function() -> x

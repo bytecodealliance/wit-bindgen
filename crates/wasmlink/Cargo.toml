@@ -16,3 +16,4 @@ witx2 = { path = "../witx2" }
 [dev-dependencies]
 wasmprinter = "0.2.26"
 wat = "1.0.37"
+pretty_assertions = "0.7.2"
