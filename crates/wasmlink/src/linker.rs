@@ -827,8 +827,8 @@ mod test {
       block  ;; label = @1
         i32.const 0
         i32.const 0
-        local.get 1
         i32.const 1
+        local.get 1
         call 2
         local.tee 2
         br_if 0 (;@1;)
