@@ -27,7 +27,8 @@ fn wasmlink_file_tests() -> Result<()> {
                     assert!(module.read_interface(&witx_path)?);
                 }
 
-                let adapter = ModuleAdapter::new(&module);
+                let mut next_resource_id = 0;
+                let adapter = ModuleAdapter::new(&module, &mut next_resource_id);
 
                 let output = match adapter.adapt() {
                     Ok(adapted) => print_bytes(&adapted.finish())?,

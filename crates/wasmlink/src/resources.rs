@@ -6,10 +6,7 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Result};
 use heck::SnakeCase;
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::atomic::{AtomicU32, Ordering},
-};
+use std::collections::{BTreeMap, HashMap};
 use wasm_encoder::EntityType;
 use wasmparser::{ExternalKind, FuncType, Type};
 
@@ -84,9 +81,7 @@ pub struct Resources<'a> {
 }
 
 impl<'a> Resources<'a> {
-    pub fn new(module: &'a Module) -> Self {
-        static NEXT_ID: AtomicU32 = AtomicU32::new(0);
-
+    pub fn new(module: &'a Module, next_resource_id: &mut u32) -> Self {
         let mut types = Vec::new();
         let mut imports = Vec::new();
         let mut resources = Vec::new();
@@ -153,7 +148,7 @@ impl<'a> Resources<'a> {
 
                 resources.push(Resource {
                     inner: resource,
-                    id: NEXT_ID.fetch_add(1, Ordering::SeqCst),
+                    id: *next_resource_id,
                     new: ResourceFunction {
                         name: format!("resource_new_{}", name),
                         ty: &FT_PI32_RI32,
@@ -180,6 +175,8 @@ impl<'a> Resources<'a> {
                     },
                     drop_callback: format!("canonical_abi_drop_{}", name),
                 });
+
+                *next_resource_id += 1;
             }
         }
 

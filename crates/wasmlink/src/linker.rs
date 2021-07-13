@@ -418,6 +418,8 @@ impl Linker {
 
         queue.push((None, main));
 
+        let mut next_resource_id = 0;
+
         loop {
             match queue.pop() {
                 Some((predecessor, module)) => {
@@ -425,7 +427,8 @@ impl Linker {
                         Entry::Occupied(e) => *e.get(),
                         Entry::Vacant(e) => {
                             needs_runtime |= module.has_resources();
-                            let index = graph.add_node(ModuleAdapter::new(module));
+                            let index =
+                                graph.add_node(ModuleAdapter::new(module, &mut next_resource_id));
 
                             for import in &module.imports {
                                 let imported_module = imports.get(import.module);

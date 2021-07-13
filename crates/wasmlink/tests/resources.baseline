@@ -54,20 +54,20 @@
     (import "$runtime" "resource_clone" (func (;2;) (type 2)))
     (import "$runtime" "resource_remove" (func (;3;) (type 3)))
     (func (;4;) (type 0) (param i32) (result i32)
-      i32.const 1
+      i32.const 0
       local.get 0
       call 0)
     (func (;5;) (type 0) (param i32) (result i32)
-      i32.const 1
+      i32.const 0
       local.get 0
       call 1)
     (func (;6;) (type 0) (param i32) (result i32)
-      i32.const 1
+      i32.const 0
       local.get 0
       call 2)
     (func (;7;) (type 1) (param i32)
       (local i64)
-      i32.const 1
+      i32.const 0
       local.get 0
       call 3
       local.tee 1

@@ -47,10 +47,10 @@ pub struct ModuleAdapter<'a> {
 
 impl<'a> ModuleAdapter<'a> {
     /// Constructs a new adapter for the given module.
-    pub fn new(module: &'a Module) -> Self {
+    pub fn new(module: &'a Module, next_resource_id: &mut u32) -> Self {
         Self {
             module,
-            resources: Resources::new(module),
+            resources: Resources::new(module, next_resource_id),
         }
     }
 
