@@ -149,7 +149,7 @@ pub trait RustGenerator {
             self.push_str("async ");
         }
         self.push_str("fn ");
-        self.push_str(to_rust_ident(&rust_name));
+        self.push_str(&to_rust_ident(&rust_name));
         if let Some(generics) = generics {
             self.push_str(generics);
         }
@@ -160,8 +160,9 @@ pub trait RustGenerator {
         }
         let mut params = Vec::new();
         for (name, param) in func.params.iter() {
-            self.push_str(to_rust_ident(name.as_str()));
-            params.push(to_rust_ident(name.as_str()).to_string());
+            let name = to_rust_ident(name);
+            self.push_str(&name);
+            params.push(name);
             self.push_str(": ");
             self.print_ty(iface, param, param_mode);
             self.push_str(",");
@@ -471,7 +472,7 @@ pub trait RustGenerator {
                 for field in record.fields.iter() {
                     self.rustdoc(&field.docs);
                     self.push_str("pub ");
-                    self.push_str(to_rust_ident(&field.name));
+                    self.push_str(&to_rust_ident(&field.name));
                     self.push_str(": ");
                     self.print_ty(iface, &field.ty, mode);
                     self.push_str(",\n");
@@ -858,8 +859,9 @@ pub trait RustFunctionGenerator {
             self.push_str(&name);
             self.push_str("{ ");
             for field in record.fields.iter() {
-                let arg = format!("{}{}", field.name.as_str(), tmp);
-                self.push_str(to_rust_ident(field.name.as_str()));
+                let name = to_rust_ident(&field.name);
+                let arg = format!("{}{}", name, tmp);
+                self.push_str(&name);
                 self.push_str(":");
                 self.push_str(&arg);
                 self.push_str(", ");
@@ -889,7 +891,7 @@ pub trait RustFunctionGenerator {
             let mut result = self.typename_lift(iface, id);
             result.push_str("{");
             for (field, val) in ty.fields.iter().zip(operands) {
-                result.push_str(to_rust_ident(&field.name));
+                result.push_str(&to_rust_ident(&field.name));
                 result.push_str(":");
                 result.push_str(&val);
                 result.push_str(", ");
@@ -1008,14 +1010,14 @@ pub trait RustFunctionGenerator {
     }
 }
 
-pub fn to_rust_ident(name: &str) -> &str {
+pub fn to_rust_ident(name: &str) -> String {
     match name {
-        "in" => "in_",
-        "type" => "type_",
-        "where" => "where_",
-        "yield" => "yield_",
-        "async" => "async_",
-        s => s,
+        "in" => "in_".into(),
+        "type" => "type_".into(),
+        "where" => "where_".into(),
+        "yield" => "yield_".into(),
+        "async" => "async_".into(),
+        s => s.to_snake_case(),
     }
 }
 

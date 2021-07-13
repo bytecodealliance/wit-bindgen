@@ -1258,7 +1258,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str("<_ as ");
                 self.push_str(&module.to_camel_case());
                 self.push_str(">::");
-                self.push_str(&func.name);
+                self.push_str(&func.name.to_snake_case());
                 self.push_str("(super::");
                 self.push_str(module);
                 self.push_str("(),");

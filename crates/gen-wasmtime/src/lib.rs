@@ -868,7 +868,7 @@ impl Generator for Wasmtime {
         }
         cvt.push_str(")");
         exports.fields.insert(
-            func.name.to_string(),
+            to_rust_ident(&func.name),
             (
                 format!("wasmtime::TypedFunc<{}>", cvt),
                 format!(
@@ -928,7 +928,7 @@ impl Generator for Wasmtime {
                     "fn drop_{}(&mut self, state: Self::{}) {{
                         drop(state);
                     }}\n",
-                    handle,
+                    handle.to_snake_case(),
                     handle.to_camel_case(),
                 ));
             }
@@ -1016,7 +1016,7 @@ impl Generator for Wasmtime {
                                 Ok(())
                             }}
                         )?;\n",
-                        handle
+                        handle.to_snake_case(),
                     ));
                 }
             }
@@ -2087,7 +2087,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.push_str(") = ");
                 }
                 self.push_str("self.");
-                self.push_str(name);
+                self.push_str(&to_rust_ident(name));
                 if self.gen.opts.async_.includes(name) {
                     self.push_str(".call_async(");
                 } else {
@@ -2131,7 +2131,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.push_str(".raw() };\n");
                 }
 
-                let mut call = format!("host.{}(", func.name);
+                let mut call = format!("host.{}(", func.name.to_snake_case());
                 if self.func_takes_all_memory {
                     call.push_str("raw_memory, ");
                 }
