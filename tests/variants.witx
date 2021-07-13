@@ -19,7 +19,7 @@ variant v1 {
     a,
     b(u1),
     c(e1),
-    /* d(string), */ // TODO
+    d(string),
     e(empty),
     f,
     g(u32),
@@ -102,7 +102,7 @@ expected_arg: function(
   c: expected<e1, _>,
   d: expected<tuple<>, tuple<>>,
   e: expected<u32, v1>,
-  /* f: expected<string, list<u8>>, */ // TODO
+  f: expected<string, list<u8>>,
 )
 expected_result: function() -> (
   expected<_, _>,
@@ -110,7 +110,7 @@ expected_result: function() -> (
   expected<e1, _>,
   expected<tuple<>, tuple<>>,
   expected<u32, v1>,
-  /* expected<string, list<u8>>, */ // TODO
+  expected<string, list<u8>>,
 )
 
 enum my_errno {

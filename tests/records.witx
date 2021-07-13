@@ -33,7 +33,7 @@ record aggregates {
     a: scalars,
     b: u32,
     c: empty,
-    //d: string, TODO
+    d: string,
     e: really_flags,
 }
 
