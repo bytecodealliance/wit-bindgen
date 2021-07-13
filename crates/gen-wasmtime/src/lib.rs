@@ -941,6 +941,7 @@ impl Generator for Wasmtime {
                 self.src.push_str(&module_camel);
                 self.src.push_str("> {\n");
                 for handle in self.all_needed_handles.iter() {
+                    self.src.push_str("pub(crate) ");
                     self.src.push_str(&handle.to_snake_case());
                     self.src
                         .push_str("_table: witx_bindgen_wasmtime::Table<T::");
