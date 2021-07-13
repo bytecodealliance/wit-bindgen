@@ -1017,6 +1017,7 @@ pub fn to_rust_ident(name: &str) -> String {
         "where" => "where_".into(),
         "yield" => "yield_".into(),
         "async" => "async_".into(),
+        "self" => "self_".into(),
         s => s.to_snake_case(),
     }
 }
