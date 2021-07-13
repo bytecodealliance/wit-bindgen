@@ -16,14 +16,5 @@ structopt = { version = "0.3", default-features = false, optional = true }
 [dev-dependencies]
 test-codegen = { path = '../test-codegen', features = ['witx-bindgen-gen-c'] }
 
-# [[test]]
-# name = "eslint"
-# harness = false
-
-# [[test]]
-# name = "run"
-# harness = false
-# required-features = ['old-witx-compat']
-
 [features]
 old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']
