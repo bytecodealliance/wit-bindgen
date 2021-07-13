@@ -2,7 +2,7 @@ use heck::*;
 use std::collections::{BTreeSet, HashMap};
 use std::mem;
 use witx_bindgen_gen_core::witx2::abi::{
-    Bindgen, Bitcast, Direction, Instruction, LiftLower, WitxInstruction,
+    Bindgen, Bitcast, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator};
 
@@ -995,8 +995,13 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::GetArg { nth } => results.push(format!("arg{}", nth)),
             Instruction::I32Const { val } => results.push(val.to_string()),
             Instruction::ConstZero { tys } => {
-                for _ in tys.iter() {
-                    results.push("0".to_string());
+                for t in tys.iter() {
+                    match t {
+                        WasmType::I64 => results.push("0n".to_string()),
+                        WasmType::I32 | WasmType::F32 | WasmType::F64 => {
+                            results.push("0".to_string());
+                        }
+                    }
                 }
             }
 

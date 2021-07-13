@@ -35,12 +35,8 @@ pub struct C {
     // at the end.
     types: HashMap<TypeId, witx_bindgen_gen_core::Source>,
 
-    intrinsics: HashMap<Intrinsic, String>,
     needs_string: bool,
 }
-
-#[derive(Copy, Clone, Hash, PartialEq, Eq)]
-enum Intrinsic {}
 
 struct Func {
     name: String,
@@ -453,40 +449,7 @@ impl C {
         }
     }
 
-    fn intrinsic(&mut self, i: Intrinsic) -> String {
-        match i {}
-        // if let Some(name) = self.intrinsics.get(&i) {
-        //     return name.clone();
-        // }
-        // let name = match i {
-        //     // Intrinsic::StringRealloc => "__string_realloc",
-        // };
-        // let name = self.names.tmp(name);
-        // self.intrinsics.insert(i, name.clone());
-        // name
-    }
-
     fn print_intrinsics(&mut self) {
-        for (i, name) in self.intrinsics.drain() {
-            match i {
-                // Intrinsic::StringRealloc => {
-                //     self.src.c(&format!(
-                //         "
-                //             static char *{}(int32_t ptr, int32_t len) {{
-                //                 if (len == 0) {{
-                //                     return strdup(\"\");
-                //                 }}
-                //                 char *ret = realloc((char*) ptr, len + 1);
-                //                 ret[len] = 0;
-                //                 return ret;
-                //             }}
-                //         ",
-                //         name,
-                //     ));
-                // }
-            }
-        }
-
         // Note that these intrinsics are declared as `weak` so they can be
         // overridden from some other symbol.
         self.src.c("
@@ -612,11 +575,7 @@ impl C {
         match &iface.types[id].kind {
             TypeDefKind::Type(t) => self.owns_anything(iface, t),
             TypeDefKind::Record(r) => r.fields.iter().any(|t| self.owns_anything(iface, &t.ty)),
-            // Lists/buffers are only owned for exports. For imports they're
-            // all pointing to allocations/handles owned by this module
-            TypeDefKind::List(_) | TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {
-                !self.in_import
-            }
+            TypeDefKind::List(_) | TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => true,
             TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => false,
             TypeDefKind::Variant(v) => v
                 .cases
@@ -805,7 +764,12 @@ impl Generator for C {
     ) {
         let prev = mem::take(&mut self.src.header);
         self.names.insert(&name.to_snake_case()).unwrap();
-        if variant.is_enum() {
+        if variant.is_bool() {
+            self.src.h("typedef bool ");
+            self.print_namespace(iface);
+            self.src.h(&name.to_snake_case());
+            self.src.h("_t;\n");
+        } else if variant.is_enum() {
             self.src.h("typedef ");
             self.src.h(int_repr(variant.tag));
             self.src.h(" ");
@@ -858,12 +822,6 @@ impl Generator for C {
     }
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        // Skip this since it's used in WASI and there's no need to redefine it
-        // here.
-        // if name == "size" && (*ty == Type::Usize || *ty == Type::U32) {
-        //     return;
-        // }
-
         let prev = mem::take(&mut self.src.header);
         self.src.h("typedef ");
         self.print_ty(iface, ty);
