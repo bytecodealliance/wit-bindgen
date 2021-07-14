@@ -882,7 +882,7 @@ impl Generator for Wasmtime {
     fn finish(&mut self, iface: &Interface, files: &mut Files) {
         for (module, funcs) in sorted_iter(&self.imports) {
             let module_camel = module.to_camel_case();
-            let is_async = funcs.iter().any(|f| self.opts.async_.includes(&f.name));
+            let is_async = !self.opts.async_.is_none();
             if is_async {
                 self.src.push_str("#[witx_bindgen_wasmtime::async_trait]\n");
             }
@@ -965,7 +965,7 @@ impl Generator for Wasmtime {
 
         for (module, funcs) in mem::take(&mut self.imports) {
             let module_camel = module.to_camel_case();
-            let is_async = funcs.iter().any(|f| self.opts.async_.includes(&f.name));
+            let is_async = !self.opts.async_.is_none();
             self.push_str("\npub fn add_");
             self.push_str(&module);
             self.push_str("_to_linker<T, U>(linker: &mut wasmtime::Linker<T>");
