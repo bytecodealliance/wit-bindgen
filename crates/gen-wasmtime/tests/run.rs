@@ -78,6 +78,16 @@ mod async_tests {
             async: ["bar"],
         });
     }
+    mod resource_with_none_async {
+        witx_bindgen_wasmtime::import!({
+            src["x"]: "
+                resource y {
+                    z: function() -> string
+                }
+            ",
+            async: [],
+        });
+    }
 }
 
 mod custom_errors {
