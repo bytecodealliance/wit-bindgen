@@ -36,6 +36,12 @@ enum Command {
         #[structopt(flatten)]
         common: Common,
     },
+    Markdown {
+        #[structopt(flatten)]
+        opts: witx_bindgen_gen_markdown::Opts,
+        #[structopt(flatten)]
+        common: Common,
+    },
 }
 
 #[derive(Debug, StructOpt)]
@@ -63,6 +69,7 @@ fn main() -> Result<()> {
         Command::Wasmtime { opts, common } => (Box::new(opts.build()), common),
         Command::Js { opts, common } => (Box::new(opts.build()), common),
         Command::C { opts, common } => (Box::new(opts.build()), common),
+        Command::Markdown { opts, common } => (Box::new(opts.build()), common),
     };
 
     if !common.import && !common.export {

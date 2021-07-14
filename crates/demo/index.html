@@ -53,6 +53,7 @@ hello: function(who: person) -&gt; string
             <option value="rust">Rust</option>
             <option value="wasmtime">Wasmtime</option>
             <option value="c">C</option>
+            <option value="markdown">Markdown</option>
           </select>
 
           &middot;
@@ -73,6 +74,8 @@ hello: function(who: person) -&gt; string
           <div id='configure-js' class='lang-configure'>
           </div>
           <div id='configure-c' class='lang-configure'>
+          </div>
+          <div id='configure-markdown' class='lang-configure'>
           </div>
           <div id='configure-rust' class='lang-configure'>
             &middot;
@@ -99,6 +102,7 @@ hello: function(who: person) -&gt; string
         </div>
 
         <div class='editor' id='output'></div>
+        <div id='html-output'></div>
       </div>
   </body>
   <script src="ace/ace.js"></script>

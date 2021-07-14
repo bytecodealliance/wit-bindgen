@@ -11,6 +11,7 @@ enum lang {
   rust,
   wasmtime,
   c,
+  markdown,
 }
 
 

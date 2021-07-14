@@ -366,6 +366,14 @@ impl Source {
         }
     }
 
+    pub fn indent(&mut self, amt: usize) {
+        self.indent += amt;
+    }
+
+    pub fn deindent(&mut self, amt: usize) {
+        self.indent -= amt;
+    }
+
     fn newline(&mut self) {
         self.s.push_str("\n");
         for _ in 0..self.indent {

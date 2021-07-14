@@ -16,6 +16,7 @@ class Editor {
   rerender: number | null;
   inputEditor: AceAjax.Editor;
   outputEditor: AceAjax.Editor;
+  outputHtml: HTMLDivElement;
 
   constructor() {
     this.input = document.getElementById('input-raw') as HTMLTextAreaElement;
@@ -26,6 +27,7 @@ class Editor {
     this.wasmtimeTracing = document.getElementById('wasmtime-tracing') as HTMLInputElement;
     this.wasmtimeAsync = document.getElementById('wasmtime-async') as HTMLInputElement;
     this.wasmtimeCustomError = document.getElementById('wasmtime-custom-error') as HTMLInputElement;
+    this.outputHtml = document.getElementById('html-output') as HTMLDivElement;
 
     this.inputEditor = ace.edit("input");
     this.outputEditor = ace.edit("output");
@@ -107,12 +109,14 @@ class Editor {
       case "rust": lang = Lang.Rust; break;
       case "wasmtime": lang = Lang.Wasmtime; break;
       case "c": lang = Lang.C; break;
+      case "markdown": lang = Lang.Markdown; break;
       default: return;
     }
     const result = this.demo.render(this.config, lang, witx, is_import);
     if (result.tag === 'err') {
       this.outputEditor.setValue(result.val);
       this.outputEditor.clearSelection();
+      this.showOutputEditor();
       return;
     }
     this.generatedFiles = {};
@@ -130,7 +134,25 @@ class Editor {
     this.updateSelectedFile();
   }
 
+  showOutputEditor() {
+    this.outputHtml.style.display = 'none';
+    document.getElementById('output').style.display = 'block';
+  }
+
+  showOutputHtml() {
+    this.outputHtml.style.display = 'block';
+    document.getElementById('output').style.display = 'none';
+  }
+
   updateSelectedFile() {
+    if (this.files.value.endsWith('.html')) {
+      const html = this.generatedFiles[this.files.value];
+      this.outputHtml.innerHTML = html;
+      this.showOutputHtml();
+      return;
+    }
+
+    this.showOutputEditor();
     this.outputEditor.setValue(this.generatedFiles[this.files.value]);
     this.outputEditor.clearSelection();
     if (this.files.value.endsWith('.d.ts'))
@@ -143,6 +165,8 @@ class Editor {
       this.outputEditor.session.setMode("ace/mode/c_cpp");
     else if (this.files.value.endsWith('.h'))
       this.outputEditor.session.setMode("ace/mode/c_cpp");
+    else if (this.files.value.endsWith('.md'))
+      this.outputEditor.session.setMode("ace/mode/markdown");
     else
       this.outputEditor.session.setMode(null);
   }
