@@ -1,0 +1,14 @@
+[package]
+name = "witx-bindgen-gen-markdown"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+doctest = false
+test = false
+
+[dependencies]
+heck = "0.3"
+pulldown-cmark = { version = "0.8", default-features = false }
+structopt = { version = "0.3", default-features = false, optional = true }
+witx-bindgen-gen-core = { path = '../gen-core', version = '0.1.0' }

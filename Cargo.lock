@@ -419,6 +419,7 @@ dependencies = [
  "witx-bindgen-gen-c",
  "witx-bindgen-gen-core",
  "witx-bindgen-gen-js",
+ "witx-bindgen-gen-markdown",
  "witx-bindgen-gen-rust-wasm",
  "witx-bindgen-gen-wasmtime",
  "witx-bindgen-rust",
@@ -944,6 +945,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulldown-cmark"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffade02495f22453cd593159ea2f59827aae7f53fa8323f756799b670881dcf8"
+dependencies = [
+ "bitflags",
+ "memchr",
+ "unicase",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1441,6 +1453,15 @@ name = "ucd-trie"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56dee185309b50d1f11bfedef0fe6d036842e3fb77413abef29f8f8d1c5d4c1c"
+
+[[package]]
+name = "unicase"
+version = "2.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50f37be617794602aabbeee0be4f259dc1778fabe05e2d67ee8f79326d5cb4f6"
+dependencies = [
+ "version_check",
+]
 
 [[package]]
 name = "unicode-segmentation"
@@ -1960,6 +1981,7 @@ dependencies = [
  "witx-bindgen-gen-c",
  "witx-bindgen-gen-core",
  "witx-bindgen-gen-js",
+ "witx-bindgen-gen-markdown",
  "witx-bindgen-gen-rust-wasm",
  "witx-bindgen-gen-wasmtime",
 ]
@@ -1991,6 +2013,16 @@ dependencies = [
  "heck",
  "structopt",
  "test-codegen",
+ "witx-bindgen-gen-core",
+]
+
+[[package]]
+name = "witx-bindgen-gen-markdown"
+version = "0.1.0"
+dependencies = [
+ "heck",
+ "pulldown-cmark",
+ "structopt",
  "witx-bindgen-gen-core",
 ]
 

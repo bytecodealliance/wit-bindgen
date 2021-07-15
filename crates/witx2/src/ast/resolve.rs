@@ -507,11 +507,15 @@ impl Resolver {
         let mut docs = String::new();
         for doc in doc.docs.iter() {
             if doc.starts_with("//") {
-                docs.push_str(&doc[2..]);
+                docs.push_str(&doc[2..].trim_start_matches('/').trim());
+                docs.push_str("\n");
             } else {
                 assert!(doc.starts_with("/*"));
                 assert!(doc.ends_with("*/"));
-                docs.push_str(&doc[2..doc.len() - 2])
+                for line in doc[2..doc.len() - 2].lines() {
+                    docs.push_str(line);
+                    docs.push_str("\n");
+                }
             }
         }
         Docs {
