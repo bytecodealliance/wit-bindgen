@@ -20,7 +20,6 @@ test-codegen = { path = '../test-codegen', features = ['witx-bindgen-gen-js'] }
 [[test]]
 name = "run"
 harness = false
-required-features = ['old-witx-compat']
 
 [features]
 old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']

@@ -168,13 +168,11 @@ host_state2_result_variant: function() -> host_state_result_variant
 
 host_state2_result_list: function() -> list<host_state2>
 
-/* TODO
-resource markdown {
-    static create: function() -> option<markdown>
-    append: function(buf: string)
-    render: function() -> string
+resource markdown2 {
+  static create: function() -> markdown2
+  append: function(buf: string)
+  render: function() -> string
 }
-*/
 
 // ===========================================
 // buffers

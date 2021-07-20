@@ -7,6 +7,7 @@ witx_bindgen_rust::export!({ paths: ["tests/wasm.witx"], unchecked });
 use wasm::*;
 use witx_bindgen_rust::Handle;
 
+use std::cell::RefCell;
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
 // use witx_bindgen_rust::exports::{InBuffer, InBufferRaw, OutBuffer, OutBufferRaw};
 
@@ -400,4 +401,21 @@ impl Wasm for MyWasm {
     //     _: ParamOutBufferBool<'_>,
     // ) {
     // }
+
+    fn markdown_create(&self) -> Option<Handle<Markdown>> {
+        Some(Markdown::default().into())
+    }
+
+    fn markdown_append(&self, md: Handle<Markdown>, input: String) {
+        md.buf.borrow_mut().push_str(&input);
+    }
+
+    fn markdown_render(&self, md: Handle<Markdown>) -> String {
+        md.buf.borrow().replace("red", "green")
+    }
+}
+
+#[derive(Default)]
+pub struct Markdown {
+    buf: RefCell<String>,
 }

@@ -231,6 +231,24 @@ function host(): imports.Host {
       assert.deepStrictEqual(string, ['foo']);
       assert.deepStrictEqual(list, [new Uint8Array([102])]);
     },
+
+    markdown2_create() {
+      class Markdown {
+        buf: string;
+
+        constructor() {
+          this.buf = '';
+        }
+        append(extra) {
+          this.buf += extra;
+        }
+        render() {
+          return this.buf.replace('red', 'green');
+        }
+      }
+
+      return new Markdown();
+    },
   };
 }
 
@@ -492,6 +510,13 @@ function test_handles(wasm: exports.Wasm) {
 
   s.drop();
   assert.strictEqual(bytes, wasm.allocated_bytes());
+
+  const md = exports.Markdown.create(wasm);
+  if (md) {
+    md.append("red is the best color");
+    assert.strictEqual(md.render(), "green is the best color");
+    md.drop();
+  }
 }
 
 // fn buffers(wasm: &Wasm) -> Result<()> {

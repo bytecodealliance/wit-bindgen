@@ -613,6 +613,19 @@ static void test_handles() {
     host_host_state2_result_list(&a);
     host_list_host_state2_free(&a);
   }
+  {
+    host_markdown2_t a = host_markdown2_create();
+    host_string_t s;
+    host_string_set(&s, "red is the best color");
+    host_markdown2_append(a, &s);
+    host_markdown2_render(a, &s);
+
+    const char *expected = "green is the best color";
+    assert(s.len == strlen(expected));
+    assert(memcmp(s.ptr, expected, s.len) == 0);
+    host_string_free(&s);
+    host_markdown2_free(&a);
+  }
 }
 
 static void test_buffers() {
