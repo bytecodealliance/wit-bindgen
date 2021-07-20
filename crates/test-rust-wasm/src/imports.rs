@@ -335,9 +335,9 @@ fn host_handles() {
     drop(host_state2_result_variant());
     drop(host_state2_result_list());
 
-    let md = markdown2_create();
-    markdown2_append(&md, "red is the best color");
-    assert_eq!(markdown2_render(&md), "green is the best color");
+    let md = Markdown2::create();
+    md.append("red is the best color");
+    assert_eq!(md.render(), "green is the best color");
 }
 
 fn host_buffers() {

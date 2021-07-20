@@ -1,5 +1,6 @@
 use ignore::gitignore::GitignoreBuilder;
 use proc_macro::{TokenStream, TokenTree};
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,6 +36,7 @@ pub fn rust_wasm_import(input: TokenStream) -> TokenStream {
 #[cfg(feature = "witx-bindgen-gen-rust-wasm")]
 pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
     use heck::*;
+    use witx2::{FunctionKind, Type, TypeDefKind};
 
     return gen_rust(
         input,
@@ -59,43 +61,71 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
     );
 
     fn gen_extra(iface: &witx2::Interface) -> proc_macro2::TokenStream {
+        let mut ret = quote::quote!();
         if iface.resources.len() == 0 && iface.functions.len() == 0 {
-            return quote::quote!();
+            return ret;
         }
 
-        let resources = iface.resources.iter().map(|(_, r)| {
-            let name = quote::format_ident!("{}", r.name.to_camel_case());
-            quote::quote!(pub struct #name;)
-        });
+        let snake = quote::format_ident!("{}", iface.name.to_snake_case());
+        let camel = quote::format_ident!("{}", iface.name.to_camel_case());
 
-        let methods = iface.functions.iter().map(|f| {
-            let name = quote::format_ident!("{}", f.name.to_snake_case());
-            let params = f.params.iter().map(|(_, t)| quote_ty(true, iface, t));
+        for (_, r) in iface.resources.iter() {
+            let name = quote::format_ident!("{}", r.name.to_camel_case());
+            ret.extend(quote::quote!(pub struct #name;));
+        }
+
+        let mut methods = Vec::new();
+        let mut resources = BTreeMap::new();
+
+        for f in iface.functions.iter() {
+            let name = quote::format_ident!("{}", f.item_name().to_snake_case());
+            let mut params = f
+                .params
+                .iter()
+                .map(|(_, t)| quote_ty(true, iface, t))
+                .collect::<Vec<_>>();
             let mut results = f.results.iter().map(|(_, t)| quote_ty(false, iface, t));
             let ret = match f.results.len() {
                 0 => quote::quote! { () },
                 1 => results.next().unwrap(),
                 _ => quote::quote! { (#(#results),*) },
             };
-            quote::quote! {
-                fn #name(&self, #(_: #params),*) -> #ret {
+            let mut self_ = quote::quote!();
+            if let FunctionKind::Method { .. } = &f.kind {
+                params.remove(0);
+                self_ = quote::quote!(&self,);
+            }
+            let method = quote::quote! {
+                fn #name(#self_ #(_: #params),*) -> #ret {
                     loop {}
                 }
-            }
-        });
-
-        let fnname = quote::format_ident!("{}", iface.name.to_snake_case());
-        let the_trait = quote::format_ident!("{}", iface.name.to_camel_case());
-        quote::quote! {
-            #(#resources)*
-            fn #fnname() -> &'static impl #fnname::#the_trait {
-                struct A;
-                impl #fnname::#the_trait for A {
-                    #(#methods)*
+            };
+            match &f.kind {
+                FunctionKind::Freestanding => methods.push(method),
+                FunctionKind::Static { resource, .. } | FunctionKind::Method { resource, .. } => {
+                    resources
+                        .entry(*resource)
+                        .or_insert(Vec::new())
+                        .push(method);
                 }
-                &A
             }
         }
+        ret.extend(quote::quote! {
+            struct #camel;
+            impl #snake::#camel for #camel {
+                #(#methods)*
+            }
+        });
+        for (id, methods) in resources {
+            let name = quote::format_ident!("{}", iface.resources[id].name.to_camel_case());
+            ret.extend(quote::quote! {
+                impl #snake::#name for #name {
+                    #(#methods)*
+                }
+            });
+        }
+
+        ret
     }
 
     fn quote_ty(
@@ -103,7 +133,6 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
         iface: &witx2::Interface,
         ty: &witx2::Type,
     ) -> proc_macro2::TokenStream {
-        use witx2::Type;
         match *ty {
             Type::U8 => quote::quote! { u8 },
             Type::S8 => quote::quote! { i8 },
@@ -130,10 +159,9 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
     fn quote_id(
         param: bool,
         iface: &witx2::Interface,
-        ty: witx2::TypeId,
+        id: witx2::TypeId,
     ) -> proc_macro2::TokenStream {
-        use witx2::{Type, TypeDefKind};
-        let ty = &iface.types[ty];
+        let ty = &iface.types[id];
         if let Some(name) = &ty.name {
             let name = quote::format_ident!("{}", name.to_camel_case());
             let module = quote::format_ident!("{}", iface.name.to_snake_case());
