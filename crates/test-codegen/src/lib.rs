@@ -322,6 +322,12 @@ where
     let cwd = env::current_dir().unwrap();
     for test in tests {
         let (mut gen, dir) = mkgen(&test);
+        if dir == Direction::Export {
+            match test.file_name().unwrap().to_str().unwrap() {
+                "wasi_snapshot_preview1.witx" | "typenames.witx" | "legacy.witx" => continue,
+                _ => {}
+            }
+        }
         let mut files = Default::default();
         let iface = witx2::Interface::parse_file(&test).unwrap();
         gen.generate(&iface, dir, &mut files);

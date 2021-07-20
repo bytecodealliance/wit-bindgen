@@ -19,7 +19,6 @@ pub fn run() {
     host_get_set();
     host_records();
     host_variants();
-    host_legacy();
     host_lists();
     host_flavorful();
     host_handles();
@@ -58,10 +57,6 @@ fn host_integers() {
     assert_eq!(roundtrip_s64(1), 1);
     assert_eq!(roundtrip_s64(i64::min_value()), i64::min_value());
     assert_eq!(roundtrip_s64(i64::max_value()), i64::max_value());
-
-    assert_eq!(roundtrip_usize(1), 1);
-    assert_eq!(roundtrip_usize(usize::min_value()), usize::min_value());
-    assert_eq!(roundtrip_usize(usize::max_value()), usize::max_value());
 
     assert_eq!(multiple_results(), (4, 5));
 }
@@ -107,10 +102,6 @@ fn host_records() {
         roundtrip_flags3(FLAG8_B0, FLAG16_B1, FLAG32_B2, FLAG64_B3),
         (FLAG8_B0, FLAG16_B1, FLAG32_B2, FLAG64_B3)
     );
-    assert_eq!(legacy_flags1(FLAG8_B4), FLAG8_B4);
-    assert_eq!(legacy_flags2(FLAG16_B5), FLAG16_B5);
-    assert_eq!(legacy_flags3(FLAG32_B6), FLAG32_B6);
-    assert_eq!(legacy_flags4(FLAG64_B7), FLAG64_B7);
 
     let r = roundtrip_record1(R1 { a: 8, b: 0 });
     assert_eq!(r.a, 8);
@@ -183,19 +174,6 @@ fn host_variants() {
         variant_enums(true, Ok(()), MyErrno::Success),
         (false, Err(()), MyErrno::A)
     );
-}
-
-fn host_legacy() {
-    legacy_params(
-        (1, 2),
-        R1 {
-            a: 0,
-            b: F1_A | F1_B,
-        },
-        (1, 2, 3, 4, 5, 6, 7, 8, 9., 10.),
-    );
-    assert!(legacy_result(true).is_ok());
-    assert!(legacy_result(false).is_err());
 }
 
 fn host_lists() {

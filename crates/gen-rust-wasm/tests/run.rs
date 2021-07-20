@@ -25,14 +25,9 @@ mod exports {
     test_codegen::rust_wasm_export!(
         "*.witx"
 
-        // These use preview1 ABI things which are only supported for imports
-        "!host.witx"
-        "!wasi_snapshot_preview1.witx"
-
-        // This uses push/pull buffer which isn't implemented in the test
+        // TODO: these use push/pull buffer which isn't implemented in the test
         // generator just yet
-        //
-        // TODO: should fix this
         "!wasi_next.witx"
+        "!host.witx"
     );
 }
