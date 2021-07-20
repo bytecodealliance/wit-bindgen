@@ -1,335 +1,253 @@
-(module $host
-  (typename $f1 (flags $a $b))
-  (typename $f2 (flags (@witx repr u64) $c $d $e))
-  (typename $r1 (record (field $a u8) (field $b $f1)))
-  (typename $e1 (enum $a $b))
+// ===========================================
+// scalars
+// ===========================================
 
-  (typename $flag8 (flags $b0 $b1 $b2 $b3 $b4 $b5 $b6 $b7))
-  (typename $flag16 (flags
-    $b0 $b1 $b2 $b3 $b4 $b5 $b6 $b7
-    $b8 $b9 $b10 $b11 $b12 $b13 $b14 $b15
-  ))
-  (typename $flag32 (flags
-    $b0 $b1 $b2 $b3 $b4 $b5 $b6 $b7
-    $b8 $b9 $b10 $b11 $b12 $b13 $b14 $b15
-    $b16 $b17 $b18 $b19 $b20 $b21 $b22 $b23
-    $b24 $b25 $b26 $b27 $b28 $b29 $b30 $b31
-  ))
-  (typename $flag64 (flags
-    $b0 $b1 $b2 $b3 $b4 $b5 $b6 $b7
-    $b8 $b9 $b10 $b11 $b12 $b13 $b14 $b15
-    $b16 $b17 $b18 $b19 $b20 $b21 $b22 $b23
-    $b24 $b25 $b26 $b27 $b28 $b29 $b30 $b31
-    $b32 $b33 $b34 $b35 $b36 $b37 $b38 $b39
-    $b40 $b41 $b42 $b43 $b44 $b45 $b46 $b47
-    $b48 $b49 $b50 $b51 $b52 $b53 $b54 $b55
-    $b56 $b57 $b58 $b59 $b60 $b61 $b62 $b63
-  ))
+roundtrip_u8: function(a: u8) -> u8
+roundtrip_s8: function(a: s8) -> s8
+roundtrip_u16: function(a: u16) -> u16
+roundtrip_s16: function(a: s16) -> s16
+roundtrip_u32: function(a: u32) -> u32
+roundtrip_s32: function(a: s32) -> s32
+roundtrip_u64: function(a: u64) -> u64
+roundtrip_s64: function(a: s64) -> s64
+roundtrip_f32: function(a: f32) -> f32
+roundtrip_f64: function(a: f64) -> f64
+roundtrip_char: function(a: char) -> char
+// roundtrip_usize: function(a: usize) -> usize
+multiple_results: function() -> (u8, u16)
+set_scalar: function(a: u32)
+get_scalar: function() -> u32
 
-  ;; Variants for testing casting between primitive types
-  (typename $c1 (variant (case $a s32) (case $b s64)))
-  (typename $c2 (variant (case $a s32) (case $b f32)))
-  (typename $c3 (variant (case $a s32) (case $b f64)))
-  (typename $c4 (variant (case $a s64) (case $b f32)))
-  (typename $c5 (variant (case $a s64) (case $b f64)))
-  (typename $c6 (variant (case $a f32) (case $b f64)))
-  (typename $casts (tuple $c1 $c2 $c3 $c4 $c5 $c6))
+// ===========================================
+// records
+// ===========================================
 
-  ;; Variants for testing zeros can be synthesized
-  (typename $z1 (variant (case $a s32) (case $b)))
-  (typename $z2 (variant (case $a s64) (case $b)))
-  (typename $z3 (variant (case $a f32) (case $b)))
-  (typename $z4 (variant (case $a f64) (case $b)))
-  (typename $zeros (tuple $z1 $z2 $z3 $z4))
+swap_tuple: function(a: tuple<u8, u32>) -> tuple<u32, u8>
 
-  (typename $s8 s8)
-  (typename $u8 u8)
-  (typename $s16 s16)
-  (typename $u16 u16)
-  (typename $s32 s32)
-  (typename $u32 u32)
-  (typename $s64 s64)
-  (typename $u64 u64)
-  (typename $f32 f32)
-  (typename $f64 f64)
-  (typename $legacy_result (tuple
-      ;; primitives with varying bit widths and signedness
-      $s8 $u8
-      $s16 $u16
-      $s32 $u32
-      $s64 $u64
-      $f32 $f64
-      ;; records
-      $r1
-  ))
+flags f1 { a, b }
+roundtrip_flags1: function(a: f1) -> f1
 
-  (typename $unused_type (record (field $a string)))
+flags f2 { c, d, e }
+roundtrip_flags2: function(a: f2) -> f2
 
-  (typename $list_in_record1 (record (field $a string)))
-  (typename $list_in_record2 (record (field $a string)))
-  (typename $list_in_record3 (record (field $a string)))
-  (typename $list_in_record4 (record (field $a string)))
+flags flag8 {
+  b0, b1, b2, b3, b4, b5, b6, b7,
+}
 
-  (typename $option_typedef (option u32))
-  (typename $bool_typedef bool)
-  (typename $result_typedef (expected u32 (error)))
+flags flag16 {
+  b0, b1, b2, b3, b4, b5, b6, b7,
+  b8, b9, b10, b11, b12, b13, b14, b15,
+}
 
-  (typename $list_in_variant1_1 (option string))
-  (typename $list_in_variant1_2 (expected (error string)))
-  (typename $list_in_variant1_3 (union string f32))
-  (typename $list_in_variant2 (option string))
-  (typename $list_in_variant3 (option string))
+flags flag32 {
+  b0, b1, b2, b3, b4, b5, b6, b7,
+  b8, b9, b10, b11, b12, b13, b14, b15,
+  b16, b17, b18, b19, b20, b21, b22, b23,
+  b24, b25, b26, b27, b28, b29, b30, b31,
+}
 
-  (typename $my_errno (enum $success $a $b))
+flags flag64 {
+  b0, b1, b2, b3, b4, b5, b6, b7,
+  b8, b9, b10, b11, b12, b13, b14, b15,
+  b16, b17, b18, b19, b20, b21, b22, b23,
+  b24, b25, b26, b27, b28, b29, b30, b31,
+  b32, b33, b34, b35, b36, b37, b38, b39,
+  b40, b41, b42, b43, b44, b45, b46, b47,
+  b48, b49, b50, b51, b52, b53, b54, b55,
+  b56, b57, b58, b59, b60, b61, b62, b63,
+}
 
-  (typename $list_in_alias $list_in_record4)
-  (typename $list_typedef string)
-  (typename $list_typedef2 (list u8))
-  (typename $list_typedef3 (list string))
+roundtrip_flags3: function(a: flag8, b: flag16, c: flag32, d: flag64) -> (flag8, flag16, flag32, flag64)
 
-  (resource $host_state)
-  (resource $host_state2)
+record r1 { a: u8, b: f1 }
+roundtrip_record1: function(a: r1) -> r1
 
-  (typename $host_state_param_record (record (field $a $host_state2)))
-  (typename $host_state_param_tuple (tuple $host_state2))
-  (typename $host_state_param_option (option $host_state2))
-  (typename $host_state_param_result (expected $host_state2 (error u32)))
-  (typename $host_state_param_variant (union $host_state2 u32))
+tuple0: function(a: tuple<>) -> tuple<>
+tuple1: function(a: tuple<u8>) -> tuple<u8>
 
-  (typename $host_state_result_record (record (field $a $host_state2)))
-  (typename $host_state_result_tuple (tuple $host_state2))
-  (typename $host_state_result_option (option $host_state2))
-  (typename $host_state_result_result (expected $host_state2 (error u32)))
-  (typename $host_state_result_variant (union $host_state2 u32))
+// ===========================================
+// variants
+// ===========================================
 
-  (typename $buffer_in_variant (variant
-    (case $a (in-buffer u8))
-    (case $b (out-buffer u8))
-    (case $c (in-buffer bool))
-    (case $d (out-buffer bool))
-  ))
+roundtrip_option: function(a: option<f32>) -> option<u8>
+roundtrip_result: function(a: expected<u32, f32>) -> expected<f64, u8>
 
-  (typename $buffer_in_record (record
-    (field $a (in-buffer u8))
-    (field $b (out-buffer u8))
-    (field $c (in-buffer bool))
-    (field $d (out-buffer bool))
-    (field $e $buffer_in_variant)
-  ))
+enum e1 { a, b }
+roundtrip_enum: function(a: e1) -> e1
 
-  (typename $param_in_buffer_u8 (in-buffer u8))
-  (typename $param_out_buffer_u8 (out-buffer u8))
-  (typename $param_in_buffer_bool (in-buffer bool))
-  (typename $param_out_buffer_bool (out-buffer bool))
+invert_bool: function(a: bool) -> bool
 
-  (typename $unaligned_record (record
-    (field $a u32)
-    (field $b u64)
-  ))
+variant c1 { a(s32), b(s64) }
+variant c2 { a(s32), b(f32) }
+variant c3 { a(s32), b(f64) }
+variant c4 { a(s64), b(f32) }
+variant c5 { a(s64), b(f64) }
+variant c6 { a(f32), b(f64) }
+type casts = tuple<c1, c2, c3, c4, c5, c6>
+variant_casts: function(a: casts) -> casts
 
-  ;; ===========================================
-  ;; scalars
-  ;; ===========================================
+variant z1 { a(s32), b }
+variant z2 { a(s64), b }
+variant z3 { a(f32), b }
+variant z4 { a(f64), b }
+type zeros = tuple<z1, z2, z3, z4>
+variant_zeros: function(a: zeros) -> zeros
 
-  (export "roundtrip_u8" (func (param $a u8) (result $b u8)))
-  (export "roundtrip_s8" (func (param $a s8) (result $b s8)))
-  (export "roundtrip_u16" (func (param $a u16) (result $b u16)))
-  (export "roundtrip_s16" (func (param $a s16) (result $b s16)))
-  (export "roundtrip_u32" (func (param $a u32) (result $b u32)))
-  (export "roundtrip_s32" (func (param $a s32) (result $b s32)))
-  (export "roundtrip_u64" (func (param $a u64) (result $b u64)))
-  (export "roundtrip_s64" (func (param $a s64) (result $b s64)))
+type option_typedef = option<u32>
+type bool_typedef = bool
+type result_typedef = expected<u32, _>
+variant_typedefs: function(a: option_typedef, b: bool_typedef, c: result_typedef)
 
-  (export "roundtrip_f32" (func (param $a f32) (result $b f32)))
-  (export "roundtrip_f64" (func (param $a f64) (result $b f64)))
+variant_enums: function(a: bool, b: expected<_, _>, c: my_errno) -> (bool, expected<_, _>, my_errno)
 
-  (export "roundtrip_char" (func (param $a char) (result $b char)))
+// ===========================================
+// lists
+// ===========================================
 
-  ;; wasi compat
-  (@interface func (export "roundtrip_usize") (param $a (@witx usize)) (result $b (@witx usize)))
+list_param: function(a: list<u8>)
+list_param2: function(a: string)
+list_param3: function(a: list<string>)
+list_param4: function(a: list<list<string>>)
+list_result: function() -> list<u8>
+list_result2: function() -> string
+list_result3: function() -> list<string>
 
-  (export "multiple_results" (func (result $a u8) (result $b u16)))
+string_roundtrip: function(a: string) -> string
 
-  (export "set_scalar" (func (param $a u32)))
-  (export "get_scalar" (func (result $a u32)))
+unaligned_roundtrip1: function(a: list<u16>, b: list<u32>, c: list<u64>, d: list<flag32>, e: list<flag64>)
 
-  ;; ===========================================
-  ;; records
-  ;; ===========================================
+record unaligned_record { a: u32, b: u64 }
+unaligned_roundtrip2: function(a: list<unaligned_record>, b: list<f32>, c: list<f64>, d: list<string>, e: list<list<u8>>)
 
-  (export "swap_tuple" (func (param $a (tuple u8 u32)) (result $b (tuple u32 u8))))
-  (export "roundtrip_flags1" (func (param $a $f1) (result $b $f1)))
-  (export "roundtrip_flags2" (func (param $a $f2) (result $b $f2)))
-  (export "roundtrip_flags3" (func
-    (param $a $flag8)
-    (param $b $flag16)
-    (param $c $flag32)
-    (param $d $flag64)
-    (result $r0 $flag8)
-    (result $r1 $flag16)
-    (result $r2 $flag32)
-    (result $r3 $flag64)
-  ))
-  (@interface func (export "legacy_flags1") (param $a $flag8) (result $r0 $flag8))
-  (@interface func (export "legacy_flags2") (param $a $flag16) (result $r0 $flag16))
-  (@interface func (export "legacy_flags3") (param $a $flag32) (result $r0 $flag32))
-  (@interface func (export "legacy_flags4") (param $a $flag64) (result $r0 $flag64))
-  (export "roundtrip_record1" (func (param $a $r1) (result $b $r1)))
-  (export "tuple0" (func (param $a (tuple)) (result $b (tuple))))
-  (export "tuple1" (func (param $a (tuple u8)) (result $b (tuple u8))))
+// ===========================================
+// handles
+// ===========================================
 
-  ;; ===========================================
-  ;; variants
-  ;; ===========================================
+resource host_state
+resource host_state2
 
-  (export "roundtrip_option" (func (param $a (option f32)) (result $b (option u8))))
-  (export "roundtrip_result" (func
-    (param $a (expected u32 (error f32)))
-    (result $b (expected f64 (error u8)))
-  ))
-  (export "roundtrip_enum" (func (param $a $e1) (result $b $e1)))
-  (export "invert_bool" (func (param $a bool) (result $b bool)))
-  (export "variant_casts" (func (param $a $casts) (result $b $casts)))
-  (export "variant_zeros" (func (param $a $zeros) (result $b $zeros)))
-  (export "variant_typedefs" (func
-    (param $a $option_typedef)
-    (param $b $bool_typedef)
-    (param $c $result_typedef)
-  ))
+host_state_create: function() -> host_state
+host_state_get: function(a: host_state) -> u32
 
-  (export "variant_enums" (func
-    (param $p1 bool)
-    (param $p2 (expected (error)))
-    (param $p3 $my_errno)
-    (result $r1 bool)
-    (result $r2 (expected (error)))
-    (result $r3 $my_errno)
-  ))
+host_state2_create: function() -> host_state2
+host_state2_saw_close: function() -> bool
+two_host_states: function(a: host_state, b: host_state2) -> (host_state, host_state2)
 
-  ;; ===========================================
-  ;; old WASI abi support
-  ;; ===========================================
-  (@interface func (export "legacy_params")
-    (param $a (tuple u32 u32))
-    ;; test aggregates
-    (param $b $r1)
-    ;; tests many kinds of loads
-    (param $c (tuple u8 s8 u16 s16 u32 s32 u64 s64 f32 f64))
-  )
-  (@interface func (export "legacy_result")
-    (param $succeed bool)
-    (result $b (expected $legacy_result (error $e1)))
-  )
+record host_state_param_record { a: host_state2 }
+host_state2_param_record: function(a: host_state_param_record)
 
-  ;; ===========================================
-  ;; lists
-  ;; ===========================================
-  (export "list_param" (func (param $a (list u8))))
-  (export "list_param2" (func (param $a string)))
-  (export "list_param3" (func (param $a (list string))))
-  (export "list_param4" (func (param $a (list (list string)))))
-  (export "list_result" (func (result $a (list u8))))
-  (export "list_result2" (func (result $a string)))
-  (export "list_result3" (func (result $a (list string))))
-  (export "string_roundtrip" (func (param $a string) (result $b string)))
+type host_state_param_tuple = tuple<host_state2>
+host_state2_param_tuple: function(a: host_state_param_tuple)
 
-  (export "unaligned_roundtrip1" (func
-    (param $a (list u16))
-    (param $b (list u32))
-    (param $c (list u64))
-    (param $d (list $flag32))
-    (param $e (list $flag64))
-  ))
-  (export "unaligned_roundtrip2" (func
-    (param $f (list $unaligned_record))
-    (param $g (list f32))
-    (param $h (list f64))
-    (param $i (list string))
-    (param $j (list (list u8)))
-  ))
+type host_state_param_option = option<host_state2>
+host_state2_param_option: function(a: host_state_param_option)
 
-  ;; ===========================================
-  ;; handles
-  ;; ===========================================
-  (export "host_state_create" (func (result $a $host_state)))
-  (export "host_state_get" (func (param $a $host_state) (result $b u32)))
-  (export "host_state2_create" (func (result $b $host_state2)))
-  ;;(export "host_state2_close" (func (param $a $host_state2)))
-  (export "host_state2_saw_close" (func (result $a bool)))
-  (export "two_host_states" (func
-    (param $a $host_state)
-    (param $b $host_state2)
-    (result $c $host_state)
-    (result $d $host_state2)
-  ))
+type host_state_param_result = expected<host_state2, u32>
+host_state2_param_result: function(a: host_state_param_result)
 
-  (export "host_state2_param_record" (func (param $a $host_state_param_record)))
-  (export "host_state2_param_tuple" (func (param $a $host_state_param_tuple)))
-  (export "host_state2_param_option" (func (param $a $host_state_param_option)))
-  (export "host_state2_param_result" (func (param $a $host_state_param_result)))
-  (export "host_state2_param_variant" (func (param $a $host_state_param_variant)))
-  (export "host_state2_param_list" (func (param $a (list $host_state2))))
+union host_state_param_variant { host_state2, u32 }
+host_state2_param_variant: function(a: host_state_param_variant)
 
-  (export "host_state2_result_record" (func (result $a $host_state_result_record)))
-  (export "host_state2_result_tuple" (func (result $a $host_state_result_tuple)))
-  (export "host_state2_result_option" (func (result $a $host_state_result_option)))
-  (export "host_state2_result_result" (func (result $a $host_state_result_result)))
-  (export "host_state2_result_variant" (func (result $a $host_state_result_variant)))
-  (export "host_state2_result_list" (func (result $a (list $host_state2))))
+host_state2_param_list: function(a: list<host_state2>)
 
-  ;; ===========================================
-  ;; buffers
-  ;; ===========================================
-  (export "buffer_u8" (func (param $a (in-buffer u8)) (param $b (out-buffer u8)) (result $r u32)))
-  (export "buffer_u32" (func (param $a (in-buffer u32)) (param $b (out-buffer u32)) (result $r u32)))
-  (export "buffer_bool" (func (param $a (in-buffer bool)) (param $b (out-buffer bool)) (result $r u32)))
-  (;
-  (export "buffer_string" (func (param $a (in-buffer string)) (param $b (out-buffer string)) (result $r u32)))
-  (export "buffer_list_bool" (func (param $a (in-buffer (list bool))) (param $b (out-buffer (list bool))) (result $r u32)))
-  (export "buffer_buffer_bool" (func (param $a (in-buffer (in-buffer bool)))))
-  ;)
-  (export "buffer_mutable1" (func (param $a (list (in-buffer bool)))))
-  (export "buffer_mutable2" (func (param $a (list (out-buffer u8))) (result $r u32)))
-  (export "buffer_mutable3" (func (param $a (list (out-buffer bool))) (result $r u32)))
-  (export "buffer_in_record" (func (param $a $buffer_in_record)))
-  (export "buffer_typedef" (func
-    (param $a $param_in_buffer_u8)
-    (param $b $param_out_buffer_u8)
-    (param $c $param_in_buffer_bool)
-    (param $d $param_out_buffer_bool)
-  ))
 
-  ;; ===========================================
-  ;; More flavorful types
-  ;; ===========================================
-  (export "list_in_record1" (func (param $a $list_in_record1)))
-  (export "list_in_record2" (func (result $a $list_in_record2)))
-  (export "list_in_record3" (func (param $a $list_in_record3) (result $b $list_in_record3)))
-  (export "list_in_record4" (func (param $a $list_in_alias) (result $b $list_in_alias)))
+record host_state_result_record { a: host_state2 }
+host_state2_result_record: function() -> host_state_result_record
 
-  (export "list_in_variant1" (func
-    (param $a $list_in_variant1_1)
-    (param $b $list_in_variant1_2)
-    (param $c $list_in_variant1_3)
-  ))
-  (export "list_in_variant2" (func (result $a $list_in_variant2)))
-  (export "list_in_variant3" (func (param $a $list_in_variant3) (result $b $list_in_variant3)))
+type host_state_result_tuple = tuple<host_state2>
+host_state2_result_tuple: function() -> host_state_result_tuple
 
-  (export "errno_result" (func (result $a (expected (error $my_errno)))))
+type host_state_result_option = option<host_state2>
+host_state2_result_option: function() -> host_state_result_option
 
-  (export "list_typedefs" (func
-    (param $a $list_typedef)
-    (param $c $list_typedef3)
-    (result $r1 $list_typedef2)
-    (result $r2 $list_typedef3)
-  ))
+type host_state_result_result = expected<host_state2, u32>
+host_state2_result_result: function() -> host_state_result_result
 
-  (export "list_of_variants" (func
-    (param $p1 (list bool))
-    (param $p2 (list (expected (error))))
-    (param $p3 (list $my_errno))
-    (result $r1 (list bool))
-    (result $r2 (list (expected (error))))
-    (result $r3 (list $my_errno))
-  ))
-)
+union host_state_result_variant { host_state2, u32 }
+host_state2_result_variant: function() -> host_state_result_variant
+
+host_state2_result_list: function() -> list<host_state2>
+
+/* TODO
+resource markdown {
+    static create: function() -> option<markdown>
+    append: function(buf: string)
+    render: function() -> string
+}
+*/
+
+// ===========================================
+// buffers
+// ===========================================
+
+buffer_u8: function(a: pull-buffer<u8>, b: push-buffer<u8>) -> u32
+buffer_u32: function(a: pull-buffer<u32>, b: push-buffer<u32>) -> u32
+buffer_bool: function(a: pull-buffer<bool>, b: push-buffer<bool>) -> u32
+
+/*
+(export "buffer_string" (func (param $a (in-buffer string)) (param $b (out-buffer string)) (result $r u32)))
+(export "buffer_list_bool" (func (param $a (in-buffer (list bool))) (param $b (out-buffer (list bool))) (result $r u32)))
+(export "buffer_buffer_bool" (func (param $a (in-buffer (in-buffer bool)))))
+*/
+
+buffer_mutable1: function(a: list<pull-buffer<bool>>)
+buffer_mutable2: function(a: list<push-buffer<u8>>) -> u32
+buffer_mutable3: function(a: list<push-buffer<bool>>) -> u32
+
+variant buffer_in_variant {
+  a(push-buffer<u8>),
+  b(pull-buffer<u8>),
+  c(push-buffer<bool>),
+  d(pull-buffer<bool>),
+}
+
+record buffer_in_record {
+  a: push-buffer<u8>,
+  b: pull-buffer<u8>,
+  c: push-buffer<bool>,
+  d: pull-buffer<bool>,
+  e: buffer_in_variant,
+}
+buffer_in_record: function(a: buffer_in_record)
+
+type param_in_buffer_u8 = push-buffer<u8>
+type param_out_buffer_u8 = pull-buffer<u8>
+type param_in_buffer_bool = push-buffer<bool>
+type param_out_buffer_bool = pull-buffer<bool>
+buffer_typedef: function(a: param_in_buffer_u8, b: param_out_buffer_u8, c: param_in_buffer_bool, d: param_out_buffer_bool)
+
+// ===========================================
+// More flavorful types
+// ===========================================
+
+record list_in_record1 { a: string }
+record list_in_record2 { a: string }
+record list_in_record3 { a: string }
+record list_in_record4 { a: string }
+type list_in_alias = list_in_record4
+
+list_in_record1: function(a: list_in_record1)
+list_in_record2: function() -> list_in_record2
+list_in_record3: function(a: list_in_record3) -> list_in_record3
+list_in_record4: function(a: list_in_alias) -> list_in_alias
+
+type list_in_variant1_1 = option<string>
+type list_in_variant1_2 = expected<_, string>
+union list_in_variant1_3 { string, f32 }
+list_in_variant1: function(a: list_in_variant1_1, b: list_in_variant1_2, c: list_in_variant1_3)
+
+type list_in_variant2 = option<string>
+list_in_variant2: function() -> list_in_variant2
+
+type list_in_variant3 = option<string>
+list_in_variant3: function(a: list_in_variant3) -> list_in_variant3
+
+enum my_errno { success, a, b }
+errno_result: function() -> expected<_, my_errno>
+
+type list_typedef = string
+type list_typedef2 = list<u8>
+type list_typedef3 = list<string>
+list_typedefs: function(a: list_typedef, c: list_typedef3) -> (list_typedef2, list_typedef3)
+
+list_of_variants: function(a: list<bool>, b: list<expected<_, _>>, c: list<my_errno>) -> (list<bool>, list<expected<_, _>>, list<my_errno>)

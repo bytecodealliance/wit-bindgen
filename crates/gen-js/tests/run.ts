@@ -52,18 +52,13 @@ function host(): imports.Host {
     roundtrip_f32(x) { return x; },
     roundtrip_f64(x) { return x; },
     roundtrip_char(x) { return x; },
-    roundtrip_usize(x) { return x; },
-    multiple_results() { return { a: 4, b: 5 }; },
+    multiple_results() { return [4, 5]; },
     set_scalar(x) { scalar = x; },
     get_scalar() { return scalar; },
     swap_tuple([a, b]) { return [b, a]; },
     roundtrip_flags1(x) { return x; },
     roundtrip_flags2(x) { return x; },
-    roundtrip_flags3(r0, r1, r2, r3) { return { r0, r1, r2, r3 }; },
-    legacy_flags1(x) { return x; },
-    legacy_flags2(x) { return x; },
-    legacy_flags3(x) { return x; },
-    legacy_flags4(x) { return x; },
+    roundtrip_flags3(r0, r1, r2, r3) { return [r0, r1, r2, r3]; },
     roundtrip_record1(x) { return x; },
     tuple0([]) { return []; },
     tuple1([x]) { return [x]; },
@@ -84,40 +79,11 @@ function host(): imports.Host {
       assert.deepStrictEqual(a, true);
       assert.deepStrictEqual(b, { tag: 'ok' });
       assert.deepStrictEqual(c, imports.MyErrno.Success);
-      return {
-        r1: false,
-        r2: { tag: 'err', val: undefined },
-        r3: imports.MyErrno.A,
-      };
-    },
-    legacy_params(a, b, c) {},
-    legacy_result(succeed) {
-      if (succeed) {
-        return {
-          tag: 'ok',
-          val: [
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7n,
-            8n,
-            9.,
-            10.,
-            {
-              a: 0,
-              b: 0,
-            },
-          ],
-        };
-      } else {
-        return {
-          tag: 'err',
-          val: imports.E1.B,
-        };
-      }
+      return [
+        false,
+        { tag: 'err', val: undefined },
+        imports.MyErrno.A,
+      ];
     },
     list_param(a) {
       assert.deepStrictEqual(Array.from(a), [1, 2, 3, 4]);
@@ -138,11 +104,11 @@ function host(): imports.Host {
     list_result3() { return ['hello,', 'world!']; },
     string_roundtrip(x) { return x; },
     host_state_create() { return 100; },
-    host_state_get(x) { return x; },
+    host_state_get(x) { return x as number; },
     host_state2_create() { return 101; },
     host_state2_saw_close() { return saw_close; },
     drop_host_state2(state) { saw_close = true; },
-    two_host_states(a, b) { return { c: b, d: a }; },
+    two_host_states(a, b) { return [b, a]; },
     host_state2_param_record(x) {},
     host_state2_param_tuple(x) {},
     host_state2_param_option(x) {},
@@ -150,12 +116,12 @@ function host(): imports.Host {
     host_state2_param_variant(x) {},
     host_state2_param_list(x) {},
 
-    host_state2_result_record() { return { a: null }; },
-    host_state2_result_tuple() { return [null]; },
+    host_state2_result_record() { return { a: {} }; },
+    host_state2_result_tuple() { return [{}]; },
     host_state2_result_option() { return 102; },
-    host_state2_result_result() { return { tag: 'ok', val: null }; },
-    host_state2_result_variant() { return { tag: '0', val: null }; },
-    host_state2_result_list() { return [null, 3]; },
+    host_state2_result_result() { return { tag: 'ok', val: {} }; },
+    host_state2_result_variant() { return { tag: '0', val: {} }; },
+    host_state2_result_list() { return [{}, 3]; },
 
     buffer_u8(x, out) {
       assert.deepStrictEqual(Array.from(x), [0]);
@@ -237,18 +203,18 @@ function host(): imports.Host {
     list_typedefs(x, y) {
       assert.strictEqual(x, 'typedef1');
       assert.deepStrictEqual(y, ['typedef2']);
-      return { r1: (new TextEncoder).encode('typedef3'), r2: ['typedef4'] };
+      return [(new TextEncoder).encode('typedef3'), ['typedef4']];
     },
 
     list_of_variants(bools, results, enums) {
       assert.deepStrictEqual(bools, [true, false]);
       assert.deepStrictEqual(results, [{ tag: 'ok' }, { tag: 'err' }]);
       assert.deepStrictEqual(enums, [imports.MyErrno.Success, imports.MyErrno.A]);
-      return {
-        r1: [false, true],
-        r2: [{ tag: 'err', val: undefined }, { tag: 'ok', val: undefined }],
-        r3: [imports.MyErrno.A, imports.MyErrno.B],
-      };
+      return [
+        [false, true],
+        [{ tag: 'err', val: undefined }, { tag: 'ok', val: undefined }],
+        [imports.MyErrno.A, imports.MyErrno.B],
+      ];
     },
 
     unaligned_roundtrip1(u16, u32, u64, flag32, flag64) {

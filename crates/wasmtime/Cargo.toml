@@ -18,8 +18,6 @@ wasmtime-wasi = "0.28"
 build-test-wasm = { path = '../build-test-wasm' }
 
 [features]
-default = ['old-witx-compat'] # TODO: rewrite {host,wasm}.witx with new syntax
-
 # Enables generated code to emit events via the `tracing` crate whenever wasm is
 # entered and when native functions are called. Note that tracin is currently
 # only done for imported functions.

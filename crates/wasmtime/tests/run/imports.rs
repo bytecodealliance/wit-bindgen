@@ -54,10 +54,6 @@ impl Host for MyHost {
         val
     }
 
-    fn roundtrip_usize(&mut self, val: u32) -> u32 {
-        val
-    }
-
     fn roundtrip_f32(&mut self, val: f32) -> f32 {
         val
     }
@@ -105,22 +101,6 @@ impl Host for MyHost {
         d: Flag64,
     ) -> (Flag8, Flag16, Flag32, Flag64) {
         (a, b, c, d)
-    }
-
-    fn legacy_flags1(&mut self, a: Flag8) -> Flag8 {
-        a
-    }
-
-    fn legacy_flags2(&mut self, a: Flag16) -> Flag16 {
-        a
-    }
-
-    fn legacy_flags3(&mut self, a: Flag32) -> Flag32 {
-        a
-    }
-
-    fn legacy_flags4(&mut self, a: Flag64) -> Flag64 {
-        a
     }
 
     fn roundtrip_record1(&mut self, a: R1) -> R1 {
@@ -174,38 +154,6 @@ impl Host for MyHost {
         assert_eq!(b, Ok(()));
         assert_eq!(c, MyErrno::Success);
         (false, Err(()), MyErrno::A)
-    }
-
-    fn legacy_params(
-        &mut self,
-        a: (u32, u32),
-        _: R1,
-        _: (u8, i8, u16, i16, u32, i32, u64, i64, f32, f64),
-    ) {
-        assert_eq!(a, (1, 2));
-    }
-
-    fn legacy_result(&mut self, succeed: bool) -> Result<LegacyResult, E1> {
-        if succeed {
-            Ok((
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                9.,
-                10.,
-                R1 {
-                    a: 0,
-                    b: F1::empty(),
-                },
-            ))
-        } else {
-            Err(E1::B)
-        }
     }
 
     fn list_param(&mut self, list: &[u8]) {

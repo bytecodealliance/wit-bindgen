@@ -39,10 +39,6 @@ static void test_integers() {
   assert(host_roundtrip_s64(LONG_MIN) == LONG_MIN);
   assert(host_roundtrip_s64(LONG_MAX) == LONG_MAX);
 
-  assert(host_roundtrip_usize(1) == 1);
-  assert(host_roundtrip_usize(0) == 0);
-  assert(host_roundtrip_usize(UINT_MAX) == UINT_MAX);
-
   uint8_t a;
   uint16_t b;
   host_multiple_results(&a, &b);
@@ -105,10 +101,6 @@ static void test_records() {
   assert(flag16 == HOST_FLAG16_B1);
   assert(flag32 == HOST_FLAG32_B2);
   assert(flag64 == HOST_FLAG64_B3);
-  assert(host_legacy_flags1(HOST_FLAG8_B4) == HOST_FLAG8_B4);
-  assert(host_legacy_flags2(HOST_FLAG16_B5) == HOST_FLAG16_B5);
-  assert(host_legacy_flags3(HOST_FLAG32_B6) == HOST_FLAG32_B6);
-  assert(host_legacy_flags4(HOST_FLAG64_B7) == HOST_FLAG64_B7);
 
   {
     host_r1_t a, b;
@@ -296,44 +288,6 @@ static void test_variants() {
     assert(b == 1);
     assert(c == HOST_MY_ERRNO_A);
   }
-}
-
-static void test_legacy() {
-  host_tuple2_u32_u32_t a;
-  host_r1_t b;
-  host_tuple10_u8_s8_u16_s16_u32_s32_u64_s64_f32_f64_t c;
-  a.f0 = 1;
-  a.f1 = 2;
-  b.a = 0;
-  b.b = HOST_F1_A | HOST_F1_B;
-  c.f0 = 1;
-  c.f1 = 2;
-  c.f2 = 3;
-  c.f3 = 4;
-  c.f4 = 5;
-  c.f5 = 6;
-  c.f6 = 7;
-  c.f7 = 8;
-  c.f8 = 9;
-  c.f9 = 10;
-  host_legacy_params(&a, &b, &c);
-
-  int8_t r1;
-  uint8_t r2;
-  int16_t r3;
-  uint16_t r4;
-  int32_t r5;
-  uint32_t r6;
-  int64_t r7;
-  uint64_t r8;
-  float r9;
-  double r10;
-  host_r1_t r11;
-  host_e1_t rc = host_legacy_result(false, &r1, &r2, &r3, &r4, &r5, &r6, &r7, &r8, &r9, &r10, &r11);
-  assert(rc == HOST_E1_B);
-
-  rc = host_legacy_result(true, &r1, &r2, &r3, &r4, &r5, &r6, &r7, &r8, &r9, &r10, &r11);
-  assert(rc == (host_e1_t) -1);
 }
 
 static void test_lists() {
@@ -795,7 +749,6 @@ void wasm_run_import_tests() {
   test_get_set();
   test_records();
   test_variants();
-  test_legacy();
   test_lists();
   test_flavorful();
   test_handles();

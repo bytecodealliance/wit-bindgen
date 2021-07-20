@@ -25,14 +25,10 @@ mod exports {
     test_codegen::wasmtime_export!(
         "*.witx"
 
-        // These use preview1 ABI things which are only supported for imports
-        "!host.witx"
-        "!typenames.witx"
-        "!wasi_snapshot_preview1.witx"
-
-        // This uses buffers, which we don't support in exports just yet
-        // TODO: should support this
+        // TODO: these use push/pull buffer which isn't implemented in the test
+        // generator just yet
         "!wasi_next.witx"
+        "!host.witx"
     );
 }
 
