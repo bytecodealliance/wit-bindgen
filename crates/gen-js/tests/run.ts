@@ -314,7 +314,7 @@ function test_scalars(wasm: exports.Wasm) {
   assert.strictEqual(wasm.roundtrip_s64((1n << 63n) - 1n), (1n << 63n) - 1n);
   assert.strictEqual(wasm.roundtrip_s64(-(1n << 63n)), -(1n << 63n));
 
-  assert.deepEqual(wasm.multiple_results(), { a: 100, b: 200 });
+  assert.deepEqual(wasm.multiple_results(), [100, 200]);
 
   assert.strictEqual(wasm.roundtrip_f32(1), 1);
   assert.strictEqual(wasm.roundtrip_f32(Infinity), Infinity);
@@ -343,7 +343,7 @@ function test_records(wasm: exports.Wasm) {
   assert.deepEqual(wasm.roundtrip_flags1(exports.F1_A | exports.F1_B), exports.F1_A | exports.F1_B);
 
   assert.deepEqual(wasm.roundtrip_flags2(exports.F2_C), exports.F2_C);
-  assert.deepEqual(wasm.roundtrip_flags2(0n), 0n);
+  assert.deepEqual(wasm.roundtrip_flags2(0), 0);
   assert.deepEqual(wasm.roundtrip_flags2(exports.F2_D), exports.F2_D);
   assert.deepEqual(wasm.roundtrip_flags2(exports.F2_C | exports.F2_E), exports.F2_C | exports.F2_E);
 
@@ -467,7 +467,7 @@ function test_flavorful(wasm: exports.Wasm) {
 
   assert.deepStrictEqual(wasm.errno_result().tag, 'err');
 
-  const { r1, r2 } = wasm.list_typedefs("typedef1", ["typedef2"]);
+  const [r1, r2] = wasm.list_typedefs("typedef1", ["typedef2"]);
   assert.deepStrictEqual(r1, (new TextEncoder()).encode('typedef3'));
   assert.deepStrictEqual(r2, ['typedef4']);
 }
@@ -488,7 +488,7 @@ function test_handles(wasm: exports.Wasm) {
 
   const arg1 = wasm.wasm_state_create();
   const arg2 = wasm.wasm_state2_create();
-  const { c, d } = wasm.two_wasm_states(arg1, arg2);
+  const [c, d] = wasm.two_wasm_states(arg1, arg2);
   arg1.drop();
   arg2.drop();
 
