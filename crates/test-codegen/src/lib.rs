@@ -1,6 +1,5 @@
 use ignore::gitignore::GitignoreBuilder;
 use proc_macro::{TokenStream, TokenTree};
-use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -36,6 +35,7 @@ pub fn rust_wasm_import(input: TokenStream) -> TokenStream {
 #[cfg(feature = "witx-bindgen-gen-rust-wasm")]
 pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
     use heck::*;
+    use std::collections::BTreeMap;
     use witx2::{FunctionKind, Type, TypeDefKind};
 
     return gen_rust(

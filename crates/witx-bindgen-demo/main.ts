@@ -49,7 +49,7 @@ class Editor {
       log: console.log,
       error: console.error,
     };
-    browser.add_browser_to_imports(imports, obj, name => this.demo.instance.exports[name]);
+    browser.addBrowserToImports(imports, obj, name => this.demo.instance.exports[name]);
     await this.demo.instantiate(fetch('./demo.wasm'), imports);
     this.config = Config.new(this.demo);
     this.installListeners();
@@ -68,12 +68,12 @@ class Editor {
     this.mode.addEventListener('change', () => this.render());
 
     this.rustUnchecked.addEventListener('change', () => {
-      this.config.set_rust_unchecked(this.rustUnchecked.checked);
+      this.config.setRustUnchecked(this.rustUnchecked.checked);
       this.render();
     });
 
     this.wasmtimeTracing.addEventListener('change', () => {
-      this.config.set_wasmtime_tracing(this.wasmtimeTracing.checked);
+      this.config.setWasmtimeTracing(this.wasmtimeTracing.checked);
       this.render();
     });
     this.wasmtimeAsync.addEventListener('change', () => {
@@ -82,11 +82,11 @@ class Editor {
         async_ = { tag: 'all' };
       else
         async_ = { tag: 'none' };
-      this.config.set_wasmtime_async(async_);
+      this.config.setWasmtimeAsync(async_);
       this.render();
     });
     this.wasmtimeCustomError.addEventListener('change', () => {
-      this.config.set_wasmtime_custom_error(this.wasmtimeCustomError.checked);
+      this.config.setWasmtimeCustomError(this.wasmtimeCustomError.checked);
       this.render();
     });
     this.files.addEventListener('change', () => this.updateSelectedFile());

@@ -45,7 +45,9 @@ fn main() {
         );
         println!("cargo:rerun-if-changed=../../tests/host.witx");
         println!("cargo:rerun-if-changed=../../tests/wasm.witx");
-        println!("cargo:rerun-if-changed=c-impl.c");
+        println!("cargo:rerun-if-changed=imports.c");
+        println!("cargo:rerun-if-changed=exports.c");
+        println!("cargo:rerun-if-changed=invalid.c");
 
         for (file, contents) in host_files.iter() {
             let dst = out_dir.join(file);
