@@ -8,7 +8,6 @@ edition = "2018"
 doctest = false
 
 [dependencies]
-witx = { git = 'https://github.com/alexcrichton/WASI', branch = 'abi-next' }
 witx2 = { path = '../witx2' }
 anyhow = "1"
 
