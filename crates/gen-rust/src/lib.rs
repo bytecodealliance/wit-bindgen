@@ -10,24 +10,6 @@ pub enum TypeMode {
     HandlesBorrowed(&'static str),
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum Visibility {
-    Pub,
-    Private,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum Unsafe {
-    Yes,
-    No,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum Async {
-    Yes,
-    No,
-}
-
 pub trait RustGenerator {
     fn push_str(&mut self, s: &str);
     fn info(&self, ty: TypeId) -> TypeInfo;
@@ -53,6 +35,9 @@ pub trait RustGenerator {
     fn default_param_mode(&self) -> TypeMode;
     fn handle_projection(&self) -> Option<(&'static str, String)>;
     fn handle_wrapper(&self) -> Option<&'static str>;
+    fn handle_in_super(&self) -> bool {
+        false
+    }
 
     fn rustdoc(&mut self, docs: &Docs) {
         let docs = match &docs.contents {
@@ -106,15 +91,10 @@ pub trait RustGenerator {
         &mut self,
         iface: &Interface,
         func: &Function,
-        visibility: Visibility,
-        unsafe_: Unsafe,
-        async_: Async,
-        self_arg: Option<&str>,
         param_mode: TypeMode,
+        sig: &FnSig,
     ) -> Vec<String> {
-        let params = self.print_docs_and_params(
-            iface, func, visibility, unsafe_, async_, None, self_arg, param_mode,
-        );
+        let params = self.print_docs_and_params(iface, func, param_mode, &sig);
         if func.results.len() > 0 {
             self.push_str(" -> ");
             self.print_results(iface, func);
@@ -126,40 +106,43 @@ pub trait RustGenerator {
         &mut self,
         iface: &Interface,
         func: &Function,
-        visibility: Visibility,
-        unsafe_: Unsafe,
-        async_: Async,
-        generics: Option<&str>,
-        self_arg: Option<&str>,
         param_mode: TypeMode,
+        sig: &FnSig,
     ) -> Vec<String> {
-        let rust_name = func.name.to_snake_case();
         self.rustdoc(&func.docs);
         self.rustdoc_params(&func.params, "Parameters");
-        // self.rustdoc_params(&func.results, "Return"); // TODO
+        self.rustdoc_params(&func.results, "Return");
 
-        match visibility {
-            Visibility::Pub => self.push_str("pub "),
-            Visibility::Private => (),
+        if !sig.private {
+            self.push_str("pub ");
         }
-        if let Unsafe::Yes = unsafe_ {
+        if sig.unsafe_ {
             self.push_str("unsafe ");
         }
-        if let Async::Yes = async_ {
+        if sig.async_ {
             self.push_str("async ");
         }
         self.push_str("fn ");
-        self.push_str(&to_rust_ident(&rust_name));
-        if let Some(generics) = generics {
+        let func_name = if sig.use_item_name {
+            func.item_name()
+        } else {
+            &func.name
+        };
+        self.push_str(&to_rust_ident(&func_name));
+        if let Some(generics) = &sig.generics {
             self.push_str(generics);
         }
         self.push_str("(");
-        if let Some(arg) = self_arg {
+        if let Some(arg) = &sig.self_arg {
             self.push_str(arg);
             self.push_str(",");
         }
         let mut params = Vec::new();
-        for (name, param) in func.params.iter() {
+        for (i, (name, param)) in func.params.iter().enumerate() {
+            if i == 0 && sig.self_is_first_param {
+                params.push("self".to_string());
+                continue;
+            }
             let name = to_rust_ident(name);
             self.push_str(&name);
             params.push(name);
@@ -213,6 +196,9 @@ pub trait RustGenerator {
                     }
                     None => "",
                 };
+                if self.handle_in_super() {
+                    self.push_str("super::");
+                }
                 if let Some((proj, _)) = self.handle_projection() {
                     self.push_str(proj);
                     self.push_str("::");
@@ -800,6 +786,17 @@ pub trait RustGenerator {
             }
         }
     }
+}
+
+#[derive(Default)]
+pub struct FnSig {
+    pub async_: bool,
+    pub unsafe_: bool,
+    pub private: bool,
+    pub use_item_name: bool,
+    pub generics: Option<String>,
+    pub self_arg: Option<String>,
+    pub self_is_first_param: bool,
 }
 
 pub trait RustFunctionGenerator {

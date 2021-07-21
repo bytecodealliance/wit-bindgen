@@ -7,210 +7,203 @@ witx_bindgen_rust::export!({ paths: ["tests/wasm.witx"], unchecked });
 use wasm::*;
 use witx_bindgen_rust::Handle;
 
+use std::cell::RefCell;
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
 // use witx_bindgen_rust::exports::{InBuffer, InBufferRaw, OutBuffer, OutBufferRaw};
 
-struct MyWasm {
-    scalar: AtomicU32,
-    wasm_state2_closed: AtomicU32,
-}
+static SCALAR: AtomicU32 = AtomicU32::new(0);
+static CLOSED: AtomicU32 = AtomicU32::new(0);
 
-fn wasm() -> &'static impl Wasm {
-    static ME: MyWasm = MyWasm {
-        scalar: AtomicU32::new(0),
-        wasm_state2_closed: AtomicU32::new(0),
-    };
-    &ME
-}
+struct Wasm;
 
 pub struct WasmState(u32);
 
 pub struct WasmState2(u32);
 
-impl Wasm for MyWasm {
-    fn allocated_bytes(&self) -> u32 {
+impl wasm::Wasm for Wasm {
+    fn allocated_bytes() -> u32 {
         crate::allocator::get() as u32
     }
 
-    fn run_import_tests(&self) {
+    fn run_import_tests() {
         crate::imports::run();
     }
 
-    fn roundtrip_u8(&self, a: u8) -> u8 {
+    fn roundtrip_u8(a: u8) -> u8 {
         a
     }
 
-    fn roundtrip_s8(&self, a: i8) -> i8 {
+    fn roundtrip_s8(a: i8) -> i8 {
         a
     }
 
-    fn roundtrip_u16(&self, a: u16) -> u16 {
+    fn roundtrip_u16(a: u16) -> u16 {
         a
     }
 
-    fn roundtrip_s16(&self, a: i16) -> i16 {
+    fn roundtrip_s16(a: i16) -> i16 {
         a
     }
 
-    fn roundtrip_u32(&self, a: u32) -> u32 {
+    fn roundtrip_u32(a: u32) -> u32 {
         a
     }
 
-    fn roundtrip_s32(&self, a: i32) -> i32 {
+    fn roundtrip_s32(a: i32) -> i32 {
         a
     }
 
-    fn roundtrip_u64(&self, a: u64) -> u64 {
+    fn roundtrip_u64(a: u64) -> u64 {
         a
     }
 
-    fn roundtrip_s64(&self, a: i64) -> i64 {
+    fn roundtrip_s64(a: i64) -> i64 {
         a
     }
 
-    fn roundtrip_f32(&self, a: f32) -> f32 {
+    fn roundtrip_f32(a: f32) -> f32 {
         a
     }
 
-    fn roundtrip_f64(&self, a: f64) -> f64 {
+    fn roundtrip_f64(a: f64) -> f64 {
         a
     }
 
-    fn roundtrip_char(&self, a: char) -> char {
+    fn roundtrip_char(a: char) -> char {
         a
     }
 
-    fn multiple_results(&self) -> (u8, u16) {
+    fn multiple_results() -> (u8, u16) {
         (100, 200)
     }
 
-    fn set_scalar(&self, val: u32) {
-        self.scalar.store(val, SeqCst)
+    fn set_scalar(val: u32) {
+        SCALAR.store(val, SeqCst)
     }
 
-    fn get_scalar(&self) -> u32 {
-        self.scalar.load(SeqCst)
+    fn get_scalar() -> u32 {
+        SCALAR.load(SeqCst)
     }
 
-    fn swap_tuple(&self, a: (u8, u32)) -> (u32, u8) {
+    fn swap_tuple(a: (u8, u32)) -> (u32, u8) {
         (a.1, a.0)
     }
 
-    fn roundtrip_flags1(&self, a: F1) -> F1 {
+    fn roundtrip_flags1(a: F1) -> F1 {
         a
     }
 
-    fn roundtrip_flags2(&self, a: F2) -> F2 {
+    fn roundtrip_flags2(a: F2) -> F2 {
         a
     }
 
-    fn roundtrip_flags3(&self, a: F8, b: F16, c: F32, d: F64) -> (F8, F16, F32, F64) {
+    fn roundtrip_flags3(a: F8, b: F16, c: F32, d: F64) -> (F8, F16, F32, F64) {
         (a, b, c, d)
     }
 
-    fn roundtrip_record1(&self, a: R1) -> R1 {
+    fn roundtrip_record1(a: R1) -> R1 {
         a
     }
 
-    fn tuple0(&self, _: ()) {}
+    fn tuple0(_: ()) {}
 
-    fn tuple1(&self, a: (u8,)) -> (u8,) {
+    fn tuple1(a: (u8,)) -> (u8,) {
         (a.0,)
     }
 
-    fn roundtrip_option(&self, a: Option<f32>) -> Option<u8> {
+    fn roundtrip_option(a: Option<f32>) -> Option<u8> {
         a.map(|x| x as u8)
     }
 
-    fn roundtrip_result(&self, a: Result<u32, f32>) -> Result<f64, u8> {
+    fn roundtrip_result(a: Result<u32, f32>) -> Result<f64, u8> {
         match a {
             Ok(a) => Ok(a.into()),
             Err(b) => Err(b as u8),
         }
     }
 
-    fn roundtrip_enum(&self, a: E1) -> E1 {
+    fn roundtrip_enum(a: E1) -> E1 {
         assert_eq!(a, a);
         a
     }
 
-    fn invert_bool(&self, a: bool) -> bool {
+    fn invert_bool(a: bool) -> bool {
         !a
     }
 
-    fn variant_casts(&self, a: Casts) -> Casts {
+    fn variant_casts(a: Casts) -> Casts {
         a
     }
 
-    fn variant_zeros(&self, a: Zeros) -> Zeros {
+    fn variant_zeros(a: Zeros) -> Zeros {
         a
     }
 
-    fn variant_typedefs(&self, _: Option<u32>, _: bool, _: Result<u32, ()>) {}
+    fn variant_typedefs(_: Option<u32>, _: bool, _: Result<u32, ()>) {}
 
-    fn list_param(&self, list: Vec<u8>) {
+    fn list_param(list: Vec<u8>) {
         assert_eq!(list, [1, 2, 3, 4]);
     }
 
-    fn list_param2(&self, ptr: String) {
+    fn list_param2(ptr: String) {
         assert_eq!(ptr, "foo");
     }
 
-    fn list_param3(&self, ptr: Vec<String>) {
+    fn list_param3(ptr: Vec<String>) {
         assert_eq!(ptr.len(), 3);
         assert_eq!(ptr[0], "foo");
         assert_eq!(ptr[1], "bar");
         assert_eq!(ptr[2], "baz");
     }
 
-    fn list_param4(&self, ptr: Vec<Vec<String>>) {
+    fn list_param4(ptr: Vec<Vec<String>>) {
         assert_eq!(ptr.len(), 2);
         assert_eq!(ptr[0][0], "foo");
         assert_eq!(ptr[0][1], "bar");
         assert_eq!(ptr[1][0], "baz");
     }
 
-    fn list_result(&self) -> Vec<u8> {
+    fn list_result() -> Vec<u8> {
         vec![1, 2, 3, 4, 5]
     }
 
-    fn list_result2(&self) -> String {
+    fn list_result2() -> String {
         "hello!".to_string()
     }
 
-    fn list_result3(&self) -> Vec<String> {
+    fn list_result3() -> Vec<String> {
         vec!["hello,".to_string(), "world!".to_string()]
     }
 
-    fn string_roundtrip(&self, x: String) -> String {
+    fn string_roundtrip(x: String) -> String {
         x.clone()
     }
 
-    fn list_in_record1(&self, ty: ListInRecord1) {
+    fn list_in_record1(ty: ListInRecord1) {
         assert_eq!(ty.a, "list_in_record1");
     }
 
-    fn list_in_record2(&self) -> ListInRecord2 {
+    fn list_in_record2() -> ListInRecord2 {
         ListInRecord2 {
             a: "list_in_record2".to_string(),
         }
     }
 
-    fn list_in_record3(&self, a: ListInRecord3) -> ListInRecord3 {
+    fn list_in_record3(a: ListInRecord3) -> ListInRecord3 {
         assert_eq!(a.a, "list_in_record3 input");
         ListInRecord3 {
             a: "list_in_record3 output".to_string(),
         }
     }
 
-    fn list_in_record4(&self, a: ListInAlias) -> ListInAlias {
+    fn list_in_record4(a: ListInAlias) -> ListInAlias {
         assert_eq!(a.a, "input4");
         ListInRecord4 {
             a: "result4".to_string(),
         }
     }
 
-    fn list_in_variant1(&self, a: ListInVariant11, b: ListInVariant12, c: ListInVariant13) {
+    fn list_in_variant1(a: ListInVariant11, b: ListInVariant12, c: ListInVariant13) {
         assert_eq!(a.unwrap(), "foo");
         assert_eq!(b.unwrap_err(), "bar");
         match c {
@@ -219,16 +212,16 @@ impl Wasm for MyWasm {
         }
     }
 
-    fn list_in_variant2(&self) -> Option<String> {
+    fn list_in_variant2() -> Option<String> {
         Some("list_in_variant2".to_string())
     }
 
-    fn list_in_variant3(&self, a: ListInVariant3) -> Option<String> {
+    fn list_in_variant3(a: ListInVariant3) -> Option<String> {
         assert_eq!(a.unwrap(), "input3");
         Some("output3".to_string())
     }
 
-    fn errno_result(&self) -> Result<(), MyErrno> {
+    fn errno_result() -> Result<(), MyErrno> {
         MyErrno::A.to_string();
         format!("{:?}", MyErrno::A);
         fn assert_error<T: std::error::Error>() {}
@@ -236,70 +229,69 @@ impl Wasm for MyWasm {
         Err(MyErrno::B)
     }
 
-    fn list_typedefs(&self, a: ListTypedef, b: ListTypedef3) -> (ListTypedef2, ListTypedef3) {
+    fn list_typedefs(a: ListTypedef, b: ListTypedef3) -> (ListTypedef2, ListTypedef3) {
         assert_eq!(a, "typedef1");
         assert_eq!(b.len(), 1);
         assert_eq!(b[0], "typedef2");
         (b"typedef3".to_vec(), vec!["typedef4".to_string()])
     }
 
-    fn wasm_state_create(&self) -> Handle<WasmState> {
+    fn wasm_state_create() -> Handle<WasmState> {
         WasmState(100).into()
     }
 
-    fn wasm_state_get_val(&self, state: Handle<WasmState>) -> u32 {
+    fn wasm_state_get_val(state: Handle<WasmState>) -> u32 {
         state.0
     }
 
-    fn wasm_state2_create(&self) -> Handle<WasmState2> {
+    fn wasm_state2_create() -> Handle<WasmState2> {
         WasmState2(33).into()
     }
 
-    fn wasm_state2_saw_close(&self) -> bool {
-        self.wasm_state2_closed.load(SeqCst) != 0
+    fn wasm_state2_saw_close() -> bool {
+        CLOSED.load(SeqCst) != 0
     }
 
-    fn drop_wasm_state2(&self, _state: WasmState2) {
-        self.wasm_state2_closed.store(1, SeqCst);
+    fn drop_wasm_state2(_state: WasmState2) {
+        CLOSED.store(1, SeqCst);
     }
 
     fn two_wasm_states(
-        &self,
         _a: Handle<WasmState>,
         _b: Handle<WasmState2>,
     ) -> (Handle<WasmState>, Handle<WasmState2>) {
         (WasmState(101).into(), WasmState2(102).into())
     }
 
-    fn wasm_state2_param_record(&self, _a: WasmStateParamRecord) {}
-    fn wasm_state2_param_tuple(&self, _a: (Handle<WasmState2>,)) {}
-    fn wasm_state2_param_option(&self, _a: Option<Handle<WasmState2>>) {}
-    fn wasm_state2_param_result(&self, _a: Result<Handle<WasmState2>, u32>) {}
-    fn wasm_state2_param_variant(&self, _a: WasmStateParamVariant) {}
-    fn wasm_state2_param_list(&self, _a: Vec<Handle<WasmState2>>) {}
+    fn wasm_state2_param_record(_a: WasmStateParamRecord) {}
+    fn wasm_state2_param_tuple(_a: (Handle<WasmState2>,)) {}
+    fn wasm_state2_param_option(_a: Option<Handle<WasmState2>>) {}
+    fn wasm_state2_param_result(_a: Result<Handle<WasmState2>, u32>) {}
+    fn wasm_state2_param_variant(_a: WasmStateParamVariant) {}
+    fn wasm_state2_param_list(_a: Vec<Handle<WasmState2>>) {}
 
-    fn wasm_state2_result_record(&self) -> WasmStateResultRecord {
+    fn wasm_state2_result_record() -> WasmStateResultRecord {
         WasmStateResultRecord {
             a: WasmState2(222).into(),
         }
     }
-    fn wasm_state2_result_tuple(&self) -> (Handle<WasmState2>,) {
+    fn wasm_state2_result_tuple() -> (Handle<WasmState2>,) {
         (WasmState2(333).into(),)
     }
-    fn wasm_state2_result_option(&self) -> Option<Handle<WasmState2>> {
+    fn wasm_state2_result_option() -> Option<Handle<WasmState2>> {
         Some(WasmState2(444).into())
     }
-    fn wasm_state2_result_result(&self) -> Result<Handle<WasmState2>, u32> {
+    fn wasm_state2_result_result() -> Result<Handle<WasmState2>, u32> {
         Ok(WasmState2(555).into())
     }
-    fn wasm_state2_result_variant(&self) -> WasmStateResultVariant {
+    fn wasm_state2_result_variant() -> WasmStateResultVariant {
         WasmStateResultVariant::V0(Handle::new(WasmState2(666)))
     }
-    fn wasm_state2_result_list(&self) -> Vec<Handle<WasmState2>> {
+    fn wasm_state2_result_list() -> Vec<Handle<WasmState2>> {
         vec![WasmState2(777).into(), WasmState2(888).into()]
     }
 
-    // fn buffer_u8(&self, in_: InBufferRaw<'_, u8>, out: OutBufferRaw<'_, u8>) -> u32 {
+    // fn buffer_u8( in_: InBufferRaw<'_, u8>, out: OutBufferRaw<'_, u8>) -> u32 {
     //     assert_eq!(in_.len(), 1);
     //     let mut input = [0];
     //     in_.copy(&mut input);
@@ -310,7 +302,7 @@ impl Wasm for MyWasm {
     //     3
     // }
 
-    // fn buffer_u32(&self, in_: InBufferRaw<'_, u32>, out: OutBufferRaw<'_, u32>) -> u32 {
+    // fn buffer_u32( in_: InBufferRaw<'_, u32>, out: OutBufferRaw<'_, u32>) -> u32 {
     //     assert_eq!(in_.len(), 1);
     //     let mut input = [0];
     //     in_.copy(&mut input);
@@ -321,7 +313,7 @@ impl Wasm for MyWasm {
     //     3
     // }
 
-    // fn buffer_bool(&self, in_: InBuffer<'_, bool>, out: OutBuffer<'_, bool>) -> u32 {
+    // fn buffer_bool( in_: InBuffer<'_, bool>, out: OutBuffer<'_, bool>) -> u32 {
     //     assert!(in_.len() <= out.capacity());
     //     let len = in_.len();
     //     let mut storage = vec![0; in_.len() * in_.element_size()];
@@ -330,7 +322,7 @@ impl Wasm for MyWasm {
     //     len as u32
     // }
 
-    // fn buffer_string(&self, in_: InBuffer<'_, String>, out: OutBuffer<'_, String>) -> u32 {
+    // fn buffer_string( in_: InBuffer<'_, String>, out: OutBuffer<'_, String>) -> u32 {
     //     assert!(in_.len() <= out.capacity());
     //     let len = in_.len();
     //     let mut storage = vec![0; in_.len() * in_.element_size()];
@@ -342,7 +334,7 @@ impl Wasm for MyWasm {
     //     len as u32
     // }
 
-    // fn buffer_list_bool(&self, in_: InBuffer<'_, Vec<bool>>, out: OutBuffer<'_, Vec<bool>>) -> u32 {
+    // fn buffer_list_bool( in_: InBuffer<'_, Vec<bool>>, out: OutBuffer<'_, Vec<bool>>) -> u32 {
     //     assert!(in_.len() <= out.capacity());
     //     let len = in_.len();
     //     let mut storage = vec![0; in_.len() * in_.element_size()];
@@ -354,7 +346,7 @@ impl Wasm for MyWasm {
     //     len as u32
     // }
 
-    // // fn buffer_buffer_bool(&self, in_: InBuffer<'_, InBuffer<'_, bool>>) {
+    // // fn buffer_buffer_bool( in_: InBuffer<'_, InBuffer<'_, bool>>) {
     // //     assert_eq!(in_.len(), 1);
     // //     let mut storage = vec![0; in_.len() * in_.element_size()];
     // //     let buf = in_.iter(&mut storage).next().unwrap();
@@ -366,7 +358,7 @@ impl Wasm for MyWasm {
     // //     );
     // // }
 
-    // fn buffer_mutable1(&self, a: Vec<InBuffer<'_, bool>>) {
+    // fn buffer_mutable1( a: Vec<InBuffer<'_, bool>>) {
     //     assert_eq!(a.len(), 1);
     //     assert_eq!(a[0].len(), 5);
     //     let mut storage = vec![0; a[0].len() * a[0].element_size()];
@@ -376,14 +368,14 @@ impl Wasm for MyWasm {
     //     );
     // }
 
-    // fn buffer_mutable2(&self, a: Vec<OutBufferRaw<'_, u8>>) -> u32 {
+    // fn buffer_mutable2( a: Vec<OutBufferRaw<'_, u8>>) -> u32 {
     //     assert_eq!(a.len(), 1);
     //     assert!(a[0].capacity() > 4);
     //     a[0].write(&[1, 2, 3, 4]);
     //     return 4;
     // }
 
-    // fn buffer_mutable3(&self, a: Vec<OutBuffer<'_, bool>>) -> u32 {
+    // fn buffer_mutable3( a: Vec<OutBuffer<'_, bool>>) -> u32 {
     //     assert_eq!(a.len(), 1);
     //     assert!(a[0].capacity() > 3);
     //     let mut storage = [0; 200];
@@ -391,13 +383,32 @@ impl Wasm for MyWasm {
     //     return 3;
     // }
 
-    // fn buffer_in_record(&self, _: BufferInRecord<'_>) {}
+    // fn buffer_in_record( _: BufferInRecord<'_>) {}
     // fn buffer_typedef(
-    //     &self,
+    //
     //     _: ParamInBufferU8<'_>,
     //     _: ParamOutBufferU8<'_>,
     //     _: ParamInBufferBool<'_>,
     //     _: ParamOutBufferBool<'_>,
     // ) {
     // }
+}
+
+#[derive(Default)]
+pub struct Markdown {
+    buf: RefCell<String>,
+}
+
+impl wasm::Markdown for Markdown {
+    fn create() -> Option<Handle<Markdown>> {
+        Some(Markdown::default().into())
+    }
+
+    fn append(&self, input: String) {
+        self.buf.borrow_mut().push_str(&input);
+    }
+
+    fn render(&self) -> String {
+        self.buf.borrow().replace("red", "green")
+    }
 }

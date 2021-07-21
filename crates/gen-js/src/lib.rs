@@ -1,5 +1,5 @@
 use heck::*;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem;
 use witx_bindgen_gen_core::witx2::abi::{
     Bindgen, Bitcast, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
@@ -11,7 +11,7 @@ pub struct Js {
     src: Source,
     in_import: bool,
     opts: Opts,
-    imports: HashMap<String, Vec<Import>>,
+    imports: HashMap<String, Imports>,
     exports: HashMap<String, Exports>,
     sizes: SizeAlign,
     needs_clamp_guest: bool,
@@ -41,14 +41,16 @@ pub struct Js {
     needs_ty_pull_buffer: bool,
 }
 
-struct Import {
-    name: String,
-    src: Source,
+#[derive(Default)]
+struct Imports {
+    freestanding_funcs: Vec<(String, Source)>,
+    resource_funcs: BTreeMap<ResourceId, Vec<(String, Source)>>,
 }
 
 #[derive(Default)]
 struct Exports {
-    funcs: Vec<Source>,
+    freestanding_funcs: Vec<Source>,
+    resource_funcs: BTreeMap<ResourceId, Vec<Source>>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -119,13 +121,6 @@ impl Js {
             | Type::F64 => self.src.ts("number"),
             Type::U64 | Type::S64 => self.src.ts("bigint"),
             Type::Char => self.src.ts("string"),
-            // For imports handles represent host objects, so any host object
-            // can be provided
-            //
-            // TODO: we still have distinct types of handles and this shouldn't
-            // be `any`, that loses more type information than I'd like.
-            Type::Handle(_) if self.in_import => self.src.ts("any"),
-            // For exports handles are specific types of exports
             Type::Handle(id) => self.src.ts(&iface.resources[*id].name.to_camel_case()),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
@@ -229,9 +224,43 @@ impl Js {
 
     fn ts_func(&mut self, iface: &Interface, func: &Function) {
         self.docs(&func.docs);
-        self.src.ts(&func.name.to_snake_case());
+
+        let mut name_printed = false;
+        if let FunctionKind::Static { .. } = &func.kind {
+            // static methods in imports are still wired up to an imported host
+            // object, but static methods on exports are actually static
+            // methods on the resource object.
+            if self.in_import {
+                name_printed = true;
+                self.src.ts(&func.name.to_snake_case());
+            } else {
+                self.src.ts("static ");
+            }
+        }
+        if !name_printed {
+            self.src.ts(&func.item_name().to_snake_case());
+        }
         self.src.ts("(");
-        for (i, (name, ty)) in func.params.iter().enumerate() {
+
+        let param_start = match &func.kind {
+            FunctionKind::Freestanding => 0,
+            FunctionKind::Static { .. } if self.in_import => 0,
+            FunctionKind::Static { .. } => {
+                // the 0th argument for exported static methods will be the
+                // instantiated interface
+                self.src.ts(&iface.name.to_snake_case());
+                self.src.ts(": ");
+                self.src.ts(&iface.name.to_camel_case());
+                if func.params.len() > 0 {
+                    self.src.ts(", ");
+                }
+                0
+            }
+            // skip the first parameter on methods which is `this`
+            FunctionKind::Method { .. } => 1,
+        };
+
+        for (i, (name, ty)) in func.params[param_start..].iter().enumerate() {
             if i > 0 {
                 self.src.ts(", ");
             }
@@ -404,74 +433,10 @@ impl Generator for Js {
         }
     }
 
-    fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
-        if self.in_import {
-            return;
+    fn type_resource(&mut self, _iface: &Interface, ty: ResourceId) {
+        if !self.in_import {
+            self.exported_resources.insert(ty);
         }
-        self.exported_resources.insert(ty);
-        self.src.js(&format!(
-            "
-                export class {} {{
-                    constructor(wasm_val, dtor, registry) {{
-                        this._wasm_val = wasm_val;
-                        this._registry = registry;
-                        this._dtor = dtor;
-                        this._refcnt = 1;
-                        registry.register(this, wasm_val, this);
-                    }}
-
-                    clone() {{
-                        this._refcnt += 1;
-                        return this;
-                    }}
-
-                    drop() {{
-                        this._refcnt -= 1;
-                        if (this._refcnt !== 0)
-                            return;
-                        this._registry.unregister(this);
-                        const dtor = this._dtor;
-                        const wasm_val = this._wasm_val;
-                        delete this._dtor;
-                        delete this._refcnt;
-                        delete this._registry;
-                        delete this._wasm_val;
-                        dtor(wasm_val);
-                    }}
-                }}
-            ",
-            iface.resources[ty].name.to_camel_case(),
-        ));
-        self.src.ts(&format!(
-            "
-                export class {} {{
-                    // Creates a new strong reference count as a new object.
-                    // This is only required if you're also calling `drop`
-                    // below and want to manually manage the reference count
-                    // from JS.
-                    //
-                    // If you don't call `drop`, you don't need to call this
-                    // and can simply use the object from JS.
-                    clone(): {0};
-
-                    // Explicitly indicate that this JS object will no longer
-                    // be used. If the internal reference count reaches zero
-                    // then this will deterministically destroy the underlying
-                    // wasm object.
-                    //
-                    // This is not required to be called from JS. Wasm
-                    // destructors will be automatically called for you if
-                    // this is not called using the JS `FinalizationRegistry`.
-                    //
-                    // Calling this method does not guarantee that the
-                    // underlying wasm object is deallocated. Something else
-                    // (including wasm) may be holding onto a strong reference
-                    // count.
-                    drop(): void;
-                }}
-            ",
-            iface.resources[ty].name.to_camel_case(),
-        ));
     }
 
     fn type_alias(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
@@ -540,14 +505,14 @@ impl Generator for Js {
         let prev = mem::take(&mut self.src);
 
         let sig = iface.wasm_signature(Direction::Import, func);
-        let args = (0..sig.params.len())
+        let params = (0..sig.params.len())
             .map(|i| format!("arg{}", i))
-            .collect::<Vec<_>>()
-            .join(", ");
-        self.src.js(&format!("function({}) {{\n", args));
+            .collect::<Vec<_>>();
+        self.src
+            .js(&format!("function({}) {{\n", params.join(", ")));
         self.ts_func(iface, func);
 
-        let mut f = FunctionBindgen::new(self, false);
+        let mut f = FunctionBindgen::new(self, false, params);
         iface.call(
             Direction::Import,
             LiftLower::LiftArgsLowerResults,
@@ -584,31 +549,59 @@ impl Generator for Js {
         self.src.js("}");
 
         let src = mem::replace(&mut self.src, prev);
-        self.imports
+        let imports = self
+            .imports
             .entry(iface.name.to_string())
-            .or_insert(Vec::new())
-            .push(Import {
-                name: func.name.to_string(),
-                src,
-            });
+            .or_insert(Imports::default());
+        let dst = match &func.kind {
+            FunctionKind::Freestanding | FunctionKind::Static { .. } => {
+                &mut imports.freestanding_funcs
+            }
+            FunctionKind::Method { resource, .. } => imports
+                .resource_funcs
+                .entry(*resource)
+                .or_insert(Vec::new()),
+        };
+        dst.push((func.name.to_string(), src));
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
         let prev = mem::take(&mut self.src);
 
+        let mut params = func
+            .params
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("arg{}", i))
+            .collect::<Vec<_>>();
+        let mut sig_start = 0;
+        let mut first_is_operand = true;
+        let src_object = match &func.kind {
+            FunctionKind::Freestanding => "this".to_string(),
+            FunctionKind::Static { .. } => {
+                self.src.js("static ");
+                params.insert(0, iface.name.to_snake_case());
+                first_is_operand = false;
+                iface.name.to_snake_case()
+            }
+            FunctionKind::Method { .. } => {
+                params[0] = "this".to_string();
+                sig_start = 1;
+                "this._obj".to_string()
+            }
+        };
         self.src.js(&format!(
             "{}({}) {{\n",
-            func.name.to_snake_case(),
-            func.params
-                .iter()
-                .enumerate()
-                .map(|(i, _)| format!("arg{}", i))
-                .collect::<Vec<_>>()
-                .join(", ")
+            func.item_name().to_snake_case(),
+            params[sig_start..].join(", ")
         ));
         self.ts_func(iface, func);
 
-        let mut f = FunctionBindgen::new(self, false);
+        if !first_is_operand {
+            params.remove(0);
+        }
+        let mut f = FunctionBindgen::new(self, false, params);
+        f.src_object = src_object;
         iface.call(
             Direction::Export,
             LiftLower::LowerArgsLiftResults,
@@ -621,21 +614,27 @@ impl Generator for Js {
             needs_memory,
             needs_realloc,
             needs_free,
+            src_object,
             ..
         } = f;
         if needs_memory {
             // TODO: hardcoding "memory"
-            self.src.js("const memory = this._exports.memory;\n");
+            self.src
+                .js(&format!("const memory = {}._exports.memory;\n", src_object));
         }
 
         if let Some(name) = needs_realloc {
-            self.src
-                .js(&format!("const realloc = this._exports[\"{}\"];\n", name));
+            self.src.js(&format!(
+                "const realloc = {}._exports[\"{}\"];\n",
+                src_object, name
+            ));
         }
 
         if let Some(name) = needs_free {
-            self.src
-                .js(&format!("const free = this._exports[\"{}\"];\n", name));
+            self.src.js(&format!(
+                "const free = {}._exports[\"{}\"];\n",
+                src_object, name
+            ));
         }
         self.src.js(&src.js);
         self.src.js("}\n");
@@ -646,7 +645,18 @@ impl Generator for Js {
             .or_insert_with(Exports::default);
 
         let func_body = mem::replace(&mut self.src, prev);
-        exports.funcs.push(func_body);
+        match &func.kind {
+            FunctionKind::Freestanding => {
+                exports.freestanding_funcs.push(func_body);
+            }
+            FunctionKind::Static { resource, .. } | FunctionKind::Method { resource, .. } => {
+                exports
+                    .resource_funcs
+                    .entry(*resource)
+                    .or_insert(Vec::new())
+                    .push(func_body);
+            }
+        }
     }
 
     fn finish(&mut self, iface: &Interface, files: &mut Files) {
@@ -682,14 +692,21 @@ impl Generator for Js {
             self.src
                 .ts(&format!("export interface {} {{\n", module.to_camel_case()));
 
-            for f in funcs {
+            for (name, src) in funcs
+                .freestanding_funcs
+                .iter()
+                .chain(funcs.resource_funcs.values().flat_map(|v| v))
+            {
                 self.src.js(&format!(
                     "imports[\"{}\"][\"{}\"] = {};\n",
                     module,
-                    f.name,
-                    f.src.js.trim(),
+                    name,
+                    src.js.trim(),
                 ));
-                self.src.ts(&f.src.ts);
+            }
+
+            for (_, src) in funcs.freestanding_funcs.iter() {
+                self.src.ts(&src.ts);
             }
 
             if self.imported_resources.len() > 0 {
@@ -714,6 +731,19 @@ impl Generator for Js {
             }
             self.src.js("}");
             self.src.ts("}\n");
+
+            for (resource, _) in iface.resources.iter() {
+                self.src.ts(&format!(
+                    "export interface {} {{\n",
+                    iface.resources[resource].name.to_camel_case()
+                ));
+                if let Some(funcs) = funcs.resource_funcs.get(&resource) {
+                    for (_, src) in funcs {
+                        self.src.ts(&src.ts);
+                    }
+                }
+                self.src.ts("}\n");
+            }
         }
 
         for (module, exports) in mem::take(&mut self.exports) {
@@ -778,9 +808,8 @@ impl Generator for Js {
                             return this._resource{idx}_slab.get(i)._wasm_val;
                         }};
                         imports.canonical_abi['resource_new_{name}'] = i => {{
-                            const dtor = this._exports['canonical_abi_drop_{name}'];
                             const registry = this._registry{idx};
-                            return this._resource{idx}_slab.insert(new {class}(i, dtor, registry));
+                            return this._resource{idx}_slab.insert(new {class}(i, this));
                         }};
                     ",
                     name = iface.resources[*r].name,
@@ -862,12 +891,87 @@ impl Generator for Js {
             }
             self.src.js("}\n");
 
-            for func in exports.funcs.iter() {
+            for func in exports.freestanding_funcs.iter() {
                 self.src.js(&func.js);
                 self.src.ts(&func.ts);
             }
             self.src.ts("}\n");
             self.src.js("}\n");
+
+            for &ty in self.exported_resources.iter() {
+                self.src.js(&format!(
+                    "
+                        export class {} {{
+                            constructor(wasm_val, obj) {{
+                                this._wasm_val = wasm_val;
+                                this._obj = obj;
+                                this._refcnt = 1;
+                                obj._registry{idx}.register(this, wasm_val, this);
+                            }}
+
+                            clone() {{
+                                this._refcnt += 1;
+                                return this;
+                            }}
+
+                            drop() {{
+                                this._refcnt -= 1;
+                                if (this._refcnt !== 0)
+                                    return;
+                                this._obj._registry{idx}.unregister(this);
+                                const dtor = this._obj._exports['canonical_abi_drop_{}'];
+                                const wasm_val = this._wasm_val;
+                                delete this._obj;
+                                delete this._refcnt;
+                                delete this._wasm_val;
+                                dtor(wasm_val);
+                            }}
+                    ",
+                    iface.resources[ty].name.to_camel_case(),
+                    iface.resources[ty].name,
+                    idx = ty.index(),
+                ));
+                self.src.ts(&format!(
+                    "
+                        export class {} {{
+                            // Creates a new strong reference count as a new
+                            // object.  This is only required if you're also
+                            // calling `drop` below and want to manually manage
+                            // the reference count from JS.
+                            //
+                            // If you don't call `drop`, you don't need to call
+                            // this and can simply use the object from JS.
+                            clone(): {0};
+
+                            // Explicitly indicate that this JS object will no
+                            // longer be used. If the internal reference count
+                            // reaches zero then this will deterministically
+                            // destroy the underlying wasm object.
+                            //
+                            // This is not required to be called from JS. Wasm
+                            // destructors will be automatically called for you
+                            // if this is not called using the JS
+                            // `FinalizationRegistry`.
+                            //
+                            // Calling this method does not guarantee that the
+                            // underlying wasm object is deallocated. Something
+                            // else (including wasm) may be holding onto a
+                            // strong reference count.
+                            drop(): void;
+                    ",
+                    iface.resources[ty].name.to_camel_case(),
+                ));
+
+                if let Some(funcs) = exports.resource_funcs.get(&ty) {
+                    for func in funcs {
+                        self.src.js(&func.js);
+                        self.src.ts(&func.ts);
+                    }
+                }
+
+                self.src.ts("}\n");
+                self.src.js("}\n");
+            }
         }
 
         files.push("bindings.js", self.src.js.as_bytes());
@@ -887,10 +991,12 @@ struct FunctionBindgen<'a> {
     needs_memory: bool,
     needs_realloc: Option<String>,
     needs_free: Option<String>,
+    params: Vec<String>,
+    src_object: String,
 }
 
 impl FunctionBindgen<'_> {
-    fn new(gen: &mut Js, in_import: bool) -> FunctionBindgen<'_> {
+    fn new(gen: &mut Js, in_import: bool, params: Vec<String>) -> FunctionBindgen<'_> {
         FunctionBindgen {
             gen,
             tmp: 0,
@@ -901,6 +1007,8 @@ impl FunctionBindgen<'_> {
             needs_memory: false,
             needs_realloc: None,
             needs_free: None,
+            params,
+            src_object: "this".to_string(),
         }
     }
 
@@ -991,7 +1099,7 @@ impl Bindgen for FunctionBindgen<'_> {
         results: &mut Vec<String>,
     ) {
         match inst {
-            Instruction::GetArg { nth } => results.push(format!("arg{}", nth)),
+            Instruction::GetArg { nth } => results.push(self.params[*nth].clone()),
             Instruction::I32Const { val } => results.push(val.to_string()),
             Instruction::ConstZero { tys } => {
                 for t in tys.iter() {
@@ -1128,24 +1236,30 @@ impl Bindgen for FunctionBindgen<'_> {
                 let tmp = self.tmp();
                 self.src
                     .js(&format!("const obj{} = {};\n", tmp, operands[0]));
-                self.src.js(&format!(
-                    "if (!(obj{} instanceof {})) ",
-                    tmp,
-                    iface.resources[*ty].name.to_camel_case()
-                ));
-                self.src.js(&format!(
-                    "throw new TypeError('expected instance of {}');\n",
-                    iface.resources[*ty].name.to_camel_case()
-                ));
+
+                // If this is the `this` argument then it's implicitly already valid
+                if operands[0] != "this" {
+                    self.src.js(&format!(
+                        "if (!(obj{} instanceof {})) ",
+                        tmp,
+                        iface.resources[*ty].name.to_camel_case()
+                    ));
+                    self.src.js(&format!(
+                        "throw new TypeError('expected instance of {}');\n",
+                        iface.resources[*ty].name.to_camel_case()
+                    ));
+                }
                 results.push(format!(
-                    "this._resource{}_slab.insert(obj{}.clone())",
+                    "{}._resource{}_slab.insert(obj{}.clone())",
+                    self.src_object,
                     ty.index(),
                     tmp,
                 ));
             }
             Instruction::HandleOwnedFromI32 { ty } => {
                 results.push(format!(
-                    "this._resource{}_slab.remove({})",
+                    "{}._resource{}_slab.remove({})",
+                    self.src_object,
                     ty.index(),
                     operands[0],
                 ));
@@ -1657,7 +1771,8 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.src.js("] = ");
                     }
                 }
-                self.src.js("this._exports['");
+                self.src.js(&self.src_object);
+                self.src.js("._exports['");
                 self.src.js(&name);
                 self.src.js("'](");
                 self.src.js(&operands.join(", "));
@@ -1692,11 +1807,24 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.src.js("} = ");
                     }
                 }
-                self.src.js("obj.");
-                self.src.js(&func.name.to_snake_case());
-                self.src.js("(");
-                self.src.js(&operands.join(", "));
-                self.src.js(");\n");
+                match &func.kind {
+                    FunctionKind::Freestanding | FunctionKind::Static { .. } => {
+                        self.src.js(&format!(
+                            "obj.{}({})",
+                            func.name.to_snake_case(),
+                            operands.join(", "),
+                        ));
+                    }
+                    FunctionKind::Method { name, .. } => {
+                        self.src.js(&format!(
+                            "{}.{}({})",
+                            operands[0],
+                            name.to_snake_case(),
+                            operands[1..].join(", "),
+                        ));
+                    }
+                }
+                self.src.js(";\n");
             }
 
             Instruction::Return { amt, func } => match amt {

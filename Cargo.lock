@@ -413,19 +413,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "demo"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-gen-c",
- "witx-bindgen-gen-core",
- "witx-bindgen-gen-js",
- "witx-bindgen-gen-markdown",
- "witx-bindgen-gen-rust-wasm",
- "witx-bindgen-gen-wasmtime",
- "witx-bindgen-rust",
-]
-
-[[package]]
 name = "diff"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1984,6 +1971,19 @@ dependencies = [
  "witx-bindgen-gen-markdown",
  "witx-bindgen-gen-rust-wasm",
  "witx-bindgen-gen-wasmtime",
+]
+
+[[package]]
+name = "witx-bindgen-demo"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-gen-c",
+ "witx-bindgen-gen-core",
+ "witx-bindgen-gen-js",
+ "witx-bindgen-gen-markdown",
+ "witx-bindgen-gen-rust-wasm",
+ "witx-bindgen-gen-wasmtime",
+ "witx-bindgen-rust",
 ]
 
 [[package]]

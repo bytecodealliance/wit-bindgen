@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, type_alias_bounds)]
 
 fn main() {
     println!("compiled successfully!")

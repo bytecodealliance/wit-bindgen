@@ -9,8 +9,7 @@ use witx_bindgen_gen_core::witx2::abi::{
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
 use witx_bindgen_gen_rust::{
-    int_repr, to_rust_ident, wasm_type, RustFunctionGenerator, RustGenerator, TypeMode, Unsafe,
-    Visibility,
+    int_repr, to_rust_ident, wasm_type, FnSig, RustFunctionGenerator, RustGenerator, TypeMode,
 };
 
 #[derive(Default)]
@@ -614,23 +613,19 @@ impl Generator for Wasmtime {
         }
         self.in_trait = true;
 
+        let mut fnsig = FnSig::default();
+        fnsig.private = true;
+        fnsig.async_ = self.opts.async_.includes(&func.name);
+        fnsig.self_arg = Some(self_arg);
         self.print_docs_and_params(
             iface,
             func,
-            Visibility::Private,
-            Unsafe::No,
-            if self.opts.async_.includes(&func.name) {
-                witx_bindgen_gen_rust::Async::Yes
-            } else {
-                witx_bindgen_gen_rust::Async::No
-            },
-            None,
-            Some(&self_arg),
             if is_dtor {
                 TypeMode::Owned
             } else {
                 TypeMode::LeafBorrowed("'_")
             },
+            &fnsig,
         );
         // The Rust return type may differ from the wasm return type based on
         // the `custom_error` configuration of this code generator.
@@ -760,20 +755,10 @@ impl Generator for Wasmtime {
         // asynchronous, Wasmtime can't intermix async and sync calls because
         // it's unknown whether the wasm module will make an async host call.
         let is_async = !self.opts.async_.is_none();
-        self.print_docs_and_params(
-            iface,
-            func,
-            Visibility::Pub,
-            Unsafe::No,
-            if is_async {
-                witx_bindgen_gen_rust::Async::Yes
-            } else {
-                witx_bindgen_gen_rust::Async::No
-            },
-            None,
-            Some("&self, mut caller: impl wasmtime::AsContextMut<Data = T>"),
-            TypeMode::AllBorrowed("'_"),
-        );
+        let mut sig = FnSig::default();
+        sig.async_ = is_async;
+        sig.self_arg = Some("&self, mut caller: impl wasmtime::AsContextMut<Data = T>".to_string());
+        self.print_docs_and_params(iface, func, TypeMode::AllBorrowed("'_"), &sig);
         self.push_str("-> Result<");
         self.print_results(iface, func);
         self.push_str(", wasmtime::Trap> {\n");

@@ -405,3 +405,14 @@ void wasm_list_typedefs(wasm_list_typedef_t *a, wasm_list_typedef3_t *c, wasm_li
   wasm_string_dup(&ret1->ptr[0], "typedef4");
 }
 
+bool wasm_markdown_create(wasm_markdown_t *md) {
+  return false;
+}
+
+void wasm_markdown_append(wasm_markdown_t md, wasm_string_t *s) {
+  abort();
+}
+
+void wasm_markdown_render(wasm_markdown_t md, wasm_string_t *ret) {
+  abort();
+}

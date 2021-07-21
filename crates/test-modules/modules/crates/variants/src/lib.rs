@@ -2,43 +2,42 @@ witx_bindgen_rust::export!("crates/variants/variants.witx");
 
 use variants::*;
 
-struct Component;
+struct Variants;
 
-impl Variants for Component {
-    fn e1_arg(&self, x: E1) {
+impl variants::Variants for Variants {
+    fn e1_arg(x: E1) {
         match x {
             E1::A => {}
         }
     }
-    fn e1_result(&self) -> E1 {
+    fn e1_result() -> E1 {
         E1::A
     }
-    fn u1_arg(&self, x: U1) {
+    fn u1_arg(x: U1) {
         match x {
             U1::V0(x) => assert_eq!(x, 1234),
             _ => panic!(),
         }
     }
-    fn u1_result(&self) -> U1 {
+    fn u1_result() -> U1 {
         U1::V1(432.1)
     }
-    fn v1_arg(&self, x: V1) {
+    fn v1_arg(x: V1) {
         match x {
             V1::D(x) => assert_eq!(x, "hello world!"),
             _ => panic!(),
         }
     }
-    fn v1_result(&self) -> V1 {
+    fn v1_result() -> V1 {
         V1::G(54321)
     }
-    fn bool_arg(&self, x: bool) {
+    fn bool_arg(x: bool) {
         assert!(x);
     }
-    fn bool_result(&self) -> bool {
+    fn bool_result() -> bool {
         false
     }
     fn option_arg(
-        &self,
         a: Option<bool>,
         b: Option<()>,
         c: Option<u32>,
@@ -61,9 +60,7 @@ impl Variants for Component {
         }
         assert_eq!(g, Some(Some(true)));
     }
-    fn option_result(
-        &self,
-    ) -> (
+    fn option_result() -> (
         Option<bool>,
         Option<()>,
         Option<u32>,
@@ -83,7 +80,6 @@ impl Variants for Component {
         )
     }
     fn casts(
-        &self,
         a: Casts1,
         b: Casts2,
         c: Casts3,
@@ -126,7 +122,6 @@ impl Variants for Component {
         )
     }
     fn expected_arg(
-        &self,
         a: Result<(), ()>,
         b: Result<(), E1>,
         c: Result<E1, ()>,
@@ -153,9 +148,7 @@ impl Variants for Component {
             _ => panic!(),
         }
     }
-    fn expected_result(
-        &self,
-    ) -> (
+    fn expected_result() -> (
         Result<(), ()>,
         Result<(), E1>,
         Result<E1, ()>,
@@ -172,9 +165,4 @@ impl Variants for Component {
             Err(vec![1, 2, 3, 4, 5, 6]),
         )
     }
-}
-
-fn variants() -> &'static impl Variants {
-    static INSTANCE: Component = Component;
-    &INSTANCE
 }

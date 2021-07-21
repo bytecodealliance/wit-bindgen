@@ -595,15 +595,21 @@ impl Resolver {
                 .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
                 .collect::<Result<_>>()?;
             let kind = if *statik {
-                FunctionKind::Static(id)
+                FunctionKind::Static {
+                    resource: id,
+                    name: value.name.name.to_string(),
+                }
             } else {
                 params.insert(0, ("self".to_string(), Type::Handle(id)));
-                FunctionKind::Method(id)
+                FunctionKind::Method {
+                    resource: id,
+                    name: value.name.name.to_string(),
+                }
             };
             self.functions.push(Function {
                 abi,
                 docs,
-                name: format!("{}::{}", resource.name.name, value.name.name.to_string()),
+                name: format!("{}::{}", resource.name.name, value.name.name),
                 kind,
                 params,
                 results,

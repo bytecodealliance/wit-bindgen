@@ -185,6 +185,12 @@ wasm_state2_result_variant: function() -> wasm_state_result_variant
 
 wasm_state2_result_list: function() -> list<wasm_state2>
 
+resource markdown {
+    static create: function() -> option<markdown>
+    append: function(buf: string)
+    render: function() -> string
+}
+
 /* TODO
 ;; ===========================================
 ;; buffers

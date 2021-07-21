@@ -2,6 +2,7 @@ witx_bindgen_wasmtime::import!("tests/host.witx");
 
 use host::*;
 pub(crate) use host::{add_host_to_linker, HostTables};
+use std::cell::RefCell;
 use witx_bindgen_wasmtime::{
     imports::{PullBuffer, PushBuffer},
     Le,
@@ -16,11 +17,17 @@ pub struct MyHost {
 #[derive(Debug)]
 pub struct SuchState(u32);
 
+#[derive(Default, Debug)]
+pub struct Markdown {
+    buf: RefCell<String>,
+}
+
 // TODO: implement propagation of errors instead of `unwrap()` everywhere
 
 impl Host for MyHost {
     type HostState = SuchState;
     type HostState2 = ();
+    type Markdown2 = Markdown;
 
     fn roundtrip_u8(&mut self, val: u8) -> u8 {
         val
@@ -459,5 +466,17 @@ impl Host for MyHost {
         assert_eq!(f64s, [101.0.into()]);
         assert_eq!(strings, ["foo"]);
         assert_eq!(lists, [&[102][..]]);
+    }
+
+    fn markdown2_create(&mut self) -> Markdown {
+        Markdown::default()
+    }
+
+    fn markdown2_append(&mut self, md: &Markdown, buf: &str) {
+        md.buf.borrow_mut().push_str(buf);
+    }
+
+    fn markdown2_render(&mut self, md: &Markdown) -> String {
+        md.buf.borrow().replace("red", "green")
     }
 }

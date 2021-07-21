@@ -244,8 +244,18 @@ pub struct Function {
 #[derive(Debug)]
 pub enum FunctionKind {
     Freestanding,
-    Static(ResourceId),
-    Method(ResourceId),
+    Static { resource: ResourceId, name: String },
+    Method { resource: ResourceId, name: String },
+}
+
+impl Function {
+    pub fn item_name(&self) -> &str {
+        match &self.kind {
+            FunctionKind::Freestanding => &self.name,
+            FunctionKind::Static { name, .. } => name,
+            FunctionKind::Method { name, .. } => name,
+        }
+    }
 }
 
 impl Interface {
