@@ -1,0 +1,27 @@
+type files = list<tuple<string, string>>
+
+variant async {
+  all,
+  none,
+  only(list<string>),
+}
+
+enum lang {
+  js,
+  rust,
+  wasmtime,
+  c,
+  markdown,
+}
+
+
+resource config {
+  static new: function() -> config
+
+  render: function(lang: lang, witx: string, import: bool) -> expected<files, string>
+
+  set_rust_unchecked: function(unchecked: bool)
+  set_wasmtime_tracing: function(unchecked: bool)
+  set_wasmtime_async: function(async: async)
+  set_wasmtime_custom_error: function(custom: bool)
+}

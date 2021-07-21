@@ -51,7 +51,7 @@ class Editor {
     };
     browser.add_browser_to_imports(imports, obj, name => this.demo.instance.exports[name]);
     await this.demo.instantiate(fetch('./demo.wasm'), imports);
-    this.config = this.demo.config_new();
+    this.config = Config.new(this.demo);
     this.installListeners();
     this.render();
   }
@@ -68,12 +68,12 @@ class Editor {
     this.mode.addEventListener('change', () => this.render());
 
     this.rustUnchecked.addEventListener('change', () => {
-      this.demo.set_rust_unchecked(this.config, this.rustUnchecked.checked);
+      this.config.set_rust_unchecked(this.rustUnchecked.checked);
       this.render();
     });
 
     this.wasmtimeTracing.addEventListener('change', () => {
-      this.demo.set_wasmtime_tracing(this.config, this.wasmtimeTracing.checked);
+      this.config.set_wasmtime_tracing(this.wasmtimeTracing.checked);
       this.render();
     });
     this.wasmtimeAsync.addEventListener('change', () => {
@@ -82,11 +82,11 @@ class Editor {
         async_ = { tag: 'all' };
       else
         async_ = { tag: 'none' };
-      this.demo.set_wasmtime_async(this.config, async_);
+      this.config.set_wasmtime_async(async_);
       this.render();
     });
     this.wasmtimeCustomError.addEventListener('change', () => {
-      this.demo.set_wasmtime_custom_error(this.config, this.wasmtimeCustomError.checked);
+      this.config.set_wasmtime_custom_error(this.wasmtimeCustomError.checked);
       this.render();
     });
     this.files.addEventListener('change', () => this.updateSelectedFile());
@@ -112,7 +112,7 @@ class Editor {
       case "markdown": lang = Lang.Markdown; break;
       default: return;
     }
-    const result = this.demo.render(this.config, lang, witx, is_import);
+    const result = this.config.render(lang, witx, is_import);
     if (result.tag === 'err') {
       this.outputEditor.setValue(result.val);
       this.outputEditor.clearSelection();

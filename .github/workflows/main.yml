@@ -83,8 +83,8 @@ jobs:
     - run: rustup update stable --no-self-update && rustup default stable
     - run: rustup target add wasm32-unknown-unknown
     - run: npm install
-      working-directory: crates/demo
-    - run: ./build-demo.sh
+      working-directory: crates/witx-bindgen-demo
+    - run: ./crates/witx-bindgen-demo/build.sh
     - uses: JamesIves/github-pages-deploy-action@4.1.4
       with:
         branch: gh-pages
