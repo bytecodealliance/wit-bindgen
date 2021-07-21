@@ -232,13 +232,13 @@ impl Js {
             // methods on the resource object.
             if self.in_import {
                 name_printed = true;
-                self.src.ts(&func.name.to_snake_case());
+                self.src.ts(&func.name.to_mixed_case());
             } else {
                 self.src.ts("static ");
             }
         }
         if !name_printed {
-            self.src.ts(&func.item_name().to_snake_case());
+            self.src.ts(&func.item_name().to_mixed_case());
         }
         self.src.ts("(");
 
@@ -248,7 +248,7 @@ impl Js {
             FunctionKind::Static { .. } => {
                 // the 0th argument for exported static methods will be the
                 // instantiated interface
-                self.src.ts(&iface.name.to_snake_case());
+                self.src.ts(&iface.name.to_mixed_case());
                 self.src.ts(": ");
                 self.src.ts(&iface.name.to_camel_case());
                 if func.params.len() > 0 {
@@ -264,7 +264,7 @@ impl Js {
             if i > 0 {
                 self.src.ts(", ");
             }
-            self.src.ts(to_js_ident(&name.to_snake_case()));
+            self.src.ts(to_js_ident(&name.to_mixed_case()));
             self.src.ts(": ");
             self.print_ty(iface, ty);
         }
@@ -288,7 +288,7 @@ impl Js {
                         if i > 0 {
                             self.src.ts(", ");
                         }
-                        self.src.ts(&name.to_snake_case());
+                        self.src.ts(&name.to_mixed_case());
                         self.src.ts(": ");
                         self.print_ty(iface, ty);
                     }
@@ -356,7 +356,7 @@ impl Generator for Js {
                 .ts(&format!("export interface {} {{\n", name.to_camel_case()));
             for field in record.fields.iter() {
                 self.docs(&field.docs);
-                self.src.ts(&format!("{}: ", field.name.to_snake_case()));
+                self.src.ts(&format!("{}: ", field.name.to_mixed_case()));
                 self.print_ty(iface, &field.ty);
                 self.src.ts(",\n");
             }
@@ -580,9 +580,9 @@ impl Generator for Js {
             FunctionKind::Freestanding => "this".to_string(),
             FunctionKind::Static { .. } => {
                 self.src.js("static ");
-                params.insert(0, iface.name.to_snake_case());
+                params.insert(0, iface.name.to_mixed_case());
                 first_is_operand = false;
-                iface.name.to_snake_case()
+                iface.name.to_mixed_case()
             }
             FunctionKind::Method { .. } => {
                 params[0] = "this".to_string();
@@ -592,7 +592,7 @@ impl Generator for Js {
         };
         self.src.js(&format!(
             "{}({}) {{\n",
-            func.item_name().to_snake_case(),
+            func.item_name().to_mixed_case(),
             params[sig_start..].join(", ")
         ));
         self.ts_func(iface, func);
@@ -663,11 +663,10 @@ impl Generator for Js {
         self.print_intrinsics();
 
         for (module, funcs) in mem::take(&mut self.imports) {
-            let module = module.to_snake_case();
             // TODO: `module.exports` vs `export function`
             self.src.js(&format!(
-                "export function add_{}_to_imports(imports, obj{}) {{\n",
-                module,
+                "export function add{}ToImports(imports, obj{}) {{\n",
+                module.to_camel_case(),
                 if self.needs_get_export {
                     ", get_export"
                 } else {
@@ -675,8 +674,7 @@ impl Generator for Js {
                 },
             ));
             self.src.ts(&format!(
-                "export function add_{}_to_imports(imports: any, obj: {}{}): void;\n",
-                module,
+                "export function add{}ToImports(imports: any, obj: {0}{}): void;\n",
                 module.to_camel_case(),
                 if self.needs_get_export {
                     ", get_export: (string) => WebAssembly.ExportValue"
@@ -717,16 +715,16 @@ impl Generator for Js {
                 self.src.js(&format!(
                     "imports.canonical_abi[\"resource_drop_{}\"] = (i) => {{
                         const val = resources{}.remove(i);
-                        if (obj.drop_{})
-                            obj.drop_{2}(val);
+                        if (obj.drop{})
+                            obj.drop{2}(val);
                     }};\n",
                     iface.resources[*resource].name,
                     resource.index(),
-                    iface.resources[*resource].name.to_snake_case(),
+                    iface.resources[*resource].name.to_camel_case(),
                 ));
                 self.src.ts(&format!(
-                    "drop_{}?: (any) => void;\n",
-                    iface.resources[*resource].name.to_snake_case()
+                    "drop{}?: (any) => void;\n",
+                    iface.resources[*resource].name.to_camel_case()
                 ));
             }
             self.src.js("}");
@@ -787,9 +785,9 @@ impl Generator for Js {
                 // instantiation then there's no need to call this method, but
                 // if you're instantiating manually elsewhere then this can be
                 // used to prepare the import object for external instantiation.
-                add_to_imports(imports: any);
+                addToImports(imports: any);
             ");
-            self.src.js("add_to_imports(imports) {\n");
+            self.src.js("addToImports(imports) {\n");
             if self.exported_resources.len() > 0 {
                 self.src
                     .js("if (!(\"canonical_abi\" in imports)) imports[\"canonical_abi\"] = {};\n");
@@ -858,7 +856,7 @@ impl Generator for Js {
             self.src.js("
                 async instantiate(module, imports) {
                     imports = imports || {};
-                    this.add_to_imports(imports);
+                    this.addToImports(imports);
             ");
 
             // With intrinsics prep'd we can now instantiate the module. JS has
@@ -1291,7 +1289,7 @@ impl Bindgen for FunctionBindgen<'_> {
                             expr.push_str(", ");
                         }
                         let name = format!("v{}_{}", tmp, i);
-                        expr.push_str(&field.name.to_snake_case());
+                        expr.push_str(&field.name.to_mixed_case());
                         expr.push_str(": ");
                         expr.push_str(&name);
                         results.push(name);
@@ -1311,7 +1309,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     // literal.
                     let mut result = "{\n".to_string();
                     for (field, op) in record.fields.iter().zip(operands) {
-                        result.push_str(&format!("{}: {},\n", field.name.to_snake_case(), op));
+                        result.push_str(&format!("{}: {},\n", field.name.to_mixed_case(), op));
                     }
                     result.push_str("}");
                     results.push(result);
@@ -1811,7 +1809,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     FunctionKind::Freestanding | FunctionKind::Static { .. } => {
                         self.src.js(&format!(
                             "obj.{}({})",
-                            func.name.to_snake_case(),
+                            func.name.to_mixed_case(),
                             operands.join(", "),
                         ));
                     }
@@ -1819,7 +1817,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.src.js(&format!(
                             "{}.{}({})",
                             operands[0],
-                            name.to_snake_case(),
+                            name.to_mixed_case(),
                             operands[1..].join(", "),
                         ));
                     }
@@ -1840,7 +1838,7 @@ impl Bindgen for FunctionBindgen<'_> {
                             func.results
                                 .iter()
                                 .zip(operands)
-                                .map(|((name, _), op)| format!("{}: {}", name.to_snake_case(), op))
+                                .map(|((name, _), op)| format!("{}: {}", name.to_mixed_case(), op))
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         ));
