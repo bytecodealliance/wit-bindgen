@@ -2071,6 +2071,9 @@
     i32.mul
     i32.const 8
     call 2)
+  (export "memory" (memory 1))
+  (export "canonical_abi_realloc" (func 1))
+  (export "canonical_abi_free" (func 2))
   (export "list_u8_param" (func 29))
   (export "list_u16_param" (func 30))
   (export "list_u32_param" (func 31))

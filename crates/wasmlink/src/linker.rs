@@ -844,6 +844,9 @@ mod test {
       local.get 2
       local.get 1
       call 4)
+    (export \"memory\" (memory 1))
+    (export \"canonical_abi_realloc\" (func 2))
+    (export \"canonical_abi_free\" (func 3))
     (export \"a\" (func 5)))
   (module (;2;)
     (type (;0;) (func (param i32 i32)))
