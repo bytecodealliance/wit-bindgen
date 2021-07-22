@@ -58,6 +58,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "nested-main"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-rust",
+]
+
+[[package]]
+name = "nested_a"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-rust",
+]
+
+[[package]]
+name = "nested_b"
+version = "0.1.0"
+dependencies = [
+ "witx-bindgen-rust",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"

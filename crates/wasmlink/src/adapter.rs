@@ -606,8 +606,27 @@ impl<'a> ModuleAdapter<'a> {
     ) {
         let mut section = wasm_encoder::ExportSection::new();
 
-        let alias_start_index =
-            num_imported_funcs + if interface.needs_realloc_free() { 2 } else { 0 };
+        if interface.needs_memory() {
+            section.export(
+                MEMORY_EXPORT_NAME,
+                wasm_encoder::Export::Memory(call::ADAPTED_MEMORY_INDEX),
+            );
+        }
+
+        let alias_start_index = if interface.needs_realloc_free() {
+            section.export(
+                REALLOC_EXPORT_NAME,
+                wasm_encoder::Export::Function(num_imported_funcs),
+            );
+            section.export(
+                FREE_EXPORT_NAME,
+                wasm_encoder::Export::Function(num_imported_funcs + 1),
+            );
+            num_imported_funcs + 2
+        } else {
+            num_imported_funcs
+        };
+
         let defined_start_index = alias_start_index + num_aliased_funcs;
         let mut adapted_count = 0;
 
