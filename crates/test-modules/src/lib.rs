@@ -20,15 +20,9 @@ mod tests {
     }
 
     fn witx_path(name: &str) -> PathBuf {
-        let path = Path::new("modules/crates")
+        Path::new("modules/crates")
             .join(name)
-            .join(format!("{}.witx", name));
-
-        if path.is_file() {
-            return path;
-        }
-
-        Path::new("../../tests").join(format!("{}.witx", name))
+            .join(format!("{}.witx", name))
     }
 
     pub fn link(main: &str, imports: &[&str]) -> Result<Vec<u8>> {
@@ -50,9 +44,7 @@ mod tests {
             .map(|(name, bytes)| {
                 Module::new(name, bytes).and_then(|mut m| {
                     let path = witx_path(name);
-                    if path.is_file() {
-                        m.read_interface(&path)?;
-                    }
+                    m.read_interface(&path)?;
                     Ok((name.as_ref(), m))
                 })
             })
@@ -127,5 +119,10 @@ mod tests {
         assert!(e.to_string().contains("invalid_handle_trap"));
 
         Ok(())
+    }
+
+    #[test]
+    fn nested() -> Result<()> {
+        run(&link("nested-main", &["nested_a", "nested_b"])?)
     }
 }

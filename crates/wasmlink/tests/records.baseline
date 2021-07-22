@@ -179,6 +179,9 @@
     i32.load (memory 1) offset=32
     i32.const 1
     call 2)
+  (export "memory" (memory 1))
+  (export "canonical_abi_realloc" (func 1))
+  (export "canonical_abi_free" (func 2))
   (export "tuple_arg" (func 13))
   (export "tuple_result" (func 14))
   (export "empty_arg" (func 5))

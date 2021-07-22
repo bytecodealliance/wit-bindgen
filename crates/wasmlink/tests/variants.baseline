@@ -594,6 +594,9 @@
       i32.const 1
       call 2
     end)
+  (export "memory" (memory 1))
+  (export "canonical_abi_realloc" (func 1))
+  (export "canonical_abi_free" (func 2))
   (export "e1_arg" (func 16))
   (export "e1_result" (func 17))
   (export "u1_arg" (func 18))

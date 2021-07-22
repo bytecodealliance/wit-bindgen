@@ -13,4 +13,7 @@ members = [
     "crates/resources",
     "crates/resources-main",
     "crates/resources-invalid-main",
+    "crates/nested_a",
+    "crates/nested_b",
+    "crates/nested-main",
 ]
