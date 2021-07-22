@@ -1,0 +1,21 @@
+[package]
+name = "witx-bindgen-gen-wasmtime-py"
+version = "0.1.0"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+edition = "2018"
+
+[lib]
+doctest = false
+test = false
+
+[dependencies]
+witx-bindgen-gen-core = { path = '../gen-core', version = '0.1.0' }
+heck = "0.3"
+structopt = { version = "0.3", default-features = false, optional = true }
+
+[dev-dependencies]
+build-test-wasm = { path = '../build-test-wasm' }
+test-codegen = { path = '../test-codegen', features = ['witx-bindgen-gen-wasmtime-py'] }
+
+[features]
+old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']

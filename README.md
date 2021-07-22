@@ -74,73 +74,95 @@ Cargo dependencies. Usage in a Web application would probably use a version of
 `witx-bindgen` compiled to WebAssembly and published to NPM.
 
 For now, though, you can explore what bindings look like in each language
-through the CLI.
+through the CLI. Again if you'd like to depend on this if you wouldn't mind
+please reach out on [zulip] so we can figure out a better story than relying on
+the CLI tool for your use case.
 
 ## Supported Languages
 
-The currently supported languages for `witx-bindgen` are:
+First here's a list of supported languages for generating a WebAssembly binary
+which uses interface types. This means that these languages support
+`*.witx`-defined imports and exports.
 
-#### `witx-bindgen rust-wasm --import *.witx`
+* `rust-wasm` - this is for Rust compiled to WebAssembly, typically using either
+  the `wasm32-wasi` or `wasm32-unknown-unknown` targets depending on your use
+  case. In this mode you'd probably depend on the `witx-bindgen-rust` crate
+  (located at `crates/rust-wasm`) and use the `import!` and `export!` macros to
+  generate code.
 
-This generation mode is intended for Rust programs compiled to WebAssembly. This
-will generate the bindings necessary to import the provided `*.witx` files. Safe
-functions are exposed with Rust-native types.
+* `c` - this is for C compiled to WebAssembly, using either of the targets above
+  for Rust as well. With C the `witx-bindgen` CLI tool will emit a `*.h` and a
+  `*.c` file to be compiled into the wasm module.
 
-#### `witx-bindgen rust-wasm --export *.witx`
+This repository also supports a number of host languages/runtimes which can be
+used to consume WebAssembly modules that use interface types. These modules need
+to follow the canonical ABI for their exports/imports:
 
-This generation mode is intended for Rust programs compiled to WebAssembly. This
-will generate the bindings necessary to have the final WebAssembly module export
-the interface described in the `*.witx` files. This mode will generate a trait
-that the Rust code needs to implement, and the Rust code will also need to
-implement a function returning a singleton of this trait for exported functions
-to call and use.
+* `wasmtime` - this is for Rust users using the `wasmtime` crate. This generator
+  is used through the `witx-bindgen-wasmtime` crate (located at
+  `crates/wasmtime`) and, like the compiled-to-wasm Rust support, has an
+  `import!` and an `export!` macro for generating code.
 
-#### `witx-bindgen wasmtime --import *.witx`
+* `js` - this is for JavaScript users executing WebAssembly modules. This could
+  be in a browsers, Node.js, or Deno. In theory this covers browser use cases
+  like web workers and such as well. In this mode the `witx-bindgen` CLI tool
+  will emit a `*.js` and a `*.d.ts` file describing the interface and providing
+  necessary runtime support in JS to implement the canonical ABI. Note that the
+  intended long-term integration of this language is to compile `witx-bindgen`
+  itself to WebAssembly and publish NPM packages for popular JS build systems to
+  integrate `witx-bindgen` into JS build processes.
 
-This generation mode is intended for Rust programs compiled against the
-[`wasmtime`] crate, typically running WebAssembly programs. This will generate
-bindings for the host to provide the specified `*.witx` files as imports to the
-WebAssembly modules. This generates a function which adds host-defined functions
-to a `Linker`, and provides a trait for the host to implement to interact with
-the guest (using Rust-native types rather than wasm primitive types).
+* `wasmtime-py` - this is for Python users using the `wasmtime` PyPI package.
+  This uses Wasmtime under the hood but you get to write Python in providing
+  imports to WebAssembly modules or consume modules using interface types. This
+  generates a `*.py` file which is annotated with types for usage in `mypy` or
+  other type-checkers.
 
-[`wasmtime`]: https://github.com/bytecodealliance/wasmtime
+All generators support the `--import` and `--export` flags in the `witx-bindgen`
+CLI tool. Here "import" means "imported by WebAssembly" and "export" means
+"exported by WebAssembly". This means that wasm files import APIs with
+`--import`, whereas hosts provide imports to wasm modules using `--import` (the
+terminology here [can be
+confusing](https://github.com/bytecodealliance/witx-bindgen/issues/34)
 
-#### `witx-bindgen wasmtime --export *.witx`
+Note that the list of supported languages here is a snapshot in time and is not
+final. The purpose of the interface-types proposal is to be language agnostic
+both in how WebAssembly modules are written as well as how they are consumed. If
+you have a runtime that isn't listed here or you're compiling to WebAssembly and
+your language isn't listed here, it doesn't mean that it will never be
+supported! A language binding generator is intended to be not the hardest thing
+in the world (but unfortunately also not the easiest) to write, and the crates
+and support in this repository mostly exist to make writing generators as easy
+as possible.
 
-This generation mode is intended for Rust programs compiled against the
-[`wasmtime`] crate, typically running WebAssembly programs. This will generate
-bindings for the host to consume a WebAssembly module which has the interface
-specified in the `*.witx` file. This generates a `struct` which is a typed
-representation of the WebAssembly instance and typed methods using native Rust
-types are provided to interact with the WebAssembly module.
+Some other languages and runtimes, for example, that don't have support in
+`witx-bindgen` today but are possible in the future (and may get written here
+too) are:
 
-#### `witx-bindgen js --import *.witx`
+* `wasmtime-go` - same as for `wasmtime-py` but for Go. Basically for Go users
+  using the [`wasmtime-go`
+  package](https://github.com/bytecodealliance/wasmtime-go) who want to work
+  with interface types rather than raw pointers/memories/etc.
 
-This generation mode is intended for consuming a WebAssembly module in a JS
-environment (in theory either Node or the Web). This mode generates bindings
-suitable for supplying as part of an import object to satisfy the imports of a
-wasm module. JS is responsible for creating an object with all the appropriate
-functions. This also generates a TypeScript file for type definitions by
-default.
+* `wasmtime-cpp` - again the same as for `wasmtime-py`, but for users of the
+  [`wasmtime-cpp` header file](https://github.com/alexcrichton/wasmtime-cpp) to
+  use interface types from C++.
 
-#### `witx-bindgen js --export *.witx`
+* JS - while host runtime support is provided for JS today it should also be
+  supported for
+  [JS-compiled-to-WebAssembly](https://bytecodealliance.org/articles/making-javascript-run-fast-on-webassembly).
+  For example a `*.d.ts` file could be generated for what JS projects could
+  import and then corresponding glue code for the engine-compiled-to-wasm would
+  also be generated. This means that you could use both JS-in-wasm but also JS
+  as a host (or more realistically another runtime like Wasmtime since if you're
+  running in a JS environment you're probably best off running the JS there
+  instead).
 
-This is intended for calling the exports of a WebAssembly module in a JS
-environment. This generates a wrapper class which will perform instantiation
-with a provided import object and then provides typed view of the wasm module's
-exports (dealing in JS types as well, automatically converting for you). This
-also generates a TypeScript file by default.
-
-#### `witx-bindgen c --import *.witx`
-
-This is the same as `rust-wasm --import`, but intended for C. C code compiled to
-WebAssembly can use this to import APIs.
-
-#### `witx-bindgen c --export *.witx`
-
-This is the same as `rust-wasm --export`, but intended for C. C code compiled to
-WebAssembly can use this to export specific APIs.
+Note that this is not an exclusive list, only intended to give you an idea of
+what other bindings could look like. There's a plethora of runtimes and
+languages that compile to WebAssembly, and interface types should be able to
+work with all of them and it's theoretically just some work-hours away from
+having support in `witx-bindgen`.
 
 ## Format of `*.witx` files
 

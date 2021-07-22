@@ -249,18 +249,78 @@ function host(): imports.Host {
 
       return new Markdown();
     },
+
+    listMinmax8(u, s) {
+      assert.deepEqual(u.length, 2);
+      assert.deepEqual(u[0], 0);
+      assert.deepEqual(u[1], (1 << 8) - 1);
+      assert.deepEqual(s.length, 2);
+      assert.deepEqual(s[0], -(1 << 7));
+      assert.deepEqual(s[1], (1 << 7) - 1);
+
+      return [u, s];
+    },
+
+    listMinmax16(u, s) {
+      assert.deepEqual(u.length, 2);
+      assert.deepEqual(u[0], 0);
+      assert.deepEqual(u[1], (1 << 16) - 1);
+      assert.deepEqual(s.length, 2);
+      assert.deepEqual(s[0], -(1 << 15));
+      assert.deepEqual(s[1], (1 << 15) - 1);
+
+      return [u, s];
+    },
+
+    listMinmax32(u, s) {
+      assert.deepEqual(u.length, 2);
+      assert.deepEqual(u[0], 0);
+      assert.deepEqual(u[1], ~0 >>> 0);
+      assert.deepEqual(s.length, 2);
+      assert.deepEqual(s[0], 1 << 31);
+      assert.deepEqual(s[1], ((1 << 31) - 1) >>> 0);
+
+      return [u, s];
+    },
+
+    listMinmax64(u, s) {
+      assert.deepEqual(u.length, 2);
+      assert.deepEqual(u[0], 0n);
+      assert.deepEqual(u[1], (2n ** 64n) - 1n);
+      assert.deepEqual(s.length, 2);
+      assert.deepEqual(s[0], -(2n ** 63n));
+      assert.deepEqual(s[1], (2n ** 63n) - 1n);
+
+      return [u, s];
+    },
+
+    listMinmaxFloat(f, d) {
+      assert.deepEqual(f.length, 4);
+      assert.deepEqual(f[0], -3.4028234663852886e+38);
+      assert.deepEqual(f[1], 3.4028234663852886e+38);
+      assert.deepEqual(f[2], Number.NEGATIVE_INFINITY);
+      assert.deepEqual(f[3], Number.POSITIVE_INFINITY);
+
+      assert.deepEqual(d.length, 4);
+      assert.deepEqual(d[0], -Number.MAX_VALUE);
+      assert.deepEqual(d[1], Number.MAX_VALUE);
+      assert.deepEqual(d[2], Number.NEGATIVE_INFINITY);
+      assert.deepEqual(d[3], Number.POSITIVE_INFINITY);
+
+      return [f, d];
+    },
   };
 }
 
 function runTests(wasm: exports.Wasm) {
   const bytes = wasm.allocatedBytes();
   wasm.runImportTests();
-  test_scalars(wasm);
-  test_records(wasm);
-  test_variants(wasm);
+  testScalars(wasm);
+  testRecords(wasm);
+  testVariants(wasm);
   testLists(wasm);
   testFlavorful(wasm);
-  test_invalid(wasm);
+  testInvalid(wasm);
   testHandles(wasm);
   // buffers(wasm);
 
@@ -269,7 +329,7 @@ function runTests(wasm: exports.Wasm) {
   assert.strictEqual(bytes, wasm.allocatedBytes());
 }
 
-function test_scalars(wasm: exports.Wasm) {
+function testScalars(wasm: exports.Wasm) {
   assert.strictEqual(wasm.roundtripU8(1), 1);
   assert.strictEqual(wasm.roundtripU8((1 << 8) - 1), (1 << 8) - 1);
 
@@ -285,7 +345,7 @@ function test_scalars(wasm: exports.Wasm) {
   assert.strictEqual(wasm.roundtripS16(-(1 << 15)), -(1 << 15));
 
   assert.strictEqual(wasm.roundtripU32(1), 1);
-  assert.strictEqual(wasm.roundtripU32((1 << 32) - 1), (1 << 32) - 1);
+  assert.strictEqual(wasm.roundtripU32(~0 >>> 0), ~0 >>> 0);
 
   assert.strictEqual(wasm.roundtripS32(1), 1);
   assert.strictEqual(wasm.roundtripS32(((1 << 31) - 1) >>> 0), ((1 << 31) - 1) >>> 0);
@@ -320,7 +380,7 @@ function test_scalars(wasm: exports.Wasm) {
   assert.strictEqual(wasm.getScalar(), 4);
 }
 
-function test_records(wasm: exports.Wasm) {
+function testRecords(wasm: exports.Wasm) {
   assert.deepStrictEqual(wasm.swapTuple([1, 2]), [2, 1]);
   assert.deepEqual(wasm.roundtripFlags1(exports.F1_A), exports.F1_A);
   assert.deepEqual(wasm.roundtripFlags1(0), 0);
@@ -347,7 +407,7 @@ function test_records(wasm: exports.Wasm) {
   assert.deepStrictEqual(wasm.tuple1([1]), [1]);
 }
 
-function test_variants(wasm: exports.Wasm) {
+function testVariants(wasm: exports.Wasm) {
   assert.deepStrictEqual(wasm.roundtripOption(1), 1);
   assert.deepStrictEqual(wasm.roundtripOption(null), null);
   assert.deepStrictEqual(wasm.roundtripOption(2), 2);
@@ -582,7 +642,7 @@ function testHandles(wasm: exports.Wasm) {
 //     Ok(())
 // }
 
-function test_invalid(wasm: exports.Wasm) {
+function testInvalid(wasm: exports.Wasm) {
   const exports = wasm.instance.exports as any;
   assert.throws(exports.invalid_bool, /invalid variant discriminant for bool/);
   assert.throws(exports.invalid_u8, /must be between/);

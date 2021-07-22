@@ -1329,6 +1329,7 @@ dependencies = [
  "witx-bindgen-gen-js",
  "witx-bindgen-gen-rust-wasm",
  "witx-bindgen-gen-wasmtime",
+ "witx-bindgen-gen-wasmtime-py",
  "witx2",
 ]
 
@@ -1971,6 +1972,7 @@ dependencies = [
  "witx-bindgen-gen-markdown",
  "witx-bindgen-gen-rust-wasm",
  "witx-bindgen-gen-wasmtime",
+ "witx-bindgen-gen-wasmtime-py",
 ]
 
 [[package]]
@@ -1983,6 +1985,7 @@ dependencies = [
  "witx-bindgen-gen-markdown",
  "witx-bindgen-gen-rust-wasm",
  "witx-bindgen-gen-wasmtime",
+ "witx-bindgen-gen-wasmtime-py",
  "witx-bindgen-rust",
 ]
 
@@ -2055,6 +2058,17 @@ dependencies = [
  "witx-bindgen-gen-core",
  "witx-bindgen-gen-rust",
  "witx-bindgen-wasmtime",
+]
+
+[[package]]
+name = "witx-bindgen-gen-wasmtime-py"
+version = "0.1.0"
+dependencies = [
+ "build-test-wasm",
+ "heck",
+ "structopt",
+ "test-codegen",
+ "witx-bindgen-gen-core",
 ]
 
 [[package]]

@@ -2,6 +2,7 @@
 #include <host.h>
 #include <limits.h>
 #include <math.h>
+#include <float.h>
 #include <stdio.h>
 #include <string.h>
 #include <wasm.h>
@@ -382,6 +383,78 @@ static void test_lists() {
     assert(b.len == a.len);
     assert(memcmp(b.ptr, a.ptr, a.len) == 0);
     host_string_free(&b);
+  }
+
+  {
+    uint8_t u8[2] = {0, UCHAR_MAX};
+    int8_t s8[2] = {SCHAR_MIN, SCHAR_MAX};
+    host_list_u8_t list_u8 = { u8, 2 };
+    host_list_s8_t list_s8 = { s8, 2 };
+    host_list_u8_t list_u8_out;
+    host_list_s8_t list_s8_out;
+    host_list_minmax8(&list_u8, &list_s8, &list_u8_out, &list_s8_out);
+    assert(list_u8_out.len == 2 && list_u8_out.ptr[0] == 0 && list_u8_out.ptr[1] == UCHAR_MAX);
+    assert(list_s8_out.len == 2 && list_s8_out.ptr[0] == SCHAR_MIN && list_s8_out.ptr[1] == SCHAR_MAX);
+    host_list_u8_free(&list_u8_out);
+    host_list_s8_free(&list_s8_out);
+  }
+
+  {
+    uint16_t u16[2] = {0, USHRT_MAX};
+    int16_t s16[2] = {SHRT_MIN, SHRT_MAX};
+    host_list_u16_t list_u16 = { u16, 2 };
+    host_list_s16_t list_s16 = { s16, 2 };
+    host_list_u16_t list_u16_out;
+    host_list_s16_t list_s16_out;
+    host_list_minmax16(&list_u16, &list_s16, &list_u16_out, &list_s16_out);
+    assert(list_u16_out.len == 2 && list_u16_out.ptr[0] == 0 && list_u16_out.ptr[1] == USHRT_MAX);
+    assert(list_s16_out.len == 2 && list_s16_out.ptr[0] == SHRT_MIN && list_s16_out.ptr[1] == SHRT_MAX);
+    host_list_u16_free(&list_u16_out);
+    host_list_s16_free(&list_s16_out);
+  }
+
+  {
+    uint32_t u32[2] = {0, UINT_MAX};
+    int32_t s32[2] = {INT_MIN, INT_MAX};
+    host_list_u32_t list_u32 = { u32, 2 };
+    host_list_s32_t list_s32 = { s32, 2 };
+    host_list_u32_t list_u32_out;
+    host_list_s32_t list_s32_out;
+    host_list_minmax32(&list_u32, &list_s32, &list_u32_out, &list_s32_out);
+    assert(list_u32_out.len == 2 && list_u32_out.ptr[0] == 0 && list_u32_out.ptr[1] == UINT_MAX);
+    assert(list_s32_out.len == 2 && list_s32_out.ptr[0] == INT_MIN && list_s32_out.ptr[1] == INT_MAX);
+    host_list_u32_free(&list_u32_out);
+    host_list_s32_free(&list_s32_out);
+  }
+
+  {
+    uint64_t u64[2] = {0, ULLONG_MAX};
+    int64_t s64[2] = {LLONG_MIN, LLONG_MAX};
+    host_list_u64_t list_u64 = { u64, 2 };
+    host_list_s64_t list_s64 = { s64, 2 };
+    host_list_u64_t list_u64_out;
+    host_list_s64_t list_s64_out;
+    host_list_minmax64(&list_u64, &list_s64, &list_u64_out, &list_s64_out);
+    assert(list_u64_out.len == 2 && list_u64_out.ptr[0] == 0 && list_u64_out.ptr[1] == ULLONG_MAX);
+    assert(list_s64_out.len == 2 && list_s64_out.ptr[0] == LLONG_MIN && list_s64_out.ptr[1] == LLONG_MAX);
+    host_list_u64_free(&list_u64_out);
+    host_list_s64_free(&list_s64_out);
+  }
+
+  {
+    float f32[4] = {-FLT_MAX, FLT_MAX, -INFINITY, INFINITY};
+    double f64[4] = {-DBL_MAX, DBL_MAX, -INFINITY, INFINITY};
+    host_list_f32_t list_f32 = { f32, 4 };
+    host_list_f64_t list_f64 = { f64, 4 };
+    host_list_f32_t list_f32_out;
+    host_list_f64_t list_f64_out;
+    host_list_minmax_float(&list_f32, &list_f64, &list_f32_out, &list_f64_out);
+    assert(list_f32_out.len == 4 && list_f32_out.ptr[0] == -FLT_MAX && list_f32_out.ptr[1] == FLT_MAX);
+    assert(list_f32_out.ptr[2] == -INFINITY && list_f32_out.ptr[3] == INFINITY);
+    assert(list_f64_out.len == 4 && list_f64_out.ptr[0] == -DBL_MAX && list_f64_out.ptr[1] == DBL_MAX);
+    assert(list_f64_out.ptr[2] == -INFINITY && list_f64_out.ptr[3] == INFINITY);
+    host_list_f32_free(&list_f32_out);
+    host_list_f64_free(&list_f64_out);
   }
 }
 

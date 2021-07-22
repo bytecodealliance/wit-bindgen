@@ -94,6 +94,12 @@ impl<T: Endian + PartialEq> PartialEq for Le<T> {
     }
 }
 
+impl<T: Endian + PartialEq> PartialEq<T> for Le<T> {
+    fn eq(&self, other: &T) -> bool {
+        self.get() == *other
+    }
+}
+
 impl<T: Endian + Eq> Eq for Le<T> {}
 
 impl<T: Endian + PartialOrd> PartialOrd for Le<T> {

@@ -108,6 +108,7 @@ class Editor {
       case "js": lang = Lang.Js; break;
       case "rust": lang = Lang.Rust; break;
       case "wasmtime": lang = Lang.Wasmtime; break;
+      case "wasmtime-py": lang = Lang.WasmtimePy; break;
       case "c": lang = Lang.C; break;
       case "markdown": lang = Lang.Markdown; break;
       default: return;

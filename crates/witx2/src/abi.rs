@@ -544,10 +544,12 @@ def_instruction! {
 
         // variants
 
-        /// This is a special instruction used just before a `VariantLower`
+        /// This is a special instruction used for `VariantLower`
         /// instruction to determine the name of the payload, if present, to use
-        /// within each block. Each sub-block which lowers a payload will expect
-        /// something bound to this name.
+        /// within each block.
+        ///
+        /// Each sub-block will have this be the first instruction, and if it
+        /// lowers a payload it will expect something bound to this name.
         VariantPayloadName : [0] => [1],
 
         /// TODO
@@ -1564,9 +1566,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 {
                     let retptr = retptr.unwrap();
                     let (ok, err) = v.as_expected().unwrap();
+                    self.push_block();
                     self.emit(&VariantPayloadName);
                     let payload_name = self.stack.pop().unwrap();
-                    self.push_block();
                     if let Some(ok) = ok {
                         self.stack.push(payload_name.clone());
                         let store = |me: &mut Self, ty: &Type, n| {
@@ -1598,6 +1600,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.finish_block(1);
 
                     self.push_block();
+                    self.emit(&VariantPayloadName);
+                    let payload_name = self.stack.pop().unwrap();
                     if let Some(ty) = err {
                         self.stack.push(payload_name.clone());
                         self.lower(ty, None);
@@ -1627,10 +1631,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let mut temp = Vec::new();
                     let mut casts = Vec::new();
                     self.iface.push_wasm(self.abi, self.dir, ty, &mut results);
-                    self.emit(&VariantPayloadName);
-                    let payload_name = self.stack.pop().unwrap();
                     for (i, case) in v.cases.iter().enumerate() {
                         self.push_block();
+                        self.emit(&VariantPayloadName);
+                        let payload_name = self.stack.pop().unwrap();
                         self.emit(&I32Const { val: i as i32 });
                         let mut pushed = 1;
                         if let Some(ty) = &case.ty {
@@ -2082,10 +2086,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // to the type's alignment.
                 TypeDefKind::Variant(v) => {
                     let payload_offset = offset + (self.bindgen.sizes().payload_offset(v) as i32);
-                    self.emit(&VariantPayloadName);
-                    let payload_name = self.stack.pop().unwrap();
                     for (i, case) in v.cases.iter().enumerate() {
                         self.push_block();
+                        self.emit(&VariantPayloadName);
+                        let payload_name = self.stack.pop().unwrap();
                         self.emit(&I32Const { val: i as i32 });
                         self.stack.push(addr.clone());
                         self.store_intrepr(offset, v.tag);
