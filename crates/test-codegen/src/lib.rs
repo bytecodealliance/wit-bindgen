@@ -307,6 +307,22 @@ pub fn c_export(input: TokenStream) -> TokenStream {
     })
 }
 
+#[proc_macro]
+#[cfg(feature = "witx-bindgen-gen-wasmtime-py")]
+pub fn py_import(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Import, "import", || {
+        witx_bindgen_gen_wasmtime_py::Opts::default().build()
+    })
+}
+
+#[proc_macro]
+#[cfg(feature = "witx-bindgen-gen-wasmtime-py")]
+pub fn py_export(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Export, "export", || {
+        witx_bindgen_gen_wasmtime_py::Opts::default().build()
+    })
+}
+
 fn generate_tests<G>(
     input: TokenStream,
     dir: &str,

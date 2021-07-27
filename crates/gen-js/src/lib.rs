@@ -1544,8 +1544,9 @@ impl Bindgen for FunctionBindgen<'_> {
                             "const ptr{} = realloc(0, 0, {}, len{0} * {});\n",
                             tmp, align, size,
                         ));
+                        // TODO: this is the wrong endianness
                         self.src.js(&format!(
-                            "(new Uint8Array(memory.buffer, ptr{}, len{0} * {})).set(new Uint8Array(val{0}));\n",
+                            "(new Uint8Array(memory.buffer, ptr{}, len{0} * {})).set(new Uint8Array(val{0}.buffer));\n",
                             tmp, size,
                         ));
                     }
@@ -1572,6 +1573,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         )
                     }
                     _ => {
+                        // TODO: this is the wrong endianness
                         let array_ty = self.gen.array_ty(iface, element).unwrap();
                         (
                             format!(
@@ -1677,6 +1679,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src
                     .js(&format!("const len{} = {};\n", tmp, operands[2]));
                 if let Some(ty) = self.gen.array_ty(iface, ty) {
+                    // TODO: this is the wrong endianness
                     results.push(format!("new {}(memory.buffer, ptr{}, len{1})", ty, tmp));
                 } else {
                     let size = self.gen.sizes.size(ty);
@@ -2038,7 +2041,6 @@ impl Js {
                 class Slab {
                     constructor() {
                         this.list = [];
-                        this.len = 0;
                         this.head = 0;
                     }
 

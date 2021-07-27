@@ -444,9 +444,9 @@ impl Host for MyHost {
         flag32s: Vec<Flag32>,
         flag64s: Vec<Flag64>,
     ) {
-        assert_eq!(u16s, [1.into()]);
-        assert_eq!(u32s, [2.into()]);
-        assert_eq!(u64s, [3.into()]);
+        assert_eq!(u16s, [1]);
+        assert_eq!(u32s, [2]);
+        assert_eq!(u64s, [3]);
         assert_eq!(flag32s, [Flag32::B8]);
         assert_eq!(flag64s, [Flag64::B9]);
     }
@@ -462,8 +462,8 @@ impl Host for MyHost {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].get().a, 10);
         assert_eq!(records[0].get().b, 11);
-        assert_eq!(f32s, [100.0.into()]);
-        assert_eq!(f64s, [101.0.into()]);
+        assert_eq!(f32s, [100.0]);
+        assert_eq!(f64s, [101.0]);
         assert_eq!(strings, ["foo"]);
         assert_eq!(lists, [&[102][..]]);
     }
@@ -478,5 +478,47 @@ impl Host for MyHost {
 
     fn markdown2_render(&mut self, md: &Markdown) -> String {
         md.buf.borrow().replace("red", "green")
+    }
+
+    fn list_minmax8(&mut self, u: &[u8], s: &[i8]) -> (Vec<u8>, Vec<i8>) {
+        assert_eq!(u, [u8::MIN, u8::MAX]);
+        assert_eq!(s, [i8::MIN, i8::MAX]);
+        (u.to_vec(), s.to_vec())
+    }
+
+    fn list_minmax16(&mut self, u: &[Le<u16>], s: &[Le<i16>]) -> (Vec<u16>, Vec<i16>) {
+        assert_eq!(u, [u16::MIN, u16::MAX]);
+        assert_eq!(s, [i16::MIN, i16::MAX]);
+        (
+            u.iter().map(|e| e.get()).collect(),
+            s.iter().map(|e| e.get()).collect(),
+        )
+    }
+
+    fn list_minmax32(&mut self, u: &[Le<u32>], s: &[Le<i32>]) -> (Vec<u32>, Vec<i32>) {
+        assert_eq!(u, [u32::MIN, u32::MAX]);
+        assert_eq!(s, [i32::MIN, i32::MAX]);
+        (
+            u.iter().map(|e| e.get()).collect(),
+            s.iter().map(|e| e.get()).collect(),
+        )
+    }
+
+    fn list_minmax64(&mut self, u: &[Le<u64>], s: &[Le<i64>]) -> (Vec<u64>, Vec<i64>) {
+        assert_eq!(u, [u64::MIN, u64::MAX]);
+        assert_eq!(s, [i64::MIN, i64::MAX]);
+        (
+            u.iter().map(|e| e.get()).collect(),
+            s.iter().map(|e| e.get()).collect(),
+        )
+    }
+
+    fn list_minmax_float(&mut self, u: &[Le<f32>], s: &[Le<f64>]) -> (Vec<f32>, Vec<f64>) {
+        assert_eq!(u, [f32::MIN, f32::MAX, f32::NEG_INFINITY, f32::INFINITY]);
+        assert_eq!(s, [f64::MIN, f64::MAX, f64::NEG_INFINITY, f64::INFINITY]);
+        (
+            u.iter().map(|e| e.get()).collect(),
+            s.iter().map(|e| e.get()).collect(),
+        )
     }
 }

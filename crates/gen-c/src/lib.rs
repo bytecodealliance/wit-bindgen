@@ -1512,7 +1512,10 @@ impl Bindgen for FunctionBindgen<'_> {
                     .blocks
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
-                let payload = self.payloads.pop().unwrap();
+                let payloads = self
+                    .payloads
+                    .drain(self.payloads.len() - variant.cases.len()..)
+                    .collect::<Vec<_>>();
 
                 if results.len() == 1 && variant.is_enum() {
                     results.push(format!("(int32_t) {}", operands[0]));
@@ -1538,8 +1541,8 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 self.src
                     .push_str(&format!("switch ((int32_t) {}) {{\n", expr_to_match));
-                for (i, (case, (block, block_results))) in
-                    variant.cases.iter().zip(blocks).enumerate()
+                for (i, ((case, (block, block_results)), payload)) in
+                    variant.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
                     self.src.push_str(&format!("case {}: {{\n", i));
                     if let Some(ty) = &case.ty {

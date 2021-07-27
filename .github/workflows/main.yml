@@ -52,6 +52,10 @@ jobs:
     - name: Install NPM packages
       run: npm install
       working-directory: crates/gen-js
+    - uses: actions/setup-python@v1
+      with:
+        python-version: 3.9
+    - run: pip install mypy wasmtime
     - if: matrix.mode == 'release'
       name: Test release build
       run: cargo test --workspace --release

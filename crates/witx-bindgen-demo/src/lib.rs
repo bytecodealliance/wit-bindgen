@@ -17,6 +17,7 @@ pub struct Config {
     c: RefCell<witx_bindgen_gen_c::Opts>,
     rust: RefCell<witx_bindgen_gen_rust_wasm::Opts>,
     wasmtime: RefCell<witx_bindgen_gen_wasmtime::Opts>,
+    wasmtime_py: RefCell<witx_bindgen_gen_wasmtime_py::Opts>,
     markdown: RefCell<witx_bindgen_gen_markdown::Opts>,
 }
 
@@ -43,6 +44,7 @@ impl demo::Config for Config {
         let mut gen: Box<dyn Generator> = match lang {
             demo::Lang::Rust => Box::new(self.rust.borrow().clone().build()),
             demo::Lang::Wasmtime => Box::new(self.wasmtime.borrow().clone().build()),
+            demo::Lang::WasmtimePy => Box::new(self.wasmtime_py.borrow().clone().build()),
             demo::Lang::Js => Box::new(self.js.borrow().clone().build()),
             demo::Lang::C => Box::new(self.c.borrow().clone().build()),
             demo::Lang::Markdown => Box::new(self.markdown.borrow().clone().build()),

@@ -24,6 +24,12 @@ enum Command {
         #[structopt(flatten)]
         common: Common,
     },
+    WasmtimePy {
+        #[structopt(flatten)]
+        opts: witx_bindgen_gen_wasmtime_py::Opts,
+        #[structopt(flatten)]
+        common: Common,
+    },
     Js {
         #[structopt(flatten)]
         opts: witx_bindgen_gen_js::Opts,
@@ -67,6 +73,7 @@ fn main() -> Result<()> {
     let (mut generator, common): (Box<dyn Generator>, _) = match opt.command {
         Command::RustWasm { opts, common } => (Box::new(opts.build()), common),
         Command::Wasmtime { opts, common } => (Box::new(opts.build()), common),
+        Command::WasmtimePy { opts, common } => (Box::new(opts.build()), common),
         Command::Js { opts, common } => (Box::new(opts.build()), common),
         Command::C { opts, common } => (Box::new(opts.build()), common),
         Command::Markdown { opts, common } => (Box::new(opts.build()), common),

@@ -256,6 +256,33 @@ fn host_lists() {
             &*lists.as_slice(),
         );
     }
+
+    assert_eq!(
+        list_minmax8(&[u8::MIN, u8::MAX], &[i8::MIN, i8::MAX]),
+        (vec![u8::MIN, u8::MAX], vec![i8::MIN, i8::MAX]),
+    );
+    assert_eq!(
+        list_minmax16(&[u16::MIN, u16::MAX], &[i16::MIN, i16::MAX]),
+        (vec![u16::MIN, u16::MAX], vec![i16::MIN, i16::MAX]),
+    );
+    assert_eq!(
+        list_minmax32(&[u32::MIN, u32::MAX], &[i32::MIN, i32::MAX]),
+        (vec![u32::MIN, u32::MAX], vec![i32::MIN, i32::MAX]),
+    );
+    assert_eq!(
+        list_minmax64(&[u64::MIN, u64::MAX], &[i64::MIN, i64::MAX]),
+        (vec![u64::MIN, u64::MAX], vec![i64::MIN, i64::MAX]),
+    );
+    assert_eq!(
+        list_minmax_float(
+            &[f32::MIN, f32::MAX, f32::NEG_INFINITY, f32::INFINITY],
+            &[f64::MIN, f64::MAX, f64::NEG_INFINITY, f64::INFINITY]
+        ),
+        (
+            vec![f32::MIN, f32::MAX, f32::NEG_INFINITY, f32::INFINITY],
+            vec![f64::MIN, f64::MAX, f64::NEG_INFINITY, f64::INFINITY],
+        ),
+    );
 }
 
 fn host_flavorful() {

@@ -108,6 +108,7 @@ class Editor {
       case "js": lang = Lang.Js; break;
       case "rust": lang = Lang.Rust; break;
       case "wasmtime": lang = Lang.Wasmtime; break;
+      case "wasmtime-py": lang = Lang.WasmtimePy; break;
       case "c": lang = Lang.C; break;
       case "markdown": lang = Lang.Markdown; break;
       default: return;
@@ -167,6 +168,8 @@ class Editor {
       this.outputEditor.session.setMode("ace/mode/c_cpp");
     else if (this.files.value.endsWith('.md'))
       this.outputEditor.session.setMode("ace/mode/markdown");
+    else if (this.files.value.endsWith('.py'))
+      this.outputEditor.session.setMode("ace/mode/python");
     else
       this.outputEditor.session.setMode(null);
   }
