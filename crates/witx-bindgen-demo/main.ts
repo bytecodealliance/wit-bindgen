@@ -168,6 +168,8 @@ class Editor {
       this.outputEditor.session.setMode("ace/mode/c_cpp");
     else if (this.files.value.endsWith('.md'))
       this.outputEditor.session.setMode("ace/mode/markdown");
+    else if (this.files.value.endsWith('.py'))
+      this.outputEditor.session.setMode("ace/mode/python");
     else
       this.outputEditor.session.setMode(null);
   }
