@@ -119,11 +119,25 @@ to follow the canonical ABI for their exports/imports:
   other type-checkers.
 
 All generators support the `--import` and `--export` flags in the `witx-bindgen`
-CLI tool. Here "import" means "imported by WebAssembly" and "export" means
+CLI tool:
+
+```
+$ witx-bindgen js --import browser.witx
+$ witx-bindgen rust-wasm --export my-interface.witx
+$ witx-bindgen wasmtime --import host-functions.witx
+```
+
+Here "import" means "imported by WebAssembly" and "export" means
 "exported by WebAssembly". This means that wasm files import APIs with
 `--import`, whereas hosts provide imports to wasm modules using `--import` (the
 terminology here [can be
 confusing](https://github.com/bytecodealliance/witx-bindgen/issues/34)
+
+Finally in a sort of "miscellaneous" category the `witx-bindgen` CLI also
+supports:
+
+* `markdown` - generates a `*.md` and a `*.html` file with readable
+  documentation rendered from the comments in the source `*.witx` file.
 
 Note that the list of supported languages here is a snapshot in time and is not
 final. The purpose of the interface-types proposal is to be language agnostic
