@@ -3,7 +3,7 @@ use wasmparser::FuncType;
 /// Represents a link profile.
 ///
 /// Link profiles represent information about the target environment.
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct Profile {}
 
 impl Profile {

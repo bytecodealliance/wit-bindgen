@@ -26,7 +26,7 @@ impl Locals {
     }
 
     fn allocate(&mut self) -> u32 {
-        assert!(self.allocated + 1 <= self.count);
+        assert!(self.allocated < self.count);
         let index = self.start + self.allocated;
         self.allocated += 1;
         index
@@ -222,6 +222,7 @@ pub(crate) struct CallAdapter<'a> {
 }
 
 impl<'a> CallAdapter<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         interface: &'a Interface,
         signature: &'a WasmSignature,
@@ -237,7 +238,7 @@ impl<'a> CallAdapter<'a> {
 
         let mut locals_count = 0;
 
-        let mut iter = (0..signature.params.len() as u32).into_iter();
+        let mut iter = 0..signature.params.len() as u32;
         let mut params = Vec::new();
         for (_, ty) in &func.params {
             Self::push_operands(
@@ -255,7 +256,7 @@ impl<'a> CallAdapter<'a> {
             // For the callee's retptr
             locals_count += 1;
 
-            let mut iter = (0..retptr.len() as u32).into_iter();
+            let mut iter = 0..retptr.len() as u32;
             let mut results = Vec::new();
             for (_, ty) in &func.results {
                 Self::push_operands(
@@ -274,7 +275,7 @@ impl<'a> CallAdapter<'a> {
             // Use the possible index for the return value local
             let index = signature.params.len() as u32 + locals_count;
 
-            let mut iter = (index..index + 1).into_iter();
+            let mut iter = index..index + 1;
             let mut results = Vec::new();
             Self::push_operands(
                 inner,
@@ -632,7 +633,7 @@ impl<'a> CallAdapter<'a> {
                     });
                 }
                 TypeDefKind::Record(r) => match r.kind {
-                    RecordKind::Flags(_) => return,
+                    RecordKind::Flags(_) => {}
                     RecordKind::Tuple | RecordKind::Other => {
                         let offsets = sizes.field_offsets(r);
 
@@ -649,7 +650,7 @@ impl<'a> CallAdapter<'a> {
                         }
                     }
                 },
-                TypeDefKind::Variant(v) if v.is_bool() || v.is_enum() => return,
+                TypeDefKind::Variant(v) if v.is_bool() || v.is_enum() => {}
                 TypeDefKind::Variant(v) => {
                     let payload_offset = sizes.payload_offset(v) as u32;
 
@@ -679,7 +680,7 @@ impl<'a> CallAdapter<'a> {
                         });
                     }
                 }
-                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => return,
+                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {}
                 TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => todo!(),
             },
             Type::Handle(id) => {
@@ -694,7 +695,7 @@ impl<'a> CallAdapter<'a> {
                     name: interface.resources[*id].name.as_str(),
                 });
             }
-            _ => return,
+            _ => {}
         }
     }
 
@@ -856,6 +857,7 @@ impl<'a> CallAdapter<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn emit_copy_element_operands(
         &self,
         function: &mut wasm_encoder::Function,
@@ -920,6 +922,7 @@ impl<'a> CallAdapter<'a> {
         function.instruction(Instruction::End);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn emit_copy_list(
         &self,
         function: &mut wasm_encoder::Function,

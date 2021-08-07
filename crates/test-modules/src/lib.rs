@@ -28,9 +28,9 @@ mod tests {
     pub fn link(main: &str, imports: &[&str]) -> Result<Vec<u8>> {
         let main_bytes = fs::read(module_path(main))?;
 
-        let main_module = Module::new("main", &main_bytes)?;
+        let main_module = Module::new("main", &main_bytes, [])?;
 
-        let imports: HashMap<&str, Vec<u8>> = imports
+        let import_bytes: HashMap<&str, Vec<u8>> = imports
             .iter()
             .map(|name| {
                 fs::read(module_path(name))
@@ -39,14 +39,17 @@ mod tests {
             })
             .collect::<Result<HashMap<&str, Vec<u8>>>>()?;
 
-        let import_modules: HashMap<&str, Module> = imports
+        let import_modules: HashMap<&str, Module> = import_bytes
             .iter()
             .map(|(name, bytes)| {
-                Module::new(name, bytes).and_then(|mut m| {
-                    let path = witx_path(name);
-                    m.read_interface(&path)?;
-                    Ok((name.as_ref(), m))
-                })
+                Ok((
+                    *name,
+                    Module::new(
+                        name,
+                        bytes,
+                        [witx2::Interface::parse_file(witx_path(name))?],
+                    )?,
+                ))
             })
             .collect::<Result<HashMap<_, _>>>()?;
 

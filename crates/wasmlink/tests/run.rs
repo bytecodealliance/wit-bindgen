@@ -1,9 +1,26 @@
 use anyhow::{Context, Result};
 use pretty_assertions::assert_eq;
-use std::{env, ffi::OsStr, fs};
+use std::{env, ffi::OsStr, fs, path::Path};
 use wasmlink::{Module, ModuleAdapter};
 use wasmprinter::print_bytes;
 use wat::parse_file;
+
+fn adapt(name: &str, bytes: &[u8], witx_path: &Path) -> Result<wasm_encoder::Module> {
+    let module = Module::new(
+        name,
+        bytes,
+        if witx_path.is_file() {
+            vec![witx2::Interface::parse_file(witx_path)?]
+        } else {
+            Vec::new()
+        },
+    )?;
+
+    let mut next_resource_id = 0;
+    let adapter = ModuleAdapter::new(&module, &mut next_resource_id);
+
+    adapter.adapt()
+}
 
 #[test]
 fn wasmlink_file_tests() -> Result<()> {
@@ -19,18 +36,10 @@ fn wasmlink_file_tests() -> Result<()> {
             (Some(stem), Some("wat")) => {
                 let bytes = parse_file(&path)?;
 
-                let mut module = Module::new(stem, &bytes)?;
-
                 let mut witx_path = path.clone();
                 assert!(witx_path.set_extension("witx"));
-                if witx_path.is_file() {
-                    assert!(module.read_interface(&witx_path)?);
-                }
 
-                let mut next_resource_id = 0;
-                let adapter = ModuleAdapter::new(&module, &mut next_resource_id);
-
-                let output = match adapter.adapt() {
+                let output = match adapt(stem, &bytes, &witx_path) {
                     Ok(adapted) => print_bytes(&adapted.finish())?,
                     Err(e) => e.to_string(),
                 };

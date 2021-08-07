@@ -91,7 +91,7 @@ impl<'a> Resources<'a> {
         let mut remove_index = None;
         let mut drop_callback_type_index = None;
 
-        if module.has_resources() {
+        if module.has_resources {
             let mut type_map = HashMap::new();
 
             // Populate the types
@@ -139,7 +139,11 @@ impl<'a> Resources<'a> {
 
             drop_callback_type_index = Some(ft_pi32_index);
 
-            for (_, resource) in &module.interface.as_ref().unwrap().inner().resources {
+            for (_, resource) in module
+                .interfaces
+                .iter()
+                .flat_map(|i| i.inner().resources.iter())
+            {
                 if resource.foreign_module.is_some() {
                     continue;
                 }
