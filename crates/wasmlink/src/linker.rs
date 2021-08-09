@@ -126,16 +126,22 @@ impl<'a> LinkedModule<'a> {
             linked.instances.push((index, args));
         }
 
-        // Instantiate the main module
-        let (main_index, _) = linked.instantiate(graph, NodeIndex::new(0), None)?;
+        // Instantiate the root module
+        let (root_index, _) = linked.instantiate(graph, NodeIndex::new(0), None)?;
 
-        // Re-export the start function
-        let start_index = linked.func_aliases.len() as u32;
-        linked.func_aliases.push((main_index, "_start"));
-        linked.exports.push((
-            "_start",
-            wasm_encoder::Export::Function(linked.imports.len() as u32 + start_index),
-        ));
+        let root = &graph[NodeIndex::new(0)];
+
+        // Re-export all functions from the root module
+        for export in &root.module.exports {
+            if let ExternalKind::Function = export.kind {
+                let func_index = linked.func_aliases.len() as u32;
+                linked.func_aliases.push((root_index, export.field));
+                linked.exports.push((
+                    export.field,
+                    wasm_encoder::Export::Function(linked.imports.len() as u32 + func_index),
+                ));
+            }
+        }
 
         Ok(linked)
     }
@@ -370,21 +376,8 @@ impl Linker {
     /// Links the given module with the given set of imported modules.
     ///
     /// On success, returns a vector of bytes representing the linked module.
-    pub fn link(&self, main: &Module, imports: &HashMap<&str, Module>) -> Result<Vec<u8>> {
-        if !main.exports.iter().any(|e| match (e.field, e.kind) {
-            ("_start", ExternalKind::Function) => {
-                let ty = main.func_type(e.index).unwrap();
-                ty.params.is_empty() && ty.returns.is_empty()
-            }
-            _ => false,
-        }) {
-            bail!(
-                "main module `{}` must export a start function that has no parameters or results",
-                main.name
-            );
-        }
-
-        let (graph, needs_runtime) = self.build_graph(main, imports)?;
+    pub fn link(&self, module: &Module, imports: &HashMap<&str, Module>) -> Result<Vec<u8>> {
+        let (graph, needs_runtime) = self.build_graph(module, imports)?;
 
         let module = LinkedModule::new(&graph, needs_runtime, &self.profile)?;
 
@@ -393,16 +386,16 @@ impl Linker {
 
     fn build_graph<'a>(
         &self,
-        main: &'a Module,
+        module: &'a Module,
         imports: &'a HashMap<&str, Module>,
     ) -> Result<(Graph<ModuleAdapter<'a>, ()>, bool)> {
         let mut queue: Vec<(Option<petgraph::graph::NodeIndex>, &Module)> = Vec::new();
         let mut seen = HashMap::new();
         let mut graph: Graph<ModuleAdapter, ()> = Graph::new();
 
-        let mut needs_runtime = main.has_resources;
+        let mut needs_runtime = module.has_resources;
 
-        queue.push((None, main));
+        queue.push((None, module));
 
         let mut next_resource_id = 0;
 
@@ -475,36 +468,6 @@ impl Linker {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn it_errors_on_missing_main_function() -> Result<()> {
-        let bytes = wat::parse_str(r#"(module)"#)?;
-        let main = Module::new("main", &bytes, [])?;
-
-        let linker = Linker::new(Profile::new());
-
-        assert_eq!(
-            linker.link(&main, &HashMap::new()).unwrap_err().to_string(),
-            "main module `main` must export a start function that has no parameters or results"
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn it_errors_on_incorrect_main_function() -> Result<()> {
-        let bytes = wat::parse_str(r#"(module (func (export "_start") (param i32)))"#)?;
-        let main = Module::new("main", &bytes, [])?;
-
-        let linker = Linker::new(Profile::new());
-
-        assert_eq!(
-            linker.link(&main, &HashMap::new()).unwrap_err().to_string(),
-            "main module `main` must export a start function that has no parameters or results"
-        );
-
-        Ok(())
-    }
 
     #[test]
     fn it_errors_on_missing_import() -> Result<()> {
@@ -853,8 +816,10 @@ mod test {
       (import \"$parent\" (instance 2))))
   (alias 3 \"a\" (func (;1;)))
   (alias 2 \"_start\" (func (;2;)))
+  (alias 2 \"canonical_abi_realloc\" (func (;3;)))
   (alias 1 \"$funcs\" (table (;0;)))
   (export \"_start\" (func 2))
+  (export \"canonical_abi_realloc\" (func 3))
   (elem (;0;) (i32.const 0) funcref (ref.func 1)))"
         );
 
