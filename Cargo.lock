@@ -1341,6 +1341,7 @@ dependencies = [
  "wasmlink",
  "wasmtime",
  "wasmtime-wasi",
+ "witx2",
 ]
 
 [[package]]
@@ -1583,6 +1584,7 @@ dependencies = [
  "structopt",
  "wasmlink",
  "wat",
+ "witx2",
 ]
 
 [[package]]

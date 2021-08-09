@@ -1,5 +1,9 @@
-use anyhow::{anyhow, bail, Context, Result};
-use std::path::Path;
+use crate::adapter::{
+    FREE_EXPORT_NAME, FREE_FUNC_TYPE, MEMORY_EXPORT_NAME, REALLOC_EXPORT_NAME, REALLOC_FUNC_TYPE,
+};
+use anyhow::{anyhow, bail, Result};
+use core::fmt;
+use std::collections::HashMap;
 use wasmparser::{
     Chunk, Export, ExternalKind, FuncType, Import, ImportSectionEntryType, Parser, Payload, Range,
     SectionReader, Type, TypeDef, Validator,
@@ -8,8 +12,6 @@ use witx2::{
     abi::{Direction, WasmSignature, WasmType},
     Function, SizeAlign,
 };
-
-const INTERFACE_SECTION_NAME: &str = ".interface";
 
 fn import_kind(ty: ImportSectionEntryType) -> &'static str {
     match ty {
@@ -68,20 +70,17 @@ pub(crate) struct Interface {
     inner: witx2::Interface,
     sizes: SizeAlign,
     func_infos: Vec<FunctionInfo>,
-    must_adapt: bool,
+    pub(crate) must_adapt: bool,
     needs_memory: bool,
-    needs_realloc_free: bool,
+    needs_memory_funcs: bool,
     has_resources: bool,
 }
 
 impl Interface {
-    pub fn parse(name: &str, source: &str) -> Result<Self> {
-        let inner = witx2::Interface::parse(name, source)
-            .map_err(|e| anyhow!("failed to parse interface definition: {}", e))?;
-
+    pub fn new(inner: witx2::Interface) -> Self {
         let mut must_adapt_module = false;
         let mut needs_memory = false;
-        let mut needs_realloc_free = false;
+        let mut needs_memory_funcs = false;
 
         let func_infos = inner
             .functions
@@ -101,12 +100,12 @@ impl Interface {
                     || f.results.iter().any(|(_, ty)| !inner.all_bits_valid(ty));
 
                 if must_adapt_func {
-                    if !needs_realloc_free {
-                        needs_realloc_free = f.params.iter().any(|(_, ty)| has_list(&inner, ty))
+                    if !needs_memory_funcs {
+                        needs_memory_funcs = f.params.iter().any(|(_, ty)| has_list(&inner, ty))
                             || f.results.iter().any(|(_, ty)| has_list(&inner, ty));
                     }
 
-                    needs_memory |= has_retptr | needs_realloc_free;
+                    needs_memory |= has_retptr | needs_memory_funcs;
                     must_adapt_module = true;
                 }
 
@@ -127,15 +126,15 @@ impl Interface {
             .iter()
             .any(|(_, r)| r.foreign_module.is_none());
 
-        Ok(Self {
+        Self {
             inner,
             sizes,
             func_infos,
             must_adapt: must_adapt_module,
             needs_memory,
-            needs_realloc_free,
+            needs_memory_funcs,
             has_resources,
-        })
+        }
     }
 
     pub fn inner(&self) -> &witx2::Interface {
@@ -152,18 +151,6 @@ impl Interface {
 
     pub fn lookup_info(&self, name: &str) -> Option<&FunctionInfo> {
         Some(&self.func_infos[self.inner.functions.iter().position(|f| f.name == name)?])
-    }
-
-    pub fn needs_memory(&self) -> bool {
-        self.needs_memory
-    }
-
-    pub fn needs_realloc_free(&self) -> bool {
-        self.needs_realloc_free
-    }
-
-    pub fn has_resources(&self) -> bool {
-        self.has_resources
     }
 
     fn sig_to_type(signature: &WasmSignature) -> FuncType {
@@ -203,14 +190,24 @@ pub struct Module<'a> {
     pub(crate) types: Vec<TypeDef<'a>>,
     pub(crate) imports: Vec<Import<'a>>,
     pub(crate) exports: Vec<Export<'a>>,
-    functions: Vec<u32>,
-    sections: Vec<wasm_encoder::RawSection<'a>>,
-    pub(crate) interface: Option<Interface>,
+    pub(crate) interfaces: Vec<Interface>,
+    pub(crate) functions: Vec<u32>,
+    pub(crate) sections: Vec<wasm_encoder::RawSection<'a>>,
+    pub(crate) must_adapt: bool,
+    pub(crate) needs_memory: bool,
+    pub(crate) needs_memory_funcs: bool,
+    pub(crate) has_resources: bool,
 }
 
 impl<'a> Module<'a> {
     /// Constructs a new WebAssembly module from a name and the module's bytes.
-    pub fn new(name: &'a str, bytes: &'a [u8]) -> Result<Self> {
+    ///
+    /// The specified interfaces are for every interface the module exports.
+    pub fn new(
+        name: &'a str,
+        bytes: &'a [u8],
+        interfaces: impl IntoIterator<Item = witx2::Interface>,
+    ) -> Result<Self> {
         let mut module = Self {
             name,
             bytes,
@@ -219,26 +216,25 @@ impl<'a> Module<'a> {
             exports: Vec::new(),
             functions: Vec::new(),
             sections: Vec::new(),
-            interface: None,
+            interfaces: interfaces.into_iter().map(Interface::new).collect(),
+            must_adapt: false,
+            needs_memory: false,
+            needs_memory_funcs: false,
+            has_resources: false,
         };
+
+        for interface in &module.interfaces {
+            module.must_adapt |= interface.must_adapt;
+            module.needs_memory |= interface.needs_memory;
+            module.needs_memory_funcs |= interface.needs_memory_funcs;
+            module.has_resources |= interface.has_resources;
+        }
 
         module.parse()?;
 
+        module.validate()?;
+
         Ok(module)
-    }
-
-    pub(crate) fn must_adapt(&self) -> bool {
-        self.interface
-            .as_ref()
-            .map(|i| i.must_adapt)
-            .unwrap_or(false)
-    }
-
-    pub(crate) fn has_resources(&self) -> bool {
-        self.interface
-            .as_ref()
-            .map(|i| i.has_resources())
-            .unwrap_or(false)
     }
 
     fn add_section(&mut self, id: wasm_encoder::SectionId, range: Range) {
@@ -352,21 +348,7 @@ impl<'a> Module<'a> {
                     bail!("module is already linked as it contains a module section")
                 }
                 Payload::ModuleSectionEntry { .. } => unreachable!(),
-                Payload::CustomSection {
-                    name, range, data, ..
-                } => {
-                    if name == INTERFACE_SECTION_NAME {
-                        if self.interface.is_some() {
-                            bail!("module contains multiple interface sections");
-                        }
-
-                        self.interface = Some(Interface::parse(
-                            self.name,
-                            std::str::from_utf8(data)
-                                .map_err(|e| anyhow!("invalid interface section: {}", e))?,
-                        )?);
-                    }
-
+                Payload::CustomSection { range, .. } => {
                     self.add_section(wasm_encoder::SectionId::Custom, range)
                 }
                 Payload::UnknownSection { id, .. } => {
@@ -379,24 +361,128 @@ impl<'a> Module<'a> {
         Ok(())
     }
 
-    /// Reads the module's interface from the given file path.
-    ///
-    /// If the module has an embedded interface definition, the external file is ignored.
-    pub fn read_interface(&mut self, path: impl AsRef<Path>) -> Result<bool> {
-        if self.interface.is_some() {
-            return Ok(false);
+    fn validate(&self) -> Result<()> {
+        enum ExpectedExportType<'a> {
+            Memory,
+            Function(&'a FuncType),
         }
 
-        let source = std::fs::read_to_string(&path).with_context(|| {
-            format!(
-                "failed to read interface file `{}`",
-                path.as_ref().display()
-            )
-        })?;
+        impl fmt::Display for ExpectedExportType<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    Self::Memory => write!(f, "memory"),
+                    Self::Function { .. } => write!(f, "function"),
+                }
+            }
+        }
 
-        self.interface = Some(Interface::parse(self.name, &source)?);
+        let mut expected = Vec::new();
 
-        Ok(true)
+        if self.needs_memory {
+            expected.push((MEMORY_EXPORT_NAME, ExpectedExportType::Memory, false));
+        }
+
+        if self.needs_memory_funcs {
+            expected.extend([
+                (
+                    REALLOC_EXPORT_NAME,
+                    ExpectedExportType::Function(&REALLOC_FUNC_TYPE),
+                    false,
+                ),
+                (
+                    FREE_EXPORT_NAME,
+                    ExpectedExportType::Function(&FREE_FUNC_TYPE),
+                    false,
+                ),
+            ]);
+        }
+
+        let mut exports = HashMap::new();
+        let mut resources = HashMap::new();
+        for interface in &self.interfaces {
+            for (f, info) in interface.iter() {
+                expected.push((
+                    f.name.as_str(),
+                    ExpectedExportType::Function(&info.export_type),
+                    false,
+                ));
+
+                if let Some(prev) = exports.insert(&f.name, interface) {
+                    bail!(
+                        "function `{}` is defined by both interface `{}` and interface `{}`",
+                        f.name,
+                        interface.inner.name,
+                        prev.inner.name
+                    );
+                }
+            }
+
+            for (_, r) in &interface.inner.resources {
+                if let Some(prev) = resources.insert(&r.name, interface) {
+                    bail!(
+                        "resource `{}` is defined by both interface `{}` and interface `{}`",
+                        r.name,
+                        interface.inner.name,
+                        prev.inner.name
+                    );
+                }
+            }
+        }
+
+        for (expected_name, expected_type, seen) in &mut expected {
+            match self.exports.iter().find(|e| e.field == *expected_name) {
+                Some(e) => {
+                    if e.field == *expected_name {
+                        *seen = true;
+                        match (e.kind, &expected_type) {
+                            (ExternalKind::Function, ExpectedExportType::Function(expected_ty)) => {
+                                let ty = self.func_type(e.index).ok_or_else(|| {
+                                    anyhow!(
+                                        "required export `{}` from module `{}` is not a function",
+                                        e.field,
+                                        self.name
+                                    )
+                                })?;
+
+                                if ty != *expected_ty {
+                                    bail!(
+                                        "required export `{}` from module `{}` does not have the expected function signature of {:?} -> {:?}",
+                                        e.field,
+                                        self.name,
+                                        expected_ty.params,
+                                        expected_ty.returns
+                                    );
+                                }
+                            }
+                            (ExternalKind::Memory, ExpectedExportType::Memory) => {
+                                // No further validation required for the memory's type
+                            }
+                            _ => {
+                                bail!(
+                                    "required export `{}` from module `{}` is not a {}",
+                                    e.field,
+                                    self.name,
+                                    expected_type
+                                )
+                            }
+                        }
+                    }
+                }
+                None => continue,
+            }
+        }
+
+        for (name, _, seen) in &expected {
+            if !*seen {
+                bail!(
+                    "required export `{}` is missing from module `{}`",
+                    name,
+                    self.name
+                );
+            }
+        }
+
+        Ok(())
     }
 
     pub(crate) fn func_type(&self, index: u32) -> Option<&FuncType> {
@@ -439,9 +525,13 @@ impl<'a> Module<'a> {
             })?;
 
         // For adapted functions, resolve by the function's import type and not the actual wasm type
-        let func_type = if let Some(interface) = &self.interface {
-            let info = interface
-                .lookup_info(import.field.unwrap_or(""))
+        let func_type = if self.interfaces.is_empty() {
+            self.func_type(export.index)
+        } else {
+            let info = self
+                .interfaces
+                .iter()
+                .find_map(|i| i.lookup_info(import.field.unwrap_or("")))
                 .ok_or_else(|| {
                     anyhow!(
                         "module `{}` does not export a function named `{}` in its interface",
@@ -451,8 +541,6 @@ impl<'a> Module<'a> {
                 })?;
 
             Some(&info.import_type)
-        } else {
-            self.func_type(export.index)
         };
 
         match (import.ty, export.kind) {

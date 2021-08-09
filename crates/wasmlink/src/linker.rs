@@ -28,6 +28,7 @@ pub fn to_val_type(ty: &Type) -> wasm_encoder::ValType {
 }
 
 /// Represents a linked module built from a dependency graph.
+#[derive(Default)]
 struct LinkedModule<'a> {
     types: Vec<&'a FuncType>,
     imports: Vec<(&'a str, Option<&'a str>, wasm_encoder::EntityType)>,
@@ -48,18 +49,7 @@ impl<'a> LinkedModule<'a> {
         needs_runtime: bool,
         profile: &Profile,
     ) -> Result<Self> {
-        let mut linked = Self {
-            types: Vec::new(),
-            imports: Vec::new(),
-            implicit_instances: HashMap::new(),
-            modules: Vec::new(),
-            module_map: HashMap::new(),
-            instances: Vec::new(),
-            func_aliases: Vec::new(),
-            table_aliases: Vec::new(),
-            segments: Vec::new(),
-            exports: Vec::new(),
-        };
+        let mut linked = Self::default();
 
         let mut types = HashMap::new();
         let mut profile_imports = HashMap::new();
@@ -125,7 +115,7 @@ impl<'a> LinkedModule<'a> {
 
         if needs_runtime {
             let bytes = include_bytes!(env!("RUNTIME_WASM_PATH"));
-            let module = Module::new(RUNTIME_MODULE_NAME, bytes)?;
+            let module = Module::new(RUNTIME_MODULE_NAME, bytes, [])?;
             let index = linked.modules.len() as u32;
             linked.modules.push(module.encode());
             let mut args = Vec::new();
@@ -181,7 +171,7 @@ impl<'a> LinkedModule<'a> {
         }
 
         // If the module has resources, import the runtime module
-        if graph[current].module.has_resources() {
+        if graph[current].module.has_resources {
             args.push((RUNTIME_MODULE_NAME, self.implicit_instances.len() as u32));
         }
 
@@ -195,7 +185,7 @@ impl<'a> LinkedModule<'a> {
             args.push((neighbor_adapter.module.name, index));
 
             // If the adapted module has resources, import it as the canonical ABI module too
-            if neighbor_adapter.module.has_resources() {
+            if neighbor_adapter.module.has_resources {
                 args.push((CANONICAL_ABI_MODULE_NAME, index));
             }
 
@@ -217,11 +207,7 @@ impl<'a> LinkedModule<'a> {
                 .exports
                 .iter()
                 .find(|e| {
-                    e.field == REALLOC_EXPORT_NAME
-                        && match e.kind {
-                            ExternalKind::Function => true,
-                            _ => false,
-                        }
+                    e.field == REALLOC_EXPORT_NAME && matches!(e.kind, ExternalKind::Function)
                 })
                 .ok_or_else(|| {
                     anyhow!(
@@ -361,7 +347,7 @@ impl<'a> LinkedModule<'a> {
                 Some(*table_index),
                 wasm_encoder::Instruction::I32Const(0),
                 wasm_encoder::ValType::FuncRef,
-                wasm_encoder::Elements::Expressions(&elements),
+                wasm_encoder::Elements::Expressions(elements),
             );
         }
 
@@ -383,7 +369,7 @@ impl Linker {
 
     /// Links the given module with the given set of imported modules.
     ///
-    /// On success, returns a vector of bytes representing the linked module
+    /// On success, returns a vector of bytes representing the linked module.
     pub fn link(&self, main: &Module, imports: &HashMap<&str, Module>) -> Result<Vec<u8>> {
         if !main.exports.iter().any(|e| match (e.field, e.kind) {
             ("_start", ExternalKind::Function) => {
@@ -414,72 +400,62 @@ impl Linker {
         let mut seen = HashMap::new();
         let mut graph: Graph<ModuleAdapter, ()> = Graph::new();
 
-        let mut needs_runtime = main.has_resources();
+        let mut needs_runtime = main.has_resources;
 
         queue.push((None, main));
 
         let mut next_resource_id = 0;
 
-        loop {
-            match queue.pop() {
-                Some((predecessor, module)) => {
-                    let index = match seen.entry(module as *const _) {
-                        Entry::Occupied(e) => *e.get(),
-                        Entry::Vacant(e) => {
-                            needs_runtime |= module.has_resources();
-                            let index =
-                                graph.add_node(ModuleAdapter::new(module, &mut next_resource_id));
+        while let Some((predecessor, module)) = queue.pop() {
+            let index = match seen.entry(module as *const _) {
+                Entry::Occupied(e) => *e.get(),
+                Entry::Vacant(e) => {
+                    needs_runtime |= module.has_resources;
+                    let index = graph.add_node(ModuleAdapter::new(module, &mut next_resource_id));
 
-                            for import in &module.imports {
-                                let imported_module = imports.get(import.module);
+                    for import in &module.imports {
+                        let imported_module = imports.get(import.module);
 
-                                // Check for profile provided function imports before resolving exports on the imported module
-                                if let ImportSectionEntryType::Function(i) = &import.ty {
-                                    match module
-                                        .types
-                                        .get(*i as usize)
-                                        .expect("function index must be in range")
+                        // Check for profile provided function imports before resolving exports on the imported module
+                        if let ImportSectionEntryType::Function(i) = &import.ty {
+                            match module
+                                .types
+                                .get(*i as usize)
+                                .expect("function index must be in range")
+                            {
+                                TypeDef::Func(ft) => {
+                                    if import.module == CANONICAL_ABI_MODULE_NAME
+                                        || self.profile.provides(import.module, import.field, ft)
                                     {
-                                        TypeDef::Func(ft) => {
-                                            if import.module == CANONICAL_ABI_MODULE_NAME
-                                                || self.profile.provides(
-                                                    import.module,
-                                                    import.field,
-                                                    ft,
-                                                )
-                                            {
-                                                continue;
-                                            }
-                                        }
-                                        _ => unreachable!("import must be a function"),
+                                        continue;
                                     }
                                 }
-
-                                let imported_module = imported_module.ok_or_else(|| {
-                                    anyhow!(
-                                        "module `{}` imports from unknown module `{}`",
-                                        module.name,
-                                        import.module
-                                    )
-                                })?;
-
-                                imported_module.resolve_import(import, module)?;
-
-                                queue.push((Some(index), imported_module));
+                                _ => unreachable!("import must be a function"),
                             }
-
-                            *e.insert(index)
                         }
-                    };
 
-                    if let Some(predecessor) = predecessor {
-                        if !graph.contains_edge(predecessor, index) {
-                            graph.add_edge(predecessor, index, ());
-                        }
-                    };
+                        let imported_module = imported_module.ok_or_else(|| {
+                            anyhow!(
+                                "module `{}` imports from unknown module `{}`",
+                                module.name,
+                                import.module
+                            )
+                        })?;
+
+                        imported_module.resolve_import(import, module)?;
+
+                        queue.push((Some(index), imported_module));
+                    }
+
+                    *e.insert(index)
                 }
-                None => break,
-            }
+            };
+
+            if let Some(predecessor) = predecessor {
+                if !graph.contains_edge(predecessor, index) {
+                    graph.add_edge(predecessor, index, ());
+                }
+            };
         }
 
         // Ensure the graph is acyclic by performing a topographical sort.
@@ -498,14 +474,12 @@ impl Linker {
 
 #[cfg(test)]
 mod test {
-    use crate::module::Interface;
-
     use super::*;
 
     #[test]
     fn it_errors_on_missing_main_function() -> Result<()> {
         let bytes = wat::parse_str(r#"(module)"#)?;
-        let main = Module::new("main", &bytes)?;
+        let main = Module::new("main", &bytes, [])?;
 
         let linker = Linker::new(Profile::new());
 
@@ -520,7 +494,7 @@ mod test {
     #[test]
     fn it_errors_on_incorrect_main_function() -> Result<()> {
         let bytes = wat::parse_str(r#"(module (func (export "_start") (param i32)))"#)?;
-        let main = Module::new("main", &bytes)?;
+        let main = Module::new("main", &bytes, [])?;
 
         let linker = Linker::new(Profile::new());
 
@@ -537,7 +511,7 @@ mod test {
         let bytes = wat::parse_str(
             r#"(module (import "unknown" "import" (func)) (func (export "_start")))"#,
         )?;
-        let main = Module::new("main", &bytes)?;
+        let main = Module::new("main", &bytes, [])?;
 
         let linker = Linker::new(Profile::new());
 
@@ -554,10 +528,10 @@ mod test {
         let bytes = wat::parse_str(r#"(module (import "a" "a" (func)) (func (export "_start")))"#)?;
         let a = wat::parse_str(r#"(module (import "b" "b" (func)))"#)?;
 
-        let main = Module::new("main", &bytes)?;
+        let main = Module::new("main", &bytes, [])?;
 
         let mut imports = HashMap::new();
-        imports.insert("a", Module::new("a", &a)?);
+        imports.insert("a", Module::new("a", &a, [])?);
 
         let linker = Linker::new(Profile::new());
 
@@ -574,10 +548,10 @@ mod test {
         let bytes = wat::parse_str(r#"(module (import "a" "a" (func)) (func (export "_start")))"#)?;
         let a = wat::parse_str(r#"(module (import "b" "b" (func)) (memory (export "a") 0))"#)?;
 
-        let main = Module::new("main", &bytes)?;
+        let main = Module::new("main", &bytes, [])?;
 
         let mut imports = HashMap::new();
-        imports.insert("a", Module::new("a", &a)?);
+        imports.insert("a", Module::new("a", &a, [])?);
 
         let linker = Linker::new(Profile::new());
 
@@ -595,10 +569,10 @@ mod test {
         let a =
             wat::parse_str(r#"(module (import "b" "b" (func)) (func (export "a") (param i32)))"#)?;
 
-        let main = Module::new("main", &bytes)?;
+        let main = Module::new("main", &bytes, [])?;
 
         let mut imports = HashMap::new();
-        imports.insert("a", Module::new("a", &a)?);
+        imports.insert("a", Module::new("a", &a, [])?);
 
         let linker = Linker::new(Profile::new());
 
@@ -617,12 +591,12 @@ mod test {
         let b = wat::parse_str(r#"(module (import "c" "c" (func)) (func (export "b")))"#)?;
         let c = wat::parse_str(r#"(module (import "a" "a" (func)) (func (export "c")))"#)?;
 
-        let main = Module::new("main", &bytes)?;
+        let main = Module::new("main", &bytes, [])?;
 
         let mut imports = HashMap::new();
-        imports.insert("a", Module::new("a", &a)?);
-        imports.insert("b", Module::new("b", &b)?);
-        imports.insert("c", Module::new("c", &c)?);
+        imports.insert("a", Module::new("a", &a, [])?);
+        imports.insert("b", Module::new("b", &b, [])?);
+        imports.insert("c", Module::new("c", &c, [])?);
 
         let linker = Linker::new(Profile::new());
 
@@ -646,11 +620,11 @@ mod test {
             r#"(module (import "wasi_snapshot_preview1" "c" (func (param i32))) (func (export "b")))"#,
         )?;
 
-        let main = Module::new("main", &bytes)?;
+        let main = Module::new("main", &bytes, [])?;
 
         let mut imports = HashMap::new();
-        imports.insert("a", Module::new("a", &a)?);
-        imports.insert("b", Module::new("b", &b)?);
+        imports.insert("a", Module::new("a", &a, [])?);
+        imports.insert("b", Module::new("b", &b, [])?);
 
         let linker = Linker::new(Profile::new());
 
@@ -669,10 +643,10 @@ mod test {
             r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a")))"#,
         )?;
 
-        let main = Module::new("main", &bytes)?;
+        let main = Module::new("main", &bytes, [])?;
 
         let mut imports = HashMap::new();
-        imports.insert("a", Module::new("a", &a)?);
+        imports.insert("a", Module::new("a", &a, [])?);
 
         let linker = Linker::new(Profile::new());
 
@@ -717,9 +691,12 @@ mod test {
             r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a") (param i32 i32)) (memory (export "memory") 0) (func (export "canonical_abi_realloc") (param i32 i32 i32 i32) (result i32) unreachable) (func (export "canonical_abi_free") (param i32 i32 i32)))"#,
         )?;
 
-        let main = Module::new("main", &bytes)?;
-        let mut a = Module::new("a", &a)?;
-        a.interface = Some(Interface::parse("a", "a: function(p: string)")?);
+        let main = Module::new("main", &bytes, [])?;
+        let a = Module::new(
+            "a",
+            &a,
+            [witx2::Interface::parse("a", "a: function(p: string)")?],
+        )?;
 
         let mut imports = HashMap::new();
         imports.insert("a", a);
@@ -743,9 +720,12 @@ mod test {
             r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a") (param i32 i32)) (memory (export "memory") 0) (func (export "canonical_abi_realloc") (param i32 i32 i32 i32) (result i32) unreachable) (func (export "canonical_abi_free") (param i32 i32 i32)))"#,
         )?;
 
-        let main = Module::new("main", &bytes)?;
-        let mut a = Module::new("a", &a)?;
-        a.interface = Some(Interface::parse("a", "a: function(p: string)")?);
+        let main = Module::new("main", &bytes, [])?;
+        let a = Module::new(
+            "a",
+            &a,
+            [witx2::Interface::parse("a", "a: function(p: string)")?],
+        )?;
 
         let mut imports = HashMap::new();
         imports.insert("a", a);
@@ -769,9 +749,12 @@ mod test {
             r#"(module (import "wasi_snapshot_preview1" "a" (func)) (func (export "a") (param i32 i32)) (memory (export "memory") 0) (func (export "canonical_abi_realloc") (param i32 i32 i32 i32) (result i32) unreachable) (func (export "canonical_abi_free") (param i32 i32 i32)))"#,
         )?;
 
-        let main = Module::new("main", &bytes)?;
-        let mut a = Module::new("a", &a)?;
-        a.interface = Some(Interface::parse("a", "a: function(p: string)")?);
+        let main = Module::new("main", &bytes, [])?;
+        let a = Module::new(
+            "a",
+            &a,
+            [witx2::Interface::parse("a", "a: function(p: string)")?],
+        )?;
 
         let mut imports = HashMap::new();
         imports.insert("a", a);

@@ -7,10 +7,17 @@ use std::{collections::HashMap, path::PathBuf};
 use structopt::{clap::AppSettings, StructOpt};
 use wasmlink::{Linker, Module, Profile};
 
-fn parse_import(s: &str) -> Result<(String, PathBuf)> {
+fn parse_module(s: &str) -> Result<(String, PathBuf)> {
     match s.split_once('=') {
         Some((name, path)) => Ok((name.into(), path.into())),
         None => bail!("expected a value with format `NAME=MODULE`"),
+    }
+}
+
+fn parse_interface(s: &str) -> Result<(String, PathBuf)> {
+    match s.split_once('=') {
+        Some((name, path)) => Ok((name.into(), path.into())),
+        None => bail!("expected a value with format `NAME=INTERFACE`"),
     }
 }
 
@@ -22,9 +29,13 @@ fn parse_import(s: &str) -> Result<(String, PathBuf)> {
     AppSettings::ArgRequiredElseHelp,
 ])]
 pub struct App {
-    /// An import to the module being linked.
-    #[structopt(long = "import", short = "i", value_name = "NAME=MODULE", parse(try_from_str = parse_import), required = true, number_of_values = 1)]
-    pub imports: Vec<(String, PathBuf)>,
+    /// A transitive imported module to the module being linked.
+    #[structopt(long = "module", short = "m", value_name = "NAME=MODULE", parse(try_from_str = parse_module), required = true, min_values = 1)]
+    pub modules: Vec<(String, PathBuf)>,
+
+    /// The path to an interface definition file for an imported module.
+    #[structopt(long = "interface", short = "i", value_name = "NAME=INTERFACE", parse(try_from_str = parse_interface))]
+    pub interfaces: Vec<(String, PathBuf)>,
 
     /// The name of the target profile to use for the link.
     #[structopt(long, short = "p", value_name = "PROFILE")]
@@ -42,7 +53,7 @@ pub struct App {
 impl App {
     /// Executes the application.
     pub fn execute(self) -> Result<()> {
-        if self.imports.is_empty() {
+        if self.modules.is_empty() {
             bail!("at least one import module must be specified");
         }
 
@@ -52,11 +63,12 @@ impl App {
         let main_module = Module::new(
             self.main.file_name().unwrap().to_str().unwrap(),
             &main_bytes,
+            [],
         )
         .with_context(|| format!("failed to parse main module `{}`", self.main.display()))?;
 
         let import_bytes = self
-            .imports
+            .modules
             .into_iter()
             .map(|(name, path)| {
                 if !path.is_file() {
@@ -70,21 +82,35 @@ impl App {
                     format!("failed to parse import module `{}`", path.display())
                 })?;
 
-                Ok((name, (path, bytes)))
+                Ok((name, bytes))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
+
+        let mut import_interfaces = self
+            .interfaces
+            .into_iter()
+            .map(|(name, path)| {
+                if !path.is_file() {
+                    bail!("interface file `{}` does not exist", path.display());
+                }
+
+                Ok((
+                    name,
+                    witx2::Interface::parse_file(&path).with_context(|| {
+                        format!("failed to parse interface file `{}`", path.display())
+                    })?,
+                ))
             })
             .collect::<Result<HashMap<_, _>>>()?;
 
         let import_modules: HashMap<&str, Module> = import_bytes
             .iter()
-            .map(|(name, (path, bytes))| {
-                Module::new(name, bytes)
-                    .with_context(|| format!("failed to parse import module `{}`", path.display()))
-                    .and_then(|mut m| {
-                        let mut interface = path.clone();
-                        interface.set_extension("witx");
-                        m.read_interface(&interface)?;
-                        Ok((name.as_ref(), m))
-                    })
+            .map(|(name, bytes)| {
+                let name = name.as_ref();
+                Ok((
+                    name,
+                    Module::new(name, bytes, import_interfaces.remove(name))?,
+                ))
             })
             .collect::<Result<HashMap<_, _>>>()?;
 

@@ -75,10 +75,7 @@ To build the `markdown` module:
 
 ```text
 $ cargo wasi build --manifest-path demo/markdown/Cargo.toml
-$ cp demo/markdown/markdown.witx demo/markdown/target/wasm32-wasi/debug/markdown.witx
 ```
-
-_Note: the linker currently expects either an embedded witx file in a custom section of the module or a witx file of the same name next to the input wasm module, so we copy the witx file to the target directory above._
 
 ### Building the `renderer` module
 
@@ -95,7 +92,7 @@ $ cargo wasi build --manifest-path demo/renderer/Cargo.toml
 With the two modules now built, it is time to link them together so that they can be run directly with [Wasmtime](https://github.com/bytecodealliance/wasmtime):
 
 ```text
-$ cargo run --release -p wasmlink-cli -- -i markdown=demo/markdown/target/wasm32-wasi/debug/markdown.wasm -p wasmtime -o linked.wasm demo/renderer/target/wasm32-wasi/debug/renderer.wasm
+$ cargo run --release -p wasmlink-cli -- -m markdown=demo/markdown/target/wasm32-wasi/debug/markdown.wasm -i markdown=demo/markdown/markdown.witx -p wasmtime -o linked.wasm demo/renderer/target/wasm32-wasi/debug/renderer.wasm
 ```
 
 This command produces a linked module named `linked.wasm` in the current directory.

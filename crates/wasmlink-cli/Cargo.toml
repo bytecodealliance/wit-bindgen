@@ -10,6 +10,7 @@ path = "src/bin/wasmlink.rs"
 
 [dependencies]
 wasmlink = { path = "../wasmlink" }
+witx2 = { path = "../witx2" }
 anyhow = "1.0.40"
 structopt = "0.3.21"
 log = "0.4.14"
