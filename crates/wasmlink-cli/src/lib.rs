@@ -41,13 +41,13 @@ pub struct App {
     #[structopt(long, short = "p", value_name = "PROFILE")]
     pub profile: String,
 
-    /// The path of the output linked module; defaults to replacing the main module.
+    /// The path of the output linked module; defaults to replacing the given module.
     #[structopt(long, short = "o", value_name = "OUTPUT", parse(from_os_str))]
     pub output: Option<PathBuf>,
 
-    /// The main module to link.
+    /// The module to link.
     #[structopt(index = 1, value_name = "MODULE", parse(from_os_str))]
-    pub main: PathBuf,
+    pub module: PathBuf,
 }
 
 impl App {
@@ -57,15 +57,15 @@ impl App {
             bail!("at least one import module must be specified");
         }
 
-        let main_bytes = wat::parse_file(&self.main)
-            .with_context(|| format!("failed to parse main module `{}`", self.main.display()))?;
+        let module_bytes = wat::parse_file(&self.module)
+            .with_context(|| format!("failed to parse module `{}`", self.module.display()))?;
 
-        let main_module = Module::new(
-            self.main.file_name().unwrap().to_str().unwrap(),
-            &main_bytes,
+        let module = Module::new(
+            self.module.file_name().unwrap().to_str().unwrap(),
+            &module_bytes,
             [],
         )
-        .with_context(|| format!("failed to parse main module `{}`", self.main.display()))?;
+        .with_context(|| format!("failed to parse module `{}`", self.module.display()))?;
 
         let import_bytes = self
             .modules
@@ -118,8 +118,8 @@ impl App {
 
         let linker = Linker::new(Profile::new());
 
-        let output = self.output.as_ref().unwrap_or(&self.main);
-        std::fs::write(output, linker.link(&main_module, &import_modules)?)
+        let output = self.output.as_ref().unwrap_or(&self.module);
+        std::fs::write(output, linker.link(&module, &import_modules)?)
             .with_context(|| format!("failed to write to output module `{}`", output.display()))?;
 
         Ok(())
