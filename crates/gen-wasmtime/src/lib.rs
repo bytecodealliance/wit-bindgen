@@ -363,7 +363,7 @@ impl Generator for Wasmtime {
         self.in_import = dir == Direction::Import;
         self.trait_name = iface.name.to_camel_case();
         self.src
-            .push_str(&format!("mod {} {{\n", iface.name.to_snake_case()));
+            .push_str(&format!("pub mod {} {{\n", iface.name.to_snake_case()));
         self.src
             .push_str("#[allow(unused_imports)]\nuse witx_bindgen_wasmtime::{wasmtime, anyhow};\n");
         self.sizes.fill(dir, iface);
