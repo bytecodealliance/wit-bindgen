@@ -1056,13 +1056,12 @@ impl Generator for C {
     fn finish(&mut self, iface: &Interface, files: &mut Files) {
         self.src.h(&format!(
             "\
+                #ifndef __BINDINGS_{0}_H
+                #define __BINDINGS_{0}_H
                 #ifdef __cplusplus
                 extern \"C\"
                 {{
                 #endif
-
-                #ifndef __BINDINGS_{0}_H
-                #define __BINDINGS_{0}_H
 
                 #include <stdint.h>
                 #include <stdbool.h>
