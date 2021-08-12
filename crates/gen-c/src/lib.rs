@@ -1058,6 +1058,10 @@ impl Generator for C {
             "\
                 #ifndef __BINDINGS_{0}_H
                 #define __BINDINGS_{0}_H
+                #ifdef __cplusplus
+                extern \"C\"
+                {{
+                #endif
 
                 #include <stdint.h>
                 #include <stdbool.h>
@@ -1243,6 +1247,11 @@ impl Generator for C {
             }
         }
 
+        self.src.h("\
+        #ifdef __cplusplus
+        }
+        #endif
+        ");
         self.src.h("#endif\n");
 
         files.push(&format!("{}.c", iface.name), self.src.src.as_bytes());
