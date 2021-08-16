@@ -427,6 +427,7 @@ impl Generator for Wasmtime {
         // is usable.
         if self.modes_of(iface, id).len() > 0
             && record.fields.iter().all(|f| iface.all_bits_valid(&f.ty))
+            && !record.is_tuple()
         {
             self.src.push_str("impl witx_bindgen_wasmtime::Endian for ");
             self.src.push_str(&name.to_camel_case());
