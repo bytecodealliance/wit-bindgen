@@ -39,3 +39,8 @@ record aggregates {
 
 aggregate_arg: function(x: aggregates)
 aggregate_result: function() -> aggregates
+
+type tuple_typedef = tuple<s32>
+type int_typedef = s32
+type tuple_typedef2 = tuple<int_typedef>
+typedef_inout: function(e: tuple_typedef2) -> s32
