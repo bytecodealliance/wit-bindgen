@@ -58,7 +58,10 @@ fn main() {
             fs::write(dst, contents).unwrap();
         }
 
-        let path = PathBuf::from(env::var_os("WASI_SDK_PATH").unwrap());
+        let path =
+            PathBuf::from(env::var_os("WASI_SDK_PATH").expect(
+                "point the `WASI_SDK_PATH` environment variable to the path of your wasi-sdk",
+            ));
         let mut cmd = Command::new(path.join("bin/clang"));
         cmd.arg("--sysroot").arg(path.join("share/wasi-sysroot"));
         cmd.arg("exports.c")
