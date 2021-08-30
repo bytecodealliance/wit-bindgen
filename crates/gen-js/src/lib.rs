@@ -1665,7 +1665,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::IterElem => results.push("e".to_string()),
+            Instruction::IterElem { .. } => results.push("e".to_string()),
 
             Instruction::IterBasePointer => results.push("base".to_string()),
 

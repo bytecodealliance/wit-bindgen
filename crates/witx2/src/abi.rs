@@ -479,7 +479,7 @@ def_instruction! {
         /// each iteration of the list.
         ///
         /// This is only used inside of blocks related to lowering lists.
-        IterElem : [0] => [1],
+        IterElem { element: &'a Type } : [0] => [1],
 
         /// Pushes an operand onto the stack representing the base pointer of
         /// the next element in a list.
@@ -1485,7 +1485,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             self.emit(&ListCanonLower { element, realloc });
                         } else {
                             self.push_block();
-                            self.emit(&IterElem);
+                            self.emit(&IterElem { element });
                             self.emit(&IterBasePointer);
                             let addr = self.stack.pop().unwrap();
                             self.write_to_memory(element, addr, 0);
