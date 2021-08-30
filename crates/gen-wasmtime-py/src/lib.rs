@@ -1965,7 +1965,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(result);
             }
 
-            Instruction::IterElem => {
+            Instruction::IterElem { .. } => {
                 let name = self.locals.tmp("e");
                 results.push(name.clone());
                 self.payloads.push(name);
