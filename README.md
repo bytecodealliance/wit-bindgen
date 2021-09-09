@@ -65,7 +65,7 @@ At this time a CLI tool is provided mostly for debugging and exploratory
 purposes. It can be installed with:
 
 ```
-$ cargo install --git https://github.com/bytecodealliance/witx-bindgen
+$ cargo install --git https://github.com/bytecodealliance/witx-bindgen witx-bindgen-cli
 ```
 
 This tool is not necessarily intended to be integrated into toolchains. For
