@@ -10,5 +10,5 @@ wasmlink = { path = "../wasmlink" }
 witx2 = { path = "../witx2" }
 
 [dev-dependencies]
-wasmtime = "0.29.0"
-wasmtime-wasi = "0.29.0"
+wasmtime = "0.30.0"
+wasmtime-wasi = "0.30.0"
