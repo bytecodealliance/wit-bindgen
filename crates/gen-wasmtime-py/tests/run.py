@@ -13,6 +13,9 @@ import wasmtime
 class HostState(i.HostState):
     val: int
 
+    def __init__(self, val: int) -> None:
+        self.val = val
+
 
 HOST_STATE2_CLOSED = False
 
@@ -20,6 +23,9 @@ HOST_STATE2_CLOSED = False
 @dataclass
 class HostState2(i.HostState2):
     val: int
+
+    def __init__(self, val: int) -> None:
+        self.val = val
 
     def drop(self) -> None:
         global HOST_STATE2_CLOSED
