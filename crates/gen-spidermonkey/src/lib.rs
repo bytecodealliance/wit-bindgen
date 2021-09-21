@@ -2118,6 +2118,8 @@ impl witx2::abi::Bindgen for Bindgen<'_> {
     }
 
     fn is_list_canonical(&self, _iface: &witx2::Interface, _ty: &witx2::Type) -> bool {
+        // TODO: we will want to support canonical lists for the various typed
+        // arrays.
         false
     }
 }
