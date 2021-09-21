@@ -57,7 +57,7 @@ impl DataSegments {
     pub fn memory_type(&self) -> wasm_encoder::MemoryType {
         const WASM_PAGE_SIZE: u32 = 65_536;
         wasm_encoder::MemoryType {
-            minimum: (self.next_offset / WASM_PAGE_SIZE + 1).into(),
+            minimum: ((self.next_offset + WASM_PAGE_SIZE - 1) / WASM_PAGE_SIZE).into(),
             maximum: None,
             memory64: false,
         }
