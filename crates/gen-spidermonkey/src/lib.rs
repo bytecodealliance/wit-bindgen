@@ -634,6 +634,15 @@ const RET_PTR_GLOBAL: u32 = 0;
 const SM_MEMORY: u32 = 0;
 const GLUE_MEMORY: u32 = 1;
 
+fn convert_ty(ty: WasmType) -> wasm_encoder::ValType {
+    match ty {
+        WasmType::I32 => wasm_encoder::ValType::I32,
+        WasmType::I64 => wasm_encoder::ValType::I64,
+        WasmType::F32 => wasm_encoder::ValType::F32,
+        WasmType::F64 => wasm_encoder::ValType::F64,
+    }
+}
+
 impl SpiderMonkeyWasm {
     /// Configure how `spidermonkey.wasm` is linked.
     ///
@@ -692,15 +701,9 @@ impl SpiderMonkeyWasm {
 
         let idx = self.types.len();
 
-        let convert_ty = |ty: &WasmType| match ty {
-            WasmType::I32 => wasm_encoder::ValType::I32,
-            WasmType::I64 => wasm_encoder::ValType::I64,
-            WasmType::F32 => wasm_encoder::ValType::F32,
-            WasmType::F64 => wasm_encoder::ValType::F64,
-        };
         self.types.function(
-            wasm_sig.params.iter().map(convert_ty),
-            wasm_sig.results.iter().map(convert_ty),
+            wasm_sig.params.iter().copied().map(convert_ty),
+            wasm_sig.results.iter().copied().map(convert_ty),
         );
 
         self.wasm_sig_to_index.insert(wasm_sig, idx);
@@ -1368,7 +1371,7 @@ fn pop_js(operands: &mut Vec<Operand>) -> u32 {
 
 fn sm_mem_arg(offset: u32) -> wasm_encoder::MemArg {
     wasm_encoder::MemArg {
-        offset,
+        offset: offset as u64,
         align: 0,
         memory_index: SM_MEMORY,
     }
@@ -1910,14 +1913,7 @@ impl witx2::abi::Bindgen for Bindgen<'_> {
                 let locals: Vec<_> = sig
                     .results
                     .iter()
-                    .map(|ty| {
-                        self.new_local(match ty {
-                            WasmType::I32 => wasm_encoder::ValType::I32,
-                            WasmType::I64 => wasm_encoder::ValType::I64,
-                            WasmType::F32 => wasm_encoder::ValType::F32,
-                            WasmType::F64 => wasm_encoder::ValType::F64,
-                        })
-                    })
+                    .map(|ty| self.new_local(convert_ty(*ty)))
                     .collect();
                 // [R...]
                 for l in locals.iter().rev() {
