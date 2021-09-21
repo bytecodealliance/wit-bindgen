@@ -3,4 +3,4 @@ static
 package-lock.json
 node_modules
 ace
-linked.wasm
+*.wasm
