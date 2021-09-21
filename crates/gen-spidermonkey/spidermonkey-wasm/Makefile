@@ -62,7 +62,7 @@ SM_OBJECTS := \
 	modules/zlib/src/gzclose.o \
 	modules/zlib/src/infback.o \
 	modules/zlib/src/uncompr.o \
-	wasm32-wasi/debug/libjsrust.a
+	wasm32-wasi/release/libjsrust.a
 
 # The `./lib/*` copies of SpiderMonkey's object files that we check into the
 # repo.
@@ -80,7 +80,6 @@ spidermonkey.initial.wasm: $(SM_LIB_OBJECTS) $(LOCAL_OBJECTS)
 		$(SM_LIB_OBJECTS) \
 		-o spidermonkey.initial.wasm \
 		-Wl,--export-dynamic \
-		-Wl,--export=malloc \
 		-Wl,--growable-table \
 		-Wl,--export-table \
 		-Wl,--gc-sections

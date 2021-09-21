@@ -222,7 +222,7 @@ lazy_static! {
             },
         ),
         (
-            "malloc",
+            "SMW_malloc",
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![WasmType::I32],
@@ -881,17 +881,12 @@ impl SpiderMonkeyWasm {
         }
     }
 
-    /// Malloc `size` bytes and save the result to `local`. Trap if `malloc`
-    /// returned `nullptr`.
+    /// Malloc `size` bytes and save the result to `local`.
+    ///
+    /// Note that `SMW_malloc` will never return `nullptr`.
     ///
     /// ```wat
-    /// (local.tee ${local} (call $malloc (i32.const ${size})))
-    /// block (param i32)
-    ///   i32.const 0
-    ///   i32.neq
-    ///   br_if 0
-    ///   unreachable
-    /// end
+    /// (local.set ${local} (call $SMW_malloc (i32.const ${size})))
     /// ```
     fn malloc_static_size<'a, F>(&mut self, func: &mut F, size: u32, result_local: u32)
     where
@@ -900,41 +895,19 @@ impl SpiderMonkeyWasm {
         // []
         func.instruction(Instruction::I32Const(size as _));
         // [i32]
-        func.instruction(Instruction::Call(self.spidermonkey_import("malloc")));
+        func.instruction(Instruction::Call(self.spidermonkey_import("SMW_malloc")));
         // [i32]
-        func.instruction(Instruction::LocalTee(result_local));
-        // [i32]
-        func.instruction(Instruction::Block(wasm_encoder::BlockType::FunctionType(
-            self.intern_type(WasmSignature {
-                params: vec![WasmType::I32],
-                results: vec![],
-                retptr: None,
-            }),
-        )));
-        // [i32]
-        func.instruction(Instruction::I32Const(0));
-        // [i32 i32]
-        func.instruction(Instruction::I32Neq);
-        // [i32]
-        func.instruction(Instruction::BrIf(0));
-        // []
-        func.instruction(Instruction::Unreachable);
-        // []
-        func.instruction(Instruction::End);
+        func.instruction(Instruction::LocalSet(result_local));
         // []
     }
 
     /// Malloc `size` bytes and save the result to `local`. Trap if `malloc`
     /// returned `nullptr`.
     ///
+    /// Note that `SMW_malloc` will never return `nullptr`.
+    ///
     /// ```wat
-    /// (local.tee ${result_local} (call $malloc (local.get ${size_local})))
-    /// block (param i32)
-    ///   i32.const 0
-    ///   i32.neq
-    ///   br_if 0
-    ///   unreachable
-    /// end
+    /// (local.set ${result_local} (call $malloc (local.get ${size_local})))
     /// ```
     fn malloc_dynamic_size<'a, F>(&mut self, func: &mut F, size_local: u32, result_local: u32)
     where
@@ -943,27 +916,9 @@ impl SpiderMonkeyWasm {
         // []
         func.instruction(Instruction::LocalGet(size_local));
         // [i32]
-        func.instruction(Instruction::Call(self.spidermonkey_import("malloc")));
+        func.instruction(Instruction::Call(self.spidermonkey_import("SMW_malloc")));
         // [i32]
-        func.instruction(Instruction::LocalTee(result_local));
-        // [i32]
-        func.instruction(Instruction::Block(wasm_encoder::BlockType::FunctionType(
-            self.intern_type(WasmSignature {
-                params: vec![WasmType::I32],
-                results: vec![],
-                retptr: None,
-            }),
-        )));
-        // [i32]
-        func.instruction(Instruction::I32Const(0));
-        // [i32 i32]
-        func.instruction(Instruction::I32Neq);
-        // [i32]
-        func.instruction(Instruction::BrIf(0));
-        // []
-        func.instruction(Instruction::Unreachable);
-        // []
-        func.instruction(Instruction::End);
+        func.instruction(Instruction::LocalSet(result_local));
         // []
     }
 
