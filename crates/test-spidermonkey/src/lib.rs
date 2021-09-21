@@ -114,9 +114,10 @@ pub fn run_test<T>(
         };
         static ref SMW_MODULE: wasmtime::Module = {
             log::debug!("reading `spidermonkey.wasm`");
-            let smw_bytes = std::fs::read("../../spidermonkey-wasm/spidermonkey.wasm")
-                .context("failed to read `spidermonkey.wasm`")
-                .unwrap();
+            let smw_bytes =
+                std::fs::read("../gen-spidermonkey/spidermonkey-wasm/spidermonkey.wasm")
+                    .context("failed to read `spidermonkey.wasm`")
+                    .unwrap();
 
             log::debug!("compiling `spidermonkey.wasm`");
             let smw_module =
@@ -154,7 +155,7 @@ pub fn run_test<T>(
         let mut linker = make_linker(&ENGINE)?;
 
         // Instantiate `spidermonkey.wasm` and put it in the linker.
-        log::debug!("instantiating `spidermonkey.wasm");
+        log::debug!("instantiating `spidermonkey.wasm`");
         let smw_instance = linker
             .instantiate(&mut *store, &SMW_MODULE)
             .context("failed to instantiate `spidermonkey.wasm`")?;
