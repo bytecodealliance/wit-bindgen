@@ -1366,6 +1366,14 @@ fn pop_js(operands: &mut Vec<Operand>) -> u32 {
     }
 }
 
+fn sm_mem_arg(offset: u32) -> wasm_encoder::MemArg {
+    wasm_encoder::MemArg {
+        offset,
+        align: 0,
+        memory_index: SM_MEMORY,
+    }
+}
+
 impl witx2::abi::Bindgen for Bindgen<'_> {
     type Operand = Operand;
 
@@ -1394,11 +1402,7 @@ impl witx2::abi::Bindgen for Bindgen<'_> {
                 // []
                 self.inst(Instruction::LocalGet(addr));
                 // [i32]
-                self.inst(Instruction::I32Load(wasm_encoder::MemArg {
-                    offset: (*offset as u32).into(),
-                    align: 0,
-                    memory_index: SM_MEMORY,
-                }));
+                self.inst(Instruction::I32Load(sm_mem_arg((*offset as u32).into())));
                 // [i32]
                 self.inst(Instruction::LocalSet(local));
                 // []
@@ -1421,11 +1425,7 @@ impl witx2::abi::Bindgen for Bindgen<'_> {
                 // [i32]
                 self.inst(Instruction::LocalGet(val));
                 // [i32 i32]
-                self.inst(Instruction::I32Store(wasm_encoder::MemArg {
-                    offset: (*offset as u32).into(),
-                    align: 0,
-                    memory_index: SM_MEMORY,
-                }));
+                self.inst(Instruction::I32Store(sm_mem_arg((*offset as u32).into())));
                 // []
             }
             witx2::abi::Instruction::I32Store8 { offset: _ } => todo!(),
@@ -1519,11 +1519,7 @@ impl witx2::abi::Bindgen for Bindgen<'_> {
                 // []
                 self.inst(Instruction::GlobalGet(RET_PTR_GLOBAL));
                 // [i32]
-                self.inst(Instruction::I32Load(wasm_encoder::MemArg {
-                    offset: 0,
-                    align: 0,
-                    memory_index: SM_MEMORY,
-                }));
+                self.inst(Instruction::I32Load(sm_mem_arg(0)));
                 // [i32]
                 self.inst(Instruction::LocalSet(ptr));
                 // []
@@ -1533,11 +1529,7 @@ impl witx2::abi::Bindgen for Bindgen<'_> {
                 // []
                 self.inst(Instruction::GlobalGet(RET_PTR_GLOBAL));
                 // [i32]
-                self.inst(Instruction::I32Load(wasm_encoder::MemArg {
-                    offset: 4,
-                    align: 0,
-                    memory_index: SM_MEMORY,
-                }));
+                self.inst(Instruction::I32Load(sm_mem_arg(4)));
                 // [i32]
                 self.inst(Instruction::LocalSet(len));
                 // []
