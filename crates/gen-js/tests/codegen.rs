@@ -22,7 +22,7 @@ mod exports {
     );
 }
 
-fn verify(dir: &str, _name: &str) {
+fn verify(dir: &str, name: &str) {
     let (cmd, args) = if cfg!(windows) {
         ("cmd.exe", &["/c", "npx.cmd"] as &[&str])
     } else {
@@ -34,7 +34,7 @@ fn verify(dir: &str, _name: &str) {
         .arg("eslint")
         .arg("-c")
         .arg(".eslintrc.js")
-        .arg(Path::new(dir).join("bindings.js"))
+        .arg(Path::new(dir).join(&format!("{}.js", name)))
         .status()
         .unwrap();
     assert!(status.success());

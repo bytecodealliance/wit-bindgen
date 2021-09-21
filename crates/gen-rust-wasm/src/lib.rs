@@ -499,6 +499,7 @@ impl Generator for RustWasm {
         } else {
             TypeMode::AllBorrowed("'_")
         };
+        sig.async_ = func.is_async;
         match &func.kind {
             FunctionKind::Freestanding => {}
             FunctionKind::Static { resource, .. } | FunctionKind::Method { resource, .. } => {
@@ -583,6 +584,10 @@ impl Generator for RustWasm {
         }
         self.src.push_str("{\n");
 
+        if func.is_async {
+            self.src.push_str("let future = async move {\n");
+        }
+
         let mut f = FunctionBindgen::new(self, is_dtor, params);
         iface.call(
             Direction::Export,
@@ -597,12 +602,18 @@ impl Generator for RustWasm {
         } = f;
         assert!(!needs_cleanup_list);
         self.src.push_str(&String::from(src));
+        if func.is_async {
+            self.src.push_str("};\n");
+            self.src
+                .push_str("witx_bindgen_rust::rt::execute(Box::pin(future));\n");
+        }
         self.src.push_str("}\n");
 
         let prev = mem::take(&mut self.src);
         self.in_trait = true;
         let mut sig = FnSig::default();
         sig.private = true;
+        sig.async_ = func.is_async;
         match &func.kind {
             FunctionKind::Freestanding => {}
             FunctionKind::Static { .. } => sig.use_item_name = true,
@@ -632,7 +643,11 @@ impl Generator for RustWasm {
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
         let mut src = mem::take(&mut self.src);
 
+        let any_async = iface.functions.iter().any(|f| f.is_async);
         for (name, trait_) in self.traits.iter() {
+            if any_async {
+                src.push_str("#[witx_bindgen_rust::async_trait(?Send)]\n");
+            }
             src.push_str("pub trait ");
             src.push_str(&name);
             src.push_str(" {\n");
@@ -643,6 +658,9 @@ impl Generator for RustWasm {
             src.push_str("}\n");
 
             for (id, methods) in trait_.resource_methods.iter() {
+                if any_async {
+                    src.push_str("#[witx_bindgen_rust::async_trait(?Send)]\n");
+                }
                 src.push_str(&format!(
                     "pub trait {} {{\n",
                     iface.resources[*id].name.to_camel_case()
@@ -717,6 +735,55 @@ impl FunctionBindgen<'_> {
             needs_cleanup_list: false,
             cleanup: Vec::new(),
         }
+    }
+
+    fn emit_cleanup(&mut self) {
+        for (ptr, layout) in mem::take(&mut self.cleanup) {
+            self.push_str(&format!("std::alloc::dealloc({}, {});\n", ptr, layout));
+        }
+        if self.needs_cleanup_list {
+            self.push_str(
+                "for (ptr, layout) in cleanup_list {
+                    std::alloc::dealloc(ptr, layout);
+                }\n",
+            );
+        }
+    }
+
+    fn declare_import(
+        &mut self,
+        module: &str,
+        name: &str,
+        params: &[WasmType],
+        results: &[WasmType],
+    ) -> String {
+        // Define the actual function we're calling inline
+        self.push_str("#[link(wasm_import_module = \"");
+        self.push_str(module);
+        self.push_str("\")]\n");
+        self.push_str("extern \"C\" {\n");
+        self.push_str("#[cfg_attr(target_arch = \"wasm32\", link_name = \"");
+        self.push_str(name);
+        self.push_str("\")]\n");
+        self.push_str("#[cfg_attr(not(target_arch = \"wasm32\"), link_name = \"");
+        self.push_str(module);
+        self.push_str("_");
+        self.push_str(name);
+        self.push_str("\")]\n");
+        self.push_str("fn witx_import(");
+        for param in params.iter() {
+            self.push_str("_: ");
+            self.push_str(wasm_type(*param));
+            self.push_str(", ");
+        }
+        self.push_str(")");
+        assert!(results.len() < 2);
+        for result in results.iter() {
+            self.push_str(" -> ");
+            self.push_str(wasm_type(*result));
+        }
+        self.push_str(";\n}\n");
+        "witx_import".to_string()
     }
 }
 
@@ -1242,44 +1309,91 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::CallWasm { module, name, sig } => {
-                assert!(sig.results.len() < 2);
-
-                // Define the actual function we're calling inline
-                self.push_str("#[link(wasm_import_module = \"");
-                self.push_str(module);
-                self.push_str("\")]\n");
-                self.push_str("extern \"C\" {\n");
-                self.push_str("#[cfg_attr(target_arch = \"wasm32\", link_name = \"");
-                self.push_str(name);
-                self.push_str("\")]\n");
-                self.push_str("#[cfg_attr(not(target_arch = \"wasm32\"), link_name = \"");
-                self.push_str(module);
-                self.push_str("_");
-                self.push_str(name);
-                self.push_str("\")]\n");
-                self.push_str("fn witx_import(");
-                for param in sig.params.iter() {
-                    self.push_str("_: ");
-                    self.push_str(wasm_type(*param));
-                    self.push_str(", ");
-                }
-                self.push_str(")");
-                for result in sig.results.iter() {
-                    self.push_str(" -> ");
-                    self.push_str(wasm_type(*result));
-                }
-                self.push_str(";\n}\n");
+                let func = self.declare_import(module, name, &sig.params, &sig.results);
 
                 // ... then call the function with all our operands
                 if sig.results.len() > 0 {
                     self.push_str("let ret = ");
                     results.push("ret".to_string());
                 }
-                self.push_str("witx_import");
+                self.push_str(&func);
                 self.push_str("(");
                 self.push_str(&operands.join(", "));
                 self.push_str(");\n");
             }
+
+            Instruction::CallWasmAsyncImport {
+                module,
+                name,
+                params: wasm_params,
+                results: wasm_results,
+            } => {
+                // The first thing we do here is define the completion callback
+                // which the host will invoke when the asynchronous call
+                // actually finishes. This receives our own custom state
+                // parameter as the first parameter which is the `Sender`
+                // converted to a `usize`. Afterwards it receives all the
+                // results which we'll transfer ove the `sender`, the canonical
+                // ABI of the results.
+                self.push_str("unsafe extern \"C\" fn completion_callback(sender: usize");
+                for (i, result) in wasm_results.iter().enumerate() {
+                    self.push_str(", ");
+                    self.push_str(&format!("ret{}: ", i));
+                    self.push_str(wasm_type(*result));
+                }
+                self.push_str(") {\n");
+                self.push_str("witx_bindgen_rust::rt::Sender::from_usize(sender).send((");
+                for i in 0..wasm_results.len() {
+                    self.push_str(&format!("ret{},", i));
+                }
+                self.push_str("));\n");
+                self.push_str("}\n");
+
+                // Next we create the future channel which will be used to track
+                // the state of this import. The "oneshot" here means that the
+                // sender (`tx`) will send something once over `rx`. The type of
+                // the `Oneshot` is the type of the `wasm_results` which is the
+                // canonical ABI of the results that this function produces.
+                self.push_str("let (rx, tx) = witx_bindgen_rust::rt::Oneshot::<(");
+                for ty in *wasm_results {
+                    self.push_str(wasm_type(*ty));
+                    self.push_str(", ");
+                }
+                self.push_str(")>::new();\n");
+
+                // Then we can actually call the function now that we have
+                // all the parameters. The first parameters to the import are
+                // the canonical ABI `operands` we were provided, and the last
+                // two arguments are our completion callback and the context for
+                // the callback, our `tx` sender.
+                let func = self.declare_import(module, name, wasm_params, &[]);
+                self.push_str(&func);
+                self.push_str("(");
+                for op in operands {
+                    self.push_str(op);
+                    self.push_str(", ");
+                }
+                self.push_str("completion_callback as i32, ");
+                self.push_str("tx.into_usize() as i32");
+                self.push_str(");\n");
+
+                // And finally we want to "appear synchronous" with an async
+                // function, so we immediately `.await` the results of the
+                // oneshot. This binds all the canonical ABI results to then get
+                // translated in further instructions to the result of this
+                // function call.
+                let tmp = self.tmp();
+                self.push_str("let (");
+                for i in 0..wasm_results.len() {
+                    let name = format!("ret{}_{}", tmp, i);
+                    self.push_str(&name);
+                    self.push_str(",");
+                    results.push(name);
+                }
+                self.push_str(") = rx.await;\n");
+            }
+
+            Instruction::CallWasmAsyncExport { .. } => unreachable!(),
 
             Instruction::CallInterface { module, func } => {
                 self.let_results(func.results.len(), results);
@@ -1305,20 +1419,15 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.push_str("&");
                 }
                 self.push_str(&operands.join(", "));
-                self.push_str(");\n");
+                self.push_str(")");
+                if func.is_async {
+                    self.push_str(".await");
+                }
+                self.push_str(";\n");
             }
 
             Instruction::Return { amt, .. } => {
-                for (ptr, layout) in mem::take(&mut self.cleanup) {
-                    self.push_str(&format!("std::alloc::dealloc({}, {});\n", ptr, layout));
-                }
-                if self.needs_cleanup_list {
-                    self.push_str(
-                        "for (ptr, layout) in cleanup_list {
-                            std::alloc::dealloc(ptr, layout);
-                        }\n",
-                    );
-                }
+                self.emit_cleanup();
                 match amt {
                     0 => {}
                     1 => {
@@ -1332,6 +1441,15 @@ impl Bindgen for FunctionBindgen<'_> {
                     }
                 }
             }
+
+            Instruction::ReturnAsyncExport { .. } => {
+                self.emit_cleanup();
+                self.push_str(&format!(
+                    "unsafe {{ witx_bindgen_rust::rt::async_export_done({}, {}); }}\n",
+                    operands[0], operands[1]
+                ));
+            }
+            Instruction::ReturnAsyncImport { .. } => unreachable!(),
 
             Instruction::I32Load { offset } => {
                 results.push(format!("*(({} + {}) as *const i32)", operands[0], offset));

@@ -997,6 +997,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
     }
 
     fn import(&mut self, iface: &witx2::Interface, func: &witx2::Function) {
+        assert!(!func.is_async, "async not supported yet");
         assert!(
             func.abi == witx2::abi::Abi::Canonical,
             "We only support the canonical ABI right now"
@@ -1039,6 +1040,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
     }
 
     fn export(&mut self, iface: &witx2::Interface, func: &witx2::Function) {
+        assert!(!func.is_async, "async not supported yet");
         assert!(
             func.abi == witx2::abi::Abi::Canonical,
             "We only support the canonical ABI right now"
@@ -2040,6 +2042,10 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
                 self.inst(Instruction::Call(self.gen.spidermonkey_import("SMW_call")));
                 // []
             }
+
+            witx2::abi::Instruction::CallWasmAsyncExport { .. } => todo!(),
+            witx2::abi::Instruction::CallWasmAsyncImport { .. } => todo!(),
+
             witx2::abi::Instruction::Return { amt, func: _ } => {
                 match self.lift_lower {
                     witx2::abi::LiftLower::LowerArgsLiftResults => {
@@ -2104,6 +2110,10 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
                     }
                 }
             }
+
+            witx2::abi::Instruction::ReturnAsyncExport { .. } => todo!(),
+            witx2::abi::Instruction::ReturnAsyncImport { .. } => todo!(),
+
             witx2::abi::Instruction::Witx { instr: _ } => {
                 unreachable!("we do not support the preview1 ABI")
             }

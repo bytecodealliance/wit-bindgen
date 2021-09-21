@@ -11,27 +11,17 @@ fn execute(name: &str, wasm: &Path, ts: &Path, imports: &Path, exports: &Path) {
     dir.push(name);
     drop(fs::remove_dir_all(&dir));
     fs::create_dir_all(&dir).unwrap();
-    fs::create_dir_all(&dir.join("imports")).unwrap();
-    fs::create_dir_all(&dir.join("exports")).unwrap();
 
     println!("OUT_DIR = {:?}", dir);
     println!("Generating bindings...");
     let imports = witx_bindgen_gen_core::witx2::Interface::parse_file(imports).unwrap();
     let exports = witx_bindgen_gen_core::witx2::Interface::parse_file(exports).unwrap();
-    // TODO: should combine these calls into one
-    let mut import_files = Default::default();
-    let mut export_files = Default::default();
+    let mut files = Default::default();
     witx_bindgen_gen_js::Opts::default()
         .build()
-        .generate_all(&[imports], &[], &mut import_files);
-    witx_bindgen_gen_js::Opts::default()
-        .build()
-        .generate_all(&[], &[exports], &mut export_files);
-    for (file, contents) in import_files.iter() {
-        fs::write(dir.join("imports").join(file), contents).unwrap();
-    }
-    for (file, contents) in export_files.iter() {
-        fs::write(dir.join("exports").join(file), contents).unwrap();
+        .generate_all(&[imports], &[exports], &mut files);
+    for (file, contents) in files.iter() {
+        fs::write(dir.join(file), contents).unwrap();
     }
 
     let (cmd, args) = if cfg!(windows) {

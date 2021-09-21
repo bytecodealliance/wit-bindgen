@@ -234,6 +234,7 @@ pub struct Global {
 #[derive(Debug)]
 pub struct Function {
     pub abi: abi::Abi,
+    pub is_async: bool,
     pub docs: Docs,
     pub name: String,
     pub kind: FunctionKind,

@@ -1,0 +1,7 @@
+async_no_args: async function()
+async_args: async function(a: u32, b: string, c: list<string>)
+async_results: async function() -> (u32, string, list<string>)
+
+resource async_resource {
+  frob: async function()
+}

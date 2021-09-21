@@ -15,7 +15,9 @@ fn main() {
             .current_dir("../test-rust-wasm")
             .arg("--target=wasm32-wasi")
             .env("CARGO_TARGET_DIR", &out_dir)
-            .env("CARGO_PROFILE_DEV_DEBUG", "1");
+            .env("CARGO_PROFILE_DEV_DEBUG", "1")
+            .env("RUSTFLAGS", "-Clink-args=--export-table")
+            .env_remove("CARGO_ENCODED_RUSTFLAGS");
         let status = cmd.status().unwrap();
         assert!(status.success());
         for file in out_dir.join("wasm32-wasi/debug").read_dir().unwrap() {

@@ -1,3 +1,4 @@
+pub use async_trait::async_trait;
 use std::fmt;
 use std::marker;
 use std::mem;
@@ -5,6 +6,7 @@ use std::ops::Deref;
 pub use witx_bindgen_rust_impl::{export, import};
 
 pub mod exports;
+mod futures;
 pub mod imports;
 
 /// A type for handles to resources that appear in exported functions.
@@ -121,6 +123,8 @@ pub unsafe trait LocalHandle: HandleType {
 #[doc(hidden)]
 pub mod rt {
     use std::alloc::{self, Layout};
+
+    pub use crate::futures::*;
 
     #[no_mangle]
     unsafe extern "C" fn canonical_abi_realloc(

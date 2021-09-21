@@ -527,6 +527,7 @@ impl Resolver {
         let docs = self.docs(&value.docs);
         match &value.kind {
             ValueKind::Function {
+                is_async,
                 abi,
                 params,
                 results,
@@ -546,6 +547,7 @@ impl Resolver {
                     kind: FunctionKind::Freestanding,
                     params,
                     results,
+                    is_async: *is_async,
                 });
             }
             ValueKind::Global(ty) => {
@@ -564,12 +566,13 @@ impl Resolver {
         let mut names = HashSet::new();
         let id = self.resource_lookup[&*resource.name.name];
         for (statik, value) in resource.values.iter() {
-            let (abi, params, results) = match &value.kind {
+            let (abi, is_async, params, results) = match &value.kind {
                 ValueKind::Function {
                     abi,
+                    is_async,
                     params,
                     results,
-                } => (*abi, params, results),
+                } => (*abi, *is_async, params, results),
                 ValueKind::Global(_) => {
                     return Err(Error {
                         span: value.name.span,
@@ -608,6 +611,7 @@ impl Resolver {
             };
             self.functions.push(Function {
                 abi,
+                is_async,
                 docs,
                 name: format!("{}::{}", resource.name.name, value.name.name),
                 kind,

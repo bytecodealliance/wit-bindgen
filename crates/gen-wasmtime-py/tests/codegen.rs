@@ -5,6 +5,9 @@ mod imports {
     test_helpers::codegen_py_import!(
         "*.witx"
 
+        // TODO: implement async support
+        "!async_functions.witx"
+
         // The python generator doesn't support the legacy witx features at this
         // time.
         "!legacy.witx"
@@ -15,6 +18,9 @@ mod imports {
 mod exports {
     test_helpers::codegen_py_export!(
         "*.witx"
+
+        // TODO: implement async support
+        "!async_functions.witx"
 
         // This uses buffers, which we don't support in exports just yet
         // TODO: should support this

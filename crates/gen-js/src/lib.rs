@@ -14,27 +14,11 @@ pub struct Js {
     imports: HashMap<String, Imports>,
     exports: HashMap<String, Exports>,
     sizes: SizeAlign,
-    needs_clamp_guest: bool,
-    needs_clamp_host: bool,
-    needs_clamp_host64: bool,
+    intrinsics: BTreeMap<Intrinsic, String>,
+    all_intrinsics: BTreeSet<Intrinsic>,
     needs_get_export: bool,
-    needs_data_view: bool,
-    needs_validate_f32: bool,
-    needs_validate_f64: bool,
-    needs_validate_guest_char: bool,
-    needs_validate_host_char: bool,
-    needs_i32_to_f32: bool,
-    needs_f32_to_i32: bool,
-    needs_i64_to_f64: bool,
-    needs_f64_to_i64: bool,
-    needs_utf8_decoder: bool,
-    needs_utf8_encode: bool,
     imported_resources: BTreeSet<ResourceId>,
     exported_resources: BTreeSet<ResourceId>,
-    needs_validate_flags: bool,
-    needs_validate_flags64: bool,
-    needs_push_buffer: bool,
-    needs_pull_buffer: bool,
     needs_ty_option: bool,
     needs_ty_result: bool,
     needs_ty_push_buffer: bool,
@@ -65,6 +49,61 @@ impl Opts {
         let mut r = Js::new();
         r.opts = self;
         r
+    }
+}
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+enum Intrinsic {
+    ClampGuest,
+    ClampHost,
+    ClampHost64,
+    PushBuffer,
+    PullBuffer,
+    DataView,
+    ValidateF32,
+    ValidateF64,
+    ValidateGuestChar,
+    ValidateHostChar,
+    ValidateFlags,
+    ValidateFlags64,
+    I32ToF32,
+    F32ToI32,
+    I64ToF64,
+    F64ToI64,
+    Utf8Decoder,
+    Utf8Encode,
+    Utf8EncodedLen,
+    Slab,
+    Promises,
+    WithCurrentPromise,
+}
+
+impl Intrinsic {
+    fn name(&self) -> &'static str {
+        match self {
+            Intrinsic::ClampGuest => "clamp_guest",
+            Intrinsic::ClampHost => "clamp_host",
+            Intrinsic::ClampHost64 => "clamp_host64",
+            Intrinsic::PushBuffer => "PushBuffer",
+            Intrinsic::PullBuffer => "PullBuffer",
+            Intrinsic::DataView => "data_view",
+            Intrinsic::ValidateF32 => "validate_f32",
+            Intrinsic::ValidateF64 => "validate_f64",
+            Intrinsic::ValidateGuestChar => "validate_guest_char",
+            Intrinsic::ValidateHostChar => "validate_host_char",
+            Intrinsic::ValidateFlags => "validate_flags",
+            Intrinsic::ValidateFlags64 => "validate_flags64",
+            Intrinsic::F32ToI32 => "f32ToI32",
+            Intrinsic::I32ToF32 => "i32ToF32",
+            Intrinsic::F64ToI64 => "f64ToI64",
+            Intrinsic::I64ToF64 => "i64ToF64",
+            Intrinsic::Utf8Decoder => "UTF8_DECODER",
+            Intrinsic::Utf8Encode => "utf8_encode",
+            Intrinsic::Utf8EncodedLen => "UTF8_ENCODED_LEN",
+            Intrinsic::Slab => "Slab",
+            Intrinsic::Promises => "PROMISES",
+            Intrinsic::WithCurrentPromise => "with_current_promise",
+        }
     }
 }
 
@@ -269,6 +308,9 @@ impl Js {
             self.print_ty(iface, ty);
         }
         self.src.ts("): ");
+        if func.is_async {
+            self.src.ts("Promise<");
+        }
         match func.results.len() {
             0 => self.src.ts("void"),
             1 => self.print_ty(iface, &func.results[0].1),
@@ -296,7 +338,20 @@ impl Js {
                 }
             }
         }
+        if func.is_async {
+            self.src.ts(">");
+        }
         self.src.ts(";\n");
+    }
+
+    fn intrinsic(&mut self, i: Intrinsic) -> String {
+        if let Some(name) = self.intrinsics.get(&i) {
+            return name.clone();
+        }
+        // TODO: should select a name that automatically doesn't conflict with
+        // anything else being generated.
+        self.intrinsics.insert(i, i.name().to_string());
+        return i.name().to_string();
     }
 }
 
@@ -546,6 +601,13 @@ impl Generator for Js {
                 .js(&format!("const free = get_export(\"{}\");\n", name));
         }
         self.src.js(&src.js);
+
+        if func.is_async {
+            // Note that `catch_closure` here is defined by the `CallInterface`
+            // instruction.
+            self.src.js("}, catch_closure);\n"); // `.then` block
+            self.src.js("});\n"); // `with_current_promise` block.
+        }
         self.src.js("}");
 
         let src = mem::replace(&mut self.src, prev);
@@ -590,6 +652,9 @@ impl Generator for Js {
                 "this._obj".to_string()
             }
         };
+        if func.is_async {
+            self.src.js("async ");
+        }
         self.src.js(&format!(
             "{}({}) {{\n",
             func.item_name().to_mixed_case(),
@@ -660,8 +725,6 @@ impl Generator for Js {
     }
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
-        self.print_intrinsics();
-
         for (module, funcs) in mem::take(&mut self.imports) {
             // TODO: `module.exports` vs `export function`
             self.src.js(&format!(
@@ -711,20 +774,25 @@ impl Generator for Js {
                 self.src
                     .js("if (!(\"canonical_abi\" in imports)) imports[\"canonical_abi\"] = {};\n");
             }
-            for resource in self.imported_resources.iter() {
+            for resource in self.imported_resources.clone() {
+                let slab = self.intrinsic(Intrinsic::Slab);
                 self.src.js(&format!(
-                    "imports.canonical_abi[\"resource_drop_{}\"] = (i) => {{
-                        const val = resources{}.remove(i);
-                        if (obj.drop{})
-                            obj.drop{2}(val);
-                    }};\n",
-                    iface.resources[*resource].name,
-                    resource.index(),
-                    iface.resources[*resource].name.to_camel_case(),
+                    "
+                        const resources{idx} = new {slab}();
+                        imports.canonical_abi[\"resource_drop_{name}\"] = (i) => {{
+                            const val = resources{idx}.remove(i);
+                            if (obj.drop{camel})
+                                obj.drop{camel}(val);
+                        }};
+                    ",
+                    name = iface.resources[resource].name,
+                    camel = iface.resources[resource].name.to_camel_case(),
+                    idx = resource.index(),
+                    slab = slab,
                 ));
                 self.src.ts(&format!(
                     "drop{}?: (val: {0}) => void;\n",
-                    iface.resources[*resource].name.to_camel_case()
+                    iface.resources[resource].name.to_camel_case()
                 ));
             }
             self.src.js("}");
@@ -743,6 +811,7 @@ impl Generator for Js {
                 self.src.ts("}\n");
             }
         }
+        let imports = mem::take(&mut self.src);
 
         for (module, exports) in mem::take(&mut self.exports) {
             let module = module.to_camel_case();
@@ -767,9 +836,13 @@ impl Generator for Js {
             ");
             if self.exported_resources.len() > 0 {
                 self.src.js("constructor() {\n");
+                let slab = self.intrinsic(Intrinsic::Slab);
                 for r in self.exported_resources.iter() {
-                    self.src
-                        .js(&format!("this._resource{}_slab = new Slab();\n", r.index()));
+                    self.src.js(&format!(
+                        "this._resource{}_slab = new {}();\n",
+                        r.index(),
+                        slab
+                    ));
                 }
                 self.src.js("}\n");
             }
@@ -788,7 +861,8 @@ impl Generator for Js {
                 addToImports(imports: any): void;
             ");
             self.src.js("addToImports(imports) {\n");
-            if self.exported_resources.len() > 0 {
+            let any_async = iface.functions.iter().any(|f| f.is_async);
+            if self.exported_resources.len() > 0 || any_async {
                 self.src
                     .js("if (!(\"canonical_abi\" in imports)) imports[\"canonical_abi\"] = {};\n");
             }
@@ -813,6 +887,17 @@ impl Generator for Js {
                     name = iface.resources[*r].name,
                     idx = r.index(),
                     class = iface.resources[*r].name.to_camel_case(),
+                ));
+            }
+            if any_async {
+                let promises = self.intrinsic(Intrinsic::Promises);
+                self.src.js(&format!(
+                    "
+                        imports.canonical_abi['async_export_done'] = (ctx, ptr) => {{
+                            {}.remove(ctx)(ptr >>> 0)
+                        }};
+                    ",
+                    promises
                 ));
             }
             self.src.js("}\n");
@@ -972,10 +1057,69 @@ impl Generator for Js {
             }
         }
 
-        files.push("bindings.js", self.src.js.as_bytes());
-        if !self.opts.no_typescript {
-            files.push("bindings.d.ts", self.src.ts.as_bytes());
+        let exports = mem::take(&mut self.src);
+
+        if mem::take(&mut self.needs_ty_option) {
+            self.src
+                .ts("export type Option<T> = { tag: \"none\" } | { tag: \"some\", val; T };\n");
         }
+        if mem::take(&mut self.needs_ty_result) {
+            self.src.ts(
+                "export type Result<T, E> = { tag: \"ok\", val: T } | { tag: \"err\", val: E };\n",
+            );
+        }
+        if mem::take(&mut self.needs_ty_push_buffer) {
+            self.src.ts("
+                export class PushBuffer<T> {
+                    length: number;
+                    push(val: T): boolean;
+                }
+            ");
+        }
+        if mem::take(&mut self.needs_ty_pull_buffer) {
+            self.src.ts("
+                export class PullBuffer<T> {
+                    length: number;
+                    pull(): T | undefined;
+                }
+            ");
+        }
+
+        if self.intrinsics.len() > 0 {
+            self.src.js("import { ");
+            for (i, (intrinsic, name)) in mem::take(&mut self.intrinsics).into_iter().enumerate() {
+                if i > 0 {
+                    self.src.js(", ");
+                }
+                self.src.js(intrinsic.name());
+                if intrinsic.name() != name {
+                    self.src.js(" as ");
+                    self.src.js(&name);
+                }
+                self.all_intrinsics.insert(intrinsic);
+            }
+            self.src.js(" } from './intrinsics.js';\n");
+        }
+
+        self.src.js(&imports.js);
+        self.src.ts(&imports.ts);
+        self.src.js(&exports.js);
+        self.src.ts(&exports.ts);
+
+        let src = mem::take(&mut self.src);
+        let name = iface.name.to_snake_case();
+        files.push(&format!("{}.js", name), src.js.as_bytes());
+        if !self.opts.no_typescript {
+            files.push(&format!("{}.d.ts", name), src.ts.as_bytes());
+        }
+    }
+
+    fn finish_all(&mut self, files: &mut Files) {
+        assert!(self.src.ts.is_empty());
+        assert!(self.src.js.is_empty());
+        self.print_intrinsics();
+        assert!(self.src.ts.is_empty());
+        files.push("intrinsics.js", self.src.js.as_bytes());
     }
 }
 
@@ -1020,42 +1164,63 @@ impl FunctionBindgen<'_> {
     where
         T: std::fmt::Display,
     {
-        self.gen.needs_clamp_guest = true;
-        results.push(format!("clamp_guest({}, {}, {})", operands[0], min, max));
+        let clamp = self.gen.intrinsic(Intrinsic::ClampGuest);
+        results.push(format!("{}({}, {}, {})", clamp, operands[0], min, max));
     }
 
     fn clamp_host<T>(&mut self, results: &mut Vec<String>, operands: &[String], min: T, max: T)
     where
         T: std::fmt::Display,
     {
-        self.gen.needs_clamp_host = true;
-        results.push(format!("clamp_host({}, {}, {})", operands[0], min, max));
+        let clamp = self.gen.intrinsic(Intrinsic::ClampHost);
+        results.push(format!("{}({}, {}, {})", clamp, operands[0], min, max));
     }
 
     fn clamp_host64<T>(&mut self, results: &mut Vec<String>, operands: &[String], min: T, max: T)
     where
         T: std::fmt::Display,
     {
-        self.gen.needs_clamp_host64 = true;
-        results.push(format!("clamp_host64({}, {}n, {}n)", operands[0], min, max));
+        let clamp = self.gen.intrinsic(Intrinsic::ClampHost64);
+        results.push(format!("{}({}, {}n, {}n)", clamp, operands[0], min, max));
     }
 
     fn load(&mut self, method: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
         self.needs_memory = true;
-        self.gen.needs_data_view = true;
+        let view = self.gen.intrinsic(Intrinsic::DataView);
         results.push(format!(
-            "data_view(memory).{}({} + {}, true)",
-            method, operands[0], offset,
+            "{}(memory).{}({} + {}, true)",
+            view, method, operands[0], offset,
         ));
     }
 
     fn store(&mut self, method: &str, offset: i32, operands: &[String]) {
         self.needs_memory = true;
-        self.gen.needs_data_view = true;
+        let view = self.gen.intrinsic(Intrinsic::DataView);
         self.src.js(&format!(
-            "data_view(memory).{}({} + {}, {}, true);\n",
-            method, operands[1], offset, operands[0]
+            "{}(memory).{}({} + {}, {}, true);\n",
+            view, method, operands[1], offset, operands[0]
         ));
+    }
+
+    fn bind_results(&mut self, amt: usize, results: &mut Vec<String>) {
+        match amt {
+            0 => {}
+            1 => {
+                self.src.js("const ret = ");
+                results.push("ret".to_string());
+            }
+            n => {
+                self.src.js("const [");
+                for i in 0..n {
+                    if i > 0 {
+                        self.src.js(", ");
+                    }
+                    self.src.js(&format!("ret{}", i));
+                    results.push(format!("ret{}", i));
+                }
+                self.src.js("] = ");
+            }
+        }
     }
 }
 
@@ -1156,59 +1321,59 @@ impl Bindgen for FunctionBindgen<'_> {
             // is indeed a number and that the 32-bit value matches the
             // original value.
             Instruction::F32FromIf32 => {
-                self.gen.needs_validate_f32 = true;
-                results.push(format!("validate_f32({})", operands[0]));
+                let validate = self.gen.intrinsic(Intrinsic::ValidateF32);
+                results.push(format!("{}({})", validate, operands[0]));
             }
 
             // Similar to f32, but no range checks, just checks it's a number
             Instruction::F64FromIf64 => {
-                self.gen.needs_validate_f64 = true;
-                results.push(format!("validate_f64({})", operands[0]));
+                let validate = self.gen.intrinsic(Intrinsic::ValidateF64);
+                results.push(format!("{}({})", validate, operands[0]));
             }
 
             // Validate that i32 values coming from wasm are indeed valid code
             // points.
             Instruction::CharFromI32 => {
-                self.gen.needs_validate_guest_char = true;
-                results.push(format!("validate_guest_char({})", operands[0]));
+                let validate = self.gen.intrinsic(Intrinsic::ValidateGuestChar);
+                results.push(format!("{}({})", validate, operands[0]));
             }
 
             // Validate that strings are indeed 1 character long and valid
             // unicode.
             Instruction::I32FromChar => {
-                self.gen.needs_validate_host_char = true;
-                results.push(format!("validate_host_char({})", operands[0]));
+                let validate = self.gen.intrinsic(Intrinsic::ValidateHostChar);
+                results.push(format!("{}({})", validate, operands[0]));
             }
 
             Instruction::Bitcasts { casts } => {
                 for (cast, op) in casts.iter().zip(operands) {
                     match cast {
                         Bitcast::I32ToF32 => {
-                            self.gen.needs_i32_to_f32 = true;
-                            results.push(format!("i32ToF32({})", op));
+                            let cvt = self.gen.intrinsic(Intrinsic::I32ToF32);
+                            results.push(format!("{}({})", cvt, op));
                         }
                         Bitcast::F32ToI32 => {
-                            self.gen.needs_f32_to_i32 = true;
-                            results.push(format!("f32ToI32({})", op));
+                            let cvt = self.gen.intrinsic(Intrinsic::F32ToI32);
+                            results.push(format!("{}({})", cvt, op));
                         }
                         Bitcast::F32ToF64 | Bitcast::F64ToF32 => results.push(op.clone()),
                         Bitcast::I64ToF64 => {
-                            self.gen.needs_i64_to_f64 = true;
-                            results.push(format!("i64ToF64({})", op));
+                            let cvt = self.gen.intrinsic(Intrinsic::I64ToF64);
+                            results.push(format!("{}({})", cvt, op));
                         }
                         Bitcast::F64ToI64 => {
-                            self.gen.needs_f64_to_i64 = true;
-                            results.push(format!("f64ToI64({})", op));
+                            let cvt = self.gen.intrinsic(Intrinsic::F64ToI64);
+                            results.push(format!("{}({})", cvt, op));
                         }
                         Bitcast::I32ToI64 => results.push(format!("BigInt({})", op)),
                         Bitcast::I64ToI32 => results.push(format!("Number({})", op)),
                         Bitcast::I64ToF32 => {
-                            self.gen.needs_i32_to_f32 = true;
-                            results.push(format!("i32ToF32(Number({}))", op));
+                            let cvt = self.gen.intrinsic(Intrinsic::I32ToF32);
+                            results.push(format!("{}(Number({}))", cvt, op));
                         }
                         Bitcast::F32ToI64 => {
-                            self.gen.needs_f32_to_i32 = true;
-                            results.push(format!("BigInt(f32ToI32({}))", op));
+                            let cvt = self.gen.intrinsic(Intrinsic::F32ToI32);
+                            results.push(format!("BigInt({}({}))", cvt, op));
                         }
                         Bitcast::None => results.push(op.clone()),
                     }
@@ -1319,17 +1484,17 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::FlagsLower { record, .. } | Instruction::FlagsLift { record, .. } => {
                 match record.num_i32s() {
                     0 | 1 => {
-                        self.gen.needs_validate_flags = true;
+                        let validate = self.gen.intrinsic(Intrinsic::ValidateFlags);
                         let mask = (1u64 << record.fields.len()) - 1;
-                        results.push(format!("validate_flags({}, {})", operands[0], mask));
+                        results.push(format!("{}({}, {})", validate, operands[0], mask));
                     }
                     _ => panic!("unsupported bitflags"),
                 }
             }
             Instruction::FlagsLower64 { record, .. } | Instruction::FlagsLift64 { record, .. } => {
-                self.gen.needs_validate_flags64 = true;
+                let validate = self.gen.intrinsic(Intrinsic::ValidateFlags64);
                 let mask = (1u128 << record.fields.len()) - 1;
-                results.push(format!("validate_flags64({}, {}n)", operands[0], mask));
+                results.push(format!("{}({}, {}n)", validate, operands[0], mask));
             }
 
             Instruction::VariantPayloadName => results.push("e".to_string()),
@@ -1526,13 +1691,14 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 match element {
                     Type::Char => {
-                        self.gen.needs_utf8_encode = true;
+                        let encode = self.gen.intrinsic(Intrinsic::Utf8Encode);
                         self.src.js(&format!(
-                            "const ptr{} = utf8_encode({}, realloc, memory);\n",
-                            tmp, operands[0],
+                            "const ptr{} = {}({}, realloc, memory);\n",
+                            tmp, encode, operands[0],
                         ));
+                        let encoded_len = self.gen.intrinsic(Intrinsic::Utf8EncodedLen);
                         self.src
-                            .js(&format!("const len{} = UTF8_ENCODED_LEN;\n", tmp));
+                            .js(&format!("const len{} = {};\n", tmp, encoded_len));
                     }
                     _ => {
                         let size = self.gen.sizes.size(element);
@@ -1563,11 +1729,11 @@ impl Bindgen for FunctionBindgen<'_> {
                     .js(&format!("const len{} = {};\n", tmp, operands[1]));
                 let (result, align) = match element {
                     Type::Char => {
-                        self.gen.needs_utf8_decoder = true;
+                        let decoder = self.gen.intrinsic(Intrinsic::Utf8Decoder);
                         (
                             format!(
-                                "UTF8_DECODER.decode(new Uint8Array(memory.buffer, ptr{}, len{0}))",
-                                tmp,
+                                "{}.decode(new Uint8Array(memory.buffer, ptr{}, len{1}))",
+                                decoder, tmp,
                             ),
                             1,
                         )
@@ -1684,23 +1850,23 @@ impl Bindgen for FunctionBindgen<'_> {
                 } else {
                     let size = self.gen.sizes.size(ty);
                     if *push {
-                        self.gen.needs_push_buffer = true;
+                        let buf = self.gen.intrinsic(Intrinsic::PushBuffer);
                         assert!(block_results.is_empty());
                         results.push(format!(
-                            "new PushBuffer(ptr{}, len{0}, {}, (e, base) => {{
+                            "new {}(ptr{}, len{1}, {}, (e, base) => {{
                                 {}
                             }})",
-                            tmp, size, block
+                            buf, tmp, size, block
                         ));
                     } else {
-                        self.gen.needs_pull_buffer = true;
+                        let buf = self.gen.intrinsic(Intrinsic::PullBuffer);
                         assert_eq!(block_results.len(), 1);
                         results.push(format!(
-                            "new PullBuffer(ptr{}, len{0}, {}, (base) => {{
+                            "new {}(ptr{}, len{1}, {}, (base) => {{
                                 {}
                                 return {};
                             }})",
-                            tmp, size, block, block_results[0],
+                            buf, tmp, size, block, block_results[0],
                         ));
                     }
                 }
@@ -1754,24 +1920,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 name,
                 sig,
             } => {
-                match sig.results.len() {
-                    0 => {}
-                    1 => {
-                        self.src.js("const ret = ");
-                        results.push("ret".to_string());
-                    }
-                    n => {
-                        self.src.js("const [");
-                        for i in 0..n {
-                            if i > 0 {
-                                self.src.js(", ");
-                            }
-                            self.src.js(&format!("ret{}", i));
-                            results.push(format!("ret{}", i));
-                        }
-                        self.src.js("] = ");
-                    }
-                }
+                self.bind_results(sig.results.len(), results);
                 self.src.js(&self.src_object);
                 self.src.js("._exports['");
                 self.src.js(&name);
@@ -1780,52 +1929,133 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.js(");\n");
             }
 
-            Instruction::CallInterface { module: _, func } => {
-                if func.results.len() > 0 {
-                    if func.results.len() == 1 {
-                        self.src.js("const ret = ");
-                        results.push("ret".to_string());
-                    } else if func.results.iter().any(|p| p.0.is_empty()) {
-                        self.src.js("const [");
-                        for i in 0..func.results.len() {
-                            if i > 0 {
-                                self.src.js(", ")
-                            }
-                            let name = format!("ret{}", i);
-                            self.src.js(&name);
-                            results.push(name);
+            Instruction::CallWasmAsyncExport {
+                module: _,
+                name,
+                params: _,
+                results: wasm_results,
+            } => {
+                self.bind_results(wasm_results.len(), results);
+                let promises = self.gen.intrinsic(Intrinsic::Promises);
+                self.src.js(&format!(
+                    "\
+                        await new Promise((resolve, reject) => {{
+                            const promise_ctx = {promises}.insert(val => {{
+                                if (typeof val !== 'number')
+                                    return reject(val);
+                                resolve(\
+                    ",
+                    promises = promises
+                ));
+
+                if wasm_results.len() > 0 {
+                    self.src.js("[");
+                    let operands = &["val".to_string()];
+                    let mut results = Vec::new();
+                    for (i, result) in wasm_results.iter().enumerate() {
+                        if i > 0 {
+                            self.src.js(", ");
                         }
-                        self.src.js("] = ");
-                    } else {
-                        self.src.js("const {");
-                        for (i, (name, _)) in func.results.iter().enumerate() {
-                            if i > 0 {
-                                self.src.js(", ")
-                            }
-                            self.src.js(name);
-                            results.push(name.clone());
-                        }
-                        self.src.js("} = ");
+                        let method = match result {
+                            WasmType::I32 => "getInt32",
+                            WasmType::I64 => "getBigInt64",
+                            WasmType::F32 => "getFloat32",
+                            WasmType::F64 => "getFloat64",
+                        };
+                        self.load(method, (i * 8) as i32, operands, &mut results);
+                        self.src.js(&results.pop().unwrap());
                     }
+                    self.src.js("]");
                 }
-                match &func.kind {
+
+                // Finish the blocks from above
+                self.src.js(");\n"); // `resolve(...)`
+                self.src.js("});\n"); // `promises.insert(...)`
+
+                let with = self.gen.intrinsic(Intrinsic::WithCurrentPromise);
+                self.src.js(&with);
+                self.src.js("(promise_ctx, _prev => {\n");
+                self.src.js(&self.src_object);
+                self.src.js("._exports['");
+                self.src.js(&name);
+                self.src.js("'](");
+                for op in operands {
+                    self.src.js(op);
+                    self.src.js(", ");
+                }
+                self.src.js("promise_ctx);\n");
+                self.src.js("});\n"); // call to `with`
+                self.src.js("});\n"); // `await new Promise(...)`
+            }
+
+            Instruction::CallInterface { module: _, func } => {
+                let call = |me: &mut FunctionBindgen<'_>| match &func.kind {
                     FunctionKind::Freestanding | FunctionKind::Static { .. } => {
-                        self.src.js(&format!(
+                        me.src.js(&format!(
                             "obj.{}({})",
                             func.name.to_mixed_case(),
                             operands.join(", "),
                         ));
                     }
                     FunctionKind::Method { name, .. } => {
-                        self.src.js(&format!(
+                        me.src.js(&format!(
                             "{}.{}({})",
                             operands[0],
                             name.to_mixed_case(),
                             operands[1..].join(", "),
                         ));
                     }
+                };
+                let mut bind_results = |me: &mut FunctionBindgen<'_>| {
+                    if func.results.len() > 0 {
+                        if func.results.len() == 1 {
+                            me.src.js("const ret = ");
+                            results.push("ret".to_string());
+                        } else if func.results.iter().any(|p| p.0.is_empty()) {
+                            me.src.js("const [");
+                            for i in 0..func.results.len() {
+                                if i > 0 {
+                                    me.src.js(", ")
+                                }
+                                let name = format!("ret{}", i);
+                                me.src.js(&name);
+                                results.push(name);
+                            }
+                            me.src.js("] = ");
+                        } else {
+                            me.src.js("const {");
+                            for (i, (name, _)) in func.results.iter().enumerate() {
+                                if i > 0 {
+                                    me.src.js(", ")
+                                }
+                                me.src.js(name);
+                                results.push(name.clone());
+                            }
+                            me.src.js("} = ");
+                        }
+                    }
+                };
+
+                if func.is_async {
+                    let with = self.gen.intrinsic(Intrinsic::WithCurrentPromise);
+                    let promises = self.gen.intrinsic(Intrinsic::Promises);
+                    self.src.js(&with);
+                    self.src.js("(null, cur_promise => {\n");
+                    self.src.js(&format!(
+                        "const catch_closure = e => {}.remove(cur_promise)(e);\n",
+                        promises
+                    ));
+                    call(self);
+                    self.src.js(".then(e => {\n");
+                    if func.results.len() > 0 {
+                        bind_results(self);
+                        self.src.js("e;\n");
+                    }
+                } else {
+                    bind_results(self);
+                    call(self);
+                    self.src.js(";\n");
                 }
-                self.src.js(";\n");
             }
 
             Instruction::Return { amt, func } => match amt {
@@ -1848,6 +2078,33 @@ impl Bindgen for FunctionBindgen<'_> {
                     }
                 }
             },
+
+            Instruction::ReturnAsyncImport { .. } => {
+                // When we reenter webassembly successfully that means that the
+                // host's promise resolved without exception. Take the current
+                // promise index saved as part of `CallInterface` and update the
+                // `CUR_PROMISE` global with what's currently being executed.
+                // This'll get reset once the wasm returns again.
+                //
+                // Note that the name `cur_promise` used here is introduced in
+                // the `CallInterface` codegen above in the closure for
+                // `with_current_promise` which we're using here.
+                //
+                // TODO: hardcoding `__indirect_function_table` and no help if
+                // it's not actually defined.
+                self.gen.needs_get_export = true;
+                let with = self.gen.intrinsic(Intrinsic::WithCurrentPromise);
+                self.src.js(&format!(
+                    "\
+                        {with}(cur_promise, _prev => {{
+                            get_export(\"__indirect_function_table\").get({})({});
+                        }});
+                    ",
+                    operands[0],
+                    operands[1..].join(", "),
+                    with = with,
+                ));
+            }
 
             Instruction::I32Load { offset } => self.load("getInt32", *offset, operands, results),
             Instruction::I64Load { offset } => self.load("getBigInt64", *offset, operands, results),
@@ -1878,135 +2135,210 @@ impl Bindgen for FunctionBindgen<'_> {
 
 impl Js {
     fn print_intrinsics(&mut self) {
-        if self.needs_clamp_guest {
-            self.src.js("function clamp_guest(i, min, max) {
-                if (i < min || i > max) \
-                    throw new RangeError(`must be between ${min} and ${max}`);
-                return i;
-            }\n");
-        }
-
-        if self.needs_clamp_host {
-            self.src.js("function clamp_host(i, min, max) {
-                if (!Number.isInteger(i)) \
-                    throw new TypeError(`must be an integer`);
-                if (i < min || i > max) \
-                    throw new RangeError(`must be between ${min} and ${max}`);
-                return i;
-            }\n");
-        }
-        if self.needs_clamp_host64 {
-            self.src.js("function clamp_host64(i, min, max) {
-                if (typeof i !== 'bigint') \
-                    throw new TypeError(`must be a bigint`);
-                if (i < min || i > max) \
-                    throw new RangeError(`must be between ${min} and ${max}`);
-                return i;
-            }\n");
-        }
-        if self.needs_data_view {
-            self.src
-                .js("let DATA_VIEW = new DataView(new ArrayBuffer());\n");
-            // TODO: hardcoded `memory`
-            self.src.js("function data_view(mem) {
-                if (DATA_VIEW.buffer !== mem.buffer) \
-                    DATA_VIEW = new DataView(mem.buffer);
-                return DATA_VIEW;
-            }\n");
-        }
-
-        if self.needs_validate_f32 {
-            // TODO: test removing the isNan test and make sure something fails
-            self.src.js("function validate_f32(val) {
-                if (typeof val !== 'number') \
-                    throw new TypeError(`must be a number`);
-                if (!Number.isNaN(val) && Math.fround(val) !== val) \
-                    throw new RangeError(`must be representable as f32`);
-                return val;
-            }\n");
-        }
-
-        if self.needs_validate_f64 {
-            self.src.js("function validate_f64(val) {
-                if (typeof val !== 'number') \
-                    throw new TypeError(`must be a number`);
-                return val;
-            }\n");
-        }
-
-        if self.needs_validate_guest_char {
-            self.src.js("function validate_guest_char(i) {
-                if ((i > 0x10ffff) || (i >= 0xd800 && i <= 0xdfff)) \
-                    throw new RangeError(`not a valid char`);
-                return String.fromCodePoint(i);
-            }\n");
-        }
-
-        if self.needs_validate_host_char {
-            // TODO: this is incorrect. It at least allows strings of length > 0
-            // but it probably doesn't do the right thing for unicode or invalid
-            // utf16 strings either.
-            self.src.js("function validate_host_char(s) {
-                if (typeof s !== 'string') \
-                    throw new TypeError(`must be a string`);
-                return s.codePointAt(0);
-            }\n");
-        }
-        if self.needs_i32_to_f32 || self.needs_f32_to_i32 {
+        if self.all_intrinsics.contains(&Intrinsic::I32ToF32)
+            || self.all_intrinsics.contains(&Intrinsic::F32ToI32)
+        {
             self.src.js("
                 const I32_TO_F32_I = new Int32Array(1);
                 const I32_TO_F32_F = new Float32Array(I32_TO_F32_I.buffer);
             ");
-            if self.needs_i32_to_f32 {
-                self.src.js("
-                    function i32ToF32(i) {
-                        I32_TO_F32_I[0] = i;
-                        return I32_TO_F32_F[0];
-                    }
-                ");
-            }
-            if self.needs_f32_to_i32 {
-                self.src.js("
-                    function f32ToI32(f) {
-                        I32_TO_F32_F[0] = f;
-                        return I32_TO_F32_I[0];
-                    }
-                ");
-            }
         }
-        if self.needs_i64_to_f64 || self.needs_f64_to_i64 {
+        if self.all_intrinsics.contains(&Intrinsic::I64ToF64)
+            || self.all_intrinsics.contains(&Intrinsic::F64ToI64)
+        {
             self.src.js("
                 const I64_TO_F64_I = new BigInt64Array(1);
                 const I64_TO_F64_F = new Float64Array(I64_TO_F64_I.buffer);
             ");
-            if self.needs_i64_to_f64 {
-                self.src.js("
-                    function i64ToF64(i) {
-                        I64_TO_F64_I[0] = i;
-                        return I64_TO_F64_F[0];
-                    }
-                ");
-            }
-            if self.needs_f64_to_i64 {
-                self.src.js("
-                    function f64ToI64(f) {
-                        I64_TO_F64_F[0] = f;
-                        return I64_TO_F64_I[0];
-                    }
-                ");
-            }
         }
 
-        if self.needs_utf8_decoder {
-            self.src
-                .js("const UTF8_DECODER = new TextDecoder('utf-8');\n");
+        if self.all_intrinsics.contains(&Intrinsic::Promises) {
+            self.all_intrinsics.insert(Intrinsic::Slab);
         }
-        if self.needs_utf8_encode {
-            self.src.js("
-                let UTF8_ENCODED_LEN = 0;
+
+        for i in mem::take(&mut self.all_intrinsics) {
+            self.print_intrinsic(i);
+        }
+    }
+
+    fn print_intrinsic(&mut self, i: Intrinsic) {
+        match i {
+            Intrinsic::ClampGuest => self.src.js("
+                export function clamp_guest(i, min, max) {
+                    if (i < min || i > max) \
+                        throw new RangeError(`must be between ${min} and ${max}`);
+                    return i;
+                }
+            "),
+            Intrinsic::ClampHost => self.src.js("
+                export function clamp_host(i, min, max) {
+                    if (!Number.isInteger(i)) \
+                        throw new TypeError(`must be an integer`);
+                    if (i < min || i > max) \
+                        throw new RangeError(`must be between ${min} and ${max}`);
+                    return i;
+                }
+            "),
+            Intrinsic::PushBuffer => self.src.js("
+                export class PushBuffer {
+                    constructor(ptr, len, size, write) {
+                        this._ptr = ptr;
+                        this._len = len;
+                        this._size = size;
+                        this._write = write;
+                    }
+
+                    get length() {
+                        return this._len;
+                    }
+
+                    push(val) {
+                        if (this._len == 0)
+                            return false;
+                        this._len -= 1;
+                        this._write(val, this._ptr);
+                        this._ptr += this._size;
+                        return true;
+                    }
+                }
+            "),
+            Intrinsic::PullBuffer => self.src.js("
+                export class PullBuffer {
+                    constructor(ptr, len, size, read) {
+                        this._len = len;
+                        this._ptr = ptr;
+                        this._size = size;
+                        this._read = read;
+                    }
+
+                    get length() {
+                        return this._len;
+                    }
+
+                    pull() {
+                        if (this._len == 0)
+                            return undefined;
+                        this._len -= 1;
+                        const ret = this._read(this._ptr);
+                        this._ptr += this._size;
+                        return ret;
+                    }
+                }
+            "),
+
+            Intrinsic::DataView => self.src.js("
+                let DATA_VIEW = new DataView(new ArrayBuffer());
+
+                export function data_view(mem) {
+                    if (DATA_VIEW.buffer !== mem.buffer) \
+                        DATA_VIEW = new DataView(mem.buffer);
+                    return DATA_VIEW;
+                }
+            "),
+
+            Intrinsic::ClampHost64 => self.src.js("
+                export function clamp_host64(i, min, max) {
+                    if (typeof i !== 'bigint') \
+                        throw new TypeError(`must be a bigint`);
+                    if (i < min || i > max) \
+                        throw new RangeError(`must be between ${min} and ${max}`);
+                    return i;
+                }
+            "),
+
+            // TODO: test removing the isNan test and make sure something fails
+            Intrinsic::ValidateF32 => self.src.js("
+                export function validate_f32(val) {
+                    if (typeof val !== 'number') \
+                        throw new TypeError(`must be a number`);
+                    if (!Number.isNaN(val) && Math.fround(val) !== val) \
+                        throw new RangeError(`must be representable as f32`);
+                    return val;
+                }
+            "),
+
+            Intrinsic::ValidateF64 => self.src.js("
+                export function validate_f64(val) {
+                    if (typeof val !== 'number') \
+                        throw new TypeError(`must be a number`);
+                    return val;
+                }
+            "),
+
+            Intrinsic::ValidateGuestChar => self.src.js("
+                export function validate_guest_char(i) {
+                    if ((i > 0x10ffff) || (i >= 0xd800 && i <= 0xdfff)) \
+                        throw new RangeError(`not a valid char`);
+                    return String.fromCodePoint(i);
+                }
+            "),
+
+            // TODO: this is incorrect. It at least allows strings of length > 0
+            // but it probably doesn't do the right thing for unicode or invalid
+            // utf16 strings either.
+            Intrinsic::ValidateHostChar => self.src.js("
+                export function validate_host_char(s) {
+                    if (typeof s !== 'string') \
+                        throw new TypeError(`must be a string`);
+                    return s.codePointAt(0);
+                }
+            "),
+
+            Intrinsic::ValidateFlags => self.src.js("
+                export function validate_flags(flags, mask) {
+                    if (!Number.isInteger(flags)) \
+                        throw new TypeError('flags were not an integer');
+                    if ((flags & ~mask) != 0)
+                        throw new TypeError('flags have extraneous bits set');
+                    return flags;
+                }
+            "),
+
+            Intrinsic::ValidateFlags64 => self.src.js("
+                export function validate_flags64(flags, mask) {
+                    if (typeof flags !== 'bigint')
+                        throw new TypeError('flags were not a bigint');
+                    if ((flags & ~mask) != 0n)
+                        throw new TypeError('flags have extraneous bits set');
+                    return flags;
+                }
+            "),
+
+            Intrinsic::I32ToF32 => self.src.js("
+                export function i32ToF32(i) {
+                    I32_TO_F32_I[0] = i;
+                    return I32_TO_F32_F[0];
+                }
+            "),
+            Intrinsic::F32ToI32 => self.src.js("
+                export function f32ToI32(f) {
+                    I32_TO_F32_F[0] = f;
+                    return I32_TO_F32_I[0];
+                }
+            "),
+            Intrinsic::I64ToF64 => self.src.js("
+                export function i64ToF64(i) {
+                    I64_TO_F64_I[0] = i;
+                    return I64_TO_F64_F[0];
+                }
+            "),
+            Intrinsic::F64ToI64 => self.src.js("
+                export function f64ToI64(f) {
+                    I64_TO_F64_F[0] = f;
+                    return I64_TO_F64_I[0];
+                }
+            "),
+
+            Intrinsic::Utf8Decoder => self
+                .src
+                .js("export const UTF8_DECODER = new TextDecoder('utf-8');\n"),
+
+            Intrinsic::Utf8EncodedLen => self.src.js("export let UTF8_ENCODED_LEN = 0;\n"),
+
+            Intrinsic::Utf8Encode => self.src.js("
                 const UTF8_ENCODER = new TextEncoder('utf-8');
 
-                function utf8_encode(s, realloc, memory) {
+                export function utf8_encode(s, realloc, memory) {
                     if (typeof s !== 'string') \
                         throw new TypeError('expected a string');
 
@@ -2033,12 +2365,10 @@ impl Js {
                     UTF8_ENCODED_LEN = writtenTotal;
                     return ptr;
                 }
-            ");
-        }
+            "),
 
-        if self.imported_resources.len() > 0 || self.exported_resources.len() > 0 {
-            self.src.js("
-                class Slab {
+            Intrinsic::Slab => self.src.js("
+                export class Slab {
                     constructor() {
                         this.list = [];
                         this.head = 0;
@@ -2077,112 +2407,21 @@ impl Js {
                         return ret;
                     }
                 }
-            ");
-        }
-        for r in self.imported_resources.iter() {
-            self.src
-                .js(&format!("const resources{} = new Slab();\n", r.index()));
-        }
+            "),
 
-        if self.needs_validate_flags {
-            self.src.js("
-                function validate_flags(flags, mask) {
-                    if (!Number.isInteger(flags)) \
-                        throw new TypeError('flags were not an integer');
-                    if ((flags & ~mask) != 0)
-                        throw new TypeError('flags have extraneous bits set');
-                    return flags;
-                }
-            ")
-        }
-
-        if self.needs_validate_flags64 {
-            self.src.js("
-                function validate_flags64(flags, mask) {
-                    if (typeof flags !== 'bigint')
-                        throw new TypeError('flags were not a bigint');
-                    if ((flags & ~mask) != 0n)
-                        throw new TypeError('flags have extraneous bits set');
-                    return flags;
-                }
-            ")
-        }
-
-        if self.needs_push_buffer {
-            self.src.js("
-                class PushBuffer {
-                    constructor(ptr, len, size, write) {
-                        this._ptr = ptr;
-                        this._len = len;
-                        this._size = size;
-                        this._write = write;
-                    }
-
-                    get length() {
-                        return this._len;
-                    }
-
-                    push(val) {
-                        if (this._len == 0)
-                            return false;
-                        this._len -= 1;
-                        this._write(val, this._ptr);
-                        this._ptr += this._size;
-                        return true;
+            Intrinsic::Promises => self.src.js("export const PROMISES = new Slab();\n"),
+            Intrinsic::WithCurrentPromise => self.src.js("
+                let CUR_PROMISE = null;
+                export function with_current_promise(val, closure) {
+                    const prev = CUR_PROMISE;
+                    CUR_PROMISE = val;
+                    try {
+                        closure(prev);
+                    } finally {
+                        CUR_PROMISE = prev;
                     }
                 }
-            ")
-        }
-        if self.needs_pull_buffer {
-            self.src.js("
-                class PullBuffer {
-                    constructor(ptr, len, size, read) {
-                        this._len = len;
-                        this._ptr = ptr;
-                        this._size = size;
-                        this._read = read;
-                    }
-
-                    get length() {
-                        return this._len;
-                    }
-
-                    pull() {
-                        if (this._len == 0)
-                            return undefined;
-                        this._len -= 1;
-                        const ret = this._read(this._ptr);
-                        this._ptr += this._size;
-                        return ret;
-                    }
-                }
-            ")
-        }
-
-        if self.needs_ty_option {
-            self.src
-                .ts("export type Option<T> = { tag: \"none\" } | { tag: \"some\", val; T };\n");
-        }
-        if self.needs_ty_result {
-            self.src.ts(
-                "export type Result<T, E> = { tag: \"ok\", val: T } | { tag: \"err\", val: E };\n",
-            );
-        }
-        if self.needs_ty_push_buffer {
-            self.src.ts("
-                export class PushBuffer<T> {
-                    length: number;
-                    push(val: T): boolean;
-                }
-            ");
-        }
-        if self.needs_ty_pull_buffer {
-            self.src.ts("
-                export class PullBuffer<T> {
-                    length: number;
-                    pull(): T | undefined;
-                }
-            ");
+            "),
         }
     }
 }

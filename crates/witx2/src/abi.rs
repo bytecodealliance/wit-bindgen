@@ -578,14 +578,64 @@ def_instruction! {
 
         /// Represents a call to a raw WebAssembly API. The module/name are
         /// provided inline as well as the types if necessary.
+        ///
+        /// Note that this instruction is not currently used for async
+        /// functions, instead `CallWasmAsyncImport` and `CallWasmAsyncExport`
+        /// are used.
         CallWasm {
             module: &'a str,
             name: &'a str,
             sig: &'a WasmSignature,
         } : [sig.params.len()] => [sig.results.len()],
 
+        /// Represents a call to an asynchronous wasm import.
+        ///
+        /// This currently only happens when a compiled-to-wasm module calls as
+        /// async import. This instruction is used to indicate that the
+        /// specified import function should be called. The specified import
+        /// function has `params` as its types, but the final two parameters
+        /// must be synthesized by this instruction which are the
+        /// callback/callback state. The actual imported function does not
+        /// return anything but the callback will be called with the `i32` state
+        /// as the first parameter and `results` as the rest of the parameters.
+        /// The callback function should return nothing.
+        ///
+        /// It's up to the bindings generator to figure out how to make this
+        /// look synchronous despite it being callback-based in the middle.
+        CallWasmAsyncImport {
+            module: &'a str,
+            name: &'a str,
+            params: &'a [WasmType],
+            results: &'a [WasmType],
+        } : [params.len() - 2] => [results.len()],
+
+        /// Represents a call to an asynchronous wasm export.
+        ///
+        /// This currently only happens when a host module calls an async
+        /// function on a wasm module. The specified function will take `params`
+        /// as its argument plus one more argument of an `i32` state that the
+        /// host needs to synthesize. The function being called doesn't actually
+        /// return anything. Instead wasm will call an `async_export_done`
+        /// intrinsic in the `canonical_abi` module. This intrinsic receives a
+        /// context value and a pointer into linear memory. The context value
+        /// lines up with the final `i32` parameter of this function call (which
+        /// the bindings generator must synthesize) and the pointer into linear
+        /// memory contains the `results`, stored at 8-byte offsets in the same
+        /// manner that multiple results are transferred.
+        ///
+        /// It's up to the bindings generator to figure out how to make this
+        /// look synchronous despite it being callback-based in the middle.
+        CallWasmAsyncExport {
+            module: &'a str,
+            name: &'a str,
+            params: &'a [WasmType],
+            results: &'a [WasmType],
+        } : [params.len() - 1] => [results.len()],
+
         /// Same as `CallWasm`, except the dual where an interface is being
         /// called rather than a raw wasm function.
+        ///
+        /// Note that this will be used for async functions.
         CallInterface {
             module: &'a str,
             func: &'a Function,
@@ -593,7 +643,39 @@ def_instruction! {
 
         /// Returns `amt` values on the stack. This is always the last
         /// instruction.
+        ///
+        /// Note that this instruction is used for asynchronous functions where
+        /// the results are *lifted*, not when they're *lowered*, though. For
+        /// those modes the `ReturnAsyncExport` and `ReturnAsyncImport`
+        /// functions are used.
         Return { amt: usize, func: &'a Function } : [*amt] => [0],
+
+        /// "Returns" from an asynchronous export.
+        ///
+        /// This is only used for compiled-to-wasm modules at this time, and
+        /// only for the exports of async functions in those modules. This
+        /// instruction receives two parameters, the first of which is the
+        /// original context from the start of the function which was provided
+        /// when the export was first called (its last parameter). The second
+        /// argument is a pointer into linear memory with the results of the
+        /// asynchronous call already encoded. This instruction should then call
+        /// the `async_export_done` intrinsic in the `canonical_abi` module.
+        ReturnAsyncExport { func: &'a Function } : [2] => [0],
+
+        /// "Returns" from an asynchronous import.
+        ///
+        /// This is only used for host modules at this time, and
+        /// only for the import of async functions in those modules. This
+        /// instruction receives the operands used to call the completion
+        /// function in the wasm module. The first parameter to this instruction
+        /// is the index into the function table of the function to call, and
+        /// the remaining parameters are the parameters to invoke the function
+        /// with.
+        ReturnAsyncImport {
+            func: &'a Function,
+            params: usize,
+        } : [*params + 2] => [0],
+
 
         // ...
 
@@ -666,7 +748,7 @@ pub enum LiftLower {
 }
 
 /// Whether we are generating glue code to call an import or an export.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Direction {
     /// We are generating glue code to call an import.
     Import,
@@ -957,19 +1039,42 @@ impl Interface {
             self.push_wasm(func.abi, dir, result, &mut results);
         }
 
-        // Rust/C don't support multi-value well right now, so if a function
-        // would have multiple results then instead truncate it. Imports take a
-        // return pointer to write into and exports return a pointer they wrote
-        // into.
         let mut retptr = None;
-        if results.len() > 1 {
-            retptr = Some(mem::take(&mut results));
+        if func.is_async {
+            // Asynchronous functions never actually return anything since
+            // they're all callback-based, meaning that we always put all the
+            // results into a return pointer.
+            //
+            // Asynchronous exports take one extra parameter which is the
+            // context used to pass to the `async_export_done` intrisnic, and
+            // asynchronous imports take two extra parameters where the first is
+            // a pointer into the function table and the second is a context
+            // argument to pass to this function.
             match dir {
-                Direction::Import => {
+                Direction::Export => {
+                    retptr = Some(mem::take(&mut results));
                     params.push(WasmType::I32);
                 }
-                Direction::Export => {
-                    results.push(WasmType::I32);
+                Direction::Import => {
+                    retptr = Some(mem::take(&mut results));
+                    params.push(WasmType::I32);
+                    params.push(WasmType::I32);
+                }
+            }
+        } else {
+            // Rust/C don't support multi-value well right now, so if a function
+            // would have multiple results then instead truncate it. Imports take a
+            // return pointer to write into and exports return a pointer they wrote
+            // into.
+            if results.len() > 1 {
+                retptr = Some(mem::take(&mut results));
+                match dir {
+                    Direction::Import => {
+                        params.push(WasmType::I32);
+                    }
+                    Direction::Export => {
+                        results.push(WasmType::I32);
+                    }
                 }
             }
         }
@@ -1163,33 +1268,63 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
                 self.lower_all(&func.params, None);
 
-                // If necessary we may need to prepare a return pointer for this
-                // ABI. The `Preview1` ABI has most return values returned
-                // through pointers, and the `Canonical` ABI returns more-than-one
-                // values through a return pointer.
-                if self.dir == Direction::Import {
-                    self.prep_return_pointer(&sig, &func.results);
-                }
-
-                // Now that all the wasm args are prepared we can call the
-                // actual wasm function.
-                assert_eq!(self.stack.len(), sig.params.len());
-                self.emit(&Instruction::CallWasm {
-                    module: &self.iface.name,
-                    name: &func.name,
-                    sig: &sig,
-                });
-
-                // In the `Canonical` ABI we model multiple return values by going
-                // through memory. Remove that indirection here by loading
-                // everything to simulate the function having many return values
-                // in our stack discipline.
-                if let Some(actual) = &sig.retptr {
-                    if self.dir == Direction::Import {
-                        assert_eq!(self.return_pointers.len(), 1);
-                        self.stack.push(self.return_pointers.pop().unwrap());
+                if func.is_async {
+                    // We emit custom instructions for async calls since they
+                    // have different parameters synthesized by the bindings
+                    // generator depending on what kind of call is being made.
+                    //
+                    // Note that no return pointer goop happens here because
+                    // that's all done through parameters of callbacks instead.
+                    let tys = sig.retptr.as_ref().unwrap();
+                    match self.dir {
+                        Direction::Import => {
+                            assert_eq!(self.stack.len(), sig.params.len() - 2);
+                            self.emit(&Instruction::CallWasmAsyncImport {
+                                module: &self.iface.name,
+                                name: &func.name,
+                                params: &sig.params,
+                                results: tys,
+                            });
+                        }
+                        Direction::Export => {
+                            assert_eq!(self.stack.len(), sig.params.len() - 1);
+                            self.emit(&Instruction::CallWasmAsyncExport {
+                                module: &self.iface.name,
+                                name: &func.name,
+                                params: &sig.params,
+                                results: tys,
+                            });
+                        }
                     }
-                    self.load_retptr(actual);
+                } else {
+                    // If necessary we may need to prepare a return pointer for this
+                    // ABI. The `Preview1` ABI has most return values returned
+                    // through pointers, and the `Canonical` ABI returns more-than-one
+                    // values through a return pointer.
+                    if self.dir == Direction::Import {
+                        self.prep_return_pointer(&sig, &func.results);
+                    }
+
+                    // Now that all the wasm args are prepared we can call the
+                    // actual wasm function.
+                    assert_eq!(self.stack.len(), sig.params.len());
+                    self.emit(&Instruction::CallWasm {
+                        module: &self.iface.name,
+                        name: &func.name,
+                        sig: &sig,
+                    });
+
+                    // In the `Canonical` ABI we model multiple return values by going
+                    // through memory. Remove that indirection here by loading
+                    // everything to simulate the function having many return values
+                    // in our stack discipline.
+                    if let Some(actual) = &sig.retptr {
+                        if self.dir == Direction::Import {
+                            assert_eq!(self.return_pointers.len(), 1);
+                            self.stack.push(self.return_pointers.pop().unwrap());
+                        }
+                        self.load_retptr(actual);
+                    }
                 }
 
                 // Batch-lift all result values now that all the function's return
@@ -1223,8 +1358,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 .count()
                     }
                     Abi::Canonical => {
-                        sig.params.len()
-                            - (self.dir == Direction::Import && sig.retptr.is_some()) as usize
+                        let skip_cnt = if func.is_async {
+                            match self.dir {
+                                Direction::Export => 1,
+                                Direction::Import => 2,
+                            }
+                        } else {
+                            (sig.retptr.is_some() && self.dir == Direction::Import) as usize
+                        };
+                        sig.params.len() - skip_cnt
                     }
                 };
                 for nth in 0..nargs {
@@ -1245,31 +1387,78 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // values.
                 self.lower_all(&func.results, Some(nargs));
 
-                // Our ABI dictates that a list of returned types are returned
-                // through memories, so after we've got all the values on the
-                // stack perform all of the stores here.
-                if let Some(tys) = &sig.retptr {
+                if func.is_async {
+                    let tys = sig.retptr.as_ref().unwrap();
                     match self.dir {
                         Direction::Import => {
+                            assert_eq!(self.stack.len(), tys.len());
+                            let operands = mem::take(&mut self.stack);
+                            // function index to call
+                            self.emit(&Instruction::GetArg {
+                                nth: sig.params.len() - 2,
+                            });
+                            // environment for the function
                             self.emit(&Instruction::GetArg {
                                 nth: sig.params.len() - 1,
                             });
+                            self.stack.extend(operands);
+                            self.emit(&Instruction::ReturnAsyncImport {
+                                func,
+                                params: tys.len(),
+                            });
                         }
                         Direction::Export => {
-                            let op = self.bindgen.i64_return_pointer_area(tys.len());
-                            self.stack.push(op);
+                            // Store all results, if any, into the general
+                            // return pointer area.
+                            let retptr = if tys.len() > 0 {
+                                let op = self.bindgen.i64_return_pointer_area(tys.len());
+                                self.stack.push(op);
+                                Some(self.store_retptr(tys))
+                            } else {
+                                None
+                            };
+
+                            // Get the caller's context index.
+                            self.emit(&Instruction::GetArg {
+                                nth: sig.params.len() - 1,
+                            });
+                            match retptr {
+                                Some(ptr) => self.stack.push(ptr),
+                                None => self.emit(&Instruction::I32Const { val: 0 }),
+                            }
+
+                            // This will call the "done" function with the
+                            // context/pointer argument
+                            self.emit(&Instruction::ReturnAsyncExport { func });
                         }
                     }
-                    let retptr = self.store_retptr(tys);
-                    if self.dir == Direction::Export {
-                        self.stack.push(retptr);
+                } else {
+                    // Our ABI dictates that a list of returned types are
+                    // returned through memories, so after we've got all the
+                    // values on the stack perform all of the stores here.
+                    if let Some(tys) = &sig.retptr {
+                        match self.dir {
+                            Direction::Import => {
+                                self.emit(&Instruction::GetArg {
+                                    nth: sig.params.len() - 1,
+                                });
+                            }
+                            Direction::Export => {
+                                let op = self.bindgen.i64_return_pointer_area(tys.len());
+                                self.stack.push(op);
+                            }
+                        }
+                        let retptr = self.store_retptr(tys);
+                        if self.dir == Direction::Export {
+                            self.stack.push(retptr);
+                        }
                     }
-                }
 
-                self.emit(&Instruction::Return {
-                    func,
-                    amt: sig.results.len(),
-                });
+                    self.emit(&Instruction::Return {
+                        func,
+                        amt: sig.results.len(),
+                    });
+                }
             }
         }
 

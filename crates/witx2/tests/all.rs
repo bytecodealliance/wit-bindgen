@@ -202,6 +202,8 @@ fn to_json(i: &witx2::Interface) -> String {
     #[derive(Serialize)]
     struct Function {
         name: String,
+        #[serde(rename = "async", skip_serializing_if = "Option::is_none")]
+        is_async: Option<bool>,
         params: Vec<String>,
         results: Vec<String>,
     }
@@ -236,6 +238,7 @@ fn to_json(i: &witx2::Interface) -> String {
         .iter()
         .map(|f| Function {
             name: f.name.clone(),
+            is_async: if f.is_async { Some(f.is_async) } else { None },
             params: f.params.iter().map(|(_, ty)| translate_type(ty)).collect(),
             results: f.results.iter().map(|(_, ty)| translate_type(ty)).collect(),
         })
