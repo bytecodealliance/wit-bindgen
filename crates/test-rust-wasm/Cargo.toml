@@ -38,3 +38,7 @@ test = false
 [[bin]]
 name = "buffers"
 test = false
+
+[[bin]]
+name = "flavorful"
+test = false

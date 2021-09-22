@@ -1,7 +1,3 @@
-// ===========================================
-// More flavorful types
-// ===========================================
-
 record list_in_record1 { a: string }
 record list_in_record2 { a: string }
 record list_in_record3 { a: string }

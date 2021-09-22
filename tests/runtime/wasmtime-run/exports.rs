@@ -27,56 +27,6 @@ pub fn test(wasm: &Wasm<Context>, instance: Instance, store: &mut Store<Context>
 }
 
 fn flavorful(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
-    wasm.list_in_record1(
-        &mut *store,
-        ListInRecord1 {
-            a: "list_in_record1",
-        },
-    )?;
-    assert_eq!(wasm.list_in_record2(&mut *store)?.a, "list_in_record2");
-
-    assert_eq!(
-        wasm.list_in_record3(
-            &mut *store,
-            ListInRecord3Param {
-                a: "list_in_record3 input"
-            }
-        )?
-        .a,
-        "list_in_record3 output"
-    );
-
-    assert_eq!(
-        wasm.list_in_record4(&mut *store, ListInAliasParam { a: "input4" })?
-            .a,
-        "result4"
-    );
-
-    wasm.list_in_variant1(
-        &mut *store,
-        Some("foo"),
-        Err("bar"),
-        ListInVariant13::V0("baz"),
-    )?;
-    assert_eq!(
-        wasm.list_in_variant2(&mut *store)?,
-        Some("list_in_variant2".to_string())
-    );
-    assert_eq!(
-        wasm.list_in_variant3(&mut *store, Some("input3"))?,
-        Some("output3".to_string())
-    );
-
-    assert!(wasm.errno_result(&mut *store)?.is_err());
-    MyErrno::A.to_string();
-    format!("{:?}", MyErrno::A);
-    fn assert_error<T: std::error::Error>() {}
-    assert_error::<MyErrno>();
-
-    let (a, b) = wasm.list_typedefs(&mut *store, "typedef1", &["typedef2"])?;
-    assert_eq!(a, b"typedef3");
-    assert_eq!(b.len(), 1);
-    assert_eq!(b[0], "typedef4");
     Ok(())
 }
 

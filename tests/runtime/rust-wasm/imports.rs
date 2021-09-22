@@ -25,52 +25,7 @@ pub fn run() {
     host_buffers();
 }
 
-fn host_flavorful() {
-    list_in_record1(ListInRecord1 {
-        a: "list_in_record1",
-    });
-    assert_eq!(list_in_record2().a, "list_in_record2");
-
-    assert_eq!(
-        list_in_record3(ListInRecord3Param {
-            a: "list_in_record3 input"
-        })
-        .a,
-        "list_in_record3 output"
-    );
-
-    assert_eq!(
-        list_in_record4(ListInAliasParam { a: "input4" }).a,
-        "result4"
-    );
-
-    list_in_variant1(Some("foo"), Err("bar"), ListInVariant13::V0("baz"));
-    assert_eq!(list_in_variant2(), Some("list_in_variant2".to_string()));
-    assert_eq!(
-        list_in_variant3(Some("input3")),
-        Some("output3".to_string())
-    );
-
-    assert!(errno_result().is_err());
-    MyErrno::A.to_string();
-    format!("{:?}", MyErrno::A);
-    fn assert_error<T: std::error::Error>() {}
-    assert_error::<MyErrno>();
-
-    let (a, b) = list_typedefs("typedef1", &["typedef2"]);
-    assert_eq!(a, b"typedef3");
-    assert_eq!(b.len(), 1);
-    assert_eq!(b[0], "typedef4");
-
-    let (a, b, c) = list_of_variants(
-        &[true, false],
-        &[Ok(()), Err(())],
-        &[MyErrno::Success, MyErrno::A],
-    );
-    assert_eq!(a, [false, true]);
-    assert_eq!(b, [Err(()), Ok(())]);
-    assert_eq!(c, [MyErrno::A, MyErrno::B]);
-}
+fn host_flavorful() {}
 
 fn host_handles() {}
 
