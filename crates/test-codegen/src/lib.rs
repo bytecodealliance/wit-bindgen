@@ -351,7 +351,7 @@ where
         builder.add_line(None, &lit[1..lit.len() - 1]).unwrap();
     }
     let ignore = builder.build().unwrap();
-    let tests = ignore::Walk::new("tests").filter_map(|d| {
+    let tests = ignore::Walk::new("tests/codegen").filter_map(|d| {
         let d = d.unwrap();
         let path = d.path();
         match ignore.matched(path, d.file_type().map(|d| d.is_dir()).unwrap_or(false)) {

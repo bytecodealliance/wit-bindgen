@@ -1,5 +1,7 @@
 # Testing witx-bindgen
 
+TODO UPDATE THIS
+
 A brief overview of tests in `witx-bindgen`:
 
 * Any `*.witx` file placed in this directory will get imports/exports generated
