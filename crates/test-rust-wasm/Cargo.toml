@@ -34,3 +34,7 @@ test = false
 [[bin]]
 name = "handles"
 test = false
+
+[[bin]]
+name = "buffers"
+test = false

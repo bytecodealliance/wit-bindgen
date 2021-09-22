@@ -80,69 +80,6 @@ fn flavorful(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
     Ok(())
 }
 
-// fn buffers(wasm: &Wasm<Context>) -> Result<()> {
-//     let mut out = [0; 10];
-//     let n = wasm.buffer_u8(&[0u8], &mut out)? as usize;
-//     assert_eq!(n, 3);
-//     assert_eq!(&out[..n], [1, 2, 3]);
-//     assert!(out[n..].iter().all(|x| *x == 0));
-
-//     let mut out = [0; 10];
-//     let n = wasm.buffer_u32(&[0], &mut out)? as usize;
-//     assert_eq!(n, 3);
-//     assert_eq!(&out[..n], [1, 2, 3]);
-//     assert!(out[n..].iter().all(|x| *x == 0));
-
-//     assert_eq!(wasm.buffer_bool(&mut iter::empty(), &mut Vec::new())?, 0);
-//     assert_eq!(wasm.buffer_string(&mut iter::empty(), &mut Vec::new())?, 0);
-//     assert_eq!(
-//         wasm.buffer_list_bool(&mut iter::empty(), &mut Vec::new())?,
-//         0
-//     );
-
-//     let mut bools = [true, false, true].iter().copied();
-//     let mut out = Vec::with_capacity(4);
-//     let n = wasm.buffer_bool(&mut bools, &mut out)?;
-//     assert_eq!(n, 3);
-//     assert_eq!(out, [false, true, false]);
-
-//     let mut strings = ["foo", "bar", "baz"].iter().copied();
-//     let mut out = Vec::with_capacity(3);
-//     let n = wasm.buffer_string(&mut strings, &mut out)?;
-//     assert_eq!(n, 3);
-//     assert_eq!(out, ["FOO", "BAR", "BAZ"]);
-
-//     let a = &[true, false, true][..];
-//     let b = &[false, false][..];
-//     let list = [a, b];
-//     let mut lists = list.iter().copied();
-//     let mut out = Vec::with_capacity(4);
-//     let n = wasm.buffer_list_bool(&mut lists, &mut out)?;
-//     assert_eq!(n, 2);
-//     assert_eq!(out, [vec![false, true, false], vec![true, true]]);
-
-//     let a = [true, false, true, true, false];
-//     // let mut bools = a.iter().copied();
-//     // let mut list = [&mut bools as &mut dyn ExactSizeIterator<Item = _>];
-//     // let mut buffers = list.iter_mut().map(|b| &mut **b);
-//     // wasm.buffer_buffer_bool(&mut buffers)?;
-
-//     let mut bools = a.iter().copied();
-//     wasm.buffer_mutable1(&mut [&mut bools])?;
-
-//     let mut dst = [0; 10];
-//     let n = wasm.buffer_mutable2(&mut [&mut dst])? as usize;
-//     assert_eq!(n, 4);
-//     assert_eq!(&dst[..n], [1, 2, 3, 4]);
-
-//     let mut out = Vec::with_capacity(10);
-//     let n = wasm.buffer_mutable3(&mut [&mut out])?;
-//     assert_eq!(n, 3);
-//     assert_eq!(out, [false, true, false]);
-
-//     Ok(())
-// }
-
 fn invalid(i: &Instance, store: &mut Store<Context>) -> Result<()> {
     run_err(i, store, "invalid_bool", "invalid discriminant for `bool`")?;
     run_err(i, store, "invalid_u8", "out-of-bounds integer conversion")?;

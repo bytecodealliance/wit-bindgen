@@ -1,0 +1,36 @@
+buffer_u8: function(a: pull-buffer<u8>, b: push-buffer<u8>) -> u32
+buffer_u32: function(a: pull-buffer<u32>, b: push-buffer<u32>) -> u32
+buffer_bool: function(a: pull-buffer<bool>, b: push-buffer<bool>) -> u32
+
+/*
+(export "buffer_string" (func (param $a (in-buffer string)) (param $b (out-buffer string)) (result $r u32)))
+(export "buffer_list_bool" (func (param $a (in-buffer (list bool))) (param $b (out-buffer (list bool))) (result $r u32)))
+(export "buffer_buffer_bool" (func (param $a (in-buffer (in-buffer bool)))))
+*/
+
+buffer_mutable1: function(a: list<pull-buffer<bool>>)
+buffer_mutable2: function(a: list<push-buffer<u8>>) -> u32
+buffer_mutable3: function(a: list<push-buffer<bool>>) -> u32
+
+variant buffer_in_variant {
+  a(push-buffer<u8>),
+  b(pull-buffer<u8>),
+  c(push-buffer<bool>),
+  d(pull-buffer<bool>),
+}
+
+record buffer_in_record {
+  a: push-buffer<u8>,
+  b: pull-buffer<u8>,
+  c: push-buffer<bool>,
+  d: pull-buffer<bool>,
+  e: buffer_in_variant,
+}
+buffer_in_record: function(a: buffer_in_record)
+
+type param_in_buffer_u8 = push-buffer<u8>
+type param_out_buffer_u8 = pull-buffer<u8>
+type param_in_buffer_bool = push-buffer<bool>
+type param_out_buffer_bool = pull-buffer<bool>
+buffer_typedef: function(a: param_in_buffer_u8, b: param_out_buffer_u8, c: param_in_buffer_bool, d: param_out_buffer_bool)
+

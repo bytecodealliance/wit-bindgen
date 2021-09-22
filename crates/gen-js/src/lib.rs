@@ -2172,7 +2172,7 @@ impl Js {
             self.src.ts("
                 export class PushBuffer<T> {
                     length: number;
-                    push(T): boolean;
+                    push(val: T): boolean;
                 }
             ");
         }
