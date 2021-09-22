@@ -2,10 +2,16 @@
 
 #![deny(missing_docs)]
 
+#[cfg(feature = "structopt")]
+mod opts;
+#[cfg(feature = "structopt")]
+pub use opts::Opts;
+
 mod data_segments;
 
 use data_segments::DataSegments;
 use lazy_static::lazy_static;
+use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -301,7 +307,7 @@ pub struct SpiderMonkeyWasm<'a> {
     js_name: PathBuf,
 
     /// The JS source code.
-    js: &'a str,
+    js: Cow<'a, str>,
 
     i64_return_pointer_area_size: usize,
 
@@ -342,8 +348,9 @@ pub struct SpiderMonkeyWasm<'a> {
 impl<'a> SpiderMonkeyWasm<'a> {
     /// Construct a new `SpiderMonkeyWasm` bindings generator using the given
     /// JavaScript module.
-    pub fn new(js_name: impl Into<PathBuf>, js: &'a str) -> Self {
+    pub fn new(js_name: impl Into<PathBuf>, js: impl Into<Cow<'a, str>>) -> Self {
         let js_name = js_name.into();
+        let js = js.into();
         SpiderMonkeyWasm {
             js_name,
             js,

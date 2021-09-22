@@ -47,6 +47,13 @@ enum Command {
         #[structopt(flatten)]
         common: Common,
     },
+    #[structopt(name = "spidermonkey")]
+    SpiderMonkey {
+        #[structopt(flatten)]
+        opts: witx_bindgen_gen_spidermonkey::Opts,
+        #[structopt(flatten)]
+        common: Common,
+    },
 }
 
 #[derive(Debug, StructOpt)]
@@ -55,14 +62,14 @@ struct Common {
     #[structopt(long = "out-dir")]
     out_dir: Option<PathBuf>,
 
-    /// Generate import binding for the given `*.witx` file. Can be specified
-    /// multiple times.
-    #[structopt(long, short)]
+    /// Generate import bindings for the given `*.witx` interface. Can be
+    /// specified multiple times.
+    #[structopt(long = "import", short)]
     imports: Vec<PathBuf>,
 
-    /// Generate export binding for the given `*.witx` file. Can be specified
-    /// multiple times.
-    #[structopt(long, short)]
+    /// Generate export bindings for the given `*.witx` interface. Can be
+    /// specified multiple times.
+    #[structopt(long = "export", short)]
     exports: Vec<PathBuf>,
 }
 
@@ -75,6 +82,11 @@ fn main() -> Result<()> {
         Command::Js { opts, common } => (Box::new(opts.build()), common),
         Command::C { opts, common } => (Box::new(opts.build()), common),
         Command::Markdown { opts, common } => (Box::new(opts.build()), common),
+        Command::SpiderMonkey { opts, common } => {
+            let js_source = std::fs::read_to_string(&opts.js)
+                .with_context(|| format!("failed to read {}", opts.js.display()))?;
+            (Box::new(opts.build(js_source)), common)
+        }
     };
 
     let imports = common

@@ -2046,6 +2046,7 @@ name = "witx-bindgen-gen-spidermonkey"
 version = "0.1.0"
 dependencies = [
  "lazy_static",
+ "structopt",
  "wasm-encoder 0.6.0",
  "witx-bindgen-gen-core",
 ]
