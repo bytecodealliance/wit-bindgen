@@ -40,14 +40,6 @@ async function run() {
 function host(): imports.Host {
   let sawClose = false;
   return {
-    multipleResults() { return [4, 5]; },
-    swapTuple([a, b]) { return [b, a]; },
-    roundtripFlags1(x) { return x; },
-    roundtripFlags2(x) { return x; },
-    roundtripFlags3(r0, r1, r2, r3) { return [r0, r1, r2, r3]; },
-    roundtripRecord1(x) { return x; },
-    tuple0([]) { return []; },
-    tuple1([x]) { return [x]; },
     roundtripOption(x) { return x; },
     roundtripResult(x) {
       if (x.tag == 'ok') {
@@ -313,38 +305,6 @@ function runTests(wasm: exports.Wasm) {
   // Ensure that we properly called `free` everywhere in all the glue that we
   // needed to.
   assert.strictEqual(bytes, wasm.allocatedBytes());
-}
-
-function testScalars(wasm: exports.Wasm) {
-
-  assert.deepEqual(wasm.multipleResults(), [100, 200]);
-}
-
-function testRecords(wasm: exports.Wasm) {
-  assert.deepStrictEqual(wasm.swapTuple([1, 2]), [2, 1]);
-  assert.deepEqual(wasm.roundtripFlags1(exports.F1_A), exports.F1_A);
-  assert.deepEqual(wasm.roundtripFlags1(0), 0);
-  assert.deepEqual(wasm.roundtripFlags1(exports.F1_A | exports.F1_B), exports.F1_A | exports.F1_B);
-
-  assert.deepEqual(wasm.roundtripFlags2(exports.F2_C), exports.F2_C);
-  assert.deepEqual(wasm.roundtripFlags2(0), 0);
-  assert.deepEqual(wasm.roundtripFlags2(exports.F2_D), exports.F2_D);
-  assert.deepEqual(wasm.roundtripFlags2(exports.F2_C | exports.F2_E), exports.F2_C | exports.F2_E);
-
-  {
-    const { a, b } = wasm.roundtripRecord1({ a: 8, b: 0 });
-    assert.deepEqual(a, 8);
-    assert.deepEqual(b, 0);
-  }
-
-  {
-    const { a, b } = wasm.roundtripRecord1({ a: 0, b: exports.F1_A | exports.F1_B });
-    assert.deepEqual(a, 0);
-    assert.deepEqual(b, exports.F1_A | exports.F1_B);
-  }
-
-  assert.deepStrictEqual(wasm.tuple0([]), []);
-  assert.deepStrictEqual(wasm.tuple1([1]), [1]);
 }
 
 function testVariants(wasm: exports.Wasm) {

@@ -11,7 +11,6 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
 // use witx_bindgen_rust::exports::{InBuffer, InBufferRaw, OutBuffer, OutBufferRaw};
 
-static SCALAR: AtomicU32 = AtomicU32::new(0);
 static CLOSED: AtomicU32 = AtomicU32::new(0);
 
 struct Wasm;
@@ -27,44 +26,6 @@ impl wasm::Wasm for Wasm {
 
     fn run_import_tests() {
         crate::imports::run();
-    }
-
-    fn multiple_results() -> (u8, u16) {
-        (100, 200)
-    }
-
-    fn set_scalar(val: u32) {
-        SCALAR.store(val, SeqCst)
-    }
-
-    fn get_scalar() -> u32 {
-        SCALAR.load(SeqCst)
-    }
-
-    fn swap_tuple(a: (u8, u32)) -> (u32, u8) {
-        (a.1, a.0)
-    }
-
-    fn roundtrip_flags1(a: F1) -> F1 {
-        a
-    }
-
-    fn roundtrip_flags2(a: F2) -> F2 {
-        a
-    }
-
-    fn roundtrip_flags3(a: F8, b: F16, c: F32, d: F64) -> (F8, F16, F32, F64) {
-        (a, b, c, d)
-    }
-
-    fn roundtrip_record1(a: R1) -> R1 {
-        a
-    }
-
-    fn tuple0(_: ()) {}
-
-    fn tuple1(a: (u8,)) -> (u8,) {
-        (a.0,)
     }
 
     fn roundtrip_option(a: Option<f32>) -> Option<u8> {

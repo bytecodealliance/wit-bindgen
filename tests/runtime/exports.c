@@ -32,42 +32,6 @@ uint32_t wasm_allocated_bytes(void) {
 }
 
 
-void wasm_multiple_results(uint8_t *ret0, uint16_t *ret1) {
-  *ret0 = 100;
-  *ret1 = 200;
-}
-
-void wasm_swap_tuple(wasm_tuple2_u8_u32_t *a, uint32_t *ret0, uint8_t *ret1) {
-  *ret0 = a->f1;
-  *ret1 = a->f0;
-}
-
-wasm_f1_t wasm_roundtrip_flags1(wasm_f1_t a) {
-  return a;
-}
-
-wasm_f2_t wasm_roundtrip_flags2(wasm_f2_t a) {
-  return a;
-}
-
-void wasm_roundtrip_flags3(wasm_f8_t a, wasm_f16_t b, wasm_f32_t c, wasm_f64_t d, wasm_f8_t *ret0, wasm_f16_t *ret1, wasm_f32_t *ret2, wasm_f64_t *ret3) {
-  *ret0 = a;
-  *ret1 = b;
-  *ret2 = c;
-  *ret3 = d;
-}
-
-void wasm_roundtrip_record1(wasm_r1_t *a, wasm_r1_t *ret0) {
-  *ret0 = *a;
-}
-
-void wasm_tuple0(wasm_tuple0_t *a) {
-}
-
-void wasm_tuple1(wasm_tuple1_u8_t *a, uint8_t *ret0) {
-  *ret0 = a->f0;
-}
-
 bool wasm_roundtrip_option(wasm_option_f32_t *a, uint8_t *ret0) {
   if (a->tag) {
     *ret0 = a->val;

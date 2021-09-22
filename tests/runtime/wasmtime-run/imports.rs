@@ -29,46 +29,6 @@ impl Host for MyHost {
     type HostState2 = ();
     type Markdown2 = Markdown;
 
-    fn multiple_results(&mut self) -> (u8, u16) {
-        (4, 5)
-    }
-
-    fn swap_tuple(&mut self, a: (u8, u32)) -> (u32, u8) {
-        (a.1, a.0)
-    }
-
-    fn roundtrip_flags1(&mut self, a: F1) -> F1 {
-        drop(a.to_string());
-        drop(format!("{:?}", a));
-        drop(a & F1::all());
-        a
-    }
-
-    fn roundtrip_flags2(&mut self, a: F2) -> F2 {
-        a
-    }
-
-    fn roundtrip_flags3(
-        &mut self,
-        a: Flag8,
-        b: Flag16,
-        c: Flag32,
-        d: Flag64,
-    ) -> (Flag8, Flag16, Flag32, Flag64) {
-        (a, b, c, d)
-    }
-
-    fn roundtrip_record1(&mut self, a: R1) -> R1 {
-        drop(format!("{:?}", a));
-        a
-    }
-
-    fn tuple0(&mut self, _: ()) {}
-
-    fn tuple1(&mut self, a: (u8,)) -> (u8,) {
-        (a.0,)
-    }
-
     fn roundtrip_option(&mut self, a: Option<f32>) -> Option<u8> {
         a.map(|x| x as u8)
     }

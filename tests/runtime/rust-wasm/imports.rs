@@ -35,37 +35,7 @@ fn host_char() {}
 
 fn host_get_set() {}
 
-fn host_records() {
-    assert_eq!(swap_tuple((1u8, 2u32)), (2u32, 1u8));
-    assert_eq!(roundtrip_flags1(F1_A), F1_A);
-    assert_eq!(roundtrip_flags1(0), 0);
-    assert_eq!(roundtrip_flags1(F1_B), F1_B);
-    assert_eq!(roundtrip_flags1(F1_A | F1_B), F1_A | F1_B);
-
-    assert_eq!(roundtrip_flags2(F2_C), F2_C);
-    assert_eq!(roundtrip_flags2(0), 0);
-    assert_eq!(roundtrip_flags2(F2_D), F2_D);
-    assert_eq!(roundtrip_flags2(F2_C | F2_E), F2_C | F2_E);
-
-    assert_eq!(
-        roundtrip_flags3(FLAG8_B0, FLAG16_B1, FLAG32_B2, FLAG64_B3),
-        (FLAG8_B0, FLAG16_B1, FLAG32_B2, FLAG64_B3)
-    );
-
-    let r = roundtrip_record1(R1 { a: 8, b: 0 });
-    assert_eq!(r.a, 8);
-    assert_eq!(r.b, 0);
-
-    let r = roundtrip_record1(R1 {
-        a: 0,
-        b: F1_A | F1_B,
-    });
-    assert_eq!(r.a, 0);
-    assert_eq!(r.b, F1_A | F1_B);
-
-    assert_eq!(tuple0(()), ());
-    assert_eq!(tuple1((1,)), (1,));
-}
+fn host_records() {}
 
 fn host_variants() {
     assert_eq!(roundtrip_option(Some(1.0)), Some(1));

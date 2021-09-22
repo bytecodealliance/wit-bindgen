@@ -25,64 +25,6 @@ static void test_chars() {
 static void test_get_set() {
 }
 
-static void test_records() {
-  host_tuple2_u8_u32_t input;
-  input.f0 = 1;
-  input.f1 = 2;
-  uint32_t a;
-  uint8_t b;
-  host_swap_tuple(&input, &a, &b);
-  assert(a == 2);
-  assert(b == 1);
-
-  assert(host_roundtrip_flags1(HOST_F1_A) == HOST_F1_A);
-  assert(host_roundtrip_flags1(0) == 0);
-  assert(host_roundtrip_flags1(HOST_F1_B) == HOST_F1_B);
-  assert(host_roundtrip_flags1(HOST_F1_A | HOST_F1_B) == (HOST_F1_A | HOST_F1_B));
-
-  assert(host_roundtrip_flags2(HOST_F2_C) == HOST_F2_C);
-  assert(host_roundtrip_flags2(0) == 0);
-  assert(host_roundtrip_flags2(HOST_F2_D) == HOST_F2_D);
-  assert(host_roundtrip_flags2(HOST_F2_C | HOST_F2_E) == (HOST_F2_C | HOST_F2_E));
-
-  host_flag8_t flag8;
-  host_flag16_t flag16;
-  host_flag32_t flag32;
-  host_flag64_t flag64;
-  host_roundtrip_flags3(HOST_FLAG8_B0, HOST_FLAG16_B1, HOST_FLAG32_B2, HOST_FLAG64_B3,
-      &flag8, &flag16, &flag32, &flag64);
-  assert(flag8 == HOST_FLAG8_B0);
-  assert(flag16 == HOST_FLAG16_B1);
-  assert(flag32 == HOST_FLAG32_B2);
-  assert(flag64 == HOST_FLAG64_B3);
-
-  {
-    host_r1_t a, b;
-    a.a = 8;
-    a.b = 0;
-    host_roundtrip_record1(&a, &b);
-    assert(b.a == 8);
-    assert(b.b == 0);
-  }
-
-  {
-    host_r1_t a, b;
-    a.a = 0;
-    a.b = HOST_F1_A | HOST_F1_B;
-    host_roundtrip_record1(&a, &b);
-    assert(b.a == 0);
-    assert(b.b == (HOST_F1_A | HOST_F1_B));
-  }
-
-  host_tuple0_t t0;
-  host_tuple0(&t0);
-
-  host_tuple1_u8_t t1;
-  t1.f0 = 1;
-  uint8_t ret;
-  host_tuple1(&t1, &ret);
-  assert(ret == 1);
-}
 
 static void test_variants() {
   {

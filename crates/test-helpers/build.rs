@@ -42,6 +42,7 @@ fn main() {
                 println!("cargo:rerun-if-changed={}", dep);
             }
         }
+        println!("cargo:rerun-if-changed=../test-rust-wasm/Cargo.toml");
     }
 
     if cfg!(feature = "wasm-c") {

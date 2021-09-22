@@ -677,7 +677,7 @@ impl Generator for Js {
                 "export function add{}ToImports(imports: any, obj: {0}{}): void;\n",
                 module.to_camel_case(),
                 if self.needs_get_export {
-                    ", get_export: (string) => WebAssembly.ExportValue"
+                    ", get_export: (name: string) => WebAssembly.ExportValue"
                 } else {
                     ""
                 },
