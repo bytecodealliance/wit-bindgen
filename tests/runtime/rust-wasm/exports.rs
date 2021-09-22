@@ -28,44 +28,6 @@ impl wasm::Wasm for Wasm {
         crate::imports::run();
     }
 
-    fn list_param(list: Vec<u8>) {
-        assert_eq!(list, [1, 2, 3, 4]);
-    }
-
-    fn list_param2(ptr: String) {
-        assert_eq!(ptr, "foo");
-    }
-
-    fn list_param3(ptr: Vec<String>) {
-        assert_eq!(ptr.len(), 3);
-        assert_eq!(ptr[0], "foo");
-        assert_eq!(ptr[1], "bar");
-        assert_eq!(ptr[2], "baz");
-    }
-
-    fn list_param4(ptr: Vec<Vec<String>>) {
-        assert_eq!(ptr.len(), 2);
-        assert_eq!(ptr[0][0], "foo");
-        assert_eq!(ptr[0][1], "bar");
-        assert_eq!(ptr[1][0], "baz");
-    }
-
-    fn list_result() -> Vec<u8> {
-        vec![1, 2, 3, 4, 5]
-    }
-
-    fn list_result2() -> String {
-        "hello!".to_string()
-    }
-
-    fn list_result3() -> Vec<String> {
-        vec!["hello,".to_string(), "world!".to_string()]
-    }
-
-    fn string_roundtrip(x: String) -> String {
-        x.clone()
-    }
-
     fn list_in_record1(ty: ListInRecord1) {
         assert_eq!(ty.a, "list_in_record1");
     }

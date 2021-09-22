@@ -27,19 +27,6 @@ pub fn test(wasm: &Wasm<Context>, instance: Instance, store: &mut Store<Context>
 }
 
 fn lists(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
-    wasm.list_param(&mut *store, &[1, 2, 3, 4])?;
-    wasm.list_param2(&mut *store, "foo")?;
-    wasm.list_param3(&mut *store, &["foo", "bar", "baz"])?;
-    wasm.list_param4(&mut *store, &[&["foo", "bar"], &["baz"]])?;
-    assert_eq!(wasm.list_result(&mut *store)?, [1, 2, 3, 4, 5]);
-    assert_eq!(wasm.list_result2(&mut *store)?, "hello!");
-    assert_eq!(wasm.list_result3(&mut *store)?, ["hello,", "world!"]);
-    assert_eq!(wasm.string_roundtrip(&mut *store, "x")?, "x");
-    assert_eq!(wasm.string_roundtrip(&mut *store, "")?, "");
-    assert_eq!(
-        wasm.string_roundtrip(&mut *store, "hello ⚑ world")?,
-        "hello ⚑ world"
-    );
     Ok(())
 }
 

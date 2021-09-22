@@ -26,3 +26,7 @@ test = false
 [[bin]]
 name = "variants"
 test = false
+
+[[bin]]
+name = "lists"
+test = false

@@ -1,0 +1,12 @@
+test_imports: function()
+allocated_bytes: function() -> u32
+
+list_param: function(a: list<u8>)
+list_param2: function(a: string)
+list_param3: function(a: list<string>)
+list_param4: function(a: list<list<string>>)
+list_result: function() -> list<u8>
+list_result2: function() -> string
+list_result3: function() -> list<string>
+
+string_roundtrip: function(a: string) -> string

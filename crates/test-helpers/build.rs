@@ -46,7 +46,6 @@ fn main() {
     }
 
     if cfg!(feature = "wasm-c") {
-        println!("cargo:rerun-if-changed=../../tests/runtime");
         for test_dir in fs::read_dir("../../tests/runtime").unwrap() {
             let test_dir = test_dir.unwrap().path();
             let c_impl = test_dir.join("wasm.c");
