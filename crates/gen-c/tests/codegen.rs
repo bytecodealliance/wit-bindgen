@@ -3,14 +3,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod imports {
-    test_codegen::c_import!(
+    test_helpers::codegen_c_import!(
         // ...
         "*.witx"
     );
 }
 
 mod exports {
-    test_codegen::c_export!(
+    test_helpers::codegen_c_export!(
         "*.witx"
 
         // These use preview1 ABI things which are only supported for imports

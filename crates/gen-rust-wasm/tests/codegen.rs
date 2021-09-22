@@ -1,12 +1,11 @@
 #![allow(dead_code, type_alias_bounds)]
 
-fn main() {
-    println!("compiled successfully!")
-}
+#[test]
+fn ok() {}
 
 #[rustfmt::skip]
 mod imports {
-    test_codegen::rust_wasm_import!(
+    test_helpers::codegen_rust_wasm_import!(
         "*.witx"
 
         // If you want to exclude a specific test you can include it here with
@@ -22,7 +21,7 @@ mod imports {
 }
 
 mod exports {
-    test_codegen::rust_wasm_export!(
+    test_helpers::codegen_rust_wasm_export!(
         "*.witx"
 
         // TODO: these use push/pull buffer which isn't implemented in the test

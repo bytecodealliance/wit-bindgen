@@ -8,7 +8,7 @@ use witx_bindgen_gen_core::Generator;
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-rust-wasm")]
-pub fn rust_wasm_import(input: TokenStream) -> TokenStream {
+pub fn codegen_rust_wasm_import(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
         Direction::Import,
@@ -33,7 +33,7 @@ pub fn rust_wasm_import(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-rust-wasm")]
-pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
+pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
     use heck::*;
     use std::collections::BTreeMap;
     use witx2::{FunctionKind, Type, TypeDefKind};
@@ -217,7 +217,7 @@ pub fn rust_wasm_export(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-wasmtime")]
-pub fn wasmtime_import(input: TokenStream) -> TokenStream {
+pub fn codegen_wasmtime_import(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
         Direction::Import,
@@ -252,7 +252,7 @@ pub fn wasmtime_import(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-wasmtime")]
-pub fn wasmtime_export(input: TokenStream) -> TokenStream {
+pub fn codegen_wasmtime_export(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
         Direction::Export,
@@ -277,7 +277,7 @@ pub fn wasmtime_export(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-js")]
-pub fn js_import(input: TokenStream) -> TokenStream {
+pub fn codegen_js_import(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Import, "import", || {
         witx_bindgen_gen_js::Opts::default().build()
     })
@@ -285,7 +285,7 @@ pub fn js_import(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-js")]
-pub fn js_export(input: TokenStream) -> TokenStream {
+pub fn codegen_js_export(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Export, "export", || {
         witx_bindgen_gen_js::Opts::default().build()
     })
@@ -293,7 +293,7 @@ pub fn js_export(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-c")]
-pub fn c_import(input: TokenStream) -> TokenStream {
+pub fn codegen_c_import(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Import, "import", || {
         witx_bindgen_gen_c::Opts::default().build()
     })
@@ -301,7 +301,7 @@ pub fn c_import(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-c")]
-pub fn c_export(input: TokenStream) -> TokenStream {
+pub fn codegen_c_export(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Export, "export", || {
         witx_bindgen_gen_c::Opts::default().build()
     })
@@ -309,7 +309,7 @@ pub fn c_export(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-wasmtime-py")]
-pub fn py_import(input: TokenStream) -> TokenStream {
+pub fn codegen_py_import(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Import, "import", || {
         witx_bindgen_gen_wasmtime_py::Opts::default().build()
     })
@@ -317,7 +317,7 @@ pub fn py_import(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-wasmtime-py")]
-pub fn py_export(input: TokenStream) -> TokenStream {
+pub fn codegen_py_export(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Export, "export", || {
         witx_bindgen_gen_wasmtime_py::Opts::default().build()
     })
@@ -463,5 +463,81 @@ fn gen_verify<G: Generator>(
             }
         }
     });
+    (quote::quote!(#(#tests)*)).into()
+}
+
+include!(concat!(env!("OUT_DIR"), "/wasms.rs"));
+
+/// Invoked as `runtime_tests!("js")` to run a top-level `execute` function with
+/// all host tests that use the "js" extension.
+#[proc_macro]
+pub fn runtime_tests(input: TokenStream) -> TokenStream {
+    let host_extension = input.to_string();
+    let host_extension = host_extension.trim_matches('"');
+    let host_file = format!("host.{}", host_extension);
+    let mut tests = Vec::new();
+    let cwd = std::env::current_dir().unwrap();
+    for entry in std::fs::read_dir(cwd.join("tests/runtime")).unwrap() {
+        let entry = entry.unwrap().path();
+        if !entry.join(&host_file).exists() {
+            continue;
+        }
+        let name_str = entry.file_name().unwrap().to_str().unwrap();
+        for (lang, name, wasm) in WASMS {
+            if *name != name_str {
+                continue;
+            }
+            let name = quote::format_ident!("{}_{}", name_str, lang);
+            let host_file = entry.join(&host_file).to_str().unwrap().to_string();
+            let import_witx = entry.join("imports.witx").to_str().unwrap().to_string();
+            let export_witx = entry.join("exports.witx").to_str().unwrap().to_string();
+            tests.push(quote::quote! {
+                #[test]
+                fn #name() {
+                    crate::execute(
+                        #name_str,
+                        #wasm.as_ref(),
+                        #host_file.as_ref(),
+                        #import_witx.as_ref(),
+                        #export_witx.as_ref(),
+                    )
+                }
+            });
+        }
+    }
+
+    (quote::quote!(#(#tests)*)).into()
+}
+
+#[proc_macro]
+#[cfg(feature = "witx-bindgen-gen-wasmtime")]
+pub fn runtime_tests_wasmtime(_input: TokenStream) -> TokenStream {
+    let mut tests = Vec::new();
+    let cwd = std::env::current_dir().unwrap();
+    for entry in std::fs::read_dir(cwd.join("tests/runtime")).unwrap() {
+        let entry = entry.unwrap().path();
+        if !entry.join("host.rs").exists() {
+            continue;
+        }
+        let name_str = entry.file_name().unwrap().to_str().unwrap();
+        for (lang, name, wasm) in WASMS {
+            if *name != name_str {
+                continue;
+            }
+            let name = quote::format_ident!("{}_{}", name_str, lang);
+            let host_file = entry.join("host.rs").to_str().unwrap().to_string();
+            tests.push(quote::quote! {
+                mod #name {
+                    include!(#host_file);
+
+                    #[test]
+                    fn test() -> Result<()> {
+                        run(#wasm)
+                    }
+                }
+            });
+        }
+    }
+
     (quote::quote!(#(#tests)*)).into()
 }

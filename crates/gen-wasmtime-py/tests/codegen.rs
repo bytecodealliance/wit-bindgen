@@ -2,7 +2,7 @@ use std::path::Path;
 use std::process::Command;
 
 mod imports {
-    test_codegen::py_import!(
+    test_helpers::codegen_py_import!(
         "*.witx"
 
         // The python generator doesn't support the legacy witx features at this
@@ -13,7 +13,7 @@ mod imports {
 }
 
 mod exports {
-    test_codegen::py_export!(
+    test_helpers::codegen_py_export!(
         "*.witx"
 
         // This uses buffers, which we don't support in exports just yet

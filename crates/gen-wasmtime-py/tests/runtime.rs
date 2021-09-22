@@ -1,13 +1,14 @@
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use witx_bindgen_gen_core::Generator;
 
-#[test]
-fn run() {
+test_helpers::runtime_tests!("py");
+
+fn execute(name: &str, wasm: &Path, py: &Path, imports: &Path, exports: &Path) {
     let mut dir = PathBuf::from(env!("OUT_DIR"));
-    dir.push("run");
+    dir.push(name);
     drop(fs::remove_dir_all(&dir));
     fs::create_dir_all(&dir).unwrap();
     fs::create_dir_all(&dir.join("imports")).unwrap();
@@ -15,8 +16,7 @@ fn run() {
 
     println!("OUT_DIR = {:?}", dir);
     println!("Generating bindings...");
-    let iface =
-        witx_bindgen_gen_core::witx2::Interface::parse_file("../../tests/host.witx").unwrap();
+    let iface = witx_bindgen_gen_core::witx2::Interface::parse_file(imports).unwrap();
     let mut files = Default::default();
     witx_bindgen_gen_wasmtime_py::Opts::default()
         .build()
@@ -26,8 +26,7 @@ fn run() {
     }
     fs::write(dir.join("imports").join("__init__.py"), "").unwrap();
 
-    let iface =
-        witx_bindgen_gen_core::witx2::Interface::parse_file("../../tests/wasm.witx").unwrap();
+    let iface = witx_bindgen_gen_core::witx2::Interface::parse_file(exports).unwrap();
     let mut files = Default::default();
     witx_bindgen_gen_wasmtime_py::Opts::default()
         .build()
@@ -38,21 +37,14 @@ fn run() {
     fs::write(dir.join("exports").join("__init__.py"), "").unwrap();
 
     println!("Running mypy...");
-    exec(
-        Command::new("mypy")
-            .env("MYPYPATH", &dir)
-            .arg("tests/run.py"),
-    );
+    exec(Command::new("mypy").env("MYPYPATH", &dir).arg(py));
 
-    for (_name, wasm) in build_test_wasm::WASMS {
-        println!("Running {}...", wasm);
-        exec(
-            Command::new("python3")
-                .env("PYTHONPATH", &dir)
-                .arg("tests/run.py")
-                .arg(wasm),
-        );
-    }
+    exec(
+        Command::new("python3")
+            .env("PYTHONPATH", &dir)
+            .arg(py)
+            .arg(wasm),
+    );
 }
 
 fn exec(cmd: &mut Command) {

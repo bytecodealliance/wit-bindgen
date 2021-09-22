@@ -14,12 +14,7 @@ heck = "0.3"
 structopt = { version = "0.3", default-features = false, optional = true }
 
 [dev-dependencies]
-build-test-wasm = { path = '../build-test-wasm' }
-test-codegen = { path = '../test-codegen', features = ['witx-bindgen-gen-js'] }
-
-[[test]]
-name = "run"
-harness = false
+test-helpers = { path = '../test-helpers', features = ['witx-bindgen-gen-js'] }
 
 [features]
 old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']

@@ -139,14 +139,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "build-test-wasm"
-version = "0.1.0"
-dependencies = [
- "witx-bindgen-gen-c",
- "witx-bindgen-gen-core",
-]
-
-[[package]]
 name = "cap-fs-ext"
 version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1311,7 +1303,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "test-codegen"
+name = "test-helpers"
 version = "0.1.0"
 dependencies = [
  "backtrace",
@@ -1988,7 +1980,7 @@ version = "0.1.0"
 dependencies = [
  "heck",
  "structopt",
- "test-codegen",
+ "test-helpers",
  "witx-bindgen-gen-core",
 ]
 
@@ -2004,10 +1996,9 @@ dependencies = [
 name = "witx-bindgen-gen-js"
 version = "0.1.0"
 dependencies = [
- "build-test-wasm",
  "heck",
  "structopt",
- "test-codegen",
+ "test-helpers",
  "witx-bindgen-gen-core",
 ]
 
@@ -2035,7 +2026,7 @@ version = "0.1.0"
 dependencies = [
  "heck",
  "structopt",
- "test-codegen",
+ "test-helpers",
  "witx-bindgen-gen-core",
  "witx-bindgen-gen-rust",
  "witx-bindgen-rust",
@@ -2055,9 +2046,12 @@ dependencies = [
 name = "witx-bindgen-gen-wasmtime"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "heck",
  "structopt",
- "test-codegen",
+ "test-helpers",
+ "wasmtime",
+ "wasmtime-wasi",
  "witx-bindgen-gen-core",
  "witx-bindgen-gen-rust",
  "witx-bindgen-wasmtime",
@@ -2067,10 +2061,9 @@ dependencies = [
 name = "witx-bindgen-gen-wasmtime-py"
 version = "0.1.0"
 dependencies = [
- "build-test-wasm",
  "heck",
  "structopt",
- "test-codegen",
+ "test-helpers",
  "witx-bindgen-gen-core",
 ]
 
@@ -2098,11 +2091,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bitflags",
- "build-test-wasm",
  "thiserror",
  "tracing",
  "wasmtime",
- "wasmtime-wasi",
  "witx-bindgen-wasmtime-impl",
 ]
 

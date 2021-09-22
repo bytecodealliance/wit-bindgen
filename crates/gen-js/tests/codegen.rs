@@ -2,7 +2,7 @@ use std::path::Path;
 use std::process::Command;
 
 mod imports {
-    test_codegen::js_import!(
+    test_helpers::codegen_js_import!(
         // ...
         "*.witx"
 
@@ -12,7 +12,7 @@ mod imports {
 }
 
 mod exports {
-    test_codegen::js_export!(
+    test_helpers::codegen_js_export!(
         "*.witx"
 
         // This uses buffers, which we don't support in exports just yet

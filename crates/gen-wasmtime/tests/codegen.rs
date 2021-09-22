@@ -6,7 +6,7 @@ fn main() {
 
 #[rustfmt::skip]
 mod imports {
-    test_codegen::wasmtime_import!(
+    test_helpers::codegen_wasmtime_import!(
         "*.witx"
 
         // If you want to exclude a specific test you can include it here with
@@ -22,7 +22,7 @@ mod imports {
 }
 
 mod exports {
-    test_codegen::wasmtime_export!(
+    test_helpers::codegen_wasmtime_export!(
         "*.witx"
 
         // TODO: these use push/pull buffer which isn't implemented in the test

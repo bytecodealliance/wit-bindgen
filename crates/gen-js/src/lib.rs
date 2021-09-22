@@ -785,7 +785,7 @@ impl Generator for Js {
                 // instantiation then there's no need to call this method, but
                 // if you're instantiating manually elsewhere then this can be
                 // used to prepare the import object for external instantiation.
-                addToImports(imports: any);
+                addToImports(imports: any): void;
             ");
             self.src.js("addToImports(imports) {\n");
             if self.exported_resources.len() > 0 {

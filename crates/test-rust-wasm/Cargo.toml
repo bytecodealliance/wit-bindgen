@@ -5,12 +5,12 @@ authors = ["Alex Crichton <alex@alexcrichton.com>"]
 edition = "2018"
 publish = false
 
-[lib]
-crate-type = ['cdylib']
-test = false
-
 [dependencies]
 witx-bindgen-rust = { path = "../rust-wasm", features = ['old-witx-compat'] }
 
 [features]
 unchecked = []
+
+[[bin]]
+name = "smoke"
+test = false

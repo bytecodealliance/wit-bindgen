@@ -28,20 +28,14 @@ fn run(input: TokenStream, dir: Direction) -> TokenStream {
 
     let (_, contents) = files.iter().next().unwrap();
 
-    let mut header = "
-        use witx_bindgen_wasmtime::{wasmtime, anyhow, bitflags};
-    "
-    .parse::<TokenStream>()
-    .unwrap();
     let contents = std::str::from_utf8(contents).unwrap();
-    let contents = contents.parse::<TokenStream>().unwrap();
-    header.extend(contents);
+    let mut contents = contents.parse::<TokenStream>().unwrap();
 
     // Include a dummy `include_str!` for any files we read so rustc knows that
     // we depend on the contents of those files.
     let cwd = std::env::current_dir().unwrap();
     for file in input.files.iter() {
-        header.extend(
+        contents.extend(
             format!(
                 "const _: &str = include_str!(r#\"{}\"#);\n",
                 cwd.join(file).display()
@@ -51,7 +45,7 @@ fn run(input: TokenStream, dir: Direction) -> TokenStream {
         );
     }
 
-    return header;
+    return contents;
 }
 
 struct Opts {

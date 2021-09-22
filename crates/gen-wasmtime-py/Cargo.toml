@@ -14,8 +14,7 @@ heck = "0.3"
 structopt = { version = "0.3", default-features = false, optional = true }
 
 [dev-dependencies]
-build-test-wasm = { path = '../build-test-wasm' }
-test-codegen = { path = '../test-codegen', features = ['witx-bindgen-gen-wasmtime-py'] }
+test-helpers = { path = '../test-helpers', features = ['witx-bindgen-gen-wasmtime-py'] }
 
 [features]
 old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']
