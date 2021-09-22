@@ -723,7 +723,7 @@ impl Generator for Js {
                     iface.resources[*resource].name.to_camel_case(),
                 ));
                 self.src.ts(&format!(
-                    "drop{}?: (any) => void;\n",
+                    "drop{}?: (val: {0}) => void;\n",
                     iface.resources[*resource].name.to_camel_case()
                 ));
             }

@@ -72,40 +72,7 @@ fn host_flavorful() {
     assert_eq!(c, [MyErrno::A, MyErrno::B]);
 }
 
-fn host_handles() {
-    let s: HostState = host_state_create();
-    assert_eq!(host_state_get(&s), 100);
-    assert_eq!(host_state2_saw_close(), false);
-    let s: HostState2 = host_state2_create();
-    assert_eq!(host_state2_saw_close(), false);
-    drop(s);
-    assert_eq!(host_state2_saw_close(), true);
-
-    let (_a, s2) = two_host_states(&host_state_create(), &host_state2_create());
-
-    host_state2_param_record(HostStateParamRecord { a: &s2 });
-    host_state2_param_tuple((&s2,));
-    host_state2_param_option(Some(&s2));
-    host_state2_param_option(None);
-    host_state2_param_result(Ok(&s2));
-    host_state2_param_result(Err(2));
-    host_state2_param_variant(HostStateParamVariant::V0(&s2));
-    host_state2_param_variant(HostStateParamVariant::V1(2));
-    host_state2_param_list(&[]);
-    host_state2_param_list(&[&s2]);
-    host_state2_param_list(&[&s2, &s2]);
-
-    drop(host_state2_result_record().a);
-    drop(host_state2_result_tuple().0);
-    drop(host_state2_result_option().unwrap());
-    drop(host_state2_result_result().unwrap());
-    drop(host_state2_result_variant());
-    drop(host_state2_result_list());
-
-    let md = Markdown2::create();
-    md.append("red is the best color");
-    assert_eq!(md.render(), "green is the best color");
-}
+fn host_handles() {}
 
 fn host_buffers() {
     use witx_bindgen_rust::imports::{PullBuffer, PushBuffer};

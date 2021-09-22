@@ -30,3 +30,7 @@ test = false
 [[bin]]
 name = "lists"
 test = false
+
+[[bin]]
+name = "handles"
+test = false

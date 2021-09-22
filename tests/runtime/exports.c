@@ -6,91 +6,6 @@
 #include <wasm.h>
 
 
-wasm_wasm_state_t wasm_wasm_state_create(void) {
-  return wasm_wasm_state_new((void*) 100);
-}
-
-uint32_t wasm_wasm_state_get_val(wasm_wasm_state_t a) {
-  uint32_t ret = (uint32_t) wasm_wasm_state_get(&a);
-  wasm_wasm_state_free(&a);
-  return ret;
-}
-
-wasm_wasm_state2_t wasm_wasm_state2_create(void) {
-  return wasm_wasm_state2_new((void*) 33);
-}
-
-static bool WASM_STATE2_CLOSED = false;
-
-bool wasm_wasm_state2_saw_close(void) {
-  return WASM_STATE2_CLOSED;
-}
-
-void wasm_wasm_state2_dtor(void *data) {
-  WASM_STATE2_CLOSED = true;
-}
-
-void wasm_two_wasm_states(wasm_wasm_state_t a, wasm_wasm_state2_t b, wasm_wasm_state_t *ret0, wasm_wasm_state2_t *ret1) {
-  wasm_wasm_state_free(&a);
-  wasm_wasm_state2_free(&b);
-
-  *ret0 = wasm_wasm_state_new((void*) 101);
-  *ret1 = wasm_wasm_state2_new((void*) 102);
-}
-
-void wasm_wasm_state2_param_record(wasm_wasm_state_param_record_t *a) {
-  wasm_wasm_state_param_record_free(a);
-}
-
-void wasm_wasm_state2_param_tuple(wasm_wasm_state_param_tuple_t *a) {
-  wasm_wasm_state_param_tuple_free(a);
-}
-
-void wasm_wasm_state2_param_option(wasm_wasm_state_param_option_t *a) {
-  wasm_wasm_state_param_option_free(a);
-}
-
-void wasm_wasm_state2_param_result(wasm_wasm_state_param_result_t *a) {
-  wasm_wasm_state_param_result_free(a);
-}
-
-void wasm_wasm_state2_param_variant(wasm_wasm_state_param_variant_t *a) {
-  wasm_wasm_state_param_variant_free(a);
-}
-
-void wasm_wasm_state2_param_list(wasm_list_wasm_state2_t *a) {
-  wasm_list_wasm_state2_free(a);
-}
-
-void wasm_wasm_state2_result_record(wasm_wasm_state_result_record_t *ret0) {
-  ret0->a = wasm_wasm_state2_new((void*) 222);
-}
-
-void wasm_wasm_state2_result_tuple(wasm_wasm_state2_t *ret0) {
-  *ret0 = wasm_wasm_state2_new((void*) 333);
-}
-
-bool wasm_wasm_state2_result_option(wasm_wasm_state2_t *ret0) {
-  *ret0 = wasm_wasm_state2_new((void*) 444);
-  return true;
-}
-
-void wasm_wasm_state2_result_result(wasm_wasm_state_result_result_t *ret0) {
-  ret0->tag = WASM_WASM_STATE_RESULT_RESULT_OK;
-  ret0->val.ok = wasm_wasm_state2_new((void*) 555);
-}
-
-void wasm_wasm_state2_result_variant(wasm_wasm_state_result_variant_t *ret0) {
-  ret0->tag = WASM_WASM_STATE_RESULT_VARIANT_0;
-  ret0->val.f0 = wasm_wasm_state2_new((void*) 666);
-}
-
-void wasm_wasm_state2_result_list(wasm_list_wasm_state2_t *ret0) {
-  ret0->len = 2;
-  ret0->ptr = canonical_abi_realloc(NULL, 0, alignof(wasm_wasm_state2_t), 2 * sizeof(wasm_wasm_state2_t));
-  ret0->ptr[0] = wasm_wasm_state2_new((void*) 777);
-  ret0->ptr[1] = wasm_wasm_state2_new((void*) 888);
-}
 
 void wasm_list_in_record1(wasm_list_in_record1_t *a) {
   assert(memcmp(a->a.ptr, "list_in_record1", a->a.len) == 0);
@@ -159,16 +74,4 @@ void wasm_list_typedefs(wasm_list_typedef_t *a, wasm_list_typedef3_t *c, wasm_li
   ret1->ptr = canonical_abi_realloc(NULL, 0, alignof(wasm_string_t), sizeof(wasm_string_t));
   ret1->len = 1;
   wasm_string_dup(&ret1->ptr[0], "typedef4");
-}
-
-bool wasm_markdown_create(wasm_markdown_t *md) {
-  return false;
-}
-
-void wasm_markdown_append(wasm_markdown_t md, wasm_string_t *s) {
-  abort();
-}
-
-void wasm_markdown_render(wasm_markdown_t md, wasm_string_t *ret) {
-  abort();
 }

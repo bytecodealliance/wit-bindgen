@@ -11,8 +11,6 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
 // use witx_bindgen_rust::exports::{InBuffer, InBufferRaw, OutBuffer, OutBufferRaw};
 
-static CLOSED: AtomicU32 = AtomicU32::new(0);
-
 struct Wasm;
 
 pub struct WasmState(u32);
@@ -83,61 +81,6 @@ impl wasm::Wasm for Wasm {
         assert_eq!(b.len(), 1);
         assert_eq!(b[0], "typedef2");
         (b"typedef3".to_vec(), vec!["typedef4".to_string()])
-    }
-
-    fn wasm_state_create() -> Handle<WasmState> {
-        WasmState(100).into()
-    }
-
-    fn wasm_state_get_val(state: Handle<WasmState>) -> u32 {
-        state.0
-    }
-
-    fn wasm_state2_create() -> Handle<WasmState2> {
-        WasmState2(33).into()
-    }
-
-    fn wasm_state2_saw_close() -> bool {
-        CLOSED.load(SeqCst) != 0
-    }
-
-    fn drop_wasm_state2(_state: WasmState2) {
-        CLOSED.store(1, SeqCst);
-    }
-
-    fn two_wasm_states(
-        _a: Handle<WasmState>,
-        _b: Handle<WasmState2>,
-    ) -> (Handle<WasmState>, Handle<WasmState2>) {
-        (WasmState(101).into(), WasmState2(102).into())
-    }
-
-    fn wasm_state2_param_record(_a: WasmStateParamRecord) {}
-    fn wasm_state2_param_tuple(_a: (Handle<WasmState2>,)) {}
-    fn wasm_state2_param_option(_a: Option<Handle<WasmState2>>) {}
-    fn wasm_state2_param_result(_a: Result<Handle<WasmState2>, u32>) {}
-    fn wasm_state2_param_variant(_a: WasmStateParamVariant) {}
-    fn wasm_state2_param_list(_a: Vec<Handle<WasmState2>>) {}
-
-    fn wasm_state2_result_record() -> WasmStateResultRecord {
-        WasmStateResultRecord {
-            a: WasmState2(222).into(),
-        }
-    }
-    fn wasm_state2_result_tuple() -> (Handle<WasmState2>,) {
-        (WasmState2(333).into(),)
-    }
-    fn wasm_state2_result_option() -> Option<Handle<WasmState2>> {
-        Some(WasmState2(444).into())
-    }
-    fn wasm_state2_result_result() -> Result<Handle<WasmState2>, u32> {
-        Ok(WasmState2(555).into())
-    }
-    fn wasm_state2_result_variant() -> WasmStateResultVariant {
-        WasmStateResultVariant::V0(Handle::new(WasmState2(666)))
-    }
-    fn wasm_state2_result_list() -> Vec<Handle<WasmState2>> {
-        vec![WasmState2(777).into(), WasmState2(888).into()]
     }
 
     // fn buffer_u8( in_: InBufferRaw<'_, u8>, out: OutBufferRaw<'_, u8>) -> u32 {
@@ -241,23 +184,4 @@ impl wasm::Wasm for Wasm {
     //     _: ParamOutBufferBool<'_>,
     // ) {
     // }
-}
-
-#[derive(Default)]
-pub struct Markdown {
-    buf: RefCell<String>,
-}
-
-impl wasm::Markdown for Markdown {
-    fn create() -> Option<Handle<Markdown>> {
-        Some(Markdown::default().into())
-    }
-
-    fn append(&self, input: String) {
-        self.buf.borrow_mut().push_str(&input);
-    }
-
-    fn render(&self) -> String {
-        self.buf.borrow().replace("red", "green")
-    }
 }

@@ -11,24 +11,9 @@ use witx_bindgen_wasmtime::{
 #[derive(Default)]
 pub struct MyHost {
     scalar: u32,
-    host_state2_closed: bool,
 }
-
-#[derive(Debug)]
-pub struct SuchState(u32);
-
-#[derive(Default, Debug)]
-pub struct Markdown {
-    buf: RefCell<String>,
-}
-
-// TODO: implement propagation of errors instead of `unwrap()` everywhere
 
 impl Host for MyHost {
-    type HostState = SuchState;
-    type HostState2 = ();
-    type Markdown2 = Markdown;
-
     fn list_in_record1(&mut self, ty: ListInRecord1<'_>) {
         assert_eq!(ty.a, "list_in_record1");
     }
@@ -93,54 +78,6 @@ impl Host for MyHost {
         assert_eq!(b.len(), 1);
         assert_eq!(b[0], "typedef2");
         (b"typedef3".to_vec(), vec!["typedef4".to_string()])
-    }
-
-    fn host_state_create(&mut self) -> SuchState {
-        SuchState(100)
-    }
-
-    fn host_state_get(&mut self, state: &SuchState) -> u32 {
-        state.0
-    }
-
-    fn host_state2_create(&mut self) {}
-
-    fn host_state2_saw_close(&mut self) -> bool {
-        self.host_state2_closed
-    }
-
-    fn drop_host_state2(&mut self, _state: ()) {
-        self.host_state2_closed = true;
-    }
-
-    fn two_host_states(&mut self, _a: &SuchState, _b: &()) -> (SuchState, ()) {
-        (SuchState(2), ())
-    }
-
-    fn host_state2_param_record(&mut self, _a: HostStateParamRecord<'_, Self>) {}
-    fn host_state2_param_tuple(&mut self, _a: (&'_ (),)) {}
-    fn host_state2_param_option(&mut self, _a: Option<&'_ ()>) {}
-    fn host_state2_param_result(&mut self, _a: Result<&'_ (), u32>) {}
-    fn host_state2_param_variant(&mut self, _a: HostStateParamVariant<'_, Self>) {}
-    fn host_state2_param_list(&mut self, _a: Vec<&()>) {}
-
-    fn host_state2_result_record(&mut self) -> HostStateResultRecord<Self> {
-        HostStateResultRecord { a: () }
-    }
-    fn host_state2_result_tuple(&mut self) -> ((),) {
-        ((),)
-    }
-    fn host_state2_result_option(&mut self) -> Option<()> {
-        Some(())
-    }
-    fn host_state2_result_result(&mut self) -> Result<(), u32> {
-        Ok(())
-    }
-    fn host_state2_result_variant(&mut self) -> HostStateResultVariant<Self> {
-        HostStateResultVariant::V0(())
-    }
-    fn host_state2_result_list(&mut self) -> Vec<()> {
-        vec![(), ()]
     }
 
     fn buffer_u8(&mut self, in_: &[u8], out: &mut [u8]) -> u32 {
@@ -262,17 +199,5 @@ impl Host for MyHost {
             vec![Err(()), Ok(())],
             vec![MyErrno::A, MyErrno::B],
         )
-    }
-
-    fn markdown2_create(&mut self) -> Markdown {
-        Markdown::default()
-    }
-
-    fn markdown2_append(&mut self, md: &Markdown, buf: &str) {
-        md.buf.borrow_mut().push_str(buf);
-    }
-
-    fn markdown2_render(&mut self, md: &Markdown) -> String {
-        md.buf.borrow().replace("red", "green")
     }
 }

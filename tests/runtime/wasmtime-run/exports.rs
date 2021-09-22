@@ -26,10 +26,6 @@ pub fn test(wasm: &Wasm<Context>, instance: Instance, store: &mut Store<Context>
     Ok(())
 }
 
-fn lists(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
-    Ok(())
-}
-
 fn flavorful(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
     wasm.list_in_record1(
         &mut *store,
@@ -81,55 +77,6 @@ fn flavorful(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
     assert_eq!(a, b"typedef3");
     assert_eq!(b.len(), 1);
     assert_eq!(b[0], "typedef4");
-    Ok(())
-}
-
-fn handles(wasm: &Wasm<Context>, store: &mut Store<Context>) -> Result<()> {
-    let s: WasmState = wasm.wasm_state_create(&mut *store)?;
-    assert_eq!(wasm.wasm_state_get_val(&mut *store, &s)?, 100);
-    wasm.drop_wasm_state(&mut *store, s)?;
-
-    assert_eq!(wasm.wasm_state2_saw_close(&mut *store)?, false);
-    let s: WasmState2 = wasm.wasm_state2_create(&mut *store)?;
-    assert_eq!(wasm.wasm_state2_saw_close(&mut *store)?, false);
-    wasm.drop_wasm_state2(&mut *store, s)?;
-    assert_eq!(wasm.wasm_state2_saw_close(&mut *store)?, true);
-
-    let a = wasm.wasm_state_create(&mut *store)?;
-    let b = wasm.wasm_state2_create(&mut *store)?;
-    let (s1, s2) = wasm.two_wasm_states(&mut *store, &a, &b)?;
-    wasm.drop_wasm_state(&mut *store, a)?;
-    wasm.drop_wasm_state(&mut *store, s1)?;
-    wasm.drop_wasm_state2(&mut *store, b)?;
-
-    wasm.wasm_state2_param_record(&mut *store, WasmStateParamRecord { a: &s2 })?;
-    wasm.wasm_state2_param_tuple(&mut *store, (&s2,))?;
-    wasm.wasm_state2_param_option(&mut *store, Some(&s2))?;
-    wasm.wasm_state2_param_option(&mut *store, None)?;
-    wasm.wasm_state2_param_result(&mut *store, Ok(&s2))?;
-    wasm.wasm_state2_param_result(&mut *store, Err(2))?;
-    wasm.wasm_state2_param_variant(&mut *store, WasmStateParamVariant::V0(&s2))?;
-    wasm.wasm_state2_param_variant(&mut *store, WasmStateParamVariant::V1(2))?;
-    wasm.wasm_state2_param_list(&mut *store, &[])?;
-    wasm.wasm_state2_param_list(&mut *store, &[&s2])?;
-    wasm.wasm_state2_param_list(&mut *store, &[&s2, &s2])?;
-    wasm.drop_wasm_state2(&mut *store, s2)?;
-
-    let s = wasm.wasm_state2_result_record(&mut *store)?.a;
-    wasm.drop_wasm_state2(&mut *store, s)?;
-    let s = wasm.wasm_state2_result_tuple(&mut *store)?.0;
-    wasm.drop_wasm_state2(&mut *store, s)?;
-    let s = wasm.wasm_state2_result_option(&mut *store)?.unwrap();
-    wasm.drop_wasm_state2(&mut *store, s)?;
-    let s = wasm.wasm_state2_result_result(&mut *store)?.unwrap();
-    match wasm.wasm_state2_result_variant(&mut *store)? {
-        WasmStateResultVariant::V0(s) => wasm.drop_wasm_state2(&mut *store, s)?,
-        WasmStateResultVariant::V1(_) => panic!(),
-    }
-    wasm.drop_wasm_state2(&mut *store, s)?;
-    for s in wasm.wasm_state2_result_list(&mut *store)? {
-        wasm.drop_wasm_state2(&mut *store, s)?;
-    }
     Ok(())
 }
 
