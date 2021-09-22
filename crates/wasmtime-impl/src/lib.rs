@@ -20,9 +20,12 @@ fn run(input: TokenStream, dir: Direction) -> TokenStream {
     let input = syn::parse_macro_input!(input as Opts);
     let mut gen = input.opts.build();
     let mut files = Files::default();
-    for iface in input.interfaces {
-        gen.generate(&iface, dir, &mut files);
-    }
+    let (imports, exports) = match dir {
+        Direction::Import => (input.interfaces, vec![]),
+        Direction::Export => (vec![], input.interfaces),
+    };
+    gen.generate_all(&imports, &exports, &mut files);
+
     let (_, contents) = files.iter().next().unwrap();
 
     let mut header = "

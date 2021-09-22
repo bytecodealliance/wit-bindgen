@@ -703,7 +703,7 @@ impl Return {
 }
 
 impl Generator for C {
-    fn preprocess(&mut self, iface: &Interface, dir: Direction) {
+    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
         self.sizes.fill(dir, iface);
         self.in_import = dir == Direction::Import;
 
@@ -1053,7 +1053,7 @@ impl Generator for C {
             .push(Func { src });
     }
 
-    fn finish(&mut self, iface: &Interface, files: &mut Files) {
+    fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
         self.src.h(&format!(
             "\
                 #ifndef __BINDINGS_{0}_H

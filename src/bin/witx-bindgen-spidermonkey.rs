@@ -32,15 +32,16 @@ struct Options {
 fn main() -> Result<()> {
     let options = Options::from_args();
 
-    let mut generator = SpiderMonkeyWasm::default();
+    let js = std::fs::read_to_string(&options.js)
+        .with_context(|| format!("failed to read {}", options.js.display()))?;
+    let mut generator = SpiderMonkeyWasm::new(&options.js, &js);
     generator.import_spidermonkey(options.import_spidermonkey);
-
-    let mut files = Files::default();
 
     let mut imports = vec![];
     for witx in &options.imports {
         imports.push(witx2::Interface::parse_file(witx)?);
     }
+
     let mut exports = vec![];
     for witx in &options.exports {
         exports.push(witx2::Interface::parse_file(witx)?);
@@ -50,35 +51,8 @@ fn main() -> Result<()> {
         "Only at most one export interface is currently supported"
     );
 
-    generator.preprocess_all(&imports, &exports);
-
-    for module in imports {
-        generator.generate(&module, witx2::abi::Direction::Import, &mut files);
-    }
-
-    for module in exports {
-        generator.generate(&module, witx2::abi::Direction::Export, &mut files);
-    }
-
-    let js = std::fs::read_to_string(&options.js)
-        .with_context(|| format!("failed to read {}", options.js.display()))?;
-    let wasm = generator.into_wasm(&options.js.display().to_string(), &js);
-
-    let js_file_stem = options.js.file_stem().ok_or_else(|| {
-        anyhow::anyhow!(
-            "input JavaScript file path does not have a file stem: {}",
-            options.js.display()
-        )
-    })?;
-    let js_file_stem = js_file_stem.to_str().ok_or_else(|| {
-        anyhow::anyhow!(
-            "input JavaScript file path is not UTF-8 representable: {}",
-            options.js.display()
-        )
-    })?;
-    let wasm_name = format!("{}.wasm", js_file_stem);
-
-    files.push(&wasm_name, &wasm);
+    let mut files = Files::default();
+    generator.generate_all(&imports, &exports, &mut files);
 
     for (name, contents) in files.iter() {
         let dst = match &options.out_dir {

@@ -8,6 +8,7 @@ use data_segments::DataSegments;
 use lazy_static::lazy_static;
 use std::convert::TryFrom;
 use std::ops::Range;
+use std::path::PathBuf;
 use std::{collections::HashMap, mem};
 use wasm_encoder::Instruction;
 use witx_bindgen_gen_core::{
@@ -17,142 +18,6 @@ use witx_bindgen_gen_core::{
     },
     Files, Generator,
 };
-
-/// The `spidermonkey.wasm` bindings generator.
-///
-/// ## Code Shape
-///
-/// The output is a single Wasm file that imports and exports the functions
-/// defined in the given WITX files and additionally
-///
-/// * embeds or imports (configurable) a `spidermonkey.wasm` instance, and
-///
-/// * exports a `wizer.initialize` function that initializes SpiderMonkey and
-///   evaluates the top level of the JavaScript.
-///
-/// ### Initialization
-///
-/// As an API contract, the `wizer.initialize` function must be invoked before
-/// any other function. It must only be invoked once.
-///
-/// The initialization function performs the following tasks:
-///
-/// * Calls `spidermonkey.wasm`'s `_initialize` function, which runs C++ global
-///   contructors.
-///
-/// * `malloc`s space in `spidermonkey.wasm`'s linear memory and copies the
-///   JavaScript source code from its linear memory into the malloc'd space.
-///
-/// * Evaluates the JavaScript source, compiling it to bytecode and initializing
-///   globals and defining top-level functions in the process.
-///
-/// ### Imports
-///
-/// By the time an imported WITX function is called, we have the following
-/// layers of code on the stack, listed from older to younger frames:
-///
-/// * User JS code (inside `spidermonkey.wasm`'s internal JS stack)
-///
-///   This is the user's JavaScript code that is running inside of
-///   `spidermonkey.wasm` and which wants to call an external, imported function
-///   that is described with WITX.
-///
-/// * Import glue Wasm code (on the Wasm stack)
-///
-///   This is a synthesized Wasm function that understands both the canonical
-///   ABI and the SpiderMonkey API. It translates outgoing arguments from
-///   SpiderMonkey values into the canonical ABI representation, calls the
-///   actual imported Wasm function, and then translates the incoming results
-///   from the canonical ABI representation into SpiderMonkey values.
-///
-/// * Imported function (on the Wasm Stack)
-///
-///   This is the actual Wasm function whose signature is described in WITX and
-///   uses the canonical ABI.
-///
-/// ### Exports
-///
-/// By the time an exported JS function that implements a WITX signature is
-/// called, we have the following frames on the stack, listed form older to
-/// younger frames:
-///
-/// * External caller (on the Wasm or native stack)
-///
-///   This is whoever is calling our JS-implemented WITX export, using the
-///   canonical ABI. This might be another Wasm module or it might be some
-///   native code in the host.
-///
-/// * Export glue Wasm code (on the Wasm stack)
-///
-///   This is a synthesized function that understands both the canonical ABI and
-///   the SpiderMonkey API. It translates incoming arguments from the canonical
-///   ABI representation into SpiderMonkey values, calls the JS function that
-///   implements this export with those values, and then translates the
-///   function's outgoing results from SpiderMonkey values into the canonical
-///   ABI representation.
-///
-/// * JavaScript function implementing the WITX signature (inside
-///   `spidermonkey.wasm`'s internal stack)
-///
-///   This is the user-written JavaScript function that is being exported. It
-///   accepts and returns the JavaScript values that correspond to the interface
-///   types used in the WITX signature.
-pub struct SpiderMonkeyWasm {
-    i64_return_pointer_area_size: usize,
-
-    num_import_functions: Option<u32>,
-    num_export_functions: Option<u32>,
-
-    import_spidermonkey: bool,
-
-    /// Function types that we use in this Wasm module.
-    types: wasm_encoder::TypeSection,
-
-    /// A map from wasm signature to its index in the `self.types` types
-    /// section. We use this to reuse earlier type definitions when possible.
-    wasm_sig_to_index: HashMap<WasmSignature, u32>,
-
-    /// The imports section containing the raw canonical ABI function imports
-    /// for each imported function we are wrapping in glue.
-    imports: wasm_encoder::ImportSection,
-
-    /// The glue functions we've generated for imported canonical ABI functions
-    /// thus far.
-    import_glue_fns: Vec<wasm_encoder::Function>,
-
-    /// A map from `module_name -> func_name -> (index, num_args)`.
-    import_fn_name_to_index: HashMap<String, HashMap<String, (u32, u32)>>,
-
-    exports: wasm_encoder::ExportSection,
-
-    /// The glue functions we've generated for exported canonical ABI functions
-    /// thus far, and their type index.
-    export_glue_fns: Vec<(wasm_encoder::Function, u32)>,
-
-    data_segments: DataSegments,
-
-    sizes: witx2::SizeAlign,
-}
-
-impl Default for SpiderMonkeyWasm {
-    fn default() -> Self {
-        SpiderMonkeyWasm {
-            i64_return_pointer_area_size: 0,
-            num_import_functions: None,
-            num_export_functions: None,
-            import_spidermonkey: false,
-            types: wasm_encoder::TypeSection::new(),
-            wasm_sig_to_index: Default::default(),
-            imports: wasm_encoder::ImportSection::new(),
-            import_glue_fns: Default::default(),
-            import_fn_name_to_index: Default::default(),
-            exports: wasm_encoder::ExportSection::new(),
-            export_glue_fns: Default::default(),
-            data_segments: DataSegments::new(1),
-            sizes: Default::default(),
-        }
-    }
-}
 
 lazy_static! {
     /// Functions exported from `spidermonkey.wasm`
@@ -352,298 +217,152 @@ lazy_static! {
     ];
 }
 
-impl Generator for SpiderMonkeyWasm {
-    fn preprocess(&mut self, iface: &witx2::Interface, dir: witx2::abi::Direction) {
-        self.sizes.fill(dir, iface);
-    }
+/// The `spidermonkey.wasm` bindings generator.
+///
+/// ## Code Shape
+///
+/// The output is a single Wasm file that imports and exports the functions
+/// defined in the given WITX files and additionally
+///
+/// * embeds or imports (configurable) a `spidermonkey.wasm` instance, and
+///
+/// * exports a `wizer.initialize` function that initializes SpiderMonkey and
+///   evaluates the top level of the JavaScript.
+///
+/// ### Initialization
+///
+/// As an API contract, the `wizer.initialize` function must be invoked before
+/// any other function. It must only be invoked once.
+///
+/// The initialization function performs the following tasks:
+///
+/// * Calls `spidermonkey.wasm`'s `_initialize` function, which runs C++ global
+///   contructors.
+///
+/// * `malloc`s space in `spidermonkey.wasm`'s linear memory and copies the
+///   JavaScript source code from its linear memory into the malloc'd space.
+///
+/// * Evaluates the JavaScript source, compiling it to bytecode and initializing
+///   globals and defining top-level functions in the process.
+///
+/// ### Imports
+///
+/// By the time an imported WITX function is called, we have the following
+/// layers of code on the stack, listed from older to younger frames:
+///
+/// * User JS code (inside `spidermonkey.wasm`'s internal JS stack)
+///
+///   This is the user's JavaScript code that is running inside of
+///   `spidermonkey.wasm` and which wants to call an external, imported function
+///   that is described with WITX.
+///
+/// * Import glue Wasm code (on the Wasm stack)
+///
+///   This is a synthesized Wasm function that understands both the canonical
+///   ABI and the SpiderMonkey API. It translates outgoing arguments from
+///   SpiderMonkey values into the canonical ABI representation, calls the
+///   actual imported Wasm function, and then translates the incoming results
+///   from the canonical ABI representation into SpiderMonkey values.
+///
+/// * Imported function (on the Wasm Stack)
+///
+///   This is the actual Wasm function whose signature is described in WITX and
+///   uses the canonical ABI.
+///
+/// ### Exports
+///
+/// By the time an exported JS function that implements a WITX signature is
+/// called, we have the following frames on the stack, listed form older to
+/// younger frames:
+///
+/// * External caller (on the Wasm or native stack)
+///
+///   This is whoever is calling our JS-implemented WITX export, using the
+///   canonical ABI. This might be another Wasm module or it might be some
+///   native code in the host.
+///
+/// * Export glue Wasm code (on the Wasm stack)
+///
+///   This is a synthesized function that understands both the canonical ABI and
+///   the SpiderMonkey API. It translates incoming arguments from the canonical
+///   ABI representation into SpiderMonkey values, calls the JS function that
+///   implements this export with those values, and then translates the
+///   function's outgoing results from SpiderMonkey values into the canonical
+///   ABI representation.
+///
+/// * JavaScript function implementing the WITX signature (inside
+///   `spidermonkey.wasm`'s internal stack)
+///
+///   This is the user-written JavaScript function that is being exported. It
+///   accepts and returns the JavaScript values that correspond to the interface
+///   types used in the WITX signature.
+pub struct SpiderMonkeyWasm<'a> {
+    /// The filename to use for the JS.
+    js_name: PathBuf,
 
-    fn type_record(
-        &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
-        name: &str,
-        record: &witx2::Record,
-        docs: &witx2::Docs,
-    ) {
-        let _ = (iface, id, name, record, docs);
-        todo!()
-    }
+    /// The JS source code.
+    js: &'a str,
 
-    fn type_variant(
-        &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
-        name: &str,
-        variant: &witx2::Variant,
-        docs: &witx2::Docs,
-    ) {
-        let _ = (iface, id, name, variant, docs);
-        todo!()
-    }
+    i64_return_pointer_area_size: usize,
 
-    fn type_resource(&mut self, iface: &witx2::Interface, ty: witx2::ResourceId) {
-        let _ = (iface, ty);
-        todo!()
-    }
+    num_import_functions: Option<u32>,
+    num_export_functions: Option<u32>,
 
-    fn type_alias(
-        &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
-        name: &str,
-        ty: &witx2::Type,
-        docs: &witx2::Docs,
-    ) {
-        let _ = (iface, id, name, ty, docs);
-        todo!()
-    }
+    import_spidermonkey: bool,
 
-    fn type_list(
-        &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
-        name: &str,
-        ty: &witx2::Type,
-        docs: &witx2::Docs,
-    ) {
-        let _ = (iface, id, name, ty, docs);
-        todo!()
-    }
+    /// Function types that we use in this Wasm module.
+    types: wasm_encoder::TypeSection,
 
-    fn type_pointer(
-        &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
-        name: &str,
-        const_: bool,
-        ty: &witx2::Type,
-        docs: &witx2::Docs,
-    ) {
-        let _ = (iface, id, name, const_, ty, docs);
-        todo!()
-    }
+    /// A map from wasm signature to its index in the `self.types` types
+    /// section. We use this to reuse earlier type definitions when possible.
+    wasm_sig_to_index: HashMap<WasmSignature, u32>,
 
-    fn type_builtin(
-        &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
-        name: &str,
-        ty: &witx2::Type,
-        docs: &witx2::Docs,
-    ) {
-        let _ = (iface, id, name, name, ty, docs);
-        todo!()
-    }
+    /// The imports section containing the raw canonical ABI function imports
+    /// for each imported function we are wrapping in glue.
+    imports: wasm_encoder::ImportSection,
 
-    fn type_push_buffer(
-        &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
-        name: &str,
-        ty: &witx2::Type,
-        docs: &witx2::Docs,
-    ) {
-        let _ = (iface, id, name, name, ty, docs);
-        todo!()
-    }
+    /// The glue functions we've generated for imported canonical ABI functions
+    /// thus far.
+    import_glue_fns: Vec<wasm_encoder::Function>,
 
-    fn type_pull_buffer(
-        &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
-        name: &str,
-        ty: &witx2::Type,
-        docs: &witx2::Docs,
-    ) {
-        let _ = (iface, id, name, name, ty, docs);
-        todo!()
-    }
+    /// A map from `module_name -> func_name -> (index, num_args)`.
+    import_fn_name_to_index: HashMap<String, HashMap<String, (u32, u32)>>,
 
-    fn import(&mut self, iface: &witx2::Interface, func: &witx2::Function) {
-        assert!(
-            func.abi == witx2::abi::Abi::Canonical,
-            "We only support the canonical ABI right now"
-        );
+    exports: wasm_encoder::ExportSection,
 
-        // Add the raw Wasm import.
-        let wasm_sig = iface.wasm_signature(witx2::abi::Direction::Import, func);
-        let type_index = self.intern_type(wasm_sig.clone());
-        let import_fn_index = self.witx_import(self.imports.len());
-        self.imports.import(
-            &iface.name,
-            Some(&func.name),
-            wasm_encoder::EntityType::Function(type_index),
-        );
+    /// The glue functions we've generated for exported canonical ABI functions
+    /// thus far, and their type index.
+    export_glue_fns: Vec<(wasm_encoder::Function, u32)>,
 
-        let existing = self
-            .import_fn_name_to_index
-            .entry(iface.name.clone())
-            .or_default()
-            .insert(
-                func.name.clone(),
-                (import_fn_index, u32::try_from(func.params.len()).unwrap()),
-            );
-        assert!(existing.is_none());
+    data_segments: DataSegments,
 
-        let mut bindgen = Bindgen::new(
-            self,
-            &wasm_sig,
-            func,
-            witx2::abi::LiftLower::LowerArgsLiftResults,
-        );
-        iface.call(
-            witx2::abi::Direction::Import,
-            witx2::abi::LiftLower::LowerArgsLiftResults,
-            func,
-            &mut bindgen,
-        );
-        let func_encoder = bindgen.finish();
-        self.import_glue_fns.push(func_encoder);
-    }
-
-    fn export(&mut self, iface: &witx2::Interface, func: &witx2::Function) {
-        assert!(
-            func.abi == witx2::abi::Abi::Canonical,
-            "We only support the canonical ABI right now"
-        );
-
-        let wasm_sig = iface.wasm_signature(witx2::abi::Direction::Export, func);
-        let type_index = self.intern_type(wasm_sig.clone());
-        let export_fn_index = self.witx_export(self.exports.len());
-        self.exports
-            .export(&func.name, wasm_encoder::Export::Function(export_fn_index));
-
-        let mut bindgen = Bindgen::new(
-            self,
-            &wasm_sig,
-            func,
-            witx2::abi::LiftLower::LiftArgsLowerResults,
-        );
-        iface.call(
-            witx2::abi::Direction::Export,
-            witx2::abi::LiftLower::LiftArgsLowerResults,
-            func,
-            &mut bindgen,
-        );
-        let func_encoder = bindgen.finish();
-        self.export_glue_fns.push((func_encoder, type_index));
-    }
-
-    fn finish(&mut self, _iface: &witx2::Interface, _files: &mut Files) {
-        // NB: Unlike other generators, each imported or exported interface
-        // doesn't get its own file of glue code. Everything goes into one
-        // single `.wasm`. But `finish` is called at the end of processing each
-        // imported/exported interface. We need to wait until we are done
-        // processing *all* imported and exported interfaces. So we do nothing
-        // in this method, and wait until `into_wasm` is called.
-    }
+    sizes: witx2::SizeAlign,
 }
 
-// ### Function Index Space
-//
-// The generated glue module's function index space is laid out as follows:
-//
-// ```text
-// |witx imports...|spidermonkey.wasm imports...|import glue...|export glue...|wizer.initialize|
-// ```
-impl SpiderMonkeyWasm {
-    /// Get the number of imported WITX functions.
-    fn witx_import_functions_len(&self) -> u32 {
-        self.num_import_functions
-            .expect("must call `preprocess_all` before generating bindings")
+impl<'a> SpiderMonkeyWasm<'a> {
+    /// Construct a new `SpiderMonkeyWasm` bindings generator using the given
+    /// JavaScript module.
+    pub fn new(js_name: impl Into<PathBuf>, js: &'a str) -> Self {
+        let js_name = js_name.into();
+        SpiderMonkeyWasm {
+            js_name,
+            js,
+            i64_return_pointer_area_size: 0,
+            num_import_functions: None,
+            num_export_functions: None,
+            import_spidermonkey: false,
+            types: wasm_encoder::TypeSection::new(),
+            wasm_sig_to_index: Default::default(),
+            imports: wasm_encoder::ImportSection::new(),
+            import_glue_fns: Default::default(),
+            import_fn_name_to_index: Default::default(),
+            exports: wasm_encoder::ExportSection::new(),
+            export_glue_fns: Default::default(),
+            data_segments: DataSegments::new(1),
+            sizes: Default::default(),
+        }
     }
 
-    /// Get the function index for the i^th WITX import.
-    fn witx_import(&self, i: u32) -> u32 {
-        i
-    }
-
-    /// Get the function index for the given spidermonkey function.
-    fn spidermonkey_import(&self, name: &str) -> u32 {
-        self.witx_import_functions_len()
-            + u32::try_from(
-                SMW_EXPORTS
-                    .iter()
-                    .position(|(n, _)| *n == name)
-                    .unwrap_or_else(|| panic!("unknown `spidermonkey.wasm` export: {}", name)),
-            )
-            .unwrap()
-    }
-
-    /// Get the function index where WITX import glue functions start.
-    fn witx_import_glue_fns_start(&self) -> u32 {
-        self.witx_import_functions_len() + u32::try_from(SMW_EXPORTS.len()).unwrap()
-    }
-
-    /// Get the range of indices for our synthesized glue functions for WITX
-    /// imports.
-    fn witx_import_glue_fn_range(&self) -> Range<u32> {
-        let start = self.witx_import_glue_fns_start();
-        let end = self.witx_export_start();
-        start..end
-    }
-
-    /// Get the function index for the i^th synthesized glue function for a WITX
-    /// import.
-    fn witx_import_glue_fn(&self, i: u32) -> u32 {
-        assert!(
-            i < self.witx_import_functions_len(),
-            "{} < {}",
-            i,
-            self.witx_import_functions_len()
-        );
-        let start = self.witx_import_glue_fns_start();
-        start + i
-    }
-
-    /// Get the function index where WITX export glue functions start.
-    fn witx_export_start(&self) -> u32 {
-        self.witx_import_glue_fns_start() + self.witx_import_functions_len()
-    }
-
-    fn witx_exports_len(&self) -> u32 {
-        self.num_export_functions
-            .expect("must call `preprocess_all` before generating bindings")
-    }
-
-    /// Get the function index for the i^th WITX export.
-    fn witx_export(&self, i: u32) -> u32 {
-        assert!(i < self.witx_exports_len());
-        self.witx_export_start() + i
-    }
-}
-
-trait InstructionSink<'a> {
-    fn instruction(&mut self, inst: wasm_encoder::Instruction<'a>);
-}
-
-impl<'a> InstructionSink<'a> for wasm_encoder::Function {
-    fn instruction(&mut self, inst: wasm_encoder::Instruction<'a>) {
-        wasm_encoder::Function::instruction(self, inst);
-    }
-}
-
-impl<'a> InstructionSink<'a> for Vec<wasm_encoder::Instruction<'a>> {
-    fn instruction(&mut self, inst: wasm_encoder::Instruction<'a>) {
-        self.push(inst);
-    }
-}
-
-const RET_PTR_GLOBAL: u32 = 0;
-
-const SM_MEMORY: u32 = 0;
-const GLUE_MEMORY: u32 = 1;
-
-fn convert_ty(ty: WasmType) -> wasm_encoder::ValType {
-    match ty {
-        WasmType::I32 => wasm_encoder::ValType::I32,
-        WasmType::I64 => wasm_encoder::ValType::I64,
-        WasmType::F32 => wasm_encoder::ValType::F32,
-        WasmType::F64 => wasm_encoder::ValType::F64,
-    }
-}
-
-impl SpiderMonkeyWasm {
     /// Configure how `spidermonkey.wasm` is linked.
     ///
     /// By default, the whole `spidermonkey.wasm` module is embedded inside our
@@ -655,43 +374,6 @@ impl SpiderMonkeyWasm {
     /// `spidermonkey.wasm` instance.
     pub fn import_spidermonkey(&mut self, import: bool) {
         self.import_spidermonkey = import;
-    }
-
-    /// Preprocess the given import and export interfaces.
-    ///
-    /// This must be called exactly once before any calls to `generate`.
-    pub fn preprocess_all(&mut self, imports: &[witx2::Interface], exports: &[witx2::Interface]) {
-        assert!(
-            self.num_import_functions.is_none() && self.num_export_functions.is_none(),
-            "must call `preprocess_all` exactly once"
-        );
-        assert!(
-            exports.len() <= 1,
-            "only one exported interface is currently supported"
-        );
-        self.num_import_functions =
-            Some(u32::try_from(imports.iter().map(|i| i.functions.len()).sum::<usize>()).unwrap());
-        self.num_export_functions =
-            Some(u32::try_from(exports.iter().map(|i| i.functions.len()).sum::<usize>()).unwrap());
-
-        // Figure out what the maximum return pointer area we will need is.
-        for (iface, dir) in imports
-            .iter()
-            .zip(std::iter::repeat(witx2::abi::Direction::Import))
-            .chain(
-                exports
-                    .iter()
-                    .zip(std::iter::repeat(witx2::abi::Direction::Export)),
-            )
-        {
-            for func in iface.functions.iter() {
-                let sig = iface.wasm_signature(dir, func);
-                if let Some(results) = sig.retptr {
-                    self.i64_return_pointer_area_size =
-                        self.i64_return_pointer_area_size.max(results.len());
-                }
-            }
-        }
     }
 
     fn intern_type(&mut self, wasm_sig: WasmSignature) -> u32 {
@@ -709,116 +391,6 @@ impl SpiderMonkeyWasm {
         self.wasm_sig_to_index.insert(wasm_sig, idx);
 
         idx
-    }
-
-    /// Compile these bindings into Wasm.
-    pub fn into_wasm(mut self, js_name: &str, js: &str) -> Vec<u8> {
-        let mut module = wasm_encoder::Module::new();
-        let mut modules = wasm_encoder::ModuleSection::new();
-        let mut instances = wasm_encoder::InstanceSection::new();
-        let mut aliases = wasm_encoder::AliasSection::new();
-        let mut mems = wasm_encoder::MemorySection::new();
-        let mut funcs = wasm_encoder::FunctionSection::new();
-        let mut globals = wasm_encoder::GlobalSection::new();
-        let mut elems = wasm_encoder::ElementSection::new();
-        let mut code = wasm_encoder::CodeSection::new();
-
-        self.link_spidermonkey_wasm(&mut modules, &mut instances, &mut aliases);
-
-        // Define the return pointer global.
-        globals.global(
-            wasm_encoder::GlobalType {
-                val_type: wasm_encoder::ValType::I32,
-                mutable: true,
-            },
-            Instruction::I32Const(0),
-        );
-
-        // Re-export `spidermonkey.wasm`'s memory and canonical ABI functions.
-        self.exports
-            .export("memory", wasm_encoder::Export::Memory(SM_MEMORY));
-        self.exports.export(
-            "canonical_abi_free",
-            wasm_encoder::Export::Function(self.spidermonkey_import("canonical_abi_free")),
-        );
-        self.exports.export(
-            "canonical_abi_realloc",
-            wasm_encoder::Export::Function(self.spidermonkey_import("canonical_abi_realloc")),
-        );
-
-        // Add the WITX function imports (add their import glue functions) to
-        // the module.
-        //
-        // Each of these functions has the Wasm equivalent of this function
-        // signature:
-        //
-        //     using JSNative = bool (JSContext* cx, unsigned argc, JSValue *vp);
-        let js_native_type_index = self.intern_type(WasmSignature {
-            params: vec![
-                // JSContext *cx
-                WasmType::I32,
-                // unsigned argc
-                WasmType::I32,
-                // JSValue *vp
-                WasmType::I32,
-            ],
-            results: vec![
-                // bool
-                WasmType::I32,
-            ],
-            retptr: None,
-        });
-        for f in &self.import_glue_fns {
-            funcs.function(js_native_type_index);
-            code.function(f);
-        }
-        for (f, ty_idx) in &self.export_glue_fns {
-            funcs.function(*ty_idx);
-            code.function(f);
-        }
-
-        // We will use `ref.func` to get a reference to each of our synthesized
-        // import glue functions, so we need to declare them as reference-able.
-        let func_indices: Vec<u32> = self.witx_import_glue_fn_range().collect();
-        if !func_indices.is_empty() {
-            elems.declared(
-                wasm_encoder::ValType::FuncRef,
-                wasm_encoder::Elements::Functions(&func_indices),
-            );
-        }
-
-        let js_name_offset = self.data_segments.add(js_name.as_bytes().iter().copied());
-        let js_offset = self.data_segments.add(js.as_bytes().iter().copied());
-
-        self.define_wizer_initialize(
-            &mut funcs,
-            &mut code,
-            js_name_offset,
-            u32::try_from(js_name.len()).unwrap(),
-            js_offset,
-            u32::try_from(js.len()).unwrap(),
-        );
-
-        module.section(&self.types).section(&self.imports);
-
-        if !self.import_spidermonkey {
-            module.section(&modules).section(&instances);
-        }
-
-        mems.memory(self.data_segments.memory_type());
-        let data = self.data_segments.take_data();
-
-        module
-            .section(&aliases)
-            .section(&funcs)
-            .section(&mems)
-            .section(&globals)
-            .section(&self.exports)
-            .section(&elems)
-            .section(&code)
-            .section(&data);
-
-        module.finish()
     }
 
     fn link_spidermonkey_wasm(
@@ -891,9 +463,9 @@ impl SpiderMonkeyWasm {
     /// ```wat
     /// (local.set ${local} (call $SMW_malloc (i32.const ${size})))
     /// ```
-    fn malloc_static_size<'a, F>(&mut self, func: &mut F, size: u32, result_local: u32)
+    fn malloc_static_size<'b, F>(&mut self, func: &mut F, size: u32, result_local: u32)
     where
-        F: InstructionSink<'a>,
+        F: InstructionSink<'b>,
     {
         // []
         func.instruction(Instruction::I32Const(size as _));
@@ -912,9 +484,9 @@ impl SpiderMonkeyWasm {
     /// ```wat
     /// (local.set ${result_local} (call $malloc (local.get ${size_local})))
     /// ```
-    fn malloc_dynamic_size<'a, F>(&mut self, func: &mut F, size_local: u32, result_local: u32)
+    fn malloc_dynamic_size<'b, F>(&mut self, func: &mut F, size_local: u32, result_local: u32)
     where
-        F: InstructionSink<'a>,
+        F: InstructionSink<'b>,
     {
         // []
         func.instruction(Instruction::LocalGet(size_local));
@@ -933,9 +505,9 @@ impl SpiderMonkeyWasm {
     ///                  (i32.const ${from_offset})
     ///                  (i32.const ${len}))
     /// ```
-    fn copy_to_smw<'a, F>(&self, func: &mut F, from_offset: u32, to_local: u32, len: u32)
+    fn copy_to_smw<'b, F>(&self, func: &mut F, from_offset: u32, to_local: u32, len: u32)
     where
-        F: InstructionSink<'a>,
+        F: InstructionSink<'b>,
     {
         // []
         func.instruction(Instruction::LocalGet(to_local));
@@ -951,9 +523,9 @@ impl SpiderMonkeyWasm {
         // []
     }
 
-    fn clear_js_operands<'a, F>(&self, func: &mut F)
+    fn clear_js_operands<'b, F>(&self, func: &mut F)
     where
-        F: InstructionSink<'a>,
+        F: InstructionSink<'b>,
     {
         // []
         func.instruction(Instruction::Call(
@@ -1202,8 +774,455 @@ impl SpiderMonkeyWasm {
     }
 }
 
-struct Bindgen<'a> {
-    gen: &'a mut SpiderMonkeyWasm,
+// ### Function Index Space
+//
+// The generated glue module's function index space is laid out as follows:
+//
+// ```text
+// |witx imports...|spidermonkey.wasm imports...|import glue...|export glue...|wizer.initialize|
+// ```
+impl SpiderMonkeyWasm<'_> {
+    /// Get the number of imported WITX functions.
+    fn witx_import_functions_len(&self) -> u32 {
+        self.num_import_functions
+            .expect("must call `preprocess_all` before generating bindings")
+    }
+
+    /// Get the function index for the i^th WITX import.
+    fn witx_import(&self, i: u32) -> u32 {
+        i
+    }
+
+    /// Get the function index for the given spidermonkey function.
+    fn spidermonkey_import(&self, name: &str) -> u32 {
+        self.witx_import_functions_len()
+            + u32::try_from(
+                SMW_EXPORTS
+                    .iter()
+                    .position(|(n, _)| *n == name)
+                    .unwrap_or_else(|| panic!("unknown `spidermonkey.wasm` export: {}", name)),
+            )
+            .unwrap()
+    }
+
+    /// Get the function index where WITX import glue functions start.
+    fn witx_import_glue_fns_start(&self) -> u32 {
+        self.witx_import_functions_len() + u32::try_from(SMW_EXPORTS.len()).unwrap()
+    }
+
+    /// Get the range of indices for our synthesized glue functions for WITX
+    /// imports.
+    fn witx_import_glue_fn_range(&self) -> Range<u32> {
+        let start = self.witx_import_glue_fns_start();
+        let end = self.witx_export_start();
+        start..end
+    }
+
+    /// Get the function index for the i^th synthesized glue function for a WITX
+    /// import.
+    fn witx_import_glue_fn(&self, i: u32) -> u32 {
+        assert!(
+            i < self.witx_import_functions_len(),
+            "{} < {}",
+            i,
+            self.witx_import_functions_len()
+        );
+        let start = self.witx_import_glue_fns_start();
+        start + i
+    }
+
+    /// Get the function index where WITX export glue functions start.
+    fn witx_export_start(&self) -> u32 {
+        self.witx_import_glue_fns_start() + self.witx_import_functions_len()
+    }
+
+    fn witx_exports_len(&self) -> u32 {
+        self.num_export_functions
+            .expect("must call `preprocess_all` before generating bindings")
+    }
+
+    /// Get the function index for the i^th WITX export.
+    fn witx_export(&self, i: u32) -> u32 {
+        assert!(i < self.witx_exports_len());
+        self.witx_export_start() + i
+    }
+}
+
+impl Generator for SpiderMonkeyWasm<'_> {
+    fn preprocess_all(&mut self, imports: &[witx2::Interface], exports: &[witx2::Interface]) {
+        assert!(
+            self.num_import_functions.is_none() && self.num_export_functions.is_none(),
+            "must call `preprocess_all` exactly once"
+        );
+        assert!(
+            exports.len() <= 1,
+            "only one exported interface is currently supported"
+        );
+        self.num_import_functions =
+            Some(u32::try_from(imports.iter().map(|i| i.functions.len()).sum::<usize>()).unwrap());
+        self.num_export_functions =
+            Some(u32::try_from(exports.iter().map(|i| i.functions.len()).sum::<usize>()).unwrap());
+
+        // Figure out what the maximum return pointer area we will need is.
+        for (iface, dir) in imports
+            .iter()
+            .zip(std::iter::repeat(witx2::abi::Direction::Import))
+            .chain(
+                exports
+                    .iter()
+                    .zip(std::iter::repeat(witx2::abi::Direction::Export)),
+            )
+        {
+            for func in iface.functions.iter() {
+                let sig = iface.wasm_signature(dir, func);
+                if let Some(results) = sig.retptr {
+                    self.i64_return_pointer_area_size =
+                        self.i64_return_pointer_area_size.max(results.len());
+                }
+            }
+        }
+    }
+
+    fn preprocess_one(&mut self, iface: &witx2::Interface, dir: witx2::abi::Direction) {
+        self.sizes.fill(dir, iface);
+    }
+
+    fn type_record(
+        &mut self,
+        iface: &witx2::Interface,
+        id: witx2::TypeId,
+        name: &str,
+        record: &witx2::Record,
+        docs: &witx2::Docs,
+    ) {
+        let _ = (iface, id, name, record, docs);
+        todo!()
+    }
+
+    fn type_variant(
+        &mut self,
+        iface: &witx2::Interface,
+        id: witx2::TypeId,
+        name: &str,
+        variant: &witx2::Variant,
+        docs: &witx2::Docs,
+    ) {
+        let _ = (iface, id, name, variant, docs);
+        todo!()
+    }
+
+    fn type_resource(&mut self, iface: &witx2::Interface, ty: witx2::ResourceId) {
+        let _ = (iface, ty);
+        todo!()
+    }
+
+    fn type_alias(
+        &mut self,
+        iface: &witx2::Interface,
+        id: witx2::TypeId,
+        name: &str,
+        ty: &witx2::Type,
+        docs: &witx2::Docs,
+    ) {
+        let _ = (iface, id, name, ty, docs);
+        todo!()
+    }
+
+    fn type_list(
+        &mut self,
+        iface: &witx2::Interface,
+        id: witx2::TypeId,
+        name: &str,
+        ty: &witx2::Type,
+        docs: &witx2::Docs,
+    ) {
+        let _ = (iface, id, name, ty, docs);
+        todo!()
+    }
+
+    fn type_pointer(
+        &mut self,
+        iface: &witx2::Interface,
+        id: witx2::TypeId,
+        name: &str,
+        const_: bool,
+        ty: &witx2::Type,
+        docs: &witx2::Docs,
+    ) {
+        let _ = (iface, id, name, const_, ty, docs);
+        todo!()
+    }
+
+    fn type_builtin(
+        &mut self,
+        iface: &witx2::Interface,
+        id: witx2::TypeId,
+        name: &str,
+        ty: &witx2::Type,
+        docs: &witx2::Docs,
+    ) {
+        let _ = (iface, id, name, name, ty, docs);
+        todo!()
+    }
+
+    fn type_push_buffer(
+        &mut self,
+        iface: &witx2::Interface,
+        id: witx2::TypeId,
+        name: &str,
+        ty: &witx2::Type,
+        docs: &witx2::Docs,
+    ) {
+        let _ = (iface, id, name, name, ty, docs);
+        todo!()
+    }
+
+    fn type_pull_buffer(
+        &mut self,
+        iface: &witx2::Interface,
+        id: witx2::TypeId,
+        name: &str,
+        ty: &witx2::Type,
+        docs: &witx2::Docs,
+    ) {
+        let _ = (iface, id, name, name, ty, docs);
+        todo!()
+    }
+
+    fn import(&mut self, iface: &witx2::Interface, func: &witx2::Function) {
+        assert!(
+            func.abi == witx2::abi::Abi::Canonical,
+            "We only support the canonical ABI right now"
+        );
+
+        // Add the raw Wasm import.
+        let wasm_sig = iface.wasm_signature(witx2::abi::Direction::Import, func);
+        let type_index = self.intern_type(wasm_sig.clone());
+        let import_fn_index = self.witx_import(self.imports.len());
+        self.imports.import(
+            &iface.name,
+            Some(&func.name),
+            wasm_encoder::EntityType::Function(type_index),
+        );
+
+        let existing = self
+            .import_fn_name_to_index
+            .entry(iface.name.clone())
+            .or_default()
+            .insert(
+                func.name.clone(),
+                (import_fn_index, u32::try_from(func.params.len()).unwrap()),
+            );
+        assert!(existing.is_none());
+
+        let mut bindgen = Bindgen::new(
+            self,
+            &wasm_sig,
+            func,
+            witx2::abi::LiftLower::LowerArgsLiftResults,
+        );
+        iface.call(
+            witx2::abi::Direction::Import,
+            witx2::abi::LiftLower::LowerArgsLiftResults,
+            func,
+            &mut bindgen,
+        );
+        let func_encoder = bindgen.finish();
+        self.import_glue_fns.push(func_encoder);
+    }
+
+    fn export(&mut self, iface: &witx2::Interface, func: &witx2::Function) {
+        assert!(
+            func.abi == witx2::abi::Abi::Canonical,
+            "We only support the canonical ABI right now"
+        );
+
+        let wasm_sig = iface.wasm_signature(witx2::abi::Direction::Export, func);
+        let type_index = self.intern_type(wasm_sig.clone());
+        let export_fn_index = self.witx_export(self.exports.len());
+        self.exports
+            .export(&func.name, wasm_encoder::Export::Function(export_fn_index));
+
+        let mut bindgen = Bindgen::new(
+            self,
+            &wasm_sig,
+            func,
+            witx2::abi::LiftLower::LiftArgsLowerResults,
+        );
+        iface.call(
+            witx2::abi::Direction::Export,
+            witx2::abi::LiftLower::LiftArgsLowerResults,
+            func,
+            &mut bindgen,
+        );
+        let func_encoder = bindgen.finish();
+        self.export_glue_fns.push((func_encoder, type_index));
+    }
+
+    fn finish_one(&mut self, _iface: &witx2::Interface, _files: &mut Files) {
+        // Nothing to do until wil finish all interfaces and generate our Wasm
+        // glue code.
+    }
+
+    fn finish_all(&mut self, files: &mut Files) {
+        let mut module = wasm_encoder::Module::new();
+        let mut modules = wasm_encoder::ModuleSection::new();
+        let mut instances = wasm_encoder::InstanceSection::new();
+        let mut aliases = wasm_encoder::AliasSection::new();
+        let mut mems = wasm_encoder::MemorySection::new();
+        let mut funcs = wasm_encoder::FunctionSection::new();
+        let mut globals = wasm_encoder::GlobalSection::new();
+        let mut elems = wasm_encoder::ElementSection::new();
+        let mut code = wasm_encoder::CodeSection::new();
+
+        self.link_spidermonkey_wasm(&mut modules, &mut instances, &mut aliases);
+
+        // Define the return pointer global.
+        globals.global(
+            wasm_encoder::GlobalType {
+                val_type: wasm_encoder::ValType::I32,
+                mutable: true,
+            },
+            Instruction::I32Const(0),
+        );
+
+        // Re-export `spidermonkey.wasm`'s memory and canonical ABI functions.
+        self.exports
+            .export("memory", wasm_encoder::Export::Memory(SM_MEMORY));
+        self.exports.export(
+            "canonical_abi_free",
+            wasm_encoder::Export::Function(self.spidermonkey_import("canonical_abi_free")),
+        );
+        self.exports.export(
+            "canonical_abi_realloc",
+            wasm_encoder::Export::Function(self.spidermonkey_import("canonical_abi_realloc")),
+        );
+
+        // Add the WITX function imports (add their import glue functions) to
+        // the module.
+        //
+        // Each of these functions has the Wasm equivalent of this function
+        // signature:
+        //
+        //     using JSNative = bool (JSContext* cx, unsigned argc, JSValue *vp);
+        let js_native_type_index = self.intern_type(WasmSignature {
+            params: vec![
+                // JSContext *cx
+                WasmType::I32,
+                // unsigned argc
+                WasmType::I32,
+                // JSValue *vp
+                WasmType::I32,
+            ],
+            results: vec![
+                // bool
+                WasmType::I32,
+            ],
+            retptr: None,
+        });
+        for f in &self.import_glue_fns {
+            funcs.function(js_native_type_index);
+            code.function(f);
+        }
+        for (f, ty_idx) in &self.export_glue_fns {
+            funcs.function(*ty_idx);
+            code.function(f);
+        }
+
+        // We will use `ref.func` to get a reference to each of our synthesized
+        // import glue functions, so we need to declare them as reference-able.
+        let func_indices: Vec<u32> = self.witx_import_glue_fn_range().collect();
+        if !func_indices.is_empty() {
+            elems.declared(
+                wasm_encoder::ValType::FuncRef,
+                wasm_encoder::Elements::Functions(&func_indices),
+            );
+        }
+
+        let js_name = self.js_name.display().to_string();
+        let js_name_offset = self.data_segments.add(js_name.as_bytes().iter().copied());
+        let js_offset = self.data_segments.add(self.js.as_bytes().iter().copied());
+
+        self.define_wizer_initialize(
+            &mut funcs,
+            &mut code,
+            js_name_offset,
+            u32::try_from(js_name.len()).unwrap(),
+            js_offset,
+            u32::try_from(self.js.len()).unwrap(),
+        );
+
+        module.section(&self.types).section(&self.imports);
+
+        if !self.import_spidermonkey {
+            module.section(&modules).section(&instances);
+        }
+
+        mems.memory(self.data_segments.memory_type());
+        let data = self.data_segments.take_data();
+
+        module
+            .section(&aliases)
+            .section(&funcs)
+            .section(&mems)
+            .section(&globals)
+            .section(&self.exports)
+            .section(&elems)
+            .section(&code)
+            .section(&data);
+
+        let wasm = module.finish();
+
+        let js_file_stem = self.js_name.file_stem().unwrap_or_else(|| {
+            panic!(
+                "input JavaScript file path does not have a file stem: {}",
+                self.js_name.display()
+            )
+        });
+        let js_file_stem = js_file_stem.to_str().unwrap_or_else(|| {
+            panic!(
+                "input JavaScript file path is not UTF-8 representable: {}",
+                self.js_name.display()
+            )
+        });
+        let wasm_name = format!("{}.wasm", js_file_stem);
+
+        files.push(&wasm_name, &wasm);
+    }
+}
+
+trait InstructionSink<'a> {
+    fn instruction(&mut self, inst: wasm_encoder::Instruction<'a>);
+}
+
+impl<'a> InstructionSink<'a> for wasm_encoder::Function {
+    fn instruction(&mut self, inst: wasm_encoder::Instruction<'a>) {
+        wasm_encoder::Function::instruction(self, inst);
+    }
+}
+
+impl<'a> InstructionSink<'a> for Vec<wasm_encoder::Instruction<'a>> {
+    fn instruction(&mut self, inst: wasm_encoder::Instruction<'a>) {
+        self.push(inst);
+    }
+}
+
+const RET_PTR_GLOBAL: u32 = 0;
+
+const SM_MEMORY: u32 = 0;
+const GLUE_MEMORY: u32 = 1;
+
+fn convert_ty(ty: WasmType) -> wasm_encoder::ValType {
+    match ty {
+        WasmType::I32 => wasm_encoder::ValType::I32,
+        WasmType::I64 => wasm_encoder::ValType::I64,
+        WasmType::F32 => wasm_encoder::ValType::F32,
+        WasmType::F64 => wasm_encoder::ValType::F64,
+    }
+}
+
+struct Bindgen<'a, 'b> {
+    gen: &'a mut SpiderMonkeyWasm<'b>,
     sig: &'a WasmSignature,
     lift_lower: witx2::abi::LiftLower,
     locals: Vec<wasm_encoder::ValType>,
@@ -1224,13 +1243,13 @@ struct Bindgen<'a> {
     to_free: Vec<(u32, u32, u32)>,
 }
 
-impl<'a> Bindgen<'a> {
+impl<'a, 'b> Bindgen<'a, 'b> {
     fn new(
-        gen: &'a mut SpiderMonkeyWasm,
+        gen: &'a mut SpiderMonkeyWasm<'b>,
         sig: &'a WasmSignature,
         func: &'a witx2::Function,
         lift_lower: witx2::abi::LiftLower,
-    ) -> Bindgen<'a> {
+    ) -> Self {
         let js_count = match lift_lower {
             witx2::abi::LiftLower::LiftArgsLowerResults => 0,
             witx2::abi::LiftLower::LowerArgsLiftResults => {
@@ -1377,7 +1396,7 @@ fn sm_mem_arg(offset: u32) -> wasm_encoder::MemArg {
     }
 }
 
-impl witx2::abi::Bindgen for Bindgen<'_> {
+impl witx2::abi::Bindgen for Bindgen<'_, '_> {
     type Operand = Operand;
 
     fn emit(

@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use structopt::StructOpt;
-use witx2::abi::Direction;
 use witx_bindgen_gen_core::{witx2, Files, Generator};
 
 #[derive(Debug, StructOpt)]
@@ -56,16 +55,15 @@ struct Common {
     #[structopt(long = "out-dir")]
     out_dir: Option<PathBuf>,
 
-    /// Whether bindings are generated for as-if these functions are imported
-    #[structopt(long, short, conflicts_with("export"))]
-    import: bool,
+    /// Generate import binding for the given `*.witx` file. Can be specified
+    /// multiple times.
+    #[structopt(long, short)]
+    imports: Vec<PathBuf>,
 
-    /// Whether bindings are generated for as-if these functions are exported
-    #[structopt(long, short, conflicts_with("import"))]
-    export: bool,
-
-    /// Input `*.witx` files to create bindings for
-    witx: Vec<PathBuf>,
+    /// Generate export binding for the given `*.witx` file. Can be specified
+    /// multiple times.
+    #[structopt(long, short)]
+    exports: Vec<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -79,23 +77,19 @@ fn main() -> Result<()> {
         Command::Markdown { opts, common } => (Box::new(opts.build()), common),
     };
 
-    if !common.import && !common.export {
-        anyhow::bail!("one of `--import` or `--export` must be used");
-    }
+    let imports = common
+        .imports
+        .iter()
+        .map(|witx| witx2::Interface::parse_file(witx))
+        .collect::<Result<Vec<_>>>()?;
+    let exports = common
+        .exports
+        .iter()
+        .map(|witx| witx2::Interface::parse_file(witx))
+        .collect::<Result<Vec<_>>>()?;
 
     let mut files = Files::default();
-    for witx in common.witx {
-        let module = witx2::Interface::parse_file(witx)?;
-        generator.generate(
-            &module,
-            if common.import {
-                Direction::Import
-            } else {
-                Direction::Export
-            },
-            &mut files,
-        );
-    }
+    generator.generate_all(&imports, &exports, &mut files);
 
     for (name, contents) in files.iter() {
         let dst = match &common.out_dir {

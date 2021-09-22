@@ -33,18 +33,6 @@ pub fn witx_files() -> Result<impl Iterator<Item = Result<PathBuf>>> {
 /// For debugging purposes, the generated Wasm will be written to
 /// `foo.{imported,exported}.wasm` if debug logging is enabled.
 pub fn generate(witx: &Path, dir: witx2::abi::Direction) -> Result<Vec<u8>> {
-    let mut smw = SpiderMonkeyWasm::default();
-    smw.import_spidermonkey(true);
-
-    let modules = vec![witx2::Interface::parse_file(&witx)?];
-    match dir {
-        witx2::abi::Direction::Import => smw.preprocess_all(&modules, &[]),
-        witx2::abi::Direction::Export => smw.preprocess_all(&[], &modules),
-    }
-
-    let mut files = Files::default();
-    smw.generate(&modules[0], dir, &mut files);
-
     let mut js = witx.to_owned();
     js.set_extension(match dir {
         witx2::abi::Direction::Import => "import.js",
@@ -52,17 +40,29 @@ pub fn generate(witx: &Path, dir: witx2::abi::Direction) -> Result<Vec<u8>> {
     });
     let js_source =
         fs::read_to_string(&js).with_context(|| format!("failed to read {}", js.display()))?;
-    let wasm = smw.into_wasm(&js.display().to_string(), &js_source);
+
+    let mut smw = SpiderMonkeyWasm::new(js, &js_source);
+    smw.import_spidermonkey(true);
+
+    let modules = vec![witx2::Interface::parse_file(&witx)?];
+
+    let (imports, exports) = match dir {
+        witx2::abi::Direction::Import => (modules, vec![]),
+        witx2::abi::Direction::Export => (vec![], modules),
+    };
+
+    let mut files = Files::default();
+    smw.generate_all(&imports, &exports, &mut files);
 
     if log::log_enabled!(log::Level::Debug) {
-        let mut wasm_file = js;
-        wasm_file.set_extension("wasm");
-        log::debug!("writing generated Wasm to {}", wasm_file.display());
-        std::fs::write(&wasm_file, &wasm)
-            .with_context(|| format!("failed to write {}", wasm_file.display()))?;
+        for (name, contents) in files.iter() {
+            log::debug!("writing generated file: {}", name);
+            std::fs::write(name, contents).with_context(|| format!("failed to write {}", name))?;
+        }
     }
 
-    Ok(wasm)
+    let mut files = files.iter();
+    Ok(files.next().unwrap().1.to_vec())
 }
 
 /// Compile, instantiate, and initialize the import and export versions of the
