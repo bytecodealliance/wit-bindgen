@@ -22,3 +22,7 @@ test = false
 [[bin]]
 name = "records"
 test = false
+
+[[bin]]
+name = "variants"
+test = false

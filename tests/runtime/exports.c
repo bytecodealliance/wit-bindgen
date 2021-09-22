@@ -32,49 +32,6 @@ uint32_t wasm_allocated_bytes(void) {
 }
 
 
-bool wasm_roundtrip_option(wasm_option_f32_t *a, uint8_t *ret0) {
-  if (a->tag) {
-    *ret0 = a->val;
-  }
-  return a->tag;
-}
-
-void wasm_roundtrip_result(wasm_expected_u32_f32_t *a, wasm_expected_f64_u8_t *ret0) {
-  ret0->tag = a->tag;
-  if (a->tag == 0) {
-    ret0->val.ok = a->val.ok;
-  } else {
-    ret0->val.err = a->val.err;
-  }
-}
-
-wasm_e1_t wasm_roundtrip_enum(wasm_e1_t a) {
-  return a;
-}
-
-bool wasm_invert_bool(bool a) {
-  return !a;
-}
-
-void wasm_variant_casts(wasm_casts_t *a, wasm_c1_t *ret0, wasm_c2_t *ret1, wasm_c3_t *ret2, wasm_c4_t *ret3, wasm_c5_t *ret4, wasm_c6_t *ret5) {
-  *ret0 = a->f0;
-  *ret1 = a->f1;
-  *ret2 = a->f2;
-  *ret3 = a->f3;
-  *ret4 = a->f4;
-  *ret5 = a->f5;
-}
-
-void wasm_variant_zeros(wasm_zeros_t *a, wasm_z1_t *ret0, wasm_z2_t *ret1, wasm_z3_t *ret2, wasm_z4_t *ret3) {
-  *ret0 = a->f0;
-  *ret1 = a->f1;
-  *ret2 = a->f2;
-  *ret3 = a->f3;
-}
-
-void wasm_variant_typedefs(wasm_option_typedef_t *a, wasm_bool_typedef_t b, wasm_result_typedef_t *c) {
-}
-
 void wasm_list_param(wasm_list_u8_t *a) {
   assert(a->len == 4);
   assert(a->ptr[0] == 1);

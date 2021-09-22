@@ -45,6 +45,7 @@ def run(wasm_file: str) -> None:
     add_imports_to_linker(linker, store, imports)
     wasm = Exports(store, linker, module)
 
+    wasm.test_imports(store)
     assert(wasm.multiple_results(store) == (100, 200))
     assert(wasm.swap_tuple(store, (1, 2)) == (2, 1))
     assert(wasm.roundtrip_flags1(store, e.F1.A) == e.F1.A)

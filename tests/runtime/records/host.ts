@@ -26,6 +26,7 @@ async function run() {
   wasi.start(wasm.instance);
   instance = wasm.instance;
 
+  wasm.testImports();
   assert.deepEqual(wasm.multipleResults(), [100, 200]);
   assert.deepStrictEqual(wasm.swapTuple([1, 2]), [2, 1]);
   assert.deepEqual(wasm.roundtripFlags1(exports.F1_A), exports.F1_A);

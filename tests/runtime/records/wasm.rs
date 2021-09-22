@@ -9,6 +9,8 @@ impl exports::Exports for Exports {
     fn test_imports() {
         use imports::*;
 
+        assert_eq!(multiple_results(), (4, 5));
+
         assert_eq!(swap_tuple((1u8, 2u32)), (2u32, 1u8));
         assert_eq!(roundtrip_flags1(F1_A), F1_A);
         assert_eq!(roundtrip_flags1(0), 0);

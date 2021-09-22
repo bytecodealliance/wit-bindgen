@@ -29,48 +29,6 @@ impl Host for MyHost {
     type HostState2 = ();
     type Markdown2 = Markdown;
 
-    fn roundtrip_option(&mut self, a: Option<f32>) -> Option<u8> {
-        a.map(|x| x as u8)
-    }
-
-    fn roundtrip_result(&mut self, a: Result<u32, f32>) -> Result<f64, u8> {
-        match a {
-            Ok(a) => Ok(a.into()),
-            Err(b) => Err(b as u8),
-        }
-    }
-
-    fn roundtrip_enum(&mut self, a: E1) -> E1 {
-        assert_eq!(a, a);
-        a
-    }
-
-    fn invert_bool(&mut self, a: bool) -> bool {
-        !a
-    }
-
-    fn variant_casts(&mut self, a: Casts) -> Casts {
-        a
-    }
-
-    fn variant_zeros(&mut self, a: Zeros) -> Zeros {
-        a
-    }
-
-    fn variant_typedefs(&mut self, _: Option<u32>, _: bool, _: Result<u32, ()>) {}
-
-    fn variant_enums(
-        &mut self,
-        a: bool,
-        b: Result<(), ()>,
-        c: MyErrno,
-    ) -> (bool, Result<(), ()>, MyErrno) {
-        assert_eq!(a, true);
-        assert_eq!(b, Ok(()));
-        assert_eq!(c, MyErrno::Success);
-        (false, Err(()), MyErrno::A)
-    }
-
     fn list_param(&mut self, list: &[u8]) {
         assert_eq!(list, [1, 2, 3, 4]);
     }

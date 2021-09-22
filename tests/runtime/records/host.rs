@@ -60,6 +60,7 @@ fn run(wasm: &str) -> Result<()> {
         |store, module, linker| Exports::instantiate(store, module, linker, |cx| &mut cx.exports),
     )?;
 
+    exports.test_imports(&mut store)?;
     assert_eq!(exports.multiple_results(&mut store,)?, (100, 200));
     assert_eq!(exports.swap_tuple(&mut store, (1u8, 2u32))?, (2u32, 1u8));
     assert_eq!(exports.roundtrip_flags1(&mut store, F1::A)?, F1::A);

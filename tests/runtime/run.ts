@@ -40,29 +40,6 @@ async function run() {
 function host(): imports.Host {
   let sawClose = false;
   return {
-    roundtripOption(x) { return x; },
-    roundtripResult(x) {
-      if (x.tag == 'ok') {
-        return { tag: 'ok', val: x.val };
-      } else {
-        return { tag: 'err', val: Math.round(x.val) };
-      }
-    },
-    roundtripEnum(x) { return x; },
-    invertBool(x) { return !x; },
-    variantCasts(x) { return x; },
-    variantZeros(x) { return x; },
-    variantTypedefs(x, y, z) {},
-    variantEnums(a, b, c) {
-      assert.deepStrictEqual(a, true);
-      assert.deepStrictEqual(b, { tag: 'ok' });
-      assert.deepStrictEqual(c, imports.MyErrno.Success);
-      return [
-        false,
-        { tag: 'err', val: undefined },
-        imports.MyErrno.A,
-      ];
-    },
     listParam(a) {
       assert.deepStrictEqual(Array.from(a), [1, 2, 3, 4]);
     },
@@ -307,74 +284,6 @@ function runTests(wasm: exports.Wasm) {
   assert.strictEqual(bytes, wasm.allocatedBytes());
 }
 
-function testVariants(wasm: exports.Wasm) {
-  assert.deepStrictEqual(wasm.roundtripOption(1), 1);
-  assert.deepStrictEqual(wasm.roundtripOption(null), null);
-  assert.deepStrictEqual(wasm.roundtripOption(2), 2);
-  assert.deepStrictEqual(wasm.roundtripResult({ tag: 'ok', val: 2 }), { tag: 'ok', val: 2 });
-  assert.deepStrictEqual(wasm.roundtripResult({ tag: 'ok', val: 4 }), { tag: 'ok', val: 4 });
-  const f = Math.fround(5.2);
-  assert.deepStrictEqual(wasm.roundtripResult({ tag: 'err', val: f }), { tag: 'err', val: 5 });
-
-  assert.deepStrictEqual(wasm.roundtripEnum(exports.E1.A), exports.E1.A);
-  assert.deepStrictEqual(wasm.roundtripEnum(exports.E1.B), exports.E1.B);
-
-  assert.deepStrictEqual(wasm.invertBool(true), false);
-  assert.deepStrictEqual(wasm.invertBool(false), true);
-
-  {
-    const a: exports.E1.A = exports.E1.A;
-    const b: exports.E1.B = exports.E1.B;
-  }
-
-  {
-    const [a1, a2, a3, a4, a5, a6] = wasm.variantCasts([
-      { tag: 'a', val: 1 },
-      { tag: 'a', val: 2 },
-      { tag: 'a', val: 3 },
-      { tag: 'a', val: 4n },
-      { tag: 'a', val: 5n },
-      { tag: 'a', val: 6 },
-    ]);
-    assert.deepStrictEqual(a1, { tag: 'a', val: 1 });
-    assert.deepStrictEqual(a2, { tag: 'a', val: 2 });
-    assert.deepStrictEqual(a3, { tag: 'a', val: 3 });
-    assert.deepStrictEqual(a4, { tag: 'a', val: 4n });
-    assert.deepStrictEqual(a5, { tag: 'a', val: 5n });
-    assert.deepStrictEqual(a6, { tag: 'a', val: 6 });
-  }
-  {
-    const [b1, b2, b3, b4, b5, b6] = wasm.variantCasts([
-      { tag: 'b', val: 1n },
-      { tag: 'b', val: 2 },
-      { tag: 'b', val: 3 },
-      { tag: 'b', val: 4 },
-      { tag: 'b', val: 5 },
-      { tag: 'b', val: 6 },
-    ]);
-    assert.deepStrictEqual(b1, { tag: 'b', val: 1n });
-    assert.deepStrictEqual(b2, { tag: 'b', val: 2 });
-    assert.deepStrictEqual(b3, { tag: 'b', val: 3 });
-    assert.deepStrictEqual(b4, { tag: 'b', val: 4 });
-    assert.deepStrictEqual(b5, { tag: 'b', val: 5 });
-    assert.deepStrictEqual(b6, { tag: 'b', val: 6 });
-  }
-
-  {
-    const [a1, a2, a3, a4] = wasm.variantZeros([
-      { tag: 'a', val: 1 },
-      { tag: 'a', val: 2n },
-      { tag: 'a', val: 3 },
-      { tag: 'a', val: 4 },
-    ]);
-    assert.deepStrictEqual(a1, { tag: 'a', val: 1 });
-    assert.deepStrictEqual(a2, { tag: 'a', val: 2n });
-    assert.deepStrictEqual(a3, { tag: 'a', val: 3 });
-    assert.deepStrictEqual(a4, { tag: 'a', val: 4 });
-  }
-
-  wasm.variantTypedefs(null, false, { tag: 'err' });
-}
 
 function testLists(wasm: exports.Wasm) {
     wasm.listParam(new Uint8Array([1, 2, 3, 4]));

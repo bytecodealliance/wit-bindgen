@@ -72,6 +72,7 @@ fn run(wasm: &str) -> Result<()> {
         },
     )?;
 
+    exports.test_imports(&mut store)?;
     assert_eq!(exports.roundtrip_u8(&mut store, 1)?, 1);
     assert_eq!(
         exports.roundtrip_u8(&mut store, u8::min_value())?,

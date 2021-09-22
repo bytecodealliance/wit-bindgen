@@ -59,6 +59,7 @@ def run(wasm_file: str) -> None:
     add_imports_to_linker(linker, store, imports)
     wasm = Exports(store, linker, module)
 
+    wasm.test_imports(store)
     assert(wasm.roundtrip_u8(store, 1) == 1)
     assert(wasm.roundtrip_u8(store, (1 << 8) - 1) == (1 << 8) - 1)
     assert(wasm.roundtrip_u16(store, 1) == 1)

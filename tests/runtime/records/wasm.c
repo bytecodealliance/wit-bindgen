@@ -3,6 +3,14 @@
 #include <exports.h>
 
 void exports_test_imports() {
+  {
+    uint8_t a;
+    uint16_t b;
+    imports_multiple_results(&a, &b);
+    assert(a == 4);
+    assert(b == 5);
+  }
+
   imports_tuple2_u8_u32_t input;
   input.f0 = 1;
   input.f1 = 2;

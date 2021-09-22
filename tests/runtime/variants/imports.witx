@@ -1,0 +1,31 @@
+roundtrip_option: function(a: option<f32>) -> option<u8>
+roundtrip_result: function(a: expected<u32, f32>) -> expected<f64, u8>
+
+enum e1 { a, b }
+roundtrip_enum: function(a: e1) -> e1
+
+invert_bool: function(a: bool) -> bool
+
+variant c1 { a(s32), b(s64) }
+variant c2 { a(s32), b(f32) }
+variant c3 { a(s32), b(f64) }
+variant c4 { a(s64), b(f32) }
+variant c5 { a(s64), b(f64) }
+variant c6 { a(f32), b(f64) }
+type casts = tuple<c1, c2, c3, c4, c5, c6>
+variant_casts: function(a: casts) -> casts
+
+variant z1 { a(s32), b }
+variant z2 { a(s64), b }
+variant z3 { a(f32), b }
+variant z4 { a(f64), b }
+type zeros = tuple<z1, z2, z3, z4>
+variant_zeros: function(a: zeros) -> zeros
+
+type option_typedef = option<u32>
+type bool_typedef = bool
+type result_typedef = expected<u32, _>
+variant_typedefs: function(a: option_typedef, b: bool_typedef, c: result_typedef)
+
+enum my_errno { success, a, b }
+variant_enums: function(a: bool, b: expected<_, _>, c: my_errno) -> (bool, expected<_, _>, my_errno)
