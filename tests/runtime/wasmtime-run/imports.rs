@@ -29,60 +29,8 @@ impl Host for MyHost {
     type HostState2 = ();
     type Markdown2 = Markdown;
 
-    fn roundtrip_u8(&mut self, val: u8) -> u8 {
-        val
-    }
-
-    fn roundtrip_s8(&mut self, val: i8) -> i8 {
-        val
-    }
-
-    fn roundtrip_u16(&mut self, val: u16) -> u16 {
-        val
-    }
-
-    fn roundtrip_s16(&mut self, val: i16) -> i16 {
-        val
-    }
-
-    fn roundtrip_u32(&mut self, val: u32) -> u32 {
-        val
-    }
-
-    fn roundtrip_s32(&mut self, val: i32) -> i32 {
-        val
-    }
-
-    fn roundtrip_u64(&mut self, val: u64) -> u64 {
-        val
-    }
-
-    fn roundtrip_s64(&mut self, val: i64) -> i64 {
-        val
-    }
-
-    fn roundtrip_f32(&mut self, val: f32) -> f32 {
-        val
-    }
-
-    fn roundtrip_f64(&mut self, val: f64) -> f64 {
-        val
-    }
-
-    fn roundtrip_char(&mut self, val: char) -> char {
-        val
-    }
-
     fn multiple_results(&mut self) -> (u8, u16) {
         (4, 5)
-    }
-
-    fn set_scalar(&mut self, val: u32) {
-        self.scalar = val;
-    }
-
-    fn get_scalar(&mut self) -> u32 {
-        self.scalar
     }
 
     fn swap_tuple(&mut self, a: (u8, u32)) -> (u32, u8) {

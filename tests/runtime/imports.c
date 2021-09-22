@@ -8,37 +8,6 @@
 #include <wasm.h>
 
 static void test_integers() {
-  assert(host_roundtrip_u8(1) == 1);
-  assert(host_roundtrip_u8(0) == 0);
-  assert(host_roundtrip_u8(UCHAR_MAX) == UCHAR_MAX);
-
-  assert(host_roundtrip_s8(1) == 1);
-  assert(host_roundtrip_s8(SCHAR_MIN) == SCHAR_MIN);
-  assert(host_roundtrip_s8(SCHAR_MAX) == SCHAR_MAX);
-
-  assert(host_roundtrip_u16(1) == 1);
-  assert(host_roundtrip_u16(0) == 0);
-  assert(host_roundtrip_u16(USHRT_MAX) == USHRT_MAX);
-
-  assert(host_roundtrip_s16(1) == 1);
-  assert(host_roundtrip_s16(SHRT_MIN) == SHRT_MIN);
-  assert(host_roundtrip_s16(SHRT_MAX) == SHRT_MAX);
-
-  assert(host_roundtrip_u32(1) == 1);
-  assert(host_roundtrip_u32(0) == 0);
-  assert(host_roundtrip_u32(UINT_MAX) == UINT_MAX);
-
-  assert(host_roundtrip_s32(1) == 1);
-  assert(host_roundtrip_s32(INT_MIN) == INT_MIN);
-  assert(host_roundtrip_s32(INT_MAX) == INT_MAX);
-
-  assert(host_roundtrip_u64(1) == 1);
-  assert(host_roundtrip_u64(0) == 0);
-  assert(host_roundtrip_u64(ULONG_MAX) == ULONG_MAX);
-
-  assert(host_roundtrip_s64(1) == 1);
-  assert(host_roundtrip_s64(LONG_MIN) == LONG_MIN);
-  assert(host_roundtrip_s64(LONG_MAX) == LONG_MAX);
 
   uint8_t a;
   uint16_t b;
@@ -48,28 +17,12 @@ static void test_integers() {
 }
 
 static void test_floats() {
-  assert(host_roundtrip_f32(1.0) == 1.0);
-  assert(host_roundtrip_f32(INFINITY) == INFINITY);
-  assert(host_roundtrip_f32(-INFINITY) == -INFINITY);
-  assert(isnan(host_roundtrip_f32(NAN)));
-
-  assert(host_roundtrip_f64(1.0) == 1.0);
-  assert(host_roundtrip_f64(INFINITY) == INFINITY);
-  assert(host_roundtrip_f64(-INFINITY) == -INFINITY);
-  assert(isnan(host_roundtrip_f64(NAN)));
 }
 
 static void test_chars() {
-  assert(host_roundtrip_char('a') == 'a');
-  assert(host_roundtrip_char(' ') == ' ');
-  assert(host_roundtrip_char(U'🚩') == U'🚩');
 }
 
 static void test_get_set() {
-  host_set_scalar(2);
-  assert(host_get_scalar() == 2);
-  host_set_scalar(4);
-  assert(host_get_scalar() == 4);
 }
 
 static void test_records() {

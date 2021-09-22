@@ -14,3 +14,7 @@ unchecked = []
 [[bin]]
 name = "smoke"
 test = false
+
+[[bin]]
+name = "numbers"
+test = false

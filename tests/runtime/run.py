@@ -44,47 +44,9 @@ class Markdown(i.Markdown2):
 
 
 class HostImpl(Host):
-    def roundtrip_u8(self, a: int) -> int:
-        return a
-
-    def roundtrip_s8(self, a: int) -> int:
-        return a
-
-    def roundtrip_u16(self, a: int) -> int:
-        return a
-
-    def roundtrip_s16(self, a: int) -> int:
-        return a
-
-    def roundtrip_u32(self, a: int) -> int:
-        return a
-
-    def roundtrip_s32(self, a: int) -> int:
-        return a
-
-    def roundtrip_u64(self, a: int) -> int:
-        return a
-
-    def roundtrip_s64(self, a: int) -> int:
-        return a
-
-    def roundtrip_f32(self, a: float) -> float:
-        return a
-
-    def roundtrip_f64(self, a: float) -> float:
-        return a
-
-    def roundtrip_char(self, a: str) -> str:
-        return a
-
     def multiple_results(self) -> Tuple[int, int]:
         return (4, 5)
 
-    def set_scalar(self, a: int) -> None:
-        self.scalar = a
-
-    def get_scalar(self) -> int:
-        return self.scalar
 
     def swap_tuple(self, a: Tuple[int, int]) -> Tuple[int, int]:
         return (a[1], a[0])
@@ -402,49 +364,10 @@ def run(wasm_file: str) -> None:
 
 
 def test_scalars(wasm: Wasm, store: wasmtime.Store) -> None:
-    assert(wasm.roundtrip_u8(store, 1) == 1)
-    assert(wasm.roundtrip_u8(store, (1 << 8) - 1) == (1 << 8) - 1)
-    assert(wasm.roundtrip_u16(store, 1) == 1)
-    assert(wasm.roundtrip_u16(store, (1 << 16) - 1) == (1 << 16) - 1)
-    assert(wasm.roundtrip_u32(store, 1) == 1)
-    assert(wasm.roundtrip_u32(store, (1 << 32) - 1) == (1 << 32) - 1)
-    assert(wasm.roundtrip_u64(store, 1) == 1)
-    assert(wasm.roundtrip_u64(store, (1 << 64) - 1) == (1 << 64) - 1)
-
-    assert(wasm.roundtrip_s8(store, 1) == 1)
-    assert(wasm.roundtrip_s8(store, (1 << (8 - 1) - 1)) == (1 << (8 - 1) - 1))
-    assert(wasm.roundtrip_s8(store, -(1 << (8 - 1))) == -(1 << (8 - 1)))
-    assert(wasm.roundtrip_s16(store, 1) == 1)
-    assert(wasm.roundtrip_s16(store, (1 << (16 - 1) - 1)) == (1 << (16 - 1) - 1))
-    assert(wasm.roundtrip_s16(store, -(1 << (16 - 1))) == -(1 << (16 - 1)))
-    assert(wasm.roundtrip_s32(store, 1) == 1)
-    assert(wasm.roundtrip_s32(store, (1 << (32 - 1) - 1)) == (1 << (32 - 1) - 1))
-    assert(wasm.roundtrip_s32(store, -(1 << (32 - 1))) == -(1 << (32 - 1)))
-    assert(wasm.roundtrip_s64(store, 1) == 1)
-    assert(wasm.roundtrip_s64(store, (1 << (64 - 1) - 1)) == (1 << (64 - 1) - 1))
-    assert(wasm.roundtrip_s64(store, -(1 << (64 - 1))) == -(1 << (64 - 1)))
 
     assert(wasm.multiple_results(store) == (100, 200))
 
-    inf = float('inf')
-    assert(wasm.roundtrip_f32(store, 1.0) == 1.0)
-    assert(wasm.roundtrip_f32(store, inf) == inf)
-    assert(wasm.roundtrip_f32(store, -inf) == -inf)
-    assert(math.isnan(wasm.roundtrip_f32(store, float('nan'))))
 
-    assert(wasm.roundtrip_f64(store, 1.0) == 1.0)
-    assert(wasm.roundtrip_f64(store, inf) == inf)
-    assert(wasm.roundtrip_f64(store, -inf) == -inf)
-    assert(math.isnan(wasm.roundtrip_f64(store, float('nan'))))
-
-    assert(wasm.roundtrip_char(store, 'a') == 'a')
-    assert(wasm.roundtrip_char(store, ' ') == ' ')
-    assert(wasm.roundtrip_char(store, '🚩') == '🚩')
-
-    wasm.set_scalar(store, 2)
-    assert(wasm.get_scalar(store) == 2)
-    wasm.set_scalar(store, 4)
-    assert(wasm.get_scalar(store) == 4)
 
 
 def test_records(wasm: Wasm, store: wasmtime.Store) -> None:

@@ -777,9 +777,9 @@ impl Bindgen for FunctionBindgen<'_> {
         if src.is_empty() {
             self.blocks.push(expr);
         } else if operands.is_empty() {
-            self.blocks.push(format!("{{\n{};\n}}", &src[..]));
+            self.blocks.push(format!("{{\n{}\n}}", &src[..]));
         } else {
-            self.blocks.push(format!("{{\n{};\n{}\n}}", &src[..], expr));
+            self.blocks.push(format!("{{\n{}\n{}\n}}", &src[..], expr));
         }
     }
 

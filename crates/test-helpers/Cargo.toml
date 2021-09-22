@@ -23,6 +23,7 @@ witx-bindgen-gen-wasmtime-py = { path = '../gen-wasmtime-py', optional = true }
 witx-bindgen-gen-js = { path = '../gen-js', optional = true }
 witx-bindgen-gen-c = { path = '../gen-c', optional = true }
 witx2 = { path = '../witx2', features = ['old-witx-compat'] }
+filetime = "0.2"
 
 [build-dependencies]
 witx-bindgen-gen-c = { path = '../gen-c' }

@@ -3,6 +3,7 @@ use proc_macro::{TokenStream, TokenTree};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 use witx_bindgen_gen_core::witx2::abi::Direction;
 use witx_bindgen_gen_core::Generator;
 
@@ -384,7 +385,7 @@ where
         drop(fs::remove_dir_all(&dst));
         fs::create_dir_all(&dst).unwrap();
         for (file, contents) in files.iter() {
-            fs::write(dst.join(file), contents).unwrap();
+            write_old_file(dst.join(file), contents);
         }
         sources.push((
             imports.pop().or(exports.pop()).unwrap(),
@@ -393,6 +394,21 @@ where
         ));
     }
     sources
+}
+
+// Files written in this proc-macro are loaded as source code in Rust. This is
+// done to assist with compiler error messages so there's an actual file to go
+// look at, but this causes issues with mtime-tracking in Cargo since it appears
+// to Cargo that a file was modified after the build started, which causes Cargo
+// to rebuild on subsequent builds. All our dependencies are tracked via the
+// inputs to the proc-macro itself, so there's no need for Cargo to track these
+// files, so we specifically set the mtime of the file to something older to
+// prevent triggering rebuilds.
+fn write_old_file(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) {
+    let path = path.as_ref();
+    fs::write(path, contents).unwrap();
+    let now = filetime::FileTime::from_system_time(SystemTime::now() - Duration::from_secs(600));
+    filetime::set_file_mtime(path, now).unwrap();
 }
 
 #[allow(dead_code)]
@@ -413,14 +429,11 @@ fn gen_rust<G: Generator>(
     )],
 ) -> TokenStream {
     let mut ret = proc_macro2::TokenStream::new();
-    let mut rustfmt = std::process::Command::new("rustfmt");
-    rustfmt.arg("--edition=2018");
     for (name, mk, extra) in tests {
         let tests = generate_tests(input.clone(), name, |_path| (mk(), dir));
         let mut sources = proc_macro2::TokenStream::new();
         for (iface, gen_dir, _input_witx) in tests.iter() {
             let test = gen_dir.join("bindings.rs");
-            rustfmt.arg(&test);
             let test = test.display().to_string();
             sources.extend(quote::quote!(include!(#test);));
             let extra = extra(iface);
@@ -428,15 +441,13 @@ fn gen_rust<G: Generator>(
                 continue;
             }
             let test = gen_dir.join("extra.rs");
-            rustfmt.arg(&test);
             let test = test.display().to_string();
             sources.extend(quote::quote!(include!(#test);));
-            fs::write(&test, extra.to_string()).unwrap();
+            write_old_file(&test, extra.to_string());
         }
         let name = quote::format_ident!("{}", name.replace("-", "_"));
         ret.extend(quote::quote!( mod #name { #sources } ));
     }
-    drop(rustfmt.output());
     ret.into()
 }
 

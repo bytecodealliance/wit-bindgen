@@ -38,23 +38,9 @@ async function run() {
 }
 
 function host(): imports.Host {
-  let scalar = 0;
   let sawClose = false;
   return {
-    roundtripU8(x) { return x; },
-    roundtripS8(x) { return x; },
-    roundtripU16(x) { return x; },
-    roundtripS16(x) { return x; },
-    roundtripU32(x) { return x; },
-    roundtripS32(x) { return x; },
-    roundtripU64(x) { return x; },
-    roundtripS64(x) { return x; },
-    roundtripF32(x) { return x; },
-    roundtripF64(x) { return x; },
-    roundtripChar(x) { return x; },
     multipleResults() { return [4, 5]; },
-    setScalar(x) { scalar = x; },
-    getScalar() { return scalar; },
     swapTuple([a, b]) { return [b, a]; },
     roundtripFlags1(x) { return x; },
     roundtripFlags2(x) { return x; },
@@ -330,54 +316,8 @@ function runTests(wasm: exports.Wasm) {
 }
 
 function testScalars(wasm: exports.Wasm) {
-  assert.strictEqual(wasm.roundtripU8(1), 1);
-  assert.strictEqual(wasm.roundtripU8((1 << 8) - 1), (1 << 8) - 1);
-
-  assert.strictEqual(wasm.roundtripS8(1), 1);
-  assert.strictEqual(wasm.roundtripS8((1 << 7) - 1), (1 << 7) - 1);
-  assert.strictEqual(wasm.roundtripS8(-(1 << 7)), -(1 << 7));
-
-  assert.strictEqual(wasm.roundtripU16(1), 1);
-  assert.strictEqual(wasm.roundtripU16((1 << 16) - 1), (1 << 16) - 1);
-
-  assert.strictEqual(wasm.roundtripS16(1), 1);
-  assert.strictEqual(wasm.roundtripS16((1 << 15) - 1), (1 << 15) - 1);
-  assert.strictEqual(wasm.roundtripS16(-(1 << 15)), -(1 << 15));
-
-  assert.strictEqual(wasm.roundtripU32(1), 1);
-  assert.strictEqual(wasm.roundtripU32(~0 >>> 0), ~0 >>> 0);
-
-  assert.strictEqual(wasm.roundtripS32(1), 1);
-  assert.strictEqual(wasm.roundtripS32(((1 << 31) - 1) >>> 0), ((1 << 31) - 1) >>> 0);
-  assert.strictEqual(wasm.roundtripS32(1 << 31), 1 << 31);
-
-  assert.strictEqual(wasm.roundtripU64(1n), 1n);
-  assert.strictEqual(wasm.roundtripU64((1n << 64n) - 1n), (1n << 64n) - 1n);
-
-  assert.strictEqual(wasm.roundtripS64(1n), 1n);
-  assert.strictEqual(wasm.roundtripS64((1n << 63n) - 1n), (1n << 63n) - 1n);
-  assert.strictEqual(wasm.roundtripS64(-(1n << 63n)), -(1n << 63n));
 
   assert.deepEqual(wasm.multipleResults(), [100, 200]);
-
-  assert.strictEqual(wasm.roundtripF32(1), 1);
-  assert.strictEqual(wasm.roundtripF32(Infinity), Infinity);
-  assert.strictEqual(wasm.roundtripF32(-Infinity), -Infinity);
-  assert.ok(Number.isNaN(wasm.roundtripF32(NaN)));
-
-  assert.strictEqual(wasm.roundtripF64(1), 1);
-  assert.strictEqual(wasm.roundtripF64(Infinity), Infinity);
-  assert.strictEqual(wasm.roundtripF64(-Infinity), -Infinity);
-  assert.ok(Number.isNaN(wasm.roundtripF64(NaN)));
-
-  assert.strictEqual(wasm.roundtripChar('a'), 'a');
-  assert.strictEqual(wasm.roundtripChar(' '), ' ');
-  assert.strictEqual(wasm.roundtripChar('🚩'), '🚩');
-
-  wasm.setScalar(2);
-  assert.strictEqual(wasm.getScalar(), 2);
-  wasm.setScalar(4);
-  assert.strictEqual(wasm.getScalar(), 4);
 }
 
 function testRecords(wasm: exports.Wasm) {

@@ -31,63 +31,10 @@ uint32_t wasm_allocated_bytes(void) {
   return ALLOCATED_BYTES;
 }
 
-uint8_t wasm_roundtrip_u8(uint8_t a) {
-  return a;
-}
-
-int8_t wasm_roundtrip_s8(int8_t a) {
-  return a;
-}
-
-uint16_t wasm_roundtrip_u16(uint16_t a) {
-  return a;
-}
-
-int16_t wasm_roundtrip_s16(int16_t a) {
-  return a;
-}
-
-uint32_t wasm_roundtrip_u32(uint32_t a) {
-  return a;
-}
-
-int32_t wasm_roundtrip_s32(int32_t a) {
-  return a;
-}
-
-uint64_t wasm_roundtrip_u64(uint64_t a) {
-  return a;
-}
-
-int64_t wasm_roundtrip_s64(int64_t a) {
-  return a;
-}
-
-float wasm_roundtrip_f32(float a) {
-  return a;
-}
-
-double wasm_roundtrip_f64(double a) {
-  return a;
-}
-
-uint32_t wasm_roundtrip_char(uint32_t a) {
-  return a;
-}
 
 void wasm_multiple_results(uint8_t *ret0, uint16_t *ret1) {
   *ret0 = 100;
   *ret1 = 200;
-}
-
-static uint32_t SCALAR = 0;
-
-void wasm_set_scalar(uint32_t a) {
-  SCALAR = a;
-}
-
-uint32_t wasm_get_scalar(void) {
-  return SCALAR;
 }
 
 void wasm_swap_tuple(wasm_tuple2_u8_u32_t *a, uint32_t *ret0, uint8_t *ret1) {
