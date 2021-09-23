@@ -563,7 +563,7 @@ pub fn runtime_tests_wasmtime(_input: TokenStream) -> TokenStream {
                     include!(#host_file);
 
                     #[test]
-                    fn test() -> Result<()> {
+                    fn test() -> anyhow::Result<()> {
                         run(#wasm)
                     }
                 }

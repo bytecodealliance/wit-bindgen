@@ -1353,22 +1353,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "test-spidermonkey"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "env_logger 0.8.4",
- "lazy_static",
- "log",
- "wasmparser 0.78.2",
- "wasmtime",
- "wasmtime-wasi",
- "witx-bindgen-gen-core",
- "witx-bindgen-gen-spidermonkey",
- "witx-bindgen-wasmtime",
-]
-
-[[package]]
 name = "textwrap"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

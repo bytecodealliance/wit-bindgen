@@ -7,7 +7,6 @@ edition = "2018"
 [workspace]
 members = [
   "crates/test-rust-wasm",
-  "crates/test-spidermonkey",
   "crates/witx-bindgen-demo",
   "crates/wasmlink-cli",
   "crates/test-modules",

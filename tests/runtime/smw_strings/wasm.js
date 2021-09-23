@@ -1,3 +1,5 @@
+import * as imports from "imports";
+
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
@@ -6,6 +8,19 @@ function assert(condition, message) {
 
 function assertEq(a, b) {
   assert(a == b, `assertEq failed: ${a} != ${b}`);
+}
+
+export function test_imports() {
+  const { f1, f2, f3 } = imports;
+  f1("Hello, WITX!");
+
+  const s = f2();
+  assertEq(s, "36 chambers");
+
+  const [a, b, c] = f3("", "🚀", "hello");
+  assertEq(a, "");
+  assertEq(b, "🚀");
+  assertEq(c, "hello");
 }
 
 export function f1(s) {
