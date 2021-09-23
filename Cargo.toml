@@ -33,4 +33,4 @@ witx-bindgen-gen-spidermonkey = { path = 'crates/gen-spidermonkey', features = [
 # Compiling `spidermonkey.wasm` takes way too long without this.
 [profile.dev.package.cranelift-codegen]
 debug-assertions = false
-opt = 2
+opt-level = 2

@@ -2,7 +2,6 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use witx_bindgen_gen_core::witx2::abi::Direction;
 use witx_bindgen_gen_core::Generator;
 
 test_helpers::runtime_tests!("ts");
@@ -17,21 +16,21 @@ fn execute(name: &str, wasm: &Path, ts: &Path, imports: &Path, exports: &Path) {
 
     println!("OUT_DIR = {:?}", dir);
     println!("Generating bindings...");
-    let iface = witx_bindgen_gen_core::witx2::Interface::parse_file(imports).unwrap();
-    let mut files = Default::default();
+    let imports = witx_bindgen_gen_core::witx2::Interface::parse_file(imports).unwrap();
+    let exports = witx_bindgen_gen_core::witx2::Interface::parse_file(exports).unwrap();
+    // TODO: should combine these calls into one
+    let mut import_files = Default::default();
+    let mut export_files = Default::default();
     witx_bindgen_gen_js::Opts::default()
         .build()
-        .generate(&iface, Direction::Import, &mut files);
-    for (file, contents) in files.iter() {
+        .generate_all(&[imports], &[], &mut import_files);
+    witx_bindgen_gen_js::Opts::default()
+        .build()
+        .generate_all(&[], &[exports], &mut export_files);
+    for (file, contents) in import_files.iter() {
         fs::write(dir.join("imports").join(file), contents).unwrap();
     }
-
-    let iface = witx_bindgen_gen_core::witx2::Interface::parse_file(exports).unwrap();
-    let mut files = Default::default();
-    witx_bindgen_gen_js::Opts::default()
-        .build()
-        .generate(&iface, Direction::Export, &mut files);
-    for (file, contents) in files.iter() {
+    for (file, contents) in export_files.iter() {
         fs::write(dir.join("exports").join(file), contents).unwrap();
     }
 

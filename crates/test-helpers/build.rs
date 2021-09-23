@@ -2,7 +2,6 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use witx2::abi::Direction;
 use witx_bindgen_gen_core::{witx2, Generator};
 
 fn main() {
@@ -59,19 +58,15 @@ fn main() {
             println!("cargo:rerun-if-changed={}", c_impl.display());
 
             let import = witx2::Interface::parse_file(&test_dir.join("imports.witx")).unwrap();
-            let mut import_files = Default::default();
-            witx_bindgen_gen_c::Opts::default().build().generate(
-                &import,
-                Direction::Import,
-                &mut import_files,
-            );
             let export = witx2::Interface::parse_file(&test_dir.join("exports.witx")).unwrap();
-            let mut export_files = Default::default();
-            witx_bindgen_gen_c::Opts::default().build().generate(
-                &export,
-                Direction::Export,
-                &mut export_files,
-            );
+            let mut files = Default::default();
+            // TODO: should combine this into one
+            witx_bindgen_gen_c::Opts::default()
+                .build()
+                .generate_all(&[import], &[], &mut files);
+            witx_bindgen_gen_c::Opts::default()
+                .build()
+                .generate_all(&[], &[export], &mut files);
 
             let out_dir = out_dir.join(format!(
                 "c-{}",
@@ -79,7 +74,7 @@ fn main() {
             ));
             drop(fs::remove_dir_all(&out_dir));
             fs::create_dir(&out_dir).unwrap();
-            for (file, contents) in import_files.iter().chain(export_files.iter()) {
+            for (file, contents) in files.iter() {
                 let dst = out_dir.join(file);
                 fs::write(dst, contents).unwrap();
             }
