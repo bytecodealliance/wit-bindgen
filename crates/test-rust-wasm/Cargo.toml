@@ -5,12 +5,44 @@ authors = ["Alex Crichton <alex@alexcrichton.com>"]
 edition = "2018"
 publish = false
 
-[lib]
-crate-type = ['cdylib']
-test = false
-
 [dependencies]
 witx-bindgen-rust = { path = "../rust-wasm", features = ['old-witx-compat'] }
 
 [features]
 unchecked = []
+
+[[bin]]
+name = "smoke"
+test = false
+
+[[bin]]
+name = "numbers"
+test = false
+
+[[bin]]
+name = "records"
+test = false
+
+[[bin]]
+name = "variants"
+test = false
+
+[[bin]]
+name = "lists"
+test = false
+
+[[bin]]
+name = "handles"
+test = false
+
+[[bin]]
+name = "buffers"
+test = false
+
+[[bin]]
+name = "flavorful"
+test = false
+
+[[bin]]
+name = "invalid"
+test = false

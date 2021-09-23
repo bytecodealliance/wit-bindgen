@@ -1,0 +1,31 @@
+test_imports: function()
+
+record list_in_record1 { a: string }
+record list_in_record2 { a: string }
+record list_in_record3 { a: string }
+record list_in_record4 { a: string }
+type list_in_alias = list_in_record4
+
+list_in_record1: function(a: list_in_record1)
+list_in_record2: function() -> list_in_record2
+list_in_record3: function(a: list_in_record3) -> list_in_record3
+list_in_record4: function(a: list_in_alias) -> list_in_alias
+
+type list_in_variant1_1 = option<string>
+type list_in_variant1_2 = expected<_, string>
+union list_in_variant1_3 { string, f32 }
+list_in_variant1: function(a: list_in_variant1_1, b: list_in_variant1_2, c: list_in_variant1_3)
+
+type list_in_variant2 = option<string>
+list_in_variant2: function() -> list_in_variant2
+
+type list_in_variant3 = option<string>
+list_in_variant3: function(a: list_in_variant3) -> list_in_variant3
+
+enum my_errno { success, a, b }
+errno_result: function() -> expected<_, my_errno>
+
+type list_typedef = string
+type list_typedef2 = list<u8>
+type list_typedef3 = list<string>
+list_typedefs: function(a: list_typedef, c: list_typedef3) -> (list_typedef2, list_typedef3)

@@ -677,7 +677,7 @@ impl Generator for Js {
                 "export function add{}ToImports(imports: any, obj: {0}{}): void;\n",
                 module.to_camel_case(),
                 if self.needs_get_export {
-                    ", get_export: (string) => WebAssembly.ExportValue"
+                    ", get_export: (name: string) => WebAssembly.ExportValue"
                 } else {
                     ""
                 },
@@ -723,7 +723,7 @@ impl Generator for Js {
                     iface.resources[*resource].name.to_camel_case(),
                 ));
                 self.src.ts(&format!(
-                    "drop{}?: (any) => void;\n",
+                    "drop{}?: (val: {0}) => void;\n",
                     iface.resources[*resource].name.to_camel_case()
                 ));
             }
@@ -785,7 +785,7 @@ impl Generator for Js {
                 // instantiation then there's no need to call this method, but
                 // if you're instantiating manually elsewhere then this can be
                 // used to prepare the import object for external instantiation.
-                addToImports(imports: any);
+                addToImports(imports: any): void;
             ");
             self.src.js("addToImports(imports) {\n");
             if self.exported_resources.len() > 0 {
@@ -2172,7 +2172,7 @@ impl Js {
             self.src.ts("
                 export class PushBuffer<T> {
                     length: number;
-                    push(T): boolean;
+                    push(val: T): boolean;
                 }
             ");
         }

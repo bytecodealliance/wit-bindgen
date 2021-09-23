@@ -1,0 +1,38 @@
+flags flag32 {
+  b0, b1, b2, b3, b4, b5, b6, b7,
+  b8, b9, b10, b11, b12, b13, b14, b15,
+  b16, b17, b18, b19, b20, b21, b22, b23,
+  b24, b25, b26, b27, b28, b29, b30, b31,
+}
+
+flags flag64 {
+  b0, b1, b2, b3, b4, b5, b6, b7,
+  b8, b9, b10, b11, b12, b13, b14, b15,
+  b16, b17, b18, b19, b20, b21, b22, b23,
+  b24, b25, b26, b27, b28, b29, b30, b31,
+  b32, b33, b34, b35, b36, b37, b38, b39,
+  b40, b41, b42, b43, b44, b45, b46, b47,
+  b48, b49, b50, b51, b52, b53, b54, b55,
+  b56, b57, b58, b59, b60, b61, b62, b63,
+}
+
+list_param: function(a: list<u8>)
+list_param2: function(a: string)
+list_param3: function(a: list<string>)
+list_param4: function(a: list<list<string>>)
+list_result: function() -> list<u8>
+list_result2: function() -> string
+list_result3: function() -> list<string>
+
+list_minmax8: function(a: list<u8>, b: list<s8>) -> (list<u8>, list<s8>)
+list_minmax16: function(a: list<u16>, b: list<s16>) -> (list<u16>, list<s16>)
+list_minmax32: function(a: list<u32>, b: list<s32>) -> (list<u32>, list<s32>)
+list_minmax64: function(a: list<u64>, b: list<s64>) -> (list<u64>, list<s64>)
+list_minmax_float: function(a: list<f32>, b: list<f64>) -> (list<f32>, list<f64>)
+
+string_roundtrip: function(a: string) -> string
+
+unaligned_roundtrip1: function(a: list<u16>, b: list<u32>, c: list<u64>, d: list<flag32>, e: list<flag64>)
+
+record unaligned_record { a: u32, b: u64 }
+unaligned_roundtrip2: function(a: list<unaligned_record>, b: list<f32>, c: list<f64>, d: list<string>, e: list<list<u8>>)

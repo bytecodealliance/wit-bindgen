@@ -1,0 +1,14 @@
+roundtrip_u8: function(a: u8) -> u8
+roundtrip_s8: function(a: s8) -> s8
+roundtrip_u16: function(a: u16) -> u16
+roundtrip_s16: function(a: s16) -> s16
+roundtrip_u32: function(a: u32) -> u32
+roundtrip_s32: function(a: s32) -> s32
+roundtrip_u64: function(a: u64) -> u64
+roundtrip_s64: function(a: s64) -> s64
+roundtrip_f32: function(a: f32) -> f32
+roundtrip_f64: function(a: f64) -> f64
+roundtrip_char: function(a: char) -> char
+
+set_scalar: function(a: u32)
+get_scalar: function() -> u32

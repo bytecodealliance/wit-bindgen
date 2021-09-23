@@ -13,10 +13,6 @@ witx-bindgen-wasmtime-impl = { path = "../wasmtime-impl", version = "0.1" }
 tracing-lib = { version = "0.1.26", optional = true, package = 'tracing' }
 async-trait = { version = "0.1.50", optional = true }
 
-[dev-dependencies]
-wasmtime-wasi = "0.30.0"
-build-test-wasm = { path = '../build-test-wasm' }
-
 [features]
 # Enables generated code to emit events via the `tracing` crate whenever wasm is
 # entered and when native functions are called. Note that tracin is currently
@@ -29,7 +25,3 @@ async = ['async-trait', 'witx-bindgen-wasmtime-impl/async']
 
 # Enables the ability to parse the old s-expression-based `*.witx` format.
 old-witx-compat = ['witx-bindgen-wasmtime-impl/old-witx-compat']
-
-[[test]]
-name = "run"
-harness = false

@@ -346,60 +346,61 @@ impl WasmtimePy {
                             return ret
                 ",
             );
-            if self.needs_push_buffer {
-                self.pyimport("typing", "TypeVar");
-                self.pyimport("typing", "Generic");
-                self.pyimport("typing", "Callable");
-                self.needs_t_typevar = true;
-                self.src.push_str(
-                    "
-                        class PushBuffer(Generic[T]):
-                            def __init__(self, ptr: int, len: int, size: int, write: Callable) -> None:
-                                self.ptr = ptr
-                                self.len = len
-                                self.size = size
-                                self.write = write
+        }
+        if self.needs_push_buffer {
+            self.pyimport("typing", "TypeVar");
+            self.pyimport("typing", "Generic");
+            self.pyimport("typing", "Callable");
+            self.needs_t_typevar = true;
+            self.src.push_str(
+                "
+                    class PushBuffer(Generic[T]):
+                        def __init__(self, ptr: int, len: int, size: int, write: Callable) -> None:
+                            self.ptr = ptr
+                            self.len = len
+                            self.size = size
+                            self.write = write
 
-                            def __len__(self) -> int:
-                                return self.len
+                        def __len__(self) -> int:
+                            return self.len
 
-                            def push(self, val: T) -> bool:
-                                if self.len == 0:
-                                    return False;
-                                self.len -= 1;
-                                self.write(val, self.ptr);
-                                self.ptr += self.size;
-                                return True
-                    ",
-                )
-            }
-            if self.needs_pull_buffer {
-                self.pyimport("typing", "TypeVar");
-                self.pyimport("typing", "Generic");
-                self.pyimport("typing", "Callable");
-                self.needs_t_typevar = true;
-                self.src.push_str(
-                    "
-                        class PullBuffer(Generic[T]):
-                            def __init__(self, ptr: int, len: int, size: int, read: Callable) -> None:
-                                self.len = len
-                                self.ptr = ptr
-                                self.size = size
-                                self.read = read
+                        def push(self, val: T) -> bool:
+                            if self.len == 0:
+                                return False;
+                            self.len -= 1;
+                            self.write(val, self.ptr);
+                            self.ptr += self.size;
+                            return True
+                ",
+            )
+        }
+        if self.needs_pull_buffer {
+            self.pyimport("typing", "TypeVar");
+            self.pyimport("typing", "Generic");
+            self.pyimport("typing", "Callable");
+            self.pyimport("typing", "Optional");
+            self.needs_t_typevar = true;
+            self.src.push_str(
+                "
+                    class PullBuffer(Generic[T]):
+                        def __init__(self, ptr: int, len: int, size: int, read: Callable) -> None:
+                            self.len = len
+                            self.ptr = ptr
+                            self.size = size
+                            self.read = read
 
-                            def __len__(self) -> int:
-                                return self.len
+                        def __len__(self) -> int:
+                            return self.len
 
-                            def pull(self) -> Optional[T]:
-                                if self.len == 0:
-                                    return None
-                                self.len -= 1
-                                ret: T = self.read(self.ptr)
-                                self.ptr += self.size
-                                return ret
-                    ",
-                )
-            }
+                        def pull(self) -> Optional[T]:
+                            if self.len == 0:
+                                return None
+                            self.len -= 1
+                            ret: T = self.read(self.ptr)
+                            self.ptr += self.size
+                            return ret
+                ",
+            )
         }
     }
 

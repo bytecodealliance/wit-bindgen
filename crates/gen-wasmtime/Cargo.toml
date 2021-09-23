@@ -15,12 +15,11 @@ heck = "0.3"
 structopt = { version = "0.3", default-features = false, optional = true }
 
 [dev-dependencies]
+anyhow = "1.0"
+test-helpers = { path = '../test-helpers', features = ['witx-bindgen-gen-wasmtime'] }
+wasmtime = "0.30.0"
+wasmtime-wasi = "0.30.0"
 witx-bindgen-wasmtime = { path = '../wasmtime', features = ['tracing', 'async'] }
-test-codegen = { path = '../test-codegen', features = ['witx-bindgen-gen-wasmtime'] }
-
-[[test]]
-name = "run"
-harness = false
 
 [features]
 old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']

@@ -1,0 +1,36 @@
+[package]
+name = "test-helpers"
+version = "0.1.0"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+edition = "2018"
+publish = false
+
+[lib]
+proc-macro = true
+doctest = false
+test = false
+
+[dependencies]
+backtrace = "0.3"
+heck = "0.3"
+ignore = "0.4"
+proc-macro2 = "1.0.27"
+quote = "1.0.9"
+witx-bindgen-gen-core = { path = '../gen-core' }
+witx-bindgen-gen-rust-wasm = { path = '../gen-rust-wasm', optional = true }
+witx-bindgen-gen-wasmtime = { path = '../gen-wasmtime', optional = true }
+witx-bindgen-gen-wasmtime-py = { path = '../gen-wasmtime-py', optional = true }
+witx-bindgen-gen-js = { path = '../gen-js', optional = true }
+witx-bindgen-gen-c = { path = '../gen-c', optional = true }
+witx2 = { path = '../witx2', features = ['old-witx-compat'] }
+filetime = "0.2"
+
+[build-dependencies]
+witx-bindgen-gen-c = { path = '../gen-c' }
+witx-bindgen-gen-core = { path = '../gen-core' }
+
+[features]
+default = ['wasm-rust', 'wasm-c']
+old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']
+wasm-rust = []
+wasm-c = []

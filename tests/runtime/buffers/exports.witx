@@ -1,0 +1,46 @@
+test_imports: function()
+
+variant buffer_in_variant {
+  a(push-buffer<u8>),
+  b(pull-buffer<u8>),
+  c(push-buffer<bool>),
+  d(pull-buffer<bool>),
+}
+
+record buffer_in_record {
+  a: push-buffer<u8>,
+  b: pull-buffer<u8>,
+  c: push-buffer<bool>,
+  d: pull-buffer<bool>,
+  e: buffer_in_variant,
+}
+
+type param_in_buffer_u8 = push-buffer<u8>
+type param_out_buffer_u8 = pull-buffer<u8>
+type param_in_buffer_bool = push-buffer<bool>
+type param_out_buffer_bool = pull-buffer<bool>
+
+
+/* TODO
+;; ===========================================
+;; buffers
+;; ===========================================
+(export "buffer_u8" (func (param $a (in-buffer u8)) (param $b (out-buffer u8)) (result $r u32)))
+(export "buffer_u32" (func (param $a (in-buffer u32)) (param $b (out-buffer u32)) (result $r u32)))
+(export "buffer_bool" (func (param $a (in-buffer bool)) (param $b (out-buffer bool)) (result $r u32)))
+(export "buffer_string" (func (param $a (in-buffer string)) (param $b (out-buffer string)) (result $r u32)))
+(export "buffer_list_bool" (func (param $a (in-buffer (list bool))) (param $b (out-buffer (list bool))) (result $r u32)))
+;; TODO: somehow get this working in wasmtime
+;;(export "buffer_buffer_bool" (func (param $a (in-buffer (in-buffer bool)))))
+(export "buffer_mutable1" (func (param $a (list (in-buffer bool)))))
+(export "buffer_mutable2" (func (param $a (list (out-buffer u8))) (result $r u32)))
+(export "buffer_mutable3" (func (param $a (list (out-buffer bool))) (result $r u32)))
+(export "buffer_in_record" (func (param $a $buffer_in_record)))
+(export "buffer_typedef" (func
+  (param $a $param_in_buffer_u8)
+  (param $b $param_out_buffer_u8)
+  (param $c $param_in_buffer_bool)
+  (param $d $param_out_buffer_bool)
+))
+*/
+

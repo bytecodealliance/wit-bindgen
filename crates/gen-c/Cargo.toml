@@ -14,7 +14,7 @@ heck = "0.3"
 structopt = { version = "0.3", default-features = false, optional = true }
 
 [dev-dependencies]
-test-codegen = { path = '../test-codegen', features = ['witx-bindgen-gen-c'] }
+test-helpers = { path = '../test-helpers', features = ['witx-bindgen-gen-c'] }
 
 [features]
 old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']
