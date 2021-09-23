@@ -44,6 +44,13 @@ pub struct Opts {
     /// intended for testing because it breaks the general form of the ABI.
     #[cfg_attr(feature = "structopt", structopt(skip))]
     pub symbol_namespace: String,
+
+    /// The alias to use for the `witx_bindgen_rust` crate.
+    ///
+    /// This allows code generators to alias the `witx_bindgen_rust` crate
+    /// to a re-export in another crate.
+    #[cfg_attr(feature = "structopt", structopt(skip))]
+    pub crate_alias: Option<String>,
 }
 
 #[derive(Default)]
@@ -206,6 +213,11 @@ impl Generator for RustWasm {
         self.trait_name = iface.name.to_camel_case();
         self.src
             .push_str(&format!("mod {} {{\n", iface.name.to_snake_case()));
+
+        if let Some(alias) = &self.opts.crate_alias {
+            self.src
+                .push_str(&format!("use {} as witx_bindgen_rust;\n", alias));
+        }
 
         for func in iface.functions.iter() {
             let sig = iface.wasm_signature(dir, func);
