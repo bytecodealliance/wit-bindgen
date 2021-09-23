@@ -7,6 +7,7 @@ edition = "2018"
 [workspace]
 members = [
   "crates/test-rust-wasm",
+  "crates/test-spidermonkey",
   "crates/witx-bindgen-demo",
   "crates/wasmlink-cli",
   "crates/test-modules",
@@ -27,3 +28,9 @@ witx-bindgen-gen-wasmtime-py = { path = 'crates/gen-wasmtime-py', features = ['s
 witx-bindgen-gen-js = { path = 'crates/gen-js', features = ['structopt'] }
 witx-bindgen-gen-c = { path = 'crates/gen-c', features = ['structopt'] }
 witx-bindgen-gen-markdown = { path = 'crates/gen-markdown', features = ['structopt'] }
+witx-bindgen-gen-spidermonkey = { path = 'crates/gen-spidermonkey', features = ['structopt'] }
+
+# Compiling `spidermonkey.wasm` takes way too long without this.
+[profile.dev.package.cranelift-codegen]
+debug-assertions = false
+opt = 2

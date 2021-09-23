@@ -374,7 +374,11 @@ where
         }
         let mut files = Default::default();
         let iface = witx2::Interface::parse_file(&test).unwrap();
-        gen.generate(&iface, dir, &mut files);
+        let (mut imports, mut exports) = match dir {
+            Direction::Import => (vec![iface], vec![]),
+            Direction::Export => (vec![], vec![iface]),
+        };
+        gen.generate_all(&imports, &exports, &mut files);
 
         let dst = out_dir.join(test.file_stem().unwrap());
         drop(fs::remove_dir_all(&dst));
@@ -382,7 +386,11 @@ where
         for (file, contents) in files.iter() {
             fs::write(dst.join(file), contents).unwrap();
         }
-        sources.push((iface, dst, cwd.join(test)));
+        sources.push((
+            imports.pop().or(exports.pop()).unwrap(),
+            dst,
+            cwd.join(test),
+        ));
     }
     sources
 }

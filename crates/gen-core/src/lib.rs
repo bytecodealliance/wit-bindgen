@@ -12,7 +12,11 @@ mod ns;
 pub use ns::Ns;
 
 pub trait Generator {
-    fn preprocess(&mut self, iface: &Interface, dir: Direction) {
+    fn preprocess_all(&mut self, imports: &[Interface], exports: &[Interface]) {
+        drop((imports, exports));
+    }
+
+    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
         drop((iface, dir));
     }
 
@@ -64,10 +68,16 @@ pub trait Generator {
     // fn const_(&mut self, iface: &Interface, name: &str, ty: &str, val: u64, docs: &Docs);
     fn import(&mut self, iface: &Interface, func: &Function);
     fn export(&mut self, iface: &Interface, func: &Function);
-    fn finish(&mut self, iface: &Interface, files: &mut Files);
 
-    fn generate(&mut self, iface: &Interface, dir: Direction, files: &mut Files) {
-        self.preprocess(iface, dir);
+    fn finish_one(&mut self, iface: &Interface, files: &mut Files);
+
+    fn finish_all(&mut self, files: &mut Files) {
+        drop(files);
+    }
+
+    fn generate_one(&mut self, iface: &Interface, dir: Direction, files: &mut Files) {
+        self.preprocess_one(iface, dir);
+
         for (id, ty) in iface.types.iter() {
             // assert!(ty.foreign_module.is_none()); // TODO
             let name = match &ty.name {
@@ -105,7 +115,21 @@ pub trait Generator {
             }
         }
 
-        self.finish(iface, files)
+        self.finish_one(iface, files)
+    }
+
+    fn generate_all(&mut self, imports: &[Interface], exports: &[Interface], files: &mut Files) {
+        self.preprocess_all(imports, exports);
+
+        for imp in imports {
+            self.generate_one(imp, Direction::Import, files);
+        }
+
+        for exp in exports {
+            self.generate_one(exp, Direction::Export, files);
+        }
+
+        self.finish_all(files);
     }
 }
 
@@ -401,7 +425,7 @@ impl From<Source> for String {
 
 #[cfg(test)]
 mod tests {
-    use super::Source;
+    use super::{Generator, Source};
 
     #[test]
     fn simple_append() {
@@ -447,5 +471,10 @@ mod tests {
         }",
         );
         assert_eq!(s.s, "function() {\n  x\n}");
+    }
+
+    #[test]
+    fn generator_is_object_safe() {
+        fn _assert(_: &dyn Generator) {}
     }
 }

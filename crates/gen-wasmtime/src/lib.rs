@@ -358,7 +358,7 @@ impl RustGenerator for Wasmtime {
 }
 
 impl Generator for Wasmtime {
-    fn preprocess(&mut self, iface: &Interface, dir: Direction) {
+    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
         self.types.analyze(iface);
         self.in_import = dir == Direction::Import;
         self.trait_name = iface.name.to_camel_case();
@@ -865,7 +865,7 @@ impl Generator for Wasmtime {
         );
     }
 
-    fn finish(&mut self, iface: &Interface, files: &mut Files) {
+    fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
         for (module, funcs) in sorted_iter(&self.imports) {
             let module_camel = module.to_camel_case();
             let is_async = !self.opts.async_.is_none();

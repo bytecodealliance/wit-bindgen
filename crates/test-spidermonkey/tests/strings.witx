@@ -1,0 +1,3 @@
+f1: function(s: string)
+f2: function() -> string
+f3: function(a: string, b:string, c: string) -> (string, string, string)

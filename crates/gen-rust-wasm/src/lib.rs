@@ -200,7 +200,7 @@ impl RustGenerator for RustWasm {
 }
 
 impl Generator for RustWasm {
-    fn preprocess(&mut self, iface: &Interface, dir: Direction) {
+    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
         self.in_import = dir == Direction::Import;
         self.types.analyze(iface);
         self.trait_name = iface.name.to_camel_case();
@@ -629,7 +629,7 @@ impl Generator for RustWasm {
         dst.push(mem::replace(&mut self.src, prev).into());
     }
 
-    fn finish(&mut self, iface: &Interface, files: &mut Files) {
+    fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
         let mut src = mem::take(&mut self.src);
 
         for (name, trait_) in self.traits.iter() {

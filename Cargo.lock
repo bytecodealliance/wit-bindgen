@@ -1347,6 +1347,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-spidermonkey"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger 0.8.4",
+ "lazy_static",
+ "log",
+ "wasmparser 0.78.2",
+ "wasmtime",
+ "wasmtime-wasi",
+ "witx-bindgen-gen-core",
+ "witx-bindgen-gen-spidermonkey",
+ "witx-bindgen-wasmtime",
+]
+
+[[package]]
 name = "textwrap"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1550,6 +1566,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm-encoder"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2caacc74c68c74f0008c4055cdf509c43e623775eaf73323bb818dcf666ed9bd"
+dependencies = [
+ "leb128",
+]
+
+[[package]]
 name = "wasmlink"
 version = "0.1.0"
 dependencies = [
@@ -1558,7 +1583,7 @@ dependencies = [
  "lazy_static",
  "petgraph",
  "pretty_assertions",
- "wasm-encoder",
+ "wasm-encoder 0.4.1",
  "wasmparser 0.78.2",
  "wasmprinter",
  "wat",
@@ -1938,6 +1963,7 @@ dependencies = [
  "witx-bindgen-gen-js",
  "witx-bindgen-gen-markdown",
  "witx-bindgen-gen-rust-wasm",
+ "witx-bindgen-gen-spidermonkey",
  "witx-bindgen-gen-wasmtime",
  "witx-bindgen-gen-wasmtime-py",
 ]
@@ -2013,6 +2039,16 @@ dependencies = [
  "witx-bindgen-gen-core",
  "witx-bindgen-gen-rust",
  "witx-bindgen-rust",
+]
+
+[[package]]
+name = "witx-bindgen-gen-spidermonkey"
+version = "0.1.0"
+dependencies = [
+ "lazy_static",
+ "structopt",
+ "wasm-encoder 0.6.0",
+ "witx-bindgen-gen-core",
 ]
 
 [[package]]

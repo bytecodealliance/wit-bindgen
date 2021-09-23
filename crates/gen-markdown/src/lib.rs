@@ -169,7 +169,7 @@ impl Markdown {
 }
 
 impl Generator for Markdown {
-    fn preprocess(&mut self, iface: &Interface, dir: Direction) {
+    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
         self.sizes.fill(dir, iface);
     }
 
@@ -349,7 +349,7 @@ impl Generator for Markdown {
         self.import(iface, func);
     }
 
-    fn finish(&mut self, _iface: &Interface, files: &mut Files) {
+    fn finish_one(&mut self, _iface: &Interface, files: &mut Files) {
         let parser = Parser::new(&self.src);
         let mut events = Vec::new();
         for event in parser {

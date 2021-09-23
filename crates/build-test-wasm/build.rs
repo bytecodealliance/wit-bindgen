@@ -2,7 +2,6 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use witx2::abi::Direction;
 use witx_bindgen_gen_core::{witx2, Generator};
 
 fn main() {
@@ -31,18 +30,14 @@ fn main() {
     if cfg!(feature = "c") {
         let host = witx2::Interface::parse_file("../../tests/host.witx").unwrap();
         let mut host_files = Default::default();
-        witx_bindgen_gen_c::Opts::default().build().generate(
-            &host,
-            Direction::Import,
-            &mut host_files,
-        );
+        witx_bindgen_gen_c::Opts::default()
+            .build()
+            .generate_all(&[host], &[], &mut host_files);
         let wasm = witx2::Interface::parse_file("../../tests/wasm.witx").unwrap();
         let mut wasm_files = Default::default();
-        witx_bindgen_gen_c::Opts::default().build().generate(
-            &wasm,
-            Direction::Export,
-            &mut wasm_files,
-        );
+        witx_bindgen_gen_c::Opts::default()
+            .build()
+            .generate_all(&[], &[wasm], &mut wasm_files);
         println!("cargo:rerun-if-changed=../../tests/host.witx");
         println!("cargo:rerun-if-changed=../../tests/wasm.witx");
         println!("cargo:rerun-if-changed=imports.c");
