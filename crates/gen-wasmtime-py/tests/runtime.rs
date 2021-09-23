@@ -7,9 +7,8 @@ use witx_bindgen_gen_core::Generator;
 test_helpers::runtime_tests!("py");
 
 fn execute(name: &str, wasm: &Path, py: &Path, imports: &Path, exports: &Path) {
-    let mut dir = PathBuf::from(env!("OUT_DIR"));
-    dir.push(name);
-    println!("{:?}", dir);
+    let out_dir = PathBuf::from(env!("OUT_DIR"));
+    let dir = out_dir.join(name);
     drop(fs::remove_dir_all(&dir));
     fs::create_dir_all(&dir).unwrap();
     fs::create_dir_all(&dir.join("imports")).unwrap();
@@ -43,7 +42,7 @@ fn execute(name: &str, wasm: &Path, py: &Path, imports: &Path, exports: &Path) {
             .env("MYPYPATH", &dir)
             .arg(py)
             .arg("--cache-dir")
-            .arg(dir.join("mypycache")),
+            .arg(out_dir.join("mypycache").join(name)),
     );
 
     exec(
