@@ -498,7 +498,8 @@ pub fn runtime_tests(input: TokenStream) -> TokenStream {
             if *name != name_str {
                 continue;
             }
-            let name = quote::format_ident!("{}_{}", name_str, lang);
+            let name_str = format!("{}_{}", name_str, lang);
+            let name = quote::format_ident!("{}", name_str);
             let host_file = entry.join(&host_file).to_str().unwrap().to_string();
             let import_witx = entry.join("imports.witx").to_str().unwrap().to_string();
             let export_witx = entry.join("exports.witx").to_str().unwrap().to_string();
