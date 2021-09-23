@@ -9,6 +9,7 @@ test_helpers::runtime_tests!("py");
 fn execute(name: &str, wasm: &Path, py: &Path, imports: &Path, exports: &Path) {
     let mut dir = PathBuf::from(env!("OUT_DIR"));
     dir.push(name);
+    println!("{:?}", dir);
     drop(fs::remove_dir_all(&dir));
     fs::create_dir_all(&dir).unwrap();
     fs::create_dir_all(&dir.join("imports")).unwrap();
@@ -37,7 +38,13 @@ fn execute(name: &str, wasm: &Path, py: &Path, imports: &Path, exports: &Path) {
     fs::write(dir.join("exports").join("__init__.py"), "").unwrap();
 
     println!("Running mypy...");
-    exec(Command::new("mypy").env("MYPYPATH", &dir).arg(py));
+    exec(
+        Command::new("mypy")
+            .env("MYPYPATH", &dir)
+            .arg(py)
+            .arg("--cache-dir")
+            .arg(dir.join("mypycache")),
+    );
 
     exec(
         Command::new("python3")
