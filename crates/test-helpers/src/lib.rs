@@ -324,6 +324,26 @@ pub fn codegen_py_export(input: TokenStream) -> TokenStream {
     })
 }
 
+#[proc_macro]
+#[cfg(feature = "witx-bindgen-gen-spidermonkey")]
+pub fn codegen_spidermonkey_import(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Import, "import", || {
+        let mut gen = witx_bindgen_gen_spidermonkey::SpiderMonkeyWasm::new("foo.js", "");
+        gen.import_spidermonkey(true);
+        gen
+    })
+}
+
+#[proc_macro]
+#[cfg(feature = "witx-bindgen-gen-spidermonkey")]
+pub fn codegen_spidermonkey_export(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Export, "export", || {
+        let mut gen = witx_bindgen_gen_spidermonkey::SpiderMonkeyWasm::new("foo.js", "");
+        gen.import_spidermonkey(true);
+        gen
+    })
+}
+
 fn generate_tests<G>(
     input: TokenStream,
     dir: &str,

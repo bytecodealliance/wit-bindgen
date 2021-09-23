@@ -4,8 +4,16 @@ version = "0.1.0"
 authors = ["Nick Fitzgerald <fitzgen@gmail.com>"]
 edition = "2018"
 
+[lib]
+test = false
+doctest = false
+
 [dependencies]
 lazy_static = "1.4.0"
 structopt = { version = "0.3", optional = true }
 wasm-encoder = "0.6.0"
 witx-bindgen-gen-core = { path = "../gen-core" }
+
+[dev-dependencies]
+test-helpers = { path = '../test-helpers', features = ['witx-bindgen-gen-spidermonkey'] }
+wasmparser = "0.80"

@@ -1328,6 +1328,7 @@ dependencies = [
  "witx-bindgen-gen-core",
  "witx-bindgen-gen-js",
  "witx-bindgen-gen-rust-wasm",
+ "witx-bindgen-gen-spidermonkey",
  "witx-bindgen-gen-wasmtime",
  "witx-bindgen-gen-wasmtime-py",
  "witx2",
@@ -2051,7 +2052,9 @@ version = "0.1.0"
 dependencies = [
  "lazy_static",
  "structopt",
+ "test-helpers",
  "wasm-encoder 0.6.0",
+ "wasmparser 0.80.1",
  "witx-bindgen-gen-core",
 ]
 
