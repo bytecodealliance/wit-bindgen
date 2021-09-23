@@ -20,10 +20,7 @@ class MyWasi {
 }
 
 export function addWasiToImports(importObj) {
-  const wasi = new WASI({
-    args: process.argv,
-    env: process.env,
-  });
+  const wasi = new WASI();
   importObj.wasi_snapshot_preview1 = wasi.wasiImport;
   return new MyWasi(wasi);
 }
