@@ -121,6 +121,46 @@ fn main() {
         }
     }
 
+    if cfg!(feature = "wasm-spidermonkey") {
+        for test_dir in fs::read_dir("../../tests/runtime").unwrap() {
+            let test_dir = test_dir.unwrap().path();
+            let js_impl = test_dir.join("wasm.js");
+            if !js_impl.exists() {
+                continue;
+            }
+            let imports = test_dir.join("imports.witx");
+            let exports = test_dir.join("exports.witx");
+            println!("cargo:rerun-if-changed={}", imports.display());
+            println!("cargo:rerun-if-changed={}", exports.display());
+            println!("cargo:rerun-if-changed={}", js_impl.display());
+
+            let import = witx2::Interface::parse_file(&test_dir.join("imports.witx")).unwrap();
+            let export = witx2::Interface::parse_file(&test_dir.join("exports.witx")).unwrap();
+            let mut files = Default::default();
+            let js = fs::read_to_string(&js_impl).unwrap();
+            let mut gen = witx_bindgen_gen_spidermonkey::SpiderMonkeyWasm::new("wasm.js", &js);
+            gen.import_spidermonkey(true);
+            gen.generate_all(&[import], &[export], &mut files);
+
+            let out_dir = out_dir.join(format!(
+                "js-{}",
+                test_dir.file_name().unwrap().to_str().unwrap()
+            ));
+            drop(fs::remove_dir_all(&out_dir));
+            fs::create_dir(&out_dir).unwrap();
+            for (file, contents) in files.iter() {
+                let dst = out_dir.join(file);
+                fs::write(dst, contents).unwrap();
+            }
+
+            wasms.push((
+                "spidermonkey",
+                test_dir.file_stem().unwrap().to_str().unwrap().to_string(),
+                out_dir.join("wasm.wasm").to_str().unwrap().to_string(),
+            ));
+        }
+    }
+
     let src = format!("const WASMS: &[(&str, &str, &str)] = &{:?};", wasms);
     std::fs::write(out_dir.join("wasms.rs"), src).unwrap();
 }

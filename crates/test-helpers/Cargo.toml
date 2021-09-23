@@ -28,10 +28,12 @@ filetime = "0.2"
 
 [build-dependencies]
 witx-bindgen-gen-c = { path = '../gen-c' }
+witx-bindgen-gen-spidermonkey = { path = '../gen-spidermonkey' }
 witx-bindgen-gen-core = { path = '../gen-core' }
 
 [features]
-default = ['wasm-rust', 'wasm-c']
+default = ['wasm-rust', 'wasm-c', 'wasm-spidermonkey']
 old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']
 wasm-rust = []
 wasm-c = []
+wasm-spidermonkey = []
