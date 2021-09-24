@@ -1,6 +1,6 @@
 type files = list<tuple<string, string>>
 
-variant async {
+variant wasmtime_async {
   all,
   none,
   only(list<string>),
@@ -23,6 +23,6 @@ resource config {
 
   set_rust_unchecked: function(unchecked: bool)
   set_wasmtime_tracing: function(unchecked: bool)
-  set_wasmtime_async: function(async: async)
+  set_wasmtime_async: function(val: wasmtime_async)
   set_wasmtime_custom_error: function(custom: bool)
 }
