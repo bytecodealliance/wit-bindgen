@@ -121,6 +121,13 @@ JSObject* module_resolve_hook(JSContext *cx,
         }
     }
 
+
+    JS::UniqueChars utf8 = JS_EncodeStringToUTF8(cx, specifier);
+    if (!utf8) {
+        JS_ReportErrorASCII(cx, "failed to find module import");
+        return nullptr;
+    }
+    JS_ReportErrorASCII(cx, "failed to find module import: `%s`", utf8.get());
     return nullptr;
 }
 
