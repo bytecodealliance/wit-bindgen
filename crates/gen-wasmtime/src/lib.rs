@@ -990,20 +990,21 @@ impl Generator for Wasmtime {
                     self.src.push_str(&format!(
                         "linker.func_wrap(
                             \"canonical_abi\",
-                            \"resource_drop_{}\",
+                            \"resource_drop_{name}\",
                             move |mut caller: wasmtime::Caller<'_, T>, handle: u32| {{
                                 let (host, tables) = get(caller.data_mut());
                                 let handle = tables
-                                    .{0}_table
+                                    .{snake}_table
                                     .remove(handle)
                                     .map_err(|e| {{
                                         wasmtime::Trap::new(format!(\"failed to remove handle: {{}}\", e))
                                     }})?;
-                                host.drop_{0}(handle);
+                                host.drop_{snake}(handle);
                                 Ok(())
                             }}
                         )?;\n",
-                        handle.to_snake_case(),
+                        name = handle,
+                        snake = handle.to_snake_case(),
                     ));
                 }
             }

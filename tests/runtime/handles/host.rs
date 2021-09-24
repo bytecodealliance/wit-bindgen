@@ -21,6 +21,7 @@ impl Imports for MyImports {
     type HostState = SuchState;
     type HostState2 = ();
     type Markdown2 = Markdown;
+    type OddName = ();
 
     fn host_state_create(&mut self) -> SuchState {
         SuchState(100)
@@ -81,6 +82,9 @@ impl Imports for MyImports {
     fn markdown2_render(&mut self, md: &Markdown) -> String {
         md.buf.borrow().replace("red", "green")
     }
+
+    fn odd_name_create(&mut self) {}
+    fn odd_name_frob_the_odd(&mut self, _: &()) {}
 }
 
 witx_bindgen_wasmtime::export!("./tests/runtime/handles/exports.witx");

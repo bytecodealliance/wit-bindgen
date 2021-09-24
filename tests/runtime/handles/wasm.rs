@@ -50,6 +50,9 @@ impl exports::Exports for Exports {
         let md = Markdown2::create();
         md.append("red is the best color");
         assert_eq!(md.render(), "green is the best color");
+
+        let odd = OddName::create();
+        odd.frob_the_odd();
     }
 
     fn wasm_state_create() -> Handle<WasmState> {

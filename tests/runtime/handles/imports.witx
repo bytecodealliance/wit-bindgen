@@ -49,3 +49,7 @@ resource markdown2 {
   render: function() -> string
 }
 
+resource "Odd name" {
+  static create: function() -> "Odd name"
+  "frob the odd": function()
+}
