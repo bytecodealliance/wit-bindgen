@@ -46,6 +46,13 @@ async function run() {
 
       return new Markdown();
     },
+
+    oddNameCreate() {
+      class OddName {
+        frobTheOdd() {}
+      }
+      return new OddName();
+    }
   };
   let instance: WebAssembly.Instance;
   addImportsToImports(importObj, imports, name => instance.exports[name]);

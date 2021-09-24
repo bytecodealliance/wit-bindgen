@@ -40,6 +40,12 @@ class Markdown(i.Markdown2):
     def render(self) -> str:
         return self.buf.replace('red', 'green')
 
+
+class OddName(i.OddName):
+    def frob_the_odd(self) -> None:
+        pass
+
+
 class MyImports:
     def host_state_create(self) -> i.HostState:
         return HostState(100)
@@ -95,6 +101,9 @@ class MyImports:
 
     def markdown2_create(self) -> i.Markdown2:
         return Markdown()
+
+    def odd_name_create(self) -> i.OddName:
+        return OddName()
 
 def run(wasm_file: str) -> None:
     store = wasmtime.Store()
