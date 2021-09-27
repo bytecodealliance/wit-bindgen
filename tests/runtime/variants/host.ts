@@ -1,6 +1,6 @@
-import { addImportsToImports, Imports, MyErrno } from "./imports/bindings.js";
-import { Exports } from "./exports/bindings.js";
-import * as exports from "./exports/bindings.js";
+import { addImportsToImports, Imports, MyErrno } from "./imports.js";
+import { Exports } from "./exports.js";
+import * as exports from "./exports.js";
 import { getWasm, addWasiToImports } from "./helpers.js";
 // @ts-ignore
 import * as assert from 'assert';

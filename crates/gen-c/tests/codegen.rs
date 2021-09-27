@@ -6,12 +6,18 @@ mod imports {
     test_helpers::codegen_c_import!(
         // ...
         "*.witx"
+
+        // TODO: implement async support
+        "!async_functions.witx"
     );
 }
 
 mod exports {
     test_helpers::codegen_c_export!(
         "*.witx"
+
+        // TODO: implement async support
+        "!async_functions.witx"
 
         // These use preview1 ABI things which are only supported for imports
         "!wasi_snapshot_preview1.witx"

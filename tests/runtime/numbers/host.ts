@@ -1,5 +1,5 @@
-import { addImportsToImports, Imports } from "./imports/bindings.js";
-import { Exports } from "./exports/bindings.js";
+import { addImportsToImports, Imports } from "./imports.js";
+import { Exports } from "./exports.js";
 import { getWasm, addWasiToImports } from "./helpers.js";
 
 function assertEq(x: any, y: any) {

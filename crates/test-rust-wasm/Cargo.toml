@@ -6,6 +6,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
+futures-util = { version = "0.3.17", default-features = true }
 witx-bindgen-rust = { path = "../rust-wasm", features = ['old-witx-compat'] }
 
 [features]
@@ -45,4 +46,8 @@ test = false
 
 [[bin]]
 name = "invalid"
+test = false
+
+[[bin]]
+name = "async_functions"
 test = false

@@ -1,0 +1,64 @@
+{
+  "resources": [
+    {
+      "name": "y"
+    }
+  ],
+  "types": [
+    {
+      "idx": 0,
+      "primitive": "handle-0"
+    }
+  ],
+  "functions": [
+    {
+      "name": "a",
+      "async": true,
+      "params": [],
+      "results": []
+    },
+    {
+      "name": "b",
+      "async": true,
+      "params": [
+        "s32"
+      ],
+      "results": []
+    },
+    {
+      "name": "c",
+      "async": true,
+      "params": [],
+      "results": [
+        "u32"
+      ]
+    },
+    {
+      "name": "y::a",
+      "async": true,
+      "params": [
+        "handle-0"
+      ],
+      "results": []
+    },
+    {
+      "name": "y::b",
+      "async": true,
+      "params": [
+        "handle-0",
+        "s32"
+      ],
+      "results": []
+    },
+    {
+      "name": "y::c",
+      "async": true,
+      "params": [
+        "handle-0"
+      ],
+      "results": [
+        "u32"
+      ]
+    }
+  ]
+}

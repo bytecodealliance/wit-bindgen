@@ -1,5 +1,5 @@
-import { Demo, Lang, Config } from './demo/bindings.js';
-import * as browser from './browser/bindings.js';
+import { Demo, Lang, Config } from './demo.js';
+import * as browser from './browser.js';
 
 class Editor {
   input: HTMLTextAreaElement;

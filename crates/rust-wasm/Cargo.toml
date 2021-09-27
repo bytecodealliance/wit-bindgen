@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 witx-bindgen-rust-impl = { path = "../rust-wasm-impl" }
+async-trait = "0.1.51"
 
 [features]
 old-witx-compat = ['witx-bindgen-rust-impl/old-witx-compat']

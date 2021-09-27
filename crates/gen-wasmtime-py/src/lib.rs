@@ -831,6 +831,7 @@ impl Generator for WasmtimePy {
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
+        assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
 
         self.print_sig(iface, func);
@@ -944,6 +945,7 @@ impl Generator for WasmtimePy {
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
+        assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
 
         let params = self.print_sig(iface, func);

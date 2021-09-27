@@ -1,4 +1,4 @@
-import { Exports } from "./exports/bindings.js";
+import { Exports } from "./exports.js";
 import { getWasm } from "./helpers.js";
 
 async function run() {

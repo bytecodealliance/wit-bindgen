@@ -132,6 +132,7 @@ pub struct Value<'a> {
 
 enum ValueKind<'a> {
     Function {
+        is_async: bool,
         abi: crate::abi::Abi,
         params: Vec<(Id<'a>, Type<'a>)>,
         results: Vec<(Id<'a>, Type<'a>)>,
@@ -219,6 +220,7 @@ impl<'a> Ast<'a> {
                     span: span(f.item.export_loc),
                 },
                 kind: ValueKind::Function {
+                    is_async: false,
                     abi: match f.item.abi {
                         witx::Abi::Next => Abi::Canonical,
                         witx::Abi::Preview1 => Abi::Preview1,
@@ -654,6 +656,16 @@ impl<'a> Value<'a> {
         tokens.expect(Token::Colon)?;
 
         let kind = if tokens.eat(Token::Function)? {
+            parse_func(tokens, false)?
+        } else if tokens.eat(Token::Async)? {
+            tokens.expect(Token::Function)?;
+            parse_func(tokens, true)?
+        } else {
+            ValueKind::Global(Type::parse(tokens)?)
+        };
+        return Ok(Value { docs, name, kind });
+
+        fn parse_func<'a>(tokens: &mut Tokenizer<'a>, is_async: bool) -> Result<ValueKind<'a>> {
             let params = parse_list(
                 tokens,
                 Token::LeftParen,
@@ -679,15 +691,13 @@ impl<'a> Value<'a> {
                     results.push(parse_return_val(tokens)?);
                 }
             }
-            ValueKind::Function {
+            Ok(ValueKind::Function {
+                is_async,
                 abi: Abi::Canonical,
                 params,
                 results,
-            }
-        } else {
-            ValueKind::Global(Type::parse(tokens)?)
-        };
-        return Ok(Value { docs, name, kind });
+            })
+        }
 
         fn parse_return_val<'a>(tokens: &mut Tokenizer<'a>) -> Result<(Id<'a>, Type<'a>)> {
             let mut other = tokens.clone();

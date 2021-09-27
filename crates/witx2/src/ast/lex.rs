@@ -77,6 +77,7 @@ pub enum Token {
     Static,
     Interface,
     Tuple,
+    Async,
 
     Id,
     StrLit,
@@ -246,6 +247,7 @@ impl<'a> Tokenizer<'a> {
                     "static" => Static,
                     "interface" => Interface,
                     "tuple" => Tuple,
+                    "async" => Async,
                     _ => Id,
                 }
             }
@@ -430,6 +432,7 @@ impl Token {
             Static => "keyword `static`",
             Interface => "keyword `interface`",
             Tuple => "keyword `tuple`",
+            Async => "keyword `async`",
         }
     }
 }
