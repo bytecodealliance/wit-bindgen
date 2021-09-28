@@ -2176,6 +2176,7 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
             }
 
             witx2::abi::Instruction::ReturnAsyncExport { .. } => todo!(),
+            witx2::abi::Instruction::CompletionCallback { .. } => todo!(),
             witx2::abi::Instruction::ReturnAsyncImport { .. } => todo!(),
 
             witx2::abi::Instruction::Witx { instr: _ } => {

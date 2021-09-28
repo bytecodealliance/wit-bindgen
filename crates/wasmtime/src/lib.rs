@@ -7,8 +7,11 @@ pub use tracing_lib as tracing;
 #[doc(hidden)]
 pub use {anyhow, bitflags, wasmtime};
 
+pub use futures::{Async, HostFuture};
+
 mod error;
 pub mod exports;
+mod futures;
 pub mod imports;
 mod le;
 mod region;
@@ -32,6 +35,7 @@ unsafe impl Sync for RawMemory {}
 
 #[doc(hidden)]
 pub mod rt {
+    pub use crate::futures::Async;
     use crate::slab::Slab;
     use crate::{Endian, Le};
     use std::mem;
@@ -256,5 +260,27 @@ pub mod rt {
             let resource = self.slab.remove(idx.0).unwrap();
             Some(resource.wasm)
         }
+    }
+
+    use std::future::Future;
+    use std::pin::Pin;
+
+    /// Helper function to assist with type inference for async bits
+    pub fn pin_result_future<'a>(
+        future: impl Future<Output = Result<(), Trap>> + Send + 'a,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Trap>> + Send + 'a>> {
+        Box::pin(future)
+    }
+
+    /// Helper function to assist with type inference for async bits
+    pub fn box_future_callback<T>(
+        callback: impl for<'a> FnOnce(
+                &'a mut StoreContextMut<'_, T>,
+            )
+                -> Pin<Box<dyn Future<Output = Result<(), Trap>> + Send + 'a>>
+            + Send
+            + 'static,
+    ) -> crate::futures::ImportResult<T> {
+        Box::new(callback)
     }
 }

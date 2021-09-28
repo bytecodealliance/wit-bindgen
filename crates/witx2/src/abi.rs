@@ -662,6 +662,20 @@ def_instruction! {
         /// the `async_export_done` intrinsic in the `canonical_abi` module.
         ReturnAsyncExport { func: &'a Function } : [2] => [0],
 
+        /// Validates a completion callback index as provided by wasm.
+        ///
+        /// This takes an `i32` argument which was provided by WebAssembly as an
+        /// index into the function table. This index should be a valid index
+        /// pointing to a valid function. The function should take the `params`
+        /// specified plus a leading `i32` parameter. The function should return
+        /// no values.
+        ///
+        /// This instruction should push an expression representing the
+        /// function, and the expression is later used as the first argument to
+        /// `ReturnAsyncImport` to actually get invoked in a later async
+        /// context.
+        CompletionCallback { func: &'a Function, params: &'a [WasmType] } : [1] => [1],
+
         /// "Returns" from an asynchronous import.
         ///
         /// This is only used for host modules at this time, and
@@ -1373,6 +1387,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&Instruction::GetArg { nth });
                 }
 
+                // If we're invoking a completion callback then allow codegen to
+                // front-load validation of the function pointer argument to
+                // ensure we can continue successfully once we've committed to
+                // translating all the arguments and calling the host function.
+                let callback = if func.is_async && self.dir == Direction::Import {
+                    self.emit(&Instruction::GetArg {
+                        nth: sig.params.len() - 2,
+                    });
+                    let params = sig.retptr.as_ref().unwrap();
+                    self.emit(&Instruction::CompletionCallback { func, params });
+                    Some(self.stack.pop().unwrap())
+                } else {
+                    None
+                };
+
                 // Once everything is on the stack we can lift all arguments
                 // one-by-one into their interface-types equivalent.
                 self.lift_all(&func.params);
@@ -1393,10 +1422,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         Direction::Import => {
                             assert_eq!(self.stack.len(), tys.len());
                             let operands = mem::take(&mut self.stack);
-                            // function index to call
-                            self.emit(&Instruction::GetArg {
-                                nth: sig.params.len() - 2,
-                            });
+                            // wasm function to call
+                            self.stack.extend(callback);
                             // environment for the function
                             self.emit(&Instruction::GetArg {
                                 nth: sig.params.len() - 1,

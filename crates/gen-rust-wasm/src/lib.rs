@@ -1461,6 +1461,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     operands[0], operands[1]
                 ));
             }
+            Instruction::CompletionCallback { .. } => unreachable!(),
             Instruction::ReturnAsyncImport { .. } => unreachable!(),
 
             Instruction::I32Load { offset } => {

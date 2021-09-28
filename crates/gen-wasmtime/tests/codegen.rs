@@ -9,9 +9,6 @@ mod exports {
     test_helpers::codegen_wasmtime_export!(
         "*.witx"
 
-        // TODO: implement async support
-        "!async_functions.witx"
-
         // If you want to exclude a specific test you can include it here with
         // gitignore glob syntax:
         //
@@ -27,9 +24,6 @@ mod exports {
 mod imports {
     test_helpers::codegen_wasmtime_import!(
         "*.witx"
-
-        // TODO: implement async support
-        "!async_functions.witx"
 
         // TODO: these use push/pull buffer which isn't implemented in the test
         // generator just yet

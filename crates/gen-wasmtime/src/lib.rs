@@ -46,7 +46,7 @@ enum NeededFunction {
 }
 
 struct Import {
-    is_async: bool,
+    wrap_async: bool,
     name: String,
     trait_signature: String,
     num_wasm_params: usize,
@@ -84,6 +84,13 @@ pub struct Opts {
     pub custom_error: bool,
 }
 
+// TODO: with the introduction of `async function()` to witx this is no longer a
+// good name. The purpose of this configuration is "should the wasmtime function
+// be invoked with `call_async`" which is sort of a different form of async.
+// Async with wasmtime involves stack switching and with fuel enables
+// preemption, but async witx functions don't actually use async host functions
+// as-defined-by-wasmtime. All that to say that this probably needs a better
+// name.
 #[derive(Debug, Clone)]
 pub enum Async {
     None,
@@ -366,10 +373,11 @@ impl Generator for Wasmtime {
         self.types.analyze(iface);
         self.in_import = dir == Direction::Import;
         self.trait_name = iface.name.to_camel_case();
+        self.src.push_str("#[allow(unused_imports)]\n");
         self.src
             .push_str(&format!("pub mod {} {{\n", iface.name.to_snake_case()));
         self.src
-            .push_str("#[allow(unused_imports)]\nuse witx_bindgen_wasmtime::{wasmtime, anyhow};\n");
+            .push_str("use witx_bindgen_wasmtime::{wasmtime, anyhow};\n");
         self.sizes.fill(dir, iface);
     }
 
@@ -573,7 +581,6 @@ impl Generator for Wasmtime {
     // }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
-        assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
 
         let is_dtor = self.types.is_preview1_dtor_func(func);
@@ -621,7 +628,7 @@ impl Generator for Wasmtime {
 
         let mut fnsig = FnSig::default();
         fnsig.private = true;
-        fnsig.async_ = self.opts.async_.includes(&func.name);
+        fnsig.async_ = self.opts.async_.includes(&func.name) && !func.is_async;
         fnsig.self_arg = Some(self_arg);
         self.print_docs_and_params(
             iface,
@@ -635,26 +642,30 @@ impl Generator for Wasmtime {
         );
         // The Rust return type may differ from the wasm return type based on
         // the `custom_error` configuration of this code generator.
+        self.push_str(" -> ");
+        if func.is_async {
+            self.push_str("std::pin::Pin<Box<dyn std::future::Future<Output = ");
+        }
         match self.classify_fn_ret(iface, func) {
             FunctionRet::Normal => {
-                if func.results.len() > 0 {
-                    self.push_str(" -> ");
-                    self.print_results(iface, func);
-                }
+                self.print_results(iface, func);
             }
             FunctionRet::CustomToTrap => {
-                self.push_str(" -> Result<");
+                self.push_str("Result<");
                 self.print_results(iface, func);
                 self.push_str(", Self::Error>");
             }
             FunctionRet::CustomToError { ok, .. } => {
-                self.push_str(" -> Result<");
+                self.push_str("Result<");
                 match ok {
                     Some(ty) => self.print_ty(iface, &ty, TypeMode::Owned),
                     None => self.push_str("()"),
                 }
                 self.push_str(", Self::Error>");
             }
+        }
+        if func.is_async {
+            self.push_str("> + Send>>");
         }
         self.in_trait = false;
         let trait_signature = mem::take(&mut self.src).into();
@@ -679,7 +690,9 @@ impl Generator for Wasmtime {
         //
         // If none of that happens, then this is fine to be sync because
         // everything is sync.
-        let is_async = if async_intrinsic_called || self.opts.async_.includes(&func.name) {
+        let finish_async_block = if !func.is_async
+            && (async_intrinsic_called || self.opts.async_.includes(&func.name))
+        {
             self.src.push_str("Box::new(async move {\n");
             true
         } else {
@@ -716,7 +729,7 @@ impl Generator for Wasmtime {
 
         if needs_memory || needs_borrow_checker {
             self.src
-                .push_str("let memory = &get_memory(&mut caller, \"memory\")?;\n");
+                .push_str("let memory = get_memory(&mut caller, \"memory\")?;\n");
             self.needs_get_memory = true;
         }
 
@@ -730,13 +743,26 @@ impl Generator for Wasmtime {
             self.src.push_str("let host = get(caller.data_mut());\n");
         }
 
+        let mut rebind = String::new();
         if self.all_needed_handles.len() > 0 {
-            self.src.push_str("let (host, _tables) = host;\n");
+            rebind.push_str("_tables, ");
+        }
+        if iface.functions.iter().any(|f| f.is_async) {
+            rebind.push_str("_async_cx, ");
+        }
+        if rebind != "" {
+            self.src
+                .push_str(&format!("let (host, {}) = host;\n", rebind));
         }
 
         self.src.push_str(&String::from(src));
 
-        if is_async {
+        if func.is_async {
+            self.src.push_str("});\n"); // finish `register_async_import`
+            self.src.push_str("Ok(())\n")
+        }
+
+        if finish_async_block {
             self.src.push_str("})\n");
         }
         self.src.push_str("}");
@@ -746,7 +772,7 @@ impl Generator for Wasmtime {
             .entry(iface.name.to_string())
             .or_insert(Vec::new())
             .push(Import {
-                is_async,
+                wrap_async: finish_async_block,
                 num_wasm_params: sig.params.len(),
                 name: func.name.to_string(),
                 closure,
@@ -755,13 +781,12 @@ impl Generator for Wasmtime {
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
-        assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
 
         // If anything is asynchronous on exports then everything must be
         // asynchronous, Wasmtime can't intermix async and sync calls because
         // it's unknown whether the wasm module will make an async host call.
-        let is_async = !self.opts.async_.is_none();
+        let is_async = !self.opts.async_.is_none() || func.is_async;
         let mut sig = FnSig::default();
         sig.async_ = is_async;
         sig.self_arg = Some("&self, mut caller: impl wasmtime::AsContextMut<Data = T>".to_string());
@@ -769,6 +794,7 @@ impl Generator for Wasmtime {
         self.push_str("-> Result<");
         self.print_results(iface, func);
         self.push_str(", wasmtime::Trap> {\n");
+        self.push_str("let mut caller = caller.as_context_mut();\n");
 
         let is_dtor = self.types.is_preview1_dtor_func(func);
         if is_dtor {
@@ -872,6 +898,7 @@ impl Generator for Wasmtime {
     }
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
+        let any_async_func = iface.functions.iter().any(|f| f.is_async);
         for (module, funcs) in sorted_iter(&self.imports) {
             let module_camel = module.to_camel_case();
             let is_async = !self.opts.async_.is_none();
@@ -897,7 +924,11 @@ impl Generator for Wasmtime {
                 }
             }
             if self.opts.custom_error {
-                self.src.push_str("type Error;\n");
+                self.src.push_str("type Error");
+                if any_async_func {
+                    self.src.push_str(": Send + 'static");
+                }
+                self.src.push_str(";\n");
                 if self.needs_custom_error_to_trap {
                     self.src.push_str(
                         "fn error_to_trap(&mut self, err: Self::Error) -> wasmtime::Trap;\n",
@@ -946,29 +977,38 @@ impl Generator for Wasmtime {
                 self.src.push_str("> Default for ");
                 self.src.push_str(&module_camel);
                 self.src.push_str("Tables<T> {\n");
-                self.src.push_str("fn default() -> Self { Self {");
+                self.src.push_str("fn default() -> Self {\nSelf {\n");
                 for handle in self.all_needed_handles.iter() {
                     self.src.push_str(&handle.to_snake_case());
-                    self.src.push_str("_table: Default::default(),");
+                    self.src.push_str("_table: Default::default(),\n");
                 }
-                self.src.push_str("}}}");
+                self.src.push_str("}\n}\n}\n");
             }
         }
 
         for (module, funcs) in mem::take(&mut self.imports) {
             let module_camel = module.to_camel_case();
             let is_async = !self.opts.async_.is_none();
+            self.push_str("#[allow(path_statements)]\n");
             self.push_str("\npub fn add_to_linker<T, U>(linker: &mut wasmtime::Linker<T>");
             self.push_str(", get: impl Fn(&mut T) -> ");
-            if self.all_needed_handles.is_empty() {
-                self.push_str("&mut U");
-            } else {
-                self.push_str(&format!("(&mut U, &mut {}Tables<U>)", module_camel));
+
+            let mut get_rets = vec!["&mut U".to_string()];
+            if self.all_needed_handles.len() > 0 {
+                get_rets.push(format!("&mut {}Tables<U>", module_camel));
             }
-            self.push_str("+ Send + Sync + Copy + 'static) -> anyhow::Result<()> \n");
+            if any_async_func {
+                get_rets.push(format!("&mut witx_bindgen_wasmtime::rt::Async<T>"));
+            }
+            if get_rets.len() > 1 {
+                self.push_str(&format!("({})", get_rets.join(", ")));
+            } else {
+                self.push_str(&get_rets[0]);
+            }
+            self.push_str(" + Send + Sync + Copy + 'static) -> anyhow::Result<()> \n");
             self.push_str("where U: ");
             self.push_str(&module_camel);
-            if is_async {
+            if is_async || any_async_func {
                 self.push_str(", T: Send,");
             }
             self.push_str("\n{\n");
@@ -979,7 +1019,7 @@ impl Generator for Wasmtime {
                 self.push_str("use witx_bindgen_wasmtime::rt::get_func;\n");
             }
             for f in funcs {
-                let method = if f.is_async {
+                let method = if f.wrap_async {
                     format!("func_wrap{}_async", f.num_wasm_params)
                 } else {
                     String::from("func_wrap")
@@ -996,14 +1036,14 @@ impl Generator for Wasmtime {
                             \"canonical_abi\",
                             \"resource_drop_{name}\",
                             move |mut caller: wasmtime::Caller<'_, T>, handle: u32| {{
-                                let (host, tables) = get(caller.data_mut());
-                                let handle = tables
+                                let data = get(caller.data_mut());
+                                let handle = data.1
                                     .{snake}_table
                                     .remove(handle)
                                     .map_err(|e| {{
                                         wasmtime::Trap::new(format!(\"failed to remove handle: {{}}\", e))
                                     }})?;
-                                host.drop_{snake}(handle);
+                                data.0.drop_{snake}(handle);
                                 Ok(())
                             }}
                         )?;\n",
@@ -1031,9 +1071,7 @@ impl Generator for Wasmtime {
                 ",
             );
             self.push_str("#[derive(Default)]\n");
-            self.push_str("pub struct ");
-            self.push_str(&name);
-            self.push_str("Data {\n");
+            self.push_str(&format!("pub struct {}Data {{\n", name));
             for r in self.exported_resources.iter() {
                 self.src.push_str(&format!(
                     "
@@ -1046,12 +1084,18 @@ impl Generator for Wasmtime {
             }
             self.push_str("}\n");
 
-            self.push_str("pub struct ");
-            self.push_str(&name);
-            self.push_str("<T> {\n");
+            let mut get_state_ret = format!("&mut {}Data", name);
+            let mut bind_state = "state";
+            if any_async_func {
+                get_state_ret =
+                    format!("({}, &mut witx_bindgen_wasmtime::Async<T>)", get_state_ret);
+                bind_state = "(state, _)";
+            }
+
+            self.push_str(&format!("pub struct {}<T> {{\n", name));
             self.push_str(&format!(
-                "get_state: Box<dyn Fn(&mut T) -> &mut {}Data + Send + Sync>,\n",
-                name
+                "get_state: Box<dyn Fn(&mut T) -> {} + Send + Sync>,\n",
+                get_state_ret,
             ));
             for (name, (ty, _)) in exports.fields.iter() {
                 self.push_str(name);
@@ -1063,7 +1107,7 @@ impl Generator for Wasmtime {
             //     self.push_str("buffer_glue: witx_bindgen_wasmtime::imports::BufferGlue,");
             // }
             self.push_str("}\n");
-            let bound = if self.opts.async_.is_none() {
+            let bound = if self.opts.async_.is_none() && !any_async_func {
                 ""
             } else {
                 ": Send"
@@ -1083,10 +1127,10 @@ impl Generator for Wasmtime {
                     /// the general store's state.
                     pub fn add_to_linker(
                         linker: &mut wasmtime::Linker<T>,
-                        get_state: impl Fn(&mut T) -> &mut {}Data + Send + Sync + Copy + 'static,
+                        get_state: impl Fn(&mut T) -> {} + Send + Sync + Copy + 'static,
                     ) -> anyhow::Result<()> {{
                 ",
-                name,
+                get_state_ret,
             ));
             for r in self.exported_resources.iter() {
                 let (func_wrap, call, wait, prefix, suffix) = if self.opts.async_.is_none() {
@@ -1106,7 +1150,7 @@ impl Generator for Wasmtime {
                             \"canonical_abi\",
                             \"resource_drop_{name}\",
                             move |mut caller: wasmtime::Caller<'_, T>, idx: u32| {prefix}{{
-                                let state = get_state(caller.data_mut());
+                                let {bind_state} = get_state(caller.data_mut());
                                 let resource_idx = state.index_slab{idx}.remove(idx)?;
                                 let wasm = match state.resource_slab{idx}.drop(resource_idx) {{
                                     Some(wasm) => wasm,
@@ -1121,7 +1165,7 @@ impl Generator for Wasmtime {
                             \"canonical_abi\",
                             \"resource_clone_{name}\",
                             move |mut caller: wasmtime::Caller<'_, T>, idx: u32| {{
-                                let state = get_state(caller.data_mut());
+                                let {bind_state} = get_state(caller.data_mut());
                                 let resource_idx = state.index_slab{idx}.get(idx)?;
                                 state.resource_slab{idx}.clone(resource_idx)?;
                                 Ok(state.index_slab{idx}.insert(resource_idx))
@@ -1131,7 +1175,7 @@ impl Generator for Wasmtime {
                             \"canonical_abi\",
                             \"resource_get_{name}\",
                             move |mut caller: wasmtime::Caller<'_, T>, idx: u32| {{
-                                let state = get_state(caller.data_mut());
+                                let {bind_state} = get_state(caller.data_mut());
                                 let resource_idx = state.index_slab{idx}.get(idx)?;
                                 Ok(state.resource_slab{idx}.get(resource_idx))
                             }},
@@ -1140,7 +1184,7 @@ impl Generator for Wasmtime {
                             \"canonical_abi\",
                             \"resource_new_{name}\",
                             move |mut caller: wasmtime::Caller<'_, T>, val: i32| {{
-                                let state = get_state(caller.data_mut());
+                                let {bind_state} = get_state(caller.data_mut());
                                 let resource_idx = state.resource_slab{idx}.insert(val);
                                 Ok(state.index_slab{idx}.insert(resource_idx))
                             }},
@@ -1153,6 +1197,23 @@ impl Generator for Wasmtime {
                     wait = wait,
                     prefix = prefix,
                     suffix = suffix,
+                    bind_state = bind_state,
+                ));
+            }
+            if iface.functions.iter().any(|f| f.is_async) {
+                self.src.push_str(&format!(
+                    "
+                        linker.func_wrap(
+                            \"canonical_abi\",
+                            \"async_export_done\",
+                            move |mut caller: wasmtime::Caller<'_, T>, cx: i32, ptr: i32| {{
+                                let memory = witx_bindgen_wasmtime::rt::get_memory(&mut caller, \"memory\")?;
+                                let (memory, state) = memory.data_and_store_mut(&mut caller);
+                                let (_, async_) = get_state(state);
+                                async_.async_export_done(cx, ptr, memory)
+                            }},
+                        )?;
+                    ",
                 ));
             }
             // if self.needs_buffer_glue {
@@ -1222,14 +1283,14 @@ impl Generator for Wasmtime {
                         mut store: impl wasmtime::AsContextMut<Data = T>,
                         module: &wasmtime::Module,
                         linker: &mut wasmtime::Linker<T>,
-                        get_state: impl Fn(&mut T) -> &mut {}Data + Send + Sync + Copy + 'static,
+                        get_state: impl Fn(&mut T) -> {} + Send + Sync + Copy + 'static,
                     ) -> anyhow::Result<(Self, wasmtime::Instance)> {{
                         Self::add_to_linker(linker, get_state)?;
                         let instance = linker.instantiate{}(&mut store, module){}?;
                         Ok((Self::new(store, &instance,get_state)?, instance))
                     }}
                 ",
-                async_fn, name, instantiate, wait,
+                async_fn, get_state_ret, instantiate, wait,
             ));
 
             self.push_str(&format!(
@@ -1245,10 +1306,10 @@ impl Generator for Wasmtime {
                     pub fn new(
                         mut store: impl wasmtime::AsContextMut<Data = T>,
                         instance: &wasmtime::Instance,
-                        get_state: impl Fn(&mut T) -> &mut {}Data + Send + Sync + Copy + 'static,
+                        get_state: impl Fn(&mut T) -> {} + Send + Sync + Copy + 'static,
                     ) -> anyhow::Result<Self> {{
                 ",
-                name,
+                get_state_ret,
             ));
             self.push_str("let mut store = store.as_context_mut();\n");
             assert!(!self.needs_get_func);
@@ -1262,15 +1323,26 @@ impl Generator for Wasmtime {
             for r in self.exported_resources.iter() {
                 self.src.push_str(&format!(
                     "
-                        get_state(store.data_mut()).dtor{} = \
-                            Some(instance.get_typed_func::<i32, (), _>(\
-                                &mut store, \
-                                \"canonical_abi_drop_{}\", \
-                            )?);\n
+                        let dtor = instance.get_typed_func::<i32, (), _>(\
+                            &mut store, \
+                            \"canonical_abi_drop_{name}\", \
+                        )?;
+                        let {bind_state} = get_state(store.data_mut());
+                        state.dtor{idx} = Some(dtor);
                     ",
-                    r.index(),
-                    iface.resources[*r].name,
+                    idx = r.index(),
+                    name = iface.resources[*r].name,
+                    bind_state = bind_state,
                 ));
+            }
+            if any_async_func {
+                self.push_str(
+                    "
+                        let table = instance.get_table(&mut store, \"__indirect_function_table\")
+                            .ok_or_else(|| wasmtime::Trap::new(\"no exported function table\"))?;
+                        get_state(store.data_mut()).1.set_table(table);
+                    ",
+                );
             }
             self.push_str("Ok(");
             self.push_str(&name);
@@ -1308,12 +1380,12 @@ impl Generator for Wasmtime {
                             val: {name_camel},
                         ) -> Result<(), wasmtime::Trap> {{
                             let mut store = store.as_context_mut();
-                            let data = (self.get_state)(store.data_mut());
-                            let wasm = match data.resource_slab{idx}.drop(val.0) {{
+                            let {bind_state} = (self.get_state)(store.data_mut());
+                            let wasm = match state.resource_slab{idx}.drop(val.0) {{
                                 Some(val) => val,
                                 None => return Ok(()),
                             }};
-                            data.dtor{idx}.unwrap().{call}(&mut store, wasm){wait}?;
+                            state.dtor{idx}.unwrap().{call}(&mut store, wasm){wait}?;
                             Ok(())
                         }}
                     ",
@@ -1323,6 +1395,7 @@ impl Generator for Wasmtime {
                     async = async_fn,
                     call = call,
                     wait = wait,
+                    bind_state = bind_state,
                 ));
             }
 
@@ -1452,7 +1525,7 @@ impl FunctionBindgen<'_> {
                     self.push_str(
                         "let (caller_memory, data) = memory.data_and_store_mut(&mut caller);\n",
                     );
-                    self.push_str("let (_, _tables) = get(data);\n");
+                    self.push_str("let _tables = &mut get(data).1;\n");
                 } else {
                     self.push_str("let caller_memory = memory.data_mut(&mut caller);\n");
                 }
@@ -1504,6 +1577,22 @@ impl FunctionBindgen<'_> {
             "{}.store({} + {}, witx_bindgen_wasmtime::rt::{}({}){})?;\n",
             mem, operands[1], offset, method, operands[0], extra
         ));
+    }
+
+    fn bind_results(&mut self, amt: usize, results: &mut Vec<String>) {
+        if amt == 0 {
+            return;
+        }
+
+        let tmp = self.tmp();
+        self.push_str("let (");
+        for i in 0..amt {
+            let arg = format!("result{}_{}", tmp, i);
+            self.push_str(&arg);
+            self.push_str(",");
+            results.push(arg);
+        }
+        self.push_str(") = ");
     }
 }
 
@@ -1685,27 +1774,35 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
             Instruction::I32FromBorrowedHandle { ty } => {
+                let any_async = iface.functions.iter().any(|f| f.is_async);
                 let tmp = self.tmp();
                 self.push_str(&format!(
                     "
                         let obj{tmp} = {op};
-                        (self.get_state)(caller.as_context_mut().data_mut()).resource_slab{idx}.clone(obj{tmp}.0)?;
-                        let handle{tmp} = (self.get_state)(caller.as_context_mut().data_mut()).index_slab{idx}.insert(obj{tmp}.0);
+                        let {bind_state} = (self.get_state)(caller.data_mut());
+                        state.resource_slab{idx}.clone(obj{tmp}.0)?;
+                        let handle{tmp} = state.index_slab{idx}.insert(obj{tmp}.0);
                     ",
                     tmp = tmp,
                     idx = ty.index(),
                     op = operands[0],
+                    bind_state = if any_async { "(state, _)" } else { "state" },
                 ));
 
                 results.push(format!("handle{} as i32", tmp,));
             }
             Instruction::HandleOwnedFromI32 { ty } => {
+                let any_async = iface.functions.iter().any(|f| f.is_async);
                 let tmp = self.tmp();
                 self.push_str(&format!(
-                    "let handle{} = (self.get_state)(caller.as_context_mut().data_mut()).index_slab{}.remove({} as u32)?;\n",
+                    "
+                        let {bind_state} = (self.get_state)(caller.data_mut());
+                        let handle{} = state.index_slab{}.remove({} as u32)?;
+                    ",
                     tmp,
                     ty.index(),
                     operands[0],
+                    bind_state = if any_async { "(state, _)" } else { "state" },
                 ));
 
                 let name = iface.resources[*ty].name.to_camel_case();
@@ -2067,17 +2164,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 name,
                 sig,
             } => {
-                if sig.results.len() > 0 {
-                    let tmp = self.tmp();
-                    self.push_str("let (");
-                    for i in 0..sig.results.len() {
-                        let arg = format!("result{}_{}", tmp, i);
-                        self.push_str(&arg);
-                        self.push_str(",");
-                        results.push(arg);
-                    }
-                    self.push_str(") = ");
-                }
+                self.bind_results(sig.results.len(), results);
                 self.push_str("self.");
                 self.push_str(&to_rust_ident(name));
                 if self.gen.opts.async_.includes(name) {
@@ -2100,7 +2187,87 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::CallWasmAsyncImport { .. } => unimplemented!(),
-            Instruction::CallWasmAsyncExport { .. } => unimplemented!(),
+
+            Instruction::CallWasmAsyncExport {
+                module: _,
+                name,
+                params: _,
+                results: wasm_results,
+            } => {
+                self.push_str(&format!(
+                    "let mut raw_results = [0; {}];\n",
+                    wasm_results.len()
+                ));
+
+                // Move the func out of `self` since it's captured in the
+                // `'static` future and `self` isn't `'static`.
+                self.push_str(&format!("let wasm_func = self.{};\n", to_rust_ident(name)));
+
+                // Move the arguments into their own temporaries. These are all
+                // scalar expressions but sometimes their results reference
+                // local variables. These all get captured in the `'static`
+                // future as well so we need to make sure no local variables are
+                // captured there.
+                let tmp = self.tmp();
+                let mut args = String::new();
+                for (i, arg) in operands.iter().enumerate() {
+                    self.push_str(&format!("let arg{}_{} = {};\n", tmp, i, arg));
+                    args.push_str(&format!("arg{}_{}, ", tmp, i));
+                }
+                args.push_str("async_cx,");
+
+                // Start the async call with various parameters passed in...
+                self.push_str(
+                    "witx_bindgen_wasmtime::rt::Async::call_async_export(\
+                        &mut caller, \
+                        &mut raw_results, \
+                        &|t| (self.get_state)(t).1, \
+                        |caller, async_cx| {\n\
+                    ",
+                );
+
+                // Delegate to `call_async` or `call` as appropriate.
+                if self.gen.opts.async_.includes(name) {
+                    self.push_str(&format!(
+                        "Box::pin(async move {{ wasm_func.call_async(caller, ({})).await }})",
+                        args,
+                    ));
+                } else {
+                    self.push_str(&format!(
+                        "Box::pin(async move {{ wasm_func.call(caller, ({})) }})",
+                        args,
+                    ));
+                }
+                // Close the async call
+                self.push_str("\n}).await?;\n");
+
+                // Read all the results from the `raw_results` array,
+                // interpreting the 64-bit values as appropriate.
+                let tmp = self.tmp();
+                for (i, ty) in wasm_results.iter().enumerate() {
+                    let name = format!("result{}_{}", tmp, i);
+                    self.push_str(&format!("let {} = ", name));
+                    results.push(name);
+                    match ty {
+                        WasmType::I32 => {
+                            self.push_str(&format!("raw_results[{}] as i32", i));
+                        }
+                        WasmType::I64 => {
+                            self.push_str(&format!("raw_results[{}]", i));
+                        }
+                        WasmType::F32 => {
+                            self.push_str(&format!("f32::from_bits(raw_results[{}] as u32)", i));
+                        }
+                        WasmType::F64 => {
+                            self.push_str(&format!("f64::from_bits(raw_results[{}] as u64)", i));
+                        }
+                    }
+                    self.push_str(";\n");
+                }
+
+                self.after_call = true;
+                self.caller_memory_available = false; // invalidated by call
+            }
 
             Instruction::CallInterface { module: _, func } => {
                 for (i, operand) in operands.iter().enumerate() {
@@ -2134,7 +2301,30 @@ impl Bindgen for FunctionBindgen<'_> {
                     call.push_str(&format!("param{}, ", i));
                 }
                 call.push_str(")");
-                if self.gen.opts.async_.includes(&func.name) {
+
+                // If this is itself an async function then the future is first
+                // created. The actual await-ing happens inside of a separate
+                // future we create here and pass to the `_async_cx` which will
+                // manage execution of the future in connection with the
+                // original invocation of an async export.
+                //
+                // The `future` is `await`'d initially and its results are then
+                // moved into a completion callback which is processed once the
+                // store is available again.
+                if func.is_async {
+                    self.push_str("let future = ");
+                    self.push_str(&call);
+                    self.push_str(";\n");
+                    self.push_str("_async_cx.register_async_import(async move {\n");
+                    self.push_str("let result = future.await;\n");
+                    call = format!("result");
+                    self.push_str(
+                        "witx_bindgen_wasmtime::rt::box_future_callback(move |mut caller| {\n",
+                    );
+                    self.push_str("witx_bindgen_wasmtime::rt::pin_result_future(async move {\n");
+                    self.push_str("let host = &mut get(caller.data_mut()).0;\n");
+                    self.push_str("drop(&mut *host);\n"); // ignore unused variable
+                } else if self.gen.opts.async_.includes(&func.name) {
                     call.push_str(".await");
                 }
 
@@ -2197,7 +2387,61 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::ReturnAsyncExport { .. } => unimplemented!(),
-            Instruction::ReturnAsyncImport { .. } => unimplemented!(),
+
+            Instruction::CompletionCallback { params, .. } => {
+                let mut tys = String::new();
+                tys.push_str("i32,");
+                for param in params.iter() {
+                    tys.push_str(wasm_type(*param));
+                    tys.push_str(", ");
+                }
+                self.closures.push_str(&format!(
+                    "\
+                        let completion_callback = get(caller.data_mut()).{async_idx}
+                            .table()
+                            .get(&mut caller, {idx} as u32)
+                            .ok_or_else(|| wasmtime::Trap::new(\"invalid function index\"))?
+                            .funcref()
+                            .ok_or_else(|| wasmtime::Trap::new(\"not a funcref table\"))?
+                            .ok_or_else(|| wasmtime::Trap::new(\"callback was a null function\"))?
+                            .typed::<({tys}), (), _>(&caller)?;
+                    ",
+                    idx = operands[0],
+                    tys = tys,
+                    async_idx = if self.gen.all_needed_handles.len() > 0 {
+                        2
+                    } else {
+                        1
+                    },
+                ));
+                results.push(format!("completion_callback"));
+            }
+
+            Instruction::ReturnAsyncImport { .. } => {
+                let mut result = operands[1..].join(", ");
+                result.push_str(",");
+                self.push_str(&format!("let ret = ({});\n", result));
+                if let Some(cleanup) = self.cleanup.take() {
+                    self.push_str(&cleanup);
+                }
+
+                self.push_str(&operands[0]);
+                if self.gen.opts.async_.is_none() {
+                    self.push_str(".call");
+                } else {
+                    self.push_str(".call_async");
+                }
+                self.push_str("(&mut caller, ret)");
+                if !self.gen.opts.async_.is_none() {
+                    self.push_str(".await");
+                }
+                self.push_str("\n");
+
+                // finish the `pin_result_future(...)`
+                self.push_str("})\n");
+                // finish the `box_future_callback(...)`
+                self.push_str("})\n");
+            }
 
             Instruction::I32Load { offset } => results.push(self.load(*offset, "i32", operands)),
             Instruction::I32Load8U { offset } => {

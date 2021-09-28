@@ -2079,6 +2079,16 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             },
 
+            Instruction::CompletionCallback { .. } => {
+                // TODO: shouldn't hardcode the function table name, should
+                // verify the table is present, and should verify the type of
+                // the function returned.
+                results.push(format!(
+                    "get_export(\"__indirect_function_table\").get({})",
+                    operands[0],
+                ));
+            }
+
             Instruction::ReturnAsyncImport { .. } => {
                 // When we reenter webassembly successfully that means that the
                 // host's promise resolved without exception. Take the current
@@ -2089,15 +2099,12 @@ impl Bindgen for FunctionBindgen<'_> {
                 // Note that the name `cur_promise` used here is introduced in
                 // the `CallInterface` codegen above in the closure for
                 // `with_current_promise` which we're using here.
-                //
-                // TODO: hardcoding `__indirect_function_table` and no help if
-                // it's not actually defined.
                 self.gen.needs_get_export = true;
                 let with = self.gen.intrinsic(Intrinsic::WithCurrentPromise);
                 self.src.js(&format!(
                     "\
                         {with}(cur_promise, _prev => {{
-                            get_export(\"__indirect_function_table\").get({})({});
+                            {}({});
                         }});
                     ",
                     operands[0],
