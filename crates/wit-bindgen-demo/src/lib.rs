@@ -20,6 +20,7 @@ pub struct Config {
     wasmtime_py: RefCell<wit_bindgen_gen_wasmtime_py::Opts>,
     markdown: RefCell<wit_bindgen_gen_markdown::Opts>,
     spidermonkey: RefCell<wit_bindgen_gen_spidermonkey::Opts>,
+    wasmer: RefCell<wit_bindgen_gen_wasmer::Opts>,
 }
 
 impl demo::Config for Config {
@@ -56,6 +57,7 @@ impl demo::Config for Config {
                 let script = "throw new Error('unimplemented');";
                 Box::new(opts.clone().build(script))
             }
+            demo::Lang::Wasmer => Box::new(self.wasmer.borrow().clone().build()),
         };
         let iface = Interface::parse("input", &wit).map_err(|e| format!("{:?}", e))?;
         let mut files = Default::default();
@@ -93,6 +95,22 @@ impl demo::Config for Config {
         use wit_bindgen_gen_wasmtime::Async;
 
         self.wasmtime.borrow_mut().async_ = match async_ {
+            demo::WasmtimeAsync::All => Async::All,
+            demo::WasmtimeAsync::None => Async::None,
+            demo::WasmtimeAsync::Only(list) => Async::Only(list.into_iter().collect()),
+        };
+    }
+    fn set_wasmer_tracing(&self, tracing: bool) {
+        self.wasmer.borrow_mut().tracing = tracing;
+    }
+    fn set_wasmer_custom_error(&self, custom_error: bool) {
+        browser::log("custom error");
+        self.wasmer.borrow_mut().custom_error = custom_error;
+    }
+    fn set_wasmer_async(&self, async_: demo::WasmtimeAsync) {
+        use wit_bindgen_gen_wasmer::Async;
+
+        self.wasmer.borrow_mut().async_ = match async_ {
             demo::WasmtimeAsync::All => Async::All,
             demo::WasmtimeAsync::None => Async::None,
             demo::WasmtimeAsync::Only(list) => Async::Only(list.into_iter().collect()),

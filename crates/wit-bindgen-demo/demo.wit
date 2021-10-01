@@ -14,6 +14,7 @@ enum lang {
   c,
   markdown,
   spidermonkey,
+  wasmer,
 }
 
 
@@ -26,4 +27,7 @@ resource config {
   set_wasmtime_tracing: function(unchecked: bool)
   set_wasmtime_async: function(val: wasmtime_async)
   set_wasmtime_custom_error: function(custom: bool)
+  set_wasmer_tracing: function(unchecked: bool)
+  set_wasmer_async: function(val: wasmtime_async)
+  set_wasmer_custom_error: function(custom: bool)
 }

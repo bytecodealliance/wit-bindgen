@@ -10,6 +10,9 @@ class Editor {
   wasmtimeTracing: HTMLInputElement;
   wasmtimeAsync: HTMLInputElement;
   wasmtimeCustomError: HTMLInputElement;
+  wasmerTracing: HTMLInputElement;
+  wasmerAsync: HTMLInputElement;
+  wasmerCustomError: HTMLInputElement;
   generatedFiles: Record<string, string>;
   demo: Demo;
   config: Config | null;
@@ -27,6 +30,9 @@ class Editor {
     this.wasmtimeTracing = document.getElementById('wasmtime-tracing') as HTMLInputElement;
     this.wasmtimeAsync = document.getElementById('wasmtime-async') as HTMLInputElement;
     this.wasmtimeCustomError = document.getElementById('wasmtime-custom-error') as HTMLInputElement;
+    this.wasmerTracing = document.getElementById('wasmer-tracing') as HTMLInputElement;
+    this.wasmerAsync = document.getElementById('wasmer-async') as HTMLInputElement;
+    this.wasmerCustomError = document.getElementById('wasmer-custom-error') as HTMLInputElement;
     this.outputHtml = document.getElementById('html-output') as HTMLDivElement;
 
     this.inputEditor = ace.edit("input");
@@ -89,6 +95,23 @@ class Editor {
       this.config.setWasmtimeCustomError(this.wasmtimeCustomError.checked);
       this.render();
     });
+    this.wasmerTracing.addEventListener('change', () => {
+      this.config.setWasmerTracing(this.wasmerTracing.checked);
+      this.render();
+    });
+    this.wasmerAsync.addEventListener('change', () => {
+      let async_;
+      if (this.wasmerAsync.checked)
+        async_ = { tag: 'all' };
+      else
+        async_ = { tag: 'none' };
+      this.config.setWasmerAsync(async_);
+      this.render();
+    });
+    this.wasmerCustomError.addEventListener('change', () => {
+      this.config.setWasmerCustomError(this.wasmerCustomError.checked);
+      this.render();
+    });
     this.files.addEventListener('change', () => this.updateSelectedFile());
   }
 
@@ -112,6 +135,7 @@ class Editor {
       case "c": lang = Lang.C; break;
       case "markdown": lang = Lang.Markdown; break;
       case "spidermonkey": lang = Lang.Spidermonkey; break;
+      case "wasmer": lang = Lang.Wasmer; break;
       default: return;
     }
     const result = this.config.render(lang, wit, is_import);

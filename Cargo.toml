@@ -28,6 +28,7 @@ wit-bindgen-gen-js = { path = 'crates/gen-js', features = ['structopt'] }
 wit-bindgen-gen-c = { path = 'crates/gen-c', features = ['structopt'] }
 wit-bindgen-gen-markdown = { path = 'crates/gen-markdown', features = ['structopt'] }
 wit-bindgen-gen-spidermonkey = { path = 'crates/gen-spidermonkey', features = ['structopt'] }
+wit-bindgen-gen-wasmer = { path = 'crates/gen-wasmer', features = ['structopt'] }
 
 # Compiling `spidermonkey.wasm` takes way too long without this.
 [profile.dev.package.cranelift-codegen]

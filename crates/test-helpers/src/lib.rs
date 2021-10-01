@@ -353,6 +353,46 @@ pub fn codegen_spidermonkey_export(input: TokenStream) -> TokenStream {
     })
 }
 
+#[proc_macro]
+#[cfg(feature = "wit-bindgen-gen-wasmer")]
+pub fn codegen_wasmer_import(input: TokenStream) -> TokenStream {
+    gen_rust(
+        input,
+        Direction::Import,
+        &[
+            (
+                "import",
+                || wit_bindgen_gen_wasmer::Opts::default().build(),
+                |_| quote::quote!(),
+            ),
+            (
+                "import-tracing-and-custom-error",
+                || {
+                    let mut opts = wit_bindgen_gen_wasmer::Opts::default();
+                    opts.tracing = true;
+                    opts.custom_error = true;
+                    opts.build()
+                },
+                |_| quote::quote!(),
+            ),
+        ],
+    )
+}
+
+#[proc_macro]
+#[cfg(feature = "wit-bindgen-gen-wasmer")]
+pub fn codegen_wasmer_export(input: TokenStream) -> TokenStream {
+    gen_rust(
+        input,
+        Direction::Export,
+        &[(
+            "export",
+            || wit_bindgen_gen_wasmer::Opts::default().build(),
+            |_| quote::quote!(),
+        )],
+    )
+}
+
 fn generate_tests<G>(
     input: TokenStream,
     dir: &str,
@@ -561,6 +601,39 @@ pub fn runtime_tests_wasmtime(_input: TokenStream) -> TokenStream {
             }
             let name = quote::format_ident!("{}_{}", name_str, lang);
             let host_file = entry.join("host.rs").to_str().unwrap().to_string();
+            tests.push(quote::quote! {
+                mod #name {
+                    include!(#host_file);
+
+                    #[test]
+                    fn test() -> anyhow::Result<()> {
+                        run(#wasm)
+                    }
+                }
+            });
+        }
+    }
+
+    (quote::quote!(#(#tests)*)).into()
+}
+
+#[proc_macro]
+#[cfg(feature = "wit-bindgen-gen-wasmer")]
+pub fn runtime_tests_wasmer(_input: TokenStream) -> TokenStream {
+    let mut tests = Vec::new();
+    let cwd = std::env::current_dir().unwrap();
+    for entry in std::fs::read_dir(cwd.join("tests/runtime")).unwrap() {
+        let entry = entry.unwrap().path();
+        if !entry.join("host-wasmer.rs").exists() {
+            continue;
+        }
+        let name_str = entry.file_name().unwrap().to_str().unwrap();
+        for (lang, name, wasm) in WASMS {
+            if *name != name_str {
+                continue;
+            }
+            let name = quote::format_ident!("{}_{}", name_str, lang);
+            let host_file = entry.join("host-wasmer.rs").to_str().unwrap().to_string();
             tests.push(quote::quote! {
                 mod #name {
                     include!(#host_file);

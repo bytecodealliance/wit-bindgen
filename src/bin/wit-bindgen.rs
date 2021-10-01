@@ -55,6 +55,12 @@ enum Command {
         #[structopt(flatten)]
         common: Common,
     },
+    Wasmer {
+        #[structopt(flatten)]
+        opts: wit_bindgen_gen_wasmer::Opts,
+        #[structopt(flatten)]
+        common: Common,
+    },
 }
 
 #[derive(Debug, StructOpt)]
@@ -88,6 +94,7 @@ fn main() -> Result<()> {
                 .with_context(|| format!("failed to read {}", opts.js.display()))?;
             (Box::new(opts.build(js_source)), common)
         }
+        Command::Wasmer { opts, common } => (Box::new(opts.build()), common),
     };
 
     let imports = common

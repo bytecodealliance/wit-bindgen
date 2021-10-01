@@ -19,5 +19,6 @@ wit-bindgen-gen-js = { path = '../gen-js' }
 wit-bindgen-gen-c = { path = '../gen-c' }
 wit-bindgen-gen-markdown = { path = '../gen-markdown' }
 wit-bindgen-gen-spidermonkey = { path = '../gen-spidermonkey' }
+wit-bindgen-gen-wasmer = { path = '../gen-wasmer' }
 wit-bindgen-rust = { path = '../rust-wasm' }
 wasmprinter = "0.2.29"

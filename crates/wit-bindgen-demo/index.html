@@ -56,6 +56,7 @@ hello: function(who: person) -&gt; string
             <option value="c">C</option>
             <option value="markdown">Markdown</option>
             <option value="spidermonkey">SpiderMonkey</option>
+            <option value="wasmer">Wasmer</option>
           </select>
 
           &middot;
@@ -104,6 +105,22 @@ hello: function(who: person) -&gt; string
             <label for="wasmtime-custom-error">custom error</label>
           </div>
           <div id='configure-spidermonkey' class='lang-configure'>
+          </div>
+          <div id='configure-wasmer' class='lang-configure'>
+            &middot;
+
+            <input type="checkbox" id="wasmer-tracing" name="tracing">
+            <label for="wasmer-tracing"><code>tracing</code></label>
+
+            &middot;
+
+            <input type="checkbox" id="wasmer-async" name="async">
+            <label for="wasmer-async"><code>async</code></label>
+
+            &middot;
+
+            <input type="checkbox" id="wasmer-custom-error" name="custom-error">
+            <label for="wasmer-custom-error">custom error</label>
           </div>
         </div>
 
