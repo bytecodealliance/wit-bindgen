@@ -215,6 +215,21 @@ impl Wasmtime {
         self.needs_custom_error_to_trap = true;
         FunctionRet::CustomToTrap
     }
+
+    fn rebind_host(&self, iface: &Interface) -> Option<String> {
+        let mut rebind = String::new();
+        if self.all_needed_handles.len() > 0 {
+            rebind.push_str("_tables, ");
+        }
+        if iface.functions.iter().any(|f| f.is_async) {
+            rebind.push_str("_async_cx, ");
+        }
+        if rebind != "" {
+            Some(format!("let (host, {}) = host;\n", rebind))
+        } else {
+            None
+        }
+    }
 }
 
 impl RustGenerator for Wasmtime {
@@ -742,17 +757,8 @@ impl Generator for Wasmtime {
         } else {
             self.src.push_str("let host = get(caller.data_mut());\n");
         }
-
-        let mut rebind = String::new();
-        if self.all_needed_handles.len() > 0 {
-            rebind.push_str("_tables, ");
-        }
-        if iface.functions.iter().any(|f| f.is_async) {
-            rebind.push_str("_async_cx, ");
-        }
-        if rebind != "" {
-            self.src
-                .push_str(&format!("let (host, {}) = host;\n", rebind));
+        if let Some(rebind) = self.rebind_host(iface) {
+            self.src.push_str(&rebind);
         }
 
         self.src.push_str(&String::from(src));
@@ -919,6 +925,9 @@ impl Generator for Wasmtime {
                     self.src.push_str(": std::fmt::Debug");
                     if is_async || any_async_func {
                         self.src.push_str(" + Send + Sync");
+                    }
+                    if any_async_func {
+                        self.src.push_str(" + 'static");
                     }
                     self.src.push_str(";\n");
                 }
@@ -2322,7 +2331,10 @@ impl Bindgen for FunctionBindgen<'_> {
                         "witx_bindgen_wasmtime::rt::box_future_callback(move |mut caller| {\n",
                     );
                     self.push_str("witx_bindgen_wasmtime::rt::pin_result_future(async move {\n");
-                    self.push_str("let host = &mut get(caller.data_mut()).0;\n");
+                    self.push_str("let host = get(caller.data_mut());\n");
+                    if let Some(rebind) = self.gen.rebind_host(iface) {
+                        self.push_str(&rebind);
+                    }
                     self.push_str("drop(&mut *host);\n"); // ignore unused variable
                 } else if self.gen.opts.async_.includes(&func.name) {
                     call.push_str(".await");
