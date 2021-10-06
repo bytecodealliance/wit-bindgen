@@ -5,3 +5,12 @@ async_results: async function() -> (u32, string, list<string>)
 resource async_resource {
   frob: async function()
 }
+
+fetch: async function(url: string) -> Response
+
+resource Response {
+  body: async function() -> list<u8>
+  status: function() -> u32
+  status_text: function() -> string
+
+}

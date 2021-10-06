@@ -917,7 +917,7 @@ impl Generator for Wasmtime {
                     self.src.push_str("type ");
                     self.src.push_str(&handle.to_camel_case());
                     self.src.push_str(": std::fmt::Debug");
-                    if is_async {
+                    if is_async || any_async_func {
                         self.src.push_str(" + Send + Sync");
                     }
                     self.src.push_str(";\n");
