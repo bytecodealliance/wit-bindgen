@@ -447,7 +447,7 @@ impl<'a> SpiderMonkeyWasm<'a> {
             todo!()
         }
 
-        // Regardless whether we imorted an instance or instantiated an embedded
+        // Regardless whether we imported an instance or instantiated an embedded
         // module, we now have an instance of `spidermonkey.wasm`. Alias its
         // exported functions and exported memory into this module's index
         // spaces.
