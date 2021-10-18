@@ -15,13 +15,13 @@
           ]
         ]
       },
-      "foreign_module": "wasi"
+      "foreign-module": "wasi"
     },
     {
       "idx": 1,
       "name": "timestamp",
       "primitive": "u64",
-      "foreign_module": "wasi"
+      "foreign-module": "wasi"
     },
     {
       "idx": 2,
@@ -338,7 +338,7 @@
           ]
         ]
       },
-      "foreign_module": "wasi"
+      "foreign-module": "wasi"
     },
     {
       "idx": 3,

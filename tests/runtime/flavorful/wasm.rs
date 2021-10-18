@@ -29,7 +29,7 @@ impl exports::Exports for Exports {
             "result4"
         );
 
-        list_in_variant1(Some("foo"), Err("bar"), ListInVariant13::V0("baz"));
+        list_in_variant1(Some("foo"), Err("bar"), ListInVariant1V3::V0("baz"));
         assert_eq!(list_in_variant2(), Some("list_in_variant2".to_string()));
         assert_eq!(
             list_in_variant3(Some("input3")),
@@ -81,12 +81,12 @@ impl exports::Exports for Exports {
         }
     }
 
-    fn list_in_variant1(a: ListInVariant11, b: ListInVariant12, c: ListInVariant13) {
+    fn list_in_variant1(a: ListInVariant1V1, b: ListInVariant1V2, c: ListInVariant1V3) {
         assert_eq!(a.unwrap(), "foo");
         assert_eq!(b.unwrap_err(), "bar");
         match c {
-            ListInVariant13::V0(s) => assert_eq!(s, "baz"),
-            ListInVariant13::V1(_) => panic!(),
+            ListInVariant1V3::V0(s) => assert_eq!(s, "baz"),
+            ListInVariant1V3::V1(_) => panic!(),
         }
     }
 

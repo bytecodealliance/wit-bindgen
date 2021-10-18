@@ -9,7 +9,7 @@ type z2 = handle import-me-x
 
 use { "handle" } from import-me
 resource xyz
-type my_handle = handle xyz
-type my_handle2 = xyz
+type my-handle = handle xyz
+type my-handle2 = xyz
 
-use { some_record } from import-me
+use { some-record } from import-me

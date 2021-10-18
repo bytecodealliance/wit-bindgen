@@ -6,43 +6,43 @@
     (func (export "canonical_abi_free") (param i32 i32 i32)
         unreachable
     )
-    (func (export "e1_arg") (param i32)
+    (func (export "e1-arg") (param i32)
         unreachable
     )
-    (func (export "e1_result") (result i32)
+    (func (export "e1-result") (result i32)
         unreachable
     )
-    (func (export "u1_arg") (param i32 i32)
+    (func (export "u1-arg") (param i32 i32)
         unreachable
     )
-    (func (export "u1_result") (result i32)
+    (func (export "u1-result") (result i32)
         unreachable
     )
-    (func (export "v1_arg") (param i32 i32 i32)
+    (func (export "v1-arg") (param i32 i32 i32)
         unreachable
     )
-    (func (export "v1_result") (result i32)
+    (func (export "v1-result") (result i32)
         unreachable
     )
-    (func (export "bool_arg") (param i32)
+    (func (export "bool-arg") (param i32)
         unreachable
     )
-    (func (export "bool_result") (result i32)
+    (func (export "bool-result") (result i32)
         unreachable
     )
-    (func (export "option_arg") (param i32 i32 i32 i32 i32 i32 i32 i32 f32 i32 i32 i32 i32 i32 i32)
+    (func (export "option-arg") (param i32 i32 i32 i32 i32 i32 i32 i32 f32 i32 i32 i32 i32 i32 i32)
         unreachable
     )
-    (func (export "option_result") (result i32)
+    (func (export "option-result") (result i32)
         unreachable
     )
     (func (export "casts") (param i32 i32 i32 f64 i32 i64 i32 i64 i32 i64 i32 i32 i32) (result i32)
         unreachable
     )
-    (func (export "expected_arg") (param i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32)
+    (func (export "expected-arg") (param i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32)
         unreachable
     )
-    (func (export "expected_result") (result i32)
+    (func (export "expected-result") (result i32)
         unreachable
     )
 )

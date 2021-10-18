@@ -1,11 +1,11 @@
 resource x
 
-acquire_an_x: function() -> x
-receive_an_x: function(val: x)
+acquire-an-x: function() -> x
+receive-an-x: function(val: x)
 
 resource y {
-  static some_constructor: function() -> y
-  method_on_y: function()
-  method_with_param: function(x: u32)
-  method_with_result: function() -> string
+  static some-constructor: function() -> y
+  method-on-y: function()
+  method-with-param: function(x: u32)
+  method-with-result: function() -> string
 }

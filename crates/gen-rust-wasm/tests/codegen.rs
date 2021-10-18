@@ -27,7 +27,7 @@ mod exports {
 
         // TODO: these use push/pull buffer which isn't implemented in the test
         // generator just yet
-        "!wasi_next.wit"
+        "!wasi-next.wit"
         "!host.wit"
     );
 }

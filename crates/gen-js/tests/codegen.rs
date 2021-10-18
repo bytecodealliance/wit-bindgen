@@ -14,7 +14,7 @@ mod imports {
 
         // This uses buffers, which we don't support in imports just yet
         // TODO: should support this
-        "!wasi_next.wit"
+        "!wasi-next.wit"
         "!host.wit"
     );
 }

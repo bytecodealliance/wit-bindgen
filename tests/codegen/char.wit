@@ -1,2 +1,2 @@
-take_char: function(x: char)
-return_char: function() -> char
+take-char: function(x: char)
+return-char: function() -> char

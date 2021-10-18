@@ -8,7 +8,7 @@ mod imports {
         "*.wit"
 
         // TODO: implement async support
-        "!async_functions.wit"
+        "!async-functions.wit"
     );
 }
 
@@ -17,11 +17,11 @@ mod exports {
         "*.wit"
 
         // TODO: implement async support
-        "!async_functions.wit"
+        "!async-functions.wit"
 
         // TODO: these use push/pull buffer in exports which isn't implemented
         // yet
-        "!wasi_next.wit"
+        "!wasi-next.wit"
         "!host.wit"
     );
 }

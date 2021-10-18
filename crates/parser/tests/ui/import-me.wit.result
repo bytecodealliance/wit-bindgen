@@ -21,7 +21,7 @@
     },
     {
       "idx": 3,
-      "name": "some_record",
+      "name": "some-record",
       "record": {
         "fields": [
           [

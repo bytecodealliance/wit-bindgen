@@ -36,7 +36,7 @@
   (typename $u64 u64)
   (typename $f32 f32)
   (typename $f64 f64)
-  (typename $legacy_result (tuple
+  (typename $legacy-result (tuple
       ;; primitives with varying bit widths and signedness
       $s8 $u8
       $s16 $u16
@@ -47,13 +47,13 @@
       $r1
   ))
 
-  (@interface func (export "roundtrip_usize") (param $a (@witx usize)) (result $b (@witx usize)))
-  (@interface func (export "legacy_flags1") (param $a $flag8) (result $r0 $flag8))
-  (@interface func (export "legacy_flags2") (param $a $flag16) (result $r0 $flag16))
-  (@interface func (export "legacy_flags3") (param $a $flag32) (result $r0 $flag32))
-  (@interface func (export "legacy_flags4") (param $a $flag64) (result $r0 $flag64))
+  (@interface func (export "roundtrip-usize") (param $a (@witx usize)) (result $b (@witx usize)))
+  (@interface func (export "legacy-flags1") (param $a $flag8) (result $r0 $flag8))
+  (@interface func (export "legacy-flags2") (param $a $flag16) (result $r0 $flag16))
+  (@interface func (export "legacy-flags3") (param $a $flag32) (result $r0 $flag32))
+  (@interface func (export "legacy-flags4") (param $a $flag64) (result $r0 $flag64))
 
-  (@interface func (export "legacy_params")
+  (@interface func (export "legacy-params")
     (param $a (tuple u32 u32))
     ;; test aggregates
     (param $b $r1)
@@ -61,8 +61,8 @@
     (param $c (tuple u8 s8 u16 s16 u32 s32 u64 s64 f32 f64))
   )
 
-  (@interface func (export "legacy_result")
+  (@interface func (export "legacy-result")
     (param $succeed bool)
-    (result $b (expected $legacy_result (error $e1)))
+    (result $b (expected $legacy-result (error $e1)))
   )
 )

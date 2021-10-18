@@ -1,1 +1,0 @@
-module `resources_missing_drop` declares a resource named `x` but does not export a function named `canonical_abi_drop_x`

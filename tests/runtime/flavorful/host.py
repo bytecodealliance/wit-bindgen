@@ -21,7 +21,7 @@ class MyImports:
         assert(a.a == 'input4')
         return i.ListInRecord4('result4')
 
-    def list_in_variant1(self, a: i.ListInVariant11, b: i.ListInVariant12, c: i.ListInVariant13) -> None:
+    def list_in_variant1(self, a: i.ListInVariant1V1, b: i.ListInVariant1V2, c: i.ListInVariant1V3) -> None:
         assert(a == 'foo')
         assert(b == i.Err('bar'))
         assert(c == i.ListInVariant130('baz'))

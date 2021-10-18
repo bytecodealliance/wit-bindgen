@@ -1,4 +1,4 @@
-test_imports: function()
+test-imports: function()
 
 f1: function(s: string)
 f2: function() -> string

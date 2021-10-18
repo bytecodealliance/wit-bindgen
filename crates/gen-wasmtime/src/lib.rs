@@ -2176,7 +2176,10 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.push_str(&call);
                         self.push_str("{\n");
                         self.push_str("Ok(val) => Ok(val),\n");
-                        self.push_str(&format!("Err(e) => Err(host.error_to_{}(e)?),\n", err));
+                        self.push_str(&format!(
+                            "Err(e) => Err(host.error_to_{}(e)?),\n",
+                            err.to_snake_case()
+                        ));
                         self.push_str("}");
                     }
                 }
