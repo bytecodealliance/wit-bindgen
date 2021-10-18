@@ -1046,7 +1046,7 @@ impl Interface {
             // results into a return pointer.
             //
             // Asynchronous exports take one extra parameter which is the
-            // context used to pass to the `async_export_done` intrisnic, and
+            // context used to pass to the `async_export_done` intrinsic, and
             // asynchronous imports take two extra parameters where the first is
             // a pointer into the function table and the second is a context
             // argument to pass to this function.
