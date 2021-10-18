@@ -1,4 +1,4 @@
-use super::{Error, Item, Span, Value, ValueKind};
+use super::{Error, Item, Value, ValueKind};
 use crate::*;
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
@@ -137,7 +137,7 @@ impl Resolver {
                         if !found {
                             return Err(Error {
                                 span: name.name.span,
-                                msg: format!("name not defined in submodule"),
+                                msg: "name not defined in submodule".to_string(),
                             }
                             .into());
                         }
@@ -170,7 +170,11 @@ impl Resolver {
                 let resource = Resource {
                     docs: r.docs.clone(),
                     name: r.name.clone(),
-                    foreign_module: Some(r.foreign_module.clone().unwrap_or(dep_name.to_string())),
+                    foreign_module: Some(
+                        r.foreign_module
+                            .clone()
+                            .unwrap_or_else(|| dep_name.to_string()),
+                    ),
                 };
                 resources.alloc(resource)
             })
@@ -185,7 +189,11 @@ impl Resolver {
         let ty = TypeDef {
             docs: ty.docs.clone(),
             name: ty.name.clone(),
-            foreign_module: Some(ty.foreign_module.clone().unwrap_or(dep_name.to_string())),
+            foreign_module: Some(
+                ty.foreign_module
+                    .clone()
+                    .unwrap_or_else(|| dep_name.to_string()),
+            ),
             kind: match &ty.kind {
                 TypeDefKind::Type(t) => TypeDefKind::Type(self.copy_type(dep_name, dep, *t)),
                 TypeDefKind::Record(r) => TypeDefKind::Record(Record {
@@ -227,7 +235,7 @@ impl Resolver {
         };
         let id = self.types.alloc(ty);
         self.types_copied.insert((dep_name.to_string(), dep_id), id);
-        return id;
+        id
     }
 
     fn copy_type(&mut self, dep_name: &str, dep: &Interface, ty: Type) -> Type {
@@ -243,7 +251,7 @@ impl Resolver {
         for field in fields {
             match field {
                 Item::Resource(r) => {
-                    let docs = self.docs(&r.docs);
+                    let docs = r.docs.docs.iter().into();
                     let id = self.resources.alloc(Resource {
                         docs,
                         name: r.name.name.to_string(),
@@ -259,7 +267,7 @@ impl Resolver {
                     self.define_type(&r.name.name, r.name.span, type_id)?;
                 }
                 Item::TypeDef(t) => {
-                    let docs = self.docs(&t.docs);
+                    let docs = t.docs.docs.iter().into();
                     let id = self.types.alloc(TypeDef {
                         docs,
                         // a dummy kind is used for now which will get filled in
@@ -288,7 +296,7 @@ impl Resolver {
         Ok(())
     }
 
-    fn define_resource(&mut self, name: &str, span: Span, id: ResourceId) -> Result<()> {
+    fn define_resource(&mut self, name: &str, span: lex::Span, id: ResourceId) -> Result<()> {
         if self.resource_lookup.insert(name.to_string(), id).is_some() {
             Err(Error {
                 span,
@@ -300,7 +308,7 @@ impl Resolver {
         }
     }
 
-    fn define_type(&mut self, name: &str, span: Span, id: TypeId) -> Result<()> {
+    fn define_type(&mut self, name: &str, span: lex::Span, id: TypeId) -> Result<()> {
         if self.type_lookup.insert(name.to_string(), id).is_some() {
             Err(Error {
                 span,
@@ -379,7 +387,7 @@ impl Resolver {
                     .iter()
                     .map(|field| {
                         Ok(Field {
-                            docs: self.docs(&field.docs),
+                            docs: field.docs.docs.iter().into(),
                             name: field.name.name.to_string(),
                             ty: self.resolve_type(&field.ty)?,
                         })
@@ -406,7 +414,7 @@ impl Resolver {
                 if variant.cases.is_empty() {
                     return Err(Error {
                         span: variant.span,
-                        msg: format!("empty variant"),
+                        msg: "empty variant".to_string(),
                     }
                     .into());
                 }
@@ -415,7 +423,7 @@ impl Resolver {
                     .iter()
                     .map(|case| {
                         Ok(Case {
-                            docs: self.docs(&case.docs),
+                            docs: case.docs.docs.iter().into(),
                             name: case.name.name.to_string(),
                             ty: match &case.ty {
                                 Some(ty) => Some(self.resolve_type(ty)?),
@@ -477,13 +485,13 @@ impl Resolver {
             TypeDefKind::Variant(v) => Key::Variant(
                 v.cases
                     .iter()
-                    .map(|case| (case.name.clone(), case.ty.clone()))
+                    .map(|case| (case.name.clone(), case.ty))
                     .collect::<Vec<_>>(),
             ),
             TypeDefKind::Record(r) => Key::Record(
                 r.fields
                     .iter()
-                    .map(|case| (case.name.clone(), case.ty.clone()))
+                    .map(|case| (case.name.clone(), case.ty))
                     .collect::<Vec<_>>(),
             ),
             TypeDefKind::List(ty) => Key::List(*ty),
@@ -500,31 +508,8 @@ impl Resolver {
         Type::Id(*id)
     }
 
-    fn docs(&mut self, doc: &super::Docs<'_>) -> Docs {
-        if doc.docs.is_empty() {
-            return Docs { contents: None };
-        }
-        let mut docs = String::new();
-        for doc in doc.docs.iter() {
-            if doc.starts_with("//") {
-                docs.push_str(&doc[2..].trim_start_matches('/').trim());
-                docs.push_str("\n");
-            } else {
-                assert!(doc.starts_with("/*"));
-                assert!(doc.ends_with("*/"));
-                for line in doc[2..doc.len() - 2].lines() {
-                    docs.push_str(line);
-                    docs.push_str("\n");
-                }
-            }
-        }
-        Docs {
-            contents: Some(docs),
-        }
-    }
-
     fn resolve_value(&mut self, value: &Value<'_>) -> Result<()> {
-        let docs = self.docs(&value.docs);
+        let docs = value.docs.docs.iter().into();
         match &value.kind {
             ValueKind::Function {
                 is_async,
@@ -534,11 +519,11 @@ impl Resolver {
             } => {
                 let params = params
                     .iter()
-                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
+                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                     .collect::<Result<_>>()?;
                 let results = results
                     .iter()
-                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
+                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                     .collect::<Result<_>>()?;
                 self.functions.push(Function {
                     abi: *abi,
@@ -576,7 +561,7 @@ impl Resolver {
                 ValueKind::Global(_) => {
                     return Err(Error {
                         span: value.name.span,
-                        msg: format!("globals not allowed in resources"),
+                        msg: "globals not allowed in resources".to_string(),
                     }
                     .into());
                 }
@@ -588,14 +573,14 @@ impl Resolver {
                 }
                 .into());
             }
-            let docs = self.docs(&value.docs);
+            let docs = value.docs.docs.iter().into();
             let mut params = params
                 .iter()
-                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
+                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                 .collect::<Result<Vec<_>>>()?;
             let results = results
                 .iter()
-                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
+                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                 .collect::<Result<_>>()?;
             let kind = if *statik {
                 FunctionKind::Static {
@@ -624,7 +609,7 @@ impl Resolver {
 
     fn validate_type_not_recursive(
         &self,
-        span: Span,
+        span: lex::Span,
         ty: TypeId,
         visiting: &mut HashSet<TypeId>,
         valid: &mut HashSet<TypeId>,
@@ -635,7 +620,7 @@ impl Resolver {
         if !visiting.insert(ty) {
             return Err(Error {
                 span,
-                msg: format!("type can recursively refer to itself"),
+                msg: "type can recursively refer to itself".to_string(),
             }
             .into());
         }

@@ -1,13 +1,223 @@
 use crate::abi::Abi;
-use anyhow::Result;
-use lex::{Span, Token, Tokenizer};
+use crate::lex::{self, Span, Tokenizer};
+use crate::Error;
+use anyhow::{bail, Result};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::fmt;
 
-mod lex;
 mod resolve;
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+enum Token {
+    Whitespace,
+    Comment,
+
+    Equals,
+    Comma,
+    Colon,
+    Semicolon,
+    LeftParen,
+    RightParen,
+    LeftBrace,
+    RightBrace,
+    LessThan,
+    GreaterThan,
+    RArrow,
+    Star,
+
+    Use,
+    Type,
+    Resource,
+    Function,
+    U8,
+    U16,
+    U32,
+    U64,
+    S8,
+    S16,
+    S32,
+    S64,
+    F32,
+    F64,
+    Char,
+    Handle,
+    Record,
+    Flags,
+    Variant,
+    Enum,
+    Union,
+    Bool,
+    String,
+    Option,
+    Expected,
+    List,
+    Underscore,
+    PushBuffer,
+    PullBuffer,
+    As,
+    From,
+    Static,
+    Interface,
+    Tuple,
+    Async,
+
+    Id,
+    StrLit,
+}
+
+impl Token {
+    fn is_keylike(ch: char) -> bool {
+        ch == '_'
+            || ch == '-'
+            || ('A'..='Z').contains(&ch)
+            || ('a'..='z').contains(&ch)
+            || ('0'..='9').contains(&ch)
+    }
+}
+
+impl lex::Token for Token {
+    fn whitespace() -> Self {
+        Self::Whitespace
+    }
+
+    fn comment() -> Self {
+        Self::Comment
+    }
+
+    fn string() -> Self {
+        Self::StrLit
+    }
+
+    fn parse(
+        start: usize,
+        ch: char,
+        tokenizer: &mut Tokenizer<'_, Self>,
+    ) -> Result<Self, lex::Error> {
+        Ok(match ch {
+            '=' => Self::Equals,
+            ',' => Self::Comma,
+            ':' => Self::Colon,
+            ';' => Self::Semicolon,
+            '(' => Self::LeftParen,
+            ')' => Self::RightParen,
+            '{' => Self::LeftBrace,
+            '}' => Self::RightBrace,
+            '<' => Self::LessThan,
+            '>' => Self::GreaterThan,
+            '*' => Self::Star,
+            '-' => {
+                if tokenizer.eatc('>') {
+                    Self::RArrow
+                } else {
+                    return Err(lex::Error::Unexpected(start, '-'));
+                }
+            }
+            ch if Self::is_keylike(ch) => {
+                let consumed = tokenizer.eat_while(Self::is_keylike);
+                let end = start + ch.len_utf8() + consumed;
+                match &tokenizer.input()[start..end] {
+                    "use" => Self::Use,
+                    "type" => Self::Type,
+                    "resource" => Self::Resource,
+                    "function" => Self::Function,
+                    "u8" => Self::U8,
+                    "u16" => Self::U16,
+                    "u32" => Self::U32,
+                    "u64" => Self::U64,
+                    "s8" => Self::S8,
+                    "s16" => Self::S16,
+                    "s32" => Self::S32,
+                    "s64" => Self::S64,
+                    "f32" => Self::F32,
+                    "f64" => Self::F64,
+                    "char" => Self::Char,
+                    "handle" => Self::Handle,
+                    "record" => Self::Record,
+                    "flags" => Self::Flags,
+                    "variant" => Self::Variant,
+                    "enum" => Self::Enum,
+                    "union" => Self::Union,
+                    "bool" => Self::Bool,
+                    "string" => Self::String,
+                    "option" => Self::Option,
+                    "expected" => Self::Expected,
+                    "list" => Self::List,
+                    "_" => Self::Underscore,
+                    "push-buffer" => Self::PushBuffer,
+                    "pull-buffer" => Self::PullBuffer,
+                    "as" => Self::As,
+                    "from" => Self::From,
+                    "static" => Self::Static,
+                    "interface" => Self::Interface,
+                    "tuple" => Self::Tuple,
+                    "async" => Self::Async,
+                    _ => Self::Id,
+                }
+            }
+            _ => return Err(lex::Error::Unexpected(start, ch)),
+        })
+    }
+
+    fn ignored(&self) -> bool {
+        matches!(self, Self::Whitespace | Self::Comment)
+    }
+
+    fn describe(&self) -> &'static str {
+        match self {
+            Self::Whitespace => "whitespace",
+            Self::Comment => "a comment",
+            Self::Equals => "'='",
+            Self::Comma => "','",
+            Self::Colon => "':'",
+            Self::Semicolon => "';'",
+            Self::LeftParen => "'('",
+            Self::RightParen => "')'",
+            Self::LeftBrace => "'{'",
+            Self::RightBrace => "'}'",
+            Self::LessThan => "'<'",
+            Self::GreaterThan => "'>'",
+            Self::Use => "keyword `use`",
+            Self::Type => "keyword `type`",
+            Self::Resource => "keyword `resource`",
+            Self::Function => "keyword `function`",
+            Self::U8 => "keyword `u8`",
+            Self::U16 => "keyword `u16`",
+            Self::U32 => "keyword `u32`",
+            Self::U64 => "keyword `u64`",
+            Self::S8 => "keyword `s8`",
+            Self::S16 => "keyword `s16`",
+            Self::S32 => "keyword `s32`",
+            Self::S64 => "keyword `s64`",
+            Self::F32 => "keyword `f32`",
+            Self::F64 => "keyword `f64`",
+            Self::Char => "keyword `char`",
+            Self::Handle => "keyword `handle`",
+            Self::Record => "keyword `record`",
+            Self::Flags => "keyword `flags`",
+            Self::Variant => "keyword `variant`",
+            Self::Enum => "keyword `enum`",
+            Self::Union => "keyword `union`",
+            Self::Bool => "keyword `bool`",
+            Self::String => "keyword `string`",
+            Self::Option => "keyword `option`",
+            Self::Expected => "keyword `expected`",
+            Self::List => "keyword `list`",
+            Self::Underscore => "keyword `_`",
+            Self::Id => "an identifier",
+            Self::StrLit => "a string literal",
+            Self::PushBuffer => "keyword `push-buffer`",
+            Self::PullBuffer => "keyword `pull-buffer`",
+            Self::RArrow => "`->`",
+            Self::Star => "`*`",
+            Self::As => "keyword `as`",
+            Self::From => "keyword `from`",
+            Self::Static => "keyword `static`",
+            Self::Interface => "keyword `interface`",
+            Self::Tuple => "keyword `tuple`",
+            Self::Async => "keyword `async`",
+        }
+    }
+}
 
 pub struct Ast<'a> {
     pub items: Vec<Item<'a>>,
@@ -444,7 +654,7 @@ impl<'a> Ast<'a> {
 }
 
 impl<'a> Item<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Item<'a>> {
+    fn parse(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Item<'a>> {
         match tokens.clone().next()? {
             Some((_span, Token::Use)) => Use::parse(tokens, docs).map(Item::Use),
             Some((_span, Token::Type)) => TypeDef::parse(tokens, docs).map(Item::TypeDef),
@@ -460,13 +670,17 @@ impl<'a> Item<'a> {
             Some((_span, Token::Id)) | Some((_span, Token::StrLit)) => {
                 Value::parse(tokens, docs).map(Item::Value)
             }
-            other => Err(err_expected(tokens, "`type`, `resource`, or `fn`", other).into()),
+            other => {
+                let (span, msg) =
+                    tokens.format_expected_error("`type`, `resource`, or `fn`", other);
+                bail!(Error { span, msg })
+            }
         }
     }
 }
 
 impl<'a> Use<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, _docs: Docs<'a>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a, Token>, _docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Use)?;
         let mut names = None;
         loop {
@@ -490,10 +704,10 @@ impl<'a> Use<'a> {
                 break;
             }
         }
-        if !names.is_none() {
+        if names.is_some() {
             tokens.expect(Token::RightBrace)?;
         }
-        tokens.expect(Token::From_)?;
+        tokens.expect(Token::From)?;
         let mut from = vec![parse_id(tokens)?];
         while tokens.eat(Token::Colon)? {
             tokens.expect_raw(Token::Colon)?;
@@ -504,7 +718,7 @@ impl<'a> Use<'a> {
 }
 
 impl<'a> TypeDef<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Type)?;
         let name = parse_id(tokens)?;
         tokens.expect(Token::Equals)?;
@@ -512,7 +726,7 @@ impl<'a> TypeDef<'a> {
         Ok(TypeDef { docs, name, ty })
     }
 
-    fn parse_flags(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
+    fn parse_flags(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Flags)?;
         let name = parse_id(tokens)?;
         let ty = Type::Record(Record {
@@ -535,7 +749,7 @@ impl<'a> TypeDef<'a> {
         Ok(TypeDef { docs, name, ty })
     }
 
-    fn parse_record(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
+    fn parse_record(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Record)?;
         let name = parse_id(tokens)?;
         let ty = Type::Record(Record {
@@ -556,7 +770,7 @@ impl<'a> TypeDef<'a> {
         Ok(TypeDef { docs, name, ty })
     }
 
-    fn parse_variant(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
+    fn parse_variant(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Variant)?;
         let name = parse_id(tokens)?;
         let ty = Type::Variant(Variant {
@@ -582,7 +796,7 @@ impl<'a> TypeDef<'a> {
         Ok(TypeDef { docs, name, ty })
     }
 
-    fn parse_union(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
+    fn parse_union(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Union)?;
         let name = parse_id(tokens)?;
         let mut i = 0;
@@ -607,7 +821,7 @@ impl<'a> TypeDef<'a> {
         Ok(TypeDef { docs, name, ty })
     }
 
-    fn parse_enum(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
+    fn parse_enum(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Enum)?;
         let name = parse_id(tokens)?;
         let ty = Type::Variant(Variant {
@@ -632,7 +846,7 @@ impl<'a> TypeDef<'a> {
 }
 
 impl<'a> Resource<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Resource)?;
         let name = parse_id(tokens)?;
         let mut values = Vec::new();
@@ -651,7 +865,7 @@ impl<'a> Resource<'a> {
 }
 
 impl<'a> Value<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
         let name = parse_id(tokens)?;
         tokens.expect(Token::Colon)?;
 
@@ -665,7 +879,10 @@ impl<'a> Value<'a> {
         };
         return Ok(Value { docs, name, kind });
 
-        fn parse_func<'a>(tokens: &mut Tokenizer<'a>, is_async: bool) -> Result<ValueKind<'a>> {
+        fn parse_func<'a>(
+            tokens: &mut Tokenizer<'a, Token>,
+            is_async: bool,
+        ) -> Result<ValueKind<'a>> {
             let params = parse_list(
                 tokens,
                 Token::LeftParen,
@@ -699,7 +916,7 @@ impl<'a> Value<'a> {
             })
         }
 
-        fn parse_return_val<'a>(tokens: &mut Tokenizer<'a>) -> Result<(Id<'a>, Type<'a>)> {
+        fn parse_return_val<'a>(tokens: &mut Tokenizer<'a, Token>) -> Result<(Id<'a>, Type<'a>)> {
             let mut other = tokens.clone();
             let id = match parse_opt_id(&mut other)? {
                 Some(id) => {
@@ -717,7 +934,7 @@ impl<'a> Value<'a> {
     }
 }
 
-fn parse_id<'a>(tokens: &mut Tokenizer<'a>) -> Result<Id<'a>> {
+fn parse_id<'a>(tokens: &mut Tokenizer<'a, Token>) -> Result<Id<'a>> {
     match tokens.next()? {
         Some((span, Token::Id)) => Ok(Id {
             name: tokens.get_span(span).into(),
@@ -727,11 +944,14 @@ fn parse_id<'a>(tokens: &mut Tokenizer<'a>) -> Result<Id<'a>> {
             name: tokens.parse_str(span).into(),
             span,
         }),
-        other => Err(err_expected(tokens, "an identifier or string", other).into()),
+        other => {
+            let (span, msg) = tokens.format_expected_error("an identifier or string", other);
+            bail!(Error { span, msg })
+        }
     }
 }
 
-fn parse_opt_id<'a>(tokens: &mut Tokenizer<'a>) -> Result<Option<Id<'a>>> {
+fn parse_opt_id<'a>(tokens: &mut Tokenizer<'a, Token>) -> Result<Option<Id<'a>>> {
     let mut other = tokens.clone();
     match other.next()? {
         Some((span, Token::Id)) => {
@@ -752,7 +972,7 @@ fn parse_opt_id<'a>(tokens: &mut Tokenizer<'a>) -> Result<Option<Id<'a>>> {
     }
 }
 
-fn parse_docs<'a>(tokens: &mut Tokenizer<'a>) -> Result<Docs<'a>> {
+fn parse_docs<'a>(tokens: &mut Tokenizer<'a, Token>) -> Result<Docs<'a>> {
     let mut docs = Docs::default();
     let mut clone = tokens.clone();
     while let Some((span, token)) = clone.next_raw()? {
@@ -767,7 +987,7 @@ fn parse_docs<'a>(tokens: &mut Tokenizer<'a>) -> Result<Docs<'a>> {
 }
 
 impl<'a> Type<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a, Token>) -> Result<Self> {
         match tokens.next()? {
             Some((_span, Token::U8)) => Ok(Type::U8),
             Some((_span, Token::U16)) => Ok(Type::U16),
@@ -809,7 +1029,7 @@ impl<'a> Type<'a> {
             }
 
             Some((_span, Token::Bool)) => Ok(Type::bool()),
-            Some((_span, Token::String_)) => Ok(Type::List(Box::new(Type::Char))),
+            Some((_span, Token::String)) => Ok(Type::List(Box::new(Type::Char))),
 
             // list<T>
             Some((_span, Token::List)) => {
@@ -820,7 +1040,7 @@ impl<'a> Type<'a> {
             }
 
             // option<T>
-            Some((span, Token::Option_)) => {
+            Some((span, Token::Option)) => {
                 tokens.expect(Token::LessThan)?;
                 let ty = Type::parse(tokens)?;
                 tokens.expect(Token::GreaterThan)?;
@@ -902,7 +1122,10 @@ impl<'a> Type<'a> {
                 Ok(Type::PullBuffer(Box::new(ty)))
             }
 
-            other => Err(err_expected(tokens, "a type", other).into()),
+            other => {
+                let (span, msg) = tokens.format_expected_error("a type", other);
+                bail!(Error { span, msg })
+            }
         }
     }
 
@@ -927,7 +1150,7 @@ impl<'a> Type<'a> {
 }
 
 impl<'a> Interface<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Interface)?;
         let name = parse_id(tokens)?;
         tokens.expect(Token::LeftBrace)?;
@@ -944,10 +1167,10 @@ impl<'a> Interface<'a> {
 }
 
 fn parse_list<'a, T>(
-    tokens: &mut Tokenizer<'a>,
+    tokens: &mut Tokenizer<'a, Token>,
     start: Token,
     end: Token,
-    mut parse: impl FnMut(Docs<'a>, &mut Tokenizer<'a>) -> Result<T>,
+    mut parse: impl FnMut(Docs<'a>, &mut Tokenizer<'a, Token>) -> Result<T>,
 ) -> Result<Vec<T>> {
     tokens.expect(start)?;
     let mut items = Vec::new();
@@ -971,107 +1194,4 @@ fn parse_list<'a, T>(
         }
     }
     Ok(items)
-}
-
-fn err_expected(
-    tokens: &Tokenizer<'_>,
-    expected: &'static str,
-    found: Option<(Span, Token)>,
-) -> Error {
-    match found {
-        Some((span, token)) => Error {
-            span,
-            msg: format!("expected {}, found {}", expected, token.describe()),
-        },
-        None => Error {
-            span: Span {
-                start: u32::try_from(tokens.input().len()).unwrap(),
-                end: u32::try_from(tokens.input().len()).unwrap(),
-            },
-            msg: format!("expected {}, found eof", expected),
-        },
-    }
-}
-
-#[derive(Debug)]
-struct Error {
-    span: Span,
-    msg: String,
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.msg.fmt(f)
-    }
-}
-
-impl std::error::Error for Error {}
-
-pub fn rewrite_error(err: &mut anyhow::Error, file: &str, contents: &str) {
-    #[cfg(feature = "old-witx-compat")]
-    if let Some(err) = err.downcast_mut::<wast::Error>() {
-        err.set_path(file.as_ref());
-        err.set_text(contents);
-        return;
-    }
-    let parse = match err.downcast_mut::<Error>() {
-        Some(err) => err,
-        None => return lex::rewrite_error(err, file, contents),
-    };
-    let msg = highlight_err(
-        parse.span.start as usize,
-        Some(parse.span.end as usize),
-        file,
-        contents,
-        &parse.msg,
-    );
-    *err = anyhow::anyhow!("{}", msg);
-}
-
-fn highlight_err(
-    start: usize,
-    end: Option<usize>,
-    file: &str,
-    input: &str,
-    err: impl fmt::Display,
-) -> String {
-    let (line, col) = linecol_in(start, input);
-    let snippet = input.lines().nth(line).unwrap_or("");
-    let mut msg = format!(
-        "\
-{err}
-     --> {file}:{line}:{col}
-      |
- {line:4} | {snippet}
-      | {marker:>0$}",
-        col + 1,
-        file = file,
-        line = line + 1,
-        col = col + 1,
-        err = err,
-        snippet = snippet,
-        marker = "^",
-    );
-    if let Some(end) = end {
-        if let Some(s) = input.get(start..end) {
-            for _ in s.chars().skip(1) {
-                msg.push_str("-");
-            }
-        }
-    }
-    return msg;
-
-    fn linecol_in(pos: usize, text: &str) -> (usize, usize) {
-        let mut cur = 0;
-        // Use split_terminator instead of lines so that if there is a `\r`,
-        // it is included in the offset calculation. The `+1` values below
-        // account for the `\n`.
-        for (i, line) in text.split_terminator('\n').enumerate() {
-            if cur + line.len() + 1 > pos {
-                return (i, pos - cur);
-            }
-            cur += line.len() + 1;
-        }
-        (text.lines().count(), 0)
-    }
 }

@@ -1,14 +1,54 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use id_arena::{Arena, Id};
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::{fmt, fs};
 
 pub mod abi;
 mod ast;
+mod lex;
+mod profile;
 mod sizealign;
 pub use sizealign::*;
 
+pub use profile::*;
+
+#[derive(Debug)]
+pub struct Error {
+    span: lex::Span,
+    msg: String,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.msg.fmt(f)
+    }
+}
+
+impl std::error::Error for Error {}
+
+fn rewrite_error(err: &mut anyhow::Error, file: &str, contents: &str) {
+    #[cfg(feature = "old-witx-compat")]
+    if let Some(err) = err.downcast_mut::<wast::Error>() {
+        err.set_path(file.as_ref());
+        err.set_text(contents);
+        return;
+    }
+    let parse = match err.downcast_mut::<Error>() {
+        Some(err) => err,
+        None => return lex::rewrite_error(err, file, contents),
+    };
+    let msg = crate::lex::highlight_err(
+        parse.span.start as usize,
+        Some(parse.span.end as usize),
+        file,
+        contents,
+        &parse.msg,
+    );
+    *err = anyhow::anyhow!("{}", msg);
+}
+
+#[derive(Clone)]
 pub struct Interface {
     pub name: String,
     pub types: Arena<TypeDef>,
@@ -25,6 +65,7 @@ pub type TypeId = Id<TypeDef>;
 pub type ResourceId = Id<Resource>;
 pub type InterfaceId = Id<Interface>;
 
+#[derive(Clone)]
 pub struct TypeDef {
     pub docs: Docs,
     pub kind: TypeDefKind,
@@ -34,6 +75,7 @@ pub struct TypeDef {
     pub foreign_module: Option<String>,
 }
 
+#[derive(Clone)]
 pub enum TypeDefKind {
     Record(Record),
     Variant(Variant),
@@ -72,7 +114,7 @@ pub enum Int {
     U64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Record {
     pub fields: Vec<Field>,
     pub kind: RecordKind,
@@ -85,7 +127,7 @@ pub enum RecordKind {
     Tuple,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Field {
     pub docs: Docs,
     pub name: String,
@@ -94,17 +136,11 @@ pub struct Field {
 
 impl Record {
     pub fn is_tuple(&self) -> bool {
-        match self.kind {
-            RecordKind::Tuple => true,
-            _ => false,
-        }
+        matches!(self.kind, RecordKind::Tuple)
     }
 
     pub fn is_flags(&self) -> bool {
-        match self.kind {
-            RecordKind::Flags(_) => true,
-            _ => false,
-        }
+        matches!(self.kind, RecordKind::Flags(_))
     }
 
     pub fn num_i32s(&self) -> usize {
@@ -114,7 +150,7 @@ impl Record {
 
 impl RecordKind {
     fn infer(types: &Arena<TypeDef>, fields: &[Field]) -> RecordKind {
-        if fields.len() == 0 {
+        if fields.is_empty() {
             return RecordKind::Other;
         }
 
@@ -147,7 +183,7 @@ impl RecordKind {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Variant {
     pub cases: Vec<Case>,
     /// The bit representation of the width of this variant's tag when the
@@ -155,7 +191,7 @@ pub struct Variant {
     pub tag: Int,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Case {
     pub docs: Docs,
     pub name: String,
@@ -217,6 +253,38 @@ pub struct Docs {
     pub contents: Option<String>,
 }
 
+impl<'a, T, U> From<T> for Docs
+where
+    T: ExactSizeIterator<Item = U>,
+    U: AsRef<str>,
+{
+    fn from(iter: T) -> Self {
+        if iter.len() == 0 {
+            return Self { contents: None };
+        }
+
+        let mut docs = String::new();
+        for doc in iter {
+            let doc = doc.as_ref();
+            if let Some(doc) = doc.strip_prefix("//") {
+                docs.push_str(doc.trim_start_matches('/').trim());
+            } else {
+                assert!(doc.starts_with("/*"));
+                assert!(doc.ends_with("*/"));
+                for line in doc[2..doc.len() - 2].lines() {
+                    docs.push_str(line);
+                    docs.push('\n');
+                }
+            }
+        }
+
+        Self {
+            contents: Some(docs),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct Resource {
     pub docs: Docs,
     pub name: String,
@@ -225,13 +293,14 @@ pub struct Resource {
     pub foreign_module: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct Global {
     pub docs: Docs,
     pub name: String,
     pub ty: Type,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub abi: abi::Abi,
     pub is_async: bool,
@@ -242,7 +311,7 @@ pub struct Function {
     pub results: Vec<(String, Type)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FunctionKind {
     Freestanding,
     Static { resource: ResourceId, name: String },
@@ -261,8 +330,8 @@ impl Function {
 
 impl Interface {
     pub fn parse(name: &str, input: &str) -> Result<Interface> {
-        Interface::parse_with(name, input, |f| {
-            Err(anyhow!("cannot load submodule `{}`", f))
+        Interface::parse_with(name, input, |name| {
+            bail!("cannot load interface `{}`", name)
         })
     }
 
@@ -270,17 +339,17 @@ impl Interface {
         let path = path.as_ref();
         let parent = path.parent().unwrap();
         let contents = std::fs::read_to_string(&path)
-            .with_context(|| format!("failed to read: {}", path.display()))?;
-        Interface::parse_with(path, &contents, |path| load_fs(parent, path))
+            .with_context(|| format!("failed to read interface `{}`", path.display()))?;
+        Interface::parse_with(path, &contents, |name| load_fs(parent, name))
     }
 
     pub fn parse_with(
-        filename: impl AsRef<Path>,
+        path: impl AsRef<Path>,
         contents: &str,
         mut load: impl FnMut(&str) -> Result<(PathBuf, String)>,
     ) -> Result<Interface> {
         Interface::_parse_with(
-            filename.as_ref(),
+            path.as_ref(),
             contents,
             &mut load,
             &mut HashSet::new(),
@@ -289,25 +358,25 @@ impl Interface {
     }
 
     fn _parse_with(
-        filename: &Path,
+        path: &Path,
         contents: &str,
         load: &mut dyn FnMut(&str) -> Result<(PathBuf, String)>,
         visiting: &mut HashSet<PathBuf>,
         map: &mut HashMap<String, Interface>,
     ) -> Result<Interface> {
         // Parse the `contents `into an AST
-        let ast = match ast::Ast::parse(&contents) {
+        let ast = match ast::Ast::parse(contents) {
             Ok(ast) => ast,
             Err(mut e) => {
-                let file = filename.display().to_string();
-                ast::rewrite_error(&mut e, &file, contents);
+                let file = path.display().to_string();
+                rewrite_error(&mut e, &file, contents);
                 return Err(e);
             }
         };
 
         // Load up any modules into our `map` that have not yet been parsed.
-        if !visiting.insert(filename.to_path_buf()) {
-            bail!("file `{}` recursively imports itself", filename.display())
+        if !visiting.insert(path.to_path_buf()) {
+            bail!("file `{}` recursively imports itself", path.display())
         }
         for item in ast.items.iter() {
             let u = match item {
@@ -317,21 +386,23 @@ impl Interface {
             if map.contains_key(&*u.from[0].name) {
                 continue;
             }
-            let (filename, contents) = load(&u.from[0].name)
+
+            let (path, contents) = load(&u.from[0].name)
                 // TODO: insert context here about `u.name.span` and `filename`
                 ?;
-            let instance = Interface::_parse_with(&filename, &contents, load, visiting, map)?;
+
+            let instance = Self::_parse_with(&path, &contents, load, visiting, map)?;
             map.insert(u.from[0].name.to_string(), instance);
         }
-        visiting.remove(filename);
+        visiting.remove(path);
 
         // and finally resolve everything into our final instance
-        let name = filename.file_stem().unwrap().to_str().unwrap();
+        let name = path.file_stem().unwrap().to_str().unwrap();
         match ast.resolve(name, map) {
             Ok(i) => Ok(i),
             Err(mut e) => {
-                let file = filename.display().to_string();
-                ast::rewrite_error(&mut e, &file, contents);
+                let file = path.display().to_string();
+                rewrite_error(&mut e, &file, contents);
                 Err(e)
             }
         }
@@ -343,7 +414,7 @@ impl Interface {
         for (id, _) in self.types.iter() {
             self.topo_visit(id, &mut ret, &mut visited);
         }
-        return ret;
+        ret
     }
 
     fn topo_visit(&self, id: TypeId, list: &mut Vec<TypeId>, visited: &mut HashSet<TypeId>) {

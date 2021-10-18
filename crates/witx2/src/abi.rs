@@ -1019,21 +1019,18 @@ impl Interface {
 
         for (_, result) in func.results.iter() {
             if let (Abi::Preview1, Type::Id(id)) = (func.abi, result) {
-                match &self.types[*id].kind {
-                    TypeDefKind::Variant(v) => {
-                        results.push(v.tag.into());
-                        if v.is_enum() {
-                            continue;
-                        }
-                        // return pointer for payload, if any
-                        if let Some(ty) = &v.cases[0].ty {
-                            for _ in 0..self.preview1_num_types(ty) {
-                                params.push(WasmType::I32);
-                            }
-                        }
+                if let TypeDefKind::Variant(v) = &self.types[*id].kind {
+                    results.push(v.tag.into());
+                    if v.is_enum() {
                         continue;
                     }
-                    _ => {}
+                    // return pointer for payload, if any
+                    if let Some(ty) = &v.cases[0].ty {
+                        for _ in 0..self.preview1_num_types(ty) {
+                            params.push(WasmType::I32);
+                        }
+                    }
+                    continue;
                 }
             }
             self.push_wasm(func.abi, dir, result, &mut results);
@@ -1349,10 +1346,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 .params
                                 .iter()
                                 .filter(|(_, t)| match t {
-                                    Type::Id(id) => match &self.iface.types[*id].kind {
-                                        TypeDefKind::List(_) => true,
-                                        _ => false,
-                                    },
+                                    Type::Id(id) => {
+                                        matches!(&self.iface.types[*id].kind, TypeDefKind::List(_))
+                                    }
                                     _ => false,
                                 })
                                 .count()
@@ -1410,7 +1406,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         Direction::Export => {
                             // Store all results, if any, into the general
                             // return pointer area.
-                            let retptr = if tys.len() > 0 {
+                            let retptr = if !tys.is_empty() {
                                 let op = self.bindgen.i64_return_pointer_area(tys.len());
                                 self.stack.push(op);
                                 Some(self.store_retptr(tys))
@@ -1490,6 +1486,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     /// interface types equivalent.
     fn lift_all(&mut self, tys: &[(String, Type)]) {
         let mut temp = Vec::new();
+        #[allow(clippy::needless_collect)]
         let operands = tys
             .iter()
             .rev()
@@ -1522,7 +1519,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     /// Assumes that the value for `tys` is already on the stack, and then
     /// converts all of those values into their wasm types by lowering each
     /// argument in-order.
-    fn lower_all<'b>(&mut self, tys: &[(String, Type)], mut nargs: Option<usize>) {
+    fn lower_all(&mut self, tys: &[(String, Type)], mut nargs: Option<usize>) {
+        #[allow(clippy::needless_collect)]
         let operands = self
             .stack
             .drain(self.stack.len() - tys.len()..)
@@ -1549,7 +1547,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 WasmType::F64 => self.emit(&Instruction::F64Store { offset }),
             }
         }
-        return retptr;
+        retptr
     }
 
     fn witx(&mut self, instr: &WitxInstruction<'_>) {
@@ -1581,7 +1579,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             inst.results_len(),
             self.results.len()
         );
-        self.stack.extend(self.results.drain(..));
+        self.stack.append(&mut self.results);
     }
 
     fn push_block(&mut self) {
@@ -1684,10 +1682,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                 },
                 TypeDefKind::PushBuffer(ty) | TypeDefKind::PullBuffer(ty) => {
-                    let push = match &self.iface.types[id].kind {
-                        TypeDefKind::PushBuffer(_) => true,
-                        _ => false,
-                    };
+                    let push = matches!(&self.iface.types[id].kind, TypeDefKind::PushBuffer(_));
                     self.translate_buffer(push, ty);
 
                     // Buffers are only used in the parameter position, so if we
@@ -1759,7 +1754,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&VariantPayloadName);
                     let payload_name = self.stack.pop().unwrap();
                     if let Some(ok) = ok {
-                        self.stack.push(payload_name.clone());
+                        self.stack.push(payload_name);
                         let store = |me: &mut Self, ty: &Type, n| {
                             me.emit(&GetArg { nth: *retptr + n });
                             let addr = me.stack.pop().unwrap();
@@ -1792,7 +1787,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&VariantPayloadName);
                     let payload_name = self.stack.pop().unwrap();
                     if let Some(ty) = err {
-                        self.stack.push(payload_name.clone());
+                        self.stack.push(payload_name);
                         self.lower(ty, None);
                     }
                     self.finish_block(1);
@@ -1922,7 +1917,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 if let Some(results) = &sig.retptr {
                     let ptr = self.bindgen.i64_return_pointer_area(results.len());
                     self.return_pointers.push(ptr.clone());
-                    self.stack.push(ptr.clone());
+                    self.stack.push(ptr);
                 }
             }
         }
@@ -2002,10 +1997,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                 },
                 TypeDefKind::PushBuffer(ty) | TypeDefKind::PullBuffer(ty) => {
-                    let push = match &self.iface.types[id].kind {
-                        TypeDefKind::PushBuffer(_) => true,
-                        _ => false,
-                    };
+                    let push = matches!(&self.iface.types[id].kind, TypeDefKind::PushBuffer(_));
                     self.translate_buffer(push, ty);
                     // Buffers are only used in the parameter position, which
                     // means lifting a buffer should only happen when we are
@@ -2459,13 +2451,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         };
         self.emit(&Instruction::IterBasePointer);
         let addr = self.stack.pop().unwrap();
+
+        self.push_block();
+
         if do_write {
-            self.push_block();
             self.emit(&Instruction::BufferPayloadName);
             self.write_to_memory(ty, addr, 0);
             self.finish_block(0);
         } else {
-            self.push_block();
             self.read_from_memory(ty, addr, 0);
             self.finish_block(1);
         }
