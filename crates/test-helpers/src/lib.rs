@@ -14,7 +14,7 @@ use witx_bindgen_gen_core::Generator;
 #[derive(PartialEq, Eq, Copy, Clone)]
 enum Direction {
     Import,
-    Export
+    Export,
 }
 
 #[proc_macro]

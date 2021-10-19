@@ -27,7 +27,7 @@ use witx_bindgen_gen_wasmtime::Async;
 /// modules and host code. The enum here represents this user perspective.
 enum Direction {
     Import,
-    Export
+    Export,
 }
 
 /// Generate code to support consuming the given interfaces, importaing them
