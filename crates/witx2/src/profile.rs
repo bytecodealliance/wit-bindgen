@@ -19,7 +19,7 @@ pub enum LoadKind {
 }
 
 /// Represents a host profile.
-#[derive(Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Profile {
     provides: HashMap<String, Provide>,
     requires: HashMap<String, Require>,
@@ -51,7 +51,6 @@ impl Profile {
     /// Parse a profile given a path to a file.
     pub fn parse_file(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-
         let contents = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read profile `{}`", path.display()))?;
 
@@ -64,14 +63,27 @@ impl Profile {
         contents: &str,
         mut load: impl FnMut(LoadKind, &str) -> Result<(PathBuf, String)>,
     ) -> Result<Self> {
-        Self::_parse_with(
+        let mut parsed = Self::default();
+
+        let mut visiting = HashSet::new();
+        visiting.insert(path.as_ref().into());
+
+        Self::_parse(
             path.as_ref(),
             contents,
             &mut load,
-            &mut HashSet::new(),
+            &mut visiting,
             &mut HashSet::new(),
             &mut HashMap::new(),
+            &mut parsed,
         )
+        .map_err(|mut e| {
+            let file = path.as_ref().display().to_string();
+            rewrite_error(&mut e, &file, contents);
+            e
+        })?;
+
+        Ok(parsed)
     }
 
     fn load_from(root: PathBuf) -> impl FnMut(LoadKind, &str) -> Result<(PathBuf, String)> {
@@ -99,15 +111,16 @@ impl Profile {
         }
     }
 
-    fn _parse_with(
+    fn _parse(
         path: &Path,
         contents: &str,
         load: &mut dyn FnMut(LoadKind, &str) -> Result<(PathBuf, String)>,
         visiting: &mut HashSet<PathBuf>,
         profiles: &mut HashSet<String>,
         interfaces: &mut HashMap<String, Rc<Interface>>,
-    ) -> Result<Self> {
-        fn add_interface(
+        parsed: &mut Self,
+    ) -> Result<()> {
+        fn load_interface(
             name: &str,
             interfaces: &mut HashMap<String, Rc<Interface>>,
             load: &mut dyn FnMut(LoadKind, &str) -> Result<(PathBuf, String)>,
@@ -125,66 +138,64 @@ impl Profile {
             })
         }
 
-        // Parse the `contents `into an AST
-        let ast = match ast::Ast::parse(contents) {
-            Ok(ast) => ast,
-            Err(mut e) => {
-                let file = path.display().to_string();
-                rewrite_error(&mut e, &file, contents);
-                return Err(e);
-            }
-        };
-
-        if !visiting.insert(path.to_path_buf()) {
-            bail!("file `{}` recursively extends itself", path.display());
-        }
-
-        let mut provides = HashMap::new();
-        let mut requires = HashMap::new();
-        let mut implements = HashMap::new();
+        let ast = ast::Ast::parse(contents)?;
+        let mut extending = true;
 
         for item in ast.items {
             match item {
                 ast::Item::Extend(e) => {
-                    if profiles.contains(e.profile.as_ref()) {
+                    if !extending {
+                        bail!(crate::Error {
+                            span: e.span,
+                            msg: "extend statements must come before all other statements"
+                                .to_string(),
+                        });
+                    }
+
+                    if !profiles.insert(e.profile.to_string()) {
                         continue;
                     }
 
                     let (path, contents) = load(LoadKind::Profile, &e.profile)?;
 
-                    let profile =
-                        Self::_parse_with(&path, &contents, load, visiting, profiles, interfaces)?;
-
-                    profiles.insert(e.profile.to_string());
-
-                    for (name, interface) in profile.provides {
-                        provides.insert(name, interface);
+                    if !visiting.insert(path.clone()) {
+                        bail!(crate::Error {
+                            span: e.span,
+                            msg: format!(
+                                "extending `{}` ({}) forms a cycle",
+                                e.profile,
+                                path.display()
+                            )
+                        });
                     }
 
-                    for (name, interface) in profile.requires {
-                        requires.insert(name, interface);
-                    }
+                    Self::_parse(
+                        &path, &contents, load, visiting, profiles, interfaces, parsed,
+                    )?;
                 }
                 ast::Item::Provide(p) => {
-                    provides.insert(
+                    extending = false;
+                    parsed.provides.insert(
                         p.interface.to_string(),
                         Provide {
                             docs: p.docs.docs.iter().into(),
-                            interface: add_interface(&p.interface, interfaces, load)?,
+                            interface: load_interface(&p.interface, interfaces, load)?,
                         },
                     );
                 }
                 ast::Item::Require(r) => {
-                    requires.insert(
+                    extending = false;
+                    parsed.requires.insert(
                         r.interface.to_string(),
                         Require {
                             docs: r.docs.docs.iter().into(),
-                            interface: add_interface(&r.interface, interfaces, load)?,
+                            interface: load_interface(&r.interface, interfaces, load)?,
                         },
                     );
                 }
                 ast::Item::Implement(i) => {
-                    if let Some(existing) = implements.insert(
+                    extending = false;
+                    if let Some(existing) = parsed.implements.insert(
                         i.interface.to_string(),
                         Implement {
                             docs: i.docs.docs.iter().into(),
@@ -193,12 +204,13 @@ impl Profile {
                         },
                     ) {
                         if existing.component != i.component {
-                            bail!(
-                                "interface `{}` cannot be implemented by both `{}` and `{}`",
-                                i.interface,
-                                existing.component,
-                                i.component
-                            );
+                            bail!(crate::Error {
+                                span: i.span,
+                                msg: format!(
+                                    "interface `{}` is already implemented by `{}`",
+                                    i.interface, existing.component
+                                ),
+                            });
                         }
                     }
                 }
@@ -207,19 +219,15 @@ impl Profile {
 
         visiting.remove(path);
 
-        Ok(Self {
-            provides,
-            requires,
-            implements,
-        })
+        Ok(())
     }
 }
 
 /// Represents a provided interface specified by a host profile.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Provide {
     pub docs: Docs,
-    interface: Rc<Interface>,
+    pub interface: Rc<Interface>,
 }
 
 impl Provide {
@@ -230,7 +238,7 @@ impl Provide {
 }
 
 /// Represents a required interface specified by a host profile.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Require {
     pub docs: Docs,
     interface: Rc<Interface>,
@@ -244,7 +252,7 @@ impl Require {
 }
 
 /// Represents an interface implementation default specified by a host profile.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Implement {
     pub docs: Docs,
     pub interface: String,
@@ -252,4 +260,188 @@ pub struct Implement {
 }
 
 #[cfg(test)]
-mod test {}
+mod test {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn it_parses_empty_content() -> Result<()> {
+        let profile = Profile::parse("test.profile", "")?;
+        assert!(profile.provides.is_empty());
+        assert!(profile.requires.is_empty());
+        assert!(profile.implements.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn it_parses_whitespace() -> Result<()> {
+        let profile = Profile::parse("test.profile", "       ")?;
+        assert!(profile.provides.is_empty());
+        assert!(profile.requires.is_empty());
+        assert!(profile.implements.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn it_parses_comments() -> Result<()> {
+        let profile = Profile::parse("test.profile", "// a comment\n")?;
+        assert!(profile.provides.is_empty());
+        assert!(profile.requires.is_empty());
+        assert!(profile.implements.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn it_fails_on_invalid_syntax() -> Result<()> {
+        let e = Profile::parse("test.profile", "invalid").expect_err("expected parsing to fail");
+        assert_eq!(e.to_string(), "unexpected character 'i'\n     --> test.profile:1:1\n      |\n    1 | invalid\n      | ^");
+        Ok(())
+    }
+
+    #[test]
+    fn it_parses_a_profile() -> Result<()> {
+        let tmpdir = tempdir()?;
+
+        let base_contents = r#"
+            // foo from base
+            require "foo"
+            // base
+            provide "base"
+        "#;
+
+        let contents = r#"
+            extend "base"
+            // foo
+            require "foo"
+            // quz
+            provide "quz"
+            require "bar"
+            require "baz"
+            provide "qux"
+            // i with c
+            implement "i" with "c"
+            implement "i2" with "c2"
+        "#;
+
+        fn verify(profile: Profile) {
+            assert_eq!(profile.provides.len(), 3);
+            let p = &profile.provides["quz"];
+            assert_eq!(p.docs.contents.as_deref(), Some("quz"));
+            assert_eq!(p.interface.name, "quz");
+            let p = &profile.provides["qux"];
+            assert!(p.docs.contents.is_none());
+            assert_eq!(p.interface.name, "qux");
+            let p = &profile.provides["base"];
+            assert_eq!(p.docs.contents.as_deref(), Some("base"));
+            assert_eq!(p.interface.name, "base");
+
+            assert_eq!(profile.requires.len(), 3);
+            let r = &profile.requires["foo"];
+            assert_eq!(r.docs.contents.as_deref(), Some("foo"));
+            assert_eq!(r.interface.name, "foo");
+            let r = &profile.requires["bar"];
+            assert!(r.docs.contents.is_none());
+            assert_eq!(r.interface.name, "bar");
+            let r = &profile.requires["baz"];
+            assert!(r.docs.contents.is_none());
+            assert_eq!(r.interface.name, "baz");
+
+            assert_eq!(profile.implements.len(), 2);
+            let i = &profile.implements["i"];
+            assert_eq!(i.docs.contents.as_deref(), Some("i with c"));
+            assert_eq!(i.interface, "i");
+            assert_eq!(i.component, "c");
+            let i = &profile.implements["i2"];
+            assert!(i.docs.contents.is_none());
+            assert_eq!(i.interface, "i2");
+            assert_eq!(i.component, "c2");
+        }
+
+        let path = tmpdir.path().join("test.profile");
+
+        fs::write(tmpdir.path().join(&path), contents)?;
+        fs::write(tmpdir.path().join("foo.witx"), "")?;
+        fs::write(tmpdir.path().join("quz.witx"), "")?;
+        fs::write(tmpdir.path().join("bar.witx"), "")?;
+        fs::write(tmpdir.path().join("baz.witx"), "")?;
+        fs::write(tmpdir.path().join("qux.witx"), "")?;
+        fs::write(tmpdir.path().join("base.witx"), "")?;
+        fs::write(tmpdir.path().join("base.profile"), base_contents)?;
+
+        // Test from a file
+        verify(Profile::parse_file(&path)?);
+
+        // Test from a string
+        verify(Profile::parse(&path, contents)?);
+
+        // Test with a custom load function
+        verify(Profile::parse_with(path, contents, |kind, name| {
+            Ok(match (kind, name) {
+                (LoadKind::Interface, "foo") => ("foo.witx".into(), "".to_string()),
+                (LoadKind::Interface, "quz") => ("quz.witx".into(), "".to_string()),
+                (LoadKind::Interface, "bar") => ("bar.witx".into(), "".to_string()),
+                (LoadKind::Interface, "baz") => ("baz.witx".into(), "".to_string()),
+                (LoadKind::Interface, "qux") => ("qux.witx".into(), "".to_string()),
+                (LoadKind::Interface, "base") => ("base.witx".into(), "".to_string()),
+                (LoadKind::Interface, _) => panic!("unexpected interface load of `{}`", name),
+                (LoadKind::Profile, "base") => ("base.profile".into(), base_contents.to_string()),
+                (LoadKind::Profile, _) => panic!("unexpected profile load of `{}`", name),
+            })
+        })?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn it_fails_with_out_of_order_extend() -> Result<()> {
+        let e = Profile::parse_with(
+            "test.profile",
+            r#"
+            implement "foo" with "bar"
+            extend "foo"
+        "#,
+            |kind, name| {
+                Ok(match (kind, name) {
+                    (LoadKind::Profile, "foo") => ("foo.profile".into(), "".to_string()),
+                    _ => panic!("unexpected load"),
+                })
+            },
+        )
+        .expect_err("expected parsing to fail");
+        assert_eq!(e.to_string(), "extend statements must come before all other statements\n     --> test.profile:3:13\n      |\n    3 |             extend \"foo\"\n      |             ^-----------");
+        Ok(())
+    }
+
+    #[test]
+    fn it_fails_with_extend_cycle() -> Result<()> {
+        let e = Profile::parse_with(
+            "test.profile",
+            r#"
+            extend "test"
+        "#,
+            |kind, name| {
+                Ok(match (kind, name) {
+                    (LoadKind::Profile, "test") => ("test.profile".into(), "".to_string()),
+                    _ => panic!("unexpected load"),
+                })
+            },
+        )
+        .expect_err("expected parsing to fail");
+        assert_eq!(e.to_string(), "extending `test` (test.profile) forms a cycle\n     --> test.profile:2:13\n      |\n    2 |             extend \"test\"\n      |             ^------------");
+        Ok(())
+    }
+
+    #[test]
+    fn it_fails_with_conflicting_implementations() -> Result<()> {
+        let e = Profile::parse(
+            "test.profile",
+            r#"
+            implement "foo" with "bar"
+            implement "foo" with "baz"
+        "#,
+        )
+        .expect_err("expected parsing to fail");
+        assert_eq!(e.to_string(), "interface `foo` is already implemented by `bar`\n     --> test.profile:3:13\n      |\n    3 |             implement \"foo\" with \"baz\"\n      |             ^-------------------------");
+        Ok(())
+    }
+}

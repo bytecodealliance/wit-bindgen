@@ -14,6 +14,7 @@ wast = { version = "33", default-features = false, optional = true }
 rayon = "1"
 serde_json = "1"
 serde = { version = "1", features = ['derive'] }
+tempfile = "3.2.0"
 
 [[test]]
 name = "all"

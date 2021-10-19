@@ -141,77 +141,87 @@ impl<'a> Docs<'a> {
 }
 
 pub struct Extend<'a> {
+    pub span: lex::Span,
     pub profile: Cow<'a, str>,
 }
 
 impl<'a> Extend<'a> {
     fn parse(tokens: &mut Tokenizer<'a, Token>) -> Result<Self> {
-        tokens.expect(Token::Extend)?;
-
+        let mut span = tokens.expect(Token::Extend)?;
         let profile = tokens.expect(Token::StrLit)?;
 
+        span.end = profile.end;
+
         Ok(Self {
-            profile: tokens.get_span(profile).into(),
+            span,
+            profile: tokens.parse_str(profile).into(),
         })
     }
 }
 
 pub struct Provide<'a> {
     pub docs: Docs<'a>,
+    pub span: lex::Span,
     pub interface: Cow<'a, str>,
 }
 
 impl<'a> Provide<'a> {
     fn parse(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
-        tokens.expect(Token::Provide)?;
-
+        let mut span = tokens.expect(Token::Provide)?;
         let interface = tokens.expect(Token::StrLit)?;
+
+        span.end = interface.end;
 
         Ok(Self {
             docs,
-            interface: tokens.get_span(interface).into(),
+            span,
+            interface: tokens.parse_str(interface).into(),
         })
     }
 }
 
 pub struct Require<'a> {
     pub docs: Docs<'a>,
+    pub span: lex::Span,
     pub interface: Cow<'a, str>,
 }
 
 impl<'a> Require<'a> {
     fn parse(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
-        tokens.expect(Token::Require)?;
-
+        let mut span = tokens.expect(Token::Require)?;
         let interface = tokens.expect(Token::StrLit)?;
+
+        span.end = interface.end;
 
         Ok(Self {
             docs,
-            interface: tokens.get_span(interface).into(),
+            span,
+            interface: tokens.parse_str(interface).into(),
         })
     }
 }
 
 pub struct Implement<'a> {
     pub docs: Docs<'a>,
+    pub span: lex::Span,
     pub interface: Cow<'a, str>,
     pub component: Cow<'a, str>,
 }
 
 impl<'a> Implement<'a> {
     fn parse(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
-        tokens.expect(Token::Implement)?;
-
+        let mut span = tokens.expect(Token::Implement)?;
         let interface = tokens.expect(Token::StrLit)?;
-
         tokens.expect(Token::With)?;
+        let component = tokens.expect(Token::StrLit)?;
 
-        let implementation = tokens.expect(Token::StrLit)?;
+        span.end = component.end;
 
         Ok(Self {
             docs,
-            interface: tokens.get_span(interface).into(),
-            component: tokens.get_span(implementation).into(),
+            span,
+            interface: tokens.parse_str(interface).into(),
+            component: tokens.parse_str(component).into(),
         })
     }
 }

@@ -48,7 +48,7 @@ fn rewrite_error(err: &mut anyhow::Error, file: &str, contents: &str) {
     *err = anyhow::anyhow!("{}", msg);
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Interface {
     pub name: String,
     pub types: Arena<TypeDef>,
@@ -65,7 +65,7 @@ pub type TypeId = Id<TypeDef>;
 pub type ResourceId = Id<Resource>;
 pub type InterfaceId = Id<Interface>;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct TypeDef {
     pub docs: Docs,
     pub kind: TypeDefKind,
@@ -75,7 +75,7 @@ pub struct TypeDef {
     pub foreign_module: Option<String>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum TypeDefKind {
     Record(Record),
     Variant(Variant),
@@ -284,7 +284,7 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Resource {
     pub docs: Docs,
     pub name: String,
@@ -293,7 +293,7 @@ pub struct Resource {
     pub foreign_module: Option<String>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Global {
     pub docs: Docs,
     pub name: String,
