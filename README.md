@@ -2,7 +2,7 @@
   <h1><code>witx-bindgen</code></h1>
 
   <p>
-    <strong>A language bindings generator for `witx`</strong>
+    <strong>A language bindings generator for <code>`witx</code></strong>
   </p>
 
   <strong>A <a href="https://bytecodealliance.org/">Bytecode Alliance</a> project</strong>
