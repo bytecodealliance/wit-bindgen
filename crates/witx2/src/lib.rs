@@ -264,22 +264,21 @@ impl Function {
 fn unwrap_md(contents: String) -> String {
     let mut witx = String::from("");
     let mut extract_next = false;
-    Parser::new_ext(&contents, Options::empty())
-        .for_each(|event| match event {
-            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("witx")))) => {
-                extract_next = true;
-            },
-            Event::Text(text) => {
-                if extract_next {
-                    witx += &text.to_owned();
-                    witx += "\n";
-                }
-            },
-            Event::End(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("witx")))) => {
-                extract_next = false;
-            },
-            _ => { },
-        });
+    Parser::new_ext(&contents, Options::empty()).for_each(|event| match event {
+        Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("witx")))) => {
+            extract_next = true;
+        }
+        Event::Text(text) => {
+            if extract_next {
+                witx += &text.to_owned();
+                witx += "\n";
+            }
+        }
+        Event::End(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("witx")))) => {
+            extract_next = false;
+        }
+        _ => {}
+    });
     witx
 }
 
@@ -319,7 +318,12 @@ impl Interface {
         visiting: &mut HashSet<PathBuf>,
         map: &mut HashMap<String, Interface>,
     ) -> Result<Interface> {
-        let contents = if filename.extension().and_then(OsStr::to_str).unwrap_or("witx") == "md" {
+        let contents = if filename
+            .extension()
+            .and_then(OsStr::to_str)
+            .unwrap_or("witx")
+            == "md"
+        {
             unwrap_md(contents)
         } else {
             contents
