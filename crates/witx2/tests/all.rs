@@ -81,6 +81,7 @@ fn find_tests() -> Vec<PathBuf> {
 
             match f.path().extension().and_then(|s| s.to_str()) {
                 Some("witx") => {}
+                Some("md") => {}
                 _ => continue,
             }
             tests.push(f.path());

@@ -123,7 +123,7 @@ impl Parse for ConfigField {
             let name = name.parse::<syn::LitStr>()?;
             input.parse::<Token![:]>()?;
             let s = input.parse::<syn::LitStr>()?;
-            let interface = witx2::Interface::parse(&name.value(), &s.value())
+            let interface = witx2::Interface::parse(&name.value(), s.value())
                 .map_err(|e| Error::new(s.span(), e))?;
             Ok(ConfigField::Interfaces(vec![interface]))
         } else if l.peek(kw::paths) {

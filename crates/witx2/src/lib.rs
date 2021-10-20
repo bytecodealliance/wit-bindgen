@@ -1,6 +1,8 @@
 use anyhow::{anyhow, bail, Context, Result};
 use id_arena::{Arena, Id};
+use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options, Parser, Tag};
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -259,8 +261,30 @@ impl Function {
     }
 }
 
+fn unwrap_md(contents: String) -> String {
+    let mut witx = String::from("");
+    let mut extract_next = false;
+    Parser::new_ext(&contents, Options::empty())
+        .for_each(|event| match event {
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("witx")))) => {
+                extract_next = true;
+            },
+            Event::Text(text) => {
+                if extract_next {
+                    witx += &text.to_owned();
+                    witx += "\n";
+                }
+            },
+            Event::End(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("witx")))) => {
+                extract_next = false;
+            },
+            _ => { },
+        });
+    witx
+}
+
 impl Interface {
-    pub fn parse(name: &str, input: &str) -> Result<Interface> {
+    pub fn parse(name: &str, input: String) -> Result<Interface> {
         Interface::parse_with(name, input, |f| {
             Err(anyhow!("cannot load submodule `{}`", f))
         })
@@ -271,12 +295,12 @@ impl Interface {
         let parent = path.parent().unwrap();
         let contents = std::fs::read_to_string(&path)
             .with_context(|| format!("failed to read: {}", path.display()))?;
-        Interface::parse_with(path, &contents, |path| load_fs(parent, path))
+        Interface::parse_with(path, contents, |path| load_fs(parent, path))
     }
 
     pub fn parse_with(
         filename: impl AsRef<Path>,
-        contents: &str,
+        contents: String,
         mut load: impl FnMut(&str) -> Result<(PathBuf, String)>,
     ) -> Result<Interface> {
         Interface::_parse_with(
@@ -290,17 +314,22 @@ impl Interface {
 
     fn _parse_with(
         filename: &Path,
-        contents: &str,
+        contents: String,
         load: &mut dyn FnMut(&str) -> Result<(PathBuf, String)>,
         visiting: &mut HashSet<PathBuf>,
         map: &mut HashMap<String, Interface>,
     ) -> Result<Interface> {
+        let contents = if filename.extension().and_then(OsStr::to_str).unwrap_or("witx") == "md" {
+            unwrap_md(contents)
+        } else {
+            contents
+        };
         // Parse the `contents `into an AST
         let ast = match ast::Ast::parse(&contents) {
             Ok(ast) => ast,
             Err(mut e) => {
                 let file = filename.display().to_string();
-                ast::rewrite_error(&mut e, &file, contents);
+                ast::rewrite_error(&mut e, &file, &contents);
                 return Err(e);
             }
         };
@@ -320,7 +349,7 @@ impl Interface {
             let (filename, contents) = load(&u.from[0].name)
                 // TODO: insert context here about `u.name.span` and `filename`
                 ?;
-            let instance = Interface::_parse_with(&filename, &contents, load, visiting, map)?;
+            let instance = Interface::_parse_with(&filename, contents, load, visiting, map)?;
             map.insert(u.from[0].name.to_string(), instance);
         }
         visiting.remove(filename);
@@ -331,7 +360,7 @@ impl Interface {
             Ok(i) => Ok(i),
             Err(mut e) => {
                 let file = filename.display().to_string();
-                ast::rewrite_error(&mut e, &file, contents);
+                ast::rewrite_error(&mut e, &file, &contents);
                 Err(e)
             }
         }
