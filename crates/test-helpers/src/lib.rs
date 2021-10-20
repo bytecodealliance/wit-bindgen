@@ -4,8 +4,18 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
-use witx_bindgen_gen_core::witx2::abi::Direction;
 use witx_bindgen_gen_core::Generator;
+
+/// This is the direction from the user's perspective. Are we importing
+/// functions to call, or defining functions and exporting them to be called?
+///
+/// This differs from the `witx2::abi::Direction` value in some bindings; see
+/// the comments on the `Direction` enum in wasmtime-impl for details.
+#[derive(PartialEq, Eq, Copy, Clone)]
+enum Direction {
+    Import,
+    Export,
+}
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-rust-wasm")]
@@ -228,18 +238,18 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-wasmtime")]
-pub fn codegen_wasmtime_import(input: TokenStream) -> TokenStream {
+pub fn codegen_wasmtime_export(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
-        Direction::Import,
+        Direction::Export,
         &[
             (
-                "import",
+                "export",
                 || witx_bindgen_gen_wasmtime::Opts::default().build(),
                 |_| quote::quote!(),
             ),
             (
-                "import-tracing-and-custom-error",
+                "export-tracing-and-custom-error",
                 || {
                     let mut opts = witx_bindgen_gen_wasmtime::Opts::default();
                     opts.tracing = true;
@@ -249,7 +259,7 @@ pub fn codegen_wasmtime_import(input: TokenStream) -> TokenStream {
                 |_| quote::quote!(),
             ),
             (
-                "import-async",
+                "export-async",
                 || {
                     let mut opts = witx_bindgen_gen_wasmtime::Opts::default();
                     opts.async_ = witx_bindgen_gen_wasmtime::Async::All;
@@ -263,18 +273,18 @@ pub fn codegen_wasmtime_import(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-wasmtime")]
-pub fn codegen_wasmtime_export(input: TokenStream) -> TokenStream {
+pub fn codegen_wasmtime_import(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
-        Direction::Export,
+        Direction::Import,
         &[
             (
-                "export",
+                "import",
                 || witx_bindgen_gen_wasmtime::Opts::default().build(),
                 |_| quote::quote!(),
             ),
             (
-                "export-async",
+                "import-async",
                 || {
                     let mut opts = witx_bindgen_gen_wasmtime::Opts::default();
                     opts.async_ = witx_bindgen_gen_wasmtime::Async::All;
@@ -397,12 +407,6 @@ where
     let cwd = env::current_dir().unwrap();
     for test in tests {
         let (mut gen, dir) = mkgen(&test);
-        if dir == Direction::Export {
-            match test.file_name().unwrap().to_str().unwrap() {
-                "wasi_snapshot_preview1.witx" | "typenames.witx" | "legacy.witx" => continue,
-                _ => {}
-            }
-        }
         let mut files = Default::default();
         let iface = witx2::Interface::parse_file(&test).unwrap();
         let (mut imports, mut exports) = match dir {

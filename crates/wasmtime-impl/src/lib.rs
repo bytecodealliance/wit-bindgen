@@ -2,15 +2,43 @@ use proc_macro::TokenStream;
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{token, Token};
-use witx2::abi::Direction;
 use witx_bindgen_gen_core::{witx2, Files, Generator};
 use witx_bindgen_gen_wasmtime::Async;
 
+/// This is the direction from the user's perspective. Are we importing
+/// functions to call, or defining functions and exporting them to be called?
+///
+/// In the wasmtime bindings, this is the opposite of the witx2::abi::Direction
+/// value, because these bindings work differently from other bindings:
+///
+/// In a wasm-calling-wasm use case, one wasm module would use the `Import`
+/// ABI, the other would use the `Export` ABI, and there would be an adapter
+/// layer between the two that translates from one ABI to the other.
+///
+/// With wasm-calling-host, we don't go through a separate adapter layer;
+/// the binding code we generate on the host side just does everything
+/// itself. So when the host is conceptually "exporting" a function to
+/// wasm, it uses the `Import` ABI so that wasm can also use the `Import`
+/// ABI and import it directly from the host.
+///
+/// These are all implementation details; from the user perspective, it's
+/// just: `export` means I'm exporting functions to be called, `import`
+/// means I'm importing functions that I'm going to call, in both wasm
+/// modules and host code. The enum here represents this user perspective.
+enum Direction {
+    Import,
+    Export,
+}
+
+/// Generate code to support consuming the given interfaces, importaing them
+/// from wasm modules.
 #[proc_macro]
 pub fn import(input: TokenStream) -> TokenStream {
     run(input, Direction::Import)
 }
 
+/// Generate code to support implementing the given interfaces and exporting
+/// them to wasm modules.
 #[proc_macro]
 pub fn export(input: TokenStream) -> TokenStream {
     run(input, Direction::Export)

@@ -321,7 +321,7 @@ impl RustGenerator for Wasmtime {
                 self.push_str(" mut ");
             }
             self.push_str(&format!(
-                "witx_bindgen_wasmtime::imports::{}Buffer<{}, ",
+                "witx_bindgen_wasmtime::exports::{}Buffer<{}, ",
                 if push { "Push" } else { "Pull" },
                 lt,
             ));
@@ -359,6 +359,10 @@ impl RustGenerator for Wasmtime {
 
 impl Generator for Wasmtime {
     fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
+        let dir = match dir {
+            Direction::Export => Direction::Import,
+            Direction::Import => Direction::Export,
+        };
         self.types.analyze(iface);
         self.in_import = dir == Direction::Import;
         self.trait_name = iface.name.to_camel_case();
@@ -568,7 +572,7 @@ impl Generator for Wasmtime {
     //     ));
     // }
 
-    fn import(&mut self, iface: &Interface, func: &Function) {
+    fn export(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
 
@@ -750,7 +754,7 @@ impl Generator for Wasmtime {
             });
     }
 
-    fn export(&mut self, iface: &Interface, func: &Function) {
+    fn import(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
 
@@ -1058,7 +1062,7 @@ impl Generator for Wasmtime {
                 self.push_str(",\n");
             }
             // if self.needs_buffer_glue {
-            //     self.push_str("buffer_glue: witx_bindgen_wasmtime::exports::BufferGlue,");
+            //     self.push_str("buffer_glue: witx_bindgen_wasmtime::imports::BufferGlue,");
             // }
             self.push_str("}\n");
             let bound = if self.opts.async_.is_none() {
@@ -1158,7 +1162,7 @@ impl Generator for Wasmtime {
             //         "
             //             use witx_bindgen_wasmtime::rt::get_memory;
 
-            //             let buffer_glue = witx_bindgen_wasmtime::exports::BufferGlue::default();
+            //             let buffer_glue = witx_bindgen_wasmtime::imports::BufferGlue::default();
             //             let g = buffer_glue.clone();
             //             linker.func(
             //                 \"witx_canonical_buffer_abi\",
@@ -2002,7 +2006,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.closures.push_str(&block);
                         self.closures.push_str("; Ok(()) };\n");
                         results.push(format!(
-                            "witx_bindgen_wasmtime::imports::PushBuffer::new(
+                            "witx_bindgen_wasmtime::exports::PushBuffer::new(
                                 &mut _bc, ptr{}, len{}, {}, &{})?",
                             tmp, tmp, size, closure
                         ));
@@ -2011,7 +2015,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.closures.push_str(&block);
                         self.closures.push_str(") };\n");
                         results.push(format!(
-                            "witx_bindgen_wasmtime::imports::PullBuffer::new(
+                            "witx_bindgen_wasmtime::exports::PullBuffer::new(
                                 &mut _bc, ptr{}, len{}, {}, &{})?",
                             tmp, tmp, size, closure
                         ));

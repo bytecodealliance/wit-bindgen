@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-witx_bindgen_wasmtime::import!("./tests/runtime/lists/imports.witx");
+witx_bindgen_wasmtime::export!("./tests/runtime/lists/imports.witx");
 
 use imports::*;
 use witx_bindgen_wasmtime::Le;
@@ -122,7 +122,7 @@ impl Imports for MyImports {
     }
 }
 
-witx_bindgen_wasmtime::export!("./tests/runtime/lists/exports.witx");
+witx_bindgen_wasmtime::import!("./tests/runtime/lists/exports.witx");
 
 fn run(wasm: &str) -> Result<()> {
     use exports::*;

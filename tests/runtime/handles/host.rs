@@ -1,4 +1,4 @@
-witx_bindgen_wasmtime::import!("./tests/runtime/handles/imports.witx");
+witx_bindgen_wasmtime::export!("./tests/runtime/handles/imports.witx");
 
 use anyhow::Result;
 use imports::*;
@@ -87,7 +87,7 @@ impl Imports for MyImports {
     fn odd_name_frob_the_odd(&mut self, _: &()) {}
 }
 
-witx_bindgen_wasmtime::export!("./tests/runtime/handles/exports.witx");
+witx_bindgen_wasmtime::import!("./tests/runtime/handles/exports.witx");
 
 fn run(wasm: &str) -> Result<()> {
     use exports::*;
