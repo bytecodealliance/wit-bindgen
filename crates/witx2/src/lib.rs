@@ -261,24 +261,39 @@ impl Function {
     }
 }
 
+// Could use https://github.com/llogiq/newlinebench/blob/5224b46c3ce5355a727eca348d9bacfe78d7d178/src/lib.rs#245
+// if we really care about this being fast.
+fn count_newlines(s: &str) -> usize {
+    s.as_bytes().iter().filter(|&&c| c == b'\n').count()
+}
+
 fn unwrap_md(contents: String) -> String {
     let mut witx = String::from("");
+    let mut line_padding_start = 0;
     let mut extract_next = false;
-    Parser::new_ext(&contents, Options::empty()).for_each(|event| match event {
-        Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("witx")))) => {
-            extract_next = true;
-        }
-        Event::Text(text) => {
-            if extract_next {
-                witx += &text.to_owned();
-                witx += "\n";
+    Parser::new_ext(&contents, Options::empty())
+        .into_offset_iter()
+        .for_each(|(event, range)| match (event, range) {
+            (Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("witx")))), _) => {
+                extract_next = true;
             }
-        }
-        Event::End(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("witx")))) => {
-            extract_next = false;
-        }
-        _ => {}
-    });
+            (Event::Text(text), range) => {
+                if extract_next {
+                    // Ensure that offsets are correct by inserting newlines to cover the Markdown
+                    // content outside of witx code blocks.
+                    let line_padding = count_newlines(&contents[line_padding_start..range.start]);
+                    witx += &std::iter::repeat("\n")
+                        .take(line_padding)
+                        .collect::<String>();
+                    witx += &text.to_owned();
+                    line_padding_start = range.end;
+                }
+            }
+            (Event::End(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("witx")))), _) => {
+                extract_next = false;
+            }
+            _ => {}
+        });
     witx
 }
 
