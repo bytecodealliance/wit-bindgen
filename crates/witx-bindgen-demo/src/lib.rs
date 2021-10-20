@@ -48,7 +48,7 @@ impl demo::Config for Config {
             demo::Lang::C => Box::new(self.c.borrow().clone().build()),
             demo::Lang::Markdown => Box::new(self.markdown.borrow().clone().build()),
         };
-        let iface = witx2::Interface::parse("input", &witx).map_err(|e| format!("{:?}", e))?;
+        let iface = witx2::Interface::parse("input", witx).map_err(|e| format!("{:?}", e))?;
         let mut files = Default::default();
         let (imports, exports) = if import {
             (vec![iface], vec![])
