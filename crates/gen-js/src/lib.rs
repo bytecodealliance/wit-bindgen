@@ -75,7 +75,6 @@ enum Intrinsic {
     Utf8EncodedLen,
     Slab,
     Promises,
-    WithCurrentPromise,
 }
 
 impl Intrinsic {
@@ -102,7 +101,6 @@ impl Intrinsic {
             Intrinsic::Utf8EncodedLen => "UTF8_ENCODED_LEN",
             Intrinsic::Slab => "Slab",
             Intrinsic::Promises => "PROMISES",
-            Intrinsic::WithCurrentPromise => "with_current_promise",
         }
     }
 }
@@ -603,10 +601,10 @@ impl Generator for Js {
         self.src.js(&src.js);
 
         if func.is_async {
-            // Note that `catch_closure` here is defined by the `CallInterface`
-            // instruction.
-            self.src.js("}, catch_closure);\n"); // `.then` block
-            self.src.js("});\n"); // `with_current_promise` block.
+            self.src.js("};\n"); // `const complete = ...` block
+            let promises = self.intrinsic(Intrinsic::Promises);
+            self.src.js(&promises);
+            self.src.js(".spawn_import(promise, complete);\n");
         }
         self.src.js("}");
 
@@ -894,7 +892,7 @@ impl Generator for Js {
                 self.src.js(&format!(
                     "
                         imports.canonical_abi['async_export_done'] = (ctx, ptr) => {{
-                            {}.remove(ctx)(ptr >>> 0)
+                            {}.async_export_done(ctx, ptr >>> 0)
                         }};
                     ",
                     promises
@@ -1936,20 +1934,10 @@ impl Bindgen for FunctionBindgen<'_> {
                 results: wasm_results,
             } => {
                 self.bind_results(wasm_results.len(), results);
-                let promises = self.gen.intrinsic(Intrinsic::Promises);
-                self.src.js(&format!(
-                    "\
-                        await new Promise((resolve, reject) => {{
-                            const promise_ctx = {promises}.insert(val => {{
-                                if (typeof val !== 'number')
-                                    return reject(val);
-                                resolve(\
-                    ",
-                    promises = promises
-                ));
+                self.src.js("await new Promise((resolve, reject) => {\n");
 
                 if wasm_results.len() > 0 {
-                    self.src.js("[");
+                    self.src.js("resolve = val => {\nresolve([");
                     let operands = &["val".to_string()];
                     let mut results = Vec::new();
                     for (i, result) in wasm_results.iter().enumerate() {
@@ -1965,16 +1953,12 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.load(method, (i * 8) as i32, operands, &mut results);
                         self.src.js(&results.pop().unwrap());
                     }
-                    self.src.js("]");
+                    self.src.js("])\n};\n"); // `resolve(...)`
                 }
 
-                // Finish the blocks from above
-                self.src.js(");\n"); // `resolve(...)`
-                self.src.js("});\n"); // `promises.insert(...)`
-
-                let with = self.gen.intrinsic(Intrinsic::WithCurrentPromise);
-                self.src.js(&with);
-                self.src.js("(promise_ctx, _prev => {\n");
+                let promises = self.gen.intrinsic(Intrinsic::Promises);
+                self.src.js(&promises);
+                self.src.js(".spawn(resolve, reject, promise_ctx => {\n");
                 self.src.js(&self.src_object);
                 self.src.js("._exports['");
                 self.src.js(&name);
@@ -1984,7 +1968,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.js(", ");
                 }
                 self.src.js("promise_ctx);\n");
-                self.src.js("});\n"); // call to `with`
+                self.src.js("});\n"); // call to `spawn`
                 self.src.js("});\n"); // `await new Promise(...)`
             }
 
@@ -2037,16 +2021,10 @@ impl Bindgen for FunctionBindgen<'_> {
                 };
 
                 if func.is_async {
-                    let with = self.gen.intrinsic(Intrinsic::WithCurrentPromise);
-                    let promises = self.gen.intrinsic(Intrinsic::Promises);
-                    self.src.js(&with);
-                    self.src.js("(null, cur_promise => {\n");
-                    self.src.js(&format!(
-                        "const catch_closure = e => {}.remove(cur_promise)(e);\n",
-                        promises
-                    ));
+                    self.src.js("const promise = ");
                     call(self);
-                    self.src.js(".then(e => {\n");
+                    self.src.js(";\n");
+                    self.src.js("const complete = e => {\n");
                     if func.results.len() > 0 {
                         bind_results(self);
                         self.src.js("e;\n");
@@ -2083,34 +2061,22 @@ impl Bindgen for FunctionBindgen<'_> {
                 // TODO: shouldn't hardcode the function table name, should
                 // verify the table is present, and should verify the type of
                 // the function returned.
-                results.push(format!(
-                    "get_export(\"__indirect_function_table\").get({})",
-                    operands[0],
+                self.src.js(&format!(
+                    "
+                        const callback = get_export(\"__indirect_function_table\").get({});
+                        if (callback === null)
+                            throw new Error('table index is a null function');
+                    ",
+                    operands[0]
                 ));
+                results.push("callback".to_string());
             }
 
             Instruction::ReturnAsyncImport { .. } => {
-                // When we reenter webassembly successfully that means that the
-                // host's promise resolved without exception. Take the current
-                // promise index saved as part of `CallInterface` and update the
-                // `CUR_PROMISE` global with what's currently being executed.
-                // This'll get reset once the wasm returns again.
-                //
-                // Note that the name `cur_promise` used here is introduced in
-                // the `CallInterface` codegen above in the closure for
-                // `with_current_promise` which we're using here.
+                // TODO
                 self.gen.needs_get_export = true;
-                let with = self.gen.intrinsic(Intrinsic::WithCurrentPromise);
-                self.src.js(&format!(
-                    "\
-                        {with}(cur_promise, _prev => {{
-                            {}({});
-                        }});
-                    ",
-                    operands[0],
-                    operands[1..].join(", "),
-                    with = with,
-                ));
+                self.src
+                    .js(&format!("{}({});\n", operands[0], operands[1..].join(", "),));
             }
 
             Instruction::I32Load { offset } => self.load("getInt32", *offset, operands, results),
@@ -2397,12 +2363,19 @@ impl Js {
                     }
 
                     get(idx) {
-                        if (idx >= this.list.length)
+                        const ret = this.maybeGet(idx);
+                        if (ret === null)
                             throw new RangeError('handle index not valid');
+                        return ret;
+                    }
+
+                    maybeGet(idx) {
+                        if (idx >= this.list.length)
+                            return null;
                         const slot = this.list[idx];
                         if (slot.next === -1)
                             return slot.val;
-                        throw new RangeError('handle index not valid');
+                        return null;
                     }
 
                     remove(idx) {
@@ -2416,18 +2389,116 @@ impl Js {
                 }
             "),
 
-            Intrinsic::Promises => self.src.js("export const PROMISES = new Slab();\n"),
-            Intrinsic::WithCurrentPromise => self.src.js("
-                let CUR_PROMISE = null;
-                export function with_current_promise(val, closure) {
-                    const prev = CUR_PROMISE;
-                    CUR_PROMISE = val;
-                    try {
-                        closure(prev);
-                    } finally {
-                        CUR_PROMISE = prev;
+            Intrinsic::Promises => self.src.js("
+                class Coroutine {
+                    constructor(resolve, reject) {
+                        this.resolve = resolve;
+                        this.reject = reject;
+                        this.completion = null;
+                        this.pending = 0;
+                    }
+
+                    complete(val) {
+                        if (this.completion === null) {
+                            this.completion = val;
+                        } else {
+                            throw new Error('cannot complete coroutine twice');
+                        }
+                    }
+
+                    check_completion() {
+                        if (this.completion === null) {
+                            if (this.pending === 0) {
+                                throw new Error('blocked coroutine with 0 pending callbacks');
+                            }
+                            return false;
+                        } else {
+                            this.resolve(this.completion);
+                            return true;
+                        }
                     }
                 }
+
+                class Promises {
+                    constructor() {
+                        this.slab = new Slab();
+                        this.current = null;
+                    }
+
+                    spawn(resolve, reject, callback) {
+                        const idx = this.slab.insert(new Coroutine(resolve, reject));
+                        this.set_current(idx, () => callback(idx));
+                    }
+
+                    // called when `promise` is the result of an async host
+                    // call, where `complete` should be called on `.then(..)`
+                    // after the promise is finished.
+                    spawn_import(promise, complete) {
+                        const current = this.current;
+                        if (current === null) {
+                            throw new Error('cannot call async import in sync export');
+                        }
+                        const coroutine = this.slab.get(current);
+                        coroutine.pending += 1;
+                        promise.then(
+                            e => {
+                                coroutine.pending -= 1;
+                                this.set_current(current, () => complete(e));
+                            },
+                            // on error this error is carried over to the
+                            // original coroutine, if it's still present. The
+                            // coroutine may already have failed due to some
+                            // other reason in which case we continue to
+                            // propagate this error in the hopes that someone
+                            // else will log uncaught exceptions or similar.
+                            e => {
+                                const coroutine = this.slab.maybeGet(current);
+                                if (coroutine !== null) {
+                                    this.slab.remove(current).reject(e);
+                                } else {
+                                    throw e;
+                                }
+                            },
+                        )
+                    }
+
+                    // implementation of the corresponding wasm intrinsic,
+                    // validates `id` and `val` internally
+                    async_export_done(id, val) {
+                        const coroutine = this.slab.maybeGet(id);
+                        if (coroutine !== null) {
+                            coroutine.complete(val);
+                        } else {
+                            throw new RangeError('invalid coroutine index');
+                        }
+                    }
+
+                    set_current(val, closure) {
+                        // assert that the coroutine is still present
+                        this.slab.get(val);
+                        const prev = this.current;
+                        this.current = val;
+                        try {
+                            // execute some wasm code
+                            closure();
+                            // if it finished successfully then determine if
+                            // the coroutine has completed, or if there are 0
+                            // pending callbacks and it's not completed an
+                            // exception is thrown here.
+                            if (this.slab.get(val).check_completion()) {
+                                this.slab.remove(val);
+                            }
+                        } catch (e) {
+                            // any errors immediately result in aborting the
+                            // coroutine and rejection of the coroutine's
+                            // promise with the same error.
+                            this.slab.remove(val).reject(e);
+                        } finally {
+                            this.current = prev;
+                        }
+                    }
+                }
+                export const PROMISES = new Promises();
             "),
         }
     }

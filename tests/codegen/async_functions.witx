@@ -12,5 +12,8 @@ resource Response {
   body: async function() -> list<u8>
   status: function() -> u32
   status_text: function() -> string
-
 }
+
+resource some_resource
+
+resource_to_resource: async function(x: some_resource) -> some_resource

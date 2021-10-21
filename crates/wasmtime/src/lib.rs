@@ -7,7 +7,7 @@ pub use tracing_lib as tracing;
 #[doc(hidden)]
 pub use {anyhow, bitflags, wasmtime};
 
-pub use futures::{Async, HostFuture};
+pub use futures::HostFuture;
 
 mod error;
 pub mod exports;
@@ -35,7 +35,7 @@ unsafe impl Sync for RawMemory {}
 
 #[doc(hidden)]
 pub mod rt {
-    pub use crate::futures::Async;
+    pub use crate::futures::{Async, AsyncHandle};
     use crate::slab::Slab;
     use crate::{Endian, Le};
     use std::mem;
@@ -262,25 +262,60 @@ pub mod rt {
         }
     }
 
+    use crate::futures::Callback;
     use std::future::Future;
     use std::pin::Pin;
 
-    /// Helper function to assist with type inference for async bits
-    pub fn pin_result_future<'a>(
-        future: impl Future<Output = Result<(), Trap>> + Send + 'a,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Trap>> + Send + 'a>> {
-        Box::pin(future)
+    pub fn infer_start<F, T>(callback: F) -> F
+    where
+        F: for<'a> FnOnce(
+                &'a mut StoreContextMut<'_, T>,
+                u32,
+            )
+                -> Pin<Box<dyn Future<Output = Result<(), Trap>> + Send + 'a>>
+            + Send
+            + 'static,
+    {
+        callback
     }
 
-    /// Helper function to assist with type inference for async bits
-    pub fn box_future_callback<T>(
+    pub fn infer_complete<F, T, U>(callback: F) -> F
+    where
+        F: for<'a> FnOnce(
+                &'a mut StoreContextMut<'_, T>,
+                i32,
+                Memory,
+            )
+                -> Pin<Box<dyn Future<Output = Result<U, Trap>> + Send + 'a>>
+            + Send
+            + 'static,
+    {
+        callback
+    }
+
+    pub fn infer_standalone<F, T, U>(callback: F) -> F
+    where
+        F: for<'a> FnOnce(
+                &'a mut StoreContextMut<'_, T>,
+            )
+                -> Pin<Box<dyn Future<Output = Result<U, Trap>> + Send + 'a>>
+            + Send
+            + 'static,
+    {
+        callback
+    }
+
+    pub fn box_callback<T>(
         callback: impl for<'a> FnOnce(
                 &'a mut StoreContextMut<'_, T>,
             )
                 -> Pin<Box<dyn Future<Output = Result<(), Trap>> + Send + 'a>>
             + Send
             + 'static,
-    ) -> crate::futures::ImportResult<T> {
+    ) -> Callback<T> {
         Box::new(callback)
     }
+
+    #[cfg(feature = "async")]
+    pub use tokio::sync::mpsc;
 }

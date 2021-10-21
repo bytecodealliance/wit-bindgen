@@ -3,3 +3,9 @@ thunk: async function()
 concurrent1: async function(a: u32) -> u32
 concurrent2: async function(a: u32) -> u32
 concurrent3: async function(a: u32) -> u32
+
+concurrent_export_helper: async function(idx: u32)
+
+iloop_entered: function()
+
+import_to_cancel: async function()

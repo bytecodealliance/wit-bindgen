@@ -51,3 +51,7 @@ test = false
 [[bin]]
 name = "async_functions"
 test = false
+
+[[bin]]
+name = "async_raw"
+test = false

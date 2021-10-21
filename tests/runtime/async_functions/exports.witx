@@ -2,3 +2,11 @@ thunk: async function()
 allocated_bytes: function() -> u32
 
 test_concurrent: async function()
+
+concurrent_export: async function(idx: u32)
+
+infinite_loop_async: async function()
+infinite_loop: function()
+
+call_import_then_trap: async function()
+call_infinite_import: async function()

@@ -1,0 +1,12 @@
+complete_immediately: async function()
+completion_not_called: async function()
+complete_twice: async function()
+complete_then_trap: async function()
+assert_coroutine_id_zero: async function()
+
+not_async_export_done: function()
+not_async_calls_async: function()
+
+import_callback_null: async function()
+import_callback_wrong_type: async function()
+import_callback_bad_index: async function()

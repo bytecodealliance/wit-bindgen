@@ -20,6 +20,9 @@ async function run() {
   const [unblockConcurrent2, resolveUnblockConcurrent2] = promiseChannel();
   const [unblockConcurrent3, resolveUnblockConcurrent3] = promiseChannel();
 
+  const [unblockExport1, resolveUnblockExport1] = promiseChannel();
+  const [unblockExport2, resolveUnblockExport2] = promiseChannel();
+
   const imports: Imports = {
     async thunk() {
       if (hit) {
@@ -60,6 +63,22 @@ async function run() {
       console.log('concurrent3 returning to wasm');
       return 13;
     },
+
+    async concurrentExportHelper(n) {
+      if (n === 0) {
+        await unblockExport1;
+      } else {
+        await unblockExport2;
+      }
+    },
+
+    iloopEntered() {
+      throw new Error('unsupported');
+    },
+
+    importToCancel() {
+      throw new Error('unsupported');
+    },
   };
   let instance: WebAssembly.Instance;
   addImportsToImports(importObj, imports, name => instance.exports[name]);
@@ -99,6 +118,13 @@ async function run() {
   console.log('waiting on host functions');
   await concurrentWasm;
   console.log('concurrent wasm finished');
+
+  const a = wasm.concurrentExport(0);
+  const b = wasm.concurrentExport(1);
+  resolveUnblockExport2();
+  await b;
+  resolveUnblockExport1();
+  await a;
 }
 
 async function some_helper() {}

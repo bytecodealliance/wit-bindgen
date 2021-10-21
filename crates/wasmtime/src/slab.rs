@@ -12,6 +12,10 @@ enum Entry<T> {
 }
 
 impl<T> Slab<T> {
+    pub fn next_id(&self) -> u32 {
+        self.next as u32
+    }
+
     pub fn insert(&mut self, item: T) -> u32 {
         if self.next == self.storage.len() {
             self.storage.push(Entry::Empty {
@@ -53,6 +57,13 @@ impl<T> Slab<T> {
                 None
             }
         }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.storage.iter().filter_map(|i| match i {
+            Entry::Full(t) => Some(t),
+            Entry::Empty { .. } => None,
+        })
     }
 }
 

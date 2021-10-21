@@ -20,4 +20,27 @@ impl exports::Exports for Exports {
 
         assert_eq!(futures_util::join!(a2, a3, a1), (12, 13, 11));
     }
+
+    async fn concurrent_export(idx: u32) {
+        imports::concurrent_export_helper(idx).await
+    }
+
+    async fn infinite_loop_async() {
+        imports::iloop_entered();
+        loop {}
+    }
+
+    fn infinite_loop() {
+        imports::iloop_entered();
+        loop {}
+    }
+
+    async fn call_import_then_trap() {
+        let _f = imports::import_to_cancel();
+        std::arch::wasm32::unreachable();
+    }
+
+    async fn call_infinite_import() {
+        imports::import_to_cancel().await;
+    }
 }
