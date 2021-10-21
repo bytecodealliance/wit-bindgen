@@ -4,6 +4,9 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::str;
 
+pub mod interface;
+pub mod profile;
+
 pub trait Token: Eq + PartialEq + Copy + Clone {
     fn whitespace() -> Self;
     fn comment() -> Self;
@@ -11,6 +14,14 @@ pub trait Token: Eq + PartialEq + Copy + Clone {
     fn parse(start: usize, ch: char, tokenizer: &mut Tokenizer<'_, Self>) -> Result<Self, Error>;
     fn ignored(&self) -> bool;
     fn describe(&self) -> &'static str;
+}
+
+fn is_keylike(ch: char) -> bool {
+    ch == '_'
+        || ch == '-'
+        || ('A'..='Z').contains(&ch)
+        || ('a'..='z').contains(&ch)
+        || ('0'..='9').contains(&ch)
 }
 
 #[derive(Clone)]

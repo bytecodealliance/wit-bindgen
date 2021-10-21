@@ -1,74 +1,9 @@
-use crate::{lex, Error};
+use crate::{
+    lex::{self, profile::Token, Span},
+    Error,
+};
 use anyhow::{bail, Result};
 use std::borrow::Cow;
-
-#[derive(Eq, PartialEq, Debug, Copy, Clone)]
-enum Token {
-    Whitespace,
-    Comment,
-    StrLit,
-
-    Extend,
-    Provide,
-    Require,
-    Implement,
-    With,
-}
-
-impl Token {
-    fn is_keyword_char(ch: char) -> bool {
-        ('a'..='z').contains(&ch)
-    }
-}
-
-impl lex::Token for Token {
-    fn whitespace() -> Self {
-        Self::Whitespace
-    }
-
-    fn comment() -> Self {
-        Self::Comment
-    }
-
-    fn string() -> Self {
-        Self::StrLit
-    }
-
-    fn parse(start: usize, ch: char, tokenizer: &mut Tokenizer<'_>) -> Result<Self, lex::Error> {
-        Ok(match ch {
-            ch if Self::is_keyword_char(ch) => {
-                let consumed = tokenizer.eat_while(Self::is_keyword_char);
-                let end = start + ch.len_utf8() + consumed;
-                match &tokenizer.input()[start..end] {
-                    "extend" => Self::Extend,
-                    "provide" => Self::Provide,
-                    "require" => Self::Require,
-                    "implement" => Self::Implement,
-                    "with" => Self::With,
-                    _ => return Err(lex::Error::Unexpected(start, ch)),
-                }
-            }
-            _ => return Err(lex::Error::Unexpected(start, ch)),
-        })
-    }
-
-    fn ignored(&self) -> bool {
-        matches!(self, Self::Whitespace | Self::Comment)
-    }
-
-    fn describe(&self) -> &'static str {
-        match self {
-            Self::Whitespace => "whitespace",
-            Self::Comment => "a comment",
-            Self::StrLit => "a string literal",
-            Token::Extend => "keyword `extend`",
-            Token::Provide => "keyword `provide`",
-            Token::Require => "keyword `require`",
-            Token::Implement => "keyword `implement`",
-            Token::With => "keyword `with`",
-        }
-    }
-}
 
 type Tokenizer<'a> = lex::Tokenizer<'a, Token>;
 
@@ -136,7 +71,7 @@ impl<'a> Docs<'a> {
 }
 
 pub struct Extend<'a> {
-    pub span: lex::Span,
+    pub span: Span,
     pub profile: Cow<'a, str>,
 }
 
@@ -156,7 +91,7 @@ impl<'a> Extend<'a> {
 
 pub struct Provide<'a> {
     pub docs: Docs<'a>,
-    pub span: lex::Span,
+    pub span: Span,
     pub interface: Cow<'a, str>,
 }
 
@@ -177,7 +112,7 @@ impl<'a> Provide<'a> {
 
 pub struct Require<'a> {
     pub docs: Docs<'a>,
-    pub span: lex::Span,
+    pub span: Span,
     pub interface: Cow<'a, str>,
 }
 
@@ -198,7 +133,7 @@ impl<'a> Require<'a> {
 
 pub struct Implement<'a> {
     pub docs: Docs<'a>,
-    pub span: lex::Span,
+    pub span: Span,
     pub interface: Cow<'a, str>,
     pub component: Cow<'a, str>,
 }

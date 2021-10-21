@@ -1,4 +1,7 @@
-use crate::{rewrite_error, Docs, Interface};
+use crate::{
+    ast::profile::{Ast, Item},
+    rewrite_error, Docs, Interface,
+};
 use anyhow::{bail, Context, Result};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
@@ -6,8 +9,6 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
 };
-
-mod ast;
 
 /// Represents the kind of file being loaded.
 #[derive(Debug, Clone, Copy)]
@@ -138,12 +139,12 @@ impl Profile {
             })
         }
 
-        let ast = ast::Ast::parse(contents)?;
+        let ast = Ast::parse(contents)?;
         let mut extending = true;
 
         for item in ast.items {
             match item {
-                ast::Item::Extend(e) => {
+                Item::Extend(e) => {
                     if !extending {
                         bail!(crate::Error {
                             span: e.span,
@@ -173,7 +174,7 @@ impl Profile {
                         &path, &contents, load, visiting, profiles, interfaces, parsed,
                     )?;
                 }
-                ast::Item::Provide(p) => {
+                Item::Provide(p) => {
                     extending = false;
                     parsed.provides.insert(
                         p.interface.to_string(),
@@ -183,7 +184,7 @@ impl Profile {
                         },
                     );
                 }
-                ast::Item::Require(r) => {
+                Item::Require(r) => {
                     extending = false;
                     parsed.requires.insert(
                         r.interface.to_string(),
@@ -193,7 +194,7 @@ impl Profile {
                         },
                     );
                 }
-                ast::Item::Implement(i) => {
+                Item::Implement(i) => {
                     extending = false;
                     if let Some(existing) = parsed.implements.insert(
                         i.interface.to_string(),
@@ -227,7 +228,7 @@ impl Profile {
 #[derive(Debug, Clone)]
 pub struct Provide {
     pub docs: Docs,
-    pub interface: Rc<Interface>,
+    interface: Rc<Interface>,
 }
 
 impl Provide {
@@ -294,7 +295,7 @@ mod test {
     #[test]
     fn it_fails_on_invalid_syntax() -> Result<()> {
         let e = Profile::parse("test.profile", "invalid").expect_err("expected parsing to fail");
-        assert_eq!(e.to_string(), "unexpected character 'i'\n     --> test.profile:1:1\n      |\n    1 | invalid\n      | ^");
+        assert_eq!(e.to_string(), "expected `extend`, `provide`, `require`, or `implement`, found an identifier\n     --> test.profile:1:1\n      |\n    1 | invalid\n      | ^------");
         Ok(())
     }
 

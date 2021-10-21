@@ -1,0 +1,467 @@
+use crate::{
+    abi::Abi,
+    ast::interface::{Ast, Item},
+    rewrite_error,
+};
+use anyhow::{bail, Context, Result};
+use id_arena::{Arena, Id};
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone)]
+pub struct Interface {
+    pub name: String,
+    pub types: Arena<TypeDef>,
+    pub type_lookup: HashMap<String, TypeId>,
+    pub resources: Arena<Resource>,
+    pub resource_lookup: HashMap<String, ResourceId>,
+    pub interfaces: Arena<Interface>,
+    pub interface_lookup: HashMap<String, InterfaceId>,
+    pub functions: Vec<Function>,
+    pub globals: Vec<Global>,
+}
+
+pub type TypeId = Id<TypeDef>;
+pub type ResourceId = Id<Resource>;
+pub type InterfaceId = Id<Interface>;
+
+#[derive(Debug, Clone)]
+pub struct TypeDef {
+    pub docs: Docs,
+    pub kind: TypeDefKind,
+    pub name: Option<String>,
+    /// `None` if this type is originally declared in this instance or
+    /// otherwise `Some` if it was originally defined in a different module.
+    pub foreign_module: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum TypeDefKind {
+    Record(Record),
+    Variant(Variant),
+    List(Type),
+    Pointer(Type),
+    ConstPointer(Type),
+    PushBuffer(Type),
+    PullBuffer(Type),
+    Type(Type),
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum Type {
+    U8,
+    U16,
+    U32,
+    U64,
+    S8,
+    S16,
+    S32,
+    S64,
+    F32,
+    F64,
+    Char,
+    CChar,
+    Usize,
+    Handle(ResourceId),
+    Id(TypeId),
+}
+
+#[derive(PartialEq, Debug, Copy, Clone)]
+pub enum Int {
+    U8,
+    U16,
+    U32,
+    U64,
+}
+
+#[derive(Debug, Clone)]
+pub struct Record {
+    pub fields: Vec<Field>,
+    pub kind: RecordKind,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum RecordKind {
+    Other,
+    Flags(Option<Int>),
+    Tuple,
+}
+
+#[derive(Debug, Clone)]
+pub struct Field {
+    pub docs: Docs,
+    pub name: String,
+    pub ty: Type,
+}
+
+impl Record {
+    pub fn is_tuple(&self) -> bool {
+        matches!(self.kind, RecordKind::Tuple)
+    }
+
+    pub fn is_flags(&self) -> bool {
+        matches!(self.kind, RecordKind::Flags(_))
+    }
+
+    pub fn num_i32s(&self) -> usize {
+        (self.fields.len() + 31) / 32
+    }
+}
+
+impl RecordKind {
+    pub fn infer(types: &Arena<TypeDef>, fields: &[Field]) -> RecordKind {
+        if fields.is_empty() {
+            return RecordKind::Other;
+        }
+
+        // Structs-of-bools are classified to get represented as bitflags.
+        if fields.iter().all(|t| is_bool(&t.ty, types)) {
+            return RecordKind::Flags(None);
+        }
+
+        // fields with consecutive integer names get represented as tuples.
+        if fields
+            .iter()
+            .enumerate()
+            .all(|(i, m)| m.name.as_str().parse().ok() == Some(i))
+        {
+            return RecordKind::Tuple;
+        }
+
+        return RecordKind::Other;
+
+        fn is_bool(t: &Type, types: &Arena<TypeDef>) -> bool {
+            match t {
+                Type::Id(v) => match &types[*v].kind {
+                    TypeDefKind::Variant(v) => v.is_bool(),
+                    TypeDefKind::Type(t) => is_bool(t, types),
+                    _ => false,
+                },
+                _ => false,
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Variant {
+    pub cases: Vec<Case>,
+    /// The bit representation of the width of this variant's tag when the
+    /// variant is stored in memory.
+    pub tag: Int,
+}
+
+#[derive(Debug, Clone)]
+pub struct Case {
+    pub docs: Docs,
+    pub name: String,
+    pub ty: Option<Type>,
+}
+
+impl Variant {
+    pub fn infer_tag(cases: usize) -> Int {
+        match cases {
+            n if n <= u8::max_value() as usize => Int::U8,
+            n if n <= u16::max_value() as usize => Int::U16,
+            n if n <= u32::max_value() as usize => Int::U32,
+            n if n <= u64::max_value() as usize => Int::U64,
+            _ => panic!("too many cases to fit in a repr"),
+        }
+    }
+
+    pub fn is_bool(&self) -> bool {
+        self.cases.len() == 2
+            && self.cases[0].name == "false"
+            && self.cases[1].name == "true"
+            && self.cases[0].ty.is_none()
+            && self.cases[1].ty.is_none()
+    }
+
+    pub fn is_enum(&self) -> bool {
+        self.cases.iter().all(|c| c.ty.is_none())
+    }
+
+    pub fn as_option(&self) -> Option<&Type> {
+        if self.cases.len() != 2 {
+            return None;
+        }
+        if self.cases[0].name != "none" || self.cases[0].ty.is_some() {
+            return None;
+        }
+        if self.cases[1].name != "some" {
+            return None;
+        }
+        self.cases[1].ty.as_ref()
+    }
+
+    pub fn as_expected(&self) -> Option<(Option<&Type>, Option<&Type>)> {
+        if self.cases.len() != 2 {
+            return None;
+        }
+        if self.cases[0].name != "ok" {
+            return None;
+        }
+        if self.cases[1].name != "err" {
+            return None;
+        }
+        Some((self.cases[0].ty.as_ref(), self.cases[1].ty.as_ref()))
+    }
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct Docs {
+    pub contents: Option<String>,
+}
+
+impl<'a, T, U> From<T> for Docs
+where
+    T: ExactSizeIterator<Item = U>,
+    U: AsRef<str>,
+{
+    fn from(iter: T) -> Self {
+        if iter.len() == 0 {
+            return Self { contents: None };
+        }
+
+        let mut docs = String::new();
+        for doc in iter {
+            let doc = doc.as_ref();
+            if let Some(doc) = doc.strip_prefix("//") {
+                docs.push_str(doc.trim_start_matches('/').trim());
+            } else {
+                assert!(doc.starts_with("/*"));
+                assert!(doc.ends_with("*/"));
+                for line in doc[2..doc.len() - 2].lines() {
+                    docs.push_str(line);
+                    docs.push('\n');
+                }
+            }
+        }
+
+        Self {
+            contents: Some(docs),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Resource {
+    pub docs: Docs,
+    pub name: String,
+    /// `None` if this resource is defined within the containing instance,
+    /// otherwise `Some` if it's defined in an instance named here.
+    pub foreign_module: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Global {
+    pub docs: Docs,
+    pub name: String,
+    pub ty: Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub abi: Abi,
+    pub is_async: bool,
+    pub docs: Docs,
+    pub name: String,
+    pub kind: FunctionKind,
+    pub params: Vec<(String, Type)>,
+    pub results: Vec<(String, Type)>,
+}
+
+#[derive(Debug, Clone)]
+pub enum FunctionKind {
+    Freestanding,
+    Static { resource: ResourceId, name: String },
+    Method { resource: ResourceId, name: String },
+}
+
+impl Function {
+    pub fn item_name(&self) -> &str {
+        match &self.kind {
+            FunctionKind::Freestanding => &self.name,
+            FunctionKind::Static { name, .. } => name,
+            FunctionKind::Method { name, .. } => name,
+        }
+    }
+}
+
+impl Interface {
+    pub fn parse(name: &str, input: &str) -> Result<Interface> {
+        Interface::parse_with(name, input, |name| {
+            bail!("cannot load interface `{}`", name)
+        })
+    }
+
+    pub fn parse_file(path: impl AsRef<Path>) -> Result<Interface> {
+        let path = path.as_ref();
+        let parent = path.parent().unwrap();
+        let contents = std::fs::read_to_string(&path)
+            .with_context(|| format!("failed to read interface `{}`", path.display()))?;
+        Interface::parse_with(path, &contents, |name| load_fs(parent, name))
+    }
+
+    pub fn parse_with(
+        path: impl AsRef<Path>,
+        contents: &str,
+        mut load: impl FnMut(&str) -> Result<(PathBuf, String)>,
+    ) -> Result<Interface> {
+        Interface::_parse_with(
+            path.as_ref(),
+            contents,
+            &mut load,
+            &mut HashSet::new(),
+            &mut HashMap::new(),
+        )
+    }
+
+    fn _parse_with(
+        path: &Path,
+        contents: &str,
+        load: &mut dyn FnMut(&str) -> Result<(PathBuf, String)>,
+        visiting: &mut HashSet<PathBuf>,
+        map: &mut HashMap<String, Interface>,
+    ) -> Result<Interface> {
+        // Parse the `contents `into an AST
+        let ast = match Ast::parse(contents) {
+            Ok(ast) => ast,
+            Err(mut e) => {
+                let file = path.display().to_string();
+                rewrite_error(&mut e, &file, contents);
+                return Err(e);
+            }
+        };
+
+        // Load up any modules into our `map` that have not yet been parsed.
+        if !visiting.insert(path.to_path_buf()) {
+            bail!("file `{}` recursively imports itself", path.display())
+        }
+        for item in ast.items.iter() {
+            let u = match item {
+                Item::Use(u) => u,
+                _ => continue,
+            };
+            if map.contains_key(&*u.from[0].name) {
+                continue;
+            }
+
+            let (path, contents) = load(&u.from[0].name)
+                // TODO: insert context here about `u.name.span` and `filename`
+                ?;
+
+            let instance = Self::_parse_with(&path, &contents, load, visiting, map)?;
+            map.insert(u.from[0].name.to_string(), instance);
+        }
+        visiting.remove(path);
+
+        // and finally resolve everything into our final instance
+        let name = path.file_stem().unwrap().to_str().unwrap();
+        match ast.resolve(name, map) {
+            Ok(i) => Ok(i),
+            Err(mut e) => {
+                let file = path.display().to_string();
+                rewrite_error(&mut e, &file, contents);
+                Err(e)
+            }
+        }
+    }
+
+    pub fn topological_types(&self) -> Vec<TypeId> {
+        let mut ret = Vec::new();
+        let mut visited = HashSet::new();
+        for (id, _) in self.types.iter() {
+            self.topo_visit(id, &mut ret, &mut visited);
+        }
+        ret
+    }
+
+    fn topo_visit(&self, id: TypeId, list: &mut Vec<TypeId>, visited: &mut HashSet<TypeId>) {
+        if !visited.insert(id) {
+            return;
+        }
+        match &self.types[id].kind {
+            TypeDefKind::Type(t)
+            | TypeDefKind::List(t)
+            | TypeDefKind::PushBuffer(t)
+            | TypeDefKind::PullBuffer(t)
+            | TypeDefKind::Pointer(t)
+            | TypeDefKind::ConstPointer(t) => self.topo_visit_ty(t, list, visited),
+            TypeDefKind::Record(r) => {
+                for f in r.fields.iter() {
+                    self.topo_visit_ty(&f.ty, list, visited);
+                }
+            }
+            TypeDefKind::Variant(v) => {
+                for v in v.cases.iter() {
+                    if let Some(ty) = &v.ty {
+                        self.topo_visit_ty(ty, list, visited);
+                    }
+                }
+            }
+        }
+        list.push(id);
+    }
+
+    fn topo_visit_ty(&self, ty: &Type, list: &mut Vec<TypeId>, visited: &mut HashSet<TypeId>) {
+        if let Type::Id(id) = ty {
+            self.topo_visit(*id, list, visited);
+        }
+    }
+
+    pub fn all_bits_valid(&self, ty: &Type) -> bool {
+        match ty {
+            Type::U8
+            | Type::S8
+            | Type::U16
+            | Type::S16
+            | Type::U32
+            | Type::S32
+            | Type::U64
+            | Type::S64
+            | Type::F32
+            | Type::F64
+            | Type::CChar
+            | Type::Usize => true,
+
+            Type::Char | Type::Handle(_) => false,
+
+            Type::Id(id) => match &self.types[*id].kind {
+                TypeDefKind::List(_)
+                | TypeDefKind::Variant(_)
+                | TypeDefKind::PushBuffer(_)
+                | TypeDefKind::PullBuffer(_) => false,
+                TypeDefKind::Type(t) => self.all_bits_valid(t),
+                TypeDefKind::Record(r) => r.fields.iter().all(|f| self.all_bits_valid(&f.ty)),
+                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => true,
+            },
+        }
+    }
+
+    pub fn has_preview1_pointer(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Id(id) => match &self.types[*id].kind {
+                TypeDefKind::List(t) | TypeDefKind::PushBuffer(t) | TypeDefKind::PullBuffer(t) => {
+                    self.has_preview1_pointer(t)
+                }
+                TypeDefKind::Type(t) => self.has_preview1_pointer(t),
+                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => true,
+                TypeDefKind::Record(r) => r.fields.iter().any(|f| self.has_preview1_pointer(&f.ty)),
+                TypeDefKind::Variant(v) => v.cases.iter().any(|c| match &c.ty {
+                    Some(ty) => self.has_preview1_pointer(ty),
+                    None => false,
+                }),
+            },
+            _ => false,
+        }
+    }
+}
+
+fn load_fs(root: &Path, name: &str) -> Result<(PathBuf, String)> {
+    let path = root.join(name).with_extension("witx");
+    let contents =
+        fs::read_to_string(&path).context(format!("failed to read `{}`", path.display()))?;
+    Ok((path, contents))
+}

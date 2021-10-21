@@ -1,6 +1,7 @@
-use super::{Error, Item, Value, ValueKind};
+use crate::ast::interface::{Item, Resource as AstResource, Type as AstType, Value, ValueKind};
 use crate::*;
 use anyhow::Result;
+use id_arena::Arena;
 use std::collections::{HashMap, HashSet};
 use std::mem;
 
@@ -320,22 +321,22 @@ impl Resolver {
         }
     }
 
-    fn resolve_type_def(&mut self, ty: &super::Type<'_>) -> Result<TypeDefKind> {
+    fn resolve_type_def(&mut self, ty: &AstType) -> Result<TypeDefKind> {
         Ok(match ty {
-            super::Type::U8 => TypeDefKind::Type(Type::U8),
-            super::Type::U16 => TypeDefKind::Type(Type::U16),
-            super::Type::U32 => TypeDefKind::Type(Type::U32),
-            super::Type::U64 => TypeDefKind::Type(Type::U64),
-            super::Type::S8 => TypeDefKind::Type(Type::S8),
-            super::Type::S16 => TypeDefKind::Type(Type::S16),
-            super::Type::S32 => TypeDefKind::Type(Type::S32),
-            super::Type::S64 => TypeDefKind::Type(Type::S64),
-            super::Type::F32 => TypeDefKind::Type(Type::F32),
-            super::Type::F64 => TypeDefKind::Type(Type::F64),
-            super::Type::Char => TypeDefKind::Type(Type::Char),
-            super::Type::CChar => TypeDefKind::Type(Type::CChar),
-            super::Type::Usize => TypeDefKind::Type(Type::Usize),
-            super::Type::Handle(resource) => {
+            AstType::U8 => TypeDefKind::Type(Type::U8),
+            AstType::U16 => TypeDefKind::Type(Type::U16),
+            AstType::U32 => TypeDefKind::Type(Type::U32),
+            AstType::U64 => TypeDefKind::Type(Type::U64),
+            AstType::S8 => TypeDefKind::Type(Type::S8),
+            AstType::S16 => TypeDefKind::Type(Type::S16),
+            AstType::S32 => TypeDefKind::Type(Type::S32),
+            AstType::S64 => TypeDefKind::Type(Type::S64),
+            AstType::F32 => TypeDefKind::Type(Type::F32),
+            AstType::F64 => TypeDefKind::Type(Type::F64),
+            AstType::Char => TypeDefKind::Type(Type::Char),
+            AstType::CChar => TypeDefKind::Type(Type::CChar),
+            AstType::Usize => TypeDefKind::Type(Type::Usize),
+            AstType::Handle(resource) => {
                 let id = match self.resource_lookup.get(&*resource.name) {
                     Some(id) => *id,
                     None => {
@@ -348,7 +349,7 @@ impl Resolver {
                 };
                 TypeDefKind::Type(Type::Handle(id))
             }
-            super::Type::Name(name) => {
+            AstType::Name(name) => {
                 let id = match self.type_lookup.get(&*name.name) {
                     Some(id) => *id,
                     None => {
@@ -361,27 +362,27 @@ impl Resolver {
                 };
                 TypeDefKind::Type(Type::Id(id))
             }
-            super::Type::List(list) => {
+            AstType::List(list) => {
                 let ty = self.resolve_type(list)?;
                 TypeDefKind::List(ty)
             }
-            super::Type::Pointer(list) => {
+            AstType::Pointer(list) => {
                 let ty = self.resolve_type(list)?;
                 TypeDefKind::Pointer(ty)
             }
-            super::Type::ConstPointer(list) => {
+            AstType::ConstPointer(list) => {
                 let ty = self.resolve_type(list)?;
                 TypeDefKind::ConstPointer(ty)
             }
-            super::Type::PushBuffer(ty) => {
+            AstType::PushBuffer(ty) => {
                 let ty = self.resolve_type(ty)?;
                 TypeDefKind::PushBuffer(ty)
             }
-            super::Type::PullBuffer(ty) => {
+            AstType::PullBuffer(ty) => {
                 let ty = self.resolve_type(ty)?;
                 TypeDefKind::PullBuffer(ty)
             }
-            super::Type::Record(record) => {
+            AstType::Record(record) => {
                 let fields = record
                     .fields
                     .iter()
@@ -398,10 +399,10 @@ impl Resolver {
                         RecordKind::Tuple
                     } else if let Some(hint) = &record.flags_repr {
                         RecordKind::Flags(Some(match &**hint {
-                            super::Type::U8 => Int::U8,
-                            super::Type::U16 => Int::U16,
-                            super::Type::U32 => Int::U32,
-                            super::Type::U64 => Int::U64,
+                            AstType::U8 => Int::U8,
+                            AstType::U16 => Int::U16,
+                            AstType::U32 => Int::U32,
+                            AstType::U64 => Int::U64,
                             _ => panic!("unknown explicit flags repr"),
                         }))
                     } else {
@@ -410,7 +411,7 @@ impl Resolver {
                     fields,
                 })
             }
-            super::Type::Variant(variant) => {
+            AstType::Variant(variant) => {
                 if variant.cases.is_empty() {
                     return Err(Error {
                         span: variant.span,
@@ -443,13 +444,13 @@ impl Resolver {
         })
     }
 
-    fn get_variant_tag(&self, tag: &super::Type) -> Int {
+    fn get_variant_tag(&self, tag: &AstType) -> Int {
         match tag {
-            super::Type::U8 => Int::U8,
-            super::Type::U16 => Int::U16,
-            super::Type::U32 => Int::U32,
-            super::Type::U64 => Int::U64,
-            super::Type::Name(name) => {
+            AstType::U8 => Int::U8,
+            AstType::U16 => Int::U16,
+            AstType::U32 => Int::U32,
+            AstType::U64 => Int::U64,
+            AstType::Name(name) => {
                 let ty = self.type_lookup[&*name.name];
                 self.get_variant_tag_id(ty)
             }
@@ -469,7 +470,7 @@ impl Resolver {
         }
     }
 
-    fn resolve_type(&mut self, ty: &super::Type<'_>) -> Result<Type> {
+    fn resolve_type(&mut self, ty: &AstType) -> Result<Type> {
         let kind = self.resolve_type_def(ty)?;
         Ok(self.anon_type_def(TypeDef {
             kind,
@@ -547,7 +548,7 @@ impl Resolver {
         Ok(())
     }
 
-    fn resolve_resource(&mut self, resource: &super::Resource<'_>) -> Result<()> {
+    fn resolve_resource(&mut self, resource: &AstResource<'_>) -> Result<()> {
         let mut names = HashSet::new();
         let id = self.resource_lookup[&*resource.name.name];
         for (statik, value) in resource.values.iter() {
