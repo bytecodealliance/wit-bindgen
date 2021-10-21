@@ -1,7 +1,4 @@
-use crate::{
-    lex::{self, Tokenizer},
-    Error,
-};
+use crate::{lex, Error};
 use anyhow::{bail, Result};
 use std::borrow::Cow;
 
@@ -37,11 +34,7 @@ impl lex::Token for Token {
         Self::StrLit
     }
 
-    fn parse(
-        start: usize,
-        ch: char,
-        tokenizer: &mut Tokenizer<'_, Self>,
-    ) -> Result<Self, lex::Error> {
+    fn parse(start: usize, ch: char, tokenizer: &mut Tokenizer<'_>) -> Result<Self, lex::Error> {
         Ok(match ch {
             ch if Self::is_keyword_char(ch) => {
                 let consumed = tokenizer.eat_while(Self::is_keyword_char);
@@ -77,13 +70,15 @@ impl lex::Token for Token {
     }
 }
 
+type Tokenizer<'a> = lex::Tokenizer<'a, Token>;
+
 pub struct Ast<'a> {
     pub items: Vec<Item<'a>>,
 }
 
 impl<'a> Ast<'a> {
     pub fn parse(input: &'a str) -> Result<Ast<'a>> {
-        let mut lexer = Tokenizer::<'a, Token>::new(input);
+        let mut lexer = Tokenizer::new(input);
         let mut items = Vec::new();
 
         while lexer.clone().next()?.is_some() {
@@ -103,7 +98,7 @@ pub enum Item<'a> {
 }
 
 impl<'a> Item<'a> {
-    fn parse(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Item<'a>> {
+    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Item<'a>> {
         match tokens.clone().next()? {
             Some((_span, Token::Extend)) => Extend::parse(tokens).map(Item::Extend),
             Some((_span, Token::Provide)) => Provide::parse(tokens, docs).map(Item::Provide),
@@ -123,7 +118,7 @@ pub struct Docs<'a> {
 }
 
 impl<'a> Docs<'a> {
-    fn parse(tokens: &mut Tokenizer<'a, Token>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a>) -> Result<Self> {
         let mut docs = Self { docs: Vec::new() };
         let mut clone = tokens.clone();
 
@@ -146,7 +141,7 @@ pub struct Extend<'a> {
 }
 
 impl<'a> Extend<'a> {
-    fn parse(tokens: &mut Tokenizer<'a, Token>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a>) -> Result<Self> {
         let mut span = tokens.expect(Token::Extend)?;
         let profile = tokens.expect(Token::StrLit)?;
 
@@ -166,7 +161,7 @@ pub struct Provide<'a> {
 }
 
 impl<'a> Provide<'a> {
-    fn parse(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         let mut span = tokens.expect(Token::Provide)?;
         let interface = tokens.expect(Token::StrLit)?;
 
@@ -187,7 +182,7 @@ pub struct Require<'a> {
 }
 
 impl<'a> Require<'a> {
-    fn parse(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         let mut span = tokens.expect(Token::Require)?;
         let interface = tokens.expect(Token::StrLit)?;
 
@@ -209,7 +204,7 @@ pub struct Implement<'a> {
 }
 
 impl<'a> Implement<'a> {
-    fn parse(tokens: &mut Tokenizer<'a, Token>, docs: Docs<'a>) -> Result<Self> {
+    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         let mut span = tokens.expect(Token::Implement)?;
         let interface = tokens.expect(Token::StrLit)?;
         tokens.expect(Token::With)?;

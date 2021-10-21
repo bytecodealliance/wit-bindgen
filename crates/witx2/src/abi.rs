@@ -1486,7 +1486,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     /// interface types equivalent.
     fn lift_all(&mut self, tys: &[(String, Type)]) {
         let mut temp = Vec::new();
-        #[allow(clippy::needless_collect)]
         let operands = tys
             .iter()
             .rev()
@@ -1520,7 +1519,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     /// converts all of those values into their wasm types by lowering each
     /// argument in-order.
     fn lower_all(&mut self, tys: &[(String, Type)], mut nargs: Option<usize>) {
-        #[allow(clippy::needless_collect)]
         let operands = self
             .stack
             .drain(self.stack.len() - tys.len()..)
@@ -2454,14 +2452,16 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
         self.push_block();
 
-        if do_write {
+        let size = if do_write {
             self.emit(&Instruction::BufferPayloadName);
             self.write_to_memory(ty, addr, 0);
-            self.finish_block(0);
+            0
         } else {
             self.read_from_memory(ty, addr, 0);
-            self.finish_block(1);
-        }
+            1
+        };
+
+        self.finish_block(size);
     }
 
     fn is_char(&self, ty: &Type) -> bool {
