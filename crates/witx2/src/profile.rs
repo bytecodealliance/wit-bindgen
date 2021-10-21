@@ -153,18 +153,18 @@ impl Profile {
                         });
                     }
 
-                    if !profiles.insert(e.profile.to_string()) {
+                    if !profiles.insert(e.profile.name.to_string()) {
                         continue;
                     }
 
-                    let (path, contents) = load(LoadKind::Profile, &e.profile)?;
+                    let (path, contents) = load(LoadKind::Profile, &e.profile.name)?;
 
                     if !visiting.insert(path.clone()) {
                         bail!(crate::Error {
                             span: e.span,
                             msg: format!(
                                 "extending `{}` ({}) forms a cycle",
-                                e.profile,
+                                e.profile.name,
                                 path.display()
                             )
                         });
@@ -177,20 +177,20 @@ impl Profile {
                 Item::Provide(p) => {
                     extending = false;
                     parsed.provides.insert(
-                        p.interface.to_string(),
+                        p.interface.name.to_string(),
                         Provide {
                             docs: p.docs.docs.iter().into(),
-                            interface: load_interface(&p.interface, interfaces, load)?,
+                            interface: load_interface(&p.interface.name, interfaces, load)?,
                         },
                     );
                 }
                 Item::Require(r) => {
                     extending = false;
                     parsed.requires.insert(
-                        r.interface.to_string(),
+                        r.interface.name.to_string(),
                         Require {
                             docs: r.docs.docs.iter().into(),
-                            interface: load_interface(&r.interface, interfaces, load)?,
+                            interface: load_interface(&r.interface.name, interfaces, load)?,
                         },
                     );
                 }
@@ -307,17 +307,18 @@ mod test {
             // foo from base
             require "foo"
             // base
-            provide "base"
+            provide base
         "#;
 
         let contents = r#"
             extend "base"
+            extend base
             // foo
-            require "foo"
+            require foo
             // quz
             provide "quz"
-            require "bar"
-            require "baz"
+            require bar
+            require baz
             provide "qux"
             // i with c
             implement "i" with "c"
