@@ -11,7 +11,7 @@ doctest = false
 [dependencies]
 lazy_static = "1.4.0"
 structopt = { version = "0.3", optional = true }
-wasm-encoder = "0.6.0"
+wasm-encoder = "0.8.0"
 witx-bindgen-gen-core = { path = "../gen-core" }
 
 [dev-dependencies]
