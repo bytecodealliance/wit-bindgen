@@ -958,9 +958,7 @@ impl Generator for Wasmtime {
         for (module, funcs) in mem::take(&mut self.imports) {
             let module_camel = module.to_camel_case();
             let is_async = !self.opts.async_.is_none();
-            self.push_str("\npub fn add_");
-            self.push_str(&module);
-            self.push_str("_to_linker<T, U>(linker: &mut wasmtime::Linker<T>");
+            self.push_str("\npub fn add_to_linker<T, U>(linker: &mut wasmtime::Linker<T>");
             self.push_str(", get: impl Fn(&mut T) -> ");
             if self.all_needed_handles.is_empty() {
                 self.push_str("&mut U");
