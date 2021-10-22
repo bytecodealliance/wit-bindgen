@@ -18,4 +18,6 @@ witx-bindgen-gen-wasmtime-py = { path = '../gen-wasmtime-py' }
 witx-bindgen-gen-js = { path = '../gen-js' }
 witx-bindgen-gen-c = { path = '../gen-c' }
 witx-bindgen-gen-markdown = { path = '../gen-markdown' }
+witx-bindgen-gen-spidermonkey = { path = '../gen-spidermonkey' }
 witx-bindgen-rust = { path = '../rust-wasm' }
+wasmprinter = "0.2.29"

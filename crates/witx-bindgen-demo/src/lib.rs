@@ -18,6 +18,7 @@ pub struct Config {
     wasmtime: RefCell<witx_bindgen_gen_wasmtime::Opts>,
     wasmtime_py: RefCell<witx_bindgen_gen_wasmtime_py::Opts>,
     markdown: RefCell<witx_bindgen_gen_markdown::Opts>,
+    spidermonkey: RefCell<witx_bindgen_gen_spidermonkey::Opts>,
 }
 
 impl demo::Config for Config {
@@ -47,6 +48,13 @@ impl demo::Config for Config {
             demo::Lang::Js => Box::new(self.js.borrow().clone().build()),
             demo::Lang::C => Box::new(self.c.borrow().clone().build()),
             demo::Lang::Markdown => Box::new(self.markdown.borrow().clone().build()),
+            demo::Lang::Spidermonkey => {
+                let mut opts = self.spidermonkey.borrow_mut();
+                opts.import_spidermonkey = true;
+                opts.js = "foo.js".into();
+                let script = "throw new Error('unimplemented');";
+                Box::new(opts.clone().build(script))
+            }
         };
         let iface = witx2::Interface::parse("input", &witx).map_err(|e| format!("{:?}", e))?;
         let mut files = Default::default();
@@ -58,7 +66,14 @@ impl demo::Config for Config {
         gen.generate_all(&imports, &exports, &mut files);
         Ok(files
             .iter()
-            .map(|(name, contents)| (name.to_string(), String::from_utf8_lossy(&contents).into()))
+            .map(|(name, contents)| {
+                let contents = if contents.starts_with(b"\0asm") {
+                    wasmprinter::print_bytes(contents).unwrap()
+                } else {
+                    String::from_utf8_lossy(&contents).into()
+                };
+                (name.to_string(), contents)
+            })
             .collect())
     }
 

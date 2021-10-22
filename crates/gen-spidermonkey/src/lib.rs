@@ -2,11 +2,6 @@
 
 #![deny(missing_docs)]
 
-#[cfg(feature = "structopt")]
-mod opts;
-#[cfg(feature = "structopt")]
-pub use opts::Opts;
-
 mod data_segments;
 
 use data_segments::DataSegments;
@@ -24,6 +19,25 @@ use witx_bindgen_gen_core::{
     },
     Files, Generator,
 };
+
+#[allow(missing_docs)]
+#[derive(Default, Debug, Clone)]
+#[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
+pub struct Opts {
+    /// The path to the JavaScript module.
+    pub js: PathBuf,
+    #[cfg_attr(feature = "structopt", structopt(long))]
+    pub import_spidermonkey: bool,
+}
+
+#[allow(missing_docs)]
+impl Opts {
+    pub fn build<'a>(self, js_source: impl Into<Cow<'a, str>>) -> SpiderMonkeyWasm<'a> {
+        let mut builder = SpiderMonkeyWasm::new(self.js, js_source);
+        builder.import_spidermonkey(self.import_spidermonkey);
+        builder
+    }
+}
 
 lazy_static! {
     /// Functions exported from `spidermonkey.wasm`
