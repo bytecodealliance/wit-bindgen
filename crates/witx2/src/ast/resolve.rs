@@ -1,6 +1,7 @@
-use super::{Error, Item, Span, Value, ValueKind};
+use crate::ast::interface::{Item, Resource as AstResource, Type as AstType, Value, ValueKind};
 use crate::*;
 use anyhow::Result;
+use id_arena::Arena;
 use std::collections::{HashMap, HashSet};
 use std::mem;
 
@@ -137,7 +138,7 @@ impl Resolver {
                         if !found {
                             return Err(Error {
                                 span: name.name.span,
-                                msg: format!("name not defined in submodule"),
+                                msg: "name not defined in submodule".to_string(),
                             }
                             .into());
                         }
@@ -170,7 +171,11 @@ impl Resolver {
                 let resource = Resource {
                     docs: r.docs.clone(),
                     name: r.name.clone(),
-                    foreign_module: Some(r.foreign_module.clone().unwrap_or(dep_name.to_string())),
+                    foreign_module: Some(
+                        r.foreign_module
+                            .clone()
+                            .unwrap_or_else(|| dep_name.to_string()),
+                    ),
                 };
                 resources.alloc(resource)
             })
@@ -185,7 +190,11 @@ impl Resolver {
         let ty = TypeDef {
             docs: ty.docs.clone(),
             name: ty.name.clone(),
-            foreign_module: Some(ty.foreign_module.clone().unwrap_or(dep_name.to_string())),
+            foreign_module: Some(
+                ty.foreign_module
+                    .clone()
+                    .unwrap_or_else(|| dep_name.to_string()),
+            ),
             kind: match &ty.kind {
                 TypeDefKind::Type(t) => TypeDefKind::Type(self.copy_type(dep_name, dep, *t)),
                 TypeDefKind::Record(r) => TypeDefKind::Record(Record {
@@ -227,7 +236,7 @@ impl Resolver {
         };
         let id = self.types.alloc(ty);
         self.types_copied.insert((dep_name.to_string(), dep_id), id);
-        return id;
+        id
     }
 
     fn copy_type(&mut self, dep_name: &str, dep: &Interface, ty: Type) -> Type {
@@ -243,7 +252,7 @@ impl Resolver {
         for field in fields {
             match field {
                 Item::Resource(r) => {
-                    let docs = self.docs(&r.docs);
+                    let docs = r.docs.docs.iter().into();
                     let id = self.resources.alloc(Resource {
                         docs,
                         name: r.name.name.to_string(),
@@ -259,7 +268,7 @@ impl Resolver {
                     self.define_type(&r.name.name, r.name.span, type_id)?;
                 }
                 Item::TypeDef(t) => {
-                    let docs = self.docs(&t.docs);
+                    let docs = t.docs.docs.iter().into();
                     let id = self.types.alloc(TypeDef {
                         docs,
                         // a dummy kind is used for now which will get filled in
@@ -288,7 +297,7 @@ impl Resolver {
         Ok(())
     }
 
-    fn define_resource(&mut self, name: &str, span: Span, id: ResourceId) -> Result<()> {
+    fn define_resource(&mut self, name: &str, span: lex::Span, id: ResourceId) -> Result<()> {
         if self.resource_lookup.insert(name.to_string(), id).is_some() {
             Err(Error {
                 span,
@@ -300,7 +309,7 @@ impl Resolver {
         }
     }
 
-    fn define_type(&mut self, name: &str, span: Span, id: TypeId) -> Result<()> {
+    fn define_type(&mut self, name: &str, span: lex::Span, id: TypeId) -> Result<()> {
         if self.type_lookup.insert(name.to_string(), id).is_some() {
             Err(Error {
                 span,
@@ -312,22 +321,22 @@ impl Resolver {
         }
     }
 
-    fn resolve_type_def(&mut self, ty: &super::Type<'_>) -> Result<TypeDefKind> {
+    fn resolve_type_def(&mut self, ty: &AstType) -> Result<TypeDefKind> {
         Ok(match ty {
-            super::Type::U8 => TypeDefKind::Type(Type::U8),
-            super::Type::U16 => TypeDefKind::Type(Type::U16),
-            super::Type::U32 => TypeDefKind::Type(Type::U32),
-            super::Type::U64 => TypeDefKind::Type(Type::U64),
-            super::Type::S8 => TypeDefKind::Type(Type::S8),
-            super::Type::S16 => TypeDefKind::Type(Type::S16),
-            super::Type::S32 => TypeDefKind::Type(Type::S32),
-            super::Type::S64 => TypeDefKind::Type(Type::S64),
-            super::Type::F32 => TypeDefKind::Type(Type::F32),
-            super::Type::F64 => TypeDefKind::Type(Type::F64),
-            super::Type::Char => TypeDefKind::Type(Type::Char),
-            super::Type::CChar => TypeDefKind::Type(Type::CChar),
-            super::Type::Usize => TypeDefKind::Type(Type::Usize),
-            super::Type::Handle(resource) => {
+            AstType::U8 => TypeDefKind::Type(Type::U8),
+            AstType::U16 => TypeDefKind::Type(Type::U16),
+            AstType::U32 => TypeDefKind::Type(Type::U32),
+            AstType::U64 => TypeDefKind::Type(Type::U64),
+            AstType::S8 => TypeDefKind::Type(Type::S8),
+            AstType::S16 => TypeDefKind::Type(Type::S16),
+            AstType::S32 => TypeDefKind::Type(Type::S32),
+            AstType::S64 => TypeDefKind::Type(Type::S64),
+            AstType::F32 => TypeDefKind::Type(Type::F32),
+            AstType::F64 => TypeDefKind::Type(Type::F64),
+            AstType::Char => TypeDefKind::Type(Type::Char),
+            AstType::CChar => TypeDefKind::Type(Type::CChar),
+            AstType::Usize => TypeDefKind::Type(Type::Usize),
+            AstType::Handle(resource) => {
                 let id = match self.resource_lookup.get(&*resource.name) {
                     Some(id) => *id,
                     None => {
@@ -340,7 +349,7 @@ impl Resolver {
                 };
                 TypeDefKind::Type(Type::Handle(id))
             }
-            super::Type::Name(name) => {
+            AstType::Name(name) => {
                 let id = match self.type_lookup.get(&*name.name) {
                     Some(id) => *id,
                     None => {
@@ -353,33 +362,33 @@ impl Resolver {
                 };
                 TypeDefKind::Type(Type::Id(id))
             }
-            super::Type::List(list) => {
+            AstType::List(list) => {
                 let ty = self.resolve_type(list)?;
                 TypeDefKind::List(ty)
             }
-            super::Type::Pointer(list) => {
+            AstType::Pointer(list) => {
                 let ty = self.resolve_type(list)?;
                 TypeDefKind::Pointer(ty)
             }
-            super::Type::ConstPointer(list) => {
+            AstType::ConstPointer(list) => {
                 let ty = self.resolve_type(list)?;
                 TypeDefKind::ConstPointer(ty)
             }
-            super::Type::PushBuffer(ty) => {
+            AstType::PushBuffer(ty) => {
                 let ty = self.resolve_type(ty)?;
                 TypeDefKind::PushBuffer(ty)
             }
-            super::Type::PullBuffer(ty) => {
+            AstType::PullBuffer(ty) => {
                 let ty = self.resolve_type(ty)?;
                 TypeDefKind::PullBuffer(ty)
             }
-            super::Type::Record(record) => {
+            AstType::Record(record) => {
                 let fields = record
                     .fields
                     .iter()
                     .map(|field| {
                         Ok(Field {
-                            docs: self.docs(&field.docs),
+                            docs: field.docs.docs.iter().into(),
                             name: field.name.name.to_string(),
                             ty: self.resolve_type(&field.ty)?,
                         })
@@ -390,10 +399,10 @@ impl Resolver {
                         RecordKind::Tuple
                     } else if let Some(hint) = &record.flags_repr {
                         RecordKind::Flags(Some(match &**hint {
-                            super::Type::U8 => Int::U8,
-                            super::Type::U16 => Int::U16,
-                            super::Type::U32 => Int::U32,
-                            super::Type::U64 => Int::U64,
+                            AstType::U8 => Int::U8,
+                            AstType::U16 => Int::U16,
+                            AstType::U32 => Int::U32,
+                            AstType::U64 => Int::U64,
                             _ => panic!("unknown explicit flags repr"),
                         }))
                     } else {
@@ -402,11 +411,11 @@ impl Resolver {
                     fields,
                 })
             }
-            super::Type::Variant(variant) => {
+            AstType::Variant(variant) => {
                 if variant.cases.is_empty() {
                     return Err(Error {
                         span: variant.span,
-                        msg: format!("empty variant"),
+                        msg: "empty variant".to_string(),
                     }
                     .into());
                 }
@@ -415,7 +424,7 @@ impl Resolver {
                     .iter()
                     .map(|case| {
                         Ok(Case {
-                            docs: self.docs(&case.docs),
+                            docs: case.docs.docs.iter().into(),
                             name: case.name.name.to_string(),
                             ty: match &case.ty {
                                 Some(ty) => Some(self.resolve_type(ty)?),
@@ -435,13 +444,13 @@ impl Resolver {
         })
     }
 
-    fn get_variant_tag(&self, tag: &super::Type) -> Int {
+    fn get_variant_tag(&self, tag: &AstType) -> Int {
         match tag {
-            super::Type::U8 => Int::U8,
-            super::Type::U16 => Int::U16,
-            super::Type::U32 => Int::U32,
-            super::Type::U64 => Int::U64,
-            super::Type::Name(name) => {
+            AstType::U8 => Int::U8,
+            AstType::U16 => Int::U16,
+            AstType::U32 => Int::U32,
+            AstType::U64 => Int::U64,
+            AstType::Name(name) => {
                 let ty = self.type_lookup[&*name.name];
                 self.get_variant_tag_id(ty)
             }
@@ -461,7 +470,7 @@ impl Resolver {
         }
     }
 
-    fn resolve_type(&mut self, ty: &super::Type<'_>) -> Result<Type> {
+    fn resolve_type(&mut self, ty: &AstType) -> Result<Type> {
         let kind = self.resolve_type_def(ty)?;
         Ok(self.anon_type_def(TypeDef {
             kind,
@@ -477,13 +486,13 @@ impl Resolver {
             TypeDefKind::Variant(v) => Key::Variant(
                 v.cases
                     .iter()
-                    .map(|case| (case.name.clone(), case.ty.clone()))
+                    .map(|case| (case.name.clone(), case.ty))
                     .collect::<Vec<_>>(),
             ),
             TypeDefKind::Record(r) => Key::Record(
                 r.fields
                     .iter()
-                    .map(|case| (case.name.clone(), case.ty.clone()))
+                    .map(|case| (case.name.clone(), case.ty))
                     .collect::<Vec<_>>(),
             ),
             TypeDefKind::List(ty) => Key::List(*ty),
@@ -500,31 +509,8 @@ impl Resolver {
         Type::Id(*id)
     }
 
-    fn docs(&mut self, doc: &super::Docs<'_>) -> Docs {
-        if doc.docs.is_empty() {
-            return Docs { contents: None };
-        }
-        let mut docs = String::new();
-        for doc in doc.docs.iter() {
-            if doc.starts_with("//") {
-                docs.push_str(&doc[2..].trim_start_matches('/').trim());
-                docs.push_str("\n");
-            } else {
-                assert!(doc.starts_with("/*"));
-                assert!(doc.ends_with("*/"));
-                for line in doc[2..doc.len() - 2].lines() {
-                    docs.push_str(line);
-                    docs.push_str("\n");
-                }
-            }
-        }
-        Docs {
-            contents: Some(docs),
-        }
-    }
-
     fn resolve_value(&mut self, value: &Value<'_>) -> Result<()> {
-        let docs = self.docs(&value.docs);
+        let docs = value.docs.docs.iter().into();
         match &value.kind {
             ValueKind::Function {
                 is_async,
@@ -534,11 +520,11 @@ impl Resolver {
             } => {
                 let params = params
                     .iter()
-                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
+                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                     .collect::<Result<_>>()?;
                 let results = results
                     .iter()
-                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
+                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                     .collect::<Result<_>>()?;
                 self.functions.push(Function {
                     abi: *abi,
@@ -562,7 +548,7 @@ impl Resolver {
         Ok(())
     }
 
-    fn resolve_resource(&mut self, resource: &super::Resource<'_>) -> Result<()> {
+    fn resolve_resource(&mut self, resource: &AstResource<'_>) -> Result<()> {
         let mut names = HashSet::new();
         let id = self.resource_lookup[&*resource.name.name];
         for (statik, value) in resource.values.iter() {
@@ -576,7 +562,7 @@ impl Resolver {
                 ValueKind::Global(_) => {
                     return Err(Error {
                         span: value.name.span,
-                        msg: format!("globals not allowed in resources"),
+                        msg: "globals not allowed in resources".to_string(),
                     }
                     .into());
                 }
@@ -588,14 +574,14 @@ impl Resolver {
                 }
                 .into());
             }
-            let docs = self.docs(&value.docs);
+            let docs = value.docs.docs.iter().into();
             let mut params = params
                 .iter()
-                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
+                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                 .collect::<Result<Vec<_>>>()?;
             let results = results
                 .iter()
-                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
+                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                 .collect::<Result<_>>()?;
             let kind = if *statik {
                 FunctionKind::Static {
@@ -624,7 +610,7 @@ impl Resolver {
 
     fn validate_type_not_recursive(
         &self,
-        span: Span,
+        span: lex::Span,
         ty: TypeId,
         visiting: &mut HashSet<TypeId>,
         valid: &mut HashSet<TypeId>,
@@ -635,7 +621,7 @@ impl Resolver {
         if !visiting.insert(ty) {
             return Err(Error {
                 span,
-                msg: format!("type can recursively refer to itself"),
+                msg: "type can recursively refer to itself".to_string(),
             }
             .into());
         }
