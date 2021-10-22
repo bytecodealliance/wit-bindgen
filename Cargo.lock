@@ -2052,11 +2052,13 @@ dependencies = [
 name = "witx-bindgen-demo"
 version = "0.1.0"
 dependencies = [
+ "wasmprinter",
  "witx-bindgen-gen-c",
  "witx-bindgen-gen-core",
  "witx-bindgen-gen-js",
  "witx-bindgen-gen-markdown",
  "witx-bindgen-gen-rust-wasm",
+ "witx-bindgen-gen-spidermonkey",
  "witx-bindgen-gen-wasmtime",
  "witx-bindgen-gen-wasmtime-py",
  "witx-bindgen-rust",

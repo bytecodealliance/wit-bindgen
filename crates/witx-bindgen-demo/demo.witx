@@ -13,6 +13,7 @@ enum lang {
   wasmtime_py,
   c,
   markdown,
+  spidermonkey,
 }
 
 
