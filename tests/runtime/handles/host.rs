@@ -95,7 +95,7 @@ fn run(wasm: &str) -> Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
         |linker| {
-            imports::add_imports_to_linker(
+            imports::add_to_linker(
                 linker,
                 |cx: &mut crate::Context<(MyImports, imports::ImportsTables<MyImports>), _>| {
                     (&mut cx.imports.0, &mut cx.imports.1)
