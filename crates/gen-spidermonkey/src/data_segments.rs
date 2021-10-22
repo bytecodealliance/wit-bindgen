@@ -31,7 +31,7 @@ impl DataSegments {
         let offset = self.reserve_space(u32::try_from(segment.len()).unwrap());
         self.data.active(
             self.memory,
-            wasm_encoder::Instruction::I32Const(offset as i32),
+            &wasm_encoder::Instruction::I32Const(offset as i32),
             segment,
         );
         offset

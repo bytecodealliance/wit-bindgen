@@ -357,6 +357,8 @@ pub struct SpiderMonkeyWasm<'a> {
     data_segments: DataSegments,
 
     sizes: witx2::SizeAlign,
+    function_names: Vec<(u32, String)>,
+    local_names: Vec<(u32, wasm_encoder::NameMap)>,
 }
 
 impl<'a> SpiderMonkeyWasm<'a> {
@@ -381,6 +383,8 @@ impl<'a> SpiderMonkeyWasm<'a> {
             export_glue_fns: Default::default(),
             data_segments: DataSegments::new(1),
             sizes: Default::default(),
+            function_names: Vec::new(),
+            local_names: Vec::new(),
         }
     }
 
@@ -474,6 +478,8 @@ impl<'a> SpiderMonkeyWasm<'a> {
         );
         for (name, _) in &*SMW_EXPORTS {
             aliases.instance_export(instance_index, wasm_encoder::ItemKind::Function, name);
+            let idx = self.spidermonkey_import(name);
+            self.function_names.push((idx, name.to_string()));
         }
     }
 
@@ -569,6 +575,8 @@ impl<'a> SpiderMonkeyWasm<'a> {
         let wizer_init_index = self.witx_import_functions_len()
             + u32::try_from(SMW_EXPORTS.len()).unwrap()
             + funcs.len();
+        self.function_names
+            .push((wizer_init_index, format!("wizer.initialize")));
 
         let ty_index = self.intern_type(WasmSignature {
             params: vec![],
@@ -586,12 +594,22 @@ impl<'a> SpiderMonkeyWasm<'a> {
         let func_name_local = 5;
         let ret_ptr_local = 6;
 
+        let mut local_names = wasm_encoder::NameMap::new();
+        local_names.append(js_name_local, "js_name");
+        local_names.append(js_local, "js");
+        local_names.append(module_name_local, "module_name");
+        local_names.append(module_builder_local, "module_builder");
+        local_names.append(table_size_local, "table_size");
+        local_names.append(func_name_local, "func_name");
+        local_names.append(ret_ptr_local, "ret_ptr");
+        self.local_names.push((wizer_init_index, local_names));
+
         let mut wizer_init = wasm_encoder::Function::new(locals);
 
         // Call `_initialize` because that must be called before any other
         // exports per the WASI reactor ABI.
         let init_index = self.spidermonkey_import("_initialize");
-        wizer_init.instruction(Instruction::Call(init_index));
+        wizer_init.instruction(&Instruction::Call(init_index));
 
         // Malloc space in `spidermonkey.wasm`'s linear memory for the JS file
         // name and the JS source.
@@ -610,16 +628,16 @@ impl<'a> SpiderMonkeyWasm<'a> {
             ret_ptr_local,
         );
         // []
-        wizer_init.instruction(Instruction::LocalGet(ret_ptr_local));
+        wizer_init.instruction(&Instruction::LocalGet(ret_ptr_local));
         // [i32]
-        wizer_init.instruction(Instruction::GlobalSet(RET_PTR_GLOBAL));
+        wizer_init.instruction(&Instruction::GlobalSet(RET_PTR_GLOBAL));
         // []
 
         // Call `SMW_initialize_engine`:
         //
         //     (call $SMW_initialize_engine)
         let smw_initialize_engine = self.spidermonkey_import("SMW_initialize_engine");
-        wizer_init.instruction(Instruction::Call(smw_initialize_engine));
+        wizer_init.instruction(&Instruction::Call(smw_initialize_engine));
 
         // Define a JS module for each WITX module that is imported. This JS
         // module will export each of our generated glue functions for that WITX
@@ -651,13 +669,13 @@ impl<'a> SpiderMonkeyWasm<'a> {
             //     local.set ${module_builder}
             wizer_init
                 // []
-                .instruction(Instruction::LocalGet(module_name_local))
+                .instruction(&Instruction::LocalGet(module_name_local))
                 // [i32]
-                .instruction(Instruction::I32Const(i32::try_from(module.len()).unwrap()))
+                .instruction(&Instruction::I32Const(i32::try_from(module.len()).unwrap()))
                 // [i32 i32]
-                .instruction(Instruction::Call(smw_new_module_builder))
+                .instruction(&Instruction::Call(smw_new_module_builder))
                 // [i32]
-                .instruction(Instruction::LocalSet(module_builder_local));
+                .instruction(&Instruction::LocalSet(module_builder_local));
             // []
 
             // Grow enough space in the function table for the functions we will
@@ -672,23 +690,23 @@ impl<'a> SpiderMonkeyWasm<'a> {
             //     end
             wizer_init
                 // []
-                .instruction(Instruction::RefNull(wasm_encoder::ValType::FuncRef))
+                .instruction(&Instruction::RefNull(wasm_encoder::ValType::FuncRef))
                 // [funcref]
-                .instruction(Instruction::I32Const(i32::try_from(funcs.len()).unwrap()))
+                .instruction(&Instruction::I32Const(i32::try_from(funcs.len()).unwrap()))
                 // [funcref i32]
-                .instruction(Instruction::TableGrow { table: 0 })
+                .instruction(&Instruction::TableGrow { table: 0 })
                 // [i32]
-                .instruction(Instruction::LocalTee(table_size_local))
+                .instruction(&Instruction::LocalTee(table_size_local))
                 // [i32]
-                .instruction(Instruction::I32Const(-1))
+                .instruction(&Instruction::I32Const(-1))
                 // [i32 i32]
-                .instruction(Instruction::I32Eq)
+                .instruction(&Instruction::I32Eq)
                 // [i32]
-                .instruction(Instruction::If(wasm_encoder::BlockType::Empty))
+                .instruction(&Instruction::If(wasm_encoder::BlockType::Empty))
                 // []
-                .instruction(Instruction::Unreachable)
+                .instruction(&Instruction::Unreachable)
                 // []
-                .instruction(Instruction::End);
+                .instruction(&Instruction::End);
             // []
 
             for (i, (func, (func_index, num_args))) in funcs.iter().enumerate() {
@@ -716,15 +734,15 @@ impl<'a> SpiderMonkeyWasm<'a> {
                 let glue_func_index = self.witx_import_glue_fn(*func_index);
                 wizer_init
                     // []
-                    .instruction(Instruction::I32Const(i32::try_from(i).unwrap()))
+                    .instruction(&Instruction::I32Const(i32::try_from(i).unwrap()))
                     // [i32]
-                    .instruction(Instruction::LocalGet(table_size_local))
+                    .instruction(&Instruction::LocalGet(table_size_local))
                     // [i32 i32]
-                    .instruction(Instruction::I32Add)
+                    .instruction(&Instruction::I32Add)
                     // [i32]
-                    .instruction(Instruction::RefFunc(glue_func_index))
+                    .instruction(&Instruction::RefFunc(glue_func_index))
                     // [i32 funcref]
-                    .instruction(Instruction::TableSet { table: 0 });
+                    .instruction(&Instruction::TableSet { table: 0 });
                 // []
 
                 // Call `SMW_module_builder_add_export` passing the index of the
@@ -739,21 +757,21 @@ impl<'a> SpiderMonkeyWasm<'a> {
                     self.spidermonkey_import("SMW_module_builder_add_export");
                 wizer_init
                     // []
-                    .instruction(Instruction::LocalGet(module_builder_local))
+                    .instruction(&Instruction::LocalGet(module_builder_local))
                     // [i32]
-                    .instruction(Instruction::LocalGet(func_name_local))
+                    .instruction(&Instruction::LocalGet(func_name_local))
                     // [i32 i32]
-                    .instruction(Instruction::I32Const(i32::try_from(func.len()).unwrap()))
+                    .instruction(&Instruction::I32Const(i32::try_from(func.len()).unwrap()))
                     // [i32 i32 i32]
-                    .instruction(Instruction::I32Const(i32::try_from(i).unwrap()))
+                    .instruction(&Instruction::I32Const(i32::try_from(i).unwrap()))
                     // [i32 i32 i32 i32]
-                    .instruction(Instruction::LocalGet(table_size_local))
+                    .instruction(&Instruction::LocalGet(table_size_local))
                     // [i32 i32 i32 i32 i32]
-                    .instruction(Instruction::I32Add)
+                    .instruction(&Instruction::I32Add)
                     // [i32 i32 i32 i32]
-                    .instruction(Instruction::I32Const(i32::try_from(*num_args).unwrap()))
+                    .instruction(&Instruction::I32Const(i32::try_from(*num_args).unwrap()))
                     // [i32 i32 i32 i32 i32]
-                    .instruction(Instruction::Call(smw_module_builder_add_export));
+                    .instruction(&Instruction::Call(smw_module_builder_add_export));
                 // []
             }
 
@@ -763,9 +781,9 @@ impl<'a> SpiderMonkeyWasm<'a> {
             let smw_finish_module_builder = self.spidermonkey_import("SMW_finish_module_builder");
             wizer_init
                 // []
-                .instruction(Instruction::LocalGet(module_builder_local))
+                .instruction(&Instruction::LocalGet(module_builder_local))
                 // [i32]
-                .instruction(Instruction::Call(smw_finish_module_builder));
+                .instruction(&Instruction::Call(smw_finish_module_builder));
             // []
         }
 
@@ -776,16 +794,16 @@ impl<'a> SpiderMonkeyWasm<'a> {
         let smw_eval_module = self.spidermonkey_import("SMW_eval_module");
         wizer_init
             // []
-            .instruction(Instruction::LocalGet(js_name_local))
+            .instruction(&Instruction::LocalGet(js_name_local))
             // [i32]
-            .instruction(Instruction::LocalGet(js_local))
+            .instruction(&Instruction::LocalGet(js_local))
             // [i32 i32]
-            .instruction(Instruction::I32Const(js_len as i32))
+            .instruction(&Instruction::I32Const(js_len as i32))
             // [i32 i32 i32]
-            .instruction(Instruction::Call(smw_eval_module));
+            .instruction(&Instruction::Call(smw_eval_module));
         // []
 
-        wizer_init.instruction(Instruction::End);
+        wizer_init.instruction(&Instruction::End);
         code.function(&wizer_init);
 
         self.exports.export(
@@ -1037,6 +1055,9 @@ impl Generator for SpiderMonkeyWasm<'_> {
             );
         assert!(existing.is_none());
 
+        self.function_names
+            .push((import_fn_index, format!("{}.{}", iface.name, func.name)));
+
         let mut bindgen = Bindgen::new(
             self,
             &wasm_sig,
@@ -1065,6 +1086,8 @@ impl Generator for SpiderMonkeyWasm<'_> {
         let export_fn_index = self.witx_export(self.exports.len());
         self.exports
             .export(&func.name, wasm_encoder::Export::Function(export_fn_index));
+        self.function_names
+            .push((export_fn_index, format!("{}.{}", iface.name, func.name)));
 
         let mut bindgen = Bindgen::new(
             self,
@@ -1106,7 +1129,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
                 val_type: wasm_encoder::ValType::I32,
                 mutable: true,
             },
-            Instruction::I32Const(0),
+            &Instruction::I32Const(0),
         );
 
         // Re-export `spidermonkey.wasm`'s memory and canonical ABI functions.
@@ -1184,6 +1207,32 @@ impl Generator for SpiderMonkeyWasm<'_> {
         mems.memory(self.data_segments.memory_type());
         let data = self.data_segments.take_data();
 
+        // Fill out the `names` section to assist in debugging the generated
+        // wasm.
+        let mut names = wasm_encoder::NameSection::new();
+        self.function_names.sort_by_key(|a| a.0);
+        let mut function_names = wasm_encoder::NameMap::new();
+        for (i, name) in self.function_names.iter() {
+            function_names.append(*i, name);
+        }
+        names.functions(&function_names);
+
+        self.local_names.sort_by_key(|a| a.0);
+        let mut local_names = wasm_encoder::IndirectNameMap::new();
+        for (i, names) in self.local_names.iter() {
+            local_names.append(*i, names);
+        }
+        names.locals(&local_names);
+
+        let mut table_names = wasm_encoder::NameMap::new();
+        table_names.append(0, "sm_function_table");
+        names.tables(&table_names);
+
+        let mut memory_names = wasm_encoder::NameMap::new();
+        memory_names.append(SM_MEMORY, "sm_mem");
+        memory_names.append(GLUE_MEMORY, "glue_mem");
+        names.memories(&memory_names);
+
         module
             .section(&aliases)
             .section(&funcs)
@@ -1192,7 +1241,8 @@ impl Generator for SpiderMonkeyWasm<'_> {
             .section(&self.exports)
             .section(&elems)
             .section(&code)
-            .section(&data);
+            .section(&data)
+            .section(&names);
 
         let wasm = module.finish();
 
@@ -1220,7 +1270,7 @@ trait InstructionSink<'a> {
 
 impl<'a> InstructionSink<'a> for wasm_encoder::Function {
     fn instruction(&mut self, inst: wasm_encoder::Instruction<'a>) {
-        wasm_encoder::Function::instruction(self, inst);
+        wasm_encoder::Function::instruction(self, &inst);
     }
 }
 
@@ -1356,9 +1406,9 @@ impl<'a, 'b> Bindgen<'a, 'b> {
         assert_eq!(self.blocks.len(), 1);
 
         for inst in &self.blocks[0] {
-            f.instruction(*inst);
+            f.instruction(inst);
         }
-        f.instruction(Instruction::End);
+        f.instruction(&Instruction::End);
         f
     }
 }

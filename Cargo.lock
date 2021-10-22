@@ -1647,9 +1647,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-encoder"
-version = "0.6.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2caacc74c68c74f0008c4055cdf509c43e623775eaf73323bb818dcf666ed9bd"
+checksum = "db0c351632e46cc06a58a696a6c11e4cf90cad4b9f8f07a0b59128d616c29bb0"
 dependencies = [
  "leb128",
 ]
@@ -2129,7 +2129,7 @@ dependencies = [
  "lazy_static",
  "structopt",
  "test-helpers",
- "wasm-encoder 0.6.0",
+ "wasm-encoder 0.8.0",
  "wasmparser 0.80.1",
  "witx-bindgen-gen-core",
 ]
