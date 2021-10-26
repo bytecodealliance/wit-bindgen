@@ -5,8 +5,8 @@ fn main() {
 }
 
 #[rustfmt::skip]
-mod exports {
-    test_helpers::codegen_wasmtime_export!(
+mod imports {
+    test_helpers::codegen_wasmtime_import!(
         "*.witx"
 
         // TODO: implement async support
@@ -24,8 +24,8 @@ mod exports {
     );
 }
 
-mod imports {
-    test_helpers::codegen_wasmtime_import!(
+mod exports {
+    test_helpers::codegen_wasmtime_export!(
         "*.witx"
 
         // TODO: implement async support
@@ -35,17 +35,12 @@ mod imports {
         // generator just yet
         "!wasi_next.witx"
         "!host.witx"
-
-        // These use the preview1 ABI which isn't implemented for wasmtime imports.
-        "!wasi_snapshot_preview1.witx"
-        "!typenames.witx"
-        "!legacy.witx"
     );
 }
 
 mod async_tests {
     mod not_async {
-        witx_bindgen_wasmtime::export!({
+        witx_bindgen_wasmtime::import!({
             src["x"]: "foo: function()",
             async: ["bar"],
         });
@@ -57,7 +52,7 @@ mod async_tests {
         }
     }
     mod one_async {
-        witx_bindgen_wasmtime::export!({
+        witx_bindgen_wasmtime::import!({
             src["x"]: "
                 foo: function() -> list<u8>
                 bar: function()
@@ -77,7 +72,7 @@ mod async_tests {
         }
     }
     mod one_async_export {
-        witx_bindgen_wasmtime::import!({
+        witx_bindgen_wasmtime::export!({
             src["x"]: "
                 foo: function(x: list<string>)
                 bar: function()
@@ -86,7 +81,7 @@ mod async_tests {
         });
     }
     mod resource_with_none_async {
-        witx_bindgen_wasmtime::export!({
+        witx_bindgen_wasmtime::import!({
             src["x"]: "
                 resource y {
                     z: function() -> string
@@ -98,7 +93,7 @@ mod async_tests {
 }
 
 mod custom_errors {
-    witx_bindgen_wasmtime::export!({
+    witx_bindgen_wasmtime::import!({
         src["x"]: "
             foo: function()
             bar: function() -> expected<_, u32>

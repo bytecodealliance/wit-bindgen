@@ -748,10 +748,6 @@ pub enum LiftLower {
 }
 
 /// Whether we are generating glue code to call an import or an export.
-///
-/// Note that this reflects the flavor of ABI we generate, and not necessarily
-/// the way the resulting bindings will be used by end users. See the comments
-/// on the `Direction` enum in wasmtime-impl for details.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Direction {
     /// We are generating glue code to call an import.

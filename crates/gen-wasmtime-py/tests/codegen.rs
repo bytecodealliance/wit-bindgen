@@ -26,11 +26,6 @@ mod exports {
         // TODO: should support this
         "!wasi_next.witx"
         "!host.witx"
-
-        // These use the preview1 ABI which isn't implemented for C exports.
-        "!wasi_snapshot_preview1.witx"
-        "!typenames.witx"
-        "!legacy.witx"
     );
 }
 
