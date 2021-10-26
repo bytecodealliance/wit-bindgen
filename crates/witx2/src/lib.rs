@@ -94,17 +94,11 @@ pub struct Field {
 
 impl Record {
     pub fn is_tuple(&self) -> bool {
-        match self.kind {
-            RecordKind::Tuple => true,
-            _ => false,
-        }
+        matches!(self.kind, RecordKind::Tuple)
     }
 
     pub fn is_flags(&self) -> bool {
-        match self.kind {
-            RecordKind::Flags(_) => true,
-            _ => false,
-        }
+        matches!(self.kind, RecordKind::Flags(_))
     }
 
     pub fn num_i32s(&self) -> usize {
@@ -114,7 +108,7 @@ impl Record {
 
 impl RecordKind {
     fn infer(types: &Arena<TypeDef>, fields: &[Field]) -> RecordKind {
-        if fields.len() == 0 {
+        if fields.is_empty() {
             return RecordKind::Other;
         }
 
@@ -296,7 +290,7 @@ impl Interface {
         map: &mut HashMap<String, Interface>,
     ) -> Result<Interface> {
         // Parse the `contents `into an AST
-        let ast = match ast::Ast::parse(&contents) {
+        let ast = match ast::Ast::parse(contents) {
             Ok(ast) => ast,
             Err(mut e) => {
                 let file = filename.display().to_string();
@@ -343,7 +337,7 @@ impl Interface {
         for (id, _) in self.types.iter() {
             self.topo_visit(id, &mut ret, &mut visited);
         }
-        return ret;
+        ret
     }
 
     fn topo_visit(&self, id: TypeId, list: &mut Vec<TypeId>, visited: &mut HashSet<TypeId>) {

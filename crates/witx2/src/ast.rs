@@ -490,7 +490,7 @@ impl<'a> Use<'a> {
                 break;
             }
         }
-        if !names.is_none() {
+        if names.is_some() {
             tokens.expect(Token::RightBrace)?;
         }
         tokens.expect(Token::From_)?;
@@ -1055,7 +1055,7 @@ fn highlight_err(
     if let Some(end) = end {
         if let Some(s) = input.get(start..end) {
             for _ in s.chars().skip(1) {
-                msg.push_str("-");
+                msg.push('-');
             }
         }
     }

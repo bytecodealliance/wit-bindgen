@@ -155,7 +155,7 @@ impl<'a> Tokenizer<'a> {
             '/' => {
                 // Eat a line comment if it's `//...`
                 if self.eatc('/') {
-                    while let Some((_, ch)) = self.chars.next() {
+                    for (_, ch) in &mut self.chars {
                         if ch == '\n' {
                             break;
                         }
@@ -342,7 +342,8 @@ impl<'a> Tokenizer<'a> {
                 None => return Err(Error::UnterminatedString(start)),
             },
             Some((_, ch))
-                if ch == '\u{09}' || ('\u{20}' <= ch && ch <= '\u{10ffff}' && ch != '\u{7f}') =>
+                if ch == '\u{09}'
+                    || (('\u{20}'..='\u{10ffff}').contains(&ch) && ch != '\u{7f}') =>
             {
                 ch
             }
@@ -372,11 +373,11 @@ impl<'a> Iterator for CrlfFold<'a> {
 }
 
 fn is_keylike(ch: char) -> bool {
-    ('A' <= ch && ch <= 'Z')
-        || ('a' <= ch && ch <= 'z')
-        || ('0' <= ch && ch <= '9')
-        || ch == '-'
+    ch == '-'
         || ch == '_'
+        || ('A'..='Z').contains(&ch)
+        || ('a'..='z').contains(&ch)
+        || ('0'..='9').contains(&ch)
 }
 
 impl Token {

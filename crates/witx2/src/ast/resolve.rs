@@ -137,7 +137,7 @@ impl Resolver {
                         if !found {
                             return Err(Error {
                                 span: name.name.span,
-                                msg: format!("name not defined in submodule"),
+                                msg: "name not defined in submodule".to_string(),
                             }
                             .into());
                         }
@@ -170,7 +170,11 @@ impl Resolver {
                 let resource = Resource {
                     docs: r.docs.clone(),
                     name: r.name.clone(),
-                    foreign_module: Some(r.foreign_module.clone().unwrap_or(dep_name.to_string())),
+                    foreign_module: Some(
+                        r.foreign_module
+                            .clone()
+                            .unwrap_or_else(|| dep_name.to_string()),
+                    ),
                 };
                 resources.alloc(resource)
             })
@@ -185,7 +189,11 @@ impl Resolver {
         let ty = TypeDef {
             docs: ty.docs.clone(),
             name: ty.name.clone(),
-            foreign_module: Some(ty.foreign_module.clone().unwrap_or(dep_name.to_string())),
+            foreign_module: Some(
+                ty.foreign_module
+                    .clone()
+                    .unwrap_or_else(|| dep_name.to_string()),
+            ),
             kind: match &ty.kind {
                 TypeDefKind::Type(t) => TypeDefKind::Type(self.copy_type(dep_name, dep, *t)),
                 TypeDefKind::Record(r) => TypeDefKind::Record(Record {
@@ -227,7 +235,7 @@ impl Resolver {
         };
         let id = self.types.alloc(ty);
         self.types_copied.insert((dep_name.to_string(), dep_id), id);
-        return id;
+        id
     }
 
     fn copy_type(&mut self, dep_name: &str, dep: &Interface, ty: Type) -> Type {
@@ -406,7 +414,7 @@ impl Resolver {
                 if variant.cases.is_empty() {
                     return Err(Error {
                         span: variant.span,
-                        msg: format!("empty variant"),
+                        msg: "empty variant".to_string(),
                     }
                     .into());
                 }
@@ -477,13 +485,13 @@ impl Resolver {
             TypeDefKind::Variant(v) => Key::Variant(
                 v.cases
                     .iter()
-                    .map(|case| (case.name.clone(), case.ty.clone()))
+                    .map(|case| (case.name.clone(), case.ty))
                     .collect::<Vec<_>>(),
             ),
             TypeDefKind::Record(r) => Key::Record(
                 r.fields
                     .iter()
-                    .map(|case| (case.name.clone(), case.ty.clone()))
+                    .map(|case| (case.name.clone(), case.ty))
                     .collect::<Vec<_>>(),
             ),
             TypeDefKind::List(ty) => Key::List(*ty),
@@ -506,15 +514,15 @@ impl Resolver {
         }
         let mut docs = String::new();
         for doc in doc.docs.iter() {
-            if doc.starts_with("//") {
-                docs.push_str(&doc[2..].trim_start_matches('/').trim());
-                docs.push_str("\n");
+            if let Some(doc) = doc.strip_prefix("//") {
+                docs.push_str(doc.trim_start_matches('/').trim());
+                docs.push('\n');
             } else {
                 assert!(doc.starts_with("/*"));
                 assert!(doc.ends_with("*/"));
                 for line in doc[2..doc.len() - 2].lines() {
                     docs.push_str(line);
-                    docs.push_str("\n");
+                    docs.push('\n');
                 }
             }
         }
@@ -534,11 +542,11 @@ impl Resolver {
             } => {
                 let params = params
                     .iter()
-                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
+                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                     .collect::<Result<_>>()?;
                 let results = results
                     .iter()
-                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
+                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                     .collect::<Result<_>>()?;
                 self.functions.push(Function {
                     abi: *abi,
@@ -576,7 +584,7 @@ impl Resolver {
                 ValueKind::Global(_) => {
                     return Err(Error {
                         span: value.name.span,
-                        msg: format!("globals not allowed in resources"),
+                        msg: "globals not allowed in resources".to_string(),
                     }
                     .into());
                 }
@@ -591,11 +599,11 @@ impl Resolver {
             let docs = self.docs(&value.docs);
             let mut params = params
                 .iter()
-                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
+                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                 .collect::<Result<Vec<_>>>()?;
             let results = results
                 .iter()
-                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(&ty)?)))
+                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                 .collect::<Result<_>>()?;
             let kind = if *statik {
                 FunctionKind::Static {
@@ -635,7 +643,7 @@ impl Resolver {
         if !visiting.insert(ty) {
             return Err(Error {
                 span,
-                msg: format!("type can recursively refer to itself"),
+                msg: "type can recursively refer to itself".to_string(),
             }
             .into());
         }
