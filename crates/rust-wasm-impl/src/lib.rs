@@ -2,26 +2,25 @@ use proc_macro::TokenStream;
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{token, Token};
-use witx2::abi::AbiVariant;
-use witx_bindgen_gen_core::{witx2, Files, Generator};
+use witx_bindgen_gen_core::{witx2, Direction, Files, Generator};
 
 #[proc_macro]
 pub fn import(input: TokenStream) -> TokenStream {
-    run(input, AbiVariant::GuestImport)
+    run(input, Direction::Import)
 }
 
 #[proc_macro]
 pub fn export(input: TokenStream) -> TokenStream {
-    run(input, AbiVariant::GuestExport)
+    run(input, Direction::Export)
 }
 
-fn run(input: TokenStream, dir: AbiVariant) -> TokenStream {
+fn run(input: TokenStream, dir: Direction) -> TokenStream {
     let input = syn::parse_macro_input!(input as Opts);
     let mut gen = input.opts.build();
     let mut files = Files::default();
     let (imports, exports) = match dir {
-        AbiVariant::GuestImport => (input.interfaces, vec![]),
-        AbiVariant::GuestExport => (vec![], input.interfaces),
+        Direction::Import => (input.interfaces, vec![]),
+        Direction::Export => (vec![], input.interfaces),
     };
     gen.generate_all(&imports, &exports, &mut files);
     let (_, contents) = files.iter().next().unwrap();
