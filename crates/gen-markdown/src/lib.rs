@@ -1,9 +1,9 @@
 use heck::*;
 use pulldown_cmark::{html, Event, LinkType, Parser, Tag};
 use std::collections::HashMap;
-use witx2::abi::AbiVariant;
 use witx2::*;
-use witx_bindgen_gen_core::{witx2, Files, Generator, Source};
+use witx_bindgen_gen_core::witx2::abi::AbiVariant;
+use witx_bindgen_gen_core::{witx2, Direction, Files, Generator, Source};
 
 #[derive(Default)]
 pub struct Markdown {
@@ -32,6 +32,14 @@ impl Opts {
 impl Markdown {
     pub fn new() -> Markdown {
         Markdown::default()
+    }
+
+    fn abi_variant(dir: Direction) -> AbiVariant {
+        // This generator uses the obvious direction to ABI variant mapping.
+        match dir {
+            Direction::Export => AbiVariant::GuestExport,
+            Direction::Import => AbiVariant::GuestImport,
+        }
     }
 
     fn print_ty(&mut self, iface: &Interface, ty: &Type, skip_name: bool) {
@@ -169,7 +177,8 @@ impl Markdown {
 }
 
 impl Generator for Markdown {
-    fn preprocess_one(&mut self, iface: &Interface, variant: AbiVariant) {
+    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
+        let variant = Self::abi_variant(dir);
         self.sizes.fill(variant, iface);
     }
 

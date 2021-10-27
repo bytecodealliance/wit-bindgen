@@ -4,18 +4,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
-use witx_bindgen_gen_core::Generator;
-
-/// This is the direction from the user's perspective. Are we importing
-/// functions to call, or defining functions and exporting them to be called?
-///
-/// This differs from the `witx2::abi::Direction` value in some bindings; see
-/// the comments on the `Direction` enum in wasmtime-impl for details.
-#[derive(PartialEq, Eq, Copy, Clone)]
-enum Direction {
-    Import,
-    Export,
-}
+use witx_bindgen_gen_core::{Direction, Generator};
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-rust-wasm")]

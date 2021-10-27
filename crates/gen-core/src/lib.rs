@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::collections::{btree_map::Entry, BTreeMap, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
-use witx2::abi::{Abi, AbiVariant};
+use witx2::abi::Abi;
 use witx2::*;
 
 // pub use witx;
@@ -11,13 +11,42 @@ mod ns;
 
 pub use ns::Ns;
 
+/// This is the direction from the user's perspective. Are we importing
+/// functions to call, or defining functions and exporting them to be called?
+///
+/// This is only used outside of `Generator` implementations. Inside of
+/// `Generator` implementations, the `Direction` is translated to an
+/// `AbiVariant` instead. The ABI variant is usually the same as the
+/// `Direction`, but it's different in the case of the Wasmtime host bindings:
+///
+/// In a wasm-calling-wasm use case, one wasm module would use the `Import`
+/// ABI, the other would use the `Export` ABI, and there would be an adapter
+/// layer between the two that translates from one ABI to the other.
+///
+/// But with wasm-calling-host, we don't go through a separate adapter layer;
+/// the binding code we generate on the host side just does everything itself.
+/// So when the host is conceptually "exporting" a function to wasm, it uses
+/// the `Import` ABI so that wasm can also use the `Import` ABI and import it
+/// directly from the host.
+///
+/// These are all implementation details; from the user perspective, and
+/// from the perspective of everything outside of `Generator` implementations,
+/// `export` means I'm exporting functions to be called, and `import` means I'm
+/// importing functions that I'm going to call, in both wasm modules and host
+/// code. The enum here represents this user perspective.
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum Direction {
+    Import,
+    Export,
+}
+
 pub trait Generator {
     fn preprocess_all(&mut self, imports: &[Interface], exports: &[Interface]) {
         drop((imports, exports));
     }
 
-    fn preprocess_one(&mut self, iface: &Interface, variant: AbiVariant) {
-        drop((iface, variant));
+    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
+        drop((iface, dir));
     }
 
     fn type_record(
@@ -75,8 +104,8 @@ pub trait Generator {
         drop(files);
     }
 
-    fn generate_one(&mut self, iface: &Interface, variant: AbiVariant, files: &mut Files) {
-        self.preprocess_one(iface, variant);
+    fn generate_one(&mut self, iface: &Interface, dir: Direction, files: &mut Files) {
+        self.preprocess_one(iface, dir);
 
         for (id, ty) in iface.types.iter() {
             // assert!(ty.foreign_module.is_none()); // TODO
@@ -109,9 +138,9 @@ pub trait Generator {
         // }
 
         for f in iface.functions.iter() {
-            match variant {
-                AbiVariant::GuestImport => self.import(iface, &f),
-                AbiVariant::GuestExport => self.export(iface, &f),
+            match dir {
+                Direction::Import => self.import(iface, &f),
+                Direction::Export => self.export(iface, &f),
             }
         }
 
@@ -122,11 +151,11 @@ pub trait Generator {
         self.preprocess_all(imports, exports);
 
         for imp in imports {
-            self.generate_one(imp, AbiVariant::GuestImport, files);
+            self.generate_one(imp, Direction::Import, files);
         }
 
         for exp in exports {
-            self.generate_one(exp, AbiVariant::GuestExport, files);
+            self.generate_one(exp, Direction::Export, files);
         }
 
         self.finish_all(files);

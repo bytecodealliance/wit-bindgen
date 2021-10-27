@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use witx_bindgen_gen_core::witx2::abi::{
     AbiVariant, Bindgen, Instruction, LiftLower, WasmType, WitxInstruction,
 };
-use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
+use witx_bindgen_gen_core::{witx2::*, Direction, Files, Generator, Source, TypeInfo, Types};
 use witx_bindgen_gen_rust::{
     int_repr, wasm_type, FnSig, RustFunctionGenerator, RustGenerator, TypeMode,
 };
@@ -70,6 +70,14 @@ impl Opts {
 impl RustWasm {
     pub fn new() -> RustWasm {
         RustWasm::default()
+    }
+
+    fn abi_variant(dir: Direction) -> AbiVariant {
+        // This generator uses the obvious direction to ABI variant mapping.
+        match dir {
+            Direction::Export => AbiVariant::GuestExport,
+            Direction::Import => AbiVariant::GuestImport,
+        }
     }
 }
 
@@ -207,7 +215,8 @@ impl RustGenerator for RustWasm {
 }
 
 impl Generator for RustWasm {
-    fn preprocess_one(&mut self, iface: &Interface, variant: AbiVariant) {
+    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
+        let variant = Self::abi_variant(dir);
         self.in_import = variant == AbiVariant::GuestImport;
         self.types.analyze(iface);
         self.trait_name = iface.name.to_camel_case();

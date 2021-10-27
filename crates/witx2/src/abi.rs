@@ -752,7 +752,7 @@ pub enum LiftLower {
 ///
 /// Note that this reflects the flavor of ABI we generate, and not necessarily
 /// the way the resulting bindings will be used by end users. See the comments
-/// on the `AbiVariant` enum in wasmtime-impl for details.
+/// on the `Direction` enum in gen-core for details.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum AbiVariant {
     /// We are generating glue code to call an import.

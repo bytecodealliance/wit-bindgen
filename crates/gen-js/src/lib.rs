@@ -4,7 +4,7 @@ use std::mem;
 use witx_bindgen_gen_core::witx2::abi::{
     AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType, WitxInstruction,
 };
-use witx_bindgen_gen_core::{witx2::*, Files, Generator};
+use witx_bindgen_gen_core::{witx2::*, Direction, Files, Generator};
 
 #[derive(Default)]
 pub struct Js {
@@ -110,6 +110,14 @@ impl Intrinsic {
 impl Js {
     pub fn new() -> Js {
         Js::default()
+    }
+
+    fn abi_variant(dir: Direction) -> AbiVariant {
+        // This generator uses the obvious direction to ABI variant mapping.
+        match dir {
+            Direction::Export => AbiVariant::GuestExport,
+            Direction::Import => AbiVariant::GuestImport,
+        }
     }
 
     fn is_nullable_option(&self, iface: &Interface, variant: &Variant) -> bool {
@@ -356,7 +364,8 @@ impl Js {
 }
 
 impl Generator for Js {
-    fn preprocess_one(&mut self, iface: &Interface, variant: AbiVariant) {
+    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
+        let variant = Self::abi_variant(dir);
         self.sizes.fill(variant, iface);
         self.in_import = variant == AbiVariant::GuestImport;
     }

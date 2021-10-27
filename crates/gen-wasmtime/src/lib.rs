@@ -7,7 +7,7 @@ use std::str::FromStr;
 use witx_bindgen_gen_core::witx2::abi::{
     Abi, AbiVariant, Bindgen, Instruction, LiftLower, WasmType, WitxInstruction,
 };
-use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
+use witx_bindgen_gen_core::{witx2::*, Direction, Files, Generator, Source, TypeInfo, Types};
 use witx_bindgen_gen_rust::{
     int_repr, to_rust_ident, wasm_type, FnSig, RustFunctionGenerator, RustGenerator, TypeMode,
 };
@@ -151,6 +151,21 @@ enum FunctionRet {
 impl Wasmtime {
     pub fn new() -> Wasmtime {
         Wasmtime::default()
+    }
+
+    fn abi_variant(dir: Direction) -> AbiVariant {
+        // This generator uses a reversed mapping! In the Wasmtime host-side
+        // bindings, we don't use any extra adapter layer between guest wasm
+        // modules and the host. When the guest imports functions using the
+        // `GuestImport` ABI, the host directly implements the `GuestImport`
+        // ABI, even though the host is *exporting* functions. Similarly, when
+        // the guest exports functions using the `GuestExport` ABI, the host
+        // directly imports them with the `GuestExport` ABI, even though the
+        // host is *importing* functions.
+        match dir {
+            Direction::Import => AbiVariant::GuestExport,
+            Direction::Export => AbiVariant::GuestImport,
+        }
     }
 
     fn print_intrinsics(&mut self) {
@@ -358,11 +373,8 @@ impl RustGenerator for Wasmtime {
 }
 
 impl Generator for Wasmtime {
-    fn preprocess_one(&mut self, iface: &Interface, variant: AbiVariant) {
-        let variant = match variant {
-            AbiVariant::GuestExport => AbiVariant::GuestImport,
-            AbiVariant::GuestImport => AbiVariant::GuestExport,
-        };
+    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
+        let variant = Self::abi_variant(dir);
         self.types.analyze(iface);
         self.in_import = variant == AbiVariant::GuestImport;
         self.trait_name = iface.name.to_camel_case();

@@ -4,7 +4,7 @@ use std::mem;
 use witx_bindgen_gen_core::witx2::abi::{
     AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType, WitxInstruction,
 };
-use witx_bindgen_gen_core::{witx2::*, Files, Generator, Ns};
+use witx_bindgen_gen_core::{witx2::*, Direction, Files, Generator, Ns};
 
 #[derive(Default)]
 pub struct C {
@@ -81,6 +81,14 @@ enum Scalar {
 impl C {
     pub fn new() -> C {
         C::default()
+    }
+
+    fn abi_variant(dir: Direction) -> AbiVariant {
+        // This generator uses the obvious direction to ABI variant mapping.
+        match dir {
+            Direction::Export => AbiVariant::GuestExport,
+            Direction::Import => AbiVariant::GuestImport,
+        }
     }
 
     fn classify_ret(&mut self, iface: &Interface, func: &Function) -> Return {
@@ -703,12 +711,13 @@ impl Return {
 }
 
 impl Generator for C {
-    fn preprocess_one(&mut self, iface: &Interface, dir: AbiVariant) {
-        self.sizes.fill(dir, iface);
-        self.in_import = dir == AbiVariant::GuestImport;
+    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
+        let variant = Self::abi_variant(dir);
+        self.sizes.fill(variant, iface);
+        self.in_import = variant == AbiVariant::GuestImport;
 
         for func in iface.functions.iter() {
-            let sig = iface.wasm_signature(dir, func);
+            let sig = iface.wasm_signature(variant, func);
             if let Some(results) = sig.retptr {
                 self.i64_return_pointer_area_size =
                     self.i64_return_pointer_area_size.max(results.len());
