@@ -1,7 +1,6 @@
-use crate::ast::interface::{Item, Resource as AstResource, Type as AstType, Value, ValueKind};
+use super::{Error, Item, Span, Value, ValueKind};
 use crate::*;
 use anyhow::Result;
-use id_arena::Arena;
 use std::collections::{HashMap, HashSet};
 use std::mem;
 
@@ -252,7 +251,7 @@ impl Resolver {
         for field in fields {
             match field {
                 Item::Resource(r) => {
-                    let docs = r.docs.docs.iter().into();
+                    let docs = self.docs(&r.docs);
                     let id = self.resources.alloc(Resource {
                         docs,
                         name: r.name.name.to_string(),
@@ -268,7 +267,7 @@ impl Resolver {
                     self.define_type(&r.name.name, r.name.span, type_id)?;
                 }
                 Item::TypeDef(t) => {
-                    let docs = t.docs.docs.iter().into();
+                    let docs = self.docs(&t.docs);
                     let id = self.types.alloc(TypeDef {
                         docs,
                         // a dummy kind is used for now which will get filled in
@@ -297,7 +296,7 @@ impl Resolver {
         Ok(())
     }
 
-    fn define_resource(&mut self, name: &str, span: lex::Span, id: ResourceId) -> Result<()> {
+    fn define_resource(&mut self, name: &str, span: Span, id: ResourceId) -> Result<()> {
         if self.resource_lookup.insert(name.to_string(), id).is_some() {
             Err(Error {
                 span,
@@ -309,7 +308,7 @@ impl Resolver {
         }
     }
 
-    fn define_type(&mut self, name: &str, span: lex::Span, id: TypeId) -> Result<()> {
+    fn define_type(&mut self, name: &str, span: Span, id: TypeId) -> Result<()> {
         if self.type_lookup.insert(name.to_string(), id).is_some() {
             Err(Error {
                 span,
@@ -321,22 +320,22 @@ impl Resolver {
         }
     }
 
-    fn resolve_type_def(&mut self, ty: &AstType) -> Result<TypeDefKind> {
+    fn resolve_type_def(&mut self, ty: &super::Type<'_>) -> Result<TypeDefKind> {
         Ok(match ty {
-            AstType::U8 => TypeDefKind::Type(Type::U8),
-            AstType::U16 => TypeDefKind::Type(Type::U16),
-            AstType::U32 => TypeDefKind::Type(Type::U32),
-            AstType::U64 => TypeDefKind::Type(Type::U64),
-            AstType::S8 => TypeDefKind::Type(Type::S8),
-            AstType::S16 => TypeDefKind::Type(Type::S16),
-            AstType::S32 => TypeDefKind::Type(Type::S32),
-            AstType::S64 => TypeDefKind::Type(Type::S64),
-            AstType::F32 => TypeDefKind::Type(Type::F32),
-            AstType::F64 => TypeDefKind::Type(Type::F64),
-            AstType::Char => TypeDefKind::Type(Type::Char),
-            AstType::CChar => TypeDefKind::Type(Type::CChar),
-            AstType::Usize => TypeDefKind::Type(Type::Usize),
-            AstType::Handle(resource) => {
+            super::Type::U8 => TypeDefKind::Type(Type::U8),
+            super::Type::U16 => TypeDefKind::Type(Type::U16),
+            super::Type::U32 => TypeDefKind::Type(Type::U32),
+            super::Type::U64 => TypeDefKind::Type(Type::U64),
+            super::Type::S8 => TypeDefKind::Type(Type::S8),
+            super::Type::S16 => TypeDefKind::Type(Type::S16),
+            super::Type::S32 => TypeDefKind::Type(Type::S32),
+            super::Type::S64 => TypeDefKind::Type(Type::S64),
+            super::Type::F32 => TypeDefKind::Type(Type::F32),
+            super::Type::F64 => TypeDefKind::Type(Type::F64),
+            super::Type::Char => TypeDefKind::Type(Type::Char),
+            super::Type::CChar => TypeDefKind::Type(Type::CChar),
+            super::Type::Usize => TypeDefKind::Type(Type::Usize),
+            super::Type::Handle(resource) => {
                 let id = match self.resource_lookup.get(&*resource.name) {
                     Some(id) => *id,
                     None => {
@@ -349,7 +348,7 @@ impl Resolver {
                 };
                 TypeDefKind::Type(Type::Handle(id))
             }
-            AstType::Name(name) => {
+            super::Type::Name(name) => {
                 let id = match self.type_lookup.get(&*name.name) {
                     Some(id) => *id,
                     None => {
@@ -362,33 +361,33 @@ impl Resolver {
                 };
                 TypeDefKind::Type(Type::Id(id))
             }
-            AstType::List(list) => {
+            super::Type::List(list) => {
                 let ty = self.resolve_type(list)?;
                 TypeDefKind::List(ty)
             }
-            AstType::Pointer(list) => {
+            super::Type::Pointer(list) => {
                 let ty = self.resolve_type(list)?;
                 TypeDefKind::Pointer(ty)
             }
-            AstType::ConstPointer(list) => {
+            super::Type::ConstPointer(list) => {
                 let ty = self.resolve_type(list)?;
                 TypeDefKind::ConstPointer(ty)
             }
-            AstType::PushBuffer(ty) => {
+            super::Type::PushBuffer(ty) => {
                 let ty = self.resolve_type(ty)?;
                 TypeDefKind::PushBuffer(ty)
             }
-            AstType::PullBuffer(ty) => {
+            super::Type::PullBuffer(ty) => {
                 let ty = self.resolve_type(ty)?;
                 TypeDefKind::PullBuffer(ty)
             }
-            AstType::Record(record) => {
+            super::Type::Record(record) => {
                 let fields = record
                     .fields
                     .iter()
                     .map(|field| {
                         Ok(Field {
-                            docs: field.docs.docs.iter().into(),
+                            docs: self.docs(&field.docs),
                             name: field.name.name.to_string(),
                             ty: self.resolve_type(&field.ty)?,
                         })
@@ -399,10 +398,10 @@ impl Resolver {
                         RecordKind::Tuple
                     } else if let Some(hint) = &record.flags_repr {
                         RecordKind::Flags(Some(match &**hint {
-                            AstType::U8 => Int::U8,
-                            AstType::U16 => Int::U16,
-                            AstType::U32 => Int::U32,
-                            AstType::U64 => Int::U64,
+                            super::Type::U8 => Int::U8,
+                            super::Type::U16 => Int::U16,
+                            super::Type::U32 => Int::U32,
+                            super::Type::U64 => Int::U64,
                             _ => panic!("unknown explicit flags repr"),
                         }))
                     } else {
@@ -411,7 +410,7 @@ impl Resolver {
                     fields,
                 })
             }
-            AstType::Variant(variant) => {
+            super::Type::Variant(variant) => {
                 if variant.cases.is_empty() {
                     return Err(Error {
                         span: variant.span,
@@ -424,7 +423,7 @@ impl Resolver {
                     .iter()
                     .map(|case| {
                         Ok(Case {
-                            docs: case.docs.docs.iter().into(),
+                            docs: self.docs(&case.docs),
                             name: case.name.name.to_string(),
                             ty: match &case.ty {
                                 Some(ty) => Some(self.resolve_type(ty)?),
@@ -444,13 +443,13 @@ impl Resolver {
         })
     }
 
-    fn get_variant_tag(&self, tag: &AstType) -> Int {
+    fn get_variant_tag(&self, tag: &super::Type) -> Int {
         match tag {
-            AstType::U8 => Int::U8,
-            AstType::U16 => Int::U16,
-            AstType::U32 => Int::U32,
-            AstType::U64 => Int::U64,
-            AstType::Name(name) => {
+            super::Type::U8 => Int::U8,
+            super::Type::U16 => Int::U16,
+            super::Type::U32 => Int::U32,
+            super::Type::U64 => Int::U64,
+            super::Type::Name(name) => {
                 let ty = self.type_lookup[&*name.name];
                 self.get_variant_tag_id(ty)
             }
@@ -470,7 +469,7 @@ impl Resolver {
         }
     }
 
-    fn resolve_type(&mut self, ty: &AstType) -> Result<Type> {
+    fn resolve_type(&mut self, ty: &super::Type<'_>) -> Result<Type> {
         let kind = self.resolve_type_def(ty)?;
         Ok(self.anon_type_def(TypeDef {
             kind,
@@ -509,8 +508,31 @@ impl Resolver {
         Type::Id(*id)
     }
 
+    fn docs(&mut self, doc: &super::Docs<'_>) -> Docs {
+        if doc.docs.is_empty() {
+            return Docs { contents: None };
+        }
+        let mut docs = String::new();
+        for doc in doc.docs.iter() {
+            if let Some(doc) = doc.strip_prefix("//") {
+                docs.push_str(doc.trim_start_matches('/').trim());
+                docs.push('\n');
+            } else {
+                assert!(doc.starts_with("/*"));
+                assert!(doc.ends_with("*/"));
+                for line in doc[2..doc.len() - 2].lines() {
+                    docs.push_str(line);
+                    docs.push('\n');
+                }
+            }
+        }
+        Docs {
+            contents: Some(docs),
+        }
+    }
+
     fn resolve_value(&mut self, value: &Value<'_>) -> Result<()> {
-        let docs = value.docs.docs.iter().into();
+        let docs = self.docs(&value.docs);
         match &value.kind {
             ValueKind::Function {
                 is_async,
@@ -548,7 +570,7 @@ impl Resolver {
         Ok(())
     }
 
-    fn resolve_resource(&mut self, resource: &AstResource<'_>) -> Result<()> {
+    fn resolve_resource(&mut self, resource: &super::Resource<'_>) -> Result<()> {
         let mut names = HashSet::new();
         let id = self.resource_lookup[&*resource.name.name];
         for (statik, value) in resource.values.iter() {
@@ -574,7 +596,7 @@ impl Resolver {
                 }
                 .into());
             }
-            let docs = value.docs.docs.iter().into();
+            let docs = self.docs(&value.docs);
             let mut params = params
                 .iter()
                 .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
@@ -610,7 +632,7 @@ impl Resolver {
 
     fn validate_type_not_recursive(
         &self,
-        span: lex::Span,
+        span: Span,
         ty: TypeId,
         visiting: &mut HashSet<TypeId>,
         valid: &mut HashSet<TypeId>,
