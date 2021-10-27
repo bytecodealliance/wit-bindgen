@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::collections::{btree_map::Entry, BTreeMap, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
-use witx2::abi::{Abi, Direction};
+use witx2::abi::{Abi, AbiVariant};
 use witx2::*;
 
 // pub use witx;
@@ -16,8 +16,8 @@ pub trait Generator {
         drop((imports, exports));
     }
 
-    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        drop((iface, dir));
+    fn preprocess_one(&mut self, iface: &Interface, variant: AbiVariant) {
+        drop((iface, variant));
     }
 
     fn type_record(
@@ -75,8 +75,8 @@ pub trait Generator {
         drop(files);
     }
 
-    fn generate_one(&mut self, iface: &Interface, dir: Direction, files: &mut Files) {
-        self.preprocess_one(iface, dir);
+    fn generate_one(&mut self, iface: &Interface, variant: AbiVariant, files: &mut Files) {
+        self.preprocess_one(iface, variant);
 
         for (id, ty) in iface.types.iter() {
             // assert!(ty.foreign_module.is_none()); // TODO
@@ -109,9 +109,9 @@ pub trait Generator {
         // }
 
         for f in iface.functions.iter() {
-            match dir {
-                Direction::Import => self.import(iface, &f),
-                Direction::Export => self.export(iface, &f),
+            match variant {
+                AbiVariant::GuestImport => self.import(iface, &f),
+                AbiVariant::GuestExport => self.export(iface, &f),
             }
         }
 
@@ -122,11 +122,11 @@ pub trait Generator {
         self.preprocess_all(imports, exports);
 
         for imp in imports {
-            self.generate_one(imp, Direction::Import, files);
+            self.generate_one(imp, AbiVariant::GuestImport, files);
         }
 
         for exp in exports {
-            self.generate_one(exp, Direction::Export, files);
+            self.generate_one(exp, AbiVariant::GuestExport, files);
         }
 
         self.finish_all(files);

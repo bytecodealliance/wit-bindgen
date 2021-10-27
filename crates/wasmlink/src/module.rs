@@ -9,7 +9,7 @@ use wasmparser::{
     SectionReader, Type, TypeDef, Validator,
 };
 use witx2::{
-    abi::{Direction, WasmSignature, WasmType},
+    abi::{AbiVariant, WasmSignature, WasmType},
     Function, SizeAlign,
 };
 
@@ -86,8 +86,8 @@ impl Interface {
             .functions
             .iter()
             .map(|f| {
-                let import_signature = inner.wasm_signature(Direction::Import, f);
-                let export_signature = inner.wasm_signature(Direction::Export, f);
+                let import_signature = inner.wasm_signature(AbiVariant::GuestImport, f);
+                let export_signature = inner.wasm_signature(AbiVariant::GuestExport, f);
                 let import_type = Self::sig_to_type(&import_signature);
                 let export_type = Self::sig_to_type(&export_signature);
 
@@ -119,7 +119,7 @@ impl Interface {
             .collect();
 
         let mut sizes = SizeAlign::default();
-        sizes.fill(Direction::Export, &inner);
+        sizes.fill(AbiVariant::GuestExport, &inner);
 
         let has_resources = inner
             .resources

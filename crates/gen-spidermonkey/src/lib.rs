@@ -905,11 +905,11 @@ impl Generator for SpiderMonkeyWasm<'_> {
         // Figure out what the maximum return pointer area we will need is.
         for (iface, dir) in imports
             .iter()
-            .zip(std::iter::repeat(witx2::abi::Direction::Import))
+            .zip(std::iter::repeat(witx2::abi::AbiVariant::GuestImport))
             .chain(
                 exports
                     .iter()
-                    .zip(std::iter::repeat(witx2::abi::Direction::Export)),
+                    .zip(std::iter::repeat(witx2::abi::AbiVariant::GuestExport)),
             )
         {
             for func in iface.functions.iter() {
@@ -922,7 +922,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
         }
     }
 
-    fn preprocess_one(&mut self, iface: &witx2::Interface, dir: witx2::abi::Direction) {
+    fn preprocess_one(&mut self, iface: &witx2::Interface, dir: witx2::abi::AbiVariant) {
         self.sizes.fill(dir, iface);
     }
 
@@ -1036,7 +1036,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
         );
 
         // Add the raw Wasm import.
-        let wasm_sig = iface.wasm_signature(witx2::abi::Direction::Import, func);
+        let wasm_sig = iface.wasm_signature(witx2::abi::AbiVariant::GuestImport, func);
         let type_index = self.intern_type(wasm_sig.clone());
         let import_fn_index = self.witx_import(self.imports.len());
         self.imports.import(
@@ -1065,7 +1065,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
             witx2::abi::LiftLower::LowerArgsLiftResults,
         );
         iface.call(
-            witx2::abi::Direction::Import,
+            witx2::abi::AbiVariant::GuestImport,
             witx2::abi::LiftLower::LowerArgsLiftResults,
             func,
             &mut bindgen,
@@ -1081,7 +1081,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
             "We only support the canonical ABI right now"
         );
 
-        let wasm_sig = iface.wasm_signature(witx2::abi::Direction::Export, func);
+        let wasm_sig = iface.wasm_signature(witx2::abi::AbiVariant::GuestExport, func);
         let type_index = self.intern_type(wasm_sig.clone());
         let export_fn_index = self.witx_export(self.exports.len());
         self.exports
@@ -1096,7 +1096,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
             witx2::abi::LiftLower::LiftArgsLowerResults,
         );
         iface.call(
-            witx2::abi::Direction::Export,
+            witx2::abi::AbiVariant::GuestExport,
             witx2::abi::LiftLower::LiftArgsLowerResults,
             func,
             &mut bindgen,

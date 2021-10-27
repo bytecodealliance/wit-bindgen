@@ -5,7 +5,7 @@ use std::mem;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 use witx_bindgen_gen_core::witx2::abi::{
-    Abi, Bindgen, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
+    Abi, Bindgen, AbiVariant, Instruction, LiftLower, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
 use witx_bindgen_gen_rust::{
@@ -358,19 +358,19 @@ impl RustGenerator for Wasmtime {
 }
 
 impl Generator for Wasmtime {
-    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        let dir = match dir {
-            Direction::Export => Direction::Import,
-            Direction::Import => Direction::Export,
+    fn preprocess_one(&mut self, iface: &Interface, variant: AbiVariant) {
+        let variant = match variant {
+            AbiVariant::GuestExport => AbiVariant::GuestImport,
+            AbiVariant::GuestImport => AbiVariant::GuestExport,
         };
         self.types.analyze(iface);
-        self.in_import = dir == Direction::Import;
+        self.in_import = variant == AbiVariant::GuestImport;
         self.trait_name = iface.name.to_camel_case();
         self.src
             .push_str(&format!("pub mod {} {{\n", iface.name.to_snake_case()));
         self.src
             .push_str("#[allow(unused_imports)]\nuse witx_bindgen_wasmtime::{wasmtime, anyhow};\n");
-        self.sizes.fill(dir, iface);
+        self.sizes.fill(variant, iface);
     }
 
     fn type_record(
@@ -581,7 +581,7 @@ impl Generator for Wasmtime {
 
         // Generate the closure that's passed to a `Linker`, the final piece of
         // codegen here.
-        let sig = iface.wasm_signature(Direction::Import, func);
+        let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
         let params = (0..sig.params.len())
             .map(|i| format!("arg{}", i))
             .collect::<Vec<_>>();
@@ -592,7 +592,7 @@ impl Generator for Wasmtime {
                 .iter()
                 .any(|(_, t)| iface.has_preview1_pointer(t));
         iface.call(
-            Direction::Import,
+            AbiVariant::GuestImport,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
@@ -781,7 +781,7 @@ impl Generator for Wasmtime {
             .collect();
         let mut f = FunctionBindgen::new(self, is_dtor, params);
         iface.call(
-            Direction::Export,
+            AbiVariant::GuestExport,
             LiftLower::LowerArgsLiftResults,
             func,
             &mut f,
@@ -847,7 +847,7 @@ impl Generator for Wasmtime {
         // Create the code snippet which will define the type of this field in
         // the struct that we're exporting and additionally extracts the
         // function from an instantiated instance.
-        let sig = iface.wasm_signature(Direction::Export, func);
+        let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
         let mut cvt = "(".to_string();
         for param in sig.params.iter() {
             cvt.push_str(wasm_type(*param));

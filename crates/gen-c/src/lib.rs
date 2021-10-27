@@ -2,7 +2,7 @@ use heck::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::mem;
 use witx_bindgen_gen_core::witx2::abi::{
-    Bindgen, Bitcast, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
+    Bindgen, Bitcast, AbiVariant, Instruction, LiftLower, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator, Ns};
 
@@ -703,9 +703,9 @@ impl Return {
 }
 
 impl Generator for C {
-    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
+    fn preprocess_one(&mut self, iface: &Interface, dir: AbiVariant) {
         self.sizes.fill(dir, iface);
-        self.in_import = dir == Direction::Import;
+        self.in_import = dir == AbiVariant::GuestImport;
 
         for func in iface.functions.iter() {
             let sig = iface.wasm_signature(dir, func);
@@ -923,7 +923,7 @@ impl Generator for C {
     fn import(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
-        let sig = iface.wasm_signature(Direction::Import, func);
+        let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
 
         // In the private C file, print a function declaration which is the
         // actual wasm import that we'll be calling, and this has the raw wasm
@@ -976,7 +976,7 @@ impl Generator for C {
             f.locals.insert(ptr).unwrap();
         }
         iface.call(
-            Direction::Import,
+            AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
             &mut f,
@@ -997,7 +997,7 @@ impl Generator for C {
     fn export(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
-        let sig = iface.wasm_signature(Direction::Export, func);
+        let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
 
         // Print the actual header for this function into the header file, and
         // it's what we'll be calling.
@@ -1039,7 +1039,7 @@ impl Generator for C {
 
         // Perform all lifting/lowering and append it to our src.
         iface.call(
-            Direction::Export,
+            AbiVariant::GuestExport,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,

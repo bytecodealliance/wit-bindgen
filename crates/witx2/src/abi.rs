@@ -747,17 +747,18 @@ pub enum LiftLower {
     LowerArgsLiftResults,
 }
 
-/// Whether we are generating glue code to call an import or an export.
+/// We use a different ABI for wasm importing functions exported by the host
+/// than for wasm exporting functions imported by the host.
 ///
 /// Note that this reflects the flavor of ABI we generate, and not necessarily
 /// the way the resulting bindings will be used by end users. See the comments
-/// on the `Direction` enum in wasmtime-impl for details.
+/// on the `AbiVariant` enum in wasmtime-impl for details.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Direction {
+pub enum AbiVariant {
     /// We are generating glue code to call an import.
-    Import,
+    GuestImport,
     /// We are generating glue code to call an export.
-    Export,
+    GuestExport,
 }
 
 /// Trait for language implementors to use to generate glue code between native
@@ -1001,7 +1002,7 @@ impl Interface {
     ///
     /// The first entry returned is the list of parameters and the second entry
     /// is the list of results for the wasm function signature.
-    pub fn wasm_signature(&self, dir: Direction, func: &Function) -> WasmSignature {
+    pub fn wasm_signature(&self, variant: AbiVariant, func: &Function) -> WasmSignature {
         let mut params = Vec::new();
         let mut results = Vec::new();
         for (_, param) in func.params.iter() {
@@ -1018,7 +1019,7 @@ impl Interface {
                     _ => {}
                 }
             }
-            self.push_wasm(func.abi, dir, param, &mut params);
+            self.push_wasm(func.abi, variant, param, &mut params);
         }
 
         for (_, result) in func.results.iter() {
@@ -1037,7 +1038,7 @@ impl Interface {
                     continue;
                 }
             }
-            self.push_wasm(func.abi, dir, result, &mut results);
+            self.push_wasm(func.abi, variant, result, &mut results);
         }
 
         let mut retptr = None;
@@ -1051,12 +1052,12 @@ impl Interface {
             // asynchronous imports take two extra parameters where the first is
             // a pointer into the function table and the second is a context
             // argument to pass to this function.
-            match dir {
-                Direction::Export => {
+            match variant {
+                AbiVariant::GuestExport => {
                     retptr = Some(mem::take(&mut results));
                     params.push(WasmType::I32);
                 }
-                Direction::Import => {
+                AbiVariant::GuestImport => {
                     retptr = Some(mem::take(&mut results));
                     params.push(WasmType::I32);
                     params.push(WasmType::I32);
@@ -1069,11 +1070,11 @@ impl Interface {
             // into.
             if results.len() > 1 {
                 retptr = Some(mem::take(&mut results));
-                match dir {
-                    Direction::Import => {
+                match variant {
+                    AbiVariant::GuestImport => {
                         params.push(WasmType::I32);
                     }
-                    Direction::Export => {
+                    AbiVariant::GuestExport => {
                         results.push(WasmType::I32);
                     }
                 }
@@ -1097,7 +1098,7 @@ impl Interface {
         }
     }
 
-    fn push_wasm(&self, abi: Abi, dir: Direction, ty: &Type, result: &mut Vec<WasmType>) {
+    fn push_wasm(&self, abi: Abi, variant: AbiVariant, ty: &Type, result: &mut Vec<WasmType>) {
         match ty {
             Type::S8
             | Type::U8
@@ -1115,7 +1116,7 @@ impl Interface {
             Type::F64 => result.push(WasmType::F64),
 
             Type::Id(id) => match &self.types[*id].kind {
-                TypeDefKind::Type(t) => self.push_wasm(abi, dir, t, result),
+                TypeDefKind::Type(t) => self.push_wasm(abi, variant, t, result),
 
                 TypeDefKind::Record(r) if r.is_flags() => match self.flags_repr(r) {
                     Some(int) => result.push(int.into()),
@@ -1128,7 +1129,7 @@ impl Interface {
 
                 TypeDefKind::Record(r) => {
                     for field in r.fields.iter() {
-                        self.push_wasm(abi, dir, &field.ty, result);
+                        self.push_wasm(abi, variant, &field.ty, result);
                     }
                 }
 
@@ -1143,7 +1144,7 @@ impl Interface {
 
                 TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {
                     result.push(WasmType::I32);
-                    if dir == Direction::Import {
+                    if variant == AbiVariant::GuestImport {
                         result.push(WasmType::I32);
                         result.push(WasmType::I32);
                     }
@@ -1165,7 +1166,7 @@ impl Interface {
                             Some(ty) => ty,
                             None => continue,
                         };
-                        self.push_wasm(abi, dir, ty, &mut temp);
+                        self.push_wasm(abi, variant, ty, &mut temp);
 
                         for (i, ty) in temp.drain(..).enumerate() {
                             match result.get_mut(start + i) {
@@ -1208,7 +1209,7 @@ impl Interface {
     /// back to a language-specific value.
     pub fn call(
         &self,
-        dir: Direction,
+        variant: AbiVariant,
         lift_lower: LiftLower,
         func: &Function,
         bindgen: &mut impl Bindgen,
@@ -1216,17 +1217,17 @@ impl Interface {
         if Abi::Preview1 == func.abi {
             // The Preview1 ABI only works with WASI which is only intended
             // for use with these modes.
-            if dir == Direction::Export {
+            if variant == AbiVariant::GuestExport {
                 panic!("the preview1 ABI only supports import modes");
             }
         }
-        Generator::new(self, func.abi, dir, lift_lower, bindgen).call(func);
+        Generator::new(self, func.abi, variant, lift_lower, bindgen).call(func);
     }
 }
 
 struct Generator<'a, B: Bindgen> {
     abi: Abi,
-    dir: Direction,
+    variant: AbiVariant,
     lift_lower: LiftLower,
     bindgen: &'a mut B,
     iface: &'a Interface,
@@ -1240,14 +1241,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     fn new(
         iface: &'a Interface,
         abi: Abi,
-        dir: Direction,
+        variant: AbiVariant,
         lift_lower: LiftLower,
         bindgen: &'a mut B,
     ) -> Generator<'a, B> {
         Generator {
             iface,
             abi,
-            dir,
+            variant,
             lift_lower,
             bindgen,
             operands: Vec::new(),
@@ -1258,7 +1259,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 
     fn call(&mut self, func: &Function) {
-        let sig = self.iface.wasm_signature(self.dir, func);
+        let sig = self.iface.wasm_signature(self.variant, func);
 
         match self.lift_lower {
             LiftLower::LowerArgsLiftResults => {
@@ -1277,8 +1278,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // Note that no return pointer goop happens here because
                     // that's all done through parameters of callbacks instead.
                     let tys = sig.retptr.as_ref().unwrap();
-                    match self.dir {
-                        Direction::Import => {
+                    match self.variant {
+                        AbiVariant::GuestImport => {
                             assert_eq!(self.stack.len(), sig.params.len() - 2);
                             self.emit(&Instruction::CallWasmAsyncImport {
                                 module: &self.iface.name,
@@ -1287,7 +1288,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 results: tys,
                             });
                         }
-                        Direction::Export => {
+                        AbiVariant::GuestExport => {
                             assert_eq!(self.stack.len(), sig.params.len() - 1);
                             self.emit(&Instruction::CallWasmAsyncExport {
                                 module: &self.iface.name,
@@ -1302,7 +1303,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // ABI. The `Preview1` ABI has most return values returned
                     // through pointers, and the `Canonical` ABI returns more-than-one
                     // values through a return pointer.
-                    if self.dir == Direction::Import {
+                    if self.variant == AbiVariant::GuestImport {
                         self.prep_return_pointer(&sig, &func.results);
                     }
 
@@ -1320,7 +1321,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // everything to simulate the function having many return values
                     // in our stack discipline.
                     if let Some(actual) = &sig.retptr {
-                        if self.dir == Direction::Import {
+                        if self.variant == AbiVariant::GuestImport {
                             assert_eq!(self.return_pointers.len(), 1);
                             self.stack.push(self.return_pointers.pop().unwrap());
                         }
@@ -1359,12 +1360,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                     Abi::Canonical => {
                         let skip_cnt = if func.is_async {
-                            match self.dir {
-                                Direction::Export => 1,
-                                Direction::Import => 2,
+                            match self.variant {
+                                AbiVariant::GuestExport => 1,
+                                AbiVariant::GuestImport => 2,
                             }
                         } else {
-                            (sig.retptr.is_some() && self.dir == Direction::Import) as usize
+                            (sig.retptr.is_some() && self.variant == AbiVariant::GuestImport) as usize
                         };
                         sig.params.len() - skip_cnt
                     }
@@ -1389,8 +1390,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 if func.is_async {
                     let tys = sig.retptr.as_ref().unwrap();
-                    match self.dir {
-                        Direction::Import => {
+                    match self.variant {
+                        AbiVariant::GuestImport => {
                             assert_eq!(self.stack.len(), tys.len());
                             let operands = mem::take(&mut self.stack);
                             // function index to call
@@ -1407,7 +1408,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 params: tys.len(),
                             });
                         }
-                        Direction::Export => {
+                        AbiVariant::GuestExport => {
                             // Store all results, if any, into the general
                             // return pointer area.
                             let retptr = if !tys.is_empty() {
@@ -1437,19 +1438,19 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // returned through memories, so after we've got all the
                     // values on the stack perform all of the stores here.
                     if let Some(tys) = &sig.retptr {
-                        match self.dir {
-                            Direction::Import => {
+                        match self.variant {
+                            AbiVariant::GuestImport => {
                                 self.emit(&Instruction::GetArg {
                                     nth: sig.params.len() - 1,
                                 });
                             }
-                            Direction::Export => {
+                            AbiVariant::GuestExport => {
                                 let op = self.bindgen.i64_return_pointer_area(tys.len());
                                 self.stack.push(op);
                             }
                         }
                         let retptr = self.store_retptr(tys);
-                        if self.dir == Direction::Export {
+                        if self.variant == AbiVariant::GuestExport {
                             self.stack.push(retptr);
                         }
                     }
@@ -1504,7 +1505,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     },
                     Abi::Canonical => {
                         temp.truncate(0);
-                        self.iface.push_wasm(self.abi, self.dir, ty, &mut temp);
+                        self.iface.push_wasm(self.abi, self.variant, ty, &mut temp);
                         temp.len()
                     }
                 };
@@ -1664,8 +1665,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // Lowering parameters calling a wasm import means
                         // we don't need to pass ownership, but we pass
                         // ownership in all other cases.
-                        let realloc = match (self.dir, self.lift_lower) {
-                            (Direction::Import, LiftLower::LowerArgsLiftResults) => None,
+                        let realloc = match (self.variant, self.lift_lower) {
+                            (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults) => None,
                             _ => Some("canonical_abi_realloc"),
                         };
                         if self.is_char(element)
@@ -1692,14 +1693,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // and lifting results.
                     assert!(self.lift_lower == LiftLower::LowerArgsLiftResults);
 
-                    match self.dir {
-                        Direction::Import => {
+                    match self.variant {
+                        AbiVariant::GuestImport => {
                             // When calling an imported function we're passing a raw view
                             // into memory, and the adapter will convert it into something
                             // else if necessary.
                             self.emit(&BufferLowerPtrLen { push, ty });
                         }
-                        Direction::Export => {
+                        AbiVariant::GuestExport => {
                             // When calling an exported function we're passing a handle to
                             // the caller's memory, and this part of the adapter is
                             // responsible for converting it into something that's a handle.
@@ -1746,7 +1747,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // pieces are.
                 TypeDefKind::Variant(v)
                     if self.abi == Abi::Preview1
-                        && self.dir == Direction::Import
+                        && self.variant == AbiVariant::GuestImport
                         && self.lift_lower == LiftLower::LiftArgsLowerResults
                         && !v.is_enum() =>
                 {
@@ -1805,7 +1806,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // Variant arguments in the Preview1 ABI are all passed by pointer
                 TypeDefKind::Variant(v)
                     if self.abi == Abi::Preview1
-                        && self.dir == Direction::Import
+                        && self.variant == AbiVariant::GuestImport
                         && self.lift_lower == LiftLower::LowerArgsLiftResults
                         && !v.is_enum() =>
                 {
@@ -1816,7 +1817,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let mut results = Vec::new();
                     let mut temp = Vec::new();
                     let mut casts = Vec::new();
-                    self.iface.push_wasm(self.abi, self.dir, ty, &mut results);
+                    self.iface.push_wasm(self.abi, self.variant, ty, &mut results);
                     for (i, case) in v.cases.iter().enumerate() {
                         self.push_block();
                         self.emit(&VariantPayloadName);
@@ -1833,7 +1834,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             // pushed, and record how many. If we pushed too few
                             // then we'll need to push some zeros after this.
                             temp.truncate(0);
-                            self.iface.push_wasm(self.abi, self.dir, ty, &mut temp);
+                            self.iface.push_wasm(self.abi, self.variant, ty, &mut temp);
                             pushed += temp.len();
 
                             // For all the types pushed we may need to insert some
@@ -1972,8 +1973,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // Lifting the arguments of a defined import means that, if
                         // possible, the caller still retains ownership and we don't
                         // free anything.
-                        let free = match (self.dir, self.lift_lower) {
-                            (Direction::Import, LiftLower::LiftArgsLowerResults) => None,
+                        let free = match (self.variant, self.lift_lower) {
+                            (AbiVariant::GuestImport, LiftLower::LiftArgsLowerResults) => None,
                             _ => Some("canonical_abi_free"),
                         };
                         if self.is_char(element)
@@ -2006,14 +2007,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // lifting arguments and lowering results.
                     assert!(self.lift_lower == LiftLower::LiftArgsLowerResults);
 
-                    match self.dir {
-                        Direction::Import => {
+                    match self.variant {
+                        AbiVariant::GuestImport => {
                             // When calling a defined imported function then we're coming
                             // from a pointer/length, and the embedding context will figure
                             // out what to do with that pointer/length.
                             self.emit(&BufferLiftPtrLen { push, ty })
                         }
-                        Direction::Export => {
+                        AbiVariant::GuestExport => {
                             // When calling an exported function we're given a handle to the
                             // buffer, which is then interpreted in the calling context.
                             self.emit(&BufferLiftHandle { push, ty })
@@ -2041,7 +2042,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                     Abi::Canonical => {
                         let mut temp = Vec::new();
-                        self.iface.push_wasm(self.abi, self.dir, ty, &mut temp);
+                        self.iface.push_wasm(self.abi, self.variant, ty, &mut temp);
                         let mut args = self
                             .stack
                             .drain(self.stack.len() - temp.len()..)
@@ -2049,7 +2050,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         for field in record.fields.iter() {
                             temp.truncate(0);
                             self.iface
-                                .push_wasm(self.abi, self.dir, &field.ty, &mut temp);
+                                .push_wasm(self.abi, self.variant, &field.ty, &mut temp);
                             self.stack.extend(args.drain(..temp.len()));
                             self.lift(&field.ty);
                         }
@@ -2066,7 +2067,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // pieces are.
                 TypeDefKind::Variant(v)
                     if self.abi == Abi::Preview1
-                        && self.dir == Direction::Import
+                        && self.variant == AbiVariant::GuestImport
                         && self.lift_lower == LiftLower::LowerArgsLiftResults
                         && !v.is_enum() =>
                 {
@@ -2115,7 +2116,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // so we read them here.
                 TypeDefKind::Variant(v)
                     if self.abi == Abi::Preview1
-                        && self.dir == Direction::Import
+                        && self.variant == AbiVariant::GuestImport
                         && self.lift_lower == LiftLower::LiftArgsLowerResults
                         && !v.is_enum() =>
                 {
@@ -2127,7 +2128,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let mut params = Vec::new();
                     let mut temp = Vec::new();
                     let mut casts = Vec::new();
-                    self.iface.push_wasm(self.abi, self.dir, ty, &mut params);
+                    self.iface.push_wasm(self.abi, self.variant, ty, &mut params);
                     let block_inputs = self
                         .stack
                         .drain(self.stack.len() + 1 - params.len()..)
@@ -2138,7 +2139,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             // Push only the values we need for this variant onto
                             // the stack.
                             temp.truncate(0);
-                            self.iface.push_wasm(self.abi, self.dir, ty, &mut temp);
+                            self.iface.push_wasm(self.abi, self.variant, ty, &mut temp);
                             self.stack
                                 .extend(block_inputs[..temp.len()].iter().cloned());
 
@@ -2206,7 +2207,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // our import/export direction.
                 TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {
                     self.lower(ty, None);
-                    if self.dir == Direction::Import {
+                    if self.variant == AbiVariant::GuestImport {
                         self.stack.push(addr.clone());
                         self.emit(&I32Store { offset: offset + 8 });
                         self.stack.push(addr.clone());
@@ -2335,7 +2336,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {
                     self.stack.push(addr.clone());
                     self.emit(&I32Load { offset });
-                    if self.dir == Direction::Import
+                    if self.variant == AbiVariant::GuestImport
                         && self.lift_lower == LiftLower::LiftArgsLowerResults
                     {
                         self.stack.push(addr.clone());

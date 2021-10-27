@@ -1,7 +1,7 @@
 use heck::*;
 use pulldown_cmark::{html, Event, LinkType, Parser, Tag};
 use std::collections::HashMap;
-use witx2::abi::Direction;
+use witx2::abi::AbiVariant;
 use witx2::*;
 use witx_bindgen_gen_core::{witx2, Files, Generator, Source};
 
@@ -169,8 +169,8 @@ impl Markdown {
 }
 
 impl Generator for Markdown {
-    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        self.sizes.fill(dir, iface);
+    fn preprocess_one(&mut self, iface: &Interface, variant: AbiVariant) {
+        self.sizes.fill(variant, iface);
     }
 
     fn type_record(

@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use witx_bindgen_gen_core::witx2::abi::{
-    Bindgen, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
+    Bindgen, AbiVariant, Instruction, LiftLower, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
 use witx_bindgen_gen_rust::{
@@ -207,8 +207,8 @@ impl RustGenerator for RustWasm {
 }
 
 impl Generator for RustWasm {
-    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        self.in_import = dir == Direction::Import;
+    fn preprocess_one(&mut self, iface: &Interface, variant: AbiVariant) {
+        self.in_import = variant == AbiVariant::GuestImport;
         self.types.analyze(iface);
         self.trait_name = iface.name.to_camel_case();
         self.src
@@ -220,13 +220,13 @@ impl Generator for RustWasm {
         }
 
         for func in iface.functions.iter() {
-            let sig = iface.wasm_signature(dir, func);
+            let sig = iface.wasm_signature(variant, func);
             if let Some(results) = sig.retptr {
                 self.i64_return_pointer_area_size =
                     self.i64_return_pointer_area_size.max(results.len());
             }
         }
-        self.sizes.fill(dir, iface);
+        self.sizes.fill(variant, iface);
     }
 
     fn type_record(
@@ -534,7 +534,7 @@ impl Generator for RustWasm {
 
         let mut f = FunctionBindgen::new(self, is_dtor, params);
         iface.call(
-            Direction::Import,
+            AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
             &mut f,
@@ -574,7 +574,7 @@ impl Generator for RustWasm {
         self.src.push_str("unsafe extern \"C\" fn __witx_bindgen_");
         self.src.push_str(&rust_name);
         self.src.push_str("(");
-        let sig = iface.wasm_signature(Direction::Export, func);
+        let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
         let mut params = Vec::new();
         for (i, param) in sig.params.iter().enumerate() {
             let name = format!("arg{}", i);
@@ -602,7 +602,7 @@ impl Generator for RustWasm {
 
         let mut f = FunctionBindgen::new(self, is_dtor, params);
         iface.call(
-            Direction::Export,
+            AbiVariant::GuestExport,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,

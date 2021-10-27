@@ -2,7 +2,7 @@ use heck::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem;
 use witx_bindgen_gen_core::witx2::abi::{
-    Bindgen, Bitcast, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
+    Bindgen, Bitcast, AbiVariant, Instruction, LiftLower, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator};
 
@@ -356,9 +356,9 @@ impl Js {
 }
 
 impl Generator for Js {
-    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        self.sizes.fill(dir, iface);
-        self.in_import = dir == Direction::Import;
+    fn preprocess_one(&mut self, iface: &Interface, variant: AbiVariant) {
+        self.sizes.fill(variant, iface);
+        self.in_import = variant == AbiVariant::GuestImport;
     }
 
     fn type_record(
@@ -559,7 +559,7 @@ impl Generator for Js {
     fn import(&mut self, iface: &Interface, func: &Function) {
         let prev = mem::take(&mut self.src);
 
-        let sig = iface.wasm_signature(Direction::Import, func);
+        let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
         let params = (0..sig.params.len())
             .map(|i| format!("arg{}", i))
             .collect::<Vec<_>>();
@@ -569,7 +569,7 @@ impl Generator for Js {
 
         let mut f = FunctionBindgen::new(self, false, params);
         iface.call(
-            Direction::Import,
+            AbiVariant::GuestImport,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
@@ -668,7 +668,7 @@ impl Generator for Js {
         let mut f = FunctionBindgen::new(self, false, params);
         f.src_object = src_object;
         iface.call(
-            Direction::Export,
+            AbiVariant::GuestExport,
             LiftLower::LowerArgsLiftResults,
             func,
             &mut f,
