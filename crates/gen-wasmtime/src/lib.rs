@@ -5,7 +5,7 @@ use std::mem;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 use witx_bindgen_gen_core::witx2::abi::{
-    Abi, Bindgen, AbiVariant, Instruction, LiftLower, WasmType, WitxInstruction,
+    Abi, AbiVariant, Bindgen, Instruction, LiftLower, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
 use witx_bindgen_gen_rust::{

@@ -1365,7 +1365,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 AbiVariant::GuestImport => 2,
                             }
                         } else {
-                            (sig.retptr.is_some() && self.variant == AbiVariant::GuestImport) as usize
+                            (sig.retptr.is_some() && self.variant == AbiVariant::GuestImport)
+                                as usize
                         };
                         sig.params.len() - skip_cnt
                     }
@@ -1817,7 +1818,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let mut results = Vec::new();
                     let mut temp = Vec::new();
                     let mut casts = Vec::new();
-                    self.iface.push_wasm(self.abi, self.variant, ty, &mut results);
+                    self.iface
+                        .push_wasm(self.abi, self.variant, ty, &mut results);
                     for (i, case) in v.cases.iter().enumerate() {
                         self.push_block();
                         self.emit(&VariantPayloadName);
@@ -2128,7 +2130,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let mut params = Vec::new();
                     let mut temp = Vec::new();
                     let mut casts = Vec::new();
-                    self.iface.push_wasm(self.abi, self.variant, ty, &mut params);
+                    self.iface
+                        .push_wasm(self.abi, self.variant, ty, &mut params);
                     let block_inputs = self
                         .stack
                         .drain(self.stack.len() + 1 - params.len()..)

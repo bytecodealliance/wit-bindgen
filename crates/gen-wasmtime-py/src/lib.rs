@@ -2,7 +2,7 @@ use heck::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem;
 use witx_bindgen_gen_core::witx2::abi::{
-    Bindgen, Bitcast, AbiVariant, Instruction, LiftLower, WasmType, WitxInstruction,
+    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType, WitxInstruction,
 };
 use witx_bindgen_gen_core::{witx2::*, Files, Generator, Ns};
 
