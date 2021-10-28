@@ -753,11 +753,18 @@ pub enum LiftLower {
 /// Note that this reflects the flavor of ABI we generate, and not necessarily
 /// the way the resulting bindings will be used by end users. See the comments
 /// on the `Direction` enum in gen-core for details.
+///
+/// The bindings ABI has a concept of a "guest" and a "host". Wasmlink can
+/// generate glue to bridge between two "guests", but in that case each side
+/// thinks of the glue as the "host". There are two variants of the ABI,
+/// one specialized for the "guest" importing and calling a function defined
+/// and exported in the "host", and the other specialized for the "host"
+/// importing and calling a fuinction defined and exported in the "guest".
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum AbiVariant {
-    /// We are generating glue code to call an import.
+    /// The guest is importing and calling the function.
     GuestImport,
-    /// We are generating glue code to call an export.
+    /// The guest is defining and exporting the function.
     GuestExport,
 }
 
