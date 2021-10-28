@@ -9,6 +9,7 @@ mod ast;
 mod sizealign;
 pub use sizealign::*;
 
+#[derive(Debug)]
 pub struct Interface {
     pub name: String,
     pub types: Arena<TypeDef>,
@@ -25,6 +26,7 @@ pub type TypeId = Id<TypeDef>;
 pub type ResourceId = Id<Resource>;
 pub type InterfaceId = Id<Interface>;
 
+#[derive(Debug)]
 pub struct TypeDef {
     pub docs: Docs,
     pub kind: TypeDefKind,
@@ -34,6 +36,7 @@ pub struct TypeDef {
     pub foreign_module: Option<String>,
 }
 
+#[derive(Debug)]
 pub enum TypeDefKind {
     Record(Record),
     Variant(Variant),
@@ -211,6 +214,7 @@ pub struct Docs {
     pub contents: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct Resource {
     pub docs: Docs,
     pub name: String,
@@ -219,6 +223,7 @@ pub struct Resource {
     pub foreign_module: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct Global {
     pub docs: Docs,
     pub name: String,
