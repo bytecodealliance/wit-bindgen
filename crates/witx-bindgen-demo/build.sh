@@ -9,8 +9,8 @@ cargo build -p witx-bindgen-demo --target wasm32-unknown-unknown --release
 cp target/wasm32-unknown-unknown/release/witx_bindgen_demo.wasm static/demo.wasm
 
 cargo run js \
-  --import crates/witx-bindgen-demo/browser.witx \
-  --export crates/witx-bindgen-demo/demo.witx \
+  --export crates/witx-bindgen-demo/browser.witx \
+  --import crates/witx-bindgen-demo/demo.witx \
   --out-dir static
 
 cp crates/witx-bindgen-demo/{index.html,main.ts} static/
