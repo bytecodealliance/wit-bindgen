@@ -1,8 +1,8 @@
 use std::path::Path;
 use std::process::Command;
 
-mod imports {
-    test_helpers::codegen_py_import!(
+mod exports {
+    test_helpers::codegen_py_export!(
         "*.witx"
 
         // TODO: implement async support
@@ -15,19 +15,19 @@ mod imports {
     );
 }
 
-mod exports {
-    test_helpers::codegen_py_export!(
+mod imports {
+    test_helpers::codegen_py_import!(
         "*.witx"
 
         // TODO: implement async support
         "!async_functions.witx"
 
-        // This uses buffers, which we don't support in exports just yet
+        // This uses buffers, which we don't support in imports just yet
         // TODO: should support this
         "!wasi_next.witx"
         "!host.witx"
 
-        // These use the preview1 ABI which isn't implemented for C exports.
+        // These use the preview1 ABI which isn't implemented for Python imports.
         "!wasi_snapshot_preview1.witx"
         "!typenames.witx"
         "!legacy.witx"
