@@ -892,7 +892,17 @@ impl Generator for Js {
                 self.src.js(&format!(
                     "
                         imports.canonical_abi['async_export_done'] = (ctx, ptr) => {{
-                            {}.async_export_done(ctx, ptr >>> 0)
+                            {0}.async_export_done(ctx, ptr >>> 0)
+                        }};
+                        imports.canonical_abi['event_new'] = (a, b) => {{
+                            const callback = {0}.table.get(a);
+                            if (callback === null) {{
+                                throw new Error('table index is a null function');
+                            }}
+                            return {0}.event_new(callback, b);
+                        }};
+                        imports.canonical_abi['event_signal'] = (a, b) => {{
+                            {0}.event_signal(a, b);
                         }};
                     ",
                     promises
@@ -959,6 +969,15 @@ impl Generator for Js {
                 }
                 this._exports = this.instance.exports;
             ");
+
+            if any_async {
+                let promises = self.intrinsic(Intrinsic::Promises);
+                // TODO: hardcoding __indirect_function_table
+                self.src.js(&format!(
+                    "{}.table = this._exports.__indirect_function_table;\n",
+                    promises
+                ));
+            }
 
             // Exported resources all get a finalization registry, and we
             // created them after instantiation so we can pass the raw wasm
@@ -2058,23 +2077,22 @@ impl Bindgen for FunctionBindgen<'_> {
             },
 
             Instruction::CompletionCallback { .. } => {
-                // TODO: shouldn't hardcode the function table name, should
-                // verify the table is present, and should verify the type of
-                // the function returned.
+                // TODO: should verify the type of the function
+                let promises = self.gen.intrinsic(Intrinsic::Promises);
                 self.src.js(&format!(
                     "
-                        const callback = get_export(\"__indirect_function_table\").get({});
-                        if (callback === null)
+                        const callback = {}.table.get({});
+                        if (callback === null) {{
                             throw new Error('table index is a null function');
+                        }}
                     ",
-                    operands[0]
+                    promises, operands[0]
                 ));
                 results.push("callback".to_string());
             }
 
             Instruction::ReturnAsyncImport { .. } => {
                 // TODO
-                self.gen.needs_get_export = true;
                 self.src
                     .js(&format!("{}({});\n", operands[0], operands[1..].join(", "),));
             }
@@ -2422,6 +2440,7 @@ impl Js {
                 class Promises {
                     constructor() {
                         this.slab = new Slab();
+                        this.events = new Slab();
                         this.current = null;
                     }
 
@@ -2496,6 +2515,29 @@ impl Js {
                         } finally {
                             this.current = prev;
                         }
+                    }
+
+                    event_new(callback, data) {
+                        const coroutine = this.slab.get(this.current);
+                        coroutine.pending += 1;
+                        return this.events.insert({
+                            coroutine: this.current,
+                            callback,
+                            data,
+                        });
+                    }
+
+                    event_signal(idx, arg) {
+                        const { coroutine, callback, data } = this.events.remove(idx);
+                        queueMicrotask(() => {
+                            const wasm = this.slab.maybeGet(coroutine);
+                            if (wasm !== null) {
+                                wasm.pending -= 1;
+                                this.set_current(coroutine, () => {
+                                    callback(data, arg);
+                                });
+                            }
+                        })
                     }
                 }
                 export const PROMISES = new Promises();

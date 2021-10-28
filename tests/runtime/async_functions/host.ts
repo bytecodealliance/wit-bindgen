@@ -80,14 +80,12 @@ async function run() {
       throw new Error('unsupported');
     },
   };
-  let instance: WebAssembly.Instance;
-  addImportsToImports(importObj, imports, name => instance.exports[name]);
+  addImportsToImports(importObj, imports);
   const wasi = addWasiToImports(importObj);
 
   const wasm = new Exports();
   await wasm.instantiate(getWasm(), importObj);
   wasi.start(wasm.instance);
-  instance = wasm.instance;
 
   const initBytes = wasm.allocatedBytes();
   console.log("calling initial async function");

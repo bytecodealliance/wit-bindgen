@@ -11,14 +11,12 @@ async function run() {
   };
 
   async function instantiate() {
-    let instance: WebAssembly.Instance;
-    addImportsToImports(importObj, imports, name => instance.exports[name]);
+    addImportsToImports(importObj, imports);
     const wasi = addWasiToImports(importObj);
 
     const wasm = new Exports();
     await wasm.instantiate(getWasm(), importObj);
     wasi.start(wasm.instance);
-    instance = wasm.instance;
     return wasm;
   }
 

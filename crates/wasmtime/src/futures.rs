@@ -7,7 +7,9 @@ use std::pin::Pin;
 use std::sync::{Arc, Weak};
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedSender};
 use tokio::task::JoinHandle;
-use wasmtime::{AsContextMut, Caller, Memory, Store, StoreContextMut, Table, Trap};
+use wasmtime::{AsContextMut, Caller, Memory, Store, StoreContextMut, Table, Trap, TypedFunc};
+
+const MAX_EVENTS: usize = 1_000;
 
 pub struct Async<T> {
     function_table: Table,
@@ -45,6 +47,9 @@ pub struct Async<T> {
     /// instead of `u32` as slabs do.
     coroutines: RefCell<Coroutines<T>>,
 
+    events: RefCell<Slab<Event>>,
+    pending_events: RefCell<Vec<(Event, u32)>>,
+
     /// The "currently active" coroutine.
     ///
     /// This is used to persist state in the host about what coroutine is
@@ -62,6 +67,8 @@ pub struct Async<T> {
     /// generational index of sorts which prevents accidentally resuing slab
     /// indices in the `coroutines` array.
     cur_unique_id: Cell<u64>,
+
+    receiver: Receiver<Message<T>>,
 }
 
 /// An "integer" identifier for a coroutine.
@@ -86,6 +93,12 @@ enum Message<T> {
     Cancel(CoroutineId),
 }
 
+struct Event {
+    callback: TypedFunc<(u32, u32), ()>,
+    coroutine: CoroutineId,
+    data: u32,
+}
+
 struct Coroutine<T> {
     /// A unique ID for this coroutine which is used to ensure that even if this
     /// coroutine's slab index is reused a `CoroutineId` uniquely points to one
@@ -105,9 +118,8 @@ struct Coroutine<T> {
     /// ASAP via an `abort()` signal on the `JoinHandle<T>`.
     pending_imports: Slab<JoinHandle<()>>,
 
-    /// The number of imports that we're waiting on, corresponding to the number
-    /// of present entries in `pending_imports`.
-    num_pending_imports: usize,
+    /// The number of imports or events that we're waiting on.
+    pending_callbacks: usize,
 
     /// A callback to invoke whenever a coroutine's `async_export_done`
     /// completion callback is invoked. This is used by the host to deserialize
@@ -153,13 +165,10 @@ pub type RunStandalone<T> = Box<
         + Send,
 >;
 
-impl<T: 'static> Async<T> {
+impl<T: Send + 'static> Async<T> {
     /// Spawns a new task which will manage async execution of wasm within the
     /// `store` provided.
-    pub fn spawn(mut store: Store<T>, function_table: Table) -> AsyncHandle<T>
-    where
-        T: Send,
-    {
+    pub fn spawn(mut store: Store<T>, function_table: Table) -> AsyncHandle<T> {
         // This channel is the primary point of communication into the task that
         // we're going to spawn. This'll be bounded to ensure it doesn't get
         // overrun, and additionally the sender will be stored in an `Arc` to
@@ -174,14 +183,17 @@ impl<T: 'static> Async<T> {
             coroutines: RefCell::new(Coroutines {
                 slab: Slab::default(),
             }),
+            events: Default::default(),
+            pending_events: Default::default(),
             cur_wasm_coroutine: CoroutineId {
                 slab_index: u32::MAX,
                 unique_id: u64::MAX,
             },
             cur_unique_id: Cell::new(0),
+            receiver,
         };
 
-        tokio::spawn(async move { cx.run(&mut store.as_context_mut(), receiver).await });
+        tokio::spawn(async move { cx.run(&mut store).await });
         AsyncHandle { sender }
     }
 
@@ -199,7 +211,7 @@ impl<T: 'static> Async<T> {
                 .get_mut(&coroutine_id)
                 .ok_or_else(|| Trap::new("cannot call async import from non-async export"))?;
             let pending_import_id = coroutine.pending_imports.next_id();
-            coroutine.num_pending_imports += 1;
+            coroutine.pending_callbacks += 1;
 
             // Note that `tokio::spawn` is used here to allow the `future` for
             // this import to execute in parallel, not just concurrently. The
@@ -231,245 +243,275 @@ impl<T: 'static> Async<T> {
         })
     }
 
-    async fn run(
-        &mut self,
-        store: &mut StoreContextMut<'_, T>,
-        mut receiver: Receiver<Message<T>>,
-    ) {
-        // Infinitely process messages on `receiver` which represent events such as
-        // requests to invoke an export or completion of an import which results in
-        // execution of a completion callback.
-        while let Some(msg) = receiver.recv().await {
-            let coroutines = self.coroutines.get_mut();
-            let (to_execute, coroutine_id) = match msg {
-                // This message is the start of a new task ("coroutine" in
-                // interface-types-vernacular) so we allocate a new task in our
-                // slab and set up its state.
-                //
-                // Note that we spawn a "helper" task here to send a message to
-                // our channel when the `sender` specified here is disconnected.
-                // That scenario means that this coroutine is cancelled and by
-                // sending a message into our channel we can start processing
-                // that.
-                Message::Execute(run, complete, sender) => {
-                    let unique_id = self.cur_unique_id.get();
-                    self.cur_unique_id.set(unique_id + 1);
-                    let coroutine_id = coroutines.next_id(unique_id);
-                    let my_sender = self.sender.clone();
-                    let await_close_sender = sender.clone();
-                    let cancel_task = tokio::spawn(async move {
-                        await_close_sender.closed().await;
-                        // if the main task is gone one way or another we ignore
-                        // the error here since no one's going to receive it
-                        // anyway and all relevant work should be cancelled.
-                        if let Some(sender) = my_sender.upgrade() {
-                            drop(sender.send(Message::Cancel(coroutine_id)).await);
-                        }
-                    });
-                    coroutines.insert(Coroutine {
-                        unique_id,
-                        complete: Some(complete),
-                        sender,
-                        pending_imports: Slab::default(),
-                        num_pending_imports: 0,
-                        cancel_task: Some(cancel_task),
-                    });
-                    (ToExecute::Start(run, coroutine_id.slab_index), coroutine_id)
-                }
+    /// Top level run-loop of the task which owns `Async<T>`, typically spawned
+    /// as a separate task.
+    async fn run(&mut self, store: &mut Store<T>) {
+        while self.process_message(store).await {
+            // ...continue on to the next message...
+        }
+    }
 
-                // This message means that we need to execute `run` specified
-                // which is a "non blocking"-in-the-coroutine-sense wasm
-                // function. This is basically "go run that single callback" and
-                // is currently only used for things like resource destructors.
-                // These aren't allowed to call blocking functions and a trap is
-                // generated if they try to call a blocking function (since
-                // there isn't a coroutine set up).
-                //
-                // Note that here we avoid allocating a coroutine entirely since
-                // this isn't actually a coroutine, which means that any attempt
-                // to call a blocking function will be met with failure (a
-                // trap). Additionally note that the actual execution of the
-                // wasm here is select'd against the closure of the `sender`
-                // here as well, since if the runtime becomes disinterested in
-                // the result of this async call we can interrupt and abort the
-                // wasm.
-                //
-                // Finally note that if the wasm completes but we fail to send
-                // the result of the wasm to the receiver then we ignore the
-                // error since that was basically a race between wasm exiting
-                // and the sender being closed.
-                //
-                // TODO: should this dropped result/error get logged/processed
-                // somewhere?
-                Message::RunNoCoroutine(run, sender) => {
-                    tokio::select! {
-                        r = tls::scope(self, run(store)) => {
-                            let is_trap = r.is_err();
-                            let _ = sender.send(r);
+    async fn process_message(&mut self, store: &mut Store<T>) -> bool {
+        let store = &mut store.as_context_mut();
 
-                            // Shut down this reactor if a trap happened because
-                            // the instance is now in an indeterminate state.
-                            if is_trap {
-                                break;
-                            }
-                        }
-                        _ = sender.closed() => break,
+        // The "highest priority" messages are those of pending events. These
+        // are processed first before we get to the actual channel queue which
+        // may block further for events.
+        if let Some((event, arg)) = self.pending_events.get_mut().pop() {
+            return self
+                .execute_coroutine(
+                    event.coroutine,
+                    event.callback.call_async(store, (event.data, arg)),
+                )
+                .await;
+        }
+
+        // Wait for a message, but if there are no other messages then we're
+        // done processing messages
+        let coroutines = self.coroutines.get_mut();
+        let msg = match self.receiver.recv().await {
+            Some(msg) => msg,
+            None => return false,
+        };
+        match msg {
+            // This message is the start of a new task ("coroutine" in
+            // interface-types-vernacular) so we allocate a new task in our
+            // slab and set up its state.
+            //
+            // Note that we spawn a "helper" task here to send a message to
+            // our channel when the `sender` specified here is disconnected.
+            // That scenario means that this coroutine is cancelled and by
+            // sending a message into our channel we can start processing
+            // that.
+            Message::Execute(run, complete, sender) => {
+                let unique_id = self.cur_unique_id.get();
+                self.cur_unique_id.set(unique_id + 1);
+                let coroutine_id = coroutines.next_id(unique_id);
+                let my_sender = self.sender.clone();
+                let await_close_sender = sender.clone();
+                let cancel_task = tokio::spawn(async move {
+                    await_close_sender.closed().await;
+                    // if the main task is gone one way or another we ignore
+                    // the error here since no one's going to receive it
+                    // anyway and all relevant work should be cancelled.
+                    if let Some(sender) = my_sender.upgrade() {
+                        drop(sender.send(Message::Cancel(coroutine_id)).await);
                     }
-                    continue;
-                }
+                });
+                coroutines.insert(Coroutine {
+                    unique_id,
+                    complete: Some(complete),
+                    sender,
+                    pending_imports: Slab::default(),
+                    pending_callbacks: 1,
+                    cancel_task: Some(cancel_task),
+                });
+                self.execute_coroutine(coroutine_id, run(store, coroutine_id.slab_index))
+                    .await
+            }
 
-                // This message indicates that an import has completed and
-                // the completion callback for the wasm must be executed.
-                // This, plus the serialization of the arguments into wasm
-                // according to the canonical ABI, is represented by
-                // `run`.
-                //
-                // Note, though, that in some cases we don't actually run
-                // the completion callback. For example if a previous
-                // completion callback for this wasm task has failed with a
-                // trap we don't continue to run completion callbacks for
-                // the wasm task. This situation is indicated when the
-                // coroutine is not actually present in our `coroutines`
-                // list, so we do a lookup here before allowing execution. When
-                // the coroutine isn't present we simply skip this message which
-                // will run destructors for any relevant host values.
-                Message::FinishImport(run, coroutine_id, import_id) => {
-                    let coroutine = match coroutines.get_mut(&coroutine_id) {
-                        Some(c) => c,
-                        None => continue,
-                    };
-                    coroutine.pending_imports.remove(import_id).unwrap();
-                    coroutine.num_pending_imports -= 1;
-                    (ToExecute::Callback(run), coroutine_id)
-                }
+            // This message means that we need to execute `run` specified
+            // which is a "non blocking"-in-the-coroutine-sense wasm
+            // function. This is basically "go run that single callback" and
+            // is currently only used for things like resource destructors.
+            // These aren't allowed to call blocking functions and a trap is
+            // generated if they try to call a blocking function (since
+            // there isn't a coroutine set up).
+            //
+            // Note that here we avoid allocating a coroutine entirely since
+            // this isn't actually a coroutine, which means that any attempt
+            // to call a blocking function will be met with failure (a
+            // trap). Additionally note that the actual execution of the
+            // wasm here is select'd against the closure of the `sender`
+            // here as well, since if the runtime becomes disinterested in
+            // the result of this async call we can interrupt and abort the
+            // wasm.
+            //
+            // Finally note that if the wasm completes but we fail to send
+            // the result of the wasm to the receiver then we ignore the
+            // error since that was basically a race between wasm exiting
+            // and the sender being closed.
+            //
+            // TODO: should this dropped result/error get logged/processed
+            // somewhere?
+            Message::RunNoCoroutine(run, sender) => {
+                tokio::select! {
+                    r = tls::scope(self, run(store)) => {
+                        let is_trap = r.is_err();
+                        let _ = sender.send(r);
 
-                // This message indicates that the specified coroutine has been
-                // cancelled, meaning that the sender which would send back the
-                // result of the coroutine is now a closed channel that we can
-                // no longer send a message along. Our response to this is to
-                // remove the coroutine, and its destructor will trigger further
-                // cancellation if necessary.
-                //
-                // Note that this message may race with the actual completion of
-                // the coroutine so we don't assert that the ID specified here
-                // is actually in our list. If a coroutine is removed though we
-                // assume that the wasm is now in an indeterminate state which
-                // results in aborting this reactor task. If nothing is removed
-                // then we assume the race was properly resolved and we skip
-                // this message.
-                Message::Cancel(coroutine_id) => {
-                    if coroutines.remove(&coroutine_id).is_some() {
-                        break;
+                        // Shut down this reactor if a trap happened because
+                        // the instance is now in an indeterminate state.
+                        if is_trap {
+                            return false;
+                        }
                     }
-                    continue;
+                    _ = sender.closed() => return false,
                 }
-            };
+                true
+            }
 
-            // Actually execute the WebAssembly callback. The call to
-            // `to_execute.run` here is what will actually execute WebAssembly
-            // asynchronously, and note that it's also executed within a
-            // `tls::scope` to ensure that the `tls::with` function will work
-            // for the duration of the future.
+            // This message indicates that an import has completed and
+            // the completion callback for the wasm must be executed.
+            // This, plus the serialization of the arguments into wasm
+            // according to the canonical ABI, is represented by
+            // `run`.
             //
-            // Also note, though, that we want to be able to cancel the
-            // execution of this WebAssembly if the caller becomes disinterested
-            // in the result. This happens by using the `closed()` method on the
-            // channel back to the sender, and if that happens we abort wasm
-            // entirely and abort the whole coroutine by removing it later.
-            //
-            // If this wasm operations is aborted then we exit this loop
-            // entirely and tear down this reactor task. That triggers
-            // cancellation of all spawned sub-tasks and sibling coroutines, and
-            // the rationale for this is that we zapped wasm while it was
-            // executing so it's now in an indeterminate state and not one that
-            // we can resume.
-            //
-            // TODO: this is a `clone()`-per-callback which is probably cheap,
-            // but this is also a sort of wonky setup so this may wish to change
-            // in the future.
-            let cancel_signal = coroutines.get_mut(&coroutine_id).unwrap().sender.clone();
-            let prev_coroutine_id = mem::replace(&mut self.cur_wasm_coroutine, coroutine_id);
-            let result = tokio::select! {
-                r = tls::scope(self, to_execute.run(store)) => r,
-                _ = cancel_signal.closed() => break,
-            };
-            self.cur_wasm_coroutine = prev_coroutine_id;
+            // Note, though, that in some cases we don't actually run
+            // the completion callback. For example if a previous
+            // completion callback for this wasm task has failed with a
+            // trap we don't continue to run completion callbacks for
+            // the wasm task. This situation is indicated when the
+            // coroutine is not actually present in our `coroutines`
+            // list, so we do a lookup here before allowing execution. When
+            // the coroutine isn't present we simply skip this message which
+            // will run destructors for any relevant host values.
+            Message::FinishImport(run, coroutine_id, import_id) => {
+                let coroutine = match coroutines.get_mut(&coroutine_id) {
+                    Some(c) => c,
+                    None => return true,
+                };
+                coroutine.pending_imports.remove(import_id).unwrap();
+                self.execute_coroutine(coroutine_id, run(&mut store.into()))
+                    .await
+            }
 
-            let coroutines = self.coroutines.get_mut();
-            let coroutine = coroutines.get_mut(&coroutine_id).unwrap();
-            if let Err(trap) = result {
-                // Our WebAssembly callback trapped. That means that this
-                // entire coroutine is now in a failure state. No further
-                // wasm callbacks will be invoked and the coroutine is
-                // removed from out internal list to invoke the failure
-                // callback, informing what trap caused the failure.
-                //
-                // Note that this reopens `coroutine_id.slab_index` to get
-                // possibly reused, intentionally so, which is why
-                // `CoroutineId` is a form of generational ID which is
-                // resilient to this form of reuse. In other words when we
-                // remove the result here if in the future a pending import
-                // for this coroutine completes we'll simply discard the
-                // message.
-                //
-                // Any error in sending the trap along the coroutine's channel
-                // is ignored since we can race with the coroutine getting
-                // dropped.
-                //
-                // TODO: should the trap still be sent somewhere? Is this ok to
-                // simply ignore?
-                //
-                // Finally we exit the reactor in this case because traps
-                // typically represent fatal conditions for wasm where we can't
-                // really resume since it may be in an indeterminate state (wasm
-                // can't handle traps itself), so after we inform the original
-                // coroutine of the original trap we break out and cancel all
-                // further execution.
-                let coroutine = coroutines.remove(&coroutine_id).unwrap();
-                let _ = coroutine.sender.send(Err(trap));
-                break;
-            } else if coroutine.num_pending_imports == 0 {
-                // Our wasm callback succeeded, and there are no pending
-                // imports for this coroutine.
-                //
-                // In this state it means that the coroutine has completed
-                // since no further work can possibly happen for the
-                // coroutine. This means that we can safely remove it from
-                // our internal list.
-                //
-                // If the coroutine's completion wasn't ever signaled,
-                // however, then that indicates a bug in the wasm code
-                // itself. This bug is translated into a trap which will get
-                // reported to the caller to inform the original invocation
-                // of the export that the result of the coroutine never
-                // actually came about.
-                //
-                // Note that like above a failure to send a trap along the
-                // channel is ignored since we raced with the caller becoming
-                // disinterested in the result which is fine to happen at any
-                // time.
-                //
-                // TODO: should the trap still be sent somewhere? Is this ok to
-                // simply ignore?
-                //
-                // TODO: should this tear down the reactor as well, despite it
-                // being a synthetically created trap?
-                let coroutine = coroutines.remove(&coroutine_id).unwrap();
-                if coroutine.complete.is_some() {
-                    let _ = coroutine
-                        .sender
-                        .send(Err(Trap::new("completion callback never called")));
+            // This message indicates that the specified coroutine has been
+            // cancelled, meaning that the sender which would send back the
+            // result of the coroutine is now a closed channel that we can
+            // no longer send a message along. Our response to this is to
+            // remove the coroutine, and its destructor will trigger further
+            // cancellation if necessary.
+            //
+            // Note that this message may race with the actual completion of
+            // the coroutine so we don't assert that the ID specified here
+            // is actually in our list. If a coroutine is removed though we
+            // assume that the wasm is now in an indeterminate state which
+            // results in aborting this reactor task. If nothing is removed
+            // then we assume the race was properly resolved and we skip
+            // this message.
+            Message::Cancel(coroutine_id) => {
+                if coroutines.remove(&coroutine_id).is_some() {
+                    return false;
                 }
-            } else {
-                // Our wasm callback succeeded, and there are pending
-                // imports for this coroutine.
-                //
-                // This means that the coroutine isn't finished yet so we
-                // simply turn the loop and wait for something else to
-                // happen. We'll next be executing WebAssembly when one of
-                // the coroutine's imports finish.
+                true
             }
         }
+    }
+
+    async fn execute_coroutine(
+        &mut self,
+        coroutine_id: CoroutineId,
+        wasm_execution: impl Future<Output = Result<(), Trap>>,
+    ) -> bool {
+        // Actually execute the WebAssembly callback. The call to
+        // `to_execute.run` here is what will actually execute WebAssembly
+        // asynchronously, and note that it's also executed within a
+        // `tls::scope` to ensure that the `tls::with` function will work
+        // for the duration of the future.
+        //
+        // Also note, though, that we want to be able to cancel the
+        // execution of this WebAssembly if the caller becomes disinterested
+        // in the result. This happens by using the `closed()` method on the
+        // channel back to the sender, and if that happens we abort wasm
+        // entirely and abort the whole coroutine by removing it later.
+        //
+        // If this wasm operations is aborted then we exit this loop
+        // entirely and tear down this reactor task. That triggers
+        // cancellation of all spawned sub-tasks and sibling coroutines, and
+        // the rationale for this is that we zapped wasm while it was
+        // executing so it's now in an indeterminate state and not one that
+        // we can resume.
+        //
+        // TODO: this is a `clone()`-per-callback which is probably cheap,
+        // but this is also a sort of wonky setup so this may wish to change
+        // in the future.
+        let coroutine = self.coroutines.get_mut().get_mut(&coroutine_id).unwrap();
+        coroutine.pending_callbacks -= 1;
+        let cancel_signal = coroutine.sender.clone();
+        let prev_coroutine_id = mem::replace(&mut self.cur_wasm_coroutine, coroutine_id);
+        let result = tokio::select! {
+            r = tls::scope(self, wasm_execution) => r,
+            _ = cancel_signal.closed() => return false,
+        };
+        self.cur_wasm_coroutine = prev_coroutine_id;
+
+        let coroutines = self.coroutines.get_mut();
+        let coroutine = coroutines.get_mut(&coroutine_id).unwrap();
+        if let Err(trap) = result {
+            // Our WebAssembly callback trapped. That means that this
+            // entire coroutine is now in a failure state. No further
+            // wasm callbacks will be invoked and the coroutine is
+            // removed from out internal list to invoke the failure
+            // callback, informing what trap caused the failure.
+            //
+            // Note that this reopens `coroutine_id.slab_index` to get
+            // possibly reused, intentionally so, which is why
+            // `CoroutineId` is a form of generational ID which is
+            // resilient to this form of reuse. In other words when we
+            // remove the result here if in the future a pending import
+            // for this coroutine completes we'll simply discard the
+            // message.
+            //
+            // Any error in sending the trap along the coroutine's channel
+            // is ignored since we can race with the coroutine getting
+            // dropped.
+            //
+            // TODO: should the trap still be sent somewhere? Is this ok to
+            // simply ignore?
+            //
+            // Finally we exit the reactor in this case because traps
+            // typically represent fatal conditions for wasm where we can't
+            // really resume since it may be in an indeterminate state (wasm
+            // can't handle traps itself), so after we inform the original
+            // coroutine of the original trap we break out and cancel all
+            // further execution.
+            let coroutine = coroutines.remove(&coroutine_id).unwrap();
+            let _ = coroutine.sender.send(Err(trap));
+            return false;
+        } else if coroutine.pending_callbacks == 0 {
+            // Our wasm callback succeeded, and there are no pending
+            // imports for this coroutine.
+            //
+            // In this state it means that the coroutine has completed
+            // since no further work can possibly happen for the
+            // coroutine. This means that we can safely remove it from
+            // our internal list.
+            //
+            // If the coroutine's completion wasn't ever signaled,
+            // however, then that indicates a bug in the wasm code
+            // itself. This bug is translated into a trap which will get
+            // reported to the caller to inform the original invocation
+            // of the export that the result of the coroutine never
+            // actually came about.
+            //
+            // Note that like above a failure to send a trap along the
+            // channel is ignored since we raced with the caller becoming
+            // disinterested in the result which is fine to happen at any
+            // time.
+            //
+            // TODO: should the trap still be sent somewhere? Is this ok to
+            // simply ignore?
+            //
+            // TODO: should this tear down the reactor as well, despite it
+            // being a synthetically created trap?
+            let coroutine = coroutines.remove(&coroutine_id).unwrap();
+            if coroutine.complete.is_some() {
+                let _ = coroutine
+                    .sender
+                    .send(Err(Trap::new("completion callback never called")));
+            }
+        } else {
+            // Our wasm callback succeeded, and there are pending
+            // imports for this coroutine.
+            //
+            // This means that the coroutine isn't finished yet so we
+            // simply turn the loop and wait for something else to
+            // happen. We'll next be executing WebAssembly when one of
+            // the coroutine's imports finish.
+        }
+
+        true
     }
 
     pub async fn async_export_done(
@@ -513,6 +555,63 @@ impl<T: 'static> Async<T> {
                 .sender
                 .send(Ok(result))
                 .map_err(|_| Trap::new("task has been cancelled"))
+        })
+    }
+
+    /// Implementation of the `event_new` canonical ABI intrinsic
+    pub fn event_new(mut caller: Caller<'_, T>, cb: u32, data: u32) -> Result<u32, Trap> {
+        Self::with(|cx| {
+            // First up validate `cb` to ensure it's actually a valid wasm
+            // callback to have given us.
+            let callback = cx
+                .function_table
+                .get(&mut caller, cb)
+                .ok_or_else(|| Trap::new("out-of bounds function index"))?
+                .funcref()
+                .ok_or_else(|| Trap::new("not a funcref table"))?
+                .ok_or_else(|| Trap::new("callback cannot be null"))?
+                .typed(&caller)?;
+
+            // Next record that there's a pending callback because the coroutine
+            // is now possibly blocked on this event.
+            cx.coroutines
+                .borrow_mut()
+                .get_mut(&cx.cur_wasm_coroutine)
+                .unwrap()
+                .pending_callbacks += 1;
+
+            // And here the event data is saved and returned back to wasm as an
+            // index.
+            Ok(cx.events.borrow_mut().insert(Event {
+                callback,
+                coroutine: cx.cur_wasm_coroutine,
+                data,
+            }))
+        })
+    }
+
+    /// Implementation of the `event_signal` canonical ABI intrinsic
+    pub fn event_signal(_caller: Caller<'_, T>, event: u32, arg: u32) -> Result<(), Trap> {
+        Self::with(|cx| {
+            // Validate that `event` is valid for this wasm module and then
+            // enqueue the event into an intenral list to get processed after
+            // this wasm is finished executing.
+            //
+            // Note that we don't decrement the pending imports count here but
+            // rather wait for the pending event message to get processed to
+            // actually decrement the count, lest the coroutine accidentally be
+            // declared done early.
+            let event = cx
+                .events
+                .borrow_mut()
+                .remove(event)
+                .ok_or_else(|| Trap::new("invalid event index"))?;
+            let mut pending_events = cx.pending_events.borrow_mut();
+            if pending_events.len() >= MAX_EVENTS {
+                return Err(Trap::new("too many events created"));
+            }
+            pending_events.push((event, arg));
+            Ok(())
         })
     }
 
@@ -575,20 +674,6 @@ impl<T> Drop for Coroutine<T> {
         }
         for task in self.pending_imports.iter() {
             task.abort();
-        }
-    }
-}
-
-enum ToExecute<T> {
-    Start(Start<T>, u32),
-    Callback(Callback<T>),
-}
-
-impl<T> ToExecute<T> {
-    async fn run(self, store: &mut StoreContextMut<'_, T>) -> Result<(), Trap> {
-        match self {
-            ToExecute::Start(cb, val) => cb(store, val).await,
-            ToExecute::Callback(cb) => cb(store).await,
         }
     }
 }

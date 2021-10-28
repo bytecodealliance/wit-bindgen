@@ -1291,6 +1291,28 @@ impl Generator for Wasmtime {
                                 }})
                             }},
                         )?;
+                        linker.func_wrap(
+                            \"canonical_abi\",
+                            \"event_new\",
+                            move |mut caller: wasmtime::Caller<'_, T>, cb: u32, data: u32| {{
+                                witx_bindgen_wasmtime::rt::Async::event_new(
+                                    caller,
+                                    cb,
+                                    data,
+                                )
+                            }},
+                        )?;
+                        linker.func_wrap(
+                            \"canonical_abi\",
+                            \"event_signal\",
+                            move |mut caller: wasmtime::Caller<'_, T>, handle: u32, arg: u32| {{
+                                witx_bindgen_wasmtime::rt::Async::event_signal(
+                                    caller,
+                                    handle,
+                                    arg,
+                                )
+                            }},
+                        )?;
                     ",
                 ));
             }
