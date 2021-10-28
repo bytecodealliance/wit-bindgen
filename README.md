@@ -127,11 +127,9 @@ $ witx-bindgen rust-wasm --export my-interface.witx
 $ witx-bindgen wasmtime --import host-functions.witx
 ```
 
-Here "import" means "imported by WebAssembly" and "export" means
-"exported by WebAssembly". This means that wasm files import APIs with
-`--import`, whereas hosts provide imports to wasm modules using `--import` (the
-terminology here [can be
-confusing](https://github.com/bytecodealliance/witx-bindgen/issues/34)
+Here "import" means "I want to import and call the functions in this interface"
+and "export" means "I want to define the functions in this interface for others
+to call".
 
 Finally in a sort of "miscellaneous" category the `witx-bindgen` CLI also
 supports:
