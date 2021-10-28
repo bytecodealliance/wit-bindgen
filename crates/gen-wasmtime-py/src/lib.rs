@@ -74,10 +74,17 @@ impl WasmtimePy {
     }
 
     fn abi_variant(dir: Direction) -> AbiVariant {
-        // This generator uses the obvious direction to ABI variant mapping.
+        // This generator uses a reversed mapping! In the Wasmtime-py host-side
+        // bindings, we don't use any extra adapter layer between guest wasm
+        // modules and the host. When the guest imports functions using the
+        // `GuestImport` ABI, the host directly implements the `GuestImport`
+        // ABI, even though the host is *exporting* functions. Similarly, when
+        // the guest exports functions using the `GuestExport` ABI, the host
+        // directly imports them with the `GuestExport` ABI, even though the
+        // host is *importing* functions.
         match dir {
-            Direction::Export => AbiVariant::GuestExport,
-            Direction::Import => AbiVariant::GuestImport,
+            Direction::Import => AbiVariant::GuestExport,
+            Direction::Export => AbiVariant::GuestImport,
         }
     }
 
@@ -839,7 +846,7 @@ impl Generator for WasmtimePy {
         self.src.push_str("\n");
     }
 
-    fn import(&mut self, iface: &Interface, func: &Function) {
+    fn export(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
 
@@ -953,7 +960,7 @@ impl Generator for WasmtimePy {
         dst.push(import);
     }
 
-    fn export(&mut self, iface: &Interface, func: &Function) {
+    fn import(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
 

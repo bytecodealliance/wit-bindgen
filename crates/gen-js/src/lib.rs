@@ -113,10 +113,17 @@ impl Js {
     }
 
     fn abi_variant(dir: Direction) -> AbiVariant {
-        // This generator uses the obvious direction to ABI variant mapping.
+        // This generator uses a reversed mapping! In the JS host-side
+        // bindings, we don't use any extra adapter layer between guest wasm
+        // modules and the host. When the guest imports functions using the
+        // `GuestImport` ABI, the host directly implements the `GuestImport`
+        // ABI, even though the host is *exporting* functions. Similarly, when
+        // the guest exports functions using the `GuestExport` ABI, the host
+        // directly imports them with the `GuestExport` ABI, even though the
+        // host is *importing* functions.
         match dir {
-            Direction::Export => AbiVariant::GuestExport,
-            Direction::Import => AbiVariant::GuestImport,
+            Direction::Import => AbiVariant::GuestExport,
+            Direction::Export => AbiVariant::GuestImport,
         }
     }
 
@@ -565,7 +572,7 @@ impl Generator for Js {
         self.src.ts(";\n");
     }
 
-    fn import(&mut self, iface: &Interface, func: &Function) {
+    fn export(&mut self, iface: &Interface, func: &Function) {
         let prev = mem::take(&mut self.src);
 
         let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
@@ -636,7 +643,7 @@ impl Generator for Js {
         dst.push((func.name.to_string(), src));
     }
 
-    fn export(&mut self, iface: &Interface, func: &Function) {
+    fn import(&mut self, iface: &Interface, func: &Function) {
         let prev = mem::take(&mut self.src);
 
         let mut params = func
