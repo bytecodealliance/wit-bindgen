@@ -16,11 +16,14 @@ fn execute(name: &str, wasm: &Path, py: &Path, imports: &Path, exports: &Path) {
 
     println!("OUT_DIR = {:?}", dir);
     println!("Generating bindings...");
+    // We call `generate_all` with exports from the imports.witx file, and
+    // imports from the exports.witx witx file. It's reversed because we're
+    // implementing the host side of these APIs.
     let iface = witx_bindgen_gen_core::witx2::Interface::parse_file(imports).unwrap();
     let mut files = Default::default();
     witx_bindgen_gen_wasmtime_py::Opts::default()
         .build()
-        .generate_all(&[iface], &[], &mut files);
+        .generate_all(&[], &[iface], &mut files);
     for (file, contents) in files.iter() {
         fs::write(dir.join("imports").join(file), contents).unwrap();
     }
@@ -30,7 +33,7 @@ fn execute(name: &str, wasm: &Path, py: &Path, imports: &Path, exports: &Path) {
     let mut files = Default::default();
     witx_bindgen_gen_wasmtime_py::Opts::default()
         .build()
-        .generate_all(&[], &[iface], &mut files);
+        .generate_all(&[iface], &[], &mut files);
     for (file, contents) in files.iter() {
         fs::write(dir.join("exports").join(file), contents).unwrap();
     }
