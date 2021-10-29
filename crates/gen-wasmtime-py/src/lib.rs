@@ -846,6 +846,9 @@ impl Generator for WasmtimePy {
         self.src.push_str("\n");
     }
 
+    // As with `abi_variant` above, we're generating host-side bindings here
+    // so a user "export" uses the "guest import" ABI variant on the inside of
+    // this `Generator` implementation.
     fn export(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
@@ -960,6 +963,9 @@ impl Generator for WasmtimePy {
         dst.push(import);
     }
 
+    // As with `abi_variant` above, we're generating host-side bindings here
+    // so a user "import" uses the "export" ABI variant on the inside of
+    // this `Generator` implementation.
     fn import(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);

@@ -572,6 +572,9 @@ impl Generator for Js {
         self.src.ts(";\n");
     }
 
+    // As with `abi_variant` above, we're generating host-side bindings here
+    // so a user "export" uses the "guest import" ABI variant on the inside of
+    // this `Generator` implementation.
     fn export(&mut self, iface: &Interface, func: &Function) {
         let prev = mem::take(&mut self.src);
 
@@ -643,6 +646,9 @@ impl Generator for Js {
         dst.push((func.name.to_string(), src));
     }
 
+    // As with `abi_variant` above, we're generating host-side bindings here
+    // so a user "import" uses the "export" ABI variant on the inside of
+    // this `Generator` implementation.
     fn import(&mut self, iface: &Interface, func: &Function) {
         let prev = mem::take(&mut self.src);
 
