@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::collections::{btree_map::Entry, BTreeMap, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
-use witx2::abi::{Abi, Direction};
+use witx2::abi::Abi;
 use witx2::*;
 
 // pub use witx;
@@ -10,6 +10,35 @@ pub use witx2;
 mod ns;
 
 pub use ns::Ns;
+
+/// This is the direction from the user's perspective. Are we importing
+/// functions to call, or defining functions and exporting them to be called?
+///
+/// This is only used outside of `Generator` implementations. Inside of
+/// `Generator` implementations, the `Direction` is translated to an
+/// `AbiVariant` instead. The ABI variant is usually the same as the
+/// `Direction`, but it's different in the case of the Wasmtime host bindings:
+///
+/// In a wasm-calling-wasm use case, one wasm module would use the `Import`
+/// ABI, the other would use the `Export` ABI, and there would be an adapter
+/// layer between the two that translates from one ABI to the other.
+///
+/// But with wasm-calling-host, we don't go through a separate adapter layer;
+/// the binding code we generate on the host side just does everything itself.
+/// So when the host is conceptually "exporting" a function to wasm, it uses
+/// the `Import` ABI so that wasm can also use the `Import` ABI and import it
+/// directly from the host.
+///
+/// These are all implementation details; from the user perspective, and
+/// from the perspective of everything outside of `Generator` implementations,
+/// `export` means I'm exporting functions to be called, and `import` means I'm
+/// importing functions that I'm going to call, in both wasm modules and host
+/// code. The enum here represents this user perspective.
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum Direction {
+    Import,
+    Export,
+}
 
 pub trait Generator {
     fn preprocess_all(&mut self, imports: &[Interface], exports: &[Interface]) {

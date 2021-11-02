@@ -15,9 +15,9 @@ use wasm_encoder::Instruction;
 use witx_bindgen_gen_core::{
     witx2::{
         self,
-        abi::{WasmSignature, WasmType},
+        abi::{AbiVariant, WasmSignature, WasmType},
     },
-    Files, Generator,
+    Direction, Files, Generator,
 };
 
 #[allow(missing_docs)]
@@ -385,6 +385,14 @@ impl<'a> SpiderMonkeyWasm<'a> {
             sizes: Default::default(),
             function_names: Vec::new(),
             local_names: Vec::new(),
+        }
+    }
+
+    fn abi_variant(dir: Direction) -> AbiVariant {
+        // This generator uses the obvious direction to ABI variant mapping.
+        match dir {
+            Direction::Export => AbiVariant::GuestExport,
+            Direction::Import => AbiVariant::GuestImport,
         }
     }
 
@@ -903,17 +911,17 @@ impl Generator for SpiderMonkeyWasm<'_> {
             Some(u32::try_from(exports.iter().map(|i| i.functions.len()).sum::<usize>()).unwrap());
 
         // Figure out what the maximum return pointer area we will need is.
-        for (iface, dir) in imports
+        for (iface, variant) in imports
             .iter()
-            .zip(std::iter::repeat(witx2::abi::Direction::Import))
+            .zip(std::iter::repeat(AbiVariant::GuestImport))
             .chain(
                 exports
                     .iter()
-                    .zip(std::iter::repeat(witx2::abi::Direction::Export)),
+                    .zip(std::iter::repeat(AbiVariant::GuestExport)),
             )
         {
             for func in iface.functions.iter() {
-                let sig = iface.wasm_signature(dir, func);
+                let sig = iface.wasm_signature(variant, func);
                 if let Some(results) = sig.retptr {
                     self.i64_return_pointer_area_size =
                         self.i64_return_pointer_area_size.max(results.len());
@@ -922,8 +930,8 @@ impl Generator for SpiderMonkeyWasm<'_> {
         }
     }
 
-    fn preprocess_one(&mut self, iface: &witx2::Interface, dir: witx2::abi::Direction) {
-        self.sizes.fill(dir, iface);
+    fn preprocess_one(&mut self, iface: &witx2::Interface, dir: Direction) {
+        self.sizes.fill(Self::abi_variant(dir), iface);
     }
 
     fn type_record(
@@ -1036,7 +1044,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
         );
 
         // Add the raw Wasm import.
-        let wasm_sig = iface.wasm_signature(witx2::abi::Direction::Import, func);
+        let wasm_sig = iface.wasm_signature(AbiVariant::GuestImport, func);
         let type_index = self.intern_type(wasm_sig.clone());
         let import_fn_index = self.witx_import(self.imports.len());
         self.imports.import(
@@ -1065,7 +1073,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
             witx2::abi::LiftLower::LowerArgsLiftResults,
         );
         iface.call(
-            witx2::abi::Direction::Import,
+            AbiVariant::GuestImport,
             witx2::abi::LiftLower::LowerArgsLiftResults,
             func,
             &mut bindgen,
@@ -1081,7 +1089,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
             "We only support the canonical ABI right now"
         );
 
-        let wasm_sig = iface.wasm_signature(witx2::abi::Direction::Export, func);
+        let wasm_sig = iface.wasm_signature(AbiVariant::GuestExport, func);
         let type_index = self.intern_type(wasm_sig.clone());
         let export_fn_index = self.witx_export(self.exports.len());
         self.exports
@@ -1096,7 +1104,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
             witx2::abi::LiftLower::LiftArgsLowerResults,
         );
         iface.call(
-            witx2::abi::Direction::Export,
+            AbiVariant::GuestExport,
             witx2::abi::LiftLower::LiftArgsLowerResults,
             func,
             &mut bindgen,

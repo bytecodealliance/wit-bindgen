@@ -5,9 +5,9 @@ use std::mem;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 use witx_bindgen_gen_core::witx2::abi::{
-    Abi, Bindgen, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
+    Abi, AbiVariant, Bindgen, Instruction, LiftLower, WasmType, WitxInstruction,
 };
-use witx_bindgen_gen_core::{witx2::*, Files, Generator, Source, TypeInfo, Types};
+use witx_bindgen_gen_core::{witx2::*, Direction, Files, Generator, Source, TypeInfo, Types};
 use witx_bindgen_gen_rust::{
     int_repr, to_rust_ident, wasm_type, FnSig, RustFunctionGenerator, RustGenerator, TypeMode,
 };
@@ -31,8 +31,8 @@ pub struct Wasmtime {
     all_needed_handles: BTreeSet<String>,
     exported_resources: BTreeSet<ResourceId>,
     types: Types,
-    imports: HashMap<String, Vec<Import>>,
-    exports: HashMap<String, Exports>,
+    guest_imports: HashMap<String, Vec<Import>>,
+    guest_exports: HashMap<String, Exports>,
     in_import: bool,
     in_trait: bool,
     trait_name: String,
@@ -151,6 +151,21 @@ enum FunctionRet {
 impl Wasmtime {
     pub fn new() -> Wasmtime {
         Wasmtime::default()
+    }
+
+    fn abi_variant(dir: Direction) -> AbiVariant {
+        // This generator uses a reversed mapping! In the Wasmtime host-side
+        // bindings, we don't use any extra adapter layer between guest wasm
+        // modules and the host. When the guest imports functions using the
+        // `GuestImport` ABI, the host directly implements the `GuestImport`
+        // ABI, even though the host is *exporting* functions. Similarly, when
+        // the guest exports functions using the `GuestExport` ABI, the host
+        // directly imports them with the `GuestExport` ABI, even though the
+        // host is *importing* functions.
+        match dir {
+            Direction::Import => AbiVariant::GuestExport,
+            Direction::Export => AbiVariant::GuestImport,
+        }
     }
 
     fn print_intrinsics(&mut self) {
@@ -359,18 +374,15 @@ impl RustGenerator for Wasmtime {
 
 impl Generator for Wasmtime {
     fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        let dir = match dir {
-            Direction::Export => Direction::Import,
-            Direction::Import => Direction::Export,
-        };
+        let variant = Self::abi_variant(dir);
         self.types.analyze(iface);
-        self.in_import = dir == Direction::Import;
+        self.in_import = variant == AbiVariant::GuestImport;
         self.trait_name = iface.name.to_camel_case();
         self.src
             .push_str(&format!("pub mod {} {{\n", iface.name.to_snake_case()));
         self.src
             .push_str("#[allow(unused_imports)]\nuse witx_bindgen_wasmtime::{wasmtime, anyhow};\n");
-        self.sizes.fill(dir, iface);
+        self.sizes.fill(variant, iface);
     }
 
     fn type_record(
@@ -572,6 +584,9 @@ impl Generator for Wasmtime {
     //     ));
     // }
 
+    // As with `abi_variant` above, we're generating host-side bindings here
+    // so a user "export" uses the "guest import" ABI variant on the inside of
+    // this `Generator` implementation.
     fn export(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
@@ -581,7 +596,7 @@ impl Generator for Wasmtime {
 
         // Generate the closure that's passed to a `Linker`, the final piece of
         // codegen here.
-        let sig = iface.wasm_signature(Direction::Import, func);
+        let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
         let params = (0..sig.params.len())
             .map(|i| format!("arg{}", i))
             .collect::<Vec<_>>();
@@ -592,7 +607,7 @@ impl Generator for Wasmtime {
                 .iter()
                 .any(|(_, t)| iface.has_preview1_pointer(t));
         iface.call(
-            Direction::Import,
+            AbiVariant::GuestImport,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
@@ -742,7 +757,7 @@ impl Generator for Wasmtime {
         self.src.push_str("}");
         let closure = mem::replace(&mut self.src, prev).into();
 
-        self.imports
+        self.guest_imports
             .entry(iface.name.to_string())
             .or_insert(Vec::new())
             .push(Import {
@@ -754,6 +769,9 @@ impl Generator for Wasmtime {
             });
     }
 
+    // As with `abi_variant` above, we're generating host-side bindings here
+    // so a user "import" uses the "export" ABI variant on the inside of
+    // this `Generator` implementation.
     fn import(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
@@ -781,7 +799,7 @@ impl Generator for Wasmtime {
             .collect();
         let mut f = FunctionBindgen::new(self, is_dtor, params);
         iface.call(
-            Direction::Export,
+            AbiVariant::GuestExport,
             LiftLower::LowerArgsLiftResults,
             func,
             &mut f,
@@ -797,7 +815,7 @@ impl Generator for Wasmtime {
         } = f;
 
         let exports = self
-            .exports
+            .guest_exports
             .entry(iface.name.to_string())
             .or_insert_with(Exports::default);
         for (name, func) in needs_functions {
@@ -847,7 +865,7 @@ impl Generator for Wasmtime {
         // Create the code snippet which will define the type of this field in
         // the struct that we're exporting and additionally extracts the
         // function from an instantiated instance.
-        let sig = iface.wasm_signature(Direction::Export, func);
+        let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
         let mut cvt = "(".to_string();
         for param in sig.params.iter() {
             cvt.push_str(wasm_type(*param));
@@ -872,7 +890,7 @@ impl Generator for Wasmtime {
     }
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
-        for (module, funcs) in sorted_iter(&self.imports) {
+        for (module, funcs) in sorted_iter(&self.guest_imports) {
             let module_camel = module.to_camel_case();
             let is_async = !self.opts.async_.is_none();
             if is_async {
@@ -955,7 +973,7 @@ impl Generator for Wasmtime {
             }
         }
 
-        for (module, funcs) in mem::take(&mut self.imports) {
+        for (module, funcs) in mem::take(&mut self.guest_imports) {
             let module_camel = module.to_camel_case();
             let is_async = !self.opts.async_.is_none();
             self.push_str("\npub fn add_to_linker<T, U>(linker: &mut wasmtime::Linker<T>");
@@ -1015,7 +1033,7 @@ impl Generator for Wasmtime {
             self.push_str("Ok(())\n}\n");
         }
 
-        for (module, exports) in sorted_iter(&mem::take(&mut self.exports)) {
+        for (module, exports) in sorted_iter(&mem::take(&mut self.guest_exports)) {
             let name = module.to_camel_case();
 
             // Generate a struct that is the "state" of this exported module

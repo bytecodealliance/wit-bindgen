@@ -14,12 +14,15 @@ fn execute(name: &str, wasm: &Path, ts: &Path, imports: &Path, exports: &Path) {
 
     println!("OUT_DIR = {:?}", dir);
     println!("Generating bindings...");
+    // We call `generate_all` with exports from the imports.witx file, and
+    // imports from the exports.witx witx file. It's reversed because we're
+    // implementing the host side of these APIs.
     let imports = witx_bindgen_gen_core::witx2::Interface::parse_file(imports).unwrap();
     let exports = witx_bindgen_gen_core::witx2::Interface::parse_file(exports).unwrap();
     let mut files = Default::default();
     witx_bindgen_gen_js::Opts::default()
         .build()
-        .generate_all(&[imports], &[exports], &mut files);
+        .generate_all(&[exports], &[imports], &mut files);
     for (file, contents) in files.iter() {
         fs::write(dir.join(file), contents).unwrap();
     }

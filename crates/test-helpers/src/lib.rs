@@ -4,18 +4,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
-use witx_bindgen_gen_core::Generator;
-
-/// This is the direction from the user's perspective. Are we importing
-/// functions to call, or defining functions and exporting them to be called?
-///
-/// This differs from the `witx2::abi::Direction` value in some bindings; see
-/// the comments on the `Direction` enum in wasmtime-impl for details.
-#[derive(PartialEq, Eq, Copy, Clone)]
-enum Direction {
-    Import,
-    Export,
-}
+use witx_bindgen_gen_core::{Direction, Generator};
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-rust-wasm")]
@@ -298,16 +287,16 @@ pub fn codegen_wasmtime_import(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-js")]
-pub fn codegen_js_import(input: TokenStream) -> TokenStream {
-    gen_verify(input, Direction::Import, "import", || {
+pub fn codegen_js_export(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Export, "export", || {
         witx_bindgen_gen_js::Opts::default().build()
     })
 }
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-js")]
-pub fn codegen_js_export(input: TokenStream) -> TokenStream {
-    gen_verify(input, Direction::Export, "export", || {
+pub fn codegen_js_import(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Import, "import", || {
         witx_bindgen_gen_js::Opts::default().build()
     })
 }
@@ -330,16 +319,16 @@ pub fn codegen_c_export(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-wasmtime-py")]
-pub fn codegen_py_import(input: TokenStream) -> TokenStream {
-    gen_verify(input, Direction::Import, "import", || {
+pub fn codegen_py_export(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Export, "export", || {
         witx_bindgen_gen_wasmtime_py::Opts::default().build()
     })
 }
 
 #[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-wasmtime-py")]
-pub fn codegen_py_export(input: TokenStream) -> TokenStream {
-    gen_verify(input, Direction::Export, "export", || {
+pub fn codegen_py_import(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Import, "import", || {
         witx_bindgen_gen_wasmtime_py::Opts::default().build()
     })
 }

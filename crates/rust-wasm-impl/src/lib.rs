@@ -2,8 +2,7 @@ use proc_macro::TokenStream;
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{token, Token};
-use witx2::abi::Direction;
-use witx_bindgen_gen_core::{witx2, Files, Generator};
+use witx_bindgen_gen_core::{witx2, Direction, Files, Generator};
 
 #[proc_macro]
 pub fn import(input: TokenStream) -> TokenStream {

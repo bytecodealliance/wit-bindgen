@@ -2,17 +2,17 @@ use heck::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem;
 use witx_bindgen_gen_core::witx2::abi::{
-    Bindgen, Bitcast, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
+    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType, WitxInstruction,
 };
-use witx_bindgen_gen_core::{witx2::*, Files, Generator};
+use witx_bindgen_gen_core::{witx2::*, Direction, Files, Generator};
 
 #[derive(Default)]
 pub struct Js {
     src: Source,
     in_import: bool,
     opts: Opts,
-    imports: HashMap<String, Imports>,
-    exports: HashMap<String, Exports>,
+    guest_imports: HashMap<String, Imports>,
+    guest_exports: HashMap<String, Exports>,
     sizes: SizeAlign,
     intrinsics: BTreeMap<Intrinsic, String>,
     all_intrinsics: BTreeSet<Intrinsic>,
@@ -110,6 +110,21 @@ impl Intrinsic {
 impl Js {
     pub fn new() -> Js {
         Js::default()
+    }
+
+    fn abi_variant(dir: Direction) -> AbiVariant {
+        // This generator uses a reversed mapping! In the JS host-side
+        // bindings, we don't use any extra adapter layer between guest wasm
+        // modules and the host. When the guest imports functions using the
+        // `GuestImport` ABI, the host directly implements the `GuestImport`
+        // ABI, even though the host is *exporting* functions. Similarly, when
+        // the guest exports functions using the `GuestExport` ABI, the host
+        // directly imports them with the `GuestExport` ABI, even though the
+        // host is *importing* functions.
+        match dir {
+            Direction::Import => AbiVariant::GuestExport,
+            Direction::Export => AbiVariant::GuestImport,
+        }
     }
 
     fn is_nullable_option(&self, iface: &Interface, variant: &Variant) -> bool {
@@ -357,8 +372,9 @@ impl Js {
 
 impl Generator for Js {
     fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        self.sizes.fill(dir, iface);
-        self.in_import = dir == Direction::Import;
+        let variant = Self::abi_variant(dir);
+        self.sizes.fill(variant, iface);
+        self.in_import = variant == AbiVariant::GuestImport;
     }
 
     fn type_record(
@@ -556,10 +572,13 @@ impl Generator for Js {
         self.src.ts(";\n");
     }
 
-    fn import(&mut self, iface: &Interface, func: &Function) {
+    // As with `abi_variant` above, we're generating host-side bindings here
+    // so a user "export" uses the "guest import" ABI variant on the inside of
+    // this `Generator` implementation.
+    fn export(&mut self, iface: &Interface, func: &Function) {
         let prev = mem::take(&mut self.src);
 
-        let sig = iface.wasm_signature(Direction::Import, func);
+        let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
         let params = (0..sig.params.len())
             .map(|i| format!("arg{}", i))
             .collect::<Vec<_>>();
@@ -569,7 +588,7 @@ impl Generator for Js {
 
         let mut f = FunctionBindgen::new(self, false, params);
         iface.call(
-            Direction::Import,
+            AbiVariant::GuestImport,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
@@ -612,7 +631,7 @@ impl Generator for Js {
 
         let src = mem::replace(&mut self.src, prev);
         let imports = self
-            .imports
+            .guest_imports
             .entry(iface.name.to_string())
             .or_insert(Imports::default());
         let dst = match &func.kind {
@@ -627,7 +646,10 @@ impl Generator for Js {
         dst.push((func.name.to_string(), src));
     }
 
-    fn export(&mut self, iface: &Interface, func: &Function) {
+    // As with `abi_variant` above, we're generating host-side bindings here
+    // so a user "import" uses the "export" ABI variant on the inside of
+    // this `Generator` implementation.
+    fn import(&mut self, iface: &Interface, func: &Function) {
         let prev = mem::take(&mut self.src);
 
         let mut params = func
@@ -668,7 +690,7 @@ impl Generator for Js {
         let mut f = FunctionBindgen::new(self, false, params);
         f.src_object = src_object;
         iface.call(
-            Direction::Export,
+            AbiVariant::GuestExport,
             LiftLower::LowerArgsLiftResults,
             func,
             &mut f,
@@ -705,7 +727,7 @@ impl Generator for Js {
         self.src.js("}\n");
 
         let exports = self
-            .exports
+            .guest_exports
             .entry(iface.name.to_string())
             .or_insert_with(Exports::default);
 
@@ -725,7 +747,7 @@ impl Generator for Js {
     }
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
-        for (module, funcs) in mem::take(&mut self.imports) {
+        for (module, funcs) in mem::take(&mut self.guest_imports) {
             // TODO: `module.exports` vs `export function`
             self.src.js(&format!(
                 "export function add{}ToImports(imports, obj{}) {{\n",
@@ -813,7 +835,7 @@ impl Generator for Js {
         }
         let imports = mem::take(&mut self.src);
 
-        for (module, exports) in mem::take(&mut self.exports) {
+        for (module, exports) in mem::take(&mut self.guest_exports) {
             let module = module.to_camel_case();
             self.src.ts(&format!("export class {} {{\n", module));
             self.src.js(&format!("export class {} {{\n", module));

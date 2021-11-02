@@ -2,17 +2,17 @@ use heck::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem;
 use witx_bindgen_gen_core::witx2::abi::{
-    Bindgen, Bitcast, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
+    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType, WitxInstruction,
 };
-use witx_bindgen_gen_core::{witx2::*, Files, Generator, Ns};
+use witx_bindgen_gen_core::{witx2::*, Direction, Files, Generator, Ns};
 
 #[derive(Default)]
 pub struct WasmtimePy {
     src: Source,
     in_import: bool,
     opts: Opts,
-    imports: HashMap<String, Imports>,
-    exports: HashMap<String, Exports>,
+    guest_imports: HashMap<String, Imports>,
+    guest_exports: HashMap<String, Exports>,
     sizes: SizeAlign,
     needs_clamp: bool,
     needs_store: bool,
@@ -71,6 +71,21 @@ impl Opts {
 impl WasmtimePy {
     pub fn new() -> WasmtimePy {
         WasmtimePy::default()
+    }
+
+    fn abi_variant(dir: Direction) -> AbiVariant {
+        // This generator uses a reversed mapping! In the Wasmtime-py host-side
+        // bindings, we don't use any extra adapter layer between guest wasm
+        // modules and the host. When the guest imports functions using the
+        // `GuestImport` ABI, the host directly implements the `GuestImport`
+        // ABI, even though the host is *exporting* functions. Similarly, when
+        // the guest exports functions using the `GuestExport` ABI, the host
+        // directly imports them with the `GuestExport` ABI, even though the
+        // host is *importing* functions.
+        match dir {
+            Direction::Import => AbiVariant::GuestExport,
+            Direction::Export => AbiVariant::GuestImport,
+        }
     }
 
     fn indent(&mut self) {
@@ -631,8 +646,9 @@ impl WasmtimePy {
 
 impl Generator for WasmtimePy {
     fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        self.sizes.fill(dir, iface);
-        self.in_import = dir == Direction::Import;
+        let variant = Self::abi_variant(dir);
+        self.sizes.fill(variant, iface);
+        self.in_import = variant == AbiVariant::GuestImport;
     }
 
     fn type_record(
@@ -830,14 +846,17 @@ impl Generator for WasmtimePy {
         self.src.push_str("\n");
     }
 
-    fn import(&mut self, iface: &Interface, func: &Function) {
+    // As with `abi_variant` above, we're generating host-side bindings here
+    // so a user "export" uses the "guest import" ABI variant on the inside of
+    // this `Generator` implementation.
+    fn export(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
 
         self.print_sig(iface, func);
         let pysig = mem::take(&mut self.src).into();
 
-        let sig = iface.wasm_signature(Direction::Import, func);
+        let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
         self.src.push_str(&format!(
             "def {}(caller: wasmtime.Caller",
             func.name.to_snake_case(),
@@ -862,7 +881,7 @@ impl Generator for WasmtimePy {
 
         let mut f = FunctionBindgen::new(self, params);
         iface.call(
-            Direction::Import,
+            AbiVariant::GuestImport,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
@@ -929,7 +948,7 @@ impl Generator for WasmtimePy {
             pysig,
         };
         let imports = self
-            .imports
+            .guest_imports
             .entry(iface.name.to_string())
             .or_insert(Imports::default());
         let dst = match &func.kind {
@@ -944,7 +963,10 @@ impl Generator for WasmtimePy {
         dst.push(import);
     }
 
-    fn export(&mut self, iface: &Interface, func: &Function) {
+    // As with `abi_variant` above, we're generating host-side bindings here
+    // so a user "import" uses the "export" ABI variant on the inside of
+    // this `Generator` implementation.
+    fn import(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
 
@@ -960,7 +982,7 @@ impl Generator for WasmtimePy {
         let mut f = FunctionBindgen::new(self, params);
         f.src_object = src_object;
         iface.call(
-            Direction::Export,
+            AbiVariant::GuestExport,
             LiftLower::LowerArgsLiftResults,
             func,
             &mut f,
@@ -999,7 +1021,7 @@ impl Generator for WasmtimePy {
         self.deindent();
 
         let exports = self
-            .exports
+            .guest_exports
             .entry(iface.name.to_string())
             .or_insert_with(Exports::default);
         if needs_memory {
@@ -1074,7 +1096,7 @@ impl Generator for WasmtimePy {
                 self.src.push_str("pass\n");
                 self.src.deindent(2);
 
-                for (_, funcs) in self.imports.iter() {
+                for (_, funcs) in self.guest_imports.iter() {
                     if let Some(funcs) = funcs.resource_funcs.get(&id) {
                         for func in funcs {
                             self.src.push_str("@abstractmethod\n");
@@ -1124,7 +1146,7 @@ impl Generator for WasmtimePy {
                     drop = name.to_snake_case(),
                 ));
 
-                for (_, exports) in self.exports.iter() {
+                for (_, exports) in self.guest_exports.iter() {
                     if let Some(funcs) = exports.resource_funcs.get(&id) {
                         for func in funcs {
                             self.src.push_str(func);
@@ -1137,7 +1159,7 @@ impl Generator for WasmtimePy {
         }
         self.src.push_str(&types);
 
-        for (module, funcs) in mem::take(&mut self.imports) {
+        for (module, funcs) in mem::take(&mut self.guest_imports) {
             self.src
                 .push_str(&format!("class {}(Protocol):\n", module.to_camel_case()));
             self.indent();
@@ -1206,7 +1228,7 @@ impl Generator for WasmtimePy {
 
         // This is exculsively here to get mypy to not complain about empty
         // modules, this probably won't really get triggered much in practice
-        if !self.in_import && self.exports.is_empty() {
+        if !self.in_import && self.guest_exports.is_empty() {
             self.src
                 .push_str(&format!("class {}:\n", iface.name.to_camel_case()));
             self.indent();
@@ -1223,7 +1245,7 @@ impl Generator for WasmtimePy {
             self.deindent();
         }
 
-        for (module, exports) in mem::take(&mut self.exports) {
+        for (module, exports) in mem::take(&mut self.guest_exports) {
             let module = module.to_camel_case();
             self.src.push_str(&format!("class {}:\n", module));
             self.indent();
