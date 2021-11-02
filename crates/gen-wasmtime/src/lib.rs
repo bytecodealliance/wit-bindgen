@@ -31,8 +31,8 @@ pub struct Wasmtime {
     all_needed_handles: BTreeSet<String>,
     exported_resources: BTreeSet<ResourceId>,
     types: Types,
-    imports: HashMap<String, Vec<Import>>,
-    exports: HashMap<String, Exports>,
+    guest_imports: HashMap<String, Vec<Import>>,
+    guest_exports: HashMap<String, Exports>,
     in_import: bool,
     in_trait: bool,
     trait_name: String,
@@ -757,7 +757,7 @@ impl Generator for Wasmtime {
         self.src.push_str("}");
         let closure = mem::replace(&mut self.src, prev).into();
 
-        self.imports
+        self.guest_imports
             .entry(iface.name.to_string())
             .or_insert(Vec::new())
             .push(Import {
@@ -815,7 +815,7 @@ impl Generator for Wasmtime {
         } = f;
 
         let exports = self
-            .exports
+            .guest_exports
             .entry(iface.name.to_string())
             .or_insert_with(Exports::default);
         for (name, func) in needs_functions {
@@ -890,7 +890,7 @@ impl Generator for Wasmtime {
     }
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
-        for (module, funcs) in sorted_iter(&self.imports) {
+        for (module, funcs) in sorted_iter(&self.guest_imports) {
             let module_camel = module.to_camel_case();
             let is_async = !self.opts.async_.is_none();
             if is_async {
@@ -973,7 +973,7 @@ impl Generator for Wasmtime {
             }
         }
 
-        for (module, funcs) in mem::take(&mut self.imports) {
+        for (module, funcs) in mem::take(&mut self.guest_imports) {
             let module_camel = module.to_camel_case();
             let is_async = !self.opts.async_.is_none();
             self.push_str("\npub fn add_to_linker<T, U>(linker: &mut wasmtime::Linker<T>");
@@ -1033,7 +1033,7 @@ impl Generator for Wasmtime {
             self.push_str("Ok(())\n}\n");
         }
 
-        for (module, exports) in sorted_iter(&mem::take(&mut self.exports)) {
+        for (module, exports) in sorted_iter(&mem::take(&mut self.guest_exports)) {
             let name = module.to_camel_case();
 
             // Generate a struct that is the "state" of this exported module

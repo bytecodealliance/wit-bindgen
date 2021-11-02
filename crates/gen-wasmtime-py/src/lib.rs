@@ -11,8 +11,8 @@ pub struct WasmtimePy {
     src: Source,
     in_import: bool,
     opts: Opts,
-    imports: HashMap<String, Imports>,
-    exports: HashMap<String, Exports>,
+    guest_imports: HashMap<String, Imports>,
+    guest_exports: HashMap<String, Exports>,
     sizes: SizeAlign,
     needs_clamp: bool,
     needs_store: bool,
@@ -948,7 +948,7 @@ impl Generator for WasmtimePy {
             pysig,
         };
         let imports = self
-            .imports
+            .guest_imports
             .entry(iface.name.to_string())
             .or_insert(Imports::default());
         let dst = match &func.kind {
@@ -1021,7 +1021,7 @@ impl Generator for WasmtimePy {
         self.deindent();
 
         let exports = self
-            .exports
+            .guest_exports
             .entry(iface.name.to_string())
             .or_insert_with(Exports::default);
         if needs_memory {
@@ -1096,7 +1096,7 @@ impl Generator for WasmtimePy {
                 self.src.push_str("pass\n");
                 self.src.deindent(2);
 
-                for (_, funcs) in self.imports.iter() {
+                for (_, funcs) in self.guest_imports.iter() {
                     if let Some(funcs) = funcs.resource_funcs.get(&id) {
                         for func in funcs {
                             self.src.push_str("@abstractmethod\n");
@@ -1146,7 +1146,7 @@ impl Generator for WasmtimePy {
                     drop = name.to_snake_case(),
                 ));
 
-                for (_, exports) in self.exports.iter() {
+                for (_, exports) in self.guest_exports.iter() {
                     if let Some(funcs) = exports.resource_funcs.get(&id) {
                         for func in funcs {
                             self.src.push_str(func);
@@ -1159,7 +1159,7 @@ impl Generator for WasmtimePy {
         }
         self.src.push_str(&types);
 
-        for (module, funcs) in mem::take(&mut self.imports) {
+        for (module, funcs) in mem::take(&mut self.guest_imports) {
             self.src
                 .push_str(&format!("class {}(Protocol):\n", module.to_camel_case()));
             self.indent();
@@ -1228,7 +1228,7 @@ impl Generator for WasmtimePy {
 
         // This is exculsively here to get mypy to not complain about empty
         // modules, this probably won't really get triggered much in practice
-        if !self.in_import && self.exports.is_empty() {
+        if !self.in_import && self.guest_exports.is_empty() {
             self.src
                 .push_str(&format!("class {}:\n", iface.name.to_camel_case()));
             self.indent();
@@ -1245,7 +1245,7 @@ impl Generator for WasmtimePy {
             self.deindent();
         }
 
-        for (module, exports) in mem::take(&mut self.exports) {
+        for (module, exports) in mem::take(&mut self.guest_exports) {
             let module = module.to_camel_case();
             self.src.push_str(&format!("class {}:\n", module));
             self.indent();

@@ -11,8 +11,8 @@ pub struct Js {
     src: Source,
     in_import: bool,
     opts: Opts,
-    imports: HashMap<String, Imports>,
-    exports: HashMap<String, Exports>,
+    guest_imports: HashMap<String, Imports>,
+    guest_exports: HashMap<String, Exports>,
     sizes: SizeAlign,
     intrinsics: BTreeMap<Intrinsic, String>,
     all_intrinsics: BTreeSet<Intrinsic>,
@@ -631,7 +631,7 @@ impl Generator for Js {
 
         let src = mem::replace(&mut self.src, prev);
         let imports = self
-            .imports
+            .guest_imports
             .entry(iface.name.to_string())
             .or_insert(Imports::default());
         let dst = match &func.kind {
@@ -727,7 +727,7 @@ impl Generator for Js {
         self.src.js("}\n");
 
         let exports = self
-            .exports
+            .guest_exports
             .entry(iface.name.to_string())
             .or_insert_with(Exports::default);
 
@@ -747,7 +747,7 @@ impl Generator for Js {
     }
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
-        for (module, funcs) in mem::take(&mut self.imports) {
+        for (module, funcs) in mem::take(&mut self.guest_imports) {
             // TODO: `module.exports` vs `export function`
             self.src.js(&format!(
                 "export function add{}ToImports(imports, obj{}) {{\n",
@@ -835,7 +835,7 @@ impl Generator for Js {
         }
         let imports = mem::take(&mut self.src);
 
-        for (module, exports) in mem::take(&mut self.exports) {
+        for (module, exports) in mem::take(&mut self.guest_exports) {
             let module = module.to_camel_case();
             self.src.ts(&format!("export class {} {{\n", module));
             self.src.js(&format!("export class {} {{\n", module));
