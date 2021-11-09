@@ -576,10 +576,16 @@ impl Generator for RustWasm {
         let is_dtor = self.types.is_preview1_dtor_func(func);
         let rust_name = func.name.to_snake_case();
 
-        self.src.push_str("#[export_name = \"");
+        self.src.push_str("#[cfg_attr(target_arch = \"wasm32\", export_name = \"");
         self.src.push_str(&self.opts.symbol_namespace);
         self.src.push_str(&func.name);
-        self.src.push_str("\"]\n");
+        self.src.push_str("\")]\n");
+        self.src.push_str("#[cfg_attr(not(target_arch = \"wasm32\"), export_name = \"");
+        self.src.push_str(&self.opts.symbol_namespace);
+        self.src.push_str(&iface.name);
+        self.src.push_str("_");
+        self.src.push_str(&func.name);
+        self.src.push_str("\")]\n");
         self.src.push_str("unsafe extern \"C\" fn __wai_bindgen_");
         self.src.push_str(&rust_name);
         self.src.push_str("(");
