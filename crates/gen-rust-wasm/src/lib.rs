@@ -596,6 +596,7 @@ impl Generator for RustWasm {
             self.src.push_str(", ");
             params.push(name);
         }
+        self.src.push_str("#[cfg(not(target_arch = \"wasm32\"))] ret: *mut i64");
         self.src.push_str(")");
 
         match sig.results.len() {
@@ -699,7 +700,8 @@ impl Generator for RustWasm {
 
         if self.i64_return_pointer_area_size > 0 {
             src.push_str(&format!(
-                "static mut RET_AREA: [i64; {0}] = [0; {0}];\n",
+                "#[cfg(any(target_arch = \"wasm32\", target_arch = \"wasm64\"))]
+                static mut RET_AREA: [i64; {0}] = [0; {0}];\n",
                 self.i64_return_pointer_area_size,
             ));
         }
@@ -890,7 +892,16 @@ impl Bindgen for FunctionBindgen<'_> {
     fn i64_return_pointer_area(&mut self, amt: usize) -> String {
         assert!(amt <= self.gen.i64_return_pointer_area_size);
         let tmp = self.tmp();
+
+        self.push_str("#[cfg(target_arch = \"wasm32\")]");
         self.push_str(&format!("let ptr{} = RET_AREA.as_mut_ptr() as i32;\n", tmp));
+        if self.gen.in_import {
+            self.push_str("#[cfg(not(target_arch = \"wasm32\"))]");
+            self.push_str(&format!("let ptr{} = &mut [0i64; {}] as *mut i64 as i32;\n", tmp, amt));
+        } else {
+            self.push_str("#[cfg(not(target_arch = \"wasm32\"))]");
+            self.push_str(&format!("let ptr{} = ret as i32;\n", tmp));
+        }
         format!("ptr{}", tmp)
     }
 
