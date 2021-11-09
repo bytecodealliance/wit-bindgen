@@ -1,4 +1,4 @@
-witx_bindgen_rust::import!("crates/lists/lists.witx");
+wai_bindgen_rust::import!("crates/lists/lists.wai");
 
 use lists::*;
 

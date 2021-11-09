@@ -1,9 +1,9 @@
-witx_bindgen_rust::import!("./tests/runtime/async_functions/imports.witx");
-witx_bindgen_rust::export!("./tests/runtime/async_functions/exports.witx");
+wai_bindgen_rust::import!("./tests/runtime/async_functions/imports.wai");
+wai_bindgen_rust::export!("./tests/runtime/async_functions/exports.wai");
 
 struct Exports;
 
-#[witx_bindgen_rust::async_trait(?Send)]
+#[wai_bindgen_rust::async_trait(?Send)]
 impl exports::Exports for Exports {
     fn allocated_bytes() -> u32 {
         test_rust_wasm::get() as u32

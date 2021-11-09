@@ -1,0 +1,5 @@
+invalid escape in string 'x'
+     --> tests/ui/parse-fail/string-bad-escape2.wai:3:3
+      |
+    3 | "\x"
+      |   ^

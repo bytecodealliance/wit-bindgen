@@ -1,5 +1,5 @@
-witx_bindgen_rust::import!("crates/nested_a/nested_a.witx");
-witx_bindgen_rust::export!("crates/nested_b/nested_b.witx");
+wai_bindgen_rust::import!("crates/nested_a/nested_a.wai");
+wai_bindgen_rust::export!("crates/nested_b/nested_b.wai");
 
 struct NestedB;
 

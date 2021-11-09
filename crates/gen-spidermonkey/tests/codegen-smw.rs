@@ -2,19 +2,19 @@ use std::path::Path;
 
 mod imports {
     test_helpers::codegen_spidermonkey_import!(
-        // TODO: should support more of the `*.witx` test suite
-        "strings.witx"
-        "simple_lists.witx"
-        "simple_functions.witx"
+        // TODO: should support more of the `*.wai` test suite
+        "strings.wai"
+        "simple_lists.wai"
+        "simple_functions.wai"
     );
 }
 
 mod exports {
     test_helpers::codegen_spidermonkey_export!(
-        // TODO: should support more of the `*.witx` test suite
-        "strings.witx"
-        "simple_lists.witx"
-        "simple_functions.witx"
+        // TODO: should support more of the `*.wai` test suite
+        "strings.wai"
+        "simple_lists.wai"
+        "simple_functions.wai"
     );
 }
 

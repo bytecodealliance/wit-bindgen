@@ -4,26 +4,18 @@ use std::process::Command;
 mod exports {
     test_helpers::codegen_js_export!(
         // ...
-        "*.witx"
-
-        // These use preview1 ABI things which aren't implemented
-        "!wasi_snapshot_preview1.witx"
+        "*.wai"
     );
 }
 
 mod imports {
     test_helpers::codegen_js_import!(
-        "*.witx"
+        "*.wai"
 
         // This uses buffers, which we don't support in imports just yet
         // TODO: should support this
-        "!wasi_next.witx"
-        "!host.witx"
-
-        // These use the preview1 ABI which isn't implemented for JS imports.
-        "!wasi_snapshot_preview1.witx"
-        "!typenames.witx"
-        "!legacy.witx"
+        "!wasi_next.wai"
+        "!host.wai"
     );
 }
 

@@ -1,5 +1,5 @@
-witx_bindgen_rust::import!("./tests/runtime/smoke/imports.witx");
-witx_bindgen_rust::export!("./tests/runtime/smoke/exports.witx");
+wai_bindgen_rust::import!("./tests/runtime/smoke/imports.wai");
+wai_bindgen_rust::export!("./tests/runtime/smoke/exports.wai");
 
 struct Exports;
 

@@ -1,4 +1,4 @@
-pub use witx_bindgen_wasmtime_impl::{export, import};
+pub use wai_bindgen_wasmtime_impl::{export, import};
 
 #[cfg(feature = "async")]
 pub use async_trait::async_trait;

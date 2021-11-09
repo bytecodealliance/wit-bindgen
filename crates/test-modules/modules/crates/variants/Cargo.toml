@@ -9,4 +9,4 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-witx-bindgen-rust = { path = "../../../../rust-wasm" }
+wai-bindgen-rust = { path = "../../../../rust-wasm" }

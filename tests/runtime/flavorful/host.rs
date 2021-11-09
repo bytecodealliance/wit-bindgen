@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-witx_bindgen_wasmtime::export!("./tests/runtime/flavorful/imports.witx");
+wai_bindgen_wasmtime::export!("./tests/runtime/flavorful/imports.wai");
 
 use imports::*;
 
@@ -91,7 +91,7 @@ impl Imports for MyImports {
     }
 }
 
-witx_bindgen_wasmtime::import!("./tests/runtime/flavorful/exports.witx");
+wai_bindgen_wasmtime::import!("./tests/runtime/flavorful/exports.wai");
 
 fn run(wasm: &str) -> Result<()> {
     use exports::*;

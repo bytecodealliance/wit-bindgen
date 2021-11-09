@@ -3,34 +3,24 @@ use std::process::Command;
 
 mod exports {
     test_helpers::codegen_py_export!(
-        "*.witx"
+        "*.wai"
 
         // TODO: implement async support
-        "!async_functions.witx"
-
-        // The python generator doesn't support the legacy witx features at this
-        // time.
-        "!legacy.witx"
-        "!wasi_snapshot_preview1.witx"
+        "!async_functions.wai"
     );
 }
 
 mod imports {
     test_helpers::codegen_py_import!(
-        "*.witx"
+        "*.wai"
 
         // TODO: implement async support
-        "!async_functions.witx"
+        "!async_functions.wai"
 
         // This uses buffers, which we don't support in imports just yet
         // TODO: should support this
-        "!wasi_next.witx"
-        "!host.witx"
-
-        // These use the preview1 ABI which isn't implemented for Python imports.
-        "!wasi_snapshot_preview1.witx"
-        "!typenames.witx"
-        "!legacy.witx"
+        "!wasi_next.wai"
+        "!host.wai"
     );
 }
 

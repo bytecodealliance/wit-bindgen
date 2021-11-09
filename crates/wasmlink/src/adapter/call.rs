@@ -1,7 +1,10 @@
 use crate::module::Interface;
 use std::collections::HashMap;
+use wai_parser::{
+    abi::WasmSignature, Function, Int, Interface as WaiInterface, RecordKind, SizeAlign, Type,
+    TypeDefKind,
+};
 use wasm_encoder::{BlockType, Instruction, MemArg, ValType};
-use witx2::{abi::WasmSignature, Function, RecordKind, SizeAlign, Type, TypeDefKind};
 
 // The parent's memory is imported, so it is always index 0 for the adapter logic
 const PARENT_MEMORY_INDEX: u32 = 0;
@@ -74,13 +77,13 @@ enum LoadType {
     I64,
 }
 
-impl From<witx2::Int> for LoadType {
-    fn from(i: witx2::Int) -> Self {
+impl From<Int> for LoadType {
+    fn from(i: Int) -> Self {
         match i {
-            witx2::Int::U8 => Self::I32_8U,
-            witx2::Int::U16 => Self::I32_16U,
-            witx2::Int::U32 => Self::I32,
-            witx2::Int::U64 => Self::I64,
+            Int::U8 => Self::I32_8U,
+            Int::U16 => Self::I32_16U,
+            Int::U32 => Self::I32,
+            Int::U64 => Self::I64,
         }
     }
 }
@@ -180,7 +183,7 @@ impl Operand<'_> {
     }
 }
 
-fn is_char(interface: &witx2::Interface, ty: &Type) -> bool {
+fn is_char(interface: &WaiInterface, ty: &Type) -> bool {
     match ty {
         Type::Char => true,
         Type::Id(id) => match &interface.types[*id].kind {
@@ -429,7 +432,7 @@ impl<'a> CallAdapter<'a> {
     }
 
     fn push_operands<T>(
-        interface: &'a witx2::Interface,
+        interface: &'a WaiInterface,
         sizes: &SizeAlign,
         ty: &Type,
         params: &mut T,
@@ -578,7 +581,7 @@ impl<'a> CallAdapter<'a> {
     }
 
     fn push_element_operands(
-        interface: &'a witx2::Interface,
+        interface: &'a WaiInterface,
         sizes: &SizeAlign,
         ty: &Type,
         offset: u32,

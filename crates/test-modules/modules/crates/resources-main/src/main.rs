@@ -1,4 +1,4 @@
-witx_bindgen_rust::import!("crates/resources/resources.witx");
+wai_bindgen_rust::import!("crates/resources/resources.wai");
 
 use resources::*;
 

@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use witx_bindgen_gen_core::{witx2, Generator};
+use wai_bindgen_gen_core::{wai_parser::Interface, Generator};
 
 fn main() {
     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
@@ -53,20 +53,20 @@ fn main() {
             if !c_impl.exists() {
                 continue;
             }
-            let imports = test_dir.join("imports.witx");
-            let exports = test_dir.join("exports.witx");
+            let imports = test_dir.join("imports.wai");
+            let exports = test_dir.join("exports.wai");
             println!("cargo:rerun-if-changed={}", imports.display());
             println!("cargo:rerun-if-changed={}", exports.display());
             println!("cargo:rerun-if-changed={}", c_impl.display());
 
-            let import = witx2::Interface::parse_file(&test_dir.join("imports.witx")).unwrap();
-            let export = witx2::Interface::parse_file(&test_dir.join("exports.witx")).unwrap();
+            let import = Interface::parse_file(&test_dir.join("imports.wai")).unwrap();
+            let export = Interface::parse_file(&test_dir.join("exports.wai")).unwrap();
             let mut files = Default::default();
             // TODO: should combine this into one
-            witx_bindgen_gen_c::Opts::default()
+            wai_bindgen_gen_c::Opts::default()
                 .build()
                 .generate_all(&[import], &[], &mut files);
-            witx_bindgen_gen_c::Opts::default()
+            wai_bindgen_gen_c::Opts::default()
                 .build()
                 .generate_all(&[], &[export], &mut files);
 
@@ -130,17 +130,17 @@ fn main() {
             if !js_impl.exists() {
                 continue;
             }
-            let imports = test_dir.join("imports.witx");
-            let exports = test_dir.join("exports.witx");
+            let imports = test_dir.join("imports.wai");
+            let exports = test_dir.join("exports.wai");
             println!("cargo:rerun-if-changed={}", imports.display());
             println!("cargo:rerun-if-changed={}", exports.display());
             println!("cargo:rerun-if-changed={}", js_impl.display());
 
-            let import = witx2::Interface::parse_file(&test_dir.join("imports.witx")).unwrap();
-            let export = witx2::Interface::parse_file(&test_dir.join("exports.witx")).unwrap();
+            let import = Interface::parse_file(&test_dir.join("imports.wai")).unwrap();
+            let export = Interface::parse_file(&test_dir.join("exports.wai")).unwrap();
             let mut files = Default::default();
             let js = fs::read_to_string(&js_impl).unwrap();
-            let mut gen = witx_bindgen_gen_spidermonkey::SpiderMonkeyWasm::new("wasm.js", &js);
+            let mut gen = wai_bindgen_gen_spidermonkey::SpiderMonkeyWasm::new("wasm.js", &js);
             gen.import_spidermonkey(true);
             gen.generate_all(&[import], &[export], &mut files);
 

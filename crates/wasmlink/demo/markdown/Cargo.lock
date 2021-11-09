@@ -9,6 +9,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15af2628f6890fe2609a3b91bef4c83450512802e59489f9c1cb1fa5df064a61"
 
 [[package]]
+name = "async-trait"
+version = "0.1.51"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44318e776df68115a881de9a8fd1b9e53368d7a4a5ce4cc48517da3393233a5e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -43,7 +54,7 @@ name = "markdown"
 version = "0.1.0"
 dependencies = [
  "pulldown-cmark",
- "witx-bindgen-rust",
+ "wai-bindgen-rust",
 ]
 
 [[package]]
@@ -127,49 +138,50 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5fecdca9a5291cc2b8dcf7dc02453fee791a280f3743cb0905f8822ae463b3fe"
 
 [[package]]
-name = "witx-bindgen-gen-core"
+name = "wai-bindgen-gen-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "witx2",
+ "wai-parser",
 ]
 
 [[package]]
-name = "witx-bindgen-gen-rust"
+name = "wai-bindgen-gen-rust"
 version = "0.1.0"
 dependencies = [
  "heck",
- "witx-bindgen-gen-core",
+ "wai-bindgen-gen-core",
 ]
 
 [[package]]
-name = "witx-bindgen-gen-rust-wasm"
+name = "wai-bindgen-gen-rust-wasm"
 version = "0.1.0"
 dependencies = [
  "heck",
- "witx-bindgen-gen-core",
- "witx-bindgen-gen-rust",
+ "wai-bindgen-gen-core",
+ "wai-bindgen-gen-rust",
 ]
 
 [[package]]
-name = "witx-bindgen-rust"
+name = "wai-bindgen-rust"
 version = "0.1.0"
 dependencies = [
- "witx-bindgen-rust-impl",
+ "async-trait",
+ "wai-bindgen-rust-impl",
 ]
 
 [[package]]
-name = "witx-bindgen-rust-impl"
+name = "wai-bindgen-rust-impl"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "syn",
- "witx-bindgen-gen-core",
- "witx-bindgen-gen-rust-wasm",
+ "wai-bindgen-gen-core",
+ "wai-bindgen-gen-rust-wasm",
 ]
 
 [[package]]
-name = "witx2"
+name = "wai-parser"
 version = "0.1.0"
 dependencies = [
  "anyhow",

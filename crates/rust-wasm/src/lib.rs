@@ -3,7 +3,7 @@ use std::fmt;
 use std::marker;
 use std::mem;
 use std::ops::Deref;
-pub use witx_bindgen_rust_impl::{export, import};
+pub use wai_bindgen_rust_impl::{export, import};
 
 pub mod exports;
 mod futures;

@@ -1,5 +1,5 @@
-witx_bindgen_rust::import!("./tests/runtime/numbers/imports.witx");
-witx_bindgen_rust::export!("./tests/runtime/numbers/exports.witx");
+wai_bindgen_rust::import!("./tests/runtime/numbers/imports.wai");
+wai_bindgen_rust::export!("./tests/runtime/numbers/exports.wai");
 
 use imports::*;
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
