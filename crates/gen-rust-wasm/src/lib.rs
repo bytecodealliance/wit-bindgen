@@ -598,8 +598,10 @@ impl Generator for RustWasm {
             self.src.push_str(", ");
             params.push(name);
         }
-        self.src
-            .push_str("#[cfg(not(target_arch = \"wasm32\"))] ret: *mut i64");
+        if self.i64_return_pointer_area_size > 0 {
+            self.src
+                .push_str("#[cfg(not(target_arch = \"wasm32\"))] ret: *mut i64");
+        }
         self.src.push_str(")");
 
         match sig.results.len() {
