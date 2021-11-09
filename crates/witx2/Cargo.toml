@@ -7,8 +7,8 @@ edition = "2018"
 [dependencies]
 id-arena = "2"
 anyhow = "1.0"
-witx = { git = 'https://github.com/alexcrichton/WASI', branch = 'abi-next', optional = true }
-wast = { version = "33", default-features = false, optional = true }
+witx = { version = "0.9.1", optional = true }
+wast = { version = "35", default-features = false, optional = true }
 
 [dev-dependencies]
 rayon = "1"

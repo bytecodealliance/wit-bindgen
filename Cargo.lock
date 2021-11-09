@@ -1867,15 +1867,6 @@ dependencies = [
 
 [[package]]
 name = "wast"
-version = "33.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d04fe175c7f78214971293e7d8875673804e736092206a3a4544dbc12811c1b"
-dependencies = [
- "leb128",
-]
-
-[[package]]
-name = "wast"
 version = "35.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ef140f1b49946586078353a453a1d28ba90adfc54dde75710bc1931de204d68"
@@ -1928,7 +1919,7 @@ dependencies = [
  "quote",
  "shellexpand",
  "syn",
- "witx 0.9.1",
+ "witx",
 ]
 
 [[package]]
@@ -1941,7 +1932,7 @@ dependencies = [
  "quote",
  "syn",
  "wiggle-generate",
- "witx 0.9.1",
+ "witx",
 ]
 
 [[package]]
@@ -1996,17 +1987,6 @@ dependencies = [
  "log",
  "thiserror",
  "wast 35.0.2",
-]
-
-[[package]]
-name = "witx"
-version = "0.10.0"
-source = "git+https://github.com/alexcrichton/WASI?branch=abi-next#70a8c6363fb26be655e59a2587bd191e7baee59b"
-dependencies = [
- "anyhow",
- "log",
- "thiserror",
- "wast 33.0.0",
 ]
 
 [[package]]
@@ -2186,8 +2166,8 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "wast 33.0.0",
- "witx 0.10.0",
+ "wast 35.0.2",
+ "witx",
 ]
 
 [[package]]
