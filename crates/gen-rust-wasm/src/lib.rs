@@ -286,19 +286,11 @@ impl Generator for RustWasm {
         // For exported handles we synthesize some trait implementations
         // automatically for runtime-required traits.
         if !self.in_import {
-            let panic = "
-                #[cfg(not(target_arch = \"wasm32\"))]
-                {
-                    panic!(\"handles can only be used on wasm32\");
-                }
-                #[cfg(target_arch = \"wasm32\")]
-            ";
             self.src.push_str(&format!(
-                "
+                "   #[cfg(any(target_arch = \"wasm32\", target_arch = \"wasm64\"))]
                     unsafe impl wai_bindgen_rust::handle::HandleType for super::{ty} {{
                         #[inline]
                         fn clone(_val: i32) -> i32 {{
-                            {panic_not_wasm}
                             {{
                                 #[link(wasm_import_module = \"canonical_abi\")]
                                 extern \"C\" {{
@@ -311,7 +303,6 @@ impl Generator for RustWasm {
 
                         #[inline]
                         fn drop(_val: i32) {{
-                            {panic_not_wasm}
                             {{
                                 #[link(wasm_import_module = \"canonical_abi\")]
                                 extern \"C\" {{
@@ -323,10 +314,10 @@ impl Generator for RustWasm {
                         }}
                     }}
 
+                    #[cfg(any(target_arch = \"wasm32\", target_arch = \"wasm64\"))]
                     unsafe impl wai_bindgen_rust::handle::LocalHandle for super::{ty} {{
                         #[inline]
                         fn new(_val: i32) -> i32 {{
-                            {panic_not_wasm}
                             {{
                                 #[link(wasm_import_module = \"canonical_abi\")]
                                 extern \"C\" {{
@@ -339,7 +330,6 @@ impl Generator for RustWasm {
 
                         #[inline]
                         fn get(_val: i32) -> i32 {{
-                            {panic_not_wasm}
                             {{
                                 #[link(wasm_import_module = \"canonical_abi\")]
                                 extern \"C\" {{
@@ -351,8 +341,16 @@ impl Generator for RustWasm {
                         }}
                     }}
 
+                    #[cfg(any(target_arch = \"wasm32\", target_arch = \"wasm64\"))]
                     const _: () = {{
                         #[export_name = \"{ns}canonical_abi_drop_{name}\"]
+                        extern \"C\" fn drop(ty: Box<super::{ty}>) {{
+                            <super::{iface} as {iface}>::drop_{name_snake}(*ty)
+                        }}
+                    }};
+                    #[cfg(not(any(target_arch = \"wasm32\", target_arch = \"wasm64\")))]
+                    const _: () = {{
+                        #[export_name = \"resource_drop_{name}\"]
                         extern \"C\" fn drop(ty: Box<super::{ty}>) {{
                             <super::{iface} as {iface}>::drop_{name_snake}(*ty)
                         }}
@@ -363,7 +361,6 @@ impl Generator for RustWasm {
                 name_snake = iface.resources[ty].name.to_snake_case(),
                 iface = iface.name.to_camel_case(),
                 ns = self.opts.symbol_namespace,
-                panic_not_wasm = panic,
             ));
             let trait_ = self
                 .traits
