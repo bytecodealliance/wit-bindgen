@@ -9,10 +9,12 @@ use std::fmt;
 mod lex;
 mod resolve;
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct Ast<'a> {
     pub items: Vec<Item<'a>>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum Item<'a> {
     Use(Use<'a>),
     Resource(Resource<'a>),
@@ -21,6 +23,7 @@ pub enum Item<'a> {
     Interface(Interface<'a>),
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct Id<'a> {
     pub name: Cow<'a, str>,
     pub span: Span,
@@ -44,33 +47,38 @@ impl<'a> From<String> for Id<'a> {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct Use<'a> {
     pub from: Vec<Id<'a>>,
     names: Option<Vec<UseName<'a>>>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 struct UseName<'a> {
     name: Id<'a>,
     as_: Option<Id<'a>>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct Resource<'a> {
     docs: Docs<'a>,
     name: Id<'a>,
     values: Vec<(bool, Value<'a>)>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, PartialEq, Clone)]
 struct Docs<'a> {
     docs: Vec<Cow<'a, str>>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct TypeDef<'a> {
     docs: Docs<'a>,
     name: Id<'a>,
     ty: Type<'a>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 enum Type<'a> {
     U8,
     U16,
@@ -100,36 +108,42 @@ enum Type<'a> {
     ConstPointer(Box<Type<'a>>),
 }
 
+#[derive(Debug, PartialEq, Clone)]
 struct Record<'a> {
     tuple_hint: bool,
     flags_repr: Option<Box<Type<'a>>>,
     fields: Vec<Field<'a>>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 struct Field<'a> {
     docs: Docs<'a>,
     name: Id<'a>,
     ty: Type<'a>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 struct Variant<'a> {
     tag: Option<Box<Type<'a>>>,
     span: Span,
     cases: Vec<Case<'a>>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 struct Case<'a> {
     docs: Docs<'a>,
     name: Id<'a>,
     ty: Option<Type<'a>>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct Value<'a> {
     docs: Docs<'a>,
     name: Id<'a>,
     kind: ValueKind<'a>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 enum ValueKind<'a> {
     Function {
         is_async: bool,
@@ -141,6 +155,7 @@ enum ValueKind<'a> {
 }
 
 #[allow(dead_code)] // TODO
+#[derive(Debug, PartialEq, Clone)]
 pub struct Interface<'a> {
     docs: Docs<'a>,
     name: Id<'a>,
@@ -182,7 +197,9 @@ impl<'a> Ast<'a> {
             items: doc.items.into_iter().map(convert_top_level_item).collect(),
         });
 
-        fn convert_top_level_item(syntax: old::Documented<'_, old::TopLevelSyntax<'_>>) -> Item<'static> {
+        fn convert_top_level_item(
+            syntax: old::Documented<'_, old::TopLevelSyntax<'_>>,
+        ) -> Item<'static> {
             let docs = docs(&syntax.comments);
 
             match syntax.item {
@@ -202,7 +219,10 @@ impl<'a> Ast<'a> {
             }
         }
 
-        fn convert_module(syntax: old::ModuleSyntax<'_>, docs: Docs<'static>) -> Interface<'static> {
+        fn convert_module(
+            syntax: old::ModuleSyntax<'_>,
+            docs: Docs<'static>,
+        ) -> Interface<'static> {
             Interface {
                 docs,
                 name: id(&syntax.name),
@@ -1032,5 +1052,56 @@ fn highlight_err(
             cur += line.len() + 1;
         }
         (text.lines().count(), 0)
+    }
+}
+
+#[cfg(all(test, feature = "old-witx-compat"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_wasi_ephemeral_args() {
+        // Use wasi_ephemeral_args.witx as an example of a "typical" WITX file.
+        // https://github.com/WebAssembly/WASI/blob/41d8c276a281f68a81f4561d70748bfa67bdd991/phases/ephemeral/witx/wasi_ephemeral_args.witx
+        let src = r#"
+            ;; WASI Command-line Arguments.
+            ;;
+            ;; This is a `witx` file. See [here](https://github.com/WebAssembly/WASI/tree/master/docs/witx.md)
+            ;; for an explanation of what that means.
+
+            (use "typenames.witx")
+
+            (module $wasi_ephemeral_args
+                ;;; Linear memory to be accessed by WASI functions that need it.
+                (import "memory" (memory))
+
+                ;;; Read command-line argument data.
+                ;;; The size of the array should match that returned by `sizes_get`.
+                ;;; Each argument is expected to be `\0` terminated.
+                (@interface func (export "get")
+                    (param $argv (@witx pointer (@witx pointer (@witx char8))))
+                    (param $argv_buf (@witx pointer (@witx char8)))
+                    (result $error (expected (error $errno)))
+                )
+
+                ;;; Return command-line argument data sizes.
+                (@interface func (export "sizes_get")
+                    ;;; Returns the number of arguments and the size of the argument string
+                    ;;; data, or an error.
+                    (result $error (expected (tuple $size $size) (error $errno)))
+                )
+            )
+        "#;
+        let expected = Ast {
+            items: vec![Item::Use(Use {
+                from: vec![Id::from("typenames.witx")],
+                names: None,
+            })],
+        };
+
+        let parsed = Ast::parse_old_witx(src).unwrap();
+
+        assert_eq!(expected, parsed);
+        unimplemented!("Add more items to the expected value");
     }
 }
