@@ -295,7 +295,7 @@ impl Generator for RustWasm {
             ";
             self.src.push_str(&format!(
                 "
-                    unsafe impl wai_bindgen_rust::HandleType for super::{ty} {{
+                    unsafe impl wai_bindgen_rust::handle::HandleType for super::{ty} {{
                         #[inline]
                         fn clone(_val: i32) -> i32 {{
                             {panic_not_wasm}
@@ -323,7 +323,7 @@ impl Generator for RustWasm {
                         }}
                     }}
 
-                    unsafe impl wai_bindgen_rust::LocalHandle for super::{ty} {{
+                    unsafe impl wai_bindgen_rust::handle::LocalHandle for super::{ty} {{
                         #[inline]
                         fn new(_val: i32) -> i32 {{
                             {panic_not_wasm}
