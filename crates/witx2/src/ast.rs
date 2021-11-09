@@ -176,73 +176,55 @@ impl<'a> Ast<'a> {
     fn parse_old_witx(input: &'a str) -> Result<Ast<'a>> {
         use witx::parser as old;
         let buf = wast::parser::ParseBuffer::new(&input)?;
-        let doc = wast::parser::parse::<old::TopLevelModule>(&buf)?;
-        let mut items = Vec::new();
-        for d in doc.decls {
-            let item = match d.item {
+        let doc = wast::parser::parse::<old::TopLevelDocument>(&buf)?;
+
+        return Ok(Ast {
+            items: doc.items.into_iter().map(convert_top_level_item).collect(),
+        });
+
+        fn convert_top_level_item(syntax: old::Documented<'_, old::TopLevelSyntax<'_>>) -> Item<'static> {
+            let docs = docs(&syntax.comments);
+
+            match syntax.item {
                 old::TopLevelSyntax::Use(u) => Item::Use(Use {
-                    from: vec![id(&u.from)],
-                    names: match u.names {
-                        old::UsedNames::All(_) => None,
-                        old::UsedNames::List(names) => Some(
-                            names
-                                .iter()
-                                .map(|n| UseName {
-                                    name: id(&n.other_name),
-                                    as_: Some(id(&n.our_name)),
-                                })
-                                .collect(),
-                        ),
-                    },
+                    from: vec![Id::from(u.to_string())],
+                    names: None,
                 }),
-                old::TopLevelSyntax::Decl(u) => match u {
-                    old::DeclSyntax::Typename(t) => Item::TypeDef(TypeDef {
-                        docs: docs(&d.comments),
-                        name: id(&t.ident),
-                        ty: ty(&t.def),
-                    }),
-                    old::DeclSyntax::Resource(r) => Item::Resource(Resource {
-                        docs: docs(&d.comments),
-                        name: id(&r.ident),
-                        values: Vec::new(),
-                    }),
-                    old::DeclSyntax::Const(_) => unimplemented!(),
-                },
-            };
-            items.push(item);
+                old::TopLevelSyntax::Decl(old::DeclSyntax::Module(m)) => {
+                    Item::Interface(convert_module(m, docs))
+                }
+                old::TopLevelSyntax::Decl(old::DeclSyntax::Typename(t)) => Item::TypeDef(TypeDef {
+                    docs,
+                    name: id(&t.ident),
+                    ty: ty(&t.def),
+                }),
+                old::TopLevelSyntax::Decl(old::DeclSyntax::Const(_)) => unimplemented!(),
+            }
         }
 
-        for f in doc.functions {
-            let item = Item::Value(Value {
-                docs: docs(&f.comments),
-                name: Id {
-                    name: f.item.export.to_string().into(),
-                    span: span(f.item.export_loc),
-                },
-                kind: ValueKind::Function {
-                    is_async: false,
-                    abi: match f.item.abi {
-                        witx::Abi::Next => Abi::Canonical,
-                        witx::Abi::Preview1 => Abi::Preview1,
-                    },
-                    params: f
-                        .item
-                        .params
-                        .iter()
-                        .map(|p| (id(&p.item.name), ty(&p.item.type_)))
-                        .collect(),
-                    results: f
-                        .item
-                        .results
-                        .iter()
-                        .map(|p| (id(&p.item.name), ty(&p.item.type_)))
-                        .collect(),
-                },
-            });
-            items.push(item);
+        fn convert_module(syntax: old::ModuleSyntax<'_>, docs: Docs<'static>) -> Interface<'static> {
+            Interface {
+                docs,
+                name: id(&syntax.name),
+                items: syntax
+                    .decls
+                    .into_iter()
+                    .map(|d| convert_module_decl(d))
+                    .collect(),
+            }
         }
 
-        return Ok(Ast { items });
+        fn convert_module_decl(
+            syntax: old::Documented<'_, old::ModuleDeclSyntax<'_>>,
+        ) -> Item<'static> {
+            let old::Documented { item, comments } = syntax;
+            let docs = docs(&comments);
+
+            match item {
+                old::ModuleDeclSyntax::Import(old::ModuleImportSyntax { name, .. }) => todo!(),
+                old::ModuleDeclSyntax::Func(_) => todo!(),
+            }
+        }
 
         fn ty(t: &old::TypedefSyntax<'_>) -> Type<'static> {
             match t {
@@ -329,22 +311,6 @@ impl<'a> Ast<'a> {
                         },
                     ],
                 }),
-                old::TypedefSyntax::Option(e) => Type::Variant(Variant {
-                    tag: None,
-                    span: Span { start: 0, end: 0 },
-                    cases: vec![
-                        Case {
-                            docs: Docs::default(),
-                            name: "none".into(),
-                            ty: None,
-                        },
-                        Case {
-                            docs: Docs::default(),
-                            name: "some".into(),
-                            ty: Some(ty(&e.ty)),
-                        },
-                    ],
-                }),
                 old::TypedefSyntax::Union(e) => Type::Variant(Variant {
                     tag: e.tag.as_ref().map(|t| Box::new(ty(t))),
                     span: Span { start: 0, end: 0 },
@@ -360,17 +326,10 @@ impl<'a> Ast<'a> {
                         .collect(),
                 }),
 
-                old::TypedefSyntax::Handle(e) => Type::Handle(id(&e.resource)),
+                old::TypedefSyntax::Handle(e) => Type::Handle(todo!()),
                 old::TypedefSyntax::List(e) => Type::List(Box::new(ty(e))),
                 old::TypedefSyntax::Pointer(e) => Type::Pointer(Box::new(ty(e))),
                 old::TypedefSyntax::ConstPointer(e) => Type::ConstPointer(Box::new(ty(e))),
-                old::TypedefSyntax::Buffer(e) => {
-                    if e.out {
-                        Type::PushBuffer(Box::new(ty(&e.ty)))
-                    } else {
-                        Type::PullBuffer(Box::new(ty(&e.ty)))
-                    }
-                }
                 old::TypedefSyntax::Builtin(e) => builtin(e),
                 old::TypedefSyntax::Ident(e) => Type::Name(id(e)),
                 old::TypedefSyntax::String => Type::List(Box::new(Type::Char)),
