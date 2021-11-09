@@ -573,11 +573,13 @@ impl Generator for RustWasm {
         let is_dtor = self.types.is_preview1_dtor_func(func);
         let rust_name = func.name.to_snake_case();
 
-        self.src.push_str("#[cfg_attr(target_arch = \"wasm32\", export_name = \"");
+        self.src
+            .push_str("#[cfg_attr(target_arch = \"wasm32\", export_name = \"");
         self.src.push_str(&self.opts.symbol_namespace);
         self.src.push_str(&func.name);
         self.src.push_str("\")]\n");
-        self.src.push_str("#[cfg_attr(not(target_arch = \"wasm32\"), export_name = \"");
+        self.src
+            .push_str("#[cfg_attr(not(target_arch = \"wasm32\"), export_name = \"");
         self.src.push_str(&self.opts.symbol_namespace);
         self.src.push_str(&iface.name);
         self.src.push_str("_");
@@ -596,7 +598,8 @@ impl Generator for RustWasm {
             self.src.push_str(", ");
             params.push(name);
         }
-        self.src.push_str("#[cfg(not(target_arch = \"wasm32\"))] ret: *mut i64");
+        self.src
+            .push_str("#[cfg(not(target_arch = \"wasm32\"))] ret: *mut i64");
         self.src.push_str(")");
 
         match sig.results.len() {
@@ -897,7 +900,10 @@ impl Bindgen for FunctionBindgen<'_> {
         self.push_str(&format!("let ptr{} = RET_AREA.as_mut_ptr() as i32;\n", tmp));
         if self.gen.in_import {
             self.push_str("#[cfg(not(target_arch = \"wasm32\"))]");
-            self.push_str(&format!("let ptr{} = &mut [0i64; {}] as *mut i64 as i32;\n", tmp, amt));
+            self.push_str(&format!(
+                "let ptr{} = &mut [0i64; {}] as *mut i64 as i32;\n",
+                tmp, amt
+            ));
         } else {
             self.push_str("#[cfg(not(target_arch = \"wasm32\"))]");
             self.push_str(&format!("let ptr{} = ret as i32;\n", tmp));
