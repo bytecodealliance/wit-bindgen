@@ -1247,8 +1247,11 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str(");\n");
                 self.push_str("}\n");
                 results.push(result);
+                // To keep the api implementation identical for native and wasm
+                // the api is still owned. But the caller deallocates the resources.
                 self.push_str(&format!(
-                    "std::alloc::dealloc(
+                    "#[cfg(target_arch = \"wasm32\")]
+                    std::alloc::dealloc(
                         {} as *mut _,
                         std::alloc::Layout::from_size_align_unchecked(
                             ({} as usize) * {},
