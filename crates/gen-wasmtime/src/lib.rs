@@ -4,11 +4,11 @@ use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
-use witx_bindgen_gen_core::witx2::abi::{
+use wai_bindgen_gen_core::wai_parser::abi::{
     Abi, AbiVariant, Bindgen, Instruction, LiftLower, WasmType, WitxInstruction,
 };
-use witx_bindgen_gen_core::{witx2::*, Direction, Files, Generator, Source, TypeInfo, Types};
-use witx_bindgen_gen_rust::{
+use wai_bindgen_gen_core::{wai_parser::*, Direction, Files, Generator, Source, TypeInfo, Types};
+use wai_bindgen_gen_rust::{
     int_repr, to_rust_ident, wasm_type, FnSig, RustFunctionGenerator, RustGenerator, TypeMode,
 };
 
@@ -170,26 +170,26 @@ impl Wasmtime {
 
     fn print_intrinsics(&mut self) {
         if self.needs_raw_mem {
-            self.push_str("use witx_bindgen_wasmtime::rt::RawMem;\n");
+            self.push_str("use wai_bindgen_wasmtime::rt::RawMem;\n");
         }
         if self.needs_char_from_i32 {
-            self.push_str("use witx_bindgen_wasmtime::rt::char_from_i32;\n");
+            self.push_str("use wai_bindgen_wasmtime::rt::char_from_i32;\n");
         }
         if self.needs_invalid_variant {
-            self.push_str("use witx_bindgen_wasmtime::rt::invalid_variant;\n");
+            self.push_str("use wai_bindgen_wasmtime::rt::invalid_variant;\n");
         }
         if self.needs_bad_int {
             self.push_str("use core::convert::TryFrom;\n");
-            self.push_str("use witx_bindgen_wasmtime::rt::bad_int;\n");
+            self.push_str("use wai_bindgen_wasmtime::rt::bad_int;\n");
         }
         if self.needs_validate_flags {
-            self.push_str("use witx_bindgen_wasmtime::rt::validate_flags;\n");
+            self.push_str("use wai_bindgen_wasmtime::rt::validate_flags;\n");
         }
         if self.needs_le {
-            self.push_str("use witx_bindgen_wasmtime::Le;\n");
+            self.push_str("use wai_bindgen_wasmtime::Le;\n");
         }
         if self.needs_copy_slice {
-            self.push_str("use witx_bindgen_wasmtime::rt::copy_slice;\n");
+            self.push_str("use wai_bindgen_wasmtime::rt::copy_slice;\n");
         }
     }
 
@@ -336,7 +336,7 @@ impl RustGenerator for Wasmtime {
                 self.push_str(" mut ");
             }
             self.push_str(&format!(
-                "witx_bindgen_wasmtime::exports::{}Buffer<{}, ",
+                "wai_bindgen_wasmtime::exports::{}Buffer<{}, ",
                 if push { "Push" } else { "Pull" },
                 lt,
             ));
@@ -381,7 +381,7 @@ impl Generator for Wasmtime {
         self.src
             .push_str(&format!("pub mod {} {{\n", iface.name.to_snake_case()));
         self.src
-            .push_str("#[allow(unused_imports)]\nuse witx_bindgen_wasmtime::{wasmtime, anyhow};\n");
+            .push_str("#[allow(unused_imports)]\nuse wai_bindgen_wasmtime::{wasmtime, anyhow};\n");
         self.sizes.fill(variant, iface);
     }
 
@@ -395,7 +395,7 @@ impl Generator for Wasmtime {
     ) {
         if record.is_flags() {
             self.src
-                .push_str("witx_bindgen_wasmtime::bitflags::bitflags! {\n");
+                .push_str("wai_bindgen_wasmtime::bitflags::bitflags! {\n");
             self.rustdoc(docs);
             self.src
                 .push_str(&format!("pub struct {}: ", name.to_camel_case()));
@@ -445,7 +445,7 @@ impl Generator for Wasmtime {
             && record.fields.iter().all(|f| iface.all_bits_valid(&f.ty))
             && !record.is_tuple()
         {
-            self.src.push_str("impl witx_bindgen_wasmtime::Endian for ");
+            self.src.push_str("impl wai_bindgen_wasmtime::Endian for ");
             self.src.push_str(&name.to_camel_case());
             self.src.push_str(" {\n");
 
@@ -477,7 +477,7 @@ impl Generator for Wasmtime {
             // byte representations are valid (guarded by the `all_bits_valid`
             // predicate).
             self.src
-                .push_str("unsafe impl witx_bindgen_wasmtime::AllBytesValid for ");
+                .push_str("unsafe impl wai_bindgen_wasmtime::AllBytesValid for ");
             self.src.push_str(&name.to_camel_case());
             self.src.push_str(" {}\n");
         }
@@ -512,7 +512,7 @@ impl Generator for Wasmtime {
         self.rustdoc(&iface.resources[ty].docs);
         self.src.push_str("#[derive(Debug)]\n");
         self.src.push_str(&format!(
-            "pub struct {}(witx_bindgen_wasmtime::rt::ResourceIndex);\n",
+            "pub struct {}(wai_bindgen_wasmtime::rt::ResourceIndex);\n",
             tyname
         ));
     }
@@ -630,7 +630,7 @@ impl Generator for Wasmtime {
         // Generate the signature this function will have in the final trait
         let mut self_arg = "&mut self".to_string();
         if func_takes_all_memory {
-            self_arg.push_str(", mem: witx_bindgen_wasmtime::RawMemory");
+            self_arg.push_str(", mem: wai_bindgen_wasmtime::RawMemory");
         }
         self.in_trait = true;
 
@@ -704,9 +704,9 @@ impl Generator for Wasmtime {
         if self.opts.tracing {
             self.src.push_str(&format!(
                 "
-                    let span = witx_bindgen_wasmtime::tracing::span!(
-                        witx_bindgen_wasmtime::tracing::Level::TRACE,
-                        \"witx-bindgen abi\",
+                    let span = wai_bindgen_wasmtime::tracing::span!(
+                        wai_bindgen_wasmtime::tracing::Level::TRACE,
+                        \"wai-bindgen abi\",
                         module = \"{}\",
                         function = \"{}\",
                     );
@@ -738,7 +738,7 @@ impl Generator for Wasmtime {
         if needs_borrow_checker {
             self.src.push_str(
                 "let (mem, data) = memory.data_and_store_mut(&mut caller);
-                let mut _bc = witx_bindgen_wasmtime::BorrowChecker::new(mem);
+                let mut _bc = wai_bindgen_wasmtime::BorrowChecker::new(mem);
                 let host = get(data);\n",
             );
         } else {
@@ -894,7 +894,7 @@ impl Generator for Wasmtime {
             let module_camel = module.to_camel_case();
             let is_async = !self.opts.async_.is_none();
             if is_async {
-                self.src.push_str("#[witx_bindgen_wasmtime::async_trait]\n");
+                self.src.push_str("#[wai_bindgen_wasmtime::async_trait]\n");
             }
             self.src.push_str("pub trait ");
             self.src.push_str(&module_camel);
@@ -953,8 +953,7 @@ impl Generator for Wasmtime {
                 for handle in self.all_needed_handles.iter() {
                     self.src.push_str("pub(crate) ");
                     self.src.push_str(&handle.to_snake_case());
-                    self.src
-                        .push_str("_table: witx_bindgen_wasmtime::Table<T::");
+                    self.src.push_str("_table: wai_bindgen_wasmtime::Table<T::");
                     self.src.push_str(&handle.to_camel_case());
                     self.src.push_str(">,\n");
                 }
@@ -991,10 +990,10 @@ impl Generator for Wasmtime {
             }
             self.push_str("\n{\n");
             if self.needs_get_memory {
-                self.push_str("use witx_bindgen_wasmtime::rt::get_memory;\n");
+                self.push_str("use wai_bindgen_wasmtime::rt::get_memory;\n");
             }
             if self.needs_get_func {
-                self.push_str("use witx_bindgen_wasmtime::rt::get_func;\n");
+                self.push_str("use wai_bindgen_wasmtime::rt::get_func;\n");
             }
             for f in funcs {
                 let method = if f.is_async {
@@ -1055,8 +1054,8 @@ impl Generator for Wasmtime {
             for r in self.exported_resources.iter() {
                 self.src.push_str(&format!(
                     "
-                        index_slab{}: witx_bindgen_wasmtime::rt::IndexSlab,
-                        resource_slab{0}: witx_bindgen_wasmtime::rt::ResourceSlab,
+                        index_slab{}: wai_bindgen_wasmtime::rt::IndexSlab,
+                        resource_slab{0}: wai_bindgen_wasmtime::rt::ResourceSlab,
                         dtor{0}: Option<wasmtime::TypedFunc<i32, ()>>,
                     ",
                     r.index()
@@ -1078,7 +1077,7 @@ impl Generator for Wasmtime {
                 self.push_str(",\n");
             }
             // if self.needs_buffer_glue {
-            //     self.push_str("buffer_glue: witx_bindgen_wasmtime::imports::BufferGlue,");
+            //     self.push_str("buffer_glue: wai_bindgen_wasmtime::imports::BufferGlue,");
             // }
             self.push_str("}\n");
             let bound = if self.opts.async_.is_none() {
@@ -1176,9 +1175,9 @@ impl Generator for Wasmtime {
             // if self.needs_buffer_glue {
             //     self.push_str(
             //         "
-            //             use witx_bindgen_wasmtime::rt::get_memory;
+            //             use wai_bindgen_wasmtime::rt::get_memory;
 
-            //             let buffer_glue = witx_bindgen_wasmtime::imports::BufferGlue::default();
+            //             let buffer_glue = wai_bindgen_wasmtime::imports::BufferGlue::default();
             //             let g = buffer_glue.clone();
             //             linker.func(
             //                 \"witx_canonical_buffer_abi\",
@@ -1519,7 +1518,7 @@ impl FunctionBindgen<'_> {
         let mem = self.memory_src();
         self.gen.needs_raw_mem = true;
         self.push_str(&format!(
-            "{}.store({} + {}, witx_bindgen_wasmtime::rt::{}({}){})?;\n",
+            "{}.store({} + {}, wai_bindgen_wasmtime::rt::{}({}){})?;\n",
             mem, operands[1], offset, method, operands[0], extra
         ));
     }
@@ -1627,7 +1626,7 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::I64FromU64 | Instruction::I64FromS64 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("witx_bindgen_wasmtime::rt::as_i64({})", s));
+                results.push(format!("wai_bindgen_wasmtime::rt::as_i64({})", s));
             }
             Instruction::I32FromUsize
             | Instruction::I32FromChar
@@ -1639,7 +1638,7 @@ impl Bindgen for FunctionBindgen<'_> {
             | Instruction::I32FromU32
             | Instruction::I32FromS32 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("witx_bindgen_wasmtime::rt::as_i32({})", s));
+                results.push(format!("wai_bindgen_wasmtime::rt::as_i32({})", s));
             }
 
             Instruction::F32FromIf32
@@ -1671,7 +1670,7 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::Bitcasts { casts } => {
-                witx_bindgen_gen_rust::bitcast(casts, operands, results)
+                wai_bindgen_gen_rust::bitcast(casts, operands, results)
             }
 
             Instruction::I32FromOwnedHandle { ty } => {
@@ -2022,7 +2021,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.closures.push_str(&block);
                         self.closures.push_str("; Ok(()) };\n");
                         results.push(format!(
-                            "witx_bindgen_wasmtime::exports::PushBuffer::new(
+                            "wai_bindgen_wasmtime::exports::PushBuffer::new(
                                 &mut _bc, ptr{}, len{}, {}, &{})?",
                             tmp, tmp, size, closure
                         ));
@@ -2031,7 +2030,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.closures.push_str(&block);
                         self.closures.push_str(") };\n");
                         results.push(format!(
-                            "witx_bindgen_wasmtime::exports::PullBuffer::new(
+                            "wai_bindgen_wasmtime::exports::PullBuffer::new(
                                 &mut _bc, ptr{}, len{}, {}, &{})?",
                             tmp, tmp, size, closure
                         ));
@@ -2125,11 +2124,11 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.push_str(&format!("let param{} = {};\n", i, operand));
                 }
                 if self.gen.opts.tracing && func.params.len() > 0 {
-                    self.push_str("witx_bindgen_wasmtime::tracing::event!(\n");
-                    self.push_str("witx_bindgen_wasmtime::tracing::Level::TRACE,\n");
+                    self.push_str("wai_bindgen_wasmtime::tracing::event!(\n");
+                    self.push_str("wai_bindgen_wasmtime::tracing::Level::TRACE,\n");
                     for (i, (name, _ty)) in func.params.iter().enumerate() {
                         self.push_str(&format!(
-                            "{} = witx_bindgen_wasmtime::tracing::field::debug(&param{}),\n",
+                            "{} = wai_bindgen_wasmtime::tracing::field::debug(&param{}),\n",
                             to_rust_ident(name),
                             i
                         ));
@@ -2139,7 +2138,7 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 if self.func_takes_all_memory {
                     let mem = self.memory_src();
-                    self.push_str("let raw_memory = witx_bindgen_wasmtime::RawMemory { slice: ");
+                    self.push_str("let raw_memory = wai_bindgen_wasmtime::RawMemory { slice: ");
                     self.push_str(&mem);
                     self.push_str(".raw() };\n");
                 }
@@ -2184,11 +2183,11 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str(";\n");
                 self.after_call = true;
                 if self.gen.opts.tracing && func.results.len() > 0 {
-                    self.push_str("witx_bindgen_wasmtime::tracing::event!(\n");
-                    self.push_str("witx_bindgen_wasmtime::tracing::Level::TRACE,\n");
+                    self.push_str("wai_bindgen_wasmtime::tracing::event!(\n");
+                    self.push_str("wai_bindgen_wasmtime::tracing::Level::TRACE,\n");
                     for name in results.iter() {
                         self.push_str(&format!(
-                            "{} = witx_bindgen_wasmtime::tracing::field::debug(&{0}),\n",
+                            "{} = wai_bindgen_wasmtime::tracing::field::debug(&{0}),\n",
                             name,
                         ));
                     }

@@ -7,6 +7,7 @@ use crate::{
 use anyhow::{anyhow, bail, Result};
 use heck::SnakeCase;
 use std::collections::{BTreeMap, HashMap};
+use wai_parser::Resource as WaiResource;
 use wasm_encoder::EntityType;
 use wasmparser::{ExternalKind, FuncType, Type};
 
@@ -50,7 +51,7 @@ struct ResourceFunction {
 }
 
 struct Resource<'a> {
-    inner: &'a witx2::Resource,
+    inner: &'a WaiResource,
     id: u32,
     new: ResourceFunction,
     get: ResourceFunction,

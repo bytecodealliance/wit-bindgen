@@ -1,9 +1,9 @@
 use anyhow::Result;
 
-witx_bindgen_wasmtime::export!("./tests/runtime/lists/imports.witx");
+wai_bindgen_wasmtime::export!("./tests/runtime/lists/imports.wai");
 
 use imports::*;
-use witx_bindgen_wasmtime::Le;
+use wai_bindgen_wasmtime::Le;
 
 #[derive(Default)]
 pub struct MyImports;
@@ -122,7 +122,7 @@ impl Imports for MyImports {
     }
 }
 
-witx_bindgen_wasmtime::import!("./tests/runtime/lists/exports.witx");
+wai_bindgen_wasmtime::import!("./tests/runtime/lists/exports.wai");
 
 fn run(wasm: &str) -> Result<()> {
     use exports::*;

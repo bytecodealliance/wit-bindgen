@@ -2,11 +2,10 @@ use anyhow::Result;
 use std::collections::{btree_map::Entry, BTreeMap, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
-use witx2::abi::Abi;
-use witx2::*;
+use wai_parser::abi::Abi;
+use wai_parser::*;
 
-// pub use witx;
-pub use witx2;
+pub use wai_parser;
 mod ns;
 
 pub use ns::Ns;

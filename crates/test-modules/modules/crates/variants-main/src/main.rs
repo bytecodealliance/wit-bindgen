@@ -1,4 +1,4 @@
-witx_bindgen_rust::import!("crates/variants/variants.witx");
+wai_bindgen_rust::import!("crates/variants/variants.wai");
 
 use variants::*;
 

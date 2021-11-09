@@ -1,0 +1,5 @@
+resource "a" defined twice
+     --> tests/ui/parse-fail/duplicate-resource.wai:4:10
+      |
+    4 | resource a
+      |          ^

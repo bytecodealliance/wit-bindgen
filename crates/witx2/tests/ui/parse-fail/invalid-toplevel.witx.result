@@ -1,5 +1,0 @@
-expected ':', found eof
-     --> tests/ui/parse-fail/invalid-toplevel.witx:3:1
-      |
-    3 | 
-      | ^

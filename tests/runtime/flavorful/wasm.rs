@@ -1,5 +1,5 @@
-witx_bindgen_rust::import!("./tests/runtime/flavorful/imports.witx");
-witx_bindgen_rust::export!("./tests/runtime/flavorful/exports.witx");
+wai_bindgen_rust::import!("./tests/runtime/flavorful/imports.wai");
+wai_bindgen_rust::export!("./tests/runtime/flavorful/exports.wai");
 
 use exports::*;
 

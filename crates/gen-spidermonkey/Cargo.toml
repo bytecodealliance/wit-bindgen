@@ -1,5 +1,5 @@
 [package]
-name = "witx-bindgen-gen-spidermonkey"
+name = "wai-bindgen-gen-spidermonkey"
 version = "0.1.0"
 authors = ["Nick Fitzgerald <fitzgen@gmail.com>"]
 edition = "2018"
@@ -12,8 +12,8 @@ doctest = false
 lazy_static = "1.4.0"
 structopt = { version = "0.3", optional = true }
 wasm-encoder = "0.8.0"
-witx-bindgen-gen-core = { path = "../gen-core" }
+wai-bindgen-gen-core = { path = "../gen-core" }
 
 [dev-dependencies]
-test-helpers = { path = '../test-helpers', features = ['witx-bindgen-gen-spidermonkey'] }
+test-helpers = { path = '../test-helpers', features = ['wai-bindgen-gen-spidermonkey'] }
 wasmparser = "0.80"

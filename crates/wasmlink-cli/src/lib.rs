@@ -96,7 +96,7 @@ impl App {
 
                 Ok((
                     name,
-                    witx2::Interface::parse_file(&path).with_context(|| {
+                    wai_parser::Interface::parse_file(&path).with_context(|| {
                         format!("failed to parse interface file `{}`", path.display())
                     })?,
                 ))
