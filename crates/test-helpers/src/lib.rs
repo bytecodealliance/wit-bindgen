@@ -576,3 +576,34 @@ pub fn runtime_tests_wasmtime(_input: TokenStream) -> TokenStream {
 
     (quote::quote!(#(#tests)*)).into()
 }
+
+#[proc_macro]
+pub fn runtime_tests_native(_input: TokenStream) -> TokenStream {
+    let mut tests = Vec::new();
+    let cwd = std::env::current_dir().unwrap();
+    for entry in std::fs::read_dir(cwd.join("tests/runtime")).unwrap() {
+        let entry = entry.unwrap().path();
+        if !entry.join("native.rs").exists() {
+            continue;
+        }
+        let name_str = entry.file_name().unwrap().to_str().unwrap();
+        let name = quote::format_ident!("{}", name_str);
+        let host_file = entry.join("native.rs").to_str().unwrap().to_string();
+        let wasm_file = entry.join("wasm.rs").to_str().unwrap().to_string();
+        tests.push(quote::quote! {
+            mod #name {
+                mod hide {
+                    include!(#wasm_file);
+                }
+                include!(#host_file);
+
+                #[test]
+                fn test() -> anyhow::Result<()> {
+                    run()
+                }
+            }
+        });
+    }
+
+    (quote::quote!(#(#tests)*)).into()
+}

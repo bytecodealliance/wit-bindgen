@@ -17,6 +17,7 @@ structopt = { version = "0.3", default-features = false, optional = true }
 [dev-dependencies]
 wai-bindgen-rust = { path = '../rust-wasm' }
 test-helpers = { path = '../test-helpers', features = ['wai-bindgen-gen-rust-wasm'] }
+anyhow = "1.0.45"
 
 [features]
 witx-compat = ['wai-bindgen-gen-core/witx-compat']
