@@ -350,7 +350,7 @@ impl Generator for RustWasm {
                     }};
                     #[cfg(not(any(target_arch = \"wasm32\", target_arch = \"wasm64\")))]
                     const _: () = {{
-                        #[export_name = \"resource_drop_{name}\"]
+                        #[export_name = \"{ns}resource_drop_{name}\"]
                         extern \"C\" fn drop(ty: Box<super::{ty}>) {{
                             <super::{iface} as {iface}>::drop_{name_snake}(*ty)
                         }}
