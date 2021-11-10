@@ -287,7 +287,7 @@ impl Generator for RustWasm {
         // automatically for runtime-required traits.
         if !self.in_import {
             self.src.push_str(&format!(
-                "   #[cfg(any(target_arch = \"wasm32\", target_arch = \"wasm64\"))]
+                "   #[cfg(target_family = \"wasm\")]
                     unsafe impl wai_bindgen_rust::handle::HandleType for super::{ty} {{
                         #[inline]
                         fn clone(_val: i32) -> i32 {{
@@ -314,7 +314,7 @@ impl Generator for RustWasm {
                         }}
                     }}
 
-                    #[cfg(any(target_arch = \"wasm32\", target_arch = \"wasm64\"))]
+                    #[cfg(target_family = \"wasm\")]
                     unsafe impl wai_bindgen_rust::handle::LocalHandle for super::{ty} {{
                         #[inline]
                         fn new(_val: i32) -> i32 {{
@@ -341,14 +341,14 @@ impl Generator for RustWasm {
                         }}
                     }}
 
-                    #[cfg(any(target_arch = \"wasm32\", target_arch = \"wasm64\"))]
+                    #[cfg(target_family = \"wasm\")]
                     const _: () = {{
                         #[export_name = \"{ns}canonical_abi_drop_{name}\"]
                         extern \"C\" fn drop(ty: Box<super::{ty}>) {{
                             <super::{iface} as {iface}>::drop_{name_snake}(*ty)
                         }}
                     }};
-                    #[cfg(not(any(target_arch = \"wasm32\", target_arch = \"wasm64\")))]
+                    #[cfg(not(target_family = \"wasm\"))]
                     const _: () = {{
                         #[export_name = \"{ns}resource_drop_{name}\"]
                         extern \"C\" fn drop(ty: Box<super::{ty}>) {{
@@ -574,12 +574,12 @@ impl Generator for RustWasm {
         let rust_name = func.name.to_snake_case();
 
         self.src
-            .push_str("#[cfg_attr(target_arch = \"wasm32\", export_name = \"");
+            .push_str("#[cfg_attr(target_family = \"wasm\", export_name = \"");
         self.src.push_str(&self.opts.symbol_namespace);
         self.src.push_str(&func.name);
         self.src.push_str("\")]\n");
         self.src
-            .push_str("#[cfg_attr(not(target_arch = \"wasm32\"), export_name = \"");
+            .push_str("#[cfg_attr(not(target_family = \"wasm\"), export_name = \"");
         self.src.push_str(&self.opts.symbol_namespace);
         self.src.push_str(&iface.name);
         self.src.push_str("_");
@@ -600,7 +600,7 @@ impl Generator for RustWasm {
         }
         if self.i64_return_pointer_area_size > 0 {
             self.src
-                .push_str("#[cfg(not(target_arch = \"wasm32\"))] ret: *mut i64");
+                .push_str("#[cfg(not(target_family = \"wasm\"))] ret: *mut i64");
         }
         self.src.push_str(")");
 
@@ -705,7 +705,7 @@ impl Generator for RustWasm {
 
         if self.i64_return_pointer_area_size > 0 {
             src.push_str(&format!(
-                "#[cfg(any(target_arch = \"wasm32\", target_arch = \"wasm64\"))]
+                "#[cfg(target_family = \"wasm\")]
                 static mut RET_AREA: [i64; {0}] = [0; {0}];\n",
                 self.i64_return_pointer_area_size,
             ));
@@ -793,10 +793,10 @@ impl FunctionBindgen<'_> {
         self.push_str(module);
         self.push_str("\")]\n");
         self.push_str("extern \"C\" {\n");
-        self.push_str("#[cfg_attr(target_arch = \"wasm32\", link_name = \"");
+        self.push_str("#[cfg_attr(target_family = \"wasm\", link_name = \"");
         self.push_str(name);
         self.push_str("\")]\n");
-        self.push_str("#[cfg_attr(not(target_arch = \"wasm32\"), link_name = \"");
+        self.push_str("#[cfg_attr(not(target_family = \"wasm\"), link_name = \"");
         self.push_str(module);
         self.push_str("_");
         self.push_str(name);
@@ -898,16 +898,16 @@ impl Bindgen for FunctionBindgen<'_> {
         assert!(amt <= self.gen.i64_return_pointer_area_size);
         let tmp = self.tmp();
 
-        self.push_str("#[cfg(target_arch = \"wasm32\")]");
+        self.push_str("#[cfg(target_family = \"wasm\")]");
         self.push_str(&format!("let ptr{} = RET_AREA.as_mut_ptr() as i32;\n", tmp));
         if self.gen.in_import {
-            self.push_str("#[cfg(not(target_arch = \"wasm32\"))]");
+            self.push_str("#[cfg(not(target_family = \"wasm\"))]");
             self.push_str(&format!(
                 "let ptr{} = &mut [0i64; {}] as *mut i64 as i32;\n",
                 tmp, amt
             ));
         } else {
-            self.push_str("#[cfg(not(target_arch = \"wasm32\"))]");
+            self.push_str("#[cfg(not(target_family = \"wasm\"))]");
             self.push_str(&format!("let ptr{} = ret as i32;\n", tmp));
         }
         format!("ptr{}", tmp)
@@ -1258,7 +1258,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 // To keep the api implementation identical for native and wasm
                 // the api is still owned. But the caller deallocates the resources.
                 self.push_str(&format!(
-                    "#[cfg(target_arch = \"wasm32\")]
+                    "#[cfg(target_family = \"wasm\")]
                     std::alloc::dealloc(
                         {} as *mut _,
                         std::alloc::Layout::from_size_align_unchecked(

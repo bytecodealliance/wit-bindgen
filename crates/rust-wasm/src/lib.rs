@@ -5,11 +5,11 @@ pub mod exports;
 mod futures;
 pub mod imports;
 
-#[cfg(any(target_arch = "wasm32", target_arch = "wasm64"))]
+#[cfg(target_family = "wasm")]
 #[path = "handle/wasm.rs"]
 pub mod handle;
 
-#[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
+#[cfg(not(target_family = "wasm"))]
 #[path = "handle/native.rs"]
 pub mod handle;
 

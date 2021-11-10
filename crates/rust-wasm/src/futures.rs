@@ -8,13 +8,13 @@ use std::rc::{Rc, Weak};
 use std::sync::Arc;
 use std::task::*;
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 #[link(wasm_import_module = "canonical_abi")]
 extern "C" {
     pub fn async_export_done(ctx: i32, ptr: i32);
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_family = "wasm"))]
 pub unsafe extern "C" fn async_export_done(_ctx: i32, _ptr: i32) {
     panic!("only supported on wasm");
 }
