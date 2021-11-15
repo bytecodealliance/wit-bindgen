@@ -2,7 +2,6 @@ use anyhow::{anyhow, bail, Context, Result};
 use id_arena::{Arena, Id};
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options, Parser, Tag};
 use std::collections::{HashMap, HashSet};
-use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -260,44 +259,35 @@ impl Function {
     }
 }
 
-// Could use https://github.com/llogiq/newlinebench/blob/5224b46c3ce5355a727eca348d9bacfe78d7d178/src/lib.rs#245
-// if we really care about this being fast.
-fn count_newlines(s: &str) -> usize {
-    s.as_bytes().iter().filter(|&&c| c == b'\n').count()
-}
-
-fn unwrap_md(contents: String) -> String {
-    let mut witx = String::from("");
-    let mut line_padding_start = 0;
-    let mut extract_next = false;
-    Parser::new_ext(&contents, Options::empty())
+fn unwrap_md(contents: &str) -> String {
+    let mut wai = String::new();
+    let mut last_pos = 0;
+    let mut in_wai_code_block = false;
+    Parser::new_ext(contents, Options::empty())
         .into_offset_iter()
         .for_each(|(event, range)| match (event, range) {
-            (Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("witx")))), _) => {
-                extract_next = true;
+            (Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("wai")))), _) => {
+                in_wai_code_block = true;
             }
-            (Event::Text(text), range) => {
-                if extract_next {
-                    // Ensure that offsets are correct by inserting newlines to cover the Markdown
-                    // content outside of witx code blocks.
-                    let line_padding = count_newlines(&contents[line_padding_start..range.start]);
-                    witx += &std::iter::repeat("\n")
-                        .take(line_padding)
-                        .collect::<String>();
-                    witx += &text.to_owned();
-                    line_padding_start = range.end;
+            (Event::Text(text), range) if in_wai_code_block => {
+                // Ensure that offsets are correct by inserting newlines to
+                // cover the Markdown content outside of wai code blocks.
+                for _ in contents[last_pos..range.start].lines() {
+                    wai.push_str("\n");
                 }
+                wai.push_str(&text);
+                last_pos = range.end;
             }
-            (Event::End(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("witx")))), _) => {
-                extract_next = false;
+            (Event::End(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("wai")))), _) => {
+                in_wai_code_block = false;
             }
             _ => {}
         });
-    witx
+    wai
 }
 
 impl Interface {
-    pub fn parse(name: &str, input: String) -> Result<Interface> {
+    pub fn parse(name: &str, input: &str) -> Result<Interface> {
         Interface::parse_with(name, input, |f| {
             Err(anyhow!("cannot load submodule `{}`", f))
         })
@@ -308,12 +298,12 @@ impl Interface {
         let parent = path.parent().unwrap();
         let contents = std::fs::read_to_string(&path)
             .with_context(|| format!("failed to read: {}", path.display()))?;
-        Interface::parse_with(path, contents, |path| load_fs(parent, path))
+        Interface::parse_with(path, &contents, |path| load_fs(parent, path))
     }
 
     pub fn parse_with(
         filename: impl AsRef<Path>,
-        contents: String,
+        contents: &str,
         mut load: impl FnMut(&str) -> Result<(PathBuf, String)>,
     ) -> Result<Interface> {
         Interface::_parse_with(
@@ -327,18 +317,15 @@ impl Interface {
 
     fn _parse_with(
         filename: &Path,
-        contents: String,
+        contents: &str,
         load: &mut dyn FnMut(&str) -> Result<(PathBuf, String)>,
         visiting: &mut HashSet<PathBuf>,
         map: &mut HashMap<String, Interface>,
     ) -> Result<Interface> {
-        let contents = if filename
-            .extension()
-            .and_then(OsStr::to_str)
-            .unwrap_or("witx")
-            == "md"
-        {
-            unwrap_md(contents)
+        let md_contents;
+        let contents = if filename.extension().and_then(|s| s.to_str()) == Some("md") {
+            md_contents = unwrap_md(contents);
+            &md_contents[..]
         } else {
             contents
         };
@@ -347,7 +334,7 @@ impl Interface {
             Ok(ast) => ast,
             Err(mut e) => {
                 let file = filename.display().to_string();
-                ast::rewrite_error(&mut e, &file, &contents);
+                ast::rewrite_error(&mut e, &file, contents);
                 return Err(e);
             }
         };
@@ -367,7 +354,7 @@ impl Interface {
             let (filename, contents) = load(&u.from[0].name)
                 // TODO: insert context here about `u.name.span` and `filename`
                 ?;
-            let instance = Interface::_parse_with(&filename, contents, load, visiting, map)?;
+            let instance = Interface::_parse_with(&filename, &contents, load, visiting, map)?;
             map.insert(u.from[0].name.to_string(), instance);
         }
         visiting.remove(filename);
@@ -378,7 +365,7 @@ impl Interface {
             Ok(i) => Ok(i),
             Err(mut e) => {
                 let file = filename.display().to_string();
-                ast::rewrite_error(&mut e, &file, &contents);
+                ast::rewrite_error(&mut e, &file, contents);
                 Err(e)
             }
         }
