@@ -7,6 +7,7 @@ edition = "2018"
 [dependencies]
 id-arena = "2"
 anyhow = "1.0"
+pulldown-cmark = { version = "0.8", default-features = false }
 witx = { git = 'https://github.com/alexcrichton/WASI', branch = 'abi-next', optional = true }
 wast = { version = "33", default-features = false, optional = true }
 

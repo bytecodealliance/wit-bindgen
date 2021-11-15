@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use id_arena::{Arena, Id};
+use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options, Parser, Tag};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -258,6 +259,33 @@ impl Function {
     }
 }
 
+fn unwrap_md(contents: &str) -> String {
+    let mut wai = String::new();
+    let mut last_pos = 0;
+    let mut in_wai_code_block = false;
+    Parser::new_ext(contents, Options::empty())
+        .into_offset_iter()
+        .for_each(|(event, range)| match (event, range) {
+            (Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("wai")))), _) => {
+                in_wai_code_block = true;
+            }
+            (Event::Text(text), range) if in_wai_code_block => {
+                // Ensure that offsets are correct by inserting newlines to
+                // cover the Markdown content outside of wai code blocks.
+                for _ in contents[last_pos..range.start].lines() {
+                    wai.push_str("\n");
+                }
+                wai.push_str(&text);
+                last_pos = range.end;
+            }
+            (Event::End(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("wai")))), _) => {
+                in_wai_code_block = false;
+            }
+            _ => {}
+        });
+    wai
+}
+
 impl Interface {
     pub fn parse(name: &str, input: &str) -> Result<Interface> {
         Interface::parse_with(name, input, |f| {
@@ -294,6 +322,13 @@ impl Interface {
         visiting: &mut HashSet<PathBuf>,
         map: &mut HashMap<String, Interface>,
     ) -> Result<Interface> {
+        let md_contents;
+        let contents = if filename.extension().and_then(|s| s.to_str()) == Some("md") {
+            md_contents = unwrap_md(contents);
+            &md_contents[..]
+        } else {
+            contents
+        };
         // Parse the `contents `into an AST
         let ast = match ast::Ast::parse(contents) {
             Ok(ast) => ast,

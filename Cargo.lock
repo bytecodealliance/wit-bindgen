@@ -1704,6 +1704,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "id-arena",
+ "pulldown-cmark",
  "rayon",
  "serde",
  "serde_json",
