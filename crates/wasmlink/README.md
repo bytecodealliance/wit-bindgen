@@ -8,7 +8,7 @@
   <strong>A <a href="https://bytecodealliance.org/">Bytecode Alliance</a> project</strong>
 
   <p>
-    <a href="https://github.com/bytecodealliance/witx-bindgen/actions?query=workflow%3ACI"><img src="https://github.com/bytecodealliance/witx-bindgen/workflows/CI/badge.svg" alt="build status" /></a>
+    <a href="https://github.com/bytecodealliance/wai-bindgen/actions?query=workflow%3ACI"><img src="https://github.com/bytecodealliance/wai-bindgen/workflows/CI/badge.svg" alt="build status" /></a>
     <img src="https://img.shields.io/badge/rustc-stable+-green.svg" alt="supported rustc stable" />
   </p>
 </div>
@@ -19,7 +19,7 @@ _Please note: this is currently an experimental project._
 
 `wasmlink` is a prototype [WebAssembly](https://webassembly.org/) module linker that can link together a module and its dependencies using [module linking](https://github.com/WebAssembly/module-linking) and the [Canonical Interface Types ABI](https://github.com/WebAssembly/interface-types/pull/132).
 
-When used in combination with [witx-bindgen](https://github.com/bytecodealliance/witx-bindgen), it is capable of generating interface adapter functions in WebAssembly that enables WebAssembly modules to exchange interface types such as strings, records, lists, and variants.
+When used in combination with [wai-bindgen](https://github.com/bytecodealliance/wai-bindgen), it is capable of generating interface adapter functions in WebAssembly that enables WebAssembly modules to exchange interface types such as strings, records, lists, and variants.
 
 ## Building
 
@@ -67,7 +67,7 @@ The `markdown` module exposes an interface consisting of a `render` function tha
 
 The interface for the `markdown` module is:
 
-```witx
+```wai
 render: function(markdown: string) -> string
 ```
 
@@ -92,7 +92,7 @@ $ cargo wasi build --manifest-path demo/renderer/Cargo.toml
 With the two modules now built, it is time to link them together so that they can be run directly with [Wasmtime](https://github.com/bytecodealliance/wasmtime):
 
 ```text
-$ cargo run --release -p wasmlink-cli -- -m markdown=demo/markdown/target/wasm32-wasi/debug/markdown.wasm -i markdown=demo/markdown/markdown.witx -p wasmtime -o linked.wasm demo/renderer/target/wasm32-wasi/debug/renderer.wasm
+$ cargo run --release -p wasmlink-cli -- -m markdown=demo/markdown/target/wasm32-wasi/debug/markdown.wasm -i markdown=demo/markdown/markdown.wai -p wasmtime -o linked.wasm demo/renderer/target/wasm32-wasi/debug/renderer.wasm
 ```
 
 This command produces a linked module named `linked.wasm` in the current directory.

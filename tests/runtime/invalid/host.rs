@@ -1,4 +1,4 @@
-witx_bindgen_wasmtime::import!("./tests/runtime/invalid/imports.witx");
+wai_bindgen_wasmtime::export!("./tests/runtime/invalid/imports.wai");
 
 use anyhow::Result;
 use imports::*;
@@ -36,7 +36,7 @@ impl Imports for MyImports {
     }
 }
 
-witx_bindgen_wasmtime::export!("./tests/runtime/invalid/exports.witx");
+wai_bindgen_wasmtime::import!("./tests/runtime/invalid/exports.wai");
 
 fn run(wasm: &str) -> Result<()> {
     use exports::*;
@@ -44,7 +44,7 @@ fn run(wasm: &str) -> Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
         |linker| {
-            imports::add_imports_to_linker(
+            imports::add_to_linker(
                 linker,
                 |cx: &mut crate::Context<(MyImports, imports::ImportsTables<MyImports>), _>| {
                     (&mut cx.imports.0, &mut cx.imports.1)

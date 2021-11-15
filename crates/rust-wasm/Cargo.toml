@@ -1,12 +1,12 @@
 [package]
-name = "witx-bindgen-rust"
+name = "wai-bindgen-rust"
 version = "0.1.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 edition = "2018"
 
 [dependencies]
-witx-bindgen-rust-impl = { path = "../rust-wasm-impl" }
+wai-bindgen-rust-impl = { path = "../rust-wasm-impl" }
 async-trait = "0.1.51"
 
 [features]
-old-witx-compat = ['witx-bindgen-rust-impl/old-witx-compat']
+witx-compat = ['wai-bindgen-rust-impl/witx-compat']

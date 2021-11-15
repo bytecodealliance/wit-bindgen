@@ -1,6 +1,6 @@
 use anyhow::Context;
 
-witx_bindgen_wasmtime::import!("tests/runtime/smw_strings/imports.witx");
+wai_bindgen_wasmtime::export!("tests/runtime/smw_strings/imports.wai");
 
 #[derive(Default)]
 pub struct Host {
@@ -29,12 +29,12 @@ impl imports::Imports for Host {
     }
 }
 
-witx_bindgen_wasmtime::export!("tests/runtime/smw_strings/exports.witx");
+wai_bindgen_wasmtime::import!("tests/runtime/smw_strings/exports.wai");
 
 fn run(wasm: &str) -> anyhow::Result<()> {
     let (exports, mut store) = crate::instantiate_smw(
         wasm,
-        |linker| imports::add_imports_to_linker(linker, |cx| -> &mut Host { &mut cx.imports }),
+        |linker| imports::add_to_linker(linker, |cx| -> &mut Host { &mut cx.imports }),
         |store, module, linker| {
             exports::Exports::instantiate(store, module, linker, |cx| &mut cx.exports)
         },
@@ -45,7 +45,7 @@ fn run(wasm: &str) -> anyhow::Result<()> {
 
     exports.test_imports(&mut store)?;
 
-    assert_eq!(store.data().imports.f1_s, "Hello, WITX!");
+    assert_eq!(store.data().imports.f1_s, "Hello, WAI!");
 
     assert!(store.data().imports.f2_called, "JS should have called `f2`");
 
@@ -56,7 +56,7 @@ fn run(wasm: &str) -> anyhow::Result<()> {
     // Test that the export instance behaves as we expect it to.
 
     exports
-        .f1(&mut store, "Hello, WITX!")
+        .f1(&mut store, "Hello, WAI!")
         .context("calling the `f1` export should succeed")?;
 
     let s = exports

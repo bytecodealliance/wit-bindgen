@@ -2,8 +2,7 @@ use proc_macro::TokenStream;
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{token, Token};
-use witx2::abi::Direction;
-use witx_bindgen_gen_core::{witx2, Files, Generator};
+use wai_bindgen_gen_core::{wai_parser::Interface, Direction, Files, Generator};
 
 #[proc_macro]
 pub fn import(input: TokenStream) -> TokenStream {
@@ -41,8 +40,8 @@ fn run(input: TokenStream, dir: Direction) -> TokenStream {
 }
 
 struct Opts {
-    opts: witx_bindgen_gen_rust_wasm::Opts,
-    interfaces: Vec<witx2::Interface>,
+    opts: wai_bindgen_gen_rust_wasm::Opts,
+    interfaces: Vec<Interface>,
     files: Vec<String>,
 }
 
@@ -55,7 +54,7 @@ mod kw {
 
 impl Parse for Opts {
     fn parse(input: ParseStream<'_>) -> Result<Opts> {
-        let mut opts = witx_bindgen_gen_rust_wasm::Opts::default();
+        let mut opts = wai_bindgen_gen_rust_wasm::Opts::default();
         let call_site = proc_macro2::Span::call_site();
         let mut files = Vec::new();
         let interfaces = if input.peek(token::Brace) {
@@ -84,8 +83,7 @@ impl Parse for Opts {
             }
             let mut interfaces = Vec::new();
             for path in files.iter() {
-                let iface =
-                    witx2::Interface::parse_file(path).map_err(|e| Error::new(call_site, e))?;
+                let iface = Interface::parse_file(path).map_err(|e| Error::new(call_site, e))?;
                 interfaces.push(iface);
             }
             interfaces
@@ -99,7 +97,7 @@ impl Parse for Opts {
 }
 
 enum ConfigField {
-    Interfaces(Vec<witx2::Interface>),
+    Interfaces(Vec<Interface>),
     Unchecked,
     MultiModule,
 }
@@ -114,8 +112,8 @@ impl Parse for ConfigField {
             let name = name.parse::<syn::LitStr>()?;
             input.parse::<Token![:]>()?;
             let s = input.parse::<syn::LitStr>()?;
-            let interface = witx2::Interface::parse(&name.value(), s.value())
-                .map_err(|e| Error::new(s.span(), e))?;
+            let interface =
+                Interface::parse(&name.value(), &s.value()).map_err(|e| Error::new(s.span(), e))?;
             Ok(ConfigField::Interfaces(vec![interface]))
         } else if l.peek(kw::paths) {
             input.parse::<kw::paths>()?;
@@ -127,7 +125,7 @@ impl Parse for ConfigField {
             let mut interfaces = Vec::new();
             for value in &values {
                 let interface =
-                    witx2::Interface::parse_file(value).map_err(|e| Error::new(bracket.span, e))?;
+                    Interface::parse_file(value).map_err(|e| Error::new(bracket.span, e))?;
                 interfaces.push(interface);
             }
             Ok(ConfigField::Interfaces(interfaces))

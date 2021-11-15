@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-witx_bindgen_wasmtime::import!("./tests/runtime/smoke/imports.witx");
+wai_bindgen_wasmtime::export!("./tests/runtime/smoke/imports.wai");
 
 #[derive(Default)]
 pub struct MyImports {
@@ -14,12 +14,12 @@ impl imports::Imports for MyImports {
     }
 }
 
-witx_bindgen_wasmtime::export!("./tests/runtime/smoke/exports.witx");
+wai_bindgen_wasmtime::import!("./tests/runtime/smoke/exports.wai");
 
 fn run(wasm: &str) -> Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
-        |linker| imports::add_imports_to_linker(linker, |cx| -> &mut MyImports { &mut cx.imports }),
+        |linker| imports::add_to_linker(linker, |cx| -> &mut MyImports { &mut cx.imports }),
         |store, module, linker| {
             exports::Exports::instantiate(store, module, linker, |cx| &mut cx.exports)
         },

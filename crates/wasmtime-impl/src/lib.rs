@@ -2,15 +2,18 @@ use proc_macro::TokenStream;
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{token, Token};
-use witx2::abi::Direction;
-use witx_bindgen_gen_core::{witx2, Files, Generator};
-use witx_bindgen_gen_wasmtime::Async;
+use wai_bindgen_gen_core::{wai_parser::Interface, Direction, Files, Generator};
+use wai_bindgen_gen_wasmtime::Async;
 
+/// Generate code to support consuming the given interfaces, importaing them
+/// from wasm modules.
 #[proc_macro]
 pub fn import(input: TokenStream) -> TokenStream {
     run(input, Direction::Import)
 }
 
+/// Generate code to support implementing the given interfaces and exporting
+/// them to wasm modules.
 #[proc_macro]
 pub fn export(input: TokenStream) -> TokenStream {
     run(input, Direction::Export)
@@ -49,8 +52,8 @@ fn run(input: TokenStream, dir: Direction) -> TokenStream {
 }
 
 struct Opts {
-    opts: witx_bindgen_gen_wasmtime::Opts,
-    interfaces: Vec<witx2::Interface>,
+    opts: wai_bindgen_gen_wasmtime::Opts,
+    interfaces: Vec<Interface>,
     files: Vec<String>,
 }
 
@@ -63,7 +66,7 @@ mod kw {
 impl Parse for Opts {
     fn parse(input: ParseStream<'_>) -> Result<Opts> {
         let call_site = proc_macro2::Span::call_site();
-        let mut opts = witx_bindgen_gen_wasmtime::Opts::default();
+        let mut opts = wai_bindgen_gen_wasmtime::Opts::default();
         let mut files = Vec::new();
         opts.tracing = cfg!(feature = "tracing");
 
@@ -93,8 +96,7 @@ impl Parse for Opts {
             }
             let mut interfaces = Vec::new();
             for path in files.iter() {
-                let iface =
-                    witx2::Interface::parse_file(path).map_err(|e| Error::new(call_site, e))?;
+                let iface = Interface::parse_file(path).map_err(|e| Error::new(call_site, e))?;
                 interfaces.push(iface);
             }
             interfaces
@@ -108,8 +110,8 @@ impl Parse for Opts {
 }
 
 enum ConfigField {
-    Interfaces(Vec<witx2::Interface>),
-    Async(witx_bindgen_gen_wasmtime::Async),
+    Interfaces(Vec<Interface>),
+    Async(wai_bindgen_gen_wasmtime::Async),
     CustomError(bool),
 }
 
@@ -123,8 +125,8 @@ impl Parse for ConfigField {
             let name = name.parse::<syn::LitStr>()?;
             input.parse::<Token![:]>()?;
             let s = input.parse::<syn::LitStr>()?;
-            let interface = witx2::Interface::parse(&name.value(), s.value())
-                .map_err(|e| Error::new(s.span(), e))?;
+            let interface =
+                Interface::parse(&name.value(), &s.value()).map_err(|e| Error::new(s.span(), e))?;
             Ok(ConfigField::Interfaces(vec![interface]))
         } else if l.peek(kw::paths) {
             input.parse::<kw::paths>()?;
@@ -136,14 +138,14 @@ impl Parse for ConfigField {
             let mut interfaces = Vec::new();
             for value in &values {
                 let interface =
-                    witx2::Interface::parse_file(value).map_err(|e| Error::new(bracket.span, e))?;
+                    Interface::parse_file(value).map_err(|e| Error::new(bracket.span, e))?;
                 interfaces.push(interface);
             }
             Ok(ConfigField::Interfaces(interfaces))
         } else if l.peek(token::Async) {
             if !cfg!(feature = "async") {
                 return Err(
-                    input.error("async support not enabled in the `witx-bindgen-wasmtime` crate")
+                    input.error("async support not enabled in the `wai-bindgen-wasmtime` crate")
                 );
             }
             input.parse::<token::Async>()?;

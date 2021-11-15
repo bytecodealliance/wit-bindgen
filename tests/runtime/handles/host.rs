@@ -1,4 +1,4 @@
-witx_bindgen_wasmtime::import!("./tests/runtime/handles/imports.witx");
+wai_bindgen_wasmtime::export!("./tests/runtime/handles/imports.wai");
 
 use anyhow::Result;
 use imports::*;
@@ -87,7 +87,7 @@ impl Imports for MyImports {
     fn odd_name_frob_the_odd(&mut self, _: &()) {}
 }
 
-witx_bindgen_wasmtime::export!("./tests/runtime/handles/exports.witx");
+wai_bindgen_wasmtime::import!("./tests/runtime/handles/exports.wai");
 
 fn run(wasm: &str) -> Result<()> {
     use exports::*;
@@ -95,7 +95,7 @@ fn run(wasm: &str) -> Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
         |linker| {
-            imports::add_imports_to_linker(
+            imports::add_to_linker(
                 linker,
                 |cx: &mut crate::Context<(MyImports, imports::ImportsTables<MyImports>), _>| {
                     (&mut cx.imports.0, &mut cx.imports.1)

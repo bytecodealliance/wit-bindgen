@@ -1,6 +1,6 @@
 /*!
  * This module implements the intrinsics used by code emitted in the
- * `witx_bindgen_gen_spidermonkey::Bindgen` trait implementation.
+ * `wai_bindgen_gen_spidermonkey::Bindgen` trait implementation.
  */
 
 #include <assert.h>
@@ -220,7 +220,7 @@ void SMW_call(char *funcName, size_t funcNameLen, size_t numResults, size_t dest
     } else {
         // Treat the "physical" return value as an iterator and unpack the
         // "logical" return values from within it. This allows JS to return
-        // multiple WITX values as an array or any other iterable.
+        // multiple WAI values as an array or any other iterable.
         JS::ForOfIterator iter(cx);
         if (!iter.init(result)) {
             // TODO: include the export name in this message.

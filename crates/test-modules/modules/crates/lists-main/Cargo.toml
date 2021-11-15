@@ -6,4 +6,4 @@ edition = "2018"
 publish = false
 
 [dependencies]
-witx-bindgen-rust = { path = "../../../../rust-wasm" }
+wai-bindgen-rust = { path = "../../../../rust-wasm" }

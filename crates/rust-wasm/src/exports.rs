@@ -1,7 +1,7 @@
 use std::fmt;
 use std::marker;
 
-#[link(wasm_import_module = "witx_canonical_buffer_abi")]
+#[link(wasm_import_module = "wai_canonical_buffer_abi")]
 extern "C" {
     fn in_len(handle: i32) -> usize;
     fn in_read(handle: i32, amount: usize, dst: *mut u8);

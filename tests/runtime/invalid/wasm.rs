@@ -1,4 +1,4 @@
-witx_bindgen_rust::export!("./tests/runtime/invalid/exports.witx");
+wai_bindgen_rust::export!("./tests/runtime/invalid/exports.wai");
 
 #[link(wasm_import_module = "imports")]
 extern "C" {

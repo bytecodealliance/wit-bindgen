@@ -2,11 +2,6 @@
 
 #![deny(missing_docs)]
 
-#[cfg(feature = "structopt")]
-mod opts;
-#[cfg(feature = "structopt")]
-pub use opts::Opts;
-
 mod data_segments;
 
 use data_segments::DataSegments;
@@ -16,14 +11,33 @@ use std::convert::TryFrom;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::{collections::HashMap, mem};
-use wasm_encoder::Instruction;
-use witx_bindgen_gen_core::{
-    witx2::{
-        self,
-        abi::{WasmSignature, WasmType},
+use wai_bindgen_gen_core::{
+    wai_parser::{
+        abi::{self, AbiVariant, WasmSignature, WasmType},
+        Docs, Function, Interface, Record, ResourceId, SizeAlign, Type, TypeId, Variant,
     },
-    Files, Generator,
+    Direction, Files, Generator,
 };
+use wasm_encoder::Instruction;
+
+#[allow(missing_docs)]
+#[derive(Default, Debug, Clone)]
+#[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
+pub struct Opts {
+    /// The path to the JavaScript module.
+    pub js: PathBuf,
+    #[cfg_attr(feature = "structopt", structopt(long))]
+    pub import_spidermonkey: bool,
+}
+
+#[allow(missing_docs)]
+impl Opts {
+    pub fn build<'a>(self, js_source: impl Into<Cow<'a, str>>) -> SpiderMonkeyWasm<'a> {
+        let mut builder = SpiderMonkeyWasm::new(self.js, js_source);
+        builder.import_spidermonkey(self.import_spidermonkey);
+        builder
+    }
+}
 
 lazy_static! {
     /// Functions exported from `spidermonkey.wasm`
@@ -228,7 +242,7 @@ lazy_static! {
 /// ## Code Shape
 ///
 /// The output is a single Wasm file that imports and exports the functions
-/// defined in the given WITX files and additionally
+/// defined in the given WAI files and additionally
 ///
 /// * embeds or imports (configurable) a `spidermonkey.wasm` instance, and
 ///
@@ -253,14 +267,14 @@ lazy_static! {
 ///
 /// ### Imports
 ///
-/// By the time an imported WITX function is called, we have the following
+/// By the time an imported WAI function is called, we have the following
 /// layers of code on the stack, listed from older to younger frames:
 ///
 /// * User JS code (inside `spidermonkey.wasm`'s internal JS stack)
 ///
 ///   This is the user's JavaScript code that is running inside of
 ///   `spidermonkey.wasm` and which wants to call an external, imported function
-///   that is described with WITX.
+///   that is described with WAI.
 ///
 /// * Import glue Wasm code (on the Wasm stack)
 ///
@@ -272,18 +286,18 @@ lazy_static! {
 ///
 /// * Imported function (on the Wasm Stack)
 ///
-///   This is the actual Wasm function whose signature is described in WITX and
+///   This is the actual Wasm function whose signature is described in WAI and
 ///   uses the canonical ABI.
 ///
 /// ### Exports
 ///
-/// By the time an exported JS function that implements a WITX signature is
+/// By the time an exported JS function that implements a WAI signature is
 /// called, we have the following frames on the stack, listed form older to
 /// younger frames:
 ///
 /// * External caller (on the Wasm or native stack)
 ///
-///   This is whoever is calling our JS-implemented WITX export, using the
+///   This is whoever is calling our JS-implemented WAI export, using the
 ///   canonical ABI. This might be another Wasm module or it might be some
 ///   native code in the host.
 ///
@@ -296,12 +310,12 @@ lazy_static! {
 ///   function's outgoing results from SpiderMonkey values into the canonical
 ///   ABI representation.
 ///
-/// * JavaScript function implementing the WITX signature (inside
+/// * JavaScript function implementing the WAI signature (inside
 ///   `spidermonkey.wasm`'s internal stack)
 ///
 ///   This is the user-written JavaScript function that is being exported. It
 ///   accepts and returns the JavaScript values that correspond to the interface
-///   types used in the WITX signature.
+///   types used in the WAI signature.
 pub struct SpiderMonkeyWasm<'a> {
     /// The filename to use for the JS.
     js_name: PathBuf,
@@ -342,7 +356,9 @@ pub struct SpiderMonkeyWasm<'a> {
 
     data_segments: DataSegments,
 
-    sizes: witx2::SizeAlign,
+    sizes: SizeAlign,
+    function_names: Vec<(u32, String)>,
+    local_names: Vec<(u32, wasm_encoder::NameMap)>,
 }
 
 impl<'a> SpiderMonkeyWasm<'a> {
@@ -367,6 +383,16 @@ impl<'a> SpiderMonkeyWasm<'a> {
             export_glue_fns: Default::default(),
             data_segments: DataSegments::new(1),
             sizes: Default::default(),
+            function_names: Vec::new(),
+            local_names: Vec::new(),
+        }
+    }
+
+    fn abi_variant(dir: Direction) -> AbiVariant {
+        // This generator uses the obvious direction to ABI variant mapping.
+        match dir {
+            Direction::Export => AbiVariant::GuestExport,
+            Direction::Import => AbiVariant::GuestImport,
         }
     }
 
@@ -460,6 +486,8 @@ impl<'a> SpiderMonkeyWasm<'a> {
         );
         for (name, _) in &*SMW_EXPORTS {
             aliases.instance_export(instance_index, wasm_encoder::ItemKind::Function, name);
+            let idx = self.spidermonkey_import(name);
+            self.function_names.push((idx, name.to_string()));
         }
     }
 
@@ -552,9 +580,11 @@ impl<'a> SpiderMonkeyWasm<'a> {
     ) {
         assert_eq!(funcs.len(), code.len());
 
-        let wizer_init_index = self.witx_import_functions_len()
+        let wizer_init_index = self.wai_import_functions_len()
             + u32::try_from(SMW_EXPORTS.len()).unwrap()
             + funcs.len();
+        self.function_names
+            .push((wizer_init_index, format!("wizer.initialize")));
 
         let ty_index = self.intern_type(WasmSignature {
             params: vec![],
@@ -572,12 +602,22 @@ impl<'a> SpiderMonkeyWasm<'a> {
         let func_name_local = 5;
         let ret_ptr_local = 6;
 
+        let mut local_names = wasm_encoder::NameMap::new();
+        local_names.append(js_name_local, "js_name");
+        local_names.append(js_local, "js");
+        local_names.append(module_name_local, "module_name");
+        local_names.append(module_builder_local, "module_builder");
+        local_names.append(table_size_local, "table_size");
+        local_names.append(func_name_local, "func_name");
+        local_names.append(ret_ptr_local, "ret_ptr");
+        self.local_names.push((wizer_init_index, local_names));
+
         let mut wizer_init = wasm_encoder::Function::new(locals);
 
         // Call `_initialize` because that must be called before any other
         // exports per the WASI reactor ABI.
         let init_index = self.spidermonkey_import("_initialize");
-        wizer_init.instruction(Instruction::Call(init_index));
+        wizer_init.instruction(&Instruction::Call(init_index));
 
         // Malloc space in `spidermonkey.wasm`'s linear memory for the JS file
         // name and the JS source.
@@ -596,19 +636,19 @@ impl<'a> SpiderMonkeyWasm<'a> {
             ret_ptr_local,
         );
         // []
-        wizer_init.instruction(Instruction::LocalGet(ret_ptr_local));
+        wizer_init.instruction(&Instruction::LocalGet(ret_ptr_local));
         // [i32]
-        wizer_init.instruction(Instruction::GlobalSet(RET_PTR_GLOBAL));
+        wizer_init.instruction(&Instruction::GlobalSet(RET_PTR_GLOBAL));
         // []
 
         // Call `SMW_initialize_engine`:
         //
         //     (call $SMW_initialize_engine)
         let smw_initialize_engine = self.spidermonkey_import("SMW_initialize_engine");
-        wizer_init.instruction(Instruction::Call(smw_initialize_engine));
+        wizer_init.instruction(&Instruction::Call(smw_initialize_engine));
 
-        // Define a JS module for each WITX module that is imported. This JS
-        // module will export each of our generated glue functions for that WITX
+        // Define a JS module for each WAI module that is imported. This JS
+        // module will export each of our generated glue functions for that WAI
         // module.
         let smw_new_module_builder = self.spidermonkey_import("SMW_new_module_builder");
         let import_fn_name_to_index =
@@ -637,13 +677,13 @@ impl<'a> SpiderMonkeyWasm<'a> {
             //     local.set ${module_builder}
             wizer_init
                 // []
-                .instruction(Instruction::LocalGet(module_name_local))
+                .instruction(&Instruction::LocalGet(module_name_local))
                 // [i32]
-                .instruction(Instruction::I32Const(i32::try_from(module.len()).unwrap()))
+                .instruction(&Instruction::I32Const(i32::try_from(module.len()).unwrap()))
                 // [i32 i32]
-                .instruction(Instruction::Call(smw_new_module_builder))
+                .instruction(&Instruction::Call(smw_new_module_builder))
                 // [i32]
-                .instruction(Instruction::LocalSet(module_builder_local));
+                .instruction(&Instruction::LocalSet(module_builder_local));
             // []
 
             // Grow enough space in the function table for the functions we will
@@ -658,23 +698,23 @@ impl<'a> SpiderMonkeyWasm<'a> {
             //     end
             wizer_init
                 // []
-                .instruction(Instruction::RefNull(wasm_encoder::ValType::FuncRef))
+                .instruction(&Instruction::RefNull(wasm_encoder::ValType::FuncRef))
                 // [funcref]
-                .instruction(Instruction::I32Const(i32::try_from(funcs.len()).unwrap()))
+                .instruction(&Instruction::I32Const(i32::try_from(funcs.len()).unwrap()))
                 // [funcref i32]
-                .instruction(Instruction::TableGrow { table: 0 })
+                .instruction(&Instruction::TableGrow { table: 0 })
                 // [i32]
-                .instruction(Instruction::LocalTee(table_size_local))
+                .instruction(&Instruction::LocalTee(table_size_local))
                 // [i32]
-                .instruction(Instruction::I32Const(-1))
+                .instruction(&Instruction::I32Const(-1))
                 // [i32 i32]
-                .instruction(Instruction::I32Eq)
+                .instruction(&Instruction::I32Eq)
                 // [i32]
-                .instruction(Instruction::If(wasm_encoder::BlockType::Empty))
+                .instruction(&Instruction::If(wasm_encoder::BlockType::Empty))
                 // []
-                .instruction(Instruction::Unreachable)
+                .instruction(&Instruction::Unreachable)
                 // []
-                .instruction(Instruction::End);
+                .instruction(&Instruction::End);
             // []
 
             for (i, (func, (func_index, num_args))) in funcs.iter().enumerate() {
@@ -699,18 +739,18 @@ impl<'a> SpiderMonkeyWasm<'a> {
                 //
                 //     (table.set (i32.add (i32.const ${i}) (local.get ${table_size}))
                 //                (ref.func ${func_index}))
-                let glue_func_index = self.witx_import_glue_fn(*func_index);
+                let glue_func_index = self.wai_import_glue_fn(*func_index);
                 wizer_init
                     // []
-                    .instruction(Instruction::I32Const(i32::try_from(i).unwrap()))
+                    .instruction(&Instruction::I32Const(i32::try_from(i).unwrap()))
                     // [i32]
-                    .instruction(Instruction::LocalGet(table_size_local))
+                    .instruction(&Instruction::LocalGet(table_size_local))
                     // [i32 i32]
-                    .instruction(Instruction::I32Add)
+                    .instruction(&Instruction::I32Add)
                     // [i32]
-                    .instruction(Instruction::RefFunc(glue_func_index))
+                    .instruction(&Instruction::RefFunc(glue_func_index))
                     // [i32 funcref]
-                    .instruction(Instruction::TableSet { table: 0 });
+                    .instruction(&Instruction::TableSet { table: 0 });
                 // []
 
                 // Call `SMW_module_builder_add_export` passing the index of the
@@ -725,21 +765,21 @@ impl<'a> SpiderMonkeyWasm<'a> {
                     self.spidermonkey_import("SMW_module_builder_add_export");
                 wizer_init
                     // []
-                    .instruction(Instruction::LocalGet(module_builder_local))
+                    .instruction(&Instruction::LocalGet(module_builder_local))
                     // [i32]
-                    .instruction(Instruction::LocalGet(func_name_local))
+                    .instruction(&Instruction::LocalGet(func_name_local))
                     // [i32 i32]
-                    .instruction(Instruction::I32Const(i32::try_from(func.len()).unwrap()))
+                    .instruction(&Instruction::I32Const(i32::try_from(func.len()).unwrap()))
                     // [i32 i32 i32]
-                    .instruction(Instruction::I32Const(i32::try_from(i).unwrap()))
+                    .instruction(&Instruction::I32Const(i32::try_from(i).unwrap()))
                     // [i32 i32 i32 i32]
-                    .instruction(Instruction::LocalGet(table_size_local))
+                    .instruction(&Instruction::LocalGet(table_size_local))
                     // [i32 i32 i32 i32 i32]
-                    .instruction(Instruction::I32Add)
+                    .instruction(&Instruction::I32Add)
                     // [i32 i32 i32 i32]
-                    .instruction(Instruction::I32Const(i32::try_from(*num_args).unwrap()))
+                    .instruction(&Instruction::I32Const(i32::try_from(*num_args).unwrap()))
                     // [i32 i32 i32 i32 i32]
-                    .instruction(Instruction::Call(smw_module_builder_add_export));
+                    .instruction(&Instruction::Call(smw_module_builder_add_export));
                 // []
             }
 
@@ -749,9 +789,9 @@ impl<'a> SpiderMonkeyWasm<'a> {
             let smw_finish_module_builder = self.spidermonkey_import("SMW_finish_module_builder");
             wizer_init
                 // []
-                .instruction(Instruction::LocalGet(module_builder_local))
+                .instruction(&Instruction::LocalGet(module_builder_local))
                 // [i32]
-                .instruction(Instruction::Call(smw_finish_module_builder));
+                .instruction(&Instruction::Call(smw_finish_module_builder));
             // []
         }
 
@@ -762,16 +802,16 @@ impl<'a> SpiderMonkeyWasm<'a> {
         let smw_eval_module = self.spidermonkey_import("SMW_eval_module");
         wizer_init
             // []
-            .instruction(Instruction::LocalGet(js_name_local))
+            .instruction(&Instruction::LocalGet(js_name_local))
             // [i32]
-            .instruction(Instruction::LocalGet(js_local))
+            .instruction(&Instruction::LocalGet(js_local))
             // [i32 i32]
-            .instruction(Instruction::I32Const(js_len as i32))
+            .instruction(&Instruction::I32Const(js_len as i32))
             // [i32 i32 i32]
-            .instruction(Instruction::Call(smw_eval_module));
+            .instruction(&Instruction::Call(smw_eval_module));
         // []
 
-        wizer_init.instruction(Instruction::End);
+        wizer_init.instruction(&Instruction::End);
         code.function(&wizer_init);
 
         self.exports.export(
@@ -786,23 +826,23 @@ impl<'a> SpiderMonkeyWasm<'a> {
 // The generated glue module's function index space is laid out as follows:
 //
 // ```text
-// |witx imports...|spidermonkey.wasm imports...|import glue...|export glue...|wizer.initialize|
+// |wai imports...|spidermonkey.wasm imports...|import glue...|export glue...|wizer.initialize|
 // ```
 impl SpiderMonkeyWasm<'_> {
-    /// Get the number of imported WITX functions.
-    fn witx_import_functions_len(&self) -> u32 {
+    /// Get the number of imported WAI functions.
+    fn wai_import_functions_len(&self) -> u32 {
         self.num_import_functions
             .expect("must call `preprocess_all` before generating bindings")
     }
 
-    /// Get the function index for the i^th WITX import.
-    fn witx_import(&self, i: u32) -> u32 {
+    /// Get the function index for the i^th WAI import.
+    fn wai_import(&self, i: u32) -> u32 {
         i
     }
 
     /// Get the function index for the given spidermonkey function.
     fn spidermonkey_import(&self, name: &str) -> u32 {
-        self.witx_import_functions_len()
+        self.wai_import_functions_len()
             + u32::try_from(
                 SMW_EXPORTS
                     .iter()
@@ -812,51 +852,51 @@ impl SpiderMonkeyWasm<'_> {
             .unwrap()
     }
 
-    /// Get the function index where WITX import glue functions start.
-    fn witx_import_glue_fns_start(&self) -> u32 {
-        self.witx_import_functions_len() + u32::try_from(SMW_EXPORTS.len()).unwrap()
+    /// Get the function index where WAI import glue functions start.
+    fn wai_import_glue_fns_start(&self) -> u32 {
+        self.wai_import_functions_len() + u32::try_from(SMW_EXPORTS.len()).unwrap()
     }
 
-    /// Get the range of indices for our synthesized glue functions for WITX
+    /// Get the range of indices for our synthesized glue functions for WAI
     /// imports.
-    fn witx_import_glue_fn_range(&self) -> Range<u32> {
-        let start = self.witx_import_glue_fns_start();
-        let end = self.witx_export_start();
+    fn wai_import_glue_fn_range(&self) -> Range<u32> {
+        let start = self.wai_import_glue_fns_start();
+        let end = self.wai_export_start();
         start..end
     }
 
-    /// Get the function index for the i^th synthesized glue function for a WITX
+    /// Get the function index for the i^th synthesized glue function for a WAI
     /// import.
-    fn witx_import_glue_fn(&self, i: u32) -> u32 {
+    fn wai_import_glue_fn(&self, i: u32) -> u32 {
         assert!(
-            i < self.witx_import_functions_len(),
+            i < self.wai_import_functions_len(),
             "{} < {}",
             i,
-            self.witx_import_functions_len()
+            self.wai_import_functions_len()
         );
-        let start = self.witx_import_glue_fns_start();
+        let start = self.wai_import_glue_fns_start();
         start + i
     }
 
-    /// Get the function index where WITX export glue functions start.
-    fn witx_export_start(&self) -> u32 {
-        self.witx_import_glue_fns_start() + self.witx_import_functions_len()
+    /// Get the function index where WAI export glue functions start.
+    fn wai_export_start(&self) -> u32 {
+        self.wai_import_glue_fns_start() + self.wai_import_functions_len()
     }
 
-    fn witx_exports_len(&self) -> u32 {
+    fn wai_exports_len(&self) -> u32 {
         self.num_export_functions
             .expect("must call `preprocess_all` before generating bindings")
     }
 
-    /// Get the function index for the i^th WITX export.
-    fn witx_export(&self, i: u32) -> u32 {
-        assert!(i < self.witx_exports_len());
-        self.witx_export_start() + i
+    /// Get the function index for the i^th WAI export.
+    fn wai_export(&self, i: u32) -> u32 {
+        assert!(i < self.wai_exports_len());
+        self.wai_export_start() + i
     }
 }
 
 impl Generator for SpiderMonkeyWasm<'_> {
-    fn preprocess_all(&mut self, imports: &[witx2::Interface], exports: &[witx2::Interface]) {
+    fn preprocess_all(&mut self, imports: &[Interface], exports: &[Interface]) {
         assert!(
             self.num_import_functions.is_none() && self.num_export_functions.is_none(),
             "must call `preprocess_all` exactly once"
@@ -871,17 +911,17 @@ impl Generator for SpiderMonkeyWasm<'_> {
             Some(u32::try_from(exports.iter().map(|i| i.functions.len()).sum::<usize>()).unwrap());
 
         // Figure out what the maximum return pointer area we will need is.
-        for (iface, dir) in imports
+        for (iface, variant) in imports
             .iter()
-            .zip(std::iter::repeat(witx2::abi::Direction::Import))
+            .zip(std::iter::repeat(AbiVariant::GuestImport))
             .chain(
                 exports
                     .iter()
-                    .zip(std::iter::repeat(witx2::abi::Direction::Export)),
+                    .zip(std::iter::repeat(AbiVariant::GuestExport)),
             )
         {
             for func in iface.functions.iter() {
-                let sig = iface.wasm_signature(dir, func);
+                let sig = iface.wasm_signature(variant, func);
                 if let Some(results) = sig.retptr {
                     self.i64_return_pointer_area_size =
                         self.i64_return_pointer_area_size.max(results.len());
@@ -890,17 +930,17 @@ impl Generator for SpiderMonkeyWasm<'_> {
         }
     }
 
-    fn preprocess_one(&mut self, iface: &witx2::Interface, dir: witx2::abi::Direction) {
-        self.sizes.fill(dir, iface);
+    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
+        self.sizes.fill(Self::abi_variant(dir), iface);
     }
 
     fn type_record(
         &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
+        iface: &Interface,
+        id: TypeId,
         name: &str,
-        record: &witx2::Record,
-        docs: &witx2::Docs,
+        record: &Record,
+        docs: &Docs,
     ) {
         let _ = (iface, id, name, record, docs);
         todo!()
@@ -908,77 +948,56 @@ impl Generator for SpiderMonkeyWasm<'_> {
 
     fn type_variant(
         &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
+        iface: &Interface,
+        id: TypeId,
         name: &str,
-        variant: &witx2::Variant,
-        docs: &witx2::Docs,
+        variant: &Variant,
+        docs: &Docs,
     ) {
         let _ = (iface, id, name, variant, docs);
         todo!()
     }
 
-    fn type_resource(&mut self, iface: &witx2::Interface, ty: witx2::ResourceId) {
+    fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
         let _ = (iface, ty);
         todo!()
     }
 
-    fn type_alias(
-        &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
-        name: &str,
-        ty: &witx2::Type,
-        docs: &witx2::Docs,
-    ) {
+    fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let _ = (iface, id, name, ty, docs);
         todo!()
     }
 
-    fn type_list(
-        &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
-        name: &str,
-        ty: &witx2::Type,
-        docs: &witx2::Docs,
-    ) {
+    fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let _ = (iface, id, name, ty, docs);
         todo!()
     }
 
     fn type_pointer(
         &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
+        iface: &Interface,
+        id: TypeId,
         name: &str,
         const_: bool,
-        ty: &witx2::Type,
-        docs: &witx2::Docs,
+        ty: &Type,
+        docs: &Docs,
     ) {
         let _ = (iface, id, name, const_, ty, docs);
         todo!()
     }
 
-    fn type_builtin(
-        &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
-        name: &str,
-        ty: &witx2::Type,
-        docs: &witx2::Docs,
-    ) {
+    fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let _ = (iface, id, name, name, ty, docs);
         todo!()
     }
 
     fn type_push_buffer(
         &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
+        iface: &Interface,
+        id: TypeId,
         name: &str,
-        ty: &witx2::Type,
-        docs: &witx2::Docs,
+        ty: &Type,
+        docs: &Docs,
     ) {
         let _ = (iface, id, name, name, ty, docs);
         todo!()
@@ -986,27 +1005,27 @@ impl Generator for SpiderMonkeyWasm<'_> {
 
     fn type_pull_buffer(
         &mut self,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
+        iface: &Interface,
+        id: TypeId,
         name: &str,
-        ty: &witx2::Type,
-        docs: &witx2::Docs,
+        ty: &Type,
+        docs: &Docs,
     ) {
         let _ = (iface, id, name, name, ty, docs);
         todo!()
     }
 
-    fn import(&mut self, iface: &witx2::Interface, func: &witx2::Function) {
+    fn import(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         assert!(
-            func.abi == witx2::abi::Abi::Canonical,
+            func.abi == abi::Abi::Canonical,
             "We only support the canonical ABI right now"
         );
 
         // Add the raw Wasm import.
-        let wasm_sig = iface.wasm_signature(witx2::abi::Direction::Import, func);
+        let wasm_sig = iface.wasm_signature(AbiVariant::GuestImport, func);
         let type_index = self.intern_type(wasm_sig.clone());
-        let import_fn_index = self.witx_import(self.imports.len());
+        let import_fn_index = self.wai_import(self.imports.len());
         self.imports.import(
             &iface.name,
             Some(&func.name),
@@ -1023,15 +1042,13 @@ impl Generator for SpiderMonkeyWasm<'_> {
             );
         assert!(existing.is_none());
 
-        let mut bindgen = Bindgen::new(
-            self,
-            &wasm_sig,
-            func,
-            witx2::abi::LiftLower::LowerArgsLiftResults,
-        );
+        self.function_names
+            .push((import_fn_index, format!("{}.{}", iface.name, func.name)));
+
+        let mut bindgen = Bindgen::new(self, &wasm_sig, func, abi::LiftLower::LowerArgsLiftResults);
         iface.call(
-            witx2::abi::Direction::Import,
-            witx2::abi::LiftLower::LowerArgsLiftResults,
+            AbiVariant::GuestImport,
+            abi::LiftLower::LowerArgsLiftResults,
             func,
             &mut bindgen,
         );
@@ -1039,28 +1056,25 @@ impl Generator for SpiderMonkeyWasm<'_> {
         self.import_glue_fns.push(func_encoder);
     }
 
-    fn export(&mut self, iface: &witx2::Interface, func: &witx2::Function) {
+    fn export(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         assert!(
-            func.abi == witx2::abi::Abi::Canonical,
+            func.abi == abi::Abi::Canonical,
             "We only support the canonical ABI right now"
         );
 
-        let wasm_sig = iface.wasm_signature(witx2::abi::Direction::Export, func);
+        let wasm_sig = iface.wasm_signature(AbiVariant::GuestExport, func);
         let type_index = self.intern_type(wasm_sig.clone());
-        let export_fn_index = self.witx_export(self.exports.len());
+        let export_fn_index = self.wai_export(self.exports.len());
         self.exports
             .export(&func.name, wasm_encoder::Export::Function(export_fn_index));
+        self.function_names
+            .push((export_fn_index, format!("{}.{}", iface.name, func.name)));
 
-        let mut bindgen = Bindgen::new(
-            self,
-            &wasm_sig,
-            func,
-            witx2::abi::LiftLower::LiftArgsLowerResults,
-        );
+        let mut bindgen = Bindgen::new(self, &wasm_sig, func, abi::LiftLower::LiftArgsLowerResults);
         iface.call(
-            witx2::abi::Direction::Export,
-            witx2::abi::LiftLower::LiftArgsLowerResults,
+            AbiVariant::GuestExport,
+            abi::LiftLower::LiftArgsLowerResults,
             func,
             &mut bindgen,
         );
@@ -1068,7 +1082,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
         self.export_glue_fns.push((func_encoder, type_index));
     }
 
-    fn finish_one(&mut self, _iface: &witx2::Interface, _files: &mut Files) {
+    fn finish_one(&mut self, _iface: &Interface, _files: &mut Files) {
         // Nothing to do until wil finish all interfaces and generate our Wasm
         // glue code.
     }
@@ -1092,7 +1106,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
                 val_type: wasm_encoder::ValType::I32,
                 mutable: true,
             },
-            Instruction::I32Const(0),
+            &Instruction::I32Const(0),
         );
 
         // Re-export `spidermonkey.wasm`'s memory and canonical ABI functions.
@@ -1107,7 +1121,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
             wasm_encoder::Export::Function(self.spidermonkey_import("canonical_abi_realloc")),
         );
 
-        // Add the WITX function imports (add their import glue functions) to
+        // Add the WAI function imports (add their import glue functions) to
         // the module.
         //
         // Each of these functions has the Wasm equivalent of this function
@@ -1140,7 +1154,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
 
         // We will use `ref.func` to get a reference to each of our synthesized
         // import glue functions, so we need to declare them as reference-able.
-        let func_indices: Vec<u32> = self.witx_import_glue_fn_range().collect();
+        let func_indices: Vec<u32> = self.wai_import_glue_fn_range().collect();
         if !func_indices.is_empty() {
             elems.declared(
                 wasm_encoder::ValType::FuncRef,
@@ -1170,6 +1184,32 @@ impl Generator for SpiderMonkeyWasm<'_> {
         mems.memory(self.data_segments.memory_type());
         let data = self.data_segments.take_data();
 
+        // Fill out the `names` section to assist in debugging the generated
+        // wasm.
+        let mut names = wasm_encoder::NameSection::new();
+        self.function_names.sort_by_key(|a| a.0);
+        let mut function_names = wasm_encoder::NameMap::new();
+        for (i, name) in self.function_names.iter() {
+            function_names.append(*i, name);
+        }
+        names.functions(&function_names);
+
+        self.local_names.sort_by_key(|a| a.0);
+        let mut local_names = wasm_encoder::IndirectNameMap::new();
+        for (i, names) in self.local_names.iter() {
+            local_names.append(*i, names);
+        }
+        names.locals(&local_names);
+
+        let mut table_names = wasm_encoder::NameMap::new();
+        table_names.append(0, "sm_function_table");
+        names.tables(&table_names);
+
+        let mut memory_names = wasm_encoder::NameMap::new();
+        memory_names.append(SM_MEMORY, "sm_mem");
+        memory_names.append(GLUE_MEMORY, "glue_mem");
+        names.memories(&memory_names);
+
         module
             .section(&aliases)
             .section(&funcs)
@@ -1178,7 +1218,8 @@ impl Generator for SpiderMonkeyWasm<'_> {
             .section(&self.exports)
             .section(&elems)
             .section(&code)
-            .section(&data);
+            .section(&data)
+            .section(&names);
 
         let wasm = module.finish();
 
@@ -1206,7 +1247,7 @@ trait InstructionSink<'a> {
 
 impl<'a> InstructionSink<'a> for wasm_encoder::Function {
     fn instruction(&mut self, inst: wasm_encoder::Instruction<'a>) {
-        wasm_encoder::Function::instruction(self, inst);
+        wasm_encoder::Function::instruction(self, &inst);
     }
 }
 
@@ -1233,7 +1274,7 @@ fn convert_ty(ty: WasmType) -> wasm_encoder::ValType {
 struct Bindgen<'a, 'b> {
     gen: &'a mut SpiderMonkeyWasm<'b>,
     sig: &'a WasmSignature,
-    lift_lower: witx2::abi::LiftLower,
+    lift_lower: abi::LiftLower,
     locals: Vec<wasm_encoder::ValType>,
     js_count: u32,
 
@@ -1256,18 +1297,16 @@ impl<'a, 'b> Bindgen<'a, 'b> {
     fn new(
         gen: &'a mut SpiderMonkeyWasm<'b>,
         sig: &'a WasmSignature,
-        func: &'a witx2::Function,
-        lift_lower: witx2::abi::LiftLower,
+        func: &'a Function,
+        lift_lower: abi::LiftLower,
     ) -> Self {
         let js_count = match lift_lower {
-            witx2::abi::LiftLower::LiftArgsLowerResults => 0,
-            witx2::abi::LiftLower::LowerArgsLiftResults => {
-                u32::try_from(func.params.len()).unwrap()
-            }
+            abi::LiftLower::LiftArgsLowerResults => 0,
+            abi::LiftLower::LowerArgsLiftResults => u32::try_from(func.params.len()).unwrap(),
         };
 
         let mut insts = vec![];
-        if lift_lower == witx2::abi::LiftLower::LowerArgsLiftResults && !func.params.is_empty() {
+        if lift_lower == abi::LiftLower::LowerArgsLiftResults && !func.params.is_empty() {
             // Initialize `bindgen.cpp`'s JS value operands vector with the
             // arguments given to this function
             //
@@ -1314,10 +1353,10 @@ impl<'a, 'b> Bindgen<'a, 'b> {
     /// Create a new Wasm local for this function and return its index.
     fn new_local(&mut self, ty: wasm_encoder::ValType) -> u32 {
         let offset = match self.lift_lower {
-            witx2::abi::LiftLower::LiftArgsLowerResults => self.sig.params.len(),
+            abi::LiftLower::LiftArgsLowerResults => self.sig.params.len(),
             // `JSNative` functions take three `i32` arguments: cx, argc, and
             // vp.
-            witx2::abi::LiftLower::LowerArgsLiftResults => 3,
+            abi::LiftLower::LowerArgsLiftResults => 3,
         };
         let idx = u32::try_from(self.locals.len() + offset).unwrap();
         self.locals.push(ty);
@@ -1342,9 +1381,9 @@ impl<'a, 'b> Bindgen<'a, 'b> {
         assert_eq!(self.blocks.len(), 1);
 
         for inst in &self.blocks[0] {
-            f.instruction(*inst);
+            f.instruction(inst);
         }
-        f.instruction(Instruction::End);
+        f.instruction(&Instruction::End);
         f
     }
 }
@@ -1405,28 +1444,28 @@ fn sm_mem_arg(offset: u32) -> wasm_encoder::MemArg {
     }
 }
 
-impl witx2::abi::Bindgen for Bindgen<'_, '_> {
+impl abi::Bindgen for Bindgen<'_, '_> {
     type Operand = Operand;
 
     fn emit(
         &mut self,
-        _iface: &witx2::Interface,
-        inst: &witx2::abi::Instruction<'_>,
+        _iface: &Interface,
+        inst: &abi::Instruction<'_>,
         operands: &mut Vec<Self::Operand>,
         results: &mut Vec<Self::Operand>,
     ) {
         match inst {
-            witx2::abi::Instruction::GetArg { nth } => {
+            abi::Instruction::GetArg { nth } => {
                 let nth = u32::try_from(*nth).unwrap();
                 results.push(match self.lift_lower {
-                    witx2::abi::LiftLower::LiftArgsLowerResults => Operand::Wasm(nth),
-                    witx2::abi::LiftLower::LowerArgsLiftResults => Operand::Js(nth),
+                    abi::LiftLower::LiftArgsLowerResults => Operand::Wasm(nth),
+                    abi::LiftLower::LowerArgsLiftResults => Operand::Js(nth),
                 });
             }
-            witx2::abi::Instruction::I32Const { val: _ } => todo!(),
-            witx2::abi::Instruction::Bitcasts { casts: _ } => todo!(),
-            witx2::abi::Instruction::ConstZero { tys: _ } => todo!(),
-            witx2::abi::Instruction::I32Load { offset } => {
+            abi::Instruction::I32Const { val: _ } => todo!(),
+            abi::Instruction::Bitcasts { casts: _ } => todo!(),
+            abi::Instruction::ConstZero { tys: _ } => todo!(),
+            abi::Instruction::I32Load { offset } => {
                 let addr = pop_wasm(operands);
                 let local = self.new_local(wasm_encoder::ValType::I32);
 
@@ -1440,14 +1479,14 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
 
                 results.push(Operand::Wasm(local));
             }
-            witx2::abi::Instruction::I32Load8U { offset: _ } => todo!(),
-            witx2::abi::Instruction::I32Load8S { offset: _ } => todo!(),
-            witx2::abi::Instruction::I32Load16U { offset: _ } => todo!(),
-            witx2::abi::Instruction::I32Load16S { offset: _ } => todo!(),
-            witx2::abi::Instruction::I64Load { offset: _ } => todo!(),
-            witx2::abi::Instruction::F32Load { offset: _ } => todo!(),
-            witx2::abi::Instruction::F64Load { offset: _ } => todo!(),
-            witx2::abi::Instruction::I32Store { offset } => {
+            abi::Instruction::I32Load8U { offset: _ } => todo!(),
+            abi::Instruction::I32Load8S { offset: _ } => todo!(),
+            abi::Instruction::I32Load16U { offset: _ } => todo!(),
+            abi::Instruction::I32Load16S { offset: _ } => todo!(),
+            abi::Instruction::I64Load { offset: _ } => todo!(),
+            abi::Instruction::F32Load { offset: _ } => todo!(),
+            abi::Instruction::F64Load { offset: _ } => todo!(),
+            abi::Instruction::I32Store { offset } => {
                 let addr = pop_wasm(operands);
                 let val = pop_wasm(operands);
 
@@ -1459,15 +1498,15 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
                 self.inst(Instruction::I32Store(sm_mem_arg((*offset as u32).into())));
                 // []
             }
-            witx2::abi::Instruction::I32Store8 { offset: _ } => todo!(),
-            witx2::abi::Instruction::I32Store16 { offset: _ } => todo!(),
-            witx2::abi::Instruction::I64Store { offset: _ } => todo!(),
-            witx2::abi::Instruction::F32Store { offset: _ } => todo!(),
-            witx2::abi::Instruction::F64Store { offset: _ } => todo!(),
-            witx2::abi::Instruction::I32FromChar => todo!(),
-            witx2::abi::Instruction::I64FromU64 => todo!(),
-            witx2::abi::Instruction::I64FromS64 => todo!(),
-            witx2::abi::Instruction::I32FromU32 => {
+            abi::Instruction::I32Store8 { offset: _ } => todo!(),
+            abi::Instruction::I32Store16 { offset: _ } => todo!(),
+            abi::Instruction::I64Store { offset: _ } => todo!(),
+            abi::Instruction::F32Store { offset: _ } => todo!(),
+            abi::Instruction::F64Store { offset: _ } => todo!(),
+            abi::Instruction::I32FromChar => todo!(),
+            abi::Instruction::I64FromU64 => todo!(),
+            abi::Instruction::I64FromS64 => todo!(),
+            abi::Instruction::I32FromU32 => {
                 let js = pop_js(operands);
                 let local = self.new_local(wasm_encoder::ValType::I32);
 
@@ -1483,21 +1522,21 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
 
                 results.push(Operand::Wasm(local));
             }
-            witx2::abi::Instruction::I32FromS32 => todo!(),
-            witx2::abi::Instruction::I32FromU16 => todo!(),
-            witx2::abi::Instruction::I32FromS16 => todo!(),
-            witx2::abi::Instruction::I32FromU8 => todo!(),
-            witx2::abi::Instruction::I32FromS8 => todo!(),
-            witx2::abi::Instruction::I32FromUsize => todo!(),
-            witx2::abi::Instruction::I32FromChar8 => todo!(),
-            witx2::abi::Instruction::F32FromIf32 => todo!(),
-            witx2::abi::Instruction::F64FromIf64 => todo!(),
-            witx2::abi::Instruction::S8FromI32 => todo!(),
-            witx2::abi::Instruction::U8FromI32 => todo!(),
-            witx2::abi::Instruction::S16FromI32 => todo!(),
-            witx2::abi::Instruction::U16FromI32 => todo!(),
-            witx2::abi::Instruction::S32FromI32 => todo!(),
-            witx2::abi::Instruction::U32FromI32 => {
+            abi::Instruction::I32FromS32 => todo!(),
+            abi::Instruction::I32FromU16 => todo!(),
+            abi::Instruction::I32FromS16 => todo!(),
+            abi::Instruction::I32FromU8 => todo!(),
+            abi::Instruction::I32FromS8 => todo!(),
+            abi::Instruction::I32FromUsize => todo!(),
+            abi::Instruction::I32FromChar8 => todo!(),
+            abi::Instruction::F32FromIf32 => todo!(),
+            abi::Instruction::F64FromIf64 => todo!(),
+            abi::Instruction::S8FromI32 => todo!(),
+            abi::Instruction::U8FromI32 => todo!(),
+            abi::Instruction::S16FromI32 => todo!(),
+            abi::Instruction::U16FromI32 => todo!(),
+            abi::Instruction::S32FromI32 => todo!(),
+            abi::Instruction::U32FromI32 => {
                 let local = pop_wasm(operands);
                 let result = self.next_js();
 
@@ -1513,18 +1552,18 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
 
                 results.push(result);
             }
-            witx2::abi::Instruction::S64FromI64 => todo!(),
-            witx2::abi::Instruction::U64FromI64 => todo!(),
-            witx2::abi::Instruction::CharFromI32 => todo!(),
-            witx2::abi::Instruction::If32FromF32 => todo!(),
-            witx2::abi::Instruction::If64FromF64 => todo!(),
-            witx2::abi::Instruction::Char8FromI32 => todo!(),
-            witx2::abi::Instruction::UsizeFromI32 => todo!(),
-            witx2::abi::Instruction::I32FromBorrowedHandle { ty: _ } => todo!(),
-            witx2::abi::Instruction::I32FromOwnedHandle { ty: _ } => todo!(),
-            witx2::abi::Instruction::HandleOwnedFromI32 { ty: _ } => todo!(),
-            witx2::abi::Instruction::HandleBorrowedFromI32 { ty: _ } => todo!(),
-            witx2::abi::Instruction::ListCanonLower { element, realloc } => {
+            abi::Instruction::S64FromI64 => todo!(),
+            abi::Instruction::U64FromI64 => todo!(),
+            abi::Instruction::CharFromI32 => todo!(),
+            abi::Instruction::If32FromF32 => todo!(),
+            abi::Instruction::If64FromF64 => todo!(),
+            abi::Instruction::Char8FromI32 => todo!(),
+            abi::Instruction::UsizeFromI32 => todo!(),
+            abi::Instruction::I32FromBorrowedHandle { ty: _ } => todo!(),
+            abi::Instruction::I32FromOwnedHandle { ty: _ } => todo!(),
+            abi::Instruction::HandleOwnedFromI32 { ty: _ } => todo!(),
+            abi::Instruction::HandleBorrowedFromI32 { ty: _ } => todo!(),
+            abi::Instruction::ListCanonLower { element, realloc } => {
                 let js = pop_js(operands);
                 let ptr = self.new_local(wasm_encoder::ValType::I32);
                 let len = self.new_local(wasm_encoder::ValType::I32);
@@ -1578,7 +1617,7 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
                 results.push(Operand::Wasm(ptr));
                 results.push(Operand::Wasm(len));
             }
-            witx2::abi::Instruction::ListLower { element, realloc } => {
+            abi::Instruction::ListLower { element, realloc } => {
                 let iterable = pop_js(operands);
                 let (block, block_results) = self.pop_block();
                 assert!(block_results.is_empty());
@@ -1699,12 +1738,12 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
                 results.push(Operand::Wasm(ptr));
                 results.push(Operand::Wasm(length));
             }
-            witx2::abi::Instruction::ListCanonLift {
+            abi::Instruction::ListCanonLift {
                 element,
                 free,
                 ty: _,
             } => {
-                assert_eq!(**element, witx2::Type::Char);
+                assert_eq!(**element, Type::Char);
 
                 let len = pop_wasm(operands);
                 let ptr = pop_wasm(operands);
@@ -1736,7 +1775,7 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
 
                 results.push(result);
             }
-            witx2::abi::Instruction::ListLift {
+            abi::Instruction::ListLift {
                 element,
                 free,
                 ty: _,
@@ -1857,65 +1896,65 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
 
                 results.push(result);
             }
-            witx2::abi::Instruction::IterElem { element: _ } => {
+            abi::Instruction::IterElem { element: _ } => {
                 let iter_elem = self.next_js();
                 self.iter_elem.push(iter_elem.unwrap_js());
                 results.push(iter_elem);
             }
-            witx2::abi::Instruction::IterBasePointer => {
+            abi::Instruction::IterBasePointer => {
                 let iter_base_pointer = self.new_local(wasm_encoder::ValType::I32);
                 self.iter_base_pointer.push(iter_base_pointer);
                 results.push(Operand::Wasm(iter_base_pointer));
             }
 
-            witx2::abi::Instruction::BufferPayloadName => todo!(),
-            witx2::abi::Instruction::BufferLowerPtrLen { push: _, ty: _ } => todo!(),
-            witx2::abi::Instruction::BufferLowerHandle { push: _, ty: _ } => todo!(),
-            witx2::abi::Instruction::BufferLiftPtrLen { push: _, ty: _ } => todo!(),
-            witx2::abi::Instruction::BufferLiftHandle { push: _, ty: _ } => todo!(),
-            witx2::abi::Instruction::RecordLower {
+            abi::Instruction::BufferPayloadName => todo!(),
+            abi::Instruction::BufferLowerPtrLen { push: _, ty: _ } => todo!(),
+            abi::Instruction::BufferLowerHandle { push: _, ty: _ } => todo!(),
+            abi::Instruction::BufferLiftPtrLen { push: _, ty: _ } => todo!(),
+            abi::Instruction::BufferLiftHandle { push: _, ty: _ } => todo!(),
+            abi::Instruction::RecordLower {
                 record: _,
                 name: _,
                 ty: _,
             } => todo!(),
-            witx2::abi::Instruction::RecordLift {
+            abi::Instruction::RecordLift {
                 record: _,
                 name: _,
                 ty: _,
             } => todo!(),
-            witx2::abi::Instruction::FlagsLower {
+            abi::Instruction::FlagsLower {
                 record: _,
                 name: _,
                 ty: _,
             } => todo!(),
-            witx2::abi::Instruction::FlagsLower64 {
+            abi::Instruction::FlagsLower64 {
                 record: _,
                 name: _,
                 ty: _,
             } => todo!(),
-            witx2::abi::Instruction::FlagsLift {
+            abi::Instruction::FlagsLift {
                 record: _,
                 name: _,
                 ty: _,
             } => todo!(),
-            witx2::abi::Instruction::FlagsLift64 {
+            abi::Instruction::FlagsLift64 {
                 record: _,
                 name: _,
                 ty: _,
             } => todo!(),
-            witx2::abi::Instruction::VariantPayloadName => todo!(),
-            witx2::abi::Instruction::VariantLower {
+            abi::Instruction::VariantPayloadName => todo!(),
+            abi::Instruction::VariantLower {
                 variant: _,
                 name: _,
                 ty: _,
                 results: _,
             } => todo!(),
-            witx2::abi::Instruction::VariantLift {
+            abi::Instruction::VariantLift {
                 variant: _,
                 name: _,
                 ty: _,
             } => todo!(),
-            witx2::abi::Instruction::CallWasm { module, name, sig } => {
+            abi::Instruction::CallWasm { module, name, sig } => {
                 // Push the Wasm arguments.
                 //
                 // []
@@ -1965,7 +2004,7 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
                     // []
                 }
             }
-            witx2::abi::Instruction::CallInterface { module: _, func } => {
+            abi::Instruction::CallInterface { module: _, func } => {
                 // TODO: Rather than always dynamically pushing all of our JS
                 // arguments, make `SMW_call_{0,1,...,n}` up to the largest
                 // common `n` so we can directly pass the arguments for most
@@ -2043,12 +2082,12 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
                 // []
             }
 
-            witx2::abi::Instruction::CallWasmAsyncExport { .. } => todo!(),
-            witx2::abi::Instruction::CallWasmAsyncImport { .. } => todo!(),
+            abi::Instruction::CallWasmAsyncExport { .. } => todo!(),
+            abi::Instruction::CallWasmAsyncImport { .. } => todo!(),
 
-            witx2::abi::Instruction::Return { amt, func: _ } => {
+            abi::Instruction::Return { amt, func: _ } => {
                 match self.lift_lower {
-                    witx2::abi::LiftLower::LowerArgsLiftResults => {
+                    abi::LiftLower::LowerArgsLiftResults => {
                         if *amt != 0 {
                             // Attach the return values to the `JS::CallArgs`:
                             // build up the return values via a series of
@@ -2093,7 +2132,7 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
                         self.inst(Instruction::Return);
                         // []
                     }
-                    witx2::abi::LiftLower::LiftArgsLowerResults => {
+                    abi::LiftLower::LiftArgsLowerResults => {
                         self.gen.clear_js_operands(self.blocks.last_mut().unwrap());
 
                         // Get the return values out of their locals and push
@@ -2111,20 +2150,16 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
                 }
             }
 
-            witx2::abi::Instruction::ReturnAsyncExport { .. } => todo!(),
-            witx2::abi::Instruction::ReturnAsyncImport { .. } => todo!(),
+            abi::Instruction::ReturnAsyncExport { .. } => todo!(),
+            abi::Instruction::ReturnAsyncImport { .. } => todo!(),
 
-            witx2::abi::Instruction::Witx { instr: _ } => {
+            abi::Instruction::Witx { instr: _ } => {
                 unreachable!("we do not support the preview1 ABI")
             }
         }
     }
 
-    fn allocate_typed_space(
-        &mut self,
-        _iface: &witx2::Interface,
-        _ty: witx2::TypeId,
-    ) -> Self::Operand {
+    fn allocate_typed_space(&mut self, _iface: &Interface, _ty: TypeId) -> Self::Operand {
         todo!()
     }
 
@@ -2149,11 +2184,11 @@ impl witx2::abi::Bindgen for Bindgen<'_, '_> {
         self.block_results.push(results.to_vec());
     }
 
-    fn sizes(&self) -> &witx2::SizeAlign {
+    fn sizes(&self) -> &SizeAlign {
         todo!()
     }
 
-    fn is_list_canonical(&self, _iface: &witx2::Interface, _ty: &witx2::Type) -> bool {
+    fn is_list_canonical(&self, _iface: &Interface, _ty: &Type) -> bool {
         // TODO: we will want to support canonical lists for the various typed
         // arrays.
         false

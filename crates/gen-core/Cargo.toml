@@ -1,5 +1,5 @@
 [package]
-name = "witx-bindgen-gen-core"
+name = "wai-bindgen-gen-core"
 version = "0.1.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 edition = "2018"
@@ -8,8 +8,8 @@ edition = "2018"
 doctest = false
 
 [dependencies]
-witx2 = { path = '../witx2' }
+wai-parser = { path = '../parser' }
 anyhow = "1"
 
 [features]
-old-witx-compat = ['witx2/old-witx-compat']
+witx-compat = ['wai-parser/witx-compat']

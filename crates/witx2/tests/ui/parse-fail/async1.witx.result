@@ -1,5 +1,0 @@
-expected keyword `function`, found '('
-     --> tests/ui/parse-fail/async1.witx:2:9
-      |
-    2 | a: async()
-      |         ^

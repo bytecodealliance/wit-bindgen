@@ -4,13 +4,13 @@ use crate::adapter::{
 use anyhow::{anyhow, bail, Result};
 use core::fmt;
 use std::collections::HashMap;
+use wai_parser::{
+    abi::{AbiVariant, WasmSignature, WasmType},
+    Function, Interface as WaiInterface, SizeAlign, Type as WaiType,
+};
 use wasmparser::{
     Chunk, Export, ExternalKind, FuncType, Import, ImportSectionEntryType, Parser, Payload, Range,
     SectionReader, Type, TypeDef, Validator,
-};
-use witx2::{
-    abi::{Direction, WasmSignature, WasmType},
-    Function, SizeAlign,
 };
 
 fn import_kind(ty: ImportSectionEntryType) -> &'static str {
@@ -40,8 +40,8 @@ pub(crate) fn export_kind(kind: ExternalKind) -> &'static str {
     }
 }
 
-fn has_list(interface: &witx2::Interface, ty: &witx2::Type) -> bool {
-    use witx2::{Type, TypeDefKind};
+fn has_list(interface: &WaiInterface, ty: &WaiType) -> bool {
+    use wai_parser::{Type, TypeDefKind};
 
     match ty {
         Type::Id(id) => match &interface.types[*id].kind {
@@ -67,7 +67,7 @@ pub(crate) struct FunctionInfo {
 }
 
 pub(crate) struct Interface {
-    inner: witx2::Interface,
+    inner: WaiInterface,
     sizes: SizeAlign,
     func_infos: Vec<FunctionInfo>,
     pub(crate) must_adapt: bool,
@@ -77,7 +77,7 @@ pub(crate) struct Interface {
 }
 
 impl Interface {
-    pub fn new(inner: witx2::Interface) -> Self {
+    pub fn new(inner: WaiInterface) -> Self {
         let mut must_adapt_module = false;
         let mut needs_memory = false;
         let mut needs_memory_funcs = false;
@@ -86,8 +86,8 @@ impl Interface {
             .functions
             .iter()
             .map(|f| {
-                let import_signature = inner.wasm_signature(Direction::Import, f);
-                let export_signature = inner.wasm_signature(Direction::Export, f);
+                let import_signature = inner.wasm_signature(AbiVariant::GuestImport, f);
+                let export_signature = inner.wasm_signature(AbiVariant::GuestExport, f);
                 let import_type = Self::sig_to_type(&import_signature);
                 let export_type = Self::sig_to_type(&export_signature);
 
@@ -119,7 +119,7 @@ impl Interface {
             .collect();
 
         let mut sizes = SizeAlign::default();
-        sizes.fill(Direction::Export, &inner);
+        sizes.fill(AbiVariant::GuestExport, &inner);
 
         let has_resources = inner
             .resources
@@ -137,7 +137,7 @@ impl Interface {
         }
     }
 
-    pub fn inner(&self) -> &witx2::Interface {
+    pub fn inner(&self) -> &WaiInterface {
         &self.inner
     }
 
@@ -154,7 +154,7 @@ impl Interface {
     }
 
     fn sig_to_type(signature: &WasmSignature) -> FuncType {
-        fn from_witx_type(ty: &WasmType) -> Type {
+        fn from_wasm_type(ty: &WasmType) -> Type {
             match ty {
                 WasmType::I32 => Type::I32,
                 WasmType::I64 => Type::I64,
@@ -166,14 +166,14 @@ impl Interface {
         let params = signature
             .params
             .iter()
-            .map(from_witx_type)
+            .map(from_wasm_type)
             .collect::<Vec<_>>()
             .into_boxed_slice();
 
         let returns = signature
             .results
             .iter()
-            .map(from_witx_type)
+            .map(from_wasm_type)
             .collect::<Vec<_>>()
             .into_boxed_slice();
 
@@ -206,7 +206,7 @@ impl<'a> Module<'a> {
     pub fn new(
         name: &'a str,
         bytes: &'a [u8],
-        interfaces: impl IntoIterator<Item = witx2::Interface>,
+        interfaces: impl IntoIterator<Item = WaiInterface>,
     ) -> Result<Self> {
         let mut module = Self {
             name,

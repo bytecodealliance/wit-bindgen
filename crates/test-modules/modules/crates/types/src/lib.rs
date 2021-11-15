@@ -1,4 +1,4 @@
-witx_bindgen_rust::export!("crates/types/types.witx");
+wai_bindgen_rust::export!("crates/types/types.wai");
 
 struct Types;
 

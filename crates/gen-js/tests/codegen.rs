@@ -1,24 +1,21 @@
 use std::path::Path;
 use std::process::Command;
 
-mod imports {
-    test_helpers::codegen_js_import!(
+mod exports {
+    test_helpers::codegen_js_export!(
         // ...
-        "*.witx"
-
-        // These use preview1 ABI things which aren't implemented
-        "!wasi_snapshot_preview1.witx"
+        "*.wai"
     );
 }
 
-mod exports {
-    test_helpers::codegen_js_export!(
-        "*.witx"
+mod imports {
+    test_helpers::codegen_js_import!(
+        "*.wai"
 
-        // This uses buffers, which we don't support in exports just yet
+        // This uses buffers, which we don't support in imports just yet
         // TODO: should support this
-        "!wasi_next.witx"
-        "!host.witx"
+        "!wasi_next.wai"
+        "!host.wai"
     );
 }
 

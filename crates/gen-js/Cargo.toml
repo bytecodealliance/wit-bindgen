@@ -1,5 +1,5 @@
 [package]
-name = "witx-bindgen-gen-js"
+name = "wai-bindgen-gen-js"
 version = "0.1.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 edition = "2018"
@@ -9,12 +9,12 @@ doctest = false
 test = false
 
 [dependencies]
-witx-bindgen-gen-core = { path = '../gen-core', version = '0.1.0' }
+wai-bindgen-gen-core = { path = '../gen-core', version = '0.1.0' }
 heck = "0.3"
 structopt = { version = "0.3", default-features = false, optional = true }
 
 [dev-dependencies]
-test-helpers = { path = '../test-helpers', features = ['witx-bindgen-gen-js'] }
+test-helpers = { path = '../test-helpers', features = ['wai-bindgen-gen-js'] }
 
 [features]
-old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']
+wai-compat = ['wai-bindgen-gen-core/witx-compat']

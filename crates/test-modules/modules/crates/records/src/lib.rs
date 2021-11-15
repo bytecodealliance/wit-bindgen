@@ -1,4 +1,4 @@
-witx_bindgen_rust::export!("crates/records/records.witx");
+wai_bindgen_rust::export!("crates/records/records.wai");
 
 use records::*;
 

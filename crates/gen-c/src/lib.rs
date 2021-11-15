@@ -1,10 +1,10 @@
 use heck::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::mem;
-use witx_bindgen_gen_core::witx2::abi::{
-    Bindgen, Bitcast, Direction, Instruction, LiftLower, WasmType, WitxInstruction,
+use wai_bindgen_gen_core::wai_parser::abi::{
+    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType, WitxInstruction,
 };
-use witx_bindgen_gen_core::{witx2::*, Files, Generator, Ns};
+use wai_bindgen_gen_core::{wai_parser::*, Direction, Files, Generator, Ns};
 
 #[derive(Default)]
 pub struct C {
@@ -29,7 +29,7 @@ pub struct C {
 
     // Type definitions for the given `TypeId`. This is printed topologically
     // at the end.
-    types: HashMap<TypeId, witx_bindgen_gen_core::Source>,
+    types: HashMap<TypeId, wai_bindgen_gen_core::Source>,
 
     needs_string: bool,
 }
@@ -81,6 +81,14 @@ enum Scalar {
 impl C {
     pub fn new() -> C {
         C::default()
+    }
+
+    fn abi_variant(dir: Direction) -> AbiVariant {
+        // This generator uses the obvious direction to ABI variant mapping.
+        match dir {
+            Direction::Export => AbiVariant::GuestExport,
+            Direction::Import => AbiVariant::GuestImport,
+        }
     }
 
     fn classify_ret(&mut self, iface: &Interface, func: &Function) -> Return {
@@ -704,11 +712,12 @@ impl Return {
 
 impl Generator for C {
     fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        self.sizes.fill(dir, iface);
-        self.in_import = dir == Direction::Import;
+        let variant = Self::abi_variant(dir);
+        self.sizes.fill(variant, iface);
+        self.in_import = variant == AbiVariant::GuestImport;
 
         for func in iface.functions.iter() {
-            let sig = iface.wasm_signature(dir, func);
+            let sig = iface.wasm_signature(variant, func);
             if let Some(results) = sig.retptr {
                 self.i64_return_pointer_area_size =
                     self.i64_return_pointer_area_size.max(results.len());
@@ -923,7 +932,7 @@ impl Generator for C {
     fn import(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
-        let sig = iface.wasm_signature(Direction::Import, func);
+        let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
 
         // In the private C file, print a function declaration which is the
         // actual wasm import that we'll be calling, and this has the raw wasm
@@ -976,7 +985,7 @@ impl Generator for C {
             f.locals.insert(ptr).unwrap();
         }
         iface.call(
-            Direction::Import,
+            AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
             &mut f,
@@ -997,7 +1006,7 @@ impl Generator for C {
     fn export(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
-        let sig = iface.wasm_signature(Direction::Export, func);
+        let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
 
         // Print the actual header for this function into the header file, and
         // it's what we'll be calling.
@@ -1039,7 +1048,7 @@ impl Generator for C {
 
         // Perform all lifting/lowering and append it to our src.
         iface.call(
-            Direction::Export,
+            AbiVariant::GuestExport,
             LiftLower::LiftArgsLowerResults,
             func,
             &mut f,
@@ -1265,10 +1274,10 @@ struct FunctionBindgen<'a> {
     gen: &'a mut C,
     locals: Ns,
     // tmp: usize,
-    src: witx_bindgen_gen_core::Source,
+    src: wai_bindgen_gen_core::Source,
     sig: CSig,
     func_to_call: &'a str,
-    block_storage: Vec<witx_bindgen_gen_core::Source>,
+    block_storage: Vec<wai_bindgen_gen_core::Source>,
     blocks: Vec<(String, Vec<String>)>,
     payloads: Vec<String>,
     params: Vec<String>,
@@ -1904,8 +1913,8 @@ impl Bindgen for FunctionBindgen<'_> {
 
 #[derive(Default)]
 struct Source {
-    header: witx_bindgen_gen_core::Source,
-    src: witx_bindgen_gen_core::Source,
+    header: wai_bindgen_gen_core::Source,
+    src: wai_bindgen_gen_core::Source,
 }
 
 impl Source {

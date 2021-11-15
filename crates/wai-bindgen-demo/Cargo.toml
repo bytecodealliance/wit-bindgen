@@ -1,0 +1,23 @@
+[package]
+name = "wai-bindgen-demo"
+version = "0.1.0"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+edition = "2018"
+publish = false
+
+[lib]
+crate-type = ['cdylib']
+test = false
+doctest = false
+
+[dependencies]
+wai-bindgen-gen-core = { path = '../gen-core', features = ['witx-compat'] }
+wai-bindgen-gen-rust-wasm = { path = '../gen-rust-wasm' }
+wai-bindgen-gen-wasmtime = { path = '../gen-wasmtime' }
+wai-bindgen-gen-wasmtime-py = { path = '../gen-wasmtime-py' }
+wai-bindgen-gen-js = { path = '../gen-js' }
+wai-bindgen-gen-c = { path = '../gen-c' }
+wai-bindgen-gen-markdown = { path = '../gen-markdown' }
+wai-bindgen-gen-spidermonkey = { path = '../gen-spidermonkey' }
+wai-bindgen-rust = { path = '../rust-wasm' }
+wasmprinter = "0.2.29"

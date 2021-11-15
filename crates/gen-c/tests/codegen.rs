@@ -5,27 +5,24 @@ use std::process::Command;
 mod imports {
     test_helpers::codegen_c_import!(
         // ...
-        "*.witx"
+        "*.wai"
 
         // TODO: implement async support
-        "!async_functions.witx"
+        "!async_functions.wai"
     );
 }
 
 mod exports {
     test_helpers::codegen_c_export!(
-        "*.witx"
+        "*.wai"
 
         // TODO: implement async support
-        "!async_functions.witx"
-
-        // These use preview1 ABI things which are only supported for imports
-        "!wasi_snapshot_preview1.witx"
+        "!async_functions.wai"
 
         // TODO: these use push/pull buffer in exports which isn't implemented
         // yet
-        "!wasi_next.witx"
-        "!host.witx"
+        "!wasi_next.wai"
+        "!host.wai"
     );
 }
 

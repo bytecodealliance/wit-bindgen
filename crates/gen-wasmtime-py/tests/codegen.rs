@@ -1,31 +1,26 @@
 use std::path::Path;
 use std::process::Command;
 
-mod imports {
-    test_helpers::codegen_py_import!(
-        "*.witx"
+mod exports {
+    test_helpers::codegen_py_export!(
+        "*.wai"
 
         // TODO: implement async support
-        "!async_functions.witx"
-
-        // The python generator doesn't support the legacy witx features at this
-        // time.
-        "!legacy.witx"
-        "!wasi_snapshot_preview1.witx"
+        "!async_functions.wai"
     );
 }
 
-mod exports {
-    test_helpers::codegen_py_export!(
-        "*.witx"
+mod imports {
+    test_helpers::codegen_py_import!(
+        "*.wai"
 
         // TODO: implement async support
-        "!async_functions.witx"
+        "!async_functions.wai"
 
-        // This uses buffers, which we don't support in exports just yet
+        // This uses buffers, which we don't support in imports just yet
         // TODO: should support this
-        "!wasi_next.witx"
-        "!host.witx"
+        "!wasi_next.wai"
+        "!host.wai"
     );
 }
 

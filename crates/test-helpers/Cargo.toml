@@ -16,24 +16,24 @@ heck = "0.3"
 ignore = "0.4"
 proc-macro2 = "1.0.27"
 quote = "1.0.9"
-witx-bindgen-gen-core = { path = '../gen-core' }
-witx-bindgen-gen-rust-wasm = { path = '../gen-rust-wasm', optional = true }
-witx-bindgen-gen-wasmtime = { path = '../gen-wasmtime', optional = true }
-witx-bindgen-gen-wasmtime-py = { path = '../gen-wasmtime-py', optional = true }
-witx-bindgen-gen-js = { path = '../gen-js', optional = true }
-witx-bindgen-gen-c = { path = '../gen-c', optional = true }
-witx-bindgen-gen-spidermonkey = { path = '../gen-spidermonkey', optional = true }
-witx2 = { path = '../witx2', features = ['old-witx-compat'] }
+wai-bindgen-gen-core = { path = '../gen-core' }
+wai-bindgen-gen-rust-wasm = { path = '../gen-rust-wasm', optional = true }
+wai-bindgen-gen-wasmtime = { path = '../gen-wasmtime', optional = true }
+wai-bindgen-gen-wasmtime-py = { path = '../gen-wasmtime-py', optional = true }
+wai-bindgen-gen-js = { path = '../gen-js', optional = true }
+wai-bindgen-gen-c = { path = '../gen-c', optional = true }
+wai-bindgen-gen-spidermonkey = { path = '../gen-spidermonkey', optional = true }
+wai-parser = { path = '../parser', features = ['witx-compat'] }
 filetime = "0.2"
 
 [build-dependencies]
-witx-bindgen-gen-c = { path = '../gen-c' }
-witx-bindgen-gen-spidermonkey = { path = '../gen-spidermonkey' }
-witx-bindgen-gen-core = { path = '../gen-core' }
+wai-bindgen-gen-c = { path = '../gen-c' }
+wai-bindgen-gen-spidermonkey = { path = '../gen-spidermonkey' }
+wai-bindgen-gen-core = { path = '../gen-core' }
 
 [features]
 default = ['wasm-rust', 'wasm-c', 'wasm-spidermonkey']
-old-witx-compat = ['witx-bindgen-gen-core/old-witx-compat']
+witx-compat = ['wai-bindgen-gen-core/witx-compat']
 wasm-rust = []
 wasm-c = []
 wasm-spidermonkey = []

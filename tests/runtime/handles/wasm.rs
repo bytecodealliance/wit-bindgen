@@ -1,10 +1,10 @@
-witx_bindgen_rust::import!("./tests/runtime/handles/imports.witx");
-witx_bindgen_rust::export!("./tests/runtime/handles/exports.witx");
+wai_bindgen_rust::import!("./tests/runtime/handles/imports.wai");
+wai_bindgen_rust::export!("./tests/runtime/handles/exports.wai");
 
 use exports::*;
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
-use witx_bindgen_rust::Handle;
+use wai_bindgen_rust::Handle;
 
 struct Exports;
 

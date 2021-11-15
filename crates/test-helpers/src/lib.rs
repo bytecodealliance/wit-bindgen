@@ -4,11 +4,10 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
-use witx_bindgen_gen_core::witx2::abi::Direction;
-use witx_bindgen_gen_core::Generator;
+use wai_bindgen_gen_core::{Direction, Generator};
 
 #[proc_macro]
-#[cfg(feature = "witx-bindgen-gen-rust-wasm")]
+#[cfg(feature = "wai-bindgen-gen-rust-wasm")]
 pub fn codegen_rust_wasm_import(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
@@ -16,13 +15,13 @@ pub fn codegen_rust_wasm_import(input: TokenStream) -> TokenStream {
         &[
             (
                 "import",
-                || witx_bindgen_gen_rust_wasm::Opts::default().build(),
+                || wai_bindgen_gen_rust_wasm::Opts::default().build(),
                 |_| quote::quote!(),
             ),
             (
                 "import-unchecked",
                 || {
-                    let mut opts = witx_bindgen_gen_rust_wasm::Opts::default();
+                    let mut opts = wai_bindgen_gen_rust_wasm::Opts::default();
                     opts.unchecked = true;
                     opts.build()
                 },
@@ -33,11 +32,11 @@ pub fn codegen_rust_wasm_import(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-#[cfg(feature = "witx-bindgen-gen-rust-wasm")]
+#[cfg(feature = "wai-bindgen-gen-rust-wasm")]
 pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
     use heck::*;
     use std::collections::BTreeMap;
-    use witx2::{FunctionKind, Type, TypeDefKind};
+    use wai_parser::{FunctionKind, Type, TypeDefKind};
 
     return gen_rust(
         input,
@@ -45,13 +44,13 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         &[
             (
                 "export",
-                || witx_bindgen_gen_rust_wasm::Opts::default().build(),
+                || wai_bindgen_gen_rust_wasm::Opts::default().build(),
                 gen_extra,
             ),
             (
                 "export-unchecked",
                 || {
-                    let mut opts = witx_bindgen_gen_rust_wasm::Opts::default();
+                    let mut opts = wai_bindgen_gen_rust_wasm::Opts::default();
                     opts.unchecked = true;
                     opts.symbol_namespace = "unchecked".to_string();
                     opts.build()
@@ -61,7 +60,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         ],
     );
 
-    fn gen_extra(iface: &witx2::Interface) -> proc_macro2::TokenStream {
+    fn gen_extra(iface: &wai_parser::Interface) -> proc_macro2::TokenStream {
         let mut ret = quote::quote!();
         if iface.resources.len() == 0 && iface.functions.len() == 0 {
             return ret;
@@ -98,7 +97,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 self_ = quote::quote!(&self,);
             }
             let async_ = if f.is_async {
-                async_trait = quote::quote!(#[witx_bindgen_rust::async_trait(?Send)]);
+                async_trait = quote::quote!(#[wai_bindgen_rust::async_trait(?Send)]);
                 quote::quote!(async)
             } else {
                 quote::quote!()
@@ -141,8 +140,8 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
 
     fn quote_ty(
         param: bool,
-        iface: &witx2::Interface,
-        ty: &witx2::Type,
+        iface: &wai_parser::Interface,
+        ty: &wai_parser::Type,
     ) -> proc_macro2::TokenStream {
         match *ty {
             Type::U8 => quote::quote! { u8 },
@@ -161,7 +160,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
             Type::Handle(resource) => {
                 let name =
                     quote::format_ident!("{}", iface.resources[resource].name.to_camel_case());
-                quote::quote! { witx_bindgen_rust::Handle<#name> }
+                quote::quote! { wai_bindgen_rust::Handle<#name> }
             }
             Type::Id(id) => quote_id(param, iface, id),
         }
@@ -169,8 +168,8 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
 
     fn quote_id(
         param: bool,
-        iface: &witx2::Interface,
-        id: witx2::TypeId,
+        iface: &wai_parser::Interface,
+        id: wai_parser::TypeId,
     ) -> proc_macro2::TokenStream {
         let ty = &iface.types[id];
         if let Some(name) = &ty.name {
@@ -227,42 +226,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-#[cfg(feature = "witx-bindgen-gen-wasmtime")]
-pub fn codegen_wasmtime_import(input: TokenStream) -> TokenStream {
-    gen_rust(
-        input,
-        Direction::Import,
-        &[
-            (
-                "import",
-                || witx_bindgen_gen_wasmtime::Opts::default().build(),
-                |_| quote::quote!(),
-            ),
-            (
-                "import-tracing-and-custom-error",
-                || {
-                    let mut opts = witx_bindgen_gen_wasmtime::Opts::default();
-                    opts.tracing = true;
-                    opts.custom_error = true;
-                    opts.build()
-                },
-                |_| quote::quote!(),
-            ),
-            (
-                "import-async",
-                || {
-                    let mut opts = witx_bindgen_gen_wasmtime::Opts::default();
-                    opts.async_ = witx_bindgen_gen_wasmtime::Async::All;
-                    opts.build()
-                },
-                |_| quote::quote!(),
-            ),
-        ],
-    )
-}
-
-#[proc_macro]
-#[cfg(feature = "witx-bindgen-gen-wasmtime")]
+#[cfg(feature = "wai-bindgen-gen-wasmtime")]
 pub fn codegen_wasmtime_export(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
@@ -270,14 +234,24 @@ pub fn codegen_wasmtime_export(input: TokenStream) -> TokenStream {
         &[
             (
                 "export",
-                || witx_bindgen_gen_wasmtime::Opts::default().build(),
+                || wai_bindgen_gen_wasmtime::Opts::default().build(),
+                |_| quote::quote!(),
+            ),
+            (
+                "export-tracing-and-custom-error",
+                || {
+                    let mut opts = wai_bindgen_gen_wasmtime::Opts::default();
+                    opts.tracing = true;
+                    opts.custom_error = true;
+                    opts.build()
+                },
                 |_| quote::quote!(),
             ),
             (
                 "export-async",
                 || {
-                    let mut opts = witx_bindgen_gen_wasmtime::Opts::default();
-                    opts.async_ = witx_bindgen_gen_wasmtime::Async::All;
+                    let mut opts = wai_bindgen_gen_wasmtime::Opts::default();
+                    opts.async_ = wai_bindgen_gen_wasmtime::Async::All;
                     opts.build()
                 },
                 |_| quote::quote!(),
@@ -287,68 +261,93 @@ pub fn codegen_wasmtime_export(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-#[cfg(feature = "witx-bindgen-gen-js")]
-pub fn codegen_js_import(input: TokenStream) -> TokenStream {
-    gen_verify(input, Direction::Import, "import", || {
-        witx_bindgen_gen_js::Opts::default().build()
-    })
+#[cfg(feature = "wai-bindgen-gen-wasmtime")]
+pub fn codegen_wasmtime_import(input: TokenStream) -> TokenStream {
+    gen_rust(
+        input,
+        Direction::Import,
+        &[
+            (
+                "import",
+                || wai_bindgen_gen_wasmtime::Opts::default().build(),
+                |_| quote::quote!(),
+            ),
+            (
+                "import-async",
+                || {
+                    let mut opts = wai_bindgen_gen_wasmtime::Opts::default();
+                    opts.async_ = wai_bindgen_gen_wasmtime::Async::All;
+                    opts.build()
+                },
+                |_| quote::quote!(),
+            ),
+        ],
+    )
 }
 
 #[proc_macro]
-#[cfg(feature = "witx-bindgen-gen-js")]
+#[cfg(feature = "wai-bindgen-gen-js")]
 pub fn codegen_js_export(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Export, "export", || {
-        witx_bindgen_gen_js::Opts::default().build()
+        wai_bindgen_gen_js::Opts::default().build()
     })
 }
 
 #[proc_macro]
-#[cfg(feature = "witx-bindgen-gen-c")]
+#[cfg(feature = "wai-bindgen-gen-js")]
+pub fn codegen_js_import(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Import, "import", || {
+        wai_bindgen_gen_js::Opts::default().build()
+    })
+}
+
+#[proc_macro]
+#[cfg(feature = "wai-bindgen-gen-c")]
 pub fn codegen_c_import(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Import, "import", || {
-        witx_bindgen_gen_c::Opts::default().build()
+        wai_bindgen_gen_c::Opts::default().build()
     })
 }
 
 #[proc_macro]
-#[cfg(feature = "witx-bindgen-gen-c")]
+#[cfg(feature = "wai-bindgen-gen-c")]
 pub fn codegen_c_export(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Export, "export", || {
-        witx_bindgen_gen_c::Opts::default().build()
+        wai_bindgen_gen_c::Opts::default().build()
     })
 }
 
 #[proc_macro]
-#[cfg(feature = "witx-bindgen-gen-wasmtime-py")]
-pub fn codegen_py_import(input: TokenStream) -> TokenStream {
-    gen_verify(input, Direction::Import, "import", || {
-        witx_bindgen_gen_wasmtime_py::Opts::default().build()
-    })
-}
-
-#[proc_macro]
-#[cfg(feature = "witx-bindgen-gen-wasmtime-py")]
+#[cfg(feature = "wai-bindgen-gen-wasmtime-py")]
 pub fn codegen_py_export(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Export, "export", || {
-        witx_bindgen_gen_wasmtime_py::Opts::default().build()
+        wai_bindgen_gen_wasmtime_py::Opts::default().build()
     })
 }
 
 #[proc_macro]
-#[cfg(feature = "witx-bindgen-gen-spidermonkey")]
+#[cfg(feature = "wai-bindgen-gen-wasmtime-py")]
+pub fn codegen_py_import(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Import, "import", || {
+        wai_bindgen_gen_wasmtime_py::Opts::default().build()
+    })
+}
+
+#[proc_macro]
+#[cfg(feature = "wai-bindgen-gen-spidermonkey")]
 pub fn codegen_spidermonkey_import(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Import, "import", || {
-        let mut gen = witx_bindgen_gen_spidermonkey::SpiderMonkeyWasm::new("foo.js", "");
+        let mut gen = wai_bindgen_gen_spidermonkey::SpiderMonkeyWasm::new("foo.js", "");
         gen.import_spidermonkey(true);
         gen
     })
 }
 
 #[proc_macro]
-#[cfg(feature = "witx-bindgen-gen-spidermonkey")]
+#[cfg(feature = "wai-bindgen-gen-spidermonkey")]
 pub fn codegen_spidermonkey_export(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Export, "export", || {
-        let mut gen = witx_bindgen_gen_spidermonkey::SpiderMonkeyWasm::new("foo.js", "");
+        let mut gen = wai_bindgen_gen_spidermonkey::SpiderMonkeyWasm::new("foo.js", "");
         gen.import_spidermonkey(true);
         gen
     })
@@ -358,7 +357,7 @@ fn generate_tests<G>(
     input: TokenStream,
     dir: &str,
     mkgen: impl Fn(&Path) -> (G, Direction),
-) -> Vec<(witx2::Interface, PathBuf, PathBuf)>
+) -> Vec<(wai_parser::Interface, PathBuf, PathBuf)>
 where
     G: Generator,
 {
@@ -397,14 +396,8 @@ where
     let cwd = env::current_dir().unwrap();
     for test in tests {
         let (mut gen, dir) = mkgen(&test);
-        if dir == Direction::Export {
-            match test.file_name().unwrap().to_str().unwrap() {
-                "wasi_snapshot_preview1.witx" | "typenames.witx" | "legacy.witx" => continue,
-                _ => {}
-            }
-        }
         let mut files = Default::default();
-        let iface = witx2::Interface::parse_file(&test).unwrap();
+        let iface = wai_parser::Interface::parse_file(&test).unwrap();
         let (mut imports, mut exports) = match dir {
             Direction::Import => (vec![iface], vec![]),
             Direction::Export => (vec![], vec![iface]),
@@ -455,14 +448,14 @@ fn gen_rust<G: Generator>(
     tests: &[(
         &'static str,
         fn() -> G,
-        fn(&witx2::Interface) -> proc_macro2::TokenStream,
+        fn(&wai_parser::Interface) -> proc_macro2::TokenStream,
     )],
 ) -> TokenStream {
     let mut ret = proc_macro2::TokenStream::new();
     for (name, mk, extra) in tests {
         let tests = generate_tests(input.clone(), name, |_path| (mk(), dir));
         let mut sources = proc_macro2::TokenStream::new();
-        for (iface, gen_dir, _input_witx) in tests.iter() {
+        for (iface, gen_dir, _input_wai) in tests.iter() {
             let test = gen_dir.join("bindings.rs");
             let test = test.display().to_string();
             sources.extend(quote::quote!(include!(#test);));
@@ -491,15 +484,15 @@ fn gen_verify<G: Generator>(
     use heck::*;
 
     let tests = generate_tests(input, name, |_path| (mkgen(), dir));
-    let tests = tests.iter().map(|(iface, test, witx)| {
+    let tests = tests.iter().map(|(iface, test, wai)| {
         let test = test.display().to_string();
-        let witx = witx.display().to_string();
+        let wai = wai.display().to_string();
         let name = quote::format_ident!("{}", iface.name.to_snake_case());
         let iface_name = iface.name.to_snake_case();
         quote::quote! {
             #[test]
             fn #name() {
-                const _: &str = include_str!(#witx);
+                const _: &str = include_str!(#wai);
                 crate::verify(#test, #iface_name);
             }
         }
@@ -531,8 +524,8 @@ pub fn runtime_tests(input: TokenStream) -> TokenStream {
             let name_str = format!("{}_{}", name_str, lang);
             let name = quote::format_ident!("{}", name_str);
             let host_file = entry.join(&host_file).to_str().unwrap().to_string();
-            let import_witx = entry.join("imports.witx").to_str().unwrap().to_string();
-            let export_witx = entry.join("exports.witx").to_str().unwrap().to_string();
+            let import_wai = entry.join("imports.wai").to_str().unwrap().to_string();
+            let export_wai = entry.join("exports.wai").to_str().unwrap().to_string();
             tests.push(quote::quote! {
                 #[test]
                 fn #name() {
@@ -540,8 +533,8 @@ pub fn runtime_tests(input: TokenStream) -> TokenStream {
                         #name_str,
                         #wasm.as_ref(),
                         #host_file.as_ref(),
-                        #import_witx.as_ref(),
-                        #export_witx.as_ref(),
+                        #import_wai.as_ref(),
+                        #export_wai.as_ref(),
                     )
                 }
             });
@@ -552,7 +545,7 @@ pub fn runtime_tests(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-#[cfg(feature = "witx-bindgen-gen-wasmtime")]
+#[cfg(feature = "wai-bindgen-gen-wasmtime")]
 pub fn runtime_tests_wasmtime(_input: TokenStream) -> TokenStream {
     let mut tests = Vec::new();
     let cwd = std::env::current_dir().unwrap();

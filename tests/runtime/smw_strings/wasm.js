@@ -12,7 +12,7 @@ function assertEq(a, b) {
 
 export function test_imports() {
   const { f1, f2, f3 } = imports;
-  f1("Hello, WITX!");
+  f1("Hello, WAI!");
 
   const s = f2();
   assertEq(s, "36 chambers");
@@ -24,7 +24,7 @@ export function test_imports() {
 }
 
 export function f1(s) {
-  assertEq(s, "Hello, WITX!");
+  assertEq(s, "Hello, WAI!");
 }
 
 export function f2() {
