@@ -4,13 +4,13 @@ use crate::adapter::{
 use anyhow::{anyhow, bail, Result};
 use core::fmt;
 use std::collections::HashMap;
-use wai_parser::{
-    abi::{AbiVariant, WasmSignature, WasmType},
-    Function, Interface as WaiInterface, SizeAlign, Type as WaiType,
-};
 use wasmparser::{
     Chunk, Export, ExternalKind, FuncType, Import, ImportSectionEntryType, Parser, Payload, Range,
     SectionReader, Type, TypeDef, Validator,
+};
+use wit_parser::{
+    abi::{AbiVariant, WasmSignature, WasmType},
+    Function, Interface as WaiInterface, SizeAlign, Type as WaiType,
 };
 
 fn import_kind(ty: ImportSectionEntryType) -> &'static str {
@@ -41,7 +41,7 @@ pub(crate) fn export_kind(kind: ExternalKind) -> &'static str {
 }
 
 fn has_list(interface: &WaiInterface, ty: &WaiType) -> bool {
-    use wai_parser::{Type, TypeDefKind};
+    use wit_parser::{Type, TypeDefKind};
 
     match ty {
         Type::Id(id) => match &interface.types[*id].kind {

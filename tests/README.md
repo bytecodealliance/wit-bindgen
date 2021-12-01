@@ -1,6 +1,6 @@
-# Testing wai-bindgen - `codegen
+# Testing wit-bindgen - `codegen
 
-Any tests placed into the `tests/codegen` directory should be raw `*.wai`
+Any tests placed into the `tests/codegen` directory should be raw `*.wit`
 files. These files will be executed in all code generators by default most
 likely, and the purpose of these files is to execute language-specific
 validation for each bindings generator. Basically if there's a bug where
@@ -8,7 +8,7 @@ something generates invalid code then this is probably where the test should go.
 Note that this directory can have whatever it wants since nothing implements the
 interfaces or tries to call them.
 
-# Testing wai-bindgen - `runtime`
+# Testing wit-bindgen - `runtime`
 
 Otherwise tests are organized in `tests/runtime/*`. Inside this directory is a
 directory-per-test. These tests are somewhat heavyweight so you may want to
@@ -59,7 +59,7 @@ The actual way tests are hooked up looks roughly like:
 The general layout is then that if you want to run the JS host tests you run:
 
 ```
-$ cargo test -p wai-bindgen-gen-js
+$ cargo test -p wit-bindgen-gen-js
 ```
 
 and if you want to run all tests you can execute:

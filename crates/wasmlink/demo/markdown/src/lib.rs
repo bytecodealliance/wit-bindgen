@@ -1,6 +1,6 @@
 use pulldown_cmark::{html, Parser};
 
-wai_bindgen_rust::export!("markdown.wai");
+wit_bindgen_rust::export!("markdown.wit");
 
 struct Markdown;
 

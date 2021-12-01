@@ -3,24 +3,24 @@ use std::process::Command;
 
 mod exports {
     test_helpers::codegen_py_export!(
-        "*.wai"
+        "*.wit"
 
         // TODO: implement async support
-        "!async_functions.wai"
+        "!async_functions.wit"
     );
 }
 
 mod imports {
     test_helpers::codegen_py_import!(
-        "*.wai"
+        "*.wit"
 
         // TODO: implement async support
-        "!async_functions.wai"
+        "!async_functions.wit"
 
         // This uses buffers, which we don't support in imports just yet
         // TODO: should support this
-        "!wasi_next.wai"
-        "!host.wai"
+        "!wasi_next.wit"
+        "!host.wit"
     );
 }
 

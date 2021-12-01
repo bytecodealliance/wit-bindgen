@@ -3,11 +3,11 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
-use wai_bindgen_gen_core::wai_parser::abi::{
+use wit_bindgen_gen_core::wit_parser::abi::{
     AbiVariant, Bindgen, Instruction, LiftLower, WasmType, WitxInstruction,
 };
-use wai_bindgen_gen_core::{wai_parser::*, Direction, Files, Generator, Source, TypeInfo, Types};
-use wai_bindgen_gen_rust::{
+use wit_bindgen_gen_core::{wit_parser::*, Direction, Files, Generator, Source, TypeInfo, Types};
+use wit_bindgen_gen_rust::{
     int_repr, wasm_type, FnSig, RustFunctionGenerator, RustGenerator, TypeMode,
 };
 
@@ -31,7 +31,7 @@ pub struct Opts {
     #[cfg_attr(feature = "structopt", structopt(long))]
     pub rustfmt: bool,
 
-    /// Adds the wai module name into import binding names when enabled.
+    /// Adds the wit module name into import binding names when enabled.
     #[cfg_attr(feature = "structopt", structopt(long))]
     pub multi_module: bool,
 
@@ -45,9 +45,9 @@ pub struct Opts {
     #[cfg_attr(feature = "structopt", structopt(skip))]
     pub symbol_namespace: String,
 
-    /// The alias to use for the `wai_bindgen_rust` crate.
+    /// The alias to use for the `wit_bindgen_rust` crate.
     ///
-    /// This allows code generators to alias the `wai_bindgen_rust` crate
+    /// This allows code generators to alias the `wit_bindgen_rust` crate
     /// to a re-export in another crate.
     #[cfg_attr(feature = "structopt", structopt(skip))]
     pub crate_alias: Option<String>,
@@ -107,7 +107,7 @@ impl RustGenerator for RustWasm {
         if self.in_import {
             None
         } else {
-            Some("wai_bindgen_rust::Handle")
+            Some("wit_bindgen_rust::Handle")
         }
     }
 
@@ -193,7 +193,7 @@ impl RustGenerator for RustWasm {
                 self.push_str(" mut ");
             }
             self.push_str(&format!(
-                "wai_bindgen_rust::imports::{}Buffer<{}, ",
+                "wit_bindgen_rust::imports::{}Buffer<{}, ",
                 prefix, lt,
             ));
             self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
@@ -202,7 +202,7 @@ impl RustGenerator for RustWasm {
             // Buffers in exports are represented with special types from the
             // library support crate since they're wrappers around
             // externally-provided handles.
-            self.push_str("wai_bindgen_rust::exports::");
+            self.push_str("wit_bindgen_rust::exports::");
             self.push_str(prefix);
             self.push_str("Buffer");
             self.push_str("<");
@@ -225,7 +225,7 @@ impl Generator for RustWasm {
 
         if let Some(alias) = &self.opts.crate_alias {
             self.src
-                .push_str(&format!("use {} as wai_bindgen_rust;\n", alias));
+                .push_str(&format!("use {} as wit_bindgen_rust;\n", alias));
         }
 
         for func in iface.functions.iter() {
@@ -295,7 +295,7 @@ impl Generator for RustWasm {
             ";
             self.src.push_str(&format!(
                 "
-                    unsafe impl wai_bindgen_rust::HandleType for super::{ty} {{
+                    unsafe impl wit_bindgen_rust::HandleType for super::{ty} {{
                         #[inline]
                         fn clone(_val: i32) -> i32 {{
                             {panic_not_wasm}
@@ -323,7 +323,7 @@ impl Generator for RustWasm {
                         }}
                     }}
 
-                    unsafe impl wai_bindgen_rust::LocalHandle for super::{ty} {{
+                    unsafe impl wit_bindgen_rust::LocalHandle for super::{ty} {{
                         #[inline]
                         fn new(_val: i32) -> i32 {{
                             {panic_not_wasm}
@@ -580,7 +580,7 @@ impl Generator for RustWasm {
         self.src.push_str(&self.opts.symbol_namespace);
         self.src.push_str(&func.name);
         self.src.push_str("\"]\n");
-        self.src.push_str("unsafe extern \"C\" fn __wai_bindgen_");
+        self.src.push_str("unsafe extern \"C\" fn __wit_bindgen_");
         self.src.push_str(&rust_name);
         self.src.push_str("(");
         let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
@@ -626,7 +626,7 @@ impl Generator for RustWasm {
         if func.is_async {
             self.src.push_str("};\n");
             self.src
-                .push_str("wai_bindgen_rust::rt::execute(Box::pin(future));\n");
+                .push_str("wit_bindgen_rust::rt::execute(Box::pin(future));\n");
         }
         self.src.push_str("}\n");
 
@@ -667,7 +667,7 @@ impl Generator for RustWasm {
         let any_async = iface.functions.iter().any(|f| f.is_async);
         for (name, trait_) in self.traits.iter() {
             if any_async {
-                src.push_str("#[wai_bindgen_rust::async_trait(?Send)]\n");
+                src.push_str("#[wit_bindgen_rust::async_trait(?Send)]\n");
             }
             src.push_str("pub trait ");
             src.push_str(&name);
@@ -680,7 +680,7 @@ impl Generator for RustWasm {
 
             for (id, methods) in trait_.resource_methods.iter() {
                 if any_async {
-                    src.push_str("#[wai_bindgen_rust::async_trait(?Send)]\n");
+                    src.push_str("#[wit_bindgen_rust::async_trait(?Send)]\n");
                 }
                 src.push_str(&format!(
                     "pub trait {} {{\n",
@@ -791,7 +791,7 @@ impl FunctionBindgen<'_> {
         self.push_str("_");
         self.push_str(name);
         self.push_str("\")]\n");
-        self.push_str("fn wai_import(");
+        self.push_str("fn wit_import(");
         for param in params.iter() {
             self.push_str("_: ");
             self.push_str(wasm_type(*param));
@@ -804,7 +804,7 @@ impl FunctionBindgen<'_> {
             self.push_str(wasm_type(*result));
         }
         self.push_str(";\n}\n");
-        "wai_import".to_string()
+        "wit_import".to_string()
     }
 }
 
@@ -930,7 +930,7 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::I64FromU64 | Instruction::I64FromS64 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wai_bindgen_rust::rt::as_i64({})", s));
+                results.push(format!("wit_bindgen_rust::rt::as_i64({})", s));
             }
             Instruction::I32FromUsize
             | Instruction::I32FromChar
@@ -942,16 +942,16 @@ impl Bindgen for FunctionBindgen<'_> {
             | Instruction::I32FromU32
             | Instruction::I32FromS32 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wai_bindgen_rust::rt::as_i32({})", s));
+                results.push(format!("wit_bindgen_rust::rt::as_i32({})", s));
             }
 
             Instruction::F32FromIf32 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wai_bindgen_rust::rt::as_f32({})", s));
+                results.push(format!("wit_bindgen_rust::rt::as_f32({})", s));
             }
             Instruction::F64FromIf64 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wai_bindgen_rust::rt::as_f64({})", s));
+                results.push(format!("wit_bindgen_rust::rt::as_f64({})", s));
             }
             Instruction::If32FromF32
             | Instruction::If64FromF64
@@ -981,20 +981,20 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::Bitcasts { casts } => {
-                wai_bindgen_gen_rust::bitcast(casts, operands, results)
+                wit_bindgen_gen_rust::bitcast(casts, operands, results)
             }
 
             // handles in exports
             Instruction::I32FromOwnedHandle { .. } => {
                 results.push(format!(
-                    "wai_bindgen_rust::Handle::into_raw({})",
+                    "wit_bindgen_rust::Handle::into_raw({})",
                     operands[0]
                 ));
             }
             Instruction::HandleBorrowedFromI32 { .. } => {
                 assert!(!self.is_dtor);
                 results.push(format!(
-                    "wai_bindgen_rust::Handle::from_raw({})",
+                    "wit_bindgen_rust::Handle::from_raw({})",
                     operands[0],
                 ));
             }
@@ -1024,7 +1024,7 @@ impl Bindgen for FunctionBindgen<'_> {
             }
             Instruction::FlagsLower64 { .. } => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wai_bindgen_rust::rt::as_i64({})", s));
+                results.push(format!("wit_bindgen_rust::rt::as_i64({})", s));
             }
             Instruction::FlagsLift { name, .. } | Instruction::FlagsLift64 { name, .. } => {
                 let name = name.to_camel_case();
@@ -1300,7 +1300,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::BufferLiftHandle { push, ty } => {
                 let block = self.blocks.pop().unwrap();
                 let size = self.gen.sizes.size(ty);
-                let mut result = String::from("wai_bindgen_rust::exports::");
+                let mut result = String::from("wit_bindgen_rust::exports::");
                 if *push {
                     result.push_str("Push");
                 } else {
@@ -1363,7 +1363,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.push_str(wasm_type(*result));
                 }
                 self.push_str(") {\n");
-                self.push_str("wai_bindgen_rust::rt::Sender::from_usize(sender).send((");
+                self.push_str("wit_bindgen_rust::rt::Sender::from_usize(sender).send((");
                 for i in 0..wasm_results.len() {
                     self.push_str(&format!("ret{},", i));
                 }
@@ -1375,7 +1375,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 // sender (`tx`) will send something once over `rx`. The type of
                 // the `Oneshot` is the type of the `wasm_results` which is the
                 // canonical ABI of the results that this function produces.
-                self.push_str("let (rx, tx) = wai_bindgen_rust::rt::Oneshot::<(");
+                self.push_str("let (rx, tx) = wit_bindgen_rust::rt::Oneshot::<(");
                 for ty in *wasm_results {
                     self.push_str(wasm_type(*ty));
                     self.push_str(", ");
@@ -1466,7 +1466,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::ReturnAsyncExport { .. } => {
                 self.emit_cleanup();
                 self.push_str(&format!(
-                    "unsafe {{ wai_bindgen_rust::rt::async_export_done({}, {}); }}\n",
+                    "unsafe {{ wit_bindgen_rust::rt::async_export_done({}, {}); }}\n",
                     operands[0], operands[1]
                 ));
             }

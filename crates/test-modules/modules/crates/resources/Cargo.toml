@@ -10,4 +10,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 lazy_static = "1.4.0"
-wai-bindgen-rust = { path = "../../../../rust-wasm" }
+wit-bindgen-rust = { path = "../../../../rust-wasm" }

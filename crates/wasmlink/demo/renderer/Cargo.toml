@@ -5,6 +5,6 @@ authors = ["Peter Huene <peter@huene.dev>"]
 edition = "2018"
 
 [dependencies]
-wai-bindgen-rust = { path = "../../../rust-wasm" }
+wit-bindgen-rust = { path = "../../../rust-wasm" }
 
 [workspace]

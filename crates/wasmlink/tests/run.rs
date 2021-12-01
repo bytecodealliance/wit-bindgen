@@ -5,12 +5,12 @@ use wasmlink::{Module, ModuleAdapter};
 use wasmprinter::print_bytes;
 use wat::parse_file;
 
-fn adapt(name: &str, bytes: &[u8], wai_path: &Path) -> Result<wasm_encoder::Module> {
+fn adapt(name: &str, bytes: &[u8], wit_path: &Path) -> Result<wasm_encoder::Module> {
     let module = Module::new(
         name,
         bytes,
-        if wai_path.is_file() {
-            vec![wai_parser::Interface::parse_file(wai_path)?]
+        if wit_path.is_file() {
+            vec![wit_parser::Interface::parse_file(wit_path)?]
         } else {
             Vec::new()
         },
@@ -36,10 +36,10 @@ fn wasmlink_file_tests() -> Result<()> {
             (Some(stem), Some("wat")) => {
                 let bytes = parse_file(&path)?;
 
-                let mut wai_path = path.clone();
-                assert!(wai_path.set_extension("wai"));
+                let mut wit_path = path.clone();
+                assert!(wit_path.set_extension("wit"));
 
-                let output = match adapt(stem, &bytes, &wai_path) {
+                let output = match adapt(stem, &bytes, &wit_path) {
                     Ok(adapted) => print_bytes(&adapted.finish())?,
                     Err(e) => e.to_string(),
                 };

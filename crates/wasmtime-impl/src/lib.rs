@@ -2,8 +2,8 @@ use proc_macro::TokenStream;
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{token, Token};
-use wai_bindgen_gen_core::{wai_parser::Interface, Direction, Files, Generator};
-use wai_bindgen_gen_wasmtime::Async;
+use wit_bindgen_gen_core::{wit_parser::Interface, Direction, Files, Generator};
+use wit_bindgen_gen_wasmtime::Async;
 
 /// Generate code to support consuming the given interfaces, importaing them
 /// from wasm modules.
@@ -52,7 +52,7 @@ fn run(input: TokenStream, dir: Direction) -> TokenStream {
 }
 
 struct Opts {
-    opts: wai_bindgen_gen_wasmtime::Opts,
+    opts: wit_bindgen_gen_wasmtime::Opts,
     interfaces: Vec<Interface>,
     files: Vec<String>,
 }
@@ -66,7 +66,7 @@ mod kw {
 impl Parse for Opts {
     fn parse(input: ParseStream<'_>) -> Result<Opts> {
         let call_site = proc_macro2::Span::call_site();
-        let mut opts = wai_bindgen_gen_wasmtime::Opts::default();
+        let mut opts = wit_bindgen_gen_wasmtime::Opts::default();
         let mut files = Vec::new();
         opts.tracing = cfg!(feature = "tracing");
 
@@ -111,7 +111,7 @@ impl Parse for Opts {
 
 enum ConfigField {
     Interfaces(Vec<Interface>),
-    Async(wai_bindgen_gen_wasmtime::Async),
+    Async(wit_bindgen_gen_wasmtime::Async),
     CustomError(bool),
 }
 
@@ -145,7 +145,7 @@ impl Parse for ConfigField {
         } else if l.peek(token::Async) {
             if !cfg!(feature = "async") {
                 return Err(
-                    input.error("async support not enabled in the `wai-bindgen-wasmtime` crate")
+                    input.error("async support not enabled in the `wit-bindgen-wasmtime` crate")
                 );
             }
             input.parse::<token::Async>()?;

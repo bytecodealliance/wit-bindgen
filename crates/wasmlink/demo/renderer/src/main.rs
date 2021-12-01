@@ -1,6 +1,6 @@
 use std::io::{self, Read};
 
-wai_bindgen_rust::import!("../markdown/markdown.wai");
+wit_bindgen_rust::import!("../markdown/markdown.wit");
 
 fn main() {
     let mut buffer = String::new();

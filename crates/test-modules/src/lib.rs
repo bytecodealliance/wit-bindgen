@@ -19,10 +19,10 @@ mod tests {
             .join(format!("{}.wasm", name))
     }
 
-    fn wai_path(name: &str) -> PathBuf {
+    fn wit_path(name: &str) -> PathBuf {
         Path::new("modules/crates")
             .join(name)
-            .join(format!("{}.wai", name))
+            .join(format!("{}.wit", name))
     }
 
     pub fn link(main: &str, imports: &[&str]) -> Result<Vec<u8>> {
@@ -47,7 +47,7 @@ mod tests {
                     Module::new(
                         name,
                         bytes,
-                        [wai_parser::Interface::parse_file(wai_path(name))?],
+                        [wit_parser::Interface::parse_file(wit_path(name))?],
                     )?,
                 ))
             })

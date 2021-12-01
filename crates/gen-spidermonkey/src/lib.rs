@@ -11,14 +11,14 @@ use std::convert::TryFrom;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::{collections::HashMap, mem};
-use wai_bindgen_gen_core::{
-    wai_parser::{
+use wasm_encoder::Instruction;
+use wit_bindgen_gen_core::{
+    wit_parser::{
         abi::{self, AbiVariant, WasmSignature, WasmType},
         Docs, Function, Interface, Record, ResourceId, SizeAlign, Type, TypeId, Variant,
     },
     Direction, Files, Generator,
 };
-use wasm_encoder::Instruction;
 
 #[allow(missing_docs)]
 #[derive(Default, Debug, Clone)]
@@ -242,7 +242,7 @@ lazy_static! {
 /// ## Code Shape
 ///
 /// The output is a single Wasm file that imports and exports the functions
-/// defined in the given WAI files and additionally
+/// defined in the given WIT files and additionally
 ///
 /// * embeds or imports (configurable) a `spidermonkey.wasm` instance, and
 ///
@@ -267,14 +267,14 @@ lazy_static! {
 ///
 /// ### Imports
 ///
-/// By the time an imported WAI function is called, we have the following
+/// By the time an imported WIT function is called, we have the following
 /// layers of code on the stack, listed from older to younger frames:
 ///
 /// * User JS code (inside `spidermonkey.wasm`'s internal JS stack)
 ///
 ///   This is the user's JavaScript code that is running inside of
 ///   `spidermonkey.wasm` and which wants to call an external, imported function
-///   that is described with WAI.
+///   that is described with WIT.
 ///
 /// * Import glue Wasm code (on the Wasm stack)
 ///
@@ -286,18 +286,18 @@ lazy_static! {
 ///
 /// * Imported function (on the Wasm Stack)
 ///
-///   This is the actual Wasm function whose signature is described in WAI and
+///   This is the actual Wasm function whose signature is described in WIT and
 ///   uses the canonical ABI.
 ///
 /// ### Exports
 ///
-/// By the time an exported JS function that implements a WAI signature is
+/// By the time an exported JS function that implements a WIT signature is
 /// called, we have the following frames on the stack, listed form older to
 /// younger frames:
 ///
 /// * External caller (on the Wasm or native stack)
 ///
-///   This is whoever is calling our JS-implemented WAI export, using the
+///   This is whoever is calling our JS-implemented WIT export, using the
 ///   canonical ABI. This might be another Wasm module or it might be some
 ///   native code in the host.
 ///
@@ -310,12 +310,12 @@ lazy_static! {
 ///   function's outgoing results from SpiderMonkey values into the canonical
 ///   ABI representation.
 ///
-/// * JavaScript function implementing the WAI signature (inside
+/// * JavaScript function implementing the WIT signature (inside
 ///   `spidermonkey.wasm`'s internal stack)
 ///
 ///   This is the user-written JavaScript function that is being exported. It
 ///   accepts and returns the JavaScript values that correspond to the interface
-///   types used in the WAI signature.
+///   types used in the WIT signature.
 pub struct SpiderMonkeyWasm<'a> {
     /// The filename to use for the JS.
     js_name: PathBuf,
@@ -580,7 +580,7 @@ impl<'a> SpiderMonkeyWasm<'a> {
     ) {
         assert_eq!(funcs.len(), code.len());
 
-        let wizer_init_index = self.wai_import_functions_len()
+        let wizer_init_index = self.wit_import_functions_len()
             + u32::try_from(SMW_EXPORTS.len()).unwrap()
             + funcs.len();
         self.function_names
@@ -647,8 +647,8 @@ impl<'a> SpiderMonkeyWasm<'a> {
         let smw_initialize_engine = self.spidermonkey_import("SMW_initialize_engine");
         wizer_init.instruction(&Instruction::Call(smw_initialize_engine));
 
-        // Define a JS module for each WAI module that is imported. This JS
-        // module will export each of our generated glue functions for that WAI
+        // Define a JS module for each WIT module that is imported. This JS
+        // module will export each of our generated glue functions for that WIT
         // module.
         let smw_new_module_builder = self.spidermonkey_import("SMW_new_module_builder");
         let import_fn_name_to_index =
@@ -739,7 +739,7 @@ impl<'a> SpiderMonkeyWasm<'a> {
                 //
                 //     (table.set (i32.add (i32.const ${i}) (local.get ${table_size}))
                 //                (ref.func ${func_index}))
-                let glue_func_index = self.wai_import_glue_fn(*func_index);
+                let glue_func_index = self.wit_import_glue_fn(*func_index);
                 wizer_init
                     // []
                     .instruction(&Instruction::I32Const(i32::try_from(i).unwrap()))
@@ -826,23 +826,23 @@ impl<'a> SpiderMonkeyWasm<'a> {
 // The generated glue module's function index space is laid out as follows:
 //
 // ```text
-// |wai imports...|spidermonkey.wasm imports...|import glue...|export glue...|wizer.initialize|
+// |wit imports...|spidermonkey.wasm imports...|import glue...|export glue...|wizer.initialize|
 // ```
 impl SpiderMonkeyWasm<'_> {
-    /// Get the number of imported WAI functions.
-    fn wai_import_functions_len(&self) -> u32 {
+    /// Get the number of imported WIT functions.
+    fn wit_import_functions_len(&self) -> u32 {
         self.num_import_functions
             .expect("must call `preprocess_all` before generating bindings")
     }
 
-    /// Get the function index for the i^th WAI import.
-    fn wai_import(&self, i: u32) -> u32 {
+    /// Get the function index for the i^th WIT import.
+    fn wit_import(&self, i: u32) -> u32 {
         i
     }
 
     /// Get the function index for the given spidermonkey function.
     fn spidermonkey_import(&self, name: &str) -> u32 {
-        self.wai_import_functions_len()
+        self.wit_import_functions_len()
             + u32::try_from(
                 SMW_EXPORTS
                     .iter()
@@ -852,46 +852,46 @@ impl SpiderMonkeyWasm<'_> {
             .unwrap()
     }
 
-    /// Get the function index where WAI import glue functions start.
-    fn wai_import_glue_fns_start(&self) -> u32 {
-        self.wai_import_functions_len() + u32::try_from(SMW_EXPORTS.len()).unwrap()
+    /// Get the function index where WIT import glue functions start.
+    fn wit_import_glue_fns_start(&self) -> u32 {
+        self.wit_import_functions_len() + u32::try_from(SMW_EXPORTS.len()).unwrap()
     }
 
-    /// Get the range of indices for our synthesized glue functions for WAI
+    /// Get the range of indices for our synthesized glue functions for WIT
     /// imports.
-    fn wai_import_glue_fn_range(&self) -> Range<u32> {
-        let start = self.wai_import_glue_fns_start();
-        let end = self.wai_export_start();
+    fn wit_import_glue_fn_range(&self) -> Range<u32> {
+        let start = self.wit_import_glue_fns_start();
+        let end = self.wit_export_start();
         start..end
     }
 
-    /// Get the function index for the i^th synthesized glue function for a WAI
+    /// Get the function index for the i^th synthesized glue function for a WIT
     /// import.
-    fn wai_import_glue_fn(&self, i: u32) -> u32 {
+    fn wit_import_glue_fn(&self, i: u32) -> u32 {
         assert!(
-            i < self.wai_import_functions_len(),
+            i < self.wit_import_functions_len(),
             "{} < {}",
             i,
-            self.wai_import_functions_len()
+            self.wit_import_functions_len()
         );
-        let start = self.wai_import_glue_fns_start();
+        let start = self.wit_import_glue_fns_start();
         start + i
     }
 
-    /// Get the function index where WAI export glue functions start.
-    fn wai_export_start(&self) -> u32 {
-        self.wai_import_glue_fns_start() + self.wai_import_functions_len()
+    /// Get the function index where WIT export glue functions start.
+    fn wit_export_start(&self) -> u32 {
+        self.wit_import_glue_fns_start() + self.wit_import_functions_len()
     }
 
-    fn wai_exports_len(&self) -> u32 {
+    fn wit_exports_len(&self) -> u32 {
         self.num_export_functions
             .expect("must call `preprocess_all` before generating bindings")
     }
 
-    /// Get the function index for the i^th WAI export.
-    fn wai_export(&self, i: u32) -> u32 {
-        assert!(i < self.wai_exports_len());
-        self.wai_export_start() + i
+    /// Get the function index for the i^th WIT export.
+    fn wit_export(&self, i: u32) -> u32 {
+        assert!(i < self.wit_exports_len());
+        self.wit_export_start() + i
     }
 }
 
@@ -1025,7 +1025,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
         // Add the raw Wasm import.
         let wasm_sig = iface.wasm_signature(AbiVariant::GuestImport, func);
         let type_index = self.intern_type(wasm_sig.clone());
-        let import_fn_index = self.wai_import(self.imports.len());
+        let import_fn_index = self.wit_import(self.imports.len());
         self.imports.import(
             &iface.name,
             Some(&func.name),
@@ -1065,7 +1065,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
 
         let wasm_sig = iface.wasm_signature(AbiVariant::GuestExport, func);
         let type_index = self.intern_type(wasm_sig.clone());
-        let export_fn_index = self.wai_export(self.exports.len());
+        let export_fn_index = self.wit_export(self.exports.len());
         self.exports
             .export(&func.name, wasm_encoder::Export::Function(export_fn_index));
         self.function_names
@@ -1121,7 +1121,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
             wasm_encoder::Export::Function(self.spidermonkey_import("canonical_abi_realloc")),
         );
 
-        // Add the WAI function imports (add their import glue functions) to
+        // Add the WIT function imports (add their import glue functions) to
         // the module.
         //
         // Each of these functions has the Wasm equivalent of this function
@@ -1154,7 +1154,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
 
         // We will use `ref.func` to get a reference to each of our synthesized
         // import glue functions, so we need to declare them as reference-able.
-        let func_indices: Vec<u32> = self.wai_import_glue_fn_range().collect();
+        let func_indices: Vec<u32> = self.wit_import_glue_fn_range().collect();
         if !func_indices.is_empty() {
             elems.declared(
                 wasm_encoder::ValType::FuncRef,

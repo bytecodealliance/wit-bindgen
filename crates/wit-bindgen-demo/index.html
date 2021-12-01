@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+<style type="text/css" media="screen">
+body {
+  display: flex;
+  min-height: 800px;
+}
+
+.area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+}
+
+.editor{
+  width: 100%;
+  height: 100%;
+}
+
+.options {
+  margin-bottom: 10px;
+}
+
+.lang-configure {
+  display: none;
+}
+
+</style>
+  </head>
+  <body>
+      <div class='area'>
+        <h1>Input <code>*.wit</code></h1>
+        <div class='editor' id='input'></div>
+        <textarea id='input-raw' style='display:none'>
+record person {
+  name: string,
+  age: u32,
+}
+hello: function(who: person) -&gt; string
+</textarea>
+      </div>
+      <div class='area'>
+        <h1>Generated bindings</h1>
+
+        <div class='options'>
+          <label for="language-select">Language:</label>
+
+          <select name="language" id="language-select">
+            <option value="js">JavaScript</option>
+            <option value="rust">Rust</option>
+            <option value="wasmtime">Wasmtime</option>
+            <option value="wasmtime-py">Wasmtime (Python)</option>
+            <option value="c">C</option>
+            <option value="markdown">Markdown</option>
+            <option value="spidermonkey">SpiderMonkey</option>
+          </select>
+
+          &middot;
+
+          <label for="mode-select">Mode:</label>
+
+          <select name="mode" id="mode-select">
+            <option value="import">import</option>
+            <option value="export">export</option>
+          </select>
+
+          &middot;
+
+          <label for="file-select">File:</label>
+          <select name="file" id="file-select">
+          </select>
+
+          <div id='configure-js' class='lang-configure'>
+          </div>
+          <div id='configure-c' class='lang-configure'>
+          </div>
+          <div id='configure-markdown' class='lang-configure'>
+          </div>
+          <div id='configure-wasmtime-py' class='lang-configure'>
+          </div>
+          <div id='configure-rust' class='lang-configure'>
+            &middot;
+
+            <input type="checkbox" id="rust-unchecked" name="unchecked">
+            <label for="rust-unchecked">Unchecked</label>
+          </div>
+          <div id='configure-wasmtime' class='lang-configure'>
+            &middot;
+
+            <input type="checkbox" id="wasmtime-tracing" name="tracing">
+            <label for="wasmtime-tracing"><code>tracing</code></label>
+
+            &middot;
+
+            <input type="checkbox" id="wasmtime-async" name="async">
+            <label for="wasmtime-async"><code>async</code></label>
+
+            &middot;
+
+            <input type="checkbox" id="wasmtime-custom-error" name="custom-error">
+            <label for="wasmtime-custom-error">custom error</label>
+          </div>
+          <div id='configure-spidermonkey' class='lang-configure'>
+          </div>
+        </div>
+
+        <div class='editor' id='output'></div>
+        <div id='html-output'></div>
+      </div>
+  </body>
+  <script src="ace/ace.js"></script>
+  <script src='main.js' type=module></script>
+</html>

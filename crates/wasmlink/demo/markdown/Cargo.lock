@@ -54,7 +54,7 @@ name = "markdown"
 version = "0.1.0"
 dependencies = [
  "pulldown-cmark",
- "wai-bindgen-rust",
+ "wit-bindgen-rust",
 ]
 
 [[package]]
@@ -138,52 +138,53 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5fecdca9a5291cc2b8dcf7dc02453fee791a280f3743cb0905f8822ae463b3fe"
 
 [[package]]
-name = "wai-bindgen-gen-core"
+name = "wit-bindgen-gen-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "wai-parser",
+ "wit-parser",
 ]
 
 [[package]]
-name = "wai-bindgen-gen-rust"
+name = "wit-bindgen-gen-rust"
 version = "0.1.0"
 dependencies = [
  "heck",
- "wai-bindgen-gen-core",
+ "wit-bindgen-gen-core",
 ]
 
 [[package]]
-name = "wai-bindgen-gen-rust-wasm"
+name = "wit-bindgen-gen-rust-wasm"
 version = "0.1.0"
 dependencies = [
  "heck",
- "wai-bindgen-gen-core",
- "wai-bindgen-gen-rust",
+ "wit-bindgen-gen-core",
+ "wit-bindgen-gen-rust",
 ]
 
 [[package]]
-name = "wai-bindgen-rust"
+name = "wit-bindgen-rust"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "wai-bindgen-rust-impl",
+ "wit-bindgen-rust-impl",
 ]
 
 [[package]]
-name = "wai-bindgen-rust-impl"
+name = "wit-bindgen-rust-impl"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "syn",
- "wai-bindgen-gen-core",
- "wai-bindgen-gen-rust-wasm",
+ "wit-bindgen-gen-core",
+ "wit-bindgen-gen-rust-wasm",
 ]
 
 [[package]]
-name = "wai-parser"
+name = "wit-parser"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "id-arena",
+ "pulldown-cmark",
 ]

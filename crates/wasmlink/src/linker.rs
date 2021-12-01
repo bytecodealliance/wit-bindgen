@@ -673,7 +673,7 @@ mod test {
         let a = Module::new(
             "a",
             &a,
-            [wai_parser::Interface::parse("a", "a: function(p: string)")?],
+            [wit_parser::Interface::parse("a", "a: function(p: string)")?],
         )?;
 
         let mut imports = HashMap::new();
@@ -702,7 +702,7 @@ mod test {
         let a = Module::new(
             "a",
             &a,
-            [wai_parser::Interface::parse("a", "a: function(p: string)")?],
+            [wit_parser::Interface::parse("a", "a: function(p: string)")?],
         )?;
 
         let mut imports = HashMap::new();
@@ -731,7 +731,7 @@ mod test {
         let a = Module::new(
             "a",
             &a,
-            [wai_parser::Interface::parse("a", "a: function(p: string)")?],
+            [wit_parser::Interface::parse("a", "a: function(p: string)")?],
         )?;
 
         let mut imports = HashMap::new();

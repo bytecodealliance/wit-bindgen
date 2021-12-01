@@ -11,7 +11,7 @@ lazy_static = "1.4.0"
 petgraph = "0.5.1"
 wasm-encoder = "0.4.1"
 wasmparser = "0.78.1"
-wai-parser = { path = "../parser" }
+wit-parser = { path = "../parser" }
 
 [dev-dependencies]
 wasmprinter = "0.2.26"

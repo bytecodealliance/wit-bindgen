@@ -1,6 +1,6 @@
 use heck::*;
-use wai_bindgen_gen_core::wai_parser::abi::{Bitcast, LiftLower, WasmType};
-use wai_bindgen_gen_core::{wai_parser::*, TypeInfo, Types};
+use wit_bindgen_gen_core::wit_parser::abi::{Bitcast, LiftLower, WasmType};
+use wit_bindgen_gen_core::{wit_parser::*, TypeInfo, Types};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum TypeMode {
@@ -497,7 +497,7 @@ pub trait RustGenerator {
         variant: &Variant,
         docs: &Docs,
     ) {
-        // TODO: should this perhaps be an attribute in the wai file?
+        // TODO: should this perhaps be an attribute in the wit file?
         let is_error = name.contains("errno") && variant.is_enum();
         let info = self.info(id);
 
