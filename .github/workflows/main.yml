@@ -80,15 +80,15 @@ jobs:
       working-directory: crates/wasmlink/runtime
 
   demo:
-    name: Build wai-bindgen demo
+    name: Build wit-bindgen demo
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
     - run: rustup update stable --no-self-update && rustup default stable
     - run: rustup target add wasm32-unknown-unknown
     - run: npm install
-      working-directory: crates/wai-bindgen-demo
-    - run: ./crates/wai-bindgen-demo/build.sh
+      working-directory: crates/wit-bindgen-demo
+    - run: ./crates/wit-bindgen-demo/build.sh
     - uses: JamesIves/github-pages-deploy-action@4.1.4
       with:
         branch: gh-pages
@@ -120,6 +120,6 @@ jobs:
     - name: Build the renderer component
       run: cargo wasi build --release --manifest-path crates/wasmlink/demo/renderer/Cargo.toml
     - name: Link the components
-      run: cargo run --release -p wasmlink-cli -- -m markdown=crates/wasmlink/demo/markdown/target/wasm32-wasi/release/markdown.wasm -i markdown=crates/wasmlink/demo/markdown/markdown.wai -p wasmtime -o linked.wasm crates/wasmlink/demo/renderer/target/wasm32-wasi/release/renderer.wasm
+      run: cargo run --release -p wasmlink-cli -- -m markdown=crates/wasmlink/demo/markdown/target/wasm32-wasi/release/markdown.wasm -i markdown=crates/wasmlink/demo/markdown/markdown.wit -p wasmtime -o linked.wasm crates/wasmlink/demo/renderer/target/wasm32-wasi/release/renderer.wasm
     - name: Run the linked component with Wasmtime
       run: printf '# Hello\nworld' | /tmp/wasmtime/wasmtime --enable-module-linking --enable-multi-memory linked.wasm | grep -q '<h1>Hello</h1>'
