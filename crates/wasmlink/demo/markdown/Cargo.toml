@@ -9,6 +9,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pulldown-cmark = "0.8.0"
-wai-bindgen-rust = { path = "../../../rust-wasm" }
+wit-bindgen-rust = { path = "../../../rust-wasm" }
 
 [workspace]

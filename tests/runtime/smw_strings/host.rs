@@ -1,6 +1,6 @@
 use anyhow::Context;
 
-wai_bindgen_wasmtime::export!("tests/runtime/smw_strings/imports.wai");
+wit_bindgen_wasmtime::export!("tests/runtime/smw_strings/imports.wit");
 
 #[derive(Default)]
 pub struct Host {
@@ -29,7 +29,7 @@ impl imports::Imports for Host {
     }
 }
 
-wai_bindgen_wasmtime::import!("tests/runtime/smw_strings/exports.wai");
+wit_bindgen_wasmtime::import!("tests/runtime/smw_strings/exports.wit");
 
 fn run(wasm: &str) -> anyhow::Result<()> {
     let (exports, mut store) = crate::instantiate_smw(
@@ -45,7 +45,7 @@ fn run(wasm: &str) -> anyhow::Result<()> {
 
     exports.test_imports(&mut store)?;
 
-    assert_eq!(store.data().imports.f1_s, "Hello, WAI!");
+    assert_eq!(store.data().imports.f1_s, "Hello, WIT!");
 
     assert!(store.data().imports.f2_called, "JS should have called `f2`");
 
@@ -56,7 +56,7 @@ fn run(wasm: &str) -> anyhow::Result<()> {
     // Test that the export instance behaves as we expect it to.
 
     exports
-        .f1(&mut store, "Hello, WAI!")
+        .f1(&mut store, "Hello, WIT!")
         .context("calling the `f1` export should succeed")?;
 
     let s = exports

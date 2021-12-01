@@ -1,9 +1,9 @@
-wai_bindgen_wasmtime::export!("./tests/runtime/buffers/imports.wai");
+wit_bindgen_wasmtime::export!("./tests/runtime/buffers/imports.wit");
 
 use anyhow::Result;
 use imports::*;
-use wai_bindgen_wasmtime::exports::{PullBuffer, PushBuffer};
-use wai_bindgen_wasmtime::Le;
+use wit_bindgen_wasmtime::exports::{PullBuffer, PushBuffer};
+use wit_bindgen_wasmtime::Le;
 
 #[derive(Default)]
 pub struct MyImports;
@@ -115,7 +115,7 @@ impl Imports for MyImports {
     }
 }
 
-wai_bindgen_wasmtime::import!("./tests/runtime/buffers/exports.wai");
+wit_bindgen_wasmtime::import!("./tests/runtime/buffers/exports.wit");
 
 fn run(wasm: &str) -> Result<()> {
     use exports::*;

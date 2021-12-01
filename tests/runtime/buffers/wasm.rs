@@ -1,5 +1,5 @@
-wai_bindgen_rust::import!("./tests/runtime/buffers/imports.wai");
-wai_bindgen_rust::export!("./tests/runtime/buffers/exports.wai");
+wit_bindgen_rust::import!("./tests/runtime/buffers/imports.wit");
+wit_bindgen_rust::export!("./tests/runtime/buffers/exports.wit");
 
 use std::iter;
 
@@ -8,7 +8,7 @@ struct Exports;
 impl exports::Exports for Exports {
     fn test_imports() {
         use imports::*;
-        use wai_bindgen_rust::imports::{PullBuffer, PushBuffer};
+        use wit_bindgen_rust::imports::{PullBuffer, PushBuffer};
 
         let _guard = test_rust_wasm::guard();
 

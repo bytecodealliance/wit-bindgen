@@ -7,9 +7,9 @@ use crate::{
 use anyhow::{anyhow, bail, Result};
 use heck::SnakeCase;
 use std::collections::{BTreeMap, HashMap};
-use wai_parser::Resource as WaiResource;
 use wasm_encoder::EntityType;
 use wasmparser::{ExternalKind, FuncType, Type};
+use wit_parser::Resource as WaiResource;
 
 const RESOURCE_INSERT_FUNC_NAME: &str = "resource_insert";
 const RESOURCE_GET_FUNC_NAME: &str = "resource_get";

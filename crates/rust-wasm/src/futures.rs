@@ -1,4 +1,4 @@
-//! Helper library support for `async` wai functions, used for both
+//! Helper library support for `async` wit functions, used for both
 
 use std::cell::RefCell;
 use std::future::Future;

@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 futures-util = { version = "0.3.17", default-features = true }
-wai-bindgen-rust = { path = "../rust-wasm", features = ['witx-compat'] }
+wit-bindgen-rust = { path = "../rust-wasm", features = ['witx-compat'] }
 
 [features]
 unchecked = []

@@ -7,41 +7,41 @@ fn main() {
 #[rustfmt::skip]
 mod exports {
     test_helpers::codegen_wasmtime_export!(
-        "*.wai"
+        "*.wit"
         "*.witx"
 
         // TODO: implement async support
-        "!async_functions.wai"
+        "!async_functions.wit"
 
         // If you want to exclude a specific test you can include it here with
         // gitignore glob syntax:
         //
-        // "!wasm.wai"
-        // "!host.wai"
+        // "!wasm.wit"
+        // "!host.wit"
         //
         //
-        // Similarly you can also just remove the `*.wai` glob and list tests
+        // Similarly you can also just remove the `*.wit` glob and list tests
         // individually if you're debugging.
     );
 }
 
 mod imports {
     test_helpers::codegen_wasmtime_import!(
-        "*.wai"
+        "*.wit"
 
         // TODO: implement async support
-        "!async_functions.wai"
+        "!async_functions.wit"
 
         // TODO: these use push/pull buffer which isn't implemented in the test
         // generator just yet
-        "!wasi_next.wai"
-        "!host.wai"
+        "!wasi_next.wit"
+        "!host.wit"
     );
 }
 
 mod async_tests {
     mod not_async {
-        wai_bindgen_wasmtime::export!({
+        wit_bindgen_wasmtime::export!({
             src["x"]: "foo: function()",
             async: ["bar"],
         });
@@ -53,7 +53,7 @@ mod async_tests {
         }
     }
     mod one_async {
-        wai_bindgen_wasmtime::export!({
+        wit_bindgen_wasmtime::export!({
             src["x"]: "
                 foo: function() -> list<u8>
                 bar: function()
@@ -63,7 +63,7 @@ mod async_tests {
 
         struct Me;
 
-        #[wai_bindgen_wasmtime::async_trait]
+        #[wit_bindgen_wasmtime::async_trait]
         impl x::X for Me {
             fn foo(&mut self) -> Vec<u8> {
                 Vec::new()
@@ -73,7 +73,7 @@ mod async_tests {
         }
     }
     mod one_async_export {
-        wai_bindgen_wasmtime::import!({
+        wit_bindgen_wasmtime::import!({
             src["x"]: "
                 foo: function(x: list<string>)
                 bar: function()
@@ -82,7 +82,7 @@ mod async_tests {
         });
     }
     mod resource_with_none_async {
-        wai_bindgen_wasmtime::export!({
+        wit_bindgen_wasmtime::export!({
             src["x"]: "
                 resource y {
                     z: function() -> string
@@ -94,7 +94,7 @@ mod async_tests {
 }
 
 mod custom_errors {
-    wai_bindgen_wasmtime::export!({
+    wit_bindgen_wasmtime::export!({
         src["x"]: "
             foo: function()
             bar: function() -> expected<_, u32>

@@ -1,9 +1,9 @@
 use heck::*;
 use pulldown_cmark::{html, Event, LinkType, Parser, Tag};
 use std::collections::HashMap;
-use wai_bindgen_gen_core::wai_parser::abi::AbiVariant;
-use wai_bindgen_gen_core::{wai_parser, Direction, Files, Generator, Source};
-use wai_parser::*;
+use wit_bindgen_gen_core::wit_parser::abi::AbiVariant;
+use wit_bindgen_gen_core::{wit_parser, Direction, Files, Generator, Source};
+use wit_parser::*;
 
 #[derive(Default)]
 pub struct Markdown {

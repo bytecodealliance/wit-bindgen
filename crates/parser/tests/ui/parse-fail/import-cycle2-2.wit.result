@@ -1,0 +1,4 @@
+failed to read `tests/ui/parse-fail/import-cycle-2-3.wit`
+
+Caused by:
+    some generic platform-agnostic error message

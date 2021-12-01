@@ -1,7 +1,7 @@
-wai_bindgen_rust::export!("crates/resources/resources.wai");
+wit_bindgen_rust::export!("crates/resources/resources.wit");
 
 use std::sync::{Arc, Mutex};
-use wai_bindgen_rust::Handle;
+use wit_bindgen_rust::Handle;
 
 lazy_static::lazy_static! {
     static ref INSTANCE: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));

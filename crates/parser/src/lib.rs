@@ -260,30 +260,30 @@ impl Function {
 }
 
 fn unwrap_md(contents: &str) -> String {
-    let mut wai = String::new();
+    let mut wit = String::new();
     let mut last_pos = 0;
-    let mut in_wai_code_block = false;
+    let mut in_wit_code_block = false;
     Parser::new_ext(contents, Options::empty())
         .into_offset_iter()
         .for_each(|(event, range)| match (event, range) {
-            (Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("wai")))), _) => {
-                in_wai_code_block = true;
+            (Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("wit")))), _) => {
+                in_wit_code_block = true;
             }
-            (Event::Text(text), range) if in_wai_code_block => {
+            (Event::Text(text), range) if in_wit_code_block => {
                 // Ensure that offsets are correct by inserting newlines to
-                // cover the Markdown content outside of wai code blocks.
+                // cover the Markdown content outside of wit code blocks.
                 for _ in contents[last_pos..range.start].lines() {
-                    wai.push_str("\n");
+                    wit.push_str("\n");
                 }
-                wai.push_str(&text);
+                wit.push_str(&text);
                 last_pos = range.end;
             }
-            (Event::End(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("wai")))), _) => {
-                in_wai_code_block = false;
+            (Event::End(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("wit")))), _) => {
+                in_wit_code_block = false;
             }
             _ => {}
         });
-    wai
+    wit
 }
 
 impl Interface {
@@ -463,10 +463,10 @@ impl Interface {
 
 fn load_fs(root: &Path, name: &str) -> Result<(PathBuf, String)> {
     // TODO: only read one, not both
-    let wai = root.join(name).with_extension("wai");
+    let wit = root.join(name).with_extension("wit");
     let witx = root.join(name).with_extension("witx");
-    let contents = fs::read_to_string(&wai)
+    let contents = fs::read_to_string(&wit)
         .or_else(|_| fs::read_to_string(&witx))
-        .context(format!("failed to read `{}`", wai.display()))?;
-    Ok((wai, contents))
+        .context(format!("failed to read `{}`", wit.display()))?;
+    Ok((wit, contents))
 }

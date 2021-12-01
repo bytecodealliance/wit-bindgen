@@ -1,10 +1,10 @@
 use crate::module::Interface;
 use std::collections::HashMap;
-use wai_parser::{
+use wasm_encoder::{BlockType, Instruction, MemArg, ValType};
+use wit_parser::{
     abi::WasmSignature, Function, Int, Interface as WaiInterface, RecordKind, SizeAlign, Type,
     TypeDefKind,
 };
-use wasm_encoder::{BlockType, Instruction, MemArg, ValType};
 
 // The parent's memory is imported, so it is always index 0 for the adapter logic
 const PARENT_MEMORY_INDEX: u32 = 0;

@@ -1,4 +1,4 @@
-wai_bindgen_rust::import!("crates/flags/flags.wai");
+wit_bindgen_rust::import!("crates/flags/flags.wit");
 
 use flags::*;
 

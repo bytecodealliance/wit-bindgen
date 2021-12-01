@@ -5,7 +5,7 @@
 //! An argument can be passed as well to filter, based on filename, which test
 //! to run
 //!
-//!     cargo test --test all foo.wai
+//!     cargo test --test all foo.wit
 
 use anyhow::{bail, Context, Result};
 use rayon::prelude::*;
@@ -16,7 +16,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
-use wai_parser::*;
+use wit_parser::*;
 
 fn main() {
     let tests = find_tests();
@@ -82,7 +82,7 @@ fn find_tests() -> Vec<PathBuf> {
 
             match f.path().extension().and_then(|s| s.to_str()) {
                 Some("md") => {}
-                Some("wai") => {}
+                Some("wit") => {}
                 _ => continue,
             }
             tests.push(f.path());
@@ -118,7 +118,7 @@ impl Runner<'_> {
             to_json(&instance)
         };
 
-        let result_file = test.with_extension("wai.result");
+        let result_file = test.with_extension("wit.result");
         if env::var_os("BLESS").is_some() {
             fs::write(&result_file, result)?;
         } else {
@@ -262,7 +262,7 @@ fn to_json(i: &Interface) -> String {
     };
     return serde_json::to_string_pretty(&iface).unwrap();
 
-    fn translate_typedef(ty: &wai_parser::TypeDef) -> Type {
+    fn translate_typedef(ty: &wit_parser::TypeDef) -> Type {
         match &ty.kind {
             TypeDefKind::Type(t) => Type::Primitive(translate_type(t)),
             TypeDefKind::Record(r) => Type::Record {
@@ -287,8 +287,8 @@ fn to_json(i: &Interface) -> String {
         }
     }
 
-    fn translate_type(ty: &wai_parser::Type) -> String {
-        use wai_parser::Type;
+    fn translate_type(ty: &wit_parser::Type) -> String {
+        use wit_parser::Type;
         match ty {
             Type::U8 => format!("u8"),
             Type::CChar => format!("c_char"),

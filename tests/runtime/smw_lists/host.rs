@@ -1,7 +1,7 @@
 use anyhow::Context;
-use wai_bindgen_wasmtime::Le;
+use wit_bindgen_wasmtime::Le;
 
-wai_bindgen_wasmtime::export!("tests/runtime/smw_lists/imports.wai");
+wit_bindgen_wasmtime::export!("tests/runtime/smw_lists/imports.wit");
 
 #[derive(Default)]
 pub struct Host {
@@ -37,7 +37,7 @@ impl imports::Imports for Host {
     }
 }
 
-wai_bindgen_wasmtime::import!("tests/runtime/smw_lists/exports.wai");
+wit_bindgen_wasmtime::import!("tests/runtime/smw_lists/exports.wit");
 
 fn run(wasm: &str) -> anyhow::Result<()> {
     let (exports, mut store) = crate::instantiate_smw(

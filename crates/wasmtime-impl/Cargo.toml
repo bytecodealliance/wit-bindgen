@@ -1,5 +1,5 @@
 [package]
-name = "wai-bindgen-wasmtime-impl"
+name = "wit-bindgen-wasmtime-impl"
 version = "0.1.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 edition = "2018"
@@ -12,10 +12,10 @@ test = false
 [dependencies]
 proc-macro2 = "1.0"
 syn = "1.0"
-wai-bindgen-gen-core = { path = "../gen-core", version = "0.1" }
-wai-bindgen-gen-wasmtime = { path = "../gen-wasmtime", version = "0.1" }
+wit-bindgen-gen-core = { path = "../gen-core", version = "0.1" }
+wit-bindgen-gen-wasmtime = { path = "../gen-wasmtime", version = "0.1" }
 
 [features]
-witx-compat = ['wai-bindgen-gen-wasmtime/witx-compat']
+witx-compat = ['wit-bindgen-gen-wasmtime/witx-compat']
 tracing = []
 async = []

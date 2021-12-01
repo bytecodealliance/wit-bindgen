@@ -1,4 +1,4 @@
-wai_bindgen_rust::import!("crates/types/types.wai");
+wit_bindgen_rust::import!("crates/types/types.wit");
 
 fn main() {
     types::a();
