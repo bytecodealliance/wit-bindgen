@@ -10,7 +10,7 @@ use wasmparser::{
 };
 use wit_parser::{
     abi::{AbiVariant, WasmSignature, WasmType},
-    Function, Interface as WaiInterface, SizeAlign, Type as WaiType,
+    Function, Interface as WitInterface, SizeAlign, Type as WitType,
 };
 
 fn import_kind(ty: ImportSectionEntryType) -> &'static str {
@@ -40,7 +40,7 @@ pub(crate) fn export_kind(kind: ExternalKind) -> &'static str {
     }
 }
 
-fn has_list(interface: &WaiInterface, ty: &WaiType) -> bool {
+fn has_list(interface: &WitInterface, ty: &WitType) -> bool {
     use wit_parser::{Type, TypeDefKind};
 
     match ty {
@@ -67,7 +67,7 @@ pub(crate) struct FunctionInfo {
 }
 
 pub(crate) struct Interface {
-    inner: WaiInterface,
+    inner: WitInterface,
     sizes: SizeAlign,
     func_infos: Vec<FunctionInfo>,
     pub(crate) must_adapt: bool,
@@ -77,7 +77,7 @@ pub(crate) struct Interface {
 }
 
 impl Interface {
-    pub fn new(inner: WaiInterface) -> Self {
+    pub fn new(inner: WitInterface) -> Self {
         let mut must_adapt_module = false;
         let mut needs_memory = false;
         let mut needs_memory_funcs = false;
@@ -137,7 +137,7 @@ impl Interface {
         }
     }
 
-    pub fn inner(&self) -> &WaiInterface {
+    pub fn inner(&self) -> &WitInterface {
         &self.inner
     }
 
@@ -206,7 +206,7 @@ impl<'a> Module<'a> {
     pub fn new(
         name: &'a str,
         bytes: &'a [u8],
-        interfaces: impl IntoIterator<Item = WaiInterface>,
+        interfaces: impl IntoIterator<Item = WitInterface>,
     ) -> Result<Self> {
         let mut module = Self {
             name,

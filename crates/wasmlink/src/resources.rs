@@ -9,7 +9,7 @@ use heck::SnakeCase;
 use std::collections::{BTreeMap, HashMap};
 use wasm_encoder::EntityType;
 use wasmparser::{ExternalKind, FuncType, Type};
-use wit_parser::Resource as WaiResource;
+use wit_parser::Resource as WitResource;
 
 const RESOURCE_INSERT_FUNC_NAME: &str = "resource_insert";
 const RESOURCE_GET_FUNC_NAME: &str = "resource_get";
@@ -51,7 +51,7 @@ struct ResourceFunction {
 }
 
 struct Resource<'a> {
-    inner: &'a WaiResource,
+    inner: &'a WitResource,
     id: u32,
     new: ResourceFunction,
     get: ResourceFunction,
