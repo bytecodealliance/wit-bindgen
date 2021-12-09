@@ -1180,13 +1180,13 @@ impl Generator for Wasmtime {
             //             let buffer_glue = wit_bindgen_wasmtime::imports::BufferGlue::default();
             //             let g = buffer_glue.clone();
             //             linker.func(
-            //                 \"witx_canonical_buffer_abi\",
+            //                 \"wit_canonical_buffer_abi\",
             //                 \"in_len\",
             //                 move |handle: u32| g.in_len(handle),
             //             )?;
             //             let g = buffer_glue.clone();
             //             linker.func(
-            //                 \"witx_canonical_buffer_abi\",
+            //                 \"wit_canonical_buffer_abi\",
             //                 \"in_read\",
             //                 move |caller: wasmtime::Caller<'_>, handle: u32, len: u32, offset: u32| {
             //                     let memory = get_memory(&mut caller, \"memory\")?;
@@ -1195,13 +1195,13 @@ impl Generator for Wasmtime {
             //             )?;
             //             let g = buffer_glue.clone();
             //             linker.func(
-            //                 \"witx_canonical_buffer_abi\",
+            //                 \"wit_canonical_buffer_abi\",
             //                 \"out_len\",
             //                 move |handle: u32| g.out_len(handle),
             //             )?;
             //             let g = buffer_glue.clone();
             //             linker.func(
-            //                 \"witx_canonical_buffer_abi\",
+            //                 \"wit_canonical_buffer_abi\",
             //                 \"out_write\",
             //                 move |caller: wasmtime::Caller<'_>, handle: u32, len: u32, offset: u32| {
             //                     let memory = get_memory(&mut caller, \"memory\")?;

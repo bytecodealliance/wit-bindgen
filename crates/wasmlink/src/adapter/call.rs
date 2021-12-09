@@ -2,7 +2,7 @@ use crate::module::Interface;
 use std::collections::HashMap;
 use wasm_encoder::{BlockType, Instruction, MemArg, ValType};
 use wit_parser::{
-    abi::WasmSignature, Function, Int, Interface as WaiInterface, RecordKind, SizeAlign, Type,
+    abi::WasmSignature, Function, Int, Interface as WitInterface, RecordKind, SizeAlign, Type,
     TypeDefKind,
 };
 
@@ -183,7 +183,7 @@ impl Operand<'_> {
     }
 }
 
-fn is_char(interface: &WaiInterface, ty: &Type) -> bool {
+fn is_char(interface: &WitInterface, ty: &Type) -> bool {
     match ty {
         Type::Char => true,
         Type::Id(id) => match &interface.types[*id].kind {
@@ -432,7 +432,7 @@ impl<'a> CallAdapter<'a> {
     }
 
     fn push_operands<T>(
-        interface: &'a WaiInterface,
+        interface: &'a WitInterface,
         sizes: &SizeAlign,
         ty: &Type,
         params: &mut T,
@@ -581,7 +581,7 @@ impl<'a> CallAdapter<'a> {
     }
 
     fn push_element_operands(
-        interface: &'a WaiInterface,
+        interface: &'a WitInterface,
         sizes: &SizeAlign,
         ty: &Type,
         offset: u32,
