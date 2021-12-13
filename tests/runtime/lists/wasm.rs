@@ -69,8 +69,8 @@ impl exports::Exports for Exports {
             let u16s = Unaligned::new(1);
             let u32s = Unaligned::new(2);
             let u64s = Unaligned::new(3);
-            let flag32s = Unaligned::new(FLAG32_B8);
-            let flag64s = Unaligned::new(FLAG64_B9);
+            let flag32s = Unaligned::new(Flag32::B8);
+            let flag64s = Unaligned::new(Flag64::B9);
             let records = Unaligned::new(UnalignedRecord { a: 10, b: 11 });
             let f32s = Unaligned::new(100.0);
             let f64s = Unaligned::new(101.0);
