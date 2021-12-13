@@ -322,13 +322,20 @@ impl Interface {
         visiting: &mut HashSet<PathBuf>,
         map: &mut HashMap<String, Interface>,
     ) -> Result<Interface> {
+        let mut name = filename.file_stem().unwrap();
+        let mut contents = contents;
+
+        // If we have a ".md" file, it's a wit file wrapped in a markdown file;
+        // parse the markdown to extract the `wit` code blocks.
         let md_contents;
-        let contents = if filename.extension().and_then(|s| s.to_str()) == Some("md") {
+        if filename.extension().and_then(|s| s.to_str()) == Some("md") {
             md_contents = unwrap_md(contents);
-            &md_contents[..]
-        } else {
-            contents
-        };
+            contents = &md_contents[..];
+
+            // Also strip the inner ".wit" extension.
+            name = Path::new(name).file_stem().unwrap();
+        }
+
         // Parse the `contents `into an AST
         let ast = match ast::Ast::parse(contents) {
             Ok(ast) => ast,
@@ -360,8 +367,7 @@ impl Interface {
         visiting.remove(filename);
 
         // and finally resolve everything into our final instance
-        let name = filename.file_stem().unwrap().to_str().unwrap();
-        match ast.resolve(name, map) {
+        match ast.resolve(name.to_str().unwrap(), map) {
             Ok(i) => Ok(i),
             Err(mut e) => {
                 let file = filename.display().to_string();
