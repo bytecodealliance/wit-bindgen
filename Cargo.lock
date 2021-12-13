@@ -2101,6 +2101,7 @@ name = "wit-bindgen-rust"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bitflags",
  "wit-bindgen-rust-impl",
 ]
 

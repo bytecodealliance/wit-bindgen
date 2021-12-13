@@ -247,24 +247,63 @@ impl Generator for RustWasm {
         docs: &Docs,
     ) {
         if record.is_flags() {
-            self.rustdoc(docs);
             self.src
-                .push_str(&format!("pub type {} = ", name.to_camel_case()));
+                .push_str("wit_bindgen_rust::bitflags::bitflags! {\n");
+            self.rustdoc(docs);
             let repr = iface
                 .flags_repr(record)
                 .expect("unsupported number of flags");
-            self.src.push_str(int_repr(repr));
-            self.src.push_str(";\n");
+            self.src.push_str(&format!(
+                "pub struct {}: {} {{\n",
+                name.to_camel_case(),
+                int_repr(repr)
+            ));
             for (i, field) in record.fields.iter().enumerate() {
                 self.rustdoc(&field.docs);
                 self.src.push_str(&format!(
-                    "pub const {}_{}: {} = 1 << {};\n",
-                    name.to_shouty_snake_case(),
+                    "const {} = 1 << {};\n",
                     field.name.to_shouty_snake_case(),
-                    name.to_camel_case(),
                     i,
                 ));
             }
+            self.src.push_str("}\n");
+            self.src.push_str("}\n");
+
+            // Add a `from_bits_preserve` method.
+            self.src
+                .push_str(&format!("impl {} {{\n", name.to_camel_case()));
+            self.src.push_str(&format!(
+                "    /// Convert from a raw integer, preserving any unknown bits. See\n"
+            ));
+            self.src.push_str(&format!("    /// <https://github.com/bitflags/bitflags/issues/263#issuecomment-957088321>\n"));
+            self.src.push_str(&format!(
+                "    pub fn from_bits_preserve(bits: {}) -> Self {{\n",
+                int_repr(repr)
+            ));
+            self.src.push_str(&format!("        Self {{ bits }}\n"));
+            self.src.push_str(&format!("    }}\n"));
+            self.src.push_str(&format!("}}\n"));
+
+            // Add a `AsI64` etc. method.
+            let as_trait = match repr {
+                Int::U8 | Int::U16 | Int::U32 => "i32",
+                Int::U64 => "i64",
+            };
+            self.src.push_str(&format!(
+                "impl wit_bindgen_rust::rt::As{} for {} {{\n",
+                as_trait.to_camel_case(),
+                name.to_camel_case()
+            ));
+            self.src.push_str(&format!("    #[inline]"));
+            self.src.push_str(&format!(
+                "    fn as_{}(self) -> {} {{\n",
+                as_trait, as_trait
+            ));
+            self.src
+                .push_str(&format!("        self.bits() as {}\n", as_trait));
+            self.src.push_str(&format!("    }}"));
+            self.src.push_str(&format!("}}\n"));
+
             return;
         }
 
@@ -1019,7 +1058,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let tmp = self.tmp();
                 self.push_str(&format!("let flags{} = {};\n", tmp, operands[0]));
                 for i in 0..record.num_i32s() {
-                    results.push(format!("(flags{} >> {}) as i32", tmp, i * 32));
+                    results.push(format!("(flags{}.bits() >> {}) as i32", tmp, i * 32));
                 }
             }
             Instruction::FlagsLower64 { .. } => {
@@ -1028,9 +1067,14 @@ impl Bindgen for FunctionBindgen<'_> {
             }
             Instruction::FlagsLift { name, .. } | Instruction::FlagsLift64 { name, .. } => {
                 let name = name.to_camel_case();
-                let mut result = String::from("0");
+                let mut result = format!("{}::empty()", name);
                 for (i, op) in operands.iter().enumerate() {
-                    result.push_str(&format!("| (({} as {}) << {})", op, name, i * 32));
+                    result.push_str(&format!(
+                        " | {}::from_bits_preserve((({} as u32) << {}) as _)",
+                        name,
+                        op,
+                        i * 32
+                    ));
                 }
                 results.push(result);
             }

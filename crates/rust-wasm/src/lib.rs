@@ -9,6 +9,10 @@ pub mod exports;
 mod futures;
 pub mod imports;
 
+// Re-export `bitflags` so that we can reference it from macros.
+#[doc(hidden)]
+pub use bitflags;
+
 /// A type for handles to resources that appear in exported functions.
 ///
 /// This type is used as `Handle<T>` for argument types and return values of
