@@ -1390,7 +1390,6 @@ dependencies = [
 name = "test-rust-wasm"
 version = "0.1.0"
 dependencies = [
- "bitflags",
  "futures-util",
  "wit-bindgen-rust",
 ]
@@ -2052,7 +2051,6 @@ dependencies = [
 name = "wit-bindgen-gen-rust-wasm"
 version = "0.1.0"
 dependencies = [
- "bitflags",
  "heck",
  "structopt",
  "test-helpers",
@@ -2103,6 +2101,7 @@ name = "wit-bindgen-rust"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bitflags",
  "wit-bindgen-rust-impl",
 ]
 

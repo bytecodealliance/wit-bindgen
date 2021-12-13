@@ -247,7 +247,8 @@ impl Generator for RustWasm {
         docs: &Docs,
     ) {
         if record.is_flags() {
-            self.src.push_str("bitflags::bitflags! {\n");
+            self.src
+                .push_str("wit_bindgen_rust::bitflags::bitflags! {\n");
             self.rustdoc(docs);
             let repr = iface
                 .flags_repr(record)
