@@ -17,11 +17,11 @@ fn main() {
     assert_eq!(x.a, 3);
     assert_eq!(x.b, 4);
 
-    flags_arg(REALLY_FLAGS_B | REALLY_FLAGS_E | REALLY_FLAGS_F | REALLY_FLAGS_G | REALLY_FLAGS_I);
+    flags_arg(ReallyFlags::B | ReallyFlags::E | ReallyFlags::F | ReallyFlags::G | ReallyFlags::I);
     let x = flags_result();
     assert_eq!(
         x,
-        REALLY_FLAGS_A | REALLY_FLAGS_C | REALLY_FLAGS_D | REALLY_FLAGS_H
+        ReallyFlags::A | ReallyFlags::C | ReallyFlags::D | ReallyFlags::H
     );
 
     aggregate_arg(AggregatesParam {
@@ -29,7 +29,7 @@ fn main() {
         b: 7,
         c: Empty {},
         d: "hello world!",
-        e: REALLY_FLAGS_F,
+        e: ReallyFlags::F,
     });
 
     let x = aggregate_result();
@@ -37,5 +37,5 @@ fn main() {
     assert_eq!(x.a.b, 101);
     assert_eq!(x.b, 8);
     assert_eq!(x.d, "I love Wasm!");
-    assert_eq!(x.e, REALLY_FLAGS_G);
+    assert_eq!(x.e, ReallyFlags::G);
 }

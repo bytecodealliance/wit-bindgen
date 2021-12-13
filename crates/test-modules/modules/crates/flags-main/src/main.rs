@@ -3,22 +3,22 @@ wit_bindgen_rust::import!("crates/flags/flags.wit");
 use flags::*;
 
 fn main() {
-    assert_eq!(roundtrip_flag1(0), 0);
-    assert_eq!(roundtrip_flag1(FLAG1_B0), FLAG1_B0);
+    assert_eq!(roundtrip_flag1(Flag1::empty()), Flag1::empty());
+    assert_eq!(roundtrip_flag1(Flag1::B0), Flag1::B0);
 
-    assert_eq!(roundtrip_flag2(0), 0);
-    assert_eq!(roundtrip_flag2(FLAG2_B0), FLAG2_B0);
-    assert_eq!(roundtrip_flag2(FLAG2_B1 | FLAG2_B0), FLAG2_B1 | FLAG2_B0);
+    assert_eq!(roundtrip_flag2(Flag2::empty()), Flag2::empty());
+    assert_eq!(roundtrip_flag2(Flag2::B0), Flag2::B0);
+    assert_eq!(roundtrip_flag2(Flag2::B1 | Flag2::B0), Flag2::B1 | Flag2::B0);
 
-    assert_eq!(roundtrip_flag4(0), 0);
-    assert_eq!(roundtrip_flag4(FLAG4_B0), FLAG4_B0);
-    assert_eq!(roundtrip_flag4(FLAG4_B1 | FLAG4_B0), FLAG4_B1 | FLAG4_B0);
+    assert_eq!(roundtrip_flag4(Flag4::empty()), Flag4::empty());
+    assert_eq!(roundtrip_flag4(Flag4::B0), Flag4::B0);
+    assert_eq!(roundtrip_flag4(Flag4::B1 | Flag4::B0), Flag4::B1 | Flag4::B0);
     assert_eq!(
-        roundtrip_flag4(FLAG4_B2 | FLAG4_B1 | FLAG4_B0),
-        FLAG4_B2 | FLAG4_B1 | FLAG4_B0
+        roundtrip_flag4(Flag4::B2 | Flag4::B1 | Flag4::B0),
+        Flag4::B2 | Flag4::B1 | Flag4::B0
     );
     assert_eq!(
-        roundtrip_flag4(FLAG4_B3 | FLAG4_B2 | FLAG4_B1 | FLAG4_B0),
-        FLAG4_B3 | FLAG4_B2 | FLAG4_B1 | FLAG4_B0
+        roundtrip_flag4(Flag4::B3 | Flag4::B2 | Flag4::B1 | Flag4::B0),
+        Flag4::B3 | Flag4::B2 | Flag4::B1 | Flag4::B0
     );
 }

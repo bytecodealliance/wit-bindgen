@@ -26,18 +26,18 @@ impl records::Records for Records {
     fn flags_arg(x: ReallyFlags) {
         assert_eq!(
             x,
-            REALLY_FLAGS_B | REALLY_FLAGS_E | REALLY_FLAGS_F | REALLY_FLAGS_G | REALLY_FLAGS_I
+            ReallyFlags::B | ReallyFlags::E | ReallyFlags::F | ReallyFlags::G | ReallyFlags::I
         );
     }
     fn flags_result() -> ReallyFlags {
-        REALLY_FLAGS_A | REALLY_FLAGS_C | REALLY_FLAGS_D | REALLY_FLAGS_H
+        ReallyFlags::A | ReallyFlags::C | ReallyFlags::D | ReallyFlags::H
     }
     fn aggregate_arg(x: Aggregates) {
         assert_eq!(x.a.a, 10);
         assert_eq!(x.a.b, 100);
         assert_eq!(x.b, 7);
         assert_eq!(x.d, "hello world!");
-        assert_eq!(x.e, REALLY_FLAGS_F);
+        assert_eq!(x.e, ReallyFlags::F);
     }
     fn aggregate_result() -> Aggregates {
         Aggregates {
@@ -45,7 +45,7 @@ impl records::Records for Records {
             b: 8,
             c: Empty {},
             d: "I love Wasm!".to_string(),
-            e: REALLY_FLAGS_G,
+            e: ReallyFlags::G,
         }
     }
 }

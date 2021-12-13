@@ -13,12 +13,12 @@ impl exports::Exports for Exports {
 
         assert_eq!(swap_tuple((1u8, 2u32)), (2u32, 1u8));
         assert_eq!(roundtrip_flags1(F1::A), F1::A);
-        assert_eq!(roundtrip_flags1(F1::from_bits_preserve(0)), F1::from_bits_preserve(0));
+        assert_eq!(roundtrip_flags1(F1::empty()), F1::empty());
         assert_eq!(roundtrip_flags1(F1::B), F1::B);
         assert_eq!(roundtrip_flags1(F1::A | F1::B), F1::A | F1::B);
 
         assert_eq!(roundtrip_flags2(F2::C), F2::C);
-        assert_eq!(roundtrip_flags2(F2::from_bits_preserve(0)), F2::from_bits_preserve(0));
+        assert_eq!(roundtrip_flags2(F2::empty()), F2::empty());
         assert_eq!(roundtrip_flags2(F2::D), F2::D);
         assert_eq!(roundtrip_flags2(F2::C | F2::E), F2::C | F2::E);
 
