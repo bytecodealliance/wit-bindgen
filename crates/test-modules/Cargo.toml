@@ -10,5 +10,5 @@ wasmlink = { path = "../wasmlink" }
 wit-parser = { path = "../parser" }
 
 [dev-dependencies]
-wasmtime = "0.31.0"
-wasmtime-wasi = "0.31.0"
+wasmtime = "0.32.0"
+wasmtime-wasi = "0.32.0"
