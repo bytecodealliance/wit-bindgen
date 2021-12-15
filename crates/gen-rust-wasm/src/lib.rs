@@ -544,11 +544,12 @@ impl Generator for RustWasm {
                 "{{
                     fn drop(&mut self) {{
                         unsafe {{
-                            drop({}_close(self.as_raw()));
+                            drop({}_close({}(self.as_raw())));
                         }}
                     }}
                 }}\n",
                 name,
+                name.to_camel_case(),
             ));
         } else {
             self.src.push_str(&format!(
