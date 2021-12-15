@@ -763,9 +763,9 @@ dependencies = [
 
 [[package]]
 name = "io-lifetimes"
-version = "0.4.3"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "806a2263a7ab56a48a20d88340e87a8e810b6f5adbbc1ac45ed57aaa33570343"
+checksum = "f6ef6787e7f0faedc040f95716bdd0e62bcfcf4ba93da053b62dea2691c13864"
 dependencies = [
  "winapi",
 ]
@@ -2118,7 +2118,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bitflags",
- "io-lifetimes 0.4.3",
+ "io-lifetimes 0.4.4",
  "wit-bindgen-rust-impl",
 ]
 
