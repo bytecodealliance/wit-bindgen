@@ -223,6 +223,9 @@ impl Generator for RustWasm {
         self.src
             .push_str(&format!("mod {} {{\n", iface.name.to_snake_case()));
 
+        self.src.push_str("#[cfg(target_os = \"wasi\")]\n");
+        self.src
+            .push_str("use std::os::wasi::io::{AsRawFd as _, IntoRawFd as _, FromRawFd as _};");
         if let Some(alias) = &self.opts.crate_alias {
             self.src
                 .push_str(&format!("use {} as wit_bindgen_rust;\n", alias));
@@ -430,22 +433,106 @@ impl Generator for RustWasm {
         self.src.push_str("#[repr(transparent)]\n");
         self.src
             .push_str(&format!("pub struct {}(i32);\n", name.to_camel_case()));
+
+        // Implement the inherent API with `from_raw`, `into_raw`, and `as_raw`
+        // which is the same API used in the host-side bindings.
         self.src.push_str("impl ");
         self.src.push_str(&name.to_camel_case());
         self.src.push_str(
             " {
+                #[inline]
                 pub unsafe fn from_raw(raw: i32) -> Self {
                     Self(raw)
                 }
 
+                #[inline]
                 pub fn into_raw(self) -> i32 {
                     let ret = self.0;
                     core::mem::forget(self);
-                    return ret;
+                    ret
                 }
 
+                #[inline]
                 pub fn as_raw(&self) -> i32 {
                     self.0
+                }
+            }\n",
+        );
+
+        // Implement `AsRawFd`, `FromRawFd`, and `IntoRawFd`.
+        self.src.push_str("#[cfg(target_os = \"wasi\")]\n");
+        self.src.push_str("impl std::os::wasi::io::FromRawFd for ");
+        self.src.push_str(&name.to_camel_case());
+        self.src.push_str(
+            " {
+                #[inline]
+                unsafe fn from_raw_fd(raw: i32) -> Self {
+                    Self::from_raw(raw)
+                }
+            }\n",
+        );
+        self.src.push_str("#[cfg(target_os = \"wasi\")]\n");
+        self.src.push_str("impl std::os::wasi::io::IntoRawFd for ");
+        self.src.push_str(&name.to_camel_case());
+        self.src.push_str(
+            " {
+                #[inline]
+                fn into_raw_fd(self) -> i32 {
+                    self.into_raw()
+                }
+            }\n",
+        );
+        self.src.push_str("#[cfg(target_os = \"wasi\")]\n");
+        self.src.push_str("impl std::os::wasi::io::AsRawFd for ");
+        self.src.push_str(&name.to_camel_case());
+        self.src.push_str(
+            " {
+                #[inline]
+                fn as_raw_fd(&self) -> i32 {
+                    self.as_raw()
+                }
+            }\n",
+        );
+
+        // Implement the I/O safety traits. Once these are stabilized in
+        // std, we can switch to std rather than io-lifetimes.
+        self.src.push_str("#[cfg(target_os = \"wasi\")]\n");
+        self.src
+            .push_str("impl wit_bindgen_rust::io_lifetimes::FromFd for ");
+        self.src.push_str(&name.to_camel_case());
+        self.src.push_str(
+            " {
+                #[inline]
+                fn from_fd(fd: wit_bindgen_rust::io_lifetimes::OwnedFd) -> Self {
+                    Self(fd.into_raw_fd())
+                }
+            }\n",
+        );
+        self.src.push_str("#[cfg(target_os = \"wasi\")]\n");
+        self.src
+            .push_str("impl wit_bindgen_rust::io_lifetimes::IntoFd for ");
+        self.src.push_str(&name.to_camel_case());
+        self.src.push_str(
+            " {
+                #[inline]
+                fn into_fd(self) -> wit_bindgen_rust::io_lifetimes::OwnedFd {
+                    let raw = self.as_raw();
+                    core::mem::forget(self);
+                    unsafe { wit_bindgen_rust::io_lifetimes::OwnedFd::from_raw_fd(raw) }
+                }
+            }\n",
+        );
+        self.src.push_str("#[cfg(target_os = \"wasi\")]\n");
+        self.src
+            .push_str("impl wit_bindgen_rust::io_lifetimes::AsFd for ");
+        self.src.push_str(&name.to_camel_case());
+        self.src.push_str(
+            " {
+                #[inline]
+                fn as_fd(&self) -> wit_bindgen_rust::io_lifetimes::BorrowedFd<'_> {
+                    unsafe {
+                        wit_bindgen_rust::io_lifetimes::BorrowedFd::borrow_raw_fd(self.as_raw())
+                    }
                 }
             }\n",
         );
@@ -457,12 +544,11 @@ impl Generator for RustWasm {
                 "{{
                     fn drop(&mut self) {{
                         unsafe {{
-                            drop({}_close({}(self.0)));
+                            drop({}_close(self.as_raw()));
                         }}
                     }}
                 }}\n",
                 name,
-                name.to_camel_case(),
             ));
         } else {
             self.src.push_str(&format!(
@@ -471,10 +557,10 @@ impl Generator for RustWasm {
                         #[link(wasm_import_module = \"canonical_abi\")]
                         extern \"C\" {{
                             #[link_name = \"resource_drop_{}\"]
-                            fn close(fd: i32);
+                            fn close(raw: i32);
                         }}
                         unsafe {{
-                            close(self.0);
+                            close(self.as_raw());
                         }}
                     }}
                 }}\n",
@@ -1043,12 +1129,12 @@ impl Bindgen for FunctionBindgen<'_> {
                 if self.is_dtor {
                     results.push(format!("{}.into_raw()", operands[0]));
                 } else {
-                    results.push(format!("{}.0", operands[0]));
+                    results.push(format!("{}.as_raw()", operands[0]));
                 }
             }
             Instruction::HandleOwnedFromI32 { ty } => {
                 results.push(format!(
-                    "{}({})",
+                    "{}::from_raw({})",
                     iface.resources[*ty].name.to_camel_case(),
                     operands[0]
                 ));

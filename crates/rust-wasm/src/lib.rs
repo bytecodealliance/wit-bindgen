@@ -13,6 +13,11 @@ pub mod imports;
 #[doc(hidden)]
 pub use bitflags;
 
+// Re-export `io-lifetimes` so that we can reference it from macros.
+#[doc(hidden)]
+#[cfg(target_os = "wasi")]
+pub use io_lifetimes;
+
 /// A type for handles to resources that appear in exported functions.
 ///
 /// This type is used as `Handle<T>` for argument types and return values of
