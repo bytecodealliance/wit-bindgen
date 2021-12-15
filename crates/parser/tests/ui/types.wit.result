@@ -302,15 +302,15 @@
         "fields": [
           [
             "a",
-            "type-53"
+            "type-55"
           ],
           [
             "b",
-            "type-53"
+            "type-55"
           ],
           [
             "c",
-            "type-53"
+            "type-55"
           ]
         ]
       }
@@ -322,15 +322,15 @@
         "fields": [
           [
             "a",
-            "type-53"
+            "type-55"
           ],
           [
             "b",
-            "type-53"
+            "type-55"
           ],
           [
             "c",
-            "type-53"
+            "type-55"
           ]
         ]
       }
@@ -406,7 +406,7 @@
           ],
           [
             "b",
-            "type-54"
+            "type-56"
           ]
         ]
       }
@@ -438,7 +438,7 @@
           ],
           [
             "1",
-            "type-54"
+            "type-56"
           ]
         ]
       }
@@ -454,7 +454,7 @@
           ],
           [
             "1",
-            "type-54"
+            "type-56"
           ]
         ]
       }
@@ -523,7 +523,7 @@
     {
       "idx": 46,
       "name": "t45",
-      "list": "type-56"
+      "list": "type-58"
     },
     {
       "idx": 47,
@@ -547,16 +547,52 @@
     },
     {
       "idx": 51,
-      "name": "foo",
-      "primitive": "type-52"
+      "name": "t50",
+      "variant": {
+        "cases": [
+          [
+            "0",
+            null
+          ],
+          [
+            "1",
+            "u32"
+          ]
+        ]
+      }
     },
     {
       "idx": 52,
+      "name": "t51",
+      "variant": {
+        "cases": [
+          [
+            "0",
+            "u32"
+          ],
+          [
+            "1",
+            null
+          ],
+          [
+            "2",
+            "f32"
+          ]
+        ]
+      }
+    },
+    {
+      "idx": 53,
+      "name": "foo",
+      "primitive": "type-54"
+    },
+    {
+      "idx": 54,
       "name": "bar",
       "primitive": "u32"
     },
     {
-      "idx": 53,
+      "idx": 55,
       "variant": {
         "cases": [
           [
@@ -571,7 +607,7 @@
       }
     },
     {
-      "idx": 54,
+      "idx": 56,
       "variant": {
         "cases": [
           [
@@ -586,12 +622,12 @@
       }
     },
     {
-      "idx": 55,
+      "idx": 57,
       "list": "type-33"
     },
     {
-      "idx": 56,
-      "list": "type-55"
+      "idx": 58,
+      "list": "type-57"
     }
   ]
 }

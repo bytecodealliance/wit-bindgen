@@ -50,6 +50,8 @@ type t46 = t44
 type t47 = "t44"
 type t48 = push-buffer<u8>
 type t49 = pull-buffer<u8>
+union t50 { _, u32 }
+union t51 { u32, _, f32 }
 
 // type order doesn't matter
 type foo = bar

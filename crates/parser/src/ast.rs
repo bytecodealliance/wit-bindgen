@@ -594,12 +594,16 @@ impl<'a> TypeDef<'a> {
                 Token::LeftBrace,
                 Token::RightBrace,
                 |docs, tokens| {
-                    let ty = Type::parse(tokens)?;
+                    let ty = if tokens.eat(Token::Underscore)? {
+                        None
+                    } else {
+                        Some(Type::parse(tokens)?)
+                    };
                     i += 1;
                     Ok(Case {
                         docs,
                         name: (i - 1).to_string().into(),
-                        ty: Some(ty),
+                        ty,
                     })
                 },
             )?,
