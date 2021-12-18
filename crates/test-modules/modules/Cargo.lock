@@ -305,6 +305,7 @@ name = "wit-parser"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "heck",
  "id-arena",
  "pulldown-cmark",
  "unicode-normalization",
