@@ -396,6 +396,12 @@ fn detect_invalid_input(input: &str) -> Result<()> {
         match ch {
             '\n' => line += 1,
             '\r' | '\t' => {}
+
+            // Bidirectional override codepoints can be used to craft source code that
+            // appears to have a different meaning than its actual meaning. See
+            // [CVE-2021-42574] for background and motivation.
+            //
+            // [CVE-2021-42574]: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-42574
             '\u{202a}' | '\u{202b}' | '\u{202c}' | '\u{202d}' | '\u{202e}' | '\u{2066}'
             | '\u{2067}' | '\u{2068}' | '\u{2069}' => {
                 bail!(
@@ -404,17 +410,30 @@ fn detect_invalid_input(input: &str) -> Result<()> {
                     line
                 );
             }
+
+            // Disallow several characters which are deprecated or discouraged in Unicode.
+            //
+            // U+149 deprecated; see Unicode 13.0.0, sec. 7.1 Latin, Compatibility Digraphs.
+            // U+673 deprecated; see Unicode 13.0.0, sec. 9.2 Arabic, Additional Vowel Marks.
+            // U+F77 and U+F79 deprecated; see Unicode 13.0.0, sec. 13.4 Tibetan, Vowels.
+            // U+17A3 and U+17A4 deprecated, and U+17B4 and U+17B5 discouraged; see
+            // Unicode 13.0.0, sec. 16.4 Khmer, Characters Whose Use Is Discouraged.
             '\u{149}' | '\u{673}' | '\u{f77}' | '\u{f79}' | '\u{17a3}' | '\u{17a4}'
             | '\u{17b4}' | '\u{17b5}' => {
                 bail!(
-                    "Codepoint {:?} at line {} is strongly discouraged by Unicode",
+                    "Codepoint {:?} at line {} is discouraged by Unicode",
                     ch.escape_unicode(),
                     line
                 );
             }
+
+            // Disallow control codes other than the ones explicitly recognized above,
+            // so that viewing a wit file on a terminal doesn't have surprising side
+            // effects or appear to have a different meaning than its actual meaning.
             ch if ch.is_control() => {
                 bail!("Control code {:?} at line {}", ch.escape_unicode(), line);
             }
+
             _ => {}
         }
     }
@@ -445,14 +464,22 @@ fn validate_id(start: usize, id: &str) -> Result<(), Error> {
         match part.chars().next() {
             None => return Err(Error::IdPartEmpty(start)),
             Some(first) => {
+                // Require the first character of each part to be non-combining,
+                // so that if a source langauge uses `CamelCase`, they won't
+                // combine with the last character of the previous part.
                 if canonical_combining_class(first) != 0 {
                     return Err(Error::InvalidCharInId(start, first));
                 }
+
+                // Require the first character to be a XID start.
                 if !UnicodeXID::is_xid_start(first) {
                     return Err(Error::InvalidCharInId(start, first));
                 }
-                // TODO: Disallow values with 'Grapheme_Extend = Yes'?
-                // TODO: disallow values with 'Grapheme_Cluster_Break = SpacingMark'?
+
+                // TODO: Disallow values with 'Grapheme_Extend = Yes', to
+                // prevent them from combining with previous parts?
+
+                // TODO: Disallow values with 'Grapheme_Cluster_Break = SpacingMark'?
             }
         };
 
