@@ -393,6 +393,22 @@ pub fn codegen_wasmer_export(input: TokenStream) -> TokenStream {
     )
 }
 
+#[proc_macro]
+#[cfg(feature = "wit-bindgen-gen-wasmer-py")]
+pub fn codegen_py_export(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Export, "export", || {
+        wit_bindgen_gen_wasmer_py::Opts::default().build()
+    })
+}
+
+#[proc_macro]
+#[cfg(feature = "wit-bindgen-gen-wasmer-py")]
+pub fn codegen_py_import(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Import, "import", || {
+        wit_bindgen_gen_wasmer_py::Opts::default().build()
+    })
+}
+
 fn generate_tests<G>(
     input: TokenStream,
     dir: &str,
@@ -564,6 +580,44 @@ pub fn runtime_tests(input: TokenStream) -> TokenStream {
             let name_str = format!("{}_{}", name_str, lang);
             let name = quote::format_ident!("{}", name_str);
             let host_file = entry.join(&host_file).to_str().unwrap().to_string();
+            let import_wit = entry.join("imports.wit").to_str().unwrap().to_string();
+            let export_wit = entry.join("exports.wit").to_str().unwrap().to_string();
+            tests.push(quote::quote! {
+                #[test]
+                fn #name() {
+                    crate::execute(
+                        #name_str,
+                        #wasm.as_ref(),
+                        #host_file.as_ref(),
+                        #import_wit.as_ref(),
+                        #export_wit.as_ref(),
+                    )
+                }
+            });
+        }
+    }
+
+    (quote::quote!(#(#tests)*)).into()
+}
+
+#[proc_macro]
+#[cfg(feature = "wit-bindgen-gen-wasmer-py")]
+pub fn runtime_tests_wasmer_py(_input: TokenStream) -> TokenStream {
+    let mut tests = Vec::new();
+    let cwd = std::env::current_dir().unwrap();
+    for entry in std::fs::read_dir(cwd.join("tests/runtime")).unwrap() {
+        let entry = entry.unwrap().path();
+        if !entry.join("host-wasmer.py").exists() {
+            continue;
+        }
+        let name_str = entry.file_name().unwrap().to_str().unwrap();
+        for (lang, name, wasm) in WASMS {
+            if *name != name_str {
+                continue;
+            }
+            let name_str = format!("{}_{}", name_str, lang);
+            let name = quote::format_ident!("{}", name_str);
+            let host_file = entry.join("host-wasmer.py").to_str().unwrap().to_string();
             let import_wit = entry.join("imports.wit").to_str().unwrap().to_string();
             let export_wit = entry.join("exports.wit").to_str().unwrap().to_string();
             tests.push(quote::quote! {

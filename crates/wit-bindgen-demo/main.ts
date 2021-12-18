@@ -136,6 +136,7 @@ class Editor {
       case "markdown": lang = Lang.Markdown; break;
       case "spidermonkey": lang = Lang.Spidermonkey; break;
       case "wasmer": lang = Lang.Wasmer; break;
+      case "wasmer-py": lang = Lang.WasmerPy; break;
       default: return;
     }
     const result = this.config.render(lang, wit, is_import);

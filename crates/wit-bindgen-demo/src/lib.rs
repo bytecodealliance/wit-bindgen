@@ -21,6 +21,7 @@ pub struct Config {
     markdown: RefCell<wit_bindgen_gen_markdown::Opts>,
     spidermonkey: RefCell<wit_bindgen_gen_spidermonkey::Opts>,
     wasmer: RefCell<wit_bindgen_gen_wasmer::Opts>,
+    wasmer_py: RefCell<wit_bindgen_gen_wasmer_py::Opts>,
 }
 
 impl demo::Config for Config {
@@ -58,6 +59,7 @@ impl demo::Config for Config {
                 Box::new(opts.clone().build(script))
             }
             demo::Lang::Wasmer => Box::new(self.wasmer.borrow().clone().build()),
+            demo::Lang::WasmerPy => Box::new(self.wasmer_py.borrow().clone().build()),
         };
         let iface = Interface::parse("input", &wit).map_err(|e| format!("{:?}", e))?;
         let mut files = Default::default();

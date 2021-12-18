@@ -61,6 +61,12 @@ enum Command {
         #[structopt(flatten)]
         common: Common,
     },
+    WasmerPy {
+        #[structopt(flatten)]
+        opts: wit_bindgen_gen_wasmer_py::Opts,
+        #[structopt(flatten)]
+        common: Common,
+    },
 }
 
 #[derive(Debug, StructOpt)]
@@ -95,6 +101,7 @@ fn main() -> Result<()> {
             (Box::new(opts.build(js_source)), common)
         }
         Command::Wasmer { opts, common } => (Box::new(opts.build()), common),
+        Command::WasmerPy { opts, common } => (Box::new(opts.build()), common),
     };
 
     let imports = common

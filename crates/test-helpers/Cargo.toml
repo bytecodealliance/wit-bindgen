@@ -24,6 +24,7 @@ wit-bindgen-gen-js = { path = '../gen-js', optional = true }
 wit-bindgen-gen-c = { path = '../gen-c', optional = true }
 wit-bindgen-gen-spidermonkey = { path = '../gen-spidermonkey', optional = true }
 wit-bindgen-gen-wasmer = { path = '../gen-wasmer', optional = true }
+wit-bindgen-gen-wasmer-py = { path = '../gen-wasmer-py', optional = true }
 wit-parser = { path = '../parser', features = ['witx-compat'] }
 filetime = "0.2"
 
