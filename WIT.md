@@ -20,6 +20,10 @@ like comments, multi-line comments, and custom identifiers. A `wit` document
 is parsed as a unicode string, and when stored in a file is expected to be
 encoded as UTF-8.
 
+Additionally, wit files must not contain any bidirectional override scalar values,
+control codes other than newline, carriage return, and horizontal tab, or
+codepoints that Unicode officially deprecates or strongly discourages.
+
 The current structure of tokens are:
 
 ```wit
@@ -485,26 +489,31 @@ through a `use` statement or they can be defined locally.
 
 ## Identifiers
 
-Identifiers in `wit` can be defined with two different forms. The first is a bare
-inline identifier with alphanumeric ASCII characters:
+Identifiers in `wit` can be defined with two different forms. The first is a
+lower-case [stream-safe] [NFC] [kebab-case] identifier where each part delimited
+by '-'s starts with a `XID_Start` scalar value with a zero Canonical Combining
+Class:
 
 ```wit
 foo: function(bar: u32)
+
+red-green-blue: function(r: u32, g: u32, b: u32)
 ```
 
-but these identifiers are limited in their definition not only in the character
-set (only ASCII alphanumerics) but also they can't collide with other keywords.
-To work around this restriction identifiers can also be declared in quotes:
+This form can't name identifiers which have the same name as wit keywords, so
+the second form is the same syntax with the same restrictions as the first, but
+enclosed in quotes:
 
 ```wit
 "foo": function("bar": u32)
 
 "variant": function("enum": s32)
-
-"function with spaces in its name": function()
-
-"can also be valid unicode 🚀": function("⛽": i32)
 ```
+
+[kebab-case]: https://en.wikipedia.org/wiki/Letter_case#Kebab_case
+[Unicode identifier]: http://www.unicode.org/reports/tr31/
+[stream-safe]: https://unicode.org/reports/tr15/#Stream_Safe_Text_Format
+[NFC]: https://unicode.org/reports/tr15/#Norm_Forms
 
 ## Name resolution
 
