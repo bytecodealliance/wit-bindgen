@@ -86,13 +86,13 @@ resource body {
     /// @return result - a result containing the number of bytes written on success
     // TODO: check if `out-buffer` is the right way to express this
     // NOTE: s/expected/result/
-    read: function(dest: push-buffer<u8>) -> expected<u64, Error>
+    read: function(dest: push-buffer<u8>) -> expected<u64, error>
 
     /// Write to a body.
     /// @param source - source buffer to read from
     /// @return result - a result containing the number of bytes read on success
     // TODO: check if `in-buffer` is the right way to express this
-    write: function(source: pull-buffer<u8>) -> expected<u64, Error>
+    write: function(source: pull-buffer<u8>) -> expected<u64, error>
 }
 /*
 
@@ -134,20 +134,20 @@ interface nested-interface2 {
 
 /// An enum with some values
 // Note: should we have a way to declare the underlying representation, along the lines of
-// `enum Error: u8 {..}`?
+// `enum error: u8 {..}`?
 // Note: what about non-numeric types?
 // Note: what about heterogeneous enums?
-enum Error {
-    Overflow,
-    Unavailable,
+enum error {
+    overflow,
+    unavailable,
 }
 
 /// A function returning a Result, with the enum above as one of the options
-/// @return result - a `Result` containing either the desired number, or an `Error`
-maybe-number: function() -> expected<u64, Error>
+/// @return result - a `Result` containing either the desired number, or an `error`
+maybe-number: function() -> expected<u64, error>
 
 /// A simple struct
-record Timestamp {
+record timestamp {
     seconds: u64,
     nanoseconds: u64,
 }

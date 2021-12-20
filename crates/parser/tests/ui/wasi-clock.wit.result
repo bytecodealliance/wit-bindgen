@@ -15,13 +15,13 @@
           ]
         ]
       },
-      "foreign-module": "wasi"
+      "foreign_module": "wasi"
     },
     {
       "idx": 1,
       "name": "timestamp",
       "primitive": "u64",
-      "foreign-module": "wasi"
+      "foreign_module": "wasi"
     },
     {
       "idx": 2,
@@ -33,7 +33,7 @@
             null
           ],
           [
-            "2big",
+            "toobig",
             null
           ],
           [
@@ -338,7 +338,7 @@
           ]
         ]
       },
-      "foreign-module": "wasi"
+      "foreign_module": "wasi"
     },
     {
       "idx": 3,
@@ -358,7 +358,7 @@
   ],
   "functions": [
     {
-      "name": "res_get",
+      "name": "res-get",
       "params": [
         "type-0"
       ],
@@ -367,7 +367,7 @@
       ]
     },
     {
-      "name": "time_get",
+      "name": "time-get",
       "params": [
         "type-0",
         "type-1"

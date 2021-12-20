@@ -2,7 +2,7 @@
   "resources": [
     {
       "name": "x",
-      "foreign-module": "import-me"
+      "foreign_module": "import-me"
     },
     {
       "name": "xyz"
@@ -13,18 +13,18 @@
       "idx": 0,
       "name": "foo",
       "primitive": "u32",
-      "foreign-module": "import-me"
+      "foreign_module": "import-me"
     },
     {
       "idx": 1,
       "primitive": "handle-0",
-      "foreign-module": "import-me"
+      "foreign_module": "import-me"
     },
     {
       "idx": 2,
       "name": "handle",
       "primitive": "handle-0",
-      "foreign-module": "import-me"
+      "foreign_module": "import-me"
     },
     {
       "idx": 3,
@@ -45,7 +45,7 @@
           ]
         ]
       },
-      "foreign-module": "import-me"
+      "foreign_module": "import-me"
     },
     {
       "idx": 4,
