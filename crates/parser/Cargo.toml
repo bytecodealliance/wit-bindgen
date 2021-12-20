@@ -12,7 +12,6 @@ witx = { git = 'https://github.com/alexcrichton/WASI', branch = 'abi-next', opti
 wast = { version = "33", default-features = false, optional = true }
 unicode-xid = "0.2.2"
 unicode-normalization = "0.1.19"
-heck = "0.3"
 
 [dev-dependencies]
 rayon = "1"

@@ -1,5 +1,4 @@
 use anyhow::{bail, Result};
-use heck::{CamelCase, KebabCase, MixedCase, ShoutySnakeCase, SnakeCase};
 use std::char;
 use std::convert::TryFrom;
 use std::fmt;
@@ -93,7 +92,6 @@ pub enum Error {
     InvalidCharInId(usize, char),
     IdNotSSNFC(usize),
     IdPartEmpty(usize),
-    IdNotRoundTrippable(usize, String, String),
     InvalidEscape(usize, char),
     // InvalidHexEscape(usize, char),
     // InvalidEscapeValue(usize, u32),
@@ -431,7 +429,7 @@ fn detect_invalid_input(input: &str) -> Result<()> {
             // so that viewing a wit file on a terminal doesn't have surprising side
             // effects or appear to have a different meaning than its actual meaning.
             ch if ch.is_control() => {
-                bail!("Control code {:?} at line {}", ch.escape_unicode(), line);
+                bail!("Control code '{}' at line {}", ch.escape_unicode(), line);
             }
 
             _ => {}
@@ -492,24 +490,6 @@ fn validate_id(start: usize, id: &str) -> Result<(), Error> {
             // about collisions.
             if ch.is_uppercase() || ch == '_' || !UnicodeXID::is_xid_continue(ch) {
                 return Err(Error::InvalidCharInId(start, ch));
-            }
-        }
-
-        // Bindings generators will render the identifier in a variety of case
-        // schemes; make sure they are all SS-NFC and round-trippable.
-        for render in &[
-            id.to_camel_case(),
-            id.to_snake_case(),
-            id.to_kebab_case(),
-            id.to_shouty_snake_case(),
-            id.to_mixed_case(),
-        ] {
-            if !unicode_normalization::is_nfc_stream_safe(&id) {
-                return Err(Error::IdNotSSNFC(start));
-            }
-            let back = render.to_kebab_case();
-            if back != id {
-                return Err(Error::IdNotRoundTrippable(start, id.to_owned(), back));
             }
         }
     }
@@ -591,9 +571,6 @@ impl fmt::Display for Error {
             Error::InvalidCharInId(_, ch) => write!(f, "invalid character in identifier {:?}", ch),
             Error::IdPartEmpty(_) => write!(f, "identifiers must have characters between '-'s"),
             Error::IdNotSSNFC(_) => write!(f, "identifiers must be in stream-safe NFC"),
-            Error::IdNotRoundTrippable(_, id, back) => {
-                write!(f, "identifier '{:?}' round-trips to '{:?}'", id, back)
-            }
             Error::InvalidEscape(_, ch) => write!(f, "invalid escape in string {:?}", ch),
         }
     }
@@ -614,7 +591,6 @@ pub fn rewrite_error(err: &mut anyhow::Error, file: &str, contents: &str) {
         | Error::InvalidCharInId(at, _)
         | Error::IdNotSSNFC(at)
         | Error::IdPartEmpty(at)
-        | Error::IdNotRoundTrippable(at, _, _)
         | Error::InvalidEscape(at, _) => *at,
     };
     let msg = super::highlight_err(pos, None, file, contents, lex);
@@ -630,19 +606,18 @@ fn test_validate_id() {
     validate_id(0, "hühnervögel").unwrap();
     validate_id(0, "москва").unwrap();
     validate_id(0, "東京").unwrap();
+    validate_id(0, "東-京").unwrap();
+    validate_id(0, "garçon-hühnervögel-москва-東京").unwrap();
     validate_id(0, "garçon-hühnervögel-москва-東-京").unwrap();
     validate_id(0, "a0").unwrap();
     validate_id(0, "a").unwrap();
-    validate_id(0, "\"a\"").unwrap();
-    validate_id(0, "\"a-a\"").unwrap();
-    validate_id(0, "\"bool\"").unwrap();
+    validate_id(0, "a-a").unwrap();
+    validate_id(0, "bool").unwrap();
 
     assert!(validate_id(0, "0").is_err());
     assert!(validate_id(0, "@").is_err());
     assert!(validate_id(0, "$").is_err());
     assert!(validate_id(0, "0a").is_err());
-    assert!(validate_id(0, "-").is_err());
-    assert!(validate_id(0, "--").is_err());
     assert!(validate_id(0, ".").is_err());
     assert!(validate_id(0, "·").is_err());
     assert!(validate_id(0, "\"a a\"").is_err());
@@ -694,18 +669,12 @@ fn test_tokenizer() {
 
     assert_eq!(collect("").unwrap(), vec![]);
     assert_eq!(collect("_").unwrap(), vec![Token::Underscore]);
-    assert_eq!(collect("-").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("--").unwrap(), vec![Token::Id]);
-    assert_eq!(collect(".").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("·").unwrap(), vec![Token::Id]);
     assert_eq!(collect("apple").unwrap(), vec![Token::Id]);
     assert_eq!(collect("apple-pear").unwrap(), vec![Token::Id]);
     assert_eq!(collect("apple--pear").unwrap(), vec![Token::Id]);
     assert_eq!(collect("apple-Pear").unwrap(), vec![Token::Id]);
     assert_eq!(collect("apple-pear-grape").unwrap(), vec![Token::Id]);
     assert_eq!(collect("apple pear").unwrap(), vec![Token::Id, Token::Id]);
-    assert_eq!(collect("0").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("9apple9").unwrap(), vec![Token::Id]);
     assert_eq!(collect("_a_p_p_l_e_").unwrap(), vec![Token::Id]);
     assert_eq!(collect("garçon").unwrap(), vec![Token::Id]);
     assert_eq!(collect("hühnervögel").unwrap(), vec![Token::Id]);
@@ -717,12 +686,9 @@ fn test_tokenizer() {
     );
     assert_eq!(collect("a0").unwrap(), vec![Token::Id]);
     assert_eq!(collect("a").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("\"a\"").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("\"a-a\"").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("\"bool\"").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("apple\u{5f3}pear").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("apple\u{200c}pear").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("apple\u{200d}pear").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("\"a\"").unwrap(), vec![Token::StrLit]);
+    assert_eq!(collect("\"a-a\"").unwrap(), vec![Token::StrLit]);
+    assert_eq!(collect("\"bool\"").unwrap(), vec![Token::StrLit]);
 
     assert!(collect("\u{149}").is_err(), "strongly discouraged");
     assert!(collect("\u{673}").is_err(), "strongly discouraged");
