@@ -1221,7 +1221,7 @@ impl Generator for Wasmtime {
             };
             self.push_str(&format!(
                 "
-                    /// Instantaites the provided `module` using the specified
+                    /// Instantiates the provided `module` using the specified
                     /// parameters, wrapping up the result in a structure that
                     /// translates between wasm and the host.
                     ///
