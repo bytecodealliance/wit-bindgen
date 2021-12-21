@@ -1,7 +1,10 @@
+use anyhow::{bail, Result};
 use std::char;
 use std::convert::TryFrom;
 use std::fmt;
 use std::str;
+use unicode_normalization::char::canonical_combining_class;
+use unicode_xid::UnicodeXID;
 
 use self::Token::*;
 
@@ -86,6 +89,9 @@ pub enum Token {
 #[derive(Eq, PartialEq, Debug)]
 pub enum Error {
     InvalidCharInString(usize, char),
+    InvalidCharInId(usize, char),
+    IdNotSSNFC(usize),
+    IdPartEmpty(usize),
     InvalidEscape(usize, char),
     // InvalidHexEscape(usize, char),
     // InvalidEscapeValue(usize, u32),
@@ -101,7 +107,9 @@ pub enum Error {
 }
 
 impl<'a> Tokenizer<'a> {
-    pub fn new(input: &'a str) -> Tokenizer<'a> {
+    pub fn new(input: &'a str) -> Result<Tokenizer<'a>> {
+        detect_invalid_input(input)?;
+
         let mut t = Tokenizer {
             input,
             chars: CrlfFold {
@@ -110,7 +118,7 @@ impl<'a> Tokenizer<'a> {
         };
         // Eat utf-8 BOM
         t.eatc('\u{feff}');
-        t
+        Ok(t)
     }
 
     pub fn input(&self) -> &'a str {
@@ -121,15 +129,22 @@ impl<'a> Tokenizer<'a> {
         &self.input[span.start as usize..span.end as usize]
     }
 
-    pub fn parse_str(&self, span: Span) -> String {
+    pub fn parse_id(&self, span: Span) -> Result<String> {
+        let ret = self.get_span(span).to_owned();
+        validate_id(span.start as usize, &ret)?;
+        Ok(ret)
+    }
+
+    pub fn parse_str(&self, span: Span) -> Result<String> {
         let mut ret = String::new();
         let s = self.get_span(span);
-        let mut l = Tokenizer::new(s);
+        let mut l = Tokenizer::new(s)?;
         assert!(matches!(l.chars.next(), Some((_, '"'))));
         while let Some(c) = l.eat_str_char(0).unwrap() {
             ret.push(c);
         }
-        ret
+        validate_id(span.start as usize, &ret)?;
+        Ok(ret)
     }
 
     pub fn next(&mut self) -> Result<Option<(Span, Token)>, Error> {
@@ -202,11 +217,11 @@ impl<'a> Tokenizer<'a> {
                 while let Some(_ch) = self.eat_str_char(start)? {}
                 StrLit
             }
-            ch if is_keylike(ch) => {
+            ch if is_keylike_start(ch) => {
                 let remaining = self.chars.chars.as_str().len();
                 let mut iter = self.chars.clone();
                 while let Some((_, ch)) = iter.next() {
-                    if !is_keylike(ch) {
+                    if !is_keylike_continue(ch) {
                         break;
                     }
                     self.chars = iter.clone();
@@ -372,12 +387,114 @@ impl<'a> Iterator for CrlfFold<'a> {
     }
 }
 
-fn is_keylike(ch: char) -> bool {
-    ch == '-'
-        || ch == '_'
-        || ('A'..='Z').contains(&ch)
-        || ('a'..='z').contains(&ch)
-        || ('0'..='9').contains(&ch)
+fn detect_invalid_input(input: &str) -> Result<()> {
+    // Disallow specific codepoints.
+    let mut line = 1;
+    for ch in input.chars() {
+        match ch {
+            '\n' => line += 1,
+            '\r' | '\t' => {}
+
+            // Bidirectional override codepoints can be used to craft source code that
+            // appears to have a different meaning than its actual meaning. See
+            // [CVE-2021-42574] for background and motivation.
+            //
+            // [CVE-2021-42574]: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-42574
+            '\u{202a}' | '\u{202b}' | '\u{202c}' | '\u{202d}' | '\u{202e}' | '\u{2066}'
+            | '\u{2067}' | '\u{2068}' | '\u{2069}' => {
+                bail!(
+                    "Input contains bidirectional override codepoint {:?} at line {}",
+                    ch.escape_unicode(),
+                    line
+                );
+            }
+
+            // Disallow several characters which are deprecated or discouraged in Unicode.
+            //
+            // U+149 deprecated; see Unicode 13.0.0, sec. 7.1 Latin, Compatibility Digraphs.
+            // U+673 deprecated; see Unicode 13.0.0, sec. 9.2 Arabic, Additional Vowel Marks.
+            // U+F77 and U+F79 deprecated; see Unicode 13.0.0, sec. 13.4 Tibetan, Vowels.
+            // U+17A3 and U+17A4 deprecated, and U+17B4 and U+17B5 discouraged; see
+            // Unicode 13.0.0, sec. 16.4 Khmer, Characters Whose Use Is Discouraged.
+            '\u{149}' | '\u{673}' | '\u{f77}' | '\u{f79}' | '\u{17a3}' | '\u{17a4}'
+            | '\u{17b4}' | '\u{17b5}' => {
+                bail!(
+                    "Codepoint {:?} at line {} is discouraged by Unicode",
+                    ch.escape_unicode(),
+                    line
+                );
+            }
+
+            // Disallow control codes other than the ones explicitly recognized above,
+            // so that viewing a wit file on a terminal doesn't have surprising side
+            // effects or appear to have a different meaning than its actual meaning.
+            ch if ch.is_control() => {
+                bail!("Control code '{}' at line {}", ch.escape_unicode(), line);
+            }
+
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+fn is_keylike_start(ch: char) -> bool {
+    // Lex any XID start, `_`, or '-'. These aren't all valid identifier chars,
+    // but we'll diagnose that after we've lexed the full string.
+    UnicodeXID::is_xid_start(ch) || ch == '_' || ch == '-'
+}
+
+fn is_keylike_continue(ch: char) -> bool {
+    // Lex any XID continue (which includes `_`) or '-'.
+    UnicodeXID::is_xid_continue(ch) || ch == '-'
+}
+
+fn validate_id(start: usize, id: &str) -> Result<(), Error> {
+    // Ids must be in stream-safe NFC.
+    if !unicode_normalization::is_nfc_stream_safe(&id) {
+        return Err(Error::IdNotSSNFC(start));
+    }
+
+    // Ids consist of parts separated by '-'s.
+    for part in id.split("-") {
+        // Parts must be non-empty and start with a non-combining XID start.
+        match part.chars().next() {
+            None => return Err(Error::IdPartEmpty(start)),
+            Some(first) => {
+                // Require the first character of each part to be non-combining,
+                // so that if a source langauge uses `CamelCase`, they won't
+                // combine with the last character of the previous part.
+                if canonical_combining_class(first) != 0 {
+                    return Err(Error::InvalidCharInId(start, first));
+                }
+
+                // Require the first character to be a XID start.
+                if !UnicodeXID::is_xid_start(first) {
+                    return Err(Error::InvalidCharInId(start, first));
+                }
+
+                // TODO: Disallow values with 'Grapheme_Extend = Yes', to
+                // prevent them from combining with previous parts?
+
+                // TODO: Disallow values with 'Grapheme_Cluster_Break = SpacingMark'?
+            }
+        };
+
+        // Some XID values are not valid ID part values.
+        for ch in part.chars() {
+            // Disallow uppercase and underscore, so that identifiers
+            // consistently use `kebab-case`, and source languages can map
+            // identifiers according to their own conventions (which might use
+            // `CamelCase` or `snake_case` or something else) without worrying
+            // about collisions.
+            if ch.is_uppercase() || ch == '_' || !UnicodeXID::is_xid_continue(ch) {
+                return Err(Error::InvalidCharInId(start, ch));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 impl Token {
@@ -451,6 +568,9 @@ impl fmt::Display for Error {
             Error::UnterminatedString(_) => write!(f, "unterminated string literal"),
             Error::NewlineInString(_) => write!(f, "newline in string literal"),
             Error::InvalidCharInString(_, ch) => write!(f, "invalid character in string {:?}", ch),
+            Error::InvalidCharInId(_, ch) => write!(f, "invalid character in identifier {:?}", ch),
+            Error::IdPartEmpty(_) => write!(f, "identifiers must have characters between '-'s"),
+            Error::IdNotSSNFC(_) => write!(f, "identifiers must be in stream-safe NFC"),
             Error::InvalidEscape(_, ch) => write!(f, "invalid escape in string {:?}", ch),
         }
     }
@@ -468,8 +588,116 @@ pub fn rewrite_error(err: &mut anyhow::Error, file: &str, contents: &str) {
         | Error::UnterminatedString(at)
         | Error::NewlineInString(at)
         | Error::InvalidCharInString(at, _)
+        | Error::InvalidCharInId(at, _)
+        | Error::IdNotSSNFC(at)
+        | Error::IdPartEmpty(at)
         | Error::InvalidEscape(at, _) => *at,
     };
     let msg = super::highlight_err(pos, None, file, contents, lex);
     *err = anyhow::anyhow!("{}", msg);
+}
+
+#[test]
+fn test_validate_id() {
+    validate_id(0, "apple").unwrap();
+    validate_id(0, "apple-pear").unwrap();
+    validate_id(0, "apple-pear-grape").unwrap();
+    validate_id(0, "garçon").unwrap();
+    validate_id(0, "hühnervögel").unwrap();
+    validate_id(0, "москва").unwrap();
+    validate_id(0, "東京").unwrap();
+    validate_id(0, "東-京").unwrap();
+    validate_id(0, "garçon-hühnervögel-москва-東京").unwrap();
+    validate_id(0, "garçon-hühnervögel-москва-東-京").unwrap();
+    validate_id(0, "a0").unwrap();
+    validate_id(0, "a").unwrap();
+    validate_id(0, "a-a").unwrap();
+    validate_id(0, "bool").unwrap();
+
+    assert!(validate_id(0, "0").is_err());
+    assert!(validate_id(0, "@").is_err());
+    assert!(validate_id(0, "$").is_err());
+    assert!(validate_id(0, "0a").is_err());
+    assert!(validate_id(0, ".").is_err());
+    assert!(validate_id(0, "·").is_err());
+    assert!(validate_id(0, "\"a a\"").is_err());
+    assert!(validate_id(0, "\"_\"").is_err());
+    assert!(validate_id(0, "\"-\"").is_err());
+    assert!(validate_id(0, "\"a-\"").is_err());
+    assert!(validate_id(0, "\"-a\"").is_err());
+    assert!(validate_id(0, "Apple").is_err());
+    assert!(validate_id(0, "APPLE").is_err());
+    assert!(validate_id(0, "applE").is_err());
+    assert!(validate_id(0, "-apple-pear").is_err());
+    assert!(validate_id(0, "apple-pear-").is_err());
+    assert!(validate_id(0, "apple_pear").is_err());
+    assert!(validate_id(0, "apple.pear").is_err());
+    assert!(validate_id(0, "apple pear").is_err());
+    assert!(validate_id(0, "apple/pear").is_err());
+    assert!(validate_id(0, "apple|pear").is_err());
+    assert!(validate_id(0, "apple-Pear").is_err());
+    assert!(validate_id(0, "apple-0").is_err());
+    assert!(validate_id(0, "()()").is_err());
+    assert!(validate_id(0, "").is_err());
+    assert!(validate_id(0, "*").is_err());
+    assert!(validate_id(0, "apple\u{5f3}pear").is_err());
+    assert!(validate_id(0, "apple\u{200c}pear").is_err());
+    assert!(validate_id(0, "apple\u{200d}pear").is_err());
+    assert!(validate_id(0, "apple--pear").is_err());
+    assert!(validate_id(0, "_apple").is_err());
+    assert!(validate_id(0, "apple_").is_err());
+    assert!(validate_id(0, "_Znwj").is_err());
+    assert!(validate_id(0, "__i386").is_err());
+    assert!(validate_id(0, "__i386__").is_err());
+    assert!(validate_id(0, "ENOENT").is_err());
+    assert!(validate_id(0, "Москва").is_err());
+    assert!(validate_id(0, "garçon-hühnervögel-Москва-東京").is_err());
+    assert!(validate_id(0, "😼").is_err(), "non-identifier");
+    assert!(validate_id(0, "\u{212b}").is_err(), "not NFC");
+}
+
+#[test]
+fn test_tokenizer() {
+    fn collect(s: &str) -> Result<Vec<Token>> {
+        let mut t = Tokenizer::new(s)?;
+        let mut tokens = Vec::new();
+        while let Some(token) = t.next()? {
+            tokens.push(token.1);
+        }
+        Ok(tokens)
+    }
+
+    assert_eq!(collect("").unwrap(), vec![]);
+    assert_eq!(collect("_").unwrap(), vec![Token::Underscore]);
+    assert_eq!(collect("apple").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("apple-pear").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("apple--pear").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("apple-Pear").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("apple-pear-grape").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("apple pear").unwrap(), vec![Token::Id, Token::Id]);
+    assert_eq!(collect("_a_p_p_l_e_").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("garçon").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("hühnervögel").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("москва").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("東京").unwrap(), vec![Token::Id]);
+    assert_eq!(
+        collect("garçon-hühnervögel-москва-東京").unwrap(),
+        vec![Token::Id]
+    );
+    assert_eq!(collect("a0").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("a").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("\"a\"").unwrap(), vec![Token::StrLit]);
+    assert_eq!(collect("\"a-a\"").unwrap(), vec![Token::StrLit]);
+    assert_eq!(collect("\"bool\"").unwrap(), vec![Token::StrLit]);
+
+    assert!(collect("\u{149}").is_err(), "strongly discouraged");
+    assert!(collect("\u{673}").is_err(), "strongly discouraged");
+    assert!(collect("\u{17a3}").is_err(), "strongly discouraged");
+    assert!(collect("\u{17a4}").is_err(), "strongly discouraged");
+    assert!(collect("\u{202a}").is_err(), "bidirectional override");
+    assert!(collect("\u{2068}").is_err(), "bidirectional override");
+    assert!(collect("\u{0}").is_err(), "control code");
+    assert!(collect("\u{b}").is_err(), "control code");
+    assert!(collect("\u{c}").is_err(), "control code");
+    assert!(collect("\u{85}").is_err(), "control code");
 }

@@ -6,7 +6,10 @@
     (func (export "canonical_abi_free") (param i32 i32 i32)
         unreachable
     )
-    (func (export "acquire_an_x") (result i32)
+    (func (export "canonical_abi_drop_x")
+        unreachable
+    )
+    (func (export "acquire-an-x") (result i32)
         unreachable
     )
 )

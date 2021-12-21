@@ -1,16 +1,16 @@
 {
   "resources": [
     {
-      "name": "Request"
+      "name": "request"
     },
     {
-      "name": "Response"
+      "name": "response"
     },
     {
-      "name": "Headers"
+      "name": "headers"
     },
     {
-      "name": "Body"
+      "name": "body"
     }
   ],
   "types": [
@@ -32,15 +32,15 @@
     },
     {
       "idx": 4,
-      "name": "Error",
+      "name": "error",
       "variant": {
         "cases": [
           [
-            "Overflow",
+            "overflow",
             null
           ],
           [
-            "Unavailable",
+            "unavailable",
             null
           ]
         ]
@@ -48,7 +48,7 @@
     },
     {
       "idx": 5,
-      "name": "Timestamp",
+      "name": "timestamp",
       "record": {
         "fields": [
           [
@@ -116,14 +116,14 @@
       ]
     },
     {
-      "name": "Request::Request",
+      "name": "request::request",
       "params": [],
       "results": [
         "handle-0"
       ]
     },
     {
-      "name": "Request::method",
+      "name": "request::method",
       "params": [
         "handle-0"
       ],
@@ -132,7 +132,7 @@
       ]
     },
     {
-      "name": "Request::headers",
+      "name": "request::headers",
       "params": [
         "handle-0"
       ],
@@ -141,7 +141,7 @@
       ]
     },
     {
-      "name": "Request::body",
+      "name": "request::body",
       "params": [
         "handle-0"
       ],
@@ -150,7 +150,7 @@
       ]
     },
     {
-      "name": "Response::status",
+      "name": "response::status",
       "params": [
         "handle-1"
       ],
@@ -159,7 +159,7 @@
       ]
     },
     {
-      "name": "Response::headers",
+      "name": "response::headers",
       "params": [
         "handle-1"
       ],
@@ -168,7 +168,7 @@
       ]
     },
     {
-      "name": "Response::body",
+      "name": "response::body",
       "params": [
         "handle-1"
       ],
@@ -177,7 +177,7 @@
       ]
     },
     {
-      "name": "Headers::get",
+      "name": "headers::get",
       "params": [
         "handle-2",
         "type-6"
@@ -187,7 +187,7 @@
       ]
     },
     {
-      "name": "Body::read",
+      "name": "body::read",
       "params": [
         "handle-3",
         "type-8"
@@ -197,7 +197,7 @@
       ]
     },
     {
-      "name": "Body::write",
+      "name": "body::write",
       "params": [
         "handle-3",
         "type-10"
@@ -207,7 +207,7 @@
       ]
     },
     {
-      "name": "maybe_number",
+      "name": "maybe-number",
       "params": [],
       "results": [
         "type-9"
@@ -216,11 +216,11 @@
   ],
   "globals": [
     {
-      "name": "my_int",
+      "name": "my-int",
       "ty": "u32"
     },
     {
-      "name": "my_request",
+      "name": "my-request",
       "ty": "handle-0"
     }
   ]

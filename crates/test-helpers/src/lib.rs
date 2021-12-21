@@ -488,7 +488,7 @@ fn gen_verify<G: Generator>(
         let test = test.display().to_string();
         let wit = wit.display().to_string();
         let name = quote::format_ident!("{}", iface.name.to_snake_case());
-        let iface_name = iface.name.to_snake_case();
+        let iface_name = iface.name.to_kebab_case();
         quote::quote! {
             #[test]
             fn #name() {

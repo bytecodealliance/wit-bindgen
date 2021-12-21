@@ -1129,7 +1129,7 @@ impl Generator for Js {
         self.src.ts(&exports.ts);
 
         let src = mem::take(&mut self.src);
-        let name = iface.name.to_snake_case();
+        let name = iface.name.to_kebab_case();
         files.push(&format!("{}.js", name), src.js.as_bytes());
         if !self.opts.no_typescript {
             files.push(&format!("{}.d.ts", name), src.ts.as_bytes());

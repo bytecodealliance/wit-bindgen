@@ -1,23 +1,23 @@
 (module
-    (func (export "roundtrip_flag1") (param i32) (result i32)
+    (func (export "roundtrip-flag1") (param i32) (result i32)
         unreachable
     )
-    (func (export "roundtrip_flag2") (param i32) (result i32)
+    (func (export "roundtrip-flag2") (param i32) (result i32)
         unreachable
     )
-    (func (export "roundtrip_flag4") (param i32) (result i32)
+    (func (export "roundtrip-flag4") (param i32) (result i32)
         unreachable
     )
-    (func (export "roundtrip_flag8") (param i32) (result i32)
+    (func (export "roundtrip-flag8") (param i32) (result i32)
         unreachable
     )
-    (func (export "roundtrip_flag16") (param i32) (result i32)
+    (func (export "roundtrip-flag16") (param i32) (result i32)
         unreachable
     )
-    (func (export "roundtrip_flag32") (param i32) (result i32)
+    (func (export "roundtrip-flag32") (param i32) (result i32)
         unreachable
     )
-    (func (export "roundtrip_flag64") (param i64) (result i64)
+    (func (export "roundtrip-flag64") (param i64) (result i64)
         unreachable
     )
 )

@@ -1,49 +1,49 @@
-test_imports: function()
+test-imports: function()
 
-resource wasm_state
-resource wasm_state2
+resource wasm-state
+resource wasm-state2
 
-wasm_state_create: function() -> wasm_state
-wasm_state_get_val: function(a: wasm_state) -> u32
+wasm-state-create: function() -> wasm-state
+wasm-state-get-val: function(a: wasm-state) -> u32
 
-wasm_state2_create: function() -> wasm_state2
-wasm_state2_saw_close: function() -> bool
-two_wasm_states: function(a: wasm_state, b: wasm_state2) -> (wasm_state, wasm_state2)
+wasm-state2-create: function() -> wasm-state2
+wasm-state2-saw-close: function() -> bool
+two-wasm-states: function(a: wasm-state, b: wasm-state2) -> (wasm-state, wasm-state2)
 
-record wasm_state_param_record { a: wasm_state2 }
-wasm_state2_param_record: function(a: wasm_state_param_record)
+record wasm-state-param-record { a: wasm-state2 }
+wasm-state2-param-record: function(a: wasm-state-param-record)
 
-type wasm_state_param_tuple = tuple<wasm_state2>
-wasm_state2_param_tuple: function(a: wasm_state_param_tuple)
+type wasm-state-param-tuple = tuple<wasm-state2>
+wasm-state2-param-tuple: function(a: wasm-state-param-tuple)
 
-type wasm_state_param_option = option<wasm_state2>
-wasm_state2_param_option: function(a: wasm_state_param_option)
+type wasm-state-param-option = option<wasm-state2>
+wasm-state2-param-option: function(a: wasm-state-param-option)
 
-type wasm_state_param_result = expected<wasm_state2, u32>
-wasm_state2_param_result: function(a: wasm_state_param_result)
+type wasm-state-param-result = expected<wasm-state2, u32>
+wasm-state2-param-result: function(a: wasm-state-param-result)
 
-union wasm_state_param_variant { wasm_state2, u32 }
-wasm_state2_param_variant: function(a: wasm_state_param_variant)
+union wasm-state-param-variant { wasm-state2, u32 }
+wasm-state2-param-variant: function(a: wasm-state-param-variant)
 
-wasm_state2_param_list: function(a: list<wasm_state2>)
+wasm-state2-param-list: function(a: list<wasm-state2>)
 
 
-record wasm_state_result_record { a: wasm_state2 }
-wasm_state2_result_record: function() -> wasm_state_result_record
+record wasm-state-result-record { a: wasm-state2 }
+wasm-state2-result-record: function() -> wasm-state-result-record
 
-type wasm_state_result_tuple = tuple<wasm_state2>
-wasm_state2_result_tuple: function() -> wasm_state_result_tuple
+type wasm-state-result-tuple = tuple<wasm-state2>
+wasm-state2-result-tuple: function() -> wasm-state-result-tuple
 
-type wasm_state_result_option = option<wasm_state2>
-wasm_state2_result_option: function() -> wasm_state_result_option
+type wasm-state-result-option = option<wasm-state2>
+wasm-state2-result-option: function() -> wasm-state-result-option
 
-type wasm_state_result_result = expected<wasm_state2, u32>
-wasm_state2_result_result: function() -> wasm_state_result_result
+type wasm-state-result-result = expected<wasm-state2, u32>
+wasm-state2-result-result: function() -> wasm-state-result-result
 
-union wasm_state_result_variant { wasm_state2, u32 }
-wasm_state2_result_variant: function() -> wasm_state_result_variant
+union wasm-state-result-variant { wasm-state2, u32 }
+wasm-state2-result-variant: function() -> wasm-state-result-variant
 
-wasm_state2_result_list: function() -> list<wasm_state2>
+wasm-state2-result-list: function() -> list<wasm-state2>
 
 resource markdown {
     static create: function() -> option<markdown>

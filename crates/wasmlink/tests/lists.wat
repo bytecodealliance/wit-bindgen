@@ -6,82 +6,82 @@
     (func (export "canonical_abi_free") (param i32 i32 i32)
         unreachable
     )
-    (func (export "list_u8_param") (param i32 i32)
+    (func (export "list-u8-param") (param i32 i32)
         unreachable
     )
-    (func (export "list_u16_param") (param i32 i32)
+    (func (export "list-u16-param") (param i32 i32)
         unreachable
     )
-    (func (export "list_u32_param") (param i32 i32)
+    (func (export "list-u32-param") (param i32 i32)
         unreachable
     )
-    (func (export "list_u64_param") (param i32 i32)
+    (func (export "list-u64-param") (param i32 i32)
         unreachable
     )
-    (func (export "list_s8_param") (param i32 i32)
+    (func (export "list-s8-param") (param i32 i32)
         unreachable
     )
-    (func (export "list_s16_param") (param i32 i32)
+    (func (export "list-s16-param") (param i32 i32)
         unreachable
     )
-    (func (export "list_s32_param") (param i32 i32)
+    (func (export "list-s32-param") (param i32 i32)
         unreachable
     )
-    (func (export "list_s64_param") (param i32 i32)
+    (func (export "list-s64-param") (param i32 i32)
         unreachable
     )
-    (func (export "list_f32_param") (param i32 i32)
+    (func (export "list-f32-param") (param i32 i32)
         unreachable
     )
-    (func (export "list_f64_param") (param i32 i32)
+    (func (export "list-f64-param") (param i32 i32)
         unreachable
     )
-    (func (export "list_u8_ret") (result i32)
+    (func (export "list-u8-ret") (result i32)
         unreachable
     )
-    (func (export "list_u16_ret") (result i32)
+    (func (export "list-u16-ret") (result i32)
         unreachable
     )
-    (func (export "list_u32_ret") (result i32)
+    (func (export "list-u32-ret") (result i32)
         unreachable
     )
-    (func (export "list_u64_ret") (result i32)
+    (func (export "list-u64-ret") (result i32)
         unreachable
     )
-    (func (export "list_s8_ret") (result i32)
+    (func (export "list-s8-ret") (result i32)
         unreachable
     )
-    (func (export "list_s16_ret") (result i32)
+    (func (export "list-s16-ret") (result i32)
         unreachable
     )
-    (func (export "list_s32_ret") (result i32)
+    (func (export "list-s32-ret") (result i32)
         unreachable
     )
-    (func (export "list_s64_ret") (result i32)
+    (func (export "list-s64-ret") (result i32)
         unreachable
     )
-    (func (export "list_f32_ret") (result i32)
+    (func (export "list-f32-ret") (result i32)
         unreachable
     )
-    (func (export "list_f64_ret") (result i32)
+    (func (export "list-f64-ret") (result i32)
         unreachable
     )
-    (func (export "tuple_list") (param i32 i32) (result i32)
+    (func (export "tuple-list") (param i32 i32) (result i32)
         unreachable
     )
-    (func (export "tuple_string_list") (param i32 i32) (result i32)
+    (func (export "tuple-string-list") (param i32 i32) (result i32)
         unreachable
     )
-    (func (export "string_list") (param i32 i32) (result i32)
+    (func (export "string-list") (param i32 i32) (result i32)
         unreachable
     )
-    (func (export "record_list") (param i32 i32) (result i32)
+    (func (export "record-list") (param i32 i32) (result i32)
         unreachable
     )
-    (func (export "variant_list") (param i32 i32) (result i32)
+    (func (export "variant-list") (param i32 i32) (result i32)
         unreachable
     )
-    (func (export "load_store_everything") (param i32 i32) (result i32)
+    (func (export "load-store-everything") (param i32 i32) (result i32)
         unreachable
     )
 )
