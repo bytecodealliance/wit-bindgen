@@ -672,10 +672,10 @@ fn test_tokenizer() {
     );
     assert_eq!(collect("a0").unwrap(), vec![Token::Id]);
     assert_eq!(collect("a").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("@a").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("@a-a").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("@bool").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("@").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("@a").unwrap(), vec![Token::ExplicitId]);
+    assert_eq!(collect("@a-a").unwrap(), vec![Token::ExplicitId]);
+    assert_eq!(collect("@bool").unwrap(), vec![Token::ExplicitId]);
+    assert_eq!(collect("@").unwrap(), vec![Token::ExplicitId]);
 
     assert!(collect("\u{149}").is_err(), "strongly discouraged");
     assert!(collect("\u{673}").is_err(), "strongly discouraged");
