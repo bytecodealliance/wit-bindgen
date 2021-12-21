@@ -459,7 +459,7 @@ impl<'a> Item<'a> {
             Some((_span, Token::Union)) => TypeDef::parse_union(tokens, docs).map(Item::TypeDef),
             Some((_span, Token::Resource)) => Resource::parse(tokens, docs).map(Item::Resource),
             Some((_span, Token::Interface)) => Interface::parse(tokens, docs).map(Item::Interface),
-            Some((_span, Token::Id)) | Some((_span, Token::StrLit)) => {
+            Some((_span, Token::Id)) | Some((_span, Token::ExplicitId)) => {
                 Value::parse(tokens, docs).map(Item::Value)
             }
             other => Err(err_expected(tokens, "`type`, `resource`, or `fn`", other).into()),
@@ -725,8 +725,8 @@ fn parse_id<'a>(tokens: &mut Tokenizer<'a>) -> Result<Id<'a>> {
             name: tokens.parse_id(span)?.into(),
             span,
         }),
-        Some((span, Token::StrLit)) => Ok(Id {
-            name: tokens.parse_str(span)?.into(),
+        Some((span, Token::ExplicitId)) => Ok(Id {
+            name: tokens.parse_explicit_id(span)?.into(),
             span,
         }),
         other => Err(err_expected(tokens, "an identifier or string", other).into()),
@@ -743,10 +743,10 @@ fn parse_opt_id<'a>(tokens: &mut Tokenizer<'a>) -> Result<Option<Id<'a>>> {
                 span,
             }))
         }
-        Some((span, Token::StrLit)) => {
+        Some((span, Token::ExplicitId)) => {
             *tokens = other;
             Ok(Some(Id {
-                name: tokens.parse_str(span)?.into(),
+                name: tokens.parse_explicit_id(span)?.into(),
                 span,
             }))
         }
@@ -882,9 +882,9 @@ impl<'a> Type<'a> {
                 name: tokens.parse_id(span)?.into(),
                 span,
             })),
-            // `"foo"`
-            Some((span, Token::StrLit)) => Ok(Type::Name(Id {
-                name: tokens.parse_str(span)?.into(),
+            // `@foo`
+            Some((span, Token::ExplicitId)) => Ok(Type::Name(Id {
+                name: tokens.parse_explicit_id(span)?.into(),
                 span,
             })),
 

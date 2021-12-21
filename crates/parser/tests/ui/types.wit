@@ -24,8 +24,8 @@ record t21 { a: u32 }
 record t22 { a: u32, }
 record t23 { a: u32, b: u64 }
 record t24 { a: u32, b: u64, }
-record t25 { "x": u32 }
-record "record" {}
+record t25 { @x: u32 }
+record @record {}
 type t26 = tuple<>
 type t27 = tuple<u32>
 type t28 = tuple<u32,>
@@ -47,7 +47,7 @@ type t43 = bool
 type t44 = string
 type t45 = list<list<list<t32>>>
 type t46 = t44
-type t47 = "t44"
+type t47 = @t44
 type t48 = push-buffer<u8>
 type t49 = pull-buffer<u8>
 
