@@ -10,7 +10,7 @@ function assertEq(a, b) {
   assert(a == b, `assertEq failed: ${a} != ${b}`);
 }
 
-function test_imports() {
+export function test_imports() {
   const { f1, f2, f3 } = imports;
   f1("Hello, WIT!");
 
@@ -22,7 +22,6 @@ function test_imports() {
   assertEq(b, "🚀");
   assertEq(c, "hello");
 }
-export { test_imports as "test-imports" }
 
 export function f1(s) {
   assertEq(s, "Hello, WIT!");

@@ -5,6 +5,7 @@
 mod data_segments;
 
 use data_segments::DataSegments;
+use heck::SnakeCase;
 use lazy_static::lazy_static;
 use std::borrow::Cow;
 use std::convert::TryFrom;
@@ -2042,7 +2043,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 let func_name_offset = self
                     .gen
                     .data_segments
-                    .add(func.name.as_bytes().iter().copied());
+                    .add(func.name.to_snake_case().as_bytes().iter().copied());
                 self.gen.copy_to_smw(
                     self.blocks.last_mut().unwrap(),
                     func_name_offset,

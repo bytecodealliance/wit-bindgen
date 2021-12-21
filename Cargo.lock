@@ -2094,6 +2094,7 @@ dependencies = [
 name = "wit-bindgen-gen-spidermonkey"
 version = "0.1.0"
 dependencies = [
+ "heck",
  "lazy_static",
  "structopt",
  "test-helpers",
