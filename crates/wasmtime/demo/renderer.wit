@@ -1,0 +1,5 @@
+/// Name of the plugin
+name: function() -> string
+
+/// Render texts
+render: function(text: string) -> string
