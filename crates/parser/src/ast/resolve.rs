@@ -514,13 +514,13 @@ impl Resolver {
         }
         let mut docs = String::new();
         for doc in doc.docs.iter() {
-            if let Some(doc) = doc.strip_prefix("//") {
+            if let Some(doc) = doc.strip_prefix("///") {
                 docs.push_str(doc.trim_start_matches('/').trim());
                 docs.push('\n');
             } else {
-                assert!(doc.starts_with("/*"));
+                assert!(doc.starts_with("/**"));
                 assert!(doc.ends_with("*/"));
-                for line in doc[2..doc.len() - 2].lines() {
+                for line in doc[3..doc.len() - 2].lines() {
                     docs.push_str(line);
                     docs.push('\n');
                 }
