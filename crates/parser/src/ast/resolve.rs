@@ -514,7 +514,7 @@ impl Resolver {
         }
         let mut docs = String::new();
         for doc in doc.docs.iter() {
-        	// Comments which are not doc-comments are silently ignored
+            // Comments which are not doc-comments are silently ignored
             if let Some(doc) = doc.strip_prefix("///") {
                 docs.push_str(doc.trim_start_matches('/').trim());
                 docs.push('\n');
