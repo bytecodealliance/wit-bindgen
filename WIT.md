@@ -58,6 +58,17 @@ comment ::= '//' character-that-isnt-a-newline*
           | '/*' any-unicode-character* '*/'
 ```
 
+There is a special type of comment called `documentation comment`. A 
+`doc-comment` is either a line comment preceded with `///` whichends at the next
+newline (`\n`) character or it's a block comment which starts with `/**` and ends 
+with `*/`. Note that block comments are allowed to be nested and their delimiters 
+must be balanced
+
+```wit
+doc-comment ::= '///' character-that-isnt-a-newline*
+          | '/**' any-unicode-character* '*/'
+```
+
 ### Operators
 
 There are some common operators in the lexical structure of `wit` used for
