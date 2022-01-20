@@ -39,7 +39,7 @@ enum errno {
   /// Argument list too long.
   toobig,
   /// Permission denied.
-  acces,
+  access,
   /// Address in use.
   addrinuse,
   /// Address not available.
