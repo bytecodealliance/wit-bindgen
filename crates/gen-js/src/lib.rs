@@ -1734,7 +1734,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         ));
                         // TODO: this is the wrong endianness
                         self.src.js(&format!(
-                            "(new Uint8Array(memory.buffer, ptr{}, len{0} * {})).set(new Uint8Array(val{0}.buffer));\n",
+                            "(new Uint8Array(memory.buffer, ptr{0}, len{0} * {1})).set(new Uint8Array(val{0}.buffer, val{0}.byteOffset, len{0} * {1}));\n",
                             tmp, size,
                         ));
                     }
