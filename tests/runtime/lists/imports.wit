@@ -30,6 +30,8 @@ list-minmax32: function(a: list<u32>, b: list<s32>) -> (list<u32>, list<s32>)
 list-minmax64: function(a: list<u64>, b: list<s64>) -> (list<u64>, list<s64>)
 list-minmax-float: function(a: list<f32>, b: list<f64>) -> (list<f32>, list<f64>)
 
+list-roundtrip: function(a: list<u8>) -> list<u8>
+
 string-roundtrip: function(a: string) -> string
 
 unaligned-roundtrip1: function(a: list<u16>, b: list<u32>, c: list<u64>, d: list<flag32>, e: list<flag64>)

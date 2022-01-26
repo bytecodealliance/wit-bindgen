@@ -159,6 +159,10 @@ impl exports::Exports for Exports {
         vec!["hello,".to_string(), "world!".to_string()]
     }
 
+    fn list_roundtrip(x: Vec<u8>) -> Vec<u8> {
+        x.clone()
+    }
+
     fn string_roundtrip(x: String) -> String {
         x.clone()
     }
