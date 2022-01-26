@@ -8,10 +8,15 @@ fn main() {
             receive_an_x(&acquire_an_x("I heart Wasm!")),
             "I heart Wasm!"
         );
-        assert_eq!(
-            receive_an_x(&acquire_an_x("I heart interface types!")),
-            "I heart interface types!"
-        );
+
+        let x = acquire_an_x("I heart interface types!");
+        let x_clone = x.clone();
+        assert_eq!(receive_an_x(&x), "I heart interface types!");
+        drop(x);
+        assert!(!all_dropped());
+        assert_eq!(receive_an_x(&x_clone), "I heart interface types!");
+        drop(x_clone);
+        assert!(all_dropped());
 
         let x = acquire_lots_of_x(&["hello", "world", "!"]);
         let x: Vec<_> = x.iter().collect();
