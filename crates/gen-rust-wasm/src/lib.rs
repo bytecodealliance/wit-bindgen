@@ -481,6 +481,24 @@ impl Generator for RustWasm {
                 name,
             ));
         }
+
+        self.src.push_str("impl Clone for ");
+        self.src.push_str(&name.to_camel_case());
+        self.src.push_str(&format!(
+            "{{
+                fn clone(&self) -> Self {{
+                    #[link(wasm_import_module = \"canonical_abi\")]
+                    extern \"C\" {{
+                        #[link_name = \"resource_clone_{}\"]
+                        fn clone(val: i32) -> i32;
+                    }}
+                    unsafe {{
+                        Self(clone(self.0))
+                    }}
+                }}
+            }}\n",
+            name,
+        ));
     }
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
