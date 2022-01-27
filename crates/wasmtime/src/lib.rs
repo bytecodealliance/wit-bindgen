@@ -137,7 +137,6 @@ pub mod rt {
     pub fn copy_slice<T: Endian>(
         store: impl AsContextMut,
         memory: &Memory,
-        free: &TypedFunc<(i32, i32, i32), ()>,
         base: i32,
         len: i32,
         align: i32,
@@ -150,9 +149,7 @@ pub mod rt {
             .get(base as usize..)
             .and_then(|s| s.get(..size as usize))
             .ok_or_else(|| Trap::new("out of bounds read"))?;
-        let result = Le::from_slice(slice).iter().map(|s| s.get()).collect();
-        free.call(store, (base, size as i32, align))?;
-        Ok(result)
+        Ok(Le::from_slice(slice).iter().map(|s| s.get()).collect())
     }
 
     macro_rules! as_traits {
