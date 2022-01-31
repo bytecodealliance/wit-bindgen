@@ -15,7 +15,7 @@ async-trait = { version = "0.1.50", optional = true }
 
 [features]
 # Enables generated code to emit events via the `tracing` crate whenever wasm is
-# entered and when native functions are called. Note that tracin is currently
+# entered and when native functions are called. Note that tracing is currently
 # only done for imported functions.
 tracing = ['tracing-lib', 'wit-bindgen-wasmtime-impl/tracing']
 
