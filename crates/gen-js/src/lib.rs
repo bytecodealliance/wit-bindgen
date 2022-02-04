@@ -189,7 +189,6 @@ impl Js {
                     TypeDefKind::Variant(v) => {
                         if self.is_nullable_option(iface, v) {
                             self.print_ty(iface, v.cases[1].ty.as_ref().unwrap());
-                            self.src.ts(" | null");
                         } else if let Some(t) = v.as_option() {
                             self.needs_ty_option = true;
                             self.src.ts("Option<");
@@ -427,7 +426,15 @@ impl Generator for Js {
                 .ts(&format!("export interface {} {{\n", name.to_camel_case()));
             for field in record.fields.iter() {
                 self.docs(&field.docs);
-                self.src.ts(&format!("{}: ", field.name.to_mixed_case()));
+                self.src.ts(&format!(
+                    "{}{}: ",
+                    field.name.to_mixed_case(),
+                    if is_nullable(&iface, &field.ty) {
+                        "?"
+                    } else {
+                        ""
+                    }
+                ));
                 self.print_ty(iface, &field.ty);
                 self.src.ts(",\n");
             }
@@ -453,7 +460,7 @@ impl Generator for Js {
             self.src
                 .ts(&format!("export type {} = ", name.to_camel_case()));
             self.print_ty(iface, variant.cases[1].ty.as_ref().unwrap());
-            self.src.ts(" | null;\n");
+            self.src.ts("?;\n");
         } else if variant.is_enum() {
             self.src
                 .ts(&format!("export enum {} {{\n", name.to_camel_case()));
@@ -2468,5 +2475,20 @@ impl Source {
     }
     fn ts(&mut self, s: &str) {
         self.ts.push_str(s);
+    }
+}
+
+fn is_nullable(iface: &Interface, ty: &Type) -> bool {
+    //Note: currently making type non-nullable since the "?" makes it optional
+    if let Type::Id(id) = ty {
+        match &iface.types[*id].kind {
+            TypeDefKind::Variant(v) => v
+                .as_option()
+                .and_then(|_| v.cases[1].ty.as_ref())
+                .map_or(false, |_| true),
+            _ => true,
+        }
+    } else {
+        false
     }
 }
