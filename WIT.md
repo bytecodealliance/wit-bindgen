@@ -112,6 +112,8 @@ keyword ::= 'use'
           | 'interface'
           | 'tuple'
           | 'async'
+          | 'pull-buffer'
+          | 'push-buffer'
 ```
 
 ### Identifiers
