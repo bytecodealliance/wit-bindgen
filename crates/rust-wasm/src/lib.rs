@@ -1,8 +1,10 @@
+#[cfg(feature = "async")]
 pub use async_trait::async_trait;
 use std::fmt;
 use std::marker;
 use std::mem;
 use std::ops::Deref;
+#[cfg(feature = "proc-macro")]
 pub use wit_bindgen_rust_impl::{export, import};
 
 pub mod exports;
