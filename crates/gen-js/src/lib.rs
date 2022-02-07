@@ -273,9 +273,9 @@ impl Js {
         };
         self.src.ts("/**\n");
         for line in docs.lines() {
-            self.src.ts(&format!("* {}\n", line));
+            self.src.ts(&format!(" * {}\n", line));
         }
-        self.src.ts("*/\n");
+        self.src.ts(" */\n");
     }
 
     fn ts_func(&mut self, iface: &Interface, func: &Function) {
