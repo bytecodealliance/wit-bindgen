@@ -140,6 +140,16 @@ impl Js {
         }
     }
 
+    fn unwrap_nullable_option<'a>(&self, iface: &'a Interface, ty: &Type) -> Option<&'a Type> {
+        match ty {
+            Type::Id(id) => match &iface.types[*id].kind {
+                TypeDefKind::Variant(v) if self.is_nullable_option(iface, v) => v.as_option(),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn array_ty(&self, iface: &Interface, ty: &Type) -> Option<&'static str> {
         match ty {
             Type::U8 | Type::CChar => Some("Uint8Array"),
@@ -427,23 +437,9 @@ impl Generator for Js {
                 .ts(&format!("export interface {} {{\n", name.to_camel_case()));
             for field in record.fields.iter() {
                 self.docs(&field.docs);
-                let (option_str, ty) = if is_nullable(&iface, &field.ty) {
-                    (
-                        "?",
-                        match &field.ty {
-                            Type::Id(id) => match &iface.types[*id].kind {
-                                TypeDefKind::Variant(v) => v
-                                    .as_option()
-                                    .and_then(|_| v.cases[1].ty.as_ref())
-                                    .unwrap_or(&field.ty),
-                                _ => &field.ty,
-                            },
-                            _ => &field.ty,
-                        },
-                    )
-                } else {
-                    ("", &field.ty)
-                };
+                let (option_str, ty) = self
+                    .unwrap_nullable_option(iface, &field.ty)
+                    .map_or(("", &field.ty), |ty| ("?", ty));
                 self.src
                     .ts(&format!("{}{}: ", field.name.to_mixed_case(), option_str));
                 self.print_ty(iface, ty);
@@ -2486,20 +2482,5 @@ impl Source {
     }
     fn ts(&mut self, s: &str) {
         self.ts.push_str(s);
-    }
-}
-
-fn is_nullable(iface: &Interface, ty: &Type) -> bool {
-    //Note: currently making type non-nullable since the "?" makes it optional
-    if let Type::Id(id) = ty {
-        match &iface.types[*id].kind {
-            TypeDefKind::Variant(v) => v
-                .as_option()
-                .and_then(|_| v.cases[1].ty.as_ref())
-                .map_or(false, |_| true),
-            _ => true,
-        }
-    } else {
-        false
     }
 }
