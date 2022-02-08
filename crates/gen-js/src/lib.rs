@@ -189,7 +189,7 @@ impl Js {
                     TypeDefKind::Variant(v) => {
                         if self.is_nullable_option(iface, v) {
                             self.print_ty(iface, v.cases[1].ty.as_ref().unwrap());
-                            self.src.ts(" | null")
+                            self.src.ts(" | null");
                         } else if let Some(t) = v.as_option() {
                             self.needs_ty_option = true;
                             self.src.ts("Option<");
