@@ -1,18 +1,18 @@
 [package]
-name = "wit-bindgen-gen-ts-near"
-version = "0.0.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>", "Willem Wyndham <willem@ahalabs.dev>"]
+description = "Generates a TS file of a NEAR smart contract from a wit file"
 edition = "2018"
+license = "APACHE"
+name = "wit-bindgen-gen-ts-near"
+repository = "https://github.com/ahalabs/wit-bindgen"
+version = "0.0.0"
 
 [lib]
 doctest = false
 test = false
 
 [dependencies]
-wit-bindgen-gen-core = { path = '../gen-core', version = '0.0.0', package = "aha-wit-bindgen-gen-core" }
-heck = "0.3"
-structopt = { version = "0.3", default-features = false, optional = true }
 anyhow = "1.0"
-
-
-
+heck = "0.3"
+structopt = {version = "0.3", default-features = false, optional = true}
+wit-bindgen-gen-core = {path = '../gen-core', version = '0.0.0', package = "aha-wit-bindgen-gen-core"}

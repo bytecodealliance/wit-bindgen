@@ -1,22 +1,25 @@
 [package]
-name = "aha-wit-parser"
-version = "0.0.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
+description = "fork of wit-parser used by ts generator"
 edition = "2018"
+license = "APACHE"
+name = "aha-wit-parser"
+repository = "https://github.com/ahalabs/wit-bindgen"
+version = "0.0.0"
 
 [dependencies]
-id-arena = "2"
 anyhow = "1.0"
-pulldown-cmark = { version = "0.8", default-features = false }
+id-arena = "2"
+pulldown-cmark = {version = "0.8", default-features = false}
 # witx = { git = 'https://github.com/alexcrichton/WASI', branch = 'abi-next', optional = true }
-wast = { version = "33", default-features = false, optional = true }
-unicode-xid = "0.2.2"
 unicode-normalization = "0.1.19"
+unicode-xid = "0.2.2"
+wast = {version = "33", default-features = false, optional = true}
 
 [dev-dependencies]
 rayon = "1"
+serde = {version = "1", features = ['derive']}
 serde_json = "1"
-serde = { version = "1", features = ['derive'] }
 
 [features]
 default = []

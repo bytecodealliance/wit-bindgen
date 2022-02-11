@@ -1,12 +1,15 @@
 [package]
-name = "aha-wit-bindgen-gen-core"
-version = "0.0.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
+description = "fork of wit-bindgen-gen-core used by ts generator"
 edition = "2018"
+license = "APACHE"
+name = "aha-wit-bindgen-gen-core"
+repository = "https://github.com/ahalabs/wit-bindgen"
+version = "0.0.0"
 
 [lib]
 doctest = false
 
 [dependencies]
-wit-parser = { path = '../parser', package = "aha-wit-parser", version = "0.0.0"}
 anyhow = "1"
+wit-parser = {path = '../parser', package = "aha-wit-parser", version = "0.0.0"}
