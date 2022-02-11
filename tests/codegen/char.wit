@@ -1,2 +1,0 @@
-take-char: function(x: char)
-return-char: function() -> char

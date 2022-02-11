@@ -1,5 +1,0 @@
-empty variant
-     --> tests/ui/parse-fail/empty-variant3.wit:2:7
-      |
-    2 | union t {}
-      |       ^

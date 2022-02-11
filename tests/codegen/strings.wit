@@ -1,3 +1,0 @@
-a: function(x: string)
-b: function() -> string
-c: function(a: string, b: string) -> string

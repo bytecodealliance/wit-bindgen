@@ -1,4 +1,0 @@
-use * from import-me
-
-type my-handle = handle x
-type my-handle2 = x

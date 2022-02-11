@@ -1,4 +1,0 @@
-thunk: async function()
-allocated-bytes: function() -> u32
-
-test-concurrent: async function()

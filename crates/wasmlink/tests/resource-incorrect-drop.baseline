@@ -1,1 +1,0 @@
-unexpected function type for export `canonical_abi_drop_x` from module `resource-incorrect-drop`: expected [i32] -> []

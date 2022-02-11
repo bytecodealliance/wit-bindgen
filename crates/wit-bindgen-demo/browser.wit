@@ -1,2 +1,0 @@
-log: function(msg: string)
-error: function(msg: string)
