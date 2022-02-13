@@ -485,7 +485,6 @@ impl Interface {
             self.get_nullable_option(ty)
                 .map_or(true, |ty| self.get_nullable_option(ty).is_none())
         })
-
     }
 }
 
