@@ -465,6 +465,28 @@ impl Interface {
             _ => false,
         }
     }
+    pub fn get_variant(&self, ty: &Type) -> Option<&Variant> {
+        if let Type::Id(id) = ty {
+            match &self.types[*id].kind {
+                TypeDefKind::Variant(v) => Some(v),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn get_nullable_option(&self, ty: &Type) -> Option<&Type> {
+        self.get_variant(ty).and_then(|v| v.as_option())
+    }
+
+    pub fn is_nullable_option(&self, variant: &Variant) -> bool {
+        variant.as_option().map_or(false, |ty| {
+            self.get_nullable_option(ty)
+                .map_or(true, |ty| self.get_nullable_option(ty).is_none())
+        })
+
+    }
 }
 
 fn load_fs(root: &Path, name: &str) -> Result<(PathBuf, String)> {
