@@ -174,7 +174,7 @@ impl Js {
                     TypeDefKind::Record(_) => panic!("anonymous record"),
                     TypeDefKind::Variant(v) if v.is_bool() => self.src.ts("boolean"),
                     TypeDefKind::Variant(v) => {
-                        if iface.is_nullable_option(v) {
+                        if self.is_nullable_option(iface, v) {
                             self.print_ty(iface, v.cases[1].ty.as_ref().unwrap());
                             self.src.ts(" | null");
                         } else if let Some(t) = v.as_option() {
@@ -355,6 +355,17 @@ impl Js {
         self.intrinsics.insert(i, i.name().to_string());
         return i.name().to_string();
     }
+
+    pub fn get_nullable_option<'a>(&self, iface: &'a Interface, ty: &Type) -> Option<&'a Type> {
+        iface.get_variant(ty).and_then(|v| v.as_option())
+    }
+
+    pub fn is_nullable_option(&self, iface: &Interface, variant: &Variant) -> bool {
+        variant.as_option().map_or(false, |ty| {
+            self.get_nullable_option(iface, ty)
+                .map_or(true, |ty| self.get_nullable_option(iface, ty).is_none())
+        })
+    }
 }
 
 impl Generator for Js {
@@ -414,8 +425,8 @@ impl Generator for Js {
                 .ts(&format!("export interface {} {{\n", name.to_camel_case()));
             for field in record.fields.iter() {
                 self.docs(&field.docs);
-                let (option_str, ty) = iface
-                    .get_nullable_option(&field.ty)
+                let (option_str, ty) = self
+                    .get_nullable_option(iface, &field.ty)
                     .map_or(("", &field.ty), |ty| ("?", ty));
                 self.src
                     .ts(&format!("{}{}: ", field.name.to_mixed_case(), option_str));
@@ -440,7 +451,7 @@ impl Generator for Js {
                 "export type {} = boolean;\n",
                 name.to_camel_case(),
             ));
-        } else if iface.is_nullable_option(variant) {
+        } else if self.is_nullable_option(iface, variant) {
             self.src
                 .ts(&format!("export type {} = ", name.to_camel_case()));
             self.print_ty(iface, variant.cases[1].ty.as_ref().unwrap());
@@ -1551,7 +1562,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
 
                 let expr_to_match = if variant.is_bool()
-                    || iface.is_nullable_option(variant)
+                    || self.gen.is_nullable_option(iface, variant)
                     || (variant.is_enum() && name.is_some())
                 {
                     format!("variant{}", tmp)
@@ -1566,7 +1577,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 {
                     if variant.is_bool() {
                         self.src.js(&format!("case {}: {{\n", case.name.as_str()));
-                    } else if iface.is_nullable_option(variant) {
+                    } else if self.gen.is_nullable_option(iface, variant) {
                         if case.ty.is_none() {
                             self.src.js("case null: {\n");
                         } else {
@@ -1649,7 +1660,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     } else if variant.is_enum() && name.is_some() {
                         assert!(block_results.is_empty());
                         self.src.js(&format!("variant{} = tag{0};\n", tmp));
-                    } else if iface.is_nullable_option(variant) {
+                    } else if self.gen.is_nullable_option(iface, variant) {
                         if case.ty.is_none() {
                             assert!(block_results.is_empty());
                             self.src.js(&format!("variant{} = null;\n", tmp));
