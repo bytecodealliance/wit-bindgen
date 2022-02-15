@@ -465,6 +465,16 @@ impl Interface {
             _ => false,
         }
     }
+    pub fn get_variant(&self, ty: &Type) -> Option<&Variant> {
+        if let Type::Id(id) = ty {
+            match &self.types[*id].kind {
+                TypeDefKind::Variant(v) => Some(v),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
 }
 
 fn load_fs(root: &Path, name: &str) -> Result<(PathBuf, String)> {

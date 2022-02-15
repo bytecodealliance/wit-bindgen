@@ -127,19 +127,6 @@ impl Js {
         }
     }
 
-    fn is_nullable_option(&self, iface: &Interface, variant: &Variant) -> bool {
-        match variant.as_option() {
-            Some(ty) => match ty {
-                Type::Id(id) => match &iface.types[*id].kind {
-                    TypeDefKind::Variant(v) => !self.is_nullable_option(iface, v),
-                    _ => true,
-                },
-                _ => true,
-            },
-            None => false,
-        }
-    }
-
     fn array_ty(&self, iface: &Interface, ty: &Type) -> Option<&'static str> {
         match ty {
             Type::U8 | Type::CChar => Some("Uint8Array"),
@@ -370,6 +357,17 @@ impl Js {
         self.intrinsics.insert(i, i.name().to_string());
         return i.name().to_string();
     }
+
+    pub fn get_nullable_option<'a>(&self, iface: &'a Interface, ty: &Type) -> Option<&'a Type> {
+        iface.get_variant(ty).and_then(|v| v.as_option())
+    }
+
+    pub fn is_nullable_option(&self, iface: &Interface, variant: &Variant) -> bool {
+        variant.as_option().map_or(false, |ty| {
+            self.get_nullable_option(iface, ty)
+                .map_or(true, |ty| self.get_nullable_option(iface, ty).is_none())
+        })
+    }
 }
 
 impl Generator for Js {
@@ -429,8 +427,12 @@ impl Generator for Js {
                 .ts(&format!("export interface {} {{\n", name.to_camel_case()));
             for field in record.fields.iter() {
                 self.docs(&field.docs);
-                self.src.ts(&format!("{}: ", field.name.to_mixed_case()));
-                self.print_ty(iface, &field.ty);
+                let (option_str, ty) = self
+                    .get_nullable_option(iface, &field.ty)
+                    .map_or(("", &field.ty), |ty| ("?", ty));
+                self.src
+                    .ts(&format!("{}{}: ", field.name.to_mixed_case(), option_str));
+                self.print_ty(iface, ty);
                 self.src.ts(",\n");
             }
             self.src.ts("}\n");
@@ -455,7 +457,7 @@ impl Generator for Js {
             self.src
                 .ts(&format!("export type {} = ", name.to_camel_case()));
             self.print_ty(iface, variant.cases[1].ty.as_ref().unwrap());
-            self.src.ts(" | null;\n");
+            self.src.ts("| null;\n");
         } else if variant.is_enum() {
             self.src
                 .ts(&format!("export enum {} {{\n", name.to_camel_case()));

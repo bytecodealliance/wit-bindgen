@@ -97,7 +97,7 @@ async function run() {
   c.drop();
   d.drop();
 
-  wasm.wasmState2ResultRecord().a.drop();
+  wasm.wasmState2ResultRecord().a?.drop();
   wasm.wasmState2ResultTuple()[0].drop();
   const opt = wasm.wasmState2ResultOption();
   if (opt === null)
