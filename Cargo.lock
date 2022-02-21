@@ -2151,6 +2151,7 @@ name = "wit-bindgen-rust-impl"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
+ "shellexpand",
  "syn",
  "wit-bindgen-gen-core",
  "wit-bindgen-gen-rust-wasm",
@@ -2174,6 +2175,7 @@ name = "wit-bindgen-wasmtime-impl"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
+ "shellexpand",
  "syn",
  "wit-bindgen-gen-core",
  "wit-bindgen-gen-wasmtime",

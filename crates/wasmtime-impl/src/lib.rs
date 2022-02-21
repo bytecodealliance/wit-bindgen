@@ -91,10 +91,13 @@ impl Parse for Opts {
             interfaces
         } else {
             while !input.is_empty() {
-                let s = input.parse::<syn::LitStr>()?;
-                files.push(s.value());
+                let literal = input.parse::<syn::LitStr>()?;
+                let s = literal.value();
+                let path = shellexpand::env(&s).map_err(|e| Error::new(call_site, e))?;
+                files.push(path.to_string());
             }
             let mut interfaces = Vec::new();
+
             for path in files.iter() {
                 let iface = Interface::parse_file(path).map_err(|e| Error::new(call_site, e))?;
                 interfaces.push(iface);
@@ -134,8 +137,17 @@ impl Parse for ConfigField {
             let paths;
             let bracket = syn::bracketed!(paths in input);
             let paths = Punctuated::<syn::LitStr, Token![,]>::parse_terminated(&paths)?;
-            let values = paths.iter().map(|s| s.value()).collect::<Vec<_>>();
+            let values = paths
+                .iter()
+                .map(|path| {
+                    let s = path.value();
+                    shellexpand::env(&s)
+                        .map(|s| s.to_string())
+                        .map_err(|e| Error::new(path.span(), e))
+                })
+                .collect::<Result<Vec<_>>>()?;
             let mut interfaces = Vec::new();
+
             for value in &values {
                 let interface =
                     Interface::parse_file(value).map_err(|e| Error::new(bracket.span, e))?;
