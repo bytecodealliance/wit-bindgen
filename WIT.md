@@ -544,8 +544,8 @@ type foo = u32
 type foo = u64  // ERROR: name `foo` already defined
 ```
 
-Names do not be defined before they're used (unlike in C or C++), it's ok to
-define a type after it's used:
+Names do not need to be defined before they're used (unlike in C or C++),
+it's ok to define a type after it's used:
 
 ```wit
 type foo = bar
