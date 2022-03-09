@@ -10,7 +10,13 @@ mod ast;
 mod sizealign;
 pub use sizealign::*;
 
-#[derive(Debug)]
+/// Checks if the given string is a legal identifier in wit.
+pub fn validate_id(s: &str) -> Result<()> {
+    ast::validate_id(0, s)?;
+    Ok(())
+}
+
+#[derive(Debug, Default)]
 pub struct Interface {
     pub name: String,
     pub types: Arena<TypeDef>,
@@ -181,6 +187,13 @@ impl Variant {
 
     pub fn is_enum(&self) -> bool {
         self.cases.iter().all(|c| c.ty.is_none())
+    }
+
+    pub fn is_union(&self) -> bool {
+        self.cases
+            .iter()
+            .enumerate()
+            .all(|(i, c)| c.name.parse().ok() == Some(i) && c.ty.is_some())
     }
 
     pub fn as_option(&self) -> Option<&Type> {

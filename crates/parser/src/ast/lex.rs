@@ -450,7 +450,7 @@ fn is_keylike_continue(ch: char) -> bool {
     UnicodeXID::is_xid_continue(ch) || ch == '-'
 }
 
-fn validate_id(start: usize, id: &str) -> Result<(), Error> {
+pub fn validate_id(start: usize, id: &str) -> Result<(), Error> {
     // Ids must be in stream-safe NFC.
     if !unicode_normalization::is_nfc_stream_safe(&id) {
         return Err(Error::IdNotSSNFC(start));

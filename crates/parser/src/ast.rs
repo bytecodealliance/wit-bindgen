@@ -9,6 +9,8 @@ use std::fmt;
 mod lex;
 mod resolve;
 
+pub use lex::validate_id;
+
 pub struct Ast<'a> {
     pub items: Vec<Item<'a>>,
 }
