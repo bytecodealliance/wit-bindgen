@@ -1,15 +1,27 @@
 //! Testing the round tripping of interfaces to component encodings and back.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::fs;
-use wit_component::{decode_interface_component, encode_interface_component, InterfacePrinter};
+use wit_component::{decode_interface_component, ComponentEncoder, InterfacePrinter};
 use wit_parser::Interface;
 
 #[test]
 fn roundtrip_interfaces() -> Result<()> {
     for file in fs::read_dir("tests/wit")? {
         let file = file?;
-        let bytes = encode_interface_component(&Interface::parse_file(file.path())?)?;
+        let interface = Interface::parse_file(file.path())?;
+
+        let encoder = ComponentEncoder::default()
+            .interface(&interface)
+            .types_only(true);
+
+        let bytes = encoder.encode().with_context(|| {
+            format!(
+                "failed to encode a component from interface `{}`",
+                file.path().display()
+            )
+        })?;
+
         let interface = decode_interface_component(&bytes)?;
 
         let mut printer = InterfacePrinter::default();
