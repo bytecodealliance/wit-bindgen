@@ -1,4 +1,4 @@
-wit_bindgen_rust::import!("crates/resources/resources.wit");
+wit_bindgen_rust::import!("../resources/resources.wit");
 
 use resources::*;
 

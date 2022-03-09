@@ -1,5 +1,5 @@
-wit_bindgen_rust::import!("./tests/runtime/buffers/imports.wit");
-wit_bindgen_rust::export!("./tests/runtime/buffers/exports.wit");
+wit_bindgen_rust::import!("../../tests/runtime/buffers/imports.wit");
+wit_bindgen_rust::export!("../../tests/runtime/buffers/exports.wit");
 
 use std::iter;
 

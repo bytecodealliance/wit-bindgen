@@ -1,4 +1,4 @@
-wit_bindgen_rust::import!("crates/nested_b/nested_b.wit");
+wit_bindgen_rust::import!("../nested_b/nested_b.wit");
 
 use nested_b::*;
 
