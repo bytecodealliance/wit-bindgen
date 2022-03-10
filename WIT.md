@@ -513,15 +513,15 @@ red-green-blue: function(r: u32, g: u32, b: u32)
 
 This form can't name identifiers which have the same name as wit keywords, so
 the second form is the same syntax with the same restrictions as the first, but
-prefixed with '@':
+prefixed with '%':
 
 ```wit
-@foo: function(@bar: u32)
+%foo: function(%bar: u32)
 
-@red-green-blue: function(@r: u32, @g: u32, @b: u32)
+%red-green-blue: function(%r: u32, %g: u32, %b: u32)
 
 // This form also supports identifiers that would otherwise be keywords.
-@variant: function(@enum: s32)
+%variant: function(%enum: s32)
 ```
 
 [kebab-case]: https://en.wikipedia.org/wiki/Letter_case#Kebab_case

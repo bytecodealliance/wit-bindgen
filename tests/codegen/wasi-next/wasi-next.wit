@@ -77,7 +77,7 @@ fd-fdstat-get: function(fd: fd) -> expected<fdstat, errno>
 /// Adjust the flags associated with a file descriptor.
 /// Note: This is similar to `fcntl(fd, F-SETFL, flags)` in POSIX.
   /// The desired values of the file descriptor flags.
-fd-fdstat-set-flags: function(fd: fd, @flags: fdflags) -> expected<_, errno>
+fd-fdstat-set-flags: function(fd: fd, %flags: fdflags) -> expected<_, errno>
 
   /// Adjust the rights associated with a file descriptor.
   /// This can only be used to remove rights, and returns `errno::notcapable` if called in a way that would attempt to add rights
@@ -225,7 +225,7 @@ path-create-directory: function(
 path-filestat-get: function(
   fd: fd,
   /// Flags determining the method of how the path is resolved.
-  @flags: lookupflags,
+  %flags: lookupflags,
   /// The path of the file or directory to inspect.
   path: string,
 )
@@ -237,7 +237,7 @@ path-filestat-get: function(
 path-filestat-set-times: function(
   fd: fd,
   /// Flags determining the method of how the path is resolved.
-  @flags: lookupflags,
+  %flags: lookupflags,
   /// The path of the file or directory to operate on.
   path: string,
   /// The desired values of the data access timestamp.

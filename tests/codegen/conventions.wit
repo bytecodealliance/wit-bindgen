@@ -8,8 +8,8 @@ record ludicrous-speed {
 }
 
 foo: function(x: ludicrous-speed)
-@function-with-dashes: function()
-@function-with-no-weird-characters: function()
+%function-with-dashes: function()
+%function-with-no-weird-characters: function()
 
 apple: function()
 apple-pear: function()
@@ -21,8 +21,8 @@ hühnervögel: function()
 garçon-hühnervögel-москва-東-京: function()
 a0: function()
 
-@explicit: function()
-@explicit-kebab: function()
+%explicit: function()
+%explicit-kebab: function()
 
 // Identifiers with the same name as keywords are quoted.
-@bool: function()
+%bool: function()

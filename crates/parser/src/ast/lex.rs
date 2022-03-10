@@ -137,7 +137,7 @@ impl<'a> Tokenizer<'a> {
 
     pub fn parse_explicit_id(&self, span: Span) -> Result<String> {
         let token = self.get_span(span);
-        let id_part = token.strip_prefix('@').unwrap();
+        let id_part = token.strip_prefix('%').unwrap();
         validate_id(span.start as usize, id_part)?;
         Ok(id_part.to_owned())
     }
@@ -208,7 +208,7 @@ impl<'a> Tokenizer<'a> {
                     return Err(Error::Unexpected(start, '-'));
                 }
             }
-            '@' => {
+            '%' => {
                 let mut iter = self.chars.clone();
                 if let Some((_, ch)) = iter.next() {
                     if is_keylike_start(ch) {
@@ -525,7 +525,7 @@ impl Token {
             List => "keyword `list`",
             Underscore => "keyword `_`",
             Id => "an identifier",
-            ExplicitId => "an '@' identifier",
+            ExplicitId => "an '%' identifier",
             PushBuffer => "keyword `push-buffer`",
             PullBuffer => "keyword `pull-buffer`",
             RArrow => "`->`",
@@ -601,7 +601,7 @@ fn test_validate_id() {
 
     assert!(validate_id(0, "").is_err());
     assert!(validate_id(0, "0").is_err());
-    assert!(validate_id(0, "@").is_err());
+    assert!(validate_id(0, "%").is_err());
     assert!(validate_id(0, "$").is_err());
     assert!(validate_id(0, "0a").is_err());
     assert!(validate_id(0, ".").is_err());
@@ -672,10 +672,10 @@ fn test_tokenizer() {
     );
     assert_eq!(collect("a0").unwrap(), vec![Token::Id]);
     assert_eq!(collect("a").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("@a").unwrap(), vec![Token::ExplicitId]);
-    assert_eq!(collect("@a-a").unwrap(), vec![Token::ExplicitId]);
-    assert_eq!(collect("@bool").unwrap(), vec![Token::ExplicitId]);
-    assert_eq!(collect("@").unwrap(), vec![Token::ExplicitId]);
+    assert_eq!(collect("%a").unwrap(), vec![Token::ExplicitId]);
+    assert_eq!(collect("%a-a").unwrap(), vec![Token::ExplicitId]);
+    assert_eq!(collect("%bool").unwrap(), vec![Token::ExplicitId]);
+    assert_eq!(collect("%").unwrap(), vec![Token::ExplicitId]);
 
     assert!(collect("\u{149}").is_err(), "strongly discouraged");
     assert!(collect("\u{673}").is_err(), "strongly discouraged");

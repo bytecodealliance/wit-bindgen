@@ -49,7 +49,7 @@ resource markdown2 {
   render: function() -> string
 }
 
-resource @odd-name {
-  static create: function() -> @odd-name
-  @frob-the-odd: function()
+resource %odd-name {
+  static create: function() -> %odd-name
+  %frob-the-odd: function()
 }

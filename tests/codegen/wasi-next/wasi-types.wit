@@ -449,7 +449,7 @@ record event-fd-readwrite {
   /// The number of bytes available for reading or writing.
   nbytes: filesize,
   /// The state of the file descriptor.
-  @flags: eventrwflags,
+  %flags: eventrwflags,
 }
 
 variant event-u {
@@ -465,7 +465,7 @@ record event {
   /// If non-zero, an error that occurred while processing the subscription request.
   error: errno,
   /// The type of event that occured, along with the contents of the event.
-  @type: event-u,
+  %type: event-u,
 }
 
 /// Flags determining how to interpret the timestamp provided in
@@ -489,7 +489,7 @@ record subscription-clock {
   /// to coalesce with other events.
   precision: timestamp,
   /// Flags specifying whether the timeout is absolute or relative
-  @flags: subclockflags,
+  %flags: subclockflags,
 }
 
 /// The contents of a `subscription` when type is type is
