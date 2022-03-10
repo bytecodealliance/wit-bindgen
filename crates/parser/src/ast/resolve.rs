@@ -246,8 +246,20 @@ impl Resolver {
         }
     }
 
+
+
     fn register_names(&mut self, fields: &[Item<'_>]) -> Result<()> {
-        let mut values = HashSet::new();
+        // TODO: add span info and generate error message pointing
+        // original definition in case of duplicates.
+        #[derive(Debug, Clone)]
+        enum Definition {
+            Resource,
+            Function,
+            Global,
+            Type
+        }
+
+        let mut values = HashMap::new();
         for field in fields {
             match field {
                 Item::Resource(r) => {
@@ -265,6 +277,13 @@ impl Resolver {
                         foreign_module: None,
                     });
                     self.define_type(&r.name.name, r.name.span, type_id)?;
+                    if let Some(existing) = values.insert(&r.name.name, Definition::Resource) {
+                        return Err(Error {
+                            span: r.name.span,
+                            msg: format!("Resource {:?} already defined as a {:?}", r.name.name, existing),
+                        }
+                        .into());
+                    }
                 }
                 Item::TypeDef(t) => {
                     let docs = self.docs(&t.docs);
@@ -277,12 +296,23 @@ impl Resolver {
                         foreign_module: None,
                     });
                     self.define_type(&t.name.name, t.name.span, id)?;
+                    if let Some(existing) = values.insert(&t.name.name, Definition::Type) {
+                        return Err(Error {
+                            span: t.name.span,
+                            msg: format!("Type {:?} already defined as a {:?}", t.name.name, existing),
+                        }
+                        .into());
+                    }
                 }
                 Item::Value(f) => {
-                    if !values.insert(&f.name.name) {
+                    let kind = match &f.kind {
+                        ValueKind::Function { .. } => Definition::Function,
+                        ValueKind::Global { .. } => Definition::Global,
+                    };
+                    if let Some(existing) = values.insert(&f.name.name, kind.clone()) {
                         return Err(Error {
                             span: f.name.span,
-                            msg: format!("{:?} defined twice", f.name.name),
+                            msg: format!("{:?} {:?} already defined as a {:?}", kind, f.name.name, existing),
                         }
                         .into());
                     }

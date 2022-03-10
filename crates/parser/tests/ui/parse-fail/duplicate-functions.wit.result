@@ -1,4 +1,4 @@
-"foo" defined twice
+Function "foo" already defined as a Function
      --> tests/ui/parse-fail/duplicate-functions.wit:4:1
       |
     4 | foo: function()

@@ -544,6 +544,13 @@ type foo = u32
 type foo = u64  // ERROR: name `foo` already defined
 ```
 
+A type and a function may not share the same name either:
+
+```wit
+type foo = u32
+foo: function()  // ERROR: name `foo` already defined
+```
+
 Names do not need to be defined before they're used (unlike in C or C++),
 it's ok to define a type after it's used:
 
