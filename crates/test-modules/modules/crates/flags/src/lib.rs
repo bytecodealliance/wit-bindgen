@@ -1,4 +1,4 @@
-wit_bindgen_rust::export!("crates/flags/flags.wit");
+wit_bindgen_rust::export!("flags.wit");
 
 use flags::*;
 

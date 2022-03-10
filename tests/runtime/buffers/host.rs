@@ -1,4 +1,4 @@
-wit_bindgen_wasmtime::export!("./tests/runtime/buffers/imports.wit");
+wit_bindgen_wasmtime::export!("../../tests/runtime/buffers/imports.wit");
 
 use anyhow::Result;
 use imports::*;
@@ -115,7 +115,7 @@ impl Imports for MyImports {
     }
 }
 
-wit_bindgen_wasmtime::import!("./tests/runtime/buffers/exports.wit");
+wit_bindgen_wasmtime::import!("../../tests/runtime/buffers/exports.wit");
 
 fn run(wasm: &str) -> Result<()> {
     use exports::*;
