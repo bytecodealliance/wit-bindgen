@@ -104,7 +104,7 @@ impl Imports for MyImports {
         return 3;
     }
 
-    fn buffer_in_record(&mut self, _: BufferInRecord<'_>) {}
+    fn buffer_in_record_func(&mut self, _: BufferInRecord<'_>) {}
     fn buffer_typedef(
         &mut self,
         _: ParamInBufferU8<'_>,

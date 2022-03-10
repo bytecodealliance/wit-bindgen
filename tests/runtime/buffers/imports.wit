@@ -26,7 +26,7 @@ record buffer-in-record {
   d: pull-buffer<bool>,
   e: buffer-in-variant,
 }
-buffer-in-record: function(a: buffer-in-record)
+buffer-in-record-func: function(a: buffer-in-record)
 
 type param-in-buffer-u8 = push-buffer<u8>
 type param-out-buffer-u8 = pull-buffer<u8>

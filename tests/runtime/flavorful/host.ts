@@ -8,13 +8,13 @@ import * as assert from 'assert';
 async function run() {
   const importObj = {};
   const imports: Imports = {
-    listInRecord1(x) {},
-    listInRecord2() { return { a: 'list_in_record2' }; },
-    listInRecord3(x) {
+    listInRecord1Func(x) {},
+    listInRecord2Func() { return { a: 'list_in_record2' }; },
+    listInRecord3Func(x) {
       assert.strictEqual(x.a, 'list_in_record3 input');
       return { a: 'list_in_record3 output' };
     },
-    listInRecord4(x) {
+    listInRecord4Func(x) {
       assert.strictEqual(x.a, 'input4');
       return { a: 'result4' };
     },

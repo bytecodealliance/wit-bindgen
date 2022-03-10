@@ -193,7 +193,7 @@ impl exports::Exports for Exports {
     //     return 3;
     // }
 
-    // fn buffer_in_record( _: BufferInRecord<'_>) {}
+    // fn buffer_in_record_func( _: BufferInRecord<'_>) {}
     // fn buffer_typedef(
     //
     //     _: ParamInBufferU8<'_>,

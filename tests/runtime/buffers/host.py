@@ -65,7 +65,7 @@ class MyImports:
         a[0].push(False)
         return 3
 
-    def buffer_in_record(self, a: i.BufferInRecord) -> None:
+    def buffer_in_record_func(self, a: i.BufferInRecord) -> None:
         pass
 
     def buffer_typedef(self, a: i.ParamInBufferU8, b: i.ParamOutBufferU8, c: i.ParamInBufferBool, d: i.ParamOutBufferBool) -> None:

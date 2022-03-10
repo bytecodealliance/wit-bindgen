@@ -59,7 +59,7 @@ async function run() {
       x[0].push(false);
       return 3;
     },
-    bufferInRecord(x) { },
+    bufferInRecordFunc(x) { },
     bufferTypedef(a, b, c, d) {},
   };
   let instance: WebAssembly.Instance;

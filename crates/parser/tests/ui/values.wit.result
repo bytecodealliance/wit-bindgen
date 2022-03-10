@@ -2,7 +2,7 @@
   "types": [
     {
       "idx": 0,
-      "name": "a",
+      "name": "c",
       "record": {
         "fields": []
       }
@@ -39,7 +39,7 @@
       "ty": "type-1"
     },
     {
-      "name": "c",
+      "name": "d",
       "ty": "type-2"
     }
   ]

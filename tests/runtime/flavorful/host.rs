@@ -8,24 +8,24 @@ use imports::*;
 pub struct MyImports;
 
 impl Imports for MyImports {
-    fn list_in_record1(&mut self, ty: ListInRecord1<'_>) {
+    fn list_in_record1_func(&mut self, ty: ListInRecord1<'_>) {
         assert_eq!(ty.a, "list_in_record1");
     }
 
-    fn list_in_record2(&mut self) -> ListInRecord2 {
+    fn list_in_record2_func(&mut self) -> ListInRecord2 {
         ListInRecord2 {
             a: "list_in_record2".to_string(),
         }
     }
 
-    fn list_in_record3(&mut self, a: ListInRecord3Param<'_>) -> ListInRecord3Result {
+    fn list_in_record3_func(&mut self, a: ListInRecord3Param<'_>) -> ListInRecord3Result {
         assert_eq!(a.a, "list_in_record3 input");
         ListInRecord3Result {
             a: "list_in_record3 output".to_string(),
         }
     }
 
-    fn list_in_record4(&mut self, a: ListInAliasParam<'_>) -> ListInAliasResult {
+    fn list_in_record4_func(&mut self, a: ListInAliasParam<'_>) -> ListInAliasResult {
         assert_eq!(a.a, "input4");
         ListInRecord4Result {
             a: "result4".to_string(),

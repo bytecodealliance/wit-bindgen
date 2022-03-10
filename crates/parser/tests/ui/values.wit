@@ -1,4 +1,4 @@
 a: s32
 b: tuple<>
-record a {}
-c: tuple<u32, a>
+record c {}
+d: tuple<u32, c>

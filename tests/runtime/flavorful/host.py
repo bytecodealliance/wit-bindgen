@@ -7,17 +7,17 @@ import sys
 import wasmtime
 
 class MyImports:
-    def list_in_record1(self, a: i.ListInRecord1) -> None:
+    def list_in_record1_func(self, a: i.ListInRecord1) -> None:
         pass
 
-    def list_in_record2(self) -> i.ListInRecord2:
+    def list_in_record2_func(self) -> i.ListInRecord2:
         return i.ListInRecord2('list_in_record2')
 
-    def list_in_record3(self, a: i.ListInRecord3) -> i.ListInRecord3:
+    def list_in_record3_func(self, a: i.ListInRecord3) -> i.ListInRecord3:
         assert(a.a == 'list_in_record3 input')
         return i.ListInRecord3('list_in_record3 output')
 
-    def list_in_record4(self, a: i.ListInAlias) -> i.ListInAlias:
+    def list_in_record4_func(self, a: i.ListInAlias) -> i.ListInAlias:
         assert(a.a == 'input4')
         return i.ListInRecord4('result4')
 
