@@ -246,8 +246,6 @@ impl Resolver {
         }
     }
 
-
-
     fn register_names(&mut self, fields: &[Item<'_>]) -> Result<()> {
         // TODO: add span info and generate error message pointing
         // original definition in case of duplicates.
@@ -256,7 +254,7 @@ impl Resolver {
             Resource,
             Function,
             Global,
-            Type
+            Type,
         }
 
         let mut values = HashMap::new();
@@ -280,7 +278,10 @@ impl Resolver {
                     if let Some(existing) = values.insert(&r.name.name, Definition::Resource) {
                         return Err(Error {
                             span: r.name.span,
-                            msg: format!("Resource {:?} already defined as a {:?}", r.name.name, existing),
+                            msg: format!(
+                                "Resource {:?} already defined as a {:?}",
+                                r.name.name, existing
+                            ),
                         }
                         .into());
                     }
@@ -299,7 +300,10 @@ impl Resolver {
                     if let Some(existing) = values.insert(&t.name.name, Definition::Type) {
                         return Err(Error {
                             span: t.name.span,
-                            msg: format!("Type {:?} already defined as a {:?}", t.name.name, existing),
+                            msg: format!(
+                                "Type {:?} already defined as a {:?}",
+                                t.name.name, existing
+                            ),
                         }
                         .into());
                     }
@@ -312,7 +316,10 @@ impl Resolver {
                     if let Some(existing) = values.insert(&f.name.name, kind.clone()) {
                         return Err(Error {
                             span: f.name.span,
-                            msg: format!("{:?} {:?} already defined as a {:?}", kind, f.name.name, existing),
+                            msg: format!(
+                                "{:?} {:?} already defined as a {:?}",
+                                kind, f.name.name, existing
+                            ),
                         }
                         .into());
                     }
