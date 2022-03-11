@@ -27,7 +27,7 @@ void exports_test_imports() {
   {
     imports_list_in_record4_t a, b;
     imports_string_set(&a.a, "input4");
-    imports_list_in_record4(&a, &b);
+    imports_list_in_record4_func(&a, &b);
     assert(memcmp(b.a.ptr, "result4", b.a.len) == 0);
     imports_list_in_record4_free(&b);
   }
