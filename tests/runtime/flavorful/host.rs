@@ -46,11 +46,11 @@ impl Imports for MyImports {
         }
     }
 
-    fn list_in_variant2(&mut self) -> Option<String> {
+    fn list_in_variant2_func(&mut self) -> Option<String> {
         Some("list_in_variant2".to_string())
     }
 
-    fn list_in_variant3(&mut self, a: ListInVariant3Param<'_>) -> Option<String> {
+    fn list_in_variant3_func(&mut self, a: ListInVariant3Param<'_>) -> Option<String> {
         assert_eq!(a.unwrap(), "input3");
         Some("output3".to_string())
     }
@@ -104,17 +104,17 @@ fn run(wasm: &str) -> Result<()> {
 
     exports.test_imports(&mut store)?;
 
-    exports.list_in_record1(
+    exports.list_in_record1_func(
         &mut store,
         ListInRecord1 {
             a: "list_in_record1",
         },
     )?;
-    assert_eq!(exports.list_in_record2(&mut store)?.a, "list_in_record2");
+    assert_eq!(exports.list_in_record2_func(&mut store)?.a, "list_in_record2");
 
     assert_eq!(
         exports
-            .list_in_record3(
+            .list_in_record3_func(
                 &mut store,
                 ListInRecord3Param {
                     a: "list_in_record3 input"
@@ -126,7 +126,7 @@ fn run(wasm: &str) -> Result<()> {
 
     assert_eq!(
         exports
-            .list_in_record4(&mut store, ListInAliasParam { a: "input4" })?
+            .list_in_record4_func(&mut store, ListInAliasParam { a: "input4" })?
             .a,
         "result4"
     );
@@ -138,11 +138,11 @@ fn run(wasm: &str) -> Result<()> {
         ListInVariant1V3::V0("baz"),
     )?;
     assert_eq!(
-        exports.list_in_variant2(&mut store)?,
+        exports.list_in_variant2_func(&mut store)?,
         Some("list_in_variant2".to_string())
     );
     assert_eq!(
-        exports.list_in_variant3(&mut store, Some("input3"))?,
+        exports.list_in_variant3_func(&mut store, Some("input3"))?,
         Some("output3".to_string())
     );
 

@@ -61,7 +61,7 @@
     (param $c (tuple u8 s8 u16 s16 u32 s32 u64 s64 f32 f64))
   )
 
-  (@interface func (export "legacy-result")
+  (@interface func (export "legacy-result-func")
     (param $succeed bool)
     (result $b (expected $legacy-result (error $e1)))
   )
