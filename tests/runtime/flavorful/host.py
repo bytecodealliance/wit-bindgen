@@ -67,14 +67,14 @@ def run(wasm_file: str) -> None:
 
     wasm.test_imports(store)
     wasm.list_in_record1(store, e.ListInRecord1("list_in_record1"))
-    assert(wasm.list_in_record2(store) == e.ListInRecord2(a="list_in_record2"))
+    assert(wasm.list_in_record2_func(store) == e.ListInRecord2(a="list_in_record2"))
 
-    assert(wasm.list_in_record3(store, e.ListInRecord3("list_in_record3 input")).a == "list_in_record3 output")
-    assert(wasm.list_in_record4(store, e.ListInRecord4("input4")).a == "result4")
+    assert(wasm.list_in_record3_func(store, e.ListInRecord3("list_in_record3 input")).a == "list_in_record3 output")
+    assert(wasm.list_in_record4_func(store, e.ListInRecord4("input4")).a == "result4")
 
     wasm.list_in_variant1(store, "foo", e.Err("bar"), e.ListInVariant1V30('baz'))
-    assert(wasm.list_in_variant2(store) == "list_in_variant2")
-    assert(wasm.list_in_variant3(store, "input3") == "output3")
+    assert(wasm.list_in_variant2_func(store) == "list_in_variant2")
+    assert(wasm.list_in_variant3_func(store, "input3") == "output3")
 
     assert(isinstance(wasm.errno_result(store), e.Err))
 

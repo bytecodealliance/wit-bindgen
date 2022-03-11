@@ -23,8 +23,8 @@ async function run() {
       assert.deepStrictEqual(b, { tag: 'err', val: 'bar' });
       assert.deepStrictEqual(c, { tag: '0', val: 'baz' });
     },
-    listInVariant2() { return 'list_in_variant2'; },
-    listInVariant3(x) {
+    listInVariant2Func() { return 'list_in_variant2'; },
+    listInVariant3Func(x) {
       assert.strictEqual(x, 'input3');
       return 'output3';
     },
@@ -57,23 +57,23 @@ async function run() {
   instance = wasm.instance;
 
   wasm.testImports();
-  wasm.listInRecord1({ a: "list_in_record1" });
-  assert.deepStrictEqual(wasm.listInRecord2(), { a: "list_in_record2" });
+  wasm.listInRecord1Func({ a: "list_in_record1" });
+  assert.deepStrictEqual(wasm.listInRecord2Func(), { a: "list_in_record2" });
 
   assert.deepStrictEqual(
-    wasm.listInRecord3({ a: "list_in_record3 input" }),
+    wasm.listInRecord3Func({ a: "list_in_record3 input" }),
     { a: "list_in_record3 output" },
   );
 
   assert.deepStrictEqual(
-    wasm.listInRecord4({ a: "input4" }),
+    wasm.listInRecord4Func({ a: "input4" }),
     { a: "result4" },
   );
 
   wasm.listInVariant1("foo", { tag: 'err', val: 'bar' }, { tag: '0', val: 'baz' });
 
-  assert.deepStrictEqual(wasm.listInVariant2(), "list_in_variant2");
-  assert.deepStrictEqual(wasm.listInVariant3("input3"), "output3");
+  assert.deepStrictEqual(wasm.listInVariant2Func(), "list_in_variant2");
+  assert.deepStrictEqual(wasm.listInVariant3Func("input3"), "output3");
 
   assert.deepStrictEqual(wasm.errnoResult().tag, 'err');
 

@@ -6,3 +6,4 @@ ace
 *.wasm
 .vscode
 wasi-sdk-*
+**/*/.mypy_cache
