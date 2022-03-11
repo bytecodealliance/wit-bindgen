@@ -26,10 +26,10 @@ class MyImports:
         assert(b == i.Err('bar'))
         assert(c == i.ListInVariant1V30('baz'))
 
-    def list_in_variant2(self) -> i.ListInVariant2:
+    def list_in_variant2_func(self) -> i.ListInVariant2:
         return 'list_in_variant2'
 
-    def list_in_variant3(self, a: i.ListInVariant3) -> i.ListInVariant3:
+    def list_in_variant3_func(self, a: i.ListInVariant3) -> i.ListInVariant3:
         assert(a == 'input3')
         return 'output3'
 
@@ -66,7 +66,7 @@ def run(wasm_file: str) -> None:
     wasm = Exports(store, linker, module)
 
     wasm.test_imports(store)
-    wasm.list_in_record1(store, e.ListInRecord1("list_in_record1"))
+    wasm.list_in_record1_func(store, e.ListInRecord1("list_in_record1"))
     assert(wasm.list_in_record2_func(store) == e.ListInRecord2(a="list_in_record2"))
 
     assert(wasm.list_in_record3_func(store, e.ListInRecord3("list_in_record3 input")).a == "list_in_record3 output")
