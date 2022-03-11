@@ -8,10 +8,10 @@ void exports_test_imports() {
   {
     imports_list_in_record1_t a;
     imports_string_set(&a.a, "list_in_record1");
-    imports_list_in_record1(&a);
+    imports_list_in_record1_func(&a);
 
     imports_list_in_record2_t b;
-    imports_list_in_record2(&b);
+    imports_list_in_record2_func(&b);
     assert(memcmp(b.a.ptr, "list_in_record2", b.a.len) == 0);
     imports_list_in_record2_free(&b);
   }
@@ -19,7 +19,7 @@ void exports_test_imports() {
   {
     imports_list_in_record3_t a, b;
     imports_string_set(&a.a, "list_in_record3 input");
-    imports_list_in_record3(&a, &b);
+    imports_list_in_record3_func(&a, &b);
     assert(memcmp(b.a.ptr, "list_in_record3 output", b.a.len) == 0);
     imports_list_in_record3_free(&b);
   }
@@ -47,7 +47,7 @@ void exports_test_imports() {
 
   {
     imports_string_t a;
-    assert(imports_list_in_variant2(&a));
+    assert(imports_list_in_variant2_func(&a));
     assert(memcmp(a.ptr, "list_in_variant2", a.len) == 0);
     imports_string_free(&a);
   }
@@ -57,7 +57,7 @@ void exports_test_imports() {
     a.tag = IMPORTS_LIST_IN_VARIANT3_SOME;
     imports_string_set(&a.val, "input3");
     imports_string_t b;
-    assert(imports_list_in_variant3(&a, &b));
+    assert(imports_list_in_variant3_func(&a, &b));
     assert(memcmp(b.ptr, "output3", b.len) == 0);
     imports_string_free(&b);
   }
