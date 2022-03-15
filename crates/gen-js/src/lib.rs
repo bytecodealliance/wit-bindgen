@@ -127,19 +127,6 @@ impl Js {
         }
     }
 
-    fn is_nullable_option(&self, iface: &Interface, variant: &Variant) -> bool {
-        match variant.as_option() {
-            Some(ty) => match ty {
-                Type::Id(id) => match &iface.types[*id].kind {
-                    TypeDefKind::Variant(v) => !self.is_nullable_option(iface, v),
-                    _ => true,
-                },
-                _ => true,
-            },
-            None => false,
-        }
-    }
-
     fn array_ty(&self, iface: &Interface, ty: &Type) -> Option<&'static str> {
         match ty {
             Type::U8 | Type::CChar => Some("Uint8Array"),
@@ -271,9 +258,11 @@ impl Js {
             Some(docs) => docs,
             None => return,
         };
+        self.src.ts("/**\n");
         for line in docs.lines() {
-            self.src.ts(&format!("// {}\n", line));
+            self.src.ts(&format!(" * {}\n", line));
         }
+        self.src.ts(" */\n");
     }
 
     fn ts_func(&mut self, iface: &Interface, func: &Function) {
@@ -368,6 +357,17 @@ impl Js {
         self.intrinsics.insert(i, i.name().to_string());
         return i.name().to_string();
     }
+
+    pub fn get_nullable_option<'a>(&self, iface: &'a Interface, ty: &Type) -> Option<&'a Type> {
+        iface.get_variant(ty).and_then(|v| v.as_option())
+    }
+
+    pub fn is_nullable_option(&self, iface: &Interface, variant: &Variant) -> bool {
+        variant.as_option().map_or(false, |ty| {
+            self.get_nullable_option(iface, ty)
+                .map_or(true, |ty| self.get_nullable_option(iface, ty).is_none())
+        })
+    }
 }
 
 impl Generator for Js {
@@ -427,8 +427,12 @@ impl Generator for Js {
                 .ts(&format!("export interface {} {{\n", name.to_camel_case()));
             for field in record.fields.iter() {
                 self.docs(&field.docs);
-                self.src.ts(&format!("{}: ", field.name.to_mixed_case()));
-                self.print_ty(iface, &field.ty);
+                let (option_str, ty) = self
+                    .get_nullable_option(iface, &field.ty)
+                    .map_or(("", &field.ty), |ty| ("?", ty));
+                self.src
+                    .ts(&format!("{}{}: ", field.name.to_mixed_case(), option_str));
+                self.print_ty(iface, ty);
                 self.src.ts(",\n");
             }
             self.src.ts("}\n");
@@ -453,7 +457,7 @@ impl Generator for Js {
             self.src
                 .ts(&format!("export type {} = ", name.to_camel_case()));
             self.print_ty(iface, variant.cases[1].ty.as_ref().unwrap());
-            self.src.ts(" | null;\n");
+            self.src.ts("| null;\n");
         } else if variant.is_enum() {
             self.src
                 .ts(&format!("export enum {} {{\n", name.to_camel_case()));
@@ -841,19 +845,23 @@ impl Generator for Js {
             self.src.js(&format!("export class {} {{\n", module));
 
             self.src.ts("
-                // The WebAssembly instance that this class is operating with.
-                // This is only available after the `instantiate` method has
-                // been called.
+               /**
+                * The WebAssembly instance that this class is operating with.
+                * This is only available after the `instantiate` method has
+                * been called.
+                */
                 instance: WebAssembly.Instance;
             ");
 
             self.src.ts("
-                // Constructs a new instance with internal state necessary to
-                // manage a wasm instance.
-                //
-                // Note that this does not actually instantiate the WebAssembly
-                // instance or module, you'll need to call the `instantiate`
-                // method below to \"activate\" this class.
+               /**
+                * Constructs a new instance with internal state necessary to
+                * manage a wasm instance.
+                *
+                * Note that this does not actually instantiate the WebAssembly
+                * instance or module, you'll need to call the `instantiate`
+                * method below to \"activate\" this class.
+                */
                 constructor();
             ");
             if self.exported_resources.len() > 0 {
@@ -870,16 +878,18 @@ impl Generator for Js {
             }
 
             self.src.ts("
-                // This is a low-level method which can be used to add any
-                // intrinsics necessary for this instance to operate to an
-                // import object.
-                //
-                // The `import` object given here is expected to be used later
-                // to actually instantiate the module this class corresponds to.
-                // If the `instantiate` method below actually does the
-                // instantiation then there's no need to call this method, but
-                // if you're instantiating manually elsewhere then this can be
-                // used to prepare the import object for external instantiation.
+               /** 
+                * This is a low-level method which can be used to add any
+                * intrinsics necessary for this instance to operate to an
+                * import object.
+                *
+                * The `import` object given here is expected to be used later
+                * to actually instantiate the module this class corresponds to.
+                * If the `instantiate` method below actually does the
+                * instantiation then there's no need to call this method, but
+                * if you're instantiating manually elsewhere then this can be
+                * used to prepare the import object for external instantiation.
+                */
                 addToImports(imports: any): void;
             ");
             self.src.js("addToImports(imports) {\n");
@@ -926,34 +936,36 @@ impl Generator for Js {
 
             self.src.ts(&format!(
                 "
-                    // Initializes this object with the provided WebAssembly
-                    // module/instance.
-                    //
-                    // This is intended to be a flexible method of instantiating
-                    // and completion of the initialization of this class. This
-                    // method must be called before interacting with the
-                    // WebAssembly object.
-                    //
-                    // The first argument to this method is where to get the
-                    // wasm from. This can be a whole bunch of different types,
-                    // for example:
-                    //
-                    // * A precompiled `WebAssembly.Module`
-                    // * A typed array buffer containing the wasm bytecode.
-                    // * A `Promise` of a `Response` which is used with
-                    //   `instantiateStreaming`
-                    // * A `Response` itself used with `instantiateStreaming`.
-                    // * An already instantiated `WebAssembly.Instance`
-                    //
-                    // If necessary the module is compiled, and if necessary the
-                    // module is instantiated. Whether or not it's necessary
-                    // depends on the type of argument provided to
-                    // instantiation.
-                    //
-                    // If instantiation is performed then the `imports` object
-                    // passed here is the list of imports used to instantiate
-                    // the instance. This method may add its own intrinsics to
-                    // this `imports` object too.
+                   /**
+                    * Initializes this object with the provided WebAssembly
+                    * module/instance.
+                    *
+                    * This is intended to be a flexible method of instantiating
+                    * and completion of the initialization of this class. This
+                    * method must be called before interacting with the
+                    * WebAssembly object.
+                    *
+                    * The first argument to this method is where to get the
+                    * wasm from. This can be a whole bunch of different types,
+                    * for example:
+                    *
+                    * * A precompiled `WebAssembly.Module`
+                    * * A typed array buffer containing the wasm bytecode.
+                    * * A `Promise` of a `Response` which is used with
+                    *   `instantiateStreaming`
+                    * * A `Response` itself used with `instantiateStreaming`.
+                    * * An already instantiated `WebAssembly.Instance`
+                    *
+                    * If necessary the module is compiled, and if necessary the
+                    * module is instantiated. Whether or not it's necessary
+                    * depends on the type of argument provided to
+                    * instantiation.
+                    *
+                    * If instantiation is performed then the `imports` object
+                    * passed here is the list of imports used to instantiate
+                    * the instance. This method may add its own intrinsics to
+                    * this `imports` object too.
+                    */
                     instantiate(
                         module: WebAssembly.Module | BufferSource | Promise<Response> | Response | WebAssembly.Instance,
                         imports?: any,
@@ -1129,7 +1141,7 @@ impl Generator for Js {
         self.src.ts(&exports.ts);
 
         let src = mem::take(&mut self.src);
-        let name = iface.name.to_snake_case();
+        let name = iface.name.to_kebab_case();
         files.push(&format!("{}.js", name), src.js.as_bytes());
         if !self.opts.no_typescript {
             files.push(&format!("{}.d.ts", name), src.ts.as_bytes());
@@ -1734,7 +1746,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         ));
                         // TODO: this is the wrong endianness
                         self.src.js(&format!(
-                            "(new Uint8Array(memory.buffer, ptr{}, len{0} * {})).set(new Uint8Array(val{0}.buffer));\n",
+                            "(new Uint8Array(memory.buffer, ptr{0}, len{0} * {1})).set(new Uint8Array(val{0}.buffer, val{0}.byteOffset, len{0} * {1}));\n",
                             tmp, size,
                         ));
                     }

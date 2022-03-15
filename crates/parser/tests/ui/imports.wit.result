@@ -28,7 +28,7 @@
     },
     {
       "idx": 3,
-      "name": "some_record",
+      "name": "some-record",
       "record": {
         "fields": [
           [
@@ -73,12 +73,12 @@
     },
     {
       "idx": 9,
-      "name": "my_handle",
+      "name": "my-handle",
       "primitive": "handle-1"
     },
     {
       "idx": 10,
-      "name": "my_handle2",
+      "name": "my-handle2",
       "primitive": "type-8"
     }
   ]

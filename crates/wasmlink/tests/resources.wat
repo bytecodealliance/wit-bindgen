@@ -9,19 +9,19 @@
     (func (export "canonical_abi_drop_x") (param i32)
         unreachable
     )
-    (func (export "acquire_an_x") (param i32 i32) (result i32)
+    (func (export "acquire-an-x") (param i32 i32) (result i32)
         unreachable
     )
-    (func (export "acquire_lots_of_x") (param i32 i32) (result i32)
+    (func (export "acquire-lots-of-x") (param i32 i32) (result i32)
         unreachable
     )
-    (func (export "receive_an_x") (param i32) (result i32)
+    (func (export "receive-an-x") (param i32) (result i32)
         unreachable
     )
-    (func (export "receive_lots_of_x") (param i32 i32) (result i32)
+    (func (export "receive-lots-of-x") (param i32 i32) (result i32)
         unreachable
     )
-    (func (export "all_dropped") (result i32)
+    (func (export "all-dropped") (result i32)
         unreachable
     )
 )

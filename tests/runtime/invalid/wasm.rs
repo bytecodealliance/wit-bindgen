@@ -1,19 +1,28 @@
-wit_bindgen_rust::export!("./tests/runtime/invalid/exports.wit");
+wit_bindgen_rust::export!("../../tests/runtime/invalid/exports.wit");
 
 #[link(wasm_import_module = "imports")]
 extern "C" {
+    #[link_name = "roundtrip-bool"]
     fn roundtrip_bool(a: i32) -> i32;
+    #[link_name = "roundtrip-u16"]
     fn roundtrip_u16(a: i32) -> i32;
+    #[link_name = "roundtrip-u8"]
     fn roundtrip_u8(a: i32) -> i32;
+    #[link_name = "roundtrip-s16"]
     fn roundtrip_s16(a: i32) -> i32;
+    #[link_name = "roundtrip-s8"]
     fn roundtrip_s8(a: i32) -> i32;
+    #[link_name = "roundtrip-char"]
     fn roundtrip_char(a: i32) -> i32;
+    #[link_name = "roundtrip-enum"]
     fn roundtrip_enum(a: i32) -> i32;
+    #[link_name = "get-internal"]
     fn get_internal(a: i32) -> i32;
 }
 
 #[link(wasm_import_module = "canonical_abi")]
 extern "C" {
+    #[link_name = "resource_drop_host-state"]
     fn resource_drop_host_state(a: i32);
 }
 

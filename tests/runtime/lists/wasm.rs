@@ -1,5 +1,5 @@
-wit_bindgen_rust::import!("./tests/runtime/lists/imports.wit");
-wit_bindgen_rust::export!("./tests/runtime/lists/exports.wit");
+wit_bindgen_rust::import!("../../tests/runtime/lists/imports.wit");
+wit_bindgen_rust::export!("../../tests/runtime/lists/exports.wit");
 
 use std::alloc::{self, Layout};
 use std::mem;
@@ -157,6 +157,10 @@ impl exports::Exports for Exports {
 
     fn list_result3() -> Vec<String> {
         vec!["hello,".to_string(), "world!".to_string()]
+    }
+
+    fn list_roundtrip(x: Vec<u8>) -> Vec<u8> {
+        x.clone()
     }
 
     fn string_roundtrip(x: String) -> String {

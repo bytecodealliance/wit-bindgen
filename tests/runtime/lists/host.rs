@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-wit_bindgen_wasmtime::export!("./tests/runtime/lists/imports.wit");
+wit_bindgen_wasmtime::export!("../../tests/runtime/lists/imports.wit");
 
 use imports::*;
 use wit_bindgen_wasmtime::Le;
@@ -41,6 +41,10 @@ impl Imports for MyImports {
 
     fn list_result3(&mut self) -> Vec<String> {
         vec!["hello,".to_string(), "world!".to_string()]
+    }
+
+    fn list_roundtrip(&mut self, list: &[u8]) -> Vec<u8> {
+        list.to_vec()
     }
 
     fn string_roundtrip(&mut self, s: &str) -> String {
@@ -122,7 +126,7 @@ impl Imports for MyImports {
     }
 }
 
-wit_bindgen_wasmtime::import!("./tests/runtime/lists/exports.wit");
+wit_bindgen_wasmtime::import!("../../tests/runtime/lists/exports.wit");
 
 fn run(wasm: &str) -> Result<()> {
     use exports::*;

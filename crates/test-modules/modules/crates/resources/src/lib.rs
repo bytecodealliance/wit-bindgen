@@ -1,4 +1,4 @@
-wit_bindgen_rust::export!("crates/resources/resources.wit");
+wit_bindgen_rust::export!("resources.wit");
 
 use std::sync::{Arc, Mutex};
 use wit_bindgen_rust::Handle;

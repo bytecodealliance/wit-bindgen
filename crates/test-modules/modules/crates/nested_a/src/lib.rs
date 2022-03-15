@@ -1,4 +1,4 @@
-wit_bindgen_rust::export!("crates/nested_a/nested_a.wit");
+wit_bindgen_rust::export!("nested_a.wit");
 
 struct NestedA;
 

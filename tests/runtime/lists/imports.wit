@@ -16,23 +16,25 @@ flags flag64 {
   b56, b57, b58, b59, b60, b61, b62, b63,
 }
 
-list_param: function(a: list<u8>)
-list_param2: function(a: string)
-list_param3: function(a: list<string>)
-list_param4: function(a: list<list<string>>)
-list_result: function() -> list<u8>
-list_result2: function() -> string
-list_result3: function() -> list<string>
+list-param: function(a: list<u8>)
+list-param2: function(a: string)
+list-param3: function(a: list<string>)
+list-param4: function(a: list<list<string>>)
+list-result: function() -> list<u8>
+list-result2: function() -> string
+list-result3: function() -> list<string>
 
-list_minmax8: function(a: list<u8>, b: list<s8>) -> (list<u8>, list<s8>)
-list_minmax16: function(a: list<u16>, b: list<s16>) -> (list<u16>, list<s16>)
-list_minmax32: function(a: list<u32>, b: list<s32>) -> (list<u32>, list<s32>)
-list_minmax64: function(a: list<u64>, b: list<s64>) -> (list<u64>, list<s64>)
-list_minmax_float: function(a: list<f32>, b: list<f64>) -> (list<f32>, list<f64>)
+list-minmax8: function(a: list<u8>, b: list<s8>) -> (list<u8>, list<s8>)
+list-minmax16: function(a: list<u16>, b: list<s16>) -> (list<u16>, list<s16>)
+list-minmax32: function(a: list<u32>, b: list<s32>) -> (list<u32>, list<s32>)
+list-minmax64: function(a: list<u64>, b: list<s64>) -> (list<u64>, list<s64>)
+list-minmax-float: function(a: list<f32>, b: list<f64>) -> (list<f32>, list<f64>)
 
-string_roundtrip: function(a: string) -> string
+list-roundtrip: function(a: list<u8>) -> list<u8>
 
-unaligned_roundtrip1: function(a: list<u16>, b: list<u32>, c: list<u64>, d: list<flag32>, e: list<flag64>)
+string-roundtrip: function(a: string) -> string
 
-record unaligned_record { a: u32, b: u64 }
-unaligned_roundtrip2: function(a: list<unaligned_record>, b: list<f32>, c: list<f64>, d: list<string>, e: list<list<u8>>)
+unaligned-roundtrip1: function(a: list<u16>, b: list<u32>, c: list<u64>, d: list<flag32>, e: list<flag64>)
+
+record unaligned-record { a: u32, b: u64 }
+unaligned-roundtrip2: function(a: list<unaligned-record>, b: list<f32>, c: list<f64>, d: list<string>, e: list<list<u8>>)

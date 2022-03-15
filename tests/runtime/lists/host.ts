@@ -25,6 +25,7 @@ async function run() {
     },
     listResult2() { return 'hello!'; },
     listResult3() { return ['hello,', 'world!']; },
+    listRoundtrip(x) { return x; },
     stringRoundtrip(x) { return x; },
 
     unalignedRoundtrip1(u16, u32, u64, flag32, flag64) {
@@ -119,6 +120,12 @@ async function run() {
   assert.deepStrictEqual(Array.from(wasm.listResult()), [1, 2, 3, 4, 5]);
   assert.deepStrictEqual(wasm.listResult2(), "hello!");
   assert.deepStrictEqual(wasm.listResult3(), ["hello,", "world!"]);
+  
+  const buffer = new ArrayBuffer(8);
+  (new Uint8Array(buffer)).set(new Uint8Array([1, 2, 3, 4]), 2);
+  // Create a view of the four bytes in the middle of the buffer
+  const view = new Uint8Array(buffer, 2, 4);
+  assert.deepStrictEqual(Array.from(wasm.listRoundtrip(view)), [1, 2, 3, 4]);
 
   assert.deepStrictEqual(wasm.stringRoundtrip("x"), "x");
   assert.deepStrictEqual(wasm.stringRoundtrip(""), "");

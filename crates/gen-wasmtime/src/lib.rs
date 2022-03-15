@@ -1874,34 +1874,42 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.gen.needs_copy_slice = true;
                     self.needs_functions
                         .insert(free.to_string(), NeededFunction::Free);
-                    let (stringify, align) = match element {
-                        Type::Char => (true, 1),
-                        _ => (false, self.gen.sizes.align(element)),
+                    let (stringify, align, el_size) = match element {
+                        Type::Char => (true, 1, 1),
+                        _ => (
+                            false,
+                            self.sizes().align(element),
+                            self.sizes().size(element),
+                        ),
                     };
                     let tmp = self.tmp();
                     self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
                     self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
-                    let result = format!(
+                    self.push_str(&format!(
                         "
-                                copy_slice(
-                                    &mut caller,
-                                    memory,
-                                    func_{},
-                                    ptr{tmp}, len{tmp}, {}
-                                )?
-                            ",
-                        free,
+                            let data{tmp} = copy_slice(
+                                &mut caller,
+                                memory,
+                                ptr{tmp}, len{tmp}, {}
+                            )?;
+                        ",
                         align,
-                        tmp = tmp
+                        tmp = tmp,
+                    ));
+                    self.call_intrinsic(
+                        free,
+                        // we use normal multiplication here as copy_slice has
+                        // already verified that multiplied size fits i32
+                        format!("(ptr{tmp}, len{tmp} * {}, {})", el_size, align, tmp = tmp),
                     );
                     if stringify {
                         results.push(format!(
-                            "String::from_utf8({})
+                            "String::from_utf8(data{})
                                     .map_err(|_| wasmtime::Trap::new(\"invalid utf-8\"))?",
-                            result
+                            tmp,
                         ));
                     } else {
-                        results.push(result);
+                        results.push(format!("data{}", tmp));
                     }
                 }
                 None => {
@@ -2176,7 +2184,10 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.push_str(&call);
                         self.push_str("{\n");
                         self.push_str("Ok(val) => Ok(val),\n");
-                        self.push_str(&format!("Err(e) => Err(host.error_to_{}(e)?),\n", err));
+                        self.push_str(&format!(
+                            "Err(e) => Err(host.error_to_{}(e)?),\n",
+                            err.to_snake_case()
+                        ));
                         self.push_str("}");
                     }
                 }

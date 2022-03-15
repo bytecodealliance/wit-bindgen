@@ -1,5 +1,5 @@
 // parse-fail
 
-type x = list<32
+type x = list<u32
 
 type y = u32

@@ -1084,7 +1084,7 @@ impl Generator for C {
                 #include <stdlib.h>
                 #include <{}.h>
             ",
-            iface.name.to_snake_case(),
+            iface.name.to_kebab_case(),
         ));
 
         self.print_intrinsics();
@@ -1265,8 +1265,14 @@ impl Generator for C {
         ");
         self.src.h("#endif\n");
 
-        files.push(&format!("{}.c", iface.name), self.src.src.as_bytes());
-        files.push(&format!("{}.h", iface.name), self.src.header.as_bytes());
+        files.push(
+            &format!("{}.c", iface.name.to_kebab_case()),
+            self.src.src.as_bytes(),
+        );
+        files.push(
+            &format!("{}.h", iface.name.to_kebab_case()),
+            self.src.header.as_bytes(),
+        );
     }
 }
 

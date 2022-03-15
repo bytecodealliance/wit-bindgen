@@ -1,4 +1,4 @@
-wit_bindgen_rust::import!("crates/lists/lists.wit");
+wit_bindgen_rust::import!("../lists/lists.wit");
 
 use lists::*;
 

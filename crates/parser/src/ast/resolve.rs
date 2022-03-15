@@ -514,13 +514,13 @@ impl Resolver {
         }
         let mut docs = String::new();
         for doc in doc.docs.iter() {
-            if let Some(doc) = doc.strip_prefix("//") {
+            // Comments which are not doc-comments are silently ignored
+            if let Some(doc) = doc.strip_prefix("///") {
                 docs.push_str(doc.trim_start_matches('/').trim());
                 docs.push('\n');
-            } else {
-                assert!(doc.starts_with("/*"));
+            } else if let Some(doc) = doc.strip_prefix("/**") {
                 assert!(doc.ends_with("*/"));
-                for line in doc[2..doc.len() - 2].lines() {
+                for line in doc[..doc.len() - 2].lines() {
                     docs.push_str(line);
                     docs.push('\n');
                 }

@@ -9,6 +9,7 @@ members = [
   "crates/test-rust-wasm",
   "crates/wit-bindgen-demo",
   "crates/wasmlink-cli",
+  "crates/wit-component",
   "crates/test-modules",
 ]
 resolver = "2"

@@ -1,5 +1,5 @@
-wit_bindgen_rust::import!("./tests/runtime/records/imports.wit");
-wit_bindgen_rust::export!("./tests/runtime/records/exports.wit");
+wit_bindgen_rust::import!("../../tests/runtime/records/imports.wit");
+wit_bindgen_rust::export!("../../tests/runtime/records/exports.wit");
 
 use exports::*;
 
@@ -27,7 +27,10 @@ impl exports::Exports for Exports {
             (Flag8::B0, Flag16::B1, Flag32::B2, Flag64::B3)
         );
 
-        let r = roundtrip_record1(R1 { a: 8, b: F1::empty() });
+        let r = roundtrip_record1(R1 {
+            a: 8,
+            b: F1::empty(),
+        });
         assert_eq!(r.a, 8);
         assert_eq!(r.b, F1::empty());
 

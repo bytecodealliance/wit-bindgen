@@ -33,7 +33,7 @@
             null
           ],
           [
-            "2big",
+            "toobig",
             null
           ],
           [
@@ -358,7 +358,7 @@
   ],
   "functions": [
     {
-      "name": "res_get",
+      "name": "res-get",
       "params": [
         "type-0"
       ],
@@ -367,7 +367,7 @@
       ]
     },
     {
-      "name": "time_get",
+      "name": "time-get",
       "params": [
         "type-0",
         "type-1"

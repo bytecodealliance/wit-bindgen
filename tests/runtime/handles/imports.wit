@@ -1,47 +1,47 @@
-resource host_state
-resource host_state2
+resource host-state
+resource host-state2
 
-host_state_create: function() -> host_state
-host_state_get: function(a: host_state) -> u32
+host-state-create: function() -> host-state
+host-state-get: function(a: host-state) -> u32
 
-host_state2_create: function() -> host_state2
-host_state2_saw_close: function() -> bool
-two_host_states: function(a: host_state, b: host_state2) -> (host_state, host_state2)
+host-state2-create: function() -> host-state2
+host-state2-saw-close: function() -> bool
+two-host-states: function(a: host-state, b: host-state2) -> (host-state, host-state2)
 
-record host_state_param_record { a: host_state2 }
-host_state2_param_record: function(a: host_state_param_record)
+record host-state-param-record { a: host-state2 }
+host-state2-param-record: function(a: host-state-param-record)
 
-type host_state_param_tuple = tuple<host_state2>
-host_state2_param_tuple: function(a: host_state_param_tuple)
+type host-state-param-tuple = tuple<host-state2>
+host-state2-param-tuple: function(a: host-state-param-tuple)
 
-type host_state_param_option = option<host_state2>
-host_state2_param_option: function(a: host_state_param_option)
+type host-state-param-option = option<host-state2>
+host-state2-param-option: function(a: host-state-param-option)
 
-type host_state_param_result = expected<host_state2, u32>
-host_state2_param_result: function(a: host_state_param_result)
+type host-state-param-result = expected<host-state2, u32>
+host-state2-param-result: function(a: host-state-param-result)
 
-union host_state_param_variant { host_state2, u32 }
-host_state2_param_variant: function(a: host_state_param_variant)
+union host-state-param-variant { host-state2, u32 }
+host-state2-param-variant: function(a: host-state-param-variant)
 
-host_state2_param_list: function(a: list<host_state2>)
+host-state2-param-list: function(a: list<host-state2>)
 
 
-record host_state_result_record { a: host_state2 }
-host_state2_result_record: function() -> host_state_result_record
+record host-state-result-record { a: host-state2 }
+host-state2-result-record: function() -> host-state-result-record
 
-type host_state_result_tuple = tuple<host_state2>
-host_state2_result_tuple: function() -> host_state_result_tuple
+type host-state-result-tuple = tuple<host-state2>
+host-state2-result-tuple: function() -> host-state-result-tuple
 
-type host_state_result_option = option<host_state2>
-host_state2_result_option: function() -> host_state_result_option
+type host-state-result-option = option<host-state2>
+host-state2-result-option: function() -> host-state-result-option
 
-type host_state_result_result = expected<host_state2, u32>
-host_state2_result_result: function() -> host_state_result_result
+type host-state-result-result = expected<host-state2, u32>
+host-state2-result-result: function() -> host-state-result-result
 
-union host_state_result_variant { host_state2, u32 }
-host_state2_result_variant: function() -> host_state_result_variant
+union host-state-result-variant { host-state2, u32 }
+host-state2-result-variant: function() -> host-state-result-variant
 
-host_state2_result_list: function() -> list<host_state2>
+host-state2-result-list: function() -> list<host-state2>
 
 resource markdown2 {
   static create: function() -> markdown2
@@ -49,7 +49,7 @@ resource markdown2 {
   render: function() -> string
 }
 
-resource "Odd name" {
-  static create: function() -> "Odd name"
-  "frob the odd": function()
+resource %odd-name {
+  static create: function() -> %odd-name
+  %frob-the-odd: function()
 }

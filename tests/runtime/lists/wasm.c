@@ -283,6 +283,10 @@ void exports_list_result3(exports_list_string_t *ret0) {
   exports_string_dup(&ret0->ptr[1], "world!");
 }
 
+void exports_list_roundtrip(exports_list_u8_t *a, exports_list_u8_t *ret0) {
+  *ret0 = *a;
+}
+
 void exports_string_roundtrip(exports_string_t *a, exports_string_t *ret0) {
   *ret0 = *a;
 }

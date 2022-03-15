@@ -6,34 +6,34 @@
     (func (export "canonical_abi_free") (param i32 i32 i32)
         unreachable
     )
-    (func (export "tuple_arg") (param i32 i32)
+    (func (export "tuple-arg") (param i32 i32)
         unreachable
     )
-    (func (export "tuple_result") (result i32)
+    (func (export "tuple-result") (result i32)
         unreachable
     )
-    (func (export "empty_arg")
+    (func (export "empty-arg")
         unreachable
     )
-    (func (export "empty_result")
+    (func (export "empty-result")
         unreachable
     )
-    (func (export "scalar_arg") (param i32 i32)
+    (func (export "scalar-arg") (param i32 i32)
         unreachable
     )
-    (func (export "scalar_result") (result i32)
+    (func (export "scalar-result") (result i32)
         unreachable
     )
-    (func (export "flags_arg") (param i32)
+    (func (export "flags-arg") (param i32)
         unreachable
     )
-    (func (export "flags_result") (result i32)
+    (func (export "flags-result") (result i32)
         unreachable
     )
-    (func (export "aggregate_arg") (param i32 i32 i32 i32 i32 i32)
+    (func (export "aggregate-arg") (param i32 i32 i32 i32 i32 i32)
         unreachable
     )
-    (func (export "aggregate_result") (result i32)
+    (func (export "aggregate-result") (result i32)
         unreachable
     )
 )

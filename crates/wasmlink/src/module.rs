@@ -375,6 +375,14 @@ impl<'a> Module<'a> {
                 }
             }
         }
+        impl fmt::Debug for ExpectedExportType<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    Self::Memory => write!(f, "memory"),
+                    Self::Function { .. } => write!(f, "function"),
+                }
+            }
+        }
 
         let mut expected = Vec::new();
 
