@@ -223,8 +223,6 @@ impl WasmtimePy {
             self.src.push_str(
                 "
                     def _decode_utf8(mem: wasmer.Memory, ptr: int, len: int) -> str:
-                        print('ptr = ' + str(ptr))
-                        print('len = ' + str(len))
                         ptr = ptr & 0xffffffff
                         len = len & 0xffffffff
                         if ptr + len > mem.data_size:
@@ -232,8 +230,6 @@ impl WasmtimePy {
                         view = mem.uint8_view()
                         bytes = bytearray(view[ptr:ptr+len])
                         x = bytes.decode('utf8')
-                        print('decode_utf8: ' + x)
-                        print('bytes: ' + str(bytes))
                         return x
                 ",
             );
@@ -244,8 +240,6 @@ impl WasmtimePy {
                 "
                     def _encode_utf8(val: str, realloc: wasmer.Function, mem: wasmer.Memory) -> Tuple[int, int]:
                         bytes = val.encode('utf8')
-                        print('encode_utf8: ' + val)
-                        print('bytes: ' + str(bytes))
                         ptr = realloc(0, 0, 1, len(bytes))
                         assert(isinstance(ptr, int))
                         ptr = ptr & 0xffffffff
