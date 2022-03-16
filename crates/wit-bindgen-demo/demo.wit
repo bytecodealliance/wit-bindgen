@@ -15,7 +15,7 @@ enum lang {
   markdown,
   spidermonkey,
   wasmer,
-  wasmer_py,
+  wasmer-py,
 }
 
 
@@ -29,6 +29,6 @@ resource config {
   set-wasmtime-async: function(val: wasmtime-async)
   set-wasmtime-custom-error: function(custom: bool)
   set-wasmer-tracing: function(unchecked: bool)
-  set-wasmer-async: function(val: wasmtime_async)
+  set-wasmer-async: function(val: wasmtime-async)
   set-wasmer-custom-error: function(custom: bool)
 }
