@@ -28,6 +28,9 @@ class MyImports:
     def list_result3(self) -> List[str]:
         return ['hello,', 'world!']
 
+    def list_roundtrip(self, a: bytes) -> bytes:
+        return a
+
     def string_roundtrip(self, a: str) -> str:
         return a
 
