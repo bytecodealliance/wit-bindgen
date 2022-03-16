@@ -119,7 +119,8 @@ mod tests {
     fn resources_with_invalid_handle() -> Result<()> {
         let e = run(&link("resources-invalid-main", &["resources"])?).expect_err("should trap");
 
-        assert!(e.to_string().contains("invalid_handle_trap"));
+        let str_e = e.to_string();
+        assert!(str_e.contains("invalid_handle_trap") || str_e.contains("unreachable"));
 
         Ok(())
     }

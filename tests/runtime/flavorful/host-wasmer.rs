@@ -35,15 +35,15 @@ impl Imports for MyImports {
 
     fn list_in_variant1(
         &mut self,
-        a: ListInVariant11<'_>,
-        b: ListInVariant12<'_>,
-        c: ListInVariant13<'_>,
+        a: ListInVariant1V1<'_>,
+        b: ListInVariant1V2<'_>,
+        c: ListInVariant1V3<'_>,
     ) {
         assert_eq!(a.unwrap(), "foo");
         assert_eq!(b.unwrap_err(), "bar");
         match c {
-            ListInVariant13::V0(s) => assert_eq!(s, "baz"),
-            ListInVariant13::V1(_) => panic!(),
+            ListInVariant1V3::V0(s) => assert_eq!(s, "baz"),
+            ListInVariant1V3::V1(_) => panic!(),
         }
     }
 
@@ -124,7 +124,7 @@ fn run(wasm: &str) -> Result<()> {
         "result4"
     );
 
-    exports.list_in_variant1(Some("foo"), Err("bar"), ListInVariant13::V0("baz"))?;
+    exports.list_in_variant1(Some("foo"), Err("bar"), ListInVariant1V3::V0("baz"))?;
     assert_eq!(
         exports.list_in_variant2()?,
         Some("list_in_variant2".to_string())

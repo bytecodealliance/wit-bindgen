@@ -2,7 +2,7 @@ use std::path::Path;
 use std::process::Command;
 
 mod exports {
-    test_helpers::codegen_py_export!(
+    test_helpers::codegen_wasmtime_py_export!(
         "*.wit"
 
         // TODO: implement async support
@@ -11,7 +11,7 @@ mod exports {
 }
 
 mod imports {
-    test_helpers::codegen_py_import!(
+    test_helpers::codegen_wasmtime_py_import!(
         "*.wit"
 
         // TODO: implement async support

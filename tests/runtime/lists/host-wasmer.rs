@@ -44,6 +44,10 @@ impl Imports for MyImports {
         vec!["hello,".to_string(), "world!".to_string()]
     }
 
+    fn list_roundtrip(&mut self, list: &[u8]) -> Vec<u8> {
+        list.to_vec()
+    }
+
     fn string_roundtrip(&mut self, s: &str) -> String {
         s.to_string()
     }

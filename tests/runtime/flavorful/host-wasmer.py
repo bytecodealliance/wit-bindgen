@@ -21,10 +21,10 @@ class MyImports:
         assert(a.a == 'input4')
         return i.ListInRecord4('result4')
 
-    def list_in_variant1(self, a: i.ListInVariant11, b: i.ListInVariant12, c: i.ListInVariant13) -> None:
+    def list_in_variant1(self, a: i.ListInVariant1V1, b: i.ListInVariant1V2, c: i.ListInVariant1V3) -> None:
         assert(a == 'foo')
         assert(b == i.Err('bar'))
-        assert(c == i.ListInVariant130('baz'))
+        assert(c == i.ListInVariant1V30('baz'))
 
     def list_in_variant2(self) -> i.ListInVariant2:
         return 'list_in_variant2'
@@ -76,7 +76,7 @@ def run(wasm_file: str) -> None:
     assert(wasm.list_in_record3(e.ListInRecord3("list_in_record3 input")).a == "list_in_record3 output")
     assert(wasm.list_in_record4(e.ListInRecord4("input4")).a == "result4")
 
-    wasm.list_in_variant1("foo", e.Err("bar"), e.ListInVariant130('baz'))
+    wasm.list_in_variant1("foo", e.Err("bar"), e.ListInVariant1V30('baz'))
     assert(wasm.list_in_variant2() == "list_in_variant2")
     assert(wasm.list_in_variant3("input3") == "output3")
 

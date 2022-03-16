@@ -319,7 +319,7 @@ pub fn codegen_c_export(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "wit-bindgen-gen-wasmtime-py")]
-pub fn codegen_py_export(input: TokenStream) -> TokenStream {
+pub fn codegen_wasmtime_py_export(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Export, "export", || {
         wit_bindgen_gen_wasmtime_py::Opts::default().build()
     })
@@ -327,7 +327,7 @@ pub fn codegen_py_export(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "wit-bindgen-gen-wasmtime-py")]
-pub fn codegen_py_import(input: TokenStream) -> TokenStream {
+pub fn codegen_wasmtime_py_import(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Import, "import", || {
         wit_bindgen_gen_wasmtime_py::Opts::default().build()
     })
@@ -395,7 +395,7 @@ pub fn codegen_wasmer_export(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "wit-bindgen-gen-wasmer-py")]
-pub fn codegen_py_export(input: TokenStream) -> TokenStream {
+pub fn codegen_wasmer_py_export(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Export, "export", || {
         wit_bindgen_gen_wasmer_py::Opts::default().build()
     })
@@ -403,7 +403,7 @@ pub fn codegen_py_export(input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 #[cfg(feature = "wit-bindgen-gen-wasmer-py")]
-pub fn codegen_py_import(input: TokenStream) -> TokenStream {
+pub fn codegen_wasmer_py_import(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Import, "import", || {
         wit_bindgen_gen_wasmer_py::Opts::default().build()
     })

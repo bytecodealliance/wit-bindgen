@@ -11,7 +11,7 @@ mod imports {
         "*.witx"
  
         // TODO: implement async support
-        "!async_functions.wit"
+        "!async-functions.wit"
 
         // If you want to exclude a specific test you can include it here with
         // gitignore glob syntax:
@@ -30,11 +30,11 @@ mod exports {
         "*.wit"
 
         // TODO: implement async support
-        "!async_functions.wit"
+        "!async-functions.wit"
 
         // TODO: these use push/pull buffer which isn't implemented in the test
         // generator just yet
-        "!wasi_next.wit"
+        "!wasi-next.wit"
         "!host.wit"
     );
 }
