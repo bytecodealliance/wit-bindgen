@@ -28,7 +28,7 @@ mod imports {
 mod exports {
     test_helpers::codegen_wasmer_import!(
         "*.wit"
- 
+
         // TODO: implement async support
         "!async_functions.wit"
 

@@ -52,7 +52,11 @@ impl<'a> BorrowChecker<'a> {
         Ok(ret)
     }
 
-    pub fn slice_mut<T: AllBytesValid>(&mut self, ptr: i32, len: i32) -> Result<&'a mut [T], RuntimeError> {
+    pub fn slice_mut<T: AllBytesValid>(
+        &mut self,
+        ptr: i32,
+        len: i32,
+    ) -> Result<&'a mut [T], RuntimeError> {
         let (ret, r) = self.get_slice_mut(ptr, len)?;
         // SAFETY: see `slice` for how we're extending the lifetime by
         // recording the borrow here. Note that the `mut_borrows` list is
@@ -63,7 +67,11 @@ impl<'a> BorrowChecker<'a> {
         Ok(ret)
     }
 
-    fn get_slice<T: AllBytesValid>(&self, ptr: i32, len: i32) -> Result<(&[T], Region), RuntimeError> {
+    fn get_slice<T: AllBytesValid>(
+        &self,
+        ptr: i32,
+        len: i32,
+    ) -> Result<(&[T], Region), RuntimeError> {
         let r = self.region::<T>(ptr, len)?;
         if self.is_mut_borrowed(r) {
             Err(to_error(GuestError::PtrBorrowed(r)))

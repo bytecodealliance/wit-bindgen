@@ -24,7 +24,14 @@ struct Buffer<T> {
 enum Input {
     Bytes(*const u8, usize),
     General {
-        shim: unsafe fn([usize; 2], *const u8, &Memory, i32, u32, &mut u32) -> Result<(), RuntimeError>,
+        shim: unsafe fn(
+            [usize; 2],
+            *const u8,
+            &Memory,
+            i32,
+            u32,
+            &mut u32,
+        ) -> Result<(), RuntimeError>,
         iterator: [usize; 2],
         serialize: *const u8,
     },

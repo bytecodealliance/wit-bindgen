@@ -903,7 +903,8 @@ impl Generator for WasmtimePy {
         }
 
         if let Some(name) = needs_free {
-            self.src.push_str(&format!("free = get_export(\"{}\")\n", name));
+            self.src
+                .push_str(&format!("free = get_export(\"{}\")\n", name));
             self.src
                 .push_str("assert(isinstance(free, wasmer.Function))\n");
             locals.insert("free").unwrap();
@@ -1871,7 +1872,7 @@ impl Bindgen for FunctionBindgen<'_> {
                             Type::U8 => {
                                 lift = format!("bytes({})", lift);
                                 "bytes".to_string()
-                            },
+                            }
                             _ => {
                                 self.gen.pyimport("typing", "List");
                                 format!("List[{}]", self.gen.type_string(iface, element))
