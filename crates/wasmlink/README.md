@@ -104,7 +104,7 @@ As the linked module uses features from both the [module linking](https://github
 To run the linked module:
 
 ```text
-$ printf '# Hello\nworld' | wasmtime --enable-module-linking --enable-multi-memory linked.wasm
+$ printf '# Hello\nworld' | wasmtime --wasm-features=module-linking,multi-memory linked.wasm
 ```
 
 If everything worked correctly, this should render the Markdown echoed on the command line:
