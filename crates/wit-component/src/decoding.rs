@@ -43,7 +43,7 @@ impl<'a> ComponentInfo<'a> {
                             encoding,
                             range,
                         } => {
-                            if encoding != Encoding::Component {
+                            if parsers.is_empty() && encoding != Encoding::Component {
                                 bail!("file is not a WebAssembly component");
                             }
 
