@@ -1622,7 +1622,7 @@ dependencies = [
 [[package]]
 name = "wasm-encoder"
 version = "0.9.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools?branch=component-model#0dbb2da3c5b66f249ba05a1c6a9bdf1b2cd0b43e"
+source = "git+https://github.com/bytecodealliance/wasm-tools?branch=component-model#2d87f3b4e273e8bca958b45fca707a831e9f37eb"
 dependencies = [
  "leb128",
 ]
@@ -1677,7 +1677,10 @@ checksum = "0559cc0f1779240d6f894933498877ea94f693d84f3ee39c9a9932c6c312bd70"
 [[package]]
 name = "wasmparser"
 version = "0.82.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools?branch=component-model#0dbb2da3c5b66f249ba05a1c6a9bdf1b2cd0b43e"
+source = "git+https://github.com/bytecodealliance/wasm-tools?branch=component-model#2d87f3b4e273e8bca958b45fca707a831e9f37eb"
+dependencies = [
+ "indexmap",
+]
 
 [[package]]
 name = "wasmparser"
@@ -1910,7 +1913,7 @@ dependencies = [
 [[package]]
 name = "wast"
 version = "39.0.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools?branch=component-model#0dbb2da3c5b66f249ba05a1c6a9bdf1b2cd0b43e"
+source = "git+https://github.com/bytecodealliance/wasm-tools?branch=component-model#2d87f3b4e273e8bca958b45fca707a831e9f37eb"
 dependencies = [
  "leb128",
  "memchr",
@@ -1929,7 +1932,7 @@ dependencies = [
 [[package]]
 name = "wat"
 version = "1.0.41"
-source = "git+https://github.com/bytecodealliance/wasm-tools?branch=component-model#0dbb2da3c5b66f249ba05a1c6a9bdf1b2cd0b43e"
+source = "git+https://github.com/bytecodealliance/wasm-tools?branch=component-model#2d87f3b4e273e8bca958b45fca707a831e9f37eb"
 dependencies = [
  "wast 39.0.0 (git+https://github.com/bytecodealliance/wasm-tools?branch=component-model)",
 ]
