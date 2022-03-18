@@ -50,20 +50,48 @@ impl<'a> ComponentInfo<'a> {
                             validator.version(num, encoding, &range)?;
                         }
 
-                        Payload::TypeSection(_) => unreachable!(),
-                        Payload::ImportSection(_) => unreachable!(),
-                        Payload::FunctionSection(_) => unreachable!(),
-                        Payload::TableSection(_) => unreachable!(),
-                        Payload::MemorySection(_) => unreachable!(),
-                        Payload::TagSection(_) => unreachable!(),
-                        Payload::GlobalSection(_) => unreachable!(),
-                        Payload::ExportSection(_) => unreachable!(),
-                        Payload::StartSection { .. } => unreachable!(),
-                        Payload::ElementSection(_) => unreachable!(),
-                        Payload::DataCountSection { .. } => unreachable!(),
-                        Payload::DataSection(_) => unreachable!(),
-                        Payload::CodeSectionStart { .. } => unreachable!(),
-                        Payload::CodeSectionEntry(_) => unreachable!(),
+                        Payload::TypeSection(s) => {
+                            validator.type_section(&s)?;
+                        }
+                        Payload::ImportSection(s) => {
+                            validator.import_section(&s)?;
+                        }
+                        Payload::FunctionSection(s) => {
+                            validator.function_section(&s)?;
+                        }
+                        Payload::TableSection(s) => {
+                            validator.table_section(&s)?;
+                        }
+                        Payload::MemorySection(s) => {
+                            validator.memory_section(&s)?;
+                        }
+                        Payload::TagSection(s) => {
+                            validator.tag_section(&s)?;
+                        }
+                        Payload::GlobalSection(s) => {
+                            validator.global_section(&s)?;
+                        }
+                        Payload::ExportSection(s) => {
+                            validator.export_section(&s)?;
+                        }
+                        Payload::StartSection { func, range } => {
+                            validator.start_section(func, &range)?;
+                        }
+                        Payload::ElementSection(s) => {
+                            validator.element_section(&s)?;
+                        }
+                        Payload::DataCountSection { count, range } => {
+                            validator.data_count_section(count, &range)?;
+                        }
+                        Payload::DataSection(s) => {
+                            validator.data_section(&s)?;
+                        }
+                        Payload::CodeSectionStart { count, range, .. } => {
+                            validator.code_section_start(count, &range)?;
+                        }
+                        Payload::CodeSectionEntry(f) => {
+                            validator.code_section_entry(&f)?;
+                        }
 
                         Payload::ComponentTypeSection(s) => {
                             validator.component_type_section(&s)?;
