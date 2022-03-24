@@ -142,16 +142,16 @@ impl<'a> ModuleAdapter<'a> {
                 let mut func = wasm_encoder::Function::new(std::iter::empty());
 
                 for i in 0..info.import_type.params.len() as u32 {
-                    func.instruction(wasm_encoder::Instruction::LocalGet(i));
+                    func.instruction(&wasm_encoder::Instruction::LocalGet(i));
                 }
 
-                func.instruction(wasm_encoder::Instruction::I32Const(func_index as i32));
-                func.instruction(wasm_encoder::Instruction::CallIndirect {
+                func.instruction(&wasm_encoder::Instruction::I32Const(func_index as i32));
+                func.instruction(&wasm_encoder::Instruction::CallIndirect {
                     ty: *type_index,
                     table: 0,
                 });
 
-                func.instruction(wasm_encoder::Instruction::End);
+                func.instruction(&wasm_encoder::Instruction::End);
 
                 code.function(&func);
             }
@@ -170,10 +170,8 @@ impl<'a> ModuleAdapter<'a> {
 
         tables.table(wasm_encoder::TableType {
             element_type: wasm_encoder::ValType::FuncRef,
-            limits: wasm_encoder::Limits {
-                min: table_len,
-                max: Some(table_len),
-            },
+            minimum: table_len,
+            maximum: Some(table_len),
         });
 
         exports.export(FUNCTION_TABLE_NAME, wasm_encoder::Export::Table(0));
@@ -300,7 +298,9 @@ impl<'a> ModuleAdapter<'a> {
                 PARENT_MODULE_NAME,
                 Some(MEMORY_EXPORT_NAME),
                 wasm_encoder::EntityType::Memory(wasm_encoder::MemoryType {
-                    limits: wasm_encoder::Limits { min: 0, max: None },
+                    maximum: None,
+                    minimum: 0,
+                    memory64: false,
                 }),
             );
 

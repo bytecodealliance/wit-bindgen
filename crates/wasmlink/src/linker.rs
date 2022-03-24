@@ -366,7 +366,7 @@ impl<'a> LinkedModule<'a> {
         for (table_index, elements) in &self.segments {
             section.active(
                 Some(*table_index),
-                wasm_encoder::Instruction::I32Const(0),
+                &wasm_encoder::Instruction::I32Const(0),
                 wasm_encoder::ValType::FuncRef,
                 wasm_encoder::Elements::Expressions(elements),
             );

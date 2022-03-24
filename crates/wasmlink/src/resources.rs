@@ -368,7 +368,7 @@ impl<'a> Resources<'a> {
 
         section.active(
             Some(0),
-            wasm_encoder::Instruction::I32Const(0),
+            &wasm_encoder::Instruction::I32Const(0),
             wasm_encoder::ValType::FuncRef,
             wasm_encoder::Elements::Expressions(&elements),
         );
@@ -409,16 +409,16 @@ impl<'a> Resources<'a> {
                 let mut func = wasm_encoder::Function::new(std::iter::empty());
 
                 for i in 0..f.ty.params.len() as u32 {
-                    func.instruction(wasm_encoder::Instruction::LocalGet(i));
+                    func.instruction(&wasm_encoder::Instruction::LocalGet(i));
                 }
 
-                func.instruction(wasm_encoder::Instruction::I32Const(start_index as i32));
-                func.instruction(wasm_encoder::Instruction::CallIndirect {
+                func.instruction(&wasm_encoder::Instruction::I32Const(start_index as i32));
+                func.instruction(&wasm_encoder::Instruction::CallIndirect {
                     ty: type_map[f.ty],
                     table: 0,
                 });
 
-                func.instruction(wasm_encoder::Instruction::End);
+                func.instruction(&wasm_encoder::Instruction::End);
 
                 code.function(&func);
 
@@ -537,10 +537,8 @@ impl<'a> Resources<'a> {
 
         section.table(wasm_encoder::TableType {
             element_type: wasm_encoder::ValType::FuncRef,
-            limits: wasm_encoder::Limits {
-                min: count,
-                max: Some(count),
-            },
+            minimum: count,
+            maximum: Some(count),
         });
 
         module.section(&section);
@@ -593,10 +591,10 @@ impl<'a> Resources<'a> {
 
         let mut func = wasm_encoder::Function::new(std::iter::empty());
 
-        func.instruction(Instruction::I32Const(id as i32));
-        func.instruction(Instruction::LocalGet(0));
-        func.instruction(Instruction::Call(self.insert_index.unwrap()));
-        func.instruction(Instruction::End);
+        func.instruction(&Instruction::I32Const(id as i32));
+        func.instruction(&Instruction::LocalGet(0));
+        func.instruction(&Instruction::Call(self.insert_index.unwrap()));
+        func.instruction(&Instruction::End);
         func
     }
 
@@ -605,10 +603,10 @@ impl<'a> Resources<'a> {
 
         let mut func = wasm_encoder::Function::new(std::iter::empty());
 
-        func.instruction(Instruction::I32Const(id as i32));
-        func.instruction(Instruction::LocalGet(0));
-        func.instruction(Instruction::Call(self.get_index.unwrap()));
-        func.instruction(Instruction::End);
+        func.instruction(&Instruction::I32Const(id as i32));
+        func.instruction(&Instruction::LocalGet(0));
+        func.instruction(&Instruction::Call(self.get_index.unwrap()));
+        func.instruction(&Instruction::End);
         func
     }
 
@@ -617,10 +615,10 @@ impl<'a> Resources<'a> {
 
         let mut func = wasm_encoder::Function::new(std::iter::empty());
 
-        func.instruction(Instruction::I32Const(id as i32));
-        func.instruction(Instruction::LocalGet(0));
-        func.instruction(Instruction::Call(self.clone_index.unwrap()));
-        func.instruction(Instruction::End);
+        func.instruction(&Instruction::I32Const(id as i32));
+        func.instruction(&Instruction::LocalGet(0));
+        func.instruction(&Instruction::Call(self.clone_index.unwrap()));
+        func.instruction(&Instruction::End);
         func
     }
 
@@ -630,35 +628,35 @@ impl<'a> Resources<'a> {
         let mut func =
             wasm_encoder::Function::new(std::iter::once((1, wasm_encoder::ValType::I64)));
 
-        func.instruction(Instruction::I32Const(id as i32));
-        func.instruction(Instruction::LocalGet(0));
-        func.instruction(Instruction::Call(self.remove_index.unwrap()));
+        func.instruction(&Instruction::I32Const(id as i32));
+        func.instruction(&Instruction::LocalGet(0));
+        func.instruction(&Instruction::Call(self.remove_index.unwrap()));
 
         // The function returns a 64-bit value where:
         // * The high-order 32-bits is non-zero if the resource is still alive or 0 if it should drop.
         // * The low-order 32-bits is zero if the resource is still alive or
         //   the original resource value to pass to the drop callback if it is being dropped.
 
-        func.instruction(Instruction::LocalTee(1));
+        func.instruction(&Instruction::LocalTee(1));
 
         // Check the higher 32-bits to see if the resource is still alive
-        func.instruction(Instruction::I64Const(32));
-        func.instruction(Instruction::I64ShrU);
-        func.instruction(Instruction::I32WrapI64);
-        func.instruction(Instruction::BrIf(0));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64ShrU);
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&Instruction::BrIf(0));
 
         // At this point the resource is being dropped, mask the lower 32-bits and pass to
         // the drop callback referenced via the callback table
-        func.instruction(Instruction::LocalGet(1));
-        func.instruction(Instruction::I32WrapI64);
-        func.instruction(wasm_encoder::Instruction::I32Const(
+        func.instruction(&Instruction::LocalGet(1));
+        func.instruction(&Instruction::I32WrapI64);
+        func.instruction(&wasm_encoder::Instruction::I32Const(
             drop_callback_index as i32,
         ));
-        func.instruction(wasm_encoder::Instruction::CallIndirect {
+        func.instruction(&wasm_encoder::Instruction::CallIndirect {
             ty: self.drop_callback_type_index.unwrap(),
             table: 0,
         });
-        func.instruction(Instruction::End);
+        func.instruction(&Instruction::End);
         func
     }
 }

@@ -117,23 +117,23 @@ impl ValueRef {
     ) {
         match self {
             ValueRef::Local(i) | ValueRef::Return(i) => {
-                function.instruction(Instruction::LocalGet(*i));
+                function.instruction(&Instruction::LocalGet(*i));
                 return;
             }
             ValueRef::RetPtr(_) | ValueRef::ElementOffset(_) => {}
         }
 
         let base = base.expect("cannot load via an element offset without a base");
-        function.instruction(Instruction::LocalGet(base.base));
+        function.instruction(&Instruction::LocalGet(base.base));
         if let Some((index, size)) = base.index_and_size {
-            function.instruction(Instruction::LocalGet(index));
-            function.instruction(Instruction::I32Const(size as i32));
-            function.instruction(Instruction::I32Mul);
-            function.instruction(Instruction::I32Add);
+            function.instruction(&Instruction::LocalGet(index));
+            function.instruction(&Instruction::I32Const(size as i32));
+            function.instruction(&Instruction::I32Mul);
+            function.instruction(&Instruction::I32Add);
         }
 
         let memarg = MemArg {
-            offset: self.offset().expect("reference should have an offset"),
+            offset: self.offset().expect("reference should have an offset") as u64,
             align: match ty {
                 LoadType::I32_8U => 0,
                 LoadType::I32_16U => 1,
@@ -144,10 +144,10 @@ impl ValueRef {
         };
 
         match ty {
-            LoadType::I32_8U => function.instruction(Instruction::I32Load8_U(memarg)),
-            LoadType::I32_16U => function.instruction(Instruction::I32Load16_U(memarg)),
-            LoadType::I32 => function.instruction(Instruction::I32Load(memarg)),
-            LoadType::I64 => function.instruction(Instruction::I64Load(memarg)),
+            LoadType::I32_8U => function.instruction(&Instruction::I32Load8_U(memarg)),
+            LoadType::I32_16U => function.instruction(&Instruction::I32Load16_U(memarg)),
+            LoadType::I32 => function.instruction(&Instruction::I32Load(memarg)),
+            LoadType::I64 => function.instruction(&Instruction::I64Load(memarg)),
         };
     }
 }
@@ -323,7 +323,7 @@ impl<'a> CallAdapter<'a> {
 
         assert_eq!(locals.allocated, locals.count);
 
-        function.instruction(Instruction::End);
+        function.instruction(&Instruction::End);
 
         function
     }
@@ -342,10 +342,10 @@ impl<'a> CallAdapter<'a> {
         };
 
         for i in 0..params {
-            function.instruction(Instruction::LocalGet(locals.lookup(i).unwrap_or(i)));
+            function.instruction(&Instruction::LocalGet(locals.lookup(i).unwrap_or(i)));
         }
 
-        function.instruction(Instruction::Call(self.call_index));
+        function.instruction(&Instruction::Call(self.call_index));
     }
 
     fn copy_results(&self, function: &mut wasm_encoder::Function, locals: &mut Locals) {
@@ -354,7 +354,7 @@ impl<'a> CallAdapter<'a> {
             let dst_retptr = self.signature.params.len() as u32 - 1;
 
             // Store the retptr returned from the call
-            function.instruction(Instruction::LocalSet(src_retptr));
+            function.instruction(&Instruction::LocalSet(src_retptr));
 
             // Copy each 8 byte value in the return space
             for i in 0..self
@@ -364,15 +364,15 @@ impl<'a> CallAdapter<'a> {
                 .expect("function must have a retptr")
                 .len()
             {
-                function.instruction(Instruction::LocalGet(dst_retptr));
-                function.instruction(Instruction::LocalGet(src_retptr));
-                function.instruction(Instruction::I64Load(MemArg {
-                    offset: (i * 8) as u32,
+                function.instruction(&Instruction::LocalGet(dst_retptr));
+                function.instruction(&Instruction::LocalGet(src_retptr));
+                function.instruction(&Instruction::I64Load(MemArg {
+                    offset: (i * 8) as u64,
                     align: 3,
                     memory_index: ADAPTED_MEMORY_INDEX,
                 }));
-                function.instruction(Instruction::I64Store(MemArg {
-                    offset: (i * 8) as u32,
+                function.instruction(&Instruction::I64Store(MemArg {
+                    offset: (i * 8) as u64,
                     align: 3,
                     memory_index: PARENT_MEMORY_INDEX,
                 }));
@@ -417,7 +417,7 @@ impl<'a> CallAdapter<'a> {
         let src = locals.allocate();
 
         // Store the value returned from the call
-        function.instruction(Instruction::LocalSet(src));
+        function.instruction(&Instruction::LocalSet(src));
 
         self.emit_copy_operand(
             function,
@@ -428,7 +428,7 @@ impl<'a> CallAdapter<'a> {
             None,
         );
 
-        function.instruction(Instruction::LocalGet(locals.lookup(src).unwrap_or(src)));
+        function.instruction(&Instruction::LocalGet(locals.lookup(src).unwrap_or(src)));
     }
 
     fn push_operands<T>(
@@ -706,18 +706,18 @@ impl<'a> CallAdapter<'a> {
         &self,
         function: &mut wasm_encoder::Function,
         base: &ElementBase,
-        offset: u32,
+        offset: u64,
         value: u32,
     ) {
-        function.instruction(Instruction::LocalGet(base.base));
+        function.instruction(&Instruction::LocalGet(base.base));
         if let Some((index, size)) = base.index_and_size {
-            function.instruction(Instruction::LocalGet(index));
-            function.instruction(Instruction::I32Const(size as i32));
-            function.instruction(Instruction::I32Mul);
-            function.instruction(Instruction::I32Add);
+            function.instruction(&Instruction::LocalGet(index));
+            function.instruction(&Instruction::I32Const(size as i32));
+            function.instruction(&Instruction::I32Mul);
+            function.instruction(&Instruction::I32Add);
         }
-        function.instruction(Instruction::LocalGet(value));
-        function.instruction(Instruction::I32Store(MemArg {
+        function.instruction(&Instruction::LocalGet(value));
+        function.instruction(&Instruction::I32Store(MemArg {
             offset,
             align: 2,
             memory_index: base.memory,
@@ -741,12 +741,12 @@ impl<'a> CallAdapter<'a> {
                 let (discriminant, ty) = discriminant;
 
                 for (case, operands) in cases {
-                    function.instruction(Instruction::Block(BlockType::Empty));
+                    function.instruction(&Instruction::Block(BlockType::Empty));
 
                     discriminant.emit_load(function, src_base, *ty);
-                    function.instruction(Instruction::I32Const(*case as i32));
-                    function.instruction(Instruction::I32Neq);
-                    function.instruction(Instruction::BrIf(0));
+                    function.instruction(&Instruction::I32Const(*case as i32));
+                    function.instruction(&Instruction::I32Ne);
+                    function.instruction(&Instruction::BrIf(0));
 
                     for operand in operands {
                         self.emit_copy_operand(
@@ -756,12 +756,12 @@ impl<'a> CallAdapter<'a> {
                         // If the operand had a local value, take from the map and assign it here as part of the
                         // variant's block.
                         if let Some(i) = operand.local() {
-                            function.instruction(Instruction::LocalGet(locals.take(i)));
-                            function.instruction(Instruction::LocalSet(i));
+                            function.instruction(&Instruction::LocalGet(locals.take(i)));
+                            function.instruction(&Instruction::LocalSet(i));
                         }
                     }
 
-                    function.instruction(Instruction::End);
+                    function.instruction(&Instruction::End);
                 }
             }
             Operand::List {
@@ -787,7 +787,7 @@ impl<'a> CallAdapter<'a> {
                     self.emit_store_from_base(
                         function,
                         &dst_base.expect("destination base should be present"),
-                        offset,
+                        offset as u64,
                         dst_list,
                     );
                 }
@@ -811,11 +811,11 @@ impl<'a> CallAdapter<'a> {
                     addr.emit_load(function, src_base, LoadType::I32);
                     len.emit_load(function, src_base, LoadType::I32);
                     if *element_size > 1 {
-                        function.instruction(Instruction::I32Const(*element_size as i32));
-                        function.instruction(Instruction::I32Mul);
+                        function.instruction(&Instruction::I32Const(*element_size as i32));
+                        function.instruction(&Instruction::I32Mul);
                     }
-                    function.instruction(Instruction::I32Const(*element_alignment as i32));
-                    function.instruction(Instruction::Call(
+                    function.instruction(&Instruction::I32Const(*element_alignment as i32));
+                    function.instruction(&Instruction::Call(
                         self.free_index
                             .expect("must be given an index to copy lists"),
                     ));
@@ -830,21 +830,21 @@ impl<'a> CallAdapter<'a> {
                     Direction::In => {
                         // For resources being passed to a function, the callee owns
                         // the handle, so do a clone
-                        function.instruction(Instruction::Call(clone_func_index));
+                        function.instruction(&Instruction::Call(clone_func_index));
 
                         let dst = match addr {
                             ValueRef::Local(i) | ValueRef::Return(i) => locals.map(*i),
                             ValueRef::ElementOffset(_) | ValueRef::RetPtr(_) => locals.allocate(),
                         };
 
-                        function.instruction(Instruction::LocalSet(dst));
+                        function.instruction(&Instruction::LocalSet(dst));
 
                         // Now that the handle has been cloned, update the element in the parent list
                         if let Some(offset) = addr.offset() {
                             self.emit_store_from_base(
                                 function,
                                 &dst_base.expect("destination base should be present"),
-                                offset,
+                                offset as u64,
                                 dst,
                             );
                         }
@@ -852,8 +852,8 @@ impl<'a> CallAdapter<'a> {
                     Direction::Out => {
                         // For returned handles, ownership is transferring to the caller, so just validate
                         // that the handle is valid with a call to get the underlying resource
-                        function.instruction(Instruction::Call(get_func_index));
-                        function.instruction(Instruction::Drop);
+                        function.instruction(&Instruction::Call(get_func_index));
+                        function.instruction(&Instruction::Drop);
                     }
                 }
             }
@@ -892,17 +892,17 @@ impl<'a> CallAdapter<'a> {
             memory: dst_memory,
         };
 
-        function.instruction(Instruction::I32Const(0));
-        function.instruction(Instruction::LocalSet(index));
+        function.instruction(&Instruction::I32Const(0));
+        function.instruction(&Instruction::LocalSet(index));
 
-        function.instruction(Instruction::Block(BlockType::Empty));
-        function.instruction(Instruction::Loop(BlockType::Empty));
+        function.instruction(&Instruction::Block(BlockType::Empty));
+        function.instruction(&Instruction::Loop(BlockType::Empty));
 
         len.emit_load(function, len_base, LoadType::I32);
 
-        function.instruction(Instruction::LocalGet(index));
-        function.instruction(Instruction::I32Eq);
-        function.instruction(Instruction::BrIf(1));
+        function.instruction(&Instruction::LocalGet(index));
+        function.instruction(&Instruction::I32Eq);
+        function.instruction(&Instruction::BrIf(1));
 
         for operand in operands {
             self.emit_copy_operand(
@@ -915,14 +915,14 @@ impl<'a> CallAdapter<'a> {
             );
         }
 
-        function.instruction(Instruction::LocalGet(index));
-        function.instruction(Instruction::I32Const(1));
-        function.instruction(Instruction::I32Add);
-        function.instruction(Instruction::LocalSet(index));
+        function.instruction(&Instruction::LocalGet(index));
+        function.instruction(&Instruction::I32Const(1));
+        function.instruction(&Instruction::I32Add);
+        function.instruction(&Instruction::LocalSet(index));
 
-        function.instruction(Instruction::Br(0));
-        function.instruction(Instruction::End);
-        function.instruction(Instruction::End);
+        function.instruction(&Instruction::Br(0));
+        function.instruction(&Instruction::End);
+        function.instruction(&Instruction::End);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -957,34 +957,34 @@ impl<'a> CallAdapter<'a> {
             ValueRef::ElementOffset(_) | ValueRef::RetPtr(_) => {
                 let src = locals.allocate();
                 addr.emit_load(function, src_base, LoadType::I32);
-                function.instruction(Instruction::LocalSet(src));
+                function.instruction(&Instruction::LocalSet(src));
                 (src, locals.allocate())
             }
             ValueRef::Return(_) => unreachable!(),
         };
 
-        function.instruction(Instruction::Block(BlockType::Empty));
-        function.instruction(Instruction::I32Const(0)); // Previous ptr
-        function.instruction(Instruction::I32Const(0)); // Previous size
-        function.instruction(Instruction::I32Const(element_alignment as i32));
+        function.instruction(&Instruction::Block(BlockType::Empty));
+        function.instruction(&Instruction::I32Const(0)); // Previous ptr
+        function.instruction(&Instruction::I32Const(0)); // Previous size
+        function.instruction(&Instruction::I32Const(element_alignment as i32));
         len.emit_load(function, src_base, LoadType::I32);
         if element_size > 1 {
-            function.instruction(Instruction::I32Const(element_size as i32));
-            function.instruction(Instruction::I32Mul);
+            function.instruction(&Instruction::I32Const(element_size as i32));
+            function.instruction(&Instruction::I32Mul);
         }
-        function.instruction(Instruction::Call(realloc));
-        function.instruction(Instruction::LocalTee(dst));
-        function.instruction(Instruction::BrIf(0));
-        function.instruction(Instruction::Unreachable);
-        function.instruction(Instruction::End);
-        function.instruction(Instruction::LocalGet(dst));
-        function.instruction(Instruction::LocalGet(src));
+        function.instruction(&Instruction::Call(realloc));
+        function.instruction(&Instruction::LocalTee(dst));
+        function.instruction(&Instruction::BrIf(0));
+        function.instruction(&Instruction::Unreachable);
+        function.instruction(&Instruction::End);
+        function.instruction(&Instruction::LocalGet(dst));
+        function.instruction(&Instruction::LocalGet(src));
         len.emit_load(function, src_base, LoadType::I32);
         if element_size > 1 {
-            function.instruction(Instruction::I32Const(element_size as i32));
-            function.instruction(Instruction::I32Mul);
+            function.instruction(&Instruction::I32Const(element_size as i32));
+            function.instruction(&Instruction::I32Mul);
         }
-        function.instruction(Instruction::MemoryCopy {
+        function.instruction(&Instruction::MemoryCopy {
             src: src_memory,
             dst: dst_memory,
         });
