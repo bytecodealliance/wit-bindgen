@@ -1603,15 +1603,6 @@ dependencies = [
 
 [[package]]
 name = "wasm-encoder"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51b4949d4f2b25a4b208317dcf86aacef9e7a5884e48dfc45d4aeb91808d6f86"
-dependencies = [
- "leb128",
-]
-
-[[package]]
-name = "wasm-encoder"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db0c351632e46cc06a58a696a6c11e4cf90cad4b9f8f07a0b59128d616c29bb0"
@@ -1628,6 +1619,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm-encoder"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa9d9bf45fc46f71c407837c9b30b1e874197f2dc357588430b21e5017d290ab"
+dependencies = [
+ "leb128",
+]
+
+[[package]]
 name = "wasmlink"
 version = "0.1.0"
 dependencies = [
@@ -1636,7 +1636,7 @@ dependencies = [
  "lazy_static",
  "petgraph",
  "pretty_assertions",
- "wasm-encoder 0.4.1",
+ "wasm-encoder 0.10.0",
  "wasmparser 0.78.2",
  "wasmprinter",
  "wat 1.0.41 (registry+https://github.com/rust-lang/crates.io-index)",
