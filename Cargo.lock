@@ -358,7 +358,7 @@ dependencies = [
  "itertools",
  "log",
  "smallvec",
- "wasmparser 0.82.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasmparser 0.82.0",
  "wasmtime-types",
 ]
 
@@ -1612,8 +1612,8 @@ dependencies = [
 
 [[package]]
 name = "wasm-encoder"
-version = "0.9.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools?branch=component-model#2d87f3b4e273e8bca958b45fca707a831e9f37eb"
+version = "0.10.0"
+source = "git+https://github.com/bytecodealliance/wasm-tools#461c0b14a96805387a3c99ea89f6db7024e6e61b"
 dependencies = [
  "leb128",
 ]
@@ -1676,17 +1676,17 @@ checksum = "0559cc0f1779240d6f894933498877ea94f693d84f3ee39c9a9932c6c312bd70"
 
 [[package]]
 name = "wasmparser"
-version = "0.82.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools?branch=component-model#2d87f3b4e273e8bca958b45fca707a831e9f37eb"
-dependencies = [
- "indexmap",
-]
+version = "0.83.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "718ed7c55c2add6548cca3ddd6383d738cd73b892df400e96b9aa876f0141d7a"
 
 [[package]]
 name = "wasmparser"
 version = "0.83.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "718ed7c55c2add6548cca3ddd6383d738cd73b892df400e96b9aa876f0141d7a"
+source = "git+https://github.com/bytecodealliance/wasm-tools#461c0b14a96805387a3c99ea89f6db7024e6e61b"
+dependencies = [
+ "indexmap",
+]
 
 [[package]]
 name = "wasmprinter"
@@ -1695,7 +1695,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f973822fb3ca7e03ab421910274514b405df19a3d53acb131ae4df3a2fc4eb58"
 dependencies = [
  "anyhow",
- "wasmparser 0.83.0",
+ "wasmparser 0.83.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1721,7 +1721,7 @@ dependencies = [
  "region",
  "serde",
  "target-lexicon",
- "wasmparser 0.82.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasmparser 0.82.0",
  "wasmtime-cache",
  "wasmtime-cranelift",
  "wasmtime-environ",
@@ -1770,7 +1770,7 @@ dependencies = [
  "object",
  "target-lexicon",
  "thiserror",
- "wasmparser 0.82.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasmparser 0.82.0",
  "wasmtime-environ",
 ]
 
@@ -1790,7 +1790,7 @@ dependencies = [
  "serde",
  "target-lexicon",
  "thiserror",
- "wasmparser 0.82.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasmparser 0.82.0",
  "wasmtime-types",
 ]
 
@@ -1865,7 +1865,7 @@ dependencies = [
  "cranelift-entity",
  "serde",
  "thiserror",
- "wasmparser 0.82.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasmparser 0.82.0",
 ]
 
 [[package]]
@@ -1913,7 +1913,7 @@ dependencies = [
 [[package]]
 name = "wast"
 version = "39.0.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools?branch=component-model#2d87f3b4e273e8bca958b45fca707a831e9f37eb"
+source = "git+https://github.com/bytecodealliance/wasm-tools#461c0b14a96805387a3c99ea89f6db7024e6e61b"
 dependencies = [
  "leb128",
  "memchr",
@@ -1932,9 +1932,9 @@ dependencies = [
 [[package]]
 name = "wat"
 version = "1.0.41"
-source = "git+https://github.com/bytecodealliance/wasm-tools?branch=component-model#2d87f3b4e273e8bca958b45fca707a831e9f37eb"
+source = "git+https://github.com/bytecodealliance/wasm-tools#461c0b14a96805387a3c99ea89f6db7024e6e61b"
 dependencies = [
- "wast 39.0.0 (git+https://github.com/bytecodealliance/wasm-tools?branch=component-model)",
+ "wast 39.0.0 (git+https://github.com/bytecodealliance/wasm-tools)",
 ]
 
 [[package]]
@@ -2199,9 +2199,9 @@ dependencies = [
  "clap 3.1.5",
  "env_logger 0.9.0",
  "log",
- "wasm-encoder 0.9.0",
- "wasmparser 0.82.0 (git+https://github.com/bytecodealliance/wasm-tools?branch=component-model)",
- "wat 1.0.41 (git+https://github.com/bytecodealliance/wasm-tools?branch=component-model)",
+ "wasm-encoder 0.10.0",
+ "wasmparser 0.83.0 (git+https://github.com/bytecodealliance/wasm-tools)",
+ "wat 1.0.41 (git+https://github.com/bytecodealliance/wasm-tools)",
  "wit-parser",
 ]
 
