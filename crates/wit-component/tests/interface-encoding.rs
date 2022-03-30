@@ -1,12 +1,12 @@
-//! Testing the round tripping of interfaces to component encodings and back.
+//! Testing the encoding of interfaces.
 
 use anyhow::{Context, Result};
 use std::{ffi::OsStr, fs};
-use wit_component::{decode_interface_component, ComponentEncoder, InterfacePrinter};
+use wit_component::ComponentEncoder;
 use wit_parser::Interface;
 
 #[test]
-fn roundtrip_interfaces() -> Result<()> {
+fn interface_encoding() -> Result<()> {
     for entry in fs::read_dir("tests/wit")? {
         let path = entry?.path();
         if path.extension().and_then(OsStr::to_str) != Some("wit") {
@@ -26,19 +26,18 @@ fn roundtrip_interfaces() -> Result<()> {
             )
         })?;
 
-        let interface = decode_interface_component(&bytes)?;
-
-        let mut printer = InterfacePrinter::default();
-        let output = printer.print(&interface)?;
+        let output = wasmprinter::print_bytes(&bytes)?;
+        let output_path = path.with_extension("wat");
 
         if std::env::var_os("BLESS").is_some() {
-            fs::write(&path, output)?;
+            fs::write(&output_path, output)?;
         } else {
             assert_eq!(
                 output,
-                fs::read_to_string(&path)?.replace("\r\n", "\n"),
-                "encoding of wit file `{}` did not match the the decoded interface",
+                fs::read_to_string(&output_path)?.replace("\r\n", "\n"),
+                "encoding of wit file `{}` did not match the expected wat file `{}`",
                 path.display(),
+                output_path.display(),
             );
         }
     }

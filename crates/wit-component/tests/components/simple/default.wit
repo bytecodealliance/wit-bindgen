@@ -1,0 +1,3 @@
+a: function()
+b: function() -> string
+c: function(x: string) -> string
