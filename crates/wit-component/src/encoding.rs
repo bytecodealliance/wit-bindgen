@@ -1288,6 +1288,9 @@ impl<'a> ComponentEncoder<'a> {
                 let mut instances = InstanceSection::new();
 
                 instances.export_items(exports);
+                types
+                    .exports
+                    .export(&export.name, ComponentExport::Instance(self.instance_count));
                 self.instance_count += 1;
 
                 component.section(&instances);

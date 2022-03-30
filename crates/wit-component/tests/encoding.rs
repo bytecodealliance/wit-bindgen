@@ -12,7 +12,19 @@ fn read_interface(path: &Path) -> Result<Interface> {
 
 fn read_interfaces(dir: &Path, pattern: &str) -> Result<Vec<Interface>> {
     glob::glob(dir.join(pattern).to_str().unwrap())?
-        .map(|p| read_interface(&p?))
+        .map(|p| {
+            let p = p?;
+            let mut i = read_interface(&p)?;
+            i.name = p
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .trim_start_matches("import-")
+                .trim_start_matches("export-")
+                .to_string();
+            Ok(i)
+        })
         .collect::<Result<_>>()
 }
 
@@ -33,8 +45,8 @@ fn component_encoding() -> Result<()> {
             .is_file()
             .then(|| read_interface(&interface_path))
             .transpose()?;
-        let imports = read_interfaces(&path, "imports-*.wit")?;
-        let exports = read_interfaces(&path, "exports-*.wit")?;
+        let imports = read_interfaces(&path, "import-*.wit")?;
+        let exports = read_interfaces(&path, "export-*.wit")?;
 
         let mut encoder = ComponentEncoder::default()
             .module(&module)
