@@ -87,6 +87,7 @@ pub enum Token {
 }
 
 #[derive(Eq, PartialEq, Debug)]
+#[allow(dead_code)]
 pub enum Error {
     InvalidCharInString(usize, char),
     InvalidCharInId(usize, char),

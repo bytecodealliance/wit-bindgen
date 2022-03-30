@@ -71,7 +71,10 @@ fn component_encoding() -> Result<()> {
             }
         } else {
             (
-                wasmprinter::print_bytes(&r?).with_context(|| {
+                wasmprinter::print_bytes(
+                    &r.with_context(|| format!("failed to encode for test case `{}`", test_case))?,
+                )
+                .with_context(|| {
                     format!(
                         "failed to print component bytes for test case `{}`",
                         test_case

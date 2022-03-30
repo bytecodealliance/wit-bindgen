@@ -43,7 +43,7 @@
   (alias export (instance 0) "b" (func (;1;)))
   (alias export (instance 0) "c" (func (;2;)))
   (alias export (instance 0) "d" (func (;3;)))
-  (func (;4;) (canon.lift (type 0) utf8 (into (instance 0)) (func 0)))
+  (func (;4;) (canon.lift (type 0) (func 0)))
   (func (;5;) (canon.lift (type 1) utf8 (into (instance 0)) (func 1)))
   (func (;6;) (canon.lift (type 2) utf8 (into (instance 0)) (func 2)))
   (func (;7;) (canon.lift (type 4) utf8 (into (instance 0)) (func 3)))

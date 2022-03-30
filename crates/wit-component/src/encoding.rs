@@ -645,6 +645,79 @@ impl<'a> TypeEncoder<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RequiredOptions {
+    // No required options.
+    None,
+    // The encoding and into options are required.
+    Encoding,
+    // Only the into option is required.
+    Into,
+}
+
+impl RequiredOptions {
+    fn for_types<'a>(interface: &Interface, mut types: impl Iterator<Item = &'a Type>) -> Self {
+        match types.try_fold(Self::None, |acc, ty| {
+            match Self::for_type(interface, ty) {
+                Self::None => {
+                    // Don't update the accumulator
+                    Ok(acc)
+                }
+                Self::Encoding => {
+                    // If something requires the encoding option, bail early as an error
+                    Err(Self::Encoding)
+                }
+                Self::Into => {
+                    // Otherwise, update the accumulator (keep looking in case encoding is required)
+                    Ok(Self::Into)
+                }
+            }
+        }) {
+            Ok(o) | Err(o) => o,
+        }
+    }
+
+    fn for_type(interface: &Interface, ty: &Type) -> Self {
+        match ty {
+            Type::Id(id) => match &interface.types[*id].kind {
+                TypeDefKind::Record(r) => {
+                    Self::for_types(interface, r.fields.iter().map(|f| &f.ty))
+                }
+                TypeDefKind::Variant(v) => {
+                    Self::for_types(interface, v.cases.iter().filter_map(|c| c.ty.as_ref()))
+                }
+                TypeDefKind::List(t) => {
+                    if let Type::Char = t {
+                        return Self::Encoding;
+                    }
+
+                    match Self::for_type(interface, t) {
+                        Self::Encoding => Self::Encoding,
+                        _ => Self::Into,
+                    }
+                }
+                TypeDefKind::Type(t) => Self::for_type(interface, t),
+                TypeDefKind::Pointer(_)
+                | TypeDefKind::ConstPointer(_)
+                | TypeDefKind::PushBuffer(_)
+                | TypeDefKind::PullBuffer(_) => Self::None,
+            },
+            _ => Self::None,
+        }
+    }
+
+    fn for_function(interface: &Interface, function: &Function) -> Self {
+        Self::for_types(
+            interface,
+            function
+                .params
+                .iter()
+                .map(|(_, ty)| ty)
+                .chain(function.results.iter().map(|(_, ty)| ty)),
+        )
+    }
+}
+
 #[derive(Debug, Default)]
 struct ImportEncoder<'a> {
     // Map from import name to instance type and shim index.
@@ -653,7 +726,7 @@ struct ImportEncoder<'a> {
     // and lowered wasm signature. A shim represents a collection of
     // non-conflicting function exports that will be passed as arguments to
     // the instantiation of the core module.
-    shims: Vec<IndexMap<&'a str, (usize, WasmSignature)>>,
+    shims: Vec<IndexMap<&'a str, (usize, WasmSignature, RequiredOptions)>>,
 }
 
 impl<'a> ImportEncoder<'a> {
@@ -685,13 +758,19 @@ impl<'a> ImportEncoder<'a> {
 
                 let shim = &mut self.shims[shim_index];
                 for f in &interface.functions {
-                    shim.insert(
-                        &f.name,
-                        (
-                            e.index(),
-                            interface.wasm_signature(AbiVariant::GuestImport, f),
-                        ),
-                    );
+                    let sig = interface.wasm_signature(AbiVariant::GuestImport, f);
+                    let options = match RequiredOptions::for_function(interface, f) {
+                        RequiredOptions::None => {
+                            if sig.retptr.is_some() {
+                                RequiredOptions::Into
+                            } else {
+                                RequiredOptions::None
+                            }
+                        }
+                        o => o,
+                    };
+
+                    shim.insert(&f.name, (e.index(), sig, options));
                 }
 
                 e.insert((ty, shim_index));
@@ -717,7 +796,7 @@ impl<'a> ImportEncoder<'a> {
 
     fn encode_shims(&'a self, component: &mut Component, module_count: &mut u32) {
         for shim in &self.shims {
-            Self::encode_shim_and_fixup(component, shim.iter().map(|(n, (_, s))| (*n, s)));
+            Self::encode_shim_and_fixup(component, shim.iter().map(|(n, (_, s, _))| (*n, s)));
         }
 
         *module_count += self.shims.len() as u32 * 2;
@@ -871,6 +950,9 @@ impl<'a> ImportEncoder<'a> {
         let alias_start = *function_count;
         let func_start = alias_start + func_count;
 
+        let encoding_options = [encoding.into(), CanonicalOption::Into(core_instance_index)];
+        let into_options = [CanonicalOption::Into(core_instance_index)];
+
         // Lower the imported functions and instantiate fixup modules
         for (i, shim) in self.shims.iter().enumerate() {
             let mut exports = Vec::new();
@@ -886,7 +968,7 @@ impl<'a> ImportEncoder<'a> {
 
             exports.push((INDIRECT_TABLE_NAME, Export::Table(table_index)));
 
-            for (name, (import_index, _)) in shim {
+            for (name, (import_index, _, options)) in shim {
                 // Alias the function from the imported instance
                 aliases.instance_export(
                     *import_index as u32,
@@ -894,12 +976,14 @@ impl<'a> ImportEncoder<'a> {
                     name,
                 );
 
+                let options: &[CanonicalOption] = match options {
+                    RequiredOptions::None => &[],
+                    RequiredOptions::Encoding => &encoding_options,
+                    RequiredOptions::Into => &into_options,
+                };
+
                 // Lower the function from the imported instance
-                // TODO: only pass canonical options when required to
-                functions.lower(
-                    alias_start + func_index,
-                    [encoding.into(), CanonicalOption::Into(core_instance_index)],
-                );
+                functions.lower(alias_start + func_index, options.iter().copied());
 
                 // Export the lowered function as an instantiation arg to the fixup module
                 exports.push((name, Export::Function(func_start + func_index)));
@@ -1217,6 +1301,12 @@ impl<'a> ComponentEncoder<'a> {
         types: &mut TypeEncoder<'a>,
         core_instance_index: u32,
     ) {
+        let encoding_options = [
+            self.encoding.into(),
+            CanonicalOption::Into(core_instance_index),
+        ];
+        let into_options = [CanonicalOption::Into(core_instance_index)];
+
         for (export, is_default) in self
             .interface
             .iter()
@@ -1255,15 +1345,13 @@ impl<'a> ComponentEncoder<'a> {
                     })
                     .expect("the type should be encoded");
 
-                // TODO: only encode needed options
-                functions.lift(
-                    ty,
-                    alias_start_index + i as u32,
-                    [
-                        self.encoding.into(),
-                        CanonicalOption::Into(core_instance_index),
-                    ],
-                );
+                let options = match RequiredOptions::for_function(export, func) {
+                    RequiredOptions::None => &[] as &[CanonicalOption],
+                    RequiredOptions::Encoding => &encoding_options,
+                    RequiredOptions::Into => &into_options,
+                };
+
+                functions.lift(ty, alias_start_index + i as u32, options.iter().copied());
 
                 if is_default {
                     // Directly export the lifted function
@@ -1278,7 +1366,6 @@ impl<'a> ComponentEncoder<'a> {
                     ));
                 }
 
-                // Add the alias function here (lifted will count below)
                 self.function_count += 1;
             }
 
