@@ -1,6 +1,7 @@
 //! Testing the encoding of interfaces.
 
 use anyhow::{Context, Result};
+use pretty_assertions::assert_eq;
 use std::{ffi::OsStr, fs};
 use wit_component::ComponentEncoder;
 use wit_parser::Interface;

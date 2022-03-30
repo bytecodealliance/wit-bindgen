@@ -983,6 +983,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pretty_assertions"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c038cb5319b9c704bf9c227c261d275bfec0ad438118a2787ce47944fb228b"
+dependencies = [
+ "ansi_term",
+ "ctor",
+ "diff",
+ "output_vt100",
+]
+
+[[package]]
 name = "proc-macro-error"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1643,7 +1655,7 @@ dependencies = [
  "heck 0.3.3",
  "lazy_static",
  "petgraph",
- "pretty_assertions",
+ "pretty_assertions 0.7.2",
  "wasm-encoder 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wasmparser 0.78.2",
  "wasmprinter 0.2.33 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2218,6 +2230,7 @@ dependencies = [
  "glob",
  "indexmap",
  "log",
+ "pretty_assertions 1.2.0",
  "wasm-encoder 0.10.0 (git+https://github.com/bytecodealliance/wasm-tools)",
  "wasmparser 0.83.0 (git+https://github.com/bytecodealliance/wasm-tools)",
  "wasmprinter 0.2.33 (git+https://github.com/bytecodealliance/wasm-tools)",

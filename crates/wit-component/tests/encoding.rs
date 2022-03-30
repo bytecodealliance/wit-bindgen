@@ -1,6 +1,7 @@
 //! Testing the encoding of components.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
+use pretty_assertions::assert_eq;
 use std::{fs, path::Path};
 use wit_component::ComponentEncoder;
 use wit_parser::Interface;
@@ -36,9 +37,13 @@ fn component_encoding() -> Result<()> {
             continue;
         }
 
+        let test_case = path.file_stem().unwrap().to_str().unwrap();
+
         let module_path = path.join("module.wat");
         let interface_path = path.join("default.wit");
         let component_path = path.join("component.wat");
+        let error_path = path.join("error.txt");
+
         let module = wat::parse_file(&module_path)
             .with_context(|| format!("expected file `{}`", module_path.display()))?;
         let interface = interface_path
@@ -58,15 +63,33 @@ fn component_encoding() -> Result<()> {
             encoder = encoder.interface(interface);
         }
 
-        let bytes = encoder.encode()?;
-        let output = wasmprinter::print_bytes(&bytes)?;
+        let r = encoder.encode();
+        let (output, baseline_path) = if error_path.is_file() {
+            match r {
+                Ok(_) => bail!("encoding should fail for test case `{}`", test_case),
+                Err(e) => (e.to_string(), &error_path),
+            }
+        } else {
+            (
+                wasmprinter::print_bytes(&r?).with_context(|| {
+                    format!(
+                        "failed to print component bytes for test case `{}`",
+                        test_case
+                    )
+                })?,
+                &component_path,
+            )
+        };
 
         if std::env::var_os("BLESS").is_some() {
-            fs::write(&component_path, output)?;
+            fs::write(&baseline_path, output)?;
         } else {
             assert_eq!(
                 output,
-                fs::read_to_string(&component_path)?.replace("\r\n", "\n")
+                fs::read_to_string(&baseline_path)?.replace("\r\n", "\n"),
+                "failed baseline comparison for test case `{}` ({})",
+                test_case,
+                baseline_path.display(),
             );
         }
     }

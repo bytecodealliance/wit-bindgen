@@ -33,6 +33,7 @@ log = { version = "0.4.14", optional = true }
 [dev-dependencies]
 wasmprinter = { git = "https://github.com/bytecodealliance/wasm-tools" }
 glob = "0.3.0"
+pretty_assertions = "1.2.0"
 
 [features]
 default = ["cli"]

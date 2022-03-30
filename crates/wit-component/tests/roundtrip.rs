@@ -1,6 +1,7 @@
 //! Testing the round tripping of interfaces to component encodings and back.
 
 use anyhow::{Context, Result};
+use pretty_assertions::assert_eq;
 use std::{ffi::OsStr, fs};
 use wit_component::{decode_interface_component, ComponentEncoder, InterfacePrinter};
 use wit_parser::Interface;
