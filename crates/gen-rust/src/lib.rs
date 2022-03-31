@@ -538,6 +538,8 @@ pub trait RustGenerator {
                 // skip copy/clone
             } else if !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
+            } else if !info.has_handle {
+                self.push_str("#[derive(Clone)]\n");
             }
             self.push_str(&format!("pub enum {}", name.to_camel_case()));
             self.print_generics(&info, lt, true);
