@@ -131,5 +131,5 @@ record is-clone {
   v1: v1,
 }
 
-is-clone-arg: function(i: is-clone)
+is-clone-arg: function(a: is-clone)
 is-clone-return: function() -> is-clone
