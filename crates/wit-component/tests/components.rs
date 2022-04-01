@@ -1,5 +1,3 @@
-//! Testing the encoding of components.
-
 use anyhow::{bail, Context, Result};
 use pretty_assertions::assert_eq;
 use std::{fs, path::Path};
@@ -29,6 +27,30 @@ fn read_interfaces(dir: &Path, pattern: &str) -> Result<Vec<Interface>> {
         .collect::<Result<_>>()
 }
 
+/// Tests the encoding of components.
+///
+/// This test looks in the `components/` directory for test cases.
+///
+/// The expected input files for a test case are:
+///
+/// * [required] `module.wat` - contains the core module definition to be encoded
+///   as a component.
+/// * [optional] `default.wit` - represents the component's default interface.
+/// * [optional] `export-<name>.wit` - represents an interface exported by the component.
+/// * [optional] `import-<name>.wit` - represents an interface imported by the component.
+///
+/// And the output files are one of the following:
+///
+/// * `component.wat` - the expected encoded component in text format if the encoding
+///   is expected to succeed.
+/// * `error.txt` - the expected error message if the encoding is expected to fail.
+///
+/// The test encodes a component based on the input files. If the encoding succeeds,
+/// it expects the output to match `component.wat`. If the encoding fails, it expects
+/// the output to match `error.txt`.
+///
+/// Run the test with the environment variable `BLESS` set to update
+/// either `component.wat` or `error.txt` depending on the outcome of the encoding.
 #[test]
 fn component_encoding() -> Result<()> {
     for entry in fs::read_dir("tests/components")? {
