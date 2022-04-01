@@ -1613,7 +1613,8 @@ dependencies = [
 [[package]]
 name = "wasm-encoder"
 version = "0.10.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools#461c0b14a96805387a3c99ea89f6db7024e6e61b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa9d9bf45fc46f71c407837c9b30b1e874197f2dc357588430b21e5017d290ab"
 dependencies = [
  "leb128",
 ]
@@ -1621,8 +1622,7 @@ dependencies = [
 [[package]]
 name = "wasm-encoder"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa9d9bf45fc46f71c407837c9b30b1e874197f2dc357588430b21e5017d290ab"
+source = "git+https://github.com/bytecodealliance/wasm-tools#461c0b14a96805387a3c99ea89f6db7024e6e61b"
 dependencies = [
  "leb128",
 ]
@@ -1636,7 +1636,7 @@ dependencies = [
  "lazy_static",
  "petgraph",
  "pretty_assertions",
- "wasm-encoder 0.10.0",
+ "wasm-encoder 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wasmparser 0.78.2",
  "wasmprinter",
  "wat 1.0.41 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2199,7 +2199,7 @@ dependencies = [
  "clap 3.1.5",
  "env_logger 0.9.0",
  "log",
- "wasm-encoder 0.10.0",
+ "wasm-encoder 0.10.0 (git+https://github.com/bytecodealliance/wasm-tools)",
  "wasmparser 0.83.0 (git+https://github.com/bytecodealliance/wasm-tools)",
  "wat 1.0.41 (git+https://github.com/bytecodealliance/wasm-tools)",
  "wit-parser",

@@ -126,3 +126,10 @@ return-option-sugar: function() -> option<s32>
 return-option-sugar2: function() -> option<my-errno>
 
 expected-simple: function() -> expected<u32, s32>
+
+record is-clone {
+  v1: v1,
+}
+
+is-clone-arg: function(a: is-clone)
+is-clone-return: function() -> is-clone
