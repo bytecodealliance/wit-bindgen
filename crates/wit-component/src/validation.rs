@@ -123,6 +123,8 @@ pub fn validate_module<'a>(
                                             import.name
                                         );
                                     }
+
+                                    functions.push(ty);
                                 }
                                 _ => bail!("module is only allowed to import functions"),
                             }
