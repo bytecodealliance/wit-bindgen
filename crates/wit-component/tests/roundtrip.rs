@@ -50,8 +50,8 @@ fn roundtrip_interfaces() -> Result<()> {
             fs::write(&wit_path, output)?;
         } else {
             assert_eq!(
-                output,
                 fs::read_to_string(&wit_path)?.replace("\r\n", "\n"),
+                output,
                 "encoding of wit file `{}` did not match the the decoded interface for test case `{}`",
                 wit_path.display(),
                 test_case,

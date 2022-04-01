@@ -110,8 +110,8 @@ fn component_encoding() -> Result<()> {
             fs::write(&baseline_path, output)?;
         } else {
             assert_eq!(
-                output,
                 fs::read_to_string(&baseline_path)?.replace("\r\n", "\n"),
+                output,
                 "failed baseline comparison for test case `{}` ({})",
                 test_case,
                 baseline_path.display(),

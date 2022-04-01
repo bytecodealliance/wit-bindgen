@@ -48,8 +48,8 @@ fn interface_encoding() -> Result<()> {
             fs::write(&wat_path, output)?;
         } else {
             assert_eq!(
-                output,
                 fs::read_to_string(&wat_path)?.replace("\r\n", "\n"),
+                output,
                 "encoding of wit file `{}` did not match the expected wat file `{}` for test case `{}`",
                 wit_path.display(),
                 wat_path.display(),
