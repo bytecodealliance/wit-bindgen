@@ -2,7 +2,7 @@
   (type (;0;) (func (param "x" u64) (param "y" string)))
   (type (;1;) 
     (instance
-      (alias outer 1 (type (;0;) 0))
+      (alias outer 1 0 (type (;0;)))
       (export "a" (type 0))
     )
   )
@@ -10,14 +10,14 @@
   (type (;3;) (func (param "x" (type 2)) (result (type 2))))
   (type (;4;) 
     (instance
-      (alias outer 1 (type (;0;) 3))
+      (alias outer 1 3 (type (;0;)))
       (export "baz" (type 0))
     )
   )
   (type (;5;) (func))
   (type (;6;) 
     (instance
-      (alias outer 1 (type (;0;) 5))
+      (alias outer 1 5 (type (;0;)))
       (export "a" (type 0))
     )
   )
