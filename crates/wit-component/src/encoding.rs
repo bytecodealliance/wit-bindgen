@@ -7,15 +7,9 @@ use indexmap::IndexMap;
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     hash::{Hash, Hasher},
+    ops::BitOr,
 };
-use wasm_encoder::{
-    AliasExportKind, AliasSection, CanonicalOption, CodeSection, Component, ComponentExport,
-    ComponentExportSection, ComponentFunctionSection, ComponentImportSection, ComponentSectionId,
-    ComponentTypeSection, ElementSection, Elements, EntityType, Export, ExportSection,
-    FunctionSection, ImportSection, InstanceSection, InstanceType, Instruction, InterfaceTypeRef,
-    Module, ModuleArg, ModuleSection, PrimitiveInterfaceType, TableSection, TableType, TypeSection,
-    ValType,
-};
+use wasm_encoder::*;
 use wasmparser::{Validator, WasmFeatures};
 use wit_parser::{
     abi::{Abi, AbiVariant, WasmSignature, WasmType},
@@ -340,84 +334,82 @@ impl<'a> TypeEncoder<'a> {
         instance: &mut Option<InstanceTypeEncoder<'a>>,
     ) -> Result<u32> {
         let key = FunctionKey { interface, func };
-        match self.func_type_map.get(&key) {
-            Some(index) => Ok(*index),
-            None => {
-                // Encode all referenced parameter types from this function.
-                let params: Vec<_> = func
-                    .params
-                    .iter()
-                    .map(|(name, ty)| {
-                        Ok((
-                            Some(name.as_str()),
-                            self.encode_type(interface, instance, ty)?,
-                        ))
-                    })
-                    .collect::<Result<_>>()?;
+        if let Some(index) = self.func_type_map.get(&key) {
+            return Ok(*index);
+        }
 
-                let result = if func.results.is_empty() {
-                    InterfaceTypeRef::Primitive(PrimitiveInterfaceType::Unit)
-                } else if func.results.len() == 1 {
-                    let (name, ty) = &func.results[0];
-                    if !name.is_empty() {
-                        bail!(
-                            "unsupported function `{}`: a single return value cannot be named",
-                            func.name
-                        );
-                    }
-                    self.encode_type(interface, instance, ty)?
-                } else {
-                    // Encode a tuple for the return value
-                    let fields = func
-                        .results
-                        .iter()
-                        .enumerate()
-                        .map(|(i, (_, ty))| {
-                            Ok(Field {
-                                docs: Docs::default(),
-                                name: i.to_string(),
-                                ty: *ty,
-                            })
-                        })
-                        .collect::<Result<Vec<_>>>()?;
+        // Encode all referenced parameter types from this function.
+        let params: Vec<_> = func
+            .params
+            .iter()
+            .map(|(name, ty)| {
+                Ok((
+                    Some(name.as_str()),
+                    self.encode_type(interface, instance, ty)?,
+                ))
+            })
+            .collect::<Result<_>>()?;
 
-                    let def = TypeDef {
+        let result = if func.results.is_empty() {
+            InterfaceTypeRef::Primitive(PrimitiveInterfaceType::Unit)
+        } else if func.results.len() == 1 {
+            let (name, ty) = &func.results[0];
+            if !name.is_empty() {
+                bail!(
+                    "unsupported function `{}`: a single return value cannot be named",
+                    func.name
+                );
+            }
+            self.encode_type(interface, instance, ty)?
+        } else {
+            // Encode a tuple for the return value
+            let fields = func
+                .results
+                .iter()
+                .enumerate()
+                .map(|(i, (_, ty))| {
+                    Ok(Field {
                         docs: Docs::default(),
-                        name: None,
-                        kind: TypeDefKind::Record(Record {
-                            fields,
-                            kind: RecordKind::Tuple,
-                        }),
-                        foreign_module: None,
-                    };
+                        name: i.to_string(),
+                        ty: *ty,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
 
-                    InterfaceTypeRef::Type(
-                        match self.type_map.get(&TypeDefKey::borrow(interface, &def)) {
-                            Some(index) => *index,
-                            None => match &def.kind {
-                                TypeDefKind::Record(r) => {
-                                    match self.encode_record(interface, instance, r)? {
-                                        InterfaceTypeRef::Type(ty) => {
-                                            self.type_map
-                                                .insert(TypeDefKey::owned(interface, def), ty);
-                                            ty
-                                        }
-                                        _ => unreachable!(),
-                                    }
+            let def = TypeDef {
+                docs: Docs::default(),
+                name: None,
+                kind: TypeDefKind::Record(Record {
+                    fields,
+                    kind: RecordKind::Tuple,
+                }),
+                foreign_module: None,
+            };
+
+            InterfaceTypeRef::Type(
+                match self.type_map.get(&TypeDefKey::borrow(interface, &def)) {
+                    Some(index) => *index,
+                    None => match &def.kind {
+                        TypeDefKind::Record(r) => {
+                            match self.encode_record(interface, instance, r)? {
+                                InterfaceTypeRef::Type(ty) => {
+                                    self.type_map.insert(TypeDefKey::owned(interface, def), ty);
+                                    ty
                                 }
                                 _ => unreachable!(),
-                            },
-                        },
-                    )
-                };
+                            }
+                        }
+                        _ => unreachable!(),
+                    },
+                },
+            )
+        };
 
-                // Encode the function type
-                let index = self.types.len();
-                self.types.function(params, result);
-                self.func_type_map.insert(key, index);
-                Ok(index)
-            }
-        }
+        // Encode the function type
+        let index = self.types.len();
+        self.types.function(params, result);
+        self.func_type_map.insert(key, index);
+        Ok(index)
     }
 
     fn encode_type(
@@ -447,16 +439,15 @@ impl<'a> TypeEncoder<'a> {
                     let mut encoded = match &ty.kind {
                         TypeDefKind::Record(r) => self.encode_record(interface, instance, r)?,
                         TypeDefKind::Variant(v) => self.encode_variant(interface, instance, v)?,
+                        TypeDefKind::List(Type::Char) => {
+                            InterfaceTypeRef::Primitive(PrimitiveInterfaceType::String)
+                        }
                         TypeDefKind::List(ty) => {
-                            if matches!(ty, Type::Char) {
-                                InterfaceTypeRef::Primitive(PrimitiveInterfaceType::String)
-                            } else {
-                                let ty = self.encode_type(interface, instance, ty)?;
-                                let index = self.types.len();
-                                let encoder = self.types.interface_type();
-                                encoder.list(ty);
-                                InterfaceTypeRef::Type(index)
-                            }
+                            let ty = self.encode_type(interface, instance, ty)?;
+                            let index = self.types.len();
+                            let encoder = self.types.interface_type();
+                            encoder.list(ty);
+                            InterfaceTypeRef::Type(index)
                         }
                         TypeDefKind::Type(ty) => self.encode_type(interface, instance, ty)?,
                         TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {
@@ -664,7 +655,8 @@ impl RequiredOptions {
                     Ok(acc)
                 }
                 Self::Encoding => {
-                    // If something requires the encoding option, bail early as an error
+                    // If something requires the encoding option, we're done searching
+                    // Returning an error here so that the operation terminates early.
                     Err(Self::Encoding)
                 }
                 Self::Into => {
@@ -686,15 +678,15 @@ impl RequiredOptions {
                 TypeDefKind::Variant(v) => {
                     Self::for_types(interface, v.cases.iter().filter_map(|c| c.ty.as_ref()))
                 }
+                TypeDefKind::List(Type::Char) => {
+                    // Strings need the encoding option
+                    Self::Encoding
+                }
                 TypeDefKind::List(t) => {
-                    if let Type::Char = t {
-                        return Self::Encoding;
-                    }
-
-                    match Self::for_type(interface, t) {
-                        Self::Encoding => Self::Encoding,
-                        _ => Self::Into,
-                    }
+                    // Lists need at least the `into` option, but may require
+                    // the encoding option if there's a string somewhere in the
+                    // type.
+                    Self::for_type(interface, t) | Self::Into
                 }
                 TypeDefKind::Type(t) => Self::for_type(interface, t),
                 TypeDefKind::Pointer(_)
@@ -715,6 +707,18 @@ impl RequiredOptions {
                 .map(|(_, ty)| ty)
                 .chain(function.results.iter().map(|(_, ty)| ty)),
         )
+    }
+}
+
+impl BitOr for RequiredOptions {
+    type Output = RequiredOptions;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::Encoding, _) | (_, Self::Encoding) => Self::Encoding,
+            (Self::Into, _) | (_, Self::Into) => Self::Into,
+            _ => Self::None,
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use std::{
     borrow::Cow,
     collections::{hash_map::Entry, HashMap, HashSet},
@@ -162,28 +162,30 @@ fn validate_imported_interface(
     types: &Types,
 ) -> Result<()> {
     for (func_name, ty) in imports {
-        match interface.functions.iter().find(|f| f.name == *func_name) {
-            Some(f) => {
-                let expected =
-                    wasm_sig_to_func_type(interface.wasm_signature(AbiVariant::GuestImport, f));
-                let ty = types.func_type_at(*ty).unwrap();
-                if ty != &expected {
-                    bail!(
-                        "type mismatch for function `{}` on imported interface `{}`: expected `{:?} -> {:?}` but found `{:?} -> {:?}`",
-                        func_name,
-                        name,
-                        expected.params,
-                        expected.returns,
-                        ty.params,
-                        ty.returns
-                    );
-                }
-            }
-            None => bail!(
-                "import interface `{}` is missing function `{}` that is required by the module",
-                name,
-                func_name,
-            ),
+        let f = interface
+            .functions
+            .iter()
+            .find(|f| f.name == *func_name)
+            .ok_or_else(|| {
+                anyhow!(
+                    "import interface `{}` is missing function `{}` that is required by the module",
+                    name,
+                    func_name,
+                )
+            })?;
+
+        let expected = wasm_sig_to_func_type(interface.wasm_signature(AbiVariant::GuestImport, f));
+        let ty = types.func_type_at(*ty).unwrap();
+        if ty != &expected {
+            bail!(
+                    "type mismatch for function `{}` on imported interface `{}`: expected `{:?} -> {:?}` but found `{:?} -> {:?}`",
+                    func_name,
+                    name,
+                    expected.params,
+                    expected.returns,
+                    ty.params,
+                    ty.returns
+                );
         }
     }
 
