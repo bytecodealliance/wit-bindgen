@@ -4,7 +4,8 @@ use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
 };
 use wasmparser::{
-    Chunk, Encoding, ExternalKind, FuncType, Parser, Payload, Type, TypeDef, TypeRef, Validator,
+    types::Types, Encoding, ExternalKind, FuncType, Parser, Payload, Type, TypeRef, ValidPayload,
+    Validator,
 };
 use wit_parser::{
     abi::{AbiVariant, WasmSignature, WasmType},
@@ -61,7 +62,7 @@ fn wasm_sig_to_func_type(signature: WasmSignature) -> FuncType {
 ///
 /// Returns the set of imported interfaces required by the module.
 pub fn validate_module<'a>(
-    mut bytes: &'a [u8],
+    bytes: &'a [u8],
     interface: &Option<&Interface>,
     imports: &[Interface],
     exports: &[Interface],
@@ -69,149 +70,62 @@ pub fn validate_module<'a>(
     let imports: HashMap<&str, &Interface> = imports.iter().map(|i| (i.name.as_str(), i)).collect();
     let exports: HashMap<&str, &Interface> = exports.iter().map(|i| (i.name.as_str(), i)).collect();
 
-    let mut parser = Parser::new(0);
     let mut validator = Validator::new();
-    let mut types = Vec::new();
-    let mut functions = Vec::new();
+    let mut types = None;
     let mut import_funcs = HashMap::new();
     let mut export_funcs = HashMap::new();
 
-    loop {
-        match parser.parse(bytes, true)? {
-            Chunk::Parsed { payload, consumed } => {
-                bytes = &bytes[consumed..];
-                match payload {
-                    Payload::Version {
-                        num,
-                        encoding,
-                        range,
-                    } => {
-                        validator.version(num, encoding, &range)?;
-                        if encoding != Encoding::Module {
-                            bail!("data is not a WebAssembly module");
+    for payload in Parser::new(0).parse_all(bytes) {
+        let payload = payload?;
+        if let ValidPayload::End(tys) = validator.payload(&payload)? {
+            types = Some(tys);
+            break;
+        }
+
+        match payload {
+            Payload::Version { encoding, .. } if encoding != Encoding::Module => {
+                bail!("data is not a WebAssembly module");
+            }
+            Payload::ImportSection(s) => {
+                for import in s {
+                    let import = import?;
+                    if is_wasi(import.module) {
+                        continue;
+                    }
+                    match import.ty {
+                        TypeRef::Func(ty) => {
+                            let map = match import_funcs.entry(import.module) {
+                                Entry::Occupied(e) => e.into_mut(),
+                                Entry::Vacant(e) => e.insert(HashMap::new()),
+                            };
+
+                            assert!(map.insert(import.name, ty).is_none());
                         }
+                        _ => bail!("module is only allowed to import functions"),
                     }
-                    Payload::TypeSection(s) => {
-                        validator.type_section(&s)?;
-                        types.reserve(s.get_count() as usize);
-                        for ty in s {
-                            match ty? {
-                                TypeDef::Func(ty) => {
-                                    types.push(ty);
-                                }
-                            }
-                        }
-                    }
-                    Payload::ImportSection(s) => {
-                        validator.import_section(&s)?;
-                        for import in s {
-                            let import = import?;
-                            if is_wasi(import.module) {
-                                continue;
-                            }
-                            match import.ty {
-                                TypeRef::Func(ty) => {
-                                    let map = match import_funcs.entry(import.module) {
-                                        Entry::Occupied(e) => e.into_mut(),
-                                        Entry::Vacant(e) => e.insert(HashMap::new()),
-                                    };
-
-                                    if map.insert(import.name, ty).is_some() {
-                                        bail!(
-                                            "duplicate import `{}::{}`",
-                                            import.module,
-                                            import.name
-                                        );
-                                    }
-
-                                    functions.push(ty);
-                                }
-                                _ => bail!("module is only allowed to import functions"),
-                            }
-                        }
-                    }
-                    Payload::FunctionSection(s) => {
-                        validator.function_section(&s)?;
-                        functions.reserve(s.get_count() as usize);
-                        for ty in s {
-                            functions.push(ty?);
-                        }
-                    }
-                    Payload::TableSection(s) => {
-                        validator.table_section(&s)?;
-                    }
-                    Payload::MemorySection(s) => {
-                        validator.memory_section(&s)?;
-                    }
-                    Payload::TagSection(s) => {
-                        validator.tag_section(&s)?;
-                    }
-                    Payload::GlobalSection(s) => {
-                        validator.global_section(&s)?;
-                    }
-                    Payload::ExportSection(s) => {
-                        validator.export_section(&s)?;
-
-                        for export in s {
-                            let export = export?;
-
-                            match export.kind {
-                                ExternalKind::Func => {
-                                    if is_canonical_function(export.name) {
-                                        continue;
-                                    }
-
-                                    if export_funcs.insert(export.name, export.index).is_some() {
-                                        bail!("duplicate exported function `{}`", export.name);
-                                    }
-                                }
-                                _ => continue,
-                            }
-                        }
-                    }
-                    Payload::StartSection { func, range } => {
-                        validator.start_section(func, &range)?;
-                    }
-                    Payload::ElementSection(s) => {
-                        validator.element_section(&s)?;
-                    }
-                    Payload::DataCountSection { count, range } => {
-                        validator.data_count_section(count, &range)?;
-                    }
-                    Payload::DataSection(s) => {
-                        validator.data_section(&s)?;
-                    }
-                    Payload::CodeSectionStart { count, range, .. } => {
-                        validator.code_section_start(count, &range)?;
-                    }
-                    Payload::CodeSectionEntry(body) => {
-                        let mut v = validator.code_section_entry(&body)?;
-                        v.validate(&body)?;
-                    }
-
-                    // Component sections shouldn't be present in a module
-                    Payload::ComponentTypeSection(_)
-                    | Payload::ComponentImportSection(_)
-                    | Payload::ComponentFunctionSection(_)
-                    | Payload::ModuleSection { .. }
-                    | Payload::ComponentSection { .. }
-                    | Payload::InstanceSection(_)
-                    | Payload::ComponentExportSection(_)
-                    | Payload::ComponentStartSection(_)
-                    | Payload::AliasSection(_) => unreachable!(),
-
-                    Payload::CustomSection { .. } => {
-                        // Ignore custom sections
-                    }
-                    Payload::UnknownSection { id, range, .. } => {
-                        validator.unknown_section(id, &range)?;
-                    }
-                    Payload::End(_) => break,
                 }
             }
-            Chunk::NeedMoreData(_) => unreachable!(),
+            Payload::ExportSection(s) => {
+                for export in s {
+                    let export = export?;
+
+                    match export.kind {
+                        ExternalKind::Func => {
+                            if is_canonical_function(export.name) {
+                                continue;
+                            }
+
+                            assert!(export_funcs.insert(export.name, export.index).is_none())
+                        }
+                        _ => continue,
+                    }
+                }
+            }
+            _ => continue,
         }
     }
+
+    let types = types.unwrap();
 
     for (name, funcs) in &import_funcs {
         if name.is_empty() {
@@ -227,7 +141,7 @@ pub fn validate_module<'a>(
     }
 
     if let Some(interface) = interface {
-        validate_exported_interface(interface, None, &export_funcs, &types, &functions)?;
+        validate_exported_interface(interface, None, &export_funcs, &types)?;
     }
 
     for (name, interface) in exports {
@@ -235,7 +149,7 @@ pub fn validate_module<'a>(
             bail!("cannot export an interface with an empty name");
         }
 
-        validate_exported_interface(interface, Some(name), &export_funcs, &types, &functions)?;
+        validate_exported_interface(interface, Some(name), &export_funcs, &types)?;
     }
 
     Ok(import_funcs.keys().copied().collect())
@@ -245,14 +159,14 @@ fn validate_imported_interface(
     interface: &Interface,
     name: &str,
     imports: &HashMap<&str, u32>,
-    types: &[FuncType],
+    types: &Types,
 ) -> Result<()> {
     for (func_name, ty) in imports {
         match interface.functions.iter().find(|f| f.name == *func_name) {
             Some(f) => {
                 let expected =
                     wasm_sig_to_func_type(interface.wasm_signature(AbiVariant::GuestImport, f));
-                let ty = &types[*ty as usize];
+                let ty = types.func_type_at(*ty).unwrap();
                 if ty != &expected {
                     bail!(
                         "type mismatch for function `{}` on imported interface `{}`: expected `{:?} -> {:?}` but found `{:?} -> {:?}`",
@@ -280,16 +194,15 @@ fn validate_exported_interface(
     interface: &Interface,
     name: Option<&str>,
     exports: &HashMap<&str, u32>,
-    types: &[FuncType],
-    funcs: &[u32],
+    types: &Types,
 ) -> Result<()> {
     for f in &interface.functions {
         let expected_export = expected_export_name(name, &f.name);
         match exports.get(expected_export.as_ref()) {
-            Some(ty) => {
+            Some(func_index) => {
                 let expected_ty =
                     wasm_sig_to_func_type(interface.wasm_signature(AbiVariant::GuestExport, f));
-                let ty = &types[funcs[*ty as usize] as usize];
+                let ty = types.function_at(*func_index).unwrap();
                 if ty != &expected_ty {
                     match name {
                         Some(name) => bail!(
