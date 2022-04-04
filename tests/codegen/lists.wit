@@ -29,6 +29,7 @@ string-list: function(x: list<string>) -> list<string>
 record some-record {
   x: string,
   y: other-record,
+  z: list<other-record>,
   c1: u32,
   c2: u64,
   c3: s32,
@@ -43,6 +44,7 @@ record other-record {
   c: list<u8>,
 }
 record-list: function(x: list<some-record>) -> list<other-record>
+record-list-reverse: function(x: list<other-record>) -> list<some-record>
 
 variant some-variant {
   a(string),
