@@ -1998,7 +1998,10 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::IterElem { .. } => results.push("e".to_string()),
+            Instruction::IterElem { .. } => {
+                self.caller_memory_available = false; // invalidated by for loop
+                results.push("e".to_string())
+            }
 
             Instruction::IterBasePointer => results.push("base".to_string()),
 
