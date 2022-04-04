@@ -722,66 +722,108 @@ impl BitOr for RequiredOptions {
     }
 }
 
+#[derive(Debug)]
+struct DirectLowering<'a> {
+    name: &'a str,
+}
+
+#[derive(Debug)]
+struct IndirectLowering<'a> {
+    name: &'a str,
+    sig: WasmSignature,
+    options: RequiredOptions,
+    export_name: String,
+}
+
+#[derive(Debug)]
+enum Lowering<'a> {
+    Direct(DirectLowering<'a>),
+    Indirect(IndirectLowering<'a>),
+}
+
+#[derive(Debug)]
+struct ImportedInterface<'a> {
+    ty: u32,
+    lowerings: Vec<Lowering<'a>>,
+    // Stores indexes into `lowerings` that are indirect.
+    indirect_lowerings: Vec<usize>,
+}
+
+/// The import encoder handles indirect lowering of any imports
+/// that require the `into` option specified.
+///
+/// Lowering of such imports is done through a shim module that
+/// defines a table of functions and exports functions that indirectly
+/// call through the table.
+///
+/// Another module is responsible for "fixing-up" the table of functions
+/// once the functions have been lowered (after the core module is instantiated)
+///
+/// If a lowering does not require the `into` option, the import is lowered before
+/// the core module is instantiated and passed directly as an instantiation argument.
 #[derive(Debug, Default)]
 struct ImportEncoder<'a> {
-    // Map from import name to instance type and shim index.
-    imports: IndexMap<&'a str, (u32, usize)>,
-    // Set of shims mapping exported function names to pair of import index
-    // and lowered wasm signature. A shim represents a collection of
-    // non-conflicting function exports that will be passed as arguments to
-    // the instantiation of the core module.
-    shims: Vec<IndexMap<&'a str, (usize, WasmSignature, RequiredOptions)>>,
+    imports: IndexMap<&'a str, ImportedInterface<'a>>,
+    direct_count: u32,
+    indirect_count: u32,
 }
 
 impl<'a> ImportEncoder<'a> {
     fn import(&mut self, interface: &'a Interface, ty: u32) -> Result<()> {
         match self.imports.entry(&interface.name) {
             indexmap::map::Entry::Occupied(e) => {
-                if e.get().0 != ty {
+                if e.get().ty != ty {
                     bail!("duplicate import `{}`", interface.name)
                 }
             }
             indexmap::map::Entry::Vacant(e) => {
-                // We need to locate a shim where every function on the imported
-                // interface does not conflict with any other function exported
-                // by the shim.
-                // TODO: speed this check up?
-                let shim_index = match self.shims.iter().position(|m| {
-                    interface
-                        .functions
-                        .iter()
-                        .all(|f| !m.contains_key(f.name.as_str()))
-                }) {
-                    Some(i) => i,
-                    None => {
-                        let i = self.shims.len();
-                        self.shims.push(IndexMap::new());
-                        i
-                    }
-                };
-
-                let shim = &mut self.shims[shim_index];
-                for f in &interface.functions {
-                    let sig = interface.wasm_signature(AbiVariant::GuestImport, f);
-                    let options = match RequiredOptions::for_function(interface, f) {
-                        RequiredOptions::None => {
-                            if sig.retptr.is_some() {
+                let mut indirect_lowerings = Vec::new();
+                let lowerings = interface
+                    .functions
+                    .iter()
+                    .enumerate()
+                    .map(|(i, f)| {
+                        let sig = interface.wasm_signature(AbiVariant::GuestImport, f);
+                        let options = RequiredOptions::for_function(interface, f)
+                            | if sig.retptr.is_some() {
                                 RequiredOptions::Into
                             } else {
                                 RequiredOptions::None
+                            };
+
+                        match options {
+                            RequiredOptions::Encoding | RequiredOptions::Into => {
+                                let table_index = self.indirect_count;
+                                self.indirect_count += 1;
+                                indirect_lowerings.push(i);
+                                Lowering::Indirect(IndirectLowering {
+                                    name: &f.name,
+                                    sig,
+                                    options,
+                                    export_name: table_index.to_string(),
+                                })
+                            }
+                            RequiredOptions::None => {
+                                self.direct_count += 1;
+                                Lowering::Direct(DirectLowering { name: &f.name })
                             }
                         }
-                        o => o,
-                    };
+                    })
+                    .collect();
 
-                    shim.insert(&f.name, (e.index(), sig, options));
-                }
-
-                e.insert((ty, shim_index));
+                e.insert(ImportedInterface {
+                    ty,
+                    lowerings,
+                    indirect_lowerings,
+                });
             }
         }
 
         Ok(())
+    }
+
+    fn len(&self) -> u32 {
+        self.imports.len() as u32
     }
 
     fn is_empty(&self) -> bool {
@@ -791,30 +833,22 @@ impl<'a> ImportEncoder<'a> {
     fn encode_imports(&self, component: &mut Component) {
         let mut imports = ComponentImportSection::default();
 
-        for (name, (ty, _)) in &self.imports {
-            imports.import(name, *ty);
+        for (name, import) in &self.imports {
+            imports.import(name, import.ty);
         }
 
         component.section(&imports);
     }
 
-    fn encode_shims(&'a self, component: &mut Component, module_count: &mut u32) {
-        for shim in &self.shims {
-            Self::encode_shim_and_fixup(component, shim.iter().map(|(n, (_, s, _))| (*n, s)));
+    fn create_shim_modules(&self) -> Option<(Module, Module)> {
+        if self.indirect_count == 0 {
+            return None;
         }
 
-        *module_count += self.shims.len() as u32 * 2;
-    }
-
-    fn encode_shim_and_fixup(
-        component: &mut Component,
-        funcs: impl Iterator<Item = (&'a str, &'a WasmSignature)>,
-    ) {
         // This function encodes two modules:
         // - A shim module that defines a table and exports functions
-        //   that indirectly call through the table. The instance of the
-        //   shim is what is passed an argument for instantiating the core module.
-        // - A fixup module that imports a table and a set of functions
+        //   that indirectly call through the table.
+        // - A fixup module that imports that table and a set of functions
         //   and populates the imported table via active element segments. The
         //   fixup module is used to populate the shim's table once the
         //   imported functions have been lowered.
@@ -830,24 +864,36 @@ impl<'a> ImportEncoder<'a> {
         let mut func_indexes = Vec::new();
 
         let mut func_index = 0;
-        for (name, sig) in funcs {
-            let type_index = *sigs.entry(sig).or_insert_with(|| {
-                let index = types.len();
-                types.function(
-                    sig.params.iter().map(to_val_type),
-                    sig.results.iter().map(to_val_type),
+        for import in self.imports.values() {
+            for i in &import.indirect_lowerings {
+                let lowering = match &import.lowerings[*i] {
+                    Lowering::Indirect(lowering) => lowering,
+                    Lowering::Direct(_) => unreachable!(),
+                };
+
+                let type_index = *sigs.entry(&lowering.sig).or_insert_with(|| {
+                    let index = types.len();
+                    types.function(
+                        lowering.sig.params.iter().map(to_val_type),
+                        lowering.sig.results.iter().map(to_val_type),
+                    );
+                    index
+                });
+
+                functions.function(type_index);
+                Self::encode_shim_function(
+                    type_index,
+                    func_index,
+                    &mut code,
+                    lowering.sig.params.len() as u32,
                 );
-                index
-            });
+                exports.export(&lowering.export_name, Export::Function(func_index));
 
-            functions.function(type_index);
-            Self::encode_shim_function(type_index, func_index, &mut code, sig.params.len() as u32);
-            exports.export(name, Export::Function(func_index));
+                imports.import("", &lowering.export_name, EntityType::Function(type_index));
+                func_indexes.push(func_index);
 
-            imports.import("", name, EntityType::Function(type_index));
-            func_indexes.push(func_index);
-
-            func_index += 1;
+                func_index += 1;
+            }
         }
 
         let table_type = TableType {
@@ -874,13 +920,13 @@ impl<'a> ImportEncoder<'a> {
         shim.section(&tables);
         shim.section(&exports);
         shim.section(&code);
-        component.section(&ModuleSection(shim));
 
         let mut fixups = Module::default();
         fixups.section(&types);
         fixups.section(&imports);
         fixups.section(&elements);
-        component.section(&ModuleSection(fixups));
+
+        Some((shim, fixups))
     }
 
     fn encode_shim_function(
@@ -903,111 +949,159 @@ impl<'a> ImportEncoder<'a> {
         code.function(&func);
     }
 
-    fn encode_shim_instantiations(
-        &self,
-        instances: &mut InstanceSection,
-        module_start_index: u32,
-        instance_count: &mut u32,
-    ) {
-        for i in 0..self.shims.len() as u32 {
-            instances.instantiate_module::<_, ModuleArg>(module_start_index + (i * 2), []);
-        }
-
-        *instance_count += self.shims.len() as u32;
-    }
-
     fn encode_core_instantiation(
         &self,
-        instances: &mut InstanceSection,
-        instance_start_index: u32,
-        core_module_index: u32,
-    ) {
-        instances.instantiate_module(
-            core_module_index,
-            self.imports.iter().map(|(name, (_, shim))| {
-                (
-                    *name,
-                    ModuleArg::Instance(instance_start_index + *shim as u32),
-                )
-            }),
-        );
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn encode_lowerings(
-        &self,
         component: &mut Component,
-        encoding: StringEncoding,
-        module_start_index: u32,
-        instance_start_index: u32,
-        core_instance_index: u32,
-        table_count: &mut u32,
-        function_count: &mut u32,
+        shim_instance_index: Option<u32>,
+        core_module_index: u32,
         instance_count: &mut u32,
-    ) {
+        function_count: &mut u32,
+    ) -> u32 {
         let mut aliases = AliasSection::new();
         let mut functions = ComponentFunctionSection::new();
         let mut instances = InstanceSection::new();
 
-        let mut func_index = 0;
-        let func_count = self.shims.iter().fold(0, |acc, s| acc + s.len() as u32);
-        let alias_start = *function_count;
-        let func_start = alias_start + func_count;
+        let mut direct_count = 0;
+        let direct_start_index = *function_count + self.direct_count + self.indirect_count;
+
+        let args: Vec<_> = self
+            .imports
+            .iter()
+            .enumerate()
+            .map(|(instance_index, (name, import))| {
+                let alias_start_index = *function_count + aliases.len();
+
+                let exports = import.lowerings.iter().enumerate().map(|(i, lowering)| {
+                    let (name, func_index) = match lowering {
+                        Lowering::Direct(lowering) => {
+                            aliases.instance_export(
+                                instance_index as u32,
+                                AliasExportKind::ComponentFunction,
+                                lowering.name,
+                            );
+
+                            functions.lower(alias_start_index + i as u32, []);
+
+                            let i = direct_count;
+                            direct_count += 1;
+
+                            (lowering.name, direct_start_index + i as u32)
+                        }
+                        Lowering::Indirect(lowering) => {
+                            aliases.instance_export(
+                                shim_instance_index.unwrap(),
+                                AliasExportKind::Function,
+                                &lowering.export_name,
+                            );
+
+                            (lowering.name, alias_start_index + i as u32)
+                        }
+                    };
+
+                    (name, Export::Function(func_index))
+                });
+
+                instances.export_core_items(exports);
+                (
+                    *name,
+                    ModuleArg::Instance(*instance_count + instance_index as u32),
+                )
+            })
+            .collect();
+
+        let core_instance_index = *instance_count + instances.len();
+        instances.instantiate_module(core_module_index, args);
+
+        component.section(&aliases);
+        *function_count += aliases.len();
+
+        component.section(&functions);
+        *function_count += functions.len();
+
+        component.section(&instances);
+        *instance_count += instances.len();
+
+        core_instance_index
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn encode_indirect_lowerings(
+        &self,
+        component: &mut Component,
+        encoding: StringEncoding,
+        instance_count: &mut u32,
+        function_count: &mut u32,
+        core_instance_index: u32,
+        shim_instance_index: u32,
+        fixup_module_index: u32,
+    ) {
+        if self.indirect_count == 0 {
+            return;
+        }
+
+        let mut aliases = AliasSection::new();
+        let mut functions = ComponentFunctionSection::new();
+        let mut instances = InstanceSection::new();
 
         let encoding_options = [encoding.into(), CanonicalOption::Into(core_instance_index)];
         let into_options = [CanonicalOption::Into(core_instance_index)];
 
-        // Lower the imported functions and instantiate fixup modules
-        for (i, shim) in self.shims.iter().enumerate() {
-            let mut exports = Vec::new();
+        let mut indirect_count = 0;
+        let indirect_start_index = *function_count + self.indirect_count;
 
-            // Alias the shim module's table
-            let table_index = *table_count;
-            aliases.instance_export(
-                instance_start_index + i as u32,
-                AliasExportKind::Table,
-                INDIRECT_TABLE_NAME,
-            );
-            *table_count += 1;
+        aliases.instance_export(
+            shim_instance_index,
+            AliasExportKind::Table,
+            INDIRECT_TABLE_NAME,
+        );
 
-            exports.push((INDIRECT_TABLE_NAME, Export::Table(table_index)));
+        let mut exports = Vec::with_capacity(1 + self.indirect_count as usize);
+        exports.push((INDIRECT_TABLE_NAME, Export::Table(0)));
 
-            for (name, (import_index, _, options)) in shim {
-                // Alias the function from the imported instance
+        for (instance_index, import) in self.imports.values().enumerate() {
+            for i in &import.indirect_lowerings {
+                let lowering = match &import.lowerings[*i] {
+                    Lowering::Indirect(lowering) => lowering,
+                    Lowering::Direct(_) => unreachable!(),
+                };
+
                 aliases.instance_export(
-                    *import_index as u32,
+                    instance_index as u32,
                     AliasExportKind::ComponentFunction,
-                    name,
+                    lowering.name,
                 );
 
-                let options: &[CanonicalOption] = match options {
+                let options: &[CanonicalOption] = match lowering.options {
                     RequiredOptions::None => &[],
                     RequiredOptions::Encoding => &encoding_options,
                     RequiredOptions::Into => &into_options,
                 };
 
-                // Lower the function from the imported instance
-                functions.lower(alias_start + func_index, options.iter().copied());
+                functions.lower(*function_count + indirect_count, options.iter().copied());
 
-                // Export the lowered function as an instantiation arg to the fixup module
-                exports.push((name, Export::Function(func_start + func_index)));
+                exports.push((
+                    lowering.export_name.as_str(),
+                    Export::Function(indirect_start_index + indirect_count),
+                ));
 
-                func_index += 1;
-                *function_count += 2;
+                indirect_count += 1;
             }
-
-            let fixup_args = *instance_count;
-            instances.export_core_items(exports);
-            instances.instantiate_module(
-                module_start_index + 1 + (i as u32 * 2),
-                [("", ModuleArg::Instance(fixup_args))],
-            );
-            *instance_count += 2;
         }
 
+        instances.export_core_items(exports);
+        instances.instantiate_module(
+            fixup_module_index,
+            [("", ModuleArg::Instance(*instance_count))],
+        );
+
         component.section(&aliases);
+        *function_count += aliases.len() - 1 /* don't include the table */;
+
         component.section(&functions);
+        *function_count += functions.len();
+
         component.section(&instances);
+        *instance_count += instances.len();
     }
 }
 
@@ -1023,7 +1117,6 @@ pub struct ComponentEncoder<'a> {
     types_only: bool,
     module_count: u32,
     instance_count: u32,
-    table_count: u32,
     function_count: u32,
 }
 
@@ -1097,11 +1190,8 @@ impl<'a> ComponentEncoder<'a> {
             let core_module_index = self.module_count;
             self.encode_core_module(&mut component)?;
 
-            let core_instance_index = if !imports.is_empty() {
-                self.encode_instantiation_with_imports(&mut component, &imports, core_module_index)
-            } else {
-                self.encode_instantiation(&mut component, core_module_index)
-            };
+            let core_instance_index =
+                self.encode_core_instantiation(&mut component, &imports, core_module_index);
 
             self.encode_exports(&mut component, &mut types, core_instance_index);
         }
@@ -1199,7 +1289,6 @@ impl<'a> ComponentEncoder<'a> {
 
             let index = types.encode_instance_type(&instance.as_ref().unwrap().ty);
             imports.import(import, index)?;
-            self.instance_count += 1;
         }
 
         Ok(())
@@ -1248,53 +1337,74 @@ impl<'a> ComponentEncoder<'a> {
         Ok(())
     }
 
-    fn encode_instantiation_with_imports(
+    fn encode_core_instantiation(
         &mut self,
         component: &mut Component,
         imports: &ImportEncoder,
         core_module_index: u32,
     ) -> u32 {
-        let mut instances = InstanceSection::new();
+        // If there's no imports, directly instantiate the core module.
+        if imports.is_empty() {
+            let mut instances = InstanceSection::new();
+            let core_instance_index = self.instance_count;
+            instances.instantiate_module::<_, ModuleArg>(core_module_index, []);
+            self.instance_count += 1;
+            component.section(&instances);
+            return core_instance_index;
+        }
+
+        // Otherwise, we need to encode the imports, lower the direct lowerings,
+        // and pass the imports through to the core module instantiation.
         imports.encode_imports(component);
+        self.instance_count += imports.len();
 
-        let module_start_index = self.module_count;
-        imports.encode_shims(component, &mut self.module_count);
+        let (fixup_module_index, shim_instance_index) =
+            if let Some((shim, fixups)) = imports.create_shim_modules() {
+                // Shim modules were encoded, so add them to the component
+                let shim_module_index = self.module_count;
+                component.section(&ModuleSection(shim));
+                self.module_count += 1;
 
-        let instance_start_index = self.instance_count;
-        imports.encode_shim_instantiations(
-            &mut instances,
-            module_start_index,
-            &mut self.instance_count,
-        );
+                let fixup_module_index = self.module_count;
+                component.section(&ModuleSection(fixups));
+                self.module_count += 1;
 
-        let core_instance_index = self.instance_count;
-        imports.encode_core_instantiation(&mut instances, instance_start_index, core_module_index);
-        self.instance_count += 1;
+                // We must instantiate the shim module before any aliasing below
+                let shim_instance_index = self.instance_count;
+                let mut instances = InstanceSection::new();
+                instances.instantiate_module::<_, ModuleArg>(shim_module_index, []);
+                self.instance_count += 1;
 
-        component.section(&instances);
+                component.section(&instances);
 
-        imports.encode_lowerings(
+                (Some(fixup_module_index), Some(shim_instance_index))
+            } else {
+                // No shim instance needed
+                (None, None)
+            };
+
+        let core_instance_index = imports.encode_core_instantiation(
             component,
-            self.encoding,
-            module_start_index,
-            instance_start_index,
-            core_instance_index,
-            &mut self.table_count,
-            &mut self.function_count,
+            shim_instance_index,
+            core_module_index,
             &mut self.instance_count,
+            &mut self.function_count,
         );
 
-        core_instance_index
-    }
-
-    fn encode_instantiation(&mut self, component: &mut Component, core_module_index: u32) -> u32 {
-        let mut instances = InstanceSection::new();
-
-        let core_instance_index = self.instance_count;
-        instances.instantiate_module::<_, ModuleArg>(core_module_index, []);
-        self.instance_count += 1;
-
-        component.section(&instances);
+        // Finally, lower the indirect imports
+        if let (Some(shim_instance_index), Some(fixup_module_index)) =
+            (shim_instance_index, fixup_module_index)
+        {
+            imports.encode_indirect_lowerings(
+                component,
+                self.encoding,
+                &mut self.instance_count,
+                &mut self.function_count,
+                core_instance_index,
+                shim_instance_index,
+                fixup_module_index,
+            );
+        }
 
         core_instance_index
     }
