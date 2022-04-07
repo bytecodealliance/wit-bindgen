@@ -77,6 +77,7 @@ impl Resolver {
 
         Ok(Interface {
             name: name.to_string(),
+            module: None,
             types: mem::take(&mut self.types),
             type_lookup: mem::take(&mut self.type_lookup),
             resources: mem::take(&mut self.resources),

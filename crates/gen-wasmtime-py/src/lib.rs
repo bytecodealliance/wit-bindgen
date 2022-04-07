@@ -1047,7 +1047,7 @@ impl Bindgen for FunctionBindgen<'_> {
         self.blocks.push((src.into(), mem::take(operands)));
     }
 
-    fn return_pointer(&mut self, _size: usize, _align: usize) -> String {
+    fn return_pointer(&mut self, _iface: &Interface, _size: usize, _align: usize) -> String {
         unimplemented!()
     }
 
@@ -1913,7 +1913,7 @@ impl Bindgen for FunctionBindgen<'_> {
             //        results.push(format!("{}", handle));
             //    }
             Instruction::CallWasm {
-                module: _,
+                iface: _,
                 name,
                 sig,
             } => {

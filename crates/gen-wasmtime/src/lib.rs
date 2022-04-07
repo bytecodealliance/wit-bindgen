@@ -1418,7 +1418,7 @@ impl Bindgen for FunctionBindgen<'_> {
         self.caller_memory_available = false;
     }
 
-    fn return_pointer(&mut self, _size: usize, _align: usize) -> String {
+    fn return_pointer(&mut self, _iface: &Interface, _size: usize, _align: usize) -> String {
         unimplemented!()
     }
 
@@ -2012,7 +2012,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::IterBasePointer => results.push("base".to_string()),
 
             Instruction::CallWasm {
-                module: _,
+                iface: _,
                 name,
                 sig,
             } => {

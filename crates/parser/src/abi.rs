@@ -640,7 +640,7 @@ def_instruction! {
         /// functions, instead `CallWasmAsyncImport` and `CallWasmAsyncExport`
         /// are used.
         CallWasm {
-            module: &'a str,
+            iface: &'a Interface,
             name: &'a str,
             sig: &'a WasmSignature,
         } : [sig.params.len()] => [sig.results.len()],
@@ -660,7 +660,7 @@ def_instruction! {
         /// It's up to the bindings generator to figure out how to make this
         /// look synchronous despite it being callback-based in the middle.
         CallWasmAsyncImport {
-            module: &'a str,
+            iface: &'a Interface,
             name: &'a str,
             params: &'a [WasmType],
             results: &'a [WasmType],
@@ -841,8 +841,10 @@ pub trait Bindgen {
         results: &mut Vec<Self::Operand>,
     );
 
-    /// TODO
-    fn return_pointer(&mut self, size: usize, align: usize) -> Self::Operand;
+    /// Gets a operand reference to the return pointer area.
+    ///
+    /// The provided size and alignment is for the function's return type.
+    fn return_pointer(&mut self, iface: &Interface, size: usize, align: usize) -> Self::Operand;
 
     /// Enters a new block of code to generate code for.
     ///
@@ -1138,7 +1140,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     let ptr = match self.variant {
                         // When a wasm module calls an import it will provide
                         // static space that isn't dynamically allocated.
-                        AbiVariant::GuestImport => self.bindgen.return_pointer(size, align),
+                        AbiVariant::GuestImport => {
+                            self.bindgen.return_pointer(self.iface, size, align)
+                        }
                         // When calling a wasm module from the outside, though,
                         // malloc needs to be called.
                         AbiVariant::GuestExport => {
@@ -1175,7 +1179,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         AbiVariant::GuestImport => {
                             assert_eq!(self.stack.len(), sig.params.len() - 2);
                             self.emit(&Instruction::CallWasmAsyncImport {
-                                module: &self.iface.name,
+                                iface: self.iface,
                                 name: &func.name,
                                 params: &sig.params,
                                 results: &results,
@@ -1199,7 +1203,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     if self.variant == AbiVariant::GuestImport && sig.retptr {
                         let size = self.bindgen.sizes().size(&func.result);
                         let align = self.bindgen.sizes().align(&func.result);
-                        let ptr = self.bindgen.return_pointer(size, align);
+                        let ptr = self.bindgen.return_pointer(self.iface, size, align);
                         self.return_pointer = Some(ptr.clone());
                         self.stack.push(ptr);
                     }
@@ -1208,7 +1212,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // actual wasm function.
                     assert_eq!(self.stack.len(), sig.params.len());
                     self.emit(&Instruction::CallWasm {
-                        module: &self.iface.name,
+                        iface: self.iface,
                         name: &func.name,
                         sig: &sig,
                     });
@@ -1329,7 +1333,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         AbiVariant::GuestExport => {
                             let size = self.bindgen.sizes().size(&func.result);
                             let align = self.bindgen.sizes().align(&func.result);
-                            let ptr = self.bindgen.return_pointer(size, align);
+                            let ptr = self.bindgen.return_pointer(self.iface, size, align);
                             self.write_to_memory(&func.result, ptr.clone(), 0);
 
                             // Get the caller's context index.
@@ -1372,7 +1376,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             AbiVariant::GuestExport => {
                                 let size = self.bindgen.sizes().size(&func.result);
                                 let align = self.bindgen.sizes().align(&func.result);
-                                let ptr = self.bindgen.return_pointer(size, align);
+                                let ptr = self.bindgen.return_pointer(self.iface, size, align);
                                 self.write_to_memory(&func.result, ptr.clone(), 0);
                                 self.stack.push(ptr);
                             }

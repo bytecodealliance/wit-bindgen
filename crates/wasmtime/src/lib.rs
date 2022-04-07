@@ -130,7 +130,7 @@ pub mod rt {
         memory: &Memory,
         base: i32,
         len: i32,
-        align: i32,
+        _align: i32,
     ) -> Result<Vec<T>, Trap> {
         let size = (len as u32)
             .checked_mul(mem::size_of::<T>() as u32)
