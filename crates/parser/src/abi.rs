@@ -993,7 +993,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 for nth in 0..func.params.len() {
                     self.emit(&Instruction::GetArg { nth });
                 }
-                self.lower_all(&func.params, None);
+                self.lower_all(&func.params);
 
                 if func.is_async {
                     // We emit custom instructions for async calls since they
@@ -1096,7 +1096,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 // ... and at the end we lower everything back into return
                 // values.
-                self.lower_all(&func.results, Some(nargs));
+                self.lower_all(&func.results);
 
                 if func.is_async {
                     let tys = sig.retptr.as_ref().unwrap();
@@ -1224,14 +1224,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     /// Assumes that the value for `tys` is already on the stack, and then
     /// converts all of those values into their wasm types by lowering each
     /// argument in-order.
-    fn lower_all(&mut self, tys: &[(String, Type)], mut nargs: Option<usize>) {
+    fn lower_all(&mut self, tys: &[(String, Type)]) {
         let operands = self
             .stack
             .drain(self.stack.len() - tys.len()..)
             .collect::<Vec<_>>();
         for (operand, (_, ty)) in operands.into_iter().zip(tys) {
             self.stack.push(operand);
-            self.lower(ty, nargs.as_mut());
+            self.lower(ty);
         }
     }
 
@@ -1297,7 +1297,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         self.bindgen.finish_block(&mut self.operands);
     }
 
-    fn lower(&mut self, ty: &Type, retptr: Option<&mut usize>) {
+    fn lower(&mut self, ty: &Type) {
         use Instruction::*;
 
         match *ty {
@@ -1349,7 +1349,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
             }
             Type::Id(id) => match &self.iface.types[id].kind {
-                TypeDefKind::Type(t) => self.lower(t, retptr),
+                TypeDefKind::Type(t) => self.lower(t),
                 TypeDefKind::List(element) => {
                     // Lowering parameters calling a wasm import means
                     // we don't need to pass ownership, but we pass
@@ -1397,7 +1397,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         .collect::<Vec<_>>();
                     for (field, value) in record.fields.iter().zip(values) {
                         self.stack.push(value);
-                        self.lower(&field.ty, None);
+                        self.lower(&field.ty);
                     }
                 }
 
@@ -1416,7 +1416,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             // Using the payload of this block we lower the type to
                             // raw wasm values.
                             self.stack.push(payload_name.clone());
-                            self.lower(ty, None);
+                            self.lower(ty);
 
                             // Determine the types of all the wasm values we just
                             // pushed, and record how many. If we pushed too few
@@ -1635,7 +1635,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // which we write into memory, writing the pointer into the low address
                 // and the length into the high address.
                 TypeDefKind::List(_) => {
-                    self.lower(ty, None);
+                    self.lower(ty);
                     self.stack.push(addr.clone());
                     self.emit(&I32Store { offset: offset + 4 });
                     self.stack.push(addr);
@@ -1643,7 +1643,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Record(r) if r.is_flags() => {
-                    self.lower(ty, None);
+                    self.lower(ty);
                     match self.iface.flags_repr(r) {
                         Some(repr) => {
                             self.stack.push(addr);
@@ -1720,7 +1720,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 
     fn lower_and_emit(&mut self, ty: &Type, addr: B::Operand, instr: &Instruction) {
-        self.lower(ty, None);
+        self.lower(ty);
         self.stack.push(addr);
         self.emit(instr);
     }
