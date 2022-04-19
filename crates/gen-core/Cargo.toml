@@ -10,6 +10,3 @@ doctest = false
 [dependencies]
 wit-parser = { path = '../parser' }
 anyhow = "1"
-
-[features]
-witx-compat = ['wit-parser/witx-compat']

@@ -5,9 +5,7 @@ use std::mem;
 use std::ops::Deref;
 pub use wit_bindgen_rust_impl::{export, import};
 
-pub mod exports;
 mod futures;
-pub mod imports;
 
 // Re-export `bitflags` so that we can reference it from macros.
 #[doc(hidden)]

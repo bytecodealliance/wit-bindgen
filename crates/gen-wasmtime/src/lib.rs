@@ -5,7 +5,7 @@ use std::mem;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 use wit_bindgen_gen_core::wit_parser::abi::{
-    Abi, AbiVariant, Bindgen, Instruction, LiftLower, WasmType, WitxInstruction,
+    AbiVariant, Bindgen, Instruction, LiftLower, WasmType,
 };
 use wit_bindgen_gen_core::{wit_parser::*, Direction, Files, Generator, Source, TypeInfo, Types};
 use wit_bindgen_gen_rust::{
@@ -36,7 +36,6 @@ pub struct Wasmtime {
     in_import: bool,
     in_trait: bool,
     trait_name: String,
-    has_preview1_dtor: bool,
     sizes: SizeAlign,
 }
 
@@ -318,58 +317,6 @@ impl RustGenerator for Wasmtime {
         }
         self.push_str(" str");
     }
-
-    fn print_lib_buffer(
-        &mut self,
-        iface: &Interface,
-        push: bool,
-        ty: &Type,
-        mode: TypeMode,
-        lt: &'static str,
-    ) {
-        if self.in_import {
-            if let TypeMode::AllBorrowed(_) = mode {
-                self.push_str("&");
-                if lt != "'_" {
-                    self.push_str(lt);
-                }
-                self.push_str(" mut ");
-            }
-            self.push_str(&format!(
-                "wit_bindgen_wasmtime::exports::{}Buffer<{}, ",
-                if push { "Push" } else { "Pull" },
-                lt,
-            ));
-            self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
-            self.push_str(">");
-        } else {
-            if push {
-                // Push buffers, where wasm pushes, are a `Vec` which is pushed onto
-                self.push_str("&");
-                if lt != "'_" {
-                    self.push_str(lt);
-                }
-                self.push_str(" mut Vec<");
-                self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
-                self.push_str(">");
-            } else {
-                // Pull buffers, which wasm pulls from, are modeled as iterators
-                // in Rust.
-                self.push_str("&");
-                if lt != "'_" {
-                    self.push_str(lt);
-                }
-                self.push_str(" mut (dyn ExactSizeIterator<Item = ");
-                self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
-                self.push_str(">");
-                if lt != "'_" {
-                    self.push_str(" + ");
-                    self.push_str(lt);
-                }
-                self.push_str(")");
-            }
-        }
-    }
 }
 
 impl Generator for Wasmtime {
@@ -382,7 +329,7 @@ impl Generator for Wasmtime {
             .push_str(&format!("pub mod {} {{\n", iface.name.to_snake_case()));
         self.src
             .push_str("#[allow(unused_imports)]\nuse wit_bindgen_wasmtime::{wasmtime, anyhow};\n");
-        self.sizes.fill(variant, iface);
+        self.sizes.fill(iface);
     }
 
     fn type_record(
@@ -525,23 +472,6 @@ impl Generator for Wasmtime {
         self.print_type_list(iface, id, ty, docs);
     }
 
-    fn type_pointer(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        const_: bool,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        self.rustdoc(docs);
-        let mutbl = if const_ { "const" } else { "mut" };
-        self.src
-            .push_str(&format!("pub type {} = *{} ", name.to_camel_case(), mutbl,));
-        self.print_ty(iface, ty, TypeMode::Owned);
-        self.src.push_str(";\n");
-    }
-
     fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.rustdoc(docs);
         self.src
@@ -551,39 +481,6 @@ impl Generator for Wasmtime {
         self.src.push_str(";\n");
     }
 
-    fn type_push_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        self.print_typedef_buffer(iface, id, true, ty, docs);
-    }
-
-    fn type_pull_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        self.print_typedef_buffer(iface, id, false, ty, docs);
-    }
-
-    // fn const_(&mut self, name: &Id, ty: &Id, val: u64, docs: &str) {
-    //     self.rustdoc(docs);
-    //     self.src.push_str(&format!(
-    //         "pub const {}_{}: {} = {};\n",
-    //         ty.to_shouty_snake_case(),
-    //         name.to_shouty_snake_case(),
-    //         ty.to_camel_case(),
-    //         val
-    //     ));
-    // }
-
     // As with `abi_variant` above, we're generating host-side bindings here
     // so a user "export" uses the "guest import" ABI variant on the inside of
     // this `Generator` implementation.
@@ -591,21 +488,13 @@ impl Generator for Wasmtime {
         assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
 
-        let is_dtor = self.types.is_preview1_dtor_func(func);
-        self.has_preview1_dtor = self.has_preview1_dtor || is_dtor;
-
         // Generate the closure that's passed to a `Linker`, the final piece of
         // codegen here.
         let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
         let params = (0..sig.params.len())
             .map(|i| format!("arg{}", i))
             .collect::<Vec<_>>();
-        let mut f = FunctionBindgen::new(self, is_dtor, params);
-        f.func_takes_all_memory = func.abi == Abi::Preview1
-            && func
-                .params
-                .iter()
-                .any(|(_, t)| iface.has_preview1_pointer(t));
+        let mut f = FunctionBindgen::new(self, params);
         iface.call(
             AbiVariant::GuestImport,
             LiftLower::LiftArgsLowerResults,
@@ -621,33 +510,20 @@ impl Generator for Wasmtime {
             needs_functions,
             closures,
             async_intrinsic_called,
-            func_takes_all_memory,
             ..
         } = f;
         assert!(cleanup.is_none());
         assert!(!needs_buffer_transaction);
 
         // Generate the signature this function will have in the final trait
-        let mut self_arg = "&mut self".to_string();
-        if func_takes_all_memory {
-            self_arg.push_str(", mem: wit_bindgen_wasmtime::RawMemory");
-        }
+        let self_arg = "&mut self".to_string();
         self.in_trait = true;
 
         let mut fnsig = FnSig::default();
         fnsig.private = true;
         fnsig.async_ = self.opts.async_.includes(&func.name);
         fnsig.self_arg = Some(self_arg);
-        self.print_docs_and_params(
-            iface,
-            func,
-            if is_dtor {
-                TypeMode::Owned
-            } else {
-                TypeMode::LeafBorrowed("'_")
-            },
-            &fnsig,
-        );
+        self.print_docs_and_params(iface, func, TypeMode::LeafBorrowed("'_"), &fnsig);
         // The Rust return type may differ from the wasm return type based on
         // the `custom_error` configuration of this code generator.
         match self.classify_fn_ret(iface, func) {
@@ -788,16 +664,12 @@ impl Generator for Wasmtime {
         self.print_results(iface, func);
         self.push_str(", wasmtime::Trap> {\n");
 
-        let is_dtor = self.types.is_preview1_dtor_func(func);
-        if is_dtor {
-            assert_eq!(func.results.len(), 0, "destructors cannot have results");
-        }
         let params = func
             .params
             .iter()
             .map(|(name, _)| to_rust_ident(name).to_string())
             .collect();
-        let mut f = FunctionBindgen::new(self, is_dtor, params);
+        let mut f = FunctionBindgen::new(self, params);
         iface.call(
             AbiVariant::GuestExport,
             LiftLower::LowerArgsLiftResults,
@@ -858,9 +730,7 @@ impl Generator for Wasmtime {
         self.src.push_str(&String::from(src));
         self.src.push_str("}\n");
         let func_body = mem::replace(&mut self.src, prev);
-        if !is_dtor {
-            exports.funcs.push(func_body.into());
-        }
+        exports.funcs.push(func_body.into());
 
         // Create the code snippet which will define the type of this field in
         // the struct that we're exporting and additionally extracts the
@@ -1006,28 +876,26 @@ impl Generator for Wasmtime {
                     method, module, f.name, f.closure,
                 ));
             }
-            if !self.has_preview1_dtor {
-                for handle in self.all_needed_handles.iter() {
-                    self.src.push_str(&format!(
-                        "linker.func_wrap(
-                            \"canonical_abi\",
-                            \"resource_drop_{name}\",
-                            move |mut caller: wasmtime::Caller<'_, T>, handle: u32| {{
-                                let (host, tables) = get(caller.data_mut());
-                                let handle = tables
-                                    .{snake}_table
-                                    .remove(handle)
-                                    .map_err(|e| {{
-                                        wasmtime::Trap::new(format!(\"failed to remove handle: {{}}\", e))
-                                    }})?;
-                                host.drop_{snake}(handle);
-                                Ok(())
-                            }}
-                        )?;\n",
-                        name = handle,
-                        snake = handle.to_snake_case(),
-                    ));
-                }
+            for handle in self.all_needed_handles.iter() {
+                self.src.push_str(&format!(
+                    "linker.func_wrap(
+                        \"canonical_abi\",
+                        \"resource_drop_{name}\",
+                        move |mut caller: wasmtime::Caller<'_, T>, handle: u32| {{
+                            let (host, tables) = get(caller.data_mut());
+                            let handle = tables
+                                .{snake}_table
+                                .remove(handle)
+                                .map_err(|e| {{
+                                    wasmtime::Trap::new(format!(\"failed to remove handle: {{}}\", e))
+                                }})?;
+                            host.drop_{snake}(handle);
+                            Ok(())
+                        }}
+                    )?;\n",
+                    name = handle,
+                    snake = handle.to_snake_case(),
+                ));
             }
             self.push_str("Ok(())\n}\n");
         }
@@ -1076,9 +944,6 @@ impl Generator for Wasmtime {
                 self.push_str(ty);
                 self.push_str(",\n");
             }
-            // if self.needs_buffer_glue {
-            //     self.push_str("buffer_glue: wit_bindgen_wasmtime::imports::BufferGlue,");
-            // }
             self.push_str("}\n");
             let bound = if self.opts.async_.is_none() {
                 ""
@@ -1172,45 +1037,6 @@ impl Generator for Wasmtime {
                     suffix = suffix,
                 ));
             }
-            // if self.needs_buffer_glue {
-            //     self.push_str(
-            //         "
-            //             use wit_bindgen_wasmtime::rt::get_memory;
-
-            //             let buffer_glue = wit_bindgen_wasmtime::imports::BufferGlue::default();
-            //             let g = buffer_glue.clone();
-            //             linker.func(
-            //                 \"wit_canonical_buffer_abi\",
-            //                 \"in_len\",
-            //                 move |handle: u32| g.in_len(handle),
-            //             )?;
-            //             let g = buffer_glue.clone();
-            //             linker.func(
-            //                 \"wit_canonical_buffer_abi\",
-            //                 \"in_read\",
-            //                 move |caller: wasmtime::Caller<'_>, handle: u32, len: u32, offset: u32| {
-            //                     let memory = get_memory(&mut caller, \"memory\")?;
-            //                     g.in_read(handle, &memory, offset, len)
-            //                 },
-            //             )?;
-            //             let g = buffer_glue.clone();
-            //             linker.func(
-            //                 \"wit_canonical_buffer_abi\",
-            //                 \"out_len\",
-            //                 move |handle: u32| g.out_len(handle),
-            //             )?;
-            //             let g = buffer_glue.clone();
-            //             linker.func(
-            //                 \"wit_canonical_buffer_abi\",
-            //                 \"out_write\",
-            //                 move |caller: wasmtime::Caller<'_>, handle: u32, len: u32, offset: u32| {
-            //                     let memory = get_memory(&mut caller, \"memory\")?;
-            //                     g.out_write(handle, &memory, offset, len)
-            //                 },
-            //             )?;
-            //         ",
-            //     );
-            // }
             self.push_str("Ok(())\n");
             self.push_str("}\n");
 
@@ -1388,9 +1214,6 @@ struct FunctionBindgen<'a> {
     // Destination where source code is pushed onto for this function
     src: Source,
 
-    // Whether or not this function is a preview1 dtor
-    is_dtor: bool,
-
     // The named parameters that are available to this function
     params: Vec<String>,
 
@@ -1411,9 +1234,6 @@ struct FunctionBindgen<'a> {
     // Code that must be executed before a return, generated during instruction
     // lowering.
     cleanup: Option<String>,
-    // Only present for preview1 ABIs where some arguments might be a `pointer`
-    // type.
-    func_takes_all_memory: bool,
 
     // Rust clousures for buffers that must be placed at the front of the
     // function.
@@ -1428,7 +1248,7 @@ struct FunctionBindgen<'a> {
 }
 
 impl FunctionBindgen<'_> {
-    fn new(gen: &mut Wasmtime, is_dtor: bool, params: Vec<String>) -> FunctionBindgen<'_> {
+    fn new(gen: &mut Wasmtime, params: Vec<String>) -> FunctionBindgen<'_> {
         FunctionBindgen {
             gen,
             block_storage: Vec::new(),
@@ -1439,13 +1259,11 @@ impl FunctionBindgen<'_> {
             async_intrinsic_called: false,
             tmp: 0,
             cleanup: None,
-            func_takes_all_memory: false,
             closures: Source::default(),
             needs_buffer_transaction: false,
             needs_borrow_checker: false,
             needs_memory: false,
             needs_functions: HashMap::new(),
-            is_dtor,
             params,
         }
     }
@@ -1493,14 +1311,6 @@ impl FunctionBindgen<'_> {
             name, method, args, suffix
         ));
         self.caller_memory_available = false; // invalidated by call
-    }
-
-    fn type_string(&mut self, iface: &Interface, ty: &Type, mode: TypeMode) -> String {
-        let start = self.gen.src.len();
-        self.gen.print_ty(iface, ty, mode);
-        let ty = self.gen.src[start..].to_string();
-        self.gen.src.as_mut_string().truncate(start);
-        ty
     }
 
     fn load(&mut self, offset: i32, ty: &str, operands: &[String]) -> String {
@@ -1576,10 +1386,6 @@ impl Bindgen for FunctionBindgen<'_> {
             self.blocks.push(format!("{{\n{}{}\n}}", &src[..], expr));
         }
         self.caller_memory_available = false;
-    }
-
-    fn allocate_typed_space(&mut self, _iface: &Interface, _ty: TypeId) -> String {
-        unimplemented!()
     }
 
     fn i64_return_pointer_area(&mut self, _amt: usize) -> String {
@@ -1683,23 +1489,13 @@ impl Bindgen for FunctionBindgen<'_> {
             }
             Instruction::HandleBorrowedFromI32 { ty } => {
                 let name = &iface.resources[*ty].name;
-                if self.is_dtor {
-                    results.push(format!(
-                        "_tables.{}_table.remove(({}) as u32).map_err(|e| {{
-                            wasmtime::Trap::new(format!(\"failed to remove handle: {{}}\", e))
-                        }})?",
-                        name.to_snake_case(),
-                        operands[0]
-                    ));
-                } else {
-                    results.push(format!(
-                        "_tables.{}_table.get(({}) as u32).ok_or_else(|| {{
+                results.push(format!(
+                    "_tables.{}_table.get(({}) as u32).ok_or_else(|| {{
                             wasmtime::Trap::new(\"invalid handle index\")
                         }})?",
-                        name.to_snake_case(),
-                        operands[0]
-                    ));
-                }
+                    name.to_snake_case(),
+                    operands[0]
+                ));
             }
             Instruction::I32FromBorrowedHandle { ty } => {
                 let tmp = self.tmp();
@@ -1770,7 +1566,6 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::VariantPayloadName => results.push("e".to_string()),
-            Instruction::BufferPayloadName => results.push("e".to_string()),
 
             Instruction::VariantLower {
                 variant,
@@ -2005,91 +1800,6 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::IterBasePointer => results.push("base".to_string()),
 
-            // Never used due to the call modes that this binding generator
-            // uses
-            Instruction::BufferLowerPtrLen { .. } => unreachable!(),
-            Instruction::BufferLiftHandle { .. } => unimplemented!(),
-
-            Instruction::BufferLiftPtrLen { push, ty } => {
-                let block = self.blocks.pop().unwrap();
-                self.needs_borrow_checker = true;
-                let tmp = self.tmp();
-                self.push_str(&format!("let _ = {};\n", operands[0]));
-                self.push_str(&format!("let ptr{} = {};\n", tmp, operands[1]));
-                self.push_str(&format!("let len{} = {};\n", tmp, operands[2]));
-                if iface.all_bits_valid(ty) {
-                    let method = if *push { "slice_mut" } else { "slice" };
-                    results.push(format!("_bc.{}(ptr{1}, len{1})?", method, tmp));
-                } else {
-                    let size = self.gen.sizes.size(ty);
-                    let closure = format!("closure{}", tmp);
-                    self.closures.push_str(&format!("let {} = ", closure));
-                    if *push {
-                        self.closures.push_str("|_bc: &mut [u8], e:");
-                        let ty = self.type_string(iface, ty, TypeMode::Owned);
-                        self.closures.push_str(&ty);
-                        self.closures.push_str("| {let base = 0;\n");
-                        self.closures.push_str(&block);
-                        self.closures.push_str("; Ok(()) };\n");
-                        results.push(format!(
-                            "wit_bindgen_wasmtime::exports::PushBuffer::new(
-                                &mut _bc, ptr{}, len{}, {}, &{})?",
-                            tmp, tmp, size, closure
-                        ));
-                    } else {
-                        self.closures.push_str("|_bc: &[u8]| { let base = 0;Ok(");
-                        self.closures.push_str(&block);
-                        self.closures.push_str(") };\n");
-                        results.push(format!(
-                            "wit_bindgen_wasmtime::exports::PullBuffer::new(
-                                &mut _bc, ptr{}, len{}, {}, &{})?",
-                            tmp, tmp, size, closure
-                        ));
-                    }
-                }
-            }
-
-            Instruction::BufferLowerHandle { push, ty } => {
-                let block = self.blocks.pop().unwrap();
-                let size = self.gen.sizes.size(ty);
-                let tmp = self.tmp();
-                let handle = format!("handle{}", tmp);
-                let closure = format!("closure{}", tmp);
-                self.needs_buffer_transaction = true;
-                if iface.all_bits_valid(ty) {
-                    let method = if *push { "push_out_raw" } else { "push_in_raw" };
-                    self.push_str(&format!(
-                        "let {} = unsafe {{ buffer_transaction.{}({}) }};\n",
-                        handle, method, operands[0],
-                    ));
-                } else if *push {
-                    self.closures.push_str(&format!(
-                        "let {} = |memory: &wasmtime::Memory, base: i32| {{
-                            Ok(({}, {}))
-                        }};\n",
-                        closure, block, size,
-                    ));
-                    self.push_str(&format!(
-                        "let {} = unsafe {{ buffer_transaction.push_out({}, &{}) }};\n",
-                        handle, operands[0], closure,
-                    ));
-                } else {
-                    let ty = self.type_string(iface, ty, TypeMode::AllBorrowed("'_"));
-                    self.closures.push_str(&format!(
-                        "let {} = |memory: &wasmtime::Memory, base: i32, e: {}| {{
-                            {};
-                            Ok({})
-                        }};\n",
-                        closure, ty, block, size,
-                    ));
-                    self.push_str(&format!(
-                        "let {} = unsafe {{ buffer_transaction.push_in({}, &{}) }};\n",
-                        handle, operands[0], closure,
-                    ));
-                }
-                results.push(format!("{}", handle));
-            }
-
             Instruction::CallWasm {
                 module: _,
                 name,
@@ -2147,17 +1857,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.push_str(");\n");
                 }
 
-                if self.func_takes_all_memory {
-                    let mem = self.memory_src();
-                    self.push_str("let raw_memory = wit_bindgen_wasmtime::RawMemory { slice: ");
-                    self.push_str(&mem);
-                    self.push_str(".raw() };\n");
-                }
-
                 let mut call = format!("host.{}(", func.name.to_snake_case());
-                if self.func_takes_all_memory {
-                    call.push_str("raw_memory, ");
-                }
                 for i in 0..operands.len() {
                     call.push_str(&format!("param{}, ", i));
                 }
@@ -2261,12 +1961,6 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::I32Store16 { offset } => {
                 self.store(*offset, "as_i32", " as u16", operands)
             }
-
-            Instruction::Witx { instr } => match instr {
-                WitxInstruction::PointerFromI32 { .. }
-                | WitxInstruction::ConstPointerFromI32 { .. } => top_as("u32"),
-                i => unimplemented!("{:?}", i),
-            },
         }
     }
 }

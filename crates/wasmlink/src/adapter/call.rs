@@ -555,10 +555,6 @@ impl<'a> CallAdapter<'a> {
                         params.next().unwrap();
                     }
                 }
-                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {
-                    params.next().unwrap();
-                }
-                TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => todo!(),
             },
             Type::Handle(id) => {
                 let addr = params.next().unwrap();
@@ -683,8 +679,6 @@ impl<'a> CallAdapter<'a> {
                         });
                     }
                 }
-                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {}
-                TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => todo!(),
             },
             Type::Handle(id) => {
                 // Params need to be cloned, so add a local

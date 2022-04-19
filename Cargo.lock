@@ -2019,7 +2019,7 @@ dependencies = [
  "quote",
  "shellexpand",
  "syn",
- "witx 0.9.1",
+ "witx",
 ]
 
 [[package]]
@@ -2277,7 +2277,6 @@ dependencies = [
  "unicode-normalization",
  "unicode-xid",
  "wast 33.0.0",
- "witx 0.10.0",
 ]
 
 [[package]]
@@ -2290,17 +2289,6 @@ dependencies = [
  "log",
  "thiserror",
  "wast 35.0.2",
-]
-
-[[package]]
-name = "witx"
-version = "0.10.0"
-source = "git+https://github.com/alexcrichton/WASI?branch=abi-next#70a8c6363fb26be655e59a2587bd191e7baee59b"
-dependencies = [
- "anyhow",
- "log",
- "thiserror",
- "wast 33.0.0",
 ]
 
 [[package]]

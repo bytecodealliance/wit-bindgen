@@ -195,10 +195,6 @@ fn to_json(i: &Interface) -> String {
             cases: Vec<(String, Option<String>)>,
         },
         List(String),
-        PushBuffer(String),
-        PullBuffer(String),
-        Pointer(String),
-        ConstPointer(String),
     }
 
     #[derive(Serialize)]
@@ -279,11 +275,7 @@ fn to_json(i: &Interface) -> String {
                     .map(|f| (f.name.clone(), f.ty.as_ref().map(translate_type)))
                     .collect(),
             },
-            TypeDefKind::PushBuffer(ty) => Type::PushBuffer(translate_type(ty)),
-            TypeDefKind::PullBuffer(ty) => Type::PullBuffer(translate_type(ty)),
             TypeDefKind::List(ty) => Type::List(translate_type(ty)),
-            TypeDefKind::Pointer(ty) => Type::Pointer(translate_type(ty)),
-            TypeDefKind::ConstPointer(ty) => Type::ConstPointer(translate_type(ty)),
         }
     }
 

@@ -1,4 +1,3 @@
-use crate::abi::AbiVariant;
 use crate::{Int, Interface, Record, RecordKind, Type, TypeDef, TypeDefKind, Variant};
 
 #[derive(Default)]
@@ -7,23 +6,18 @@ pub struct SizeAlign {
 }
 
 impl SizeAlign {
-    pub fn fill(&mut self, variant: AbiVariant, iface: &Interface) {
+    pub fn fill(&mut self, iface: &Interface) {
         self.map = vec![(0, 0); iface.types.len()];
         for ty in iface.topological_types() {
-            let pair = self.calculate(variant, &iface.types[ty]);
+            let pair = self.calculate(&iface.types[ty]);
             self.map[ty.index()] = pair;
         }
     }
 
-    fn calculate(&self, variant: AbiVariant, ty: &TypeDef) -> (usize, usize) {
+    fn calculate(&self, ty: &TypeDef) -> (usize, usize) {
         match &ty.kind {
             TypeDefKind::Type(t) => (self.size(t), self.align(t)),
             TypeDefKind::List(_) => (8, 4),
-            TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => (4, 4),
-            TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => match variant {
-                AbiVariant::GuestImport => (12, 4),
-                AbiVariant::GuestExport => (4, 4),
-            },
             TypeDefKind::Record(r) => {
                 if let RecordKind::Flags(repr) = r.kind {
                     return match repr {

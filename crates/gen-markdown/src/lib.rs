@@ -1,7 +1,6 @@
 use heck::*;
 use pulldown_cmark::{html, Event, LinkType, Parser, Tag};
 use std::collections::HashMap;
-use wit_bindgen_gen_core::wit_parser::abi::AbiVariant;
 use wit_bindgen_gen_core::{wit_parser, Direction, Files, Generator, Source};
 use wit_parser::*;
 
@@ -32,14 +31,6 @@ impl Opts {
 impl Markdown {
     pub fn new() -> Markdown {
         Markdown::default()
-    }
-
-    fn abi_variant(dir: Direction) -> AbiVariant {
-        // This generator uses the obvious direction to ABI variant mapping.
-        match dir {
-            Direction::Export => AbiVariant::GuestExport,
-            Direction::Import => AbiVariant::GuestImport,
-        }
     }
 
     fn print_ty(&mut self, iface: &Interface, ty: &Type, skip_name: bool) {
@@ -116,26 +107,6 @@ impl Markdown {
                         self.print_ty(iface, t, false);
                         self.src.push_str(">");
                     }
-                    TypeDefKind::PushBuffer(t) => {
-                        self.src.push_str("push-buffer<");
-                        self.print_ty(iface, t, false);
-                        self.src.push_str(">");
-                    }
-                    TypeDefKind::PullBuffer(t) => {
-                        self.src.push_str("pull-buffer<");
-                        self.print_ty(iface, t, false);
-                        self.src.push_str(">");
-                    }
-                    TypeDefKind::Pointer(t) => {
-                        self.src.push_str("pointer<");
-                        self.print_ty(iface, t, false);
-                        self.src.push_str(">");
-                    }
-                    TypeDefKind::ConstPointer(t) => {
-                        self.src.push_str("const-pointer<");
-                        self.print_ty(iface, t, false);
-                        self.src.push_str(">");
-                    }
                 }
             }
         }
@@ -177,9 +148,8 @@ impl Markdown {
 }
 
 impl Generator for Markdown {
-    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        let variant = Self::abi_variant(dir);
-        self.sizes.fill(variant, iface);
+    fn preprocess_one(&mut self, iface: &Interface, _dir: Direction) {
+        self.sizes.fill(iface);
     }
 
     fn type_record(
@@ -268,42 +238,8 @@ impl Generator for Markdown {
         self.type_alias(iface, id, name, &Type::Id(id), docs);
     }
 
-    fn type_pointer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        _const: bool,
-        _ty: &Type,
-        docs: &Docs,
-    ) {
-        self.type_alias(iface, id, name, &Type::Id(id), docs);
-    }
-
     fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.type_alias(iface, id, name, ty, docs)
-    }
-
-    fn type_push_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        _ty: &Type,
-        docs: &Docs,
-    ) {
-        self.type_alias(iface, id, name, &Type::Id(id), docs);
-    }
-
-    fn type_pull_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        _ty: &Type,
-        docs: &Docs,
-    ) {
-        self.type_alias(iface, id, name, &Type::Id(id), docs);
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {

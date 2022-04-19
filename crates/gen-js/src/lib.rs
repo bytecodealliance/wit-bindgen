@@ -2,7 +2,7 @@ use heck::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem;
 use wit_bindgen_gen_core::wit_parser::abi::{
-    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType, WitxInstruction,
+    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
 };
 use wit_bindgen_gen_core::{wit_parser::*, Direction, Files, Generator};
 
@@ -21,8 +21,6 @@ pub struct Js {
     exported_resources: BTreeSet<ResourceId>,
     needs_ty_option: bool,
     needs_ty_result: bool,
-    needs_ty_push_buffer: bool,
-    needs_ty_pull_buffer: bool,
 }
 
 #[derive(Default)]
@@ -57,8 +55,6 @@ enum Intrinsic {
     ClampGuest,
     ClampHost,
     ClampHost64,
-    PushBuffer,
-    PullBuffer,
     DataView,
     ValidateF32,
     ValidateF64,
@@ -84,8 +80,6 @@ impl Intrinsic {
             Intrinsic::ClampGuest => "clamp_guest",
             Intrinsic::ClampHost => "clamp_host",
             Intrinsic::ClampHost64 => "clamp_host64",
-            Intrinsic::PushBuffer => "PushBuffer",
-            Intrinsic::PullBuffer => "PullBuffer",
             Intrinsic::DataView => "data_view",
             Intrinsic::ValidateF32 => "validate_f32",
             Intrinsic::ValidateF64 => "validate_f64",
@@ -200,11 +194,6 @@ impl Js {
                         }
                     }
                     TypeDefKind::List(v) => self.print_list(iface, v),
-                    TypeDefKind::PushBuffer(v) => self.print_buffer(iface, true, v),
-                    TypeDefKind::PullBuffer(v) => self.print_buffer(iface, false, v),
-                    TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {
-                        self.src.ts("number");
-                    }
                 }
             }
         }
@@ -233,24 +222,6 @@ impl Js {
             self.print_ty(iface, &field.ty);
         }
         self.src.ts("]");
-    }
-
-    fn print_buffer(&mut self, iface: &Interface, push: bool, ty: &Type) {
-        match self.array_ty(iface, ty) {
-            Some(ty) => self.src.ts(ty),
-            None => {
-                if push {
-                    self.needs_ty_push_buffer = true;
-                    self.src.ts("PushBuffer");
-                } else {
-                    self.needs_ty_pull_buffer = true;
-                    self.src.ts("PullBuffer");
-                }
-                self.src.ts("<");
-                self.print_ty(iface, ty);
-                self.src.ts(">");
-            }
-        }
     }
 
     fn docs(&mut self, docs: &Docs) {
@@ -373,7 +344,7 @@ impl Js {
 impl Generator for Js {
     fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
         let variant = Self::abi_variant(dir);
-        self.sizes.fill(variant, iface);
+        self.sizes.fill(iface);
         self.in_import = variant == AbiVariant::GuestImport;
     }
 
@@ -530,50 +501,8 @@ impl Generator for Js {
         self.src.ts(";\n");
     }
 
-    fn type_pointer(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        const_: bool,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        drop((iface, _id, name, const_, ty, docs));
-    }
-
     fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         drop((iface, _id, name, ty, docs));
-    }
-
-    fn type_push_buffer(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        self.docs(docs);
-        self.src
-            .ts(&format!("export type {} = ", name.to_camel_case()));
-        self.print_buffer(iface, true, ty);
-        self.src.ts(";\n");
-    }
-
-    fn type_pull_buffer(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        self.docs(docs);
-        self.src
-            .ts(&format!("export type {} = ", name.to_camel_case()));
-        self.print_buffer(iface, false, ty);
-        self.src.ts(";\n");
     }
 
     // As with `abi_variant` above, we're generating host-side bindings here
@@ -878,7 +807,7 @@ impl Generator for Js {
             }
 
             self.src.ts("
-               /** 
+               /**
                 * This is a low-level method which can be used to add any
                 * intrinsics necessary for this instance to operate to an
                 * import object.
@@ -1102,22 +1031,6 @@ impl Generator for Js {
                 "export type Result<T, E> = { tag: \"ok\", val: T } | { tag: \"err\", val: E };\n",
             );
         }
-        if mem::take(&mut self.needs_ty_push_buffer) {
-            self.src.ts("
-                export class PushBuffer<T> {
-                    length: number;
-                    push(val: T): boolean;
-                }
-            ");
-        }
-        if mem::take(&mut self.needs_ty_pull_buffer) {
-            self.src.ts("
-                export class PullBuffer<T> {
-                    length: number;
-                    pull(): T | undefined;
-                }
-            ");
-        }
 
         if self.intrinsics.len() > 0 {
             self.src.js("import { ");
@@ -1274,10 +1187,6 @@ impl Bindgen for FunctionBindgen<'_> {
         let to_restore = self.block_storage.pop().unwrap();
         let src = mem::replace(&mut self.src.js, to_restore);
         self.blocks.push((src.into(), mem::take(operands)));
-    }
-
-    fn allocate_typed_space(&mut self, _iface: &Interface, _ty: TypeId) -> String {
-        unimplemented!()
     }
 
     fn i64_return_pointer_area(&mut self, _amt: usize) -> String {
@@ -1532,7 +1441,6 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::VariantPayloadName => results.push("e".to_string()),
-            Instruction::BufferPayloadName => results.push("e".to_string()),
             Instruction::VariantLower {
                 variant,
                 results: result_types,
@@ -1869,86 +1777,6 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::IterBasePointer => results.push("base".to_string()),
 
-            Instruction::BufferLiftPtrLen { push, ty } => {
-                let (block, block_results) = self.blocks.pop().unwrap();
-                // assert_eq!(block_results.len(), 1);
-                let tmp = self.tmp();
-                self.needs_memory = true;
-                self.src
-                    .js(&format!("const ptr{} = {};\n", tmp, operands[1]));
-                self.src
-                    .js(&format!("const len{} = {};\n", tmp, operands[2]));
-                if let Some(ty) = self.gen.array_ty(iface, ty) {
-                    // TODO: this is the wrong endianness
-                    results.push(format!("new {}(memory.buffer, ptr{}, len{1})", ty, tmp));
-                } else {
-                    let size = self.gen.sizes.size(ty);
-                    if *push {
-                        let buf = self.gen.intrinsic(Intrinsic::PushBuffer);
-                        assert!(block_results.is_empty());
-                        results.push(format!(
-                            "new {}(ptr{}, len{1}, {}, (e, base) => {{
-                                {}
-                            }})",
-                            buf, tmp, size, block
-                        ));
-                    } else {
-                        let buf = self.gen.intrinsic(Intrinsic::PullBuffer);
-                        assert_eq!(block_results.len(), 1);
-                        results.push(format!(
-                            "new {}(ptr{}, len{1}, {}, (base) => {{
-                                {}
-                                return {};
-                            }})",
-                            buf, tmp, size, block, block_results[0],
-                        ));
-                    }
-                }
-            }
-
-            //    Instruction::BufferLowerHandle { push, ty } => {
-            //        let block = self.blocks.pop().unwrap();
-            //        let size = self.sizes.size(ty);
-            //        let tmp = self.tmp();
-            //        let handle = format!("handle{}", tmp);
-            //        let closure = format!("closure{}", tmp);
-            //        self.needs_buffer_transaction = true;
-            //        if iface.all_bits_valid(ty) {
-            //            let method = if *push { "push_out_raw" } else { "push_in_raw" };
-            //            self.push_str(&format!(
-            //                "let {} = unsafe {{ buffer_transaction.{}({}) }};\n",
-            //                handle, method, operands[0],
-            //            ));
-            //        } else if *push {
-            //            self.closures.push_str(&format!(
-            //                "let {} = |memory: &wasmtime::Memory, base: i32| {{
-            //                    Ok(({}, {}))
-            //                }};\n",
-            //                closure, block, size,
-            //            ));
-            //            self.push_str(&format!(
-            //                "let {} = unsafe {{ buffer_transaction.push_out({}, &{}) }};\n",
-            //                handle, operands[0], closure,
-            //            ));
-            //        } else {
-            //            let start = self.src.len();
-            //            self.print_ty(iface, ty, TypeMode::AllBorrowed("'_"));
-            //            let ty = self.src[start..].to_string();
-            //            self.src.truncate(start);
-            //            self.closures.push_str(&format!(
-            //                "let {} = |memory: &wasmtime::Memory, base: i32, e: {}| {{
-            //                    {};
-            //                    Ok({})
-            //                }};\n",
-            //                closure, ty, block, size,
-            //            ));
-            //            self.push_str(&format!(
-            //                "let {} = unsafe {{ buffer_transaction.push_in({}, &{}) }};\n",
-            //                handle, operands[0], closure,
-            //            ));
-            //        }
-            //        results.push(format!("{}", handle));
-            //    }
             Instruction::CallWasm {
                 module: _,
                 name,
@@ -2157,11 +1985,6 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::I32Store8 { offset } => self.store("setInt8", *offset, operands),
             Instruction::I32Store16 { offset } => self.store("setInt16", *offset, operands),
 
-            Instruction::Witx { instr } => match instr {
-                WitxInstruction::PointerFromI32 { .. } => results.push(operands[0].clone()),
-                i => unimplemented!("{:?}", i),
-            },
-
             i => unimplemented!("{:?}", i),
         }
     }
@@ -2211,52 +2034,6 @@ impl Js {
                     if (i < min || i > max) \
                         throw new RangeError(`must be between ${min} and ${max}`);
                     return i;
-                }
-            "),
-            Intrinsic::PushBuffer => self.src.js("
-                export class PushBuffer {
-                    constructor(ptr, len, size, write) {
-                        this._ptr = ptr;
-                        this._len = len;
-                        this._size = size;
-                        this._write = write;
-                    }
-
-                    get length() {
-                        return this._len;
-                    }
-
-                    push(val) {
-                        if (this._len == 0)
-                            return false;
-                        this._len -= 1;
-                        this._write(val, this._ptr);
-                        this._ptr += this._size;
-                        return true;
-                    }
-                }
-            "),
-            Intrinsic::PullBuffer => self.src.js("
-                export class PullBuffer {
-                    constructor(ptr, len, size, read) {
-                        this._len = len;
-                        this._ptr = ptr;
-                        this._size = size;
-                        this._read = read;
-                    }
-
-                    get length() {
-                        return this._len;
-                    }
-
-                    pull() {
-                        if (this._len == 0)
-                            return undefined;
-                        this._len -= 1;
-                        const ret = this._read(this._ptr);
-                        this._ptr += this._size;
-                        return ret;
-                    }
                 }
             "),
 

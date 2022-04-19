@@ -20,6 +20,3 @@ test-helpers = { path = '../test-helpers', features = ['wit-bindgen-gen-wasmtime
 wasmtime = "0.35.2"
 wasmtime-wasi = "0.35.2"
 wit-bindgen-wasmtime = { path = '../wasmtime', features = ['tracing', 'async'] }
-
-[features]
-witx-compat = ['wit-bindgen-gen-core/witx-compat']

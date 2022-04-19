@@ -15,6 +15,3 @@ structopt = { version = "0.3", default-features = false, optional = true }
 
 [dev-dependencies]
 test-helpers = { path = '../test-helpers', features = ['wit-bindgen-gen-js'] }
-
-[features]
-wit-compat = ['wit-bindgen-gen-core/witx-compat']

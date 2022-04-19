@@ -24,14 +24,6 @@ pub trait RustGenerator {
         lifetime: &'static str,
     );
     fn print_borrowed_str(&mut self, lifetime: &'static str);
-    fn print_lib_buffer(
-        &mut self,
-        iface: &Interface,
-        push: bool,
-        ty: &Type,
-        mode: TypeMode,
-        lt: &'static str,
-    );
     fn default_param_mode(&self) -> TypeMode;
     fn handle_projection(&self) -> Option<(&'static str, String)>;
     fn handle_wrapper(&self) -> Option<&'static str>;
@@ -246,11 +238,7 @@ pub trait RustGenerator {
 
             fn needs_generics(iface: &Interface, ty: &TypeDefKind) -> bool {
                 match ty {
-                    TypeDefKind::Variant(_)
-                    | TypeDefKind::Record(_)
-                    | TypeDefKind::List(_)
-                    | TypeDefKind::PushBuffer(_)
-                    | TypeDefKind::PullBuffer(_) => true,
+                    TypeDefKind::Variant(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
                     TypeDefKind::Type(Type::Id(t)) => needs_generics(iface, &iface.types[*t].kind),
                     TypeDefKind::Type(Type::Handle(_)) => true,
                     _ => false,
@@ -260,9 +248,6 @@ pub trait RustGenerator {
 
         match &ty.kind {
             TypeDefKind::List(t) => self.print_list(iface, t, mode),
-
-            TypeDefKind::Pointer(t) => self.print_pointer(iface, false, t),
-            TypeDefKind::ConstPointer(t) => self.print_pointer(iface, true, t),
 
             // Variants can be printed natively if they're `Option`,
             // `Result` , or `bool`, otherwise they must be named for now.
@@ -306,9 +291,6 @@ pub trait RustGenerator {
                 panic!("unsupported anonymous type reference: record")
             }
 
-            TypeDefKind::PushBuffer(r) => self.print_buffer(iface, true, r, mode),
-            TypeDefKind::PullBuffer(r) => self.print_buffer(iface, false, r, mode),
-
             TypeDefKind::Type(t) => self.print_ty(iface, t, mode),
         }
     }
@@ -323,13 +305,11 @@ pub trait RustGenerator {
             },
             t => match mode {
                 TypeMode::AllBorrowed(lt) => {
-                    let mutbl = self.needs_mutable_slice(iface, ty);
-                    self.print_borrowed_slice(iface, mutbl, ty, lt);
+                    self.print_borrowed_slice(iface, false, ty, lt);
                 }
                 TypeMode::LeafBorrowed(lt) => {
                     if iface.all_bits_valid(t) {
-                        let mutbl = self.needs_mutable_slice(iface, ty);
-                        self.print_borrowed_slice(iface, mutbl, ty, lt);
+                        self.print_borrowed_slice(iface, false, ty, lt);
                     } else {
                         self.push_str("Vec<");
                         self.print_ty(iface, ty, mode);
@@ -342,20 +322,6 @@ pub trait RustGenerator {
                     self.push_str(">");
                 }
             },
-        }
-    }
-
-    fn print_buffer(&mut self, iface: &Interface, push: bool, ty: &Type, mode: TypeMode) {
-        let lt = match mode {
-            TypeMode::AllBorrowed(s) | TypeMode::HandlesBorrowed(s) | TypeMode::LeafBorrowed(s) => {
-                s
-            }
-            TypeMode::Owned => unimplemented!(),
-        };
-        if iface.all_bits_valid(ty) {
-            self.print_borrowed_slice(iface, push, ty, lt)
-        } else {
-            self.print_lib_buffer(iface, push, ty, mode, lt)
         }
     }
 
@@ -444,9 +410,7 @@ pub trait RustGenerator {
                 }
                 self.push_str(");\n");
             } else {
-                if info.has_pull_buffer || info.has_push_buffer {
-                    // skip copy/clone ...
-                } else if !info.owns_data() {
+                if !info.owns_data() {
                     self.push_str("#[repr(C)]\n");
                     self.push_str("#[derive(Copy, Clone)]\n");
                 } else if !info.has_handle {
@@ -534,8 +498,6 @@ pub trait RustGenerator {
                 self.push_str("#[repr(");
                 self.int_repr(variant.tag);
                 self.push_str(")]\n#[derive(Clone, Copy, PartialEq, Eq)]\n");
-            } else if info.has_pull_buffer || info.has_push_buffer {
-                // skip copy/clone
             } else if !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
             } else if !info.has_handle {
@@ -683,26 +645,6 @@ pub trait RustGenerator {
         }
     }
 
-    fn print_typedef_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        push: bool,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        let info = self.info(id);
-        for (name, mode) in self.modes_of(iface, id) {
-            let lt = self.lifetime_for(&info, mode);
-            self.rustdoc(docs);
-            self.push_str(&format!("pub type {}", name));
-            self.print_generics(&info, lt, true);
-            self.push_str(" = ");
-            self.print_buffer(iface, push, ty, mode);
-            self.push_str(";\n");
-        }
-    }
-
     fn param_name(&self, iface: &Interface, ty: TypeId) -> String {
         let info = self.info(ty);
         let name = iface.types[ty].name.as_ref().unwrap().to_camel_case();
@@ -737,55 +679,12 @@ pub trait RustGenerator {
     fn lifetime_for(&self, info: &TypeInfo, mode: TypeMode) -> Option<&'static str> {
         match mode {
             TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s)
-                if info.has_list
-                    || info.has_handle
-                    || info.has_push_buffer
-                    || info.has_pull_buffer =>
+                if info.has_list || info.has_handle =>
             {
                 Some(s)
             }
-            TypeMode::HandlesBorrowed(s)
-                if info.has_handle || info.has_pull_buffer || info.has_push_buffer =>
-            {
-                Some(s)
-            }
+            TypeMode::HandlesBorrowed(s) if info.has_handle => Some(s),
             _ => None,
-        }
-    }
-
-    fn needs_mutable_slice(&mut self, iface: &Interface, ty: &Type) -> bool {
-        let info = self.types_mut().type_info(iface, ty);
-        // If there's any out-buffers transitively then a mutable slice is
-        // required because the out-buffers could be modified. Otherwise a
-        // mutable slice is also required if, transitively, `InBuffer` is used
-        // which is used when we're a buffer of a type where not all bits are
-        // valid (e.g. the rust representation and the canonical abi may differ).
-        info.has_push_buffer || self.has_pull_buffer_invalid_bits(iface, ty)
-    }
-
-    fn has_pull_buffer_invalid_bits(&self, iface: &Interface, ty: &Type) -> bool {
-        let id = match ty {
-            Type::Id(id) => *id,
-            _ => return false,
-        };
-        match &iface.types[id].kind {
-            TypeDefKind::Type(t)
-            | TypeDefKind::Pointer(t)
-            | TypeDefKind::ConstPointer(t)
-            | TypeDefKind::PushBuffer(t)
-            | TypeDefKind::List(t) => self.has_pull_buffer_invalid_bits(iface, t),
-            TypeDefKind::Record(r) => r
-                .fields
-                .iter()
-                .any(|t| self.has_pull_buffer_invalid_bits(iface, &t.ty)),
-            TypeDefKind::Variant(v) => v
-                .cases
-                .iter()
-                .filter_map(|c| c.ty.as_ref())
-                .any(|t| self.has_pull_buffer_invalid_bits(iface, t)),
-            TypeDefKind::PullBuffer(t) => {
-                !iface.all_bits_valid(t) || self.has_pull_buffer_invalid_bits(iface, t)
-            }
         }
     }
 }
@@ -1045,7 +944,7 @@ trait TypeInfoExt {
 
 impl TypeInfoExt for TypeInfo {
     fn owns_data(&self) -> bool {
-        self.has_list || self.has_handle || self.has_pull_buffer || self.has_push_buffer
+        self.has_list || self.has_handle
     }
 }
 

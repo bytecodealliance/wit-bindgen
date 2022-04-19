@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use wit_bindgen_gen_core::wit_parser::abi::{
-    AbiVariant, Bindgen, Instruction, LiftLower, WasmType, WitxInstruction,
+    AbiVariant, Bindgen, Instruction, LiftLower, WasmType,
 };
 use wit_bindgen_gen_core::{wit_parser::*, Direction, Files, Generator, Source, TypeInfo, Types};
 use wit_bindgen_gen_rust::{
@@ -137,12 +137,9 @@ impl RustGenerator for RustWasm {
         let manually_drop = match ty {
             Type::Id(id) => match &iface.types[*id].kind {
                 TypeDefKind::Record(_) => true,
-                TypeDefKind::List(_)
-                | TypeDefKind::Variant(_)
-                | TypeDefKind::PushBuffer(_)
-                | TypeDefKind::PullBuffer(_)
-                | TypeDefKind::Type(_) => panic!("unsupported pointer type"),
-                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => true,
+                TypeDefKind::List(_) | TypeDefKind::Variant(_) | TypeDefKind::Type(_) => {
+                    panic!("unsupported pointer type")
+                }
             },
             Type::Handle(_) => true,
             _ => false,
@@ -174,44 +171,6 @@ impl RustGenerator for RustWasm {
         }
         self.push_str(" str");
     }
-
-    fn print_lib_buffer(
-        &mut self,
-        iface: &Interface,
-        push: bool,
-        ty: &Type,
-        mode: TypeMode,
-        lt: &'static str,
-    ) {
-        let prefix = if push { "Push" } else { "Pull" };
-        if self.in_import {
-            if let TypeMode::AllBorrowed(_) = mode {
-                self.push_str("&");
-                if lt != "'_" {
-                    self.push_str(lt);
-                }
-                self.push_str(" mut ");
-            }
-            self.push_str(&format!(
-                "wit_bindgen_rust::imports::{}Buffer<{}, ",
-                prefix, lt,
-            ));
-            self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
-            self.push_str(">");
-        } else {
-            // Buffers in exports are represented with special types from the
-            // library support crate since they're wrappers around
-            // externally-provided handles.
-            self.push_str("wit_bindgen_rust::exports::");
-            self.push_str(prefix);
-            self.push_str("Buffer");
-            self.push_str("<");
-            self.push_str(lt);
-            self.push_str(", ");
-            self.print_ty(iface, ty, if push { TypeMode::Owned } else { mode });
-            self.push_str(">");
-        }
-    }
 }
 
 impl Generator for RustWasm {
@@ -235,7 +194,7 @@ impl Generator for RustWasm {
                     self.i64_return_pointer_area_size.max(results.len());
             }
         }
-        self.sizes.fill(variant, iface);
+        self.sizes.fill(iface);
     }
 
     fn type_record(
@@ -452,35 +411,21 @@ impl Generator for RustWasm {
 
         self.src.push_str("impl Drop for ");
         self.src.push_str(&name.to_camel_case());
-        if self.types.has_preview1_dtor(ty) {
-            self.src.push_str(&format!(
-                "{{
-                    fn drop(&mut self) {{
-                        unsafe {{
-                            drop({}_close({}(self.0)));
-                        }}
+        self.src.push_str(&format!(
+            "{{
+                fn drop(&mut self) {{
+                    #[link(wasm_import_module = \"canonical_abi\")]
+                    extern \"C\" {{
+                        #[link_name = \"resource_drop_{}\"]
+                        fn close(fd: i32);
                     }}
-                }}\n",
-                name,
-                name.to_camel_case(),
-            ));
-        } else {
-            self.src.push_str(&format!(
-                "{{
-                    fn drop(&mut self) {{
-                        #[link(wasm_import_module = \"canonical_abi\")]
-                        extern \"C\" {{
-                            #[link_name = \"resource_drop_{}\"]
-                            fn close(fd: i32);
-                        }}
-                        unsafe {{
-                            close(self.0);
-                        }}
+                    unsafe {{
+                        close(self.0);
                     }}
-                }}\n",
-                name,
-            ));
-        }
+                }}
+            }}\n",
+            name,
+        ));
 
         self.src.push_str("impl Clone for ");
         self.src.push_str(&name.to_camel_case());
@@ -509,23 +454,6 @@ impl Generator for RustWasm {
         self.print_type_list(iface, id, ty, docs);
     }
 
-    fn type_pointer(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        const_: bool,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        self.rustdoc(docs);
-        let mutbl = if const_ { "const" } else { "mut" };
-        self.src
-            .push_str(&format!("pub type {} = *{} ", name.to_camel_case(), mutbl,));
-        self.print_ty(iface, ty, TypeMode::Owned);
-        self.src.push_str(";\n");
-    }
-
     fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.rustdoc(docs);
         self.src
@@ -535,48 +463,9 @@ impl Generator for RustWasm {
         self.src.push_str(";\n");
     }
 
-    fn type_push_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        self.print_typedef_buffer(iface, id, true, ty, docs);
-    }
-
-    fn type_pull_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        self.print_typedef_buffer(iface, id, false, ty, docs);
-    }
-
-    // fn const_(&mut self, name: &Id, ty: &Id, val: u64, docs: &str) {
-    //     self.rustdoc(docs);
-    //     self.src.push_str(&format!(
-    //         "pub const {}_{}: {} = {};\n",
-    //         ty.to_shouty_snake_case(),
-    //         name.to_shouty_snake_case(),
-    //         ty.to_camel_case(),
-    //         val
-    //     ));
-    // }
-
     fn import(&mut self, iface: &Interface, func: &Function) {
-        let is_dtor = self.types.is_preview1_dtor_func(func);
         let mut sig = FnSig::default();
-        let param_mode = if is_dtor {
-            sig.unsafe_ = true;
-            TypeMode::Owned
-        } else {
-            TypeMode::AllBorrowed("'_")
-        };
+        let param_mode = TypeMode::AllBorrowed("'_");
         sig.async_ = func.is_async;
         match &func.kind {
             FunctionKind::Freestanding => {}
@@ -594,11 +483,9 @@ impl Generator for RustWasm {
         }
         let params = self.print_signature(iface, func, param_mode, &sig);
         self.src.push_str("{\n");
-        if !is_dtor {
-            self.src.push_str("unsafe {\n");
-        }
+        self.src.push_str("unsafe {\n");
 
-        let mut f = FunctionBindgen::new(self, is_dtor, params);
+        let mut f = FunctionBindgen::new(self, params);
         iface.call(
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
@@ -616,9 +503,7 @@ impl Generator for RustWasm {
         }
         self.src.push_str(&String::from(src));
 
-        if !is_dtor {
-            self.src.push_str("}\n");
-        }
+        self.src.push_str("}\n");
         self.src.push_str("}\n");
 
         match &func.kind {
@@ -630,7 +515,6 @@ impl Generator for RustWasm {
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
-        let is_dtor = self.types.is_preview1_dtor_func(func);
         let rust_name = func.name.to_snake_case();
 
         self.src.push_str("#[export_name = \"");
@@ -666,7 +550,7 @@ impl Generator for RustWasm {
             self.src.push_str("let future = async move {\n");
         }
 
-        let mut f = FunctionBindgen::new(self, is_dtor, params);
+        let mut f = FunctionBindgen::new(self, params);
         iface.call(
             AbiVariant::GuestExport,
             LiftLower::LiftArgsLowerResults,
@@ -797,15 +681,13 @@ struct FunctionBindgen<'a> {
     tmp: usize,
     needs_cleanup_list: bool,
     cleanup: Vec<(String, String)>,
-    is_dtor: bool,
 }
 
 impl FunctionBindgen<'_> {
-    fn new(gen: &mut RustWasm, is_dtor: bool, params: Vec<String>) -> FunctionBindgen<'_> {
+    fn new(gen: &mut RustWasm, params: Vec<String>) -> FunctionBindgen<'_> {
         FunctionBindgen {
             gen,
             params,
-            is_dtor,
             src: Default::default(),
             blocks: Vec::new(),
             block_storage: Vec::new(),
@@ -928,19 +810,6 @@ impl Bindgen for FunctionBindgen<'_> {
         }
     }
 
-    fn allocate_typed_space(&mut self, _iface: &Interface, ty: TypeId) -> String {
-        let tmp = self.tmp();
-        self.push_str(&format!(
-            "let mut rp{} = core::mem::MaybeUninit::<[u8;",
-            tmp
-        ));
-        let size = self.gen.sizes.size(&Type::Id(ty));
-        self.push_str(&size.to_string());
-        self.push_str("]>::uninit();\n");
-        self.push_str(&format!("let ptr{} = rp{0}.as_mut_ptr() as i32;\n", tmp));
-        format!("ptr{}", tmp)
-    }
-
     fn i64_return_pointer_area(&mut self, amt: usize) -> String {
         assert!(amt <= self.gen.i64_return_pointer_area_size);
         let tmp = self.tmp();
@@ -1049,7 +918,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 ));
             }
             Instruction::HandleBorrowedFromI32 { .. } => {
-                assert!(!self.is_dtor);
                 results.push(format!(
                     "wit_bindgen_rust::Handle::from_raw({})",
                     operands[0],
@@ -1058,11 +926,7 @@ impl Bindgen for FunctionBindgen<'_> {
 
             // handles in imports
             Instruction::I32FromBorrowedHandle { .. } => {
-                if self.is_dtor {
-                    results.push(format!("{}.into_raw()", operands[0]));
-                } else {
-                    results.push(format!("{}.0", operands[0]));
-                }
+                results.push(format!("{}.0", operands[0]));
             }
             Instruction::HandleOwnedFromI32 { ty } => {
                 results.push(format!(
@@ -1105,7 +969,6 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::VariantPayloadName => results.push("e".to_string()),
-            Instruction::BufferPayloadName => results.push("e".to_string()),
 
             Instruction::VariantLower {
                 variant,
@@ -1310,86 +1173,6 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::IterElem { .. } => results.push("e".to_string()),
 
             Instruction::IterBasePointer => results.push("base".to_string()),
-
-            // Never used due to the call modes that this binding generator
-            // uses
-            Instruction::BufferLowerHandle { .. } => unimplemented!(),
-            Instruction::BufferLiftPtrLen { .. } => unimplemented!(),
-
-            Instruction::BufferLowerPtrLen { push, ty } => {
-                let block = self.blocks.pop().unwrap();
-                let size = self.gen.sizes.size(ty);
-                let tmp = self.tmp();
-                let ptr = format!("ptr{}", tmp);
-                let len = format!("len{}", tmp);
-                if iface.all_bits_valid(ty) {
-                    let vec = format!("vec{}", tmp);
-                    self.push_str(&format!("let {} = {};\n", vec, operands[0]));
-                    self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, vec));
-                    self.push_str(&format!("let {} = {}.len() as i32;\n", len, vec));
-                } else {
-                    if *push {
-                        self.push_str("let (");
-                        self.push_str(&ptr);
-                        self.push_str(", ");
-                        self.push_str(&len);
-                        self.push_str(") = ");
-                        self.push_str(&operands[0]);
-                        self.push_str(".ptr_len::<");
-                        self.push_str(&size.to_string());
-                        self.push_str(">(|base| {\n");
-                        self.push_str(&block);
-                        self.push_str("});\n");
-                    } else {
-                        self.push_str("let (");
-                        self.push_str(&ptr);
-                        self.push_str(", ");
-                        self.push_str(&len);
-                        self.push_str(") = ");
-                        self.push_str(&operands[0]);
-                        self.push_str(".serialize::<_, ");
-                        self.push_str(&size.to_string());
-                        self.push_str(">(|e, base| {\n");
-                        self.push_str(&block);
-                        self.push_str("});\n");
-                    }
-                }
-                results.push("0".to_string());
-                results.push(ptr);
-                results.push(len);
-            }
-
-            Instruction::BufferLiftHandle { push, ty } => {
-                let block = self.blocks.pop().unwrap();
-                let size = self.gen.sizes.size(ty);
-                let mut result = String::from("wit_bindgen_rust::exports::");
-                if *push {
-                    result.push_str("Push");
-                } else {
-                    result.push_str("Pull");
-                }
-                result.push_str("Buffer");
-                if iface.all_bits_valid(ty) {
-                    result.push_str("Raw::new(");
-                    result.push_str(&operands[0]);
-                    result.push_str(")");
-                } else {
-                    result.push_str("::new(");
-                    result.push_str(&operands[0]);
-                    result.push_str(", ");
-                    result.push_str(&size.to_string());
-                    result.push_str(", ");
-                    if *push {
-                        result.push_str("|base, e|");
-                        result.push_str(&block);
-                    } else {
-                        result.push_str("|base|");
-                        result.push_str(&block);
-                    }
-                    result.push_str(")");
-                }
-                results.push(result);
-            }
 
             Instruction::CallWasm { module, name, sig } => {
                 let func = self.declare_import(module, name, &sig.params, &sig.results);
@@ -1606,18 +1389,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     operands[1], offset, operands[0]
                 ));
             }
-
-            Instruction::Witx { instr } => match instr {
-                WitxInstruction::I32FromPointer => top_as("i32"),
-                WitxInstruction::I32FromConstPointer => top_as("i32"),
-                WitxInstruction::ReuseReturn => results.push("ret".to_string()),
-                WitxInstruction::AddrOf => {
-                    let i = self.tmp();
-                    self.push_str(&format!("let t{} = {};\n", i, operands[0]));
-                    results.push(format!("&t{} as *const _ as i32", i));
-                }
-                i => unimplemented!("{:?}", i),
-            },
         }
     }
 }

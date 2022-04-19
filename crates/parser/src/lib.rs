@@ -48,10 +48,6 @@ pub enum TypeDefKind {
     Record(Record),
     Variant(Variant),
     List(Type),
-    Pointer(Type),
-    ConstPointer(Type),
-    PushBuffer(Type),
-    PullBuffer(Type),
     Type(Type),
 }
 
@@ -246,7 +242,6 @@ pub struct Global {
 
 #[derive(Debug)]
 pub struct Function {
-    pub abi: abi::Abi,
     pub is_async: bool,
     pub docs: Docs,
     pub name: String,
@@ -404,12 +399,7 @@ impl Interface {
             return;
         }
         match &self.types[id].kind {
-            TypeDefKind::Type(t)
-            | TypeDefKind::List(t)
-            | TypeDefKind::PushBuffer(t)
-            | TypeDefKind::PullBuffer(t)
-            | TypeDefKind::Pointer(t)
-            | TypeDefKind::ConstPointer(t) => self.topo_visit_ty(t, list, visited),
+            TypeDefKind::Type(t) | TypeDefKind::List(t) => self.topo_visit_ty(t, list, visited),
             TypeDefKind::Record(r) => {
                 for f in r.fields.iter() {
                     self.topo_visit_ty(&f.ty, list, visited);
@@ -450,34 +440,13 @@ impl Interface {
             Type::Char | Type::Handle(_) => false,
 
             Type::Id(id) => match &self.types[*id].kind {
-                TypeDefKind::List(_)
-                | TypeDefKind::Variant(_)
-                | TypeDefKind::PushBuffer(_)
-                | TypeDefKind::PullBuffer(_) => false,
+                TypeDefKind::List(_) | TypeDefKind::Variant(_) => false,
                 TypeDefKind::Type(t) => self.all_bits_valid(t),
                 TypeDefKind::Record(r) => r.fields.iter().all(|f| self.all_bits_valid(&f.ty)),
-                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => true,
             },
         }
     }
 
-    pub fn has_preview1_pointer(&self, ty: &Type) -> bool {
-        match ty {
-            Type::Id(id) => match &self.types[*id].kind {
-                TypeDefKind::List(t) | TypeDefKind::PushBuffer(t) | TypeDefKind::PullBuffer(t) => {
-                    self.has_preview1_pointer(t)
-                }
-                TypeDefKind::Type(t) => self.has_preview1_pointer(t),
-                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => true,
-                TypeDefKind::Record(r) => r.fields.iter().any(|f| self.has_preview1_pointer(&f.ty)),
-                TypeDefKind::Variant(v) => v.cases.iter().any(|c| match &c.ty {
-                    Some(ty) => self.has_preview1_pointer(ty),
-                    None => false,
-                }),
-            },
-            _ => false,
-        }
-    }
     pub fn get_variant(&self, ty: &Type) -> Option<&Variant> {
         if let Type::Id(id) = ty {
             match &self.types[*id].kind {
@@ -491,11 +460,8 @@ impl Interface {
 }
 
 fn load_fs(root: &Path, name: &str) -> Result<(PathBuf, String)> {
-    // TODO: only read one, not both
     let wit = root.join(name).with_extension("wit");
-    let witx = root.join(name).with_extension("witx");
-    let contents = fs::read_to_string(&wit)
-        .or_else(|_| fs::read_to_string(&witx))
-        .context(format!("failed to read `{}`", wit.display()))?;
+    let contents =
+        fs::read_to_string(&wit).context(format!("failed to read `{}`", wit.display()))?;
     Ok((wit, contents))
 }
