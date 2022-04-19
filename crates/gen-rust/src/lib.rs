@@ -14,7 +14,6 @@ pub trait RustGenerator {
     fn push_str(&mut self, s: &str);
     fn info(&self, ty: TypeId) -> TypeInfo;
     fn types_mut(&mut self) -> &mut Types;
-    fn print_usize(&mut self);
     fn print_pointer(&mut self, iface: &Interface, const_: bool, ty: &Type);
     fn print_borrowed_slice(
         &mut self,
@@ -200,10 +199,8 @@ pub trait RustGenerator {
             }
 
             Type::U8 => self.push_str("u8"),
-            Type::CChar => self.push_str("u8"),
             Type::U16 => self.push_str("u16"),
             Type::U32 => self.push_str("u32"),
-            Type::Usize => self.print_usize(),
             Type::U64 => self.push_str("u64"),
             Type::S8 => self.push_str("i8"),
             Type::S16 => self.push_str("i16"),

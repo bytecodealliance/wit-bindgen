@@ -223,10 +223,8 @@ impl C {
             Type::S32 => self.src.h("int32_t"),
             Type::U64 => self.src.h("uint64_t"),
             Type::S64 => self.src.h("int64_t"),
-            Type::CChar => self.src.h("char"),
             Type::F32 => self.src.h("float"),
             Type::F64 => self.src.h("double"),
-            Type::Usize => self.src.h("size_t"),
             Type::Handle(id) => {
                 self.print_namespace(iface);
                 self.src.h(&iface.resources[*id].name.to_snake_case());
@@ -280,10 +278,8 @@ impl C {
             Type::S32 => self.src.h("s32"),
             Type::U64 => self.src.h("u64"),
             Type::S64 => self.src.h("s64"),
-            Type::CChar => self.src.h("char"),
             Type::F32 => self.src.h("f32"),
             Type::F64 => self.src.h("f64"),
-            Type::Usize => self.src.h("usize"),
             Type::Handle(id) => self.src.h(&iface.resources[*id].name.to_snake_case()),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
@@ -1297,10 +1293,8 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::U32FromI32 => results.push(format!("(uint32_t) ({})", operands[0])),
             Instruction::S32FromI32 | Instruction::S64FromI64 => results.push(operands[0].clone()),
             Instruction::U64FromI64 => results.push(format!("(uint64_t) ({})", operands[0])),
-            Instruction::UsizeFromI32 => results.push(format!("(size_t) ({})", operands[0])),
 
-            Instruction::I32FromUsize
-            | Instruction::I32FromU8
+            Instruction::I32FromU8
             | Instruction::I32FromS8
             | Instruction::I32FromU16
             | Instruction::I32FromS16

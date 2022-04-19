@@ -64,8 +64,6 @@ pub enum Type {
     F32,
     F64,
     Char,
-    CChar,
-    Usize,
     Handle(ResourceId),
     Id(TypeId),
 }
@@ -433,9 +431,7 @@ impl Interface {
             | Type::U64
             | Type::S64
             | Type::F32
-            | Type::F64
-            | Type::CChar
-            | Type::Usize => true,
+            | Type::F64 => true,
 
             Type::Char | Type::Handle(_) => false,
 

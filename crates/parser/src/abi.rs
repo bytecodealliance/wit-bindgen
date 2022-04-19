@@ -203,10 +203,6 @@ def_instruction! {
         I32FromU8 : [1] => [1],
         /// Converts an interface type `s8` value to a wasm `i32`.
         I32FromS8 : [1] => [1],
-        /// Converts a language-specific `usize` value to a wasm `i32`.
-        I32FromUsize : [1] => [1],
-        /// Converts a language-specific C `char` value to a wasm `i32`.
-        I32FromChar8 : [1] => [1],
         /// Conversion an interface type `f32` value to a wasm `f32`.
         ///
         /// This may be a noop for some implementations, but it's here in case the
@@ -252,12 +248,6 @@ def_instruction! {
         If32FromF32 : [1] => [1],
         /// Converts a native wasm `f64` to an interface type `f64`.
         If64FromF64 : [1] => [1],
-        /// Converts a native wasm `i32` to a language-specific C `char`.
-        ///
-        /// This will truncate the upper bits of the `i32`.
-        Char8FromI32 : [1] => [1],
-        /// Converts a native wasm `i32` to a language-specific `usize`.
-        UsizeFromI32 : [1] => [1],
 
         // Handles
 
@@ -854,9 +844,7 @@ impl Interface {
             | Type::S32
             | Type::U32
             | Type::Char
-            | Type::Handle(_)
-            | Type::CChar
-            | Type::Usize => result.push(WasmType::I32),
+            | Type::Handle(_) => result.push(WasmType::I32),
 
             Type::U64 | Type::S64 => result.push(WasmType::I64),
             Type::F32 => result.push(WasmType::F32),
@@ -1303,12 +1291,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         match *ty {
             Type::S8 => self.emit(&I32FromS8),
             Type::U8 => self.emit(&I32FromU8),
-            Type::CChar => self.emit(&I32FromChar8),
             Type::S16 => self.emit(&I32FromS16),
             Type::U16 => self.emit(&I32FromU16),
             Type::S32 => self.emit(&I32FromS32),
             Type::U32 => self.emit(&I32FromU32),
-            Type::Usize => self.emit(&I32FromUsize),
             Type::S64 => self.emit(&I64FromS64),
             Type::U64 => self.emit(&I64FromU64),
             Type::Char => self.emit(&I32FromChar),
@@ -1478,12 +1464,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
         match *ty {
             Type::S8 => self.emit(&S8FromI32),
-            Type::CChar => self.emit(&Char8FromI32),
             Type::U8 => self.emit(&U8FromI32),
             Type::S16 => self.emit(&S16FromI32),
             Type::U16 => self.emit(&U16FromI32),
             Type::S32 => self.emit(&S32FromI32),
-            Type::Usize => self.emit(&UsizeFromI32),
             Type::U32 => self.emit(&U32FromI32),
             Type::S64 => self.emit(&S64FromI64),
             Type::U64 => self.emit(&U64FromI64),
@@ -1617,11 +1601,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         match *ty {
             // Builtin types need different flavors of storage instructions
             // depending on the size of the value written.
-            Type::U8 | Type::S8 | Type::CChar => {
-                self.lower_and_emit(ty, addr, &I32Store8 { offset })
-            }
+            Type::U8 | Type::S8 => self.lower_and_emit(ty, addr, &I32Store8 { offset }),
             Type::U16 | Type::S16 => self.lower_and_emit(ty, addr, &I32Store16 { offset }),
-            Type::U32 | Type::S32 | Type::Usize | Type::Handle(_) | Type::Char => {
+            Type::U32 | Type::S32 | Type::Handle(_) | Type::Char => {
                 self.lower_and_emit(ty, addr, &I32Store { offset })
             }
             Type::U64 | Type::S64 => self.lower_and_emit(ty, addr, &I64Store { offset }),
@@ -1729,11 +1711,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         use Instruction::*;
 
         match *ty {
-            Type::U8 | Type::CChar => self.emit_and_lift(ty, addr, &I32Load8U { offset }),
+            Type::U8 => self.emit_and_lift(ty, addr, &I32Load8U { offset }),
             Type::S8 => self.emit_and_lift(ty, addr, &I32Load8S { offset }),
             Type::U16 => self.emit_and_lift(ty, addr, &I32Load16U { offset }),
             Type::S16 => self.emit_and_lift(ty, addr, &I32Load16S { offset }),
-            Type::U32 | Type::S32 | Type::Char | Type::Usize | Type::Handle(_) => {
+            Type::U32 | Type::S32 | Type::Char | Type::Handle(_) => {
                 self.emit_and_lift(ty, addr, &I32Load { offset })
             }
             Type::U64 | Type::S64 => self.emit_and_lift(ty, addr, &I64Load { offset }),

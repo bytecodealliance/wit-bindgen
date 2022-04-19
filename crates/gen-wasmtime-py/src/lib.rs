@@ -377,9 +377,7 @@ impl WasmtimePy {
             | Type::U32
             | Type::S32
             | Type::U64
-            | Type::S64
-            | Type::Usize
-            | Type::CChar => self.src.push_str("int"),
+            | Type::S64 => self.src.push_str("int"),
             Type::F32 | Type::F64 => self.src.push_str("float"),
             Type::Char => self.src.push_str("str"),
             Type::Handle(id) => {
@@ -493,11 +491,11 @@ impl WasmtimePy {
 
     fn array_ty(&self, iface: &Interface, ty: &Type) -> Option<&'static str> {
         match ty {
-            Type::U8 | Type::CChar => Some("c_uint8"),
+            Type::U8 => Some("c_uint8"),
             Type::S8 => Some("c_int8"),
             Type::U16 => Some("c_uint16"),
             Type::S16 => Some("c_int16"),
-            Type::U32 | Type::Usize => Some("c_uint32"),
+            Type::U32 => Some("c_uint32"),
             Type::S32 => Some("c_int32"),
             Type::U64 => Some("c_uint64"),
             Type::S64 => Some("c_int64"),
@@ -1346,7 +1344,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::U16FromI32 => self.clamp(results, operands, u16::MIN, u16::MAX),
             Instruction::S16FromI32 => self.clamp(results, operands, i16::MIN, i16::MAX),
             // Ensure the bits of the number are treated as unsigned.
-            Instruction::U32FromI32 | Instruction::UsizeFromI32 => {
+            Instruction::U32FromI32 => {
                 results.push(format!("{} & 0xffffffff", operands[0]));
             }
             // All bigints coming from wasm are treated as signed, so convert
@@ -1367,7 +1365,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::I32FromU16 => self.clamp(results, operands, u16::MIN, u16::MAX),
             Instruction::I32FromS16 => self.clamp(results, operands, i16::MIN, i16::MAX),
             // TODO: need to do something to get this to be represented as signed?
-            Instruction::I32FromU32 | Instruction::I32FromUsize => {
+            Instruction::I32FromU32 => {
                 self.clamp(results, operands, u32::MIN, u32::MAX);
             }
             Instruction::I32FromS32 => self.clamp(results, operands, i32::MIN, i32::MAX),
