@@ -2,7 +2,7 @@ use heck::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::mem;
 use wit_bindgen_gen_core::wit_parser::abi::{
-    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType, WitxInstruction,
+    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
 };
 use wit_bindgen_gen_core::{wit_parser::*, Direction, Files, Generator, Ns};
 
@@ -173,12 +173,7 @@ impl C {
                 TypeDefKind::Type(t) => self.is_arg_by_pointer(iface, t),
                 TypeDefKind::Variant(v) => !v.is_enum(),
                 TypeDefKind::Record(r) if r.is_flags() => false,
-                TypeDefKind::Pointer(_)
-                | TypeDefKind::ConstPointer(_)
-                | TypeDefKind::Record(_)
-                | TypeDefKind::List(_)
-                | TypeDefKind::PushBuffer(_)
-                | TypeDefKind::PullBuffer(_) => true,
+                TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
             },
             _ => false,
         }
@@ -257,24 +252,12 @@ impl C {
                         self.print_ty_name(iface, &Type::Id(*id));
                         self.src.h("_t");
                     }
-                    TypeDefKind::Pointer(t) => {
-                        self.print_ty(iface, t);
-                        self.src.h("*");
-                    }
-                    TypeDefKind::ConstPointer(t) => {
-                        self.src.h("const ");
-                        self.print_ty(iface, t);
-                        self.src.h("*");
-                    }
                     TypeDefKind::List(Type::Char) => {
                         self.print_namespace(iface);
                         self.src.h("string_t");
                         self.needs_string = true;
                     }
-                    TypeDefKind::Record(_)
-                    | TypeDefKind::List(_)
-                    | TypeDefKind::PushBuffer(_)
-                    | TypeDefKind::PullBuffer(_) => {
+                    TypeDefKind::Record(_) | TypeDefKind::List(_) => {
                         self.public_anonymous_types.insert(*id);
                         self.private_anonymous_types.remove(id);
                         self.print_namespace(iface);
@@ -339,25 +322,9 @@ impl C {
                             unimplemented!();
                         }
                     }
-                    TypeDefKind::Pointer(t) => {
-                        self.src.h("ptr_");
-                        self.print_ty_name(iface, t);
-                    }
-                    TypeDefKind::ConstPointer(t) => {
-                        self.src.h("const_ptr_ ");
-                        self.print_ty_name(iface, t);
-                    }
                     TypeDefKind::List(Type::Char) => self.src.h("string"),
                     TypeDefKind::List(t) => {
                         self.src.h("list_");
-                        self.print_ty_name(iface, t);
-                    }
-                    TypeDefKind::PushBuffer(t) => {
-                        self.src.h("push_buffer_");
-                        self.print_ty_name(iface, t);
-                    }
-                    TypeDefKind::PullBuffer(t) => {
-                        self.src.h("pull_buffer_");
                         self.print_ty_name(iface, t);
                     }
                 }
@@ -370,7 +337,7 @@ impl C {
         self.src.h("typedef ");
         let kind = &iface.types[ty].kind;
         match kind {
-            TypeDefKind::Type(_) | TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {
+            TypeDefKind::Type(_) => {
                 unreachable!()
             }
             TypeDefKind::Record(r) => {
@@ -419,17 +386,6 @@ impl C {
             }
             TypeDefKind::List(t) => {
                 self.src.h("struct {\n");
-                self.print_ty(iface, t);
-                self.src.h(" *ptr;\n");
-                self.src.h("size_t len;\n");
-                self.src.h("}");
-            }
-            TypeDefKind::PushBuffer(t) | TypeDefKind::PullBuffer(t) => {
-                self.src.h("struct {\n");
-                self.src.h("int32_t is_handle;\n");
-                if let TypeDefKind::PullBuffer(_) = kind {
-                    self.src.h("const ");
-                }
                 self.print_ty(iface, t);
                 self.src.h(" *ptr;\n");
                 self.src.h("size_t len;\n");
@@ -565,11 +521,6 @@ impl C {
                 }
                 self.src.c("}\n");
             }
-
-            TypeDefKind::PushBuffer(_)
-            | TypeDefKind::PullBuffer(_)
-            | TypeDefKind::Pointer(_)
-            | TypeDefKind::ConstPointer(_) => {}
         }
         self.src.c("}\n");
     }
@@ -584,8 +535,6 @@ impl C {
             TypeDefKind::Type(t) => self.owns_anything(iface, t),
             TypeDefKind::Record(r) => r.fields.iter().any(|t| self.owns_anything(iface, &t.ty)),
             TypeDefKind::List(_) => true,
-            TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => false,
-            TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => false,
             TypeDefKind::Variant(v) => v
                 .cases
                 .iter()
@@ -640,14 +589,7 @@ impl Return {
             TypeDefKind::Record(_) => self.splat_tuples(iface, ty, orig_ty),
 
             // other records/lists/buffers always go to return pointers
-            TypeDefKind::List(_) | TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {
-                self.retptrs.push(*orig_ty)
-            }
-
-            // pointers are scalars
-            TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {
-                self.scalar = Some(Scalar::Type(*orig_ty));
-            }
+            TypeDefKind::List(_) => self.retptrs.push(*orig_ty),
 
             // Enums are scalars (this includes bools)
             TypeDefKind::Variant(v) if v.is_enum() => {
@@ -713,7 +655,7 @@ impl Return {
 impl Generator for C {
     fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
         let variant = Self::abi_variant(dir);
-        self.sizes.fill(variant, iface);
+        self.sizes.fill(iface);
         self.in_import = variant == AbiVariant::GuestImport;
 
         for func in iface.functions.iter() {
@@ -879,54 +821,8 @@ impl Generator for C {
             .insert(id, mem::replace(&mut self.src.header, prev));
     }
 
-    fn type_pointer(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        const_: bool,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        drop((iface, _id, name, const_, ty, docs));
-    }
-
     fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         drop((iface, _id, name, ty, docs));
-    }
-
-    fn type_push_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        self.type_pull_buffer(iface, id, name, ty, docs);
-    }
-
-    fn type_pull_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        let prev = mem::take(&mut self.src.header);
-        self.docs(docs);
-        self.src.h("typedef struct {\n");
-        self.src.h("int32_t is_handle;\n");
-        self.print_ty(iface, ty);
-        self.src.h(" *ptr;\n");
-        self.src.h("size_t len;\n");
-        self.src.h("} ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
-        self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
@@ -1365,13 +1261,6 @@ impl Bindgen for FunctionBindgen<'_> {
         self.blocks.push((src.into(), mem::take(operands)));
     }
 
-    fn allocate_typed_space(&mut self, iface: &Interface, ty: TypeId) -> String {
-        let ty = self.gen.type_string(iface, &Type::Id(ty));
-        let name = self.locals.tmp("tmp");
-        self.src.push_str(&format!("{} {};\n", ty, name));
-        format!("(int32_t) (&{})", name)
-    }
-
     fn i64_return_pointer_area(&mut self, amt: usize) -> String {
         assert!(amt <= self.gen.i64_return_pointer_area_size);
         let ptr = self.locals.tmp("ptr");
@@ -1672,18 +1561,6 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::IterElem { .. } => results.push("e".to_string()),
             Instruction::IterBasePointer => results.push("base".to_string()),
 
-            Instruction::BufferLowerPtrLen { .. } => {
-                drop(self.blocks.pop().unwrap());
-                results.push(format!("({}).is_handle", operands[0]));
-                results.push(format!("(int32_t) ({}).ptr", operands[0]));
-                results.push(format!("({}).len", operands[0]));
-            }
-
-            Instruction::BufferLiftHandle { .. } => {
-                drop(self.blocks.pop().unwrap());
-                results.push(format!("({}).idx", operands[0]));
-            }
-
             Instruction::CallWasm { sig, .. } => {
                 match sig.results.len() {
                     0 => {}
@@ -1896,21 +1773,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 drop(offset);
                 self.src.push_str("INVALIDSTORE");
             }
-
-            Instruction::Witx { instr } => match instr {
-                WitxInstruction::I32FromPointer | WitxInstruction::I32FromConstPointer => {
-                    results.push(format!("(int32_t) ({})", operands[0]))
-                }
-                WitxInstruction::AddrOf => {
-                    results.push(format!("(int32_t) (&{})", operands[0]));
-                }
-                WitxInstruction::ReuseReturn => {
-                    results.push(self.wasm_return.clone().unwrap());
-                }
-                i => unimplemented!("{:?}", i),
-            },
-
-            Instruction::BufferPayloadName => results.push("INVALID".into()),
 
             i => unimplemented!("{:?}", i),
         }

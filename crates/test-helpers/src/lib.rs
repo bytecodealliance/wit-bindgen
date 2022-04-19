@@ -179,14 +179,6 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         }
         match &ty.kind {
             TypeDefKind::Type(t) => quote_ty(param, iface, t),
-            TypeDefKind::Pointer(t) => {
-                let t = quote_ty(param, iface, t);
-                quote::quote! { *mut #t }
-            }
-            TypeDefKind::ConstPointer(t) => {
-                let t = quote_ty(param, iface, t);
-                quote::quote! { *const #t }
-            }
             TypeDefKind::List(t) => {
                 if *t == Type::Char {
                     quote::quote! { String }
@@ -195,8 +187,6 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                     quote::quote! { Vec<#t> }
                 }
             }
-            TypeDefKind::PushBuffer(_) => panic!("unimplemented push-buffer"),
-            TypeDefKind::PullBuffer(_) => panic!("unimplemented pull-buffer"),
             TypeDefKind::Record(r) => {
                 let fields = r.fields.iter().map(|f| quote_ty(param, iface, &f.ty));
                 quote::quote! { (#(#fields,)*) }

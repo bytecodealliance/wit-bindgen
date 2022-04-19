@@ -1,8 +1,7 @@
 use anyhow::Result;
-use std::collections::{btree_map::Entry, BTreeMap, HashMap, HashSet};
+use std::collections::{btree_map::Entry, BTreeMap, HashMap};
 use std::ops::Deref;
 use std::path::Path;
-use wit_parser::abi::Abi;
 use wit_parser::*;
 
 pub use wit_parser;
@@ -67,32 +66,7 @@ pub trait Generator {
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId);
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
-    fn type_pointer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        const_: bool,
-        ty: &Type,
-        docs: &Docs,
-    );
     fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
-    fn type_push_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        ty: &Type,
-        docs: &Docs,
-    );
-    fn type_pull_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        ty: &Type,
-        docs: &Docs,
-    );
     // fn const_(&mut self, iface: &Interface, name: &str, ty: &str, val: u64, docs: &Docs);
     fn import(&mut self, iface: &Interface, func: &Function);
     fn export(&mut self, iface: &Interface, func: &Function);
@@ -118,13 +92,7 @@ pub trait Generator {
                     self.type_variant(iface, id, name, variant, &ty.docs)
                 }
                 TypeDefKind::List(t) => self.type_list(iface, id, name, t, &ty.docs),
-                TypeDefKind::PushBuffer(t) => self.type_push_buffer(iface, id, name, t, &ty.docs),
-                TypeDefKind::PullBuffer(t) => self.type_pull_buffer(iface, id, name, t, &ty.docs),
                 TypeDefKind::Type(t) => self.type_alias(iface, id, name, t, &ty.docs),
-                TypeDefKind::Pointer(t) => self.type_pointer(iface, id, name, false, t, &ty.docs),
-                TypeDefKind::ConstPointer(t) => {
-                    self.type_pointer(iface, id, name, true, t, &ty.docs)
-                }
             }
         }
 
@@ -164,8 +132,6 @@ pub trait Generator {
 #[derive(Default)]
 pub struct Types {
     type_info: HashMap<TypeId, TypeInfo>,
-    handle_dtors: HashSet<ResourceId>,
-    dtor_funcs: HashSet<String>,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -183,12 +149,6 @@ pub struct TypeInfo {
 
     /// Whether or not this type (transitively) has a handle.
     pub has_handle: bool,
-
-    /// Whether or not this type (transitively) has a push buffer.
-    pub has_push_buffer: bool,
-
-    /// Whether or not this type (transitively) has a pull buffer.
-    pub has_pull_buffer: bool,
 }
 
 impl std::ops::BitOrAssign for TypeInfo {
@@ -197,8 +157,6 @@ impl std::ops::BitOrAssign for TypeInfo {
         self.result |= rhs.result;
         self.has_list |= rhs.has_list;
         self.has_handle |= rhs.has_handle;
-        self.has_push_buffer |= rhs.has_push_buffer;
-        self.has_pull_buffer |= rhs.has_pull_buffer;
     }
 }
 
@@ -214,63 +172,11 @@ impl Types {
             for (_, ty) in f.results.iter() {
                 self.set_param_result_ty(iface, ty, false, true);
             }
-            self.maybe_set_preview1_dtor(iface, f);
-        }
-    }
-
-    fn maybe_set_preview1_dtor(&mut self, iface: &Interface, f: &Function) {
-        match f.abi {
-            Abi::Preview1 => {}
-            _ => return,
-        }
-
-        // Dtors only happen when the function has a singular parameter
-        if f.params.len() != 1 {
-            return;
-        }
-
-        // Dtors are inferred to be `${type}_close` right now.
-        let name = f.name.as_str();
-        let prefix = match name.strip_suffix("_close") {
-            Some(prefix) => prefix,
-            None => return,
-        };
-
-        // The singular parameter type name must be the prefix of this
-        // function's own name.
-        let resource = match find_handle(iface, &f.params[0].1) {
-            Some(id) => id,
-            None => return,
-        };
-        if iface.resources[resource].name != prefix {
-            return;
-        }
-
-        self.handle_dtors.insert(resource);
-        self.dtor_funcs.insert(f.name.to_string());
-
-        fn find_handle(iface: &Interface, ty: &Type) -> Option<ResourceId> {
-            match ty {
-                Type::Handle(r) => Some(*r),
-                Type::Id(id) => match &iface.types[*id].kind {
-                    TypeDefKind::Type(t) => find_handle(iface, t),
-                    _ => None,
-                },
-                _ => None,
-            }
         }
     }
 
     pub fn get(&self, id: TypeId) -> TypeInfo {
         self.type_info[&id]
-    }
-
-    pub fn has_preview1_dtor(&self, resource: ResourceId) -> bool {
-        self.handle_dtors.contains(&resource)
-    }
-
-    pub fn is_preview1_dtor_func(&self, func: &Function) -> bool {
-        self.dtor_funcs.contains(&func.name)
     }
 
     pub fn type_id_info(&mut self, iface: &Interface, ty: TypeId) -> TypeInfo {
@@ -295,16 +201,8 @@ impl Types {
                 info = self.type_info(iface, ty);
                 info.has_list = true;
             }
-            TypeDefKind::PushBuffer(ty) => {
+            TypeDefKind::Type(ty) => {
                 info = self.type_info(iface, ty);
-                info.has_push_buffer = true;
-            }
-            TypeDefKind::PullBuffer(ty) => {
-                info = self.type_info(iface, ty);
-                info.has_pull_buffer = true;
-            }
-            TypeDefKind::ConstPointer(ty) | TypeDefKind::Pointer(ty) | TypeDefKind::Type(ty) => {
-                info = self.type_info(iface, ty)
             }
         }
         self.type_info.insert(ty, info);
@@ -335,11 +233,7 @@ impl Types {
                     }
                 }
             }
-            TypeDefKind::List(ty)
-            | TypeDefKind::PushBuffer(ty)
-            | TypeDefKind::PullBuffer(ty)
-            | TypeDefKind::Pointer(ty)
-            | TypeDefKind::ConstPointer(ty) => self.set_param_result_ty(iface, ty, param, result),
+            TypeDefKind::List(ty) => self.set_param_result_ty(iface, ty, param, result),
             TypeDefKind::Type(ty) => self.set_param_result_ty(iface, ty, param, result),
         }
     }

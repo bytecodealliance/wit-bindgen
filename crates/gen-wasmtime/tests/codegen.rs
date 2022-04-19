@@ -8,7 +8,6 @@ fn main() {
 mod exports {
     test_helpers::codegen_wasmtime_export!(
         "*.wit"
-        "*.witx"
 
         // TODO: implement async support
         "!async-functions.wit"

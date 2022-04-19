@@ -22,10 +22,6 @@ enum Key {
     Variant(Vec<(String, Option<Type>)>),
     Record(Vec<(String, Type)>),
     List(Type),
-    PushBuffer(Type),
-    PullBuffer(Type),
-    Pointer(Type),
-    ConstPointer(Type),
 }
 
 impl Resolver {
@@ -221,16 +217,6 @@ impl Resolver {
                     tag: v.tag,
                 }),
                 TypeDefKind::List(t) => TypeDefKind::List(self.copy_type(dep_name, dep, *t)),
-                TypeDefKind::PullBuffer(t) => {
-                    TypeDefKind::PullBuffer(self.copy_type(dep_name, dep, *t))
-                }
-                TypeDefKind::PushBuffer(t) => {
-                    TypeDefKind::PushBuffer(self.copy_type(dep_name, dep, *t))
-                }
-                TypeDefKind::Pointer(t) => TypeDefKind::Pointer(self.copy_type(dep_name, dep, *t)),
-                TypeDefKind::ConstPointer(t) => {
-                    TypeDefKind::ConstPointer(self.copy_type(dep_name, dep, *t))
-                }
             },
         };
         let id = self.types.alloc(ty);
@@ -365,22 +351,6 @@ impl Resolver {
                 let ty = self.resolve_type(list)?;
                 TypeDefKind::List(ty)
             }
-            super::Type::Pointer(list) => {
-                let ty = self.resolve_type(list)?;
-                TypeDefKind::Pointer(ty)
-            }
-            super::Type::ConstPointer(list) => {
-                let ty = self.resolve_type(list)?;
-                TypeDefKind::ConstPointer(ty)
-            }
-            super::Type::PushBuffer(ty) => {
-                let ty = self.resolve_type(ty)?;
-                TypeDefKind::PushBuffer(ty)
-            }
-            super::Type::PullBuffer(ty) => {
-                let ty = self.resolve_type(ty)?;
-                TypeDefKind::PullBuffer(ty)
-            }
             super::Type::Record(record) => {
                 let fields = record
                     .fields
@@ -495,10 +465,6 @@ impl Resolver {
                     .collect::<Vec<_>>(),
             ),
             TypeDefKind::List(ty) => Key::List(*ty),
-            TypeDefKind::Pointer(ty) => Key::Pointer(*ty),
-            TypeDefKind::ConstPointer(ty) => Key::ConstPointer(*ty),
-            TypeDefKind::PushBuffer(ty) => Key::PushBuffer(*ty),
-            TypeDefKind::PullBuffer(ty) => Key::PullBuffer(*ty),
         };
         let types = &mut self.types;
         let id = self
@@ -536,7 +502,6 @@ impl Resolver {
         match &value.kind {
             ValueKind::Function {
                 is_async,
-                abi,
                 params,
                 results,
             } => {
@@ -549,7 +514,6 @@ impl Resolver {
                     .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                     .collect::<Result<_>>()?;
                 self.functions.push(Function {
-                    abi: *abi,
                     docs,
                     name: value.name.name.to_string(),
                     kind: FunctionKind::Freestanding,
@@ -574,13 +538,12 @@ impl Resolver {
         let mut names = HashSet::new();
         let id = self.resource_lookup[&*resource.name.name];
         for (statik, value) in resource.values.iter() {
-            let (abi, is_async, params, results) = match &value.kind {
+            let (is_async, params, results) = match &value.kind {
                 ValueKind::Function {
-                    abi,
                     is_async,
                     params,
                     results,
-                } => (*abi, *is_async, params, results),
+                } => (*is_async, params, results),
                 ValueKind::Global(_) => {
                     return Err(Error {
                         span: value.name.span,
@@ -618,7 +581,6 @@ impl Resolver {
                 }
             };
             self.functions.push(Function {
-                abi,
                 is_async,
                 docs,
                 name: format!("{}::{}", resource.name.name, value.name.name),
@@ -649,12 +611,7 @@ impl Resolver {
         }
 
         match &self.types[ty].kind {
-            TypeDefKind::List(Type::Id(id))
-            | TypeDefKind::Pointer(Type::Id(id))
-            | TypeDefKind::ConstPointer(Type::Id(id))
-            | TypeDefKind::PushBuffer(Type::Id(id))
-            | TypeDefKind::PullBuffer(Type::Id(id))
-            | TypeDefKind::Type(Type::Id(id)) => {
+            TypeDefKind::List(Type::Id(id)) | TypeDefKind::Type(Type::Id(id)) => {
                 self.validate_type_not_recursive(span, *id, visiting, valid)?
             }
             TypeDefKind::Variant(v) => {
@@ -672,12 +629,7 @@ impl Resolver {
                 }
             }
 
-            TypeDefKind::List(_)
-            | TypeDefKind::Pointer(_)
-            | TypeDefKind::ConstPointer(_)
-            | TypeDefKind::PushBuffer(_)
-            | TypeDefKind::PullBuffer(_)
-            | TypeDefKind::Type(_) => {}
+            TypeDefKind::List(_) | TypeDefKind::Type(_) => {}
         }
 
         valid.insert(ty);

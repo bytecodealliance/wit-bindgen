@@ -63,8 +63,7 @@ struct Resource<'a> {
 impl Resource<'_> {
     fn funcs(&self) -> impl ExactSizeIterator<Item = &ResourceFunction> {
         // This is used to define a stable order of the functions
-        let funcs = [&self.new, &self.get, &self.clone, &self.drop];
-        std::array::IntoIter::new(funcs)
+        [&self.new, &self.get, &self.clone, &self.drop].into_iter()
     }
 }
 

@@ -2,7 +2,7 @@ use heck::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem;
 use wit_bindgen_gen_core::wit_parser::abi::{
-    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType, WitxInstruction,
+    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
 };
 use wit_bindgen_gen_core::{wit_parser::*, Direction, Files, Generator, Ns};
 
@@ -27,8 +27,6 @@ pub struct WasmtimePy {
     needs_encode_utf8: bool,
     needs_list_canon_lift: bool,
     needs_list_canon_lower: bool,
-    needs_push_buffer: bool,
-    needs_pull_buffer: bool,
     needs_t_typevar: bool,
     pyimports: BTreeMap<String, Option<BTreeSet<String>>>,
 }
@@ -362,61 +360,6 @@ impl WasmtimePy {
                 ",
             );
         }
-        if self.needs_push_buffer {
-            self.pyimport("typing", "TypeVar");
-            self.pyimport("typing", "Generic");
-            self.pyimport("typing", "Callable");
-            self.needs_t_typevar = true;
-            self.src.push_str(
-                "
-                    class PushBuffer(Generic[T]):
-                        def __init__(self, ptr: int, len: int, size: int, write: Callable) -> None:
-                            self.ptr = ptr
-                            self.len = len
-                            self.size = size
-                            self.write = write
-
-                        def __len__(self) -> int:
-                            return self.len
-
-                        def push(self, val: T) -> bool:
-                            if self.len == 0:
-                                return False;
-                            self.len -= 1;
-                            self.write(val, self.ptr);
-                            self.ptr += self.size;
-                            return True
-                ",
-            )
-        }
-        if self.needs_pull_buffer {
-            self.pyimport("typing", "TypeVar");
-            self.pyimport("typing", "Generic");
-            self.pyimport("typing", "Callable");
-            self.pyimport("typing", "Optional");
-            self.needs_t_typevar = true;
-            self.src.push_str(
-                "
-                    class PullBuffer(Generic[T]):
-                        def __init__(self, ptr: int, len: int, size: int, read: Callable) -> None:
-                            self.len = len
-                            self.ptr = ptr
-                            self.size = size
-                            self.read = read
-
-                        def __len__(self) -> int:
-                            return self.len
-
-                        def pull(self) -> Optional[T]:
-                            if self.len == 0:
-                                return None
-                            self.len -= 1
-                            ret: T = self.read(self.ptr)
-                            self.ptr += self.size
-                            return ret
-                ",
-            )
-        }
     }
 
     fn type_string(&mut self, iface: &Interface, ty: &Type) -> String {
@@ -496,11 +439,6 @@ impl WasmtimePy {
                         }
                     }
                     TypeDefKind::List(t) => self.print_list(iface, t),
-                    TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {
-                        self.src.push_str("int")
-                    }
-                    TypeDefKind::PushBuffer(t) => self.print_buffer(iface, true, t),
-                    TypeDefKind::PullBuffer(t) => self.print_buffer(iface, false, t),
                 }
             }
         }
@@ -519,19 +457,6 @@ impl WasmtimePy {
             }
             self.print_ty(iface, t);
         }
-        self.src.push_str("]");
-    }
-
-    fn print_buffer(&mut self, iface: &Interface, push: bool, ty: &Type) {
-        if push {
-            self.needs_push_buffer = true;
-            self.src.push_str("PushBuffer");
-        } else {
-            self.needs_pull_buffer = true;
-            self.src.push_str("PullBuffer");
-        }
-        self.src.push_str("[");
-        self.print_ty(iface, ty);
         self.src.push_str("]");
     }
 
@@ -647,7 +572,7 @@ impl WasmtimePy {
 impl Generator for WasmtimePy {
     fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
         let variant = Self::abi_variant(dir);
-        self.sizes.fill(variant, iface);
+        self.sizes.fill(iface);
         self.in_import = variant == AbiVariant::GuestImport;
     }
 
@@ -802,48 +727,8 @@ impl Generator for WasmtimePy {
         self.src.push_str("\n");
     }
 
-    fn type_pointer(
-        &mut self,
-        _iface: &Interface,
-        _id: TypeId,
-        _name: &str,
-        _const_: bool,
-        _ty: &Type,
-        _docs: &Docs,
-    ) {
-        // drop((iface, _id, name, const_, ty, docs));
-    }
-
     fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.type_alias(iface, id, name, ty, docs);
-    }
-
-    fn type_push_buffer(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        self.docs(docs);
-        self.src.push_str(&format!("{} = ", name.to_camel_case()));
-        self.print_buffer(iface, true, ty);
-        self.src.push_str("\n");
-    }
-
-    fn type_pull_buffer(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        self.docs(docs);
-        self.src.push_str(&format!("{} = ", name.to_camel_case()));
-        self.print_buffer(iface, false, ty);
-        self.src.push_str("\n");
     }
 
     // As with `abi_variant` above, we're generating host-side bindings here
@@ -1425,10 +1310,6 @@ impl Bindgen for FunctionBindgen<'_> {
         self.blocks.push((src.into(), mem::take(operands)));
     }
 
-    fn allocate_typed_space(&mut self, _iface: &Interface, _ty: TypeId) -> String {
-        unimplemented!()
-    }
-
     fn i64_return_pointer_area(&mut self, _amt: usize) -> String {
         unimplemented!()
     }
@@ -1634,7 +1515,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(name.clone());
                 self.payloads.push(name);
             }
-            Instruction::BufferPayloadName => results.push("e".to_string()),
             Instruction::VariantLower {
                 variant,
                 results: result_types,
@@ -2001,39 +1881,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.payloads.push(name);
             }
 
-            Instruction::BufferLiftPtrLen { push, ty } => {
-                let (block, block_results) = self.blocks.pop().unwrap();
-                let base = self.payloads.pop().unwrap();
-                self.needs_memory = true;
-                let ptr = self.locals.tmp("ptr");
-                let len = self.locals.tmp("len");
-                self.src.push_str(&format!("{} = {}\n", ptr, operands[1]));
-                self.src.push_str(&format!("{} = {}\n", len, operands[2]));
-                let size = self.gen.sizes.size(ty);
-                if *push {
-                    self.gen.needs_push_buffer = true;
-                    assert!(block_results.is_empty());
-                    let write = self.locals.tmp("write_val");
-                    self.src
-                        .push_str(&format!("def {}(e, {}): # type: ignore\n", write, base));
-                    self.src.indent(2);
-                    self.src.push_str(&block);
-                    self.src.deindent(2);
-                    results.push(format!("PushBuffer({}, {}, {}, {})", ptr, len, size, write));
-                } else {
-                    self.gen.needs_pull_buffer = true;
-                    assert_eq!(block_results.len(), 1);
-                    let read = self.locals.tmp("read_val");
-                    self.src
-                        .push_str(&format!("def {}({}): # type: ignore\n", read, base));
-                    self.src.indent(2);
-                    self.src.push_str(&block);
-                    self.src.push_str(&format!("return {}\n", block_results[0]));
-                    self.src.deindent(2);
-                    results.push(format!("PullBuffer({}, {}, {}, {})", ptr, len, size, read));
-                }
-            }
-
             //    Instruction::BufferLowerHandle { push, ty } => {
             //        let block = self.blocks.pop().unwrap();
             //        let size = self.sizes.size(ty);
@@ -2167,10 +2014,6 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::I32Store8 { offset } => self.store("c_uint8", *offset, operands),
             Instruction::I32Store16 { offset } => self.store("c_uint16", *offset, operands),
 
-            Instruction::Witx { instr } => match instr {
-                WitxInstruction::PointerFromI32 { .. } => results.push(operands[0].clone()),
-                i => unimplemented!("{:?}", i),
-            },
             i => unimplemented!("{:?}", i),
         }
     }

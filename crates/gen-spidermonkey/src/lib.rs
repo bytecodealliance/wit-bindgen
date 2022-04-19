@@ -389,14 +389,6 @@ impl<'a> SpiderMonkeyWasm<'a> {
         }
     }
 
-    fn abi_variant(dir: Direction) -> AbiVariant {
-        // This generator uses the obvious direction to ABI variant mapping.
-        match dir {
-            Direction::Export => AbiVariant::GuestExport,
-            Direction::Import => AbiVariant::GuestImport,
-        }
-    }
-
     /// Configure how `spidermonkey.wasm` is linked.
     ///
     /// By default, the whole `spidermonkey.wasm` module is embedded inside our
@@ -931,8 +923,8 @@ impl Generator for SpiderMonkeyWasm<'_> {
         }
     }
 
-    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        self.sizes.fill(Self::abi_variant(dir), iface);
+    fn preprocess_one(&mut self, iface: &Interface, _dir: Direction) {
+        self.sizes.fill(iface);
     }
 
     fn type_record(
@@ -974,54 +966,13 @@ impl Generator for SpiderMonkeyWasm<'_> {
         todo!()
     }
 
-    fn type_pointer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        const_: bool,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        let _ = (iface, id, name, const_, ty, docs);
-        todo!()
-    }
-
     fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        let _ = (iface, id, name, name, ty, docs);
-        todo!()
-    }
-
-    fn type_push_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        let _ = (iface, id, name, name, ty, docs);
-        todo!()
-    }
-
-    fn type_pull_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
         let _ = (iface, id, name, name, ty, docs);
         todo!()
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
-        assert!(
-            func.abi == abi::Abi::Canonical,
-            "We only support the canonical ABI right now"
-        );
 
         // Add the raw Wasm import.
         let wasm_sig = iface.wasm_signature(AbiVariant::GuestImport, func);
@@ -1059,10 +1010,6 @@ impl Generator for SpiderMonkeyWasm<'_> {
 
     fn export(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
-        assert!(
-            func.abi == abi::Abi::Canonical,
-            "We only support the canonical ABI right now"
-        );
 
         let wasm_sig = iface.wasm_signature(AbiVariant::GuestExport, func);
         let type_index = self.intern_type(wasm_sig.clone());
@@ -1908,11 +1855,6 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 results.push(Operand::Wasm(iter_base_pointer));
             }
 
-            abi::Instruction::BufferPayloadName => todo!(),
-            abi::Instruction::BufferLowerPtrLen { push: _, ty: _ } => todo!(),
-            abi::Instruction::BufferLowerHandle { push: _, ty: _ } => todo!(),
-            abi::Instruction::BufferLiftPtrLen { push: _, ty: _ } => todo!(),
-            abi::Instruction::BufferLiftHandle { push: _, ty: _ } => todo!(),
             abi::Instruction::RecordLower {
                 record: _,
                 name: _,
@@ -2153,15 +2095,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
 
             abi::Instruction::ReturnAsyncExport { .. } => todo!(),
             abi::Instruction::ReturnAsyncImport { .. } => todo!(),
-
-            abi::Instruction::Witx { instr: _ } => {
-                unreachable!("we do not support the preview1 ABI")
-            }
         }
-    }
-
-    fn allocate_typed_space(&mut self, _iface: &Interface, _ty: TypeId) -> Self::Operand {
-        todo!()
     }
 
     fn i64_return_pointer_area(&mut self, amt: usize) -> Self::Operand {

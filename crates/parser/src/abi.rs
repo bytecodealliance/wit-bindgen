@@ -48,24 +48,6 @@ impl From<Int> for WasmType {
     }
 }
 
-/// Possible ABIs for interface functions to have.
-///
-/// Note that this is a stopgap until we have more of interface types. Interface
-/// types functions do not have ABIs, they have APIs. For the meantime, however,
-/// we mandate ABIs to ensure we can all talk to each other.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum Abi {
-    /// Only stable ABI currently, and is the historical WASI ABI since it was
-    /// first created.
-    ///
-    /// Note that this ABI is limited notably in its return values where it can
-    /// only return 0 results or one `Result<T, enum>` lookalike.
-    Preview1,
-
-    /// In-progress "canonical ABI" as proposed for interface types.
-    Canonical,
-}
-
 // Helper macro for defining instructions without having to have tons of
 // exhaustive `match` statements to update
 macro_rules! def_instruction {
@@ -487,19 +469,6 @@ def_instruction! {
         /// This is used for both lifting and lowering lists.
         IterBasePointer : [0] => [1],
 
-        // buffers
-
-        /// Pops a buffer value, pushes the pointer/length of where it points
-        /// to in memory.
-        BufferLowerPtrLen { push: bool, ty: &'a Type } : [1] => [3],
-        /// Pops a buffer value, pushes an integer handle for the buffer.
-        BufferLowerHandle { push: bool, ty: &'a Type } : [1] => [1],
-        /// Pops a ptr/len, pushes a buffer wrapping that ptr/len of the memory
-        /// from the origin module.
-        BufferLiftPtrLen { push: bool, ty: &'a Type } : [3] => [1],
-        /// Pops an i32, pushes a buffer wrapping that i32 handle.
-        BufferLiftHandle { push: bool, ty: &'a Type } : [1] => [1],
-
         // records
 
         /// Pops a record value off the stack, decomposes the record to all of
@@ -551,9 +520,6 @@ def_instruction! {
         /// Each sub-block will have this be the first instruction, and if it
         /// lowers a payload it will expect something bound to this name.
         VariantPayloadName : [0] => [1],
-
-        /// TODO
-        BufferPayloadName : [0] => [1],
 
         /// Pops a variant off the stack as well as `ty.cases.len()` blocks
         /// from the code generator. Uses each of those blocks and the value
@@ -676,14 +642,6 @@ def_instruction! {
             params: usize,
         } : [*params + 2] => [0],
 
-
-        // ...
-
-        /// An instruction from an extended instruction set that's specific to
-        /// `*.witx` and the "Preview1" ABI.
-        Witx {
-            instr: &'a WitxInstruction<'a>,
-        } : [instr.operands_len()] => [instr.results_len()],
     }
 }
 
@@ -704,29 +662,6 @@ pub enum Bitcast {
     I64ToF32,
 
     None,
-}
-
-def_instruction! {
-    #[derive(Debug)]
-    pub enum WitxInstruction<'a> {
-        /// Takes the value off the top of the stack and writes it into linear
-        /// memory. Pushes the address in linear memory as an `i32`.
-        AddrOf : [1] => [1],
-
-        /// Converts a language-specific pointer value to a wasm `i32`.
-        I32FromPointer : [1] => [1],
-        /// Converts a language-specific pointer value to a wasm `i32`.
-        I32FromConstPointer : [1] => [1],
-        /// Converts a native wasm `i32` to a language-specific pointer.
-        PointerFromI32 { ty: &'a Type }: [1] => [1],
-        /// Converts a native wasm `i32` to a language-specific pointer.
-        ConstPointerFromI32 { ty: &'a Type } : [1] => [1],
-
-        /// This is a special instruction specifically for the original ABI of
-        /// WASI.  The raw return `i32` of a function is re-pushed onto the
-        /// stack for reuse.
-        ReuseReturn : [0] => [1],
-    }
 }
 
 /// Whether the glue code surrounding a call is lifting arguments and lowering
@@ -802,20 +737,11 @@ pub trait Bindgen {
         results: &mut Vec<Self::Operand>,
     );
 
-    /// Allocates temporary space in linear memory for the type `ty`.
-    ///
-    /// This is called when calling some wasm functions where a return pointer
-    /// is needed. Only used for the `Abi::Preview1` ABI.
-    ///
-    /// Returns an `Operand` which has type `i32` and is the base of the typed
-    /// allocation in memory.
-    fn allocate_typed_space(&mut self, iface: &Interface, ty: TypeId) -> Self::Operand;
-
     /// Allocates temporary space in linear memory for a fixed number of `i64`
     /// values.
     ///
-    /// This is only called in the `Abi::Canonical` ABI for when a function
-    /// would otherwise have multiple results.
+    /// This is only called when a function would otherwise have multiple
+    /// results.
     ///
     /// Returns an `Operand` which has type `i32` and points to the base of the
     /// fixed-size-array allocation.
@@ -857,154 +783,6 @@ pub trait Bindgen {
 }
 
 impl Interface {
-    /// Validates the parameters/results of a function are representable in its
-    /// ABI.
-    ///
-    /// Returns an error string if they're not representable or returns `Ok` if
-    /// they're indeed representable.
-    pub fn validate_abi(&self, func: &Function) -> Result<(), String> {
-        for (_, ty) in func.params.iter() {
-            self.validate_abi_ty(func.abi, ty, true)?;
-        }
-        for (_, ty) in func.results.iter() {
-            self.validate_abi_ty(func.abi, ty, false)?;
-        }
-        match func.abi {
-            Abi::Preview1 => {
-                // validated below...
-            }
-            Abi::Canonical => return Ok(()),
-        }
-        match func.results.len() {
-            0 => Ok(()),
-            1 => self.validate_preview1_return(&func.results[0].1),
-            _ => Err("more than one result".to_string()),
-        }
-    }
-
-    fn validate_preview1_return(&self, ty: &Type) -> Result<(), String> {
-        let id = match ty {
-            Type::Id(id) => *id,
-            _ => return Ok(()),
-        };
-        match &self.types[id].kind {
-            TypeDefKind::Type(t) => self.validate_preview1_return(t),
-            TypeDefKind::Variant(v) => {
-                let (ok, err) = match v.as_expected() {
-                    Some(pair) => pair,
-                    None => return Err("invalid return type".to_string()),
-                };
-                if let Some(ty) = ok {
-                    let id = match ty {
-                        Type::Id(id) => *id,
-                        _ => return Err("only named types are allowed in results".to_string()),
-                    };
-                    match &self.types[id].kind {
-                        TypeDefKind::Record(r) if r.is_tuple() => {
-                            for field in r.fields.iter() {
-                                self.validate_ty_named(&field.ty)?;
-                            }
-                        }
-                        _ => {
-                            self.validate_ty_named(ty)?;
-                        }
-                    }
-                }
-
-                if let Some(ty) = err {
-                    let kind = self.validate_ty_named(ty)?;
-                    if let TypeDefKind::Variant(v) = kind {
-                        if v.is_enum() {
-                            return Ok(());
-                        }
-                    }
-                    return Err("invalid type in error payload of result".to_string());
-                }
-                Ok(())
-            }
-            TypeDefKind::Record(r) if r.is_flags() => Ok(()),
-            TypeDefKind::Record(_)
-            | TypeDefKind::List(_)
-            | TypeDefKind::PushBuffer(_)
-            | TypeDefKind::PullBuffer(_) => Err("invalid return type".to_string()),
-            TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => Ok(()),
-        }
-    }
-
-    fn validate_ty_named(&self, ty: &Type) -> Result<&TypeDefKind, String> {
-        let id = match ty {
-            Type::Id(id) => *id,
-            _ => return Err("only named types are allowed in results".to_string()),
-        };
-        let ty = &self.types[id];
-        if ty.name.is_none() {
-            return Err("only named types are allowed in results".to_string());
-        }
-        Ok(&ty.kind)
-    }
-
-    fn validate_abi_ty(&self, abi: Abi, ty: &Type, param: bool) -> Result<(), String> {
-        let id = match ty {
-            Type::Id(id) => *id,
-            // Type::U8 { lang_c_char: true } => {
-            //     if let Abi::Next = self {
-            //         return Err("cannot use `(@witx char8)` in this ABI".to_string());
-            //     }
-            //     Ok(())
-            // }
-            // Type::U32 { lang_ptr_size: true } => {
-            //     if let Abi::Next = self {
-            //         return Err("cannot use `(@witx usize)` in this ABI".to_string());
-            //     }
-            //     Ok(())
-            // }
-            _ => return Ok(()),
-        };
-        match &self.types[id].kind {
-            TypeDefKind::Type(t) => self.validate_abi_ty(abi, t, param),
-            TypeDefKind::Record(r) => {
-                for r in r.fields.iter() {
-                    self.validate_abi_ty(abi, &r.ty, param)?;
-                }
-                Ok(())
-            }
-            TypeDefKind::Variant(v) => {
-                for case in v.cases.iter() {
-                    if let Some(ty) = &case.ty {
-                        self.validate_abi_ty(abi, ty, param)?;
-                    }
-                }
-                Ok(())
-            }
-            TypeDefKind::List(t) => self.validate_abi_ty(abi, t, param),
-            TypeDefKind::Pointer(t) => {
-                if let Abi::Canonical = abi {
-                    return Err("cannot use `(@witx pointer)` in this ABI".to_string());
-                }
-                self.validate_abi_ty(abi, t, param)
-            }
-            TypeDefKind::ConstPointer(t) => {
-                if let Abi::Canonical = abi {
-                    return Err("cannot use `(@witx const_pointer)` in this ABI".to_string());
-                }
-                self.validate_abi_ty(abi, t, param)
-            }
-            TypeDefKind::PushBuffer(t) | TypeDefKind::PullBuffer(t) => {
-                if !param {
-                    return Err("cannot use buffers in the result position".to_string());
-                }
-                let param = match &self.types[id].kind {
-                    TypeDefKind::PushBuffer(_) => false,
-                    TypeDefKind::PullBuffer(_) => param,
-                    _ => unreachable!(),
-                };
-                // If this is an output buffer then validate `t` as if it were a
-                // result because the callee can't give us buffers back.
-                self.validate_abi_ty(abi, t, param)
-            }
-        }
-    }
-
     /// Get the WebAssembly type signature for this interface function
     ///
     /// The first entry returned is the list of parameters and the second entry
@@ -1013,39 +791,11 @@ impl Interface {
         let mut params = Vec::new();
         let mut results = Vec::new();
         for (_, param) in func.params.iter() {
-            if let (Abi::Preview1, Type::Id(id)) = (func.abi, param) {
-                match &self.types[*id].kind {
-                    TypeDefKind::Variant(_) => {
-                        params.push(WasmType::I32);
-                        continue;
-                    }
-                    TypeDefKind::Record(r) if !r.is_flags() => {
-                        params.push(WasmType::I32);
-                        continue;
-                    }
-                    _ => {}
-                }
-            }
-            self.push_wasm(func.abi, variant, param, &mut params);
+            self.push_wasm(variant, param, &mut params);
         }
 
         for (_, result) in func.results.iter() {
-            if let (Abi::Preview1, Type::Id(id)) = (func.abi, result) {
-                if let TypeDefKind::Variant(v) = &self.types[*id].kind {
-                    results.push(v.tag.into());
-                    if v.is_enum() {
-                        continue;
-                    }
-                    // return pointer for payload, if any
-                    if let Some(ty) = &v.cases[0].ty {
-                        for _ in 0..self.preview1_num_types(ty) {
-                            params.push(WasmType::I32);
-                        }
-                    }
-                    continue;
-                }
-            }
-            self.push_wasm(func.abi, variant, result, &mut results);
+            self.push_wasm(variant, result, &mut results);
         }
 
         let mut retptr = None;
@@ -1095,17 +845,7 @@ impl Interface {
         }
     }
 
-    fn preview1_num_types(&self, ty: &Type) -> usize {
-        match ty {
-            Type::Id(id) => match &self.types[*id].kind {
-                TypeDefKind::Record(r) if r.is_tuple() => r.fields.len(),
-                _ => 1,
-            },
-            _ => 1,
-        }
-    }
-
-    fn push_wasm(&self, abi: Abi, variant: AbiVariant, ty: &Type, result: &mut Vec<WasmType>) {
+    fn push_wasm(&self, variant: AbiVariant, ty: &Type, result: &mut Vec<WasmType>) {
         match ty {
             Type::S8
             | Type::U8
@@ -1123,7 +863,7 @@ impl Interface {
             Type::F64 => result.push(WasmType::F64),
 
             Type::Id(id) => match &self.types[*id].kind {
-                TypeDefKind::Type(t) => self.push_wasm(abi, variant, t, result),
+                TypeDefKind::Type(t) => self.push_wasm(variant, t, result),
 
                 TypeDefKind::Record(r) if r.is_flags() => match self.flags_repr(r) {
                     Some(int) => result.push(int.into()),
@@ -1136,25 +876,13 @@ impl Interface {
 
                 TypeDefKind::Record(r) => {
                     for field in r.fields.iter() {
-                        self.push_wasm(abi, variant, &field.ty, result);
+                        self.push_wasm(variant, &field.ty, result);
                     }
                 }
 
                 TypeDefKind::List(_) => {
                     result.push(WasmType::I32);
                     result.push(WasmType::I32);
-                }
-
-                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {
-                    result.push(WasmType::I32);
-                }
-
-                TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {
-                    result.push(WasmType::I32);
-                    if variant == AbiVariant::GuestImport {
-                        result.push(WasmType::I32);
-                        result.push(WasmType::I32);
-                    }
                 }
 
                 TypeDefKind::Variant(v) => {
@@ -1173,7 +901,7 @@ impl Interface {
                             Some(ty) => ty,
                             None => continue,
                         };
-                        self.push_wasm(abi, variant, ty, &mut temp);
+                        self.push_wasm(variant, ty, &mut temp);
 
                         for (i, ty) in temp.drain(..).enumerate() {
                             match result.get_mut(start + i) {
@@ -1221,19 +949,11 @@ impl Interface {
         func: &Function,
         bindgen: &mut impl Bindgen,
     ) {
-        if Abi::Preview1 == func.abi {
-            // The Preview1 ABI only works with WASI which is only intended
-            // for use with these modes.
-            if variant == AbiVariant::GuestExport {
-                panic!("the preview1 ABI only supports import modes");
-            }
-        }
-        Generator::new(self, func.abi, variant, lift_lower, bindgen).call(func);
+        Generator::new(self, variant, lift_lower, bindgen).call(func);
     }
 }
 
 struct Generator<'a, B: Bindgen> {
-    abi: Abi,
     variant: AbiVariant,
     lift_lower: LiftLower,
     bindgen: &'a mut B,
@@ -1247,14 +967,12 @@ struct Generator<'a, B: Bindgen> {
 impl<'a, B: Bindgen> Generator<'a, B> {
     fn new(
         iface: &'a Interface,
-        abi: Abi,
         variant: AbiVariant,
         lift_lower: LiftLower,
         bindgen: &'a mut B,
     ) -> Generator<'a, B> {
         Generator {
             iface,
-            abi,
             variant,
             lift_lower,
             bindgen,
@@ -1351,32 +1069,16 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // directly due to various conversions and return pointers, so
                 // we need to somewhat manually calculate all the arguments
                 // which are converted as interface types arguments below.
-                let nargs = match self.abi {
-                    Abi::Preview1 => {
-                        func.params.len()
-                            + func
-                                .params
-                                .iter()
-                                .filter(|(_, t)| match t {
-                                    Type::Id(id) => {
-                                        matches!(&self.iface.types[*id].kind, TypeDefKind::List(_))
-                                    }
-                                    _ => false,
-                                })
-                                .count()
-                    }
-                    Abi::Canonical => {
-                        let skip_cnt = if func.is_async {
-                            match self.variant {
-                                AbiVariant::GuestExport => 1,
-                                AbiVariant::GuestImport => 2,
-                            }
-                        } else {
-                            (sig.retptr.is_some() && self.variant == AbiVariant::GuestImport)
-                                as usize
-                        };
-                        sig.params.len() - skip_cnt
-                    }
+                let nargs = {
+                    let skip_cnt = if func.is_async {
+                        match self.variant {
+                            AbiVariant::GuestExport => 1,
+                            AbiVariant::GuestImport => 2,
+                        }
+                    } else {
+                        (sig.retptr.is_some() && self.variant == AbiVariant::GuestImport) as usize
+                    };
+                    sig.params.len() - skip_cnt
                 };
                 for nth in 0..nargs {
                     self.emit(&Instruction::GetArg { nth });
@@ -1503,19 +1205,10 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             .iter()
             .rev()
             .map(|(_, ty)| {
-                let ntys = match self.abi {
-                    Abi::Preview1 => match ty {
-                        Type::Id(id) => match &self.iface.types[*id].kind {
-                            TypeDefKind::List(_) => 2,
-                            _ => 1,
-                        },
-                        _ => 1,
-                    },
-                    Abi::Canonical => {
-                        temp.truncate(0);
-                        self.iface.push_wasm(self.abi, self.variant, ty, &mut temp);
-                        temp.len()
-                    }
+                let ntys = {
+                    temp.truncate(0);
+                    self.iface.push_wasm(self.variant, ty, &mut temp);
+                    temp.len()
                 };
                 self.stack
                     .drain(self.stack.len() - ntys..)
@@ -1559,10 +1252,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             }
         }
         retptr
-    }
-
-    fn witx(&mut self, instr: &WitxInstruction<'_>) {
-        self.emit(&Instruction::Witx { instr });
     }
 
     fn emit(&mut self, inst: &Instruction<'_>) {
@@ -1610,7 +1299,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
     fn lower(&mut self, ty: &Type, retptr: Option<&mut usize>) {
         use Instruction::*;
-        use WitxInstruction::*;
 
         match *ty {
             Type::S8 => self.emit(&I32FromS8),
@@ -1662,58 +1350,25 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             }
             Type::Id(id) => match &self.iface.types[id].kind {
                 TypeDefKind::Type(t) => self.lower(t, retptr),
-                TypeDefKind::Pointer(_) => self.witx(&I32FromPointer),
-                TypeDefKind::ConstPointer(_) => self.witx(&I32FromConstPointer),
-                TypeDefKind::List(element) => match self.abi {
-                    Abi::Preview1 => self.emit(&ListCanonLower {
-                        element,
-                        realloc: None,
-                    }),
-                    Abi::Canonical => {
-                        // Lowering parameters calling a wasm import means
-                        // we don't need to pass ownership, but we pass
-                        // ownership in all other cases.
-                        let realloc = match (self.variant, self.lift_lower) {
-                            (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults) => None,
-                            _ => Some("canonical_abi_realloc"),
-                        };
-                        if self.is_char(element)
-                            || self.bindgen.is_list_canonical(self.iface, element)
-                        {
-                            self.emit(&ListCanonLower { element, realloc });
-                        } else {
-                            self.push_block();
-                            self.emit(&IterElem { element });
-                            self.emit(&IterBasePointer);
-                            let addr = self.stack.pop().unwrap();
-                            self.write_to_memory(element, addr, 0);
-                            self.finish_block(0);
-                            self.emit(&ListLower { element, realloc });
-                        }
-                    }
-                },
-                TypeDefKind::PushBuffer(ty) | TypeDefKind::PullBuffer(ty) => {
-                    let push = matches!(&self.iface.types[id].kind, TypeDefKind::PushBuffer(_));
-                    self.translate_buffer(push, ty);
-
-                    // Buffers are only used in the parameter position, so if we
-                    // are lowering them, then we had better be lowering args
-                    // and lifting results.
-                    assert!(self.lift_lower == LiftLower::LowerArgsLiftResults);
-
-                    match self.variant {
-                        AbiVariant::GuestImport => {
-                            // When calling an imported function we're passing a raw view
-                            // into memory, and the adapter will convert it into something
-                            // else if necessary.
-                            self.emit(&BufferLowerPtrLen { push, ty });
-                        }
-                        AbiVariant::GuestExport => {
-                            // When calling an exported function we're passing a handle to
-                            // the caller's memory, and this part of the adapter is
-                            // responsible for converting it into something that's a handle.
-                            self.emit(&BufferLowerHandle { push, ty });
-                        }
+                TypeDefKind::List(element) => {
+                    // Lowering parameters calling a wasm import means
+                    // we don't need to pass ownership, but we pass
+                    // ownership in all other cases.
+                    let realloc = match (self.variant, self.lift_lower) {
+                        (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults) => None,
+                        _ => Some("canonical_abi_realloc"),
+                    };
+                    if self.is_char(element) || self.bindgen.is_list_canonical(self.iface, element)
+                    {
+                        self.emit(&ListCanonLower { element, realloc });
+                    } else {
+                        self.push_block();
+                        self.emit(&IterElem { element });
+                        self.emit(&IterBasePointer);
+                        let addr = self.stack.pop().unwrap();
+                        self.write_to_memory(element, addr, 0);
+                        self.finish_block(0);
+                        self.emit(&ListLower { element, realloc });
                     }
                 }
                 TypeDefKind::Record(record) if record.is_flags() => {
@@ -1730,103 +1385,27 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         }),
                     }
                 }
-                TypeDefKind::Record(record) => match self.abi {
-                    Abi::Preview1 => self.witx(&AddrOf),
-
-                    Abi::Canonical => {
-                        self.emit(&RecordLower {
-                            record,
-                            ty: id,
-                            name: self.iface.types[id].name.as_deref(),
-                        });
-                        let values = self
-                            .stack
-                            .drain(self.stack.len() - record.fields.len()..)
-                            .collect::<Vec<_>>();
-                        for (field, value) in record.fields.iter().zip(values) {
-                            self.stack.push(value);
-                            self.lower(&field.ty, None);
-                        }
-                    }
-                },
-
-                // Variants in the return position of an import must be a Result in
-                // the preview1 ABI and they're a bit special about where all the
-                // pieces are.
-                TypeDefKind::Variant(v)
-                    if self.abi == Abi::Preview1
-                        && self.variant == AbiVariant::GuestImport
-                        && self.lift_lower == LiftLower::LiftArgsLowerResults
-                        && !v.is_enum() =>
-                {
-                    let retptr = retptr.unwrap();
-                    let (ok, err) = v.as_expected().unwrap();
-                    self.push_block();
-                    self.emit(&VariantPayloadName);
-                    let payload_name = self.stack.pop().unwrap();
-                    if let Some(ok) = ok {
-                        self.stack.push(payload_name);
-                        let store = |me: &mut Self, ty: &Type, n| {
-                            me.emit(&GetArg { nth: *retptr + n });
-                            let addr = me.stack.pop().unwrap();
-                            me.write_to_memory(ty, addr, 0);
-                        };
-                        match *ok {
-                            Type::Id(okid) => match &self.iface.types[okid].kind {
-                                TypeDefKind::Record(record) if record.is_tuple() => {
-                                    self.emit(&RecordLower {
-                                        record,
-                                        ty: id,
-                                        name: self.iface.types[okid].name.as_deref(),
-                                    });
-                                    // Note that `rev()` is used here due to the order
-                                    // that tuples are pushed onto the stack and how we
-                                    // consume the last item first from the stack.
-                                    for (i, field) in record.fields.iter().enumerate().rev() {
-                                        store(self, &field.ty, i);
-                                    }
-                                }
-                                _ => store(self, ok, 0),
-                            },
-                            _ => store(self, ok, 0),
-                        }
-                    };
-                    self.emit(&I32Const { val: 0 });
-                    self.finish_block(1);
-
-                    self.push_block();
-                    self.emit(&VariantPayloadName);
-                    let payload_name = self.stack.pop().unwrap();
-                    if let Some(ty) = err {
-                        self.stack.push(payload_name);
-                        self.lower(ty, None);
-                    }
-                    self.finish_block(1);
-
-                    self.emit(&VariantLower {
-                        variant: v,
+                TypeDefKind::Record(record) => {
+                    self.emit(&RecordLower {
+                        record,
                         ty: id,
                         name: self.iface.types[id].name.as_deref(),
-                        results: &[WasmType::I32],
                     });
-                }
-
-                // Variant arguments in the Preview1 ABI are all passed by pointer
-                TypeDefKind::Variant(v)
-                    if self.abi == Abi::Preview1
-                        && self.variant == AbiVariant::GuestImport
-                        && self.lift_lower == LiftLower::LowerArgsLiftResults
-                        && !v.is_enum() =>
-                {
-                    self.witx(&AddrOf)
+                    let values = self
+                        .stack
+                        .drain(self.stack.len() - record.fields.len()..)
+                        .collect::<Vec<_>>();
+                    for (field, value) in record.fields.iter().zip(values) {
+                        self.stack.push(value);
+                        self.lower(&field.ty, None);
+                    }
                 }
 
                 TypeDefKind::Variant(v) => {
                     let mut results = Vec::new();
                     let mut temp = Vec::new();
                     let mut casts = Vec::new();
-                    self.iface
-                        .push_wasm(self.abi, self.variant, ty, &mut results);
+                    self.iface.push_wasm(self.variant, ty, &mut results);
                     for (i, case) in v.cases.iter().enumerate() {
                         self.push_block();
                         self.emit(&VariantPayloadName);
@@ -1843,7 +1422,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             // pushed, and record how many. If we pushed too few
                             // then we'll need to push some zeros after this.
                             temp.truncate(0);
-                            self.iface.push_wasm(self.abi, self.variant, ty, &mut temp);
+                            self.iface.push_wasm(self.variant, ty, &mut temp);
                             pushed += temp.len();
 
                             // For all the types pushed we may need to insert some
@@ -1881,57 +1460,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     }
 
     fn prep_return_pointer(&mut self, sig: &WasmSignature, results: &[(String, Type)]) {
-        match self.abi {
-            Abi::Preview1 => {
-                assert!(results.len() <= 1);
-                let ty = match results.get(0) {
-                    Some((_, ty)) => ty,
-                    None => return,
-                };
-                // Return pointers are only needed for `Result<T, _>`...
-                let variant = match ty {
-                    Type::Id(id) => match &self.iface.types[*id].kind {
-                        TypeDefKind::Variant(v) => v,
-                        _ => return,
-                    },
-                    _ => return,
-                };
-                // ... and only if `T` is actually present in `Result<T, _>`
-                let ok = match &variant.cases[0].ty {
-                    Some(Type::Id(id)) => *id,
-                    _ => return,
-                };
-
-                // Tuples have each individual item in a separate return pointer while
-                // all other types go through a singular return pointer.
-                let iface = self.iface;
-                let mut prep = |ty: TypeId| {
-                    let ptr = self.bindgen.allocate_typed_space(iface, ty);
-                    self.return_pointers.push(ptr.clone());
-                    self.stack.push(ptr);
-                };
-                match &iface.types[ok].kind {
-                    TypeDefKind::Record(r) if r.is_tuple() => {
-                        for field in r.fields.iter() {
-                            match field.ty {
-                                Type::Id(id) => prep(id),
-                                _ => unreachable!(),
-                            }
-                        }
-                    }
-                    _ => prep(ok),
-                }
-            }
-            // If a return pointer was automatically injected into this function
-            // then we need to allocate a proper amount of space for it and then
-            // add it to the stack to get passed to the callee.
-            Abi::Canonical => {
-                if let Some(results) = &sig.retptr {
-                    let ptr = self.bindgen.i64_return_pointer_area(results.len());
-                    self.return_pointers.push(ptr.clone());
-                    self.stack.push(ptr);
-                }
-            }
+        drop(results); // FIXME: update to the new canonical abi and use this
+                       // If a return pointer was automatically injected into this function
+                       // then we need to allocate a proper amount of space for it and then
+                       // add it to the stack to get passed to the callee.
+        if let Some(results) = &sig.retptr {
+            let ptr = self.bindgen.i64_return_pointer_area(results.len());
+            self.return_pointers.push(ptr.clone());
+            self.stack.push(ptr);
         }
     }
 
@@ -1939,7 +1475,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     /// `lower` function above. This is intentional and should be kept this way!
     fn lift(&mut self, ty: &Type) {
         use Instruction::*;
-        use WitxInstruction::*;
 
         match *ty {
             Type::S8 => self.emit(&S8FromI32),
@@ -1970,64 +1505,32 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             }
             Type::Id(id) => match &self.iface.types[id].kind {
                 TypeDefKind::Type(t) => self.lift(t),
-                TypeDefKind::Pointer(ty) => self.witx(&PointerFromI32 { ty }),
-                TypeDefKind::ConstPointer(ty) => self.witx(&ConstPointerFromI32 { ty }),
-                TypeDefKind::List(element) => match self.abi {
-                    Abi::Preview1 => self.emit(&ListCanonLift {
-                        element,
-                        free: None,
-                        ty: id,
-                    }),
-                    Abi::Canonical => {
-                        // Lifting the arguments of a defined import means that, if
-                        // possible, the caller still retains ownership and we don't
-                        // free anything.
-                        let free = match (self.variant, self.lift_lower) {
-                            (AbiVariant::GuestImport, LiftLower::LiftArgsLowerResults) => None,
-                            _ => Some("canonical_abi_free"),
-                        };
-                        if self.is_char(element)
-                            || self.bindgen.is_list_canonical(self.iface, element)
-                        {
-                            self.emit(&ListCanonLift {
-                                element,
-                                free,
-                                ty: id,
-                            });
-                        } else {
-                            self.push_block();
-                            self.emit(&IterBasePointer);
-                            let addr = self.stack.pop().unwrap();
-                            self.read_from_memory(element, addr, 0);
-                            self.finish_block(1);
-                            self.emit(&ListLift {
-                                element,
-                                free,
-                                ty: id,
-                            });
-                        }
-                    }
-                },
-                TypeDefKind::PushBuffer(ty) | TypeDefKind::PullBuffer(ty) => {
-                    let push = matches!(&self.iface.types[id].kind, TypeDefKind::PushBuffer(_));
-                    self.translate_buffer(push, ty);
-                    // Buffers are only used in the parameter position, which
-                    // means lifting a buffer should only happen when we are
-                    // lifting arguments and lowering results.
-                    assert!(self.lift_lower == LiftLower::LiftArgsLowerResults);
-
-                    match self.variant {
-                        AbiVariant::GuestImport => {
-                            // When calling a defined imported function then we're coming
-                            // from a pointer/length, and the embedding context will figure
-                            // out what to do with that pointer/length.
-                            self.emit(&BufferLiftPtrLen { push, ty })
-                        }
-                        AbiVariant::GuestExport => {
-                            // When calling an exported function we're given a handle to the
-                            // buffer, which is then interpreted in the calling context.
-                            self.emit(&BufferLiftHandle { push, ty })
-                        }
+                TypeDefKind::List(element) => {
+                    // Lifting the arguments of a defined import means that, if
+                    // possible, the caller still retains ownership and we don't
+                    // free anything.
+                    let free = match (self.variant, self.lift_lower) {
+                        (AbiVariant::GuestImport, LiftLower::LiftArgsLowerResults) => None,
+                        _ => Some("canonical_abi_free"),
+                    };
+                    if self.is_char(element) || self.bindgen.is_list_canonical(self.iface, element)
+                    {
+                        self.emit(&ListCanonLift {
+                            element,
+                            free,
+                            ty: id,
+                        });
+                    } else {
+                        self.push_block();
+                        self.emit(&IterBasePointer);
+                        let addr = self.stack.pop().unwrap();
+                        self.read_from_memory(element, addr, 0);
+                        self.finish_block(1);
+                        self.emit(&ListLift {
+                            element,
+                            free,
+                            ty: id,
+                        });
                     }
                 }
                 TypeDefKind::Record(record) if record.is_flags() => {
@@ -2044,101 +1547,31 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         }),
                     }
                 }
-                TypeDefKind::Record(record) => match self.abi {
-                    Abi::Preview1 => {
-                        let addr = self.stack.pop().unwrap();
-                        self.read_from_memory(ty, addr, 0);
+                TypeDefKind::Record(record) => {
+                    let mut temp = Vec::new();
+                    self.iface.push_wasm(self.variant, ty, &mut temp);
+                    let mut args = self
+                        .stack
+                        .drain(self.stack.len() - temp.len()..)
+                        .collect::<Vec<_>>();
+                    for field in record.fields.iter() {
+                        temp.truncate(0);
+                        self.iface.push_wasm(self.variant, &field.ty, &mut temp);
+                        self.stack.extend(args.drain(..temp.len()));
+                        self.lift(&field.ty);
                     }
-                    Abi::Canonical => {
-                        let mut temp = Vec::new();
-                        self.iface.push_wasm(self.abi, self.variant, ty, &mut temp);
-                        let mut args = self
-                            .stack
-                            .drain(self.stack.len() - temp.len()..)
-                            .collect::<Vec<_>>();
-                        for field in record.fields.iter() {
-                            temp.truncate(0);
-                            self.iface
-                                .push_wasm(self.abi, self.variant, &field.ty, &mut temp);
-                            self.stack.extend(args.drain(..temp.len()));
-                            self.lift(&field.ty);
-                        }
-                        self.emit(&RecordLift {
-                            record,
-                            ty: id,
-                            name: self.iface.types[id].name.as_deref(),
-                        });
-                    }
-                },
-
-                // Variants in the return position of an import must be a Result in
-                // the preview1 ABI and they're a bit special about where all the
-                // pieces are.
-                TypeDefKind::Variant(v)
-                    if self.abi == Abi::Preview1
-                        && self.variant == AbiVariant::GuestImport
-                        && self.lift_lower == LiftLower::LowerArgsLiftResults
-                        && !v.is_enum() =>
-                {
-                    let (ok, err) = v.as_expected().unwrap();
-                    self.push_block();
-                    if let Some(ok) = ok {
-                        let mut n = 0;
-                        let mut load = |me: &mut Self, ty: &Type| {
-                            me.read_from_memory(ty, me.return_pointers[n].clone(), 0);
-                            n += 1;
-                        };
-                        match *ok {
-                            Type::Id(okid) => match &self.iface.types[okid].kind {
-                                TypeDefKind::Record(record) if record.is_tuple() => {
-                                    for field in record.fields.iter() {
-                                        load(self, &field.ty);
-                                    }
-                                    self.emit(&RecordLift {
-                                        record,
-                                        ty: okid,
-                                        name: self.iface.types[okid].name.as_deref(),
-                                    });
-                                }
-                                _ => load(self, ok),
-                            },
-                            _ => load(self, ok),
-                        }
-                    }
-                    self.finish_block(ok.is_some() as usize);
-
-                    self.push_block();
-                    if let Some(ty) = err {
-                        self.witx(&ReuseReturn);
-                        self.lift(ty);
-                    }
-                    self.finish_block(err.is_some() as usize);
-
-                    self.emit(&VariantLift {
-                        variant: v,
+                    self.emit(&RecordLift {
+                        record,
                         ty: id,
                         name: self.iface.types[id].name.as_deref(),
                     });
-                }
-
-                // Variant arguments in the Preview1 ABI are all passed by pointer,
-                // so we read them here.
-                TypeDefKind::Variant(v)
-                    if self.abi == Abi::Preview1
-                        && self.variant == AbiVariant::GuestImport
-                        && self.lift_lower == LiftLower::LiftArgsLowerResults
-                        && !v.is_enum() =>
-                {
-                    let addr = self.stack.pop().unwrap();
-                    self.read_from_memory(ty, addr, 0)
                 }
 
                 TypeDefKind::Variant(v) => {
                     let mut params = Vec::new();
                     let mut temp = Vec::new();
                     let mut casts = Vec::new();
-                    self.iface
-                        .push_wasm(self.abi, self.variant, ty, &mut params);
+                    self.iface.push_wasm(self.variant, ty, &mut params);
                     let block_inputs = self
                         .stack
                         .drain(self.stack.len() + 1 - params.len()..)
@@ -2149,7 +1582,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             // Push only the values we need for this variant onto
                             // the stack.
                             temp.truncate(0);
-                            self.iface.push_wasm(self.abi, self.variant, ty, &mut temp);
+                            self.iface.push_wasm(self.variant, ty, &mut temp);
                             self.stack
                                 .extend(block_inputs[..temp.len()].iter().cloned());
 
@@ -2197,9 +1630,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
             Type::Id(id) => match &self.iface.types[id].kind {
                 TypeDefKind::Type(t) => self.write_to_memory(t, addr, offset),
-                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {
-                    self.lower_and_emit(ty, addr, &I32Store { offset });
-                }
 
                 // After lowering the list there's two i32 values on the stack
                 // which we write into memory, writing the pointer into the low address
@@ -2208,21 +1638,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.lower(ty, None);
                     self.stack.push(addr.clone());
                     self.emit(&I32Store { offset: offset + 4 });
-                    self.stack.push(addr);
-                    self.emit(&I32Store { offset });
-                }
-
-                // Lower the buffer to its raw values, and then write the values
-                // into memory, which may be more than one value depending on
-                // our import/export direction.
-                TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {
-                    self.lower(ty, None);
-                    if self.variant == AbiVariant::GuestImport {
-                        self.stack.push(addr.clone());
-                        self.emit(&I32Store { offset: offset + 8 });
-                        self.stack.push(addr.clone());
-                        self.emit(&I32Store { offset: offset + 4 });
-                    }
                     self.stack.push(addr);
                     self.emit(&I32Store { offset });
                 }
@@ -2327,9 +1742,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
             Type::Id(id) => match &self.iface.types[id].kind {
                 TypeDefKind::Type(t) => self.read_from_memory(t, addr, offset),
-                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {
-                    self.emit_and_lift(ty, addr, &I32Load { offset })
-                }
 
                 // Read the pointer/len and then perform the standard lifting
                 // proceses.
@@ -2338,22 +1750,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&I32Load { offset });
                     self.stack.push(addr);
                     self.emit(&I32Load { offset: offset + 4 });
-                    self.lift(ty);
-                }
-
-                // Read the requisite number of values from memory and then lift as
-                // appropriate.
-                TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {
-                    self.stack.push(addr.clone());
-                    self.emit(&I32Load { offset });
-                    if self.variant == AbiVariant::GuestImport
-                        && self.lift_lower == LiftLower::LiftArgsLowerResults
-                    {
-                        self.stack.push(addr.clone());
-                        self.emit(&I32Load { offset: offset + 4 });
-                        self.stack.push(addr);
-                        self.emit(&I32Load { offset: offset + 8 });
-                    }
                     self.lift(ty);
                 }
 
@@ -2447,36 +1843,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Int::U16 => Instruction::I32Store16 { offset },
             Int::U8 => Instruction::I32Store8 { offset },
         });
-    }
-
-    fn translate_buffer(&mut self, push: bool, ty: &Type) {
-        let do_write = match self.lift_lower {
-            // For declared items, input/output is defined in the context of
-            // what the callee will do. The callee will read input buffers,
-            // meaning we write to them, and write to output buffers, meaning
-            // we'll read from them.
-            LiftLower::LowerArgsLiftResults => !push,
-
-            // Defined item mirror declared imports because buffers are
-            // defined from the caller's perspective, so we don't invert the
-            // `out` setting like above.
-            LiftLower::LiftArgsLowerResults => push,
-        };
-        self.emit(&Instruction::IterBasePointer);
-        let addr = self.stack.pop().unwrap();
-
-        self.push_block();
-
-        let size = if do_write {
-            self.emit(&Instruction::BufferPayloadName);
-            self.write_to_memory(ty, addr, 0);
-            0
-        } else {
-            self.read_from_memory(ty, addr, 0);
-            1
-        };
-
-        self.finish_block(size);
     }
 
     fn is_char(&self, ty: &Type) -> bool {

@@ -86,13 +86,13 @@ resource body {
     /// @return result - a result containing the number of bytes written on success
     // TODO: check if `out-buffer` is the right way to express this
     // NOTE: s/expected/result/
-    read: function(dest: push-buffer<u8>) -> expected<u64, error>
+    read: function(dest: list<u8>) -> expected<u64, error>
 
     /// Write to a body.
     /// @param source - source buffer to read from
     /// @return result - a result containing the number of bytes read on success
     // TODO: check if `in-buffer` is the right way to express this
-    write: function(source: pull-buffer<u8>) -> expected<u64, error>
+    write: function(source: list<u8>) -> expected<u64, error>
 }
 /*
 

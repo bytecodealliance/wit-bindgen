@@ -48,8 +48,6 @@ type t44 = string
 type t45 = list<list<list<t32>>>
 type t46 = t44
 type t47 = %t44
-type t48 = push-buffer<u8>
-type t49 = pull-buffer<u8>
 
 // type order doesn't matter
 type foo = bar

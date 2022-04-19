@@ -53,7 +53,6 @@ fn has_list(interface: &WitInterface, ty: &WitType) -> bool {
                     .map(|t| has_list(interface, t))
                     .unwrap_or(false)
             }),
-            _ => false,
         },
         _ => false,
     }
@@ -119,7 +118,7 @@ impl Interface {
             .collect();
 
         let mut sizes = SizeAlign::default();
-        sizes.fill(AbiVariant::GuestExport, &inner);
+        sizes.fill(&inner);
 
         let has_resources = inner
             .resources

@@ -7,7 +7,6 @@ fn ok() {}
 mod imports {
     test_helpers::codegen_rust_wasm_import!(
         "*.wit"
-        "*.witx"
 
         // If you want to exclude a specific test you can include it here with
         // gitignore glob syntax:

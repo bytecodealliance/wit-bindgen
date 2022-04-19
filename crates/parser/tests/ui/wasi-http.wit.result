@@ -83,7 +83,7 @@
     },
     {
       "idx": 8,
-      "push-buffer": "u8"
+      "list": "u8"
     },
     {
       "idx": 9,
@@ -99,10 +99,6 @@
           ]
         ]
       }
-    },
-    {
-      "idx": 10,
-      "pull-buffer": "u8"
     }
   ],
   "functions": [
@@ -200,7 +196,7 @@
       "name": "body::write",
       "params": [
         "handle-3",
-        "type-10"
+        "type-8"
       ],
       "results": [
         "type-9"
