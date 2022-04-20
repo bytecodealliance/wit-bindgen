@@ -26,16 +26,15 @@ pub enum WasmType {
     // e.g. externref, so we don't need to define them here.
 }
 
-fn unify(a: WasmType, b: WasmType) -> WasmType {
+fn join(a: WasmType, b: WasmType) -> WasmType {
     use WasmType::*;
 
     match (a, b) {
-        (I64, _) | (_, I64) | (I32, F64) | (F64, I32) => I64,
+        (I32, I32) | (I64, I64) | (F32, F32) | (F64, F64) => a,
 
-        (I32, I32) | (I32, F32) | (F32, I32) => I32,
+        (I32, F32) | (F32, I32) => I32,
 
-        (F32, F32) => F32,
-        (F64, F64) | (F32, F64) | (F64, F32) => F64,
+        (_, I64 | F64) | (I64 | F64, _) => I64,
     }
 }
 
@@ -638,14 +637,12 @@ def_instruction! {
 #[derive(Debug, PartialEq)]
 pub enum Bitcast {
     // Upcasts
-    F32ToF64,
     F32ToI32,
     F64ToI64,
     I32ToI64,
     F32ToI64,
 
     // Downcasts
-    F64ToF32,
     I32ToF32,
     I64ToF64,
     I64ToI32,
@@ -893,7 +890,7 @@ impl Interface {
 
                         for (i, ty) in temp.drain(..).enumerate() {
                             match result.get_mut(start + i) {
-                                Some(prev) => *prev = unify(*prev, ty),
+                                Some(prev) => *prev = join(*prev, ty),
                                 None => result.push(ty),
                             }
                         }
@@ -1846,17 +1843,16 @@ fn cast(from: WasmType, to: WasmType) -> Bitcast {
         (I32, I32) | (I64, I64) | (F32, F32) | (F64, F64) => Bitcast::None,
 
         (I32, I64) => Bitcast::I32ToI64,
-        (F32, F64) => Bitcast::F32ToF64,
         (F32, I32) => Bitcast::F32ToI32,
         (F64, I64) => Bitcast::F64ToI64,
 
         (I64, I32) => Bitcast::I64ToI32,
-        (F64, F32) => Bitcast::F64ToF32,
         (I32, F32) => Bitcast::I32ToF32,
         (I64, F64) => Bitcast::I64ToF64,
 
         (F32, I64) => Bitcast::F32ToI64,
         (I64, F32) => Bitcast::I64ToF32,
-        (F64, I32) | (I32, F64) => unreachable!(),
+
+        (F32, F64) | (F64, F32) | (F64, I32) | (I32, F64) => unreachable!(),
     }
 }

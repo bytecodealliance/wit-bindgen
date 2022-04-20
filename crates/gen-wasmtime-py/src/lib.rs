@@ -1402,7 +1402,6 @@ impl Bindgen for FunctionBindgen<'_> {
                             self.gen.needs_f32_to_i32 = true;
                             results.push(format!("_f32_to_i32({})", op));
                         }
-                        Bitcast::F32ToF64 | Bitcast::F64ToF32 => results.push(op.clone()),
                         Bitcast::I64ToF64 => {
                             self.gen.needs_i64_to_f64 = true;
                             results.push(format!("_i64_to_f64({})", op));

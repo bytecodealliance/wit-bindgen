@@ -957,11 +957,9 @@ pub fn bitcast(casts: &[Bitcast], operands: &[String], results: &mut Vec<String>
     for (cast, operand) in casts.iter().zip(operands) {
         results.push(match cast {
             Bitcast::None => operand.clone(),
-            Bitcast::F32ToF64 => format!("f64::from({})", operand),
             Bitcast::I32ToI64 => format!("i64::from({})", operand),
             Bitcast::F32ToI32 => format!("({}).to_bits() as i32", operand),
             Bitcast::F64ToI64 => format!("({}).to_bits() as i64", operand),
-            Bitcast::F64ToF32 => format!("{} as f32", operand),
             Bitcast::I64ToI32 => format!("{} as i32", operand),
             Bitcast::I32ToF32 => format!("f32::from_bits({} as u32)", operand),
             Bitcast::I64ToF64 => format!("f64::from_bits({} as u64)", operand),

@@ -39,13 +39,17 @@ fn wasmlink_file_tests() -> Result<()> {
                 let mut wit_path = path.clone();
                 assert!(wit_path.set_extension("wit"));
 
-                let output = match adapt(stem, &bytes, &wit_path) {
+                let mut output = match adapt(stem, &bytes, &wit_path) {
                     Ok(adapted) => print_bytes(&adapted.finish())?,
                     Err(e) => e.to_string(),
                 };
 
                 let baseline_path = path.with_extension("baseline");
                 if env::var_os("BLESS").is_some() {
+                    if !output.ends_with("\n") {
+                        output.push_str("\n");
+                    }
+
                     fs::write(&baseline_path, output)?;
                 } else {
                     let expected = fs::read_to_string(&baseline_path)

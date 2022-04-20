@@ -1335,7 +1335,6 @@ impl Bindgen for FunctionBindgen<'_> {
                             results
                                 .push(format!("((union {{ float a; int32_t b; }}){{ {} }}).b", op));
                         }
-                        Bitcast::F32ToF64 | Bitcast::F64ToF32 => results.push(op.to_string()),
                         Bitcast::I64ToF64 => {
                             results.push(format!(
                                 "((union {{ int64_t a; double b; }}){{ {} }}).b",
