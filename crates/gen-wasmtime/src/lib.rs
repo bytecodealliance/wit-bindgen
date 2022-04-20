@@ -266,10 +266,6 @@ impl RustGenerator for Wasmtime {
         &mut self.types
     }
 
-    fn print_pointer(&mut self, _iface: &Interface, _const_: bool, _ty: &Type) {
-        self.push_str("u32");
-    }
-
     fn print_borrowed_slice(
         &mut self,
         iface: &Interface,

@@ -14,7 +14,6 @@ pub trait RustGenerator {
     fn push_str(&mut self, s: &str);
     fn info(&self, ty: TypeId) -> TypeInfo;
     fn types_mut(&mut self) -> &mut Types;
-    fn print_pointer(&mut self, iface: &Interface, const_: bool, ty: &Type);
     fn print_borrowed_slice(
         &mut self,
         iface: &Interface,

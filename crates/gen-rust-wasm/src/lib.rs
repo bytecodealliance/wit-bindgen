@@ -123,32 +123,6 @@ impl RustGenerator for RustWasm {
         &mut self.types
     }
 
-    fn print_pointer(&mut self, iface: &Interface, const_: bool, ty: &Type) {
-        self.push_str("*");
-        if const_ {
-            self.push_str("const ");
-        } else {
-            self.push_str("mut ");
-        }
-        let manually_drop = match ty {
-            Type::Id(id) => match &iface.types[*id].kind {
-                TypeDefKind::Record(_) => true,
-                TypeDefKind::List(_) | TypeDefKind::Variant(_) | TypeDefKind::Type(_) => {
-                    panic!("unsupported pointer type")
-                }
-            },
-            Type::Handle(_) => true,
-            _ => false,
-        };
-        if manually_drop {
-            self.push_str("core::mem::ManuallyDrop<");
-        }
-        self.print_ty(iface, ty, TypeMode::Owned);
-        if manually_drop {
-            self.push_str(">");
-        }
-    }
-
     fn print_borrowed_slice(
         &mut self,
         iface: &Interface,
