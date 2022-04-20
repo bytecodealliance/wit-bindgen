@@ -6,8 +6,8 @@ list-s8-param: function(x: list<s8>)
 list-s16-param: function(x: list<s16>)
 list-s32-param: function(x: list<s32>)
 list-s64-param: function(x: list<s64>)
-list-f32-param: function(x: list<f32>)
-list-f64-param: function(x: list<f64>)
+list-float32-param: function(x: list<float32>)
+list-float64-param: function(x: list<float64>)
 
 list-u8-ret: function() -> list<u8>
 list-u16-ret: function() -> list<u16>
@@ -17,8 +17,8 @@ list-s8-ret: function() -> list<s8>
 list-s16-ret: function() -> list<s16>
 list-s32-ret: function() -> list<s32>
 list-s64-ret: function() -> list<s64>
-list-f32-ret: function() -> list<f32>
-list-f64-ret: function() -> list<f64>
+list-float32-ret: function() -> list<float32>
+list-float64-ret: function() -> list<float64>
 
 tuple-list: function(x: list<tuple<u8, s8>>) -> list<tuple<s64, u32>>
 tuple-string-list: function(x: list<tuple<u8, string>>) -> list<tuple<string, u8>>
@@ -65,8 +65,8 @@ type load-store-all-sizes = list<tuple<
   s32,
   u64,
   s64,
-  f32,
-  f64,
+  float32,
+  float64,
   char,
 >>
 load-store-everything: function(a: load-store-all-sizes) -> load-store-all-sizes

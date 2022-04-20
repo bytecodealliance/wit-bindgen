@@ -36,11 +36,11 @@ int64_t exports_roundtrip_s64(int64_t a) {
   return a;
 }
 
-float exports_roundtrip_f32(float a) {
+float exports_roundtrip_float32(float a) {
   return a;
 }
 
-double exports_roundtrip_f64(double a) {
+double exports_roundtrip_float64(double a) {
   return a;
 }
 
@@ -92,15 +92,15 @@ void exports_test_imports() {
   assert(imports_roundtrip_s64(LONG_MIN) == LONG_MIN);
   assert(imports_roundtrip_s64(LONG_MAX) == LONG_MAX);
 
-  assert(imports_roundtrip_f32(1.0) == 1.0);
-  assert(imports_roundtrip_f32(INFINITY) == INFINITY);
-  assert(imports_roundtrip_f32(-INFINITY) == -INFINITY);
-  assert(isnan(imports_roundtrip_f32(NAN)));
+  assert(imports_roundtrip_float32(1.0) == 1.0);
+  assert(imports_roundtrip_float32(INFINITY) == INFINITY);
+  assert(imports_roundtrip_float32(-INFINITY) == -INFINITY);
+  assert(isnan(imports_roundtrip_float32(NAN)));
 
-  assert(imports_roundtrip_f64(1.0) == 1.0);
-  assert(imports_roundtrip_f64(INFINITY) == INFINITY);
-  assert(imports_roundtrip_f64(-INFINITY) == -INFINITY);
-  assert(isnan(imports_roundtrip_f64(NAN)));
+  assert(imports_roundtrip_float64(1.0) == 1.0);
+  assert(imports_roundtrip_float64(INFINITY) == INFINITY);
+  assert(imports_roundtrip_float64(-INFINITY) == -INFINITY);
+  assert(isnan(imports_roundtrip_float64(NAN)));
 
   assert(imports_roundtrip_char('a') == 'a');
   assert(imports_roundtrip_char(' ') == ' ');

@@ -11,7 +11,7 @@ list-in-record4: function(a: list-in-alias) -> list-in-alias
 
 type list-in-variant1-v1 = option<string>
 type list-in-variant1-v2 = expected<_, string>
-union list-in-variant1-v3 { string, f32 }
+union list-in-variant1-v3 { string, float32 }
 list-in-variant1: function(a: list-in-variant1-v1, b: list-in-variant1-v2, c: list-in-variant1-v3)
 
 type list-in-variant2 = option<string>

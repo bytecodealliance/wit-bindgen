@@ -30,10 +30,10 @@
     (func (export "list-s64-param") (param i32 i32)
         unreachable
     )
-    (func (export "list-f32-param") (param i32 i32)
+    (func (export "list-float32-param") (param i32 i32)
         unreachable
     )
-    (func (export "list-f64-param") (param i32 i32)
+    (func (export "list-float64-param") (param i32 i32)
         unreachable
     )
     (func (export "list-u8-ret") (result i32)
@@ -60,10 +60,10 @@
     (func (export "list-s64-ret") (result i32)
         unreachable
     )
-    (func (export "list-f32-ret") (result i32)
+    (func (export "list-float32-ret") (result i32)
         unreachable
     )
-    (func (export "list-f64-ret") (result i32)
+    (func (export "list-float64-ret") (result i32)
         unreachable
     )
     (func (export "tuple-list") (param i32 i32) (result i32)

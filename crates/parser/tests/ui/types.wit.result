@@ -52,12 +52,12 @@
     {
       "idx": 9,
       "name": "t9",
-      "primitive": "f32"
+      "primitive": "float32"
     },
     {
       "idx": 10,
       "name": "t10",
-      "primitive": "f64"
+      "primitive": "float64"
     },
     {
       "idx": 11,

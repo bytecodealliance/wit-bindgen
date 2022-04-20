@@ -43,8 +43,8 @@ impl Markdown {
             Type::S32 => self.src.push_str("`s32`"),
             Type::U64 => self.src.push_str("`u64`"),
             Type::S64 => self.src.push_str("`s64`"),
-            Type::F32 => self.src.push_str("`f32`"),
-            Type::F64 => self.src.push_str("`f64`"),
+            Type::Float32 => self.src.push_str("`float32`"),
+            Type::Float64 => self.src.push_str("`float64`"),
             Type::Char => self.src.push_str("`char`"),
             Type::Handle(id) => {
                 self.src.push_str("handle<");

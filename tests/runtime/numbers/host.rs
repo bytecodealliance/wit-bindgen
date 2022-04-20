@@ -40,11 +40,11 @@ impl imports::Imports for MyImports {
         val
     }
 
-    fn roundtrip_f32(&mut self, val: f32) -> f32 {
+    fn roundtrip_float32(&mut self, val: f32) -> f32 {
         val
     }
 
-    fn roundtrip_f64(&mut self, val: f64) -> f64 {
+    fn roundtrip_float64(&mut self, val: f64) -> f64 {
         val
     }
 
@@ -153,27 +153,27 @@ fn run(wasm: &str) -> Result<()> {
         i64::max_value()
     );
 
-    assert_eq!(exports.roundtrip_f32(&mut store, 1.0)?, 1.0);
+    assert_eq!(exports.roundtrip_float32(&mut store, 1.0)?, 1.0);
     assert_eq!(
-        exports.roundtrip_f32(&mut store, f32::INFINITY)?,
+        exports.roundtrip_float32(&mut store, f32::INFINITY)?,
         f32::INFINITY
     );
     assert_eq!(
-        exports.roundtrip_f32(&mut store, f32::NEG_INFINITY)?,
+        exports.roundtrip_float32(&mut store, f32::NEG_INFINITY)?,
         f32::NEG_INFINITY
     );
-    assert!(exports.roundtrip_f32(&mut store, f32::NAN)?.is_nan());
+    assert!(exports.roundtrip_float32(&mut store, f32::NAN)?.is_nan());
 
-    assert_eq!(exports.roundtrip_f64(&mut store, 1.0)?, 1.0);
+    assert_eq!(exports.roundtrip_float64(&mut store, 1.0)?, 1.0);
     assert_eq!(
-        exports.roundtrip_f64(&mut store, f64::INFINITY)?,
+        exports.roundtrip_float64(&mut store, f64::INFINITY)?,
         f64::INFINITY
     );
     assert_eq!(
-        exports.roundtrip_f64(&mut store, f64::NEG_INFINITY)?,
+        exports.roundtrip_float64(&mut store, f64::NEG_INFINITY)?,
         f64::NEG_INFINITY
     );
-    assert!(exports.roundtrip_f64(&mut store, f64::NAN)?.is_nan());
+    assert!(exports.roundtrip_float64(&mut store, f64::NAN)?.is_nan());
 
     assert_eq!(exports.roundtrip_char(&mut store, 'a')?, 'a');
     assert_eq!(exports.roundtrip_char(&mut store, ' ')?, ' ');

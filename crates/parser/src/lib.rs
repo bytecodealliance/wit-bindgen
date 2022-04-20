@@ -61,8 +61,8 @@ pub enum Type {
     S16,
     S32,
     S64,
-    F32,
-    F64,
+    Float32,
+    Float64,
     Char,
     Handle(ResourceId),
     Id(TypeId),
@@ -430,8 +430,8 @@ impl Interface {
             | Type::S32
             | Type::U64
             | Type::S64
-            | Type::F32
-            | Type::F64 => true,
+            | Type::Float32
+            | Type::Float64 => true,
 
             Type::Char | Type::Handle(_) => false,
 
