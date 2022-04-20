@@ -46,8 +46,6 @@ impl Markdown {
             Type::F32 => self.src.push_str("`f32`"),
             Type::F64 => self.src.push_str("`f64`"),
             Type::Char => self.src.push_str("`char`"),
-            Type::CChar => self.src.push_str("`c_char`"),
-            Type::Usize => self.src.push_str("`usize`"),
             Type::Handle(id) => {
                 self.src.push_str("handle<");
                 self.src.push_str(&iface.resources[*id].name);

@@ -123,11 +123,11 @@ impl Js {
 
     fn array_ty(&self, iface: &Interface, ty: &Type) -> Option<&'static str> {
         match ty {
-            Type::U8 | Type::CChar => Some("Uint8Array"),
+            Type::U8 => Some("Uint8Array"),
             Type::S8 => Some("Int8Array"),
             Type::U16 => Some("Uint16Array"),
             Type::S16 => Some("Int16Array"),
-            Type::U32 | Type::Usize => Some("Uint32Array"),
+            Type::U32 => Some("Uint32Array"),
             Type::S32 => Some("Int32Array"),
             Type::U64 => Some("BigUint64Array"),
             Type::S64 => Some("BigInt64Array"),
@@ -145,12 +145,10 @@ impl Js {
     fn print_ty(&mut self, iface: &Interface, ty: &Type) {
         match ty {
             Type::U8
-            | Type::CChar
             | Type::S8
             | Type::U16
             | Type::S16
             | Type::U32
-            | Type::Usize
             | Type::S32
             | Type::F32
             | Type::F64 => self.src.ts("number"),
@@ -1228,7 +1226,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::S16FromI32 => self.clamp_guest(results, operands, i16::MIN, i16::MAX),
             // Use `>>>0` to ensure the bits of the number are treated as
             // unsigned.
-            Instruction::U32FromI32 | Instruction::UsizeFromI32 => {
+            Instruction::U32FromI32 => {
                 results.push(format!("{} >>> 0", operands[0]));
             }
             // All bigints coming from wasm are treated as signed, so convert
@@ -1246,7 +1244,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::I32FromS8 => self.clamp_host(results, operands, i8::MIN, i8::MAX),
             Instruction::I32FromU16 => self.clamp_host(results, operands, u16::MIN, u16::MAX),
             Instruction::I32FromS16 => self.clamp_host(results, operands, i16::MIN, i16::MAX),
-            Instruction::I32FromU32 | Instruction::I32FromUsize => {
+            Instruction::I32FromU32 => {
                 self.clamp_host(results, operands, u32::MIN, u32::MAX);
             }
             Instruction::I32FromS32 => self.clamp_host(results, operands, i32::MIN, i32::MAX),

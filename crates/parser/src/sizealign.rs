@@ -58,9 +58,9 @@ impl SizeAlign {
 
     pub fn size(&self, ty: &Type) -> usize {
         match ty {
-            Type::U8 | Type::S8 | Type::CChar => 1,
+            Type::U8 | Type::S8 => 1,
             Type::U16 | Type::S16 => 2,
-            Type::U32 | Type::S32 | Type::F32 | Type::Char | Type::Handle(_) | Type::Usize => 4,
+            Type::U32 | Type::S32 | Type::F32 | Type::Char | Type::Handle(_) => 4,
             Type::U64 | Type::S64 | Type::F64 => 8,
             Type::Id(id) => self.map[id.index()].0,
         }
@@ -68,9 +68,9 @@ impl SizeAlign {
 
     pub fn align(&self, ty: &Type) -> usize {
         match ty {
-            Type::U8 | Type::S8 | Type::CChar => 1,
+            Type::U8 | Type::S8 => 1,
             Type::U16 | Type::S16 => 2,
-            Type::U32 | Type::S32 | Type::F32 | Type::Char | Type::Handle(_) | Type::Usize => 4,
+            Type::U32 | Type::S32 | Type::F32 | Type::Char | Type::Handle(_) => 4,
             Type::U64 | Type::S64 | Type::F64 => 8,
             Type::Id(id) => self.map[id.index()].1,
         }

@@ -283,10 +283,8 @@ fn to_json(i: &Interface) -> String {
         use wit_parser::Type;
         match ty {
             Type::U8 => format!("u8"),
-            Type::CChar => format!("c_char"),
             Type::U16 => format!("u16"),
             Type::U32 => format!("u32"),
-            Type::Usize => format!("usize"),
             Type::U64 => format!("u64"),
             Type::S8 => format!("s8"),
             Type::S16 => format!("s16"),

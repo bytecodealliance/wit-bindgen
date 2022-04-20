@@ -84,10 +84,6 @@ enum Type<'a> {
     F32,
     F64,
     Char,
-    #[allow(dead_code)]
-    Usize,
-    #[allow(dead_code)]
-    CChar,
     Handle(Id<'a>),
     Name(Id<'a>),
     List(Box<Type<'a>>),

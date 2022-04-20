@@ -123,10 +123,6 @@ impl RustGenerator for RustWasm {
         &mut self.types
     }
 
-    fn print_usize(&mut self) {
-        self.src.push_str("usize");
-    }
-
     fn print_pointer(&mut self, iface: &Interface, const_: bool, ty: &Type) {
         self.push_str("*");
         if const_ {
@@ -858,11 +854,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 let s = operands.pop().unwrap();
                 results.push(format!("wit_bindgen_rust::rt::as_i64({})", s));
             }
-            Instruction::I32FromUsize
-            | Instruction::I32FromChar
+            Instruction::I32FromChar
             | Instruction::I32FromU8
             | Instruction::I32FromS8
-            | Instruction::I32FromChar8
             | Instruction::I32FromU16
             | Instruction::I32FromS16
             | Instruction::I32FromU32
@@ -886,12 +880,11 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(operands.pop().unwrap());
             }
             Instruction::S8FromI32 => top_as("i8"),
-            Instruction::Char8FromI32 | Instruction::U8FromI32 => top_as("u8"),
+            Instruction::U8FromI32 => top_as("u8"),
             Instruction::S16FromI32 => top_as("i16"),
             Instruction::U16FromI32 => top_as("u16"),
             Instruction::U32FromI32 => top_as("u32"),
             Instruction::U64FromI64 => top_as("u64"),
-            Instruction::UsizeFromI32 => top_as("usize"),
             Instruction::CharFromI32 => {
                 if unchecked {
                     results.push(format!(

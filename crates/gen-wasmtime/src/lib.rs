@@ -266,10 +266,6 @@ impl RustGenerator for Wasmtime {
         &mut self.types
     }
 
-    fn print_usize(&mut self) {
-        self.src.push_str("u32");
-    }
-
     fn print_pointer(&mut self, _iface: &Interface, _const_: bool, _ty: &Type) {
         self.push_str("u32");
     }
@@ -1434,11 +1430,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 let s = operands.pop().unwrap();
                 results.push(format!("wit_bindgen_wasmtime::rt::as_i64({})", s));
             }
-            Instruction::I32FromUsize
-            | Instruction::I32FromChar
+            Instruction::I32FromChar
             | Instruction::I32FromU8
             | Instruction::I32FromS8
-            | Instruction::I32FromChar8
             | Instruction::I32FromU16
             | Instruction::I32FromS16
             | Instruction::I32FromU32
@@ -1461,13 +1455,13 @@ impl Bindgen for FunctionBindgen<'_> {
             // necessary since we could chop bits off this should be more
             // forward-compatible with any future changes.
             Instruction::S8FromI32 => try_from("i8", operands, results),
-            Instruction::Char8FromI32 | Instruction::U8FromI32 => try_from("u8", operands, results),
+            Instruction::U8FromI32 => try_from("u8", operands, results),
             Instruction::S16FromI32 => try_from("i16", operands, results),
             Instruction::U16FromI32 => try_from("u16", operands, results),
 
             // Casts of the same bit width simply use `as` since we're just
             // reinterpreting the bits already there.
-            Instruction::U32FromI32 | Instruction::UsizeFromI32 => top_as("u32"),
+            Instruction::U32FromI32 => top_as("u32"),
             Instruction::U64FromI64 => top_as("u64"),
 
             Instruction::CharFromI32 => {
