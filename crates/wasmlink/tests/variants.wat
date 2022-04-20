@@ -36,7 +36,7 @@
     (func (export "option-result") (result i32)
         unreachable
     )
-    (func (export "casts") (param i32 i32 i32 f64 i32 i64 i32 i64 i32 i64 i32 i32 i32) (result i32)
+    (func (export "casts") (param i32 i32 i32 i64 i32 i64 i32 i64 i32 i64 i32 i32 i32) (result i32)
         unreachable
     )
     (func (export "expected-arg") (param i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32 i32)

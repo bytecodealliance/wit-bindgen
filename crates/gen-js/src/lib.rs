@@ -1297,7 +1297,6 @@ impl Bindgen for FunctionBindgen<'_> {
                             let cvt = self.gen.intrinsic(Intrinsic::F32ToI32);
                             results.push(format!("{}({})", cvt, op));
                         }
-                        Bitcast::F32ToF64 | Bitcast::F64ToF32 => results.push(op.clone()),
                         Bitcast::I64ToF64 => {
                             let cvt = self.gen.intrinsic(Intrinsic::I64ToF64);
                             results.push(format!("{}({})", cvt, op));
