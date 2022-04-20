@@ -1,5 +1,5 @@
-no type named `f32`
-     --> tests/not-adapted.wit:1:33
-      |
-    1 | f1: function(a: s32, b: s64, c: f32, d: f64) -> u32
-      |                                 ^--
+(module
+  (type (;0;) (func (param i32 i64 f32 f64) (result i32)))
+  (func (;0;) (type 0) (param i32 i64 f32 f64) (result i32)
+    unreachable)
+  (export "f1" (func 0)))
