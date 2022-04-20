@@ -38,10 +38,10 @@ impl lists::Lists for Lists {
             &[-1, 2, -3, 4, -5, 6, -7, 8, -9, 10, -11, 12, -13, 14, -15, 16, -17, 18, -19, 20]
         );
     }
-    fn list_f32_param(x: Vec<f32>) {
+    fn list_float32_param(x: Vec<f32>) {
         assert_eq!(x, &[-1.1, 2.2, -3.3, 4.4, -5.5]);
     }
-    fn list_f64_param(x: Vec<f64>) {
+    fn list_float64_param(x: Vec<f64>) {
         assert_eq!(x, &[-1.1, 2.2, -3.3, 4.4, -5.5]);
     }
     fn list_u8_ret() -> Vec<u8> {
@@ -72,10 +72,10 @@ impl lists::Lists for Lists {
             -1, 2, -3, 4, -5, 6, -7, 8, -9, 10, -11, 12, -13, 14, -15, 16, -17, 18, -19, 20,
         ]
     }
-    fn list_f32_ret() -> Vec<f32> {
+    fn list_float32_ret() -> Vec<f32> {
         vec![1.1, -2.2, 3.3, -4.4, 5.5]
     }
-    fn list_f64_ret() -> Vec<f64> {
+    fn list_float64_ret() -> Vec<f64> {
         vec![1.1, -2.2, 3.3, -4.4, 5.5]
     }
     fn tuple_list(x: Vec<(u8, i8)>) -> Vec<(i64, u32)> {

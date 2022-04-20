@@ -152,8 +152,8 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
             Type::S32 => quote::quote! { i32 },
             Type::U64 => quote::quote! { u64 },
             Type::S64 => quote::quote! { i64 },
-            Type::F32 => quote::quote! { f32 },
-            Type::F64 => quote::quote! { f64 },
+            Type::Float32 => quote::quote! { f32 },
+            Type::Float64 => quote::quote! { f64 },
             Type::Char => quote::quote! { char },
             Type::Handle(resource) => {
                 let name =

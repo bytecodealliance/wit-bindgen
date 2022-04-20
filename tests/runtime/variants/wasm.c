@@ -4,7 +4,7 @@
 
 void exports_test_imports() {
   {
-    imports_option_f32_t a;
+    imports_option_float32_t a;
     uint8_t r;
     a.tag = 1;
     a.val = 1;
@@ -19,8 +19,8 @@ void exports_test_imports() {
 
 
   {
-    imports_expected_u32_f32_t a;
-    imports_expected_f64_u8_t b;
+    imports_expected_u32_float32_t a;
+    imports_expected_float64_u8_t b;
 
     a.tag = 0;
     a.val.ok = 2;
@@ -162,14 +162,14 @@ void exports_test_imports() {
   }
 }
 
-bool exports_roundtrip_option(exports_option_f32_t *a, uint8_t *ret0) {
+bool exports_roundtrip_option(exports_option_float32_t *a, uint8_t *ret0) {
   if (a->tag) {
     *ret0 = a->val;
   }
   return a->tag;
 }
 
-void exports_roundtrip_result(exports_expected_u32_f32_t *a, exports_expected_f64_u8_t *ret0) {
+void exports_roundtrip_result(exports_expected_u32_float32_t *a, exports_expected_float64_u8_t *ret0) {
   ret0->tag = a->tag;
   if (a->tag == 0) {
     ret0->val.ok = a->val.ok;

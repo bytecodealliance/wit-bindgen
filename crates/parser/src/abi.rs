@@ -208,13 +208,13 @@ def_instruction! {
         /// This may be a noop for some implementations, but it's here in case the
         /// native language representation of `f32` is different than the wasm
         /// representation of `f32`.
-        F32FromIf32 : [1] => [1],
+        F32FromFloat32 : [1] => [1],
         /// Conversion an interface type `f64` value to a wasm `f64`.
         ///
         /// This may be a noop for some implementations, but it's here in case the
         /// native language representation of `f64` is different than the wasm
         /// representation of `f64`.
-        F64FromIf64 : [1] => [1],
+        F64FromFloat64 : [1] => [1],
 
         /// Converts a native wasm `i32` to an interface type `s8`.
         ///
@@ -245,9 +245,9 @@ def_instruction! {
         /// It's safe to assume that the `i32` is indeed a valid unicode code point.
         CharFromI32 : [1] => [1],
         /// Converts a native wasm `f32` to an interface type `f32`.
-        If32FromF32 : [1] => [1],
+        Float32FromF32 : [1] => [1],
         /// Converts a native wasm `f64` to an interface type `f64`.
-        If64FromF64 : [1] => [1],
+        Float64FromF64 : [1] => [1],
 
         // Handles
 
@@ -847,8 +847,8 @@ impl Interface {
             | Type::Handle(_) => result.push(WasmType::I32),
 
             Type::U64 | Type::S64 => result.push(WasmType::I64),
-            Type::F32 => result.push(WasmType::F32),
-            Type::F64 => result.push(WasmType::F64),
+            Type::Float32 => result.push(WasmType::F32),
+            Type::Float64 => result.push(WasmType::F64),
 
             Type::Id(id) => match &self.types[*id].kind {
                 TypeDefKind::Type(t) => self.push_wasm(variant, t, result),
@@ -1298,8 +1298,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::S64 => self.emit(&I64FromS64),
             Type::U64 => self.emit(&I64FromU64),
             Type::Char => self.emit(&I32FromChar),
-            Type::F32 => self.emit(&F32FromIf32),
-            Type::F64 => self.emit(&F64FromIf64),
+            Type::Float32 => self.emit(&F32FromFloat32),
+            Type::Float64 => self.emit(&F64FromFloat64),
             Type::Handle(ty) => {
                 let borrowed = match self.lift_lower {
                     // This means that a return value is being lowered, which is
@@ -1472,8 +1472,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::S64 => self.emit(&S64FromI64),
             Type::U64 => self.emit(&U64FromI64),
             Type::Char => self.emit(&CharFromI32),
-            Type::F32 => self.emit(&If32FromF32),
-            Type::F64 => self.emit(&If64FromF64),
+            Type::Float32 => self.emit(&Float32FromF32),
+            Type::Float64 => self.emit(&Float64FromF64),
             Type::Handle(ty) => {
                 // For more information on these values see the comments in
                 // `lower` above.
@@ -1607,8 +1607,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 self.lower_and_emit(ty, addr, &I32Store { offset })
             }
             Type::U64 | Type::S64 => self.lower_and_emit(ty, addr, &I64Store { offset }),
-            Type::F32 => self.lower_and_emit(ty, addr, &F32Store { offset }),
-            Type::F64 => self.lower_and_emit(ty, addr, &F64Store { offset }),
+            Type::Float32 => self.lower_and_emit(ty, addr, &F32Store { offset }),
+            Type::Float64 => self.lower_and_emit(ty, addr, &F64Store { offset }),
 
             Type::Id(id) => match &self.iface.types[id].kind {
                 TypeDefKind::Type(t) => self.write_to_memory(t, addr, offset),
@@ -1719,8 +1719,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 self.emit_and_lift(ty, addr, &I32Load { offset })
             }
             Type::U64 | Type::S64 => self.emit_and_lift(ty, addr, &I64Load { offset }),
-            Type::F32 => self.emit_and_lift(ty, addr, &F32Load { offset }),
-            Type::F64 => self.emit_and_lift(ty, addr, &F64Load { offset }),
+            Type::Float32 => self.emit_and_lift(ty, addr, &F32Load { offset }),
+            Type::Float64 => self.emit_and_lift(ty, addr, &F64Load { offset }),
 
             Type::Id(id) => match &self.iface.types[id].kind {
                 TypeDefKind::Type(t) => self.read_from_memory(t, addr, offset),

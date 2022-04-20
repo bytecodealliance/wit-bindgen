@@ -223,8 +223,8 @@ impl C {
             Type::S32 => self.src.h("int32_t"),
             Type::U64 => self.src.h("uint64_t"),
             Type::S64 => self.src.h("int64_t"),
-            Type::F32 => self.src.h("float"),
-            Type::F64 => self.src.h("double"),
+            Type::Float32 => self.src.h("float"),
+            Type::Float64 => self.src.h("double"),
             Type::Handle(id) => {
                 self.print_namespace(iface);
                 self.src.h(&iface.resources[*id].name.to_snake_case());
@@ -278,8 +278,8 @@ impl C {
             Type::S32 => self.src.h("s32"),
             Type::U64 => self.src.h("u64"),
             Type::S64 => self.src.h("s64"),
-            Type::F32 => self.src.h("f32"),
-            Type::F64 => self.src.h("f64"),
+            Type::Float32 => self.src.h("float32"),
+            Type::Float64 => self.src.h("float64"),
             Type::Handle(id) => self.src.h(&iface.resources[*id].name.to_snake_case()),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
@@ -1308,10 +1308,10 @@ impl Bindgen for FunctionBindgen<'_> {
 
             // f32/f64 have the same representation in the import type and in C,
             // so no conversions necessary.
-            Instruction::F32FromIf32
-            | Instruction::F64FromIf64
-            | Instruction::If32FromF32
-            | Instruction::If64FromF64 => {
+            Instruction::F32FromFloat32
+            | Instruction::F64FromFloat64
+            | Instruction::Float32FromF32
+            | Instruction::Float64FromF64 => {
                 results.push(operands[0].clone());
             }
 

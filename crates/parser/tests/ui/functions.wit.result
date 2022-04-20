@@ -25,7 +25,7 @@
           ],
           [
             "err",
-            "f32"
+            "float32"
           ]
         ]
       }
@@ -69,8 +69,8 @@
     {
       "name": "f7",
       "params": [
-        "f32",
-        "f32"
+        "float32",
+        "float32"
       ],
       "results": [
         "u32",

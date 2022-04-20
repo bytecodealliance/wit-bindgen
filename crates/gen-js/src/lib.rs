@@ -131,8 +131,8 @@ impl Js {
             Type::S32 => Some("Int32Array"),
             Type::U64 => Some("BigUint64Array"),
             Type::S64 => Some("BigInt64Array"),
-            Type::F32 => Some("Float32Array"),
-            Type::F64 => Some("Float64Array"),
+            Type::Float32 => Some("Float32Array"),
+            Type::Float64 => Some("Float64Array"),
             Type::Char => None,
             Type::Handle(_) => None,
             Type::Id(id) => match &iface.types[*id].kind {
@@ -150,8 +150,8 @@ impl Js {
             | Type::S16
             | Type::U32
             | Type::S32
-            | Type::F32
-            | Type::F64 => self.src.ts("number"),
+            | Type::Float32
+            | Type::Float64 => self.src.ts("number"),
             Type::U64 | Type::S64 => self.src.ts("bigint"),
             Type::Char => self.src.ts("string"),
             Type::Handle(id) => self.src.ts(&iface.resources[*id].name.to_camel_case()),
@@ -1254,20 +1254,20 @@ impl Bindgen for FunctionBindgen<'_> {
             // The native representation in JS of f32 and f64 is just a number,
             // so there's nothing to do here. Everything wasm gives us is
             // representable in JS.
-            Instruction::If32FromF32 | Instruction::If64FromF64 => {
+            Instruction::Float32FromF32 | Instruction::Float64FromF64 => {
                 results.push(operands.pop().unwrap())
             }
 
             // For f32 coming from the host we need to validate that the value
             // is indeed a number and that the 32-bit value matches the
             // original value.
-            Instruction::F32FromIf32 => {
+            Instruction::F32FromFloat32 => {
                 let validate = self.gen.intrinsic(Intrinsic::ValidateF32);
                 results.push(format!("{}({})", validate, operands[0]));
             }
 
             // Similar to f32, but no range checks, just checks it's a number
-            Instruction::F64FromIf64 => {
+            Instruction::F64FromFloat64 => {
                 let validate = self.gen.intrinsic(Intrinsic::ValidateF64);
                 results.push(format!("{}({})", validate, operands[0]));
             }

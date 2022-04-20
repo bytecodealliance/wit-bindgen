@@ -316,8 +316,8 @@ impl Resolver {
             super::Type::S16 => TypeDefKind::Type(Type::S16),
             super::Type::S32 => TypeDefKind::Type(Type::S32),
             super::Type::S64 => TypeDefKind::Type(Type::S64),
-            super::Type::F32 => TypeDefKind::Type(Type::F32),
-            super::Type::F64 => TypeDefKind::Type(Type::F64),
+            super::Type::Float32 => TypeDefKind::Type(Type::Float32),
+            super::Type::Float64 => TypeDefKind::Type(Type::Float64),
             super::Type::Char => TypeDefKind::Type(Type::Char),
             super::Type::Handle(resource) => {
                 let id = match self.resource_lookup.get(&*resource.name) {

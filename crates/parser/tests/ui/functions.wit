@@ -3,8 +3,8 @@ f2: function(a: u32)
 f3: function(a: u32,)
 f4: function() -> u32
 f6: function() -> (u32, u32)
-f7: function(a: f32, b: f32) -> (u32, u32)
-f8: function(a: option<u32>) -> expected<u32, f32>
+f7: function(a: float32, b: float32) -> (u32, u32)
+f8: function(a: option<u32>) -> expected<u32, float32>
 
 f9: function() -> a: u32
 f10: function() -> (a: u32)

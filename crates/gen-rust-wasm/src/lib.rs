@@ -865,16 +865,16 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("wit_bindgen_rust::rt::as_i32({})", s));
             }
 
-            Instruction::F32FromIf32 => {
+            Instruction::F32FromFloat32 => {
                 let s = operands.pop().unwrap();
                 results.push(format!("wit_bindgen_rust::rt::as_f32({})", s));
             }
-            Instruction::F64FromIf64 => {
+            Instruction::F64FromFloat64 => {
                 let s = operands.pop().unwrap();
                 results.push(format!("wit_bindgen_rust::rt::as_f64({})", s));
             }
-            Instruction::If32FromF32
-            | Instruction::If64FromF64
+            Instruction::Float32FromF32
+            | Instruction::Float64FromF64
             | Instruction::S32FromI32
             | Instruction::S64FromI64 => {
                 results.push(operands.pop().unwrap());

@@ -1441,10 +1441,10 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("wit_bindgen_wasmtime::rt::as_i32({})", s));
             }
 
-            Instruction::F32FromIf32
-            | Instruction::F64FromIf64
-            | Instruction::If32FromF32
-            | Instruction::If64FromF64
+            Instruction::F32FromFloat32
+            | Instruction::F64FromFloat64
+            | Instruction::Float32FromF32
+            | Instruction::Float64FromF64
             | Instruction::S32FromI32
             | Instruction::S64FromI64 => {
                 results.push(operands.pop().unwrap());

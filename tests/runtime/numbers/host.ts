@@ -24,8 +24,8 @@ async function run() {
     roundtripS32(x) { return x; },
     roundtripU64(x) { return x; },
     roundtripS64(x) { return x; },
-    roundtripF32(x) { return x; },
-    roundtripF64(x) { return x; },
+    roundtripFloat32(x) { return x; },
+    roundtripFloat64(x) { return x; },
     roundtripChar(x) { return x; },
     setScalar(x) { scalar = x; },
     getScalar() { return scalar; },
@@ -66,15 +66,15 @@ async function run() {
   assertEq(wasm.roundtripS64((1n << 63n) - 1n), (1n << 63n) - 1n);
   assertEq(wasm.roundtripS64(-(1n << 63n)), -(1n << 63n));
 
-  assertEq(wasm.roundtripF32(1), 1);
-  assertEq(wasm.roundtripF32(Infinity), Infinity);
-  assertEq(wasm.roundtripF32(-Infinity), -Infinity);
-  assert(Number.isNaN(wasm.roundtripF32(NaN)));
+  assertEq(wasm.roundtripFloat32(1), 1);
+  assertEq(wasm.roundtripFloat32(Infinity), Infinity);
+  assertEq(wasm.roundtripFloat32(-Infinity), -Infinity);
+  assert(Number.isNaN(wasm.roundtripFloat32(NaN)));
 
-  assertEq(wasm.roundtripF64(1), 1);
-  assertEq(wasm.roundtripF64(Infinity), Infinity);
-  assertEq(wasm.roundtripF64(-Infinity), -Infinity);
-  assert(Number.isNaN(wasm.roundtripF64(NaN)));
+  assertEq(wasm.roundtripFloat64(1), 1);
+  assertEq(wasm.roundtripFloat64(Infinity), Infinity);
+  assertEq(wasm.roundtripFloat64(-Infinity), -Infinity);
+  assert(Number.isNaN(wasm.roundtripFloat64(NaN)));
 
   assertEq(wasm.roundtripChar('a'), 'a');
   assertEq(wasm.roundtripChar(' '), ' ');
