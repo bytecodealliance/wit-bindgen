@@ -84,6 +84,7 @@ enum Type<'a> {
     Float32,
     Float64,
     Char,
+    String,
     Handle(Id<'a>),
     Name(Id<'a>),
     List(Box<Type<'a>>),
@@ -524,7 +525,7 @@ impl<'a> Type<'a> {
             }
 
             Some((_span, Token::Bool)) => Ok(Type::bool()),
-            Some((_span, Token::String_)) => Ok(Type::List(Box::new(Type::Char))),
+            Some((_span, Token::String_)) => Ok(Type::String),
 
             // list<T>
             Some((_span, Token::List)) => {

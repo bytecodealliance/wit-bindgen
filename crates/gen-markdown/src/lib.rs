@@ -46,6 +46,7 @@ impl Markdown {
             Type::Float32 => self.src.push_str("`float32`"),
             Type::Float64 => self.src.push_str("`float64`"),
             Type::Char => self.src.push_str("`char`"),
+            Type::String => self.src.push_str("`string`"),
             Type::Handle(id) => {
                 self.src.push_str("handle<");
                 self.src.push_str(&iface.resources[*id].name);
@@ -99,7 +100,6 @@ impl Markdown {
                             unreachable!()
                         }
                     }
-                    TypeDefKind::List(Type::Char) => self.src.push_str("`string`"),
                     TypeDefKind::List(t) => {
                         self.src.push_str("list<");
                         self.print_ty(iface, t, false);

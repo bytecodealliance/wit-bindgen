@@ -293,6 +293,7 @@ fn to_json(i: &Interface) -> String {
             Type::Float32 => format!("float32"),
             Type::Float64 => format!("float64"),
             Type::Char => format!("char"),
+            Type::String => format!("string"),
             Type::Handle(resource) => format!("handle-{}", resource.index()),
             Type::Id(id) => format!("type-{}", id.index()),
         }

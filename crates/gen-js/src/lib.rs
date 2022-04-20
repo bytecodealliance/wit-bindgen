@@ -135,6 +135,7 @@ impl Js {
             Type::Float64 => Some("Float64Array"),
             Type::Char => None,
             Type::Handle(_) => None,
+            Type::String => None,
             Type::Id(id) => match &iface.types[*id].kind {
                 TypeDefKind::Type(t) => self.array_ty(iface, t),
                 _ => None,
@@ -155,6 +156,7 @@ impl Js {
             Type::U64 | Type::S64 => self.src.ts("bigint"),
             Type::Char => self.src.ts("string"),
             Type::Handle(id) => self.src.ts(&iface.resources[*id].name.to_camel_case()),
+            Type::String => self.src.ts("string"),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
                 if let Some(name) = &ty.name {
@@ -201,12 +203,8 @@ impl Js {
         match self.array_ty(iface, ty) {
             Some(ty) => self.src.ts(ty),
             None => {
-                if let Type::Char = ty {
-                    self.src.ts("string");
-                } else {
-                    self.print_ty(iface, ty);
-                    self.src.ts("[]");
-                }
+                self.print_ty(iface, ty);
+                self.src.ts("[]");
             }
         }
     }
@@ -1629,34 +1627,20 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.needs_realloc = Some(realloc.to_string());
                 let tmp = self.tmp();
 
-                match element {
-                    Type::Char => {
-                        let encode = self.gen.intrinsic(Intrinsic::Utf8Encode);
-                        self.src.js(&format!(
-                            "const ptr{} = {}({}, realloc, memory);\n",
-                            tmp, encode, operands[0],
-                        ));
-                        let encoded_len = self.gen.intrinsic(Intrinsic::Utf8EncodedLen);
-                        self.src
-                            .js(&format!("const len{} = {};\n", tmp, encoded_len));
-                    }
-                    _ => {
-                        let size = self.gen.sizes.size(element);
-                        let align = self.gen.sizes.align(element);
-                        self.src
-                            .js(&format!("const val{} = {};\n", tmp, operands[0]));
-                        self.src.js(&format!("const len{} = val{0}.length;\n", tmp));
-                        self.src.js(&format!(
-                            "const ptr{} = realloc(0, 0, {}, len{0} * {});\n",
-                            tmp, align, size,
-                        ));
-                        // TODO: this is the wrong endianness
-                        self.src.js(&format!(
-                            "(new Uint8Array(memory.buffer, ptr{0}, len{0} * {1})).set(new Uint8Array(val{0}.buffer, val{0}.byteOffset, len{0} * {1}));\n",
-                            tmp, size,
-                        ));
-                    }
-                };
+                let size = self.gen.sizes.size(element);
+                let align = self.gen.sizes.align(element);
+                self.src
+                    .js(&format!("const val{} = {};\n", tmp, operands[0]));
+                self.src.js(&format!("const len{} = val{0}.length;\n", tmp));
+                self.src.js(&format!(
+                    "const ptr{} = realloc(0, 0, {}, len{0} * {});\n",
+                    tmp, align, size,
+                ));
+                // TODO: this is the wrong endianness
+                self.src.js(&format!(
+                    "(new Uint8Array(memory.buffer, ptr{0}, len{0} * {1})).set(new Uint8Array(val{0}.buffer, val{0}.byteOffset, len{0} * {1}));\n",
+                    tmp, size,
+                ));
                 results.push(format!("ptr{}", tmp));
                 results.push(format!("len{}", tmp));
             }
@@ -1667,37 +1651,64 @@ impl Bindgen for FunctionBindgen<'_> {
                     .js(&format!("const ptr{} = {};\n", tmp, operands[0]));
                 self.src
                     .js(&format!("const len{} = {};\n", tmp, operands[1]));
-                let (result, align) = match element {
-                    Type::Char => {
-                        let decoder = self.gen.intrinsic(Intrinsic::Utf8Decoder);
-                        (
-                            format!(
-                                "{}.decode(new Uint8Array(memory.buffer, ptr{}, len{1}))",
-                                decoder, tmp,
-                            ),
-                            1,
-                        )
-                    }
-                    _ => {
-                        // TODO: this is the wrong endianness
-                        let array_ty = self.gen.array_ty(iface, element).unwrap();
-                        (
-                            format!(
-                                "new {}(memory.buffer.slice(ptr{}, ptr{1} + len{1} * {}))",
-                                array_ty,
-                                tmp,
-                                self.gen.sizes.size(element),
-                            ),
-                            self.gen.sizes.align(element),
-                        )
-                    }
-                };
+                // TODO: this is the wrong endianness
+                let array_ty = self.gen.array_ty(iface, element).unwrap();
+                let result = format!(
+                    "new {}(memory.buffer.slice(ptr{}, ptr{1} + len{1} * {}))",
+                    array_ty,
+                    tmp,
+                    self.gen.sizes.size(element),
+                );
+                let align = self.gen.sizes.align(element);
                 match free {
                     Some(free) => {
                         self.needs_free = Some(free.to_string());
                         self.src.js(&format!("const list{} = {};\n", tmp, result));
                         self.src
                             .js(&format!("free(ptr{}, len{0}, {});\n", tmp, align));
+                        results.push(format!("list{}", tmp));
+                    }
+                    None => results.push(result),
+                }
+            }
+            Instruction::StringLower { realloc } => {
+                // Lowering only happens when we're passing lists into wasm,
+                // which forces us to always allocate, so this should always be
+                // `Some`.
+                let realloc = realloc.unwrap();
+                self.gen.needs_get_export = true;
+                self.needs_memory = true;
+                self.needs_realloc = Some(realloc.to_string());
+                let tmp = self.tmp();
+
+                let encode = self.gen.intrinsic(Intrinsic::Utf8Encode);
+                self.src.js(&format!(
+                    "const ptr{} = {}({}, realloc, memory);\n",
+                    tmp, encode, operands[0],
+                ));
+                let encoded_len = self.gen.intrinsic(Intrinsic::Utf8EncodedLen);
+                self.src
+                    .js(&format!("const len{} = {};\n", tmp, encoded_len));
+                results.push(format!("ptr{}", tmp));
+                results.push(format!("len{}", tmp));
+            }
+            Instruction::StringLift { free } => {
+                self.needs_memory = true;
+                let tmp = self.tmp();
+                self.src
+                    .js(&format!("const ptr{} = {};\n", tmp, operands[0]));
+                self.src
+                    .js(&format!("const len{} = {};\n", tmp, operands[1]));
+                let decoder = self.gen.intrinsic(Intrinsic::Utf8Decoder);
+                let result = format!(
+                    "{}.decode(new Uint8Array(memory.buffer, ptr{}, len{1}))",
+                    decoder, tmp,
+                );
+                match free {
+                    Some(free) => {
+                        self.needs_free = Some(free.to_string());
+                        self.src.js(&format!("const list{} = {};\n", tmp, result));
+                        self.src.js(&format!("free(ptr{}, len{0}, 1);\n", tmp));
                         results.push(format!("list{}", tmp));
                     }
                     None => results.push(result),

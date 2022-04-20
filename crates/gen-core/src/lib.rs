@@ -213,6 +213,7 @@ impl Types {
         let mut info = TypeInfo::default();
         match ty {
             Type::Handle(_) => info.has_handle = true,
+            Type::String => info.has_list = true,
             Type::Id(id) => return self.type_id_info(iface, *id),
             _ => {}
         }

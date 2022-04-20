@@ -155,6 +155,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
             Type::Float32 => quote::quote! { f32 },
             Type::Float64 => quote::quote! { f64 },
             Type::Char => quote::quote! { char },
+            Type::String => quote::quote! { String },
             Type::Handle(resource) => {
                 let name =
                     quote::format_ident!("{}", iface.resources[resource].name.to_camel_case());
@@ -178,12 +179,8 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         match &ty.kind {
             TypeDefKind::Type(t) => quote_ty(param, iface, t),
             TypeDefKind::List(t) => {
-                if *t == Type::Char {
-                    quote::quote! { String }
-                } else {
-                    let t = quote_ty(param, iface, t);
-                    quote::quote! { Vec<#t> }
-                }
+                let t = quote_ty(param, iface, t);
+                quote::quote! { Vec<#t> }
             }
             TypeDefKind::Record(r) => {
                 let fields = r.fields.iter().map(|f| quote_ty(param, iface, &f.ty));

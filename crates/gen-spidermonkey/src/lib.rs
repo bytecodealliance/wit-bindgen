@@ -1507,7 +1507,8 @@ impl abi::Bindgen for Bindgen<'_, '_> {
             abi::Instruction::I32FromOwnedHandle { ty: _ } => todo!(),
             abi::Instruction::HandleOwnedFromI32 { ty: _ } => todo!(),
             abi::Instruction::HandleBorrowedFromI32 { ty: _ } => todo!(),
-            abi::Instruction::ListCanonLower { element, realloc } => {
+            abi::Instruction::ListCanonLower { .. } => todo!(),
+            abi::Instruction::StringLower { realloc } => {
                 let js = pop_js(operands);
                 let ptr = self.new_local(wasm_encoder::ValType::I32);
                 let len = self.new_local(wasm_encoder::ValType::I32);
@@ -1551,11 +1552,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 // If `realloc` is `None`, then we are responsible for freeing
                 // this pointer after the call.
                 if realloc.is_none() {
-                    self.to_free.push((
-                        ptr,
-                        len,
-                        u32::try_from(self.gen.sizes.align(element)).unwrap(),
-                    ));
+                    self.to_free.push((ptr, len, 1));
                 }
 
                 results.push(Operand::Wasm(ptr));
@@ -1682,13 +1679,8 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 results.push(Operand::Wasm(ptr));
                 results.push(Operand::Wasm(length));
             }
-            abi::Instruction::ListCanonLift {
-                element,
-                free,
-                ty: _,
-            } => {
-                assert_eq!(**element, Type::Char);
-
+            abi::Instruction::ListCanonLift { .. } => todo!(),
+            abi::Instruction::StringLift { free } => {
                 let len = pop_wasm(operands);
                 let ptr = pop_wasm(operands);
                 let result = self.next_js();
@@ -1711,7 +1703,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                     // [i32]
                     self.inst(Instruction::LocalGet(len));
                     // [i32 i32]
-                    self.inst(Instruction::I32Const(self.gen.sizes.align(element) as _));
+                    self.inst(Instruction::I32Const(1));
                     // [i32 i32 i32]
                     self.inst(Instruction::Call(self.gen.spidermonkey_import(free)));
                     // []

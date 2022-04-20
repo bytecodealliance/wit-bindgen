@@ -72,7 +72,7 @@
     {
       "idx": 13,
       "name": "t13",
-      "list": "char"
+      "primitive": "string"
     },
     {
       "idx": 14,
@@ -518,7 +518,7 @@
     {
       "idx": 45,
       "name": "t44",
-      "list": "char"
+      "primitive": "string"
     },
     {
       "idx": 46,

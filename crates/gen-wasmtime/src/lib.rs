@@ -1616,17 +1616,10 @@ impl Bindgen for FunctionBindgen<'_> {
                 // Lowering only happens when we're passing lists into wasm,
                 // which forces us to always allocate, so this should always be
                 // `Some`.
-                //
-                // Note that the size of a list of `char` is 1 because it's
-                // encoded as utf-8, otherwise it's just normal contiguous array
-                // elements.
                 let realloc = realloc.unwrap();
                 self.needs_functions
                     .insert(realloc.to_string(), NeededFunction::Realloc);
-                let (size, align) = match element {
-                    Type::Char => (1, 1),
-                    _ => (self.gen.sizes.size(element), self.gen.sizes.align(element)),
-                };
+                let (size, align) = (self.gen.sizes.size(element), self.gen.sizes.align(element));
 
                 // Store the operand into a temporary...
                 let tmp = self.tmp();
@@ -1643,10 +1636,7 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 // ... and then copy over the result.
                 let mem = self.memory_src();
-                self.push_str(&format!(
-                    "{}.store_many({}, {}.as_ref())?;\n",
-                    mem, ptr, val
-                ));
+                self.push_str(&format!("{}.store_many({}, &{})?;\n", mem, ptr, val));
                 self.gen.needs_raw_mem = true;
                 self.needs_memory = true;
                 results.push(ptr);
@@ -1659,14 +1649,8 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.gen.needs_copy_slice = true;
                     self.needs_functions
                         .insert(free.to_string(), NeededFunction::Free);
-                    let (stringify, align, el_size) = match element {
-                        Type::Char => (true, 1, 1),
-                        _ => (
-                            false,
-                            self.sizes().align(element),
-                            self.sizes().size(element),
-                        ),
-                    };
+                    let (align, el_size) =
+                        (self.sizes().align(element), self.sizes().size(element));
                     let tmp = self.tmp();
                     self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
                     self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
@@ -1687,26 +1671,83 @@ impl Bindgen for FunctionBindgen<'_> {
                         // already verified that multiplied size fits i32
                         format!("(ptr{tmp}, len{tmp} * {}, {})", el_size, align, tmp = tmp),
                     );
-                    if stringify {
-                        results.push(format!(
-                            "String::from_utf8(data{})
-                                    .map_err(|_| wasmtime::Trap::new(\"invalid utf-8\"))?",
-                            tmp,
-                        ));
-                    } else {
-                        results.push(format!("data{}", tmp));
-                    }
+                    results.push(format!("data{}", tmp));
                 }
                 None => {
                     self.needs_borrow_checker = true;
-                    let method = match element {
-                        Type::Char => "slice_str",
-                        _ => "slice",
-                    };
                     let tmp = self.tmp();
                     self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
                     self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
-                    let slice = format!("_bc.{}(ptr{1}, len{1})?", method, tmp);
+                    let slice = format!("_bc.slice(ptr{0}, len{0})?", tmp);
+                    results.push(slice);
+                }
+            },
+
+            Instruction::StringLower { realloc } => {
+                // see above for this unwrap
+                let realloc = realloc.unwrap();
+                self.needs_functions
+                    .insert(realloc.to_string(), NeededFunction::Realloc);
+
+                // Store the operand into a temporary...
+                let tmp = self.tmp();
+                let val = format!("vec{}", tmp);
+                self.push_str(&format!("let {} = {};\n", val, operands[0]));
+
+                // ... and then realloc space for the result in the guest module
+                let ptr = format!("ptr{}", tmp);
+                self.push_str(&format!("let {} = ", ptr));
+                self.call_intrinsic(realloc, format!("(0, 0, 1, {}.len() as i32)", val));
+
+                // ... and then copy over the result.
+                let mem = self.memory_src();
+                self.push_str(&format!(
+                    "{}.store_many({}, {}.as_bytes())?;\n",
+                    mem, ptr, val
+                ));
+                self.gen.needs_raw_mem = true;
+                self.needs_memory = true;
+                results.push(ptr);
+                results.push(format!("{}.len() as i32", val));
+            }
+
+            Instruction::StringLift { free } => match free {
+                Some(free) => {
+                    self.needs_memory = true;
+                    self.gen.needs_copy_slice = true;
+                    self.needs_functions
+                        .insert(free.to_string(), NeededFunction::Free);
+                    let tmp = self.tmp();
+                    self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
+                    self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
+                    self.push_str(&format!(
+                        "
+                            let data{tmp} = copy_slice(
+                                &mut caller,
+                                memory,
+                                ptr{tmp}, len{tmp}, 1,
+                            )?;
+                        ",
+                        tmp = tmp,
+                    ));
+                    self.call_intrinsic(
+                        free,
+                        // we use normal multiplication here as copy_slice has
+                        // already verified that multiplied size fits i32
+                        format!("(ptr{tmp}, len{tmp}, 1)", tmp = tmp),
+                    );
+                    results.push(format!(
+                        "String::from_utf8(data{})
+                            .map_err(|_| wasmtime::Trap::new(\"invalid utf-8\"))?",
+                        tmp,
+                    ));
+                }
+                None => {
+                    self.needs_borrow_checker = true;
+                    let tmp = self.tmp();
+                    self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
+                    self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
+                    let slice = format!("_bc.slice_str(ptr{0}, len{0})?", tmp);
                     results.push(slice);
                 }
             },
