@@ -1,10 +1,14 @@
-pub use async_trait::async_trait;
 use std::fmt;
 use std::marker;
 use std::mem;
 use std::ops::Deref;
+
+#[cfg(feature = "macros")]
 pub use wit_bindgen_rust_impl::{export, import};
 
+#[cfg(feature = "async")]
+pub use async_trait::async_trait;
+#[cfg(feature = "async")]
 mod futures;
 
 // Re-export `bitflags` so that we can reference it from macros.
@@ -126,6 +130,7 @@ pub unsafe trait LocalHandle: HandleType {
 pub mod rt {
     use std::alloc::{self, Layout};
 
+    #[cfg(feature = "async")]
     pub use crate::futures::*;
 
     #[no_mangle]
