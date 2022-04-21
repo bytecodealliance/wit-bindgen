@@ -250,20 +250,18 @@ impl<'a> CallAdapter<'a> {
 
             let mut iter = 0..retptr.len() as u32;
             let mut results = Vec::new();
-            for (_, ty) in &func.results {
-                Self::push_operands(
-                    inner,
-                    sizes,
-                    ty,
-                    &mut iter,
-                    PushMode::RetPtr,
-                    &mut locals_count,
-                    &mut results,
-                );
-            }
+            Self::push_operands(
+                inner,
+                sizes,
+                &func.result,
+                &mut iter,
+                PushMode::RetPtr,
+                &mut locals_count,
+                &mut results,
+            );
 
             results
-        } else if func.results.len() == 1 {
+        } else {
             // Use the possible index for the return value local
             let index = signature.params.len() as u32 + locals_count;
 
@@ -272,7 +270,7 @@ impl<'a> CallAdapter<'a> {
             Self::push_operands(
                 inner,
                 sizes,
-                &func.results[0].1,
+                &func.result,
                 &mut iter,
                 PushMode::Return,
                 &mut locals_count,
@@ -285,8 +283,6 @@ impl<'a> CallAdapter<'a> {
             }
 
             results
-        } else {
-            Vec::new()
         };
 
         Self {

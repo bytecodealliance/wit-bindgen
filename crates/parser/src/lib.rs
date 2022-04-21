@@ -240,7 +240,7 @@ pub struct Function {
     pub name: String,
     pub kind: FunctionKind,
     pub params: Vec<(String, Type)>,
-    pub results: Vec<(String, Type)>,
+    pub result: Type,
 }
 
 #[derive(Debug)]

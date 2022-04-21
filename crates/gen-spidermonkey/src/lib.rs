@@ -1353,6 +1353,8 @@ enum Operand {
     Js(u32),
     /// The `n`th Wasm local.
     Wasm(u32),
+    /// A "unit" void type
+    Unit,
 }
 
 impl Operand {
@@ -1360,12 +1362,21 @@ impl Operand {
         match *self {
             Operand::Js(js) => js,
             Operand::Wasm(_) => panic!("Operand::unwrap_js on a Wasm operand"),
+            Operand::Unit => panic!("Operand::unwrap_js on a Unit operand"),
         }
     }
     fn unwrap_wasm(&self) -> u32 {
         match *self {
             Operand::Wasm(w) => w,
             Operand::Js(_) => panic!("Operand::unwrap_wasm on a JS operand"),
+            Operand::Unit => panic!("Operand::unwrap_wasm on a Unit operand"),
+        }
+    }
+    fn unwrap_unit(&self) {
+        match *self {
+            Operand::Unit => {}
+            Operand::Wasm(_) => panic!("Operand::unwrap_unit on a Wasm operand"),
+            Operand::Js(_) => panic!("Operand::unwrap_unit on a JS operand"),
         }
     }
 }
@@ -1981,17 +1992,20 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                     u32::try_from(func.name.len()).unwrap(),
                 );
 
-                let first_result = if func.results.is_empty() {
+                let (first_result, num_results) = match &func.result {
                     // If there aren't any function results, then this argument
                     // to `SMW_call` is going to be ignored. Use a highly
                     // visible placeholder so that if this is ever accidentally
                     // used it is easier to debug.
-                    0xffffffff
-                } else {
-                    let js = self.next_js();
-                    results.push(js);
-                    results.extend((0..(func.results.len() - 1)).map(|_| self.next_js()));
-                    js.unwrap_js()
+                    Type::Unit => {
+                        results.push(Operand::Unit);
+                        (0xffffffff, 0)
+                    }
+                    _ => {
+                        let js = self.next_js();
+                        results.push(js);
+                        (js.unwrap_js(), 1)
+                    }
                 };
 
                 // Make the call.
@@ -2003,9 +2017,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                     i32::try_from(func.name.len()).unwrap(),
                 ));
                 // [i32 i32]
-                self.inst(Instruction::I32Const(
-                    u32::try_from(func.results.len()).unwrap() as _,
-                ));
+                self.inst(Instruction::I32Const(num_results));
                 // [i32 i32 i32]
                 self.inst(Instruction::I32Const(first_result as i32));
                 // [i32 i32 i32 i32]
@@ -2016,22 +2028,25 @@ impl abi::Bindgen for Bindgen<'_, '_> {
             abi::Instruction::CallWasmAsyncExport { .. } => todo!(),
             abi::Instruction::CallWasmAsyncImport { .. } => todo!(),
 
-            abi::Instruction::Return { amt, func: _ } => {
+            abi::Instruction::Return { func, amt } => {
                 match self.lift_lower {
                     abi::LiftLower::LowerArgsLiftResults => {
-                        if *amt != 0 {
-                            // Attach the return values to the `JS::CallArgs`:
-                            // build up the return values via a series of
-                            // `SMW_push_return_value` calls, followed by a
-                            // single `SMW_finish_returns` call.
-                            //
-                            // TODO: introduce fast path intrinsics for common
-                            // small numbers of return values so that we don't
-                            // have to do multiple intrinsic calls here, and can
-                            // instead do a single `SMW_return_{1,2,...,n}`
-                            // call.
-                            let vals: Vec<_> = (0..*amt).map(|_| pop_js(operands)).collect();
-                            for val in vals.into_iter().rev() {
+                        match &func.result {
+                            Type::Unit => {
+                                operands[0].unwrap_unit();
+                            }
+                            _ => {
+                                // Attach the return values to the `JS::CallArgs`:
+                                // build up the return values via a series of
+                                // `SMW_push_return_value` calls, followed by a
+                                // single `SMW_finish_returns` call.
+                                //
+                                // TODO: introduce fast path intrinsics for common
+                                // small numbers of return values so that we don't
+                                // have to do multiple intrinsic calls here, and can
+                                // instead do a single `SMW_return_{1,2,...,n}`
+                                // call.
+                                let val = pop_js(operands);
                                 // []
                                 self.inst(Instruction::I32Const(val as _));
                                 // [i32]
@@ -2039,16 +2054,15 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                                     self.gen.spidermonkey_import("SMW_push_return_value"),
                                 ));
                                 // []
+                                self.inst(Instruction::LocalGet(1));
+                                // [i32]
+                                self.inst(Instruction::LocalGet(2));
+                                // [i32 i32]
+                                self.inst(Instruction::Call(
+                                    self.gen.spidermonkey_import("SMW_finish_returns"),
+                                ));
+                                // []
                             }
-                            // []
-                            self.inst(Instruction::LocalGet(1));
-                            // [i32]
-                            self.inst(Instruction::LocalGet(2));
-                            // [i32 i32]
-                            self.inst(Instruction::Call(
-                                self.gen.spidermonkey_import("SMW_finish_returns"),
-                            ));
-                            // []
                         }
 
                         // NB: only clear the JS operands after we've attached
@@ -2081,8 +2095,12 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 }
             }
 
-            abi::Instruction::UnitLower { .. } => todo!(),
-            abi::Instruction::UnitLift { .. } => todo!(),
+            abi::Instruction::UnitLower { .. } => {
+                operands[0].unwrap_unit();
+            }
+            abi::Instruction::UnitLift { .. } => {
+                results.push(Operand::Unit);
+            }
 
             abi::Instruction::I32FromBool { .. } => todo!(),
             abi::Instruction::BoolFromI32 { .. } => todo!(),

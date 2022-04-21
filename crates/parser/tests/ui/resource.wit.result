@@ -51,21 +51,21 @@
       "params": [
         "handle-4"
       ],
-      "results": []
+      "result": "unit"
     },
     {
       "name": "f::x",
       "params": [
         "handle-5"
       ],
-      "results": []
+      "result": "unit"
     },
     {
       "name": "f::y",
       "params": [
         "handle-5"
       ],
-      "results": []
+      "result": "unit"
     }
   ]
 }

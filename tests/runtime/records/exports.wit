@@ -1,6 +1,6 @@
 test-imports: function()
 
-multiple-results: function() -> (u8, u16)
+multiple-results: function() -> tuple<u8, u16>
 
 swap-tuple: function(a: tuple<u8, u32>) -> tuple<u32, u8>
 
@@ -19,14 +19,14 @@ flags f16 {
   b8, b9, b10, b11, b12, b13, b14, b15,
 }
 
-flags %f32 {
+flags f32 {
   b0, b1, b2, b3, b4, b5, b6, b7,
   b8, b9, b10, b11, b12, b13, b14, b15,
   b16, b17, b18, b19, b20, b21, b22, b23,
   b24, b25, b26, b27, b28, b29, b30, b31,
 }
 
-flags %f64 {
+flags f64 {
   b0, b1, b2, b3, b4, b5, b6, b7,
   b8, b9, b10, b11, b12, b13, b14, b15,
   b16, b17, b18, b19, b20, b21, b22, b23,
@@ -37,7 +37,7 @@ flags %f64 {
   b56, b57, b58, b59, b60, b61, b62, b63,
 }
 
-roundtrip-flags3: function(a: f8, b: f16, c: %f32, d: %f64) -> (f8, f16, %f32, %f64)
+roundtrip-flags3: function(a: f8, b: f16, c: f32, d: f64) -> tuple<f8, f16, f32, f64>
 
 record r1 { a: u8, b: f1 }
 roundtrip-record1: function(a: r1) -> r1

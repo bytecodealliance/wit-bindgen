@@ -102,13 +102,13 @@ interface nested-interface1 {
     resource better-request {
         // TODO: do we need to have a ctor with special semantics? E.g. to generate actual
         // constructors for languages that have them, such as JS?
-        new: function(request: handle<request>) -> (request: handle<better-request>)
+        new: function(request: handle<request>) -> handle<better-request>
         // Note: sadly, the sauce better-request uses must remain secret, so it doesn't actually
         // expose any of its functionality, and hence doesn't need any other methods.
     }
     /// Maps a request to an even better request.
     // Note: the containing scope's members are in scope in a nested interface
-    fun: function(request: handle<request>) -> (response: handle<response>)
+    fun: function(request: handle<request>) -> handle<response>
 }
 
 /// Another nested interface, doing something even more neat and elaborate.
@@ -128,7 +128,7 @@ interface nested-interface2 {
     /// @return response - a boring, normal response
     /// @return added-shiny - the shiny!
     // Note: this just exists to demonstrate multiple return values, including their documentation
-    fun: function(request: better-request) -> (response: handle<response>, added-shiny: handle<the-thiny>)
+    fun: function(request: better-request) -> tuple<handle<response>, handle<the-thiny>>
 }
 */
 

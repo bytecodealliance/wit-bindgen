@@ -28,4 +28,4 @@ errno-result: function() -> expected<_, my-errno>
 type list-typedef = string
 type list-typedef2 = list<u8>
 type list-typedef3 = list<string>
-list-typedefs: function(a: list-typedef, c: list-typedef3) -> (list-typedef2, list-typedef3)
+list-typedefs: function(a: list-typedef, c: list-typedef3) -> tuple<list-typedef2, list-typedef3>

@@ -128,7 +128,7 @@ enum ValueKind<'a> {
     Function {
         is_async: bool,
         params: Vec<(Id<'a>, Type<'a>)>,
-        results: Vec<(Id<'a>, Type<'a>)>,
+        result: Type<'a>,
     },
     Global(Type<'a>),
 }
@@ -396,41 +396,16 @@ impl<'a> Value<'a> {
                     Ok((name, ty))
                 },
             )?;
-            let mut results = Vec::new();
-            if tokens.eat(Token::RArrow)? {
-                if tokens.eat(Token::LeftParen)? {
-                    while !tokens.eat(Token::RightParen)? {
-                        results.push(parse_return_val(tokens)?);
-                        if !tokens.eat(Token::Comma)? {
-                            tokens.expect(Token::RightParen)?;
-                            break;
-                        }
-                    }
-                } else {
-                    results.push(parse_return_val(tokens)?);
-                }
-            }
+            let result = if tokens.eat(Token::RArrow)? {
+                Type::parse(tokens)?
+            } else {
+                Type::Unit
+            };
             Ok(ValueKind::Function {
                 is_async,
                 params,
-                results,
+                result,
             })
-        }
-
-        fn parse_return_val<'a>(tokens: &mut Tokenizer<'a>) -> Result<(Id<'a>, Type<'a>)> {
-            let mut other = tokens.clone();
-            let id = match parse_opt_id(&mut other)? {
-                Some(id) => {
-                    if other.eat(Token::Colon)? {
-                        *tokens = other;
-                        id
-                    } else {
-                        "".into()
-                    }
-                }
-                None => "".into(),
-            };
-            Ok((id, Type::parse(tokens)?))
         }
     }
 }
@@ -446,27 +421,6 @@ fn parse_id<'a>(tokens: &mut Tokenizer<'a>) -> Result<Id<'a>> {
             span,
         }),
         other => Err(err_expected(tokens, "an identifier or string", other).into()),
-    }
-}
-
-fn parse_opt_id<'a>(tokens: &mut Tokenizer<'a>) -> Result<Option<Id<'a>>> {
-    let mut other = tokens.clone();
-    match other.next()? {
-        Some((span, Token::Id)) => {
-            *tokens = other;
-            Ok(Some(Id {
-                name: tokens.parse_id(span)?.into(),
-                span,
-            }))
-        }
-        Some((span, Token::ExplicitId)) => {
-            *tokens = other;
-            Ok(Some(Id {
-                name: tokens.parse_explicit_id(span)?.into(),
-                span,
-            }))
-        }
-        _ => Ok(None),
     }
 }
 

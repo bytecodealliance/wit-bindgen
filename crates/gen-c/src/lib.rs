@@ -69,6 +69,7 @@ struct CSig {
 
 #[derive(Debug)]
 enum Scalar {
+    Void,
     OptionBool(Type),
     ExpectedEnum {
         err: TypeId,
@@ -97,11 +98,7 @@ impl C {
             scalar: None,
             retptrs: Vec::new(),
         };
-        match func.results.len() {
-            0 => {}
-            1 => ret.return_single(iface, &func.results[0].1, &func.results[0].1),
-            _ => ret.retptrs.extend(func.results.iter().map(|p| p.1)),
-        }
+        ret.return_single(iface, &func.result, &func.result);
         return ret;
     }
 
@@ -116,7 +113,7 @@ impl C {
 
         let ret = self.classify_ret(iface, func);
         match &ret.scalar {
-            None => self.src.h("void"),
+            None | Some(Scalar::Void) => self.src.h("void"),
             Some(Scalar::OptionBool(_id)) => self.src.h("bool"),
             Some(Scalar::ExpectedEnum { err, .. }) => self.print_ty(iface, &Type::Id(*err)),
             Some(Scalar::Type(ty)) => self.print_ty(iface, ty),
@@ -567,6 +564,10 @@ impl Return {
             Type::Id(id) => *id,
             Type::String => {
                 self.retptrs.push(*orig_ty);
+                return;
+            }
+            Type::Unit => {
+                self.scalar = Some(Scalar::Void);
                 return;
             }
             _ => {
@@ -1356,8 +1357,7 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::UnitLower => {}
             Instruction::UnitLift => {
-                // TODO:
-                // results.push("None".to_string());
+                results.push("INVALID".to_string());
             }
             Instruction::BoolFromI32 | Instruction::I32FromBool => {
                 results.push(operands[0].clone());
@@ -1616,16 +1616,20 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.src
                             .push_str(&format!("{}({});\n", self.sig.name, args));
                         if self.sig.ret.splat_tuple {
-                            let ty = self.gen.type_string(iface, &func.results[0].1);
+                            let ty = self.gen.type_string(iface, &func.result);
                             results.push(format!("({}){{ {} }}", ty, retptrs.join(", ")));
                         } else if self.sig.retptrs.len() > 0 {
                             results.extend(retptrs);
                         }
                     }
+                    Some(Scalar::Void) => {
+                        self.src
+                            .push_str(&format!("{}({});\n", self.sig.name, args));
+                        results.push("INVALID".to_string());
+                    }
                     Some(Scalar::Type(_)) => {
-                        assert_eq!(func.results.len(), 1);
                         let ret = self.locals.tmp("ret");
-                        let ty = self.gen.type_string(iface, &func.results[0].1);
+                        let ty = self.gen.type_string(iface, &func.result);
                         self.src
                             .push_str(&format!("{} {} = {}({});\n", ty, ret, self.sig.name, args));
                         results.push(ret);
@@ -1642,7 +1646,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.src.push_str(&format!("{} {};\n", payload_ty, val));
                         self.src
                             .push_str(&format!("bool {} = {}({});\n", ret, self.sig.name, args));
-                        let option_ty = self.gen.type_string(iface, &func.results[0].1);
+                        let option_ty = self.gen.type_string(iface, &func.result);
                         let option_ret = self.locals.tmp("ret");
                         self.src.push_str(&format!(
                             "
@@ -1676,7 +1680,7 @@ impl Bindgen for FunctionBindgen<'_> {
                             "{} {} = {}({});\n",
                             err_ty, ret, self.sig.name, args,
                         ));
-                        let expected_ty = self.gen.type_string(iface, &func.results[0].1);
+                        let expected_ty = self.gen.type_string(iface, &func.result);
                         let expected_ret = self.locals.tmp("ret");
                         self.src.push_str(&format!(
                             "
@@ -1715,6 +1719,9 @@ impl Bindgen for FunctionBindgen<'_> {
             }
             Instruction::Return { .. } if self.gen.in_import => match self.sig.ret.scalar {
                 None => self.store_in_retptrs(operands),
+                Some(Scalar::Void) => {
+                    assert_eq!(operands, &["INVALID"]);
+                }
                 Some(Scalar::Type(_)) => {
                     assert_eq!(operands.len(), 1);
                     self.src.push_str("return ");

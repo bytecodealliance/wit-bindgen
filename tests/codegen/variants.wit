@@ -40,7 +40,7 @@ option-arg: function(
   f: option<u1>,
   g: option<option<bool>>,
 )
-option-result: function() -> (
+option-result: function() -> tuple<
   option<bool>,
   option<tuple<>>,
   option<u32>,
@@ -48,7 +48,7 @@ option-result: function() -> (
   option<float32>,
   option<u1>,
   option<option<bool>>,
-)
+>
 
 variant casts1 {
   a(s32),
@@ -87,14 +87,14 @@ casts: function(
   d: casts4,
   e: casts5,
   f: casts6,
-) -> (
+) -> tuple<
   casts1,
   casts2,
   casts3,
   casts4,
   casts5,
   casts6,
-)
+>
 
 expected-arg: function(
   a: expected<_, _>,
@@ -104,14 +104,14 @@ expected-arg: function(
   e: expected<u32, v1>,
   f: expected<string, list<u8>>,
 )
-expected-result: function() -> (
+expected-result: function() -> tuple<
   expected<_, _>,
   expected<_, e1>,
   expected<e1, _>,
   expected<tuple<>, tuple<>>,
   expected<u32, v1>,
   expected<string, list<u8>>,
-)
+>
 
 enum my-errno {
   bad1,

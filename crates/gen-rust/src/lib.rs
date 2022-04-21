@@ -85,10 +85,8 @@ pub trait RustGenerator {
         sig: &FnSig,
     ) -> Vec<String> {
         let params = self.print_docs_and_params(iface, func, param_mode, &sig);
-        if func.results.len() > 0 {
-            self.push_str(" -> ");
-            self.print_results(iface, func);
-        }
+        self.push_str(" -> ");
+        self.print_ty(iface, &func.result, TypeMode::Owned);
         params
     }
 
@@ -101,7 +99,8 @@ pub trait RustGenerator {
     ) -> Vec<String> {
         self.rustdoc(&func.docs);
         self.rustdoc_params(&func.params, "Parameters");
-        self.rustdoc_params(&func.results, "Return");
+        // TODO: re-add this when docs are back
+        // self.rustdoc_params(&func.results, "Return");
 
         if !sig.private {
             self.push_str("pub ");
@@ -142,23 +141,6 @@ pub trait RustGenerator {
         }
         self.push_str(")");
         params
-    }
-
-    fn print_results(&mut self, iface: &Interface, func: &Function) {
-        match func.results.len() {
-            0 => self.push_str("()"),
-            1 => {
-                self.print_ty(iface, &func.results[0].1, TypeMode::Owned);
-            }
-            _ => {
-                self.push_str("(");
-                for (_, result) in func.results.iter() {
-                    self.print_ty(iface, result, TypeMode::Owned);
-                    self.push_str(", ");
-                }
-                self.push_str(")");
-            }
-        }
     }
 
     fn print_ty(&mut self, iface: &Interface, ty: &Type, mode: TypeMode) {

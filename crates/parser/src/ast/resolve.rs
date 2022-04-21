@@ -504,22 +504,19 @@ impl Resolver {
             ValueKind::Function {
                 is_async,
                 params,
-                results,
+                result,
             } => {
                 let params = params
                     .iter()
                     .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                     .collect::<Result<_>>()?;
-                let results = results
-                    .iter()
-                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
-                    .collect::<Result<_>>()?;
+                let result = self.resolve_type(result)?;
                 self.functions.push(Function {
                     docs,
                     name: value.name.name.to_string(),
                     kind: FunctionKind::Freestanding,
                     params,
-                    results,
+                    result,
                     is_async: *is_async,
                 });
             }
@@ -539,12 +536,12 @@ impl Resolver {
         let mut names = HashSet::new();
         let id = self.resource_lookup[&*resource.name.name];
         for (statik, value) in resource.values.iter() {
-            let (is_async, params, results) = match &value.kind {
+            let (is_async, params, result) = match &value.kind {
                 ValueKind::Function {
                     is_async,
                     params,
-                    results,
-                } => (*is_async, params, results),
+                    result,
+                } => (*is_async, params, result),
                 ValueKind::Global(_) => {
                     return Err(Error {
                         span: value.name.span,
@@ -565,10 +562,7 @@ impl Resolver {
                 .iter()
                 .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                 .collect::<Result<Vec<_>>>()?;
-            let results = results
-                .iter()
-                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
-                .collect::<Result<_>>()?;
+            let result = self.resolve_type(result)?;
             let kind = if *statik {
                 FunctionKind::Static {
                     resource: id,
@@ -587,7 +581,7 @@ impl Resolver {
                 name: format!("{}::{}", resource.name.name, value.name.name),
                 kind,
                 params,
-                results,
+                result,
             });
         }
         Ok(())
