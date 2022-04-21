@@ -72,6 +72,7 @@ enum Intrinsic {
     Slab,
     Promises,
     WithCurrentPromise,
+    ThrowInvalidBool,
 }
 
 impl Intrinsic {
@@ -97,6 +98,7 @@ impl Intrinsic {
             Intrinsic::Slab => "Slab",
             Intrinsic::Promises => "PROMISES",
             Intrinsic::WithCurrentPromise => "with_current_promise",
+            Intrinsic::ThrowInvalidBool => "throw_invalid_bool",
         }
     }
 }
@@ -123,6 +125,7 @@ impl Js {
 
     fn array_ty(&self, iface: &Interface, ty: &Type) -> Option<&'static str> {
         match ty {
+            Type::Unit | Type::Bool => None,
             Type::U8 => Some("Uint8Array"),
             Type::S8 => Some("Int8Array"),
             Type::U16 => Some("Uint16Array"),
@@ -145,6 +148,8 @@ impl Js {
 
     fn print_ty(&mut self, iface: &Interface, ty: &Type) {
         match ty {
+            Type::Unit => self.src.ts("undefined"),
+            Type::Bool => self.src.ts("boolean"),
             Type::U8
             | Type::S8
             | Type::U16
@@ -166,7 +171,6 @@ impl Js {
                     TypeDefKind::Type(t) => self.print_ty(iface, t),
                     TypeDefKind::Record(r) if r.is_tuple() => self.print_tuple(iface, r),
                     TypeDefKind::Record(_) => panic!("anonymous record"),
-                    TypeDefKind::Variant(v) if v.is_bool() => self.src.ts("boolean"),
                     TypeDefKind::Variant(v) => {
                         if self.is_nullable_option(iface, v) {
                             self.print_ty(iface, v.cases[1].ty.as_ref().unwrap());
@@ -415,12 +419,7 @@ impl Generator for Js {
         docs: &Docs,
     ) {
         self.docs(docs);
-        if variant.is_bool() {
-            self.src.ts(&format!(
-                "export type {} = boolean;\n",
-                name.to_camel_case(),
-            ));
-        } else if self.is_nullable_option(iface, variant) {
+        if self.is_nullable_option(iface, variant) {
             self.src
                 .ts(&format!("export type {} = ", name.to_camel_case()));
             self.print_ty(iface, variant.cases[1].ty.as_ref().unwrap());
@@ -1318,6 +1317,24 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
+            Instruction::UnitLower => {}
+            Instruction::UnitLift => {
+                results.push("undefined".to_string());
+            }
+
+            Instruction::BoolFromI32 => {
+                let tmp = self.tmp();
+                self.src
+                    .js(&format!("const bool{} = {};\n", tmp, operands[0]));
+                let throw = self.gen.intrinsic(Intrinsic::ThrowInvalidBool);
+                results.push(format!(
+                    "bool{tmp} == 0 ? false : (bool{tmp} == 1 ? true : {throw}())"
+                ));
+            }
+            Instruction::I32FromBool => {
+                results.push(format!("{} ? 1 : 0", operands[0]));
+            }
+
             // These instructions are used with handles when we're implementing
             // imports. This means we interact with the `resources` slabs to
             // translate the wasm-provided index into a JS value.
@@ -1450,11 +1467,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src
                     .js(&format!("const variant{} = {};\n", tmp, operands[0]));
 
-                if result_types.len() == 1
-                    && variant.is_enum()
-                    && name.is_some()
-                    && !variant.is_bool()
-                {
+                if result_types.len() == 1 && variant.is_enum() && name.is_some() {
                     let name = name.unwrap().to_camel_case();
                     self.src
                         .js(&format!("if (!(variant{} in {}))\n", tmp, name));
@@ -1474,8 +1487,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     results.push(format!("variant{}_{}", tmp, i));
                 }
 
-                let expr_to_match = if variant.is_bool()
-                    || self.gen.is_nullable_option(iface, variant)
+                let expr_to_match = if self.gen.is_nullable_option(iface, variant)
                     || (variant.is_enum() && name.is_some())
                 {
                     format!("variant{}", tmp)
@@ -1488,9 +1500,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 for (i, (case, (block, block_results))) in
                     variant.cases.iter().zip(blocks).enumerate()
                 {
-                    if variant.is_bool() {
-                        self.src.js(&format!("case {}: {{\n", case.name.as_str()));
-                    } else if self.gen.is_nullable_option(iface, variant) {
+                    if self.gen.is_nullable_option(iface, variant) {
                         if case.ty.is_none() {
                             self.src.js("case null: {\n");
                         } else {
@@ -1519,9 +1529,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 if use_default {
                     let variant_name = name.map(|s| s.to_camel_case());
                     let variant_name = variant_name.as_deref().unwrap_or_else(|| {
-                        if variant.is_bool() {
-                            "bool"
-                        } else if variant.as_expected().is_some() {
+                        if variant.as_expected().is_some() {
                             "expected"
                         } else if variant.as_option().is_some() {
                             "option"
@@ -1545,7 +1553,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     .collect::<Vec<_>>();
 
                 let tmp = self.tmp();
-                if variant.is_enum() && name.is_some() && !variant.is_bool() {
+                if variant.is_enum() && name.is_some() {
                     let name = name.unwrap().to_camel_case();
                     self.src
                         .js(&format!("const tag{} = {};\n", tmp, operands[0]));
@@ -1566,11 +1574,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.js(&format!("case {}: {{\n", i));
                     self.src.js(&block);
 
-                    if variant.is_bool() {
-                        assert!(block_results.is_empty());
-                        self.src
-                            .js(&format!("variant{} = {};\n", tmp, case.name.as_str()));
-                    } else if variant.is_enum() && name.is_some() {
+                    if variant.is_enum() && name.is_some() {
                         assert!(block_results.is_empty());
                         self.src.js(&format!("variant{} = tag{0};\n", tmp));
                     } else if self.gen.is_nullable_option(iface, variant) {
@@ -1597,9 +1601,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
                 let variant_name = name.map(|s| s.to_camel_case());
                 let variant_name = variant_name.as_deref().unwrap_or_else(|| {
-                    if variant.is_bool() {
-                        "bool"
-                    } else if variant.as_expected().is_some() {
+                    if variant.as_expected().is_some() {
                         "expected"
                     } else if variant.as_option().is_some() {
                         "option"
@@ -2239,6 +2241,11 @@ impl Js {
                     } finally {
                         CUR_PROMISE = prev;
                     }
+                }
+            "),
+            Intrinsic::ThrowInvalidBool => self.src.js("
+                export function throw_invalid_bool() {
+                    throw new RangeError(\"invalid variant discriminant for bool\");
                 }
             "),
         }

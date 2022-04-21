@@ -79,6 +79,7 @@ pub enum Token {
     Interface,
     Tuple,
     Async,
+    Unit,
 
     Id,
     ExplicitId,
@@ -266,6 +267,7 @@ impl<'a> Tokenizer<'a> {
                     "interface" => Interface,
                     "tuple" => Tuple,
                     "async" => Async,
+                    "unit" => Unit,
                     _ => Id,
                 }
             }
@@ -531,6 +533,7 @@ impl Token {
             Interface => "keyword `interface`",
             Tuple => "keyword `tuple`",
             Async => "keyword `async`",
+            Unit => "keyword `unit`",
         }
     }
 }

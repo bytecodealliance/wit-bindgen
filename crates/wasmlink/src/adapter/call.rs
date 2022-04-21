@@ -503,7 +503,7 @@ impl<'a> CallAdapter<'a> {
                         }
                     }
                 },
-                TypeDefKind::Variant(v) if v.is_bool() || v.is_enum() => {
+                TypeDefKind::Variant(v) if v.is_enum() => {
                     params.next().unwrap();
                 }
                 TypeDefKind::Variant(v) => {
@@ -658,7 +658,7 @@ impl<'a> CallAdapter<'a> {
                         }
                     }
                 },
-                TypeDefKind::Variant(v) if v.is_bool() || v.is_enum() => {}
+                TypeDefKind::Variant(v) if v.is_enum() => {}
                 TypeDefKind::Variant(v) => {
                     let payload_offset = sizes.payload_offset(v) as u32;
 

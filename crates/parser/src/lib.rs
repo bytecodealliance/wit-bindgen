@@ -53,6 +53,8 @@ pub enum TypeDefKind {
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum Type {
+    Unit,
+    Bool,
     U8,
     U16,
     U32,
@@ -135,8 +137,8 @@ impl RecordKind {
 
         fn is_bool(t: &Type, types: &Arena<TypeDef>) -> bool {
             match t {
+                Type::Bool => true,
                 Type::Id(v) => match &types[*v].kind {
-                    TypeDefKind::Variant(v) => v.is_bool(),
                     TypeDefKind::Type(t) => is_bool(t, types),
                     _ => false,
                 },
@@ -170,14 +172,6 @@ impl Variant {
             n if n <= u64::max_value() as usize => Int::U64,
             _ => panic!("too many cases to fit in a repr"),
         }
-    }
-
-    pub fn is_bool(&self) -> bool {
-        self.cases.len() == 2
-            && self.cases[0].name == "false"
-            && self.cases[1].name == "true"
-            && self.cases[0].ty.is_none()
-            && self.cases[1].ty.is_none()
     }
 
     pub fn is_enum(&self) -> bool {
@@ -423,7 +417,8 @@ impl Interface {
 
     pub fn all_bits_valid(&self, ty: &Type) -> bool {
         match ty {
-            Type::U8
+            Type::Unit
+            | Type::U8
             | Type::S8
             | Type::U16
             | Type::S16
@@ -434,7 +429,7 @@ impl Interface {
             | Type::Float32
             | Type::Float64 => true,
 
-            Type::Char | Type::Handle(_) | Type::String => false,
+            Type::Bool | Type::Char | Type::Handle(_) | Type::String => false,
 
             Type::Id(id) => match &self.types[*id].kind {
                 TypeDefKind::List(_) | TypeDefKind::Variant(_) => false,

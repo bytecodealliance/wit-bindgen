@@ -73,6 +73,8 @@ pub struct TypeDef<'a> {
 }
 
 enum Type<'a> {
+    Unit,
+    Bool,
     U8,
     U16,
     U32,
@@ -244,7 +246,7 @@ impl<'a> TypeDef<'a> {
                     Ok(Field {
                         docs,
                         name,
-                        ty: Type::bool(),
+                        ty: Type::Bool,
                     })
                 },
             )?,
@@ -524,7 +526,8 @@ impl<'a> Type<'a> {
                 }))
             }
 
-            Some((_span, Token::Bool)) => Ok(Type::bool()),
+            Some((_span, Token::Unit)) => Ok(Type::Unit),
+            Some((_span, Token::Bool)) => Ok(Type::Bool),
             Some((_span, Token::String_)) => Ok(Type::String),
 
             // list<T>
@@ -604,25 +607,6 @@ impl<'a> Type<'a> {
 
             other => Err(err_expected(tokens, "a type", other).into()),
         }
-    }
-
-    fn bool() -> Type<'static> {
-        Type::Variant(Variant {
-            tag: None,
-            span: Span { start: 0, end: 0 },
-            cases: vec![
-                Case {
-                    docs: Docs::default(),
-                    name: "false".into(),
-                    ty: None,
-                },
-                Case {
-                    docs: Docs::default(),
-                    name: "true".into(),
-                    ty: None,
-                },
-            ],
-        })
     }
 }
 

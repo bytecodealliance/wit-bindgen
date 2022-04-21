@@ -58,7 +58,8 @@ impl SizeAlign {
 
     pub fn size(&self, ty: &Type) -> usize {
         match ty {
-            Type::U8 | Type::S8 => 1,
+            Type::Unit => 0,
+            Type::Bool | Type::U8 | Type::S8 => 1,
             Type::U16 | Type::S16 => 2,
             Type::U32 | Type::S32 | Type::Float32 | Type::Char | Type::Handle(_) => 4,
             Type::U64 | Type::S64 | Type::Float64 | Type::String => 8,
@@ -68,7 +69,7 @@ impl SizeAlign {
 
     pub fn align(&self, ty: &Type) -> usize {
         match ty {
-            Type::U8 | Type::S8 => 1,
+            Type::Unit | Type::Bool | Type::U8 | Type::S8 => 1,
             Type::U16 | Type::S16 => 2,
             Type::U32 | Type::S32 | Type::Float32 | Type::Char | Type::Handle(_) | Type::String => {
                 4

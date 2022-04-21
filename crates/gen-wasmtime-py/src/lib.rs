@@ -370,6 +370,8 @@ impl WasmtimePy {
 
     fn print_ty(&mut self, iface: &Interface, ty: &Type) {
         match ty {
+            Type::Unit => self.src.push_str("None"),
+            Type::Bool => self.src.push_str("bool"),
             Type::U8
             | Type::S8
             | Type::U16
@@ -413,9 +415,7 @@ impl WasmtimePy {
                     }
                     TypeDefKind::Record(_) => unreachable!(),
                     TypeDefKind::Variant(v) => {
-                        if v.is_bool() {
-                            self.src.push_str("bool");
-                        } else if let Some(t) = v.as_option() {
+                        if let Some(t) = v.as_option() {
                             self.pyimport("typing", "Optional");
                             self.src.push_str("Optional[");
                             self.print_ty(iface, t);
@@ -491,6 +491,7 @@ impl WasmtimePy {
 
     fn array_ty(&self, iface: &Interface, ty: &Type) -> Option<&'static str> {
         match ty {
+            Type::Unit | Type::Bool => None,
             Type::U8 => Some("c_uint8"),
             Type::S8 => Some("c_int8"),
             Type::U16 => Some("c_uint16"),
@@ -631,10 +632,7 @@ impl Generator for WasmtimePy {
         docs: &Docs,
     ) {
         self.docs(docs);
-        if variant.is_bool() {
-            self.src
-                .push_str(&format!("{} = bool\n", name.to_camel_case()));
-        } else if variant.is_enum() {
+        if variant.is_enum() {
             self.pyimport("enum", "Enum");
             self.src
                 .push_str(&format!("class {}(Enum):\n", name.to_camel_case()));
@@ -1426,6 +1424,31 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
+            Instruction::UnitLower => {}
+            Instruction::UnitLift => {
+                results.push("None".to_string());
+            }
+            Instruction::BoolFromI32 => {
+                let op = self.locals.tmp("operand");
+                let ret = self.locals.tmp("boolean");
+                self.src.push_str(&format!(
+                    "
+                        {op} = {}
+                        if {op} == 0:
+                            {ret} = False
+                        elif {op} == 1:
+                            {ret} = True
+                        else:
+                            raise TypeError(\"invalid variant discriminant for bool\")
+                    ",
+                    operands[0]
+                ));
+                results.push(ret);
+            }
+            Instruction::I32FromBool => {
+                results.push(format!("int({})", operands[0]));
+            }
+
             // These instructions are used with handles when we're implementing
             // imports. This means we interact with the `resources` slabs to
             // translate the wasm-provided index into a Python value.
@@ -1529,9 +1552,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     .collect::<Vec<_>>();
 
                 if result_types.len() == 1 && variant.is_enum() {
-                    if variant.is_bool() {
-                        return results.push(format!("int({})", operands[0]));
-                    }
                     if name.is_some() {
                         return results.push(format!("({}).value", operands[0]));
                     }
@@ -1554,10 +1574,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.src.push_str("elif ");
                     }
 
-                    if variant.is_bool() {
-                        self.src
-                            .push_str(&format!("{} == bool({}):\n", operands[0], i));
-                    } else if variant.as_option().is_some() {
+                    if variant.as_option().is_some() {
                         if i == 0 {
                             self.src.push_str(&format!("{} is None:\n", operands[0]));
                         }
@@ -1598,9 +1615,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 if needs_else {
                     let variant_name = name.map(|s| s.to_camel_case());
                     let variant_name = variant_name.as_deref().unwrap_or_else(|| {
-                        if variant.is_bool() {
-                            "bool"
-                        } else if variant.as_expected().is_some() {
+                        if variant.as_expected().is_some() {
                             "expected"
                         } else if variant.as_option().is_some() {
                             "option"
@@ -1651,11 +1666,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.indent(2);
                     self.src.push_str(&block);
 
-                    if variant.is_bool() {
-                        assert!(block_results.is_empty());
-                        self.src
-                            .push_str(&format!("{} = {}\n", result, case.name.to_camel_case(),));
-                    } else if variant.as_option().is_some() {
+                    if variant.as_option().is_some() {
                         if case.ty.is_none() {
                             assert!(block_results.is_empty());
                             self.src.push_str(&format!("{} = None\n", result));
@@ -1692,9 +1703,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.indent(2);
                 let variant_name = name.map(|s| s.to_camel_case());
                 let variant_name = variant_name.as_deref().unwrap_or_else(|| {
-                    if variant.is_bool() {
-                        "bool"
-                    } else if variant.as_expected().is_some() {
+                    if variant.as_expected().is_some() {
                         "expected"
                     } else if variant.as_option().is_some() {
                         "option"

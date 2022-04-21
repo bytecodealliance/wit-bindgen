@@ -35,6 +35,8 @@ impl Markdown {
 
     fn print_ty(&mut self, iface: &Interface, ty: &Type, skip_name: bool) {
         match ty {
+            Type::Unit => self.src.push_str("`unit`"),
+            Type::Bool => self.src.push_str("`bool`"),
             Type::U8 => self.src.push_str("`u8`"),
             Type::S8 => self.src.push_str("`s8`"),
             Type::U16 => self.src.push_str("`u16`"),
@@ -78,9 +80,7 @@ impl Markdown {
                         self.src.push_str(")");
                     }
                     TypeDefKind::Variant(v) => {
-                        if v.is_bool() {
-                            self.src.push_str("`bool`");
-                        } else if let Some(t) = v.as_option() {
+                        if let Some(t) = v.as_option() {
                             self.src.push_str("option<");
                             self.print_ty(iface, t, false);
                             self.src.push_str(">");

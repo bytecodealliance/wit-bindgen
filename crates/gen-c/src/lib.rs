@@ -215,6 +215,8 @@ impl C {
 
     fn print_ty(&mut self, iface: &Interface, ty: &Type) {
         match ty {
+            Type::Unit => self.src.h("void"),
+            Type::Bool => self.src.h("bool"),
             Type::Char => self.src.h("uint32_t"), // TODO: better type?
             Type::U8 => self.src.h("uint8_t"),
             Type::S8 => self.src.h("int8_t"),
@@ -246,10 +248,7 @@ impl C {
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty(iface, t),
-                    TypeDefKind::Variant(v) => {
-                        if v.is_bool() {
-                            return self.src.h("bool");
-                        }
+                    TypeDefKind::Variant(_) => {
                         self.public_anonymous_types.insert(*id);
                         self.private_anonymous_types.remove(id);
                         self.print_namespace(iface);
@@ -270,6 +269,8 @@ impl C {
 
     fn print_ty_name(&mut self, iface: &Interface, ty: &Type) {
         match ty {
+            Type::Unit => self.src.h("unit"),
+            Type::Bool => self.src.h("bool"),
             Type::Char => self.src.h("char32"),
             Type::U8 => self.src.h("u8"),
             Type::S8 => self.src.h("s8"),
@@ -314,8 +315,6 @@ impl C {
                                 Some(t) => self.print_ty_name(iface, t),
                                 None => self.src.h("void"),
                             }
-                        } else if v.is_bool() {
-                            self.src.h("bool");
                         } else {
                             unimplemented!();
                         }
@@ -728,12 +727,7 @@ impl Generator for C {
         let prev = mem::take(&mut self.src.header);
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
-        if variant.is_bool() {
-            self.src.h("typedef bool ");
-            self.print_namespace(iface);
-            self.src.h(&name.to_snake_case());
-            self.src.h("_t;\n");
-        } else if variant.is_enum() {
+        if variant.is_enum() {
             self.src.h("typedef ");
             self.src.h(int_repr(variant.tag));
             self.src.h(" ");
@@ -1352,6 +1346,15 @@ impl Bindgen for FunctionBindgen<'_> {
                         Bitcast::None => results.push(op.to_string()),
                     }
                 }
+            }
+
+            Instruction::UnitLower => {}
+            Instruction::UnitLift => {
+                // TODO:
+                // results.push("None".to_string());
+            }
+            Instruction::BoolFromI32 | Instruction::I32FromBool => {
+                results.push(operands[0].clone());
             }
 
             Instruction::I32FromOwnedHandle { .. } | Instruction::I32FromBorrowedHandle { .. } => {

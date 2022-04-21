@@ -2081,6 +2081,12 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 }
             }
 
+            abi::Instruction::UnitLower { .. } => todo!(),
+            abi::Instruction::UnitLift { .. } => todo!(),
+
+            abi::Instruction::I32FromBool { .. } => todo!(),
+            abi::Instruction::BoolFromI32 { .. } => todo!(),
+
             abi::Instruction::ReturnAsyncExport { .. } => todo!(),
             abi::Instruction::ReturnAsyncImport { .. } => todo!(),
         }
