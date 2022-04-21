@@ -1672,7 +1672,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
             Instruction::StringLower { realloc } => {
-                // Lowering only happens when we're passing lists into wasm,
+                // Lowering only happens when we're passing strings into wasm,
                 // which forces us to always allocate, so this should always be
                 // `Some`.
                 let realloc = realloc.unwrap();

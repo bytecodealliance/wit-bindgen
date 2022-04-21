@@ -1056,7 +1056,7 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::StringLift { free, .. } => {
-                // This only happens when we're receiving a list from the
+                // This only happens when we're receiving a string from the
                 // outside world, so `free` should always be `Some`.
                 assert!(free.is_some());
                 let tmp = self.tmp();
