@@ -380,6 +380,7 @@ impl WasmtimePy {
             | Type::S64 => self.src.push_str("int"),
             Type::Float32 | Type::Float64 => self.src.push_str("float"),
             Type::Char => self.src.push_str("str"),
+            Type::String => self.src.push_str("str"),
             Type::Handle(id) => {
                 // In general we want to use quotes around this to support
                 // forward-references (such as a method on a resource returning
@@ -460,7 +461,6 @@ impl WasmtimePy {
 
     fn print_list(&mut self, iface: &Interface, element: &Type) {
         match element {
-            Type::Char => self.src.push_str("str"),
             Type::U8 => self.src.push_str("bytes"),
             t => {
                 self.pyimport("typing", "List");
@@ -503,6 +503,7 @@ impl WasmtimePy {
             Type::Float64 => Some("c_double"),
             Type::Char => None,
             Type::Handle(_) => None,
+            Type::String => None,
             Type::Id(id) => match &iface.types[*id].kind {
                 TypeDefKind::Type(t) => self.array_ty(iface, t),
                 _ => None,
@@ -1719,25 +1720,14 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 let ptr = self.locals.tmp("ptr");
                 let len = self.locals.tmp("len");
-                match element {
-                    Type::Char => {
-                        self.gen.needs_encode_utf8 = true;
-                        self.src.push_str(&format!(
-                            "{}, {} = _encode_utf8({}, realloc, memory, caller)\n",
-                            ptr, len, operands[0],
-                        ));
-                    }
-                    _ => {
-                        let array_ty = self.gen.array_ty(iface, element).unwrap();
-                        self.gen.needs_list_canon_lower = true;
-                        let size = self.gen.sizes.size(element);
-                        let align = self.gen.sizes.align(element);
-                        self.src.push_str(&format!(
-                            "{}, {} = _list_canon_lower({}, ctypes.{}, {}, {}, realloc, memory, caller)\n",
-                            ptr, len, operands[0], array_ty, size, align,
-                        ));
-                    }
-                };
+                let array_ty = self.gen.array_ty(iface, element).unwrap();
+                self.gen.needs_list_canon_lower = true;
+                let size = self.gen.sizes.size(element);
+                let align = self.gen.sizes.align(element);
+                self.src.push_str(&format!(
+                    "{}, {} = _list_canon_lower({}, ctypes.{}, {}, {}, realloc, memory, caller)\n",
+                    ptr, len, operands[0], array_ty, size, align,
+                ));
                 results.push(ptr);
                 results.push(len);
             }
@@ -1747,35 +1737,25 @@ impl Bindgen for FunctionBindgen<'_> {
                 let len = self.locals.tmp("len");
                 self.src.push_str(&format!("{} = {}\n", ptr, operands[0]));
                 self.src.push_str(&format!("{} = {}\n", len, operands[1]));
-                let (result, align) = match element {
-                    Type::Char => {
-                        self.gen.needs_decode_utf8 = true;
-                        (format!("_decode_utf8(memory, caller, {}, {})", ptr, len), 1)
-                    }
+                let array_ty = self.gen.array_ty(iface, element).unwrap();
+                self.gen.needs_list_canon_lift = true;
+                let lift = format!(
+                    "_list_canon_lift({}, {}, {}, ctypes.{}, memory, caller)",
+                    ptr,
+                    len,
+                    self.gen.sizes.size(element),
+                    array_ty,
+                );
+                let pyty = match element {
+                    Type::U8 => "bytes".to_string(),
                     _ => {
-                        let array_ty = self.gen.array_ty(iface, element).unwrap();
-                        self.gen.needs_list_canon_lift = true;
-                        let lift = format!(
-                            "_list_canon_lift({}, {}, {}, ctypes.{}, memory, caller)",
-                            ptr,
-                            len,
-                            self.gen.sizes.size(element),
-                            array_ty,
-                        );
-                        let pyty = match element {
-                            Type::U8 => "bytes".to_string(),
-                            _ => {
-                                self.gen.pyimport("typing", "List");
-                                format!("List[{}]", self.gen.type_string(iface, element))
-                            }
-                        };
-                        self.gen.pyimport("typing", "cast");
-                        (
-                            format!("cast({}, {})", pyty, lift),
-                            self.gen.sizes.align(element),
-                        )
+                        self.gen.pyimport("typing", "List");
+                        format!("List[{}]", self.gen.type_string(iface, element))
                     }
                 };
+                self.gen.pyimport("typing", "cast");
+                let result = format!("cast({}, {})", pyty, lift);
+                let align = self.gen.sizes.align(element);
                 match free {
                     Some(free) => {
                         self.needs_free = Some(free.to_string());
@@ -1783,6 +1763,44 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.src.push_str(&format!("{} = {}\n", list, result));
                         self.src
                             .push_str(&format!("free(caller, {}, {}, {})\n", ptr, len, align));
+                        results.push(list);
+                    }
+                    None => results.push(result),
+                }
+            }
+            Instruction::StringLower { realloc } => {
+                // Lowering only happens when we're passing strings into wasm,
+                // which forces us to always allocate, so this should always be
+                // `Some`.
+                let realloc = realloc.unwrap();
+                self.needs_memory = true;
+                self.needs_realloc = Some(realloc.to_string());
+
+                let ptr = self.locals.tmp("ptr");
+                let len = self.locals.tmp("len");
+                self.gen.needs_encode_utf8 = true;
+                self.src.push_str(&format!(
+                    "{}, {} = _encode_utf8({}, realloc, memory, caller)\n",
+                    ptr, len, operands[0],
+                ));
+                results.push(ptr);
+                results.push(len);
+            }
+            Instruction::StringLift { free, .. } => {
+                self.needs_memory = true;
+                let ptr = self.locals.tmp("ptr");
+                let len = self.locals.tmp("len");
+                self.src.push_str(&format!("{} = {}\n", ptr, operands[0]));
+                self.src.push_str(&format!("{} = {}\n", len, operands[1]));
+                self.gen.needs_decode_utf8 = true;
+                let result = format!("_decode_utf8(memory, caller, {}, {})", ptr, len);
+                match free {
+                    Some(free) => {
+                        self.needs_free = Some(free.to_string());
+                        let list = self.locals.tmp("list");
+                        self.src.push_str(&format!("{} = {}\n", list, result));
+                        self.src
+                            .push_str(&format!("free(caller, {}, {}, 1)\n", ptr, len));
                         results.push(list);
                     }
                     None => results.push(result),

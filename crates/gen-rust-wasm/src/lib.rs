@@ -1001,7 +1001,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(result);
             }
 
-            Instruction::ListCanonLower { element, realloc } => {
+            Instruction::ListCanonLower { realloc, .. } => {
                 let tmp = self.tmp();
                 let val = format!("vec{}", tmp);
                 let ptr = format!("ptr{}", tmp);
@@ -1009,12 +1009,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 if realloc.is_none() {
                     self.push_str(&format!("let {} = {};\n", val, operands[0]));
                 } else {
-                    let op0 = match element {
-                        Type::Char => {
-                            format!("{}.into_bytes()", operands[0])
-                        }
-                        _ => operands.pop().unwrap(),
-                    };
+                    let op0 = operands.pop().unwrap();
                     self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
                 }
                 self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, val));
@@ -1026,7 +1021,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(len);
             }
 
-            Instruction::ListCanonLift { element, free, .. } => {
+            Instruction::ListCanonLift { free, .. } => {
                 // This only happens when we're receiving a list from the
                 // outside world, so `free` should always be `Some`.
                 assert!(free.is_some());
@@ -1037,15 +1032,44 @@ impl Bindgen for FunctionBindgen<'_> {
                     "Vec::from_raw_parts({} as *mut _, {1}, {1})",
                     operands[0], len
                 );
-                match element {
-                    Type::Char => {
-                        if unchecked {
-                            results.push(format!("String::from_utf8_unchecked({})", result));
-                        } else {
-                            results.push(format!("String::from_utf8({}).unwrap()", result));
-                        }
-                    }
-                    _ => results.push(result),
+                results.push(result);
+            }
+
+            Instruction::StringLower { realloc } => {
+                let tmp = self.tmp();
+                let val = format!("vec{}", tmp);
+                let ptr = format!("ptr{}", tmp);
+                let len = format!("len{}", tmp);
+                if realloc.is_none() {
+                    self.push_str(&format!("let {} = {};\n", val, operands[0]));
+                } else {
+                    let op0 = format!("{}.into_bytes()", operands[0]);
+                    self.push_str(&format!("let {} = ({}).into_boxed_slice();\n", val, op0));
+                }
+                self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, val));
+                self.push_str(&format!("let {} = {}.len() as i32;\n", len, val));
+                if realloc.is_some() {
+                    self.push_str(&format!("core::mem::forget({});\n", val));
+                }
+                results.push(ptr);
+                results.push(len);
+            }
+
+            Instruction::StringLift { free, .. } => {
+                // This only happens when we're receiving a string from the
+                // outside world, so `free` should always be `Some`.
+                assert!(free.is_some());
+                let tmp = self.tmp();
+                let len = format!("len{}", tmp);
+                self.push_str(&format!("let {} = {} as usize;\n", len, operands[1]));
+                let result = format!(
+                    "Vec::from_raw_parts({} as *mut _, {1}, {1})",
+                    operands[0], len
+                );
+                if unchecked {
+                    results.push(format!("String::from_utf8_unchecked({})", result));
+                } else {
+                    results.push(format!("String::from_utf8({}).unwrap()", result));
                 }
             }
 

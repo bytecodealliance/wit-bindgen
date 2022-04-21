@@ -319,6 +319,7 @@ impl Resolver {
             super::Type::Float32 => TypeDefKind::Type(Type::Float32),
             super::Type::Float64 => TypeDefKind::Type(Type::Float64),
             super::Type::Char => TypeDefKind::Type(Type::Char),
+            super::Type::String => TypeDefKind::Type(Type::String),
             super::Type::Handle(resource) => {
                 let id = match self.resource_lookup.get(&*resource.name) {
                     Some(id) => *id,

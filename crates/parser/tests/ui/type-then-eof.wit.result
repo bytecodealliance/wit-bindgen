@@ -1,16 +1,10 @@
 {
-  "types": [
-    {
-      "idx": 0,
-      "list": "char"
-    }
-  ],
   "functions": [
     {
       "name": "foo",
       "params": [],
       "results": [
-        "type-0"
+        "string"
       ]
     }
   ]

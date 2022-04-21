@@ -64,6 +64,7 @@ pub enum Type {
     Float32,
     Float64,
     Char,
+    String,
     Handle(ResourceId),
     Id(TypeId),
 }
@@ -433,7 +434,7 @@ impl Interface {
             | Type::Float32
             | Type::Float64 => true,
 
-            Type::Char | Type::Handle(_) => false,
+            Type::Char | Type::Handle(_) | Type::String => false,
 
             Type::Id(id) => match &self.types[*id].kind {
                 TypeDefKind::List(_) | TypeDefKind::Variant(_) => false,

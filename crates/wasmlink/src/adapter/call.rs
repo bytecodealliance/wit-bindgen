@@ -183,17 +183,6 @@ impl Operand<'_> {
     }
 }
 
-fn is_char(interface: &WitInterface, ty: &Type) -> bool {
-    match ty {
-        Type::Char => true,
-        Type::Id(id) => match &interface.types[*id].kind {
-            TypeDefKind::Type(t) => is_char(interface, t),
-            _ => false,
-        },
-        _ => false,
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 enum PushMode {
     Params,
@@ -452,7 +441,7 @@ impl<'a> CallAdapter<'a> {
                     let len = params.next().unwrap();
 
                     let mut element_operands = Vec::new();
-                    if !interface.all_bits_valid(element) && !is_char(interface, element) {
+                    if !interface.all_bits_valid(element) {
                         Self::push_element_operands(
                             interface,
                             sizes,
@@ -556,6 +545,26 @@ impl<'a> CallAdapter<'a> {
                     }
                 }
             },
+            Type::String => {
+                let addr = params.next().unwrap();
+                let len = params.next().unwrap();
+
+                // Every list copied needs a destination local (and a source for
+                // retptr)
+                *locals_count += match mode {
+                    PushMode::Params => 1,
+                    PushMode::RetPtr => 2,
+                    PushMode::Return => unreachable!(),
+                };
+
+                operands.push(Operand::List {
+                    addr: mode.create_value_ref(addr),
+                    len: mode.create_value_ref(len),
+                    element_size: 1, // UTF-8
+                    element_alignment: 1,
+                    operands: Vec::new(),
+                });
+            }
             Type::Handle(id) => {
                 let addr = params.next().unwrap();
 
@@ -598,7 +607,7 @@ impl<'a> CallAdapter<'a> {
                 ),
                 TypeDefKind::List(element) => {
                     let mut element_operands = Vec::new();
-                    if !interface.all_bits_valid(element) && !is_char(interface, element) {
+                    if !interface.all_bits_valid(element) {
                         Self::push_element_operands(
                             interface,
                             sizes,
@@ -680,6 +689,18 @@ impl<'a> CallAdapter<'a> {
                     }
                 }
             },
+            Type::String => {
+                // Every list copied needs a source and destination local
+                *locals_count += 2;
+
+                operands.push(Operand::List {
+                    addr: ValueRef::ElementOffset(offset),
+                    len: ValueRef::ElementOffset(offset + 4),
+                    element_size: 1, // UTF-8
+                    element_alignment: 1,
+                    operands: Vec::new(),
+                });
+            }
             Type::Handle(id) => {
                 // Params need to be cloned, so add a local
                 *locals_count += match mode {

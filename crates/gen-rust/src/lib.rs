@@ -208,6 +208,12 @@ pub trait RustGenerator {
             Type::Float32 => self.push_str("f32"),
             Type::Float64 => self.push_str("f64"),
             Type::Char => self.push_str("char"),
+            Type::String => match mode {
+                TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) => {
+                    self.print_borrowed_str(lt)
+                }
+                TypeMode::Owned | TypeMode::HandlesBorrowed(_) => self.push_str("String"),
+            },
         }
     }
 
@@ -236,6 +242,7 @@ pub trait RustGenerator {
                 match ty {
                     TypeDefKind::Variant(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
                     TypeDefKind::Type(Type::Id(t)) => needs_generics(iface, &iface.types[*t].kind),
+                    TypeDefKind::Type(Type::String) => true,
                     TypeDefKind::Type(Type::Handle(_)) => true,
                     _ => false,
                 }
@@ -292,32 +299,24 @@ pub trait RustGenerator {
     }
 
     fn print_list(&mut self, iface: &Interface, ty: &Type, mode: TypeMode) {
-        match ty {
-            Type::Char => match mode {
-                TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) => {
-                    self.print_borrowed_str(lt)
-                }
-                TypeMode::Owned | TypeMode::HandlesBorrowed(_) => self.push_str("String"),
-            },
-            t => match mode {
-                TypeMode::AllBorrowed(lt) => {
+        match mode {
+            TypeMode::AllBorrowed(lt) => {
+                self.print_borrowed_slice(iface, false, ty, lt);
+            }
+            TypeMode::LeafBorrowed(lt) => {
+                if iface.all_bits_valid(ty) {
                     self.print_borrowed_slice(iface, false, ty, lt);
-                }
-                TypeMode::LeafBorrowed(lt) => {
-                    if iface.all_bits_valid(t) {
-                        self.print_borrowed_slice(iface, false, ty, lt);
-                    } else {
-                        self.push_str("Vec<");
-                        self.print_ty(iface, ty, mode);
-                        self.push_str(">");
-                    }
-                }
-                TypeMode::HandlesBorrowed(_) | TypeMode::Owned => {
+                } else {
                     self.push_str("Vec<");
                     self.print_ty(iface, ty, mode);
                     self.push_str(">");
                 }
-            },
+            }
+            TypeMode::HandlesBorrowed(_) | TypeMode::Owned => {
+                self.push_str("Vec<");
+                self.print_ty(iface, ty, mode);
+                self.push_str(">");
+            }
         }
     }
 

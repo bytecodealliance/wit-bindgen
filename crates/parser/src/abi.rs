@@ -388,6 +388,11 @@ def_instruction! {
             realloc: Option<&'a str>,
         } : [1] => [2],
 
+        /// Same as `ListCanonLower`, but used for strings
+        StringLower {
+            realloc: Option<&'a str>,
+        } : [1] => [2],
+
         /// Lowers a list where the element's layout in the native language is
         /// not expected to match the canonical ABI definition of interface
         /// types.
@@ -429,6 +434,11 @@ def_instruction! {
             element: &'a Type,
             free: Option<&'a str>,
             ty: TypeId,
+        } : [2] => [1],
+
+        /// Same as `ListCanonLift`, but used for strings
+        StringLift {
+            free: Option<&'a str>,
         } : [2] => [1],
 
         /// Lifts a list which into an interface types value.
@@ -846,6 +856,10 @@ impl Interface {
             Type::U64 | Type::S64 => result.push(WasmType::I64),
             Type::Float32 => result.push(WasmType::F32),
             Type::Float64 => result.push(WasmType::F64),
+            Type::String => {
+                result.push(WasmType::I32);
+                result.push(WasmType::I32);
+            }
 
             Type::Id(id) => match &self.types[*id].kind {
                 TypeDefKind::Type(t) => self.push_wasm(variant, t, result),
@@ -1331,18 +1345,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&I32FromOwnedHandle { ty });
                 }
             }
+            Type::String => {
+                let realloc = self.list_realloc();
+                self.emit(&StringLower { realloc });
+            }
             Type::Id(id) => match &self.iface.types[id].kind {
                 TypeDefKind::Type(t) => self.lower(t),
                 TypeDefKind::List(element) => {
-                    // Lowering parameters calling a wasm import means
-                    // we don't need to pass ownership, but we pass
-                    // ownership in all other cases.
-                    let realloc = match (self.variant, self.lift_lower) {
-                        (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults) => None,
-                        _ => Some("canonical_abi_realloc"),
-                    };
-                    if self.is_char(element) || self.bindgen.is_list_canonical(self.iface, element)
-                    {
+                    let realloc = self.list_realloc();
+                    if self.bindgen.is_list_canonical(self.iface, element) {
                         self.emit(&ListCanonLower { element, realloc });
                     } else {
                         self.push_block();
@@ -1442,6 +1453,16 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         }
     }
 
+    fn list_realloc(&self) -> Option<&'static str> {
+        // Lowering parameters calling a wasm import means
+        // we don't need to pass ownership, but we pass
+        // ownership in all other cases.
+        match (self.variant, self.lift_lower) {
+            (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults) => None,
+            _ => Some("canonical_abi_realloc"),
+        }
+    }
+
     fn prep_return_pointer(&mut self, sig: &WasmSignature, results: &[(String, Type)]) {
         drop(results); // FIXME: update to the new canonical abi and use this
                        // If a return pointer was automatically injected into this function
@@ -1484,16 +1505,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&HandleOwnedFromI32 { ty });
                 }
             }
+            Type::String => {
+                let free = self.list_free();
+                self.emit(&StringLift { free });
+            }
             Type::Id(id) => match &self.iface.types[id].kind {
                 TypeDefKind::Type(t) => self.lift(t),
                 TypeDefKind::List(element) => {
-                    // Lifting the arguments of a defined import means that, if
-                    // possible, the caller still retains ownership and we don't
-                    // free anything.
-                    let free = match (self.variant, self.lift_lower) {
-                        (AbiVariant::GuestImport, LiftLower::LiftArgsLowerResults) => None,
-                        _ => Some("canonical_abi_free"),
-                    };
+                    let free = self.list_free();
                     if self.is_char(element) || self.bindgen.is_list_canonical(self.iface, element)
                     {
                         self.emit(&ListCanonLift {
@@ -1592,6 +1611,16 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         }
     }
 
+    fn list_free(&self) -> Option<&'static str> {
+        // Lifting the arguments of a defined import means that, if
+        // possible, the caller still retains ownership and we don't
+        // free anything.
+        match (self.variant, self.lift_lower) {
+            (AbiVariant::GuestImport, LiftLower::LiftArgsLowerResults) => None,
+            _ => Some("canonical_abi_free"),
+        }
+    }
+
     fn write_to_memory(&mut self, ty: &Type, addr: B::Operand, offset: i32) {
         use Instruction::*;
 
@@ -1606,20 +1635,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::U64 | Type::S64 => self.lower_and_emit(ty, addr, &I64Store { offset }),
             Type::Float32 => self.lower_and_emit(ty, addr, &F32Store { offset }),
             Type::Float64 => self.lower_and_emit(ty, addr, &F64Store { offset }),
+            Type::String => self.write_list_to_memory(ty, addr, offset),
 
             Type::Id(id) => match &self.iface.types[id].kind {
                 TypeDefKind::Type(t) => self.write_to_memory(t, addr, offset),
-
-                // After lowering the list there's two i32 values on the stack
-                // which we write into memory, writing the pointer into the low address
-                // and the length into the high address.
-                TypeDefKind::List(_) => {
-                    self.lower(ty);
-                    self.stack.push(addr.clone());
-                    self.emit(&I32Store { offset: offset + 4 });
-                    self.stack.push(addr);
-                    self.emit(&I32Store { offset });
-                }
+                TypeDefKind::List(_) => self.write_list_to_memory(ty, addr, offset),
 
                 TypeDefKind::Record(r) if r.is_flags() => {
                     self.lower(ty);
@@ -1698,6 +1718,17 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         }
     }
 
+    fn write_list_to_memory(&mut self, ty: &Type, addr: B::Operand, offset: i32) {
+        // After lowering the list there's two i32 values on the stack
+        // which we write into memory, writing the pointer into the low address
+        // and the length into the high address.
+        self.lower(ty);
+        self.stack.push(addr.clone());
+        self.emit(&Instruction::I32Store { offset: offset + 4 });
+        self.stack.push(addr);
+        self.emit(&Instruction::I32Store { offset });
+    }
+
     fn lower_and_emit(&mut self, ty: &Type, addr: B::Operand, instr: &Instruction) {
         self.lower(ty);
         self.stack.push(addr);
@@ -1718,19 +1749,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::U64 | Type::S64 => self.emit_and_lift(ty, addr, &I64Load { offset }),
             Type::Float32 => self.emit_and_lift(ty, addr, &F32Load { offset }),
             Type::Float64 => self.emit_and_lift(ty, addr, &F64Load { offset }),
+            Type::String => self.read_list_from_memory(ty, addr, offset),
 
             Type::Id(id) => match &self.iface.types[id].kind {
                 TypeDefKind::Type(t) => self.read_from_memory(t, addr, offset),
 
-                // Read the pointer/len and then perform the standard lifting
-                // proceses.
-                TypeDefKind::List(_) => {
-                    self.stack.push(addr.clone());
-                    self.emit(&I32Load { offset });
-                    self.stack.push(addr);
-                    self.emit(&I32Load { offset: offset + 4 });
-                    self.lift(ty);
-                }
+                TypeDefKind::List(_) => self.read_list_from_memory(ty, addr, offset),
 
                 TypeDefKind::Record(r) if r.is_flags() => {
                     match self.iface.flags_repr(r) {
@@ -1798,6 +1822,16 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
             },
         }
+    }
+
+    fn read_list_from_memory(&mut self, ty: &Type, addr: B::Operand, offset: i32) {
+        // Read the pointer/len and then perform the standard lifting
+        // proceses.
+        self.stack.push(addr.clone());
+        self.emit(&Instruction::I32Load { offset });
+        self.stack.push(addr);
+        self.emit(&Instruction::I32Load { offset: offset + 4 });
+        self.lift(ty);
     }
 
     fn emit_and_lift(&mut self, ty: &Type, addr: B::Operand, instr: &Instruction) {

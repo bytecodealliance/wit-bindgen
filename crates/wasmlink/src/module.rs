@@ -44,6 +44,7 @@ fn has_list(interface: &WitInterface, ty: &WitType) -> bool {
     use wit_parser::{Type, TypeDefKind};
 
     match ty {
+        Type::String => true,
         Type::Id(id) => match &interface.types[*id].kind {
             TypeDefKind::List(_) => true,
             TypeDefKind::Type(t) => has_list(interface, t),

@@ -64,10 +64,6 @@
     },
     {
       "idx": 6,
-      "list": "char"
-    },
-    {
-      "idx": 7,
       "variant": {
         "cases": [
           [
@@ -76,17 +72,17 @@
           ],
           [
             "some",
-            "type-6"
+            "string"
           ]
         ]
       }
     },
     {
-      "idx": 8,
+      "idx": 7,
       "list": "u8"
     },
     {
-      "idx": 9,
+      "idx": 8,
       "variant": {
         "cases": [
           [
@@ -124,7 +120,7 @@
         "handle-0"
       ],
       "results": [
-        "type-6"
+        "string"
       ]
     },
     {
@@ -176,37 +172,37 @@
       "name": "headers::get",
       "params": [
         "handle-2",
-        "type-6"
+        "string"
       ],
       "results": [
-        "type-7"
+        "type-6"
       ]
     },
     {
       "name": "body::read",
       "params": [
         "handle-3",
-        "type-8"
+        "type-7"
       ],
       "results": [
-        "type-9"
+        "type-8"
       ]
     },
     {
       "name": "body::write",
       "params": [
         "handle-3",
-        "type-8"
+        "type-7"
       ],
       "results": [
-        "type-9"
+        "type-8"
       ]
     },
     {
       "name": "maybe-number",
       "params": [],
       "results": [
-        "type-9"
+        "type-8"
       ]
     }
   ],

@@ -175,6 +175,7 @@ impl C {
                 TypeDefKind::Record(r) if r.is_flags() => false,
                 TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
             },
+            Type::String => true,
             _ => false,
         }
     }
@@ -230,6 +231,11 @@ impl C {
                 self.src.h(&iface.resources[*id].name.to_snake_case());
                 self.src.h("_t");
             }
+            Type::String => {
+                self.print_namespace(iface);
+                self.src.h("string_t");
+                self.needs_string = true;
+            }
             Type::Id(id) => {
                 let ty = &iface.types[*id];
                 if let Some(name) = &ty.name {
@@ -249,11 +255,6 @@ impl C {
                         self.print_namespace(iface);
                         self.print_ty_name(iface, &Type::Id(*id));
                         self.src.h("_t");
-                    }
-                    TypeDefKind::List(Type::Char) => {
-                        self.print_namespace(iface);
-                        self.src.h("string_t");
-                        self.needs_string = true;
                     }
                     TypeDefKind::Record(_) | TypeDefKind::List(_) => {
                         self.public_anonymous_types.insert(*id);
@@ -281,6 +282,7 @@ impl C {
             Type::Float32 => self.src.h("float32"),
             Type::Float64 => self.src.h("float64"),
             Type::Handle(id) => self.src.h(&iface.resources[*id].name.to_snake_case()),
+            Type::String => self.src.h("string"),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
                 if let Some(name) = &ty.name {
@@ -318,7 +320,6 @@ impl C {
                             unimplemented!();
                         }
                     }
-                    TypeDefKind::List(Type::Char) => self.src.h("string"),
                     TypeDefKind::List(t) => {
                         self.src.h("list_");
                         self.print_ty_name(iface, t);
@@ -484,14 +485,10 @@ impl C {
                     self.free(iface, t, "&ptr->ptr[i]");
                     self.src.c("}\n");
                 }
-                let (size, align) = if *t == Type::Char {
-                    (1, 1)
-                } else {
-                    (self.sizes.size(t), self.sizes.align(t))
-                };
                 self.src.c(&format!(
                     "canonical_abi_free(ptr->ptr, ptr->len * {}, {});\n",
-                    size, align,
+                    self.sizes.size(t),
+                    self.sizes.align(t),
                 ));
             }
 
@@ -524,6 +521,7 @@ impl C {
     fn owns_anything(&self, iface: &Interface, ty: &Type) -> bool {
         let id = match ty {
             Type::Id(id) => *id,
+            Type::String => return true,
             Type::Handle(_) => return true,
             _ => return false,
         };
@@ -568,6 +566,10 @@ impl Return {
     fn return_single(&mut self, iface: &Interface, ty: &Type, orig_ty: &Type) {
         let id = match ty {
             Type::Id(id) => *id,
+            Type::String => {
+                self.retptrs.push(*orig_ty);
+                return;
+            }
             _ => {
                 self.scalar = Some(Scalar::Type(*orig_ty));
                 return;
@@ -799,17 +801,11 @@ impl Generator for C {
     fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let prev = mem::take(&mut self.src.header);
         self.docs(docs);
-        if *ty == Type::Char {
-            self.src.h("typedef ");
-            self.print_namespace(iface);
-            self.src.h("string_t ");
-        } else {
-            self.src.h("typedef struct {\n");
-            self.print_ty(iface, ty);
-            self.src.h(" *ptr;\n");
-            self.src.h("size_t len;\n");
-            self.src.h("} ");
-        }
+        self.src.h("typedef struct {\n");
+        self.print_ty(iface, ty);
+        self.src.h(" *ptr;\n");
+        self.src.h("size_t len;\n");
+        self.src.h("} ");
         self.print_namespace(iface);
         self.src.h(&name.to_snake_case());
         self.src.h("_t;\n");
@@ -1517,19 +1513,23 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(result);
             }
 
-            Instruction::ListCanonLower { .. } => {
+            Instruction::ListCanonLower { .. } | Instruction::StringLower { .. } => {
                 results.push(format!("(int32_t) ({}).ptr", operands[0]));
                 results.push(format!("(int32_t) ({}).len", operands[0]));
             }
             Instruction::ListCanonLift { element, ty, .. } => {
                 let list_name = self.gen.type_string(iface, &Type::Id(*ty));
-                let elem_name = match element {
-                    Type::Char => "char".into(),
-                    _ => self.gen.type_string(iface, element),
-                };
+                let elem_name = self.gen.type_string(iface, element);
                 results.push(format!(
                     "({}) {{ ({}*)({}), (size_t)({}) }}",
                     list_name, elem_name, operands[0], operands[1]
+                ));
+            }
+            Instruction::StringLift { .. } => {
+                let list_name = self.gen.type_string(iface, &Type::String);
+                results.push(format!(
+                    "({}) {{ (char*)({}), (size_t)({}) }}",
+                    list_name, operands[0], operands[1]
                 ));
             }
 
@@ -1542,10 +1542,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::ListLift { element, ty, .. } => {
                 let _body = self.blocks.pop().unwrap();
                 let list_name = self.gen.type_string(iface, &Type::Id(*ty));
-                let elem_name = match element {
-                    Type::Char => "char".into(),
-                    _ => self.gen.type_string(iface, element),
-                };
+                let elem_name = self.gen.type_string(iface, element);
                 results.push(format!(
                     "({}) {{ ({}*)({}), (size_t)({}) }}",
                     list_name, elem_name, operands[0], operands[1]
