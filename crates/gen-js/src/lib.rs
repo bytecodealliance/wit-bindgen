@@ -148,7 +148,7 @@ impl Js {
 
     fn print_ty(&mut self, iface: &Interface, ty: &Type) {
         match ty {
-            Type::Unit => self.src.ts("undefined"),
+            Type::Unit => self.src.ts("void"),
             Type::Bool => self.src.ts("boolean"),
             Type::U8
             | Type::S8
@@ -286,33 +286,7 @@ impl Js {
         if func.is_async {
             self.src.ts("Promise<");
         }
-        match func.results.len() {
-            0 => self.src.ts("void"),
-            1 => self.print_ty(iface, &func.results[0].1),
-            _ => {
-                if func.results.iter().any(|(n, _)| n.is_empty()) {
-                    self.src.ts("[");
-                    for (i, (_, ty)) in func.results.iter().enumerate() {
-                        if i > 0 {
-                            self.src.ts(", ");
-                        }
-                        self.print_ty(iface, ty);
-                    }
-                    self.src.ts("]");
-                } else {
-                    self.src.ts("{ ");
-                    for (i, (name, ty)) in func.results.iter().enumerate() {
-                        if i > 0 {
-                            self.src.ts(", ");
-                        }
-                        self.src.ts(&name.to_mixed_case());
-                        self.src.ts(": ");
-                        self.print_ty(iface, ty);
-                    }
-                    self.src.ts(" }");
-                }
-            }
-        }
+        self.print_ty(iface, &func.result);
         if func.is_async {
             self.src.ts(">");
         }
@@ -1317,9 +1291,11 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::UnitLower => {}
+            Instruction::UnitLower => {
+                assert_eq!(operands, &[""]);
+            }
             Instruction::UnitLift => {
-                results.push("undefined".to_string());
+                results.push("".to_string());
             }
 
             Instruction::BoolFromI32 => {
@@ -1878,33 +1854,13 @@ impl Bindgen for FunctionBindgen<'_> {
                         ));
                     }
                 };
-                let mut bind_results = |me: &mut FunctionBindgen<'_>| {
-                    if func.results.len() > 0 {
-                        if func.results.len() == 1 {
-                            me.src.js("const ret = ");
-                            results.push("ret".to_string());
-                        } else if func.results.iter().any(|p| p.0.is_empty()) {
-                            me.src.js("const [");
-                            for i in 0..func.results.len() {
-                                if i > 0 {
-                                    me.src.js(", ")
-                                }
-                                let name = format!("ret{}", i);
-                                me.src.js(&name);
-                                results.push(name);
-                            }
-                            me.src.js("] = ");
-                        } else {
-                            me.src.js("const {");
-                            for (i, (name, _)) in func.results.iter().enumerate() {
-                                if i > 0 {
-                                    me.src.js(", ")
-                                }
-                                me.src.js(name);
-                                results.push(name.clone());
-                            }
-                            me.src.js("} = ");
-                        }
+                let mut bind_results = |me: &mut FunctionBindgen<'_>| match &func.result {
+                    Type::Unit => {
+                        results.push("".to_string());
+                    }
+                    _ => {
+                        me.src.js("const ret = ");
+                        results.push("ret".to_string());
                     }
                 };
 
@@ -1919,9 +1875,14 @@ impl Bindgen for FunctionBindgen<'_> {
                     ));
                     call(self);
                     self.src.js(".then(e => {\n");
-                    if func.results.len() > 0 {
-                        bind_results(self);
-                        self.src.js("e;\n");
+                    match &func.result {
+                        Type::Unit => {
+                            results.push("".to_string());
+                        }
+                        _ => {
+                            bind_results(self);
+                            self.src.js("e;\n");
+                        }
                     }
                 } else {
                     bind_results(self);
@@ -1930,24 +1891,12 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::Return { amt, func } => match amt {
+            Instruction::Return { amt, func: _ } => match amt {
                 0 => {}
                 1 => self.src.js(&format!("return {};\n", operands[0])),
                 _ => {
-                    if self.in_import || func.results.iter().any(|p| p.0.is_empty()) {
-                        self.src.js(&format!("return [{}];\n", operands.join(", ")));
-                    } else {
-                        assert_eq!(func.results.len(), operands.len());
-                        self.src.js(&format!(
-                            "return {{ {} }};\n",
-                            func.results
-                                .iter()
-                                .zip(operands)
-                                .map(|((name, _), op)| format!("{}: {}", name.to_mixed_case(), op))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        ));
-                    }
+                    assert!(self.in_import);
+                    self.src.js(&format!("return [{}];\n", operands.join(", ")));
                 }
             },
 

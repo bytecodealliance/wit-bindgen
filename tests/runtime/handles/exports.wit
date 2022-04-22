@@ -8,7 +8,7 @@ wasm-state-get-val: function(a: wasm-state) -> u32
 
 wasm-state2-create: function() -> wasm-state2
 wasm-state2-saw-close: function() -> bool
-two-wasm-states: function(a: wasm-state, b: wasm-state2) -> (wasm-state, wasm-state2)
+two-wasm-states: function(a: wasm-state, b: wasm-state2) -> tuple<wasm-state, wasm-state2>
 
 record wasm-state-param-record { a: wasm-state2 }
 wasm-state2-param-record: function(a: wasm-state-param-record)

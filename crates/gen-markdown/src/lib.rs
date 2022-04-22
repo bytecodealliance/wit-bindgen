@@ -271,14 +271,15 @@ impl Generator for Markdown {
                 self.src.push_str("\n");
             }
         }
-        if func.results.len() > 0 {
-            self.src.push_str("##### Results\n\n");
-            for (name, ty) in func.results.iter() {
+        match &func.result {
+            Type::Unit => {}
+            ty => {
+                self.src.push_str("##### Results\n\n");
                 self.src.push_str(&format!(
                     "- <a href=\"#{f}.{p}\" name=\"{f}.{p}\"></a> `{}`: ",
-                    name,
+                    "result",
                     f = func.name.to_snake_case(),
-                    p = name.to_snake_case(),
+                    p = "result",
                 ));
                 self.print_ty(iface, ty, false);
                 self.src.push_str("\n");

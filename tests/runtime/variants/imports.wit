@@ -28,4 +28,4 @@ type result-typedef = expected<u32, _>
 variant-typedefs: function(a: option-typedef, b: bool-typedef, c: result-typedef)
 
 enum my-errno { success, a, b }
-variant-enums: function(a: bool, b: expected<_, _>, c: my-errno) -> (bool, expected<_, _>, my-errno)
+variant-enums: function(a: bool, b: expected<_, _>, c: my-errno) -> tuple<bool, expected<_, _>, my-errno>

@@ -615,7 +615,7 @@ def_instruction! {
         CallInterface {
             module: &'a str,
             func: &'a Function,
-        } : [func.params.len()] => [func.results.len()],
+        } : [func.params.len()] => [1],
 
         /// Returns `amt` values on the stack. This is always the last
         /// instruction.
@@ -802,9 +802,7 @@ impl Interface {
             self.push_wasm(variant, param, &mut params);
         }
 
-        for (_, result) in func.results.iter() {
-            self.push_wasm(variant, result, &mut results);
-        }
+        self.push_wasm(variant, &func.result, &mut results);
 
         let mut retptr = None;
         if func.is_async {
@@ -1042,7 +1040,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // through pointers, and the `Canonical` ABI returns more-than-one
                     // values through a return pointer.
                     if self.variant == AbiVariant::GuestImport {
-                        self.prep_return_pointer(&sig, &func.results);
+                        self.prep_return_pointer(&sig, &func.result);
                     }
 
                     // Now that all the wasm args are prepared we can call the
@@ -1069,12 +1067,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 // Batch-lift all result values now that all the function's return
                 // values are on the stack.
-                self.lift_all(&func.results);
+                self.lift(&func.result);
 
-                self.emit(&Instruction::Return {
-                    func,
-                    amt: func.results.len(),
-                });
+                self.emit(&Instruction::Return { func, amt: 1 });
             }
             LiftLower::LiftArgsLowerResults => {
                 // Use `GetArg` to push all relevant arguments onto the stack.
@@ -1109,7 +1104,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 // ... and at the end we lower everything back into return
                 // values.
-                self.lower_all(&func.results);
+                self.lower(&func.result);
 
                 if func.is_async {
                     let tys = sig.retptr.as_ref().unwrap();
@@ -1479,11 +1474,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         }
     }
 
-    fn prep_return_pointer(&mut self, sig: &WasmSignature, results: &[(String, Type)]) {
-        drop(results); // FIXME: update to the new canonical abi and use this
-                       // If a return pointer was automatically injected into this function
-                       // then we need to allocate a proper amount of space for it and then
-                       // add it to the stack to get passed to the callee.
+    fn prep_return_pointer(&mut self, sig: &WasmSignature, result: &Type) {
+        drop(result); // FIXME: update to the new canonical abi and use this
+                      // If a return pointer was automatically injected into this function
+                      // then we need to allocate a proper amount of space for it and then
+                      // add it to the stack to get passed to the callee.
         if let Some(results) = &sig.retptr {
             let ptr = self.bindgen.i64_return_pointer_area(results.len());
             self.return_pointers.push(ptr.clone());

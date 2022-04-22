@@ -362,9 +362,7 @@
       "params": [
         "type-0"
       ],
-      "results": [
-        "type-3"
-      ]
+      "result": "type-3"
     },
     {
       "name": "time-get",
@@ -372,9 +370,7 @@
         "type-0",
         "type-1"
       ],
-      "results": [
-        "type-3"
-      ]
+      "result": "type-3"
     }
   ]
 }

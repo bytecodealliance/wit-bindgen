@@ -85,12 +85,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 .iter()
                 .map(|(_, t)| quote_ty(true, iface, t))
                 .collect::<Vec<_>>();
-            let mut results = f.results.iter().map(|(_, t)| quote_ty(false, iface, t));
-            let ret = match f.results.len() {
-                0 => quote::quote! { () },
-                1 => results.next().unwrap(),
-                _ => quote::quote! { (#(#results),*) },
-            };
+            let ret = quote_ty(false, iface, &f.result);
             let mut self_ = quote::quote!();
             if let FunctionKind::Method { .. } = &f.kind {
                 params.remove(0);

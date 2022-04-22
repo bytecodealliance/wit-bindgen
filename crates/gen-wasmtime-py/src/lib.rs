@@ -560,11 +560,7 @@ impl WasmtimePy {
             self.print_ty(iface, ty);
         }
         self.src.push_str(") -> ");
-        match func.results.len() {
-            0 => self.src.push_str("None"),
-            1 => self.print_ty(iface, &func.results[0].1),
-            _ => self.print_tuple(iface, func.results.iter().map(|p| &p.1)),
-        }
+        self.print_ty(iface, &func.result);
         params
     }
 }
@@ -1424,9 +1420,11 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::UnitLower => {}
+            Instruction::UnitLower => {
+                assert_eq!(operands, &["".to_string()]);
+            }
             Instruction::UnitLift => {
-                results.push("None".to_string());
+                results.push("".to_string());
             }
             Instruction::BoolFromI32 => {
                 let op = self.locals.tmp("operand");
@@ -1983,16 +1981,16 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
             Instruction::CallInterface { module: _, func } => {
-                for i in 0..func.results.len() {
-                    if i > 0 {
-                        self.src.push_str(", ");
+                match &func.result {
+                    Type::Unit => {
+                        results.push("".to_string());
                     }
-                    let result = self.locals.tmp("ret");
-                    self.src.push_str(&result);
-                    results.push(result);
-                }
-                if func.results.len() > 0 {
-                    self.src.push_str(" = ");
+                    _ => {
+                        let result = self.locals.tmp("ret");
+                        self.src.push_str(&result);
+                        results.push(result);
+                        self.src.push_str(" = ");
+                    }
                 }
                 match &func.kind {
                     FunctionKind::Freestanding | FunctionKind::Static { .. } => {

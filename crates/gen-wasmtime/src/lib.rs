@@ -199,11 +199,7 @@ impl Wasmtime {
             return FunctionRet::Normal;
         }
 
-        if f.results.len() != 1 {
-            self.needs_custom_error_to_trap = true;
-            return FunctionRet::CustomToTrap;
-        }
-        if let Type::Id(id) = &f.results[0].1 {
+        if let Type::Id(id) = &f.result {
             if let TypeDefKind::Variant(v) = &iface.types[*id].kind {
                 if let Some((ok, Some(err))) = v.as_expected() {
                     if let Type::Id(err) = err {
@@ -520,14 +516,12 @@ impl Generator for Wasmtime {
         // the `custom_error` configuration of this code generator.
         match self.classify_fn_ret(iface, func) {
             FunctionRet::Normal => {
-                if func.results.len() > 0 {
-                    self.push_str(" -> ");
-                    self.print_results(iface, func);
-                }
+                self.push_str(" -> ");
+                self.print_ty(iface, &func.result, TypeMode::Owned);
             }
             FunctionRet::CustomToTrap => {
                 self.push_str(" -> Result<");
-                self.print_results(iface, func);
+                self.print_ty(iface, &func.result, TypeMode::Owned);
                 self.push_str(", Self::Error>");
             }
             FunctionRet::CustomToError { ok, .. } => {
@@ -653,7 +647,7 @@ impl Generator for Wasmtime {
         sig.self_arg = Some("&self, mut caller: impl wasmtime::AsContextMut<Data = T>".to_string());
         self.print_docs_and_params(iface, func, TypeMode::AllBorrowed("'_"), &sig);
         self.push_str("-> Result<");
-        self.print_results(iface, func);
+        self.print_ty(iface, &func.result, TypeMode::Owned);
         self.push_str(", wasmtime::Trap> {\n");
 
         let params = func
@@ -1469,7 +1463,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 wit_bindgen_gen_rust::bitcast(casts, operands, results)
             }
 
-            Instruction::UnitLower => {}
+            Instruction::UnitLower => {
+                self.push_str(&format!("let () = {};\n", operands[0]));
+            }
             Instruction::UnitLift => {
                 results.push("()".to_string());
             }
@@ -1915,7 +1911,8 @@ impl Bindgen for FunctionBindgen<'_> {
                     call.push_str(".await");
                 }
 
-                self.let_results(func.results.len(), results);
+                self.push_str("let result = ");
+                results.push("result".to_string());
                 match self.gen.classify_fn_ret(iface, func) {
                     FunctionRet::Normal => self.push_str(&call),
                     // Unwrap the result, translating errors to unconditional
@@ -1945,16 +1942,18 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
                 self.push_str(";\n");
                 self.after_call = true;
-                if self.gen.opts.tracing && func.results.len() > 0 {
-                    self.push_str("wit_bindgen_wasmtime::tracing::event!(\n");
-                    self.push_str("wit_bindgen_wasmtime::tracing::Level::TRACE,\n");
-                    for name in results.iter() {
+                match &func.result {
+                    Type::Unit => {}
+                    _ if self.gen.opts.tracing => {
+                        self.push_str("wit_bindgen_wasmtime::tracing::event!(\n");
+                        self.push_str("wit_bindgen_wasmtime::tracing::Level::TRACE,\n");
                         self.push_str(&format!(
                             "{} = wit_bindgen_wasmtime::tracing::field::debug(&{0}),\n",
-                            name,
+                            results[0],
                         ));
+                        self.push_str(");\n");
                     }
-                    self.push_str(");\n");
+                    _ => {}
                 }
             }
 

@@ -6,7 +6,7 @@ host-state-get: function(a: host-state) -> u32
 
 host-state2-create: function() -> host-state2
 host-state2-saw-close: function() -> bool
-two-host-states: function(a: host-state, b: host-state2) -> (host-state, host-state2)
+two-host-states: function(a: host-state, b: host-state2) -> tuple<host-state, host-state2>
 
 record host-state-param-record { a: host-state2 }
 host-state2-param-record: function(a: host-state-param-record)

@@ -11,7 +11,8 @@ function assertEq(a, b) {
 }
 
 export function test_imports() {
-  const { f1, f2, f3, f4, f5, f6 } = imports;
+  // const { f1, f2, f3, f4, f5, f6 } = imports;
+  const { f1, f2, f3, f4 } = imports;
 
   //
   // Testing arguments.
@@ -33,18 +34,18 @@ export function test_imports() {
     assertEq(a, 1337);
   }
 
-  {
-    const [a, b] = f5();
-    assertEq(a, 1);
-    assertEq(b, 2);
-  }
+  // {
+  //   const [a, b] = f5();
+  //   assertEq(a, 1);
+  //   assertEq(b, 2);
+  // }
 
-  {
-    const [a, b, c] = f6(100, 200, 300);
-    assertEq(a, 101);
-    assertEq(b, 201);
-    assertEq(c, 301);
-  }
+  // {
+  //   const [a, b, c] = f6(100, 200, 300);
+  //   assertEq(a, 101);
+  //   assertEq(b, 201);
+  //   assertEq(c, 301);
+  // }
 }
 
 //

@@ -97,12 +97,12 @@ impl Interface {
                 // that needs to be adapted.
                 let must_adapt_func = has_retptr
                     || f.params.iter().any(|(_, ty)| !inner.all_bits_valid(ty))
-                    || f.results.iter().any(|(_, ty)| !inner.all_bits_valid(ty));
+                    || !inner.all_bits_valid(&f.result);
 
                 if must_adapt_func {
                     if !needs_memory_funcs {
                         needs_memory_funcs = f.params.iter().any(|(_, ty)| has_list(&inner, ty))
-                            || f.results.iter().any(|(_, ty)| has_list(&inner, ty));
+                            || has_list(&inner, &f.result);
                     }
 
                     needs_memory |= has_retptr | needs_memory_funcs;

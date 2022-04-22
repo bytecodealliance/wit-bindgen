@@ -9,10 +9,10 @@ pub struct Host {
     pub f3_a: u32,
     pub f3_b: u32,
     pub f4_called: bool,
-    pub f5_called: bool,
-    pub f6_a: u32,
-    pub f6_b: u32,
-    pub f6_c: u32,
+    // pub f5_called: bool,
+    // pub f6_a: u32,
+    // pub f6_b: u32,
+    // pub f6_c: u32,
 }
 
 impl imports::Imports for Host {
@@ -34,17 +34,17 @@ impl imports::Imports for Host {
         1337
     }
 
-    fn f5(&mut self) -> (u32, u32) {
-        self.f5_called = true;
-        (1, 2)
-    }
+    // fn f5(&mut self) -> (u32, u32) {
+    //     self.f5_called = true;
+    //     (1, 2)
+    // }
 
-    fn f6(&mut self, a: u32, b: u32, c: u32) -> (u32, u32, u32) {
-        self.f6_a = a;
-        self.f6_b = b;
-        self.f6_c = c;
-        (a + 1, b + 1, c + 1)
-    }
+    // fn f6(&mut self, a: u32, b: u32, c: u32) -> (u32, u32, u32) {
+    //     self.f6_a = a;
+    //     self.f6_b = b;
+    //     self.f6_c = c;
+    //     (a + 1, b + 1, c + 1)
+    // }
 }
 
 wit_bindgen_wasmtime::import!("../../tests/runtime/smw_functions/exports.wit");
@@ -82,14 +82,14 @@ fn run(wasm: &str) -> anyhow::Result<()> {
         "the top-level JS imported and called `f4`",
     );
 
-    assert!(
-        store.data().imports.f5_called,
-        "the top-level JS imported and called `f5`"
-    );
+    // assert!(
+    //     store.data().imports.f5_called,
+    //     "the top-level JS imported and called `f5`"
+    // );
 
-    assert_eq!(store.data().imports.f6_a, 100);
-    assert_eq!(store.data().imports.f6_b, 200);
-    assert_eq!(store.data().imports.f6_c, 300);
+    // assert_eq!(store.data().imports.f6_a, 100);
+    // assert_eq!(store.data().imports.f6_b, 200);
+    // assert_eq!(store.data().imports.f6_c, 300);
 
     // Test that the export instance behaves as we expect it to.
 
@@ -110,18 +110,18 @@ fn run(wasm: &str) -> anyhow::Result<()> {
         .context("calling the `f4` export should succeed")?;
     assert_eq!(a, 1337);
 
-    let (a, b) = exports
-        .f5(&mut store)
-        .context("calling the `f5` export should succeed")?;
-    assert_eq!(a, 1);
-    assert_eq!(b, 2);
+    // let (a, b) = exports
+    //     .f5(&mut store)
+    //     .context("calling the `f5` export should succeed")?;
+    // assert_eq!(a, 1);
+    // assert_eq!(b, 2);
 
-    let (a, b, c) = exports
-        .f6(&mut store, 100, 200, 300)
-        .context("calling the `f6` export should succeed")?;
-    assert_eq!(a, 101);
-    assert_eq!(b, 201);
-    assert_eq!(c, 301);
+    // let (a, b, c) = exports
+    //     .f6(&mut store, 100, 200, 300)
+    //     .context("calling the `f6` export should succeed")?;
+    // assert_eq!(a, 101);
+    // assert_eq!(b, 201);
+    // assert_eq!(c, 301);
 
     Ok(())
 }

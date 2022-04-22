@@ -1,7 +1,7 @@
 a: function()
-b: function(p0: u8, p1: s8, p2: u16, p3: s16, p4: u32, p5: s32, p6: u64, p7: s64) -> (u8, s8, u16, s16, u32, s32, u64, s64)
-c: function(p0: float32, p1: float64) -> (float32, float64)
+b: function(p0: u8, p1: s8, p2: u16, p3: s16, p4: u32, p5: s32, p6: u64, p7: s64) -> tuple<u8, s8, u16, s16, u32, s32, u64, s64>
+c: function(p0: float32, p1: float64) -> tuple<float32, float64>
 d: function(p0: string) -> string
 e: function() -> string
-f: function() -> (u32, string, u64)
+f: function() -> tuple<u32, string, u64>
 g: function(p0: u32) -> u32

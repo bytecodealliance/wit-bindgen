@@ -877,7 +877,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 wit_bindgen_gen_rust::bitcast(casts, operands, results)
             }
 
-            Instruction::UnitLower => {}
+            Instruction::UnitLower => {
+                self.push_str(&format!("let () = {};\n", operands[0]));
+            }
             Instruction::UnitLift => {
                 results.push("()".to_string());
             }
@@ -1279,7 +1281,8 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::CallWasmAsyncExport { .. } => unreachable!(),
 
             Instruction::CallInterface { module, func } => {
-                self.let_results(func.results.len(), results);
+                self.push_str("let result = ");
+                results.push("result".to_string());
                 match &func.kind {
                     FunctionKind::Freestanding => {
                         self.push_str(&format!(

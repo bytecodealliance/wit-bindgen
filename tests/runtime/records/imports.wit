@@ -1,4 +1,4 @@
-multiple-results: function() -> (u8, u16)
+multiple-results: function() -> tuple<u8, u16>
 
 swap-tuple: function(a: tuple<u8, u32>) -> tuple<u32, u8>
 
@@ -35,7 +35,7 @@ flags flag64 {
   b56, b57, b58, b59, b60, b61, b62, b63,
 }
 
-roundtrip-flags3: function(a: flag8, b: flag16, c: flag32, d: flag64) -> (flag8, flag16, flag32, flag64)
+roundtrip-flags3: function(a: flag8, b: flag16, c: flag32, d: flag64) -> tuple<flag8, flag16, flag32, flag64>
 
 record r1 { a: u8, b: f1 }
 roundtrip-record1: function(a: r1) -> r1
