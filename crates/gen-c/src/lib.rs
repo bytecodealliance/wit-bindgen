@@ -493,7 +493,7 @@ impl C {
             }
 
             TypeDefKind::Variant(v) => {
-                self.src.c("switch (ptr->tag) {\n");
+                self.src.c("switch ((int32_t) ptr->tag) {\n");
                 for (i, case) in v.cases.iter().enumerate() {
                     let case_ty = match &case.ty {
                         Some(ty) => ty,
@@ -1072,10 +1072,16 @@ impl Generator for C {
         // same loop as above, after we switch the sets. We record, however,
         // all private types in a local set here to later determine if the type
         // needs to be in the C file or the H file.
+        //
+        // Note though that we don't re-print a type (and consider it private)
+        // if we already printed it above as part of the public set.
         let mut private_types = HashSet::new();
         self.public_anonymous_types = mem::take(&mut self.private_anonymous_types);
         while !self.public_anonymous_types.is_empty() {
             for ty in mem::take(&mut self.public_anonymous_types) {
+                if self.types.contains_key(&ty) {
+                    continue;
+                }
                 private_types.insert(ty);
                 self.print_anonymous_type(iface, ty);
             }
