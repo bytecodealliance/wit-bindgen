@@ -877,6 +877,32 @@ impl Bindgen for FunctionBindgen<'_> {
                 wit_bindgen_gen_rust::bitcast(casts, operands, results)
             }
 
+            Instruction::UnitLower => {}
+            Instruction::UnitLift => {
+                results.push("()".to_string());
+            }
+
+            Instruction::I32FromBool => {
+                results.push(format!("match {} {{ true => 1, false => 0 }}", operands[0]));
+            }
+            Instruction::BoolFromI32 => {
+                if unchecked {
+                    results.push(format!(
+                        "core::mem::transmute::<u8, bool>({} as u8)",
+                        operands[0],
+                    ));
+                } else {
+                    results.push(format!(
+                        "match {} {{
+                            0 => false,
+                            1 => true,
+                            _ => panic!(\"invalid bool discriminant\"),
+                        }}",
+                        operands[0],
+                    ));
+                }
+            }
+
             // handles in exports
             Instruction::I32FromOwnedHandle { .. } => {
                 results.push(format!(

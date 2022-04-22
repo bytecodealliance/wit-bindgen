@@ -302,15 +302,15 @@
         "fields": [
           [
             "a",
-            "type-51"
+            "bool"
           ],
           [
             "b",
-            "type-51"
+            "bool"
           ],
           [
             "c",
-            "type-51"
+            "bool"
           ]
         ]
       }
@@ -322,15 +322,15 @@
         "fields": [
           [
             "a",
-            "type-51"
+            "bool"
           ],
           [
             "b",
-            "type-51"
+            "bool"
           ],
           [
             "c",
-            "type-51"
+            "bool"
           ]
         ]
       }
@@ -406,7 +406,7 @@
           ],
           [
             "b",
-            "type-52"
+            "type-51"
           ]
         ]
       }
@@ -438,7 +438,7 @@
           ],
           [
             "1",
-            "type-52"
+            "type-51"
           ]
         ]
       }
@@ -454,7 +454,7 @@
           ],
           [
             "1",
-            "type-52"
+            "type-51"
           ]
         ]
       }
@@ -502,18 +502,7 @@
     {
       "idx": 44,
       "name": "t43",
-      "variant": {
-        "cases": [
-          [
-            "false",
-            null
-          ],
-          [
-            "true",
-            null
-          ]
-        ]
-      }
+      "primitive": "bool"
     },
     {
       "idx": 45,
@@ -523,7 +512,7 @@
     {
       "idx": 46,
       "name": "t45",
-      "list": "type-54"
+      "list": "type-53"
     },
     {
       "idx": 47,
@@ -550,21 +539,6 @@
       "variant": {
         "cases": [
           [
-            "false",
-            null
-          ],
-          [
-            "true",
-            null
-          ]
-        ]
-      }
-    },
-    {
-      "idx": 52,
-      "variant": {
-        "cases": [
-          [
             "none",
             null
           ],
@@ -576,12 +550,12 @@
       }
     },
     {
-      "idx": 53,
+      "idx": 52,
       "list": "type-33"
     },
     {
-      "idx": 54,
-      "list": "type-53"
+      "idx": 53,
+      "list": "type-52"
     }
   ]
 }

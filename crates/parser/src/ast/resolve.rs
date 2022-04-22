@@ -308,6 +308,8 @@ impl Resolver {
 
     fn resolve_type_def(&mut self, ty: &super::Type<'_>) -> Result<TypeDefKind> {
         Ok(match ty {
+            super::Type::Unit => TypeDefKind::Type(Type::Unit),
+            super::Type::Bool => TypeDefKind::Type(Type::Bool),
             super::Type::U8 => TypeDefKind::Type(Type::U8),
             super::Type::U16 => TypeDefKind::Type(Type::U16),
             super::Type::U32 => TypeDefKind::Type(Type::U32),

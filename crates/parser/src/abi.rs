@@ -248,6 +248,17 @@ def_instruction! {
         /// Converts a native wasm `f64` to an interface type `f64`.
         Float64FromF64 : [1] => [1],
 
+        /// Creates a `bool` from an `i32` input, trapping if the `i32` isn't
+        /// zero or one.
+        BoolFromI32 : [1] => [1],
+        /// Creates an `i32` from a `bool` input, must return 0 or 1.
+        I32FromBool : [1] => [1],
+
+        /// Creates a "unit" value from nothing.
+        UnitLift : [0] => [1],
+        /// Consumes a "unit" value and returns nothing.
+        UnitLower : [1] => [0],
+
         // Handles
 
         /// Converts a "borrowed" handle into a wasm `i32` value.
@@ -844,7 +855,10 @@ impl Interface {
 
     fn push_wasm(&self, variant: AbiVariant, ty: &Type, result: &mut Vec<WasmType>) {
         match ty {
-            Type::S8
+            Type::Unit => {}
+
+            Type::Bool
+            | Type::S8
             | Type::U8
             | Type::S16
             | Type::U16
@@ -1300,6 +1314,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         use Instruction::*;
 
         match *ty {
+            Type::Unit => self.emit(&UnitLower),
+            Type::Bool => self.emit(&I32FromBool),
             Type::S8 => self.emit(&I32FromS8),
             Type::U8 => self.emit(&I32FromU8),
             Type::S16 => self.emit(&I32FromS16),
@@ -1481,6 +1497,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         use Instruction::*;
 
         match *ty {
+            Type::Unit => self.emit(&UnitLift),
+            Type::Bool => self.emit(&BoolFromI32),
             Type::S8 => self.emit(&S8FromI32),
             Type::U8 => self.emit(&U8FromI32),
             Type::S16 => self.emit(&S16FromI32),
@@ -1625,9 +1643,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         use Instruction::*;
 
         match *ty {
+            Type::Unit => self.lower(ty),
             // Builtin types need different flavors of storage instructions
             // depending on the size of the value written.
-            Type::U8 | Type::S8 => self.lower_and_emit(ty, addr, &I32Store8 { offset }),
+            Type::Bool | Type::U8 | Type::S8 => {
+                self.lower_and_emit(ty, addr, &I32Store8 { offset })
+            }
             Type::U16 | Type::S16 => self.lower_and_emit(ty, addr, &I32Store16 { offset }),
             Type::U32 | Type::S32 | Type::Handle(_) | Type::Char => {
                 self.lower_and_emit(ty, addr, &I32Store { offset })
@@ -1739,6 +1760,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         use Instruction::*;
 
         match *ty {
+            Type::Unit => self.emit(&UnitLift),
+            Type::Bool => self.emit_and_lift(ty, addr, &I32Load8U { offset }),
             Type::U8 => self.emit_and_lift(ty, addr, &I32Load8U { offset }),
             Type::S8 => self.emit_and_lift(ty, addr, &I32Load8S { offset }),
             Type::U16 => self.emit_and_lift(ty, addr, &I32Load16U { offset }),

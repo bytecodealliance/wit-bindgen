@@ -144,6 +144,8 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         ty: &wit_parser::Type,
     ) -> proc_macro2::TokenStream {
         match *ty {
+            Type::Unit => quote::quote! { () },
+            Type::Bool => quote::quote! { bool },
             Type::U8 => quote::quote! { u8 },
             Type::S8 => quote::quote! { i8 },
             Type::U16 => quote::quote! { u16 },
@@ -187,9 +189,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 quote::quote! { (#(#fields,)*) }
             }
             TypeDefKind::Variant(v) => {
-                if v.is_bool() {
-                    quote::quote! { bool }
-                } else if let Some(ty) = v.as_option() {
+                if let Some(ty) = v.as_option() {
                     let ty = quote_ty(param, iface, ty);
                     quote::quote! { Option<#ty> }
                 } else if let Some((ok, err)) = v.as_expected() {

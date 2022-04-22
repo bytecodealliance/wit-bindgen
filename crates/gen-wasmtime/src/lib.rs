@@ -1469,6 +1469,26 @@ impl Bindgen for FunctionBindgen<'_> {
                 wit_bindgen_gen_rust::bitcast(casts, operands, results)
             }
 
+            Instruction::UnitLower => {}
+            Instruction::UnitLift => {
+                results.push("()".to_string());
+            }
+
+            Instruction::I32FromBool => {
+                results.push(format!("match {} {{ true => 1, false => 0 }}", operands[0]));
+            }
+            Instruction::BoolFromI32 => {
+                self.gen.needs_invalid_variant = true;
+                results.push(format!(
+                    "match {} {{
+                        0 => false,
+                        1 => true,
+                        _ => return Err(invalid_variant(\"bool\")),
+                    }}",
+                    operands[0],
+                ));
+            }
+
             Instruction::I32FromOwnedHandle { ty } => {
                 let name = &iface.resources[*ty].name;
                 results.push(format!(
@@ -1594,9 +1614,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
                 let variant_name = name.map(|s| s.to_camel_case());
                 let variant_name = variant_name.as_deref().unwrap_or_else(|| {
-                    if variant.is_bool() {
-                        "bool"
-                    } else if variant.as_expected().is_some() {
+                    if variant.as_expected().is_some() {
                         "Result"
                     } else if variant.as_option().is_some() {
                         "Option"

@@ -197,6 +197,8 @@ pub trait RustGenerator {
                 self.push_str(suffix);
             }
 
+            Type::Unit => self.push_str("()"),
+            Type::Bool => self.push_str("bool"),
             Type::U8 => self.push_str("u8"),
             Type::U16 => self.push_str("u16"),
             Type::U32 => self.push_str("u32"),
@@ -252,9 +254,8 @@ pub trait RustGenerator {
         match &ty.kind {
             TypeDefKind::List(t) => self.print_list(iface, t, mode),
 
-            // Variants can be printed natively if they're `Option`,
-            // `Result` , or `bool`, otherwise they must be named for now.
-            TypeDefKind::Variant(v) if v.is_bool() => self.push_str("bool"),
+            // Variants can be printed natively if they're `Option` or
+            // `Result`, otherwise they must be named for now.
             TypeDefKind::Variant(v) => match v.as_expected() {
                 Some((ok, err)) => {
                     self.push_str("Result<");
@@ -463,10 +464,7 @@ pub trait RustGenerator {
         for (name, mode) in self.modes_of(iface, id) {
             self.rustdoc(docs);
             let lt = self.lifetime_for(&info, mode);
-            if variant.is_bool() {
-                self.push_str(&format!("pub type {} = bool;\n", name));
-                continue;
-            } else if let Some(ty) = variant.as_option() {
+            if let Some(ty) = variant.as_option() {
                 self.push_str(&format!("pub type {}", name));
                 self.print_generics(&info, lt, true);
                 self.push_str("= Option<");
@@ -835,9 +833,7 @@ pub trait RustFunctionGenerator {
         self.push_str(operand);
         self.push_str("{\n");
         for (case, block) in ty.cases.iter().zip(blocks) {
-            if ty.is_bool() {
-                self.push_str(case.name.as_str());
-            } else if ty.as_expected().is_some() {
+            if ty.as_expected().is_some() {
                 self.push_str(&case.name.to_camel_case());
                 self.push_str("(");
                 self.push_str(if case.ty.is_some() { "e" } else { "()" });
@@ -874,9 +870,7 @@ pub trait RustFunctionGenerator {
         block: &str,
         result: &mut String,
     ) {
-        if ty.is_bool() {
-            result.push_str(case.name.as_str());
-        } else if ty.as_expected().is_some() {
+        if ty.as_expected().is_some() {
             result.push_str(&case.name.to_camel_case());
             result.push_str("(");
             result.push_str(block);

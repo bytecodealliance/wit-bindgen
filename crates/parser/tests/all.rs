@@ -282,6 +282,8 @@ fn to_json(i: &Interface) -> String {
     fn translate_type(ty: &wit_parser::Type) -> String {
         use wit_parser::Type;
         match ty {
+            Type::Unit => format!("unit"),
+            Type::Bool => format!("bool"),
             Type::U8 => format!("u8"),
             Type::U16 => format!("u16"),
             Type::U32 => format!("u32"),
