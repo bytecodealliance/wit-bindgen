@@ -91,7 +91,7 @@ impl Interface {
                 let import_type = Self::sig_to_type(&import_signature);
                 let export_type = Self::sig_to_type(&export_signature);
 
-                let has_retptr = import_signature.retptr.is_some();
+                let has_retptr = import_signature.retptr;
 
                 // A function must be adapted if it has a return pointer or any parameter or result
                 // that needs to be adapted.

@@ -20,7 +20,8 @@ pub struct RustWasm {
     traits: BTreeMap<String, Trait>,
     in_trait: bool,
     trait_name: String,
-    i64_return_pointer_area_size: usize,
+    return_pointer_area_size: usize,
+    return_pointer_area_align: usize,
     sizes: SizeAlign,
 }
 
@@ -157,14 +158,19 @@ impl Generator for RustWasm {
                 .push_str(&format!("use {} as wit_bindgen_rust;\n", alias));
         }
 
+        self.sizes.fill(iface);
+
         for func in iface.functions.iter() {
             let sig = iface.wasm_signature(variant, func);
-            if let Some(results) = sig.retptr {
-                self.i64_return_pointer_area_size =
-                    self.i64_return_pointer_area_size.max(results.len());
+            if sig.retptr {
+                self.return_pointer_area_size = self
+                    .return_pointer_area_size
+                    .max(self.sizes.size(&func.result));
+                self.return_pointer_area_align = self
+                    .return_pointer_area_align
+                    .max(self.sizes.align(&func.result));
             }
         }
-        self.sizes.fill(iface);
     }
 
     fn type_record(
@@ -605,10 +611,15 @@ impl Generator for RustWasm {
             }
         }
 
-        if self.i64_return_pointer_area_size > 0 {
+        if self.return_pointer_area_align > 0 {
             src.push_str(&format!(
-                "static mut RET_AREA: [i64; {0}] = [0; {0}];\n",
-                self.i64_return_pointer_area_size,
+                "
+                    #[repr(align({align}))]
+                    struct RetArea([u8; {size}]);
+                    static mut RET_AREA: RetArea = RetArea([0; {size}]);
+                ",
+                align = self.return_pointer_area_align,
+                size = self.return_pointer_area_size,
             ));
         }
 
@@ -780,10 +791,12 @@ impl Bindgen for FunctionBindgen<'_> {
         }
     }
 
-    fn i64_return_pointer_area(&mut self, amt: usize) -> String {
-        assert!(amt <= self.gen.i64_return_pointer_area_size);
+    fn return_pointer(&mut self, _iface: &Interface, _ty: &Type) -> String {
         let tmp = self.tmp();
-        self.push_str(&format!("let ptr{} = RET_AREA.as_mut_ptr() as i32;\n", tmp));
+        self.push_str(&format!(
+            "let ptr{} = RET_AREA.0.as_mut_ptr() as i32;\n",
+            tmp
+        ));
         format!("ptr{}", tmp)
     }
 
