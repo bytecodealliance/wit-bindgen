@@ -1,3 +1,4 @@
+use crate::sizealign::align_to;
 use crate::{
     Function, Int, Interface, Record, RecordKind, ResourceId, Type, TypeDefKind, TypeId, Variant,
 };
@@ -8,8 +9,18 @@ use std::mem;
 pub struct WasmSignature {
     /// The WebAssembly parameters of this function.
     pub params: Vec<WasmType>,
+
     /// The WebAssembly results of this function.
     pub results: Vec<WasmType>,
+
+    /// Whether or not this signature is passing all of its parameters
+    /// indirectly through a pointer within `params`.
+    ///
+    /// Note that `params` still reflects the true wasm paramters of this
+    /// function, this is auxiliary information for code generators if
+    /// necessary.
+    pub indirect_params: bool,
+
     /// Whether or not this signature is using a return pointer to store the
     /// result of the function, which is reflected either in `params` or
     /// `results` depending on the context this function is used (e.g. an import
@@ -654,6 +665,19 @@ def_instruction! {
             params: usize,
         } : [*params + 2] => [0],
 
+        /// TODO
+        Malloc {
+            realloc: &'static str,
+            size: usize,
+            align: usize,
+        } : [0] => [1],
+
+        /// TODO
+        Free {
+            free: &'static str,
+            size: usize,
+            align: usize,
+        } : [1] => [0],
     }
 }
 
@@ -748,7 +772,7 @@ pub trait Bindgen {
     );
 
     /// TODO
-    fn return_pointer(&mut self, iface: &Interface, ty: &Type) -> Self::Operand;
+    fn return_pointer(&mut self, size: usize, align: usize) -> Self::Operand;
 
     /// Enters a new block of code to generate code for.
     ///
@@ -791,12 +815,22 @@ impl Interface {
     /// The first entry returned is the list of parameters and the second entry
     /// is the list of results for the wasm function signature.
     pub fn wasm_signature(&self, variant: AbiVariant, func: &Function) -> WasmSignature {
+        const MAX_FLAT_PARAMS: usize = 16;
+        const MAX_FLAT_RESULTS: usize = 1;
+
         let mut params = Vec::new();
-        let mut results = Vec::new();
+        let mut indirect_params = false;
         for (_, param) in func.params.iter() {
             self.push_wasm(variant, param, &mut params);
         }
 
+        if params.len() > MAX_FLAT_PARAMS {
+            params.truncate(0);
+            params.push(WasmType::I32);
+            indirect_params = true;
+        }
+
+        let mut results = Vec::new();
         self.push_wasm(variant, &func.result, &mut results);
 
         let mut retptr = false;
@@ -828,7 +862,7 @@ impl Interface {
             // would have multiple results then instead truncate it. Imports take a
             // return pointer to write into and exports return a pointer they wrote
             // into.
-            if results.len() > 1 {
+            if results.len() > MAX_FLAT_RESULTS {
                 retptr = true;
                 results.truncate(0);
                 match variant {
@@ -844,6 +878,7 @@ impl Interface {
 
         WasmSignature {
             params,
+            indirect_params,
             results,
             retptr,
         }
@@ -997,12 +1032,47 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
         match self.lift_lower {
             LiftLower::LowerArgsLiftResults => {
-                // Push all parameters for this function onto the stack, and
-                // then batch-lower everything all at once.
-                for nth in 0..func.params.len() {
-                    self.emit(&Instruction::GetArg { nth });
+                if !sig.indirect_params {
+                    // If the parameters for this function aren't indirect
+                    // (there aren't too many) then we simply do a normal lower
+                    // operation for them all.
+                    for (nth, (_, ty)) in func.params.iter().enumerate() {
+                        self.emit(&Instruction::GetArg { nth });
+                        self.lower(ty);
+                    }
+                } else {
+                    // ... otherwise if parameters are indirect space is
+                    // allocated from them and each argument is lowered
+                    // individually into memory.
+                    let (size, align) = self
+                        .bindgen
+                        .sizes()
+                        .record(func.params.iter().map(|t| &t.1));
+                    let ptr = match self.variant {
+                        // When a wasm module calls an import it will provide
+                        // static space that isn't dynamically allocated.
+                        AbiVariant::GuestImport => self.bindgen.return_pointer(size, align),
+                        // When calling a wasm module from the outside, though,
+                        // malloc needs to be called.
+                        AbiVariant::GuestExport => {
+                            self.emit(&Instruction::Malloc {
+                                realloc: "canonical_abi_realloc",
+                                size,
+                                align,
+                            });
+                            self.stack.pop().unwrap()
+                        }
+                    };
+                    let mut offset = 0usize;
+                    for (nth, (_, ty)) in func.params.iter().enumerate() {
+                        self.emit(&Instruction::GetArg { nth });
+                        offset = align_to(offset, self.bindgen.sizes().align(ty));
+                        self.write_to_memory(ty, ptr.clone(), offset as i32);
+                        offset += self.bindgen.sizes().size(ty);
+                    }
+
+                    self.stack.push(ptr);
                 }
-                self.lower_all(&func.params);
 
                 if func.is_async {
                     // We emit custom instructions for async calls since they
@@ -1040,7 +1110,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     // If necessary we may need to prepare a return pointer for
                     // this ABI.
                     if self.variant == AbiVariant::GuestImport && sig.retptr {
-                        let ptr = self.bindgen.return_pointer(self.iface, &func.result);
+                        let size = self.bindgen.sizes().size(&func.result);
+                        let align = self.bindgen.sizes().align(&func.result);
+                        let ptr = self.bindgen.return_pointer(size, align);
                         self.return_pointer = Some(ptr.clone());
                         self.stack.push(ptr);
                     }
@@ -1084,35 +1156,57 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 self.emit(&Instruction::Return { func, amt: 1 });
             }
             LiftLower::LiftArgsLowerResults => {
-                // Use `GetArg` to push all relevant arguments onto the stack.
-                // Note that we can't use the signature of this function
-                // directly due to various conversions and return pointers, so
-                // we need to somewhat manually calculate all the arguments
-                // which are converted as interface types arguments below.
-                let nargs = {
-                    let skip_cnt = if func.is_async {
-                        match self.variant {
-                            AbiVariant::GuestExport => 1,
-                            AbiVariant::GuestImport => 2,
+                if !sig.indirect_params {
+                    // If parameters are not passed indirectly then we lift each
+                    // argument in succession from the component wasm types that
+                    // make-up the type.
+                    let mut offset = 0;
+                    let mut temp = Vec::new();
+                    for (_, ty) in func.params.iter() {
+                        temp.truncate(0);
+                        self.iface.push_wasm(self.variant, ty, &mut temp);
+                        for _ in 0..temp.len() {
+                            self.emit(&Instruction::GetArg { nth: offset });
+                            offset += 1;
                         }
-                    } else {
-                        (sig.retptr && self.variant == AbiVariant::GuestImport) as usize
-                    };
-                    sig.params.len() - skip_cnt
-                };
-                for nth in 0..nargs {
-                    self.emit(&Instruction::GetArg { nth });
+                        self.lift(ty);
+                    }
+                } else {
+                    // ... otherwise argument is read in succession from memory
+                    // where the pointer to the arguments is the first argument
+                    // to the function.
+                    let mut offset = 0usize;
+                    self.emit(&Instruction::GetArg { nth: 0 });
+                    let ptr = self.stack.pop().unwrap();
+                    for (_, ty) in func.params.iter() {
+                        offset = align_to(offset, self.bindgen.sizes().align(ty));
+                        self.read_from_memory(ty, ptr.clone(), offset as i32);
+                        offset += self.bindgen.sizes().size(ty);
+                    }
                 }
-
-                // Once everything is on the stack we can lift all arguments
-                // one-by-one into their interface-types equivalent.
-                self.lift_all(&func.params);
 
                 // ... and that allows us to call the interface types function
                 self.emit(&Instruction::CallInterface {
                     module: &self.iface.name,
                     func,
                 });
+
+                // This was dynamically allocated by the caller so after
+                // it's been read by the guest we need to deallocate it.
+                if let AbiVariant::GuestExport = self.variant {
+                    if sig.indirect_params {
+                        let (size, align) = self
+                            .bindgen
+                            .sizes()
+                            .record(func.params.iter().map(|t| &t.1));
+                        self.emit(&Instruction::GetArg { nth: 0 });
+                        self.emit(&Instruction::Free {
+                            free: "canonical_abi_free",
+                            size,
+                            align,
+                        });
+                    }
+                }
 
                 if func.is_async {
                     match self.variant {
@@ -1146,7 +1240,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // invoke the completion intrinsics with where the
                         // result is stored in linear memory.
                         AbiVariant::GuestExport => {
-                            let ptr = self.bindgen.return_pointer(self.iface, &func.result);
+                            let size = self.bindgen.sizes().size(&func.result);
+                            let align = self.bindgen.sizes().align(&func.result);
+                            let ptr = self.bindgen.return_pointer(size, align);
                             self.write_to_memory(&func.result, ptr.clone(), 0);
 
                             // Get the caller's context index.
@@ -1187,7 +1283,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             // (statically) and then write the result into that
                             // memory, returning the pointer at the end.
                             AbiVariant::GuestExport => {
-                                let ptr = self.bindgen.return_pointer(self.iface, &func.result);
+                                let size = self.bindgen.sizes().size(&func.result);
+                                let align = self.bindgen.sizes().align(&func.result);
+                                let ptr = self.bindgen.return_pointer(size, align);
                                 self.write_to_memory(&func.result, ptr.clone(), 0);
                                 self.stack.push(ptr);
                             }
@@ -1207,47 +1305,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             "stack has {} items remaining",
             self.stack.len()
         );
-    }
-
-    /// Assumes that the wasm values to create `tys` are all located on the
-    /// stack.
-    ///
-    /// Inserts instructions necesesary to lift those types into their
-    /// interface types equivalent.
-    fn lift_all(&mut self, tys: &[(String, Type)]) {
-        let mut temp = Vec::new();
-        let operands = tys
-            .iter()
-            .rev()
-            .map(|(_, ty)| {
-                let ntys = {
-                    temp.truncate(0);
-                    self.iface.push_wasm(self.variant, ty, &mut temp);
-                    temp.len()
-                };
-                self.stack
-                    .drain(self.stack.len() - ntys..)
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-        for (operands, (_, ty)) in operands.into_iter().rev().zip(tys) {
-            self.stack.extend(operands);
-            self.lift(ty);
-        }
-    }
-
-    /// Assumes that the value for `tys` is already on the stack, and then
-    /// converts all of those values into their wasm types by lowering each
-    /// argument in-order.
-    fn lower_all(&mut self, tys: &[(String, Type)]) {
-        let operands = self
-            .stack
-            .drain(self.stack.len() - tys.len()..)
-            .collect::<Vec<_>>();
-        for (operand, (_, ty)) in operands.into_iter().zip(tys) {
-            self.stack.push(operand);
-            self.lower(ty);
-        }
     }
 
     fn emit(&mut self, inst: &Instruction<'_>) {

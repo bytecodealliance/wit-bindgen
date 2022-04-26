@@ -1374,7 +1374,7 @@ impl Bindgen for FunctionBindgen<'_> {
         self.caller_memory_available = false;
     }
 
-    fn return_pointer(&mut self, _iface: &Interface, _ty: &Type) -> String {
+    fn return_pointer(&mut self, _size: usize, _align: usize) -> String {
         unimplemented!()
     }
 
@@ -2009,6 +2009,22 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::I32Store16 { offset } => {
                 self.store(*offset, "as_i32", " as u16", operands)
             }
+
+            Instruction::Malloc {
+                realloc,
+                size,
+                align,
+            } => {
+                self.needs_functions
+                    .insert(realloc.to_string(), NeededFunction::Realloc);
+                let tmp = self.tmp();
+                let ptr = format!("ptr{}", tmp);
+                self.push_str(&format!("let {} = ", ptr));
+                self.call_intrinsic(realloc, format!("(0, 0, {}, {})", align, size));
+                results.push(ptr);
+            }
+
+            Instruction::Free { .. } => unimplemented!(),
         }
     }
 }

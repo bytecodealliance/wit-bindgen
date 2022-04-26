@@ -1158,7 +1158,7 @@ impl Bindgen for FunctionBindgen<'_> {
         self.blocks.push((src.into(), mem::take(operands)));
     }
 
-    fn return_pointer(&mut self, _iface: &Interface, _ty: &Type) -> String {
+    fn return_pointer(&mut self, _size: usize, _align: usize) -> String {
         unimplemented!()
     }
 
@@ -1943,6 +1943,21 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::F64Store { offset } => self.store("setFloat64", *offset, operands),
             Instruction::I32Store8 { offset } => self.store("setInt8", *offset, operands),
             Instruction::I32Store16 { offset } => self.store("setInt16", *offset, operands),
+
+            Instruction::Malloc {
+                realloc,
+                size,
+                align,
+            } => {
+                self.needs_realloc = Some(realloc.to_string());
+                let tmp = self.tmp();
+                let ptr = format!("ptr{}", tmp);
+                self.src.js(&format!(
+                    "const {} = realloc(0, 0, {}, {});\n",
+                    ptr, align, size
+                ));
+                results.push(ptr);
+            }
 
             i => unimplemented!("{:?}", i),
         }

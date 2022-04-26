@@ -48,7 +48,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -56,7 +56,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -64,7 +64,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -72,7 +72,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -80,7 +80,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -88,7 +88,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -96,7 +96,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -104,7 +104,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -112,7 +112,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -120,7 +120,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             }
         ),
         (
@@ -128,7 +128,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -136,7 +136,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -144,7 +144,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -152,7 +152,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -160,7 +160,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -168,7 +168,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -176,7 +176,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -184,7 +184,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -192,7 +192,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -200,7 +200,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -208,7 +208,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -216,7 +216,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -224,7 +224,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
         (
@@ -232,7 +232,7 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: false,
+                retptr: false,indirect_params:false,
             },
         ),
     ];
@@ -585,6 +585,7 @@ impl<'a> SpiderMonkeyWasm<'a> {
             params: vec![],
             results: vec![],
             retptr: false,
+            indirect_params: false,
         });
         funcs.function(ty_index);
 
@@ -908,30 +909,6 @@ impl Generator for SpiderMonkeyWasm<'_> {
             Some(u32::try_from(imports.iter().map(|i| i.functions.len()).sum::<usize>()).unwrap());
         self.num_export_functions =
             Some(u32::try_from(exports.iter().map(|i| i.functions.len()).sum::<usize>()).unwrap());
-
-        // Figure out what the maximum return pointer area we will need is.
-        for (iface, variant) in imports
-            .iter()
-            .zip(std::iter::repeat(AbiVariant::GuestImport))
-            .chain(
-                exports
-                    .iter()
-                    .zip(std::iter::repeat(AbiVariant::GuestExport)),
-            )
-        {
-            self.sizes.fill(iface);
-            for func in iface.functions.iter() {
-                let sig = iface.wasm_signature(variant, func);
-                if sig.retptr {
-                    self.return_pointer_area_size = self
-                        .return_pointer_area_size
-                        .max(self.sizes.size(&func.result));
-                    self.return_pointer_area_align = self
-                        .return_pointer_area_align
-                        .max(self.sizes.align(&func.result));
-                }
-            }
-        }
     }
 
     fn preprocess_one(&mut self, iface: &Interface, _dir: Direction) {
@@ -1101,6 +1078,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
                 WasmType::I32,
             ],
             retptr: false,
+            indirect_params: false,
         });
         for f in &self.import_glue_fns {
             funcs.function(js_native_type_index);
@@ -2118,10 +2096,15 @@ impl abi::Bindgen for Bindgen<'_, '_> {
 
             abi::Instruction::ReturnAsyncExport { .. } => todo!(),
             abi::Instruction::ReturnAsyncImport { .. } => todo!(),
+
+            abi::Instruction::Malloc { .. } => todo!(),
+            abi::Instruction::Free { .. } => todo!(),
         }
     }
 
-    fn return_pointer(&mut self, _iface: &Interface, _ty: &Type) -> Self::Operand {
+    fn return_pointer(&mut self, size: usize, align: usize) -> Self::Operand {
+        self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
+        self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
         let local = self.new_local(wasm_encoder::ValType::I32);
 
         // []
@@ -2142,7 +2125,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
     }
 
     fn sizes(&self) -> &SizeAlign {
-        todo!()
+        &self.gen.sizes
     }
 
     fn is_list_canonical(&self, _iface: &Interface, _ty: &Type) -> bool {

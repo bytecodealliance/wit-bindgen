@@ -656,18 +656,6 @@ impl Generator for C {
         let variant = Self::abi_variant(dir);
         self.sizes.fill(iface);
         self.in_import = variant == AbiVariant::GuestImport;
-
-        for func in iface.functions.iter() {
-            let sig = iface.wasm_signature(variant, func);
-            if sig.retptr {
-                self.return_pointer_area_size = self
-                    .return_pointer_area_size
-                    .max(self.sizes.size(&func.result));
-                self.return_pointer_area_align = self
-                    .return_pointer_area_align
-                    .max(self.sizes.align(&func.result));
-            }
-        }
     }
 
     fn type_record(
@@ -1262,7 +1250,9 @@ impl Bindgen for FunctionBindgen<'_> {
         self.blocks.push((src.into(), mem::take(operands)));
     }
 
-    fn return_pointer(&mut self, _iface: &Interface, _ty: &Type) -> String {
+    fn return_pointer(&mut self, size: usize, align: usize) -> String {
+        self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
+        self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
         let ptr = self.locals.tmp("ptr");
         self.src
             .push_str(&format!("int32_t {} = (int32_t) &RET_AREA;\n", ptr));
@@ -1782,6 +1772,11 @@ impl Bindgen for FunctionBindgen<'_> {
             }
             Instruction::I32Load16S { offset } => {
                 self.load_ext("int16_t", *offset, operands, results)
+            }
+
+            Instruction::Free { .. } => {
+                self.src
+                    .push_str(&format!("free((void*) ({}));\n", operands[0]));
             }
 
             i => unimplemented!("{:?}", i),
