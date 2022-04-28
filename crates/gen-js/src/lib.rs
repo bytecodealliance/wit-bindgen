@@ -1158,7 +1158,7 @@ impl Bindgen for FunctionBindgen<'_> {
         self.blocks.push((src.into(), mem::take(operands)));
     }
 
-    fn i64_return_pointer_area(&mut self, _amt: usize) -> String {
+    fn return_pointer(&mut self, _iface: &Interface, _ty: &Type) -> String {
         unimplemented!()
     }
 

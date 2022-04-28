@@ -96,8 +96,6 @@ enum ValueRef {
     ElementOffset(u32),
     /// A reference to a 32-bit value returned from a function stored in a local (single-value return).
     Return(u32),
-    /// A reference to a 32-bit value via an index into the retptr array (multi-value return).
-    RetPtr(u32),
 }
 
 impl ValueRef {
@@ -105,7 +103,6 @@ impl ValueRef {
         match self {
             ValueRef::Local(_) | ValueRef::Return(_) => None,
             ValueRef::ElementOffset(o) => Some(*o),
-            ValueRef::RetPtr(i) => Some(*i * 8),
         }
     }
 
@@ -120,7 +117,7 @@ impl ValueRef {
                 function.instruction(&Instruction::LocalGet(*i));
                 return;
             }
-            ValueRef::RetPtr(_) | ValueRef::ElementOffset(_) => {}
+            ValueRef::ElementOffset(_) => {}
         }
 
         let base = base.expect("cannot load via an element offset without a base");
@@ -187,7 +184,6 @@ impl Operand<'_> {
 enum PushMode {
     Params,
     Return,
-    RetPtr,
 }
 
 impl PushMode {
@@ -195,7 +191,6 @@ impl PushMode {
         match self {
             Self::Params => ValueRef::Local(val),
             Self::Return => ValueRef::Return(val),
-            Self::RetPtr => ValueRef::RetPtr(val),
         }
     }
 }
@@ -211,6 +206,7 @@ pub(crate) struct CallAdapter<'a> {
     free_index: Option<u32>,
     parent_realloc_index: Option<u32>,
     resource_functions: &'a HashMap<&'a str, (u32, u32)>,
+    result_size: usize,
 }
 
 impl<'a> CallAdapter<'a> {
@@ -244,18 +240,17 @@ impl<'a> CallAdapter<'a> {
             );
         }
 
-        let results = if let Some(retptr) = &signature.retptr {
+        let results = if signature.retptr {
             // For the callee's retptr
             locals_count += 1;
 
-            let mut iter = 0..retptr.len() as u32;
             let mut results = Vec::new();
-            Self::push_operands(
+            Self::push_element_operands(
                 inner,
                 sizes,
                 &func.result,
-                &mut iter,
-                PushMode::RetPtr,
+                0,
+                PushMode::Return,
                 &mut locals_count,
                 &mut results,
             );
@@ -295,6 +290,7 @@ impl<'a> CallAdapter<'a> {
             free_index,
             parent_realloc_index,
             resource_functions,
+            result_size: sizes.size(&func.result),
         }
     }
 
@@ -320,7 +316,7 @@ impl<'a> CallAdapter<'a> {
     }
 
     fn emit_call(&self, function: &mut wasm_encoder::Function, locals: &Locals) {
-        let params = if self.signature.retptr.is_some() {
+        let params = if self.signature.retptr {
             self.signature.params.len() as u32 - 1
         } else {
             self.signature.params.len() as u32
@@ -334,37 +330,19 @@ impl<'a> CallAdapter<'a> {
     }
 
     fn copy_results(&self, function: &mut wasm_encoder::Function, locals: &mut Locals) {
-        if self.signature.retptr.is_some() {
+        if self.signature.retptr {
             let src_retptr = locals.allocate();
             let dst_retptr = self.signature.params.len() as u32 - 1;
-
-            // Store the retptr returned from the call
             function.instruction(&Instruction::LocalSet(src_retptr));
 
-            // Copy each 8 byte value in the return space
-            for i in 0..self
-                .signature
-                .retptr
-                .as_ref()
-                .expect("function must have a retptr")
-                .len()
-            {
+            if self.result_size > 0 {
                 function.instruction(&Instruction::LocalGet(dst_retptr));
                 function.instruction(&Instruction::LocalGet(src_retptr));
-                function.instruction(&Instruction::I64Load(MemArg {
-                    offset: (i * 8) as u64,
-                    align: 3,
-                    memory_index: ADAPTED_MEMORY_INDEX,
-                }));
-                function.instruction(&Instruction::I64Store(MemArg {
-                    offset: (i * 8) as u64,
-                    align: 3,
-                    memory_index: PARENT_MEMORY_INDEX,
-                }));
-            }
-
-            if self.results.is_empty() {
-                return;
+                function.instruction(&Instruction::I32Const(self.result_size as i32));
+                function.instruction(&Instruction::MemoryCopy {
+                    src: ADAPTED_MEMORY_INDEX,
+                    dst: PARENT_MEMORY_INDEX,
+                });
             }
 
             let src_base = ElementBase {
@@ -452,7 +430,6 @@ impl<'a> CallAdapter<'a> {
                     // Every list copied needs a destination local (and a source for retptr)
                     *locals_count += match mode {
                         PushMode::Params => 1,
-                        PushMode::RetPtr => 2,
                         PushMode::Return => unreachable!(),
                     };
 
@@ -549,7 +526,6 @@ impl<'a> CallAdapter<'a> {
                 // retptr)
                 *locals_count += match mode {
                     PushMode::Params => 1,
-                    PushMode::RetPtr => 2,
                     PushMode::Return => unreachable!(),
                 };
 
@@ -567,7 +543,7 @@ impl<'a> CallAdapter<'a> {
                 // Params need to be cloned, so add a local
                 *locals_count += match mode {
                     PushMode::Params => 1,
-                    PushMode::RetPtr | PushMode::Return => 0,
+                    PushMode::Return => 0,
                 };
 
                 operands.push(Operand::Handle {
@@ -701,7 +677,7 @@ impl<'a> CallAdapter<'a> {
                 // Params need to be cloned, so add a local
                 *locals_count += match mode {
                     PushMode::Params => 1,
-                    PushMode::RetPtr | PushMode::Return => 0,
+                    PushMode::Return => 0,
                 };
 
                 operands.push(Operand::Handle {
@@ -845,7 +821,7 @@ impl<'a> CallAdapter<'a> {
 
                         let dst = match addr {
                             ValueRef::Local(i) | ValueRef::Return(i) => locals.map(*i),
-                            ValueRef::ElementOffset(_) | ValueRef::RetPtr(_) => locals.allocate(),
+                            ValueRef::ElementOffset(_) => locals.allocate(),
                         };
 
                         function.instruction(&Instruction::LocalSet(dst));
@@ -965,7 +941,7 @@ impl<'a> CallAdapter<'a> {
 
         let (src, dst) = match addr {
             ValueRef::Local(i) => (i, locals.map(i)),
-            ValueRef::ElementOffset(_) | ValueRef::RetPtr(_) => {
+            ValueRef::ElementOffset(_) => {
                 let src = locals.allocate();
                 addr.emit_load(function, src_base, LoadType::I32);
                 function.instruction(&Instruction::LocalSet(src));

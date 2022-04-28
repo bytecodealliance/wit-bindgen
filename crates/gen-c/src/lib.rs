@@ -12,7 +12,8 @@ pub struct C {
     in_import: bool,
     opts: Opts,
     funcs: HashMap<String, Vec<Func>>,
-    i64_return_pointer_area_size: usize,
+    return_pointer_area_size: usize,
+    return_pointer_area_align: usize,
     sizes: SizeAlign,
     names: Ns,
 
@@ -658,9 +659,13 @@ impl Generator for C {
 
         for func in iface.functions.iter() {
             let sig = iface.wasm_signature(variant, func);
-            if let Some(results) = sig.retptr {
-                self.i64_return_pointer_area_size =
-                    self.i64_return_pointer_area_size.max(results.len());
+            if sig.retptr {
+                self.return_pointer_area_size = self
+                    .return_pointer_area_size
+                    .max(self.sizes.size(&func.result));
+                self.return_pointer_area_align = self
+                    .return_pointer_area_align
+                    .max(self.sizes.align(&func.result));
             }
         }
     }
@@ -1133,10 +1138,13 @@ impl Generator for C {
             }
         }
 
-        if self.i64_return_pointer_area_size > 0 {
+        if self.return_pointer_area_size > 0 {
             self.src.c(&format!(
-                "static int64_t RET_AREA[{}];\n",
-                self.i64_return_pointer_area_size,
+                "
+                    __attribute__((aligned({})))
+                    static uint8_t RET_AREA[{}];
+                ",
+                self.return_pointer_area_align, self.return_pointer_area_size,
             ));
         }
 
@@ -1254,8 +1262,7 @@ impl Bindgen for FunctionBindgen<'_> {
         self.blocks.push((src.into(), mem::take(operands)));
     }
 
-    fn i64_return_pointer_area(&mut self, amt: usize) -> String {
-        assert!(amt <= self.gen.i64_return_pointer_area_size);
+    fn return_pointer(&mut self, _iface: &Interface, _ty: &Type) -> String {
         let ptr = self.locals.tmp("ptr");
         self.src
             .push_str(&format!("int32_t {} = (int32_t) &RET_AREA;\n", ptr));
@@ -1761,6 +1768,8 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::I64Store { offset } => self.store("int64_t", *offset, operands),
             Instruction::F32Store { offset } => self.store("float", *offset, operands),
             Instruction::F64Store { offset } => self.store("double", *offset, operands),
+            Instruction::I32Store8 { offset } => self.store("int8_t", *offset, operands),
+            Instruction::I32Store16 { offset } => self.store("int16_t", *offset, operands),
 
             Instruction::I32Load8U { offset } => {
                 self.load_ext("uint8_t", *offset, operands, results)
@@ -1773,11 +1782,6 @@ impl Bindgen for FunctionBindgen<'_> {
             }
             Instruction::I32Load16S { offset } => {
                 self.load_ext("int16_t", *offset, operands, results)
-            }
-
-            Instruction::I32Store8 { offset } | Instruction::I32Store16 { offset } => {
-                drop(offset);
-                self.src.push_str("INVALIDSTORE");
             }
 
             i => unimplemented!("{:?}", i),

@@ -10,9 +10,11 @@ pub struct WasmSignature {
     pub params: Vec<WasmType>,
     /// The WebAssembly results of this function.
     pub results: Vec<WasmType>,
-    /// The raw types, if needed, returned through return pointer located in
-    /// `params`.
-    pub retptr: Option<Vec<WasmType>>,
+    /// Whether or not this signature is using a return pointer to store the
+    /// result of the function, which is reflected either in `params` or
+    /// `results` depending on the context this function is used (e.g. an import
+    /// or an export).
+    pub retptr: bool,
 }
 
 /// Enumerates wasm types used by interface types when lowering/lifting.
@@ -745,15 +747,8 @@ pub trait Bindgen {
         results: &mut Vec<Self::Operand>,
     );
 
-    /// Allocates temporary space in linear memory for a fixed number of `i64`
-    /// values.
-    ///
-    /// This is only called when a function would otherwise have multiple
-    /// results.
-    ///
-    /// Returns an `Operand` which has type `i32` and points to the base of the
-    /// fixed-size-array allocation.
-    fn i64_return_pointer_area(&mut self, amt: usize) -> Self::Operand;
+    /// TODO
+    fn return_pointer(&mut self, iface: &Interface, ty: &Type) -> Self::Operand;
 
     /// Enters a new block of code to generate code for.
     ///
@@ -804,7 +799,7 @@ impl Interface {
 
         self.push_wasm(variant, &func.result, &mut results);
 
-        let mut retptr = None;
+        let mut retptr = false;
         if func.is_async {
             // Asynchronous functions never actually return anything since
             // they're all callback-based, meaning that we always put all the
@@ -817,11 +812,13 @@ impl Interface {
             // argument to pass to this function.
             match variant {
                 AbiVariant::GuestExport => {
-                    retptr = Some(mem::take(&mut results));
+                    retptr = true;
+                    results.truncate(0);
                     params.push(WasmType::I32);
                 }
                 AbiVariant::GuestImport => {
-                    retptr = Some(mem::take(&mut results));
+                    retptr = true;
+                    results.truncate(0);
                     params.push(WasmType::I32);
                     params.push(WasmType::I32);
                 }
@@ -832,7 +829,8 @@ impl Interface {
             // return pointer to write into and exports return a pointer they wrote
             // into.
             if results.len() > 1 {
-                retptr = Some(mem::take(&mut results));
+                retptr = true;
+                results.truncate(0);
                 match variant {
                     AbiVariant::GuestImport => {
                         params.push(WasmType::I32);
@@ -972,7 +970,7 @@ struct Generator<'a, B: Bindgen> {
     operands: Vec<B::Operand>,
     results: Vec<B::Operand>,
     stack: Vec<B::Operand>,
-    return_pointers: Vec<B::Operand>,
+    return_pointer: Option<B::Operand>,
 }
 
 impl<'a, B: Bindgen> Generator<'a, B> {
@@ -990,7 +988,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             operands: Vec::new(),
             results: Vec::new(),
             stack: Vec::new(),
-            return_pointers: Vec::new(),
+            return_pointer: None,
         }
     }
 
@@ -1013,7 +1011,9 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     //
                     // Note that no return pointer goop happens here because
                     // that's all done through parameters of callbacks instead.
-                    let tys = sig.retptr.as_ref().unwrap();
+                    let mut results = Vec::new();
+                    self.iface
+                        .push_wasm(self.variant, &func.result, &mut results);
                     match self.variant {
                         AbiVariant::GuestImport => {
                             assert_eq!(self.stack.len(), sig.params.len() - 2);
@@ -1021,7 +1021,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 module: &self.iface.name,
                                 name: &func.name,
                                 params: &sig.params,
-                                results: tys,
+                                results: &results,
                             });
                         }
                         AbiVariant::GuestExport => {
@@ -1030,17 +1030,19 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 module: &self.iface.name,
                                 name: &func.name,
                                 params: &sig.params,
-                                results: tys,
+                                results: &results,
                             });
                         }
                     }
+
+                    self.lift(&func.result);
                 } else {
-                    // If necessary we may need to prepare a return pointer for this
-                    // ABI. The `Preview1` ABI has most return values returned
-                    // through pointers, and the `Canonical` ABI returns more-than-one
-                    // values through a return pointer.
-                    if self.variant == AbiVariant::GuestImport {
-                        self.prep_return_pointer(&sig, &func.result);
+                    // If necessary we may need to prepare a return pointer for
+                    // this ABI.
+                    if self.variant == AbiVariant::GuestImport && sig.retptr {
+                        let ptr = self.bindgen.return_pointer(self.iface, &func.result);
+                        self.return_pointer = Some(ptr.clone());
+                        self.stack.push(ptr);
                     }
 
                     // Now that all the wasm args are prepared we can call the
@@ -1052,22 +1054,32 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         sig: &sig,
                     });
 
-                    // In the `Canonical` ABI we model multiple return values by going
-                    // through memory. Remove that indirection here by loading
-                    // everything to simulate the function having many return values
-                    // in our stack discipline.
-                    if let Some(actual) = &sig.retptr {
-                        if self.variant == AbiVariant::GuestImport {
-                            assert_eq!(self.return_pointers.len(), 1);
-                            self.stack.push(self.return_pointers.pop().unwrap());
-                        }
-                        self.load_retptr(actual);
+                    if !sig.retptr {
+                        // With no return pointer in use we can simply lift the
+                        // result of the function from the result of the core
+                        // wasm function.
+                        self.lift(&func.result);
+                    } else {
+                        let ptr = match self.variant {
+                            // imports into guests means it's a wasm module
+                            // calling an imported function. We supplied the
+                            // return poitner as the last argument (saved in
+                            // `self.return_pointer`) so we use that to read
+                            // the result of the function from memory.
+                            AbiVariant::GuestImport => {
+                                assert!(sig.results.len() == 0);
+                                self.return_pointer.take().unwrap()
+                            }
+
+                            // guest exports means that this is a host
+                            // calling wasm so wasm returned a pointer to where
+                            // the result is stored
+                            AbiVariant::GuestExport => self.stack.pop().unwrap(),
+                        };
+
+                        self.read_from_memory(&func.result, ptr, 0);
                     }
                 }
-
-                // Batch-lift all result values now that all the function's return
-                // values are on the stack.
-                self.lift(&func.result);
 
                 self.emit(&Instruction::Return { func, amt: 1 });
             }
@@ -1084,7 +1096,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             AbiVariant::GuestImport => 2,
                         }
                     } else {
-                        (sig.retptr.is_some() && self.variant == AbiVariant::GuestImport) as usize
+                        (sig.retptr && self.variant == AbiVariant::GuestImport) as usize
                     };
                     sig.params.len() - skip_cnt
                 };
@@ -1102,14 +1114,17 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     func,
                 });
 
-                // ... and at the end we lower everything back into return
-                // values.
-                self.lower(&func.result);
-
                 if func.is_async {
-                    let tys = sig.retptr.as_ref().unwrap();
                     match self.variant {
+                        // Returning from a guest import means that the
+                        // completion callback needs to be called which is
+                        // currently given the lowered representation of the
+                        // result.
                         AbiVariant::GuestImport => {
+                            self.lower(&func.result);
+
+                            let mut tys = Vec::new();
+                            self.iface.push_wasm(self.variant, &func.result, &mut tys);
                             assert_eq!(self.stack.len(), tys.len());
                             let operands = mem::take(&mut self.stack);
                             // function index to call
@@ -1126,25 +1141,19 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                                 params: tys.len(),
                             });
                         }
+
+                        // Returning from a guest export means that we need to
+                        // invoke the completion intrinsics with where the
+                        // result is stored in linear memory.
                         AbiVariant::GuestExport => {
-                            // Store all results, if any, into the general
-                            // return pointer area.
-                            let retptr = if !tys.is_empty() {
-                                let op = self.bindgen.i64_return_pointer_area(tys.len());
-                                self.stack.push(op);
-                                Some(self.store_retptr(tys))
-                            } else {
-                                None
-                            };
+                            let ptr = self.bindgen.return_pointer(self.iface, &func.result);
+                            self.write_to_memory(&func.result, ptr.clone(), 0);
 
                             // Get the caller's context index.
                             self.emit(&Instruction::GetArg {
                                 nth: sig.params.len() - 1,
                             });
-                            match retptr {
-                                Some(ptr) => self.stack.push(ptr),
-                                None => self.emit(&Instruction::I32Const { val: 0 }),
-                            }
+                            self.stack.push(ptr);
 
                             // This will call the "done" function with the
                             // context/pointer argument
@@ -1152,24 +1161,36 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         }
                     }
                 } else {
-                    // Our ABI dictates that a list of returned types are
-                    // returned through memories, so after we've got all the
-                    // values on the stack perform all of the stores here.
-                    if let Some(tys) = &sig.retptr {
+                    if !sig.retptr {
+                        // With no return pointer in use we simply lower the
+                        // result and return that directly from the function.
+                        self.lower(&func.result);
+                    } else {
                         match self.variant {
+                            // When a function is imported to a guest this means
+                            // it's a host providing the implementation of the
+                            // import. The result is stored in the pointer
+                            // specified in the last argument, so we get the
+                            // pointer here and then write the return value into
+                            // it.
                             AbiVariant::GuestImport => {
                                 self.emit(&Instruction::GetArg {
                                     nth: sig.params.len() - 1,
                                 });
+                                let ptr = self.stack.pop().unwrap();
+                                self.write_to_memory(&func.result, ptr, 0);
                             }
+
+                            // For a guest import this is a function defined in
+                            // wasm, so we're returning a pointer where the
+                            // value was stored at. Allocate some space here
+                            // (statically) and then write the result into that
+                            // memory, returning the pointer at the end.
                             AbiVariant::GuestExport => {
-                                let op = self.bindgen.i64_return_pointer_area(tys.len());
-                                self.stack.push(op);
+                                let ptr = self.bindgen.return_pointer(self.iface, &func.result);
+                                self.write_to_memory(&func.result, ptr.clone(), 0);
+                                self.stack.push(ptr);
                             }
-                        }
-                        let retptr = self.store_retptr(tys);
-                        if self.variant == AbiVariant::GuestExport {
-                            self.stack.push(retptr);
                         }
                     }
 
@@ -1186,20 +1207,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             "stack has {} items remaining",
             self.stack.len()
         );
-    }
-
-    fn load_retptr(&mut self, types: &[WasmType]) {
-        let rp = self.stack.pop().unwrap();
-        for (i, ty) in types.iter().enumerate() {
-            self.stack.push(rp.clone());
-            let offset = (i * 8) as i32;
-            match ty {
-                WasmType::I32 => self.emit(&Instruction::I32Load { offset }),
-                WasmType::I64 => self.emit(&Instruction::I64Load { offset }),
-                WasmType::F32 => self.emit(&Instruction::F32Load { offset }),
-                WasmType::F64 => self.emit(&Instruction::F64Load { offset }),
-            }
-        }
     }
 
     /// Assumes that the wasm values to create `tys` are all located on the
@@ -1241,25 +1248,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             self.stack.push(operand);
             self.lower(ty);
         }
-    }
-
-    /// Assumes `types.len()` values are on the stack and stores them all into
-    /// the return pointer of this function, specified in the last argument.
-    ///
-    /// This is only used with `Abi::Next`.
-    fn store_retptr(&mut self, types: &[WasmType]) -> B::Operand {
-        let retptr = self.stack.pop().unwrap();
-        for (i, ty) in types.iter().enumerate().rev() {
-            self.stack.push(retptr.clone());
-            let offset = (i * 8) as i32;
-            match ty {
-                WasmType::I32 => self.emit(&Instruction::I32Store { offset }),
-                WasmType::I64 => self.emit(&Instruction::I64Store { offset }),
-                WasmType::F32 => self.emit(&Instruction::F32Store { offset }),
-                WasmType::F64 => self.emit(&Instruction::F64Store { offset }),
-            }
-        }
-        retptr
     }
 
     fn emit(&mut self, inst: &Instruction<'_>) {
@@ -1471,18 +1459,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         match (self.variant, self.lift_lower) {
             (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults) => None,
             _ => Some("canonical_abi_realloc"),
-        }
-    }
-
-    fn prep_return_pointer(&mut self, sig: &WasmSignature, result: &Type) {
-        drop(result); // FIXME: update to the new canonical abi and use this
-                      // If a return pointer was automatically injected into this function
-                      // then we need to allocate a proper amount of space for it and then
-                      // add it to the stack to get passed to the callee.
-        if let Some(results) = &sig.retptr {
-            let ptr = self.bindgen.i64_return_pointer_area(results.len());
-            self.return_pointers.push(ptr.clone());
-            self.stack.push(ptr);
         }
     }
 

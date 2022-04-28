@@ -20,11 +20,7 @@
     local.set 3
     local.get 2
     local.get 3
-    i64.load (memory 1)
-    i64.store
-    local.get 2
-    local.get 3
-    i64.load (memory 1) offset=8
-    i64.store offset=8)
+    i32.const 8
+    memory.copy 0 1)
   (export "memory" (memory 1))
   (export "f1" (func 1)))
