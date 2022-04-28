@@ -10,7 +10,10 @@ pub struct WasmSignature {
     pub params: Vec<WasmType>,
     /// The WebAssembly results of this function.
     pub results: Vec<WasmType>,
-    /// TODO
+    /// Whether or not this signature is using a return pointer to store the
+    /// result of the function, which is reflected either in `params` or
+    /// `results` depending on the context this function is used (e.g. an import
+    /// or an export).
     pub retptr: bool,
 }
 
@@ -1051,7 +1054,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         sig: &sig,
                     });
 
-                    // If a return pointer is in use
                     if !sig.retptr {
                         // With no return pointer in use we can simply lift the
                         // result of the function from the result of the core
