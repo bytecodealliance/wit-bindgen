@@ -159,18 +159,6 @@ impl Generator for RustWasm {
         }
 
         self.sizes.fill(iface);
-
-        for func in iface.functions.iter() {
-            let sig = iface.wasm_signature(variant, func);
-            if sig.retptr {
-                self.return_pointer_area_size = self
-                    .return_pointer_area_size
-                    .max(self.sizes.size(&func.result));
-                self.return_pointer_area_align = self
-                    .return_pointer_area_align
-                    .max(self.sizes.align(&func.result));
-            }
-        }
     }
 
     fn type_record(
@@ -791,7 +779,9 @@ impl Bindgen for FunctionBindgen<'_> {
         }
     }
 
-    fn return_pointer(&mut self, _iface: &Interface, _ty: &Type) -> String {
+    fn return_pointer(&mut self, size: usize, align: usize) -> String {
+        self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
+        self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
         let tmp = self.tmp();
         self.push_str(&format!(
             "let ptr{} = RET_AREA.0.as_mut_ptr() as i32;\n",
@@ -1420,6 +1410,18 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str(&format!(
                     "*(({} + {}) as *mut f64) = {};\n",
                     operands[1], offset, operands[0]
+                ));
+            }
+
+            Instruction::Malloc { .. } => unimplemented!(),
+            Instruction::Free {
+                free: _,
+                size,
+                align,
+            } => {
+                self.push_str(&format!(
+                    "wit_bindgen_rust::rt::canonical_abi_free({} as *mut u8, {}, {});\n",
+                    operands[0], size, align
                 ));
             }
         }

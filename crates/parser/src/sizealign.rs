@@ -29,15 +29,7 @@ impl SizeAlign {
                         None => (r.num_i32s() * 4, 4),
                     };
                 }
-                let mut size = 0;
-                let mut align = 1;
-                for f in r.fields.iter() {
-                    let field_size = self.size(&f.ty);
-                    let field_align = self.align(&f.ty);
-                    size = align_to(size, field_align) + field_size;
-                    align = align.max(field_align);
-                }
-                (align_to(size, align), align)
+                self.record(r.fields.iter().map(|f| &f.ty))
             }
             TypeDefKind::Variant(v) => {
                 let (discrim_size, discrim_align) = int_size_align(v.tag);
@@ -102,6 +94,18 @@ impl SizeAlign {
         let tag_size = int_size_align(variant.tag).0;
         align_to(tag_size, max_align)
     }
+
+    pub fn record<'a>(&self, types: impl Iterator<Item = &'a Type>) -> (usize, usize) {
+        let mut size = 0;
+        let mut align = 1;
+        for ty in types {
+            let field_size = self.size(ty);
+            let field_align = self.align(ty);
+            size = align_to(size, field_align) + field_size;
+            align = align.max(field_align);
+        }
+        (align_to(size, align), align)
+    }
 }
 
 fn int_size_align(i: Int) -> (usize, usize) {
@@ -113,6 +117,6 @@ fn int_size_align(i: Int) -> (usize, usize) {
     }
 }
 
-fn align_to(val: usize, align: usize) -> usize {
+pub(crate) fn align_to(val: usize, align: usize) -> usize {
     (val + align - 1) & !(align - 1)
 }
