@@ -1,4 +1,4 @@
-use crate::{Int, Interface, Record, RecordKind, Type, TypeDef, TypeDefKind, Variant};
+use crate::{FlagsRepr, Int, Interface, Record, Type, TypeDef, TypeDefKind, Variant};
 
 #[derive(Default)]
 pub struct SizeAlign {
@@ -18,19 +18,12 @@ impl SizeAlign {
         match &ty.kind {
             TypeDefKind::Type(t) => (self.size(t), self.align(t)),
             TypeDefKind::List(_) => (8, 4),
-            TypeDefKind::Record(r) => {
-                if let RecordKind::Flags(repr) = r.kind {
-                    return match repr {
-                        Some(i) => int_size_align(i),
-                        None if r.fields.len() <= 8 => (1, 1),
-                        None if r.fields.len() <= 16 => (2, 2),
-                        None if r.fields.len() <= 32 => (4, 4),
-                        None if r.fields.len() <= 64 => (8, 8),
-                        None => (r.num_i32s() * 4, 4),
-                    };
-                }
-                self.record(r.fields.iter().map(|f| &f.ty))
-            }
+            TypeDefKind::Record(r) => self.record(r.fields.iter().map(|f| &f.ty)),
+            TypeDefKind::Flags(f) => match f.repr() {
+                FlagsRepr::U8 => (1, 1),
+                FlagsRepr::U16 => (2, 2),
+                FlagsRepr::U32(n) => (n * 4, 4),
+            },
             TypeDefKind::Variant(v) => {
                 let (discrim_size, discrim_align) = int_size_align(v.tag);
                 let mut size = discrim_size;

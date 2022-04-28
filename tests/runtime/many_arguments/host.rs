@@ -3,9 +3,7 @@ use anyhow::Result;
 wit_bindgen_wasmtime::export!("../../tests/runtime/many_arguments/imports.wit");
 
 #[derive(Default)]
-pub struct MyImports {
-    scalar: u32,
-}
+pub struct MyImports {}
 
 impl imports::Imports for MyImports {
     fn many_arguments(

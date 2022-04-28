@@ -191,6 +191,9 @@ fn to_json(i: &Interface) -> String {
         Record {
             fields: Vec<(String, String)>,
         },
+        Flags {
+            flags: Vec<String>,
+        },
         Variant {
             cases: Vec<(String, Option<String>)>,
         },
@@ -267,6 +270,9 @@ fn to_json(i: &Interface) -> String {
                     .iter()
                     .map(|f| (f.name.clone(), translate_type(&f.ty)))
                     .collect(),
+            },
+            TypeDefKind::Flags(r) => Type::Flags {
+                flags: r.flags.iter().map(|f| f.name.clone()).collect(),
             },
             TypeDefKind::Variant(v) => Type::Variant {
                 cases: v

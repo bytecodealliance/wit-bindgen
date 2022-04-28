@@ -79,6 +79,7 @@ impl Markdown {
                         }
                         self.src.push_str(")");
                     }
+                    TypeDefKind::Flags(_) => unreachable!(),
                     TypeDefKind::Variant(v) => {
                         if let Some(t) = v.as_option() {
                             self.src.push_str("option<");
@@ -162,7 +163,7 @@ impl Generator for Markdown {
         self.src.push_str("record\n\n");
         self.print_type_info(id, docs);
         self.src.push_str("\n### Record Fields\n\n");
-        for (i, field) in record.fields.iter().enumerate() {
+        for field in record.fields.iter() {
             self.src.push_str(&format!(
                 "- <a href=\"{r}.{f}\" name=\"{r}.{f}\"></a> [`{name}`](#{r}.{f}): ",
                 r = name.to_snake_case(),
@@ -178,9 +179,38 @@ impl Generator for Markdown {
             self.src.push_str("\n\n");
             self.docs(&field.docs);
             self.src.deindent(1);
-            if record.is_flags() {
-                self.src.push_str(&format!("Bit: {}\n", i));
-            }
+            self.src.push_str("\n");
+        }
+    }
+
+    fn type_flags(
+        &mut self,
+        _iface: &Interface,
+        id: TypeId,
+        name: &str,
+        flags: &Flags,
+        docs: &Docs,
+    ) {
+        self.print_type_header(name);
+        self.src.push_str("record\n\n");
+        self.print_type_info(id, docs);
+        self.src.push_str("\n### Record Fields\n\n");
+        for (i, flag) in flags.flags.iter().enumerate() {
+            self.src.push_str(&format!(
+                "- <a href=\"{r}.{f}\" name=\"{r}.{f}\"></a> [`{name}`](#{r}.{f}): ",
+                r = name.to_snake_case(),
+                f = flag.name.to_snake_case(),
+                name = flag.name,
+            ));
+            self.hrefs.insert(
+                format!("{}::{}", name, flag.name),
+                format!("#{}.{}", name.to_snake_case(), flag.name.to_snake_case()),
+            );
+            self.src.indent(1);
+            self.src.push_str("\n\n");
+            self.docs(&flag.docs);
+            self.src.deindent(1);
+            self.src.push_str(&format!("Bit: {}\n", i));
             self.src.push_str("\n");
         }
     }

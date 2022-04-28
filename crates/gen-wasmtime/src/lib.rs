@@ -9,7 +9,7 @@ use wit_bindgen_gen_core::wit_parser::abi::{
 };
 use wit_bindgen_gen_core::{wit_parser::*, Direction, Files, Generator, Source, TypeInfo, Types};
 use wit_bindgen_gen_rust::{
-    int_repr, to_rust_ident, wasm_type, FnSig, RustFunctionGenerator, RustGenerator, TypeMode,
+    to_rust_ident, wasm_type, FnSig, RustFlagsRepr, RustFunctionGenerator, RustGenerator, TypeMode,
 };
 
 #[derive(Default)]
@@ -328,49 +328,6 @@ impl Generator for Wasmtime {
         record: &Record,
         docs: &Docs,
     ) {
-        if record.is_flags() {
-            self.src
-                .push_str("wit_bindgen_wasmtime::bitflags::bitflags! {\n");
-            self.rustdoc(docs);
-            self.src
-                .push_str(&format!("pub struct {}: ", name.to_camel_case()));
-            let repr = iface
-                .flags_repr(record)
-                .expect("unsupported number of flags");
-            self.int_repr(repr);
-            self.src.push_str(" {\n");
-            for (i, field) in record.fields.iter().enumerate() {
-                self.rustdoc(&field.docs);
-                self.src.push_str(&format!(
-                    "const {} = 1 << {};\n",
-                    field.name.to_shouty_snake_case(),
-                    i,
-                ));
-            }
-            self.src.push_str("}\n");
-            self.src.push_str("}\n\n");
-
-            self.src.push_str("impl core::fmt::Display for ");
-            self.src.push_str(&name.to_camel_case());
-            self.src.push_str(
-                "{\nfn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {\n",
-            );
-
-            self.src.push_str("f.write_str(\"");
-            self.src.push_str(&name.to_camel_case());
-            self.src.push_str("(\")?;\n");
-            self.src.push_str("core::fmt::Debug::fmt(self, f)?;\n");
-            self.src.push_str("f.write_str(\" (0x\")?;\n");
-            self.src
-                .push_str("core::fmt::LowerHex::fmt(&self.bits, f)?;\n");
-            self.src.push_str("f.write_str(\"))\")?;\n");
-            self.src.push_str("Ok(())");
-
-            self.src.push_str("}\n");
-            self.src.push_str("}\n\n");
-            return;
-        }
-
         self.print_typedef_record(iface, id, record, docs);
 
         // If this record might be used as a slice type in various places then
@@ -416,6 +373,51 @@ impl Generator for Wasmtime {
             self.src.push_str(&name.to_camel_case());
             self.src.push_str(" {}\n");
         }
+    }
+
+    fn type_flags(
+        &mut self,
+        _iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        flags: &Flags,
+        docs: &Docs,
+    ) {
+        self.src
+            .push_str("wit_bindgen_wasmtime::bitflags::bitflags! {\n");
+        self.rustdoc(docs);
+        let repr = RustFlagsRepr::new(flags);
+        self.src
+            .push_str(&format!("pub struct {}: {repr} {{\n", name.to_camel_case()));
+        for (i, flag) in flags.flags.iter().enumerate() {
+            self.rustdoc(&flag.docs);
+            self.src.push_str(&format!(
+                "const {} = 1 << {};\n",
+                flag.name.to_shouty_snake_case(),
+                i,
+            ));
+        }
+        self.src.push_str("}\n");
+        self.src.push_str("}\n\n");
+
+        self.src.push_str("impl core::fmt::Display for ");
+        self.src.push_str(&name.to_camel_case());
+        self.src.push_str(
+            "{\nfn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {\n",
+        );
+
+        self.src.push_str("f.write_str(\"");
+        self.src.push_str(&name.to_camel_case());
+        self.src.push_str("(\")?;\n");
+        self.src.push_str("core::fmt::Debug::fmt(self, f)?;\n");
+        self.src.push_str("f.write_str(\" (0x\")?;\n");
+        self.src
+            .push_str("core::fmt::LowerHex::fmt(&self.bits, f)?;\n");
+        self.src.push_str("f.write_str(\"))\")?;\n");
+        self.src.push_str("Ok(())");
+
+        self.src.push_str("}\n");
+        self.src.push_str("}\n\n");
     }
 
     fn type_variant(
@@ -1538,36 +1540,29 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.record_lift(iface, *ty, record, operands, results);
             }
 
-            Instruction::FlagsLower { record, .. } => {
+            Instruction::FlagsLower { flags, .. } => {
                 let tmp = self.tmp();
                 self.push_str(&format!("let flags{} = {};\n", tmp, operands[0]));
-                for i in 0..record.num_i32s() {
+                for i in 0..flags.repr().count() {
                     results.push(format!("(flags{}.bits >> {}) as i32", tmp, i * 32));
                 }
             }
-            Instruction::FlagsLower64 { .. } => {
-                results.push(format!("({}).bits as i64", operands[0]));
-            }
-            Instruction::FlagsLift { record, name, .. }
-            | Instruction::FlagsLift64 { record, name, .. } => {
+            Instruction::FlagsLift { flags, name, .. } => {
                 self.gen.needs_validate_flags = true;
-                let repr = iface
-                    .flags_repr(record)
-                    .expect("unsupported number of flags");
+                let repr = RustFlagsRepr::new(flags);
                 let mut flags = String::from("0");
                 for (i, op) in operands.iter().enumerate() {
-                    flags.push_str(&format!("| (i64::from({}) << {})", op, i * 32));
+                    flags.push_str(&format!("| (({} as {repr}) << {})", op, i * 32));
                 }
                 results.push(format!(
                     "validate_flags(
                         {},
-                        {name}::all().bits() as i64,
+                        {name}::all().bits(),
                         \"{name}\",
-                        |b| {name} {{ bits: b as {ty} }}
+                        |bits| {name} {{ bits }}
                     )?",
                     flags,
                     name = name.to_camel_case(),
-                    ty = int_repr(repr),
                 ));
             }
 

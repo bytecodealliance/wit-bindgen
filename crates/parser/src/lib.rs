@@ -46,6 +46,7 @@ pub struct TypeDef {
 #[derive(Debug)]
 pub enum TypeDefKind {
     Record(Record),
+    Flags(Flags),
     Variant(Variant),
     List(Type),
     Type(Type),
@@ -88,7 +89,6 @@ pub struct Record {
 #[derive(Copy, Clone, Debug)]
 pub enum RecordKind {
     Other,
-    Flags(Option<Int>),
     Tuple,
 }
 
@@ -103,25 +103,12 @@ impl Record {
     pub fn is_tuple(&self) -> bool {
         matches!(self.kind, RecordKind::Tuple)
     }
-
-    pub fn is_flags(&self) -> bool {
-        matches!(self.kind, RecordKind::Flags(_))
-    }
-
-    pub fn num_i32s(&self) -> usize {
-        (self.fields.len() + 31) / 32
-    }
 }
 
 impl RecordKind {
-    fn infer(types: &Arena<TypeDef>, fields: &[Field]) -> RecordKind {
+    fn infer(fields: &[Field]) -> RecordKind {
         if fields.is_empty() {
             return RecordKind::Other;
-        }
-
-        // Structs-of-bools are classified to get represented as bitflags.
-        if fields.iter().all(|t| is_bool(&t.ty, types)) {
-            return RecordKind::Flags(None);
         }
 
         // fields with consecutive integer names get represented as tuples.
@@ -134,16 +121,43 @@ impl RecordKind {
         }
 
         return RecordKind::Other;
+    }
+}
 
-        fn is_bool(t: &Type, types: &Arena<TypeDef>) -> bool {
-            match t {
-                Type::Bool => true,
-                Type::Id(v) => match &types[*v].kind {
-                    TypeDefKind::Type(t) => is_bool(t, types),
-                    _ => false,
-                },
-                _ => false,
-            }
+#[derive(Debug, Clone)]
+pub struct Flags {
+    pub flags: Vec<Flag>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Flag {
+    pub docs: Docs,
+    pub name: String,
+}
+
+#[derive(Debug)]
+pub enum FlagsRepr {
+    U8,
+    U16,
+    U32(usize),
+}
+
+impl Flags {
+    pub fn repr(&self) -> FlagsRepr {
+        match self.flags.len() {
+            n if n <= 8 => FlagsRepr::U8,
+            n if n <= 16 => FlagsRepr::U16,
+            n => FlagsRepr::U32(sizealign::align_to(n, 32) / 32),
+        }
+    }
+}
+
+impl FlagsRepr {
+    pub fn count(&self) -> usize {
+        match self {
+            FlagsRepr::U8 => 1,
+            FlagsRepr::U16 => 1,
+            FlagsRepr::U32(n) => *n,
         }
     }
 }
@@ -392,6 +406,7 @@ impl Interface {
             return;
         }
         match &self.types[id].kind {
+            TypeDefKind::Flags(_) => {}
             TypeDefKind::Type(t) | TypeDefKind::List(t) => self.topo_visit_ty(t, list, visited),
             TypeDefKind::Record(r) => {
                 for f in r.fields.iter() {
@@ -435,6 +450,11 @@ impl Interface {
                 TypeDefKind::List(_) | TypeDefKind::Variant(_) => false,
                 TypeDefKind::Type(t) => self.all_bits_valid(t),
                 TypeDefKind::Record(r) => r.fields.iter().all(|f| self.all_bits_valid(&f.ty)),
+
+                // FIXME: this could perhaps be `true` for multiples-of-32 but
+                // seems better to probably leave this as unconditionally
+                // `false` for now, may want to reconsider later?
+                TypeDefKind::Flags(_) => false,
             },
         }
     }

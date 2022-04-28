@@ -1,4 +1,5 @@
 use heck::*;
+use std::fmt;
 use wit_bindgen_gen_core::wit_parser::abi::{Bitcast, LiftLower, WasmType};
 use wit_bindgen_gen_core::{wit_parser::*, TypeInfo, Types};
 
@@ -275,6 +276,9 @@ pub trait RustGenerator {
             }
             TypeDefKind::Record(_) => {
                 panic!("unsupported anonymous type reference: record")
+            }
+            TypeDefKind::Flags(_) => {
+                panic!("unsupported anonymous type reference: flags")
             }
 
             TypeDefKind::Type(t) => self.print_ty(iface, t, mode),
@@ -940,5 +944,38 @@ pub fn bitcast(casts: &[Bitcast], operands: &[String], results: &mut Vec<String>
             Bitcast::F32ToI64 => format!("i64::from(({}).to_bits())", operand),
             Bitcast::I64ToF32 => format!("f32::from_bits({} as u32)", operand),
         });
+    }
+}
+
+pub enum RustFlagsRepr {
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+}
+
+impl RustFlagsRepr {
+    pub fn new(f: &Flags) -> RustFlagsRepr {
+        match f.repr() {
+            FlagsRepr::U8 => RustFlagsRepr::U8,
+            FlagsRepr::U16 => RustFlagsRepr::U16,
+            FlagsRepr::U32(1) => RustFlagsRepr::U32,
+            FlagsRepr::U32(2) => RustFlagsRepr::U64,
+            FlagsRepr::U32(3 | 4) => RustFlagsRepr::U128,
+            FlagsRepr::U32(n) => panic!("unsupported number of flags: {}", n * 32),
+        }
+    }
+}
+
+impl fmt::Display for RustFlagsRepr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RustFlagsRepr::U8 => "u8".fmt(f),
+            RustFlagsRepr::U16 => "u16".fmt(f),
+            RustFlagsRepr::U32 => "u32".fmt(f),
+            RustFlagsRepr::U64 => "u64".fmt(f),
+            RustFlagsRepr::U128 => "u128".fmt(f),
+        }
     }
 }

@@ -170,7 +170,7 @@ impl C {
             Type::Id(id) => match &iface.types[*id].kind {
                 TypeDefKind::Type(t) => self.is_arg_by_pointer(iface, t),
                 TypeDefKind::Variant(v) => !v.is_enum(),
-                TypeDefKind::Record(r) if r.is_flags() => false,
+                TypeDefKind::Flags(_) => false,
                 TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
             },
             Type::String => true,
@@ -246,14 +246,10 @@ impl C {
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty(iface, t),
-                    TypeDefKind::Variant(_) => {
-                        self.public_anonymous_types.insert(*id);
-                        self.private_anonymous_types.remove(id);
-                        self.print_namespace(iface);
-                        self.print_ty_name(iface, &Type::Id(*id));
-                        self.src.h("_t");
-                    }
-                    TypeDefKind::Record(_) | TypeDefKind::List(_) => {
+                    TypeDefKind::Flags(_)
+                    | TypeDefKind::Record(_)
+                    | TypeDefKind::List(_)
+                    | TypeDefKind::Variant(_) => {
                         self.public_anonymous_types.insert(*id);
                         self.private_anonymous_types.remove(id);
                         self.print_namespace(iface);
@@ -289,6 +285,7 @@ impl C {
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty_name(iface, t),
+                    TypeDefKind::Flags(_) => unimplemented!(),
                     TypeDefKind::Record(r) => {
                         assert!(r.is_tuple());
                         self.src.h("tuple");
@@ -331,7 +328,7 @@ impl C {
         self.src.h("typedef ");
         let kind = &iface.types[ty].kind;
         match kind {
-            TypeDefKind::Type(_) => {
+            TypeDefKind::Type(_) | TypeDefKind::Flags(_) => {
                 unreachable!()
             }
             TypeDefKind::Record(r) => {
@@ -459,6 +456,8 @@ impl C {
         match &iface.types[id].kind {
             TypeDefKind::Type(t) => self.free(iface, t, "ptr"),
 
+            TypeDefKind::Flags(_) => {}
+
             TypeDefKind::Record(r) => {
                 for field in r.fields.iter() {
                     if !self.owns_anything(iface, &field.ty) {
@@ -525,6 +524,7 @@ impl C {
         match &iface.types[id].kind {
             TypeDefKind::Type(t) => self.owns_anything(iface, t),
             TypeDefKind::Record(r) => r.fields.iter().any(|t| self.owns_anything(iface, &t.ty)),
+            TypeDefKind::Flags(_) => false,
             TypeDefKind::List(_) => true,
             TypeDefKind::Variant(v) => v
                 .cases
@@ -580,7 +580,7 @@ impl Return {
             TypeDefKind::Type(t) => self.return_single(iface, t, orig_ty),
 
             // Flags are returned as their bare values
-            TypeDefKind::Record(r) if r.is_flags() => {
+            TypeDefKind::Flags(_) => {
                 self.scalar = Some(Scalar::Type(*orig_ty));
             }
 
@@ -669,41 +669,52 @@ impl Generator for C {
         let prev = mem::take(&mut self.src.header);
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
-        if record.is_flags() {
-            self.src.h("typedef ");
-            let repr = iface
-                .flags_repr(record)
-                .expect("unsupported number of flags");
-            self.src.h(int_repr(repr));
+        self.src.h("typedef struct {\n");
+        for field in record.fields.iter() {
+            self.print_ty(iface, &field.ty);
             self.src.h(" ");
-            self.print_namespace(iface);
-            self.src.h(&name.to_snake_case());
-            self.src.h("_t;\n");
+            if record.is_tuple() {
+                self.src.h("f");
+            }
+            self.src.h(&field.name.to_snake_case());
+            self.src.h(";\n");
+        }
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
 
-            for (i, field) in record.fields.iter().enumerate() {
-                self.src.h(&format!(
-                    "#define {}_{}_{} (1 << {})\n",
-                    iface.name.to_shouty_snake_case(),
-                    name.to_shouty_snake_case(),
-                    field.name.to_shouty_snake_case(),
-                    i,
-                ));
-            }
-        } else {
-            self.src.h("typedef struct {\n");
-            for field in record.fields.iter() {
-                self.print_ty(iface, &field.ty);
-                self.src.h(" ");
-                if record.is_tuple() {
-                    self.src.h("f");
-                }
-                self.src.h(&field.name.to_snake_case());
-                self.src.h(";\n");
-            }
-            self.src.h("} ");
-            self.print_namespace(iface);
-            self.src.h(&name.to_snake_case());
-            self.src.h("_t;\n");
+        self.types
+            .insert(id, mem::replace(&mut self.src.header, prev));
+    }
+
+    fn type_flags(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        flags: &Flags,
+        docs: &Docs,
+    ) {
+        let prev = mem::take(&mut self.src.header);
+        self.docs(docs);
+        self.names.insert(&name.to_snake_case()).unwrap();
+        self.src.h("typedef ");
+        let repr = flags_repr(flags);
+        self.src.h(int_repr(repr));
+        self.src.h(" ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
+
+        for (i, flag) in flags.flags.iter().enumerate() {
+            self.src.h(&format!(
+                "#define {}_{}_{} (1 << {})\n",
+                iface.name.to_shouty_snake_case(),
+                name.to_shouty_snake_case(),
+                flag.name.to_shouty_snake_case(),
+                i,
+            ));
         }
 
         self.types
@@ -1398,15 +1409,31 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             // TODO: checked
-            Instruction::FlagsLower { record, .. } | Instruction::FlagsLift { record, .. } => {
-                match record.num_i32s() {
-                    0 | 1 => results.push(operands.pop().unwrap()),
-                    _ => panic!("unsupported bitflags"),
+            Instruction::FlagsLower { flags, ty, .. } => match flags_repr(flags) {
+                Int::U8 | Int::U16 | Int::U32 => {
+                    results.push(operands.pop().unwrap());
                 }
-            }
-            Instruction::FlagsLower64 { .. } | Instruction::FlagsLift64 { .. } => {
-                results.push(operands.pop().unwrap());
-            }
+                Int::U64 => {
+                    let name = self.gen.type_string(iface, &Type::Id(*ty));
+                    let tmp = self.locals.tmp("flags");
+                    self.src
+                        .push_str(&format!("{name} {tmp} = {};\n", operands[0]));
+                    results.push(format!("{tmp} & 0xffffffff"));
+                    results.push(format!("({tmp} >> 32) & 0xffffffff"));
+                }
+            },
+
+            Instruction::FlagsLift { flags, ty, .. } => match flags_repr(flags) {
+                Int::U8 | Int::U16 | Int::U32 => {
+                    results.push(operands.pop().unwrap());
+                }
+                Int::U64 => {
+                    let name = self.gen.type_string(iface, &Type::Id(*ty));
+                    let op0 = &operands[0];
+                    let op1 = &operands[1];
+                    results.push(format!("(({name}) ({op0})) | ((({name}) ({op1})) << 32)"));
+                }
+            },
 
             Instruction::VariantPayloadName => {
                 let name = self.locals.tmp("payload");
@@ -1822,5 +1849,15 @@ fn case_field_name(case: &Case) -> String {
         format!("f{}", case.name)
     } else {
         case.name.to_snake_case()
+    }
+}
+
+fn flags_repr(f: &Flags) -> Int {
+    match f.repr() {
+        FlagsRepr::U8 => Int::U8,
+        FlagsRepr::U16 => Int::U16,
+        FlagsRepr::U32(1) => Int::U32,
+        FlagsRepr::U32(2) => Int::U64,
+        repr => panic!("unimplemented flags {:?}", repr),
     }
 }
