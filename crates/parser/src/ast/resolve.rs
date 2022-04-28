@@ -21,6 +21,7 @@ pub struct Resolver {
 enum Key {
     Variant(Vec<(String, Option<Type>)>),
     Record(Vec<(String, Type)>),
+    Flags(Vec<String>),
     List(Type),
 }
 
@@ -204,6 +205,7 @@ impl Resolver {
                         .collect(),
                     kind: r.kind,
                 }),
+                TypeDefKind::Flags(f) => TypeDefKind::Flags(f.clone()),
                 TypeDefKind::Variant(v) => TypeDefKind::Variant(Variant {
                     cases: v
                         .cases
@@ -367,19 +369,22 @@ impl Resolver {
                 TypeDefKind::Record(Record {
                     kind: if record.tuple_hint {
                         RecordKind::Tuple
-                    } else if let Some(hint) = &record.flags_repr {
-                        RecordKind::Flags(Some(match &**hint {
-                            super::Type::U8 => Int::U8,
-                            super::Type::U16 => Int::U16,
-                            super::Type::U32 => Int::U32,
-                            super::Type::U64 => Int::U64,
-                            _ => panic!("unknown explicit flags repr"),
-                        }))
                     } else {
-                        RecordKind::infer(&self.types, &fields)
+                        RecordKind::infer(&fields)
                     },
                     fields,
                 })
+            }
+            super::Type::Flags(flags) => {
+                let flags = flags
+                    .flags
+                    .iter()
+                    .map(|flag| Flag {
+                        docs: self.docs(&flag.docs),
+                        name: flag.name.name.to_string(),
+                    })
+                    .collect::<Vec<_>>();
+                TypeDefKind::Flags(Flags { flags })
             }
             super::Type::Variant(variant) => {
                 if variant.cases.is_empty() {
@@ -465,6 +470,9 @@ impl Resolver {
                     .map(|case| (case.name.clone(), case.ty))
                     .collect::<Vec<_>>(),
             ),
+            TypeDefKind::Flags(r) => {
+                Key::Flags(r.flags.iter().map(|f| f.name.clone()).collect::<Vec<_>>())
+            }
             TypeDefKind::List(ty) => Key::List(*ty),
         };
         let types = &mut self.types;
@@ -624,7 +632,7 @@ impl Resolver {
                 }
             }
 
-            TypeDefKind::List(_) | TypeDefKind::Type(_) => {}
+            TypeDefKind::Flags(_) | TypeDefKind::List(_) | TypeDefKind::Type(_) => {}
         }
 
         valid.insert(ty);

@@ -1,6 +1,7 @@
 use crate::sizealign::align_to;
 use crate::{
-    Function, Int, Interface, Record, RecordKind, ResourceId, Type, TypeDefKind, TypeId, Variant,
+    Flags, FlagsRepr, Function, Int, Interface, Record, ResourceId, Type, TypeDefKind, TypeId,
+    Variant,
 };
 use std::mem;
 
@@ -512,27 +513,17 @@ def_instruction! {
 
         /// Converts a language-specific record-of-bools to a list of `i32`.
         FlagsLower {
-            record: &'a Record,
+            flags: &'a Flags,
             name: &'a str,
             ty: TypeId,
-        } : [1] => [record.num_i32s()],
-        FlagsLower64 {
-            record: &'a Record,
-            name: &'a str,
-            ty: TypeId,
-        } : [1] => [1],
+        } : [1] => [flags.repr().count()],
         /// Converts a list of native wasm `i32` to a language-specific
         /// record-of-bools.
         FlagsLift {
-            record: &'a Record,
+            flags: &'a Flags,
             name: &'a str,
             ty: TypeId,
-        } : [record.num_i32s()] => [1],
-        FlagsLift64 {
-            record: &'a Record,
-            name: &'a str,
-            ty: TypeId,
-        } : [1] => [1],
+        } : [flags.repr().count()] => [1],
 
         // variants
 
@@ -913,18 +904,15 @@ impl Interface {
             Type::Id(id) => match &self.types[*id].kind {
                 TypeDefKind::Type(t) => self.push_wasm(variant, t, result),
 
-                TypeDefKind::Record(r) if r.is_flags() => match self.flags_repr(r) {
-                    Some(int) => result.push(int.into()),
-                    None => {
-                        for _ in 0..r.num_i32s() {
-                            result.push(WasmType::I32);
-                        }
-                    }
-                },
-
                 TypeDefKind::Record(r) => {
                     for field in r.fields.iter() {
                         self.push_wasm(variant, &field.ty, result);
+                    }
+                }
+
+                TypeDefKind::Flags(r) => {
+                    for _ in 0..r.repr().count() {
+                        result.push(WasmType::I32);
                     }
                 }
 
@@ -960,18 +948,6 @@ impl Interface {
                     }
                 }
             },
-        }
-    }
-
-    pub fn flags_repr(&self, record: &Record) -> Option<Int> {
-        match record.kind {
-            RecordKind::Flags(Some(hint)) => Some(hint),
-            RecordKind::Flags(None) if record.fields.len() <= 8 => Some(Int::U8),
-            RecordKind::Flags(None) if record.fields.len() <= 16 => Some(Int::U16),
-            RecordKind::Flags(None) if record.fields.len() <= 32 => Some(Int::U32),
-            RecordKind::Flags(None) if record.fields.len() <= 64 => Some(Int::U64),
-            RecordKind::Flags(None) => None,
-            _ => panic!("not a flags record"),
         }
     }
 
@@ -1425,20 +1401,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.emit(&ListLower { element, realloc });
                     }
                 }
-                TypeDefKind::Record(record) if record.is_flags() => {
-                    match self.iface.flags_repr(record) {
-                        Some(Int::U64) => self.emit(&FlagsLower64 {
-                            record,
-                            ty: id,
-                            name: self.iface.types[id].name.as_ref().unwrap(),
-                        }),
-                        _ => self.emit(&FlagsLower {
-                            record,
-                            ty: id,
-                            name: self.iface.types[id].name.as_ref().unwrap(),
-                        }),
-                    }
-                }
                 TypeDefKind::Record(record) => {
                     self.emit(&RecordLower {
                         record,
@@ -1453,6 +1415,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         self.stack.push(value);
                         self.lower(&field.ty);
                     }
+                }
+
+                TypeDefKind::Flags(flags) => {
+                    self.emit(&FlagsLower {
+                        flags,
+                        ty: id,
+                        name: self.iface.types[id].name.as_ref().unwrap(),
+                    });
                 }
 
                 TypeDefKind::Variant(v) => {
@@ -1583,20 +1553,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         });
                     }
                 }
-                TypeDefKind::Record(record) if record.is_flags() => {
-                    match self.iface.flags_repr(record) {
-                        Some(Int::U64) => self.emit(&FlagsLift64 {
-                            record,
-                            ty: id,
-                            name: self.iface.types[id].name.as_ref().unwrap(),
-                        }),
-                        _ => self.emit(&FlagsLift {
-                            record,
-                            ty: id,
-                            name: self.iface.types[id].name.as_ref().unwrap(),
-                        }),
-                    }
-                }
                 TypeDefKind::Record(record) => {
                     let mut temp = Vec::new();
                     self.iface.push_wasm(self.variant, ty, &mut temp);
@@ -1614,6 +1570,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         record,
                         ty: id,
                         name: self.iface.types[id].name.as_deref(),
+                    });
+                }
+                TypeDefKind::Flags(flags) => {
+                    self.emit(&FlagsLift {
+                        flags,
+                        ty: id,
+                        name: self.iface.types[id].name.as_ref().unwrap(),
                     });
                 }
 
@@ -1694,24 +1657,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 TypeDefKind::Type(t) => self.write_to_memory(t, addr, offset),
                 TypeDefKind::List(_) => self.write_list_to_memory(ty, addr, offset),
 
-                TypeDefKind::Record(r) if r.is_flags() => {
-                    self.lower(ty);
-                    match self.iface.flags_repr(r) {
-                        Some(repr) => {
-                            self.stack.push(addr);
-                            self.store_intrepr(offset, repr);
-                        }
-                        None => {
-                            for i in 0..r.num_i32s() {
-                                self.stack.push(addr.clone());
-                                self.emit(&I32Store {
-                                    offset: offset + (i as i32) * 4,
-                                });
-                            }
-                        }
-                    }
-                }
-
                 // Decompose the record into its components and then write all
                 // the components into memory one-by-one.
                 TypeDefKind::Record(record) => {
@@ -1738,6 +1683,28 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             addr.clone(),
                             offset + (field_offset as i32),
                         );
+                    }
+                }
+
+                TypeDefKind::Flags(f) => {
+                    self.lower(ty);
+                    match f.repr() {
+                        FlagsRepr::U8 => {
+                            self.stack.push(addr);
+                            self.store_intrepr(offset, Int::U8);
+                        }
+                        FlagsRepr::U16 => {
+                            self.stack.push(addr);
+                            self.store_intrepr(offset, Int::U16);
+                        }
+                        FlagsRepr::U32(n) => {
+                            for i in (0..n).rev() {
+                                self.stack.push(addr.clone());
+                                self.emit(&I32Store {
+                                    offset: offset + (i as i32) * 4,
+                                });
+                            }
+                        }
                     }
                 }
 
@@ -1811,24 +1778,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
 
                 TypeDefKind::List(_) => self.read_list_from_memory(ty, addr, offset),
 
-                TypeDefKind::Record(r) if r.is_flags() => {
-                    match self.iface.flags_repr(r) {
-                        Some(repr) => {
-                            self.stack.push(addr);
-                            self.load_intrepr(offset, repr);
-                        }
-                        None => {
-                            for i in 0..r.num_i32s() {
-                                self.stack.push(addr.clone());
-                                self.emit(&I32Load {
-                                    offset: offset + (i as i32) * 4,
-                                });
-                            }
-                        }
-                    }
-                    self.lift(ty);
-                }
-
                 // Read and lift each field individually, adjusting the offset
                 // as we go along, then aggregate all the fields into the
                 // record.
@@ -1851,6 +1800,28 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         ty: id,
                         name: self.iface.types[id].name.as_deref(),
                     });
+                }
+
+                TypeDefKind::Flags(f) => {
+                    match f.repr() {
+                        FlagsRepr::U8 => {
+                            self.stack.push(addr);
+                            self.load_intrepr(offset, Int::U8);
+                        }
+                        FlagsRepr::U16 => {
+                            self.stack.push(addr);
+                            self.load_intrepr(offset, Int::U16);
+                        }
+                        FlagsRepr::U32(n) => {
+                            for i in 0..n {
+                                self.stack.push(addr.clone());
+                                self.emit(&I32Load {
+                                    offset: offset + (i as i32) * 4,
+                                });
+                            }
+                        }
+                    }
+                    self.lift(ty);
                 }
 
                 // Each case will get its own block, and we'll dispatch to the

@@ -13,7 +13,8 @@ use wasm_encoder::*;
 use wasmparser::{Validator, WasmFeatures};
 use wit_parser::{
     abi::{AbiVariant, WasmSignature, WasmType},
-    Function, FunctionKind, Interface, Record, RecordKind, Type, TypeDef, TypeDefKind, Variant,
+    Flags, Function, FunctionKind, Interface, Record, RecordKind, Type, TypeDef, TypeDefKind,
+    Variant,
 };
 
 const INDIRECT_TABLE_NAME: &str = "$imports";
@@ -141,8 +142,14 @@ impl Hash for TypeDefKey<'_> {
                     .hash(state);
                 }
             }
-            TypeDefKind::Variant(v) => {
+            TypeDefKind::Flags(r) => {
                 state.write_u8(1);
+                for f in &r.flags {
+                    f.name.hash(state);
+                }
+            }
+            TypeDefKind::Variant(v) => {
+                state.write_u8(2);
                 for c in &v.cases {
                     c.name.hash(state);
                     c.ty.map(|ty| TypeKey {
@@ -153,7 +160,7 @@ impl Hash for TypeDefKey<'_> {
                 }
             }
             TypeDefKind::List(ty) => {
-                state.write_u8(2);
+                state.write_u8(3);
                 TypeKey {
                     interface: self.interface,
                     ty: *ty,
@@ -161,7 +168,7 @@ impl Hash for TypeDefKey<'_> {
                 .hash(state);
             }
             TypeDefKind::Type(ty) => {
-                state.write_u8(3);
+                state.write_u8(4);
                 TypeKey {
                     interface: self.interface,
                     ty: *ty,
@@ -345,6 +352,7 @@ impl<'a> TypeEncoder<'a> {
                 } else {
                     let mut encoded = match &ty.kind {
                         TypeDefKind::Record(r) => self.encode_record(interface, instance, r)?,
+                        TypeDefKind::Flags(r) => self.encode_flags(r)?,
                         TypeDefKind::Variant(v) => self.encode_variant(interface, instance, v)?,
                         TypeDefKind::List(ty) => {
                             let ty = self.encode_type(interface, instance, ty)?;
@@ -410,12 +418,6 @@ impl<'a> TypeEncoder<'a> {
                 encoder.record(fields);
                 InterfaceTypeRef::Type(index)
             }
-            RecordKind::Flags(_) => {
-                let index = self.types.len();
-                let encoder = self.types.interface_type();
-                encoder.flags(record.fields.iter().map(|f| f.name.as_str()));
-                InterfaceTypeRef::Type(index)
-            }
             RecordKind::Tuple => {
                 let tys = record
                     .fields
@@ -428,6 +430,13 @@ impl<'a> TypeEncoder<'a> {
                 InterfaceTypeRef::Type(index)
             }
         })
+    }
+
+    fn encode_flags(&mut self, flags: &Flags) -> Result<InterfaceTypeRef> {
+        let index = self.types.len();
+        let encoder = self.types.interface_type();
+        encoder.flags(flags.flags.iter().map(|f| f.name.as_str()));
+        Ok(InterfaceTypeRef::Type(index))
     }
 
     fn encode_variant(
@@ -565,6 +574,7 @@ impl RequiredOptions {
                 TypeDefKind::Record(r) => {
                     Self::for_types(interface, r.fields.iter().map(|f| &f.ty))
                 }
+                TypeDefKind::Flags(_) => Self::None,
                 TypeDefKind::Variant(v) => {
                     Self::for_types(interface, v.cases.iter().filter_map(|c| c.ty.as_ref()))
                 }

@@ -91,12 +91,12 @@ enum Type<'a> {
     Name(Id<'a>),
     List(Box<Type<'a>>),
     Record(Record<'a>),
+    Flags(Flags<'a>),
     Variant(Variant<'a>),
 }
 
 struct Record<'a> {
     tuple_hint: bool,
-    flags_repr: Option<Box<Type<'a>>>,
     fields: Vec<Field<'a>>,
 }
 
@@ -104,6 +104,15 @@ struct Field<'a> {
     docs: Docs<'a>,
     name: Id<'a>,
     ty: Type<'a>,
+}
+
+struct Flags<'a> {
+    flags: Vec<Flag<'a>>,
+}
+
+struct Flag<'a> {
+    docs: Docs<'a>,
+    name: Id<'a>,
 }
 
 struct Variant<'a> {
@@ -234,20 +243,14 @@ impl<'a> TypeDef<'a> {
     fn parse_flags(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Flags)?;
         let name = parse_id(tokens)?;
-        let ty = Type::Record(Record {
-            flags_repr: None,
-            tuple_hint: false,
-            fields: parse_list(
+        let ty = Type::Flags(Flags {
+            flags: parse_list(
                 tokens,
                 Token::LeftBrace,
                 Token::RightBrace,
                 |docs, tokens| {
                     let name = parse_id(tokens)?;
-                    Ok(Field {
-                        docs,
-                        name,
-                        ty: Type::Bool,
-                    })
+                    Ok(Flag { docs, name })
                 },
             )?,
         });
@@ -258,7 +261,6 @@ impl<'a> TypeDef<'a> {
         tokens.expect(Token::Record)?;
         let name = parse_id(tokens)?;
         let ty = Type::Record(Record {
-            flags_repr: None,
             tuple_hint: false,
             fields: parse_list(
                 tokens,
@@ -475,7 +477,6 @@ impl<'a> Type<'a> {
                 )?;
                 Ok(Type::Record(Record {
                     fields,
-                    flags_repr: None,
                     tuple_hint: true,
                 }))
             }

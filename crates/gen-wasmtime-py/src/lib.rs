@@ -413,7 +413,7 @@ impl WasmtimePy {
                     TypeDefKind::Record(r) if r.is_tuple() => {
                         self.print_tuple(iface, r.fields.iter().map(|f| &f.ty))
                     }
-                    TypeDefKind::Record(_) => unreachable!(),
+                    TypeDefKind::Record(_) | TypeDefKind::Flags(_) => unreachable!(),
                     TypeDefKind::Variant(v) => {
                         if let Some(t) = v.as_option() {
                             self.pyimport("typing", "Optional");
@@ -584,21 +584,6 @@ impl Generator for WasmtimePy {
         if record.is_tuple() {
             self.src.push_str(&format!("{} = ", name.to_camel_case()));
             self.print_tuple(iface, record.fields.iter().map(|f| &f.ty));
-        } else if record.is_flags() {
-            self.pyimport("enum", "Flag");
-            self.pyimport("enum", "auto");
-            self.src
-                .push_str(&format!("class {}(Flag):\n", name.to_camel_case()));
-            self.indent();
-            for field in record.fields.iter() {
-                self.docs(&field.docs);
-                self.src
-                    .push_str(&format!("{} = auto()\n", field.name.to_shouty_snake_case()));
-            }
-            if record.fields.is_empty() {
-                self.src.push_str("pass\n");
-            }
-            self.deindent();
         } else {
             self.pyimport("dataclasses", "dataclass");
             self.src
@@ -616,6 +601,32 @@ impl Generator for WasmtimePy {
             }
             self.deindent();
         }
+        self.src.push_str("\n");
+    }
+
+    fn type_flags(
+        &mut self,
+        _iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        flags: &Flags,
+        docs: &Docs,
+    ) {
+        self.docs(docs);
+        self.pyimport("enum", "Flag");
+        self.pyimport("enum", "auto");
+        self.src
+            .push_str(&format!("class {}(Flag):\n", name.to_camel_case()));
+        self.indent();
+        for flag in flags.flags.iter() {
+            self.docs(&flag.docs);
+            self.src
+                .push_str(&format!("{} = auto()\n", flag.name.to_shouty_snake_case()));
+        }
+        if flags.flags.is_empty() {
+            self.src.push_str("pass\n");
+        }
+        self.deindent();
         self.src.push_str("\n");
     }
 
@@ -1522,12 +1533,33 @@ impl Bindgen for FunctionBindgen<'_> {
                     results.push(format!("{}({})", name.to_camel_case(), operands.join(", ")));
                 }
             }
-            Instruction::FlagsLift { name, .. } | Instruction::FlagsLift64 { name, .. } => {
-                results.push(format!("{}({})", name.to_camel_case(), operands[0]));
+            Instruction::FlagsLift { name, .. } => {
+                let operand = match operands.len() {
+                    1 => operands[0].clone(),
+                    _ => {
+                        let tmp = self.locals.tmp("flags");
+                        self.src.push_str(&format!("{tmp} = 0\n"));
+                        for (i, op) in operands.iter().enumerate() {
+                            let i = 32 * i;
+                            self.src.push_str(&format!("{tmp} |= {op} << {i}\n"));
+                        }
+                        tmp
+                    }
+                };
+                results.push(format!("{}({})", name.to_camel_case(), operand));
             }
-            Instruction::FlagsLower { .. } | Instruction::FlagsLower64 { .. } => {
-                results.push(format!("({}).value", operands[0]));
-            }
+            Instruction::FlagsLower { flags, .. } => match flags.repr().count() {
+                1 => results.push(format!("({}).value", operands[0])),
+                n => {
+                    let tmp = self.locals.tmp("flags");
+                    self.src
+                        .push_str(&format!("{tmp} = ({}).value\n", operands[0]));
+                    for i in 0..n {
+                        let i = 32 * i;
+                        results.push(format!("({tmp} >> {i}) & 0xffffffff"));
+                    }
+                }
+            },
 
             Instruction::VariantPayloadName => {
                 let name = self.locals.tmp("payload");

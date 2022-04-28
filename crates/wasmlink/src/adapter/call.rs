@@ -451,17 +451,12 @@ impl<'a> CallAdapter<'a> {
                         operands: element_operands,
                     });
                 }
+                TypeDefKind::Flags(r) => {
+                    for _ in 0..r.repr().count() {
+                        params.next().unwrap();
+                    }
+                }
                 TypeDefKind::Record(r) => match r.kind {
-                    RecordKind::Flags(_) => match interface.flags_repr(r) {
-                        Some(_) => {
-                            params.next().unwrap();
-                        }
-                        None => {
-                            for _ in 0..r.num_i32s() {
-                                params.next().unwrap();
-                            }
-                        }
-                    },
                     RecordKind::Tuple | RecordKind::Other => {
                         for f in &r.fields {
                             Self::push_operands(
@@ -612,8 +607,8 @@ impl<'a> CallAdapter<'a> {
                         operands: element_operands,
                     });
                 }
+                TypeDefKind::Flags(_) => {}
                 TypeDefKind::Record(r) => match r.kind {
-                    RecordKind::Flags(_) => {}
                     RecordKind::Tuple | RecordKind::Other => {
                         let offsets = sizes.field_offsets(r);
 

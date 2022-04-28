@@ -55,6 +55,7 @@ pub trait Generator {
         record: &Record,
         docs: &Docs,
     );
+    fn type_flags(&mut self, iface: &Interface, id: TypeId, name: &str, flags: &Flags, docs: &Docs);
     fn type_variant(
         &mut self,
         iface: &Interface,
@@ -88,6 +89,7 @@ pub trait Generator {
             };
             match &ty.kind {
                 TypeDefKind::Record(record) => self.type_record(iface, id, name, record, &ty.docs),
+                TypeDefKind::Flags(flags) => self.type_flags(iface, id, name, flags, &ty.docs),
                 TypeDefKind::Variant(variant) => {
                     self.type_variant(iface, id, name, variant, &ty.docs)
                 }
@@ -188,6 +190,7 @@ impl Types {
                     info |= self.type_info(iface, &field.ty);
                 }
             }
+            TypeDefKind::Flags(_) => {}
             TypeDefKind::Variant(v) => {
                 for case in v.cases.iter() {
                     if let Some(ty) = &case.ty {
@@ -225,6 +228,7 @@ impl Types {
                     self.set_param_result_ty(iface, &field.ty, param, result)
                 }
             }
+            TypeDefKind::Flags(_) => {}
             TypeDefKind::Variant(v) => {
                 for case in v.cases.iter() {
                     if let Some(ty) = &case.ty {

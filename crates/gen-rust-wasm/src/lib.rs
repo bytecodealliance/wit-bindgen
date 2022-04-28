@@ -8,7 +8,7 @@ use wit_bindgen_gen_core::wit_parser::abi::{
 };
 use wit_bindgen_gen_core::{wit_parser::*, Direction, Files, Generator, Source, TypeInfo, Types};
 use wit_bindgen_gen_rust::{
-    int_repr, wasm_type, FnSig, RustFunctionGenerator, RustGenerator, TypeMode,
+    int_repr, wasm_type, FnSig, RustFlagsRepr, RustFunctionGenerator, RustGenerator, TypeMode,
 };
 
 #[derive(Default)]
@@ -165,72 +165,53 @@ impl Generator for RustWasm {
         &mut self,
         iface: &Interface,
         id: TypeId,
-        name: &str,
+        _name: &str,
         record: &Record,
         docs: &Docs,
     ) {
-        if record.is_flags() {
-            self.src
-                .push_str("wit_bindgen_rust::bitflags::bitflags! {\n");
-            self.rustdoc(docs);
-            let repr = iface
-                .flags_repr(record)
-                .expect("unsupported number of flags");
-            self.src.push_str(&format!(
-                "pub struct {}: {} {{\n",
-                name.to_camel_case(),
-                int_repr(repr)
-            ));
-            for (i, field) in record.fields.iter().enumerate() {
-                self.rustdoc(&field.docs);
-                self.src.push_str(&format!(
-                    "const {} = 1 << {};\n",
-                    field.name.to_shouty_snake_case(),
-                    i,
-                ));
-            }
-            self.src.push_str("}\n");
-            self.src.push_str("}\n");
-
-            // Add a `from_bits_preserve` method.
-            self.src
-                .push_str(&format!("impl {} {{\n", name.to_camel_case()));
-            self.src.push_str(&format!(
-                "    /// Convert from a raw integer, preserving any unknown bits. See\n"
-            ));
-            self.src.push_str(&format!("    /// <https://github.com/bitflags/bitflags/issues/263#issuecomment-957088321>\n"));
-            self.src.push_str(&format!(
-                "    pub fn from_bits_preserve(bits: {}) -> Self {{\n",
-                int_repr(repr)
-            ));
-            self.src.push_str(&format!("        Self {{ bits }}\n"));
-            self.src.push_str(&format!("    }}\n"));
-            self.src.push_str(&format!("}}\n"));
-
-            // Add a `AsI64` etc. method.
-            let as_trait = match repr {
-                Int::U8 | Int::U16 | Int::U32 => "i32",
-                Int::U64 => "i64",
-            };
-            self.src.push_str(&format!(
-                "impl wit_bindgen_rust::rt::As{} for {} {{\n",
-                as_trait.to_camel_case(),
-                name.to_camel_case()
-            ));
-            self.src.push_str(&format!("    #[inline]"));
-            self.src.push_str(&format!(
-                "    fn as_{}(self) -> {} {{\n",
-                as_trait, as_trait
-            ));
-            self.src
-                .push_str(&format!("        self.bits() as {}\n", as_trait));
-            self.src.push_str(&format!("    }}"));
-            self.src.push_str(&format!("}}\n"));
-
-            return;
-        }
-
         self.print_typedef_record(iface, id, record, docs);
+    }
+
+    fn type_flags(
+        &mut self,
+        _iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        flags: &Flags,
+        docs: &Docs,
+    ) {
+        self.src
+            .push_str("wit_bindgen_rust::bitflags::bitflags! {\n");
+        self.rustdoc(docs);
+        let repr = RustFlagsRepr::new(flags);
+        self.src
+            .push_str(&format!("pub struct {}: {repr} {{\n", name.to_camel_case(),));
+        for (i, flag) in flags.flags.iter().enumerate() {
+            self.rustdoc(&flag.docs);
+            self.src.push_str(&format!(
+                "const {} = 1 << {};\n",
+                flag.name.to_shouty_snake_case(),
+                i,
+            ));
+        }
+        self.src.push_str("}\n");
+        self.src.push_str("}\n");
+
+        // Add a `from_bits_preserve` method.
+        self.src
+            .push_str(&format!("impl {} {{\n", name.to_camel_case()));
+        self.src.push_str(&format!(
+            "    /// Convert from a raw integer, preserving any unknown bits. See\n"
+        ));
+        self.src.push_str(&format!(
+            "    /// <https://github.com/bitflags/bitflags/issues/263#issuecomment-957088321>\n"
+        ));
+        self.src.push_str(&format!(
+            "    pub fn from_bits_preserve(bits: {repr}) -> Self {{\n",
+        ));
+        self.src.push_str(&format!("        Self {{ bits }}\n"));
+        self.src.push_str(&format!("    }}\n"));
+        self.src.push_str(&format!("}}\n"));
     }
 
     fn type_variant(
@@ -934,23 +915,20 @@ impl Bindgen for FunctionBindgen<'_> {
                 ));
             }
 
-            Instruction::FlagsLower { record, .. } => {
+            Instruction::FlagsLower { flags, .. } => {
                 let tmp = self.tmp();
                 self.push_str(&format!("let flags{} = {};\n", tmp, operands[0]));
-                for i in 0..record.num_i32s() {
+                for i in 0..flags.repr().count() {
                     results.push(format!("(flags{}.bits() >> {}) as i32", tmp, i * 32));
                 }
             }
-            Instruction::FlagsLower64 { .. } => {
-                let s = operands.pop().unwrap();
-                results.push(format!("wit_bindgen_rust::rt::as_i64({})", s));
-            }
-            Instruction::FlagsLift { name, .. } | Instruction::FlagsLift64 { name, .. } => {
+            Instruction::FlagsLift { name, flags, .. } => {
+                let repr = RustFlagsRepr::new(flags);
                 let name = name.to_camel_case();
                 let mut result = format!("{}::empty()", name);
                 for (i, op) in operands.iter().enumerate() {
                     result.push_str(&format!(
-                        " | {}::from_bits_preserve((({} as u32) << {}) as _)",
+                        " | {}::from_bits_preserve((({} as {repr}) << {}) as _)",
                         name,
                         op,
                         i * 32

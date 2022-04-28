@@ -48,6 +48,7 @@ fn has_list(interface: &WitInterface, ty: &WitType) -> bool {
         Type::Id(id) => match &interface.types[*id].kind {
             TypeDefKind::List(_) => true,
             TypeDefKind::Type(t) => has_list(interface, t),
+            TypeDefKind::Flags(_) => false,
             TypeDefKind::Record(r) => r.fields.iter().any(|f| has_list(interface, &f.ty)),
             TypeDefKind::Variant(v) => v.cases.iter().any(|c| {
                 c.ty.as_ref()
