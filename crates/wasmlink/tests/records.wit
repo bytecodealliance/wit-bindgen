@@ -14,16 +14,16 @@ record scalars {
 scalar-arg: function(x: scalars)
 scalar-result: function() -> scalars
 
-record really-flags {
-    a: bool,
-    b: bool,
-    c: bool,
-    d: bool,
-    e: bool,
-    f: bool,
-    g: bool,
-    h: bool,
-    i: bool,
+flags really-flags {
+    a,
+    b,
+    c,
+    d,
+    e,
+    f,
+    g,
+    h,
+    i,
 }
 
 flags-arg: function(x: really-flags)

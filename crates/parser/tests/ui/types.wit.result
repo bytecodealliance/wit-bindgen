@@ -291,47 +291,29 @@
     {
       "idx": 31,
       "name": "t30",
-      "record": {
-        "fields": []
+      "flags": {
+        "flags": []
       }
     },
     {
       "idx": 32,
       "name": "t31",
-      "record": {
-        "fields": [
-          [
-            "a",
-            "bool"
-          ],
-          [
-            "b",
-            "bool"
-          ],
-          [
-            "c",
-            "bool"
-          ]
+      "flags": {
+        "flags": [
+          "a",
+          "b",
+          "c"
         ]
       }
     },
     {
       "idx": 33,
       "name": "t32",
-      "record": {
-        "fields": [
-          [
-            "a",
-            "bool"
-          ],
-          [
-            "b",
-            "bool"
-          ],
-          [
-            "c",
-            "bool"
-          ]
+      "flags": {
+        "flags": [
+          "a",
+          "b",
+          "c"
         ]
       }
     },

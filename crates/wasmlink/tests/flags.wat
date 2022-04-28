@@ -1,4 +1,5 @@
 (module
+    (memory (export "memory") 1)
     (func (export "roundtrip-flag1") (param i32) (result i32)
         unreachable
     )
