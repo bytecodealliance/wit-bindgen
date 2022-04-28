@@ -48,7 +48,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -56,7 +57,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -64,7 +66,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -72,7 +75,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -80,7 +84,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -88,7 +93,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -96,7 +102,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -104,7 +111,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -112,7 +120,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -120,15 +129,17 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
-            }
+                retptr: false,
+                indirect_params: false,
+    }
         ),
         (
             "SMW_clear_operands",
             WasmSignature {
                 params: vec![],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -136,7 +147,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -144,7 +156,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -152,7 +165,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -160,7 +174,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -168,7 +183,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -176,7 +192,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -184,7 +201,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -192,7 +210,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -200,7 +219,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -208,7 +228,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -216,7 +237,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -224,7 +246,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -232,7 +255,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: false,indirect_params:false,
+                retptr: false,
+                indirect_params: false,
             },
         ),
     ];

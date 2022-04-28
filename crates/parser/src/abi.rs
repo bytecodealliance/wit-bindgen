@@ -665,14 +665,18 @@ def_instruction! {
             params: usize,
         } : [*params + 2] => [0],
 
-        /// TODO
+        /// Calls the `realloc` function specified in a malloc-like fashion
+        /// allocating `size` bytes with alignment `align`.
+        ///
+        /// Pushes the returned pointer onto the stack.
         Malloc {
             realloc: &'static str,
             size: usize,
             align: usize,
         } : [0] => [1],
 
-        /// TODO
+        /// Calls the `free` function specified to deallocate the pointer on the
+        /// stack which has `size` bytes with alignment `align`.
         Free {
             free: &'static str,
             size: usize,
