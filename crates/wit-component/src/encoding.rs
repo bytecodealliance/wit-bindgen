@@ -91,6 +91,16 @@ impl PartialEq for TypeDefKey<'_> {
                             })
                     })
                 }
+                (TypeDefKind::Flags(f1), TypeDefKind::Flags(f2)) => {
+                    if f1.flags.len() != f2.flags.len() {
+                        return false;
+                    }
+
+                    f1.flags
+                        .iter()
+                        .zip(f2.flags.iter())
+                        .all(|(f1, f2)| f1.name == f2.name)
+                }
                 (TypeDefKind::Variant(v1), TypeDefKind::Variant(v2)) => {
                     if v1.cases.len() != v2.cases.len() {
                         return false;
