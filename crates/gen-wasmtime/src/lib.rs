@@ -434,11 +434,22 @@ impl Generator for Wasmtime {
         &mut self,
         iface: &Interface,
         id: TypeId,
-        name: &str,
+        _name: &str,
         variant: &Variant,
         docs: &Docs,
     ) {
-        self.print_typedef_variant(iface, id, name, variant, docs);
+        self.print_typedef_variant(iface, id, variant, docs);
+    }
+
+    fn type_enum(
+        &mut self,
+        _iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        enum_: &Enum,
+        docs: &Docs,
+    ) {
+        self.print_typedef_enum(name, enum_, docs);
     }
 
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
@@ -1632,6 +1643,30 @@ impl Bindgen for FunctionBindgen<'_> {
                 });
                 result.push_str("_ => return Err(invalid_variant(\"");
                 result.push_str(&variant_name);
+                result.push_str("\")),\n");
+                result.push_str("}");
+                results.push(result);
+                self.gen.needs_invalid_variant = true;
+            }
+
+            Instruction::EnumLower { .. } => {
+                results.push(format!("{} as i32", operands[0]));
+            }
+
+            Instruction::EnumLift { name, enum_, .. } => {
+                let mut result = format!("match ");
+                result.push_str(&operands[0]);
+                result.push_str(" {\n");
+                for (i, case) in enum_.cases.iter().enumerate() {
+                    result.push_str(&i.to_string());
+                    result.push_str(" => ");
+                    result.push_str(&name.to_camel_case());
+                    result.push_str("::");
+                    result.push_str(&wit_bindgen_gen_rust::case_name(&case.name));
+                    result.push_str(",\n");
+                }
+                result.push_str("_ => return Err(invalid_variant(\"");
+                result.push_str(&name.to_camel_case());
                 result.push_str("\")),\n");
                 result.push_str("}");
                 results.push(result);

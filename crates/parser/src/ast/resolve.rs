@@ -23,6 +23,7 @@ enum Key {
     Record(Vec<(String, Type)>),
     Flags(Vec<String>),
     Tuple(Vec<Type>),
+    Enum(Vec<String>),
     List(Type),
 }
 
@@ -225,6 +226,9 @@ impl Resolver {
                         .collect(),
                     tag: v.tag,
                 }),
+                TypeDefKind::Enum(e) => TypeDefKind::Enum(Enum {
+                    cases: e.cases.clone(),
+                }),
                 TypeDefKind::List(t) => TypeDefKind::List(self.copy_type(dep_name, dep, *t)),
             },
         };
@@ -423,6 +427,26 @@ impl Resolver {
                     cases,
                 })
             }
+            super::Type::Enum(e) => {
+                if e.cases.is_empty() {
+                    return Err(Error {
+                        span: e.span,
+                        msg: "empty enum".to_string(),
+                    }
+                    .into());
+                }
+                let cases = e
+                    .cases
+                    .iter()
+                    .map(|case| {
+                        Ok(EnumCase {
+                            docs: self.docs(&case.docs),
+                            name: case.name.name.to_string(),
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                TypeDefKind::Enum(Enum { cases })
+            }
         })
     }
 
@@ -481,6 +505,9 @@ impl Resolver {
                 Key::Flags(r.flags.iter().map(|f| f.name.clone()).collect::<Vec<_>>())
             }
             TypeDefKind::Tuple(t) => Key::Tuple(t.types.clone()),
+            TypeDefKind::Enum(r) => {
+                Key::Enum(r.cases.iter().map(|f| f.name.clone()).collect::<Vec<_>>())
+            }
             TypeDefKind::List(ty) => Key::List(*ty),
         };
         let types = &mut self.types;
@@ -647,7 +674,10 @@ impl Resolver {
                 }
             }
 
-            TypeDefKind::Flags(_) | TypeDefKind::List(_) | TypeDefKind::Type(_) => {}
+            TypeDefKind::Flags(_)
+            | TypeDefKind::List(_)
+            | TypeDefKind::Type(_)
+            | TypeDefKind::Enum(_) => {}
         }
 
         valid.insert(ty);

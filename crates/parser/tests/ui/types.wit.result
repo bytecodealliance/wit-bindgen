@@ -432,40 +432,22 @@
     {
       "idx": 42,
       "name": "t41",
-      "variant": {
+      "enum": {
         "cases": [
-          [
-            "a",
-            null
-          ],
-          [
-            "b",
-            null
-          ],
-          [
-            "c",
-            null
-          ]
+          "a",
+          "b",
+          "c"
         ]
       }
     },
     {
       "idx": 43,
       "name": "t42",
-      "variant": {
+      "enum": {
         "cases": [
-          [
-            "a",
-            null
-          ],
-          [
-            "b",
-            null
-          ],
-          [
-            "c",
-            null
-          ]
+          "a",
+          "b",
+          "c"
         ]
       }
     },

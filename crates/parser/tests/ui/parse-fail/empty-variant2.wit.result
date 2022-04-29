@@ -1,4 +1,4 @@
-empty variant
+empty enum
      --> tests/ui/parse-fail/empty-variant2.wit:2:6
       |
     2 | enum t {}

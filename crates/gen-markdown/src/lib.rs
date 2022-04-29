@@ -78,7 +78,9 @@ impl Markdown {
                         }
                         self.src.push_str(")");
                     }
-                    TypeDefKind::Record(_) | TypeDefKind::Flags(_) => unreachable!(),
+                    TypeDefKind::Record(_) | TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => {
+                        unreachable!()
+                    }
                     TypeDefKind::Variant(v) => {
                         if let Some(t) = v.as_option() {
                             self.src.push_str("option<");
@@ -269,6 +271,30 @@ impl Generator for Markdown {
                 self.src.push_str(": ");
                 self.print_ty(iface, ty, false);
             }
+            self.src.indent(1);
+            self.src.push_str("\n\n");
+            self.docs(&case.docs);
+            self.src.deindent(1);
+            self.src.push_str("\n");
+        }
+    }
+
+    fn type_enum(&mut self, _iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
+        self.print_type_header(name);
+        self.src.push_str("enum\n\n");
+        self.print_type_info(id, docs);
+        self.src.push_str("\n### Enum Cases\n\n");
+        for case in enum_.cases.iter() {
+            self.src.push_str(&format!(
+                "- <a href=\"{v}.{c}\" name=\"{v}.{c}\"></a> [`{name}`](#{v}.{c})",
+                v = name.to_snake_case(),
+                c = case.name.to_snake_case(),
+                name = case.name,
+            ));
+            self.hrefs.insert(
+                format!("{}::{}", name, case.name),
+                format!("#{}.{}", name.to_snake_case(), case.name.to_snake_case()),
+            );
             self.src.indent(1);
             self.src.push_str("\n\n");
             self.docs(&case.docs);

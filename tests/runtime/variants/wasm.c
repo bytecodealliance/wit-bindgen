@@ -157,7 +157,7 @@ void exports_test_imports() {
     imports_my_errno_t c;
     imports_variant_enums(true, 0, IMPORTS_MY_ERRNO_SUCCESS, &a, &b, &c);
     assert(a == false);
-    assert(b == 1);
+    assert(b.tag == 1);
     assert(c == IMPORTS_MY_ERRNO_A);
   }
 }

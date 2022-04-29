@@ -39,6 +39,7 @@ impl SizeAlign {
                 }
                 (size, align)
             }
+            TypeDefKind::Enum(e) => int_size_align(e.tag()),
         }
     }
 

@@ -56,6 +56,7 @@ fn has_list(interface: &WitInterface, ty: &WitType) -> bool {
                     .map(|t| has_list(interface, t))
                     .unwrap_or(false)
             }),
+            TypeDefKind::Enum(_) => false,
         },
         _ => false,
     }

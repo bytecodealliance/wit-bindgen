@@ -94,6 +94,7 @@ enum Type<'a> {
     Flags(Flags<'a>),
     Variant(Variant<'a>),
     Tuple(Vec<Type<'a>>),
+    Enum(Enum<'a>),
 }
 
 struct Record<'a> {
@@ -125,6 +126,16 @@ struct Case<'a> {
     docs: Docs<'a>,
     name: Id<'a>,
     ty: Option<Type<'a>>,
+}
+
+struct Enum<'a> {
+    span: Span,
+    cases: Vec<EnumCase<'a>>,
+}
+
+struct EnumCase<'a> {
+    docs: Docs<'a>,
+    name: Id<'a>,
 }
 
 pub struct Value<'a> {
@@ -330,8 +341,7 @@ impl<'a> TypeDef<'a> {
     fn parse_enum(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Enum)?;
         let name = parse_id(tokens)?;
-        let ty = Type::Variant(Variant {
-            tag: None,
+        let ty = Type::Enum(Enum {
             span: name.span,
             cases: parse_list(
                 tokens,
@@ -339,11 +349,7 @@ impl<'a> TypeDef<'a> {
                 Token::RightBrace,
                 |docs, tokens| {
                     let name = parse_id(tokens)?;
-                    Ok(Case {
-                        docs,
-                        name,
-                        ty: None,
-                    })
+                    Ok(EnumCase { docs, name })
                 },
             )?,
         });

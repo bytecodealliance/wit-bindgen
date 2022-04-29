@@ -1,6 +1,6 @@
 use crate::sizealign::align_to;
 use crate::{
-    Flags, FlagsRepr, Function, Int, Interface, Record, ResourceId, Tuple, Type, TypeDefKind,
+    Enum, Flags, FlagsRepr, Function, Int, Interface, Record, ResourceId, Tuple, Type, TypeDefKind,
     TypeId, Variant,
 };
 use std::mem;
@@ -568,6 +568,20 @@ def_instruction! {
             ty: TypeId,
         } : [1] => [1],
 
+        /// Pops an enum off the stack and pushes the `i32` representation.
+        EnumLower {
+            enum_: &'a Enum,
+            name: &'a str,
+            ty: TypeId,
+        } : [1] => [1],
+
+        /// Pops an `i32` off the stack and lifts it into the `enum` specified.
+        EnumLift {
+            enum_: &'a Enum,
+            name: &'a str,
+            ty: TypeId,
+        } : [1] => [1],
+
         // calling/control flow
 
         /// Represents a call to a raw WebAssembly API. The module/name are
@@ -967,6 +981,8 @@ impl Interface {
                         }
                     }
                 }
+
+                TypeDefKind::Enum(e) => result.push(e.tag().into()),
             },
         }
     }
@@ -1510,6 +1526,13 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         name: self.iface.types[id].name.as_deref(),
                     });
                 }
+                TypeDefKind::Enum(enum_) => {
+                    self.emit(&EnumLower {
+                        enum_,
+                        ty: id,
+                        name: self.iface.types[id].name.as_deref().unwrap(),
+                    });
+                }
             },
         }
     }
@@ -1666,6 +1689,14 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         name: self.iface.types[id].name.as_deref(),
                     });
                 }
+
+                TypeDefKind::Enum(enum_) => {
+                    self.emit(&EnumLift {
+                        enum_,
+                        ty: id,
+                        name: self.iface.types[id].name.as_deref().unwrap(),
+                    });
+                }
             },
         }
     }
@@ -1769,6 +1800,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         results: &[],
                         name: self.iface.types[id].name.as_deref(),
                     });
+                }
+
+                TypeDefKind::Enum(e) => {
+                    self.lower(ty);
+                    self.stack.push(addr);
+                    self.store_intrepr(offset, e.tag());
                 }
             },
         }
@@ -1895,6 +1932,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         ty: id,
                         name: self.iface.types[id].name.as_deref(),
                     });
+                }
+
+                TypeDefKind::Enum(e) => {
+                    self.stack.push(addr.clone());
+                    self.load_intrepr(offset, e.tag());
+                    self.lift(ty);
                 }
             },
         }
