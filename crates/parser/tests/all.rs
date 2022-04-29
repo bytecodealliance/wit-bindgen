@@ -197,6 +197,9 @@ fn to_json(i: &Interface) -> String {
         Variant {
             cases: Vec<(String, Option<String>)>,
         },
+        Tuple {
+            types: Vec<String>,
+        },
         List(String),
     }
 
@@ -270,6 +273,9 @@ fn to_json(i: &Interface) -> String {
                     .iter()
                     .map(|f| (f.name.clone(), translate_type(&f.ty)))
                     .collect(),
+            },
+            TypeDefKind::Tuple(t) => Type::Tuple {
+                types: t.types.iter().map(|ty| translate_type(ty)).collect(),
             },
             TypeDefKind::Flags(r) => Type::Flags {
                 flags: r.flags.iter().map(|f| f.name.clone()).collect(),

@@ -172,6 +172,17 @@ impl Generator for RustWasm {
         self.print_typedef_record(iface, id, record, docs);
     }
 
+    fn type_tuple(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        _name: &str,
+        tuple: &Tuple,
+        docs: &Docs,
+    ) {
+        self.print_typedef_tuple(iface, id, tuple, docs);
+    }
+
     fn type_flags(
         &mut self,
         _iface: &Interface,
@@ -942,6 +953,13 @@ impl Bindgen for FunctionBindgen<'_> {
             }
             Instruction::RecordLift { ty, record, .. } => {
                 self.record_lift(iface, *ty, record, operands, results);
+            }
+
+            Instruction::TupleLower { tuple, .. } => {
+                self.tuple_lower(tuple, &operands[0], results);
+            }
+            Instruction::TupleLift { .. } => {
+                self.tuple_lift(operands, results);
             }
 
             Instruction::VariantPayloadName => results.push("e".to_string()),

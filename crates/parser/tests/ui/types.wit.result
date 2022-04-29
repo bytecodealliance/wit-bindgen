@@ -244,47 +244,35 @@
     {
       "idx": 27,
       "name": "t26",
-      "record": {
-        "fields": []
+      "tuple": {
+        "types": []
       }
     },
     {
       "idx": 28,
       "name": "t27",
-      "record": {
-        "fields": [
-          [
-            "0",
-            "u32"
-          ]
+      "tuple": {
+        "types": [
+          "u32"
         ]
       }
     },
     {
       "idx": 29,
       "name": "t28",
-      "record": {
-        "fields": [
-          [
-            "0",
-            "u32"
-          ]
+      "tuple": {
+        "types": [
+          "u32"
         ]
       }
     },
     {
       "idx": 30,
       "name": "t29",
-      "record": {
-        "fields": [
-          [
-            "0",
-            "u32"
-          ],
-          [
-            "1",
-            "u64"
-          ]
+      "tuple": {
+        "types": [
+          "u32",
+          "u64"
         ]
       }
     },
