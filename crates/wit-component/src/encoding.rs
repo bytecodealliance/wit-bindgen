@@ -6,14 +6,13 @@ use anyhow::{bail, Context, Result};
 use indexmap::IndexMap;
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
-    hash::{Hash, Hasher},
     ops::BitOr,
 };
 use wasm_encoder::*;
 use wasmparser::{Validator, WasmFeatures};
 use wit_parser::{
     abi::{AbiVariant, WasmSignature, WasmType},
-    Flags, Function, FunctionKind, Interface, Record, Tuple, Type, TypeDef, TypeDefKind, Variant,
+    Flags, Function, FunctionKind, Interface, Record, Tuple, Type, TypeDefKind, TypeId, Variant,
 };
 
 const INDIRECT_TABLE_NAME: &str = "$imports";
@@ -24,252 +23,6 @@ fn to_val_type(ty: &WasmType) -> ValType {
         WasmType::I64 => ValType::I64,
         WasmType::F32 => ValType::F32,
         WasmType::F64 => ValType::F64,
-    }
-}
-
-struct TypeKey<'a> {
-    interface: &'a Interface,
-    ty: Type,
-}
-
-impl Hash for TypeKey<'_> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self.ty {
-            Type::Id(id) => TypeDefKey::new(self.interface, &self.interface.types[id]).hash(state),
-            _ => self.ty.hash(state),
-        }
-    }
-}
-
-impl PartialEq for TypeKey<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self.ty, other.ty) {
-            (Type::Id(id), Type::Id(other_id)) => {
-                TypeDefKey::new(self.interface, &self.interface.types[id])
-                    == TypeDefKey::new(other.interface, &other.interface.types[other_id])
-            }
-            _ => self.ty.eq(&other.ty),
-        }
-    }
-}
-
-impl Eq for TypeKey<'_> {}
-
-/// Represents a key type for interface type definitions.
-pub struct TypeDefKey<'a> {
-    interface: &'a Interface,
-    def: &'a TypeDef,
-}
-
-impl<'a> TypeDefKey<'a> {
-    fn new(interface: &'a Interface, def: &'a TypeDef) -> Self {
-        Self { interface, def }
-    }
-}
-
-impl PartialEq for TypeDefKey<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        let def = self.def;
-        let other_def = other.def;
-        def.name == other_def.name
-            && match (&def.kind, &other_def.kind) {
-                (TypeDefKind::Record(r1), TypeDefKind::Record(r2)) => {
-                    if r1.fields.len() != r2.fields.len() {
-                        return false;
-                    }
-
-                    r1.fields.iter().zip(r2.fields.iter()).all(|(f1, f2)| {
-                        f1.name == f2.name
-                            && TypeKey {
-                                interface: self.interface,
-                                ty: f1.ty,
-                            }
-                            .eq(&TypeKey {
-                                interface: other.interface,
-                                ty: f2.ty,
-                            })
-                    })
-                }
-                (TypeDefKind::Tuple(t1), TypeDefKind::Tuple(t2)) => {
-                    if t1.types.len() != t2.types.len() {
-                        return false;
-                    }
-
-                    t1.types.iter().zip(t2.types.iter()).all(|(t1, t2)| {
-                        TypeKey {
-                            interface: self.interface,
-                            ty: *t1,
-                        }
-                        .eq(&TypeKey {
-                            interface: other.interface,
-                            ty: *t2,
-                        })
-                    })
-                }
-                (TypeDefKind::Flags(f1), TypeDefKind::Flags(f2)) => {
-                    if f1.flags.len() != f2.flags.len() {
-                        return false;
-                    }
-
-                    f1.flags
-                        .iter()
-                        .zip(f2.flags.iter())
-                        .all(|(f1, f2)| f1.name == f2.name)
-                }
-                (TypeDefKind::Variant(v1), TypeDefKind::Variant(v2)) => {
-                    if v1.cases.len() != v2.cases.len() {
-                        return false;
-                    }
-
-                    v1.cases.iter().zip(v2.cases.iter()).all(|(c1, c2)| {
-                        c1.name == c2.name
-                            && c1
-                                .ty
-                                .map(|ty| TypeKey {
-                                    interface: self.interface,
-                                    ty,
-                                })
-                                .eq(&c2.ty.map(|ty| TypeKey {
-                                    interface: other.interface,
-                                    ty,
-                                }))
-                    })
-                }
-                (TypeDefKind::List(t1), TypeDefKind::List(t2))
-                | (TypeDefKind::Type(t1), TypeDefKind::Type(t2)) => TypeKey {
-                    interface: self.interface,
-                    ty: *t1,
-                }
-                .eq(&TypeKey {
-                    interface: other.interface,
-                    ty: *t2,
-                }),
-                _ => false,
-            }
-    }
-}
-
-impl Eq for TypeDefKey<'_> {}
-
-impl Hash for TypeDefKey<'_> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        let def = self.def;
-        def.name.hash(state);
-        match &def.kind {
-            TypeDefKind::Record(r) => {
-                state.write_u8(0);
-                for f in &r.fields {
-                    f.name.hash(state);
-                    TypeKey {
-                        interface: self.interface,
-                        ty: f.ty,
-                    }
-                    .hash(state);
-                }
-            }
-            TypeDefKind::Tuple(t) => {
-                state.write_u8(1);
-                for ty in &t.types {
-                    TypeKey {
-                        interface: self.interface,
-                        ty: *ty,
-                    }
-                    .hash(state);
-                }
-            }
-            TypeDefKind::Flags(r) => {
-                state.write_u8(2);
-                for f in &r.flags {
-                    f.name.hash(state);
-                }
-            }
-            TypeDefKind::Variant(v) => {
-                state.write_u8(3);
-                for c in &v.cases {
-                    c.name.hash(state);
-                    c.ty.map(|ty| TypeKey {
-                        interface: self.interface,
-                        ty,
-                    })
-                    .hash(state);
-                }
-            }
-            TypeDefKind::List(ty) => {
-                state.write_u8(4);
-                TypeKey {
-                    interface: self.interface,
-                    ty: *ty,
-                }
-                .hash(state);
-            }
-            TypeDefKind::Type(ty) => {
-                state.write_u8(5);
-                TypeKey {
-                    interface: self.interface,
-                    ty: *ty,
-                }
-                .hash(state);
-            }
-        }
-    }
-}
-
-/// Represents a key type for interface function definitions.
-pub struct FunctionKey<'a> {
-    interface: &'a Interface,
-    func: &'a Function,
-}
-
-impl PartialEq for FunctionKey<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        if self.func.params.len() != other.func.params.len() {
-            return false;
-        }
-
-        self.func
-            .params
-            .iter()
-            .zip(other.func.params.iter())
-            .all(|((n1, t1), (n2, t2))| {
-                n1 == n2
-                    && TypeKey {
-                        interface: self.interface,
-                        ty: *t1,
-                    }
-                    .eq(&TypeKey {
-                        interface: other.interface,
-                        ty: *t2,
-                    })
-            })
-            && TypeKey {
-                interface: self.interface,
-                ty: self.func.result,
-            }
-            .eq(&TypeKey {
-                interface: other.interface,
-                ty: other.func.result,
-            })
-    }
-}
-
-impl Eq for FunctionKey<'_> {}
-
-impl Hash for FunctionKey<'_> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.func.params.len().hash(state);
-        for (name, ty) in &self.func.params {
-            name.hash(state);
-            TypeKey {
-                interface: self.interface,
-                ty: *ty,
-            }
-            .hash(state);
-        }
-        TypeKey {
-            interface: self.interface,
-            ty: self.func.result,
-        }
-        .hash(state);
     }
 }
 
@@ -311,10 +64,12 @@ impl<'a> InstanceTypeEncoder<'a> {
     }
 }
 
+type FunctionKey<'a> = (&'a [(String, Type)], &'a Type);
+
 #[derive(Default)]
 struct TypeEncoder<'a> {
     types: ComponentTypeSection,
-    type_map: HashMap<TypeDefKey<'a>, u32>,
+    type_map: HashMap<TypeId, u32>,
     func_type_map: HashMap<FunctionKey<'a>, u32>,
     exports: ComponentExportSection,
     exported: HashMap<&'a str, u32>,
@@ -333,7 +88,7 @@ impl<'a> TypeEncoder<'a> {
         func: &'a Function,
         instance: &mut Option<InstanceTypeEncoder<'a>>,
     ) -> Result<u32> {
-        let key = FunctionKey { interface, func };
+        let key = (func.params.as_slice(), &func.result);
         if let Some(index) = self.func_type_map.get(&key) {
             return Ok(*index);
         }
@@ -381,8 +136,7 @@ impl<'a> TypeEncoder<'a> {
             Type::String => InterfaceTypeRef::Primitive(PrimitiveInterfaceType::String),
             Type::Id(id) => {
                 let ty = &interface.types[*id];
-                let key = TypeDefKey::new(interface, &interface.types[*id]);
-                let encoded = if let Some(index) = self.type_map.get(&key) {
+                let encoded = if let Some(index) = self.type_map.get(id) {
                     InterfaceTypeRef::Type(*index)
                 } else {
                     let mut encoded = match &ty.kind {
@@ -410,7 +164,7 @@ impl<'a> TypeEncoder<'a> {
                     }
 
                     if let InterfaceTypeRef::Type(index) = encoded {
-                        self.type_map.insert(key, index);
+                        self.type_map.insert(*id, index);
                     }
 
                     encoded
@@ -1378,10 +1132,7 @@ impl<'a> ComponentEncoder<'a> {
                 // The type should already have been encoded
                 let ty = *types
                     .func_type_map
-                    .get(&FunctionKey {
-                        interface: export,
-                        func,
-                    })
+                    .get(&(&func.params, &func.result))
                     .expect("the type should be encoded");
 
                 let options = match RequiredOptions::for_function(export, func) {
