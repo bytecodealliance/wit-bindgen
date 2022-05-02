@@ -68,18 +68,17 @@ impl Markdown {
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty(iface, t, false),
-                    TypeDefKind::Record(r) => {
-                        assert!(r.is_tuple());
+                    TypeDefKind::Tuple(t) => {
                         self.src.push_str("(");
-                        for (i, f) in r.fields.iter().enumerate() {
+                        for (i, t) in t.types.iter().enumerate() {
                             if i > 0 {
                                 self.src.push_str(", ");
                             }
-                            self.print_ty(iface, &f.ty, false);
+                            self.print_ty(iface, t, false);
                         }
                         self.src.push_str(")");
                     }
-                    TypeDefKind::Flags(_) => unreachable!(),
+                    TypeDefKind::Record(_) | TypeDefKind::Flags(_) => unreachable!(),
                     TypeDefKind::Variant(v) => {
                         if let Some(t) = v.as_option() {
                             self.src.push_str("option<");
@@ -179,6 +178,34 @@ impl Generator for Markdown {
             self.src.push_str("\n\n");
             self.docs(&field.docs);
             self.src.deindent(1);
+            self.src.push_str("\n");
+        }
+    }
+
+    fn type_tuple(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        tuple: &Tuple,
+        docs: &Docs,
+    ) {
+        self.print_type_header(name);
+        self.src.push_str("tuple\n\n");
+        self.print_type_info(id, docs);
+        self.src.push_str("\n### Tuple Fields\n\n");
+        for (i, ty) in tuple.types.iter().enumerate() {
+            self.src.push_str(&format!(
+                "- <a href=\"{r}.{f}\" name=\"{r}.{f}\"></a> [`{name}`](#{r}.{f}): ",
+                r = name.to_snake_case(),
+                f = i,
+                name = i,
+            ));
+            self.hrefs.insert(
+                format!("{}::{}", name, i),
+                format!("#{}.{}", name.to_snake_case(), i),
+            );
+            self.print_ty(iface, ty, false);
             self.src.push_str("\n");
         }
     }

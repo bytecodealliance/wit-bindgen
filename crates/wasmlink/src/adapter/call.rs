@@ -2,8 +2,7 @@ use crate::module::Interface;
 use std::collections::HashMap;
 use wasm_encoder::{BlockType, Instruction, MemArg, ValType};
 use wit_parser::{
-    abi::WasmSignature, Function, Int, Interface as WitInterface, RecordKind, SizeAlign, Type,
-    TypeDefKind,
+    abi::WasmSignature, Function, Int, Interface as WitInterface, SizeAlign, Type, TypeDefKind,
 };
 
 // The parent's memory is imported, so it is always index 0 for the adapter logic
@@ -456,21 +455,33 @@ impl<'a> CallAdapter<'a> {
                         params.next().unwrap();
                     }
                 }
-                TypeDefKind::Record(r) => match r.kind {
-                    RecordKind::Tuple | RecordKind::Other => {
-                        for f in &r.fields {
-                            Self::push_operands(
-                                interface,
-                                sizes,
-                                &f.ty,
-                                params,
-                                mode,
-                                locals_count,
-                                operands,
-                            );
-                        }
+                TypeDefKind::Record(r) => {
+                    for f in &r.fields {
+                        Self::push_operands(
+                            interface,
+                            sizes,
+                            &f.ty,
+                            params,
+                            mode,
+                            locals_count,
+                            operands,
+                        );
                     }
-                },
+                }
+                TypeDefKind::Tuple(t) => {
+                    for ty in &t.types {
+                        Self::push_operands(
+                            interface,
+                            sizes,
+                            ty,
+                            params,
+                            mode,
+                            locals_count,
+                            operands,
+                        );
+                    }
+                }
+
                 TypeDefKind::Variant(v) if v.is_enum() => {
                     params.next().unwrap();
                 }
@@ -608,23 +619,38 @@ impl<'a> CallAdapter<'a> {
                     });
                 }
                 TypeDefKind::Flags(_) => {}
-                TypeDefKind::Record(r) => match r.kind {
-                    RecordKind::Tuple | RecordKind::Other => {
-                        let offsets = sizes.field_offsets(r);
+                TypeDefKind::Record(r) => {
+                    let offsets = sizes.field_offsets(r.fields.iter().map(|f| &f.ty));
 
-                        for (f, o) in r.fields.iter().zip(offsets) {
-                            Self::push_element_operands(
-                                interface,
-                                sizes,
-                                &f.ty,
-                                offset + o as u32,
-                                mode,
-                                locals_count,
-                                operands,
-                            );
-                        }
+                    for (f, o) in r.fields.iter().zip(offsets) {
+                        Self::push_element_operands(
+                            interface,
+                            sizes,
+                            &f.ty,
+                            offset + o as u32,
+                            mode,
+                            locals_count,
+                            operands,
+                        );
                     }
-                },
+                }
+
+                TypeDefKind::Tuple(t) => {
+                    let offsets = sizes.field_offsets(&t.types);
+
+                    for (ty, o) in t.types.iter().zip(offsets) {
+                        Self::push_element_operands(
+                            interface,
+                            sizes,
+                            ty,
+                            offset + o as u32,
+                            mode,
+                            locals_count,
+                            operands,
+                        );
+                    }
+                }
+
                 TypeDefKind::Variant(v) if v.is_enum() => {}
                 TypeDefKind::Variant(v) => {
                     let payload_offset = sizes.payload_offset(v) as u32;

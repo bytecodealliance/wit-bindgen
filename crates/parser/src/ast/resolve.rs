@@ -22,6 +22,7 @@ enum Key {
     Variant(Vec<(String, Option<Type>)>),
     Record(Vec<(String, Type)>),
     Flags(Vec<String>),
+    Tuple(Vec<Type>),
     List(Type),
 }
 
@@ -203,9 +204,15 @@ impl Resolver {
                             ty: self.copy_type(dep_name, dep, field.ty),
                         })
                         .collect(),
-                    kind: r.kind,
                 }),
                 TypeDefKind::Flags(f) => TypeDefKind::Flags(f.clone()),
+                TypeDefKind::Tuple(t) => TypeDefKind::Tuple(Tuple {
+                    types: t
+                        .types
+                        .iter()
+                        .map(|ty| self.copy_type(dep_name, dep, *ty))
+                        .collect(),
+                }),
                 TypeDefKind::Variant(v) => TypeDefKind::Variant(Variant {
                     cases: v
                         .cases
@@ -366,14 +373,7 @@ impl Resolver {
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
-                TypeDefKind::Record(Record {
-                    kind: if record.tuple_hint {
-                        RecordKind::Tuple
-                    } else {
-                        RecordKind::infer(&fields)
-                    },
-                    fields,
-                })
+                TypeDefKind::Record(Record { fields })
             }
             super::Type::Flags(flags) => {
                 let flags = flags
@@ -385,6 +385,13 @@ impl Resolver {
                     })
                     .collect::<Vec<_>>();
                 TypeDefKind::Flags(Flags { flags })
+            }
+            super::Type::Tuple(types) => {
+                let types = types
+                    .iter()
+                    .map(|ty| self.resolve_type(ty))
+                    .collect::<Result<Vec<_>>>()?;
+                TypeDefKind::Tuple(Tuple { types })
             }
             super::Type::Variant(variant) => {
                 if variant.cases.is_empty() {
@@ -473,6 +480,7 @@ impl Resolver {
             TypeDefKind::Flags(r) => {
                 Key::Flags(r.flags.iter().map(|f| f.name.clone()).collect::<Vec<_>>())
             }
+            TypeDefKind::Tuple(t) => Key::Tuple(t.types.clone()),
             TypeDefKind::List(ty) => Key::List(*ty),
         };
         let types = &mut self.types;
@@ -627,6 +635,13 @@ impl Resolver {
             TypeDefKind::Record(r) => {
                 for case in r.fields.iter() {
                     if let Type::Id(id) = case.ty {
+                        self.validate_type_not_recursive(span, id, visiting, valid)?;
+                    }
+                }
+            }
+            TypeDefKind::Tuple(t) => {
+                for ty in t.types.iter() {
+                    if let Type::Id(id) = *ty {
                         self.validate_type_not_recursive(span, id, visiting, valid)?;
                     }
                 }

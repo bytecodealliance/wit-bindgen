@@ -50,6 +50,7 @@ fn has_list(interface: &WitInterface, ty: &WitType) -> bool {
             TypeDefKind::Type(t) => has_list(interface, t),
             TypeDefKind::Flags(_) => false,
             TypeDefKind::Record(r) => r.fields.iter().any(|f| has_list(interface, &f.ty)),
+            TypeDefKind::Tuple(t) => t.types.iter().any(|ty| has_list(interface, ty)),
             TypeDefKind::Variant(v) => v.cases.iter().any(|c| {
                 c.ty.as_ref()
                     .map(|t| has_list(interface, t))

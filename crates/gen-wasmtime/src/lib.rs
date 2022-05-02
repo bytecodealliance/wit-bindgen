@@ -335,7 +335,6 @@ impl Generator for Wasmtime {
         // is usable.
         if self.modes_of(iface, id).len() > 0
             && record.fields.iter().all(|f| iface.all_bits_valid(&f.ty))
-            && !record.is_tuple()
         {
             self.src.push_str("impl wit_bindgen_wasmtime::Endian for ");
             self.src.push_str(&name.to_camel_case());
@@ -373,6 +372,17 @@ impl Generator for Wasmtime {
             self.src.push_str(&name.to_camel_case());
             self.src.push_str(" {}\n");
         }
+    }
+
+    fn type_tuple(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        _name: &str,
+        tuple: &Tuple,
+        docs: &Docs,
+    ) {
+        self.print_typedef_tuple(iface, id, tuple, docs);
     }
 
     fn type_flags(
@@ -1538,6 +1548,13 @@ impl Bindgen for FunctionBindgen<'_> {
             }
             Instruction::RecordLift { ty, record, .. } => {
                 self.record_lift(iface, *ty, record, operands, results);
+            }
+
+            Instruction::TupleLower { tuple, .. } => {
+                self.tuple_lower(tuple, &operands[0], results);
+            }
+            Instruction::TupleLift { .. } => {
+                self.tuple_lift(operands, results);
             }
 
             Instruction::FlagsLower { flags, .. } => {

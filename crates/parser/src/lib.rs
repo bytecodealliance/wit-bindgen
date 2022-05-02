@@ -47,6 +47,7 @@ pub struct TypeDef {
 pub enum TypeDefKind {
     Record(Record),
     Flags(Flags),
+    Tuple(Tuple),
     Variant(Variant),
     List(Type),
     Type(Type),
@@ -83,13 +84,6 @@ pub enum Int {
 #[derive(Debug)]
 pub struct Record {
     pub fields: Vec<Field>,
-    pub kind: RecordKind,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum RecordKind {
-    Other,
-    Tuple,
 }
 
 #[derive(Debug)]
@@ -97,31 +91,6 @@ pub struct Field {
     pub docs: Docs,
     pub name: String,
     pub ty: Type,
-}
-
-impl Record {
-    pub fn is_tuple(&self) -> bool {
-        matches!(self.kind, RecordKind::Tuple)
-    }
-}
-
-impl RecordKind {
-    fn infer(fields: &[Field]) -> RecordKind {
-        if fields.is_empty() {
-            return RecordKind::Other;
-        }
-
-        // fields with consecutive integer names get represented as tuples.
-        if fields
-            .iter()
-            .enumerate()
-            .all(|(i, m)| m.name.as_str().parse().ok() == Some(i))
-        {
-            return RecordKind::Tuple;
-        }
-
-        return RecordKind::Other;
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -160,6 +129,11 @@ impl FlagsRepr {
             FlagsRepr::U32(n) => *n,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Tuple {
+    pub types: Vec<Type>,
 }
 
 #[derive(Debug)]
@@ -413,6 +387,11 @@ impl Interface {
                     self.topo_visit_ty(&f.ty, list, visited);
                 }
             }
+            TypeDefKind::Tuple(t) => {
+                for t in t.types.iter() {
+                    self.topo_visit_ty(t, list, visited);
+                }
+            }
             TypeDefKind::Variant(v) => {
                 for v in v.cases.iter() {
                     if let Some(ty) = &v.ty {
@@ -450,6 +429,7 @@ impl Interface {
                 TypeDefKind::List(_) | TypeDefKind::Variant(_) => false,
                 TypeDefKind::Type(t) => self.all_bits_valid(t),
                 TypeDefKind::Record(r) => r.fields.iter().all(|f| self.all_bits_valid(&f.ty)),
+                TypeDefKind::Tuple(t) => t.types.iter().all(|t| self.all_bits_valid(t)),
 
                 // FIXME: this could perhaps be `true` for multiples-of-32 but
                 // seems better to probably leave this as unconditionally

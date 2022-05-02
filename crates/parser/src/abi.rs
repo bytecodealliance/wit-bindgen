@@ -1,7 +1,7 @@
 use crate::sizealign::align_to;
 use crate::{
-    Flags, FlagsRepr, Function, Int, Interface, Record, ResourceId, Type, TypeDefKind, TypeId,
-    Variant,
+    Flags, FlagsRepr, Function, Int, Interface, Record, ResourceId, Tuple, Type, TypeDefKind,
+    TypeId, Variant,
 };
 use std::mem;
 
@@ -499,7 +499,7 @@ def_instruction! {
         /// its fields, and then pushes the fields onto the stack.
         RecordLower {
             record: &'a Record,
-            name: Option<&'a str>,
+            name: &'a str,
             ty: TypeId,
         } : [1] => [record.fields.len()],
 
@@ -507,9 +507,23 @@ def_instruction! {
         /// into a record.
         RecordLift {
             record: &'a Record,
-            name: Option<&'a str>,
+            name: &'a str,
             ty: TypeId,
         } : [record.fields.len()] => [1],
+
+        /// Pops a tuple value off the stack, decomposes the tuple to all of
+        /// its fields, and then pushes the fields onto the stack.
+        TupleLower {
+            tuple: &'a Tuple,
+            ty: TypeId,
+        } : [1] => [tuple.types.len()],
+
+        /// Pops all fields for a tuple off the stack and then composes them
+        /// into a tuple.
+        TupleLift {
+            tuple: &'a Tuple,
+            ty: TypeId,
+        } : [tuple.types.len()] => [1],
 
         /// Converts a language-specific record-of-bools to a list of `i32`.
         FlagsLower {
@@ -907,6 +921,12 @@ impl Interface {
                 TypeDefKind::Record(r) => {
                     for field in r.fields.iter() {
                         self.push_wasm(variant, &field.ty, result);
+                    }
+                }
+
+                TypeDefKind::Tuple(t) => {
+                    for ty in t.types.iter() {
+                        self.push_wasm(variant, ty, result);
                     }
                 }
 
@@ -1405,7 +1425,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&RecordLower {
                         record,
                         ty: id,
-                        name: self.iface.types[id].name.as_deref(),
+                        name: self.iface.types[id].name.as_deref().unwrap(),
                     });
                     let values = self
                         .stack
@@ -1414,6 +1434,17 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     for (field, value) in record.fields.iter().zip(values) {
                         self.stack.push(value);
                         self.lower(&field.ty);
+                    }
+                }
+                TypeDefKind::Tuple(tuple) => {
+                    self.emit(&TupleLower { tuple, ty: id });
+                    let values = self
+                        .stack
+                        .drain(self.stack.len() - tuple.types.len()..)
+                        .collect::<Vec<_>>();
+                    for (ty, value) in tuple.types.iter().zip(values) {
+                        self.stack.push(value);
+                        self.lower(ty);
                     }
                 }
 
@@ -1569,8 +1600,23 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&RecordLift {
                         record,
                         ty: id,
-                        name: self.iface.types[id].name.as_deref(),
+                        name: self.iface.types[id].name.as_deref().unwrap(),
                     });
+                }
+                TypeDefKind::Tuple(tuple) => {
+                    let mut temp = Vec::new();
+                    self.iface.push_wasm(self.variant, ty, &mut temp);
+                    let mut args = self
+                        .stack
+                        .drain(self.stack.len() - temp.len()..)
+                        .collect::<Vec<_>>();
+                    for ty in tuple.types.iter() {
+                        temp.truncate(0);
+                        self.iface.push_wasm(self.variant, ty, &mut temp);
+                        self.stack.extend(args.drain(..temp.len()));
+                        self.lift(ty);
+                    }
+                    self.emit(&TupleLift { tuple, ty: id });
                 }
                 TypeDefKind::Flags(flags) => {
                     self.emit(&FlagsLift {
@@ -1663,27 +1709,17 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&RecordLower {
                         record,
                         ty: id,
-                        name: self.iface.types[id].name.as_deref(),
+                        name: self.iface.types[id].name.as_deref().unwrap(),
                     });
-                    let fields = self
-                        .stack
-                        .drain(self.stack.len() - record.fields.len()..)
-                        .collect::<Vec<_>>();
-                    for ((field_offset, op), field) in self
-                        .bindgen
-                        .sizes()
-                        .field_offsets(record)
-                        .into_iter()
-                        .zip(fields)
-                        .zip(&record.fields)
-                    {
-                        self.stack.push(op);
-                        self.write_to_memory(
-                            &field.ty,
-                            addr.clone(),
-                            offset + (field_offset as i32),
-                        );
-                    }
+                    self.write_fields_to_memory(
+                        &record.fields.iter().map(|f| f.ty).collect::<Vec<_>>(),
+                        addr,
+                        offset,
+                    );
+                }
+                TypeDefKind::Tuple(tuple) => {
+                    self.emit(&TupleLower { tuple, ty: id });
+                    self.write_fields_to_memory(&tuple.types, addr, offset);
                 }
 
                 TypeDefKind::Flags(f) => {
@@ -1749,6 +1785,24 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         self.emit(&Instruction::I32Store { offset });
     }
 
+    fn write_fields_to_memory(&mut self, tys: &[Type], addr: B::Operand, offset: i32) {
+        let fields = self
+            .stack
+            .drain(self.stack.len() - tys.len()..)
+            .collect::<Vec<_>>();
+        for ((field_offset, op), ty) in self
+            .bindgen
+            .sizes()
+            .field_offsets(tys.iter())
+            .into_iter()
+            .zip(fields)
+            .zip(tys)
+        {
+            self.stack.push(op);
+            self.write_to_memory(ty, addr.clone(), offset + (field_offset as i32));
+        }
+    }
+
     fn lower_and_emit(&mut self, ty: &Type, addr: B::Operand, instr: &Instruction) {
         self.lower(ty);
         self.stack.push(addr);
@@ -1782,24 +1836,20 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // as we go along, then aggregate all the fields into the
                 // record.
                 TypeDefKind::Record(record) => {
-                    for (field_offset, field) in self
-                        .bindgen
-                        .sizes()
-                        .field_offsets(record)
-                        .into_iter()
-                        .zip(&record.fields)
-                    {
-                        self.read_from_memory(
-                            &field.ty,
-                            addr.clone(),
-                            offset + (field_offset as i32),
-                        );
-                    }
+                    self.read_fields_from_memory(
+                        &record.fields.iter().map(|f| f.ty).collect::<Vec<_>>(),
+                        addr,
+                        offset,
+                    );
                     self.emit(&RecordLift {
                         record,
                         ty: id,
-                        name: self.iface.types[id].name.as_deref(),
+                        name: self.iface.types[id].name.as_deref().unwrap(),
                     });
+                }
+                TypeDefKind::Tuple(tuple) => {
+                    self.read_fields_from_memory(&tuple.types, addr, offset);
+                    self.emit(&TupleLift { tuple, ty: id });
                 }
 
                 TypeDefKind::Flags(f) => {
@@ -1858,6 +1908,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         self.stack.push(addr);
         self.emit(&Instruction::I32Load { offset: offset + 4 });
         self.lift(ty);
+    }
+
+    fn read_fields_from_memory(&mut self, tys: &[Type], addr: B::Operand, offset: i32) {
+        for (field_offset, ty) in self.bindgen.sizes().field_offsets(tys).into_iter().zip(tys) {
+            self.read_from_memory(ty, addr.clone(), offset + (field_offset as i32));
+        }
     }
 
     fn emit_and_lift(&mut self, ty: &Type, addr: B::Operand, instr: &Instruction) {

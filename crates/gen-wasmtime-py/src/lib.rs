@@ -410,9 +410,7 @@ impl WasmtimePy {
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty(iface, t),
-                    TypeDefKind::Record(r) if r.is_tuple() => {
-                        self.print_tuple(iface, r.fields.iter().map(|f| &f.ty))
-                    }
+                    TypeDefKind::Tuple(t) => self.print_tuple(iface, t),
                     TypeDefKind::Record(_) | TypeDefKind::Flags(_) => unreachable!(),
                     TypeDefKind::Variant(v) => {
                         if let Some(t) = v.as_option() {
@@ -443,14 +441,13 @@ impl WasmtimePy {
         }
     }
 
-    fn print_tuple<'a>(&mut self, iface: &Interface, types: impl IntoIterator<Item = &'a Type>) {
-        let types = types.into_iter().collect::<Vec<_>>();
-        if types.is_empty() {
+    fn print_tuple(&mut self, iface: &Interface, tuple: &Tuple) {
+        if tuple.types.is_empty() {
             return self.src.push_str("None");
         }
         self.pyimport("typing", "Tuple");
         self.src.push_str("Tuple[");
-        for (i, t) in types.iter().enumerate() {
+        for (i, t) in tuple.types.iter().enumerate() {
             if i > 0 {
                 self.src.push_str(", ");
             }
@@ -581,26 +578,35 @@ impl Generator for WasmtimePy {
         docs: &Docs,
     ) {
         self.docs(docs);
-        if record.is_tuple() {
-            self.src.push_str(&format!("{} = ", name.to_camel_case()));
-            self.print_tuple(iface, record.fields.iter().map(|f| &f.ty));
-        } else {
-            self.pyimport("dataclasses", "dataclass");
+        self.pyimport("dataclasses", "dataclass");
+        self.src
+            .push_str(&format!("@dataclass\nclass {}:\n", name.to_camel_case()));
+        self.indent();
+        for field in record.fields.iter() {
+            self.docs(&field.docs);
             self.src
-                .push_str(&format!("@dataclass\nclass {}:\n", name.to_camel_case()));
-            self.indent();
-            for field in record.fields.iter() {
-                self.docs(&field.docs);
-                self.src
-                    .push_str(&format!("{}: ", field.name.to_snake_case()));
-                self.print_ty(iface, &field.ty);
-                self.src.push_str("\n");
-            }
-            if record.fields.is_empty() {
-                self.src.push_str("pass\n");
-            }
-            self.deindent();
+                .push_str(&format!("{}: ", field.name.to_snake_case()));
+            self.print_ty(iface, &field.ty);
+            self.src.push_str("\n");
         }
+        if record.fields.is_empty() {
+            self.src.push_str("pass\n");
+        }
+        self.deindent();
+        self.src.push_str("\n");
+    }
+
+    fn type_tuple(
+        &mut self,
+        iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        tuple: &Tuple,
+        docs: &Docs,
+    ) {
+        self.docs(docs);
+        self.src.push_str(&format!("{} = ", name.to_camel_case()));
+        self.print_tuple(iface, tuple);
         self.src.push_str("\n");
     }
 
@@ -1494,43 +1500,43 @@ impl Bindgen for FunctionBindgen<'_> {
                 if record.fields.is_empty() {
                     return;
                 }
-                if record.is_tuple() {
-                    self.src.push_str("(");
-                    for _ in 0..record.fields.len() {
-                        let name = self.locals.tmp("tuplei");
-                        self.src.push_str(&name);
-                        self.src.push_str(",");
-                        results.push(name);
-                    }
-                    self.src.push_str(") = ");
-                    self.src.push_str(&operands[0]);
-                    self.src.push_str("\n");
-                } else {
-                    let tmp = self.locals.tmp("record");
-                    self.src.push_str(&format!("{} = {}\n", tmp, operands[0]));
-                    for field in record.fields.iter() {
-                        let name = self.locals.tmp("field");
-                        self.src.push_str(&format!(
-                            "{} = {}.{}\n",
-                            name,
-                            tmp,
-                            field.name.to_snake_case(),
-                        ));
-                        results.push(name);
-                    }
+                let tmp = self.locals.tmp("record");
+                self.src.push_str(&format!("{} = {}\n", tmp, operands[0]));
+                for field in record.fields.iter() {
+                    let name = self.locals.tmp("field");
+                    self.src.push_str(&format!(
+                        "{} = {}.{}\n",
+                        name,
+                        tmp,
+                        field.name.to_snake_case(),
+                    ));
+                    results.push(name);
                 }
             }
 
-            Instruction::RecordLift { record, name, .. } => {
-                if record.is_tuple() {
-                    if operands.is_empty() {
-                        results.push("None".to_string());
-                    } else {
-                        results.push(format!("({},)", operands.join(", ")));
-                    }
+            Instruction::RecordLift { name, .. } => {
+                results.push(format!("{}({})", name.to_camel_case(), operands.join(", ")));
+            }
+            Instruction::TupleLower { tuple, .. } => {
+                if tuple.types.is_empty() {
+                    return;
+                }
+                self.src.push_str("(");
+                for _ in 0..tuple.types.len() {
+                    let name = self.locals.tmp("tuplei");
+                    self.src.push_str(&name);
+                    self.src.push_str(",");
+                    results.push(name);
+                }
+                self.src.push_str(") = ");
+                self.src.push_str(&operands[0]);
+                self.src.push_str("\n");
+            }
+            Instruction::TupleLift { .. } => {
+                if operands.is_empty() {
+                    results.push("None".to_string());
                 } else {
-                    let name = name.unwrap();
-                    results.push(format!("{}({})", name.to_camel_case(), operands.join(", ")));
+                    results.push(format!("({},)", operands.join(", ")));
                 }
             }
             Instruction::FlagsLift { name, .. } => {

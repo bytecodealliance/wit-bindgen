@@ -169,7 +169,7 @@ impl Js {
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty(iface, t),
-                    TypeDefKind::Record(r) if r.is_tuple() => self.print_tuple(iface, r),
+                    TypeDefKind::Tuple(t) => self.print_tuple(iface, t),
                     TypeDefKind::Record(_) => panic!("anonymous record"),
                     TypeDefKind::Flags(_) => panic!("anonymous flags"),
                     TypeDefKind::Variant(v) => {
@@ -214,13 +214,13 @@ impl Js {
         }
     }
 
-    fn print_tuple(&mut self, iface: &Interface, record: &Record) {
+    fn print_tuple(&mut self, iface: &Interface, tuple: &Tuple) {
         self.src.ts("[");
-        for (i, field) in record.fields.iter().enumerate() {
+        for (i, ty) in tuple.types.iter().enumerate() {
             if i > 0 {
                 self.src.ts(", ");
             }
-            self.print_ty(iface, &field.ty);
+            self.print_ty(iface, ty);
         }
         self.src.ts("]");
     }
@@ -332,26 +332,34 @@ impl Generator for Js {
         docs: &Docs,
     ) {
         self.docs(docs);
-        if record.is_tuple() {
+        self.src
+            .ts(&format!("export interface {} {{\n", name.to_camel_case()));
+        for field in record.fields.iter() {
+            self.docs(&field.docs);
+            let (option_str, ty) = self
+                .get_nullable_option(iface, &field.ty)
+                .map_or(("", &field.ty), |ty| ("?", ty));
             self.src
-                .ts(&format!("export type {} = ", name.to_camel_case()));
-            self.print_tuple(iface, record);
-            self.src.ts(";\n");
-        } else {
-            self.src
-                .ts(&format!("export interface {} {{\n", name.to_camel_case()));
-            for field in record.fields.iter() {
-                self.docs(&field.docs);
-                let (option_str, ty) = self
-                    .get_nullable_option(iface, &field.ty)
-                    .map_or(("", &field.ty), |ty| ("?", ty));
-                self.src
-                    .ts(&format!("{}{}: ", field.name.to_mixed_case(), option_str));
-                self.print_ty(iface, ty);
-                self.src.ts(",\n");
-            }
-            self.src.ts("}\n");
+                .ts(&format!("{}{}: ", field.name.to_mixed_case(), option_str));
+            self.print_ty(iface, ty);
+            self.src.ts(",\n");
         }
+        self.src.ts("}\n");
+    }
+
+    fn type_tuple(
+        &mut self,
+        iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        tuple: &Tuple,
+        docs: &Docs,
+    ) {
+        self.docs(docs);
+        self.src
+            .ts(&format!("export type {} = ", name.to_camel_case()));
+        self.print_tuple(iface, tuple);
+        self.src.ts(";\n");
     }
 
     fn type_flags(
@@ -1358,56 +1366,56 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::RecordLower { record, .. } => {
-                if record.is_tuple() {
-                    // Tuples are represented as an array, sowe can use
-                    // destructuring assignment to lower the tuple into its
-                    // components.
-                    let tmp = self.tmp();
-                    let mut expr = "const [".to_string();
-                    for i in 0..record.fields.len() {
-                        if i > 0 {
-                            expr.push_str(", ");
-                        }
-                        let name = format!("tuple{}_{}", tmp, i);
-                        expr.push_str(&name);
-                        results.push(name);
+                // use destructuring field access to get each
+                // field individually.
+                let tmp = self.tmp();
+                let mut expr = "const {".to_string();
+                for (i, field) in record.fields.iter().enumerate() {
+                    if i > 0 {
+                        expr.push_str(", ");
                     }
-                    self.src.js(&format!("{}] = {};\n", expr, operands[0]));
-                } else {
-                    // Otherwise we use destructuring field access to get each
-                    // field individually.
-                    let tmp = self.tmp();
-                    let mut expr = "const {".to_string();
-                    for (i, field) in record.fields.iter().enumerate() {
-                        if i > 0 {
-                            expr.push_str(", ");
-                        }
-                        let name = format!("v{}_{}", tmp, i);
-                        expr.push_str(&field.name.to_mixed_case());
-                        expr.push_str(": ");
-                        expr.push_str(&name);
-                        results.push(name);
-                    }
-                    self.src.js(&format!("{} }} = {};\n", expr, operands[0]));
+                    let name = format!("v{}_{}", tmp, i);
+                    expr.push_str(&field.name.to_mixed_case());
+                    expr.push_str(": ");
+                    expr.push_str(&name);
+                    results.push(name);
                 }
+                self.src.js(&format!("{} }} = {};\n", expr, operands[0]));
             }
 
             Instruction::RecordLift { record, .. } => {
-                if record.is_tuple() {
-                    // Tuples are represented as an array, so we just shove all
-                    // the operands into an array.
-                    results.push(format!("[{}]", operands.join(", ")));
-                } else {
-                    // Otherwise records are represented as plain objects, so we
-                    // make a new object and set all the fields with an object
-                    // literal.
-                    let mut result = "{\n".to_string();
-                    for (field, op) in record.fields.iter().zip(operands) {
-                        result.push_str(&format!("{}: {},\n", field.name.to_mixed_case(), op));
-                    }
-                    result.push_str("}");
-                    results.push(result);
+                // records are represented as plain objects, so we
+                // make a new object and set all the fields with an object
+                // literal.
+                let mut result = "{\n".to_string();
+                for (field, op) in record.fields.iter().zip(operands) {
+                    result.push_str(&format!("{}: {},\n", field.name.to_mixed_case(), op));
                 }
+                result.push_str("}");
+                results.push(result);
+            }
+
+            Instruction::TupleLower { tuple, .. } => {
+                // Tuples are represented as an array, sowe can use
+                // destructuring assignment to lower the tuple into its
+                // components.
+                let tmp = self.tmp();
+                let mut expr = "const [".to_string();
+                for i in 0..tuple.types.len() {
+                    if i > 0 {
+                        expr.push_str(", ");
+                    }
+                    let name = format!("tuple{}_{}", tmp, i);
+                    expr.push_str(&name);
+                    results.push(name);
+                }
+                self.src.js(&format!("{}] = {};\n", expr, operands[0]));
+            }
+
+            Instruction::TupleLift { .. } => {
+                // Tuples are represented as an array, so we just shove all
+                // the operands into an array.
+                results.push(format!("[{}]", operands.join(", ")));
             }
 
             Instruction::FlagsLower { flags, .. } => {

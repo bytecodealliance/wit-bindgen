@@ -72,11 +72,7 @@ struct CSig {
 enum Scalar {
     Void,
     OptionBool(Type),
-    ExpectedEnum {
-        err: TypeId,
-        ok: Option<Type>,
-        max_err: usize,
-    },
+    ExpectedEnum { err: TypeId, max_err: usize },
     Type(Type),
 }
 
@@ -171,7 +167,7 @@ impl C {
                 TypeDefKind::Type(t) => self.is_arg_by_pointer(iface, t),
                 TypeDefKind::Variant(v) => !v.is_enum(),
                 TypeDefKind::Flags(_) => false,
-                TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
+                TypeDefKind::Tuple(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
             },
             Type::String => true,
             _ => false,
@@ -247,6 +243,7 @@ impl C {
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty(iface, t),
                     TypeDefKind::Flags(_)
+                    | TypeDefKind::Tuple(_)
                     | TypeDefKind::Record(_)
                     | TypeDefKind::List(_)
                     | TypeDefKind::Variant(_) => {
@@ -285,14 +282,13 @@ impl C {
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty_name(iface, t),
-                    TypeDefKind::Flags(_) => unimplemented!(),
-                    TypeDefKind::Record(r) => {
-                        assert!(r.is_tuple());
+                    TypeDefKind::Record(_) | TypeDefKind::Flags(_) => unimplemented!(),
+                    TypeDefKind::Tuple(t) => {
                         self.src.h("tuple");
-                        self.src.h(&r.fields.len().to_string());
-                        for field in r.fields.iter() {
+                        self.src.h(&t.types.len().to_string());
+                        for ty in t.types.iter() {
                             self.src.h("_");
-                            self.print_ty_name(iface, &field.ty);
+                            self.print_ty_name(iface, ty);
                         }
                     }
                     TypeDefKind::Variant(v) => {
@@ -328,16 +324,15 @@ impl C {
         self.src.h("typedef ");
         let kind = &iface.types[ty].kind;
         match kind {
-            TypeDefKind::Type(_) | TypeDefKind::Flags(_) => {
+            TypeDefKind::Type(_) | TypeDefKind::Flags(_) | TypeDefKind::Record(_) => {
                 unreachable!()
             }
-            TypeDefKind::Record(r) => {
-                assert!(r.is_tuple());
+            TypeDefKind::Tuple(t) => {
                 self.src.h("struct {\n");
-                for (i, f) in r.fields.iter().enumerate() {
-                    self.print_ty(iface, &f.ty);
+                for (i, t) in t.types.iter().enumerate() {
+                    self.print_ty(iface, t);
                     self.src.h(" ");
-                    self.src.h(&format!("f{};\n", i));
+                    self.src.h(&format!("f{i};\n"));
                 }
                 self.src.h("}");
             }
@@ -399,6 +394,7 @@ impl C {
         match &iface.types[id].kind {
             TypeDefKind::Type(t) => self.is_empty_type(iface, t),
             TypeDefKind::Record(r) => r.fields.is_empty(),
+            TypeDefKind::Tuple(t) => t.types.is_empty(),
             _ => false,
         }
     }
@@ -466,12 +462,17 @@ impl C {
                     self.free(
                         iface,
                         &field.ty,
-                        &format!(
-                            "&ptr->{}{}",
-                            if r.is_tuple() { "f" } else { "" },
-                            field.name.to_snake_case()
-                        ),
+                        &format!("&ptr->{}", field.name.to_snake_case()),
                     );
+                }
+            }
+
+            TypeDefKind::Tuple(t) => {
+                for (i, ty) in t.types.iter().enumerate() {
+                    if !self.owns_anything(iface, ty) {
+                        continue;
+                    }
+                    self.free(iface, ty, &format!("&ptr->f{i}"));
                 }
             }
 
@@ -524,6 +525,7 @@ impl C {
         match &iface.types[id].kind {
             TypeDefKind::Type(t) => self.owns_anything(iface, t),
             TypeDefKind::Record(r) => r.fields.iter().any(|t| self.owns_anything(iface, &t.ty)),
+            TypeDefKind::Tuple(t) => t.types.iter().any(|t| self.owns_anything(iface, t)),
             TypeDefKind::Flags(_) => false,
             TypeDefKind::List(_) => true,
             TypeDefKind::Variant(v) => v
@@ -584,8 +586,13 @@ impl Return {
                 self.scalar = Some(Scalar::Type(*orig_ty));
             }
 
-            // record returns may become many return pointers with tuples
-            TypeDefKind::Record(_) => self.splat_tuples(iface, ty, orig_ty),
+            // Tuples get splatted to multiple return pointers
+            TypeDefKind::Tuple(_) => self.splat_tuples(iface, ty, orig_ty),
+
+            // Record returns are always through a pointer
+            TypeDefKind::Record(_) => {
+                self.retptrs.push(*orig_ty);
+            }
 
             // other records/lists/buffers always go to return pointers
             TypeDefKind::List(_) => self.retptrs.push(*orig_ty),
@@ -613,7 +620,6 @@ impl Return {
                         if let TypeDefKind::Variant(e) = &iface.types[*err].kind {
                             if e.is_enum() {
                                 self.scalar = Some(Scalar::ExpectedEnum {
-                                    ok: ok.cloned(),
                                     err: *err,
                                     max_err: e.cases.len(),
                                 });
@@ -642,9 +648,9 @@ impl Return {
             }
         };
         match &iface.types[id].kind {
-            TypeDefKind::Record(r) if r.is_tuple() => {
+            TypeDefKind::Tuple(t) => {
                 self.splat_tuple = true;
-                self.retptrs.extend(r.fields.iter().map(|f| f.ty));
+                self.retptrs.extend(t.types.iter());
             }
             _ => self.retptrs.push(*orig_ty),
         }
@@ -673,11 +679,33 @@ impl Generator for C {
         for field in record.fields.iter() {
             self.print_ty(iface, &field.ty);
             self.src.h(" ");
-            if record.is_tuple() {
-                self.src.h("f");
-            }
             self.src.h(&field.name.to_snake_case());
             self.src.h(";\n");
+        }
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
+
+        self.types
+            .insert(id, mem::replace(&mut self.src.header, prev));
+    }
+
+    fn type_tuple(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        tuple: &Tuple,
+        docs: &Docs,
+    ) {
+        let prev = mem::take(&mut self.src.header);
+        self.docs(docs);
+        self.names.insert(&name.to_snake_case()).unwrap();
+        self.src.h("typedef struct {\n");
+        for (i, ty) in tuple.types.iter().enumerate() {
+            self.print_ty(iface, ty);
+            self.src.h(&format!(" f{i};\n"));
         }
         self.src.h("} ");
         self.print_namespace(iface);
@@ -1386,19 +1414,28 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::RecordLower { record, .. } => {
-                if record.is_tuple() {
-                    let op = &operands[0];
-                    for i in 0..record.fields.len() {
-                        results.push(format!("({}).f{}", op, i));
-                    }
-                } else {
-                    let op = &operands[0];
-                    for f in record.fields.iter() {
-                        results.push(format!("({}).{}", op, f.name.to_snake_case()));
-                    }
+                let op = &operands[0];
+                for f in record.fields.iter() {
+                    results.push(format!("({}).{}", op, f.name.to_snake_case()));
                 }
             }
             Instruction::RecordLift { ty, .. } => {
+                let name = self.gen.type_string(iface, &Type::Id(*ty));
+                let mut result = format!("({}) {{\n", name);
+                for op in operands {
+                    result.push_str(&format!("{},\n", op));
+                }
+                result.push_str("}");
+                results.push(result);
+            }
+
+            Instruction::TupleLower { tuple, .. } => {
+                let op = &operands[0];
+                for i in 0..tuple.types.len() {
+                    results.push(format!("({}).f{}", op, i));
+                }
+            }
+            Instruction::TupleLift { ty, .. } => {
                 let name = self.gen.type_string(iface, &Type::Id(*ty));
                 let mut result = format!("({}) {{\n", name);
                 for op in operands {
@@ -1685,7 +1722,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         ));
                         results.push(option_ret);
                     }
-                    Some(Scalar::ExpectedEnum { err, max_err, .. }) => {
+                    Some(Scalar::ExpectedEnum { err, max_err }) => {
                         let ret = self.locals.tmp("ret");
                         let mut ok_names = Vec::new();
                         for ty in self.sig.ret.retptrs.iter() {

@@ -16,7 +16,8 @@ use wasm_encoder::Instruction;
 use wit_bindgen_gen_core::{
     wit_parser::{
         abi::{self, AbiVariant, WasmSignature, WasmType},
-        Docs, Flags, Function, Interface, Record, ResourceId, SizeAlign, Type, TypeId, Variant,
+        Docs, Flags, Function, Interface, Record, ResourceId, SizeAlign, Tuple, Type, TypeId,
+        Variant,
     },
     Direction, Files, Generator,
 };
@@ -948,6 +949,18 @@ impl Generator for SpiderMonkeyWasm<'_> {
         docs: &Docs,
     ) {
         let _ = (iface, id, name, record, docs);
+        todo!()
+    }
+
+    fn type_tuple(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        tuple: &Tuple,
+        docs: &Docs,
+    ) {
+        let _ = (iface, id, name, tuple, docs);
         todo!()
     }
 
@@ -1889,6 +1902,8 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 name: _,
                 ty: _,
             } => todo!(),
+            abi::Instruction::TupleLower { tuple: _, ty: _ } => todo!(),
+            abi::Instruction::TupleLift { tuple: _, ty: _ } => todo!(),
             abi::Instruction::FlagsLower {
                 flags: _,
                 name: _,

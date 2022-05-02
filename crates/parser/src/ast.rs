@@ -93,10 +93,10 @@ enum Type<'a> {
     Record(Record<'a>),
     Flags(Flags<'a>),
     Variant(Variant<'a>),
+    Tuple(Vec<Type<'a>>),
 }
 
 struct Record<'a> {
-    tuple_hint: bool,
     fields: Vec<Field<'a>>,
 }
 
@@ -261,7 +261,6 @@ impl<'a> TypeDef<'a> {
         tokens.expect(Token::Record)?;
         let name = parse_id(tokens)?;
         let ty = Type::Record(Record {
-            tuple_hint: false,
             fields: parse_list(
                 tokens,
                 Token::LeftBrace,
@@ -461,24 +460,13 @@ impl<'a> Type<'a> {
 
             // tuple<T, U, ...>
             Some((_span, Token::Tuple)) => {
-                let mut i = 0;
-                let fields = parse_list(
+                let types = parse_list(
                     tokens,
                     Token::LessThan,
                     Token::GreaterThan,
-                    |docs, tokens| {
-                        i += 1;
-                        Ok(Field {
-                            docs,
-                            name: (i - 1).to_string().into(),
-                            ty: Type::parse(tokens)?,
-                        })
-                    },
+                    |_docs, tokens| Type::parse(tokens),
                 )?;
-                Ok(Type::Record(Record {
-                    fields,
-                    tuple_hint: true,
-                }))
+                Ok(Type::Tuple(types))
             }
 
             Some((_span, Token::Unit)) => Ok(Type::Unit),

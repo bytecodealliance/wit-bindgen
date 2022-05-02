@@ -56,6 +56,7 @@ pub trait Generator {
         docs: &Docs,
     );
     fn type_flags(&mut self, iface: &Interface, id: TypeId, name: &str, flags: &Flags, docs: &Docs);
+    fn type_tuple(&mut self, iface: &Interface, id: TypeId, name: &str, flags: &Tuple, docs: &Docs);
     fn type_variant(
         &mut self,
         iface: &Interface,
@@ -90,6 +91,7 @@ pub trait Generator {
             match &ty.kind {
                 TypeDefKind::Record(record) => self.type_record(iface, id, name, record, &ty.docs),
                 TypeDefKind::Flags(flags) => self.type_flags(iface, id, name, flags, &ty.docs),
+                TypeDefKind::Tuple(tuple) => self.type_tuple(iface, id, name, tuple, &ty.docs),
                 TypeDefKind::Variant(variant) => {
                     self.type_variant(iface, id, name, variant, &ty.docs)
                 }
@@ -190,6 +192,11 @@ impl Types {
                     info |= self.type_info(iface, &field.ty);
                 }
             }
+            TypeDefKind::Tuple(t) => {
+                for ty in t.types.iter() {
+                    info |= self.type_info(iface, ty);
+                }
+            }
             TypeDefKind::Flags(_) => {}
             TypeDefKind::Variant(v) => {
                 for case in v.cases.iter() {
@@ -226,6 +233,11 @@ impl Types {
             TypeDefKind::Record(r) => {
                 for field in r.fields.iter() {
                     self.set_param_result_ty(iface, &field.ty, param, result)
+                }
+            }
+            TypeDefKind::Tuple(t) => {
+                for ty in t.types.iter() {
+                    self.set_param_result_ty(iface, ty, param, result)
                 }
             }
             TypeDefKind::Flags(_) => {}

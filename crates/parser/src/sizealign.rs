@@ -1,4 +1,4 @@
-use crate::{FlagsRepr, Int, Interface, Record, Type, TypeDef, TypeDefKind, Variant};
+use crate::{FlagsRepr, Int, Interface, Type, TypeDef, TypeDefKind, Variant};
 
 #[derive(Default)]
 pub struct SizeAlign {
@@ -19,6 +19,7 @@ impl SizeAlign {
             TypeDefKind::Type(t) => (self.size(t), self.align(t)),
             TypeDefKind::List(_) => (8, 4),
             TypeDefKind::Record(r) => self.record(r.fields.iter().map(|f| &f.ty)),
+            TypeDefKind::Tuple(t) => self.record(t.types.iter()),
             TypeDefKind::Flags(f) => match f.repr() {
                 FlagsRepr::U8 => (1, 1),
                 FlagsRepr::U16 => (2, 2),
@@ -64,14 +65,13 @@ impl SizeAlign {
         }
     }
 
-    pub fn field_offsets(&self, record: &Record) -> Vec<usize> {
+    pub fn field_offsets<'a>(&self, types: impl IntoIterator<Item = &'a Type>) -> Vec<usize> {
         let mut cur = 0;
-        record
-            .fields
-            .iter()
-            .map(|field| {
-                let ret = align_to(cur, self.align(&field.ty));
-                cur = ret + self.size(&field.ty);
+        types
+            .into_iter()
+            .map(|ty| {
+                let ret = align_to(cur, self.align(ty));
+                cur = ret + self.size(ty);
                 ret
             })
             .collect()

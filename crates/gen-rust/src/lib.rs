@@ -225,11 +225,15 @@ pub trait RustGenerator {
 
             fn needs_generics(iface: &Interface, ty: &TypeDefKind) -> bool {
                 match ty {
-                    TypeDefKind::Variant(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
+                    TypeDefKind::Variant(_)
+                    | TypeDefKind::Record(_)
+                    | TypeDefKind::List(_)
+                    | TypeDefKind::Flags(_)
+                    | TypeDefKind::Tuple(_) => true,
                     TypeDefKind::Type(Type::Id(t)) => needs_generics(iface, &iface.types[*t].kind),
                     TypeDefKind::Type(Type::String) => true,
                     TypeDefKind::Type(Type::Handle(_)) => true,
-                    _ => false,
+                    TypeDefKind::Type(_) => false,
                 }
             }
         }
@@ -266,10 +270,10 @@ pub trait RustGenerator {
             // Tuple-like records are mapped directly to Rust tuples of
             // types. Note the trailing comma after each member to
             // appropriately handle 1-tuples.
-            TypeDefKind::Record(r) if r.is_tuple() => {
+            TypeDefKind::Tuple(t) => {
                 self.push_str("(");
-                for field in r.fields.iter() {
-                    self.print_ty(iface, &field.ty, mode);
+                for ty in t.types.iter() {
+                    self.print_ty(iface, ty, mode);
                     self.push_str(",");
                 }
                 self.push_str(")");
@@ -382,56 +386,59 @@ pub trait RustGenerator {
         for (name, mode) in self.modes_of(iface, id) {
             let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
-            if record.is_tuple() {
-                self.push_str(&format!("pub type {}", name));
-                self.print_generics(&info, lt, true);
-                self.push_str(" = (");
-                for field in record.fields.iter() {
-                    self.print_ty(iface, &field.ty, mode);
-                    self.push_str(",");
-                }
-                self.push_str(");\n");
-            } else {
-                if !info.owns_data() {
-                    self.push_str("#[repr(C)]\n");
-                    self.push_str("#[derive(Copy, Clone)]\n");
-                } else if !info.has_handle {
-                    self.push_str("#[derive(Clone)]\n");
-                }
-                self.push_str(&format!("pub struct {}", name));
-                self.print_generics(&info, lt, true);
-                self.push_str(" {\n");
-                for field in record.fields.iter() {
-                    self.rustdoc(&field.docs);
-                    self.push_str("pub ");
-                    self.push_str(&to_rust_ident(&field.name));
-                    self.push_str(": ");
-                    self.print_ty(iface, &field.ty, mode);
-                    self.push_str(",\n");
-                }
-                self.push_str("}\n");
-
-                self.push_str("impl");
-                self.print_generics(&info, lt, true);
-                self.push_str(" std::fmt::Debug for ");
-                self.push_str(&name);
-                self.print_generics(&info, lt, false);
-                self.push_str(" {\n");
-                self.push_str(
-                    "fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
-                );
-                self.push_str(&format!("f.debug_struct(\"{}\")", name));
-                for field in record.fields.iter() {
-                    self.push_str(&format!(
-                        ".field(\"{}\", &self.{})",
-                        field.name,
-                        to_rust_ident(&field.name)
-                    ));
-                }
-                self.push_str(".finish()");
-                self.push_str("}\n");
-                self.push_str("}\n");
+            if !info.owns_data() {
+                self.push_str("#[repr(C)]\n");
+                self.push_str("#[derive(Copy, Clone)]\n");
+            } else if !info.has_handle {
+                self.push_str("#[derive(Clone)]\n");
             }
+            self.push_str(&format!("pub struct {}", name));
+            self.print_generics(&info, lt, true);
+            self.push_str(" {\n");
+            for field in record.fields.iter() {
+                self.rustdoc(&field.docs);
+                self.push_str("pub ");
+                self.push_str(&to_rust_ident(&field.name));
+                self.push_str(": ");
+                self.print_ty(iface, &field.ty, mode);
+                self.push_str(",\n");
+            }
+            self.push_str("}\n");
+
+            self.push_str("impl");
+            self.print_generics(&info, lt, true);
+            self.push_str(" std::fmt::Debug for ");
+            self.push_str(&name);
+            self.print_generics(&info, lt, false);
+            self.push_str(" {\n");
+            self.push_str("fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n");
+            self.push_str(&format!("f.debug_struct(\"{}\")", name));
+            for field in record.fields.iter() {
+                self.push_str(&format!(
+                    ".field(\"{}\", &self.{})",
+                    field.name,
+                    to_rust_ident(&field.name)
+                ));
+            }
+            self.push_str(".finish()");
+            self.push_str("}\n");
+            self.push_str("}\n");
+        }
+    }
+
+    fn print_typedef_tuple(&mut self, iface: &Interface, id: TypeId, tuple: &Tuple, docs: &Docs) {
+        let info = self.info(id);
+        for (name, mode) in self.modes_of(iface, id) {
+            let lt = self.lifetime_for(&info, mode);
+            self.rustdoc(docs);
+            self.push_str(&format!("pub type {}", name));
+            self.print_generics(&info, lt, true);
+            self.push_str(" = (");
+            for ty in tuple.types.iter() {
+                self.print_ty(iface, ty, mode);
+                self.push_str(",");
+            }
+            self.push_str(");\n");
         }
     }
 
@@ -719,35 +726,22 @@ pub trait RustFunctionGenerator {
         results: &mut Vec<String>,
     ) {
         let tmp = self.tmp();
-        if record.is_tuple() {
-            self.push_str("let (");
-            for i in 0..record.fields.len() {
-                let arg = format!("t{}_{}", tmp, i);
-                self.push_str(&arg);
-                self.push_str(", ");
-                results.push(arg);
-            }
-            self.push_str(") = ");
-            self.push_str(operand);
-            self.push_str(";\n");
-        } else {
-            self.push_str("let ");
-            let name = self.typename_lower(iface, id);
+        self.push_str("let ");
+        let name = self.typename_lower(iface, id);
+        self.push_str(&name);
+        self.push_str("{ ");
+        for field in record.fields.iter() {
+            let name = to_rust_ident(&field.name);
+            let arg = format!("{}{}", name, tmp);
             self.push_str(&name);
-            self.push_str("{ ");
-            for field in record.fields.iter() {
-                let name = to_rust_ident(&field.name);
-                let arg = format!("{}{}", name, tmp);
-                self.push_str(&name);
-                self.push_str(":");
-                self.push_str(&arg);
-                self.push_str(", ");
-                results.push(arg);
-            }
-            self.push_str("} = ");
-            self.push_str(operand);
-            self.push_str(";\n");
+            self.push_str(":");
+            self.push_str(&arg);
+            self.push_str(", ");
+            results.push(arg);
         }
+        self.push_str("} = ");
+        self.push_str(operand);
+        self.push_str(";\n");
     }
 
     fn record_lift(
@@ -758,23 +752,37 @@ pub trait RustFunctionGenerator {
         operands: &[String],
         results: &mut Vec<String>,
     ) {
-        if ty.is_tuple() {
-            if operands.len() == 1 {
-                results.push(format!("({},)", operands[0]));
-            } else {
-                results.push(format!("({})", operands.join(", ")));
-            }
+        let mut result = self.typename_lift(iface, id);
+        result.push_str("{");
+        for (field, val) in ty.fields.iter().zip(operands) {
+            result.push_str(&to_rust_ident(&field.name));
+            result.push_str(":");
+            result.push_str(&val);
+            result.push_str(", ");
+        }
+        result.push_str("}");
+        results.push(result);
+    }
+
+    fn tuple_lower(&mut self, tuple: &Tuple, operand: &str, results: &mut Vec<String>) {
+        let tmp = self.tmp();
+        self.push_str("let (");
+        for i in 0..tuple.types.len() {
+            let arg = format!("t{}_{}", tmp, i);
+            self.push_str(&arg);
+            self.push_str(", ");
+            results.push(arg);
+        }
+        self.push_str(") = ");
+        self.push_str(operand);
+        self.push_str(";\n");
+    }
+
+    fn tuple_lift(&mut self, operands: &[String], results: &mut Vec<String>) {
+        if operands.len() == 1 {
+            results.push(format!("({},)", operands[0]));
         } else {
-            let mut result = self.typename_lift(iface, id);
-            result.push_str("{");
-            for (field, val) in ty.fields.iter().zip(operands) {
-                result.push_str(&to_rust_ident(&field.name));
-                result.push_str(":");
-                result.push_str(&val);
-                result.push_str(", ");
-            }
-            result.push_str("}");
-            results.push(result);
+            results.push(format!("({})", operands.join(", ")));
         }
     }
 
