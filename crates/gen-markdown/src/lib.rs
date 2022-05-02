@@ -78,29 +78,23 @@ impl Markdown {
                         }
                         self.src.push_str(")");
                     }
-                    TypeDefKind::Record(_) | TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => {
+                    TypeDefKind::Record(_)
+                    | TypeDefKind::Flags(_)
+                    | TypeDefKind::Enum(_)
+                    | TypeDefKind::Variant(_) => {
                         unreachable!()
                     }
-                    TypeDefKind::Variant(v) => {
-                        if let Some(t) = v.as_option() {
-                            self.src.push_str("option<");
-                            self.print_ty(iface, t, false);
-                            self.src.push_str(">");
-                        } else if let Some((ok, err)) = v.as_expected() {
-                            self.src.push_str("expected<");
-                            match ok {
-                                Some(t) => self.print_ty(iface, t, false),
-                                None => self.src.push_str("_"),
-                            }
-                            self.src.push_str(", ");
-                            match err {
-                                Some(t) => self.print_ty(iface, t, false),
-                                None => self.src.push_str("_"),
-                            }
-                            self.src.push_str(">");
-                        } else {
-                            unreachable!()
-                        }
+                    TypeDefKind::Option(t) => {
+                        self.src.push_str("option<");
+                        self.print_ty(iface, t, false);
+                        self.src.push_str(">");
+                    }
+                    TypeDefKind::Expected(e) => {
+                        self.src.push_str("expected<");
+                        self.print_ty(iface, &e.ok, false);
+                        self.src.push_str(", ");
+                        self.print_ty(iface, &e.err, false);
+                        self.src.push_str(">");
                     }
                     TypeDefKind::List(t) => {
                         self.src.push_str("list<");
@@ -301,6 +295,38 @@ impl Generator for Markdown {
             self.src.deindent(1);
             self.src.push_str("\n");
         }
+    }
+
+    fn type_option(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        payload: &Type,
+        docs: &Docs,
+    ) {
+        self.print_type_header(name);
+        self.src.push_str("option<");
+        self.print_ty(iface, payload, false);
+        self.src.push_str(">");
+        self.print_type_info(id, docs);
+    }
+
+    fn type_expected(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        expected: &Expected,
+        docs: &Docs,
+    ) {
+        self.print_type_header(name);
+        self.src.push_str("expected<");
+        self.print_ty(iface, &expected.ok, false);
+        self.src.push_str(", ");
+        self.print_ty(iface, &expected.err, false);
+        self.src.push_str(">");
+        self.print_type_info(id, docs);
     }
 
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {

@@ -96,7 +96,7 @@ mod custom_errors {
     wit_bindgen_wasmtime::export!({
         src["x"]: "
             foo: function()
-            bar: function() -> expected<_, u32>
+            bar: function() -> expected<unit, u32>
             enum errno {
                 bad1,
                 bad2,

@@ -441,6 +441,28 @@ impl Generator for Wasmtime {
         self.print_typedef_variant(iface, id, variant, docs);
     }
 
+    fn type_option(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        _name: &str,
+        payload: &Type,
+        docs: &Docs,
+    ) {
+        self.print_typedef_option(iface, id, payload, docs);
+    }
+
+    fn type_expected(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        _name: &str,
+        expected: &Expected,
+        docs: &Docs,
+    ) {
+        self.print_typedef_expected(iface, id, expected, docs);
+    }
+
     fn type_enum(
         &mut self,
         _iface: &Interface,
@@ -1631,21 +1653,73 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.variant_lift_case(iface, *ty, variant, case, &block, &mut result);
                     result.push_str(",\n");
                 }
-                let variant_name = name.map(|s| s.to_camel_case());
-                let variant_name = variant_name.as_deref().unwrap_or_else(|| {
-                    if variant.as_expected().is_some() {
-                        "Result"
-                    } else if variant.as_option().is_some() {
-                        "Option"
-                    } else {
-                        unimplemented!()
-                    }
-                });
+                let variant_name = name.to_camel_case();
                 result.push_str("_ => return Err(invalid_variant(\"");
                 result.push_str(&variant_name);
                 result.push_str("\")),\n");
                 result.push_str("}");
                 results.push(result);
+                self.gen.needs_invalid_variant = true;
+            }
+
+            Instruction::OptionLower {
+                results: result_types,
+                ..
+            } => {
+                let some = self.blocks.pop().unwrap();
+                let none = self.blocks.pop().unwrap();
+                self.let_results(result_types.len(), results);
+                let operand = &operands[0];
+                self.push_str(&format!(
+                    "match {operand} {{
+                        Some(e) => {{ {some} }},
+                        None => {{ {none} }},
+                    }};"
+                ));
+            }
+
+            Instruction::OptionLift { .. } => {
+                let some = self.blocks.pop().unwrap();
+                let none = self.blocks.pop().unwrap();
+                assert_eq!(none, "()");
+                let operand = &operands[0];
+                results.push(format!(
+                    "match {operand} {{
+                        0 => None,
+                        1 => Some({some}),
+                        _ => return Err(invalid_variant(\"option\")),
+                    }}"
+                ));
+                self.gen.needs_invalid_variant = true;
+            }
+
+            Instruction::ExpectedLower {
+                results: result_types,
+                ..
+            } => {
+                let err = self.blocks.pop().unwrap();
+                let ok = self.blocks.pop().unwrap();
+                self.let_results(result_types.len(), results);
+                let operand = &operands[0];
+                self.push_str(&format!(
+                    "match {operand} {{
+                        Ok(e) => {{ {ok} }},
+                        Err(e) => {{ {err} }},
+                    }};"
+                ));
+            }
+
+            Instruction::ExpectedLift { .. } => {
+                let err = self.blocks.pop().unwrap();
+                let ok = self.blocks.pop().unwrap();
+                let operand = &operands[0];
+                results.push(format!(
+                    "match {operand} {{
+                        0 => Ok({ok}),
+                        1 => Err({err}),
+                        _ => return Err(invalid_variant(\"expected\")),
+                    }}"
+                ));
                 self.gen.needs_invalid_variant = true;
             }
 

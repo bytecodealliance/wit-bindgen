@@ -97,17 +97,17 @@ casts: function(
 >
 
 expected-arg: function(
-  a: expected<_, _>,
-  b: expected<_, e1>,
-  c: expected<e1, _>,
+  a: expected<unit, unit>,
+  b: expected<unit, e1>,
+  c: expected<e1, unit>,
   d: expected<tuple<>, tuple<>>,
   e: expected<u32, v1>,
   f: expected<string, list<u8>>,
 )
 expected-result: function() -> tuple<
-  expected<_, _>,
-  expected<_, e1>,
-  expected<e1, _>,
+  expected<unit, unit>,
+  expected<unit, e1>,
+  expected<e1, unit>,
   expected<tuple<>, tuple<>>,
   expected<u32, v1>,
   expected<string, list<u8>>,
@@ -119,7 +119,7 @@ enum my-errno {
 }
 
 return-expected-sugar: function() -> expected<s32, my-errno>
-return-expected-sugar2: function() -> expected<_, my-errno>
+return-expected-sugar2: function() -> expected<unit, my-errno>
 return-expected-sugar3: function() -> expected<my-errno, my-errno>
 return-expected-sugar4: function() -> expected<tuple<s32, u32>, my-errno>
 return-option-sugar: function() -> option<s32>

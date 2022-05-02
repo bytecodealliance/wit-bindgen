@@ -23,7 +23,7 @@ async function run() {
     variantTypedefs(x, y, z) {},
     variantEnums(a, b, c) {
       assert.deepStrictEqual(a, true);
-      assert.deepStrictEqual(b, { tag: 'ok' });
+      assert.deepStrictEqual(b, { tag: 'ok', val: undefined });
       assert.deepStrictEqual(c, MyErrno.Success);
       return [
         false,
@@ -107,7 +107,7 @@ async function run() {
     assert.deepStrictEqual(a4, { tag: 'a', val: 4 });
   }
 
-  wasm.variantTypedefs(null, false, { tag: 'err' });
+  wasm.variantTypedefs(null, false, { tag: 'err', val: undefined });
 }
 
 await run()

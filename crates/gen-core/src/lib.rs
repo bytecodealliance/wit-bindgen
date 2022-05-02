@@ -65,6 +65,22 @@ pub trait Generator {
         variant: &Variant,
         docs: &Docs,
     );
+    fn type_option(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        payload: &Type,
+        docs: &Docs,
+    );
+    fn type_expected(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        expected: &Expected,
+        docs: &Docs,
+    );
     fn type_enum(&mut self, iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs);
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId);
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
@@ -97,6 +113,8 @@ pub trait Generator {
                 TypeDefKind::Variant(variant) => {
                     self.type_variant(iface, id, name, variant, &ty.docs)
                 }
+                TypeDefKind::Option(t) => self.type_option(iface, id, name, t, &ty.docs),
+                TypeDefKind::Expected(e) => self.type_expected(iface, id, name, e, &ty.docs),
                 TypeDefKind::List(t) => self.type_list(iface, id, name, t, &ty.docs),
                 TypeDefKind::Type(t) => self.type_alias(iface, id, name, t, &ty.docs),
             }
@@ -215,6 +233,13 @@ impl Types {
             TypeDefKind::Type(ty) => {
                 info = self.type_info(iface, ty);
             }
+            TypeDefKind::Option(ty) => {
+                info = self.type_info(iface, ty);
+            }
+            TypeDefKind::Expected(e) => {
+                info = self.type_info(iface, &e.ok);
+                info |= self.type_info(iface, &e.err);
+            }
         }
         self.type_info.insert(ty, info);
         return info;
@@ -252,8 +277,13 @@ impl Types {
                     }
                 }
             }
-            TypeDefKind::List(ty) => self.set_param_result_ty(iface, ty, param, result),
-            TypeDefKind::Type(ty) => self.set_param_result_ty(iface, ty, param, result),
+            TypeDefKind::List(ty) | TypeDefKind::Type(ty) | TypeDefKind::Option(ty) => {
+                self.set_param_result_ty(iface, ty, param, result)
+            }
+            TypeDefKind::Expected(e) => {
+                self.set_param_result_ty(iface, &e.ok, param, result);
+                self.set_param_result_ty(iface, &e.err, param, result);
+            }
         }
     }
 

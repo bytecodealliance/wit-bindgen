@@ -58,18 +58,7 @@
     },
     {
       "idx": 6,
-      "variant": {
-        "cases": [
-          [
-            "none",
-            null
-          ],
-          [
-            "some",
-            "string"
-          ]
-        ]
-      }
+      "option": "string"
     },
     {
       "idx": 7,
@@ -77,17 +66,9 @@
     },
     {
       "idx": 8,
-      "variant": {
-        "cases": [
-          [
-            "ok",
-            "u64"
-          ],
-          [
-            "err",
-            "type-4"
-          ]
-        ]
+      "expected": {
+        "ok": "u64",
+        "err": "type-4"
       }
     }
   ],

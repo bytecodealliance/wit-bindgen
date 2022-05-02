@@ -166,6 +166,8 @@ impl C {
             Type::Id(id) => match &iface.types[*id].kind {
                 TypeDefKind::Type(t) => self.is_arg_by_pointer(iface, t),
                 TypeDefKind::Variant(_) => true,
+                TypeDefKind::Option(_) => true,
+                TypeDefKind::Expected(_) => true,
                 TypeDefKind::Enum(_) => false,
                 TypeDefKind::Flags(_) => false,
                 TypeDefKind::Tuple(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
@@ -235,26 +237,22 @@ impl C {
             }
             Type::Id(id) => {
                 let ty = &iface.types[*id];
-                if let Some(name) = &ty.name {
-                    self.print_namespace(iface);
-                    self.src.h(&name.to_snake_case());
-                    self.src.h("_t");
-                    return;
-                }
-                match &ty.kind {
-                    TypeDefKind::Type(t) => self.print_ty(iface, t),
-                    TypeDefKind::Flags(_)
-                    | TypeDefKind::Tuple(_)
-                    | TypeDefKind::Enum(_)
-                    | TypeDefKind::Record(_)
-                    | TypeDefKind::List(_)
-                    | TypeDefKind::Variant(_) => {
-                        self.public_anonymous_types.insert(*id);
-                        self.private_anonymous_types.remove(id);
+                match &ty.name {
+                    Some(name) => {
                         self.print_namespace(iface);
-                        self.print_ty_name(iface, &Type::Id(*id));
+                        self.src.h(&name.to_snake_case());
                         self.src.h("_t");
                     }
+                    None => match &ty.kind {
+                        TypeDefKind::Type(t) => self.print_ty(iface, t),
+                        _ => {
+                            self.public_anonymous_types.insert(*id);
+                            self.private_anonymous_types.remove(id);
+                            self.print_namespace(iface);
+                            self.print_ty_name(iface, &Type::Id(*id));
+                            self.src.h("_t");
+                        }
+                    },
                 }
             }
         }
@@ -284,7 +282,10 @@ impl C {
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty_name(iface, t),
-                    TypeDefKind::Record(_) | TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => {
+                    TypeDefKind::Record(_)
+                    | TypeDefKind::Flags(_)
+                    | TypeDefKind::Enum(_)
+                    | TypeDefKind::Variant(_) => {
                         unimplemented!()
                     }
                     TypeDefKind::Tuple(t) => {
@@ -295,24 +296,15 @@ impl C {
                             self.print_ty_name(iface, ty);
                         }
                     }
-                    TypeDefKind::Variant(v) => {
-                        if let Some(ty) = v.as_option() {
-                            self.src.h("option_");
-                            self.print_ty_name(iface, ty);
-                        } else if let Some((ok, err)) = v.as_expected() {
-                            self.src.h("expected_");
-                            match ok {
-                                Some(t) => self.print_ty_name(iface, t),
-                                None => self.src.h("void"),
-                            }
-                            self.src.h("_");
-                            match err {
-                                Some(t) => self.print_ty_name(iface, t),
-                                None => self.src.h("void"),
-                            }
-                        } else {
-                            unimplemented!();
-                        }
+                    TypeDefKind::Option(ty) => {
+                        self.src.h("option_");
+                        self.print_ty_name(iface, ty);
+                    }
+                    TypeDefKind::Expected(e) => {
+                        self.src.h("expected_");
+                        self.print_ty_name(iface, &e.ok);
+                        self.src.h("_");
+                        self.print_ty_name(iface, &e.err);
                     }
                     TypeDefKind::List(t) => {
                         self.src.h("list_");
@@ -331,7 +323,8 @@ impl C {
             TypeDefKind::Type(_)
             | TypeDefKind::Flags(_)
             | TypeDefKind::Record(_)
-            | TypeDefKind::Enum(_) => {
+            | TypeDefKind::Enum(_)
+            | TypeDefKind::Variant(_) => {
                 unreachable!()
             }
             TypeDefKind::Tuple(t) => {
@@ -343,35 +336,30 @@ impl C {
                 }
                 self.src.h("}");
             }
-            TypeDefKind::Variant(v) => {
-                if let Some(t) = v.as_option() {
-                    self.src.h("struct {\n");
-                    self.src.h("\
-                        // `true` if `val` is present, `false` otherwise
-                        bool tag;
-                    ");
+            TypeDefKind::Option(t) => {
+                self.src.h("struct {\n");
+                self.src.h("bool is_some;\n");
+                if !self.is_empty_type(iface, t) {
                     self.print_ty(iface, t);
                     self.src.h(" val;\n");
-                    self.src.h("}");
-                } else if let Some((ok, err)) = v.as_expected() {
-                    self.src.h("struct {
-                        // 0 if `val` is `ok`, 1 otherwise
-                        uint8_t tag;
-                        union {
-                    ");
-                    if let Some(ok) = ok {
-                        self.print_ty(iface, ok);
-                        self.src.h(" ok;\n");
-                    }
-                    if let Some(err) = err {
-                        self.print_ty(iface, err);
-                        self.src.h(" err;\n");
-                    }
-                    self.src.h("} val;\n");
-                    self.src.h("}");
-                } else {
-                    unimplemented!();
                 }
+                self.src.h("}");
+            }
+            TypeDefKind::Expected(e) => {
+                self.src.h("struct {
+                    bool is_err;
+                    union {
+                ");
+                if !self.is_empty_type(iface, &e.ok) {
+                    self.print_ty(iface, &e.ok);
+                    self.src.h(" ok;\n");
+                }
+                if !self.is_empty_type(iface, &e.err) {
+                    self.print_ty(iface, &e.err);
+                    self.src.h(" err;\n");
+                }
+                self.src.h("} val;\n");
+                self.src.h("}");
             }
             TypeDefKind::List(t) => {
                 self.src.h("struct {\n");
@@ -392,6 +380,7 @@ impl C {
     fn is_empty_type(&self, iface: &Interface, ty: &Type) -> bool {
         let id = match ty {
             Type::Id(id) => *id,
+            Type::Unit => return true,
             _ => return false,
         };
         match &iface.types[id].kind {
@@ -515,6 +504,24 @@ impl C {
                 }
                 self.src.c("}\n");
             }
+
+            TypeDefKind::Option(t) => {
+                self.src.c("if (ptr->is_some) {\n");
+                self.free(iface, t, "&ptr->val");
+                self.src.c("}\n");
+            }
+
+            TypeDefKind::Expected(e) => {
+                self.src.c("if (!ptr->is_err) {\n");
+                if self.owns_anything(iface, &e.ok) {
+                    self.free(iface, &e.ok, "&ptr->val.ok");
+                }
+                if self.owns_anything(iface, &e.err) {
+                    self.src.c("} else {\n");
+                    self.free(iface, &e.err, "&ptr->val.err");
+                }
+                self.src.c("}\n");
+            }
         }
         self.src.c("}\n");
     }
@@ -538,6 +545,10 @@ impl C {
                 .iter()
                 .filter_map(|c| c.ty.as_ref())
                 .any(|t| self.owns_anything(iface, t)),
+            TypeDefKind::Option(t) => self.owns_anything(iface, t),
+            TypeDefKind::Expected(e) => {
+                self.owns_anything(iface, &e.ok) || self.owns_anything(iface, &e.err)
+            }
         }
     }
 
@@ -607,36 +618,35 @@ impl Return {
                 self.scalar = Some(Scalar::Type(*orig_ty));
             }
 
-            TypeDefKind::Variant(r) => {
-                // Unpack optional returns where a boolean discriminant is
-                // returned and then the actual type returned is returned
-                // through a return pointer.
-                if let Some(ty) = r.as_option() {
-                    self.scalar = Some(Scalar::OptionBool(*ty));
-                    self.retptrs.push(*ty);
-                    return;
-                }
+            // Unpack optional returns where a boolean discriminant is
+            // returned and then the actual type returned is returned
+            // through a return pointer.
+            TypeDefKind::Option(ty) => {
+                self.scalar = Some(Scalar::OptionBool(*ty));
+                self.retptrs.push(*ty);
+            }
 
-                // Unpack `expected<T, E>` returns where `E` looks like an enum
-                // so we can return that in the scalar return and have `T` get
-                // returned through the normal returns.
-                if let Some((ok, err)) = r.as_expected() {
-                    if let Some(Type::Id(err)) = err {
-                        if let TypeDefKind::Enum(e) = &iface.types[*err].kind {
-                            self.scalar = Some(Scalar::ExpectedEnum {
-                                err: *err,
-                                max_err: e.cases.len(),
-                            });
-                            if let Some(ok) = ok {
-                                self.splat_tuples(iface, ok, ok);
-                            }
-                            return;
-                        }
+            // Unpack `expected<T, E>` returns where `E` looks like an enum
+            // so we can return that in the scalar return and have `T` get
+            // returned through the normal returns.
+            TypeDefKind::Expected(e) => {
+                if let Type::Id(err) = e.err {
+                    if let TypeDefKind::Enum(enum_) = &iface.types[err].kind {
+                        self.scalar = Some(Scalar::ExpectedEnum {
+                            err,
+                            max_err: enum_.cases.len(),
+                        });
+                        self.splat_tuples(iface, &e.ok, &e.ok);
+                        return;
                     }
                 }
 
-                // If all that failed then just return the variant via a normal
+                // otherwise just return the variant via a normal
                 // return pointer
+                self.retptrs.push(*orig_ty);
+            }
+
+            TypeDefKind::Variant(_) => {
                 self.retptrs.push(*orig_ty);
             }
         }
@@ -645,6 +655,7 @@ impl Return {
     fn splat_tuples(&mut self, iface: &Interface, ty: &Type, orig_ty: &Type) {
         let id = match ty {
             Type::Id(id) => *id,
+            Type::Unit => return,
             _ => {
                 self.retptrs.push(*orig_ty);
                 return;
@@ -797,6 +808,64 @@ impl Generator for C {
                 i,
             ));
         }
+
+        self.types
+            .insert(id, mem::replace(&mut self.src.header, prev));
+    }
+
+    fn type_option(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        payload: &Type,
+        docs: &Docs,
+    ) {
+        let prev = mem::take(&mut self.src.header);
+        self.docs(docs);
+        self.names.insert(&name.to_snake_case()).unwrap();
+        self.src.h("typedef struct {\n");
+        self.src.h("bool is_some;\n");
+        if !self.is_empty_type(iface, payload) {
+            self.print_ty(iface, payload);
+            self.src.h(" val;\n");
+        }
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
+
+        self.types
+            .insert(id, mem::replace(&mut self.src.header, prev));
+    }
+
+    fn type_expected(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        expected: &Expected,
+        docs: &Docs,
+    ) {
+        let prev = mem::take(&mut self.src.header);
+        self.docs(docs);
+        self.names.insert(&name.to_snake_case()).unwrap();
+        self.src.h("typedef struct {\n");
+        self.src.h("bool is_err;\n");
+        self.src.h("union {\n");
+        if !self.is_empty_type(iface, &expected.ok) {
+            self.print_ty(iface, &expected.ok);
+            self.src.h(" ok;\n");
+        }
+        if !self.is_empty_type(iface, &expected.err) {
+            self.print_ty(iface, &expected.err);
+            self.src.h(" err;\n");
+        }
+        self.src.h("} val;\n");
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
 
         self.types
             .insert(id, mem::replace(&mut self.src.header, prev));
@@ -1589,6 +1658,177 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(result);
             }
 
+            Instruction::OptionLower {
+                results: result_types,
+                payload,
+                ..
+            } => {
+                let (mut some, some_results) = self.blocks.pop().unwrap();
+                let (mut none, none_results) = self.blocks.pop().unwrap();
+                let some_payload = self.payloads.pop().unwrap();
+                let _none_payload = self.payloads.pop().unwrap();
+
+                let mut variant_results = Vec::new();
+                for (i, ty) in result_types.iter().enumerate() {
+                    let name = self.locals.tmp("option");
+                    results.push(name.clone());
+                    self.src.push_str(wasm_type(*ty));
+                    self.src.push_str(" ");
+                    self.src.push_str(&name);
+                    self.src.push_str(";\n");
+                    let some_result = &some_results[i];
+                    some.push_str(&format!("{name} = {some_result};\n"));
+                    let none_result = &none_results[i];
+                    none.push_str(&format!("{name} = {none_result};\n"));
+                    variant_results.push(name);
+                }
+
+                let op0 = &operands[0];
+                let ty = self.gen.type_string(iface, payload);
+                let bind_some = if self.gen.is_empty_type(iface, payload) {
+                    String::new()
+                } else {
+                    format!("const {ty} *{some_payload} = &({op0}).val;")
+                };
+                self.src.push_str(&format!(
+                    "
+                    if (({op0}).is_some) {{
+                        {bind_some}
+                        {some}
+                    }} else {{
+                        {none}
+                    }}
+                    "
+                ));
+            }
+
+            Instruction::OptionLift { payload, ty, .. } => {
+                let (some, some_results) = self.blocks.pop().unwrap();
+                let (none, none_results) = self.blocks.pop().unwrap();
+                assert!(none_results.is_empty());
+                assert!(some_results.len() == 1);
+                let some_result = &some_results[0];
+
+                let ty = self.gen.type_string(iface, &Type::Id(*ty));
+                let result = self.locals.tmp("option");
+                self.src.push_str(&format!("{ty} {result};\n"));
+                let op0 = &operands[0];
+                let set_some = if self.gen.is_empty_type(iface, payload) {
+                    String::new()
+                } else {
+                    format!("{result}.val = {some_result};")
+                };
+                self.src.push_str(&format!(
+                    "switch ({op0}) {{
+                        case 0: {{
+                            {result}.is_some = false;
+                            {none}
+                            break;
+                        }}
+                        case 1: {{
+                            {result}.is_some = true;
+                            {some}
+                            {set_some}
+                            break;
+                        }}
+                    }}"
+                ));
+                results.push(result);
+            }
+
+            Instruction::ExpectedLower {
+                results: result_types,
+                expected,
+                ..
+            } => {
+                let (mut err, err_results) = self.blocks.pop().unwrap();
+                let (mut ok, ok_results) = self.blocks.pop().unwrap();
+                let err_payload = self.payloads.pop().unwrap();
+                let ok_payload = self.payloads.pop().unwrap();
+
+                let mut variant_results = Vec::new();
+                for (i, ty) in result_types.iter().enumerate() {
+                    let name = self.locals.tmp("expected");
+                    results.push(name.clone());
+                    self.src.push_str(wasm_type(*ty));
+                    self.src.push_str(" ");
+                    self.src.push_str(&name);
+                    self.src.push_str(";\n");
+                    let ok_result = &ok_results[i];
+                    ok.push_str(&format!("{name} = {ok_result};\n"));
+                    let err_result = &err_results[i];
+                    err.push_str(&format!("{name} = {err_result};\n"));
+                    variant_results.push(name);
+                }
+
+                let op0 = &operands[0];
+                let ok_ty = self.gen.type_string(iface, &expected.ok);
+                let err_ty = self.gen.type_string(iface, &expected.err);
+                let bind_ok = if self.gen.is_empty_type(iface, &expected.ok) {
+                    String::new()
+                } else {
+                    format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;")
+                };
+                let bind_err = if self.gen.is_empty_type(iface, &expected.err) {
+                    String::new()
+                } else {
+                    format!("const {err_ty} *{err_payload} = &({op0}).val.err;")
+                };
+                self.src.push_str(&format!(
+                    "
+                    if (({op0}).is_err) {{
+                        {bind_err}
+                        {err}
+                    }} else {{
+                        {bind_ok}
+                        {ok}
+                    }}
+                    "
+                ));
+            }
+
+            Instruction::ExpectedLift { expected, ty, .. } => {
+                let (err, err_results) = self.blocks.pop().unwrap();
+                assert!(err_results.len() == 1);
+                let err_result = &err_results[0];
+                let (ok, ok_results) = self.blocks.pop().unwrap();
+                assert!(ok_results.len() == 1);
+                let ok_result = &ok_results[0];
+
+                let result = self.locals.tmp("expected");
+                let set_ok = if self.gen.is_empty_type(iface, &expected.ok) {
+                    String::new()
+                } else {
+                    format!("{result}.val.ok = {ok_result};")
+                };
+                let set_err = if self.gen.is_empty_type(iface, &expected.err) {
+                    String::new()
+                } else {
+                    format!("{result}.val.err = {err_result};")
+                };
+
+                let ty = self.gen.type_string(iface, &Type::Id(*ty));
+                self.src.push_str(&format!("{ty} {result};\n"));
+                let op0 = &operands[0];
+                self.src.push_str(&format!(
+                    "switch ({op0}) {{
+                        case 0: {{
+                            {result}.is_err = false;
+                            {ok}
+                            {set_ok}
+                            break;
+                        }}
+                        case 1: {{
+                            {result}.is_err = true;
+                            {err}
+                            {set_err}
+                            break;
+                        }}
+                    }}"
+                ));
+                results.push(result);
+            }
+
             Instruction::EnumLower { .. } => results.push(format!("(int32_t) {}", operands[0])),
             Instruction::EnumLift { .. } => results.push(operands.pop().unwrap()),
 
@@ -1721,7 +1961,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.src.push_str(&format!(
                             "
                                 {ty} {ret};
-                                {ret}.tag = {tag};
+                                {ret}.is_some = {tag};
                                 {ret}.val = {val};
                             ",
                             ty = option_ty,
@@ -1756,10 +1996,10 @@ impl Bindgen for FunctionBindgen<'_> {
                             "
                                 {ty} {ret};
                                 if ({tag} <= {max}) {{
-                                    {ret}.tag = 1;
+                                    {ret}.is_err = true;
                                     {ret}.val.err = {tag};
                                 }} else {{
-                                    {ret}.tag = 0;
+                                    {ret}.is_err = false;
                                     {set_ok}
                                 }}
                             ",
@@ -1804,7 +2044,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.store_in_retptrs(&[format!("{}.val", variant)]);
                     self.src.push_str("return ");
                     self.src.push_str(&variant);
-                    self.src.push_str(".tag;\n");
+                    self.src.push_str(".is_some;\n");
                 }
                 Some(Scalar::ExpectedEnum { .. }) => {
                     assert_eq!(operands.len(), 1);
@@ -1813,7 +2053,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.store_in_retptrs(&[format!("{}.val.ok", variant)]);
                     }
                     self.src
-                        .push_str(&format!("return {}.tag ? {0}.val.err : -1;\n", variant,));
+                        .push_str(&format!("return {}.is_err ? {0}.val.err : -1;\n", variant));
                 }
             },
             Instruction::Return { amt, .. } => {

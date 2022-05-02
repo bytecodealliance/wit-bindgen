@@ -95,6 +95,8 @@ enum Type<'a> {
     Variant(Variant<'a>),
     Tuple(Vec<Type<'a>>),
     Enum(Enum<'a>),
+    Option(Box<Type<'a>>),
+    Expected(Expected<'a>),
 }
 
 struct Record<'a> {
@@ -136,6 +138,11 @@ struct Enum<'a> {
 struct EnumCase<'a> {
     docs: Docs<'a>,
     name: Id<'a>,
+}
+
+struct Expected<'a> {
+    ok: Box<Type<'a>>,
+    err: Box<Type<'a>>,
 }
 
 pub struct Value<'a> {
@@ -488,59 +495,21 @@ impl<'a> Type<'a> {
             }
 
             // option<T>
-            Some((span, Token::Option_)) => {
+            Some((_span, Token::Option_)) => {
                 tokens.expect(Token::LessThan)?;
                 let ty = Type::parse(tokens)?;
                 tokens.expect(Token::GreaterThan)?;
-                Ok(Type::Variant(Variant {
-                    tag: None,
-                    span,
-                    cases: vec![
-                        Case {
-                            docs: Docs::default(),
-                            name: "none".into(),
-                            ty: None,
-                        },
-                        Case {
-                            docs: Docs::default(),
-                            name: "some".into(),
-                            ty: Some(ty),
-                        },
-                    ],
-                }))
+                Ok(Type::Option(Box::new(ty)))
             }
 
             // expected<T, E>
-            Some((span, Token::Expected)) => {
+            Some((_span, Token::Expected)) => {
                 tokens.expect(Token::LessThan)?;
-                let ok = if tokens.eat(Token::Underscore)? {
-                    None
-                } else {
-                    Some(Type::parse(tokens)?)
-                };
+                let ok = Box::new(Type::parse(tokens)?);
                 tokens.expect(Token::Comma)?;
-                let err = if tokens.eat(Token::Underscore)? {
-                    None
-                } else {
-                    Some(Type::parse(tokens)?)
-                };
+                let err = Box::new(Type::parse(tokens)?);
                 tokens.expect(Token::GreaterThan)?;
-                Ok(Type::Variant(Variant {
-                    tag: None,
-                    span,
-                    cases: vec![
-                        Case {
-                            docs: Docs::default(),
-                            name: "ok".into(),
-                            ty: ok,
-                        },
-                        Case {
-                            docs: Docs::default(),
-                            name: "err".into(),
-                            ty: err,
-                        },
-                    ],
-                }))
+                Ok(Type::Expected(Expected { ok, err }))
             }
 
             // `foo`

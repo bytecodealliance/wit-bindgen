@@ -25,6 +25,8 @@ enum Key {
     Tuple(Vec<Type>),
     Enum(Vec<String>),
     List(Type),
+    Option(Type),
+    Expected(Type, Type),
 }
 
 impl Resolver {
@@ -230,6 +232,11 @@ impl Resolver {
                     cases: e.cases.clone(),
                 }),
                 TypeDefKind::List(t) => TypeDefKind::List(self.copy_type(dep_name, dep, *t)),
+                TypeDefKind::Option(t) => TypeDefKind::Option(self.copy_type(dep_name, dep, *t)),
+                TypeDefKind::Expected(e) => TypeDefKind::Expected(Expected {
+                    ok: self.copy_type(dep_name, dep, e.ok),
+                    err: self.copy_type(dep_name, dep, e.err),
+                }),
             },
         };
         let id = self.types.alloc(ty);
@@ -447,6 +454,11 @@ impl Resolver {
                     .collect::<Result<Vec<_>>>()?;
                 TypeDefKind::Enum(Enum { cases })
             }
+            super::Type::Option(ty) => TypeDefKind::Option(self.resolve_type(ty)?),
+            super::Type::Expected(e) => TypeDefKind::Expected(Expected {
+                ok: self.resolve_type(&e.ok)?,
+                err: self.resolve_type(&e.err)?,
+            }),
         })
     }
 
@@ -509,6 +521,8 @@ impl Resolver {
                 Key::Enum(r.cases.iter().map(|f| f.name.clone()).collect::<Vec<_>>())
             }
             TypeDefKind::List(ty) => Key::List(*ty),
+            TypeDefKind::Option(t) => Key::Option(*t),
+            TypeDefKind::Expected(e) => Key::Expected(e.ok, e.err),
         };
         let types = &mut self.types;
         let id = self
@@ -671,6 +685,20 @@ impl Resolver {
                     if let Type::Id(id) = *ty {
                         self.validate_type_not_recursive(span, id, visiting, valid)?;
                     }
+                }
+            }
+
+            TypeDefKind::Option(t) => {
+                if let Type::Id(id) = *t {
+                    self.validate_type_not_recursive(span, id, visiting, valid)?
+                }
+            }
+            TypeDefKind::Expected(e) => {
+                if let Type::Id(id) = e.ok {
+                    self.validate_type_not_recursive(span, id, visiting, valid)?
+                }
+                if let Type::Id(id) = e.err {
+                    self.validate_type_not_recursive(span, id, visiting, valid)?
                 }
             }
 

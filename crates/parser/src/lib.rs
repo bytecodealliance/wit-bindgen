@@ -50,6 +50,8 @@ pub enum TypeDefKind {
     Tuple(Tuple),
     Variant(Variant),
     Enum(Enum),
+    Option(Type),
+    Expected(Expected),
     List(Type),
     Type(Type),
 }
@@ -217,6 +219,12 @@ impl Enum {
             _ => panic!("too many cases to fit in a repr"),
         }
     }
+}
+
+#[derive(Debug)]
+pub struct Expected {
+    pub ok: Type,
+    pub err: Type,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -418,6 +426,11 @@ impl Interface {
                     }
                 }
             }
+            TypeDefKind::Option(ty) => self.topo_visit_ty(ty, list, visited),
+            TypeDefKind::Expected(e) => {
+                self.topo_visit_ty(&e.ok, list, visited);
+                self.topo_visit_ty(&e.err, list, visited);
+            }
         }
         list.push(id);
     }
@@ -445,7 +458,11 @@ impl Interface {
             Type::Bool | Type::Char | Type::Handle(_) | Type::String => false,
 
             Type::Id(id) => match &self.types[*id].kind {
-                TypeDefKind::List(_) | TypeDefKind::Variant(_) | TypeDefKind::Enum(_) => false,
+                TypeDefKind::List(_)
+                | TypeDefKind::Variant(_)
+                | TypeDefKind::Enum(_)
+                | TypeDefKind::Option(_)
+                | TypeDefKind::Expected(_) => false,
                 TypeDefKind::Type(t) => self.all_bits_valid(t),
                 TypeDefKind::Record(r) => r.fields.iter().all(|f| self.all_bits_valid(&f.ty)),
                 TypeDefKind::Tuple(t) => t.types.iter().all(|t| self.all_bits_valid(t)),

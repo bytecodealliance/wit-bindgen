@@ -13,8 +13,8 @@ use wasm_encoder::*;
 use wasmparser::{Validator, WasmFeatures};
 use wit_parser::{
     abi::{AbiVariant, WasmSignature, WasmType},
-    Enum, Flags, Function, FunctionKind, Interface, Record, Tuple, Type, TypeDef, TypeDefKind,
-    Variant,
+    Enum, Expected, Flags, Function, FunctionKind, Interface, Record, Tuple, Type, TypeDef,
+    TypeDefKind, Variant,
 };
 
 const INDIRECT_TABLE_NAME: &str = "$imports";
@@ -227,6 +227,27 @@ impl Hash for TypeDefKey<'_> {
                 }
                 .hash(state);
             }
+            TypeDefKind::Option(ty) => {
+                state.write_u8(7);
+                TypeKey {
+                    interface: self.interface,
+                    ty: *ty,
+                }
+                .hash(state);
+            }
+            TypeDefKind::Expected(e) => {
+                state.write_u8(8);
+                TypeKey {
+                    interface: self.interface,
+                    ty: e.ok,
+                }
+                .hash(state);
+                TypeKey {
+                    interface: self.interface,
+                    ty: e.err,
+                }
+                .hash(state);
+            }
         }
     }
 }
@@ -407,6 +428,8 @@ impl<'a> TypeEncoder<'a> {
                         TypeDefKind::Tuple(t) => self.encode_tuple(interface, instance, t)?,
                         TypeDefKind::Flags(r) => self.encode_flags(r)?,
                         TypeDefKind::Variant(v) => self.encode_variant(interface, instance, v)?,
+                        TypeDefKind::Option(t) => self.encode_option(interface, instance, t)?,
+                        TypeDefKind::Expected(e) => self.encode_expected(interface, instance, e)?,
                         TypeDefKind::Enum(e) => self.encode_enum(e)?,
                         TypeDefKind::List(ty) => {
                             let ty = self.encode_type(interface, instance, ty)?;
@@ -501,29 +524,6 @@ impl<'a> TypeEncoder<'a> {
         instance: &mut Option<InstanceTypeEncoder<'a>>,
         variant: &Variant,
     ) -> Result<InterfaceTypeRef> {
-        if let Some(ty) = variant.as_option() {
-            let ty = self.encode_type(interface, instance, ty)?;
-            let index = self.types.len();
-            let encoder = self.types.interface_type();
-            encoder.option(ty);
-            return Ok(InterfaceTypeRef::Type(index));
-        }
-
-        if let Some((ok, error)) = variant.as_expected() {
-            let ok = ok
-                .map(|ty| self.encode_type(interface, instance, ty))
-                .transpose()?
-                .unwrap_or(InterfaceTypeRef::Primitive(PrimitiveInterfaceType::Unit));
-            let error = error
-                .map(|ty| self.encode_type(interface, instance, ty))
-                .transpose()?
-                .unwrap_or(InterfaceTypeRef::Primitive(PrimitiveInterfaceType::Unit));
-            let index = self.types.len();
-            let encoder = self.types.interface_type();
-            encoder.expected(ok, error);
-            return Ok(InterfaceTypeRef::Type(index));
-        }
-
         if variant.is_union() {
             let tys = variant
                 .cases
@@ -555,6 +555,33 @@ impl<'a> TypeEncoder<'a> {
         let index = self.types.len();
         let encoder = self.types.interface_type();
         encoder.variant(cases);
+        Ok(InterfaceTypeRef::Type(index))
+    }
+
+    fn encode_option(
+        &mut self,
+        interface: &'a Interface,
+        instance: &mut Option<InstanceTypeEncoder<'a>>,
+        payload: &Type,
+    ) -> Result<InterfaceTypeRef> {
+        let ty = self.encode_type(interface, instance, payload)?;
+        let index = self.types.len();
+        let encoder = self.types.interface_type();
+        encoder.option(ty);
+        Ok(InterfaceTypeRef::Type(index))
+    }
+
+    fn encode_expected(
+        &mut self,
+        interface: &'a Interface,
+        instance: &mut Option<InstanceTypeEncoder<'a>>,
+        expected: &Expected,
+    ) -> Result<InterfaceTypeRef> {
+        let ok = self.encode_type(interface, instance, &expected.ok)?;
+        let error = self.encode_type(interface, instance, &expected.err)?;
+        let index = self.types.len();
+        let encoder = self.types.interface_type();
+        encoder.expected(ok, error);
         Ok(InterfaceTypeRef::Type(index))
     }
 
@@ -632,6 +659,10 @@ impl RequiredOptions {
                 }
                 TypeDefKind::Tuple(t) => Self::for_types(interface, t.types.iter()),
                 TypeDefKind::Flags(_) => Self::None,
+                TypeDefKind::Option(t) => Self::for_type(interface, t),
+                TypeDefKind::Expected(e) => {
+                    Self::for_type(interface, &e.ok) | Self::for_type(interface, &e.err)
+                }
                 TypeDefKind::Variant(v) => {
                     Self::for_types(interface, v.cases.iter().filter_map(|c| c.ty.as_ref()))
                 }

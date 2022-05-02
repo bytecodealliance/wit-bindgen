@@ -485,44 +485,36 @@ impl<'a> CallAdapter<'a> {
                 TypeDefKind::Enum(_) => {
                     params.next().unwrap();
                 }
-                TypeDefKind::Variant(v) => {
-                    let discriminant = params.next().unwrap();
-                    let mut count = 0;
-                    let mut cases = Vec::new();
-                    for (i, c) in v.cases.iter().enumerate() {
-                        if let Some(ty) = &c.ty {
-                            let mut iter = params.clone();
-                            let mut operands = Vec::new();
-
-                            Self::push_operands(
-                                interface,
-                                sizes,
-                                ty,
-                                &mut iter,
-                                mode,
-                                locals_count,
-                                &mut operands,
-                            );
-
-                            if !operands.is_empty() {
-                                cases.push((i as u32, operands));
-                            }
-
-                            count = std::cmp::max(count, params.len() - iter.len());
-                        }
-                    }
-
-                    if !cases.is_empty() {
-                        operands.push(Operand::Variant {
-                            discriminant: (mode.create_value_ref(discriminant), v.tag.into()),
-                            cases,
-                        });
-                    }
-
-                    for _ in 0..count {
-                        params.next().unwrap();
-                    }
-                }
+                TypeDefKind::Variant(v) => Self::push_variant_operands(
+                    interface,
+                    sizes,
+                    v.tag,
+                    v.cases.iter().map(|c| c.ty.as_ref()),
+                    params,
+                    mode,
+                    locals_count,
+                    operands,
+                ),
+                TypeDefKind::Option(t) => Self::push_variant_operands(
+                    interface,
+                    sizes,
+                    Int::U8,
+                    [None, Some(t)],
+                    params,
+                    mode,
+                    locals_count,
+                    operands,
+                ),
+                TypeDefKind::Expected(e) => Self::push_variant_operands(
+                    interface,
+                    sizes,
+                    Int::U8,
+                    [Some(&e.ok), Some(&e.err)],
+                    params,
+                    mode,
+                    locals_count,
+                    operands,
+                ),
             },
             Type::String => {
                 let addr = params.next().unwrap();
@@ -557,9 +549,60 @@ impl<'a> CallAdapter<'a> {
                     name: interface.resources[*id].name.as_str(),
                 });
             }
+            Type::Unit => {}
             _ => {
                 params.next().unwrap();
             }
+        }
+    }
+
+    fn push_variant_operands<'b, T>(
+        interface: &'a WitInterface,
+        sizes: &SizeAlign,
+        tag: Int,
+        all_cases: impl IntoIterator<Item = Option<&'b Type>>,
+        params: &mut T,
+        mode: PushMode,
+        locals_count: &mut u32,
+        operands: &mut Vec<Operand<'a>>,
+    ) where
+        T: ExactSizeIterator<Item = u32> + Clone,
+    {
+        let discriminant = params.next().unwrap();
+        let mut count = 0;
+        let mut cases = Vec::new();
+        for (i, c) in all_cases.into_iter().enumerate() {
+            if let Some(ty) = c {
+                let mut iter = params.clone();
+                let mut operands = Vec::new();
+
+                Self::push_operands(
+                    interface,
+                    sizes,
+                    ty,
+                    &mut iter,
+                    mode,
+                    locals_count,
+                    &mut operands,
+                );
+
+                if !operands.is_empty() {
+                    cases.push((i as u32, operands));
+                }
+
+                count = std::cmp::max(count, params.len() - iter.len());
+            }
+        }
+
+        if !cases.is_empty() {
+            operands.push(Operand::Variant {
+                discriminant: (mode.create_value_ref(discriminant), tag.into()),
+                cases,
+            });
+        }
+
+        for _ in 0..count {
+            params.next().unwrap();
         }
     }
 
@@ -651,35 +694,36 @@ impl<'a> CallAdapter<'a> {
                     }
                 }
                 TypeDefKind::Enum(_) => {}
-                TypeDefKind::Variant(v) => {
-                    let payload_offset = sizes.payload_offset(v) as u32;
-
-                    let mut cases = Vec::new();
-                    for (i, c) in v.cases.iter().enumerate() {
-                        if let Some(ty) = &c.ty {
-                            let mut operands = Vec::new();
-                            Self::push_element_operands(
-                                interface,
-                                sizes,
-                                ty,
-                                offset + payload_offset,
-                                mode,
-                                locals_count,
-                                &mut operands,
-                            );
-                            if !operands.is_empty() {
-                                cases.push((i as u32, operands));
-                            }
-                        }
-                    }
-
-                    if !cases.is_empty() {
-                        operands.push(Operand::Variant {
-                            discriminant: (ValueRef::ElementOffset(offset), v.tag.into()),
-                            cases,
-                        });
-                    }
-                }
+                TypeDefKind::Variant(v) => Self::push_variant_element_operands(
+                    interface,
+                    sizes,
+                    offset,
+                    v.tag,
+                    v.cases.iter().map(|c| c.ty.as_ref()),
+                    mode,
+                    locals_count,
+                    operands,
+                ),
+                TypeDefKind::Option(t) => Self::push_variant_element_operands(
+                    interface,
+                    sizes,
+                    offset,
+                    Int::U8,
+                    [None, Some(t)],
+                    mode,
+                    locals_count,
+                    operands,
+                ),
+                TypeDefKind::Expected(e) => Self::push_variant_element_operands(
+                    interface,
+                    sizes,
+                    offset,
+                    Int::U8,
+                    [Some(&e.ok), Some(&e.err)],
+                    mode,
+                    locals_count,
+                    operands,
+                ),
             },
             Type::String => {
                 // Every list copied needs a source and destination local
@@ -706,6 +750,45 @@ impl<'a> CallAdapter<'a> {
                 });
             }
             _ => {}
+        }
+    }
+
+    fn push_variant_element_operands<'b>(
+        interface: &'a WitInterface,
+        sizes: &SizeAlign,
+        offset: u32,
+        tag: Int,
+        all_cases: impl IntoIterator<Item = Option<&'b Type>> + Clone,
+        mode: PushMode,
+        locals_count: &mut u32,
+        operands: &mut Vec<Operand<'a>>,
+    ) {
+        let payload_offset = sizes.payload_offset(tag, all_cases.clone()) as u32;
+
+        let mut cases = Vec::new();
+        for (i, c) in all_cases.into_iter().enumerate() {
+            if let Some(ty) = c {
+                let mut operands = Vec::new();
+                Self::push_element_operands(
+                    interface,
+                    sizes,
+                    ty,
+                    offset + payload_offset,
+                    mode,
+                    locals_count,
+                    &mut operands,
+                );
+                if !operands.is_empty() {
+                    cases.push((i as u32, operands));
+                }
+            }
+        }
+
+        if !cases.is_empty() {
+            operands.push(Operand::Variant {
+                discriminant: (ValueRef::ElementOffset(offset), tag.into()),
+                cases,
+            });
         }
     }
 

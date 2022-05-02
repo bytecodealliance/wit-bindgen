@@ -236,6 +236,28 @@ impl Generator for RustWasm {
         self.print_typedef_variant(iface, id, variant, docs);
     }
 
+    fn type_option(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        _name: &str,
+        payload: &Type,
+        docs: &Docs,
+    ) {
+        self.print_typedef_option(iface, id, payload, docs);
+    }
+
+    fn type_expected(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        _name: &str,
+        expected: &Expected,
+        docs: &Docs,
+    ) {
+        self.print_typedef_expected(iface, id, expected, docs);
+    }
+
     fn type_enum(
         &mut self,
         _iface: &Interface,
@@ -998,11 +1020,9 @@ impl Bindgen for FunctionBindgen<'_> {
 
             // In unchecked mode when this type is a named enum then we know we
             // defined the type so we can transmute directly into it.
-            Instruction::VariantLift {
-                name: Some(name),
-                variant,
-                ..
-            } if variant.cases.iter().all(|c| c.ty.is_none()) && unchecked => {
+            Instruction::VariantLift { name, variant, .. }
+                if variant.cases.iter().all(|c| c.ty.is_none()) && unchecked =>
+            {
                 self.blocks.drain(self.blocks.len() - variant.cases.len()..);
                 let mut result = format!("core::mem::transmute::<_, ");
                 result.push_str(&name.to_camel_case());
@@ -1037,6 +1057,75 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
                 result.push_str("}");
                 results.push(result);
+            }
+
+            Instruction::OptionLower {
+                results: result_types,
+                ..
+            } => {
+                let some = self.blocks.pop().unwrap();
+                let none = self.blocks.pop().unwrap();
+                self.let_results(result_types.len(), results);
+                let operand = &operands[0];
+                self.push_str(&format!(
+                    "match {operand} {{
+                        Some(e) => {{ {some} }},
+                        None => {{ {none} }},
+                    }};"
+                ));
+            }
+
+            Instruction::OptionLift { .. } => {
+                let some = self.blocks.pop().unwrap();
+                let none = self.blocks.pop().unwrap();
+                assert_eq!(none, "()");
+                let operand = &operands[0];
+                let invalid = if unchecked {
+                    "std::hint::unreachable_unchecked()"
+                } else {
+                    "panic!(\"invalid enum discriminant\")"
+                };
+                results.push(format!(
+                    "match {operand} {{
+                        0 => None,
+                        1 => Some({some}),
+                        _ => {invalid},
+                    }}"
+                ));
+            }
+
+            Instruction::ExpectedLower {
+                results: result_types,
+                ..
+            } => {
+                let err = self.blocks.pop().unwrap();
+                let ok = self.blocks.pop().unwrap();
+                self.let_results(result_types.len(), results);
+                let operand = &operands[0];
+                self.push_str(&format!(
+                    "match {operand} {{
+                        Ok(e) => {{ {ok} }},
+                        Err(e) => {{ {err} }},
+                    }};"
+                ));
+            }
+
+            Instruction::ExpectedLift { .. } => {
+                let err = self.blocks.pop().unwrap();
+                let ok = self.blocks.pop().unwrap();
+                let operand = &operands[0];
+                let invalid = if unchecked {
+                    "std::hint::unreachable_unchecked()"
+                } else {
+                    "panic!(\"invalid enum discriminant\")"
+                };
+                results.push(format!(
+                    "match {operand} {{
+                        0 => Ok({ok}),
+                        1 => Err({err}),
+                        _ => {invalid},
+                    }}"
+                ));
             }
 
             Instruction::EnumLower { enum_, name, .. } => {
