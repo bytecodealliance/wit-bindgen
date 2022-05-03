@@ -25,30 +25,11 @@ impl SizeAlign {
                 FlagsRepr::U16 => (2, 2),
                 FlagsRepr::U32(n) => (n * 4, 4),
             },
-            TypeDefKind::Variant(v) => {
-                let (discrim_size, discrim_align) = int_size_align(v.tag);
-                let mut size = discrim_size;
-                let mut align = discrim_align;
-                for c in v.cases.iter() {
-                    if let Some(ty) = &c.ty {
-                        let case_size = self.size(ty);
-                        let case_align = self.align(ty);
-                        align = align.max(case_align);
-                        size = size.max(align_to(discrim_size, case_align) + case_size);
-                    }
-                }
-                (size, align)
-            }
-            TypeDefKind::Enum(e) => int_size_align(e.tag()),
-            TypeDefKind::Option(t) => {
-                let align = self.align(t);
-                (align_to(1, align) + self.size(t), align)
-            }
-            TypeDefKind::Expected(e) => {
-                let align = self.align(&e.ok).max(self.align(&e.err));
-                let size = self.size(&e.ok).max(self.size(&e.err));
-                (align_to(1, align) + size, align)
-            }
+            TypeDefKind::Variant(v) => self.variant(v.tag, v.cases.iter().map(|c| c.ty.as_ref())),
+            TypeDefKind::Enum(e) => self.variant(e.tag(), []),
+            TypeDefKind::Option(t) => self.variant(Int::U8, [None, Some(t)]),
+            TypeDefKind::Expected(e) => self.variant(Int::U8, [Some(&e.ok), Some(&e.err)]),
+            TypeDefKind::Union(u) => self.variant(u.tag(), u.cases.iter().map(|c| Some(&c.ty))),
         }
     }
 
@@ -112,6 +93,25 @@ impl SizeAlign {
             align = align.max(field_align);
         }
         (align_to(size, align), align)
+    }
+
+    fn variant<'a>(
+        &self,
+        tag: Int,
+        types: impl IntoIterator<Item = Option<&'a Type>>,
+    ) -> (usize, usize) {
+        let (discrim_size, discrim_align) = int_size_align(tag);
+        let mut size = discrim_size;
+        let mut align = discrim_align;
+        for ty in types {
+            if let Some(ty) = ty {
+                let case_size = self.size(ty);
+                let case_align = self.align(ty);
+                align = align.max(case_align);
+                size = size.max(align_to(discrim_size, case_align) + case_size);
+            }
+        }
+        (size, align)
     }
 }
 

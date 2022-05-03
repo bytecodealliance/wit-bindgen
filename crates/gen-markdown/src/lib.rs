@@ -81,7 +81,8 @@ impl Markdown {
                     TypeDefKind::Record(_)
                     | TypeDefKind::Flags(_)
                     | TypeDefKind::Enum(_)
-                    | TypeDefKind::Variant(_) => {
+                    | TypeDefKind::Variant(_)
+                    | TypeDefKind::Union(_) => {
                         unreachable!()
                     }
                     TypeDefKind::Option(t) => {
@@ -265,6 +266,35 @@ impl Generator for Markdown {
                 self.src.push_str(": ");
                 self.print_ty(iface, ty, false);
             }
+            self.src.indent(1);
+            self.src.push_str("\n\n");
+            self.docs(&case.docs);
+            self.src.deindent(1);
+            self.src.push_str("\n");
+        }
+    }
+
+    fn type_union(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        union: &Union,
+        docs: &Docs,
+    ) {
+        self.print_type_header(name);
+        self.src.push_str("union\n\n");
+        self.print_type_info(id, docs);
+        self.src.push_str("\n### Union Cases\n\n");
+        let snake = name.to_snake_case();
+        for (i, case) in union.cases.iter().enumerate() {
+            self.src.push_str(&format!(
+                "- <a href=\"{snake}.{i}\" name=\"{snake}.{i}\"></a> [`{i}`](#{snake}.{i})",
+            ));
+            self.hrefs
+                .insert(format!("{name}::{i}"), format!("#{snake}.{i}"));
+            self.src.push_str(": ");
+            self.print_ty(iface, &case.ty, false);
             self.src.indent(1);
             self.src.push_str("\n\n");
             self.docs(&case.docs);

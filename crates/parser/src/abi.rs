@@ -1,7 +1,7 @@
 use crate::sizealign::align_to;
 use crate::{
     Enum, Expected, Flags, FlagsRepr, Function, Int, Interface, Record, ResourceId, Tuple, Type,
-    TypeDefKind, TypeId, Variant,
+    TypeDefKind, TypeId, Union, Variant,
 };
 use std::mem;
 
@@ -568,6 +568,21 @@ def_instruction! {
             ty: TypeId,
         } : [1] => [1],
 
+        /// TODO
+        UnionLower {
+            union: &'a Union,
+            name: &'a str,
+            ty: TypeId,
+            results: &'a [WasmType],
+        } : [1] => [results.len()],
+
+        /// TODO
+        UnionLift {
+            union: &'a Union,
+            name: &'a str,
+            ty: TypeId,
+        } : [1] => [1],
+
         /// Pops an enum off the stack and pushes the `i32` representation.
         EnumLower {
             enum_: &'a Enum,
@@ -1004,6 +1019,11 @@ impl Interface {
                 TypeDefKind::Expected(e) => {
                     result.push(WasmType::I32);
                     self.push_wasm_variants(variant, [Some(&e.ok), Some(&e.err)], result);
+                }
+
+                TypeDefKind::Union(u) => {
+                    result.push(WasmType::I32);
+                    self.push_wasm_variants(variant, u.cases.iter().map(|c| Some(&c.ty)), result);
                 }
             },
         }
@@ -1558,6 +1578,16 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         results: &results,
                     });
                 }
+                TypeDefKind::Union(union) => {
+                    let results =
+                        self.lower_variant_arms(ty, union.cases.iter().map(|c| Some(&c.ty)));
+                    self.emit(&UnionLower {
+                        union,
+                        ty: id,
+                        results: &results,
+                        name: self.iface.types[id].name.as_deref().unwrap(),
+                    });
+                }
             },
         }
     }
@@ -1758,6 +1788,15 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         ty: id,
                     });
                 }
+
+                TypeDefKind::Union(union) => {
+                    self.lift_variant_arms(ty, union.cases.iter().map(|c| Some(&c.ty)));
+                    self.emit(&UnionLift {
+                        union,
+                        ty: id,
+                        name: self.iface.types[id].name.as_deref().unwrap(),
+                    });
+                }
             },
         }
     }
@@ -1922,6 +1961,21 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.lower(ty);
                     self.stack.push(addr);
                     self.store_intrepr(offset, e.tag());
+                }
+
+                TypeDefKind::Union(union) => {
+                    self.write_variant_arms_to_memory(
+                        offset,
+                        addr,
+                        union.tag(),
+                        union.cases.iter().map(|c| Some(&c.ty)),
+                    );
+                    self.emit(&UnionLower {
+                        union,
+                        ty: id,
+                        results: &[],
+                        name: self.iface.types[id].name.as_deref().unwrap(),
+                    });
                 }
             },
         }
@@ -2091,6 +2145,20 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.stack.push(addr.clone());
                     self.load_intrepr(offset, e.tag());
                     self.lift(ty);
+                }
+
+                TypeDefKind::Union(union) => {
+                    self.read_variant_arms_from_memory(
+                        offset,
+                        addr,
+                        union.tag(),
+                        union.cases.iter().map(|c| Some(&c.ty)),
+                    );
+                    self.emit(&UnionLift {
+                        union,
+                        ty: id,
+                        name: self.iface.types[id].name.as_deref().unwrap(),
+                    });
                 }
             },
         }

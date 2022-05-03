@@ -27,6 +27,7 @@ enum Key {
     List(Type),
     Option(Type),
     Expected(Type, Type),
+    Union(Vec<Type>),
 }
 
 impl Resolver {
@@ -236,6 +237,16 @@ impl Resolver {
                 TypeDefKind::Expected(e) => TypeDefKind::Expected(Expected {
                     ok: self.copy_type(dep_name, dep, e.ok),
                     err: self.copy_type(dep_name, dep, e.err),
+                }),
+                TypeDefKind::Union(u) => TypeDefKind::Union(Union {
+                    cases: u
+                        .cases
+                        .iter()
+                        .map(|c| UnionCase {
+                            docs: c.docs.clone(),
+                            ty: self.copy_type(dep_name, dep, c.ty),
+                        })
+                        .collect(),
                 }),
             },
         };
@@ -459,6 +470,26 @@ impl Resolver {
                 ok: self.resolve_type(&e.ok)?,
                 err: self.resolve_type(&e.err)?,
             }),
+            super::Type::Union(e) => {
+                if e.cases.is_empty() {
+                    return Err(Error {
+                        span: e.span,
+                        msg: "empty union".to_string(),
+                    }
+                    .into());
+                }
+                let cases = e
+                    .cases
+                    .iter()
+                    .map(|case| {
+                        Ok(UnionCase {
+                            docs: self.docs(&case.docs),
+                            ty: self.resolve_type(&case.ty)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                TypeDefKind::Union(Union { cases })
+            }
         })
     }
 
@@ -523,6 +554,7 @@ impl Resolver {
             TypeDefKind::List(ty) => Key::List(*ty),
             TypeDefKind::Option(t) => Key::Option(*t),
             TypeDefKind::Expected(e) => Key::Expected(e.ok, e.err),
+            TypeDefKind::Union(u) => Key::Union(u.cases.iter().map(|c| c.ty).collect()),
         };
         let types = &mut self.types;
         let id = self
@@ -699,6 +731,13 @@ impl Resolver {
                 }
                 if let Type::Id(id) = e.err {
                     self.validate_type_not_recursive(span, id, visiting, valid)?
+                }
+            }
+            TypeDefKind::Union(u) => {
+                for c in u.cases.iter() {
+                    if let Type::Id(id) = c.ty {
+                        self.validate_type_not_recursive(span, id, visiting, valid)?
+                    }
                 }
             }
 

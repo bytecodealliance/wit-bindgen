@@ -17,7 +17,7 @@ use wit_bindgen_gen_core::{
     wit_parser::{
         abi::{self, AbiVariant, WasmSignature, WasmType},
         Docs, Enum, Expected, Flags, Function, Interface, Record, ResourceId, SizeAlign, Tuple,
-        Type, TypeId, Variant,
+        Type, TypeId, Union, Variant,
     },
     Direction, Files, Generator,
 };
@@ -985,6 +985,18 @@ impl Generator for SpiderMonkeyWasm<'_> {
         docs: &Docs,
     ) {
         let _ = (iface, id, name, variant, docs);
+        todo!()
+    }
+
+    fn type_union(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        union: &Union,
+        docs: &Docs,
+    ) {
+        let _ = (iface, id, name, union, docs);
         todo!()
     }
 
@@ -1959,6 +1971,8 @@ impl abi::Bindgen for Bindgen<'_, '_> {
             abi::Instruction::OptionLift { .. } => todo!(),
             abi::Instruction::ExpectedLower { .. } => todo!(),
             abi::Instruction::ExpectedLift { .. } => todo!(),
+            abi::Instruction::UnionLower { .. } => todo!(),
+            abi::Instruction::UnionLift { .. } => todo!(),
             abi::Instruction::EnumLower {
                 enum_: _,
                 name: _,

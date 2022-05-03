@@ -166,6 +166,7 @@ impl C {
             Type::Id(id) => match &iface.types[*id].kind {
                 TypeDefKind::Type(t) => self.is_arg_by_pointer(iface, t),
                 TypeDefKind::Variant(_) => true,
+                TypeDefKind::Union(_) => true,
                 TypeDefKind::Option(_) => true,
                 TypeDefKind::Expected(_) => true,
                 TypeDefKind::Enum(_) => false,
@@ -285,7 +286,8 @@ impl C {
                     TypeDefKind::Record(_)
                     | TypeDefKind::Flags(_)
                     | TypeDefKind::Enum(_)
-                    | TypeDefKind::Variant(_) => {
+                    | TypeDefKind::Variant(_)
+                    | TypeDefKind::Union(_) => {
                         unimplemented!()
                     }
                     TypeDefKind::Tuple(t) => {
@@ -324,7 +326,8 @@ impl C {
             | TypeDefKind::Flags(_)
             | TypeDefKind::Record(_)
             | TypeDefKind::Enum(_)
-            | TypeDefKind::Variant(_) => {
+            | TypeDefKind::Variant(_)
+            | TypeDefKind::Union(_) => {
                 unreachable!()
             }
             TypeDefKind::Tuple(t) => {
@@ -493,8 +496,23 @@ impl C {
                         continue;
                     }
                     self.src.c(&format!("case {}: {{\n", i));
-                    let expr = format!("&ptr->val.{}", case_field_name(case));
+                    let expr = format!("&ptr->val.{}", case.name.to_snake_case());
                     self.free(iface, case_ty, &expr);
+                    self.src.c("break;\n");
+                    self.src.c("}\n");
+                }
+                self.src.c("}\n");
+            }
+
+            TypeDefKind::Union(u) => {
+                self.src.c("switch ((int32_t) ptr->tag) {\n");
+                for (i, case) in u.cases.iter().enumerate() {
+                    if !self.owns_anything(iface, &case.ty) {
+                        continue;
+                    }
+                    self.src.c(&format!("case {i}: {{\n"));
+                    let expr = format!("&ptr->val.f{i}");
+                    self.free(iface, &case.ty, &expr);
                     self.src.c("break;\n");
                     self.src.c("}\n");
                 }
@@ -541,6 +559,10 @@ impl C {
                 .iter()
                 .filter_map(|c| c.ty.as_ref())
                 .any(|t| self.owns_anything(iface, t)),
+            TypeDefKind::Union(v) => v
+                .cases
+                .iter()
+                .any(|case| self.owns_anything(iface, &case.ty)),
             TypeDefKind::Option(t) => self.owns_anything(iface, t),
             TypeDefKind::Expected(e) => {
                 self.owns_anything(iface, &e.ok) || self.owns_anything(iface, &e.err)
@@ -642,7 +664,7 @@ impl Return {
                 self.retptrs.push(*orig_ty);
             }
 
-            TypeDefKind::Variant(_) => {
+            TypeDefKind::Variant(_) | TypeDefKind::Union(_) => {
                 self.retptrs.push(*orig_ty);
             }
         }
@@ -778,7 +800,7 @@ impl Generator for C {
             if let Some(ty) = &case.ty {
                 self.print_ty(iface, ty);
                 self.src.h(" ");
-                self.src.h(&case_field_name(case));
+                self.src.h(&case.name.to_snake_case());
                 self.src.h(";\n");
             }
         }
@@ -796,6 +818,35 @@ impl Generator for C {
                 i,
             ));
         }
+
+        self.types
+            .insert(id, mem::replace(&mut self.src.header, prev));
+    }
+
+    fn type_union(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        union: &Union,
+        docs: &Docs,
+    ) {
+        let prev = mem::take(&mut self.src.header);
+        self.docs(docs);
+        self.names.insert(&name.to_snake_case()).unwrap();
+        self.src.h("typedef struct {\n");
+        self.src.h(int_repr(union.tag()));
+        self.src.h(" tag;\n");
+        self.src.h("union {\n");
+        for (i, case) in union.cases.iter().enumerate() {
+            self.print_ty(iface, &case.ty);
+            self.src.h(&format!(" f{i};\n"));
+        }
+        self.src.h("} val;\n");
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
 
         self.types
             .insert(id, mem::replace(&mut self.src.header, prev));
@@ -1594,7 +1645,7 @@ impl Bindgen for FunctionBindgen<'_> {
                                 ty, payload, operands[0],
                             ));
                             self.src.push_str(".");
-                            self.src.push_str(&case_field_name(case));
+                            self.src.push_str(&case.name.to_snake_case());
                             self.src.push_str(";\n");
                         }
                     }
@@ -1631,11 +1682,83 @@ impl Bindgen for FunctionBindgen<'_> {
                         assert!(block_results.len() == 1);
                         let mut dst = format!("{}.val", result);
                         dst.push_str(".");
-                        dst.push_str(&case_field_name(case));
+                        dst.push_str(&case.name.to_snake_case());
                         self.store_op(&block_results[0], &dst);
                     } else {
                         assert!(block_results.is_empty());
                     }
+                    self.src.push_str("break;\n}\n");
+                }
+                self.src.push_str("}\n");
+                results.push(result);
+            }
+
+            Instruction::UnionLower {
+                union,
+                results: result_types,
+                ..
+            } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - union.cases.len()..)
+                    .collect::<Vec<_>>();
+                let payloads = self
+                    .payloads
+                    .drain(self.payloads.len() - union.cases.len()..)
+                    .collect::<Vec<_>>();
+
+                let mut union_results = Vec::with_capacity(result_types.len());
+                for ty in result_types.iter() {
+                    let name = self.locals.tmp("unionres");
+                    results.push(name.clone());
+                    let ty = wasm_type(*ty);
+                    self.src.push_str(&format!("{ty} {name};\n"));
+                    union_results.push(name);
+                }
+
+                let op0 = &operands[0];
+                self.src.push_str(&format!("switch (({op0}).tag) {{\n"));
+                for (i, ((case, (block, block_results)), payload)) in
+                    union.cases.iter().zip(blocks).zip(payloads).enumerate()
+                {
+                    self.src.push_str(&format!("case {i}: {{\n"));
+                    if !self.gen.is_empty_type(iface, &case.ty) {
+                        let ty = self.gen.type_string(iface, &case.ty);
+                        self.src
+                            .push_str(&format!("const {ty} *{payload} = &({op0}).val.f{i};\n"));
+                    }
+                    self.src.push_str(&block);
+
+                    for (name, result) in union_results.iter().zip(&block_results) {
+                        self.src.push_str(&format!("{name} = {result};\n"));
+                    }
+                    self.src.push_str("break;\n}\n");
+                }
+                self.src.push_str("}\n");
+            }
+
+            Instruction::UnionLift { union, ty, .. } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - union.cases.len()..)
+                    .collect::<Vec<_>>();
+
+                let ty = self.gen.type_string(iface, &Type::Id(*ty));
+                let result = self.locals.tmp("unionres");
+                self.src.push_str(&format!("{} {};\n", ty, result));
+                self.src
+                    .push_str(&format!("{}.tag = {};\n", result, operands[0]));
+                self.src
+                    .push_str(&format!("switch ((int32_t) {}.tag) {{\n", result));
+                for (i, (_case, (block, block_results))) in
+                    union.cases.iter().zip(blocks).enumerate()
+                {
+                    self.src.push_str(&format!("case {i}: {{\n"));
+                    self.src.push_str(&block);
+
+                    assert!(block_results.len() == 1);
+                    let dst = format!("{result}.val.f{i}");
+                    self.store_op(&block_results[0], &dst);
                     self.src.push_str("break;\n}\n");
                 }
                 self.src.push_str("}\n");
@@ -2107,14 +2230,6 @@ fn int_repr(ty: Int) -> &'static str {
         Int::U16 => "uint16_t",
         Int::U32 => "uint32_t",
         Int::U64 => "uint64_t",
-    }
-}
-
-fn case_field_name(case: &Case) -> String {
-    if case.name.parse::<u32>().is_ok() {
-        format!("f{}", case.name)
-    } else {
-        case.name.to_snake_case()
     }
 }
 

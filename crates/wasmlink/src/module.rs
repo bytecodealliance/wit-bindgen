@@ -56,6 +56,7 @@ fn has_list(interface: &WitInterface, ty: &WitType) -> bool {
                     .map(|t| has_list(interface, t))
                     .unwrap_or(false)
             }),
+            TypeDefKind::Union(v) => v.cases.iter().any(|c| has_list(interface, &c.ty)),
             TypeDefKind::Option(t) => has_list(interface, t),
             TypeDefKind::Expected(e) => has_list(interface, &e.ok) || has_list(interface, &e.err),
             TypeDefKind::Enum(_) => false,

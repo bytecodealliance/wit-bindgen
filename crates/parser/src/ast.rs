@@ -97,6 +97,7 @@ enum Type<'a> {
     Enum(Enum<'a>),
     Option(Box<Type<'a>>),
     Expected(Expected<'a>),
+    Union(Union<'a>),
 }
 
 struct Record<'a> {
@@ -149,6 +150,16 @@ pub struct Value<'a> {
     docs: Docs<'a>,
     name: Id<'a>,
     kind: ValueKind<'a>,
+}
+
+struct Union<'a> {
+    span: Span,
+    cases: Vec<UnionCase<'a>>,
+}
+
+struct UnionCase<'a> {
+    docs: Docs<'a>,
+    ty: Type<'a>,
 }
 
 enum ValueKind<'a> {
@@ -323,9 +334,7 @@ impl<'a> TypeDef<'a> {
     fn parse_union(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Union)?;
         let name = parse_id(tokens)?;
-        let mut i = 0;
-        let ty = Type::Variant(Variant {
-            tag: None,
+        let ty = Type::Union(Union {
             span: name.span,
             cases: parse_list(
                 tokens,
@@ -333,12 +342,7 @@ impl<'a> TypeDef<'a> {
                 Token::RightBrace,
                 |docs, tokens| {
                     let ty = Type::parse(tokens)?;
-                    i += 1;
-                    Ok(Case {
-                        docs,
-                        name: (i - 1).to_string().into(),
-                        ty: Some(ty),
-                    })
+                    Ok(UnionCase { docs, ty })
                 },
             )?,
         });

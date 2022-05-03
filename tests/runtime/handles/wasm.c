@@ -53,10 +53,10 @@ void exports_test_imports() {
     }
     {
       imports_host_state_param_variant_t a;
-      a.tag = IMPORTS_HOST_STATE_PARAM_VARIANT_0;
+      a.tag = 0;
       a.val.f0 = d;
       imports_host_state2_param_variant(&a);
-      a.tag = IMPORTS_HOST_STATE_PARAM_VARIANT_1;
+      a.tag = 1;
       a.val.f1 = 2;
       imports_host_state2_param_variant(&a);
     }
@@ -199,7 +199,7 @@ void exports_wasm_state2_result_result(exports_wasm_state_result_result_t *ret0)
 }
 
 void exports_wasm_state2_result_variant(exports_wasm_state_result_variant_t *ret0) {
-  ret0->tag = EXPORTS_WASM_STATE_RESULT_VARIANT_0;
+  ret0->tag = 0;
   ret0->val.f0 = exports_wasm_state2_new((void*) 666);
 }
 

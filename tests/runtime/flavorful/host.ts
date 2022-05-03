@@ -21,7 +21,7 @@ async function run() {
     listInVariant1(a, b, c) {
       assert.strictEqual(a, 'foo');
       assert.deepStrictEqual(b, { tag: 'err', val: 'bar' });
-      assert.deepStrictEqual(c, { tag: '0', val: 'baz' });
+      assert.deepStrictEqual(c, { tag: 0, val: 'baz' });
     },
     listInVariant2() { return 'list_in_variant2'; },
     listInVariant3(x) {
@@ -70,7 +70,7 @@ async function run() {
     { a: "result4" },
   );
 
-  wasm.listInVariant1("foo", { tag: 'err', val: 'bar' }, { tag: '0', val: 'baz' });
+  wasm.listInVariant1("foo", { tag: 'err', val: 'bar' }, { tag: 0, val: 'baz' });
 
   assert.deepStrictEqual(wasm.listInVariant2(), "list_in_variant2");
   assert.deepStrictEqual(wasm.listInVariant3("input3"), "output3");

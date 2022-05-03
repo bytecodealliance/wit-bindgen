@@ -81,6 +81,7 @@ pub trait Generator {
         expected: &Expected,
         docs: &Docs,
     );
+    fn type_union(&mut self, iface: &Interface, id: TypeId, name: &str, union: &Union, docs: &Docs);
     fn type_enum(&mut self, iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs);
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId);
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
@@ -115,6 +116,7 @@ pub trait Generator {
                 }
                 TypeDefKind::Option(t) => self.type_option(iface, id, name, t, &ty.docs),
                 TypeDefKind::Expected(e) => self.type_expected(iface, id, name, e, &ty.docs),
+                TypeDefKind::Union(u) => self.type_union(iface, id, name, u, &ty.docs),
                 TypeDefKind::List(t) => self.type_list(iface, id, name, t, &ty.docs),
                 TypeDefKind::Type(t) => self.type_alias(iface, id, name, t, &ty.docs),
             }
@@ -240,6 +242,11 @@ impl Types {
                 info = self.type_info(iface, &e.ok);
                 info |= self.type_info(iface, &e.err);
             }
+            TypeDefKind::Union(u) => {
+                for case in u.cases.iter() {
+                    info |= self.type_info(iface, &case.ty);
+                }
+            }
         }
         self.type_info.insert(ty, info);
         return info;
@@ -283,6 +290,11 @@ impl Types {
             TypeDefKind::Expected(e) => {
                 self.set_param_result_ty(iface, &e.ok, param, result);
                 self.set_param_result_ty(iface, &e.err, param, result);
+            }
+            TypeDefKind::Union(u) => {
+                for case in u.cases.iter() {
+                    self.set_param_result_ty(iface, &case.ty, param, result)
+                }
             }
         }
     }

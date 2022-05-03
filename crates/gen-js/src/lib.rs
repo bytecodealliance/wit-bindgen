@@ -173,6 +173,7 @@ impl Js {
                     TypeDefKind::Record(_) => panic!("anonymous record"),
                     TypeDefKind::Flags(_) => panic!("anonymous flags"),
                     TypeDefKind::Enum(_) => panic!("anonymous enum"),
+                    TypeDefKind::Union(_) => panic!("anonymous union"),
                     TypeDefKind::Option(t) => {
                         if self.maybe_null(iface, t) {
                             self.needs_ty_option = true;
@@ -449,6 +450,35 @@ impl Generator for Js {
                 self.print_ty(iface, ty);
                 self.src.ts(",\n");
             }
+            self.src.ts("}\n");
+        }
+    }
+
+    fn type_union(
+        &mut self,
+        iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        union: &Union,
+        docs: &Docs,
+    ) {
+        self.docs(docs);
+        let name = name.to_camel_case();
+        self.src.ts(&format!("export type {name} = "));
+        for i in 0..union.cases.len() {
+            if i > 0 {
+                self.src.ts(" | ");
+            }
+            self.src.ts(&format!("{name}{i}"));
+        }
+        self.src.ts(";\n");
+        for (i, case) in union.cases.iter().enumerate() {
+            self.docs(&case.docs);
+            self.src.ts(&format!("export interface {name}{i} {{\n"));
+            self.src.ts(&format!("tag: {i},\n"));
+            self.src.ts("val: ");
+            self.print_ty(iface, &case.ty);
+            self.src.ts(",\n");
             self.src.ts("}\n");
         }
     }
@@ -1620,6 +1650,80 @@ impl Bindgen for FunctionBindgen<'_> {
                 ));
                 self.src.js("}\n");
                 results.push(format!("variant{}", tmp));
+            }
+
+            Instruction::UnionLower {
+                union,
+                results: result_types,
+                name,
+                ..
+            } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - union.cases.len()..)
+                    .collect::<Vec<_>>();
+                let tmp = self.tmp();
+                let op0 = &operands[0];
+                self.src.js(&format!("const union{tmp} = {op0};\n"));
+
+                for i in 0..result_types.len() {
+                    self.src.js(&format!("let union{tmp}_{i};\n"));
+                    results.push(format!("union{tmp}_{i}"));
+                }
+
+                self.src.js(&format!("switch (union{tmp}.tag) {{\n"));
+                for (i, (_case, (block, block_results))) in
+                    union.cases.iter().zip(blocks).enumerate()
+                {
+                    self.src.js(&format!("case {i}: {{\n"));
+                    self.src.js(&format!("const e = union{tmp}.val;\n"));
+                    self.src.js(&block);
+                    for (i, result) in block_results.iter().enumerate() {
+                        self.src.js(&format!("union{tmp}_{i} = {result};\n"));
+                    }
+                    self.src.js("break;\n}\n");
+                }
+                let name = name.to_camel_case();
+                self.src.js("default:\n");
+                self.src.js(&format!(
+                    "throw new RangeError(\"invalid union specified for {name}\");\n",
+                ));
+                self.src.js("}\n");
+            }
+
+            Instruction::UnionLift { union, name, .. } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - union.cases.len()..)
+                    .collect::<Vec<_>>();
+
+                let tmp = self.tmp();
+
+                self.src.js(&format!("let union{tmp};\n"));
+                self.src.js(&format!("switch ({}) {{\n", operands[0]));
+                for (i, (_case, (block, block_results))) in
+                    union.cases.iter().zip(blocks).enumerate()
+                {
+                    assert!(block_results.len() == 1);
+                    let block_result = &block_results[0];
+                    self.src.js(&format!(
+                        "case {i}: {{
+                            {block}
+                            union{tmp} = {{
+                                tag: {i},
+                                val: {block_result},
+                            }};
+                            break;
+                        }}\n"
+                    ));
+                }
+                let name = name.to_camel_case();
+                self.src.js("default:\n");
+                self.src.js(&format!(
+                    "throw new RangeError(\"invalid union discriminant for {name}\");\n",
+                ));
+                self.src.js("}\n");
+                results.push(format!("union{tmp}"));
             }
 
             Instruction::OptionLower {
