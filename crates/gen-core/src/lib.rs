@@ -65,6 +65,7 @@ pub trait Generator {
         variant: &Variant,
         docs: &Docs,
     );
+    fn type_enum(&mut self, iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs);
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId);
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
@@ -92,6 +93,7 @@ pub trait Generator {
                 TypeDefKind::Record(record) => self.type_record(iface, id, name, record, &ty.docs),
                 TypeDefKind::Flags(flags) => self.type_flags(iface, id, name, flags, &ty.docs),
                 TypeDefKind::Tuple(tuple) => self.type_tuple(iface, id, name, tuple, &ty.docs),
+                TypeDefKind::Enum(enum_) => self.type_enum(iface, id, name, enum_, &ty.docs),
                 TypeDefKind::Variant(variant) => {
                     self.type_variant(iface, id, name, variant, &ty.docs)
                 }
@@ -198,6 +200,7 @@ impl Types {
                 }
             }
             TypeDefKind::Flags(_) => {}
+            TypeDefKind::Enum(_) => {}
             TypeDefKind::Variant(v) => {
                 for case in v.cases.iter() {
                     if let Some(ty) = &case.ty {
@@ -241,6 +244,7 @@ impl Types {
                 }
             }
             TypeDefKind::Flags(_) => {}
+            TypeDefKind::Enum(_) => {}
             TypeDefKind::Variant(v) => {
                 for case in v.cases.iter() {
                     if let Some(ty) = &case.ty {

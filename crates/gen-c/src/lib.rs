@@ -165,7 +165,8 @@ impl C {
         match ty {
             Type::Id(id) => match &iface.types[*id].kind {
                 TypeDefKind::Type(t) => self.is_arg_by_pointer(iface, t),
-                TypeDefKind::Variant(v) => !v.is_enum(),
+                TypeDefKind::Variant(_) => true,
+                TypeDefKind::Enum(_) => false,
                 TypeDefKind::Flags(_) => false,
                 TypeDefKind::Tuple(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
             },
@@ -244,6 +245,7 @@ impl C {
                     TypeDefKind::Type(t) => self.print_ty(iface, t),
                     TypeDefKind::Flags(_)
                     | TypeDefKind::Tuple(_)
+                    | TypeDefKind::Enum(_)
                     | TypeDefKind::Record(_)
                     | TypeDefKind::List(_)
                     | TypeDefKind::Variant(_) => {
@@ -282,7 +284,9 @@ impl C {
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty_name(iface, t),
-                    TypeDefKind::Record(_) | TypeDefKind::Flags(_) => unimplemented!(),
+                    TypeDefKind::Record(_) | TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => {
+                        unimplemented!()
+                    }
                     TypeDefKind::Tuple(t) => {
                         self.src.h("tuple");
                         self.src.h(&t.types.len().to_string());
@@ -324,7 +328,10 @@ impl C {
         self.src.h("typedef ");
         let kind = &iface.types[ty].kind;
         match kind {
-            TypeDefKind::Type(_) | TypeDefKind::Flags(_) | TypeDefKind::Record(_) => {
+            TypeDefKind::Type(_)
+            | TypeDefKind::Flags(_)
+            | TypeDefKind::Record(_)
+            | TypeDefKind::Enum(_) => {
                 unreachable!()
             }
             TypeDefKind::Tuple(t) => {
@@ -347,25 +354,21 @@ impl C {
                     self.src.h(" val;\n");
                     self.src.h("}");
                 } else if let Some((ok, err)) = v.as_expected() {
-                    if ok.is_none() && err.is_none() {
-                        self.src.h("uint8_t");
-                    } else {
-                        self.src.h("struct {
-                            // 0 if `val` is `ok`, 1 otherwise
-                            uint8_t tag;
-                            union {
-                        ");
-                        if let Some(ok) = ok {
-                            self.print_ty(iface, ok);
-                            self.src.h(" ok;\n");
-                        }
-                        if let Some(err) = err {
-                            self.print_ty(iface, err);
-                            self.src.h(" err;\n");
-                        }
-                        self.src.h("} val;\n");
-                        self.src.h("}");
+                    self.src.h("struct {
+                        // 0 if `val` is `ok`, 1 otherwise
+                        uint8_t tag;
+                        union {
+                    ");
+                    if let Some(ok) = ok {
+                        self.print_ty(iface, ok);
+                        self.src.h(" ok;\n");
                     }
+                    if let Some(err) = err {
+                        self.print_ty(iface, err);
+                        self.src.h(" err;\n");
+                    }
+                    self.src.h("} val;\n");
+                    self.src.h("}");
                 } else {
                     unimplemented!();
                 }
@@ -453,6 +456,7 @@ impl C {
             TypeDefKind::Type(t) => self.free(iface, t, "ptr"),
 
             TypeDefKind::Flags(_) => {}
+            TypeDefKind::Enum(_) => {}
 
             TypeDefKind::Record(r) => {
                 for field in r.fields.iter() {
@@ -527,6 +531,7 @@ impl C {
             TypeDefKind::Record(r) => r.fields.iter().any(|t| self.owns_anything(iface, &t.ty)),
             TypeDefKind::Tuple(t) => t.types.iter().any(|t| self.owns_anything(iface, t)),
             TypeDefKind::Flags(_) => false,
+            TypeDefKind::Enum(_) => false,
             TypeDefKind::List(_) => true,
             TypeDefKind::Variant(v) => v
                 .cases
@@ -597,8 +602,8 @@ impl Return {
             // other records/lists/buffers always go to return pointers
             TypeDefKind::List(_) => self.retptrs.push(*orig_ty),
 
-            // Enums are scalars (this includes bools)
-            TypeDefKind::Variant(v) if v.is_enum() => {
+            // Enums are scalars
+            TypeDefKind::Enum(_) => {
                 self.scalar = Some(Scalar::Type(*orig_ty));
             }
 
@@ -617,17 +622,15 @@ impl Return {
                 // returned through the normal returns.
                 if let Some((ok, err)) = r.as_expected() {
                     if let Some(Type::Id(err)) = err {
-                        if let TypeDefKind::Variant(e) = &iface.types[*err].kind {
-                            if e.is_enum() {
-                                self.scalar = Some(Scalar::ExpectedEnum {
-                                    err: *err,
-                                    max_err: e.cases.len(),
-                                });
-                                if let Some(ok) = ok {
-                                    self.splat_tuples(iface, ok, ok);
-                                }
-                                return;
+                        if let TypeDefKind::Enum(e) = &iface.types[*err].kind {
+                            self.scalar = Some(Scalar::ExpectedEnum {
+                                err: *err,
+                                max_err: e.cases.len(),
+                            });
+                            if let Some(ok) = ok {
+                                self.splat_tuples(iface, ok, ok);
                             }
+                            return;
                         }
                     }
                 }
@@ -760,41 +763,56 @@ impl Generator for C {
         let prev = mem::take(&mut self.src.header);
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
-        if variant.is_enum() {
-            self.src.h("typedef ");
-            self.src.h(int_repr(variant.tag));
-            self.src.h(" ");
-            self.print_namespace(iface);
-            self.src.h(&name.to_snake_case());
-            self.src.h("_t;\n");
-        } else {
-            self.src.h("typedef struct {\n");
-            self.src.h(int_repr(variant.tag));
-            self.src.h(" tag;\n");
-            match variant.as_option() {
-                Some(ty) => {
-                    self.print_ty(iface, ty);
-                    self.src.h(" val;\n");
-                }
-                None => {
-                    self.src.h("union {\n");
-                    for case in variant.cases.iter() {
-                        if let Some(ty) = &case.ty {
-                            self.print_ty(iface, ty);
-                            self.src.h(" ");
-                            self.src.h(&case_field_name(case));
-                            self.src.h(";\n");
-                        }
-                    }
-                    self.src.h("} val;\n");
-                }
+        self.src.h("typedef struct {\n");
+        self.src.h(int_repr(variant.tag));
+        self.src.h(" tag;\n");
+        match variant.as_option() {
+            Some(ty) => {
+                self.print_ty(iface, ty);
+                self.src.h(" val;\n");
             }
-            self.src.h("} ");
-            self.print_namespace(iface);
-            self.src.h(&name.to_snake_case());
-            self.src.h("_t;\n");
+            None => {
+                self.src.h("union {\n");
+                for case in variant.cases.iter() {
+                    if let Some(ty) = &case.ty {
+                        self.print_ty(iface, ty);
+                        self.src.h(" ");
+                        self.src.h(&case_field_name(case));
+                        self.src.h(";\n");
+                    }
+                }
+                self.src.h("} val;\n");
+            }
         }
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
         for (i, case) in variant.cases.iter().enumerate() {
+            self.src.h(&format!(
+                "#define {}_{}_{} {}\n",
+                iface.name.to_shouty_snake_case(),
+                name.to_shouty_snake_case(),
+                case.name.to_shouty_snake_case(),
+                i,
+            ));
+        }
+
+        self.types
+            .insert(id, mem::replace(&mut self.src.header, prev));
+    }
+
+    fn type_enum(&mut self, iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
+        let prev = mem::take(&mut self.src.header);
+        self.docs(docs);
+        self.names.insert(&name.to_snake_case()).unwrap();
+        self.src.h("typedef ");
+        self.src.h(int_repr(enum_.tag()));
+        self.src.h(" ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
+        for (i, case) in enum_.cases.iter().enumerate() {
             self.src.h(&format!(
                 "#define {}_{}_{} {}\n",
                 iface.name.to_shouty_snake_case(),
@@ -1477,6 +1495,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("*{}", name));
                 self.payloads.push(name);
             }
+
             Instruction::VariantLower {
                 variant,
                 results: result_types,
@@ -1491,11 +1510,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     .drain(self.payloads.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
 
-                if results.len() == 1 && variant.is_enum() {
-                    results.push(format!("(int32_t) {}", operands[0]));
-                    return;
-                }
-
                 let mut variant_results = Vec::new();
                 for ty in result_types.iter() {
                     let name = self.locals.tmp("variant");
@@ -1507,11 +1521,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     variant_results.push(name);
                 }
 
-                let expr_to_match = if variant.is_enum() {
-                    operands[0].to_string()
-                } else {
-                    format!("({}).tag", operands[0])
-                };
+                let expr_to_match = format!("({}).tag", operands[0]);
 
                 self.src
                     .push_str(&format!("switch ((int32_t) {}) {{\n", expr_to_match));
@@ -1549,10 +1559,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
 
-                if variant.is_enum() {
-                    return results.push(operands.pop().unwrap());
-                }
-
                 let ty = self.gen.type_string(iface, &Type::Id(*ty));
                 let result = self.locals.tmp("variant");
                 self.src.push_str(&format!("{} {};\n", ty, result));
@@ -1582,6 +1588,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.push_str("}\n");
                 results.push(result);
             }
+
+            Instruction::EnumLower { .. } => results.push(format!("(int32_t) {}", operands[0])),
+            Instruction::EnumLift { .. } => results.push(operands.pop().unwrap()),
 
             Instruction::ListCanonLower { .. } | Instruction::StringLower { .. } => {
                 results.push(format!("(int32_t) ({}).ptr", operands[0]));

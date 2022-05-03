@@ -49,6 +49,7 @@ pub enum TypeDefKind {
     Flags(Flags),
     Tuple(Tuple),
     Variant(Variant),
+    Enum(Enum),
     List(Type),
     Type(Type),
 }
@@ -162,10 +163,6 @@ impl Variant {
         }
     }
 
-    pub fn is_enum(&self) -> bool {
-        self.cases.iter().all(|c| c.ty.is_none())
-    }
-
     pub fn is_union(&self) -> bool {
         self.cases
             .iter()
@@ -197,6 +194,28 @@ impl Variant {
             return None;
         }
         Some((self.cases[0].ty.as_ref(), self.cases[1].ty.as_ref()))
+    }
+}
+
+#[derive(Debug)]
+pub struct Enum {
+    pub cases: Vec<EnumCase>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumCase {
+    pub docs: Docs,
+    pub name: String,
+}
+
+impl Enum {
+    pub fn tag(&self) -> Int {
+        match self.cases.len() {
+            n if n <= u8::max_value() as usize => Int::U8,
+            n if n <= u16::max_value() as usize => Int::U16,
+            n if n <= u32::max_value() as usize => Int::U32,
+            _ => panic!("too many cases to fit in a repr"),
+        }
     }
 }
 
@@ -380,7 +399,7 @@ impl Interface {
             return;
         }
         match &self.types[id].kind {
-            TypeDefKind::Flags(_) => {}
+            TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => {}
             TypeDefKind::Type(t) | TypeDefKind::List(t) => self.topo_visit_ty(t, list, visited),
             TypeDefKind::Record(r) => {
                 for f in r.fields.iter() {
@@ -426,7 +445,7 @@ impl Interface {
             Type::Bool | Type::Char | Type::Handle(_) | Type::String => false,
 
             Type::Id(id) => match &self.types[*id].kind {
-                TypeDefKind::List(_) | TypeDefKind::Variant(_) => false,
+                TypeDefKind::List(_) | TypeDefKind::Variant(_) | TypeDefKind::Enum(_) => false,
                 TypeDefKind::Type(t) => self.all_bits_valid(t),
                 TypeDefKind::Record(r) => r.fields.iter().all(|f| self.all_bits_valid(&f.ty)),
                 TypeDefKind::Tuple(t) => t.types.iter().all(|t| self.all_bits_valid(t)),

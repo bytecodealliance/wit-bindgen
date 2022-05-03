@@ -229,11 +229,22 @@ impl Generator for RustWasm {
         &mut self,
         iface: &Interface,
         id: TypeId,
-        name: &str,
+        _name: &str,
         variant: &Variant,
         docs: &Docs,
     ) {
-        self.print_typedef_variant(iface, id, name, variant, docs);
+        self.print_typedef_variant(iface, id, variant, docs);
+    }
+
+    fn type_enum(
+        &mut self,
+        _iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        enum_: &Enum,
+        docs: &Docs,
+    ) {
+        self.print_typedef_enum(name, enum_, docs);
     }
 
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
@@ -1024,6 +1035,47 @@ impl Bindgen for FunctionBindgen<'_> {
                 if !unchecked {
                     result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
                 }
+                result.push_str("}");
+                results.push(result);
+            }
+
+            Instruction::EnumLower { enum_, name, .. } => {
+                let mut result = format!("match {} {{\n", operands[0]);
+                let name = name.to_camel_case();
+                for (i, case) in enum_.cases.iter().enumerate() {
+                    let case = wit_bindgen_gen_rust::case_name(&case.name);
+                    result.push_str(&format!("{name}::{case} => {i},\n"));
+                }
+                result.push_str("}");
+                results.push(result);
+            }
+
+            // In unchecked mode when this type is a named enum then we know we
+            // defined the type so we can transmute directly into it.
+            Instruction::EnumLift { enum_, name, .. } if unchecked => {
+                let mut result = format!("core::mem::transmute::<_, ");
+                result.push_str(&name.to_camel_case());
+                result.push_str(">(");
+                result.push_str(&operands[0]);
+                result.push_str(" as ");
+                result.push_str(int_repr(enum_.tag()));
+                result.push_str(")");
+                results.push(result);
+            }
+
+            Instruction::EnumLift { enum_, name, .. } => {
+                let mut result = format!("match ");
+                result.push_str(&operands[0]);
+                result.push_str(" {\n");
+                for (i, case) in enum_.cases.iter().enumerate() {
+                    result.push_str(&i.to_string());
+                    result.push_str(" => ");
+                    result.push_str(&name.to_camel_case());
+                    result.push_str("::");
+                    result.push_str(&wit_bindgen_gen_rust::case_name(&case.name));
+                    result.push_str(",\n");
+                }
+                result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
                 result.push_str("}");
                 results.push(result);
             }

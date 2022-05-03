@@ -33,16 +33,10 @@
     {
       "idx": 4,
       "name": "error",
-      "variant": {
+      "enum": {
         "cases": [
-          [
-            "overflow",
-            null
-          ],
-          [
-            "unavailable",
-            null
-          ]
+          "overflow",
+          "unavailable"
         ]
       }
     },

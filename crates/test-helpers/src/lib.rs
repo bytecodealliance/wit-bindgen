@@ -180,6 +180,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 quote::quote! { Vec<#t> }
             }
             TypeDefKind::Flags(_) => panic!("unknown flags"),
+            TypeDefKind::Enum(_) => panic!("unknown enum"),
             TypeDefKind::Record(_) => panic!("unknown record"),
             TypeDefKind::Tuple(t) => {
                 let fields = t.types.iter().map(|ty| quote_ty(param, iface, ty));

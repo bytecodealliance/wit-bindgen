@@ -229,6 +229,7 @@ pub trait RustGenerator {
                     | TypeDefKind::Record(_)
                     | TypeDefKind::List(_)
                     | TypeDefKind::Flags(_)
+                    | TypeDefKind::Enum(_)
                     | TypeDefKind::Tuple(_) => true,
                     TypeDefKind::Type(Type::Id(t)) => needs_generics(iface, &iface.types[*t].kind),
                     TypeDefKind::Type(Type::String) => true,
@@ -283,6 +284,9 @@ pub trait RustGenerator {
             }
             TypeDefKind::Flags(_) => {
                 panic!("unsupported anonymous type reference: flags")
+            }
+            TypeDefKind::Enum(_) => {
+                panic!("unsupported anonymous type reference: enum")
             }
 
             TypeDefKind::Type(t) => self.print_ty(iface, t, mode),
@@ -446,12 +450,9 @@ pub trait RustGenerator {
         &mut self,
         iface: &Interface,
         id: TypeId,
-        name: &str,
         variant: &Variant,
         docs: &Docs,
     ) {
-        // TODO: should this perhaps be an attribute in the wit file?
-        let is_error = name.contains("errno") && variant.is_enum();
         let info = self.info(id);
 
         for (name, mode) in self.modes_of(iface, id) {
@@ -480,11 +481,7 @@ pub trait RustGenerator {
                 self.push_str(">;\n");
                 continue;
             }
-            if variant.is_enum() {
-                self.push_str("#[repr(");
-                self.int_repr(variant.tag);
-                self.push_str(")]\n#[derive(Clone, Copy, PartialEq, Eq)]\n");
-            } else if !info.owns_data() {
+            if !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
             } else if !info.has_handle {
                 self.push_str("#[derive(Clone)]\n");
@@ -504,104 +501,138 @@ pub trait RustGenerator {
             }
             self.push_str("}\n");
 
-            // Auto-synthesize an implementation of the standard `Error` trait for
-            // error-looking types based on their name.
-            if is_error {
-                self.push_str("impl ");
+            self.push_str("impl");
+            self.print_generics(&info, lt, true);
+            self.push_str(" std::fmt::Debug for ");
+            self.push_str(&name);
+            self.print_generics(&info, lt, false);
+            self.push_str(" {\n");
+            self.push_str("fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n");
+            self.push_str("match self {\n");
+            for case in variant.cases.iter() {
                 self.push_str(&name);
-                self.push_str("{\n");
-
-                self.push_str("pub fn name(&self) -> &'static str {\n");
-                self.push_str("match self {\n");
-                for case in variant.cases.iter() {
-                    self.push_str(&name);
-                    self.push_str("::");
-                    self.push_str(&case_name(&case.name));
-                    self.push_str(" => \"");
-                    self.push_str(case.name.as_str());
-                    self.push_str("\",\n");
+                self.push_str("::");
+                self.push_str(&case_name(&case.name));
+                if case.ty.is_some() {
+                    self.push_str("(e)");
                 }
-                self.push_str("}\n");
-                self.push_str("}\n");
-
-                self.push_str("pub fn message(&self) -> &'static str {\n");
-                self.push_str("match self {\n");
-                for case in variant.cases.iter() {
-                    self.push_str(&name);
-                    self.push_str("::");
-                    self.push_str(&case_name(&case.name));
-                    self.push_str(" => \"");
-                    if let Some(contents) = &case.docs.contents {
-                        self.push_str(contents.trim());
-                    }
-                    self.push_str("\",\n");
+                self.push_str(" => {\n");
+                self.push_str(&format!(
+                    "f.debug_tuple(\"{}::{}\")",
+                    name,
+                    case_name(&case.name)
+                ));
+                if case.ty.is_some() {
+                    self.push_str(".field(e)");
                 }
-                self.push_str("}\n");
-                self.push_str("}\n");
-
-                self.push_str("}\n");
-
-                self.push_str("impl std::fmt::Debug for ");
-                self.push_str(&name);
-                self.push_str(
-                    "{\nfn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
-                );
-                self.push_str("f.debug_struct(\"");
-                self.push_str(&name);
-                self.push_str("\")\n");
-                self.push_str(".field(\"code\", &(*self as i32))\n");
-                self.push_str(".field(\"name\", &self.name())\n");
-                self.push_str(".field(\"message\", &self.message())\n");
                 self.push_str(".finish()\n");
                 self.push_str("}\n");
-                self.push_str("}\n");
+            }
+            self.push_str("}\n");
+            self.push_str("}\n");
+            self.push_str("}\n");
+        }
+    }
 
-                self.push_str("impl std::fmt::Display for ");
+    fn print_typedef_enum(&mut self, name: &str, enum_: &Enum, docs: &Docs) {
+        // TODO: should this perhaps be an attribute in the wit file?
+        let is_error = name.contains("errno");
+
+        let name = name.to_camel_case();
+        self.rustdoc(docs);
+        self.push_str("#[repr(");
+        self.int_repr(enum_.tag());
+        self.push_str(")]\n#[derive(Clone, Copy, PartialEq, Eq)]\n");
+        self.push_str(&format!("pub enum {} {{\n", name.to_camel_case()));
+        for case in enum_.cases.iter() {
+            self.rustdoc(&case.docs);
+            self.push_str(&case_name(&case.name));
+            self.push_str(",\n");
+        }
+        self.push_str("}\n");
+
+        // Auto-synthesize an implementation of the standard `Error` trait for
+        // error-looking types based on their name.
+        if is_error {
+            self.push_str("impl ");
+            self.push_str(&name);
+            self.push_str("{\n");
+
+            self.push_str("pub fn name(&self) -> &'static str {\n");
+            self.push_str("match self {\n");
+            for case in enum_.cases.iter() {
                 self.push_str(&name);
-                self.push_str(
-                    "{\nfn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
-                );
-                self.push_str("write!(f, \"{} (error {})\", self.name(), *self as i32)");
-                self.push_str("}\n");
-                self.push_str("}\n");
-                self.push_str("\n");
-                self.push_str("impl std::error::Error for ");
+                self.push_str("::");
+                self.push_str(&case_name(&case.name));
+                self.push_str(" => \"");
+                self.push_str(case.name.as_str());
+                self.push_str("\",\n");
+            }
+            self.push_str("}\n");
+            self.push_str("}\n");
+
+            self.push_str("pub fn message(&self) -> &'static str {\n");
+            self.push_str("match self {\n");
+            for case in enum_.cases.iter() {
                 self.push_str(&name);
-                self.push_str("{}\n");
-            } else {
-                self.push_str("impl");
-                self.print_generics(&info, lt, true);
-                self.push_str(" std::fmt::Debug for ");
-                self.push_str(&name);
-                self.print_generics(&info, lt, false);
-                self.push_str(" {\n");
-                self.push_str(
-                    "fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
-                );
-                self.push_str("match self {\n");
-                for case in variant.cases.iter() {
-                    self.push_str(&name);
-                    self.push_str("::");
-                    self.push_str(&case_name(&case.name));
-                    if case.ty.is_some() {
-                        self.push_str("(e)");
-                    }
-                    self.push_str(" => {\n");
-                    self.push_str(&format!(
-                        "f.debug_tuple(\"{}::{}\")",
-                        name,
-                        case_name(&case.name)
-                    ));
-                    if case.ty.is_some() {
-                        self.push_str(".field(e)");
-                    }
-                    self.push_str(".finish()\n");
-                    self.push_str("}\n");
+                self.push_str("::");
+                self.push_str(&case_name(&case.name));
+                self.push_str(" => \"");
+                if let Some(contents) = &case.docs.contents {
+                    self.push_str(contents.trim());
                 }
-                self.push_str("}\n");
-                self.push_str("}\n");
+                self.push_str("\",\n");
+            }
+            self.push_str("}\n");
+            self.push_str("}\n");
+
+            self.push_str("}\n");
+
+            self.push_str("impl std::fmt::Debug for ");
+            self.push_str(&name);
+            self.push_str(
+                "{\nfn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
+            );
+            self.push_str("f.debug_struct(\"");
+            self.push_str(&name);
+            self.push_str("\")\n");
+            self.push_str(".field(\"code\", &(*self as i32))\n");
+            self.push_str(".field(\"name\", &self.name())\n");
+            self.push_str(".field(\"message\", &self.message())\n");
+            self.push_str(".finish()\n");
+            self.push_str("}\n");
+            self.push_str("}\n");
+
+            self.push_str("impl std::fmt::Display for ");
+            self.push_str(&name);
+            self.push_str(
+                "{\nfn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
+            );
+            self.push_str("write!(f, \"{} (error {})\", self.name(), *self as i32)");
+            self.push_str("}\n");
+            self.push_str("}\n");
+            self.push_str("\n");
+            self.push_str("impl std::error::Error for ");
+            self.push_str(&name);
+            self.push_str("{}\n");
+        } else {
+            self.push_str("impl");
+            self.push_str(" std::fmt::Debug for ");
+            self.push_str(&name);
+            self.push_str(" {\n");
+            self.push_str("fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n");
+            self.push_str("match self {\n");
+            for case in enum_.cases.iter() {
+                self.push_str(&name);
+                self.push_str("::");
+                self.push_str(&case_name(&case.name));
+                self.push_str(" => {\n");
+                self.push_str(&format!("\"{}::{}\".fmt(f)\n", name, case_name(&case.name)));
                 self.push_str("}\n");
             }
+            self.push_str("}\n");
+            self.push_str("}\n");
+            self.push_str("}\n");
         }
     }
 
@@ -810,18 +841,7 @@ pub trait RustFunctionGenerator {
         results: &mut Vec<String>,
         blocks: Vec<String>,
     ) {
-        // If this is a named enum with no type payloads and we're
-        // producing a singular result, then we know we're directly
-        // converting from the Rust enum to the integer discriminant. In
-        // this scenario we can optimize a bit and use just `as i32`
-        // instead of letting LLVM figure out it can do the same with
-        // optimizing the `match` generated below.
         let has_name = iface.types[id].name.is_some();
-        if nresults == 1 && has_name && ty.cases.iter().all(|c| c.ty.is_none()) {
-            results.push(format!("{} as i32", operand));
-            return;
-        }
-
         self.let_results(nresults, results);
         self.push_str("match ");
         self.push_str(operand);

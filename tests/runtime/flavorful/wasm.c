@@ -92,8 +92,8 @@ void exports_test_imports() {
 
     imports_list_expected_void_void_t b;
     imports_expected_void_void_t b_val[2];
-    b_val[0] = 0;
-    b_val[1] = 1;
+    b_val[0].tag = 0;
+    b_val[1].tag = 1;
     b.ptr = b_val;
     b.len = 2;
 
@@ -114,8 +114,8 @@ void exports_test_imports() {
     assert(d.ptr[1] == true);
 
     assert(e.len == 2);
-    assert(e.ptr[0] == 1);
-    assert(e.ptr[1] == 0);
+    assert(e.ptr[0].tag == 1);
+    assert(e.ptr[1].tag == 0);
 
     assert(f.len == 2);
     assert(f.ptr[0] == IMPORTS_MY_ERRNO_A);

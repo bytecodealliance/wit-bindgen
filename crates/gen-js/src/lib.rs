@@ -172,6 +172,7 @@ impl Js {
                     TypeDefKind::Tuple(t) => self.print_tuple(iface, t),
                     TypeDefKind::Record(_) => panic!("anonymous record"),
                     TypeDefKind::Flags(_) => panic!("anonymous flags"),
+                    TypeDefKind::Enum(_) => panic!("anonymous enum"),
                     TypeDefKind::Variant(v) => {
                         if self.is_nullable_option(iface, v) {
                             self.print_ty(iface, v.cases[1].ty.as_ref().unwrap());
@@ -404,26 +405,6 @@ impl Generator for Js {
                 .ts(&format!("export type {} = ", name.to_camel_case()));
             self.print_ty(iface, variant.cases[1].ty.as_ref().unwrap());
             self.src.ts("| null;\n");
-        } else if variant.is_enum() {
-            self.src
-                .ts(&format!("export enum {} {{\n", name.to_camel_case()));
-            for (i, case) in variant.cases.iter().enumerate() {
-                self.docs(&case.docs);
-                let name = case.name.to_camel_case();
-                self.src.ts(&format!("{} = {},\n", name, i));
-            }
-            self.src.ts("}\n");
-
-            self.src.js(&format!(
-                "export const {} = Object.freeze({{\n",
-                name.to_camel_case()
-            ));
-            for (i, case) in variant.cases.iter().enumerate() {
-                let name = case.name.to_camel_case();
-                self.src.js(&format!("{}: \"{}\",\n", i, name));
-                self.src.js(&format!("\"{}\": {},\n", name, i));
-            }
-            self.src.js("});\n");
         } else {
             self.src
                 .ts(&format!("export type {} = ", name.to_camel_case()));
@@ -452,6 +433,36 @@ impl Generator for Js {
                 self.src.ts("}\n");
             }
         }
+    }
+
+    fn type_enum(
+        &mut self,
+        _iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        enum_: &Enum,
+        docs: &Docs,
+    ) {
+        self.docs(docs);
+        self.src
+            .ts(&format!("export enum {} {{\n", name.to_camel_case()));
+        for (i, case) in enum_.cases.iter().enumerate() {
+            self.docs(&case.docs);
+            let name = case.name.to_camel_case();
+            self.src.ts(&format!("{} = {},\n", name, i));
+        }
+        self.src.ts("}\n");
+
+        self.src.js(&format!(
+            "export const {} = Object.freeze({{\n",
+            name.to_camel_case()
+        ));
+        for (i, case) in enum_.cases.iter().enumerate() {
+            let name = case.name.to_camel_case();
+            self.src.js(&format!("{}: \"{}\",\n", i, name));
+            self.src.js(&format!("\"{}\": {},\n", name, i));
+        }
+        self.src.js("});\n");
     }
 
     fn type_resource(&mut self, _iface: &Interface, ty: ResourceId) {
@@ -1471,6 +1482,7 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::VariantPayloadName => results.push("e".to_string()),
+
             Instruction::VariantLower {
                 variant,
                 results: result_types,
@@ -1485,29 +1497,12 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src
                     .js(&format!("const variant{} = {};\n", tmp, operands[0]));
 
-                if result_types.len() == 1 && variant.is_enum() && name.is_some() {
-                    let name = name.unwrap().to_camel_case();
-                    self.src
-                        .js(&format!("if (!(variant{} in {}))\n", tmp, name));
-                    self.src.js(&format!(
-                        "throw new RangeError(\"invalid variant specified for {}\");\n",
-                        name,
-                    ));
-                    results.push(format!(
-                        "Number.isInteger(variant{}) ? variant{0} : {}[variant{0}]",
-                        tmp, name
-                    ));
-                    return;
-                }
-
                 for i in 0..result_types.len() {
                     self.src.js(&format!("let variant{}_{};\n", tmp, i));
                     results.push(format!("variant{}_{}", tmp, i));
                 }
 
-                let expr_to_match = if self.gen.is_nullable_option(iface, variant)
-                    || (variant.is_enum() && name.is_some())
-                {
+                let expr_to_match = if self.gen.is_nullable_option(iface, variant) {
                     format!("variant{}", tmp)
                 } else {
                     format!("variant{}.tag", tmp)
@@ -1515,9 +1510,7 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 self.src.js(&format!("switch ({}) {{\n", expr_to_match));
                 let mut use_default = true;
-                for (i, (case, (block, block_results))) in
-                    variant.cases.iter().zip(blocks).enumerate()
-                {
+                for (case, (block, block_results)) in variant.cases.iter().zip(blocks) {
                     if self.gen.is_nullable_option(iface, variant) {
                         if case.ty.is_none() {
                             self.src.js("case null: {\n");
@@ -1526,9 +1519,6 @@ impl Bindgen for FunctionBindgen<'_> {
                             self.src.js(&format!("const e = variant{};\n", tmp));
                             use_default = false;
                         }
-                    } else if variant.is_enum() && name.is_some() {
-                        self.src.js(&format!("case {}: {{\n", i));
-                        self.src.js(&format!("const e = variant{};\n", tmp));
                     } else {
                         self.src
                             .js(&format!("case \"{}\": {{\n", case.name.as_str()));
@@ -1571,18 +1561,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     .collect::<Vec<_>>();
 
                 let tmp = self.tmp();
-                if variant.is_enum() && name.is_some() {
-                    let name = name.unwrap().to_camel_case();
-                    self.src
-                        .js(&format!("const tag{} = {};\n", tmp, operands[0]));
-                    self.src.js(&format!("if (!(tag{} in {}))\n", tmp, name));
-                    self.src.js(&format!(
-                        "throw new RangeError(\"invalid discriminant specified for {}\");\n",
-                        name,
-                    ));
-                    results.push(format!("tag{}", tmp));
-                    return;
-                }
 
                 self.src.js(&format!("let variant{};\n", tmp));
                 self.src.js(&format!("switch ({}) {{\n", operands[0]));
@@ -1592,10 +1570,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.js(&format!("case {}: {{\n", i));
                     self.src.js(&block);
 
-                    if variant.is_enum() && name.is_some() {
-                        assert!(block_results.is_empty());
-                        self.src.js(&format!("variant{} = tag{0};\n", tmp));
-                    } else if self.gen.is_nullable_option(iface, variant) {
+                    if self.gen.is_nullable_option(iface, variant) {
                         if case.ty.is_none() {
                             assert!(block_results.is_empty());
                             self.src.js(&format!("variant{} = null;\n", tmp));
@@ -1634,6 +1609,37 @@ impl Bindgen for FunctionBindgen<'_> {
                 ));
                 self.src.js("}\n");
                 results.push(format!("variant{}", tmp));
+            }
+
+            Instruction::EnumLower { name, .. } => {
+                let tmp = self.tmp();
+                self.src
+                    .js(&format!("const variant{} = {};\n", tmp, operands[0]));
+
+                let name = name.to_camel_case();
+                self.src
+                    .js(&format!("if (!(variant{} in {}))\n", tmp, name));
+                self.src.js(&format!(
+                    "throw new RangeError(\"invalid variant specified for {}\");\n",
+                    name,
+                ));
+                results.push(format!(
+                    "Number.isInteger(variant{}) ? variant{0} : {}[variant{0}]",
+                    tmp, name
+                ));
+            }
+
+            Instruction::EnumLift { name, .. } => {
+                let tmp = self.tmp();
+                let name = name.to_camel_case();
+                self.src
+                    .js(&format!("const tag{} = {};\n", tmp, operands[0]));
+                self.src.js(&format!("if (!(tag{} in {}))\n", tmp, name));
+                self.src.js(&format!(
+                    "throw new RangeError(\"invalid discriminant specified for {}\");\n",
+                    name,
+                ));
+                results.push(format!("tag{}", tmp));
             }
 
             Instruction::ListCanonLower { element, realloc } => {

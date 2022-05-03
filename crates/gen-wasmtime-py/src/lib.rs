@@ -411,7 +411,9 @@ impl WasmtimePy {
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty(iface, t),
                     TypeDefKind::Tuple(t) => self.print_tuple(iface, t),
-                    TypeDefKind::Record(_) | TypeDefKind::Flags(_) => unreachable!(),
+                    TypeDefKind::Record(_) | TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => {
+                        unreachable!()
+                    }
                     TypeDefKind::Variant(v) => {
                         if let Some(t) = v.as_option() {
                             self.pyimport("typing", "Optional");
@@ -645,27 +647,7 @@ impl Generator for WasmtimePy {
         docs: &Docs,
     ) {
         self.docs(docs);
-        if variant.is_enum() {
-            self.pyimport("enum", "Enum");
-            self.src
-                .push_str(&format!("class {}(Enum):\n", name.to_camel_case()));
-            self.indent();
-            for (i, case) in variant.cases.iter().enumerate() {
-                self.docs(&case.docs);
-
-                // TODO this handling of digits should be more general and
-                // shouldn't be here just to fix the one case in wasi where an
-                // enum variant is "2big" and doesn't generate valid Python. We
-                // should probably apply this to all generated Python
-                // identifiers.
-                let mut name = case.name.to_shouty_snake_case();
-                if name.chars().next().unwrap().is_digit(10) {
-                    name = format!("_{}", name);
-                }
-                self.src.push_str(&format!("{} = {}\n", name, i));
-            }
-            self.deindent();
-        } else if let Some(t) = variant.as_option() {
+        if let Some(t) = variant.as_option() {
             self.pyimport("typing", "Optional");
             self.src
                 .push_str(&format!("{} = Optional[", name.to_camel_case()));
@@ -714,6 +696,37 @@ impl Generator for WasmtimePy {
                 cases.join(", "),
             ));
         }
+        self.src.push_str("\n");
+    }
+
+    fn type_enum(
+        &mut self,
+        _iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        enum_: &Enum,
+        docs: &Docs,
+    ) {
+        self.docs(docs);
+        self.pyimport("enum", "Enum");
+        self.src
+            .push_str(&format!("class {}(Enum):\n", name.to_camel_case()));
+        self.indent();
+        for (i, case) in enum_.cases.iter().enumerate() {
+            self.docs(&case.docs);
+
+            // TODO this handling of digits should be more general and
+            // shouldn't be here just to fix the one case in wasi where an
+            // enum variant is "2big" and doesn't generate valid Python. We
+            // should probably apply this to all generated Python
+            // identifiers.
+            let mut name = case.name.to_shouty_snake_case();
+            if name.chars().next().unwrap().is_digit(10) {
+                name = format!("_{}", name);
+            }
+            self.src.push_str(&format!("{} = {}\n", name, i));
+        }
+        self.deindent();
         self.src.push_str("\n");
     }
 
@@ -1572,6 +1585,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(name.clone());
                 self.payloads.push(name);
             }
+
             Instruction::VariantLower {
                 variant,
                 results: result_types,
@@ -1586,12 +1600,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     .payloads
                     .drain(self.payloads.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
-
-                if result_types.len() == 1 && variant.is_enum() {
-                    if name.is_some() {
-                        return results.push(format!("({}).value", operands[0]));
-                    }
-                }
 
                 for _ in 0..result_types.len() {
                     results.push(self.locals.tmp("variant"));
@@ -1614,9 +1622,6 @@ impl Bindgen for FunctionBindgen<'_> {
                         if i == 0 {
                             self.src.push_str(&format!("{} is None:\n", operands[0]));
                         }
-                    } else if variant.is_enum() && variant.as_expected().is_none() {
-                        self.src
-                            .push_str(&format!("{}.value == {}:\n", operands[0], i));
                     } else {
                         self.src.push_str(&format!(
                             "isinstance({}, {}{}):\n",
@@ -1676,13 +1681,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     .blocks
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
-
-                if let Some(name) = name {
-                    if variant.is_enum() {
-                        results.push(format!("{}({})", name.to_camel_case(), operands[0]));
-                        return;
-                    }
-                }
 
                 let result = self.locals.tmp("variant");
                 self.src.push_str(&format!(
@@ -1753,6 +1751,12 @@ impl Bindgen for FunctionBindgen<'_> {
                 ));
                 self.src.deindent(2);
                 results.push(result);
+            }
+
+            Instruction::EnumLower { .. } => results.push(format!("({}).value", operands[0])),
+
+            Instruction::EnumLift { name, .. } => {
+                results.push(format!("{}({})", name.to_camel_case(), operands[0]));
             }
 
             Instruction::ListCanonLower { element, realloc } => {
