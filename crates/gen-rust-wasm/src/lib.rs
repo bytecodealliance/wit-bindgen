@@ -1049,7 +1049,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         result.push_str(&i.to_string());
                     }
                     result.push_str(" => ");
-                    self.variant_lift_case(iface, *ty, variant, case, &block, &mut result);
+                    self.variant_lift_case(iface, *ty, case, &block, &mut result);
                     result.push_str(",\n");
                 }
                 if !unchecked {

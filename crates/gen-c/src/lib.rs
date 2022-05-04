@@ -493,11 +493,7 @@ impl C {
                         continue;
                     }
                     self.src.c(&format!("case {}: {{\n", i));
-                    let expr = if v.as_option().is_some() {
-                        String::from("&ptr->val")
-                    } else {
-                        format!("&ptr->val.{}", case_field_name(case))
-                    };
+                    let expr = format!("&ptr->val.{}", case_field_name(case));
                     self.free(iface, case_ty, &expr);
                     self.src.c("break;\n");
                     self.src.c("}\n");
@@ -777,24 +773,16 @@ impl Generator for C {
         self.src.h("typedef struct {\n");
         self.src.h(int_repr(variant.tag));
         self.src.h(" tag;\n");
-        match variant.as_option() {
-            Some(ty) => {
+        self.src.h("union {\n");
+        for case in variant.cases.iter() {
+            if let Some(ty) = &case.ty {
                 self.print_ty(iface, ty);
-                self.src.h(" val;\n");
-            }
-            None => {
-                self.src.h("union {\n");
-                for case in variant.cases.iter() {
-                    if let Some(ty) = &case.ty {
-                        self.print_ty(iface, ty);
-                        self.src.h(" ");
-                        self.src.h(&case_field_name(case));
-                        self.src.h(";\n");
-                    }
-                }
-                self.src.h("} val;\n");
+                self.src.h(" ");
+                self.src.h(&case_field_name(case));
+                self.src.h(";\n");
             }
         }
+        self.src.h("} val;\n");
         self.src.h("} ");
         self.print_namespace(iface);
         self.src.h(&name.to_snake_case());
@@ -1605,10 +1593,8 @@ impl Bindgen for FunctionBindgen<'_> {
                                 "const {} *{} = &({}).val",
                                 ty, payload, operands[0],
                             ));
-                            if !variant.as_option().is_some() {
-                                self.src.push_str(".");
-                                self.src.push_str(&case_field_name(case));
-                            }
+                            self.src.push_str(".");
+                            self.src.push_str(&case_field_name(case));
                             self.src.push_str(";\n");
                         }
                     }
@@ -1644,10 +1630,8 @@ impl Bindgen for FunctionBindgen<'_> {
                     if case.ty.is_some() {
                         assert!(block_results.len() == 1);
                         let mut dst = format!("{}.val", result);
-                        if !variant.as_option().is_some() {
-                            dst.push_str(".");
-                            dst.push_str(&case_field_name(case));
-                        }
+                        dst.push_str(".");
+                        dst.push_str(&case_field_name(case));
                         self.store_op(&block_results[0], &dst);
                     } else {
                         assert!(block_results.is_empty());

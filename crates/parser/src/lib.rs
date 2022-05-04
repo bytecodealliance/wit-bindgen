@@ -171,32 +171,6 @@ impl Variant {
             .enumerate()
             .all(|(i, c)| c.name.parse().ok() == Some(i) && c.ty.is_some())
     }
-
-    pub fn as_option(&self) -> Option<&Type> {
-        if self.cases.len() != 2 {
-            return None;
-        }
-        if self.cases[0].name != "none" || self.cases[0].ty.is_some() {
-            return None;
-        }
-        if self.cases[1].name != "some" {
-            return None;
-        }
-        self.cases[1].ty.as_ref()
-    }
-
-    pub fn as_expected(&self) -> Option<(Option<&Type>, Option<&Type>)> {
-        if self.cases.len() != 2 {
-            return None;
-        }
-        if self.cases[0].name != "ok" {
-            return None;
-        }
-        if self.cases[1].name != "err" {
-            return None;
-        }
-        Some((self.cases[0].ty.as_ref(), self.cases[1].ty.as_ref()))
-    }
 }
 
 #[derive(Debug)]

@@ -846,32 +846,17 @@ pub trait RustFunctionGenerator {
         results: &mut Vec<String>,
         blocks: Vec<String>,
     ) {
-        let has_name = iface.types[id].name.is_some();
         self.let_results(nresults, results);
         self.push_str("match ");
         self.push_str(operand);
         self.push_str("{\n");
         for (case, block) in ty.cases.iter().zip(blocks) {
-            if ty.as_expected().is_some() {
-                self.push_str(&case.name.to_camel_case());
-                self.push_str("(");
-                self.push_str(if case.ty.is_some() { "e" } else { "()" });
-                self.push_str(")");
-            } else if ty.as_option().is_some() {
-                self.push_str(&case.name.to_camel_case());
-                if case.ty.is_some() {
-                    self.push_str("(e)");
-                }
-            } else if has_name {
-                let name = self.typename_lower(iface, id);
-                self.push_str(&name);
-                self.push_str("::");
-                self.push_str(&case_name(&case.name));
-                if case.ty.is_some() {
-                    self.push_str("(e)");
-                }
-            } else {
-                unimplemented!()
+            let name = self.typename_lower(iface, id);
+            self.push_str(&name);
+            self.push_str("::");
+            self.push_str(&case_name(&case.name));
+            if case.ty.is_some() {
+                self.push_str("(e)");
             }
             self.push_str(" => { ");
             self.push_str(&block);
@@ -884,34 +869,17 @@ pub trait RustFunctionGenerator {
         &mut self,
         iface: &Interface,
         id: TypeId,
-        ty: &Variant,
         case: &Case,
         block: &str,
         result: &mut String,
     ) {
-        if ty.as_expected().is_some() {
-            result.push_str(&case.name.to_camel_case());
+        result.push_str(&self.typename_lift(iface, id));
+        result.push_str("::");
+        result.push_str(&case_name(&case.name));
+        if case.ty.is_some() {
             result.push_str("(");
             result.push_str(block);
             result.push_str(")");
-        } else if ty.as_option().is_some() {
-            result.push_str(&case.name.to_camel_case());
-            if case.ty.is_some() {
-                result.push_str("(");
-                result.push_str(block);
-                result.push_str(")");
-            }
-        } else if iface.types[id].name.is_some() {
-            result.push_str(&self.typename_lift(iface, id));
-            result.push_str("::");
-            result.push_str(&case_name(&case.name));
-            if case.ty.is_some() {
-                result.push_str("(");
-                result.push_str(block);
-                result.push_str(")");
-            }
-        } else {
-            unimplemented!()
         }
     }
 }

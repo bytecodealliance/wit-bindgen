@@ -144,7 +144,7 @@ enum FunctionRet {
     /// The function returns a `Result` in both wasm and in Rust, but the
     /// Rust error type is a custom error and must be converted to `err`. The
     /// `ok` variant payload is provided here too.
-    CustomToError { ok: Option<Type>, err: String },
+    CustomToError { ok: Type, err: String },
 }
 
 impl Wasmtime {
@@ -200,16 +200,14 @@ impl Wasmtime {
         }
 
         if let Type::Id(id) = &f.result {
-            if let TypeDefKind::Variant(v) = &iface.types[*id].kind {
-                if let Some((ok, Some(err))) = v.as_expected() {
-                    if let Type::Id(err) = err {
-                        if let Some(name) = &iface.types[*err].name {
-                            self.needs_custom_error_to_types.insert(name.clone());
-                            return FunctionRet::CustomToError {
-                                ok: ok.cloned(),
-                                err: name.to_string(),
-                            };
-                        }
+            if let TypeDefKind::Expected(e) = &iface.types[*id].kind {
+                if let Type::Id(err) = e.err {
+                    if let Some(name) = &iface.types[err].name {
+                        self.needs_custom_error_to_types.insert(name.clone());
+                        return FunctionRet::CustomToError {
+                            ok: e.ok,
+                            err: name.to_string(),
+                        };
                     }
                 }
             }
@@ -571,10 +569,7 @@ impl Generator for Wasmtime {
             }
             FunctionRet::CustomToError { ok, .. } => {
                 self.push_str(" -> Result<");
-                match ok {
-                    Some(ty) => self.print_ty(iface, &ty, TypeMode::Owned),
-                    None => self.push_str("()"),
-                }
+                self.print_ty(iface, &ok, TypeMode::Owned);
                 self.push_str(", Self::Error>");
             }
         }
@@ -1650,7 +1645,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
                     result.push_str(&i.to_string());
                     result.push_str(" => ");
-                    self.variant_lift_case(iface, *ty, variant, case, &block, &mut result);
+                    self.variant_lift_case(iface, *ty, case, &block, &mut result);
                     result.push_str(",\n");
                 }
                 let variant_name = name.to_camel_case();
