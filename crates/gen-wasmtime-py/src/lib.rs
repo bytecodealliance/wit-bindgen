@@ -411,31 +411,25 @@ impl WasmtimePy {
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty(iface, t),
                     TypeDefKind::Tuple(t) => self.print_tuple(iface, t),
-                    TypeDefKind::Record(_) | TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => {
+                    TypeDefKind::Record(_)
+                    | TypeDefKind::Flags(_)
+                    | TypeDefKind::Enum(_)
+                    | TypeDefKind::Variant(_) => {
                         unreachable!()
                     }
-                    TypeDefKind::Variant(v) => {
-                        if let Some(t) = v.as_option() {
-                            self.pyimport("typing", "Optional");
-                            self.src.push_str("Optional[");
-                            self.print_ty(iface, t);
-                            self.src.push_str("]");
-                        } else if let Some((ok, err)) = v.as_expected() {
-                            self.needs_expected = true;
-                            self.src.push_str("Expected[");
-                            match ok {
-                                Some(t) => self.print_ty(iface, t),
-                                None => self.src.push_str("None"),
-                            }
-                            self.src.push_str(", ");
-                            match err {
-                                Some(t) => self.print_ty(iface, t),
-                                None => self.src.push_str("None"),
-                            }
-                            self.src.push_str("]");
-                        } else {
-                            unreachable!()
-                        }
+                    TypeDefKind::Option(t) => {
+                        self.pyimport("typing", "Optional");
+                        self.src.push_str("Optional[");
+                        self.print_ty(iface, t);
+                        self.src.push_str("]");
+                    }
+                    TypeDefKind::Expected(e) => {
+                        self.needs_expected = true;
+                        self.src.push_str("Expected[");
+                        self.print_ty(iface, &e.ok);
+                        self.src.push_str(", ");
+                        self.print_ty(iface, &e.err);
+                        self.src.push_str("]");
                     }
                     TypeDefKind::List(t) => self.print_list(iface, t),
                 }
@@ -647,56 +641,68 @@ impl Generator for WasmtimePy {
         docs: &Docs,
     ) {
         self.docs(docs);
-        if let Some(t) = variant.as_option() {
-            self.pyimport("typing", "Optional");
-            self.src
-                .push_str(&format!("{} = Optional[", name.to_camel_case()));
-            self.print_ty(iface, t);
-            self.src.push_str("]\n");
-        } else if let Some((ok, err)) = variant.as_expected() {
-            self.needs_expected = true;
-            self.src
-                .push_str(&format!("{} = Expected[", name.to_camel_case()));
-            match ok {
-                Some(t) => self.print_ty(iface, t),
-                None => self.src.push_str("None"),
-            }
-            self.src.push_str(", ");
-            match err {
-                Some(t) => self.print_ty(iface, t),
-                None => self.src.push_str("None"),
-            }
-            self.src.push_str("]\n");
-        } else {
-            self.pyimport("dataclasses", "dataclass");
-            let mut cases = Vec::new();
-            for case in variant.cases.iter() {
-                self.docs(&case.docs);
-                self.src.push_str("@dataclass\n");
-                let name = format!("{}{}", name.to_camel_case(), case.name.to_camel_case());
-                self.src.push_str(&format!("class {}:\n", name));
-                self.indent();
-                match &case.ty {
-                    Some(ty) => {
-                        self.src.push_str("value: ");
-                        self.print_ty(iface, ty);
-                        self.src.push_str("\n");
-                    }
-                    None => self.src.push_str("pass\n"),
+        self.pyimport("dataclasses", "dataclass");
+        let mut cases = Vec::new();
+        for case in variant.cases.iter() {
+            self.docs(&case.docs);
+            self.src.push_str("@dataclass\n");
+            let name = format!("{}{}", name.to_camel_case(), case.name.to_camel_case());
+            self.src.push_str(&format!("class {}:\n", name));
+            self.indent();
+            match &case.ty {
+                Some(ty) => {
+                    self.src.push_str("value: ");
+                    self.print_ty(iface, ty);
+                    self.src.push_str("\n");
                 }
-                self.deindent();
-                self.src.push_str("\n");
-                cases.push(name);
+                None => self.src.push_str("pass\n"),
             }
-
-            self.pyimport("typing", "Union");
-            self.src.push_str(&format!(
-                "{} = Union[{}]\n",
-                name.to_camel_case(),
-                cases.join(", "),
-            ));
+            self.deindent();
+            self.src.push_str("\n");
+            cases.push(name);
         }
+
+        self.pyimport("typing", "Union");
+        self.src.push_str(&format!(
+            "{} = Union[{}]\n",
+            name.to_camel_case(),
+            cases.join(", "),
+        ));
         self.src.push_str("\n");
+    }
+
+    fn type_option(
+        &mut self,
+        iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        payload: &Type,
+        docs: &Docs,
+    ) {
+        self.docs(docs);
+        self.pyimport("typing", "Optional");
+        self.src
+            .push_str(&format!("{} = Optional[", name.to_camel_case()));
+        self.print_ty(iface, payload);
+        self.src.push_str("]\n\n");
+    }
+
+    fn type_expected(
+        &mut self,
+        iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        expected: &Expected,
+        docs: &Docs,
+    ) {
+        self.docs(docs);
+        self.needs_expected = true;
+        self.src
+            .push_str(&format!("{} = Expected[", name.to_camel_case()));
+        self.print_ty(iface, &expected.ok);
+        self.src.push_str(", ");
+        self.print_ty(iface, &expected.err);
+        self.src.push_str("]\n\n");
     }
 
     fn type_enum(
@@ -1450,11 +1456,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::UnitLower => {
-                assert_eq!(operands, &["".to_string()]);
-            }
+            Instruction::UnitLower => {}
             Instruction::UnitLift => {
-                results.push("".to_string());
+                results.push("None".to_string());
             }
             Instruction::BoolFromI32 => {
                 let op = self.locals.tmp("operand");
@@ -1605,45 +1609,26 @@ impl Bindgen for FunctionBindgen<'_> {
                     results.push(self.locals.tmp("variant"));
                 }
 
-                let mut needs_else = true;
                 for (i, ((case, (block, block_results)), payload)) in
                     variant.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
                     if i == 0 {
                         self.src.push_str("if ");
-                    } else if i == 1 && variant.as_option().is_some() {
-                        needs_else = false;
-                        self.src.push_str("else:\n");
                     } else {
                         self.src.push_str("elif ");
                     }
 
-                    if variant.as_option().is_some() {
-                        if i == 0 {
-                            self.src.push_str(&format!("{} is None:\n", operands[0]));
-                        }
-                    } else {
-                        self.src.push_str(&format!(
-                            "isinstance({}, {}{}):\n",
-                            operands[0],
-                            if variant.as_expected().is_some() {
-                                String::new()
-                            } else {
-                                name.unwrap().to_camel_case()
-                            },
-                            case.name.to_camel_case()
-                        ));
-                    }
+                    self.src.push_str(&format!(
+                        "isinstance({}, {}{}):\n",
+                        operands[0],
+                        name.to_camel_case(),
+                        case.name.to_camel_case()
+                    ));
                     self.src.indent(2);
 
                     if case.ty.is_some() {
-                        if variant.as_option().is_some() {
-                            self.src
-                                .push_str(&format!("{} = {}\n", payload, operands[0]));
-                        } else {
-                            self.src
-                                .push_str(&format!("{} = {}.value\n", payload, operands[0]));
-                        }
+                        self.src
+                            .push_str(&format!("{} = {}.value\n", payload, operands[0]));
                     }
 
                     self.src.push_str(&block);
@@ -1653,25 +1638,14 @@ impl Bindgen for FunctionBindgen<'_> {
                     }
                     self.src.deindent(2);
                 }
-                if needs_else {
-                    let variant_name = name.map(|s| s.to_camel_case());
-                    let variant_name = variant_name.as_deref().unwrap_or_else(|| {
-                        if variant.as_expected().is_some() {
-                            "expected"
-                        } else if variant.as_option().is_some() {
-                            "option"
-                        } else {
-                            unimplemented!()
-                        }
-                    });
-                    self.src.push_str("else:\n");
-                    self.src.indent(2);
-                    self.src.push_str(&format!(
-                        "raise TypeError(\"invalid variant specified for {}\")\n",
-                        variant_name
-                    ));
-                    self.src.deindent(2);
-                }
+                let variant_name = name.to_camel_case();
+                self.src.push_str("else:\n");
+                self.src.indent(2);
+                self.src.push_str(&format!(
+                    "raise TypeError(\"invalid variant specified for {}\")\n",
+                    variant_name
+                ));
+                self.src.deindent(2);
             }
 
             Instruction::VariantLift {
@@ -1700,56 +1674,171 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.indent(2);
                     self.src.push_str(&block);
 
-                    if variant.as_option().is_some() {
-                        if case.ty.is_none() {
-                            assert!(block_results.is_empty());
-                            self.src.push_str(&format!("{} = None\n", result));
-                        } else {
-                            assert!(block_results.len() == 1);
-                            self.src
-                                .push_str(&format!("{} = {}\n", result, block_results[0]));
-                        }
+                    self.src.push_str(&format!(
+                        "{} = {}{}(",
+                        result,
+                        name.to_camel_case(),
+                        case.name.to_camel_case()
+                    ));
+                    if case.ty.is_some() {
+                        assert!(block_results.len() == 1);
+                        self.src.push_str(&block_results[0]);
                     } else {
-                        self.src.push_str(&format!(
-                            "{} = {}{}(",
-                            result,
-                            if variant.as_expected().is_some() {
-                                String::new()
-                            } else {
-                                name.unwrap().to_camel_case()
-                            },
-                            case.name.to_camel_case()
-                        ));
-                        if case.ty.is_some() {
-                            assert!(block_results.len() == 1);
-                            self.src.push_str(&block_results[0]);
-                        } else {
-                            assert!(block_results.is_empty());
-                            if variant.as_expected().is_some() {
-                                self.src.push_str("None");
-                            }
-                        }
-                        self.src.push_str(")\n");
+                        assert!(block_results.is_empty());
                     }
+                    self.src.push_str(")\n");
                     self.src.deindent(2);
                 }
                 self.src.push_str("else:\n");
                 self.src.indent(2);
-                let variant_name = name.map(|s| s.to_camel_case());
-                let variant_name = variant_name.as_deref().unwrap_or_else(|| {
-                    if variant.as_expected().is_some() {
-                        "expected"
-                    } else if variant.as_option().is_some() {
-                        "option"
-                    } else {
-                        unimplemented!()
-                    }
-                });
+                let variant_name = name.to_camel_case();
                 self.src.push_str(&format!(
                     "raise TypeError(\"invalid variant discriminant for {}\")\n",
                     variant_name
                 ));
                 self.src.deindent(2);
+                results.push(result);
+            }
+
+            Instruction::OptionLower {
+                results: result_types,
+                ..
+            } => {
+                let (some, some_results) = self.blocks.pop().unwrap();
+                let (none, none_results) = self.blocks.pop().unwrap();
+                let some_payload = self.payloads.pop().unwrap();
+                let _none_payload = self.payloads.pop().unwrap();
+
+                for _ in 0..result_types.len() {
+                    results.push(self.locals.tmp("variant"));
+                }
+
+                let op0 = &operands[0];
+                self.src.push_str(&format!("if {op0} is None:\n"));
+
+                self.src.indent(2);
+                self.src.push_str(&none);
+                for (dst, result) in results.iter().zip(&none_results) {
+                    self.src.push_str(&format!("{dst} = {result}\n"));
+                }
+                self.src.deindent(2);
+                self.src.push_str("else:\n");
+                self.src.indent(2);
+                self.src.push_str(&format!("{some_payload} = {op0}\n"));
+                self.src.push_str(&some);
+                for (dst, result) in results.iter().zip(&some_results) {
+                    self.src.push_str(&format!("{dst} = {result}\n"));
+                }
+                self.src.deindent(2);
+            }
+
+            Instruction::OptionLift { ty, .. } => {
+                let (some, some_results) = self.blocks.pop().unwrap();
+                let (none, none_results) = self.blocks.pop().unwrap();
+                assert!(none_results.is_empty());
+                assert!(some_results.len() == 1);
+                let some_result = &some_results[0];
+
+                let result = self.locals.tmp("option");
+                self.src.push_str(&format!(
+                    "{result}: {}\n",
+                    self.gen.type_string(iface, &Type::Id(*ty)),
+                ));
+
+                let op0 = &operands[0];
+                self.src.push_str(&format!("if {op0} == 0:\n"));
+                self.src.indent(2);
+                self.src.push_str(&none);
+                self.src.push_str(&format!("{result} = None\n"));
+                self.src.deindent(2);
+                self.src.push_str(&format!("elif {op0} == 1:\n"));
+                self.src.indent(2);
+                self.src.push_str(&some);
+                self.src.push_str(&format!("{result} = {some_result}\n"));
+                self.src.deindent(2);
+
+                self.src.push_str("else:\n");
+                self.src.indent(2);
+                self.src
+                    .push_str("raise TypeError(\"invalid variant discriminant for option\")\n");
+                self.src.deindent(2);
+
+                results.push(result);
+            }
+
+            Instruction::ExpectedLower {
+                results: result_types,
+                ..
+            } => {
+                let (err, err_results) = self.blocks.pop().unwrap();
+                let (ok, ok_results) = self.blocks.pop().unwrap();
+                let err_payload = self.payloads.pop().unwrap();
+                let ok_payload = self.payloads.pop().unwrap();
+
+                for _ in 0..result_types.len() {
+                    results.push(self.locals.tmp("variant"));
+                }
+
+                let op0 = &operands[0];
+                self.src.push_str(&format!("if isinstance({op0}, Ok):\n"));
+
+                self.src.indent(2);
+                self.src.push_str(&format!("{ok_payload} = {op0}.value\n"));
+                self.src.push_str(&ok);
+                for (dst, result) in results.iter().zip(&ok_results) {
+                    self.src.push_str(&format!("{dst} = {result}\n"));
+                }
+                self.src.deindent(2);
+                self.src
+                    .push_str(&format!("elif isinstance({op0}, Err):\n"));
+                self.src.indent(2);
+                self.src.push_str(&format!("{err_payload} = {op0}.value\n"));
+                self.src.push_str(&err);
+                for (dst, result) in results.iter().zip(&err_results) {
+                    self.src.push_str(&format!("{dst} = {result}\n"));
+                }
+                self.src.deindent(2);
+                self.src.push_str("else:\n");
+                self.src.indent(2);
+                self.src.push_str(&format!(
+                    "raise TypeError(\"invalid variant specified for expected\")\n",
+                ));
+                self.src.deindent(2);
+            }
+
+            Instruction::ExpectedLift { ty, .. } => {
+                let (err, err_results) = self.blocks.pop().unwrap();
+                let (ok, ok_results) = self.blocks.pop().unwrap();
+                assert!(err_results.len() == 1);
+                let err_result = &err_results[0];
+                assert!(ok_results.len() == 1);
+                let ok_result = &ok_results[0];
+
+                let result = self.locals.tmp("expected");
+                self.src.push_str(&format!(
+                    "{result}: {}\n",
+                    self.gen.type_string(iface, &Type::Id(*ty)),
+                ));
+
+                let op0 = &operands[0];
+                self.src.push_str(&format!("if {op0} == 0:\n"));
+                self.src.indent(2);
+                self.src.push_str(&ok);
+                self.src.push_str(&format!("{result} = Ok({ok_result})\n"));
+                self.src.deindent(2);
+                self.src.push_str(&format!("elif {op0} == 1:\n"));
+                self.src.indent(2);
+                self.src.push_str(&err);
+                self.src
+                    .push_str(&format!("{result} = Err({err_result})\n"));
+                self.src.deindent(2);
+
+                self.src.push_str("else:\n");
+                self.src.indent(2);
+                self.src
+                    .push_str("raise TypeError(\"invalid variant discriminant for expected\")\n");
+                self.src.deindent(2);
+
                 results.push(result);
             }
 

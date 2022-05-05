@@ -11,32 +11,13 @@
     },
     {
       "idx": 1,
-      "variant": {
-        "cases": [
-          [
-            "none",
-            null
-          ],
-          [
-            "some",
-            "u32"
-          ]
-        ]
-      }
+      "option": "u32"
     },
     {
       "idx": 2,
-      "variant": {
-        "cases": [
-          [
-            "ok",
-            "u32"
-          ],
-          [
-            "err",
-            "float32"
-          ]
-        ]
+      "expected": {
+        "ok": "u32",
+        "err": "float32"
       }
     }
   ],

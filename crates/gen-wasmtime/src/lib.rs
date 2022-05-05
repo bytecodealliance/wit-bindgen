@@ -144,7 +144,7 @@ enum FunctionRet {
     /// The function returns a `Result` in both wasm and in Rust, but the
     /// Rust error type is a custom error and must be converted to `err`. The
     /// `ok` variant payload is provided here too.
-    CustomToError { ok: Option<Type>, err: String },
+    CustomToError { ok: Type, err: String },
 }
 
 impl Wasmtime {
@@ -200,16 +200,14 @@ impl Wasmtime {
         }
 
         if let Type::Id(id) = &f.result {
-            if let TypeDefKind::Variant(v) = &iface.types[*id].kind {
-                if let Some((ok, Some(err))) = v.as_expected() {
-                    if let Type::Id(err) = err {
-                        if let Some(name) = &iface.types[*err].name {
-                            self.needs_custom_error_to_types.insert(name.clone());
-                            return FunctionRet::CustomToError {
-                                ok: ok.cloned(),
-                                err: name.to_string(),
-                            };
-                        }
+            if let TypeDefKind::Expected(e) = &iface.types[*id].kind {
+                if let Type::Id(err) = e.err {
+                    if let Some(name) = &iface.types[err].name {
+                        self.needs_custom_error_to_types.insert(name.clone());
+                        return FunctionRet::CustomToError {
+                            ok: e.ok,
+                            err: name.to_string(),
+                        };
                     }
                 }
             }
@@ -441,6 +439,28 @@ impl Generator for Wasmtime {
         self.print_typedef_variant(iface, id, variant, docs);
     }
 
+    fn type_option(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        _name: &str,
+        payload: &Type,
+        docs: &Docs,
+    ) {
+        self.print_typedef_option(iface, id, payload, docs);
+    }
+
+    fn type_expected(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        _name: &str,
+        expected: &Expected,
+        docs: &Docs,
+    ) {
+        self.print_typedef_expected(iface, id, expected, docs);
+    }
+
     fn type_enum(
         &mut self,
         _iface: &Interface,
@@ -549,10 +569,7 @@ impl Generator for Wasmtime {
             }
             FunctionRet::CustomToError { ok, .. } => {
                 self.push_str(" -> Result<");
-                match ok {
-                    Some(ty) => self.print_ty(iface, &ty, TypeMode::Owned),
-                    None => self.push_str("()"),
-                }
+                self.print_ty(iface, &ok, TypeMode::Owned);
                 self.push_str(", Self::Error>");
             }
         }
@@ -1628,24 +1645,76 @@ impl Bindgen for FunctionBindgen<'_> {
                 for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
                     result.push_str(&i.to_string());
                     result.push_str(" => ");
-                    self.variant_lift_case(iface, *ty, variant, case, &block, &mut result);
+                    self.variant_lift_case(iface, *ty, case, &block, &mut result);
                     result.push_str(",\n");
                 }
-                let variant_name = name.map(|s| s.to_camel_case());
-                let variant_name = variant_name.as_deref().unwrap_or_else(|| {
-                    if variant.as_expected().is_some() {
-                        "Result"
-                    } else if variant.as_option().is_some() {
-                        "Option"
-                    } else {
-                        unimplemented!()
-                    }
-                });
+                let variant_name = name.to_camel_case();
                 result.push_str("_ => return Err(invalid_variant(\"");
                 result.push_str(&variant_name);
                 result.push_str("\")),\n");
                 result.push_str("}");
                 results.push(result);
+                self.gen.needs_invalid_variant = true;
+            }
+
+            Instruction::OptionLower {
+                results: result_types,
+                ..
+            } => {
+                let some = self.blocks.pop().unwrap();
+                let none = self.blocks.pop().unwrap();
+                self.let_results(result_types.len(), results);
+                let operand = &operands[0];
+                self.push_str(&format!(
+                    "match {operand} {{
+                        Some(e) => {{ {some} }},
+                        None => {{ {none} }},
+                    }};"
+                ));
+            }
+
+            Instruction::OptionLift { .. } => {
+                let some = self.blocks.pop().unwrap();
+                let none = self.blocks.pop().unwrap();
+                assert_eq!(none, "()");
+                let operand = &operands[0];
+                results.push(format!(
+                    "match {operand} {{
+                        0 => None,
+                        1 => Some({some}),
+                        _ => return Err(invalid_variant(\"option\")),
+                    }}"
+                ));
+                self.gen.needs_invalid_variant = true;
+            }
+
+            Instruction::ExpectedLower {
+                results: result_types,
+                ..
+            } => {
+                let err = self.blocks.pop().unwrap();
+                let ok = self.blocks.pop().unwrap();
+                self.let_results(result_types.len(), results);
+                let operand = &operands[0];
+                self.push_str(&format!(
+                    "match {operand} {{
+                        Ok(e) => {{ {ok} }},
+                        Err(e) => {{ {err} }},
+                    }};"
+                ));
+            }
+
+            Instruction::ExpectedLift { .. } => {
+                let err = self.blocks.pop().unwrap();
+                let ok = self.blocks.pop().unwrap();
+                let operand = &operands[0];
+                results.push(format!(
+                    "match {operand} {{
+                        0 => Ok({ok}),
+                        1 => Err({err}),
+                        _ => return Err(invalid_variant(\"expected\")),
+                    }}"
+                ));
                 self.gen.needs_invalid_variant = true;
             }
 

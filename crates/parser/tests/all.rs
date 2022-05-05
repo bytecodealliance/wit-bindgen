@@ -203,6 +203,11 @@ fn to_json(i: &Interface) -> String {
         Tuple {
             types: Vec<String>,
         },
+        Option(String),
+        Expected {
+            ok: String,
+            err: String,
+        },
         List(String),
     }
 
@@ -292,6 +297,11 @@ fn to_json(i: &Interface) -> String {
                     .iter()
                     .map(|f| (f.name.clone(), f.ty.as_ref().map(translate_type)))
                     .collect(),
+            },
+            TypeDefKind::Option(t) => Type::Option(translate_type(t)),
+            TypeDefKind::Expected(e) => Type::Expected {
+                ok: translate_type(&e.ok),
+                err: translate_type(&e.err),
             },
             TypeDefKind::List(ty) => Type::List(translate_type(ty)),
         }

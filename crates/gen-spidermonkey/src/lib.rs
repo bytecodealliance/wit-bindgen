@@ -16,8 +16,8 @@ use wasm_encoder::Instruction;
 use wit_bindgen_gen_core::{
     wit_parser::{
         abi::{self, AbiVariant, WasmSignature, WasmType},
-        Docs, Enum, Flags, Function, Interface, Record, ResourceId, SizeAlign, Tuple, Type, TypeId,
-        Variant,
+        Docs, Enum, Expected, Flags, Function, Interface, Record, ResourceId, SizeAlign, Tuple,
+        Type, TypeId, Variant,
     },
     Direction, Files, Generator,
 };
@@ -988,6 +988,30 @@ impl Generator for SpiderMonkeyWasm<'_> {
         todo!()
     }
 
+    fn type_option(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        payload: &Type,
+        docs: &Docs,
+    ) {
+        let _ = (iface, id, name, payload, docs);
+        todo!()
+    }
+
+    fn type_expected(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        expected: &Expected,
+        docs: &Docs,
+    ) {
+        let _ = (iface, id, name, expected, docs);
+        todo!()
+    }
+
     fn type_enum(&mut self, iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         let _ = (iface, id, name, enum_, docs);
         todo!()
@@ -1931,6 +1955,10 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 name: _,
                 ty: _,
             } => todo!(),
+            abi::Instruction::OptionLower { .. } => todo!(),
+            abi::Instruction::OptionLift { .. } => todo!(),
+            abi::Instruction::ExpectedLower { .. } => todo!(),
+            abi::Instruction::ExpectedLift { .. } => todo!(),
             abi::Instruction::EnumLower {
                 enum_: _,
                 name: _,

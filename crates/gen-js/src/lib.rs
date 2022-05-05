@@ -173,32 +173,26 @@ impl Js {
                     TypeDefKind::Record(_) => panic!("anonymous record"),
                     TypeDefKind::Flags(_) => panic!("anonymous flags"),
                     TypeDefKind::Enum(_) => panic!("anonymous enum"),
-                    TypeDefKind::Variant(v) => {
-                        if self.is_nullable_option(iface, v) {
-                            self.print_ty(iface, v.cases[1].ty.as_ref().unwrap());
-                            self.src.ts(" | null");
-                        } else if let Some(t) = v.as_option() {
+                    TypeDefKind::Option(t) => {
+                        if self.maybe_null(iface, t) {
                             self.needs_ty_option = true;
                             self.src.ts("Option<");
                             self.print_ty(iface, t);
                             self.src.ts(">");
-                        } else if let Some((ok, err)) = v.as_expected() {
-                            self.needs_ty_result = true;
-                            self.src.ts("Result<");
-                            match ok {
-                                Some(ok) => self.print_ty(iface, ok),
-                                None => self.src.ts("undefined"),
-                            }
-                            self.src.ts(", ");
-                            match err {
-                                Some(err) => self.print_ty(iface, err),
-                                None => self.src.ts("undefined"),
-                            }
-                            self.src.ts(">");
                         } else {
-                            panic!("anonymous variant");
+                            self.print_ty(iface, t);
+                            self.src.ts(" | null");
                         }
                     }
+                    TypeDefKind::Expected(e) => {
+                        self.needs_ty_result = true;
+                        self.src.ts("Result<");
+                        self.print_ty(iface, &e.ok);
+                        self.src.ts(", ");
+                        self.print_ty(iface, &e.err);
+                        self.src.ts(">");
+                    }
+                    TypeDefKind::Variant(_) => panic!("anonymous variant"),
                     TypeDefKind::List(v) => self.print_list(iface, v),
                 }
             }
@@ -305,15 +299,46 @@ impl Js {
         return i.name().to_string();
     }
 
-    pub fn get_nullable_option<'a>(&self, iface: &'a Interface, ty: &Type) -> Option<&'a Type> {
-        iface.get_variant(ty).and_then(|v| v.as_option())
+    /// Returns whether `null` is a valid value of type `ty`
+    fn maybe_null(&self, iface: &Interface, ty: &Type) -> bool {
+        self.as_nullable(iface, ty).is_some()
     }
 
-    pub fn is_nullable_option(&self, iface: &Interface, variant: &Variant) -> bool {
-        variant.as_option().map_or(false, |ty| {
-            self.get_nullable_option(iface, ty)
-                .map_or(true, |ty| self.get_nullable_option(iface, ty).is_none())
-        })
+    /// Tests whether `ty` can be represented with `null`, and if it can then
+    /// the "other type" is returned. If `Some` is returned that means that `ty`
+    /// is `null | <return>`. If `None` is returned that means that `null` can't
+    /// be used to represent `ty`.
+    fn as_nullable<'a>(&self, iface: &'a Interface, ty: &'a Type) -> Option<&'a Type> {
+        let id = match ty {
+            Type::Id(id) => *id,
+            _ => return None,
+        };
+        match &iface.types[id].kind {
+            // If `ty` points to an `option<T>`, then `ty` can be represented
+            // with `null` if `t` itself can't be represented with null. For
+            // example `option<option<u32>>` can't be represented with `null`
+            // since that's ambiguous if it's `none` or `some(none)`.
+            //
+            // Note, oddly enough, that `option<option<option<u32>>>` can be
+            // represented as `null` since:
+            //
+            // * `null` => `none`
+            // * `{ tag: "none" }` => `some(none)`
+            // * `{ tag: "some", val: null }` => `some(some(none))`
+            // * `{ tag: "some", val: 1 }` => `some(some(some(1)))`
+            //
+            // It's doubtful anyone would actually rely on that though due to
+            // how confusing it is.
+            TypeDefKind::Option(t) => {
+                if !self.maybe_null(iface, t) {
+                    Some(t)
+                } else {
+                    None
+                }
+            }
+            TypeDefKind::Type(t) => self.as_nullable(iface, t),
+            _ => None,
+        }
     }
 }
 
@@ -338,7 +363,7 @@ impl Generator for Js {
         for field in record.fields.iter() {
             self.docs(&field.docs);
             let (option_str, ty) = self
-                .get_nullable_option(iface, &field.ty)
+                .as_nullable(iface, &field.ty)
                 .map_or(("", &field.ty), |ty| ("?", ty));
             self.src
                 .ts(&format!("{}{}: ", field.name.to_mixed_case(), option_str));
@@ -400,39 +425,73 @@ impl Generator for Js {
         docs: &Docs,
     ) {
         self.docs(docs);
-        if self.is_nullable_option(iface, variant) {
-            self.src
-                .ts(&format!("export type {} = ", name.to_camel_case()));
-            self.print_ty(iface, variant.cases[1].ty.as_ref().unwrap());
-            self.src.ts("| null;\n");
-        } else {
-            self.src
-                .ts(&format!("export type {} = ", name.to_camel_case()));
-            for (i, case) in variant.cases.iter().enumerate() {
-                if i > 0 {
-                    self.src.ts(" | ");
-                }
-                self.src
-                    .ts(&format!("{}_{}", name, case.name).to_camel_case());
+        self.src
+            .ts(&format!("export type {} = ", name.to_camel_case()));
+        for (i, case) in variant.cases.iter().enumerate() {
+            if i > 0 {
+                self.src.ts(" | ");
             }
-            self.src.ts(";\n");
-            for case in variant.cases.iter() {
-                self.docs(&case.docs);
-                self.src.ts(&format!(
-                    "export interface {} {{\n",
-                    format!("{}_{}", name, case.name).to_camel_case()
-                ));
-                self.src.ts("tag: \"");
-                self.src.ts(&case.name);
-                self.src.ts("\",\n");
-                if let Some(ty) = &case.ty {
-                    self.src.ts("val: ");
-                    self.print_ty(iface, ty);
-                    self.src.ts(",\n");
-                }
-                self.src.ts("}\n");
-            }
+            self.src
+                .ts(&format!("{}_{}", name, case.name).to_camel_case());
         }
+        self.src.ts(";\n");
+        for case in variant.cases.iter() {
+            self.docs(&case.docs);
+            self.src.ts(&format!(
+                "export interface {} {{\n",
+                format!("{}_{}", name, case.name).to_camel_case()
+            ));
+            self.src.ts("tag: \"");
+            self.src.ts(&case.name);
+            self.src.ts("\",\n");
+            if let Some(ty) = &case.ty {
+                self.src.ts("val: ");
+                self.print_ty(iface, ty);
+                self.src.ts(",\n");
+            }
+            self.src.ts("}\n");
+        }
+    }
+
+    fn type_option(
+        &mut self,
+        iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        payload: &Type,
+        docs: &Docs,
+    ) {
+        self.docs(docs);
+        let name = name.to_camel_case();
+        self.src.ts(&format!("export type {name} = "));
+        if self.maybe_null(iface, payload) {
+            self.needs_ty_option = true;
+            self.src.ts("Option<");
+            self.print_ty(iface, payload);
+            self.src.ts(">");
+        } else {
+            self.print_ty(iface, payload);
+            self.src.ts(" | null");
+        }
+        self.src.ts(";\n");
+    }
+
+    fn type_expected(
+        &mut self,
+        iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        expected: &Expected,
+        docs: &Docs,
+    ) {
+        self.docs(docs);
+        let name = name.to_camel_case();
+        self.needs_ty_result = true;
+        self.src.ts(&format!("export type {name} = Result<"));
+        self.print_ty(iface, &expected.ok);
+        self.src.ts(", ");
+        self.print_ty(iface, &expected.err);
+        self.src.ts(">;\n");
     }
 
     fn type_enum(
@@ -1308,11 +1367,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::UnitLower => {
-                assert_eq!(operands, &[""]);
-            }
+            Instruction::UnitLower => {}
             Instruction::UnitLift => {
-                results.push("".to_string());
+                results.push("undefined".to_string());
             }
 
             Instruction::BoolFromI32 => {
@@ -1502,30 +1559,15 @@ impl Bindgen for FunctionBindgen<'_> {
                     results.push(format!("variant{}_{}", tmp, i));
                 }
 
-                let expr_to_match = if self.gen.is_nullable_option(iface, variant) {
-                    format!("variant{}", tmp)
-                } else {
-                    format!("variant{}.tag", tmp)
-                };
+                let expr_to_match = format!("variant{}.tag", tmp);
 
                 self.src.js(&format!("switch ({}) {{\n", expr_to_match));
-                let mut use_default = true;
                 for (case, (block, block_results)) in variant.cases.iter().zip(blocks) {
-                    if self.gen.is_nullable_option(iface, variant) {
-                        if case.ty.is_none() {
-                            self.src.js("case null: {\n");
-                        } else {
-                            self.src.js("default: {\n");
-                            self.src.js(&format!("const e = variant{};\n", tmp));
-                            use_default = false;
-                        }
-                    } else {
-                        self.src
-                            .js(&format!("case \"{}\": {{\n", case.name.as_str()));
-                        if case.ty.is_some() {
-                            self.src.js(&format!("const e = variant{}.val;\n", tmp));
-                        }
-                    };
+                    self.src
+                        .js(&format!("case \"{}\": {{\n", case.name.as_str()));
+                    if case.ty.is_some() {
+                        self.src.js(&format!("const e = variant{}.val;\n", tmp));
+                    }
                     self.src.js(&block);
 
                     for (i, result) in block_results.iter().enumerate() {
@@ -1534,23 +1576,12 @@ impl Bindgen for FunctionBindgen<'_> {
                     }
                     self.src.js("break;\n}\n");
                 }
-                if use_default {
-                    let variant_name = name.map(|s| s.to_camel_case());
-                    let variant_name = variant_name.as_deref().unwrap_or_else(|| {
-                        if variant.as_expected().is_some() {
-                            "expected"
-                        } else if variant.as_option().is_some() {
-                            "option"
-                        } else {
-                            unimplemented!()
-                        }
-                    });
-                    self.src.js("default:\n");
-                    self.src.js(&format!(
-                        "throw new RangeError(\"invalid variant specified for {}\");\n",
-                        variant_name
-                    ));
-                }
+                let variant_name = name.to_camel_case();
+                self.src.js("default:\n");
+                self.src.js(&format!(
+                    "throw new RangeError(\"invalid variant specified for {}\");\n",
+                    variant_name
+                ));
                 self.src.js("}\n");
             }
 
@@ -1570,38 +1601,18 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.js(&format!("case {}: {{\n", i));
                     self.src.js(&block);
 
-                    if self.gen.is_nullable_option(iface, variant) {
-                        if case.ty.is_none() {
-                            assert!(block_results.is_empty());
-                            self.src.js(&format!("variant{} = null;\n", tmp));
-                        } else {
-                            assert!(block_results.len() == 1);
-                            self.src
-                                .js(&format!("variant{} = {};\n", tmp, block_results[0]));
-                        }
+                    self.src.js(&format!("variant{} = {{\n", tmp));
+                    self.src.js(&format!("tag: \"{}\",\n", case.name.as_str()));
+                    if case.ty.is_some() {
+                        assert!(block_results.len() == 1);
+                        self.src.js(&format!("val: {},\n", block_results[0]));
                     } else {
-                        self.src.js(&format!("variant{} = {{\n", tmp));
-                        self.src.js(&format!("tag: \"{}\",\n", case.name.as_str()));
-                        if case.ty.is_some() {
-                            assert!(block_results.len() == 1);
-                            self.src.js(&format!("val: {},\n", block_results[0]));
-                        } else {
-                            assert!(block_results.is_empty());
-                        }
-                        self.src.js("};\n");
+                        assert!(block_results.is_empty());
                     }
+                    self.src.js("};\n");
                     self.src.js("break;\n}\n");
                 }
-                let variant_name = name.map(|s| s.to_camel_case());
-                let variant_name = variant_name.as_deref().unwrap_or_else(|| {
-                    if variant.as_expected().is_some() {
-                        "expected"
-                    } else if variant.as_option().is_some() {
-                        "option"
-                    } else {
-                        unimplemented!()
-                    }
-                });
+                let variant_name = name.to_camel_case();
                 self.src.js("default:\n");
                 self.src.js(&format!(
                     "throw new RangeError(\"invalid variant discriminant for {}\");\n",
@@ -1609,6 +1620,189 @@ impl Bindgen for FunctionBindgen<'_> {
                 ));
                 self.src.js("}\n");
                 results.push(format!("variant{}", tmp));
+            }
+
+            Instruction::OptionLower {
+                payload,
+                results: result_types,
+                ..
+            } => {
+                let (mut some, some_results) = self.blocks.pop().unwrap();
+                let (mut none, none_results) = self.blocks.pop().unwrap();
+
+                let tmp = self.tmp();
+                self.src
+                    .js(&format!("const variant{tmp} = {};\n", operands[0]));
+
+                for i in 0..result_types.len() {
+                    self.src.js(&format!("let variant{tmp}_{i};\n"));
+                    results.push(format!("variant{tmp}_{i}"));
+
+                    let some_result = &some_results[i];
+                    let none_result = &none_results[i];
+                    some.push_str(&format!("variant{tmp}_{i} = {some_result};\n"));
+                    none.push_str(&format!("variant{tmp}_{i} = {none_result};\n"));
+                }
+
+                if self.gen.maybe_null(iface, payload) {
+                    self.src.js(&format!(
+                        "
+                        switch (variant{tmp}.tag) {{
+                            case \"none\": {{
+                                {none}
+                                break;
+                            }}
+                            case \"some\": {{
+                                const e = variant{tmp}.val;
+                                {some}
+                                break;
+                            }}
+                            default: {{
+                                throw new RangeError(\"invalid variant specified for option\");
+                            }}
+                        }}
+                        "
+                    ));
+                } else {
+                    self.src.js(&format!(
+                        "
+                        switch (variant{tmp}) {{
+                            case null: {{
+                                {none}
+                                break;
+                            }}
+                            default: {{
+                                const e = variant{tmp};
+                                {some}
+                                break;
+                            }}
+                        }}
+                        "
+                    ));
+                }
+            }
+
+            Instruction::OptionLift { payload, .. } => {
+                let (some, some_results) = self.blocks.pop().unwrap();
+                let (none, none_results) = self.blocks.pop().unwrap();
+                assert!(none_results.is_empty());
+                assert!(some_results.len() == 1);
+                let some_result = &some_results[0];
+
+                let tmp = self.tmp();
+
+                self.src.js(&format!("let variant{tmp};\n"));
+                self.src.js(&format!("switch ({}) {{\n", operands[0]));
+
+                if self.gen.maybe_null(iface, payload) {
+                    self.src.js(&format!(
+                        "
+                            case 0: {{
+                                {none}
+                                variant{tmp} = {{ tag: \"none\" }};
+                                break;
+                            }}
+                            case 1: {{
+                                {some}
+                                variant{tmp} = {{ tag: \"some\", val: {some_result} }};
+                                break;
+                            }}
+                        ",
+                    ));
+                } else {
+                    self.src.js(&format!(
+                        "
+                            case 0: {{
+                                {none}
+                                variant{tmp} = null;
+                                break;
+                            }}
+                            case 1: {{
+                                {some}
+                                variant{tmp} = {some_result};
+                                break;
+                            }}
+                        ",
+                    ));
+                }
+                self.src.js("
+                    default:
+                        throw new RangeError(\"invalid variant discriminant for option\");
+                ");
+                self.src.js("}\n");
+                results.push(format!("variant{tmp}"));
+            }
+
+            Instruction::ExpectedLower {
+                results: result_types,
+                ..
+            } => {
+                let (mut err, err_results) = self.blocks.pop().unwrap();
+                let (mut ok, ok_results) = self.blocks.pop().unwrap();
+
+                let tmp = self.tmp();
+                self.src
+                    .js(&format!("const variant{tmp} = {};\n", operands[0]));
+
+                for i in 0..result_types.len() {
+                    self.src.js(&format!("let variant{tmp}_{i};\n"));
+                    results.push(format!("variant{tmp}_{i}"));
+
+                    let ok_result = &ok_results[i];
+                    let err_result = &err_results[i];
+                    ok.push_str(&format!("variant{tmp}_{i} = {ok_result};\n"));
+                    err.push_str(&format!("variant{tmp}_{i} = {err_result};\n"));
+                }
+
+                self.src.js(&format!(
+                    "
+                    switch (variant{tmp}.tag) {{
+                        case \"ok\": {{
+                            const e = variant{tmp}.val;
+                            {ok}
+                            break;
+                        }}
+                        case \"err\": {{
+                            const e = variant{tmp}.val;
+                            {err}
+                            break;
+                        }}
+                        default: {{
+                            throw new RangeError(\"invalid variant specified for expected\");
+                        }}
+                    }}
+                    "
+                ));
+            }
+
+            Instruction::ExpectedLift { .. } => {
+                let (err, err_results) = self.blocks.pop().unwrap();
+                let (ok, ok_results) = self.blocks.pop().unwrap();
+                let err_result = &err_results[0];
+                let ok_result = &ok_results[0];
+                let tmp = self.tmp();
+                let op0 = &operands[0];
+                self.src.js(&format!(
+                    "
+                    let variant{tmp};
+                    switch ({op0}) {{
+                        case 0: {{
+                            {ok}
+                            variant{tmp} = {{ tag: \"ok\", val: {ok_result} }};
+                            break;
+                        }}
+                        case 1: {{
+                            {err}
+                            variant{tmp} = {{ tag: \"err\", val: {err_result} }};
+                            break;
+                        }}
+                        default: {{
+                            throw new RangeError(\"invalid variant discriminant for expected\");
+                        }}
+                    }}
+                    ",
+                ));
+                results.push(format!("variant{tmp}"));
             }
 
             Instruction::EnumLower { name, .. } => {

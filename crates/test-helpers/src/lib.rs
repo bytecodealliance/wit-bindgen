@@ -182,27 +182,19 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
             TypeDefKind::Flags(_) => panic!("unknown flags"),
             TypeDefKind::Enum(_) => panic!("unknown enum"),
             TypeDefKind::Record(_) => panic!("unknown record"),
+            TypeDefKind::Variant(_) => panic!("unknown variant"),
             TypeDefKind::Tuple(t) => {
                 let fields = t.types.iter().map(|ty| quote_ty(param, iface, ty));
                 quote::quote! { (#(#fields,)*) }
             }
-            TypeDefKind::Variant(v) => {
-                if let Some(ty) = v.as_option() {
-                    let ty = quote_ty(param, iface, ty);
-                    quote::quote! { Option<#ty> }
-                } else if let Some((ok, err)) = v.as_expected() {
-                    let ok = match ok {
-                        Some(ok) => quote_ty(param, iface, ok),
-                        None => quote::quote! { () },
-                    };
-                    let err = match err {
-                        Some(err) => quote_ty(param, iface, err),
-                        None => quote::quote! { () },
-                    };
-                    quote::quote! { Result<#ok, #err> }
-                } else {
-                    panic!("unknown variant");
-                }
+            TypeDefKind::Option(ty) => {
+                let ty = quote_ty(param, iface, ty);
+                quote::quote! { Option<#ty> }
+            }
+            TypeDefKind::Expected(e) => {
+                let ok = quote_ty(param, iface, &e.ok);
+                let err = quote_ty(param, iface, &e.err);
+                quote::quote! { Result<#ok, #err> }
             }
         }
     }

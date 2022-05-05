@@ -105,17 +105,9 @@
     },
     {
       "idx": 3,
-      "variant": {
-        "cases": [
-          [
-            "ok",
-            "type-1"
-          ],
-          [
-            "err",
-            "type-2"
-          ]
-        ]
+      "expected": {
+        "ok": "type-1",
+        "err": "type-2"
       }
     }
   ],

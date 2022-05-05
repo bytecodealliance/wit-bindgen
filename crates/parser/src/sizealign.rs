@@ -1,4 +1,4 @@
-use crate::{FlagsRepr, Int, Interface, Type, TypeDef, TypeDefKind, Variant};
+use crate::{FlagsRepr, Int, Interface, Type, TypeDef, TypeDefKind};
 
 #[derive(Default)]
 pub struct SizeAlign {
@@ -40,6 +40,15 @@ impl SizeAlign {
                 (size, align)
             }
             TypeDefKind::Enum(e) => int_size_align(e.tag()),
+            TypeDefKind::Option(t) => {
+                let align = self.align(t);
+                (align_to(1, align) + self.size(t), align)
+            }
+            TypeDefKind::Expected(e) => {
+                let align = self.align(&e.ok).max(self.align(&e.err));
+                let size = self.size(&e.ok).max(self.size(&e.err));
+                (align_to(1, align) + size, align)
+            }
         }
     }
 
@@ -78,14 +87,18 @@ impl SizeAlign {
             .collect()
     }
 
-    pub fn payload_offset(&self, variant: &Variant) -> usize {
+    pub fn payload_offset<'a>(
+        &self,
+        tag: Int,
+        cases: impl IntoIterator<Item = Option<&'a Type>>,
+    ) -> usize {
         let mut max_align = 1;
-        for c in variant.cases.iter() {
-            if let Some(ty) = &c.ty {
+        for c in cases {
+            if let Some(ty) = c {
                 max_align = max_align.max(self.align(ty));
             }
         }
-        let tag_size = int_size_align(variant.tag).0;
+        let tag_size = int_size_align(tag).0;
         align_to(tag_size, max_align)
     }
 

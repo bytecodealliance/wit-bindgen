@@ -77,81 +77,38 @@
     {
       "idx": 14,
       "name": "t14",
-      "variant": {
-        "cases": [
-          [
-            "none",
-            null
-          ],
-          [
-            "some",
-            "u32"
-          ]
-        ]
-      }
+      "option": "u32"
     },
     {
       "idx": 15,
       "name": "t15",
-      "variant": {
-        "cases": [
-          [
-            "ok",
-            "u32"
-          ],
-          [
-            "err",
-            "u32"
-          ]
-        ]
+      "expected": {
+        "ok": "u32",
+        "err": "u32"
       }
     },
     {
       "idx": 16,
       "name": "t16",
-      "variant": {
-        "cases": [
-          [
-            "ok",
-            null
-          ],
-          [
-            "err",
-            "u32"
-          ]
-        ]
+      "expected": {
+        "ok": "unit",
+        "err": "u32"
       }
     },
     {
       "idx": 17,
       "name": "t17",
-      "variant": {
-        "cases": [
-          [
-            "ok",
-            "u32"
-          ],
-          [
-            "err",
-            null
-          ]
-        ]
+      "expected": {
+        "ok": "u32",
+        "err": "unit"
       }
     },
     {
       "idx": 18,
       "name": "t18",
-      "variant": {
-        "cases": [
-          [
-            "ok",
-            null
-          ],
-          [
-            "err",
-            null
-          ]
-        ]
+      "expected": {
+        "ok": "unit",
+        "err": "unit"
       }
     },
     {
@@ -488,18 +445,7 @@
     },
     {
       "idx": 51,
-      "variant": {
-        "cases": [
-          [
-            "none",
-            null
-          ],
-          [
-            "some",
-            "u32"
-          ]
-        ]
-      }
+      "option": "u32"
     },
     {
       "idx": 52,

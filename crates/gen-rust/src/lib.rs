@@ -227,6 +227,8 @@ pub trait RustGenerator {
                 match ty {
                     TypeDefKind::Variant(_)
                     | TypeDefKind::Record(_)
+                    | TypeDefKind::Option(_)
+                    | TypeDefKind::Expected(_)
                     | TypeDefKind::List(_)
                     | TypeDefKind::Flags(_)
                     | TypeDefKind::Enum(_)
@@ -242,31 +244,21 @@ pub trait RustGenerator {
         match &ty.kind {
             TypeDefKind::List(t) => self.print_list(iface, t, mode),
 
-            // Variants can be printed natively if they're `Option` or
-            // `Result`, otherwise they must be named for now.
-            TypeDefKind::Variant(v) => match v.as_expected() {
-                Some((ok, err)) => {
-                    self.push_str("Result<");
-                    match ok {
-                        Some(ty) => self.print_ty(iface, ty, mode),
-                        None => self.push_str("()"),
-                    }
-                    self.push_str(",");
-                    match err {
-                        Some(ty) => self.print_ty(iface, ty, mode),
-                        None => self.push_str("()"),
-                    }
-                    self.push_str(">");
-                }
-                None => match v.as_option() {
-                    Some(ty) => {
-                        self.push_str("Option<");
-                        self.print_ty(iface, ty, mode);
-                        self.push_str(">");
-                    }
-                    None => panic!("unsupported anonymous variant"),
-                },
-            },
+            TypeDefKind::Option(t) => {
+                self.push_str("Option<");
+                self.print_ty(iface, t, mode);
+                self.push_str(">");
+            }
+
+            TypeDefKind::Expected(e) => {
+                self.push_str("Result<");
+                self.print_ty(iface, &e.ok, mode);
+                self.push_str(",");
+                self.print_ty(iface, &e.err, mode);
+                self.push_str(">");
+            }
+
+            TypeDefKind::Variant(_) => panic!("unsupported anonymous variant"),
 
             // Tuple-like records are mapped directly to Rust tuples of
             // types. Note the trailing comma after each member to
@@ -458,29 +450,6 @@ pub trait RustGenerator {
         for (name, mode) in self.modes_of(iface, id) {
             self.rustdoc(docs);
             let lt = self.lifetime_for(&info, mode);
-            if let Some(ty) = variant.as_option() {
-                self.push_str(&format!("pub type {}", name));
-                self.print_generics(&info, lt, true);
-                self.push_str("= Option<");
-                self.print_ty(iface, ty, mode);
-                self.push_str(">;\n");
-                continue;
-            } else if let Some((ok, err)) = variant.as_expected() {
-                self.push_str(&format!("pub type {}", name));
-                self.print_generics(&info, lt, true);
-                self.push_str("= Result<");
-                match ok {
-                    Some(ty) => self.print_ty(iface, ty, mode),
-                    None => self.push_str("()"),
-                }
-                self.push_str(",");
-                match err {
-                    Some(ty) => self.print_ty(iface, ty, mode),
-                    None => self.push_str("()"),
-                }
-                self.push_str(">;\n");
-                continue;
-            }
             if !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
             } else if !info.has_handle {
@@ -531,6 +500,42 @@ pub trait RustGenerator {
             self.push_str("}\n");
             self.push_str("}\n");
             self.push_str("}\n");
+        }
+    }
+
+    fn print_typedef_option(&mut self, iface: &Interface, id: TypeId, payload: &Type, docs: &Docs) {
+        let info = self.info(id);
+
+        for (name, mode) in self.modes_of(iface, id) {
+            self.rustdoc(docs);
+            let lt = self.lifetime_for(&info, mode);
+            self.push_str(&format!("pub type {}", name));
+            self.print_generics(&info, lt, true);
+            self.push_str("= Option<");
+            self.print_ty(iface, payload, mode);
+            self.push_str(">;\n");
+        }
+    }
+
+    fn print_typedef_expected(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        expected: &Expected,
+        docs: &Docs,
+    ) {
+        let info = self.info(id);
+
+        for (name, mode) in self.modes_of(iface, id) {
+            self.rustdoc(docs);
+            let lt = self.lifetime_for(&info, mode);
+            self.push_str(&format!("pub type {}", name));
+            self.print_generics(&info, lt, true);
+            self.push_str("= Result<");
+            self.print_ty(iface, &expected.ok, mode);
+            self.push_str(",");
+            self.print_ty(iface, &expected.err, mode);
+            self.push_str(">;\n");
         }
     }
 
@@ -841,32 +846,17 @@ pub trait RustFunctionGenerator {
         results: &mut Vec<String>,
         blocks: Vec<String>,
     ) {
-        let has_name = iface.types[id].name.is_some();
         self.let_results(nresults, results);
         self.push_str("match ");
         self.push_str(operand);
         self.push_str("{\n");
         for (case, block) in ty.cases.iter().zip(blocks) {
-            if ty.as_expected().is_some() {
-                self.push_str(&case.name.to_camel_case());
-                self.push_str("(");
-                self.push_str(if case.ty.is_some() { "e" } else { "()" });
-                self.push_str(")");
-            } else if ty.as_option().is_some() {
-                self.push_str(&case.name.to_camel_case());
-                if case.ty.is_some() {
-                    self.push_str("(e)");
-                }
-            } else if has_name {
-                let name = self.typename_lower(iface, id);
-                self.push_str(&name);
-                self.push_str("::");
-                self.push_str(&case_name(&case.name));
-                if case.ty.is_some() {
-                    self.push_str("(e)");
-                }
-            } else {
-                unimplemented!()
+            let name = self.typename_lower(iface, id);
+            self.push_str(&name);
+            self.push_str("::");
+            self.push_str(&case_name(&case.name));
+            if case.ty.is_some() {
+                self.push_str("(e)");
             }
             self.push_str(" => { ");
             self.push_str(&block);
@@ -879,34 +869,17 @@ pub trait RustFunctionGenerator {
         &mut self,
         iface: &Interface,
         id: TypeId,
-        ty: &Variant,
         case: &Case,
         block: &str,
         result: &mut String,
     ) {
-        if ty.as_expected().is_some() {
-            result.push_str(&case.name.to_camel_case());
+        result.push_str(&self.typename_lift(iface, id));
+        result.push_str("::");
+        result.push_str(&case_name(&case.name));
+        if case.ty.is_some() {
             result.push_str("(");
             result.push_str(block);
             result.push_str(")");
-        } else if ty.as_option().is_some() {
-            result.push_str(&case.name.to_camel_case());
-            if case.ty.is_some() {
-                result.push_str("(");
-                result.push_str(block);
-                result.push_str(")");
-            }
-        } else if iface.types[id].name.is_some() {
-            result.push_str(&self.typename_lift(iface, id));
-            result.push_str("::");
-            result.push_str(&case_name(&case.name));
-            if case.ty.is_some() {
-                result.push_str("(");
-                result.push_str(block);
-                result.push_str(")");
-            }
-        } else {
-            unimplemented!()
         }
     }
 }

@@ -38,7 +38,7 @@ async function run() {
 
     listOfVariants(bools, results, enums) {
       assert.deepStrictEqual(bools, [true, false]);
-      assert.deepStrictEqual(results, [{ tag: 'ok' }, { tag: 'err' }]);
+      assert.deepStrictEqual(results, [{ tag: 'ok', val: undefined }, { tag: 'err', val: undefined }]);
       assert.deepStrictEqual(enums, [MyErrno.Success, MyErrno.A]);
       return [
         [false, true],

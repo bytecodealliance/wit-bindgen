@@ -26,5 +26,5 @@ variant-zeros: function(a: zeros) -> zeros
 
 type option-typedef = option<u32>
 type bool-typedef = bool
-type result-typedef = expected<u32, _>
+type result-typedef = expected<u32, unit>
 variant-typedefs: function(a: option-typedef, b: bool-typedef, c: result-typedef)
