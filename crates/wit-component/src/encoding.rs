@@ -147,7 +147,8 @@ impl PartialEq for TypeDefKey<'_> {
                         .all(|(c1, c2)| c1.name == c2.name)
                 }
                 (TypeDefKind::List(t1), TypeDefKind::List(t2))
-                | (TypeDefKind::Type(t1), TypeDefKind::Type(t2)) => TypeKey {
+                | (TypeDefKind::Type(t1), TypeDefKind::Type(t2))
+                | (TypeDefKind::Option(t1), TypeDefKind::Option(t2)) => TypeKey {
                     interface: self.interface,
                     ty: *t1,
                 }
@@ -155,6 +156,21 @@ impl PartialEq for TypeDefKey<'_> {
                     interface: other.interface,
                     ty: *t2,
                 }),
+                (TypeDefKind::Expected(e1), TypeDefKind::Expected(e2)) => {
+                    TypeKey {
+                        interface: self.interface,
+                        ty: e1.ok,
+                    } == TypeKey {
+                        interface: other.interface,
+                        ty: e2.ok,
+                    } && TypeKey {
+                        interface: self.interface,
+                        ty: e1.err,
+                    } == TypeKey {
+                        interface: other.interface,
+                        ty: e2.err,
+                    }
+                }
                 _ => false,
             }
     }

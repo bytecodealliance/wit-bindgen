@@ -1567,7 +1567,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     .drain(self.payloads.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
 
-                let mut variant_results = Vec::new();
+                let mut variant_results = Vec::with_capacity(result_types.len());
                 for ty in result_types.iter() {
                     let name = self.locals.tmp("variant");
                     results.push(name.clone());
@@ -1652,7 +1652,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 let some_payload = self.payloads.pop().unwrap();
                 let _none_payload = self.payloads.pop().unwrap();
 
-                let mut variant_results = Vec::new();
                 for (i, ty) in result_types.iter().enumerate() {
                     let name = self.locals.tmp("option");
                     results.push(name.clone());
@@ -1664,7 +1663,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     some.push_str(&format!("{name} = {some_result};\n"));
                     let none_result = &none_results[i];
                     none.push_str(&format!("{name} = {none_result};\n"));
-                    variant_results.push(name);
                 }
 
                 let op0 = &operands[0];
@@ -1730,7 +1728,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 let err_payload = self.payloads.pop().unwrap();
                 let ok_payload = self.payloads.pop().unwrap();
 
-                let mut variant_results = Vec::new();
                 for (i, ty) in result_types.iter().enumerate() {
                     let name = self.locals.tmp("expected");
                     results.push(name.clone());
@@ -1742,7 +1739,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     ok.push_str(&format!("{name} = {ok_result};\n"));
                     let err_result = &err_results[i];
                     err.push_str(&format!("{name} = {err_result};\n"));
-                    variant_results.push(name);
                 }
 
                 let op0 = &operands[0];

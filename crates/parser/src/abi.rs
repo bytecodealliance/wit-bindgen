@@ -582,27 +582,35 @@ def_instruction! {
             ty: TypeId,
         } : [1] => [1],
 
-        /// TODO
+        /// Specialization of `VariantLower` for specifically `option<T>` types,
+        /// otherwise behaves the same as `VariantLower` (e.g. two blocks for
+        /// the two cases.
         OptionLower {
             payload: &'a Type,
             ty: TypeId,
             results: &'a [WasmType],
         } : [1] => [results.len()],
 
-        /// TODO
+        /// Specialization of `VariantLift` for specifically the `option<T>`
+        /// type. Otherwise behaves the same as the `VariantLift` instruction
+        /// with two blocks for the lift.
         OptionLift {
             payload: &'a Type,
             ty: TypeId,
         } : [1] => [1],
 
-        /// TODO
+        /// Specialization of `VariantLower` for specifically `expected<T, E>`
+        /// types, otherwise behaves the same as `VariantLower` (e.g. two blocks
+        /// for the two cases.
         ExpectedLower {
             expected: &'a Expected,
             ty: TypeId,
             results: &'a [WasmType],
         } : [1] => [results.len()],
 
-        /// TODO
+        /// Specialization of `VariantLift` for specifically the `expected<T,
+        /// E>` type. Otherwise behaves the same as the `VariantLift`
+        /// instruction with two blocks for the lift.
         ExpectedLift {
             expected: &'a Expected,
             ty: TypeId,
@@ -2048,7 +2056,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 // individual block is pretty simple and just reads the payload type
                 // from the corresponding offset if one is available.
                 TypeDefKind::Variant(variant) => {
-                    self.read_variant_arms_to_memory(
+                    self.read_variant_arms_from_memory(
                         offset,
                         addr,
                         variant.tag,
@@ -2062,12 +2070,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Option(t) => {
-                    self.read_variant_arms_to_memory(offset, addr, Int::U8, [None, Some(t)]);
+                    self.read_variant_arms_from_memory(offset, addr, Int::U8, [None, Some(t)]);
                     self.emit(&OptionLift { payload: t, ty: id });
                 }
 
                 TypeDefKind::Expected(e) => {
-                    self.read_variant_arms_to_memory(
+                    self.read_variant_arms_from_memory(
                         offset,
                         addr,
                         Int::U8,
@@ -2088,7 +2096,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         }
     }
 
-    fn read_variant_arms_to_memory<'b>(
+    fn read_variant_arms_from_memory<'b>(
         &mut self,
         offset: i32,
         addr: B::Operand,

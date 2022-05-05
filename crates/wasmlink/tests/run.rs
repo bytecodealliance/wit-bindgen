@@ -28,7 +28,7 @@ fn wasmlink_file_tests() -> Result<()> {
         let entry = entry?;
 
         let path = entry.path();
-        println!("{:?}", path);
+        println!("running test {:?}", path);
 
         match (
             path.file_stem().and_then(OsStr::to_str),
