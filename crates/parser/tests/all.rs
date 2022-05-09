@@ -209,6 +209,9 @@ fn to_json(i: &Interface) -> String {
             err: String,
         },
         List(String),
+        Union {
+            cases: Vec<String>,
+        },
     }
 
     #[derive(Serialize)]
@@ -304,6 +307,9 @@ fn to_json(i: &Interface) -> String {
                 err: translate_type(&e.err),
             },
             TypeDefKind::List(ty) => Type::List(translate_type(ty)),
+            TypeDefKind::Union(u) => Type::Union {
+                cases: u.cases.iter().map(|c| translate_type(&c.ty)).collect(),
+            },
         }
     }
 

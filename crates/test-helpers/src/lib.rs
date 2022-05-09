@@ -183,6 +183,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
             TypeDefKind::Enum(_) => panic!("unknown enum"),
             TypeDefKind::Record(_) => panic!("unknown record"),
             TypeDefKind::Variant(_) => panic!("unknown variant"),
+            TypeDefKind::Union(_) => panic!("unknown union"),
             TypeDefKind::Tuple(t) => {
                 let fields = t.types.iter().map(|ty| quote_ty(param, iface, ty));
                 quote::quote! { (#(#fields,)*) }

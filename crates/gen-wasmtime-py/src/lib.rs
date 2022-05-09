@@ -414,7 +414,8 @@ impl WasmtimePy {
                     TypeDefKind::Record(_)
                     | TypeDefKind::Flags(_)
                     | TypeDefKind::Enum(_)
-                    | TypeDefKind::Variant(_) => {
+                    | TypeDefKind::Variant(_)
+                    | TypeDefKind::Union(_) => {
                         unreachable!()
                     }
                     TypeDefKind::Option(t) => {
@@ -668,6 +669,38 @@ impl Generator for WasmtimePy {
             name.to_camel_case(),
             cases.join(", "),
         ));
+        self.src.push_str("\n");
+    }
+
+    fn type_union(
+        &mut self,
+        iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        union: &Union,
+        docs: &Docs,
+    ) {
+        self.docs(docs);
+        self.pyimport("dataclasses", "dataclass");
+        let mut cases = Vec::new();
+        let name = name.to_camel_case();
+        for (i, case) in union.cases.iter().enumerate() {
+            self.docs(&case.docs);
+            self.src.push_str("@dataclass\n");
+            let name = format!("{name}{i}");
+            self.src.push_str(&format!("class {name}:\n"));
+            self.indent();
+            self.src.push_str("value: ");
+            self.print_ty(iface, &case.ty);
+            self.src.push_str("\n");
+            self.deindent();
+            self.src.push_str("\n");
+            cases.push(name);
+        }
+
+        self.pyimport("typing", "Union");
+        self.src
+            .push_str(&format!("{name} = Union[{}]\n", cases.join(", ")));
         self.src.push_str("\n");
     }
 
@@ -1695,6 +1728,86 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.push_str(&format!(
                     "raise TypeError(\"invalid variant discriminant for {}\")\n",
                     variant_name
+                ));
+                self.src.deindent(2);
+                results.push(result);
+            }
+
+            Instruction::UnionLower {
+                union,
+                results: result_types,
+                name,
+                ..
+            } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - union.cases.len()..)
+                    .collect::<Vec<_>>();
+                let payloads = self
+                    .payloads
+                    .drain(self.payloads.len() - union.cases.len()..)
+                    .collect::<Vec<_>>();
+
+                for _ in 0..result_types.len() {
+                    results.push(self.locals.tmp("variant"));
+                }
+
+                let name = name.to_camel_case();
+                let op0 = &operands[0];
+                for (i, ((_case, (block, block_results)), payload)) in
+                    union.cases.iter().zip(blocks).zip(payloads).enumerate()
+                {
+                    self.src.push_str(if i == 0 { "if " } else { "elif " });
+                    self.src
+                        .push_str(&format!("isinstance({op0}, {name}{i}):\n"));
+                    self.src.indent(2);
+                    self.src.push_str(&format!("{payload} = {op0}.value\n"));
+                    self.src.push_str(&block);
+                    for (i, result) in block_results.iter().enumerate() {
+                        self.src.push_str(&format!("{} = {result}\n", results[i]));
+                    }
+                    self.src.deindent(2);
+                }
+                self.src.push_str("else:\n");
+                self.src.indent(2);
+                self.src.push_str(&format!(
+                    "raise TypeError(\"invalid variant specified for {name}\")\n"
+                ));
+                self.src.deindent(2);
+            }
+
+            Instruction::UnionLift {
+                union, name, ty, ..
+            } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - union.cases.len()..)
+                    .collect::<Vec<_>>();
+
+                let result = self.locals.tmp("variant");
+                self.src.push_str(&format!(
+                    "{result}: {}\n",
+                    self.gen.type_string(iface, &Type::Id(*ty)),
+                ));
+                let name = name.to_camel_case();
+                let op0 = &operands[0];
+                for (i, (_case, (block, block_results))) in
+                    union.cases.iter().zip(blocks).enumerate()
+                {
+                    self.src.push_str(if i == 0 { "if " } else { "elif " });
+                    self.src.push_str(&format!("{op0} == {i}:\n"));
+                    self.src.indent(2);
+                    self.src.push_str(&block);
+                    assert!(block_results.len() == 1);
+                    let block_result = &block_results[0];
+                    self.src
+                        .push_str(&format!("{result} = {name}{i}({block_result})\n"));
+                    self.src.deindent(2);
+                }
+                self.src.push_str("else:\n");
+                self.src.indent(2);
+                self.src.push_str(&format!(
+                    "raise TypeError(\"invalid variant discriminant for {name}\")\n",
                 ));
                 self.src.deindent(2);
                 results.push(result);

@@ -236,6 +236,17 @@ impl Generator for RustWasm {
         self.print_typedef_variant(iface, id, variant, docs);
     }
 
+    fn type_union(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        _name: &str,
+        union: &Union,
+        docs: &Docs,
+    ) {
+        self.print_typedef_union(iface, id, union, docs);
+    }
+
     fn type_option(
         &mut self,
         iface: &Interface,
@@ -258,15 +269,8 @@ impl Generator for RustWasm {
         self.print_typedef_expected(iface, id, expected, docs);
     }
 
-    fn type_enum(
-        &mut self,
-        _iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        enum_: &Enum,
-        docs: &Docs,
-    ) {
-        self.print_typedef_enum(name, enum_, docs);
+    fn type_enum(&mut self, _iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
+        self.print_typedef_enum(id, name, enum_, docs);
     }
 
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
@@ -1007,15 +1011,19 @@ impl Bindgen for FunctionBindgen<'_> {
                     .blocks
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
-                self.variant_lower(
-                    iface,
-                    *ty,
-                    variant,
-                    result_types.len(),
-                    &operands[0],
-                    results,
-                    blocks,
-                );
+                self.let_results(result_types.len(), results);
+                let op0 = &operands[0];
+                self.push_str(&format!("match {op0} {{\n"));
+                let name = self.typename_lower(iface, *ty);
+                for (case, block) in variant.cases.iter().zip(blocks) {
+                    let case_name = case.name.to_camel_case();
+                    self.push_str(&format!("{name}::{case_name}"));
+                    if case.ty.is_some() {
+                        self.push_str("(e)");
+                    }
+                    self.push_str(&format!(" => {block},\n"));
+                }
+                self.push_str("};\n");
             }
 
             // In unchecked mode when this type is a named enum then we know we
@@ -1039,21 +1047,68 @@ impl Bindgen for FunctionBindgen<'_> {
                     .blocks
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
-                let mut result = format!("match ");
-                result.push_str(&operands[0]);
-                result.push_str(" {\n");
+                let op0 = &operands[0];
+                let mut result = format!("match {op0} {{\n");
+                let name = self.typename_lift(iface, *ty);
                 for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
-                    if i == variant.cases.len() - 1 && unchecked {
-                        result.push_str("_");
+                    let pat = if i == variant.cases.len() - 1 && unchecked {
+                        String::from("_")
                     } else {
-                        result.push_str(&i.to_string());
-                    }
-                    result.push_str(" => ");
-                    self.variant_lift_case(iface, *ty, case, &block, &mut result);
-                    result.push_str(",\n");
+                        i.to_string()
+                    };
+                    let block = if case.ty.is_some() {
+                        format!("({block})")
+                    } else {
+                        String::new()
+                    };
+                    let case = case.name.to_camel_case();
+                    result.push_str(&format!("{pat} => {name}::{case}{block},\n"));
                 }
                 if !unchecked {
                     result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
+                }
+                result.push_str("}");
+                results.push(result);
+            }
+
+            Instruction::UnionLower {
+                union,
+                results: result_types,
+                ty,
+                ..
+            } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - union.cases.len()..)
+                    .collect::<Vec<_>>();
+                self.let_results(result_types.len(), results);
+                let op0 = &operands[0];
+                self.push_str(&format!("match {op0} {{\n"));
+                let name = self.typename_lower(iface, *ty);
+                for (i, block) in blocks.iter().enumerate() {
+                    self.push_str(&format!("{name}::V{i}(e) => {block},\n"));
+                }
+                self.push_str("};\n");
+            }
+
+            Instruction::UnionLift { union, ty, .. } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - union.cases.len()..)
+                    .collect::<Vec<_>>();
+                let op0 = &operands[0];
+                let mut result = format!("match {op0} {{\n");
+                for (i, block) in blocks.iter().enumerate() {
+                    let pat = if i == union.cases.len() - 1 && unchecked {
+                        String::from("_")
+                    } else {
+                        i.to_string()
+                    };
+                    let name = self.typename_lift(iface, *ty);
+                    result.push_str(&format!("{pat} => {name}::V{i}({block}),\n"));
+                }
+                if !unchecked {
+                    result.push_str("_ => panic!(\"invalid union discriminant\"),\n");
                 }
                 result.push_str("}");
                 results.push(result);
@@ -1132,7 +1187,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let mut result = format!("match {} {{\n", operands[0]);
                 let name = name.to_camel_case();
                 for (i, case) in enum_.cases.iter().enumerate() {
-                    let case = wit_bindgen_gen_rust::case_name(&case.name);
+                    let case = case.name.to_camel_case();
                     result.push_str(&format!("{name}::{case} => {i},\n"));
                 }
                 result.push_str("}");
@@ -1156,13 +1211,10 @@ impl Bindgen for FunctionBindgen<'_> {
                 let mut result = format!("match ");
                 result.push_str(&operands[0]);
                 result.push_str(" {\n");
+                let name = name.to_camel_case();
                 for (i, case) in enum_.cases.iter().enumerate() {
-                    result.push_str(&i.to_string());
-                    result.push_str(" => ");
-                    result.push_str(&name.to_camel_case());
-                    result.push_str("::");
-                    result.push_str(&wit_bindgen_gen_rust::case_name(&case.name));
-                    result.push_str(",\n");
+                    let case = case.name.to_camel_case();
+                    result.push_str(&format!("{i} => {name}::{case},\n"));
                 }
                 result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
                 result.push_str("}");

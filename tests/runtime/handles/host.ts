@@ -26,7 +26,7 @@ async function run() {
     hostState2ResultTuple() { return [{}]; },
     hostState2ResultOption() { return 102; },
     hostState2ResultResult() { return { tag: 'ok', val: {} }; },
-    hostState2ResultVariant() { return { tag: '0', val: {} }; },
+    hostState2ResultVariant() { return { tag: 0, val: {} }; },
     hostState2ResultList() { return [{}, 3]; },
 
     markdown2Create() {
@@ -88,8 +88,8 @@ async function run() {
   wasm.wasmState2ParamOption(null);
   wasm.wasmState2ParamResult({ tag: 'ok', val: d });
   wasm.wasmState2ParamResult({ tag: 'err', val: 2 });
-  wasm.wasmState2ParamVariant({ tag: '0', val: d });
-  wasm.wasmState2ParamVariant({ tag: '1', val: 2 });
+  wasm.wasmState2ParamVariant({ tag: 0, val: d });
+  wasm.wasmState2ParamVariant({ tag: 1, val: 2 });
   wasm.wasmState2ParamList([]);
   wasm.wasmState2ParamList([d]);
   wasm.wasmState2ParamList([d, d]);
@@ -108,7 +108,7 @@ async function run() {
     throw new Error('should be ok');
   result.val.drop();
   const variant = wasm.wasmState2ResultVariant();
-  if (variant.tag === '1')
+  if (variant.tag === 1)
     throw new Error('should be 0');
   variant.val.drop();
   for (let val of wasm.wasmState2ResultList())

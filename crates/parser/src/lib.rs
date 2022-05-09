@@ -52,6 +52,7 @@ pub enum TypeDefKind {
     Enum(Enum),
     Option(Type),
     Expected(Expected),
+    Union(Union),
     List(Type),
     Type(Type),
 }
@@ -164,13 +165,6 @@ impl Variant {
             _ => panic!("too many cases to fit in a repr"),
         }
     }
-
-    pub fn is_union(&self) -> bool {
-        self.cases
-            .iter()
-            .enumerate()
-            .all(|(i, c)| c.name.parse().ok() == Some(i) && c.ty.is_some())
-    }
 }
 
 #[derive(Debug)]
@@ -199,6 +193,28 @@ impl Enum {
 pub struct Expected {
     pub ok: Type,
     pub err: Type,
+}
+
+#[derive(Debug)]
+pub struct Union {
+    pub cases: Vec<UnionCase>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnionCase {
+    pub docs: Docs,
+    pub ty: Type,
+}
+
+impl Union {
+    pub fn tag(&self) -> Int {
+        match self.cases.len() {
+            n if n <= u8::max_value() as usize => Int::U8,
+            n if n <= u16::max_value() as usize => Int::U16,
+            n if n <= u32::max_value() as usize => Int::U32,
+            _ => panic!("too many cases to fit in a repr"),
+        }
+    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -405,6 +421,11 @@ impl Interface {
                 self.topo_visit_ty(&e.ok, list, visited);
                 self.topo_visit_ty(&e.err, list, visited);
             }
+            TypeDefKind::Union(u) => {
+                for t in u.cases.iter() {
+                    self.topo_visit_ty(&t.ty, list, visited);
+                }
+            }
         }
         list.push(id);
     }
@@ -436,7 +457,8 @@ impl Interface {
                 | TypeDefKind::Variant(_)
                 | TypeDefKind::Enum(_)
                 | TypeDefKind::Option(_)
-                | TypeDefKind::Expected(_) => false,
+                | TypeDefKind::Expected(_)
+                | TypeDefKind::Union(_) => false,
                 TypeDefKind::Type(t) => self.all_bits_valid(t),
                 TypeDefKind::Record(r) => r.fields.iter().all(|f| self.all_bits_valid(&f.ty)),
                 TypeDefKind::Tuple(t) => t.types.iter().all(|t| self.all_bits_valid(t)),
