@@ -568,7 +568,7 @@ def_instruction! {
             ty: TypeId,
         } : [1] => [1],
 
-        /// TODO
+        /// Same as `VariantLower`, except used for unions.
         UnionLower {
             union: &'a Union,
             name: &'a str,
@@ -576,7 +576,7 @@ def_instruction! {
             results: &'a [WasmType],
         } : [1] => [results.len()],
 
-        /// TODO
+        /// Same as `VariantLift`, except used for unions.
         UnionLift {
             union: &'a Union,
             name: &'a str,
