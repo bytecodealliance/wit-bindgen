@@ -120,7 +120,6 @@ struct Flag<'a> {
 }
 
 struct Variant<'a> {
-    tag: Option<Box<Type<'a>>>,
     span: Span,
     cases: Vec<Case<'a>>,
 }
@@ -309,7 +308,6 @@ impl<'a> TypeDef<'a> {
         tokens.expect(Token::Variant)?;
         let name = parse_id(tokens)?;
         let ty = Type::Variant(Variant {
-            tag: None,
             span: name.span,
             cases: parse_list(
                 tokens,

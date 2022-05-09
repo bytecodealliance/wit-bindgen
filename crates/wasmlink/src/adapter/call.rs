@@ -488,8 +488,8 @@ impl<'a> CallAdapter<'a> {
                 TypeDefKind::Variant(v) => Self::push_variant_operands(
                     interface,
                     sizes,
-                    v.tag,
-                    v.cases.iter().map(|c| c.ty.as_ref()),
+                    v.tag(),
+                    v.cases.iter().map(|c| &c.ty),
                     params,
                     mode,
                     locals_count,
@@ -499,7 +499,7 @@ impl<'a> CallAdapter<'a> {
                     interface,
                     sizes,
                     u.tag(),
-                    u.cases.iter().map(|c| Some(&c.ty)),
+                    u.cases.iter().map(|c| &c.ty),
                     params,
                     mode,
                     locals_count,
@@ -509,7 +509,7 @@ impl<'a> CallAdapter<'a> {
                     interface,
                     sizes,
                     Int::U8,
-                    [None, Some(t)],
+                    [&Type::Unit, t],
                     params,
                     mode,
                     locals_count,
@@ -519,7 +519,7 @@ impl<'a> CallAdapter<'a> {
                     interface,
                     sizes,
                     Int::U8,
-                    [Some(&e.ok), Some(&e.err)],
+                    [&e.ok, &e.err],
                     params,
                     mode,
                     locals_count,
@@ -570,7 +570,7 @@ impl<'a> CallAdapter<'a> {
         interface: &'a WitInterface,
         sizes: &SizeAlign,
         tag: Int,
-        all_cases: impl IntoIterator<Item = Option<&'b Type>>,
+        all_cases: impl IntoIterator<Item = &'b Type>,
         params: &mut T,
         mode: PushMode,
         locals_count: &mut u32,
@@ -581,27 +581,25 @@ impl<'a> CallAdapter<'a> {
         let discriminant = params.next().unwrap();
         let mut count = 0;
         let mut cases = Vec::new();
-        for (i, c) in all_cases.into_iter().enumerate() {
-            if let Some(ty) = c {
-                let mut iter = params.clone();
-                let mut operands = Vec::new();
+        for (i, ty) in all_cases.into_iter().enumerate() {
+            let mut iter = params.clone();
+            let mut operands = Vec::new();
 
-                Self::push_operands(
-                    interface,
-                    sizes,
-                    ty,
-                    &mut iter,
-                    mode,
-                    locals_count,
-                    &mut operands,
-                );
+            Self::push_operands(
+                interface,
+                sizes,
+                ty,
+                &mut iter,
+                mode,
+                locals_count,
+                &mut operands,
+            );
 
-                if !operands.is_empty() {
-                    cases.push((i as u32, operands));
-                }
-
-                count = std::cmp::max(count, params.len() - iter.len());
+            if !operands.is_empty() {
+                cases.push((i as u32, operands));
             }
+
+            count = std::cmp::max(count, params.len() - iter.len());
         }
 
         if !cases.is_empty() {
@@ -708,8 +706,8 @@ impl<'a> CallAdapter<'a> {
                     interface,
                     sizes,
                     offset,
-                    v.tag,
-                    v.cases.iter().map(|c| c.ty.as_ref()),
+                    v.tag(),
+                    v.cases.iter().map(|c| &c.ty),
                     mode,
                     locals_count,
                     operands,
@@ -719,7 +717,7 @@ impl<'a> CallAdapter<'a> {
                     sizes,
                     offset,
                     u.tag(),
-                    u.cases.iter().map(|c| Some(&c.ty)),
+                    u.cases.iter().map(|c| &c.ty),
                     mode,
                     locals_count,
                     operands,
@@ -729,7 +727,7 @@ impl<'a> CallAdapter<'a> {
                     sizes,
                     offset,
                     Int::U8,
-                    [None, Some(t)],
+                    [&Type::Unit, t],
                     mode,
                     locals_count,
                     operands,
@@ -739,7 +737,7 @@ impl<'a> CallAdapter<'a> {
                     sizes,
                     offset,
                     Int::U8,
-                    [Some(&e.ok), Some(&e.err)],
+                    [&e.ok, &e.err],
                     mode,
                     locals_count,
                     operands,
@@ -778,7 +776,7 @@ impl<'a> CallAdapter<'a> {
         sizes: &SizeAlign,
         offset: u32,
         tag: Int,
-        all_cases: impl IntoIterator<Item = Option<&'b Type>> + Clone,
+        all_cases: impl IntoIterator<Item = &'b Type> + Clone,
         mode: PushMode,
         locals_count: &mut u32,
         operands: &mut Vec<Operand<'a>>,
@@ -786,21 +784,19 @@ impl<'a> CallAdapter<'a> {
         let payload_offset = sizes.payload_offset(tag, all_cases.clone()) as u32;
 
         let mut cases = Vec::new();
-        for (i, c) in all_cases.into_iter().enumerate() {
-            if let Some(ty) = c {
-                let mut operands = Vec::new();
-                Self::push_element_operands(
-                    interface,
-                    sizes,
-                    ty,
-                    offset + payload_offset,
-                    mode,
-                    locals_count,
-                    &mut operands,
-                );
-                if !operands.is_empty() {
-                    cases.push((i as u32, operands));
-                }
+        for (i, ty) in all_cases.into_iter().enumerate() {
+            let mut operands = Vec::new();
+            Self::push_element_operands(
+                interface,
+                sizes,
+                ty,
+                offset + payload_offset,
+                mode,
+                locals_count,
+                &mut operands,
+            );
+            if !operands.is_empty() {
+                cases.push((i as u32, operands));
             }
         }
 

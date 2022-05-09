@@ -143,25 +143,21 @@ pub struct Tuple {
 #[derive(Debug)]
 pub struct Variant {
     pub cases: Vec<Case>,
-    /// The bit representation of the width of this variant's tag when the
-    /// variant is stored in memory.
-    pub tag: Int,
 }
 
 #[derive(Debug)]
 pub struct Case {
     pub docs: Docs,
     pub name: String,
-    pub ty: Option<Type>,
+    pub ty: Type,
 }
 
 impl Variant {
-    pub fn infer_tag(cases: usize) -> Int {
-        match cases {
+    pub fn tag(&self) -> Int {
+        match self.cases.len() {
             n if n <= u8::max_value() as usize => Int::U8,
             n if n <= u16::max_value() as usize => Int::U16,
             n if n <= u32::max_value() as usize => Int::U32,
-            n if n <= u64::max_value() as usize => Int::U64,
             _ => panic!("too many cases to fit in a repr"),
         }
     }
@@ -411,9 +407,7 @@ impl Interface {
             }
             TypeDefKind::Variant(v) => {
                 for v in v.cases.iter() {
-                    if let Some(ty) = &v.ty {
-                        self.topo_visit_ty(ty, list, visited);
-                    }
+                    self.topo_visit_ty(&v.ty, list, visited);
                 }
             }
             TypeDefKind::Option(ty) => self.topo_visit_ty(ty, list, visited),

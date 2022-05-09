@@ -1634,10 +1634,11 @@ impl Bindgen for FunctionBindgen<'_> {
                 for (case, block) in variant.cases.iter().zip(blocks) {
                     let case_name = case.name.to_camel_case();
                     self.push_str(&format!("{name}::{case_name}"));
-                    if case.ty.is_some() {
-                        self.push_str("(e)");
+                    if case.ty == Type::Unit {
+                        self.push_str(&format!(" => {{\nlet e = ();\n{block}\n}}\n"));
+                    } else {
+                        self.push_str(&format!("(e) => {block},\n"));
                     }
-                    self.push_str(&format!(" => {block},\n"));
                 }
                 self.push_str("};\n");
             }
@@ -1651,7 +1652,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let mut result = format!("match {op0} {{\n");
                 let name = self.typename_lift(iface, *ty);
                 for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
-                    let block = if case.ty.is_some() {
+                    let block = if case.ty != Type::Unit {
                         format!("({block})")
                     } else {
                         String::new()
@@ -1711,8 +1712,8 @@ impl Bindgen for FunctionBindgen<'_> {
                 let operand = &operands[0];
                 self.push_str(&format!(
                     "match {operand} {{
-                        Some(e) => {{ {some} }},
-                        None => {{ {none} }},
+                        Some(e) => {some},
+                        None => {{\nlet e = ();\n{none}\n}},
                     }};"
                 ));
             }

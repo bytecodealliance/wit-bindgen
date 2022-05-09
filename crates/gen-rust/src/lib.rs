@@ -457,7 +457,7 @@ pub trait RustGenerator {
             variant
                 .cases
                 .iter()
-                .map(|c| (c.name.to_camel_case(), &c.docs, c.ty.as_ref())),
+                .map(|c| (c.name.to_camel_case(), &c.docs, &c.ty)),
             docs,
         );
     }
@@ -473,7 +473,7 @@ pub trait RustGenerator {
                 .cases
                 .iter()
                 .enumerate()
-                .map(|(i, c)| (format!("V{i}"), &c.docs, Some(&c.ty))),
+                .map(|(i, c)| (format!("V{i}"), &c.docs, &c.ty)),
             docs,
         );
     }
@@ -482,7 +482,7 @@ pub trait RustGenerator {
         &mut self,
         iface: &Interface,
         id: TypeId,
-        cases: impl IntoIterator<Item = (String, &'a Docs, Option<&'a Type>)> + Clone,
+        cases: impl IntoIterator<Item = (String, &'a Docs, &'a Type)> + Clone,
         docs: &Docs,
     ) where
         Self: Sized,
@@ -504,9 +504,9 @@ pub trait RustGenerator {
             for (case_name, docs, payload) in cases.clone() {
                 self.rustdoc(docs);
                 self.push_str(&case_name);
-                if let Some(ty) = payload {
+                if *payload != Type::Unit {
                     self.push_str("(");
-                    self.print_ty(iface, ty, mode);
+                    self.print_ty(iface, payload, mode);
                     self.push_str(")")
                 }
                 self.push_str(",\n");
@@ -530,7 +530,7 @@ pub trait RustGenerator {
         id: TypeId,
         mode: TypeMode,
         name: &str,
-        cases: impl IntoIterator<Item = (String, Option<&'a Type>)>,
+        cases: impl IntoIterator<Item = (String, &'a Type)>,
     ) where
         Self: Sized,
     {
@@ -548,12 +548,12 @@ pub trait RustGenerator {
             self.push_str(name);
             self.push_str("::");
             self.push_str(&case_name);
-            if payload.is_some() {
+            if *payload != Type::Unit {
                 self.push_str("(e)");
             }
             self.push_str(" => {\n");
             self.push_str(&format!("f.debug_tuple(\"{}::{}\")", name, case_name));
-            if payload.is_some() {
+            if *payload != Type::Unit {
                 self.push_str(".field(e)");
             }
             self.push_str(".finish()\n");
@@ -689,7 +689,10 @@ pub trait RustGenerator {
                 id,
                 TypeMode::Owned,
                 &name,
-                enum_.cases.iter().map(|c| (c.name.to_camel_case(), None)),
+                enum_
+                    .cases
+                    .iter()
+                    .map(|c| (c.name.to_camel_case(), &Type::Unit)),
             )
         }
     }
