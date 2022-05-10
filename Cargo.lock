@@ -1660,7 +1660,7 @@ dependencies = [
 [[package]]
 name = "wasm-encoder"
 version = "0.11.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools#f8200cf02a1e69dee33335bbd1dada84d31eb783"
+source = "git+https://github.com/bytecodealliance/wasm-tools#5f7171c417222c50ea2b12428c24844948876667"
 dependencies = [
  "leb128",
 ]
@@ -1715,7 +1715,7 @@ checksum = "718ed7c55c2add6548cca3ddd6383d738cd73b892df400e96b9aa876f0141d7a"
 [[package]]
 name = "wasmparser"
 version = "0.84.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools#f8200cf02a1e69dee33335bbd1dada84d31eb783"
+source = "git+https://github.com/bytecodealliance/wasm-tools#5f7171c417222c50ea2b12428c24844948876667"
 dependencies = [
  "indexmap",
 ]
@@ -1733,7 +1733,7 @@ dependencies = [
 [[package]]
 name = "wasmprinter"
 version = "0.2.34"
-source = "git+https://github.com/bytecodealliance/wasm-tools#f8200cf02a1e69dee33335bbd1dada84d31eb783"
+source = "git+https://github.com/bytecodealliance/wasm-tools#5f7171c417222c50ea2b12428c24844948876667"
 dependencies = [
  "anyhow",
  "wasmparser 0.84.0",
@@ -1968,7 +1968,7 @@ dependencies = [
 [[package]]
 name = "wast"
 version = "40.0.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools#f8200cf02a1e69dee33335bbd1dada84d31eb783"
+source = "git+https://github.com/bytecodealliance/wasm-tools#5f7171c417222c50ea2b12428c24844948876667"
 dependencies = [
  "leb128",
  "memchr",
@@ -1987,7 +1987,7 @@ dependencies = [
 [[package]]
 name = "wat"
 version = "1.0.42"
-source = "git+https://github.com/bytecodealliance/wasm-tools#f8200cf02a1e69dee33335bbd1dada84d31eb783"
+source = "git+https://github.com/bytecodealliance/wasm-tools#5f7171c417222c50ea2b12428c24844948876667"
 dependencies = [
  "wast 40.0.0",
 ]
