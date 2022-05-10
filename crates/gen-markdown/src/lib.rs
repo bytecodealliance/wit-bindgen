@@ -262,10 +262,8 @@ impl Generator for Markdown {
                 format!("{}::{}", name, case.name),
                 format!("#{}.{}", name.to_snake_case(), case.name.to_snake_case()),
             );
-            if let Some(ty) = &case.ty {
-                self.src.push_str(": ");
-                self.print_ty(iface, ty, false);
-            }
+            self.src.push_str(": ");
+            self.print_ty(iface, &case.ty, false);
             self.src.indent(1);
             self.src.push_str("\n\n");
             self.docs(&case.docs);

@@ -650,14 +650,9 @@ impl Generator for WasmtimePy {
             let name = format!("{}{}", name.to_camel_case(), case.name.to_camel_case());
             self.src.push_str(&format!("class {}:\n", name));
             self.indent();
-            match &case.ty {
-                Some(ty) => {
-                    self.src.push_str("value: ");
-                    self.print_ty(iface, ty);
-                    self.src.push_str("\n");
-                }
-                None => self.src.push_str("pass\n"),
-            }
+            self.src.push_str("value: ");
+            self.print_ty(iface, &case.ty);
+            self.src.push_str("\n");
             self.deindent();
             self.src.push_str("\n");
             cases.push(name);
@@ -1658,12 +1653,8 @@ impl Bindgen for FunctionBindgen<'_> {
                         case.name.to_camel_case()
                     ));
                     self.src.indent(2);
-
-                    if case.ty.is_some() {
-                        self.src
-                            .push_str(&format!("{} = {}.value\n", payload, operands[0]));
-                    }
-
+                    self.src
+                        .push_str(&format!("{} = {}.value\n", payload, operands[0]));
                     self.src.push_str(&block);
 
                     for (i, result) in block_results.iter().enumerate() {
@@ -1713,12 +1704,8 @@ impl Bindgen for FunctionBindgen<'_> {
                         name.to_camel_case(),
                         case.name.to_camel_case()
                     ));
-                    if case.ty.is_some() {
-                        assert!(block_results.len() == 1);
-                        self.src.push_str(&block_results[0]);
-                    } else {
-                        assert!(block_results.is_empty());
-                    }
+                    assert!(block_results.len() == 1);
+                    self.src.push_str(&block_results[0]);
                     self.src.push_str(")\n");
                     self.src.deindent(2);
                 }
@@ -1848,9 +1835,10 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::OptionLift { ty, .. } => {
                 let (some, some_results) = self.blocks.pop().unwrap();
                 let (none, none_results) = self.blocks.pop().unwrap();
-                assert!(none_results.is_empty());
+                assert!(none_results.len() == 1);
                 assert!(some_results.len() == 1);
                 let some_result = &some_results[0];
+                assert_eq!(none_results[0], "None");
 
                 let result = self.locals.tmp("option");
                 self.src.push_str(&format!(

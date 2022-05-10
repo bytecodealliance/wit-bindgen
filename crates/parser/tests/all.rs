@@ -188,30 +188,15 @@ fn to_json(i: &Interface) -> String {
     #[serde(rename_all = "kebab-case")]
     enum Type {
         Primitive(String),
-        Record {
-            fields: Vec<(String, String)>,
-        },
-        Flags {
-            flags: Vec<String>,
-        },
-        Enum {
-            cases: Vec<String>,
-        },
-        Variant {
-            cases: Vec<(String, Option<String>)>,
-        },
-        Tuple {
-            types: Vec<String>,
-        },
+        Record { fields: Vec<(String, String)> },
+        Flags { flags: Vec<String> },
+        Enum { cases: Vec<String> },
+        Variant { cases: Vec<(String, String)> },
+        Tuple { types: Vec<String> },
         Option(String),
-        Expected {
-            ok: String,
-            err: String,
-        },
+        Expected { ok: String, err: String },
         List(String),
-        Union {
-            cases: Vec<String>,
-        },
+        Union { cases: Vec<String> },
     }
 
     #[derive(Serialize)]
@@ -298,7 +283,7 @@ fn to_json(i: &Interface) -> String {
                 cases: v
                     .cases
                     .iter()
-                    .map(|f| (f.name.clone(), f.ty.as_ref().map(translate_type)))
+                    .map(|f| (f.name.clone(), translate_type(&f.ty)))
                     .collect(),
             },
             TypeDefKind::Option(t) => Type::Option(translate_type(t)),

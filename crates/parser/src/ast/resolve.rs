@@ -19,7 +19,7 @@ pub struct Resolver {
 
 #[derive(PartialEq, Eq, Hash)]
 enum Key {
-    Variant(Vec<(String, Option<Type>)>),
+    Variant(Vec<(String, Type)>),
     Record(Vec<(String, Type)>),
     Flags(Vec<String>),
     Tuple(Vec<Type>),
@@ -224,10 +224,9 @@ impl Resolver {
                         .map(|case| Case {
                             docs: case.docs.clone(),
                             name: case.name.clone(),
-                            ty: case.ty.map(|t| self.copy_type(dep_name, dep, t)),
+                            ty: self.copy_type(dep_name, dep, case.ty),
                         })
                         .collect(),
-                    tag: v.tag,
                 }),
                 TypeDefKind::Enum(e) => TypeDefKind::Enum(Enum {
                     cases: e.cases.clone(),
@@ -431,19 +430,13 @@ impl Resolver {
                             docs: self.docs(&case.docs),
                             name: case.name.name.to_string(),
                             ty: match &case.ty {
-                                Some(ty) => Some(self.resolve_type(ty)?),
-                                None => None,
+                                Some(ty) => self.resolve_type(ty)?,
+                                None => Type::Unit,
                             },
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
-                TypeDefKind::Variant(Variant {
-                    tag: match &variant.tag {
-                        Some(ty) => self.get_variant_tag(ty),
-                        None => Variant::infer_tag(cases.len()),
-                    },
-                    cases,
-                })
+                TypeDefKind::Variant(Variant { cases })
             }
             super::Type::Enum(e) => {
                 if e.cases.is_empty() {
@@ -491,32 +484,6 @@ impl Resolver {
                 TypeDefKind::Union(Union { cases })
             }
         })
-    }
-
-    fn get_variant_tag(&self, tag: &super::Type) -> Int {
-        match tag {
-            super::Type::U8 => Int::U8,
-            super::Type::U16 => Int::U16,
-            super::Type::U32 => Int::U32,
-            super::Type::U64 => Int::U64,
-            super::Type::Name(name) => {
-                let ty = self.type_lookup[&*name.name];
-                self.get_variant_tag_id(ty)
-            }
-            _ => panic!("unknown explicit variant tag"),
-        }
-    }
-
-    fn get_variant_tag_id(&self, ty: TypeId) -> Int {
-        match &self.types[ty].kind {
-            TypeDefKind::Type(Type::U8) => Int::U8,
-            TypeDefKind::Type(Type::U16) => Int::U16,
-            TypeDefKind::Type(Type::U32) => Int::U32,
-            TypeDefKind::Type(Type::U64) => Int::U64,
-            TypeDefKind::Type(Type::Id(id)) => self.get_variant_tag_id(*id),
-            TypeDefKind::Variant(v) => v.tag,
-            _ => panic!("unknown typedef"),
-        }
     }
 
     fn resolve_type(&mut self, ty: &super::Type<'_>) -> Result<Type> {
@@ -700,7 +667,7 @@ impl Resolver {
             }
             TypeDefKind::Variant(v) => {
                 for case in v.cases.iter() {
-                    if let Some(Type::Id(id)) = case.ty {
+                    if let Type::Id(id) = case.ty {
                         self.validate_type_not_recursive(span, id, visiting, valid)?;
                     }
                 }

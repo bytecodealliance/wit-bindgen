@@ -445,9 +445,9 @@ impl Generator for Js {
             self.src.ts("tag: \"");
             self.src.ts(&case.name);
             self.src.ts("\",\n");
-            if let Some(ty) = &case.ty {
+            if case.ty != Type::Unit {
                 self.src.ts("val: ");
-                self.print_ty(iface, ty);
+                self.print_ty(iface, &case.ty);
                 self.src.ts(",\n");
             }
             self.src.ts("}\n");
@@ -1595,7 +1595,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 for (case, (block, block_results)) in variant.cases.iter().zip(blocks) {
                     self.src
                         .js(&format!("case \"{}\": {{\n", case.name.as_str()));
-                    if case.ty.is_some() {
+                    if case.ty != Type::Unit {
                         self.src.js(&format!("const e = variant{}.val;\n", tmp));
                     }
                     self.src.js(&block);
@@ -1633,11 +1633,11 @@ impl Bindgen for FunctionBindgen<'_> {
 
                     self.src.js(&format!("variant{} = {{\n", tmp));
                     self.src.js(&format!("tag: \"{}\",\n", case.name.as_str()));
-                    if case.ty.is_some() {
-                        assert!(block_results.len() == 1);
+                    assert!(block_results.len() == 1);
+                    if case.ty != Type::Unit {
                         self.src.js(&format!("val: {},\n", block_results[0]));
                     } else {
-                        assert!(block_results.is_empty());
+                        assert_eq!(block_results[0], "undefined");
                     }
                     self.src.js("};\n");
                     self.src.js("break;\n}\n");
@@ -1789,9 +1789,10 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::OptionLift { payload, .. } => {
                 let (some, some_results) = self.blocks.pop().unwrap();
                 let (none, none_results) = self.blocks.pop().unwrap();
-                assert!(none_results.is_empty());
+                assert!(none_results.len() == 1);
                 assert!(some_results.len() == 1);
                 let some_result = &some_results[0];
+                assert_eq!(none_results[0], "undefined");
 
                 let tmp = self.tmp();
 

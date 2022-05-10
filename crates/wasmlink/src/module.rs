@@ -51,11 +51,7 @@ fn has_list(interface: &WitInterface, ty: &WitType) -> bool {
             TypeDefKind::Flags(_) => false,
             TypeDefKind::Record(r) => r.fields.iter().any(|f| has_list(interface, &f.ty)),
             TypeDefKind::Tuple(t) => t.types.iter().any(|ty| has_list(interface, ty)),
-            TypeDefKind::Variant(v) => v.cases.iter().any(|c| {
-                c.ty.as_ref()
-                    .map(|t| has_list(interface, t))
-                    .unwrap_or(false)
-            }),
+            TypeDefKind::Variant(v) => v.cases.iter().any(|c| has_list(interface, &c.ty)),
             TypeDefKind::Union(v) => v.cases.iter().any(|c| has_list(interface, &c.ty)),
             TypeDefKind::Option(t) => has_list(interface, t),
             TypeDefKind::Expected(e) => has_list(interface, &e.ok) || has_list(interface, &e.err),

@@ -269,7 +269,7 @@
         "cases": [
           [
             "a",
-            null
+            "unit"
           ]
         ]
       }
@@ -281,11 +281,11 @@
         "cases": [
           [
             "a",
-            null
+            "unit"
           ],
           [
             "b",
-            null
+            "unit"
           ]
         ]
       }
@@ -297,11 +297,11 @@
         "cases": [
           [
             "a",
-            null
+            "unit"
           ],
           [
             "b",
-            null
+            "unit"
           ]
         ]
       }
@@ -313,7 +313,7 @@
         "cases": [
           [
             "a",
-            null
+            "unit"
           ],
           [
             "b",
@@ -329,7 +329,7 @@
         "cases": [
           [
             "a",
-            null
+            "unit"
           ],
           [
             "b",

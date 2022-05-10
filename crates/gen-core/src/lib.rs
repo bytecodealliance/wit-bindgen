@@ -223,9 +223,7 @@ impl Types {
             TypeDefKind::Enum(_) => {}
             TypeDefKind::Variant(v) => {
                 for case in v.cases.iter() {
-                    if let Some(ty) = &case.ty {
-                        info |= self.type_info(iface, ty);
-                    }
+                    info |= self.type_info(iface, &case.ty);
                 }
             }
             TypeDefKind::List(ty) => {
@@ -279,9 +277,7 @@ impl Types {
             TypeDefKind::Enum(_) => {}
             TypeDefKind::Variant(v) => {
                 for case in v.cases.iter() {
-                    if let Some(ty) = &case.ty {
-                        self.set_param_result_ty(iface, ty, param, result)
-                    }
+                    self.set_param_result_ty(iface, &case.ty, param, result)
                 }
             }
             TypeDefKind::List(ty) | TypeDefKind::Type(ty) | TypeDefKind::Option(ty) => {

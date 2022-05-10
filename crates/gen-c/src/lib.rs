@@ -488,16 +488,12 @@ impl C {
             TypeDefKind::Variant(v) => {
                 self.src.c("switch ((int32_t) ptr->tag) {\n");
                 for (i, case) in v.cases.iter().enumerate() {
-                    let case_ty = match &case.ty {
-                        Some(ty) => ty,
-                        None => continue,
-                    };
-                    if !self.owns_anything(iface, case_ty) {
+                    if !self.owns_anything(iface, &case.ty) {
                         continue;
                     }
                     self.src.c(&format!("case {}: {{\n", i));
                     let expr = format!("&ptr->val.{}", case.name.to_snake_case());
-                    self.free(iface, case_ty, &expr);
+                    self.free(iface, &case.ty, &expr);
                     self.src.c("break;\n");
                     self.src.c("}\n");
                 }
@@ -554,11 +550,7 @@ impl C {
             TypeDefKind::Flags(_) => false,
             TypeDefKind::Enum(_) => false,
             TypeDefKind::List(_) => true,
-            TypeDefKind::Variant(v) => v
-                .cases
-                .iter()
-                .filter_map(|c| c.ty.as_ref())
-                .any(|t| self.owns_anything(iface, t)),
+            TypeDefKind::Variant(v) => v.cases.iter().any(|c| self.owns_anything(iface, &c.ty)),
             TypeDefKind::Union(v) => v
                 .cases
                 .iter()
@@ -793,16 +785,17 @@ impl Generator for C {
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
         self.src.h("typedef struct {\n");
-        self.src.h(int_repr(variant.tag));
+        self.src.h(int_repr(variant.tag()));
         self.src.h(" tag;\n");
         self.src.h("union {\n");
         for case in variant.cases.iter() {
-            if let Some(ty) = &case.ty {
-                self.print_ty(iface, ty);
-                self.src.h(" ");
-                self.src.h(&case.name.to_snake_case());
-                self.src.h(";\n");
+            if self.is_empty_type(iface, &case.ty) {
+                continue;
             }
+            self.print_ty(iface, &case.ty);
+            self.src.h(" ");
+            self.src.h(&case.name.to_snake_case());
+            self.src.h(";\n");
         }
         self.src.h("} val;\n");
         self.src.h("} ");
@@ -1637,17 +1630,15 @@ impl Bindgen for FunctionBindgen<'_> {
                     variant.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
                     self.src.push_str(&format!("case {}: {{\n", i));
-                    if let Some(ty) = &case.ty {
-                        if !self.gen.is_empty_type(iface, ty) {
-                            let ty = self.gen.type_string(iface, ty);
-                            self.src.push_str(&format!(
-                                "const {} *{} = &({}).val",
-                                ty, payload, operands[0],
-                            ));
-                            self.src.push_str(".");
-                            self.src.push_str(&case.name.to_snake_case());
-                            self.src.push_str(";\n");
-                        }
+                    if !self.gen.is_empty_type(iface, &case.ty) {
+                        let ty = self.gen.type_string(iface, &case.ty);
+                        self.src.push_str(&format!(
+                            "const {} *{} = &({}).val",
+                            ty, payload, operands[0],
+                        ));
+                        self.src.push_str(".");
+                        self.src.push_str(&case.name.to_snake_case());
+                        self.src.push_str(";\n");
                     }
                     self.src.push_str(&block);
 
@@ -1677,15 +1668,13 @@ impl Bindgen for FunctionBindgen<'_> {
                 {
                     self.src.push_str(&format!("case {}: {{\n", i));
                     self.src.push_str(&block);
+                    assert!(block_results.len() == 1);
 
-                    if case.ty.is_some() {
-                        assert!(block_results.len() == 1);
+                    if !self.gen.is_empty_type(iface, &case.ty) {
                         let mut dst = format!("{}.val", result);
                         dst.push_str(".");
                         dst.push_str(&case.name.to_snake_case());
                         self.store_op(&block_results[0], &dst);
-                    } else {
-                        assert!(block_results.is_empty());
                     }
                     self.src.push_str("break;\n}\n");
                 }
@@ -1810,9 +1799,10 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::OptionLift { payload, ty, .. } => {
                 let (some, some_results) = self.blocks.pop().unwrap();
                 let (none, none_results) = self.blocks.pop().unwrap();
-                assert!(none_results.is_empty());
+                assert!(none_results.len() == 1);
                 assert!(some_results.len() == 1);
                 let some_result = &some_results[0];
+                assert_eq!(none_results[0], "INVALID");
 
                 let ty = self.gen.type_string(iface, &Type::Id(*ty));
                 let result = self.locals.tmp("option");

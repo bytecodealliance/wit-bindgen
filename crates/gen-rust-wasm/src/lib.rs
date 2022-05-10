@@ -1018,10 +1018,11 @@ impl Bindgen for FunctionBindgen<'_> {
                 for (case, block) in variant.cases.iter().zip(blocks) {
                     let case_name = case.name.to_camel_case();
                     self.push_str(&format!("{name}::{case_name}"));
-                    if case.ty.is_some() {
-                        self.push_str("(e)");
+                    if case.ty == Type::Unit {
+                        self.push_str(&format!(" => {{\nlet e = ();\n{block}\n}}\n"));
+                    } else {
+                        self.push_str(&format!("(e) => {block},\n"));
                     }
-                    self.push_str(&format!(" => {block},\n"));
                 }
                 self.push_str("};\n");
             }
@@ -1029,7 +1030,7 @@ impl Bindgen for FunctionBindgen<'_> {
             // In unchecked mode when this type is a named enum then we know we
             // defined the type so we can transmute directly into it.
             Instruction::VariantLift { name, variant, .. }
-                if variant.cases.iter().all(|c| c.ty.is_none()) && unchecked =>
+                if variant.cases.iter().all(|c| c.ty == Type::Unit) && unchecked =>
             {
                 self.blocks.drain(self.blocks.len() - variant.cases.len()..);
                 let mut result = format!("core::mem::transmute::<_, ");
@@ -1037,7 +1038,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 result.push_str(">(");
                 result.push_str(&operands[0]);
                 result.push_str(" as ");
-                result.push_str(int_repr(variant.tag));
+                result.push_str(int_repr(variant.tag()));
                 result.push_str(")");
                 results.push(result);
             }
@@ -1056,7 +1057,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     } else {
                         i.to_string()
                     };
-                    let block = if case.ty.is_some() {
+                    let block = if case.ty != Type::Unit {
                         format!("({block})")
                     } else {
                         String::new()
@@ -1124,8 +1125,8 @@ impl Bindgen for FunctionBindgen<'_> {
                 let operand = &operands[0];
                 self.push_str(&format!(
                     "match {operand} {{
-                        Some(e) => {{ {some} }},
-                        None => {{ {none} }},
+                        Some(e) => {some},
+                        None => {{\nlet e = ();\n{none}\n}},
                     }};"
                 ));
             }

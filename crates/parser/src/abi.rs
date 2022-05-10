@@ -1005,25 +1005,25 @@ impl Interface {
                 }
 
                 TypeDefKind::Variant(v) => {
-                    result.push(v.tag.into());
-                    self.push_wasm_variants(variant, v.cases.iter().map(|c| c.ty.as_ref()), result);
+                    result.push(v.tag().into());
+                    self.push_wasm_variants(variant, v.cases.iter().map(|c| &c.ty), result);
                 }
 
                 TypeDefKind::Enum(e) => result.push(e.tag().into()),
 
                 TypeDefKind::Option(t) => {
                     result.push(WasmType::I32);
-                    self.push_wasm_variants(variant, [None, Some(t)], result);
+                    self.push_wasm_variants(variant, [&Type::Unit, t], result);
                 }
 
                 TypeDefKind::Expected(e) => {
                     result.push(WasmType::I32);
-                    self.push_wasm_variants(variant, [Some(&e.ok), Some(&e.err)], result);
+                    self.push_wasm_variants(variant, [&e.ok, &e.err], result);
                 }
 
                 TypeDefKind::Union(u) => {
                     result.push(WasmType::I32);
-                    self.push_wasm_variants(variant, u.cases.iter().map(|c| Some(&c.ty)), result);
+                    self.push_wasm_variants(variant, u.cases.iter().map(|c| &c.ty), result);
                 }
             },
         }
@@ -1032,7 +1032,7 @@ impl Interface {
     fn push_wasm_variants<'a>(
         &self,
         variant: AbiVariant,
-        tys: impl IntoIterator<Item = Option<&'a Type>>,
+        tys: impl IntoIterator<Item = &'a Type>,
         result: &mut Vec<WasmType>,
     ) {
         let mut temp = Vec::new();
@@ -1044,11 +1044,7 @@ impl Interface {
         // "unification" so we can handle things like `Result<i32,
         // f32>` where that turns into `[i32 i32]` where the second
         // `i32` might be the `f32` bitcasted.
-        for case in tys {
-            let ty = match case {
-                Some(ty) => ty,
-                None => continue,
-            };
+        for ty in tys {
             self.push_wasm(variant, ty, &mut temp);
 
             for (i, ty) in temp.drain(..).enumerate() {
@@ -1546,8 +1542,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Variant(v) => {
-                    let results =
-                        self.lower_variant_arms(ty, v.cases.iter().map(|c| c.ty.as_ref()));
+                    let results = self.lower_variant_arms(ty, v.cases.iter().map(|c| &c.ty));
                     self.emit(&VariantLower {
                         variant: v,
                         ty: id,
@@ -1563,7 +1558,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Option(t) => {
-                    let results = self.lower_variant_arms(ty, [None, Some(t)]);
+                    let results = self.lower_variant_arms(ty, [&Type::Unit, t]);
                     self.emit(&OptionLower {
                         payload: t,
                         ty: id,
@@ -1571,7 +1566,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Expected(e) => {
-                    let results = self.lower_variant_arms(ty, [Some(&e.ok), Some(&e.err)]);
+                    let results = self.lower_variant_arms(ty, [&e.ok, &e.err]);
                     self.emit(&ExpectedLower {
                         expected: e,
                         ty: id,
@@ -1579,8 +1574,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
                 TypeDefKind::Union(union) => {
-                    let results =
-                        self.lower_variant_arms(ty, union.cases.iter().map(|c| Some(&c.ty)));
+                    let results = self.lower_variant_arms(ty, union.cases.iter().map(|c| &c.ty));
                     self.emit(&UnionLower {
                         union,
                         ty: id,
@@ -1595,43 +1589,41 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     fn lower_variant_arms<'b>(
         &mut self,
         ty: &Type,
-        cases: impl IntoIterator<Item = Option<&'b Type>>,
+        cases: impl IntoIterator<Item = &'b Type>,
     ) -> Vec<WasmType> {
         use Instruction::*;
         let mut results = Vec::new();
         let mut temp = Vec::new();
         let mut casts = Vec::new();
         self.iface.push_wasm(self.variant, ty, &mut results);
-        for (i, case) in cases.into_iter().enumerate() {
+        for (i, ty) in cases.into_iter().enumerate() {
             self.push_block();
             self.emit(&VariantPayloadName);
             let payload_name = self.stack.pop().unwrap();
             self.emit(&I32Const { val: i as i32 });
             let mut pushed = 1;
-            if let Some(ty) = case {
-                // Using the payload of this block we lower the type to
-                // raw wasm values.
-                self.stack.push(payload_name.clone());
-                self.lower(ty);
+            // Using the payload of this block we lower the type to
+            // raw wasm values.
+            self.stack.push(payload_name.clone());
+            self.lower(ty);
 
-                // Determine the types of all the wasm values we just
-                // pushed, and record how many. If we pushed too few
-                // then we'll need to push some zeros after this.
-                temp.truncate(0);
-                self.iface.push_wasm(self.variant, ty, &mut temp);
-                pushed += temp.len();
+            // Determine the types of all the wasm values we just
+            // pushed, and record how many. If we pushed too few
+            // then we'll need to push some zeros after this.
+            temp.truncate(0);
+            self.iface.push_wasm(self.variant, ty, &mut temp);
+            pushed += temp.len();
 
-                // For all the types pushed we may need to insert some
-                // bitcasts. This will go through and cast everything
-                // to the right type to ensure all blocks produce the
-                // same set of results.
-                casts.truncate(0);
-                for (actual, expected) in temp.iter().zip(&results[1..]) {
-                    casts.push(cast(*actual, *expected));
-                }
-                if casts.iter().any(|c| *c != Bitcast::None) {
-                    self.emit(&Bitcasts { casts: &casts });
-                }
+            // For all the types pushed we may need to insert some
+            // bitcasts. This will go through and cast everything
+            // to the right type to ensure all blocks produce the
+            // same set of results.
+            casts.truncate(0);
+            for (actual, expected) in temp.iter().zip(&results[1..]) {
+                casts.push(cast(*actual, *expected));
+            }
+            if casts.iter().any(|c| *c != Bitcast::None) {
+                self.emit(&Bitcasts { casts: &casts });
             }
 
             // If we haven't pushed enough items in this block to match
@@ -1760,7 +1752,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Variant(v) => {
-                    self.lift_variant_arms(ty, v.cases.iter().map(|c| c.ty.as_ref()));
+                    self.lift_variant_arms(ty, v.cases.iter().map(|c| &c.ty));
                     self.emit(&VariantLift {
                         variant: v,
                         ty: id,
@@ -1777,12 +1769,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Option(t) => {
-                    self.lift_variant_arms(ty, [None, Some(t)]);
+                    self.lift_variant_arms(ty, [&Type::Unit, t]);
                     self.emit(&OptionLift { payload: t, ty: id });
                 }
 
                 TypeDefKind::Expected(e) => {
-                    self.lift_variant_arms(ty, [Some(&e.ok), Some(&e.err)]);
+                    self.lift_variant_arms(ty, [&e.ok, &e.err]);
                     self.emit(&ExpectedLift {
                         expected: e,
                         ty: id,
@@ -1790,7 +1782,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Union(union) => {
-                    self.lift_variant_arms(ty, union.cases.iter().map(|c| Some(&c.ty)));
+                    self.lift_variant_arms(ty, union.cases.iter().map(|c| &c.ty));
                     self.emit(&UnionLift {
                         union,
                         ty: id,
@@ -1801,11 +1793,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         }
     }
 
-    fn lift_variant_arms<'b>(
-        &mut self,
-        ty: &Type,
-        cases: impl IntoIterator<Item = Option<&'b Type>>,
-    ) {
+    fn lift_variant_arms<'b>(&mut self, ty: &Type, cases: impl IntoIterator<Item = &'b Type>) {
         let mut params = Vec::new();
         let mut temp = Vec::new();
         let mut casts = Vec::new();
@@ -1814,30 +1802,28 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             .stack
             .drain(self.stack.len() + 1 - params.len()..)
             .collect::<Vec<_>>();
-        for case in cases {
+        for ty in cases {
             self.push_block();
-            if let Some(ty) = case {
-                // Push only the values we need for this variant onto
-                // the stack.
-                temp.truncate(0);
-                self.iface.push_wasm(self.variant, ty, &mut temp);
-                self.stack
-                    .extend(block_inputs[..temp.len()].iter().cloned());
+            // Push only the values we need for this variant onto
+            // the stack.
+            temp.truncate(0);
+            self.iface.push_wasm(self.variant, ty, &mut temp);
+            self.stack
+                .extend(block_inputs[..temp.len()].iter().cloned());
 
-                // Cast all the types we have on the stack to the actual
-                // types needed for this variant, if necessary.
-                casts.truncate(0);
-                for (actual, expected) in temp.iter().zip(&params[1..]) {
-                    casts.push(cast(*expected, *actual));
-                }
-                if casts.iter().any(|c| *c != Bitcast::None) {
-                    self.emit(&Instruction::Bitcasts { casts: &casts });
-                }
-
-                // Then recursively lift this variant's payload.
-                self.lift(ty);
+            // Cast all the types we have on the stack to the actual
+            // types needed for this variant, if necessary.
+            casts.truncate(0);
+            for (actual, expected) in temp.iter().zip(&params[1..]) {
+                casts.push(cast(*expected, *actual));
             }
-            self.finish_block(case.is_some() as usize);
+            if casts.iter().any(|c| *c != Bitcast::None) {
+                self.emit(&Instruction::Bitcasts { casts: &casts });
+            }
+
+            // Then recursively lift this variant's payload.
+            self.lift(ty);
+            self.finish_block(1);
         }
     }
 
@@ -1923,8 +1909,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.write_variant_arms_to_memory(
                         offset,
                         addr,
-                        v.tag,
-                        v.cases.iter().map(|c| c.ty.as_ref()),
+                        v.tag(),
+                        v.cases.iter().map(|c| &c.ty),
                     );
                     self.emit(&VariantLower {
                         variant: v,
@@ -1935,7 +1921,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Option(t) => {
-                    self.write_variant_arms_to_memory(offset, addr, Int::U8, [None, Some(t)]);
+                    self.write_variant_arms_to_memory(offset, addr, Int::U8, [&Type::Unit, t]);
                     self.emit(&OptionLower {
                         payload: t,
                         ty: id,
@@ -1944,12 +1930,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Expected(e) => {
-                    self.write_variant_arms_to_memory(
-                        offset,
-                        addr,
-                        Int::U8,
-                        [Some(&e.ok), Some(&e.err)],
-                    );
+                    self.write_variant_arms_to_memory(offset, addr, Int::U8, [&e.ok, &e.err]);
                     self.emit(&ExpectedLower {
                         expected: e,
                         ty: id,
@@ -1968,7 +1949,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         offset,
                         addr,
                         union.tag(),
-                        union.cases.iter().map(|c| Some(&c.ty)),
+                        union.cases.iter().map(|c| &c.ty),
                     );
                     self.emit(&UnionLower {
                         union,
@@ -1986,21 +1967,19 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         offset: i32,
         addr: B::Operand,
         tag: Int,
-        cases: impl IntoIterator<Item = Option<&'b Type>> + Clone,
+        cases: impl IntoIterator<Item = &'b Type> + Clone,
     ) {
         let payload_offset =
             offset + (self.bindgen.sizes().payload_offset(tag, cases.clone()) as i32);
-        for (i, case) in cases.into_iter().enumerate() {
+        for (i, ty) in cases.into_iter().enumerate() {
             self.push_block();
             self.emit(&Instruction::VariantPayloadName);
             let payload_name = self.stack.pop().unwrap();
             self.emit(&Instruction::I32Const { val: i as i32 });
             self.stack.push(addr.clone());
             self.store_intrepr(offset, tag);
-            if let Some(ty) = case {
-                self.stack.push(payload_name.clone());
-                self.write_to_memory(ty, addr.clone(), payload_offset);
-            }
+            self.stack.push(payload_name.clone());
+            self.write_to_memory(ty, addr.clone(), payload_offset);
             self.finish_block(0);
         }
     }
@@ -2113,8 +2092,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.read_variant_arms_from_memory(
                         offset,
                         addr,
-                        variant.tag,
-                        variant.cases.iter().map(|c| c.ty.as_ref()),
+                        variant.tag(),
+                        variant.cases.iter().map(|c| &c.ty),
                     );
                     self.emit(&VariantLift {
                         variant,
@@ -2124,17 +2103,12 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Option(t) => {
-                    self.read_variant_arms_from_memory(offset, addr, Int::U8, [None, Some(t)]);
+                    self.read_variant_arms_from_memory(offset, addr, Int::U8, [&Type::Unit, t]);
                     self.emit(&OptionLift { payload: t, ty: id });
                 }
 
                 TypeDefKind::Expected(e) => {
-                    self.read_variant_arms_from_memory(
-                        offset,
-                        addr,
-                        Int::U8,
-                        [Some(&e.ok), Some(&e.err)],
-                    );
+                    self.read_variant_arms_from_memory(offset, addr, Int::U8, [&e.ok, &e.err]);
                     self.emit(&ExpectedLift {
                         expected: e,
                         ty: id,
@@ -2152,7 +2126,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         offset,
                         addr,
                         union.tag(),
-                        union.cases.iter().map(|c| Some(&c.ty)),
+                        union.cases.iter().map(|c| &c.ty),
                     );
                     self.emit(&UnionLift {
                         union,
@@ -2169,18 +2143,16 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         offset: i32,
         addr: B::Operand,
         tag: Int,
-        cases: impl IntoIterator<Item = Option<&'b Type>> + Clone,
+        cases: impl IntoIterator<Item = &'b Type> + Clone,
     ) {
         self.stack.push(addr.clone());
         self.load_intrepr(offset, tag);
         let payload_offset =
             offset + (self.bindgen.sizes().payload_offset(tag, cases.clone()) as i32);
-        for case in cases {
+        for ty in cases {
             self.push_block();
-            if let Some(ty) = case {
-                self.read_from_memory(ty, addr.clone(), payload_offset);
-            }
-            self.finish_block(case.is_some() as usize);
+            self.read_from_memory(ty, addr.clone(), payload_offset);
+            self.finish_block(1);
         }
     }
 
