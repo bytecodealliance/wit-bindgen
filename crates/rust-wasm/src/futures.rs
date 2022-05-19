@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::task::*;
 
@@ -110,7 +110,7 @@ impl Wake for PollingWaker {
 }
 
 pub struct Oneshot<T> {
-    inner: Weak<OneshotInner<T>>,
+    inner: Rc<OneshotInner<T>>,
 }
 
 pub struct Sender<T> {
@@ -135,7 +135,7 @@ impl<T> Oneshot<T> {
         });
         (
             Oneshot {
-                inner: Rc::downgrade(&inner),
+                inner: Rc::clone(&inner),
             },
             Sender { inner },
         )
@@ -146,13 +146,7 @@ impl<T> Future for Oneshot<T> {
     type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<T> {
-        let inner = match self.inner.upgrade() {
-            Some(inner) => inner,
-            // Technically this isn't possible in the initial draft of interface
-            // types unless there's some serious bug somewhere.
-            None => panic!("completion callback was canceled"),
-        };
-        let mut state = inner.state.borrow_mut();
+        let mut state = self.inner.state.borrow_mut();
         match mem::replace(&mut *state, OneshotState::Start) {
             OneshotState::Done(t) => Poll::Ready(t),
             OneshotState::Waiting(_) | OneshotState::Start => {
