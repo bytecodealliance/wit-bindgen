@@ -11,6 +11,7 @@ use anyhow::{bail, Context, Result};
 use rayon::prelude::*;
 use serde::Serialize;
 use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -118,7 +119,18 @@ impl Runner<'_> {
             to_json(&instance)
         };
 
-        let result_file = test.with_extension("wit.result");
+        // "foo.wit" => "foo.wit.result"
+        // "foo.wit.md" => "foo.wit.md.result"
+        let result_file = if test.extension() == Some(OsStr::new("md"))
+            && test
+                .file_stem()
+                .and_then(|path| Path::new(path).extension())
+                == Some(OsStr::new("wit"))
+        {
+            test.with_extension("md.result")
+        } else {
+            test.with_extension("wit.result")
+        };
         if env::var_os("BLESS").is_some() {
             fs::write(&result_file, result)?;
         } else {

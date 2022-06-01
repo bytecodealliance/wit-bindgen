@@ -479,7 +479,20 @@ impl Interface {
 
 fn load_fs(root: &Path, name: &str) -> Result<(PathBuf, String)> {
     let wit = root.join(name).with_extension("wit");
-    let contents =
-        fs::read_to_string(&wit).context(format!("failed to read `{}`", wit.display()))?;
-    Ok((wit, contents))
+
+    // Attempt to read a ".wit" file.
+    match fs::read_to_string(&wit) {
+        Ok(contents) => Ok((wit, contents)),
+
+        // If no such file was found, attempt to read a ".wit.md" file.
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            let wit_md = wit.with_extension("wit.md");
+            match fs::read_to_string(&wit_md) {
+                Ok(contents) => Ok((wit_md, contents)),
+                Err(_err) => Err(err.into()),
+            }
+        }
+
+        Err(err) => return Err(err.into()),
+    }
 }
