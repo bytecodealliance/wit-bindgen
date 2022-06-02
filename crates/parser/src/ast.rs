@@ -97,6 +97,7 @@ enum Type<'a> {
     Enum(Enum<'a>),
     Option(Box<Type<'a>>),
     Expected(Expected<'a>),
+    Stream(Stream<'a>),
     Union(Union<'a>),
 }
 
@@ -143,6 +144,11 @@ struct EnumCase<'a> {
 struct Expected<'a> {
     ok: Box<Type<'a>>,
     err: Box<Type<'a>>,
+}
+
+struct Stream<'a> {
+    element: Box<Type<'a>>,
+    end: Box<Type<'a>>,
 }
 
 pub struct Value<'a> {
@@ -512,6 +518,16 @@ impl<'a> Type<'a> {
                 let err = Box::new(Type::parse(tokens)?);
                 tokens.expect(Token::GreaterThan)?;
                 Ok(Type::Expected(Expected { ok, err }))
+            }
+
+            // stream<T, Z>
+            Some((_span, Token::Stream)) => {
+                tokens.expect(Token::LessThan)?;
+                let element = Box::new(Type::parse(tokens)?);
+                tokens.expect(Token::Comma)?;
+                let end = Box::new(Type::parse(tokens)?);
+                tokens.expect(Token::GreaterThan)?;
+                Ok(Type::Stream(Stream { element, end }))
             }
 
             // `foo`

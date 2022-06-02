@@ -54,6 +54,7 @@ pub enum TypeDefKind {
     Expected(Expected),
     Union(Union),
     List(Type),
+    Stream(Stream),
     Type(Type),
 }
 
@@ -211,6 +212,12 @@ impl Union {
             _ => panic!("too many cases to fit in a repr"),
         }
     }
+}
+
+#[derive(Debug)]
+pub struct Stream {
+    pub element: Type,
+    pub end: Type,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -420,6 +427,10 @@ impl Interface {
                     self.topo_visit_ty(&t.ty, list, visited);
                 }
             }
+            TypeDefKind::Stream(s) => {
+                self.topo_visit_ty(&s.element, list, visited);
+                self.topo_visit_ty(&s.end, list, visited);
+            }
         }
         list.push(id);
     }
@@ -452,6 +463,7 @@ impl Interface {
                 | TypeDefKind::Enum(_)
                 | TypeDefKind::Option(_)
                 | TypeDefKind::Expected(_)
+                | TypeDefKind::Stream(_)
                 | TypeDefKind::Union(_) => false,
                 TypeDefKind::Type(t) => self.all_bits_valid(t),
                 TypeDefKind::Record(r) => r.fields.iter().all(|f| self.all_bits_valid(&f.ty)),
