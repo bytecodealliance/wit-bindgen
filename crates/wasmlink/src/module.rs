@@ -56,6 +56,7 @@ fn has_list(interface: &WitInterface, ty: &WitType) -> bool {
             TypeDefKind::Option(t) => has_list(interface, t),
             TypeDefKind::Expected(e) => has_list(interface, &e.ok) || has_list(interface, &e.err),
             TypeDefKind::Enum(_) => false,
+            TypeDefKind::Stream(_) => todo!("has_list for stream"),
         },
         _ => false,
     }

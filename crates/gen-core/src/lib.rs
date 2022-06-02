@@ -119,6 +119,7 @@ pub trait Generator {
                 TypeDefKind::Union(u) => self.type_union(iface, id, name, u, &ty.docs),
                 TypeDefKind::List(t) => self.type_list(iface, id, name, t, &ty.docs),
                 TypeDefKind::Type(t) => self.type_alias(iface, id, name, t, &ty.docs),
+                TypeDefKind::Stream(_) => todo!("generate for stream"),
             }
         }
 
@@ -245,6 +246,7 @@ impl Types {
                     info |= self.type_info(iface, &case.ty);
                 }
             }
+            TypeDefKind::Stream(_) => todo!("type_id_info for stream"),
         }
         self.type_info.insert(ty, info);
         return info;
@@ -292,6 +294,7 @@ impl Types {
                     self.set_param_result_ty(iface, &case.ty, param, result)
                 }
             }
+            TypeDefKind::Stream(_) => todo!("set_param_result_id for stream"),
         }
     }
 

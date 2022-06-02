@@ -433,6 +433,13 @@ impl WasmtimePy {
                         self.src.push_str("]");
                     }
                     TypeDefKind::List(t) => self.print_list(iface, t),
+                    TypeDefKind::Stream(s) => {
+                        self.src.push_str("Stream[");
+                        self.print_ty(iface, &s.element);
+                        self.src.push_str(", ");
+                        self.print_ty(iface, &s.end);
+                        self.src.push_str("]");
+                    }
                 }
             }
         }

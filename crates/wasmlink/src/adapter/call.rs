@@ -525,6 +525,7 @@ impl<'a> CallAdapter<'a> {
                     locals_count,
                     operands,
                 ),
+                TypeDefKind::Stream(_) => todo!("push_operands for stream"),
             },
             Type::String => {
                 let addr = params.next().unwrap();
@@ -742,6 +743,7 @@ impl<'a> CallAdapter<'a> {
                     locals_count,
                     operands,
                 ),
+                TypeDefKind::Stream(_) => todo!("push_element_operands for stream"),
             },
             Type::String => {
                 // Every list copied needs a source and destination local
