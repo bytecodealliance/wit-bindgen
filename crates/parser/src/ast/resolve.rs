@@ -277,16 +277,6 @@ impl Resolver {
                         foreign_module: None,
                     });
                     self.define_resource(&r.name.name, r.name.span, id)?;
-                    // FIXME: this is weird, resources should just be another kind of `NamedType`.
-                    let type_id = self.types.alloc(CustomType::Named(NamedType {
-                        docs: Docs::default(),
-                        kind: NamedTypeKind::Type(Type::Handle(id)),
-                        // this is extremely temporary, I'm going to
-                        // merge resources and types in the next commit.
-                        name: format!("fixme-duplicate-{}", r.name.name),
-                        foreign_module: None,
-                    }));
-                    self.define_type(&r.name.name, r.name.span, type_id)?;
                 }
                 Item::TypeDef(t) => {
                     let docs = self.docs(&t.docs);
@@ -470,19 +460,19 @@ impl Resolver {
                 };
                 Type::Handle(id)
             }
-            super::Type::Name(name) => {
-                let id = match self.type_lookup.get(&*name.name) {
-                    Some(id) => *id,
-                    None => {
+            super::Type::Name(name) => match self.type_lookup.get(&*name.name) {
+                Some(id) => Type::Id(*id),
+                None => match self.resource_lookup.get(&*name.name) {
+                    Some(id) => Type::Handle(*id),
+                    _ => {
                         return Err(Error {
                             span: name.span,
                             msg: format!("no type named `{}`", name.name),
                         }
                         .into())
                     }
-                };
-                Type::Id(id)
-            }
+                },
+            },
 
             super::Type::Option(ty) => {
                 let ty = self.resolve_type(ty)?;
