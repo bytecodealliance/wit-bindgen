@@ -20,19 +20,18 @@
     },
     {
       "idx": 2,
-      "name": "some-record",
       "tuple": {
         "types": [
           "u32",
           "u64",
           "float32"
         ]
-      },
-      "foreign_module": "import-me"
+      }
     },
     {
       "idx": 3,
-      "primitive": "handle-0",
+      "name": "some-record",
+      "primitive": "type-2",
       "foreign_module": "import-me"
     },
     {
@@ -43,7 +42,7 @@
     {
       "idx": 5,
       "name": "my-handle2",
-      "primitive": "type-3"
+      "primitive": "handle-0"
     }
   ]
 }

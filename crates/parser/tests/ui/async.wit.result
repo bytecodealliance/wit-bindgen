@@ -4,12 +4,6 @@
       "name": "y"
     }
   ],
-  "types": [
-    {
-      "idx": 0,
-      "primitive": "handle-0"
-    }
-  ],
   "functions": [
     {
       "name": "a",

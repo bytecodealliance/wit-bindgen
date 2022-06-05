@@ -12,16 +12,16 @@
     },
     {
       "idx": 1,
-      "primitive": "handle-0"
-    },
-    {
-      "idx": 2,
       "name": "handle",
       "primitive": "handle-0"
     },
     {
-      "idx": 3,
+      "idx": 2,
       "name": "some-record",
+      "primitive": "type-3"
+    },
+    {
+      "idx": 3,
       "tuple": {
         "types": [
           "u32",
