@@ -170,34 +170,6 @@ impl Generator for Markdown {
         }
     }
 
-    fn type_tuple(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        tuple: &Tuple,
-        docs: &Docs,
-    ) {
-        self.print_type_header(name);
-        self.src.push_str("tuple\n\n");
-        self.print_type_info(id, docs);
-        self.src.push_str("\n### Tuple Fields\n\n");
-        for (i, ty) in tuple.types.iter().enumerate() {
-            self.src.push_str(&format!(
-                "- <a href=\"{r}.{f}\" name=\"{r}.{f}\"></a> [`{name}`](#{r}.{f}): ",
-                r = name.to_snake_case(),
-                f = i,
-                name = i,
-            ));
-            self.hrefs.insert(
-                format!("{}::{}", name, i),
-                format!("#{}.{}", name.to_snake_case(), i),
-            );
-            self.print_ty(iface, ty);
-            self.src.push_str("\n");
-        }
-    }
-
     fn type_flags(
         &mut self,
         _iface: &Interface,
@@ -316,38 +288,6 @@ impl Generator for Markdown {
         }
     }
 
-    fn type_option(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        payload: &Type,
-        docs: &Docs,
-    ) {
-        self.print_type_header(name);
-        self.src.push_str("option<");
-        self.print_ty(iface, payload);
-        self.src.push_str(">");
-        self.print_type_info(id, docs);
-    }
-
-    fn type_expected(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        expected: &Expected,
-        docs: &Docs,
-    ) {
-        self.print_type_header(name);
-        self.src.push_str("expected<");
-        self.print_ty(iface, &expected.ok);
-        self.src.push_str(", ");
-        self.print_ty(iface, &expected.err);
-        self.src.push_str(">");
-        self.print_type_info(id, docs);
-    }
-
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
         drop((iface, ty));
     }
@@ -358,10 +298,6 @@ impl Generator for Markdown {
         self.src.push_str("\n\n");
         self.print_type_info(id, docs);
         self.src.push_str("\n");
-    }
-
-    fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, _ty: &Type, docs: &Docs) {
-        self.type_alias(iface, id, name, &Type::Id(id), docs);
     }
 
     fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {

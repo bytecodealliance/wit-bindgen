@@ -376,21 +376,6 @@ impl Generator for Js {
         self.src.ts("}\n");
     }
 
-    fn type_tuple(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        tuple: &Tuple,
-        docs: &Docs,
-    ) {
-        self.docs(docs);
-        self.src
-            .ts(&format!("export type {} = ", name.to_camel_case()));
-        self.print_tuple(iface, tuple);
-        self.src.ts(";\n");
-    }
-
     fn type_flags(
         &mut self,
         _iface: &Interface,
@@ -485,47 +470,6 @@ impl Generator for Js {
         }
     }
 
-    fn type_option(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        payload: &Type,
-        docs: &Docs,
-    ) {
-        self.docs(docs);
-        let name = name.to_camel_case();
-        self.src.ts(&format!("export type {name} = "));
-        if self.maybe_null(iface, payload) {
-            self.needs_ty_option = true;
-            self.src.ts("Option<");
-            self.print_ty(iface, payload);
-            self.src.ts(">");
-        } else {
-            self.print_ty(iface, payload);
-            self.src.ts(" | null");
-        }
-        self.src.ts(";\n");
-    }
-
-    fn type_expected(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        expected: &Expected,
-        docs: &Docs,
-    ) {
-        self.docs(docs);
-        let name = name.to_camel_case();
-        self.needs_ty_result = true;
-        self.src.ts(&format!("export type {name} = Result<"));
-        self.print_ty(iface, &expected.ok);
-        self.src.ts(", ");
-        self.print_ty(iface, &expected.err);
-        self.src.ts(">;\n");
-    }
-
     fn type_enum(
         &mut self,
         _iface: &Interface,
@@ -567,14 +511,6 @@ impl Generator for Js {
         self.src
             .ts(&format!("export type {} = ", name.to_camel_case()));
         self.print_ty(iface, ty);
-        self.src.ts(";\n");
-    }
-
-    fn type_list(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        self.docs(docs);
-        self.src
-            .ts(&format!("export type {} = ", name.to_camel_case()));
-        self.print_list(iface, ty);
         self.src.ts(";\n");
     }
 

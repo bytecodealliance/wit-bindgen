@@ -372,17 +372,6 @@ impl Generator for Wasmtime {
         }
     }
 
-    fn type_tuple(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        tuple: &Tuple,
-        docs: &Docs,
-    ) {
-        self.print_typedef_tuple(iface, id, tuple, docs);
-    }
-
     fn type_flags(
         &mut self,
         _iface: &Interface,
@@ -450,28 +439,6 @@ impl Generator for Wasmtime {
         self.print_typedef_union(iface, id, union, docs);
     }
 
-    fn type_option(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        payload: &Type,
-        docs: &Docs,
-    ) {
-        self.print_typedef_option(iface, id, payload, docs);
-    }
-
-    fn type_expected(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        expected: &Expected,
-        docs: &Docs,
-    ) {
-        self.print_typedef_expected(iface, id, expected, docs);
-    }
-
     fn type_enum(&mut self, _iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         self.print_typedef_enum(id, name, enum_, docs);
     }
@@ -501,10 +468,6 @@ impl Generator for Wasmtime {
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
         self.print_typedef_alias(iface, id, ty, docs);
-    }
-
-    fn type_list(&mut self, iface: &Interface, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
-        self.print_type_list(iface, id, ty, docs);
     }
 
     fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {

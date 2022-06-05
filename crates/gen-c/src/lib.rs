@@ -1,5 +1,5 @@
 use heck::*;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::HashMap;
 use std::mem;
 use wit_bindgen_gen_core::wit_parser::abi::{
     AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
@@ -17,20 +17,15 @@ pub struct C {
     sizes: SizeAlign,
     names: Ns,
 
-    // The set of types that are considered public (aka need to be in the
-    // header file) which are anonymous and we're effectively monomorphizing.
-    // This is discovered lazily when printing type names.
-    public_anonymous_types: BTreeSet<TypeId>,
-
-    // This is similar to `public_anonymous_types` where it's discovered
-    // lazily, but the set here are for private types only used in the
-    // implementation of functions. These types go in the implementation file,
-    // not the header file.
-    private_anonymous_types: BTreeSet<TypeId>,
-
-    // Type definitions for the given `TypeId`. This is printed topologically
-    // at the end.
-    types: HashMap<TypeId, wit_bindgen_gen_core::Source>,
+    /// A list of all the type definitions we've generated.
+    ///
+    /// This will be in topological order, since that's the order that `gen-core`
+    /// calls our type generator functions in.
+    ///
+    /// We don't just write these out immediately because we need to define any
+    /// primitives that they use beforehand, and we don't know they're getting
+    /// used until partway through.
+    types: Vec<(TypeId, wit_bindgen_gen_core::Source)>,
 
     needs_string: bool,
 }
@@ -184,35 +179,13 @@ impl C {
     }
 
     fn type_string(&mut self, iface: &Interface, ty: &Type) -> String {
-        // Getting a type string happens during codegen, and by default means
-        // that this is a private type that's being generated. This means we
-        // want to keep track of new anonymous types that are *only* mentioned
-        // in methods like this, so we can place those types in the C file
-        // instead of the header interface file.
+        // Store the current contents of the header file.
         let prev = mem::take(&mut self.src.header);
-        let prev_public = mem::take(&mut self.public_anonymous_types);
-        let prev_private = mem::take(&mut self.private_anonymous_types);
 
-        // Print the type, which will collect into the fields that we replaced
-        // above.
+        // Print the type to the new, empty header file.
         self.print_ty(iface, ty);
 
-        // Reset our public/private sets back to what they were beforehand.
-        // Note that `print_ty` always adds to the public set, so we're
-        // inverting the meaning here by interpreting those as new private
-        // types.
-        let new_private = mem::replace(&mut self.public_anonymous_types, prev_public);
-        assert!(self.private_anonymous_types.is_empty());
-        self.private_anonymous_types = prev_private;
-
-        // For all new private types found while we printed this type, if the
-        // type isn't already public then it's a new private type.
-        for id in new_private {
-            if !self.public_anonymous_types.contains(&id) {
-                self.private_anonymous_types.insert(id);
-            }
-        }
-
+        // Then switch them back and return the type definition we just wrote.
         mem::replace(&mut self.src.header, prev).into()
     }
 
@@ -250,8 +223,6 @@ impl C {
                         self.src.h("_t");
                     }
                     CustomType::Anonymous(_) => {
-                        self.public_anonymous_types.insert(*id);
-                        self.private_anonymous_types.remove(id);
                         self.print_namespace(iface);
                         self.print_ty_name(iface, &Type::Id(*id));
                         self.src.h("_t");
@@ -309,64 +280,6 @@ impl C {
                 }
             }
         }
-    }
-
-    fn print_anonymous_type(&mut self, iface: &Interface, id: TypeId) {
-        let prev = mem::take(&mut self.src.header);
-        self.src.h("typedef ");
-        let ty = match &iface.types[id] {
-            CustomType::Anonymous(ty) => ty,
-            CustomType::Named(_) => unreachable!(),
-        };
-        match ty {
-            AnonymousType::Option(t) => {
-                self.src.h("struct {\n");
-                self.src.h("bool is_some;\n");
-                if !self.is_empty_type(iface, t) {
-                    self.print_ty(iface, t);
-                    self.src.h(" val;\n");
-                }
-                self.src.h("}");
-            }
-            AnonymousType::Expected(e) => {
-                self.src.h("struct {
-                    bool is_err;
-                    union {
-                ");
-                if !self.is_empty_type(iface, &e.ok) {
-                    self.print_ty(iface, &e.ok);
-                    self.src.h(" ok;\n");
-                }
-                if !self.is_empty_type(iface, &e.err) {
-                    self.print_ty(iface, &e.err);
-                    self.src.h(" err;\n");
-                }
-                self.src.h("} val;\n");
-                self.src.h("}");
-            }
-            AnonymousType::Tuple(t) => {
-                self.src.h("struct {\n");
-                for (i, t) in t.types.iter().enumerate() {
-                    self.print_ty(iface, t);
-                    self.src.h(" ");
-                    self.src.h(&format!("f{i};\n"));
-                }
-                self.src.h("}");
-            }
-            AnonymousType::List(t) => {
-                self.src.h("struct {\n");
-                self.print_ty(iface, t);
-                self.src.h(" *ptr;\n");
-                self.src.h("size_t len;\n");
-                self.src.h("}");
-            }
-        }
-        self.src.h(" ");
-        self.print_namespace(iface);
-        self.print_ty_name(iface, &Type::Id(id));
-        self.src.h("_t;\n");
-        self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
     }
 
     fn is_empty_type(&self, iface: &Interface, ty: &Type) -> bool {
@@ -700,6 +613,83 @@ impl Generator for C {
         self.in_import = variant == AbiVariant::GuestImport;
     }
 
+    fn type_option(&mut self, iface: &Interface, id: TypeId, payload: &Type) {
+        let prev = mem::take(&mut self.src.header);
+
+        self.src.h("typedef struct {\n");
+        self.src.h("bool is_some;\n");
+        if !self.is_empty_type(iface, payload) {
+            self.print_ty(iface, payload);
+            self.src.h(" val;\n");
+        }
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.print_ty_name(iface, &Type::Id(id));
+        self.src.h("_t;\n");
+
+        self.types
+            .push((id, mem::replace(&mut self.src.header, prev)));
+    }
+
+    fn type_expected(&mut self, iface: &Interface, id: TypeId, expected: &Expected) {
+        let prev = mem::take(&mut self.src.header);
+
+        self.src.h("typedef struct {
+            bool is_err;
+            union {
+        ");
+        if !self.is_empty_type(iface, &expected.ok) {
+            self.print_ty(iface, &expected.ok);
+            self.src.h(" ok;\n");
+        }
+        if !self.is_empty_type(iface, &expected.err) {
+            self.print_ty(iface, &expected.err);
+            self.src.h(" err;\n");
+        }
+        self.src.h("} val;\n");
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.print_ty_name(iface, &Type::Id(id));
+        self.src.h("_t;\n");
+
+        self.types
+            .push((id, mem::replace(&mut self.src.header, prev)));
+    }
+
+    fn type_tuple(&mut self, iface: &Interface, id: TypeId, tuple: &Tuple) {
+        let prev = mem::take(&mut self.src.header);
+
+        self.src.h("typedef struct {\n");
+        for (i, t) in tuple.types.iter().enumerate() {
+            self.print_ty(iface, t);
+            self.src.h(" ");
+            self.src.h(&format!("f{i};\n"));
+        }
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.print_ty_name(iface, &Type::Id(id));
+        self.src.h("_t;\n");
+
+        self.types
+            .push((id, mem::replace(&mut self.src.header, prev)));
+    }
+
+    fn type_list(&mut self, iface: &Interface, id: TypeId, ty: &Type) {
+        let prev = mem::take(&mut self.src.header);
+
+        self.src.h("typedef struct {\n");
+        self.print_ty(iface, ty);
+        self.src.h(" *ptr;\n");
+        self.src.h("size_t len;\n");
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.print_ty_name(iface, &Type::Id(id));
+        self.src.h("_t;\n");
+
+        self.types
+            .push((id, mem::replace(&mut self.src.header, prev)));
+    }
+
     fn type_record(
         &mut self,
         iface: &Interface,
@@ -709,6 +699,7 @@ impl Generator for C {
         docs: &Docs,
     ) {
         let prev = mem::take(&mut self.src.header);
+
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
         self.src.h("typedef struct {\n");
@@ -724,32 +715,7 @@ impl Generator for C {
         self.src.h("_t;\n");
 
         self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
-    }
-
-    fn type_tuple(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        tuple: &Tuple,
-        docs: &Docs,
-    ) {
-        let prev = mem::take(&mut self.src.header);
-        self.docs(docs);
-        self.names.insert(&name.to_snake_case()).unwrap();
-        self.src.h("typedef struct {\n");
-        for (i, ty) in tuple.types.iter().enumerate() {
-            self.print_ty(iface, ty);
-            self.src.h(&format!(" f{i};\n"));
-        }
-        self.src.h("} ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
-
-        self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
+            .push((id, mem::replace(&mut self.src.header, prev)));
     }
 
     fn type_flags(
@@ -761,6 +727,7 @@ impl Generator for C {
         docs: &Docs,
     ) {
         let prev = mem::take(&mut self.src.header);
+
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
         self.src.h("typedef ");
@@ -782,7 +749,7 @@ impl Generator for C {
         }
 
         self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
+            .push((id, mem::replace(&mut self.src.header, prev)));
     }
 
     fn type_variant(
@@ -794,6 +761,7 @@ impl Generator for C {
         docs: &Docs,
     ) {
         let prev = mem::take(&mut self.src.header);
+
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
         self.src.h("typedef struct {\n");
@@ -825,7 +793,7 @@ impl Generator for C {
         }
 
         self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
+            .push((id, mem::replace(&mut self.src.header, prev)));
     }
 
     fn type_union(
@@ -837,6 +805,7 @@ impl Generator for C {
         docs: &Docs,
     ) {
         let prev = mem::take(&mut self.src.header);
+
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
         self.src.h("typedef struct {\n");
@@ -854,69 +823,12 @@ impl Generator for C {
         self.src.h("_t;\n");
 
         self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
-    }
-
-    fn type_option(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        payload: &Type,
-        docs: &Docs,
-    ) {
-        let prev = mem::take(&mut self.src.header);
-        self.docs(docs);
-        self.names.insert(&name.to_snake_case()).unwrap();
-        self.src.h("typedef struct {\n");
-        self.src.h("bool is_some;\n");
-        if !self.is_empty_type(iface, payload) {
-            self.print_ty(iface, payload);
-            self.src.h(" val;\n");
-        }
-        self.src.h("} ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
-
-        self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
-    }
-
-    fn type_expected(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        expected: &Expected,
-        docs: &Docs,
-    ) {
-        let prev = mem::take(&mut self.src.header);
-        self.docs(docs);
-        self.names.insert(&name.to_snake_case()).unwrap();
-        self.src.h("typedef struct {\n");
-        self.src.h("bool is_err;\n");
-        self.src.h("union {\n");
-        if !self.is_empty_type(iface, &expected.ok) {
-            self.print_ty(iface, &expected.ok);
-            self.src.h(" ok;\n");
-        }
-        if !self.is_empty_type(iface, &expected.err) {
-            self.print_ty(iface, &expected.err);
-            self.src.h(" err;\n");
-        }
-        self.src.h("} val;\n");
-        self.src.h("} ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
-
-        self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
+            .push((id, mem::replace(&mut self.src.header, prev)));
     }
 
     fn type_enum(&mut self, iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         let prev = mem::take(&mut self.src.header);
+
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
         self.src.h("typedef ");
@@ -936,7 +848,7 @@ impl Generator for C {
         }
 
         self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
+            .push((id, mem::replace(&mut self.src.header, prev)));
     }
 
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
@@ -945,6 +857,7 @@ impl Generator for C {
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let prev = mem::take(&mut self.src.header);
+
         self.docs(docs);
         self.src.h("typedef ");
         self.print_ty(iface, ty);
@@ -952,27 +865,13 @@ impl Generator for C {
         self.print_namespace(iface);
         self.src.h(&name.to_snake_case());
         self.src.h("_t;\n");
+
         self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
+            .push((id, mem::replace(&mut self.src.header, prev)));
     }
 
-    fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        let prev = mem::take(&mut self.src.header);
-        self.docs(docs);
-        self.src.h("typedef struct {\n");
-        self.print_ty(iface, ty);
-        self.src.h(" *ptr;\n");
-        self.src.h("size_t len;\n");
-        self.src.h("} ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
-        self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
-    }
-
-    fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        drop((iface, _id, name, ty, docs));
+    fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        drop((iface, id, name, ty, docs));
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
@@ -1215,36 +1114,6 @@ impl Generator for C {
             }
         }
 
-        // Continuously generate anonymous types while we continue to find more
-        //
-        // First we take care of the public set of anonymous types. This will
-        // iteratively print them and also remove any references from the
-        // private set if we happen to also reference them.
-        while !self.public_anonymous_types.is_empty() {
-            for ty in mem::take(&mut self.public_anonymous_types) {
-                self.print_anonymous_type(iface, ty);
-            }
-        }
-
-        // Next we take care of private types. To do this we have basically the
-        // same loop as above, after we switch the sets. We record, however,
-        // all private types in a local set here to later determine if the type
-        // needs to be in the C file or the H file.
-        //
-        // Note though that we don't re-print a type (and consider it private)
-        // if we already printed it above as part of the public set.
-        let mut private_types = HashSet::new();
-        self.public_anonymous_types = mem::take(&mut self.private_anonymous_types);
-        while !self.public_anonymous_types.is_empty() {
-            for ty in mem::take(&mut self.public_anonymous_types) {
-                if self.types.contains_key(&ty) {
-                    continue;
-                }
-                private_types.insert(ty);
-                self.print_anonymous_type(iface, ty);
-            }
-        }
-
         if self.needs_string {
             self.src.h(&format!(
                 "
@@ -1283,17 +1152,12 @@ impl Generator for C {
             ));
         }
 
-        // Afterwards print all types. Note that this print must be in a
-        // topological order, so we
-        for id in iface.topological_types() {
-            if let Some(ty) = self.types.get(&id) {
-                if private_types.contains(&id) {
-                    self.src.c(ty);
-                } else {
-                    self.src.h(ty);
-                    self.print_dtor(iface, id);
-                }
-            }
+        // Afterwards print all our types.
+        // Make sure to empty out `self.types` too so that they don't show up
+        // in the next interface we process.
+        for (id, def) in mem::take(&mut self.types) {
+            self.src.h(&def);
+            self.print_dtor(iface, id);
         }
 
         if self.return_pointer_area_size > 0 {

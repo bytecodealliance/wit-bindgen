@@ -587,20 +587,6 @@ impl Generator for WasmtimePy {
         self.src.push_str("\n");
     }
 
-    fn type_tuple(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        tuple: &Tuple,
-        docs: &Docs,
-    ) {
-        self.docs(docs);
-        self.src.push_str(&format!("{} = ", name.to_camel_case()));
-        self.print_tuple(iface, tuple);
-        self.src.push_str("\n");
-    }
-
     fn type_flags(
         &mut self,
         _iface: &Interface,
@@ -693,40 +679,6 @@ impl Generator for WasmtimePy {
         self.src.push_str("\n");
     }
 
-    fn type_option(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        payload: &Type,
-        docs: &Docs,
-    ) {
-        self.docs(docs);
-        self.pyimport("typing", "Optional");
-        self.src
-            .push_str(&format!("{} = Optional[", name.to_camel_case()));
-        self.print_ty(iface, payload);
-        self.src.push_str("]\n\n");
-    }
-
-    fn type_expected(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        expected: &Expected,
-        docs: &Docs,
-    ) {
-        self.docs(docs);
-        self.needs_expected = true;
-        self.src
-            .push_str(&format!("{} = Expected[", name.to_camel_case()));
-        self.print_ty(iface, &expected.ok);
-        self.src.push_str(", ");
-        self.print_ty(iface, &expected.err);
-        self.src.push_str("]\n\n");
-    }
-
     fn type_enum(
         &mut self,
         _iface: &Interface,
@@ -768,13 +720,6 @@ impl Generator for WasmtimePy {
         self.docs(docs);
         self.src.push_str(&format!("{} = ", name.to_camel_case()));
         self.print_ty(iface, ty);
-        self.src.push_str("\n");
-    }
-
-    fn type_list(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        self.docs(docs);
-        self.src.push_str(&format!("{} = ", name.to_camel_case()));
-        self.print_list(iface, ty);
         self.src.push_str("\n");
     }
 

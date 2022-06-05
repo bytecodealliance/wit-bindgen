@@ -16,8 +16,8 @@ use wasm_encoder::Instruction;
 use wit_bindgen_gen_core::{
     wit_parser::{
         abi::{self, AbiVariant, WasmSignature, WasmType},
-        Docs, Enum, Expected, Flags, Function, Interface, Record, ResourceId, SizeAlign, Tuple,
-        Type, TypeId, Union, Variant,
+        Docs, Enum, Flags, Function, Interface, Record, ResourceId, SizeAlign, Type, TypeId, Union,
+        Variant,
     },
     Direction, Files, Generator,
 };
@@ -952,18 +952,6 @@ impl Generator for SpiderMonkeyWasm<'_> {
         todo!()
     }
 
-    fn type_tuple(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        tuple: &Tuple,
-        docs: &Docs,
-    ) {
-        let _ = (iface, id, name, tuple, docs);
-        todo!()
-    }
-
     fn type_flags(
         &mut self,
         iface: &Interface,
@@ -1000,30 +988,6 @@ impl Generator for SpiderMonkeyWasm<'_> {
         todo!()
     }
 
-    fn type_option(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        payload: &Type,
-        docs: &Docs,
-    ) {
-        let _ = (iface, id, name, payload, docs);
-        todo!()
-    }
-
-    fn type_expected(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        expected: &Expected,
-        docs: &Docs,
-    ) {
-        let _ = (iface, id, name, expected, docs);
-        todo!()
-    }
-
     fn type_enum(&mut self, iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         let _ = (iface, id, name, enum_, docs);
         todo!()
@@ -1035,11 +999,6 @@ impl Generator for SpiderMonkeyWasm<'_> {
     }
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        let _ = (iface, id, name, ty, docs);
-        todo!()
-    }
-
-    fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let _ = (iface, id, name, ty, docs);
         todo!()
     }

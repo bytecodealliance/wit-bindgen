@@ -38,6 +38,30 @@ pub enum Direction {
     Export,
 }
 
+/// Trait for a particular language's code generator.
+///
+/// This has several sets of methods:
+///
+/// # `preprocess_{one,all}` and `finish{one,all}`
+///
+/// These are hooks called before and after printing everything in an interface or set of interfaces.
+///
+/// # `type_*`
+///
+/// These are the methods called to generate types.
+///
+/// These will be called in topological order. That means that any types contained by a type
+/// will have already have been generated before that type gets generated, so that the type declarations
+/// will be valid in languages which require types to be defined before they're used like C.
+///
+/// # `import`/`export`
+///
+/// These are the methods called to generate imported and exported functions respectively.
+///
+/// # `generate_{one/all}`
+///
+/// These are default-implemented methods which orchestrate the code generation.
+/// You shouldn't need to override them.
 pub trait Generator {
     fn preprocess_all(&mut self, imports: &[Interface], exports: &[Interface]) {
         drop((imports, exports));
@@ -47,30 +71,24 @@ pub trait Generator {
         drop((iface, dir));
     }
 
-    // Anonymous types.
-    // FIXME: These are never (and were never) called, because they expect named anonymous types (which don't exist).
-    // It seems like they were pretty consistently treated as being type aliases to the anonymous types though.
-    // It might be a good idea to repurpose these to generate definitions for anonymous types in languages where a
-    // concrete type has to be generated for every one that's used (e.g. C, which currently does it manually).
-    fn type_option(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        payload: &Type,
-        docs: &Docs,
-    );
-    fn type_expected(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        expected: &Expected,
-        docs: &Docs,
-    );
-    fn type_tuple(&mut self, iface: &Interface, id: TypeId, name: &str, tuple: &Tuple, docs: &Docs);
-    fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+    // Methods to print anonymous types (so, they have no names or docs).
+    // Unlike the rest of the printing methods, these have default (empty) implementations,
+    // since most languages already have these types built in and don't need to generate them.
+    fn type_option(&mut self, iface: &Interface, id: TypeId, payload: &Type) {
+        drop((iface, id, payload))
+    }
+    fn type_expected(&mut self, iface: &Interface, id: TypeId, expected: &Expected) {
+        drop((iface, id, expected))
+    }
+    fn type_tuple(&mut self, iface: &Interface, id: TypeId, tuple: &Tuple) {
+        drop((iface, id, tuple))
+    }
+    fn type_list(&mut self, iface: &Interface, id: TypeId, ty: &Type) {
+        drop((iface, id, ty))
+    }
 
+    // Methods to print named types.
+    fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_record(
         &mut self,
         iface: &Interface,
@@ -91,9 +109,15 @@ pub trait Generator {
     fn type_union(&mut self, iface: &Interface, id: TypeId, name: &str, union: &Union, docs: &Docs);
     fn type_enum(&mut self, iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs);
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId);
-    fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+
+    // This is never called; my guess is that it's meant for printing component-model builtin types?
+    // Previously, that would have been `push-buffer` and `pull-buffer`, and in future that should
+    // be `future` and `stream`. So, I'm leaving it here for now.
     fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+
     // fn const_(&mut self, iface: &Interface, name: &str, ty: &str, val: u64, docs: &Docs);
+
+    // Methods to print functions.
     fn import(&mut self, iface: &Interface, func: &Function);
     fn export(&mut self, iface: &Interface, func: &Function);
 
@@ -106,11 +130,19 @@ pub trait Generator {
     fn generate_one(&mut self, iface: &Interface, dir: Direction, files: &mut Files) {
         self.preprocess_one(iface, dir);
 
-        for (id, ty) in iface.types.iter() {
+        for (id, ty) in iface
+            .topological_types()
+            .into_iter()
+            .map(|id| (id, &iface.types[id]))
+        {
             // assert!(ty.foreign_module.is_none()); // TODO
             match ty {
-                // See FIXME on anonymous type generation methods.
-                CustomType::Anonymous(_) => {}
+                CustomType::Anonymous(ty) => match ty {
+                    AnonymousType::Option(payload) => self.type_option(iface, id, payload),
+                    AnonymousType::Expected(expected) => self.type_expected(iface, id, expected),
+                    AnonymousType::Tuple(tuple) => self.type_tuple(iface, id, tuple),
+                    AnonymousType::List(ty) => self.type_list(iface, id, ty),
+                },
                 CustomType::Named(ty) => match &ty.kind {
                     NamedTypeKind::Record(record) => {
                         self.type_record(iface, id, &ty.name, record, &ty.docs)
