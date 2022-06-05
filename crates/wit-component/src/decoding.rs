@@ -543,10 +543,10 @@ impl<'a> InterfaceDecoder<'a> {
         let id = self.interface.types.alloc(CustomType::Anonymous(ty));
         if let Some(name) = name {
             // If this type is exported, we interpret it as a type alias.
-            // (We still return the anonymous type though).
-            self.alloc_named(name, NamedTypeKind::Type(Type::Id(id)));
+            self.alloc_named(name, NamedTypeKind::Type(Type::Id(id)))
+        } else {
+            id
         }
-        id
     }
 
     fn alloc_named(&mut self, name: String, kind: NamedTypeKind) -> TypeId {

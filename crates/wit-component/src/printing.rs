@@ -161,6 +161,8 @@ impl InterfacePrinter {
                         NamedTypeKind::Union(u) => self.declare_union(interface, &ty.name, u)?,
                         NamedTypeKind::Enum(e) => self.declare_enum(&ty.name, e)?,
                         NamedTypeKind::Type(inner) => {
+                            self.declare_type(interface, inner)?;
+
                             write!(&mut self.output, "type {} = ", ty.name)?;
                             self.print_type_name(interface, inner)?;
                             self.output.push_str("\n\n");
