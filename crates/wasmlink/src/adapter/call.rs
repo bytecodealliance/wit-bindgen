@@ -2,8 +2,9 @@ use crate::module::Interface;
 use std::collections::HashMap;
 use wasm_encoder::{BlockType, Instruction, MemArg, ValType};
 use wit_parser::{
-    abi::WasmSignature, Function, Int, Interface as WitInterface, SizeAlign, Type, TypeDefKind,
+    abi::WasmSignature, Function, Int, Interface as WitInterface, NamedTypeKind, SizeAlign, Type,
 };
+use wit_parser::{AnonymousType, CustomType};
 
 // The parent's memory is imported, so it is always index 0 for the adapter logic
 const PARENT_MEMORY_INDEX: u32 = 0;
@@ -405,126 +406,136 @@ impl<'a> CallAdapter<'a> {
         T: ExactSizeIterator<Item = u32> + Clone,
     {
         match ty {
-            Type::Id(id) => match &interface.types[*id].kind {
-                TypeDefKind::Type(t) => {
-                    Self::push_operands(interface, sizes, t, params, mode, locals_count, operands)
-                }
-                TypeDefKind::List(element) => {
-                    let addr = params.next().unwrap();
-                    let len = params.next().unwrap();
+            Type::Id(id) => match &interface.types[*id] {
+                CustomType::Anonymous(ty) => match ty {
+                    AnonymousType::Option(t) => Self::push_variant_operands(
+                        interface,
+                        sizes,
+                        Int::U8,
+                        [&Type::Unit, t],
+                        params,
+                        mode,
+                        locals_count,
+                        operands,
+                    ),
+                    AnonymousType::Expected(e) => Self::push_variant_operands(
+                        interface,
+                        sizes,
+                        Int::U8,
+                        [&e.ok, &e.err],
+                        params,
+                        mode,
+                        locals_count,
+                        operands,
+                    ),
+                    AnonymousType::Tuple(t) => {
+                        for ty in &t.types {
+                            Self::push_operands(
+                                interface,
+                                sizes,
+                                ty,
+                                params,
+                                mode,
+                                locals_count,
+                                operands,
+                            );
+                        }
+                    }
+                    AnonymousType::List(element) => {
+                        let addr = params.next().unwrap();
+                        let len = params.next().unwrap();
 
-                    let mut element_operands = Vec::new();
-                    if !interface.all_bits_valid(element) {
-                        Self::push_element_operands(
-                            interface,
-                            sizes,
-                            element,
-                            0,
-                            mode,
-                            locals_count,
-                            &mut element_operands,
-                        );
+                        let mut element_operands = Vec::new();
+                        if !interface.all_bits_valid(element) {
+                            Self::push_element_operands(
+                                interface,
+                                sizes,
+                                element,
+                                0,
+                                mode,
+                                locals_count,
+                                &mut element_operands,
+                            );
+                        }
+
+                        // Every list copied needs a destination local (and a source for retptr)
+                        *locals_count += match mode {
+                            PushMode::Params => 1,
+                            PushMode::Return => unreachable!(),
+                        };
+
+                        // Lists that copy elements with lists need a local for the counter
+                        if !element_operands.is_empty() {
+                            *locals_count += 1;
+                        }
+
+                        let (element_size, element_alignment) = match element {
+                            Type::Char => (1, 1), // UTF-8
+                            _ => (sizes.size(element) as u32, sizes.align(element) as u32),
+                        };
+
+                        operands.push(Operand::List {
+                            addr: mode.create_value_ref(addr),
+                            len: mode.create_value_ref(len),
+                            element_size,
+                            element_alignment,
+                            operands: element_operands,
+                        });
+                    }
+                },
+                CustomType::Named(ty) => match &ty.kind {
+                    NamedTypeKind::Type(t) => Self::push_operands(
+                        interface,
+                        sizes,
+                        t,
+                        params,
+                        mode,
+                        locals_count,
+                        operands,
+                    ),
+                    NamedTypeKind::Flags(r) => {
+                        for _ in 0..r.repr().count() {
+                            params.next().unwrap();
+                        }
+                    }
+                    NamedTypeKind::Record(r) => {
+                        for f in &r.fields {
+                            Self::push_operands(
+                                interface,
+                                sizes,
+                                &f.ty,
+                                params,
+                                mode,
+                                locals_count,
+                                operands,
+                            );
+                        }
                     }
 
-                    // Every list copied needs a destination local (and a source for retptr)
-                    *locals_count += match mode {
-                        PushMode::Params => 1,
-                        PushMode::Return => unreachable!(),
-                    };
-
-                    // Lists that copy elements with lists need a local for the counter
-                    if !element_operands.is_empty() {
-                        *locals_count += 1;
-                    }
-
-                    let (element_size, element_alignment) = match element {
-                        Type::Char => (1, 1), // UTF-8
-                        _ => (sizes.size(element) as u32, sizes.align(element) as u32),
-                    };
-
-                    operands.push(Operand::List {
-                        addr: mode.create_value_ref(addr),
-                        len: mode.create_value_ref(len),
-                        element_size,
-                        element_alignment,
-                        operands: element_operands,
-                    });
-                }
-                TypeDefKind::Flags(r) => {
-                    for _ in 0..r.repr().count() {
+                    NamedTypeKind::Enum(_) => {
                         params.next().unwrap();
                     }
-                }
-                TypeDefKind::Record(r) => {
-                    for f in &r.fields {
-                        Self::push_operands(
-                            interface,
-                            sizes,
-                            &f.ty,
-                            params,
-                            mode,
-                            locals_count,
-                            operands,
-                        );
-                    }
-                }
-                TypeDefKind::Tuple(t) => {
-                    for ty in &t.types {
-                        Self::push_operands(
-                            interface,
-                            sizes,
-                            ty,
-                            params,
-                            mode,
-                            locals_count,
-                            operands,
-                        );
-                    }
-                }
-
-                TypeDefKind::Enum(_) => {
-                    params.next().unwrap();
-                }
-                TypeDefKind::Variant(v) => Self::push_variant_operands(
-                    interface,
-                    sizes,
-                    v.tag(),
-                    v.cases.iter().map(|c| &c.ty),
-                    params,
-                    mode,
-                    locals_count,
-                    operands,
-                ),
-                TypeDefKind::Union(u) => Self::push_variant_operands(
-                    interface,
-                    sizes,
-                    u.tag(),
-                    u.cases.iter().map(|c| &c.ty),
-                    params,
-                    mode,
-                    locals_count,
-                    operands,
-                ),
-                TypeDefKind::Option(t) => Self::push_variant_operands(
-                    interface,
-                    sizes,
-                    Int::U8,
-                    [&Type::Unit, t],
-                    params,
-                    mode,
-                    locals_count,
-                    operands,
-                ),
-                TypeDefKind::Expected(e) => Self::push_variant_operands(
-                    interface,
-                    sizes,
-                    Int::U8,
-                    [&e.ok, &e.err],
-                    params,
-                    mode,
-                    locals_count,
-                    operands,
-                ),
+                    NamedTypeKind::Variant(v) => Self::push_variant_operands(
+                        interface,
+                        sizes,
+                        v.tag(),
+                        v.cases.iter().map(|c| &c.ty),
+                        params,
+                        mode,
+                        locals_count,
+                        operands,
+                    ),
+                    NamedTypeKind::Union(u) => Self::push_variant_operands(
+                        interface,
+                        sizes,
+                        u.tag(),
+                        u.cases.iter().map(|c| &c.ty),
+                        params,
+                        mode,
+                        locals_count,
+                        operands,
+                    ),
+                },
             },
             Type::String => {
                 let addr = params.next().unwrap();
@@ -624,124 +635,128 @@ impl<'a> CallAdapter<'a> {
         operands: &mut Vec<Operand<'a>>,
     ) {
         match ty {
-            Type::Id(id) => match &interface.types[*id].kind {
-                TypeDefKind::Type(t) => Self::push_element_operands(
-                    interface,
-                    sizes,
-                    t,
-                    offset,
-                    mode,
-                    locals_count,
-                    operands,
-                ),
-                TypeDefKind::List(element) => {
-                    let mut element_operands = Vec::new();
-                    if !interface.all_bits_valid(element) {
-                        Self::push_element_operands(
-                            interface,
-                            sizes,
-                            element,
-                            0,
-                            mode,
-                            locals_count,
-                            &mut element_operands,
-                        );
+            Type::Id(id) => match &interface.types[*id] {
+                CustomType::Anonymous(ty) => match ty {
+                    AnonymousType::Option(t) => Self::push_variant_element_operands(
+                        interface,
+                        sizes,
+                        offset,
+                        Int::U8,
+                        [&Type::Unit, t],
+                        mode,
+                        locals_count,
+                        operands,
+                    ),
+                    AnonymousType::Expected(e) => Self::push_variant_element_operands(
+                        interface,
+                        sizes,
+                        offset,
+                        Int::U8,
+                        [&e.ok, &e.err],
+                        mode,
+                        locals_count,
+                        operands,
+                    ),
+                    AnonymousType::Tuple(t) => {
+                        let offsets = sizes.field_offsets(&t.types);
+
+                        for (ty, o) in t.types.iter().zip(offsets) {
+                            Self::push_element_operands(
+                                interface,
+                                sizes,
+                                ty,
+                                offset + o as u32,
+                                mode,
+                                locals_count,
+                                operands,
+                            );
+                        }
+                    }
+                    AnonymousType::List(element) => {
+                        let mut element_operands = Vec::new();
+                        if !interface.all_bits_valid(element) {
+                            Self::push_element_operands(
+                                interface,
+                                sizes,
+                                element,
+                                0,
+                                mode,
+                                locals_count,
+                                &mut element_operands,
+                            );
+                        }
+
+                        // Every list copied needs a source and destination local
+                        *locals_count += 2;
+
+                        // Lists with elements containing lists need a local for the loop counter
+                        if !element_operands.is_empty() {
+                            *locals_count += 1;
+                        }
+
+                        let (element_size, element_alignment) = match element {
+                            Type::Char => (1, 1), // UTF-8
+                            _ => (sizes.size(element) as u32, sizes.align(element) as u32),
+                        };
+
+                        operands.push(Operand::List {
+                            addr: ValueRef::ElementOffset(offset),
+                            len: ValueRef::ElementOffset(offset + 4),
+                            element_size,
+                            element_alignment,
+                            operands: element_operands,
+                        });
+                    }
+                },
+                CustomType::Named(ty) => match &ty.kind {
+                    NamedTypeKind::Type(t) => Self::push_element_operands(
+                        interface,
+                        sizes,
+                        t,
+                        offset,
+                        mode,
+                        locals_count,
+                        operands,
+                    ),
+                    NamedTypeKind::Flags(_) => {}
+                    NamedTypeKind::Record(r) => {
+                        let offsets = sizes.field_offsets(r.fields.iter().map(|f| &f.ty));
+
+                        for (f, o) in r.fields.iter().zip(offsets) {
+                            Self::push_element_operands(
+                                interface,
+                                sizes,
+                                &f.ty,
+                                offset + o as u32,
+                                mode,
+                                locals_count,
+                                operands,
+                            );
+                        }
                     }
 
-                    // Every list copied needs a source and destination local
-                    *locals_count += 2;
-
-                    // Lists with elements containing lists need a local for the loop counter
-                    if !element_operands.is_empty() {
-                        *locals_count += 1;
-                    }
-
-                    let (element_size, element_alignment) = match element {
-                        Type::Char => (1, 1), // UTF-8
-                        _ => (sizes.size(element) as u32, sizes.align(element) as u32),
-                    };
-
-                    operands.push(Operand::List {
-                        addr: ValueRef::ElementOffset(offset),
-                        len: ValueRef::ElementOffset(offset + 4),
-                        element_size,
-                        element_alignment,
-                        operands: element_operands,
-                    });
-                }
-                TypeDefKind::Flags(_) => {}
-                TypeDefKind::Record(r) => {
-                    let offsets = sizes.field_offsets(r.fields.iter().map(|f| &f.ty));
-
-                    for (f, o) in r.fields.iter().zip(offsets) {
-                        Self::push_element_operands(
-                            interface,
-                            sizes,
-                            &f.ty,
-                            offset + o as u32,
-                            mode,
-                            locals_count,
-                            operands,
-                        );
-                    }
-                }
-
-                TypeDefKind::Tuple(t) => {
-                    let offsets = sizes.field_offsets(&t.types);
-
-                    for (ty, o) in t.types.iter().zip(offsets) {
-                        Self::push_element_operands(
-                            interface,
-                            sizes,
-                            ty,
-                            offset + o as u32,
-                            mode,
-                            locals_count,
-                            operands,
-                        );
-                    }
-                }
-                TypeDefKind::Enum(_) => {}
-                TypeDefKind::Variant(v) => Self::push_variant_element_operands(
-                    interface,
-                    sizes,
-                    offset,
-                    v.tag(),
-                    v.cases.iter().map(|c| &c.ty),
-                    mode,
-                    locals_count,
-                    operands,
-                ),
-                TypeDefKind::Union(u) => Self::push_variant_element_operands(
-                    interface,
-                    sizes,
-                    offset,
-                    u.tag(),
-                    u.cases.iter().map(|c| &c.ty),
-                    mode,
-                    locals_count,
-                    operands,
-                ),
-                TypeDefKind::Option(t) => Self::push_variant_element_operands(
-                    interface,
-                    sizes,
-                    offset,
-                    Int::U8,
-                    [&Type::Unit, t],
-                    mode,
-                    locals_count,
-                    operands,
-                ),
-                TypeDefKind::Expected(e) => Self::push_variant_element_operands(
-                    interface,
-                    sizes,
-                    offset,
-                    Int::U8,
-                    [&e.ok, &e.err],
-                    mode,
-                    locals_count,
-                    operands,
-                ),
+                    NamedTypeKind::Enum(_) => {}
+                    NamedTypeKind::Variant(v) => Self::push_variant_element_operands(
+                        interface,
+                        sizes,
+                        offset,
+                        v.tag(),
+                        v.cases.iter().map(|c| &c.ty),
+                        mode,
+                        locals_count,
+                        operands,
+                    ),
+                    NamedTypeKind::Union(u) => Self::push_variant_element_operands(
+                        interface,
+                        sizes,
+                        offset,
+                        u.tag(),
+                        u.cases.iter().map(|c| &c.ty),
+                        mode,
+                        locals_count,
+                        operands,
+                    ),
+                },
             },
             Type::String => {
                 // Every list copied needs a source and destination local

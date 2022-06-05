@@ -1,7 +1,7 @@
 use crate::sizealign::align_to;
 use crate::{
-    Enum, Expected, Flags, FlagsRepr, Function, Int, Interface, Record, ResourceId, Tuple, Type,
-    TypeDefKind, TypeId, Union, Variant,
+    AnonymousType, CustomType, Enum, Expected, Flags, FlagsRepr, Function, Int, Interface,
+    NamedType, NamedTypeKind, Record, ResourceId, Tuple, Type, TypeId, Union, Variant,
 };
 use std::mem;
 
@@ -978,53 +978,56 @@ impl Interface {
                 result.push(WasmType::I32);
             }
 
-            Type::Id(id) => match &self.types[*id].kind {
-                TypeDefKind::Type(t) => self.push_wasm(variant, t, result),
+            Type::Id(id) => match &self.types[*id] {
+                CustomType::Named(ty) => match &ty.kind {
+                    NamedTypeKind::Type(t) => self.push_wasm(variant, t, result),
 
-                TypeDefKind::Record(r) => {
-                    for field in r.fields.iter() {
-                        self.push_wasm(variant, &field.ty, result);
+                    NamedTypeKind::Record(r) => {
+                        for field in r.fields.iter() {
+                            self.push_wasm(variant, &field.ty, result);
+                        }
                     }
-                }
 
-                TypeDefKind::Tuple(t) => {
-                    for ty in t.types.iter() {
-                        self.push_wasm(variant, ty, result);
+                    NamedTypeKind::Flags(r) => {
+                        for _ in 0..r.repr().count() {
+                            result.push(WasmType::I32);
+                        }
                     }
-                }
 
-                TypeDefKind::Flags(r) => {
-                    for _ in 0..r.repr().count() {
+                    NamedTypeKind::Variant(v) => {
+                        result.push(v.tag().into());
+                        self.push_wasm_variants(variant, v.cases.iter().map(|c| &c.ty), result);
+                    }
+
+                    NamedTypeKind::Enum(e) => result.push(e.tag().into()),
+
+                    NamedTypeKind::Union(u) => {
+                        result.push(WasmType::I32);
+                        self.push_wasm_variants(variant, u.cases.iter().map(|c| &c.ty), result);
+                    }
+                },
+                CustomType::Anonymous(ty) => match ty {
+                    AnonymousType::Option(t) => {
+                        result.push(WasmType::I32);
+                        self.push_wasm_variants(variant, [&Type::Unit, t], result);
+                    }
+
+                    AnonymousType::Expected(e) => {
+                        result.push(WasmType::I32);
+                        self.push_wasm_variants(variant, [&e.ok, &e.err], result);
+                    }
+
+                    AnonymousType::Tuple(t) => {
+                        for ty in t.types.iter() {
+                            self.push_wasm(variant, ty, result);
+                        }
+                    }
+
+                    AnonymousType::List(_) => {
+                        result.push(WasmType::I32);
                         result.push(WasmType::I32);
                     }
-                }
-
-                TypeDefKind::List(_) => {
-                    result.push(WasmType::I32);
-                    result.push(WasmType::I32);
-                }
-
-                TypeDefKind::Variant(v) => {
-                    result.push(v.tag().into());
-                    self.push_wasm_variants(variant, v.cases.iter().map(|c| &c.ty), result);
-                }
-
-                TypeDefKind::Enum(e) => result.push(e.tag().into()),
-
-                TypeDefKind::Option(t) => {
-                    result.push(WasmType::I32);
-                    self.push_wasm_variants(variant, [&Type::Unit, t], result);
-                }
-
-                TypeDefKind::Expected(e) => {
-                    result.push(WasmType::I32);
-                    self.push_wasm_variants(variant, [&e.ok, &e.err], result);
-                }
-
-                TypeDefKind::Union(u) => {
-                    result.push(WasmType::I32);
-                    self.push_wasm_variants(variant, u.cases.iter().map(|c| &c.ty), result);
-                }
+                },
             },
         }
     }
@@ -1490,98 +1493,103 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 let realloc = self.list_realloc();
                 self.emit(&StringLower { realloc });
             }
-            Type::Id(id) => match &self.iface.types[id].kind {
-                TypeDefKind::Type(t) => self.lower(t),
-                TypeDefKind::List(element) => {
-                    let realloc = self.list_realloc();
-                    if self.bindgen.is_list_canonical(self.iface, element) {
-                        self.emit(&ListCanonLower { element, realloc });
-                    } else {
-                        self.push_block();
-                        self.emit(&IterElem { element });
-                        self.emit(&IterBasePointer);
-                        let addr = self.stack.pop().unwrap();
-                        self.write_to_memory(element, addr, 0);
-                        self.finish_block(0);
-                        self.emit(&ListLower { element, realloc });
+            Type::Id(id) => match &self.iface.types[id] {
+                CustomType::Anonymous(anon) => match anon {
+                    AnonymousType::Option(t) => {
+                        let results = self.lower_variant_arms(ty, [&Type::Unit, t]);
+                        self.emit(&OptionLower {
+                            payload: t,
+                            ty: id,
+                            results: &results,
+                        });
                     }
-                }
-                TypeDefKind::Record(record) => {
-                    self.emit(&RecordLower {
-                        record,
-                        ty: id,
-                        name: self.iface.types[id].name.as_deref().unwrap(),
-                    });
-                    let values = self
-                        .stack
-                        .drain(self.stack.len() - record.fields.len()..)
-                        .collect::<Vec<_>>();
-                    for (field, value) in record.fields.iter().zip(values) {
-                        self.stack.push(value);
-                        self.lower(&field.ty);
+                    AnonymousType::Expected(e) => {
+                        let results = self.lower_variant_arms(ty, [&e.ok, &e.err]);
+                        self.emit(&ExpectedLower {
+                            expected: e,
+                            ty: id,
+                            results: &results,
+                        });
                     }
-                }
-                TypeDefKind::Tuple(tuple) => {
-                    self.emit(&TupleLower { tuple, ty: id });
-                    let values = self
-                        .stack
-                        .drain(self.stack.len() - tuple.types.len()..)
-                        .collect::<Vec<_>>();
-                    for (ty, value) in tuple.types.iter().zip(values) {
-                        self.stack.push(value);
-                        self.lower(ty);
+                    AnonymousType::Tuple(tuple) => {
+                        self.emit(&TupleLower { tuple, ty: id });
+                        let values = self
+                            .stack
+                            .drain(self.stack.len() - tuple.types.len()..)
+                            .collect::<Vec<_>>();
+                        for (ty, value) in tuple.types.iter().zip(values) {
+                            self.stack.push(value);
+                            self.lower(ty);
+                        }
                     }
-                }
+                    AnonymousType::List(element) => {
+                        let realloc = self.list_realloc();
+                        if self.bindgen.is_list_canonical(self.iface, element) {
+                            self.emit(&ListCanonLower { element, realloc });
+                        } else {
+                            self.push_block();
+                            self.emit(&IterElem { element });
+                            self.emit(&IterBasePointer);
+                            let addr = self.stack.pop().unwrap();
+                            self.write_to_memory(element, addr, 0);
+                            self.finish_block(0);
+                            self.emit(&ListLower { element, realloc });
+                        }
+                    }
+                },
+                CustomType::Named(named) => match &named.kind {
+                    NamedTypeKind::Type(t) => self.lower(t),
+                    NamedTypeKind::Record(record) => {
+                        self.emit(&RecordLower {
+                            record,
+                            ty: id,
+                            name: &named.name,
+                        });
+                        let values = self
+                            .stack
+                            .drain(self.stack.len() - record.fields.len()..)
+                            .collect::<Vec<_>>();
+                        for (field, value) in record.fields.iter().zip(values) {
+                            self.stack.push(value);
+                            self.lower(&field.ty);
+                        }
+                    }
 
-                TypeDefKind::Flags(flags) => {
-                    self.emit(&FlagsLower {
-                        flags,
-                        ty: id,
-                        name: self.iface.types[id].name.as_ref().unwrap(),
-                    });
-                }
+                    NamedTypeKind::Flags(flags) => {
+                        self.emit(&FlagsLower {
+                            flags,
+                            ty: id,
+                            name: &named.name,
+                        });
+                    }
 
-                TypeDefKind::Variant(v) => {
-                    let results = self.lower_variant_arms(ty, v.cases.iter().map(|c| &c.ty));
-                    self.emit(&VariantLower {
-                        variant: v,
-                        ty: id,
-                        results: &results,
-                        name: self.iface.types[id].name.as_deref().unwrap(),
-                    });
-                }
-                TypeDefKind::Enum(enum_) => {
-                    self.emit(&EnumLower {
-                        enum_,
-                        ty: id,
-                        name: self.iface.types[id].name.as_deref().unwrap(),
-                    });
-                }
-                TypeDefKind::Option(t) => {
-                    let results = self.lower_variant_arms(ty, [&Type::Unit, t]);
-                    self.emit(&OptionLower {
-                        payload: t,
-                        ty: id,
-                        results: &results,
-                    });
-                }
-                TypeDefKind::Expected(e) => {
-                    let results = self.lower_variant_arms(ty, [&e.ok, &e.err]);
-                    self.emit(&ExpectedLower {
-                        expected: e,
-                        ty: id,
-                        results: &results,
-                    });
-                }
-                TypeDefKind::Union(union) => {
-                    let results = self.lower_variant_arms(ty, union.cases.iter().map(|c| &c.ty));
-                    self.emit(&UnionLower {
-                        union,
-                        ty: id,
-                        results: &results,
-                        name: self.iface.types[id].name.as_deref().unwrap(),
-                    });
-                }
+                    NamedTypeKind::Variant(v) => {
+                        let results = self.lower_variant_arms(ty, v.cases.iter().map(|c| &c.ty));
+                        self.emit(&VariantLower {
+                            variant: v,
+                            ty: id,
+                            results: &results,
+                            name: &named.name,
+                        });
+                    }
+                    NamedTypeKind::Enum(enum_) => {
+                        self.emit(&EnumLower {
+                            enum_,
+                            ty: id,
+                            name: &named.name,
+                        });
+                    }
+                    NamedTypeKind::Union(union) => {
+                        let results =
+                            self.lower_variant_arms(ty, union.cases.iter().map(|c| &c.ty));
+                        self.emit(&UnionLower {
+                            union,
+                            ty: id,
+                            results: &results,
+                            name: &named.name,
+                        });
+                    }
+                },
             },
         }
     }
@@ -1685,110 +1693,116 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 let free = self.list_free();
                 self.emit(&StringLift { free });
             }
-            Type::Id(id) => match &self.iface.types[id].kind {
-                TypeDefKind::Type(t) => self.lift(t),
-                TypeDefKind::List(element) => {
-                    let free = self.list_free();
-                    if self.is_char(element) || self.bindgen.is_list_canonical(self.iface, element)
-                    {
-                        self.emit(&ListCanonLift {
-                            element,
-                            free,
-                            ty: id,
-                        });
-                    } else {
-                        self.push_block();
-                        self.emit(&IterBasePointer);
-                        let addr = self.stack.pop().unwrap();
-                        self.read_from_memory(element, addr, 0);
-                        self.finish_block(1);
-                        self.emit(&ListLift {
-                            element,
-                            free,
+            Type::Id(id) => match &self.iface.types[id] {
+                CustomType::Anonymous(anon) => match anon {
+                    AnonymousType::Option(t) => {
+                        self.lift_variant_arms(ty, [&Type::Unit, t]);
+                        self.emit(&OptionLift { payload: t, ty: id });
+                    }
+
+                    AnonymousType::Expected(e) => {
+                        self.lift_variant_arms(ty, [&e.ok, &e.err]);
+                        self.emit(&ExpectedLift {
+                            expected: e,
                             ty: id,
                         });
                     }
-                }
-                TypeDefKind::Record(record) => {
-                    let mut temp = Vec::new();
-                    self.iface.push_wasm(self.variant, ty, &mut temp);
-                    let mut args = self
-                        .stack
-                        .drain(self.stack.len() - temp.len()..)
-                        .collect::<Vec<_>>();
-                    for field in record.fields.iter() {
-                        temp.truncate(0);
-                        self.iface.push_wasm(self.variant, &field.ty, &mut temp);
-                        self.stack.extend(args.drain(..temp.len()));
-                        self.lift(&field.ty);
-                    }
-                    self.emit(&RecordLift {
-                        record,
-                        ty: id,
-                        name: self.iface.types[id].name.as_deref().unwrap(),
-                    });
-                }
-                TypeDefKind::Tuple(tuple) => {
-                    let mut temp = Vec::new();
-                    self.iface.push_wasm(self.variant, ty, &mut temp);
-                    let mut args = self
-                        .stack
-                        .drain(self.stack.len() - temp.len()..)
-                        .collect::<Vec<_>>();
-                    for ty in tuple.types.iter() {
-                        temp.truncate(0);
+
+                    AnonymousType::Tuple(tuple) => {
+                        let mut temp = Vec::new();
                         self.iface.push_wasm(self.variant, ty, &mut temp);
-                        self.stack.extend(args.drain(..temp.len()));
-                        self.lift(ty);
+                        let mut args = self
+                            .stack
+                            .drain(self.stack.len() - temp.len()..)
+                            .collect::<Vec<_>>();
+                        for ty in tuple.types.iter() {
+                            temp.truncate(0);
+                            self.iface.push_wasm(self.variant, ty, &mut temp);
+                            self.stack.extend(args.drain(..temp.len()));
+                            self.lift(ty);
+                        }
+                        self.emit(&TupleLift { tuple, ty: id });
                     }
-                    self.emit(&TupleLift { tuple, ty: id });
-                }
-                TypeDefKind::Flags(flags) => {
-                    self.emit(&FlagsLift {
-                        flags,
-                        ty: id,
-                        name: self.iface.types[id].name.as_ref().unwrap(),
-                    });
-                }
 
-                TypeDefKind::Variant(v) => {
-                    self.lift_variant_arms(ty, v.cases.iter().map(|c| &c.ty));
-                    self.emit(&VariantLift {
-                        variant: v,
-                        ty: id,
-                        name: self.iface.types[id].name.as_deref().unwrap(),
-                    });
-                }
+                    AnonymousType::List(element) => {
+                        let free = self.list_free();
+                        if self.is_char(element)
+                            || self.bindgen.is_list_canonical(self.iface, element)
+                        {
+                            self.emit(&ListCanonLift {
+                                element,
+                                free,
+                                ty: id,
+                            });
+                        } else {
+                            self.push_block();
+                            self.emit(&IterBasePointer);
+                            let addr = self.stack.pop().unwrap();
+                            self.read_from_memory(element, addr, 0);
+                            self.finish_block(1);
+                            self.emit(&ListLift {
+                                element,
+                                free,
+                                ty: id,
+                            });
+                        }
+                    }
+                },
+                CustomType::Named(named) => match &named.kind {
+                    NamedTypeKind::Type(t) => self.lift(t),
+                    NamedTypeKind::Record(record) => {
+                        let mut temp = Vec::new();
+                        self.iface.push_wasm(self.variant, ty, &mut temp);
+                        let mut args = self
+                            .stack
+                            .drain(self.stack.len() - temp.len()..)
+                            .collect::<Vec<_>>();
+                        for field in record.fields.iter() {
+                            temp.truncate(0);
+                            self.iface.push_wasm(self.variant, &field.ty, &mut temp);
+                            self.stack.extend(args.drain(..temp.len()));
+                            self.lift(&field.ty);
+                        }
+                        self.emit(&RecordLift {
+                            record,
+                            ty: id,
+                            name: &named.name,
+                        });
+                    }
+                    NamedTypeKind::Flags(flags) => {
+                        self.emit(&FlagsLift {
+                            flags,
+                            ty: id,
+                            name: &named.name,
+                        });
+                    }
 
-                TypeDefKind::Enum(enum_) => {
-                    self.emit(&EnumLift {
-                        enum_,
-                        ty: id,
-                        name: self.iface.types[id].name.as_deref().unwrap(),
-                    });
-                }
+                    NamedTypeKind::Variant(v) => {
+                        self.lift_variant_arms(ty, v.cases.iter().map(|c| &c.ty));
+                        self.emit(&VariantLift {
+                            variant: v,
+                            ty: id,
+                            name: &named.name,
+                        });
+                    }
 
-                TypeDefKind::Option(t) => {
-                    self.lift_variant_arms(ty, [&Type::Unit, t]);
-                    self.emit(&OptionLift { payload: t, ty: id });
-                }
+                    NamedTypeKind::Enum(enum_) => {
+                        self.emit(&EnumLift {
+                            enum_,
+                            ty: id,
+                            name: &named.name,
+                        });
+                    }
 
-                TypeDefKind::Expected(e) => {
-                    self.lift_variant_arms(ty, [&e.ok, &e.err]);
-                    self.emit(&ExpectedLift {
-                        expected: e,
-                        ty: id,
-                    });
-                }
-
-                TypeDefKind::Union(union) => {
-                    self.lift_variant_arms(ty, union.cases.iter().map(|c| &c.ty));
-                    self.emit(&UnionLift {
-                        union,
-                        ty: id,
-                        name: self.iface.types[id].name.as_deref().unwrap(),
-                    });
-                }
+                    NamedTypeKind::Union(union) => {
+                        self.lift_variant_arms(ty, union.cases.iter().map(|c| &c.ty));
+                        self.emit(&UnionLift {
+                            union,
+                            ty: id,
+                            name: &named.name,
+                        });
+                    }
+                },
             },
         }
     }
@@ -1856,108 +1870,113 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::Float64 => self.lower_and_emit(ty, addr, &F64Store { offset }),
             Type::String => self.write_list_to_memory(ty, addr, offset),
 
-            Type::Id(id) => match &self.iface.types[id].kind {
-                TypeDefKind::Type(t) => self.write_to_memory(t, addr, offset),
-                TypeDefKind::List(_) => self.write_list_to_memory(ty, addr, offset),
+            Type::Id(id) => match &self.iface.types[id] {
+                CustomType::Anonymous(anon) => match anon {
+                    AnonymousType::Option(t) => {
+                        self.write_variant_arms_to_memory(offset, addr, Int::U8, [&Type::Unit, t]);
+                        self.emit(&OptionLower {
+                            payload: t,
+                            ty: id,
+                            results: &[],
+                        });
+                    }
 
-                // Decompose the record into its components and then write all
-                // the components into memory one-by-one.
-                TypeDefKind::Record(record) => {
-                    self.emit(&RecordLower {
-                        record,
-                        ty: id,
-                        name: self.iface.types[id].name.as_deref().unwrap(),
-                    });
-                    self.write_fields_to_memory(
-                        &record.fields.iter().map(|f| f.ty).collect::<Vec<_>>(),
-                        addr,
-                        offset,
-                    );
-                }
-                TypeDefKind::Tuple(tuple) => {
-                    self.emit(&TupleLower { tuple, ty: id });
-                    self.write_fields_to_memory(&tuple.types, addr, offset);
-                }
+                    AnonymousType::Expected(e) => {
+                        self.write_variant_arms_to_memory(offset, addr, Int::U8, [&e.ok, &e.err]);
+                        self.emit(&ExpectedLower {
+                            expected: e,
+                            ty: id,
+                            results: &[],
+                        });
+                    }
 
-                TypeDefKind::Flags(f) => {
-                    self.lower(ty);
-                    match f.repr() {
-                        FlagsRepr::U8 => {
-                            self.stack.push(addr);
-                            self.store_intrepr(offset, Int::U8);
-                        }
-                        FlagsRepr::U16 => {
-                            self.stack.push(addr);
-                            self.store_intrepr(offset, Int::U16);
-                        }
-                        FlagsRepr::U32(n) => {
-                            for i in (0..n).rev() {
-                                self.stack.push(addr.clone());
-                                self.emit(&I32Store {
-                                    offset: offset + (i as i32) * 4,
-                                });
+                    AnonymousType::Tuple(tuple) => {
+                        self.emit(&TupleLower { tuple, ty: id });
+                        self.write_fields_to_memory(&tuple.types, addr, offset);
+                    }
+
+                    AnonymousType::List(_) => self.write_list_to_memory(ty, addr, offset),
+                },
+                CustomType::Named(named) => match &named.kind {
+                    NamedTypeKind::Type(t) => self.write_to_memory(t, addr, offset),
+
+                    // Decompose the record into its components and then write all
+                    // the components into memory one-by-one.
+                    NamedTypeKind::Record(record) => {
+                        self.emit(&RecordLower {
+                            record,
+                            ty: id,
+                            name: &named.name,
+                        });
+                        self.write_fields_to_memory(
+                            &record.fields.iter().map(|f| f.ty).collect::<Vec<_>>(),
+                            addr,
+                            offset,
+                        );
+                    }
+
+                    NamedTypeKind::Flags(f) => {
+                        self.lower(ty);
+                        match f.repr() {
+                            FlagsRepr::U8 => {
+                                self.stack.push(addr);
+                                self.store_intrepr(offset, Int::U8);
+                            }
+                            FlagsRepr::U16 => {
+                                self.stack.push(addr);
+                                self.store_intrepr(offset, Int::U16);
+                            }
+                            FlagsRepr::U32(n) => {
+                                for i in (0..n).rev() {
+                                    self.stack.push(addr.clone());
+                                    self.emit(&I32Store {
+                                        offset: offset + (i as i32) * 4,
+                                    });
+                                }
                             }
                         }
                     }
-                }
 
-                // Each case will get its own block, and the first item in each
-                // case is writing the discriminant. After that if we have a
-                // payload we write the payload after the discriminant, aligned up
-                // to the type's alignment.
-                TypeDefKind::Variant(v) => {
-                    self.write_variant_arms_to_memory(
-                        offset,
-                        addr,
-                        v.tag(),
-                        v.cases.iter().map(|c| &c.ty),
-                    );
-                    self.emit(&VariantLower {
-                        variant: v,
-                        ty: id,
-                        results: &[],
-                        name: self.iface.types[id].name.as_deref().unwrap(),
-                    });
-                }
+                    // Each case will get its own block, and the first item in each
+                    // case is writing the discriminant. After that if we have a
+                    // payload we write the payload after the discriminant, aligned up
+                    // to the type's alignment.
+                    NamedTypeKind::Variant(v) => {
+                        self.write_variant_arms_to_memory(
+                            offset,
+                            addr,
+                            v.tag(),
+                            v.cases.iter().map(|c| &c.ty),
+                        );
+                        self.emit(&VariantLower {
+                            variant: v,
+                            ty: id,
+                            results: &[],
+                            name: &named.name,
+                        });
+                    }
 
-                TypeDefKind::Option(t) => {
-                    self.write_variant_arms_to_memory(offset, addr, Int::U8, [&Type::Unit, t]);
-                    self.emit(&OptionLower {
-                        payload: t,
-                        ty: id,
-                        results: &[],
-                    });
-                }
+                    NamedTypeKind::Enum(e) => {
+                        self.lower(ty);
+                        self.stack.push(addr);
+                        self.store_intrepr(offset, e.tag());
+                    }
 
-                TypeDefKind::Expected(e) => {
-                    self.write_variant_arms_to_memory(offset, addr, Int::U8, [&e.ok, &e.err]);
-                    self.emit(&ExpectedLower {
-                        expected: e,
-                        ty: id,
-                        results: &[],
-                    });
-                }
-
-                TypeDefKind::Enum(e) => {
-                    self.lower(ty);
-                    self.stack.push(addr);
-                    self.store_intrepr(offset, e.tag());
-                }
-
-                TypeDefKind::Union(union) => {
-                    self.write_variant_arms_to_memory(
-                        offset,
-                        addr,
-                        union.tag(),
-                        union.cases.iter().map(|c| &c.ty),
-                    );
-                    self.emit(&UnionLower {
-                        union,
-                        ty: id,
-                        results: &[],
-                        name: self.iface.types[id].name.as_deref().unwrap(),
-                    });
-                }
+                    NamedTypeKind::Union(union) => {
+                        self.write_variant_arms_to_memory(
+                            offset,
+                            addr,
+                            union.tag(),
+                            union.cases.iter().map(|c| &c.ty),
+                        );
+                        self.emit(&UnionLower {
+                            union,
+                            ty: id,
+                            results: &[],
+                            name: &named.name,
+                        });
+                    }
+                },
             },
         }
     }
@@ -2037,103 +2056,107 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::Float64 => self.emit_and_lift(ty, addr, &F64Load { offset }),
             Type::String => self.read_list_from_memory(ty, addr, offset),
 
-            Type::Id(id) => match &self.iface.types[id].kind {
-                TypeDefKind::Type(t) => self.read_from_memory(t, addr, offset),
+            Type::Id(id) => match &self.iface.types[id] {
+                CustomType::Anonymous(anon) => match anon {
+                    AnonymousType::Option(t) => {
+                        self.read_variant_arms_from_memory(offset, addr, Int::U8, [&Type::Unit, t]);
+                        self.emit(&OptionLift { payload: t, ty: id });
+                    }
 
-                TypeDefKind::List(_) => self.read_list_from_memory(ty, addr, offset),
+                    AnonymousType::Expected(e) => {
+                        self.read_variant_arms_from_memory(offset, addr, Int::U8, [&e.ok, &e.err]);
+                        self.emit(&ExpectedLift {
+                            expected: e,
+                            ty: id,
+                        });
+                    }
 
-                // Read and lift each field individually, adjusting the offset
-                // as we go along, then aggregate all the fields into the
-                // record.
-                TypeDefKind::Record(record) => {
-                    self.read_fields_from_memory(
-                        &record.fields.iter().map(|f| f.ty).collect::<Vec<_>>(),
-                        addr,
-                        offset,
-                    );
-                    self.emit(&RecordLift {
-                        record,
-                        ty: id,
-                        name: self.iface.types[id].name.as_deref().unwrap(),
-                    });
-                }
-                TypeDefKind::Tuple(tuple) => {
-                    self.read_fields_from_memory(&tuple.types, addr, offset);
-                    self.emit(&TupleLift { tuple, ty: id });
-                }
+                    AnonymousType::Tuple(tuple) => {
+                        self.read_fields_from_memory(&tuple.types, addr, offset);
+                        self.emit(&TupleLift { tuple, ty: id });
+                    }
 
-                TypeDefKind::Flags(f) => {
-                    match f.repr() {
-                        FlagsRepr::U8 => {
-                            self.stack.push(addr);
-                            self.load_intrepr(offset, Int::U8);
-                        }
-                        FlagsRepr::U16 => {
-                            self.stack.push(addr);
-                            self.load_intrepr(offset, Int::U16);
-                        }
-                        FlagsRepr::U32(n) => {
-                            for i in 0..n {
-                                self.stack.push(addr.clone());
-                                self.emit(&I32Load {
-                                    offset: offset + (i as i32) * 4,
-                                });
+                    AnonymousType::List(_) => self.read_list_from_memory(ty, addr, offset),
+                },
+                CustomType::Named(named) => match &named.kind {
+                    NamedTypeKind::Type(t) => self.read_from_memory(t, addr, offset),
+
+                    // Read and lift each field individually, adjusting the offset
+                    // as we go along, then aggregate all the fields into the
+                    // record.
+                    NamedTypeKind::Record(record) => {
+                        self.read_fields_from_memory(
+                            &record.fields.iter().map(|f| f.ty).collect::<Vec<_>>(),
+                            addr,
+                            offset,
+                        );
+                        self.emit(&RecordLift {
+                            record,
+                            ty: id,
+                            name: &named.name,
+                        });
+                    }
+
+                    NamedTypeKind::Flags(f) => {
+                        match f.repr() {
+                            FlagsRepr::U8 => {
+                                self.stack.push(addr);
+                                self.load_intrepr(offset, Int::U8);
+                            }
+                            FlagsRepr::U16 => {
+                                self.stack.push(addr);
+                                self.load_intrepr(offset, Int::U16);
+                            }
+                            FlagsRepr::U32(n) => {
+                                for i in 0..n {
+                                    self.stack.push(addr.clone());
+                                    self.emit(&I32Load {
+                                        offset: offset + (i as i32) * 4,
+                                    });
+                                }
                             }
                         }
+                        self.lift(ty);
                     }
-                    self.lift(ty);
-                }
 
-                // Each case will get its own block, and we'll dispatch to the
-                // right block based on the `i32.load` we initially perform. Each
-                // individual block is pretty simple and just reads the payload type
-                // from the corresponding offset if one is available.
-                TypeDefKind::Variant(variant) => {
-                    self.read_variant_arms_from_memory(
-                        offset,
-                        addr,
-                        variant.tag(),
-                        variant.cases.iter().map(|c| &c.ty),
-                    );
-                    self.emit(&VariantLift {
-                        variant,
-                        ty: id,
-                        name: self.iface.types[id].name.as_deref().unwrap(),
-                    });
-                }
+                    // Each case will get its own block, and we'll dispatch to the
+                    // right block based on the `i32.load` we initially perform. Each
+                    // individual block is pretty simple and just reads the payload type
+                    // from the corresponding offset if one is available.
+                    NamedTypeKind::Variant(variant) => {
+                        self.read_variant_arms_from_memory(
+                            offset,
+                            addr,
+                            variant.tag(),
+                            variant.cases.iter().map(|c| &c.ty),
+                        );
+                        self.emit(&VariantLift {
+                            variant,
+                            ty: id,
+                            name: &named.name,
+                        });
+                    }
 
-                TypeDefKind::Option(t) => {
-                    self.read_variant_arms_from_memory(offset, addr, Int::U8, [&Type::Unit, t]);
-                    self.emit(&OptionLift { payload: t, ty: id });
-                }
+                    NamedTypeKind::Enum(e) => {
+                        self.stack.push(addr.clone());
+                        self.load_intrepr(offset, e.tag());
+                        self.lift(ty);
+                    }
 
-                TypeDefKind::Expected(e) => {
-                    self.read_variant_arms_from_memory(offset, addr, Int::U8, [&e.ok, &e.err]);
-                    self.emit(&ExpectedLift {
-                        expected: e,
-                        ty: id,
-                    });
-                }
-
-                TypeDefKind::Enum(e) => {
-                    self.stack.push(addr.clone());
-                    self.load_intrepr(offset, e.tag());
-                    self.lift(ty);
-                }
-
-                TypeDefKind::Union(union) => {
-                    self.read_variant_arms_from_memory(
-                        offset,
-                        addr,
-                        union.tag(),
-                        union.cases.iter().map(|c| &c.ty),
-                    );
-                    self.emit(&UnionLift {
-                        union,
-                        ty: id,
-                        name: self.iface.types[id].name.as_deref().unwrap(),
-                    });
-                }
+                    NamedTypeKind::Union(union) => {
+                        self.read_variant_arms_from_memory(
+                            offset,
+                            addr,
+                            union.tag(),
+                            union.cases.iter().map(|c| &c.ty),
+                        );
+                        self.emit(&UnionLift {
+                            union,
+                            ty: id,
+                            name: &named.name,
+                        });
+                    }
+                },
             },
         }
     }
@@ -2199,8 +2222,11 @@ impl<'a, B: Bindgen> Generator<'a, B> {
     fn is_char(&self, ty: &Type) -> bool {
         match ty {
             Type::Char => true,
-            Type::Id(id) => match &self.iface.types[*id].kind {
-                TypeDefKind::Type(t) => self.is_char(t),
+            Type::Id(id) => match &self.iface.types[*id] {
+                CustomType::Named(NamedType {
+                    kind: NamedTypeKind::Type(t),
+                    ..
+                }) => self.is_char(t),
                 _ => false,
             },
             _ => false,

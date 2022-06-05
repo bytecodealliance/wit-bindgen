@@ -36,7 +36,7 @@ pub fn codegen_rust_wasm_import(input: TokenStream) -> TokenStream {
 pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
     use heck::*;
     use std::collections::BTreeMap;
-    use wit_parser::{FunctionKind, Type, TypeDefKind};
+    use wit_parser::{AnonymousType, CustomType, FunctionKind, Type};
 
     return gen_rust(
         input,
@@ -168,35 +168,31 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         id: wit_parser::TypeId,
     ) -> proc_macro2::TokenStream {
         let ty = &iface.types[id];
-        if let Some(name) = &ty.name {
-            let name = quote::format_ident!("{}", name.to_camel_case());
-            let module = quote::format_ident!("{}", iface.name.to_snake_case());
-            return quote::quote! { #module::#name };
-        }
-        match &ty.kind {
-            TypeDefKind::Type(t) => quote_ty(param, iface, t),
-            TypeDefKind::List(t) => {
-                let t = quote_ty(param, iface, t);
-                quote::quote! { Vec<#t> }
+        match ty {
+            CustomType::Named(ty) => {
+                let name = quote::format_ident!("{}", ty.name.to_camel_case());
+                let module = quote::format_ident!("{}", iface.name.to_snake_case());
+                quote::quote! { #module::#name }
             }
-            TypeDefKind::Flags(_) => panic!("unknown flags"),
-            TypeDefKind::Enum(_) => panic!("unknown enum"),
-            TypeDefKind::Record(_) => panic!("unknown record"),
-            TypeDefKind::Variant(_) => panic!("unknown variant"),
-            TypeDefKind::Union(_) => panic!("unknown union"),
-            TypeDefKind::Tuple(t) => {
-                let fields = t.types.iter().map(|ty| quote_ty(param, iface, ty));
-                quote::quote! { (#(#fields,)*) }
-            }
-            TypeDefKind::Option(ty) => {
-                let ty = quote_ty(param, iface, ty);
-                quote::quote! { Option<#ty> }
-            }
-            TypeDefKind::Expected(e) => {
-                let ok = quote_ty(param, iface, &e.ok);
-                let err = quote_ty(param, iface, &e.err);
-                quote::quote! { Result<#ok, #err> }
-            }
+            CustomType::Anonymous(ty) => match ty {
+                AnonymousType::Option(ty) => {
+                    let ty = quote_ty(param, iface, ty);
+                    quote::quote! { Option<#ty> }
+                }
+                AnonymousType::Expected(e) => {
+                    let ok = quote_ty(param, iface, &e.ok);
+                    let err = quote_ty(param, iface, &e.err);
+                    quote::quote! { Result<#ok, #err> }
+                }
+                AnonymousType::Tuple(t) => {
+                    let fields = t.types.iter().map(|ty| quote_ty(param, iface, ty));
+                    quote::quote! { (#(#fields,)*) }
+                }
+                AnonymousType::List(t) => {
+                    let t = quote_ty(param, iface, t);
+                    quote::quote! { Vec<#t> }
+                }
+            },
         }
     }
 }

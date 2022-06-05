@@ -139,8 +139,11 @@ impl Js {
             Type::Char => None,
             Type::Handle(_) => None,
             Type::String => None,
-            Type::Id(id) => match &iface.types[*id].kind {
-                TypeDefKind::Type(t) => self.array_ty(iface, t),
+            Type::Id(id) => match &iface.types[*id] {
+                CustomType::Named(NamedType {
+                    kind: NamedTypeKind::Type(t),
+                    ..
+                }) => self.array_ty(iface, t),
                 _ => None,
             },
         }
@@ -164,37 +167,31 @@ impl Js {
             Type::String => self.src.ts("string"),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
-                if let Some(name) = &ty.name {
-                    return self.src.ts(&name.to_camel_case());
-                }
-                match &ty.kind {
-                    TypeDefKind::Type(t) => self.print_ty(iface, t),
-                    TypeDefKind::Tuple(t) => self.print_tuple(iface, t),
-                    TypeDefKind::Record(_) => panic!("anonymous record"),
-                    TypeDefKind::Flags(_) => panic!("anonymous flags"),
-                    TypeDefKind::Enum(_) => panic!("anonymous enum"),
-                    TypeDefKind::Union(_) => panic!("anonymous union"),
-                    TypeDefKind::Option(t) => {
-                        if self.maybe_null(iface, t) {
-                            self.needs_ty_option = true;
-                            self.src.ts("Option<");
-                            self.print_ty(iface, t);
-                            self.src.ts(">");
-                        } else {
-                            self.print_ty(iface, t);
-                            self.src.ts(" | null");
+                match ty {
+                    CustomType::Named(ty) => self.src.ts(&ty.name.to_camel_case()),
+                    CustomType::Anonymous(ty) => match ty {
+                        AnonymousType::Tuple(t) => self.print_tuple(iface, t),
+                        AnonymousType::Option(t) => {
+                            if self.maybe_null(iface, t) {
+                                self.needs_ty_option = true;
+                                self.src.ts("Option<");
+                                self.print_ty(iface, t);
+                                self.src.ts(">");
+                            } else {
+                                self.print_ty(iface, t);
+                                self.src.ts(" | null");
+                            }
                         }
-                    }
-                    TypeDefKind::Expected(e) => {
-                        self.needs_ty_result = true;
-                        self.src.ts("Result<");
-                        self.print_ty(iface, &e.ok);
-                        self.src.ts(", ");
-                        self.print_ty(iface, &e.err);
-                        self.src.ts(">");
-                    }
-                    TypeDefKind::Variant(_) => panic!("anonymous variant"),
-                    TypeDefKind::List(v) => self.print_list(iface, v),
+                        AnonymousType::Expected(e) => {
+                            self.needs_ty_result = true;
+                            self.src.ts("Result<");
+                            self.print_ty(iface, &e.ok);
+                            self.src.ts(", ");
+                            self.print_ty(iface, &e.err);
+                            self.src.ts(">");
+                        }
+                        AnonymousType::List(v) => self.print_list(iface, v),
+                    },
                 }
             }
         }
@@ -314,31 +311,36 @@ impl Js {
             Type::Id(id) => *id,
             _ => return None,
         };
-        match &iface.types[id].kind {
-            // If `ty` points to an `option<T>`, then `ty` can be represented
-            // with `null` if `t` itself can't be represented with null. For
-            // example `option<option<u32>>` can't be represented with `null`
-            // since that's ambiguous if it's `none` or `some(none)`.
-            //
-            // Note, oddly enough, that `option<option<option<u32>>>` can be
-            // represented as `null` since:
-            //
-            // * `null` => `none`
-            // * `{ tag: "none" }` => `some(none)`
-            // * `{ tag: "some", val: null }` => `some(some(none))`
-            // * `{ tag: "some", val: 1 }` => `some(some(some(1)))`
-            //
-            // It's doubtful anyone would actually rely on that though due to
-            // how confusing it is.
-            TypeDefKind::Option(t) => {
-                if !self.maybe_null(iface, t) {
-                    Some(t)
-                } else {
-                    None
+        match &iface.types[id] {
+            CustomType::Anonymous(ty) => match ty {
+                // If `ty` points to an `option<T>`, then `ty` can be represented
+                // with `null` if `t` itself can't be represented with null. For
+                // example `option<option<u32>>` can't be represented with `null`
+                // since that's ambiguous if it's `none` or `some(none)`.
+                //
+                // Note, oddly enough, that `option<option<option<u32>>>` can be
+                // represented as `null` since:
+                //
+                // * `null` => `none`
+                // * `{ tag: "none" }` => `some(none)`
+                // * `{ tag: "some", val: null }` => `some(some(none))`
+                // * `{ tag: "some", val: 1 }` => `some(some(some(1)))`
+                //
+                // It's doubtful anyone would actually rely on that though due to
+                // how confusing it is.
+                AnonymousType::Option(t) => {
+                    if !self.maybe_null(iface, t) {
+                        Some(t)
+                    } else {
+                        None
+                    }
                 }
-            }
-            TypeDefKind::Type(t) => self.as_nullable(iface, t),
-            _ => None,
+                _ => None,
+            },
+            CustomType::Named(ty) => match &ty.kind {
+                NamedTypeKind::Type(t) => self.as_nullable(iface, t),
+                _ => None,
+            },
         }
     }
 }

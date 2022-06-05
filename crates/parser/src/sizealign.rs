@@ -1,4 +1,4 @@
-use crate::{FlagsRepr, Int, Interface, Type, TypeDef, TypeDefKind};
+use crate::{AnonymousType, CustomType, FlagsRepr, Int, Interface, NamedTypeKind, Type};
 
 #[derive(Default)]
 pub struct SizeAlign {
@@ -14,22 +14,26 @@ impl SizeAlign {
         }
     }
 
-    fn calculate(&self, ty: &TypeDef) -> (usize, usize) {
-        match &ty.kind {
-            TypeDefKind::Type(t) => (self.size(t), self.align(t)),
-            TypeDefKind::List(_) => (8, 4),
-            TypeDefKind::Record(r) => self.record(r.fields.iter().map(|f| &f.ty)),
-            TypeDefKind::Tuple(t) => self.record(t.types.iter()),
-            TypeDefKind::Flags(f) => match f.repr() {
-                FlagsRepr::U8 => (1, 1),
-                FlagsRepr::U16 => (2, 2),
-                FlagsRepr::U32(n) => (n * 4, 4),
+    fn calculate(&self, ty: &CustomType) -> (usize, usize) {
+        match ty {
+            CustomType::Anonymous(ty) => match ty {
+                AnonymousType::Option(t) => self.variant(Int::U8, [&Type::Unit, t]),
+                AnonymousType::Expected(e) => self.variant(Int::U8, [&e.ok, &e.err]),
+                AnonymousType::Tuple(t) => self.record(t.types.iter()),
+                AnonymousType::List(_) => (8, 4),
             },
-            TypeDefKind::Variant(v) => self.variant(v.tag(), v.cases.iter().map(|c| &c.ty)),
-            TypeDefKind::Enum(e) => self.variant(e.tag(), []),
-            TypeDefKind::Option(t) => self.variant(Int::U8, [&Type::Unit, t]),
-            TypeDefKind::Expected(e) => self.variant(Int::U8, [&e.ok, &e.err]),
-            TypeDefKind::Union(u) => self.variant(u.tag(), u.cases.iter().map(|c| &c.ty)),
+            CustomType::Named(ty) => match &ty.kind {
+                NamedTypeKind::Type(t) => (self.size(t), self.align(t)),
+                NamedTypeKind::Record(r) => self.record(r.fields.iter().map(|f| &f.ty)),
+                NamedTypeKind::Flags(f) => match f.repr() {
+                    FlagsRepr::U8 => (1, 1),
+                    FlagsRepr::U16 => (2, 2),
+                    FlagsRepr::U32(n) => (n * 4, 4),
+                },
+                NamedTypeKind::Variant(v) => self.variant(v.tag(), v.cases.iter().map(|c| &c.ty)),
+                NamedTypeKind::Enum(e) => self.variant(e.tag(), []),
+                NamedTypeKind::Union(u) => self.variant(u.tag(), u.cases.iter().map(|c| &c.ty)),
+            },
         }
     }
 

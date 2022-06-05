@@ -19,7 +19,7 @@ pub fn validate_id(s: &str) -> Result<()> {
 #[derive(Debug, Default)]
 pub struct Interface {
     pub name: String,
-    pub types: Arena<TypeDef>,
+    pub types: Arena<CustomType>,
     pub type_lookup: HashMap<String, TypeId>,
     pub resources: Arena<Resource>,
     pub resource_lookup: HashMap<String, ResourceId>,
@@ -29,31 +29,45 @@ pub struct Interface {
     pub globals: Vec<Global>,
 }
 
-pub type TypeId = Id<TypeDef>;
+pub type TypeId = Id<CustomType>;
 pub type ResourceId = Id<Resource>;
 pub type InterfaceId = Id<Interface>;
 
+/// A user-defined type.
+///
+/// This can either by an anonymous type, defined via. generics (`option<T>`, `expected<T, E>`, etc.),
+/// or a named type (`record`s, `enum`s, etc.).
 #[derive(Debug)]
-pub struct TypeDef {
+pub enum CustomType {
+    Anonymous(AnonymousType),
+    Named(NamedType),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AnonymousType {
+    Option(Type),
+    Expected(Expected),
+    Tuple(Tuple),
+    List(Type),
+}
+
+#[derive(Debug)]
+pub struct NamedType {
     pub docs: Docs,
-    pub kind: TypeDefKind,
-    pub name: Option<String>,
+    pub kind: NamedTypeKind,
+    pub name: String,
     /// `None` if this type is originally declared in this instance or
     /// otherwise `Some` if it was originally defined in a different module.
     pub foreign_module: Option<String>,
 }
 
 #[derive(Debug)]
-pub enum TypeDefKind {
+pub enum NamedTypeKind {
     Record(Record),
     Flags(Flags),
-    Tuple(Tuple),
     Variant(Variant),
     Enum(Enum),
-    Option(Type),
-    Expected(Expected),
     Union(Union),
-    List(Type),
     Type(Type),
 }
 
@@ -135,7 +149,7 @@ impl FlagsRepr {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Tuple {
     pub types: Vec<Type>,
 }
@@ -185,7 +199,7 @@ impl Enum {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Expected {
     pub ok: Type,
     pub err: Type,
@@ -379,6 +393,12 @@ impl Interface {
         }
     }
 
+    /// Returns all of this interface's user-defined types in topological order.
+    ///
+    /// Being topologically ordered means that if one type contains another type,
+    /// the contained type will always come earlier in the list, so iterating in
+    /// this order allows you to generate bindings for each type with the assumption
+    /// that all of its contained types have already been handled.
     pub fn topological_types(&self) -> Vec<TypeId> {
         let mut ret = Vec::new();
         let mut visited = HashSet::new();
@@ -392,34 +412,39 @@ impl Interface {
         if !visited.insert(id) {
             return;
         }
-        match &self.types[id].kind {
-            TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => {}
-            TypeDefKind::Type(t) | TypeDefKind::List(t) => self.topo_visit_ty(t, list, visited),
-            TypeDefKind::Record(r) => {
-                for f in r.fields.iter() {
-                    self.topo_visit_ty(&f.ty, list, visited);
+        match &self.types[id] {
+            CustomType::Anonymous(ty) => match ty {
+                AnonymousType::Option(ty) => self.topo_visit_ty(ty, list, visited),
+                AnonymousType::Expected(e) => {
+                    self.topo_visit_ty(&e.ok, list, visited);
+                    self.topo_visit_ty(&e.err, list, visited);
                 }
-            }
-            TypeDefKind::Tuple(t) => {
-                for t in t.types.iter() {
-                    self.topo_visit_ty(t, list, visited);
+                AnonymousType::Tuple(t) => {
+                    for t in t.types.iter() {
+                        self.topo_visit_ty(t, list, visited);
+                    }
                 }
-            }
-            TypeDefKind::Variant(v) => {
-                for v in v.cases.iter() {
-                    self.topo_visit_ty(&v.ty, list, visited);
+                AnonymousType::List(t) => self.topo_visit_ty(t, list, visited),
+            },
+            CustomType::Named(ty) => match &ty.kind {
+                NamedTypeKind::Flags(_) | NamedTypeKind::Enum(_) => {}
+                NamedTypeKind::Type(t) => self.topo_visit_ty(t, list, visited),
+                NamedTypeKind::Record(r) => {
+                    for f in r.fields.iter() {
+                        self.topo_visit_ty(&f.ty, list, visited);
+                    }
                 }
-            }
-            TypeDefKind::Option(ty) => self.topo_visit_ty(ty, list, visited),
-            TypeDefKind::Expected(e) => {
-                self.topo_visit_ty(&e.ok, list, visited);
-                self.topo_visit_ty(&e.err, list, visited);
-            }
-            TypeDefKind::Union(u) => {
-                for t in u.cases.iter() {
-                    self.topo_visit_ty(&t.ty, list, visited);
+                NamedTypeKind::Variant(v) => {
+                    for v in v.cases.iter() {
+                        self.topo_visit_ty(&v.ty, list, visited);
+                    }
                 }
-            }
+                NamedTypeKind::Union(u) => {
+                    for t in u.cases.iter() {
+                        self.topo_visit_ty(&t.ty, list, visited);
+                    }
+                }
+            },
         }
         list.push(id);
     }
@@ -446,29 +471,36 @@ impl Interface {
 
             Type::Bool | Type::Char | Type::Handle(_) | Type::String => false,
 
-            Type::Id(id) => match &self.types[*id].kind {
-                TypeDefKind::List(_)
-                | TypeDefKind::Variant(_)
-                | TypeDefKind::Enum(_)
-                | TypeDefKind::Option(_)
-                | TypeDefKind::Expected(_)
-                | TypeDefKind::Union(_) => false,
-                TypeDefKind::Type(t) => self.all_bits_valid(t),
-                TypeDefKind::Record(r) => r.fields.iter().all(|f| self.all_bits_valid(&f.ty)),
-                TypeDefKind::Tuple(t) => t.types.iter().all(|t| self.all_bits_valid(t)),
+            Type::Id(id) => match &self.types[*id] {
+                CustomType::Anonymous(ty) => match ty {
+                    AnonymousType::Tuple(t) => t.types.iter().all(|t| self.all_bits_valid(t)),
+                    AnonymousType::List(_)
+                    | AnonymousType::Option(_)
+                    | AnonymousType::Expected(_) => false,
+                },
+                CustomType::Named(ty) => match &ty.kind {
+                    NamedTypeKind::Variant(_)
+                    | NamedTypeKind::Enum(_)
+                    | NamedTypeKind::Union(_) => false,
+                    NamedTypeKind::Type(t) => self.all_bits_valid(t),
+                    NamedTypeKind::Record(r) => r.fields.iter().all(|f| self.all_bits_valid(&f.ty)),
 
-                // FIXME: this could perhaps be `true` for multiples-of-32 but
-                // seems better to probably leave this as unconditionally
-                // `false` for now, may want to reconsider later?
-                TypeDefKind::Flags(_) => false,
+                    // FIXME: this could perhaps be `true` for multiples-of-32 but
+                    // seems better to probably leave this as unconditionally
+                    // `false` for now, may want to reconsider later?
+                    NamedTypeKind::Flags(_) => false,
+                },
             },
         }
     }
 
     pub fn get_variant(&self, ty: &Type) -> Option<&Variant> {
         if let Type::Id(id) = ty {
-            match &self.types[*id].kind {
-                TypeDefKind::Variant(v) => Some(v),
+            match &self.types[*id] {
+                CustomType::Named(NamedType {
+                    kind: NamedTypeKind::Variant(v),
+                    ..
+                }) => Some(v),
                 _ => None,
             }
         } else {

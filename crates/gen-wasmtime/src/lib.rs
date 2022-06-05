@@ -200,13 +200,13 @@ impl Wasmtime {
         }
 
         if let Type::Id(id) = &f.result {
-            if let TypeDefKind::Expected(e) = &iface.types[*id].kind {
+            if let CustomType::Anonymous(AnonymousType::Expected(e)) = &iface.types[*id] {
                 if let Type::Id(err) = e.err {
-                    if let Some(name) = &iface.types[err].name {
-                        self.needs_custom_error_to_types.insert(name.clone());
+                    if let CustomType::Named(ty) = &iface.types[err] {
+                        self.needs_custom_error_to_types.insert(ty.name.clone());
                         return FunctionRet::CustomToError {
                             ok: e.ok,
-                            err: name.to_string(),
+                            err: ty.name.to_string(),
                         };
                     }
                 }

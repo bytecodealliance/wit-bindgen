@@ -206,86 +206,48 @@ pub trait RustGenerator {
         let info = self.info(id);
         let lt = self.lifetime_for(&info, mode);
         let ty = &iface.types[id];
-        if ty.name.is_some() {
-            let name = if lt.is_some() {
-                self.param_name(iface, id)
-            } else {
-                self.result_name(iface, id)
-            };
-            self.push_str(&name);
+        match ty {
+            CustomType::Named(_) => {
+                let name = if lt.is_some() {
+                    self.param_name(iface, id)
+                } else {
+                    self.result_name(iface, id)
+                };
+                self.push_str(&name);
 
-            // If the type recursively owns data and it's a
-            // variant/record/list, then we need to place the
-            // lifetime parameter on the type as well.
-            if info.owns_data() && needs_generics(iface, &ty.kind) {
+                // Print generics for the type if it needs them.
+                // (This only puts them there if they're needed).
                 self.print_generics(&info, lt, false);
             }
-
-            return;
-
-            fn needs_generics(iface: &Interface, ty: &TypeDefKind) -> bool {
-                match ty {
-                    TypeDefKind::Variant(_)
-                    | TypeDefKind::Record(_)
-                    | TypeDefKind::Option(_)
-                    | TypeDefKind::Expected(_)
-                    | TypeDefKind::List(_)
-                    | TypeDefKind::Flags(_)
-                    | TypeDefKind::Enum(_)
-                    | TypeDefKind::Tuple(_)
-                    | TypeDefKind::Union(_) => true,
-                    TypeDefKind::Type(Type::Id(t)) => needs_generics(iface, &iface.types[*t].kind),
-                    TypeDefKind::Type(Type::String) => true,
-                    TypeDefKind::Type(Type::Handle(_)) => true,
-                    TypeDefKind::Type(_) => false,
+            CustomType::Anonymous(ty) => match ty {
+                AnonymousType::Option(t) => {
+                    self.push_str("Option<");
+                    self.print_ty(iface, t, mode);
+                    self.push_str(">");
                 }
-            }
-        }
 
-        match &ty.kind {
-            TypeDefKind::List(t) => self.print_list(iface, t, mode),
-
-            TypeDefKind::Option(t) => {
-                self.push_str("Option<");
-                self.print_ty(iface, t, mode);
-                self.push_str(">");
-            }
-
-            TypeDefKind::Expected(e) => {
-                self.push_str("Result<");
-                self.print_ty(iface, &e.ok, mode);
-                self.push_str(",");
-                self.print_ty(iface, &e.err, mode);
-                self.push_str(">");
-            }
-
-            TypeDefKind::Variant(_) => panic!("unsupported anonymous variant"),
-
-            // Tuple-like records are mapped directly to Rust tuples of
-            // types. Note the trailing comma after each member to
-            // appropriately handle 1-tuples.
-            TypeDefKind::Tuple(t) => {
-                self.push_str("(");
-                for ty in t.types.iter() {
-                    self.print_ty(iface, ty, mode);
+                AnonymousType::Expected(e) => {
+                    self.push_str("Result<");
+                    self.print_ty(iface, &e.ok, mode);
                     self.push_str(",");
+                    self.print_ty(iface, &e.err, mode);
+                    self.push_str(">");
                 }
-                self.push_str(")");
-            }
-            TypeDefKind::Record(_) => {
-                panic!("unsupported anonymous type reference: record")
-            }
-            TypeDefKind::Flags(_) => {
-                panic!("unsupported anonymous type reference: flags")
-            }
-            TypeDefKind::Enum(_) => {
-                panic!("unsupported anonymous type reference: enum")
-            }
-            TypeDefKind::Union(_) => {
-                panic!("unsupported anonymous type reference: union")
-            }
 
-            TypeDefKind::Type(t) => self.print_ty(iface, t, mode),
+                // Tuple-like records are mapped directly to Rust tuples of
+                // types. Note the trailing comma after each member to
+                // appropriately handle 1-tuples.
+                AnonymousType::Tuple(t) => {
+                    self.push_str("(");
+                    for ty in t.types.iter() {
+                        self.print_ty(iface, ty, mode);
+                        self.push_str(",");
+                    }
+                    self.push_str(")");
+                }
+
+                AnonymousType::List(t) => self.print_list(iface, t, mode),
+            },
         }
     }
 
@@ -725,7 +687,12 @@ pub trait RustGenerator {
 
     fn param_name(&self, iface: &Interface, ty: TypeId) -> String {
         let info = self.info(ty);
-        let name = iface.types[ty].name.as_ref().unwrap().to_camel_case();
+        // FIXME: somehow make this statically take a named type
+        // while still being able to get at the type info.
+        let name = match &iface.types[ty] {
+            CustomType::Named(ty) => ty.name.to_camel_case(),
+            _ => unreachable!(),
+        };
         if self.uses_two_names(&info) {
             format!("{}Param", name)
         } else {
@@ -735,7 +702,10 @@ pub trait RustGenerator {
 
     fn result_name(&self, iface: &Interface, ty: TypeId) -> String {
         let info = self.info(ty);
-        let name = iface.types[ty].name.as_ref().unwrap().to_camel_case();
+        let name = match &iface.types[ty] {
+            CustomType::Named(ty) => ty.name.to_camel_case(),
+            _ => unreachable!(),
+        };
         if self.uses_two_names(&info) {
             format!("{}Result", name)
         } else {

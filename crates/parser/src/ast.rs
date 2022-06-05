@@ -69,9 +69,19 @@ struct Docs<'a> {
 pub struct TypeDef<'a> {
     docs: Docs<'a>,
     name: Id<'a>,
-    ty: Type<'a>,
+    kind: TypeDefKind<'a>,
 }
 
+enum TypeDefKind<'a> {
+    Alias(Alias<'a>),
+    Record(Record<'a>),
+    Flags(Flags<'a>),
+    Variant(Variant<'a>),
+    Enum(Enum<'a>),
+    Union(Union<'a>),
+}
+
+/// The type of a value.
 enum Type<'a> {
     Unit,
     Bool,
@@ -90,14 +100,15 @@ enum Type<'a> {
     Handle(Id<'a>),
     Name(Id<'a>),
     List(Box<Type<'a>>),
-    Record(Record<'a>),
-    Flags(Flags<'a>),
-    Variant(Variant<'a>),
     Tuple(Vec<Type<'a>>),
-    Enum(Enum<'a>),
     Option(Box<Type<'a>>),
     Expected(Expected<'a>),
-    Union(Union<'a>),
+}
+
+/// A type alias, `type foo = bar`.
+struct Alias<'a> {
+    /// The type that we're aliasing (in our example, `bar`).
+    target: Type<'a>,
 }
 
 struct Record<'a> {
@@ -203,7 +214,7 @@ impl<'a> Item<'a> {
     fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Item<'a>> {
         match tokens.clone().next()? {
             Some((_span, Token::Use)) => Use::parse(tokens, docs).map(Item::Use),
-            Some((_span, Token::Type)) => TypeDef::parse(tokens, docs).map(Item::TypeDef),
+            Some((_span, Token::Type)) => TypeDef::parse_alias(tokens, docs).map(Item::TypeDef),
             Some((_span, Token::Flags)) => TypeDef::parse_flags(tokens, docs).map(Item::TypeDef),
             Some((_span, Token::Enum)) => TypeDef::parse_enum(tokens, docs).map(Item::TypeDef),
             Some((_span, Token::Variant)) => {
@@ -260,18 +271,22 @@ impl<'a> Use<'a> {
 }
 
 impl<'a> TypeDef<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
+    fn parse_alias(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Type)?;
         let name = parse_id(tokens)?;
         tokens.expect(Token::Equals)?;
-        let ty = Type::parse(tokens)?;
-        Ok(TypeDef { docs, name, ty })
+        let target = Type::parse(tokens)?;
+        Ok(TypeDef {
+            docs,
+            name,
+            kind: TypeDefKind::Alias(Alias { target }),
+        })
     }
 
     fn parse_flags(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Flags)?;
         let name = parse_id(tokens)?;
-        let ty = Type::Flags(Flags {
+        let kind = TypeDefKind::Flags(Flags {
             flags: parse_list(
                 tokens,
                 Token::LeftBrace,
@@ -282,13 +297,13 @@ impl<'a> TypeDef<'a> {
                 },
             )?,
         });
-        Ok(TypeDef { docs, name, ty })
+        Ok(TypeDef { docs, name, kind })
     }
 
     fn parse_record(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Record)?;
         let name = parse_id(tokens)?;
-        let ty = Type::Record(Record {
+        let kind = TypeDefKind::Record(Record {
             fields: parse_list(
                 tokens,
                 Token::LeftBrace,
@@ -301,13 +316,13 @@ impl<'a> TypeDef<'a> {
                 },
             )?,
         });
-        Ok(TypeDef { docs, name, ty })
+        Ok(TypeDef { docs, name, kind })
     }
 
     fn parse_variant(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Variant)?;
         let name = parse_id(tokens)?;
-        let ty = Type::Variant(Variant {
+        let kind = TypeDefKind::Variant(Variant {
             span: name.span,
             cases: parse_list(
                 tokens,
@@ -326,13 +341,13 @@ impl<'a> TypeDef<'a> {
                 },
             )?,
         });
-        Ok(TypeDef { docs, name, ty })
+        Ok(TypeDef { docs, name, kind })
     }
 
     fn parse_union(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Union)?;
         let name = parse_id(tokens)?;
-        let ty = Type::Union(Union {
+        let kind = TypeDefKind::Union(Union {
             span: name.span,
             cases: parse_list(
                 tokens,
@@ -344,13 +359,13 @@ impl<'a> TypeDef<'a> {
                 },
             )?,
         });
-        Ok(TypeDef { docs, name, ty })
+        Ok(TypeDef { docs, name, kind })
     }
 
     fn parse_enum(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Enum)?;
         let name = parse_id(tokens)?;
-        let ty = Type::Enum(Enum {
+        let kind = TypeDefKind::Enum(Enum {
             span: name.span,
             cases: parse_list(
                 tokens,
@@ -362,7 +377,7 @@ impl<'a> TypeDef<'a> {
                 },
             )?,
         });
-        Ok(TypeDef { docs, name, ty })
+        Ok(TypeDef { docs, name, kind })
     }
 }
 

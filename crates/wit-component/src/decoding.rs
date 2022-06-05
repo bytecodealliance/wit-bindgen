@@ -173,6 +173,10 @@ pub struct InterfaceDecoder<'a> {
     info: &'a ComponentInfo<'a>,
     interface: Interface,
     type_map: HashMap<types::TypeId, Type>,
+    /// A map from type IDs to their exported names.
+    ///
+    /// Types have no names if they aren't exported,
+    /// because types are unnamed in components.
     name_map: HashMap<types::TypeId, &'a str>,
 }
 
@@ -278,7 +282,7 @@ impl<'a> InterfaceDecoder<'a> {
                         }
                         types::InterfaceType::List(ty) => {
                             let inner = self.decode_type(ty)?;
-                            Type::Id(self.alloc_type(name, TypeDefKind::List(inner)))
+                            Type::Id(self.alloc_anonymous(name, AnonymousType::List(inner)))
                         }
                         types::InterfaceType::Tuple(tys) => self.decode_tuple(name, tys)?,
                         types::InterfaceType::Flags(names) => {
@@ -302,6 +306,7 @@ impl<'a> InterfaceDecoder<'a> {
         })
     }
 
+    /// Decode a primitive type which may have an export name attached to it.
     fn decode_named_primitive(
         &mut self,
         name: Option<String>,
@@ -312,7 +317,7 @@ impl<'a> InterfaceDecoder<'a> {
             validate_id(&name)
                 .with_context(|| format!("type name `{}` is not a valid identifier", name))?;
 
-            ty = Type::Id(self.alloc_type(Some(name), TypeDefKind::Type(ty)));
+            ty = Type::Id(self.alloc_named(name, NamedTypeKind::Type(ty)));
         }
 
         Ok(ty)
@@ -337,6 +342,55 @@ impl<'a> InterfaceDecoder<'a> {
         })
     }
 
+    // Anonymous types.
+    // Although the types themselves don't have names, an optional `name` parameter is passed for
+    // the type's exported name; if it has one, that's interpreted as a type alias.
+    // (That check happens inside `alloc_anonymous`).
+    fn decode_option(
+        &mut self,
+        name: Option<String>,
+        payload: &types::InterfaceTypeRef,
+    ) -> Result<Type> {
+        let payload = self.decode_type(payload)?;
+        Ok(Type::Id(
+            self.alloc_anonymous(name, AnonymousType::Option(payload)),
+        ))
+    }
+
+    fn decode_expected(
+        &mut self,
+        name: Option<String>,
+        ok: &types::InterfaceTypeRef,
+        err: &types::InterfaceTypeRef,
+    ) -> Result<Type> {
+        let ok = self.decode_type(ok)?;
+        let err = self.decode_type(err)?;
+        Ok(Type::Id(self.alloc_anonymous(
+            name,
+            AnonymousType::Expected(Expected { ok, err }),
+        )))
+    }
+
+    fn decode_tuple(
+        &mut self,
+        name: Option<String>,
+        tys: &[types::InterfaceTypeRef],
+    ) -> Result<Type> {
+        let tuple = Tuple {
+            types: tys
+                .iter()
+                .map(|ty| self.decode_type(ty))
+                .collect::<Result<_>>()?,
+        };
+
+        Ok(Type::Id(
+            self.alloc_anonymous(name, AnonymousType::Tuple(tuple)),
+        ))
+    }
+
+    // Named types.
+    // These types have to have names, but the names are still passed optionally, and the function throws an error if it's not there;
+    // it has to be done at some point anyway, so it doesn't matter if it's inside or outside the function.
     fn decode_record(
         &mut self,
         record_name: Option<String>,
@@ -364,10 +418,9 @@ impl<'a> InterfaceDecoder<'a> {
                 .collect::<Result<_>>()?,
         };
 
-        Ok(Type::Id(self.alloc_type(
-            Some(record_name),
-            TypeDefKind::Record(record),
-        )))
+        Ok(Type::Id(
+            self.alloc_named(record_name, NamedTypeKind::Record(record)),
+        ))
     }
 
     fn decode_variant(
@@ -397,25 +450,10 @@ impl<'a> InterfaceDecoder<'a> {
                 .collect::<Result<_>>()?,
         };
 
-        Ok(Type::Id(self.alloc_type(
-            Some(variant_name),
-            TypeDefKind::Variant(variant),
+        Ok(Type::Id(self.alloc_named(
+            variant_name,
+            NamedTypeKind::Variant(variant),
         )))
-    }
-
-    fn decode_tuple(
-        &mut self,
-        name: Option<String>,
-        tys: &[types::InterfaceTypeRef],
-    ) -> Result<Type> {
-        let tuple = Tuple {
-            types: tys
-                .iter()
-                .map(|ty| self.decode_type(ty))
-                .collect::<Result<_>>()?,
-        };
-
-        Ok(Type::Id(self.alloc_type(name, TypeDefKind::Tuple(tuple))))
     }
 
     fn decode_flags(
@@ -445,7 +483,7 @@ impl<'a> InterfaceDecoder<'a> {
         };
 
         Ok(Type::Id(
-            self.alloc_type(Some(flags_name), TypeDefKind::Flags(flags)),
+            self.alloc_named(flags_name, NamedTypeKind::Flags(flags)),
         ))
     }
 
@@ -474,7 +512,7 @@ impl<'a> InterfaceDecoder<'a> {
         };
 
         Ok(Type::Id(
-            self.alloc_type(Some(enum_name), TypeDefKind::Enum(enum_)),
+            self.alloc_named(enum_name, NamedTypeKind::Enum(enum_)),
         ))
     }
 
@@ -483,6 +521,7 @@ impl<'a> InterfaceDecoder<'a> {
         name: Option<String>,
         tys: &[types::InterfaceTypeRef],
     ) -> Result<Type> {
+        let name = name.ok_or_else(|| anyhow!("interface has an unnamed union type"))?;
         let union = Union {
             cases: tys
                 .iter()
@@ -495,40 +534,27 @@ impl<'a> InterfaceDecoder<'a> {
                 .collect::<Result<_>>()?,
         };
 
-        Ok(Type::Id(self.alloc_type(name, TypeDefKind::Union(union))))
-    }
-
-    fn decode_option(
-        &mut self,
-        name: Option<String>,
-        payload: &types::InterfaceTypeRef,
-    ) -> Result<Type> {
-        let payload = self.decode_type(payload)?;
         Ok(Type::Id(
-            self.alloc_type(name, TypeDefKind::Option(payload)),
+            self.alloc_named(name, NamedTypeKind::Union(union)),
         ))
     }
 
-    fn decode_expected(
-        &mut self,
-        name: Option<String>,
-        ok: &types::InterfaceTypeRef,
-        err: &types::InterfaceTypeRef,
-    ) -> Result<Type> {
-        let ok = self.decode_type(ok)?;
-        let err = self.decode_type(err)?;
-        Ok(Type::Id(self.alloc_type(
-            name,
-            TypeDefKind::Expected(Expected { ok, err }),
-        )))
+    fn alloc_anonymous(&mut self, name: Option<String>, ty: AnonymousType) -> TypeId {
+        let id = self.interface.types.alloc(CustomType::Anonymous(ty));
+        if let Some(name) = name {
+            // If this type is exported, we interpret it as a type alias.
+            // (We still return the anonymous type though).
+            self.alloc_named(name, NamedTypeKind::Type(Type::Id(id)));
+        }
+        id
     }
 
-    fn alloc_type(&mut self, name: Option<String>, kind: TypeDefKind) -> TypeId {
-        self.interface.types.alloc(TypeDef {
+    fn alloc_named(&mut self, name: String, kind: NamedTypeKind) -> TypeId {
+        self.interface.types.alloc(CustomType::Named(NamedType {
             docs: Docs::default(),
             kind,
             name,
             foreign_module: None,
-        })
+        }))
     }
 }

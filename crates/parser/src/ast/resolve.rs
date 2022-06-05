@@ -6,59 +6,51 @@ use std::mem;
 
 #[derive(Default)]
 pub struct Resolver {
+    // Note: this should only ever point to named types, since an anonymous type can't have a name to be looked up with.
     type_lookup: HashMap<String, TypeId>,
-    types: Arena<TypeDef>,
+    types: Arena<CustomType>,
     resource_lookup: HashMap<String, ResourceId>,
     resources_copied: HashMap<(String, ResourceId), ResourceId>,
     types_copied: HashMap<(String, TypeId), TypeId>,
     resources: Arena<Resource>,
-    anon_types: HashMap<Key, TypeId>,
+    anon_types: HashMap<AnonymousType, TypeId>,
     functions: Vec<Function>,
     globals: Vec<Global>,
-}
-
-#[derive(PartialEq, Eq, Hash)]
-enum Key {
-    Variant(Vec<(String, Type)>),
-    Record(Vec<(String, Type)>),
-    Flags(Vec<String>),
-    Tuple(Vec<Type>),
-    Enum(Vec<String>),
-    List(Type),
-    Option(Type),
-    Expected(Type, Type),
-    Union(Vec<Type>),
 }
 
 impl Resolver {
     pub(super) fn resolve(
         &mut self,
         name: &str,
-        fields: &[Item<'_>],
+        items: &[Item<'_>],
         deps: &HashMap<String, Interface>,
     ) -> Result<Interface> {
         // First pull in any names from our dependencies
-        self.process_use(fields, deps)?;
+        self.process_use(items, deps)?;
         // ... then register our own names
-        self.register_names(fields)?;
+        self.register_names(items)?;
 
         // With all names registered we can now fully expand and translate all
         // types.
-        for field in fields {
+        for field in items {
             let t = match field {
                 Item::TypeDef(t) => t,
                 _ => continue,
             };
             let id = self.type_lookup[&*t.name.name];
-            let kind = self.resolve_type_def(&t.ty)?;
-            self.types.get_mut(id).unwrap().kind = kind;
+            let kind = self.resolve_named_type(&t.kind)?;
+            match self.types.get_mut(id).unwrap() {
+                CustomType::Named(ty) => ty.kind = kind,
+                // An anonymous type can't have a name.
+                CustomType::Anonymous(_) => unreachable!(),
+            }
         }
 
         // And finally we can resolve all type references in functions/globals
         // and additionally validate that types thesmelves are not recursive
         let mut valid_types = HashSet::new();
         let mut visiting = HashSet::new();
-        for field in fields {
+        for field in items {
             match field {
                 Item::Value(v) => self.resolve_value(v)?,
                 Item::Resource(r) => self.resolve_resource(r)?,
@@ -131,7 +123,7 @@ impl Resolver {
                         }
 
                         if let Some(id) = dep.type_lookup.get(&*name.name.name) {
-                            let ty = self.copy_type_def(&mod_name.name, dep, *id);
+                            let ty = self.copy_custom_type(&mod_name.name, dep, *id);
                             self.define_type(my_name, span, ty)?;
                             found = true;
                         }
@@ -153,7 +145,7 @@ impl Resolver {
                     let mut names = dep.type_lookup.iter().collect::<Vec<_>>();
                     names.sort(); // produce a stable order by which to add names
                     for (name, id) in names {
-                        let ty = self.copy_type_def(&mod_name.name, dep, *id);
+                        let ty = self.copy_custom_type(&mod_name.name, dep, *id);
                         self.define_type(name, mod_name.span, ty)?;
                     }
                 }
@@ -182,72 +174,80 @@ impl Resolver {
             })
     }
 
-    fn copy_type_def(&mut self, dep_name: &str, dep: &Interface, dep_id: TypeId) -> TypeId {
+    fn copy_custom_type(&mut self, dep_name: &str, dep: &Interface, dep_id: TypeId) -> TypeId {
         if let Some(id) = self.types_copied.get(&(dep_name.to_string(), dep_id)) {
             return *id;
         }
         let ty = &dep.types[dep_id];
 
-        let ty = TypeDef {
-            docs: ty.docs.clone(),
-            name: ty.name.clone(),
-            foreign_module: Some(
-                ty.foreign_module
-                    .clone()
-                    .unwrap_or_else(|| dep_name.to_string()),
-            ),
-            kind: match &ty.kind {
-                TypeDefKind::Type(t) => TypeDefKind::Type(self.copy_type(dep_name, dep, *t)),
-                TypeDefKind::Record(r) => TypeDefKind::Record(Record {
-                    fields: r
-                        .fields
-                        .iter()
-                        .map(|field| Field {
-                            docs: field.docs.clone(),
-                            name: field.name.clone(),
-                            ty: self.copy_type(dep_name, dep, field.ty),
-                        })
-                        .collect(),
+        let ty = match ty {
+            CustomType::Anonymous(ty) => CustomType::Anonymous(match ty {
+                AnonymousType::Option(t) => {
+                    AnonymousType::Option(self.copy_type(dep_name, dep, *t))
+                }
+                AnonymousType::Expected(e) => AnonymousType::Expected(Expected {
+                    ok: self.copy_type(dep_name, dep, e.ok),
+                    err: self.copy_type(dep_name, dep, e.err),
                 }),
-                TypeDefKind::Flags(f) => TypeDefKind::Flags(f.clone()),
-                TypeDefKind::Tuple(t) => TypeDefKind::Tuple(Tuple {
+                AnonymousType::Tuple(t) => AnonymousType::Tuple(Tuple {
                     types: t
                         .types
                         .iter()
                         .map(|ty| self.copy_type(dep_name, dep, *ty))
                         .collect(),
                 }),
-                TypeDefKind::Variant(v) => TypeDefKind::Variant(Variant {
-                    cases: v
-                        .cases
-                        .iter()
-                        .map(|case| Case {
-                            docs: case.docs.clone(),
-                            name: case.name.clone(),
-                            ty: self.copy_type(dep_name, dep, case.ty),
-                        })
-                        .collect(),
-                }),
-                TypeDefKind::Enum(e) => TypeDefKind::Enum(Enum {
-                    cases: e.cases.clone(),
-                }),
-                TypeDefKind::List(t) => TypeDefKind::List(self.copy_type(dep_name, dep, *t)),
-                TypeDefKind::Option(t) => TypeDefKind::Option(self.copy_type(dep_name, dep, *t)),
-                TypeDefKind::Expected(e) => TypeDefKind::Expected(Expected {
-                    ok: self.copy_type(dep_name, dep, e.ok),
-                    err: self.copy_type(dep_name, dep, e.err),
-                }),
-                TypeDefKind::Union(u) => TypeDefKind::Union(Union {
-                    cases: u
-                        .cases
-                        .iter()
-                        .map(|c| UnionCase {
-                            docs: c.docs.clone(),
-                            ty: self.copy_type(dep_name, dep, c.ty),
-                        })
-                        .collect(),
-                }),
-            },
+                AnonymousType::List(t) => AnonymousType::List(self.copy_type(dep_name, dep, *t)),
+            }),
+            CustomType::Named(ty) => CustomType::Named(NamedType {
+                docs: ty.docs.clone(),
+                name: ty.name.clone(),
+                foreign_module: Some(
+                    ty.foreign_module
+                        .clone()
+                        .unwrap_or_else(|| dep_name.to_string()),
+                ),
+                kind: match &ty.kind {
+                    NamedTypeKind::Type(t) => {
+                        NamedTypeKind::Type(self.copy_type(dep_name, dep, *t))
+                    }
+                    NamedTypeKind::Record(r) => NamedTypeKind::Record(Record {
+                        fields: r
+                            .fields
+                            .iter()
+                            .map(|field| Field {
+                                docs: field.docs.clone(),
+                                name: field.name.clone(),
+                                ty: self.copy_type(dep_name, dep, field.ty),
+                            })
+                            .collect(),
+                    }),
+                    NamedTypeKind::Flags(f) => NamedTypeKind::Flags(f.clone()),
+                    NamedTypeKind::Variant(v) => NamedTypeKind::Variant(Variant {
+                        cases: v
+                            .cases
+                            .iter()
+                            .map(|case| Case {
+                                docs: case.docs.clone(),
+                                name: case.name.clone(),
+                                ty: self.copy_type(dep_name, dep, case.ty),
+                            })
+                            .collect(),
+                    }),
+                    NamedTypeKind::Enum(e) => NamedTypeKind::Enum(Enum {
+                        cases: e.cases.clone(),
+                    }),
+                    NamedTypeKind::Union(u) => NamedTypeKind::Union(Union {
+                        cases: u
+                            .cases
+                            .iter()
+                            .map(|c| UnionCase {
+                                docs: c.docs.clone(),
+                                ty: self.copy_type(dep_name, dep, c.ty),
+                            })
+                            .collect(),
+                    }),
+                },
+            }),
         };
         let id = self.types.alloc(ty);
         self.types_copied.insert((dep_name.to_string(), dep_id), id);
@@ -256,15 +256,18 @@ impl Resolver {
 
     fn copy_type(&mut self, dep_name: &str, dep: &Interface, ty: Type) -> Type {
         match ty {
-            Type::Id(id) => Type::Id(self.copy_type_def(dep_name, dep, id)),
+            Type::Id(id) => Type::Id(self.copy_custom_type(dep_name, dep, id)),
             Type::Handle(id) => Type::Handle(self.copy_resource(dep_name, dep, id)),
             other => other,
         }
     }
 
-    fn register_names(&mut self, fields: &[Item<'_>]) -> Result<()> {
+    /// Register all of the named types in `items` in `self.types` without actually initializing them.
+    ///
+    /// This is done so that types can still reference one another when they're defined out of order.
+    fn register_names(&mut self, items: &[Item<'_>]) -> Result<()> {
         let mut values = HashSet::new();
-        for field in fields {
+        for field in items {
             match field {
                 Item::Resource(r) => {
                     let docs = self.docs(&r.docs);
@@ -274,24 +277,27 @@ impl Resolver {
                         foreign_module: None,
                     });
                     self.define_resource(&r.name.name, r.name.span, id)?;
-                    let type_id = self.types.alloc(TypeDef {
+                    // FIXME: this is weird, resources should just be another kind of `NamedType`.
+                    let type_id = self.types.alloc(CustomType::Named(NamedType {
                         docs: Docs::default(),
-                        kind: TypeDefKind::Type(Type::Handle(id)),
-                        name: None,
+                        kind: NamedTypeKind::Type(Type::Handle(id)),
+                        // this is extremely temporary, I'm going to
+                        // merge resources and types in the next commit.
+                        name: format!("fixme-duplicate-{}", r.name.name),
                         foreign_module: None,
-                    });
+                    }));
                     self.define_type(&r.name.name, r.name.span, type_id)?;
                 }
                 Item::TypeDef(t) => {
                     let docs = self.docs(&t.docs);
-                    let id = self.types.alloc(TypeDef {
+                    let id = self.types.alloc(CustomType::Named(NamedType {
                         docs,
                         // a dummy kind is used for now which will get filled in
                         // later with the actual desired contents.
-                        kind: TypeDefKind::List(Type::U8),
-                        name: Some(t.name.name.to_string()),
+                        kind: NamedTypeKind::Record(Record { fields: vec![] }),
+                        name: t.name.name.to_string(),
                         foreign_module: None,
-                    });
+                    }));
                     self.define_type(&t.name.name, t.name.span, id)?;
                 }
                 Item::Value(f) => {
@@ -336,53 +342,14 @@ impl Resolver {
         }
     }
 
-    fn resolve_type_def(&mut self, ty: &super::Type<'_>) -> Result<TypeDefKind> {
+    /// Convert a `TypeDefKind` to a `NamedTypeKind`.
+    fn resolve_named_type(&mut self, ty: &super::TypeDefKind<'_>) -> Result<NamedTypeKind> {
         Ok(match ty {
-            super::Type::Unit => TypeDefKind::Type(Type::Unit),
-            super::Type::Bool => TypeDefKind::Type(Type::Bool),
-            super::Type::U8 => TypeDefKind::Type(Type::U8),
-            super::Type::U16 => TypeDefKind::Type(Type::U16),
-            super::Type::U32 => TypeDefKind::Type(Type::U32),
-            super::Type::U64 => TypeDefKind::Type(Type::U64),
-            super::Type::S8 => TypeDefKind::Type(Type::S8),
-            super::Type::S16 => TypeDefKind::Type(Type::S16),
-            super::Type::S32 => TypeDefKind::Type(Type::S32),
-            super::Type::S64 => TypeDefKind::Type(Type::S64),
-            super::Type::Float32 => TypeDefKind::Type(Type::Float32),
-            super::Type::Float64 => TypeDefKind::Type(Type::Float64),
-            super::Type::Char => TypeDefKind::Type(Type::Char),
-            super::Type::String => TypeDefKind::Type(Type::String),
-            super::Type::Handle(resource) => {
-                let id = match self.resource_lookup.get(&*resource.name) {
-                    Some(id) => *id,
-                    None => {
-                        return Err(Error {
-                            span: resource.span,
-                            msg: format!("no resource named `{}`", resource.name),
-                        }
-                        .into())
-                    }
-                };
-                TypeDefKind::Type(Type::Handle(id))
+            super::TypeDefKind::Alias(alias) => {
+                let ty = self.resolve_type(&alias.target)?;
+                NamedTypeKind::Type(ty)
             }
-            super::Type::Name(name) => {
-                let id = match self.type_lookup.get(&*name.name) {
-                    Some(id) => *id,
-                    None => {
-                        return Err(Error {
-                            span: name.span,
-                            msg: format!("no type named `{}`", name.name),
-                        }
-                        .into())
-                    }
-                };
-                TypeDefKind::Type(Type::Id(id))
-            }
-            super::Type::List(list) => {
-                let ty = self.resolve_type(list)?;
-                TypeDefKind::List(ty)
-            }
-            super::Type::Record(record) => {
+            super::TypeDefKind::Record(record) => {
                 let fields = record
                     .fields
                     .iter()
@@ -394,9 +361,9 @@ impl Resolver {
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
-                TypeDefKind::Record(Record { fields })
+                NamedTypeKind::Record(Record { fields })
             }
-            super::Type::Flags(flags) => {
+            super::TypeDefKind::Flags(flags) => {
                 let flags = flags
                     .flags
                     .iter()
@@ -405,16 +372,9 @@ impl Resolver {
                         name: flag.name.name.to_string(),
                     })
                     .collect::<Vec<_>>();
-                TypeDefKind::Flags(Flags { flags })
+                NamedTypeKind::Flags(Flags { flags })
             }
-            super::Type::Tuple(types) => {
-                let types = types
-                    .iter()
-                    .map(|ty| self.resolve_type(ty))
-                    .collect::<Result<Vec<_>>>()?;
-                TypeDefKind::Tuple(Tuple { types })
-            }
-            super::Type::Variant(variant) => {
+            super::TypeDefKind::Variant(variant) => {
                 if variant.cases.is_empty() {
                     return Err(Error {
                         span: variant.span,
@@ -436,9 +396,9 @@ impl Resolver {
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
-                TypeDefKind::Variant(Variant { cases })
+                NamedTypeKind::Variant(Variant { cases })
             }
-            super::Type::Enum(e) => {
+            super::TypeDefKind::Enum(e) => {
                 if e.cases.is_empty() {
                     return Err(Error {
                         span: e.span,
@@ -456,14 +416,9 @@ impl Resolver {
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
-                TypeDefKind::Enum(Enum { cases })
+                NamedTypeKind::Enum(Enum { cases })
             }
-            super::Type::Option(ty) => TypeDefKind::Option(self.resolve_type(ty)?),
-            super::Type::Expected(e) => TypeDefKind::Expected(Expected {
-                ok: self.resolve_type(&e.ok)?,
-                err: self.resolve_type(&e.err)?,
-            }),
-            super::Type::Union(e) => {
+            super::TypeDefKind::Union(e) => {
                 if e.cases.is_empty() {
                     return Err(Error {
                         span: e.span,
@@ -481,53 +436,83 @@ impl Resolver {
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
-                TypeDefKind::Union(Union { cases })
+                NamedTypeKind::Union(Union { cases })
             }
         })
     }
 
     fn resolve_type(&mut self, ty: &super::Type<'_>) -> Result<Type> {
-        let kind = self.resolve_type_def(ty)?;
-        Ok(self.anon_type_def(TypeDef {
-            kind,
-            name: None,
-            docs: Docs::default(),
-            foreign_module: None,
-        }))
+        Ok(match ty {
+            super::Type::Unit => Type::Unit,
+            super::Type::Bool => Type::Bool,
+            super::Type::U8 => Type::U8,
+            super::Type::U16 => Type::U16,
+            super::Type::U32 => Type::U32,
+            super::Type::U64 => Type::U64,
+            super::Type::S8 => Type::S8,
+            super::Type::S16 => Type::S16,
+            super::Type::S32 => Type::S32,
+            super::Type::S64 => Type::S64,
+            super::Type::Float32 => Type::Float32,
+            super::Type::Float64 => Type::Float64,
+            super::Type::Char => Type::Char,
+            super::Type::String => Type::String,
+            super::Type::Handle(resource) => {
+                let id = match self.resource_lookup.get(&*resource.name) {
+                    Some(id) => *id,
+                    None => {
+                        return Err(Error {
+                            span: resource.span,
+                            msg: format!("no resource named `{}`", resource.name),
+                        }
+                        .into())
+                    }
+                };
+                Type::Handle(id)
+            }
+            super::Type::Name(name) => {
+                let id = match self.type_lookup.get(&*name.name) {
+                    Some(id) => *id,
+                    None => {
+                        return Err(Error {
+                            span: name.span,
+                            msg: format!("no type named `{}`", name.name),
+                        }
+                        .into())
+                    }
+                };
+                Type::Id(id)
+            }
+
+            super::Type::Option(ty) => {
+                let ty = self.resolve_type(ty)?;
+                self.resolve_anon_type(AnonymousType::Option(ty))
+            }
+            super::Type::Expected(expected) => {
+                let ok = self.resolve_type(&expected.ok)?;
+                let err = self.resolve_type(&expected.err)?;
+                self.resolve_anon_type(AnonymousType::Expected(Expected { ok, err }))
+            }
+            super::Type::Tuple(types) => {
+                let types = types
+                    .iter()
+                    .map(|ty| self.resolve_type(ty))
+                    .collect::<Result<_>>()?;
+                self.resolve_anon_type(AnonymousType::Tuple(Tuple { types }))
+            }
+            super::Type::List(ty) => {
+                let ty = self.resolve_type(ty)?;
+                self.resolve_anon_type(AnonymousType::List(ty))
+            }
+        })
     }
 
-    fn anon_type_def(&mut self, ty: TypeDef) -> Type {
-        let key = match &ty.kind {
-            TypeDefKind::Type(t) => return *t,
-            TypeDefKind::Variant(v) => Key::Variant(
-                v.cases
-                    .iter()
-                    .map(|case| (case.name.clone(), case.ty))
-                    .collect::<Vec<_>>(),
-            ),
-            TypeDefKind::Record(r) => Key::Record(
-                r.fields
-                    .iter()
-                    .map(|case| (case.name.clone(), case.ty))
-                    .collect::<Vec<_>>(),
-            ),
-            TypeDefKind::Flags(r) => {
-                Key::Flags(r.flags.iter().map(|f| f.name.clone()).collect::<Vec<_>>())
-            }
-            TypeDefKind::Tuple(t) => Key::Tuple(t.types.clone()),
-            TypeDefKind::Enum(r) => {
-                Key::Enum(r.cases.iter().map(|f| f.name.clone()).collect::<Vec<_>>())
-            }
-            TypeDefKind::List(ty) => Key::List(*ty),
-            TypeDefKind::Option(t) => Key::Option(*t),
-            TypeDefKind::Expected(e) => Key::Expected(e.ok, e.err),
-            TypeDefKind::Union(u) => Key::Union(u.cases.iter().map(|c| c.ty).collect()),
-        };
+    fn resolve_anon_type(&mut self, ty: AnonymousType) -> Type {
         let types = &mut self.types;
         let id = self
             .anon_types
-            .entry(key)
-            .or_insert_with(|| types.alloc(ty));
+            .entry(ty.clone())
+            .or_insert_with(|| types.alloc(CustomType::Anonymous(ty)));
         Type::Id(*id)
     }
 
@@ -643,6 +628,7 @@ impl Resolver {
         Ok(())
     }
 
+    /// Checks that a type isn't recursive (which would be invalid).
     fn validate_type_not_recursive(
         &self,
         span: Span,
@@ -661,57 +647,62 @@ impl Resolver {
             .into());
         }
 
-        match &self.types[ty].kind {
-            TypeDefKind::List(Type::Id(id)) | TypeDefKind::Type(Type::Id(id)) => {
-                self.validate_type_not_recursive(span, *id, visiting, valid)?
-            }
-            TypeDefKind::Variant(v) => {
-                for case in v.cases.iter() {
-                    if let Type::Id(id) = case.ty {
-                        self.validate_type_not_recursive(span, id, visiting, valid)?;
-                    }
-                }
-            }
-            TypeDefKind::Record(r) => {
-                for case in r.fields.iter() {
-                    if let Type::Id(id) = case.ty {
-                        self.validate_type_not_recursive(span, id, visiting, valid)?;
-                    }
-                }
-            }
-            TypeDefKind::Tuple(t) => {
-                for ty in t.types.iter() {
-                    if let Type::Id(id) = *ty {
-                        self.validate_type_not_recursive(span, id, visiting, valid)?;
-                    }
-                }
-            }
-
-            TypeDefKind::Option(t) => {
-                if let Type::Id(id) = *t {
-                    self.validate_type_not_recursive(span, id, visiting, valid)?
-                }
-            }
-            TypeDefKind::Expected(e) => {
-                if let Type::Id(id) = e.ok {
-                    self.validate_type_not_recursive(span, id, visiting, valid)?
-                }
-                if let Type::Id(id) = e.err {
-                    self.validate_type_not_recursive(span, id, visiting, valid)?
-                }
-            }
-            TypeDefKind::Union(u) => {
-                for c in u.cases.iter() {
-                    if let Type::Id(id) = c.ty {
+        match &self.types[ty] {
+            CustomType::Anonymous(ty) => match ty {
+                AnonymousType::Option(t) => {
+                    if let Type::Id(id) = *t {
                         self.validate_type_not_recursive(span, id, visiting, valid)?
                     }
                 }
-            }
+                AnonymousType::Expected(e) => {
+                    if let Type::Id(id) = e.ok {
+                        self.validate_type_not_recursive(span, id, visiting, valid)?
+                    }
+                    if let Type::Id(id) = e.err {
+                        self.validate_type_not_recursive(span, id, visiting, valid)?
+                    }
+                }
+                AnonymousType::Tuple(t) => {
+                    for ty in t.types.iter() {
+                        if let Type::Id(id) = *ty {
+                            self.validate_type_not_recursive(span, id, visiting, valid)?;
+                        }
+                    }
+                }
+                AnonymousType::List(ty) => {
+                    if let Type::Id(id) = ty {
+                        self.validate_type_not_recursive(span, *id, visiting, valid)?
+                    }
+                }
+            },
+            CustomType::Named(ty) => match &ty.kind {
+                NamedTypeKind::Type(Type::Id(id)) => {
+                    self.validate_type_not_recursive(span, *id, visiting, valid)?
+                }
+                NamedTypeKind::Variant(v) => {
+                    for case in v.cases.iter() {
+                        if let Type::Id(id) = case.ty {
+                            self.validate_type_not_recursive(span, id, visiting, valid)?;
+                        }
+                    }
+                }
+                NamedTypeKind::Record(r) => {
+                    for case in r.fields.iter() {
+                        if let Type::Id(id) = case.ty {
+                            self.validate_type_not_recursive(span, id, visiting, valid)?;
+                        }
+                    }
+                }
+                NamedTypeKind::Union(u) => {
+                    for c in u.cases.iter() {
+                        if let Type::Id(id) = c.ty {
+                            self.validate_type_not_recursive(span, id, visiting, valid)?
+                        }
+                    }
+                }
 
-            TypeDefKind::Flags(_)
-            | TypeDefKind::List(_)
-            | TypeDefKind::Type(_)
-            | TypeDefKind::Enum(_) => {}
+                NamedTypeKind::Flags(_) | NamedTypeKind::Type(_) | NamedTypeKind::Enum(_) => {}
+            },
         }
 
         valid.insert(ty);

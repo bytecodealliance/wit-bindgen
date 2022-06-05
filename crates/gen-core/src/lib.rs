@@ -47,24 +47,11 @@ pub trait Generator {
         drop((iface, dir));
     }
 
-    fn type_record(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        record: &Record,
-        docs: &Docs,
-    );
-    fn type_flags(&mut self, iface: &Interface, id: TypeId, name: &str, flags: &Flags, docs: &Docs);
-    fn type_tuple(&mut self, iface: &Interface, id: TypeId, name: &str, flags: &Tuple, docs: &Docs);
-    fn type_variant(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        variant: &Variant,
-        docs: &Docs,
-    );
+    // Anonymous types.
+    // FIXME: These are never (and were never) called, because they expect named anonymous types (which don't exist).
+    // It seems like they were pretty consistently treated as being type aliases to the anonymous types though.
+    // It might be a good idea to repurpose these to generate definitions for anonymous types in languages where a
+    // concrete type has to be generated for every one that's used (e.g. C, which currently does it manually).
     fn type_option(
         &mut self,
         iface: &Interface,
@@ -81,11 +68,30 @@ pub trait Generator {
         expected: &Expected,
         docs: &Docs,
     );
+    fn type_tuple(&mut self, iface: &Interface, id: TypeId, name: &str, tuple: &Tuple, docs: &Docs);
+    fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+
+    fn type_record(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        record: &Record,
+        docs: &Docs,
+    );
+    fn type_flags(&mut self, iface: &Interface, id: TypeId, name: &str, flags: &Flags, docs: &Docs);
+    fn type_variant(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        variant: &Variant,
+        docs: &Docs,
+    );
     fn type_union(&mut self, iface: &Interface, id: TypeId, name: &str, union: &Union, docs: &Docs);
     fn type_enum(&mut self, iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs);
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId);
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
-    fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     // fn const_(&mut self, iface: &Interface, name: &str, ty: &str, val: u64, docs: &Docs);
     fn import(&mut self, iface: &Interface, func: &Function);
@@ -102,23 +108,25 @@ pub trait Generator {
 
         for (id, ty) in iface.types.iter() {
             // assert!(ty.foreign_module.is_none()); // TODO
-            let name = match &ty.name {
-                Some(name) => name,
-                None => continue,
-            };
-            match &ty.kind {
-                TypeDefKind::Record(record) => self.type_record(iface, id, name, record, &ty.docs),
-                TypeDefKind::Flags(flags) => self.type_flags(iface, id, name, flags, &ty.docs),
-                TypeDefKind::Tuple(tuple) => self.type_tuple(iface, id, name, tuple, &ty.docs),
-                TypeDefKind::Enum(enum_) => self.type_enum(iface, id, name, enum_, &ty.docs),
-                TypeDefKind::Variant(variant) => {
-                    self.type_variant(iface, id, name, variant, &ty.docs)
-                }
-                TypeDefKind::Option(t) => self.type_option(iface, id, name, t, &ty.docs),
-                TypeDefKind::Expected(e) => self.type_expected(iface, id, name, e, &ty.docs),
-                TypeDefKind::Union(u) => self.type_union(iface, id, name, u, &ty.docs),
-                TypeDefKind::List(t) => self.type_list(iface, id, name, t, &ty.docs),
-                TypeDefKind::Type(t) => self.type_alias(iface, id, name, t, &ty.docs),
+            match ty {
+                // See FIXME on anonymous type generation methods.
+                CustomType::Anonymous(_) => {}
+                CustomType::Named(ty) => match &ty.kind {
+                    NamedTypeKind::Record(record) => {
+                        self.type_record(iface, id, &ty.name, record, &ty.docs)
+                    }
+                    NamedTypeKind::Flags(flags) => {
+                        self.type_flags(iface, id, &ty.name, flags, &ty.docs)
+                    }
+                    NamedTypeKind::Enum(enum_) => {
+                        self.type_enum(iface, id, &ty.name, enum_, &ty.docs)
+                    }
+                    NamedTypeKind::Variant(variant) => {
+                        self.type_variant(iface, id, &ty.name, variant, &ty.docs)
+                    }
+                    NamedTypeKind::Union(u) => self.type_union(iface, id, &ty.name, u, &ty.docs),
+                    NamedTypeKind::Type(t) => self.type_alias(iface, id, &ty.name, t, &ty.docs),
+                },
             }
         }
 
@@ -203,48 +211,53 @@ impl Types {
         self.type_info[&id]
     }
 
+    /// Gets the `TypeInfo` about `ty`.
     pub fn type_id_info(&mut self, iface: &Interface, ty: TypeId) -> TypeInfo {
         if let Some(info) = self.type_info.get(&ty) {
             return *info;
         }
         let mut info = TypeInfo::default();
-        match &iface.types[ty].kind {
-            TypeDefKind::Record(r) => {
-                for field in r.fields.iter() {
-                    info |= self.type_info(iface, &field.ty);
+        match &iface.types[ty] {
+            CustomType::Anonymous(anon) => match anon {
+                AnonymousType::Option(ty) => {
+                    info = self.type_info(iface, ty);
                 }
-            }
-            TypeDefKind::Tuple(t) => {
-                for ty in t.types.iter() {
-                    info |= self.type_info(iface, ty);
+                AnonymousType::Expected(e) => {
+                    info = self.type_info(iface, &e.ok);
+                    info |= self.type_info(iface, &e.err);
                 }
-            }
-            TypeDefKind::Flags(_) => {}
-            TypeDefKind::Enum(_) => {}
-            TypeDefKind::Variant(v) => {
-                for case in v.cases.iter() {
-                    info |= self.type_info(iface, &case.ty);
+                AnonymousType::Tuple(t) => {
+                    for ty in t.types.iter() {
+                        info |= self.type_info(iface, ty);
+                    }
                 }
-            }
-            TypeDefKind::List(ty) => {
-                info = self.type_info(iface, ty);
-                info.has_list = true;
-            }
-            TypeDefKind::Type(ty) => {
-                info = self.type_info(iface, ty);
-            }
-            TypeDefKind::Option(ty) => {
-                info = self.type_info(iface, ty);
-            }
-            TypeDefKind::Expected(e) => {
-                info = self.type_info(iface, &e.ok);
-                info |= self.type_info(iface, &e.err);
-            }
-            TypeDefKind::Union(u) => {
-                for case in u.cases.iter() {
-                    info |= self.type_info(iface, &case.ty);
+                AnonymousType::List(ty) => {
+                    info = self.type_info(iface, ty);
+                    info.has_list = true;
                 }
-            }
+            },
+            CustomType::Named(named) => match &named.kind {
+                NamedTypeKind::Record(r) => {
+                    for field in r.fields.iter() {
+                        info |= self.type_info(iface, &field.ty);
+                    }
+                }
+                NamedTypeKind::Flags(_) => {}
+                NamedTypeKind::Enum(_) => {}
+                NamedTypeKind::Variant(v) => {
+                    for case in v.cases.iter() {
+                        info |= self.type_info(iface, &case.ty);
+                    }
+                }
+                NamedTypeKind::Type(ty) => {
+                    info = self.type_info(iface, ty);
+                }
+                NamedTypeKind::Union(u) => {
+                    for case in u.cases.iter() {
+                        info |= self.type_info(iface, &case.ty);
+                    }
+                }
+            },
         }
         self.type_info.insert(ty, info);
         return info;
@@ -261,37 +274,44 @@ impl Types {
         info
     }
 
+    /// Sets whether `ty` is used as a parameter and/or as a result.
     fn set_param_result_id(&mut self, iface: &Interface, ty: TypeId, param: bool, result: bool) {
-        match &iface.types[ty].kind {
-            TypeDefKind::Record(r) => {
-                for field in r.fields.iter() {
-                    self.set_param_result_ty(iface, &field.ty, param, result)
-                }
-            }
-            TypeDefKind::Tuple(t) => {
-                for ty in t.types.iter() {
+        match &iface.types[ty] {
+            CustomType::Anonymous(anon) => match anon {
+                AnonymousType::List(ty) | AnonymousType::Option(ty) => {
                     self.set_param_result_ty(iface, ty, param, result)
                 }
-            }
-            TypeDefKind::Flags(_) => {}
-            TypeDefKind::Enum(_) => {}
-            TypeDefKind::Variant(v) => {
-                for case in v.cases.iter() {
-                    self.set_param_result_ty(iface, &case.ty, param, result)
+                AnonymousType::Tuple(t) => {
+                    for ty in t.types.iter() {
+                        self.set_param_result_ty(iface, ty, param, result)
+                    }
                 }
-            }
-            TypeDefKind::List(ty) | TypeDefKind::Type(ty) | TypeDefKind::Option(ty) => {
-                self.set_param_result_ty(iface, ty, param, result)
-            }
-            TypeDefKind::Expected(e) => {
-                self.set_param_result_ty(iface, &e.ok, param, result);
-                self.set_param_result_ty(iface, &e.err, param, result);
-            }
-            TypeDefKind::Union(u) => {
-                for case in u.cases.iter() {
-                    self.set_param_result_ty(iface, &case.ty, param, result)
+
+                AnonymousType::Expected(e) => {
+                    self.set_param_result_ty(iface, &e.ok, param, result);
+                    self.set_param_result_ty(iface, &e.err, param, result);
                 }
-            }
+            },
+            CustomType::Named(named) => match &named.kind {
+                NamedTypeKind::Record(r) => {
+                    for field in r.fields.iter() {
+                        self.set_param_result_ty(iface, &field.ty, param, result)
+                    }
+                }
+                NamedTypeKind::Flags(_) => {}
+                NamedTypeKind::Enum(_) => {}
+                NamedTypeKind::Variant(v) => {
+                    for case in v.cases.iter() {
+                        self.set_param_result_ty(iface, &case.ty, param, result)
+                    }
+                }
+                NamedTypeKind::Type(ty) => self.set_param_result_ty(iface, ty, param, result),
+                NamedTypeKind::Union(u) => {
+                    for case in u.cases.iter() {
+                        self.set_param_result_ty(iface, &case.ty, param, result)
+                    }
+                }
+            },
         }
     }
 

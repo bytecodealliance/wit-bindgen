@@ -13,8 +13,8 @@ use wasm_encoder::*;
 use wasmparser::{Validator, WasmFeatures};
 use wit_parser::{
     abi::{AbiVariant, WasmSignature, WasmType},
-    Enum, Expected, Flags, Function, FunctionKind, Interface, Record, Tuple, Type, TypeDef,
-    TypeDefKind, Union, Variant,
+    AnonymousType, CustomType, Enum, Expected, Flags, Function, FunctionKind, Interface, NamedType,
+    NamedTypeKind, Record, Tuple, Type, Union, Variant,
 };
 
 const INDIRECT_TABLE_NAME: &str = "$imports";
@@ -36,7 +36,9 @@ struct TypeKey<'a> {
 impl Hash for TypeKey<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self.ty {
-            Type::Id(id) => TypeDefKey::new(self.interface, &self.interface.types[id]).hash(state),
+            Type::Id(id) => {
+                CustomTypeKey::new(self.interface, &self.interface.types[id]).hash(state)
+            }
             _ => self.ty.hash(state),
         }
     }
@@ -46,8 +48,8 @@ impl PartialEq for TypeKey<'_> {
     fn eq(&self, other: &Self) -> bool {
         match (self.ty, other.ty) {
             (Type::Id(id), Type::Id(other_id)) => {
-                TypeDefKey::new(self.interface, &self.interface.types[id])
-                    == TypeDefKey::new(other.interface, &other.interface.types[other_id])
+                CustomTypeKey::new(self.interface, &self.interface.types[id])
+                    == CustomTypeKey::new(other.interface, &other.interface.types[other_id])
             }
             _ => self.ty.eq(&other.ty),
         }
@@ -56,25 +58,172 @@ impl PartialEq for TypeKey<'_> {
 
 impl Eq for TypeKey<'_> {}
 
-/// Represents a key type for interface type definitions.
-pub struct TypeDefKey<'a> {
+/// Represents a key type for user-defined interface types.
+pub struct CustomTypeKey<'a> {
     interface: &'a Interface,
-    def: &'a TypeDef,
+    ty: &'a CustomType,
 }
 
-impl<'a> TypeDefKey<'a> {
-    fn new(interface: &'a Interface, def: &'a TypeDef) -> Self {
-        Self { interface, def }
+impl<'a> CustomTypeKey<'a> {
+    fn new(interface: &'a Interface, ty: &'a CustomType) -> Self {
+        Self { interface, ty }
     }
 }
 
-impl PartialEq for TypeDefKey<'_> {
+impl PartialEq for CustomTypeKey<'_> {
     fn eq(&self, other: &Self) -> bool {
-        let def = self.def;
-        let other_def = other.def;
+        match (&self.ty, &other.ty) {
+            (CustomType::Anonymous(a), CustomType::Anonymous(b)) => {
+                AnonymousTypeKey::new(self.interface, a) == AnonymousTypeKey::new(self.interface, b)
+            }
+            (CustomType::Named(a), CustomType::Named(b)) => {
+                NamedTypeKey::new(self.interface, a) == NamedTypeKey::new(self.interface, b)
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Eq for CustomTypeKey<'_> {}
+
+impl Hash for CustomTypeKey<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match &self.ty {
+            // Note: all of the variants of both of these are prefixed with unique numbers,
+            // so we don't need to prefix anything extra to distinguish them.
+            CustomType::Anonymous(ty) => AnonymousTypeKey::new(self.interface, ty).hash(state),
+            CustomType::Named(ty) => NamedTypeKey::new(self.interface, ty).hash(state),
+        }
+    }
+}
+
+/// Represents a key type for anonymous interface type definitions.
+pub struct AnonymousTypeKey<'a> {
+    interface: &'a Interface,
+    ty: &'a AnonymousType,
+}
+
+impl<'a> AnonymousTypeKey<'a> {
+    fn new(interface: &'a Interface, ty: &'a AnonymousType) -> Self {
+        Self { interface, ty }
+    }
+}
+
+impl PartialEq for AnonymousTypeKey<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self.ty, other.ty) {
+            (AnonymousType::Tuple(t1), AnonymousType::Tuple(t2)) => {
+                if t1.types.len() != t2.types.len() {
+                    return false;
+                }
+
+                t1.types.iter().zip(t2.types.iter()).all(|(t1, t2)| {
+                    TypeKey {
+                        interface: self.interface,
+                        ty: *t1,
+                    }
+                    .eq(&TypeKey {
+                        interface: other.interface,
+                        ty: *t2,
+                    })
+                })
+            }
+            (AnonymousType::List(t1), AnonymousType::List(t2))
+            | (AnonymousType::Option(t1), AnonymousType::Option(t2)) => TypeKey {
+                interface: self.interface,
+                ty: *t1,
+            }
+            .eq(&TypeKey {
+                interface: other.interface,
+                ty: *t2,
+            }),
+            (AnonymousType::Expected(e1), AnonymousType::Expected(e2)) => {
+                TypeKey {
+                    interface: self.interface,
+                    ty: e1.ok,
+                } == TypeKey {
+                    interface: other.interface,
+                    ty: e2.ok,
+                } && TypeKey {
+                    interface: self.interface,
+                    ty: e1.err,
+                } == TypeKey {
+                    interface: other.interface,
+                    ty: e2.err,
+                }
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Eq for AnonymousTypeKey<'_> {}
+
+impl Hash for AnonymousTypeKey<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self.ty {
+            AnonymousType::Option(ty) => {
+                state.write_u8(0);
+                TypeKey {
+                    interface: self.interface,
+                    ty: *ty,
+                }
+                .hash(state);
+            }
+            AnonymousType::Expected(e) => {
+                state.write_u8(1);
+                TypeKey {
+                    interface: self.interface,
+                    ty: e.ok,
+                }
+                .hash(state);
+                TypeKey {
+                    interface: self.interface,
+                    ty: e.err,
+                }
+                .hash(state);
+            }
+            AnonymousType::Tuple(t) => {
+                state.write_u8(2);
+                for ty in &t.types {
+                    TypeKey {
+                        interface: self.interface,
+                        ty: *ty,
+                    }
+                    .hash(state);
+                }
+            }
+            AnonymousType::List(ty) => {
+                state.write_u8(3);
+                TypeKey {
+                    interface: self.interface,
+                    ty: *ty,
+                }
+                .hash(state);
+            }
+        }
+    }
+}
+
+/// Represents a key type for named interface type definitions.
+pub struct NamedTypeKey<'a> {
+    interface: &'a Interface,
+    ty: &'a NamedType,
+}
+
+impl<'a> NamedTypeKey<'a> {
+    fn new(interface: &'a Interface, ty: &'a NamedType) -> Self {
+        Self { interface, ty }
+    }
+}
+
+impl PartialEq for NamedTypeKey<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        let def = self.ty;
+        let other_def = other.ty;
         def.name == other_def.name
             && match (&def.kind, &other_def.kind) {
-                (TypeDefKind::Record(r1), TypeDefKind::Record(r2)) => {
+                (NamedTypeKind::Record(r1), NamedTypeKind::Record(r2)) => {
                     if r1.fields.len() != r2.fields.len() {
                         return false;
                     }
@@ -91,23 +240,7 @@ impl PartialEq for TypeDefKey<'_> {
                             })
                     })
                 }
-                (TypeDefKind::Tuple(t1), TypeDefKind::Tuple(t2)) => {
-                    if t1.types.len() != t2.types.len() {
-                        return false;
-                    }
-
-                    t1.types.iter().zip(t2.types.iter()).all(|(t1, t2)| {
-                        TypeKey {
-                            interface: self.interface,
-                            ty: *t1,
-                        }
-                        .eq(&TypeKey {
-                            interface: other.interface,
-                            ty: *t2,
-                        })
-                    })
-                }
-                (TypeDefKind::Flags(f1), TypeDefKind::Flags(f2)) => {
+                (NamedTypeKind::Flags(f1), NamedTypeKind::Flags(f2)) => {
                     if f1.flags.len() != f2.flags.len() {
                         return false;
                     }
@@ -117,7 +250,7 @@ impl PartialEq for TypeDefKey<'_> {
                         .zip(f2.flags.iter())
                         .all(|(f1, f2)| f1.name == f2.name)
                 }
-                (TypeDefKind::Variant(v1), TypeDefKind::Variant(v2)) => {
+                (NamedTypeKind::Variant(v1), NamedTypeKind::Variant(v2)) => {
                     if v1.cases.len() != v2.cases.len() {
                         return false;
                     }
@@ -133,7 +266,7 @@ impl PartialEq for TypeDefKey<'_> {
                             }
                     })
                 }
-                (TypeDefKind::Union(v1), TypeDefKind::Union(v2)) => {
+                (NamedTypeKind::Union(v1), NamedTypeKind::Union(v2)) => {
                     if v1.cases.len() != v2.cases.len() {
                         return false;
                     }
@@ -148,7 +281,7 @@ impl PartialEq for TypeDefKey<'_> {
                         }
                     })
                 }
-                (TypeDefKind::Enum(e1), TypeDefKind::Enum(e2)) => {
+                (NamedTypeKind::Enum(e1), NamedTypeKind::Enum(e2)) => {
                     if e1.cases.len() != e2.cases.len() {
                         return false;
                     }
@@ -158,9 +291,7 @@ impl PartialEq for TypeDefKey<'_> {
                         .zip(e2.cases.iter())
                         .all(|(c1, c2)| c1.name == c2.name)
                 }
-                (TypeDefKind::List(t1), TypeDefKind::List(t2))
-                | (TypeDefKind::Type(t1), TypeDefKind::Type(t2))
-                | (TypeDefKind::Option(t1), TypeDefKind::Option(t2)) => TypeKey {
+                (NamedTypeKind::Type(t1), NamedTypeKind::Type(t2)) => TypeKey {
                     interface: self.interface,
                     ty: *t1,
                 }
@@ -168,35 +299,21 @@ impl PartialEq for TypeDefKey<'_> {
                     interface: other.interface,
                     ty: *t2,
                 }),
-                (TypeDefKind::Expected(e1), TypeDefKind::Expected(e2)) => {
-                    TypeKey {
-                        interface: self.interface,
-                        ty: e1.ok,
-                    } == TypeKey {
-                        interface: other.interface,
-                        ty: e2.ok,
-                    } && TypeKey {
-                        interface: self.interface,
-                        ty: e1.err,
-                    } == TypeKey {
-                        interface: other.interface,
-                        ty: e2.err,
-                    }
-                }
                 _ => false,
             }
     }
 }
 
-impl Eq for TypeDefKey<'_> {}
+impl Eq for NamedTypeKey<'_> {}
 
-impl Hash for TypeDefKey<'_> {
+impl Hash for NamedTypeKey<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let def = self.def;
+        let def = self.ty;
         def.name.hash(state);
         match &def.kind {
-            TypeDefKind::Record(r) => {
-                state.write_u8(0);
+            NamedTypeKind::Record(r) => {
+                // Note: this should be 1 more than the prefix of the last anonymous type.
+                state.write_u8(4);
                 for f in &r.fields {
                     f.name.hash(state);
                     TypeKey {
@@ -206,24 +323,14 @@ impl Hash for TypeDefKey<'_> {
                     .hash(state);
                 }
             }
-            TypeDefKind::Tuple(t) => {
-                state.write_u8(1);
-                for ty in &t.types {
-                    TypeKey {
-                        interface: self.interface,
-                        ty: *ty,
-                    }
-                    .hash(state);
-                }
-            }
-            TypeDefKind::Flags(r) => {
-                state.write_u8(2);
+            NamedTypeKind::Flags(r) => {
+                state.write_u8(5);
                 for f in &r.flags {
                     f.name.hash(state);
                 }
             }
-            TypeDefKind::Variant(v) => {
-                state.write_u8(3);
+            NamedTypeKind::Variant(v) => {
+                state.write_u8(6);
                 for c in &v.cases {
                     c.name.hash(state);
                     TypeKey {
@@ -233,50 +340,21 @@ impl Hash for TypeDefKey<'_> {
                     .hash(state);
                 }
             }
-            TypeDefKind::Enum(e) => {
-                state.write_u8(4);
+            NamedTypeKind::Enum(e) => {
+                state.write_u8(7);
                 for c in &e.cases {
                     c.name.hash(state);
                 }
             }
-            TypeDefKind::List(ty) => {
-                state.write_u8(5);
-                TypeKey {
-                    interface: self.interface,
-                    ty: *ty,
-                }
-                .hash(state);
-            }
-            TypeDefKind::Type(ty) => {
-                state.write_u8(6);
-                TypeKey {
-                    interface: self.interface,
-                    ty: *ty,
-                }
-                .hash(state);
-            }
-            TypeDefKind::Option(ty) => {
-                state.write_u8(7);
-                TypeKey {
-                    interface: self.interface,
-                    ty: *ty,
-                }
-                .hash(state);
-            }
-            TypeDefKind::Expected(e) => {
+            NamedTypeKind::Type(ty) => {
                 state.write_u8(8);
                 TypeKey {
                     interface: self.interface,
-                    ty: e.ok,
-                }
-                .hash(state);
-                TypeKey {
-                    interface: self.interface,
-                    ty: e.err,
+                    ty: *ty,
                 }
                 .hash(state);
             }
-            TypeDefKind::Union(u) => {
+            NamedTypeKind::Union(u) => {
                 state.write_u8(9);
                 u.cases.len().hash(state);
                 for case in u.cases.iter() {
@@ -391,7 +469,7 @@ impl<'a> InstanceTypeEncoder<'a> {
 #[derive(Default)]
 struct TypeEncoder<'a> {
     types: ComponentTypeSection,
-    type_map: HashMap<TypeDefKey<'a>, u32>,
+    type_map: HashMap<CustomTypeKey<'a>, u32>,
     func_type_map: HashMap<FunctionKey<'a>, u32>,
     exports: ComponentExportSection,
     exported: HashMap<&'a str, u32>,
@@ -458,37 +536,55 @@ impl<'a> TypeEncoder<'a> {
             Type::String => InterfaceTypeRef::Primitive(PrimitiveInterfaceType::String),
             Type::Id(id) => {
                 let ty = &interface.types[*id];
-                let key = TypeDefKey::new(interface, &interface.types[*id]);
+                let key = CustomTypeKey::new(interface, &interface.types[*id]);
                 let encoded = if let Some(index) = self.type_map.get(&key) {
                     InterfaceTypeRef::Type(*index)
                 } else {
-                    let mut encoded = match &ty.kind {
-                        TypeDefKind::Record(r) => self.encode_record(interface, instance, r)?,
-                        TypeDefKind::Tuple(t) => self.encode_tuple(interface, instance, t)?,
-                        TypeDefKind::Flags(r) => self.encode_flags(r)?,
-                        TypeDefKind::Variant(v) => self.encode_variant(interface, instance, v)?,
-                        TypeDefKind::Union(u) => self.encode_union(interface, instance, u)?,
-                        TypeDefKind::Option(t) => self.encode_option(interface, instance, t)?,
-                        TypeDefKind::Expected(e) => self.encode_expected(interface, instance, e)?,
-                        TypeDefKind::Enum(e) => self.encode_enum(e)?,
-                        TypeDefKind::List(ty) => {
-                            let ty = self.encode_type(interface, instance, ty)?;
-                            let index = self.types.len();
-                            let encoder = self.types.interface_type();
-                            encoder.list(ty);
-                            InterfaceTypeRef::Type(index)
-                        }
-                        TypeDefKind::Type(ty) => self.encode_type(interface, instance, ty)?,
-                    };
+                    let encoded = match ty {
+                        CustomType::Anonymous(ty) => match ty {
+                            AnonymousType::Option(t) => {
+                                self.encode_option(interface, instance, t)?
+                            }
+                            AnonymousType::Expected(e) => {
+                                self.encode_expected(interface, instance, e)?
+                            }
+                            AnonymousType::List(ty) => {
+                                let ty = self.encode_type(interface, instance, ty)?;
+                                let index = self.types.len();
+                                let encoder = self.types.interface_type();
+                                encoder.list(ty);
+                                InterfaceTypeRef::Type(index)
+                            }
+                            AnonymousType::Tuple(t) => self.encode_tuple(interface, instance, t)?,
+                        },
+                        CustomType::Named(ty) => {
+                            let mut encoded = match &ty.kind {
+                                NamedTypeKind::Record(r) => {
+                                    self.encode_record(interface, instance, r)?
+                                }
+                                NamedTypeKind::Flags(r) => self.encode_flags(r)?,
+                                NamedTypeKind::Variant(v) => {
+                                    self.encode_variant(interface, instance, v)?
+                                }
+                                NamedTypeKind::Union(u) => {
+                                    self.encode_union(interface, instance, u)?
+                                }
+                                NamedTypeKind::Enum(e) => self.encode_enum(e)?,
+                                NamedTypeKind::Type(ty) => {
+                                    self.encode_type(interface, instance, ty)?
+                                }
+                            };
 
-                    if ty.name.is_some() {
-                        if let InterfaceTypeRef::Primitive(ty) = encoded {
-                            // Named primitive types need entries in the type section
-                            let index = self.types.len();
-                            self.types.interface_type().primitive(ty);
-                            encoded = InterfaceTypeRef::Type(index);
+                            if let InterfaceTypeRef::Primitive(ty) = encoded {
+                                // Named primitive types need entries in the type section
+                                let index = self.types.len();
+                                self.types.interface_type().primitive(ty);
+                                encoded = InterfaceTypeRef::Type(index);
+                            }
+
+                            encoded
                         }
-                    }
+                    };
 
                     if let InterfaceTypeRef::Type(index) = encoded {
                         self.type_map.insert(key, index);
@@ -497,9 +593,9 @@ impl<'a> TypeEncoder<'a> {
                     encoded
                 };
 
-                if let Some(name) = ty.name.as_deref() {
+                if let CustomType::Named(ty) = ty {
                     if let InterfaceTypeRef::Type(index) = encoded {
-                        self.export_type(instance, name, index)?;
+                        self.export_type(instance, &ty.name, index)?;
                     }
                 }
 
@@ -693,30 +789,37 @@ impl RequiredOptions {
         }
     }
 
+    /// Gets the required options to use a type.
     fn for_type(interface: &Interface, ty: &Type) -> Self {
         match ty {
-            Type::Id(id) => match &interface.types[*id].kind {
-                TypeDefKind::Record(r) => {
-                    Self::for_types(interface, r.fields.iter().map(|f| &f.ty))
-                }
-                TypeDefKind::Tuple(t) => Self::for_types(interface, t.types.iter()),
-                TypeDefKind::Flags(_) => Self::None,
-                TypeDefKind::Option(t) => Self::for_type(interface, t),
-                TypeDefKind::Expected(e) => {
-                    Self::for_type(interface, &e.ok) | Self::for_type(interface, &e.err)
-                }
-                TypeDefKind::Variant(v) => {
-                    Self::for_types(interface, v.cases.iter().map(|c| &c.ty))
-                }
-                TypeDefKind::Union(v) => Self::for_types(interface, v.cases.iter().map(|c| &c.ty)),
-                TypeDefKind::Enum(_) => Self::None,
-                TypeDefKind::List(t) => {
-                    // Lists need at least the `into` option, but may require
-                    // the encoding option if there's a string somewhere in the
-                    // type.
-                    Self::for_type(interface, t) | Self::Into
-                }
-                TypeDefKind::Type(t) => Self::for_type(interface, t),
+            Type::Id(id) => match &interface.types[*id] {
+                CustomType::Anonymous(ty) => match ty {
+                    AnonymousType::Option(t) => Self::for_type(interface, t),
+                    AnonymousType::Expected(e) => {
+                        Self::for_type(interface, &e.ok) | Self::for_type(interface, &e.err)
+                    }
+                    AnonymousType::Tuple(t) => Self::for_types(interface, t.types.iter()),
+                    AnonymousType::List(t) => {
+                        // Lists need at least the `into` option, but may require
+                        // the encoding option if there's a string somewhere in the
+                        // type.
+                        Self::for_type(interface, t) | Self::Into
+                    }
+                },
+                CustomType::Named(ty) => match &ty.kind {
+                    NamedTypeKind::Record(r) => {
+                        Self::for_types(interface, r.fields.iter().map(|f| &f.ty))
+                    }
+                    NamedTypeKind::Flags(_) => Self::None,
+                    NamedTypeKind::Variant(v) => {
+                        Self::for_types(interface, v.cases.iter().map(|c| &c.ty))
+                    }
+                    NamedTypeKind::Union(v) => {
+                        Self::for_types(interface, v.cases.iter().map(|c| &c.ty))
+                    }
+                    NamedTypeKind::Enum(_) => Self::None,
+                    NamedTypeKind::Type(t) => Self::for_type(interface, t),
+                },
             },
             Type::String => Self::Encoding,
             _ => Self::None,

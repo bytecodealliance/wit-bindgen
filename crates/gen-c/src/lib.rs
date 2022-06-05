@@ -163,15 +163,20 @@ impl C {
 
     fn is_arg_by_pointer(&self, iface: &Interface, ty: &Type) -> bool {
         match ty {
-            Type::Id(id) => match &iface.types[*id].kind {
-                TypeDefKind::Type(t) => self.is_arg_by_pointer(iface, t),
-                TypeDefKind::Variant(_) => true,
-                TypeDefKind::Union(_) => true,
-                TypeDefKind::Option(_) => true,
-                TypeDefKind::Expected(_) => true,
-                TypeDefKind::Enum(_) => false,
-                TypeDefKind::Flags(_) => false,
-                TypeDefKind::Tuple(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
+            Type::Id(id) => match &iface.types[*id] {
+                CustomType::Anonymous(ty) => match ty {
+                    AnonymousType::Option(_) => true,
+                    AnonymousType::Expected(_) => true,
+                    AnonymousType::Tuple(_) | AnonymousType::List(_) => true,
+                },
+                CustomType::Named(ty) => match &ty.kind {
+                    NamedTypeKind::Type(t) => self.is_arg_by_pointer(iface, t),
+                    NamedTypeKind::Variant(_) => true,
+                    NamedTypeKind::Union(_) => true,
+                    NamedTypeKind::Enum(_) => false,
+                    NamedTypeKind::Flags(_) => false,
+                    NamedTypeKind::Record(_) => true,
+                },
             },
             Type::String => true,
             _ => false,
@@ -238,22 +243,19 @@ impl C {
             }
             Type::Id(id) => {
                 let ty = &iface.types[*id];
-                match &ty.name {
-                    Some(name) => {
+                match ty {
+                    CustomType::Named(ty) => {
                         self.print_namespace(iface);
-                        self.src.h(&name.to_snake_case());
+                        self.src.h(&ty.name.to_snake_case());
                         self.src.h("_t");
                     }
-                    None => match &ty.kind {
-                        TypeDefKind::Type(t) => self.print_ty(iface, t),
-                        _ => {
-                            self.public_anonymous_types.insert(*id);
-                            self.private_anonymous_types.remove(id);
-                            self.print_namespace(iface);
-                            self.print_ty_name(iface, &Type::Id(*id));
-                            self.src.h("_t");
-                        }
-                    },
+                    CustomType::Anonymous(_) => {
+                        self.public_anonymous_types.insert(*id);
+                        self.private_anonymous_types.remove(id);
+                        self.print_namespace(iface);
+                        self.print_ty_name(iface, &Type::Id(*id));
+                        self.src.h("_t");
+                    }
                 }
             }
         }
@@ -278,68 +280,46 @@ impl C {
             Type::String => self.src.h("string"),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
-                if let Some(name) = &ty.name {
-                    return self.src.h(&name.to_snake_case());
-                }
-                match &ty.kind {
-                    TypeDefKind::Type(t) => self.print_ty_name(iface, t),
-                    TypeDefKind::Record(_)
-                    | TypeDefKind::Flags(_)
-                    | TypeDefKind::Enum(_)
-                    | TypeDefKind::Variant(_)
-                    | TypeDefKind::Union(_) => {
-                        unimplemented!()
-                    }
-                    TypeDefKind::Tuple(t) => {
-                        self.src.h("tuple");
-                        self.src.h(&t.types.len().to_string());
-                        for ty in t.types.iter() {
-                            self.src.h("_");
+                match ty {
+                    CustomType::Named(ty) => self.src.h(&ty.name.to_snake_case()),
+                    CustomType::Anonymous(ty) => match ty {
+                        AnonymousType::Option(ty) => {
+                            self.src.h("option_");
                             self.print_ty_name(iface, ty);
                         }
-                    }
-                    TypeDefKind::Option(ty) => {
-                        self.src.h("option_");
-                        self.print_ty_name(iface, ty);
-                    }
-                    TypeDefKind::Expected(e) => {
-                        self.src.h("expected_");
-                        self.print_ty_name(iface, &e.ok);
-                        self.src.h("_");
-                        self.print_ty_name(iface, &e.err);
-                    }
-                    TypeDefKind::List(t) => {
-                        self.src.h("list_");
-                        self.print_ty_name(iface, t);
-                    }
+                        AnonymousType::Expected(e) => {
+                            self.src.h("expected_");
+                            self.print_ty_name(iface, &e.ok);
+                            self.src.h("_");
+                            self.print_ty_name(iface, &e.err);
+                        }
+                        AnonymousType::Tuple(t) => {
+                            self.src.h("tuple");
+                            self.src.h(&t.types.len().to_string());
+                            for ty in t.types.iter() {
+                                self.src.h("_");
+                                self.print_ty_name(iface, ty);
+                            }
+                        }
+                        AnonymousType::List(t) => {
+                            self.src.h("list_");
+                            self.print_ty_name(iface, t);
+                        }
+                    },
                 }
             }
         }
     }
 
-    fn print_anonymous_type(&mut self, iface: &Interface, ty: TypeId) {
+    fn print_anonymous_type(&mut self, iface: &Interface, id: TypeId) {
         let prev = mem::take(&mut self.src.header);
         self.src.h("typedef ");
-        let kind = &iface.types[ty].kind;
-        match kind {
-            TypeDefKind::Type(_)
-            | TypeDefKind::Flags(_)
-            | TypeDefKind::Record(_)
-            | TypeDefKind::Enum(_)
-            | TypeDefKind::Variant(_)
-            | TypeDefKind::Union(_) => {
-                unreachable!()
-            }
-            TypeDefKind::Tuple(t) => {
-                self.src.h("struct {\n");
-                for (i, t) in t.types.iter().enumerate() {
-                    self.print_ty(iface, t);
-                    self.src.h(" ");
-                    self.src.h(&format!("f{i};\n"));
-                }
-                self.src.h("}");
-            }
-            TypeDefKind::Option(t) => {
+        let ty = match &iface.types[id] {
+            CustomType::Anonymous(ty) => ty,
+            CustomType::Named(_) => unreachable!(),
+        };
+        match ty {
+            AnonymousType::Option(t) => {
                 self.src.h("struct {\n");
                 self.src.h("bool is_some;\n");
                 if !self.is_empty_type(iface, t) {
@@ -348,7 +328,7 @@ impl C {
                 }
                 self.src.h("}");
             }
-            TypeDefKind::Expected(e) => {
+            AnonymousType::Expected(e) => {
                 self.src.h("struct {
                     bool is_err;
                     union {
@@ -364,7 +344,16 @@ impl C {
                 self.src.h("} val;\n");
                 self.src.h("}");
             }
-            TypeDefKind::List(t) => {
+            AnonymousType::Tuple(t) => {
+                self.src.h("struct {\n");
+                for (i, t) in t.types.iter().enumerate() {
+                    self.print_ty(iface, t);
+                    self.src.h(" ");
+                    self.src.h(&format!("f{i};\n"));
+                }
+                self.src.h("}");
+            }
+            AnonymousType::List(t) => {
                 self.src.h("struct {\n");
                 self.print_ty(iface, t);
                 self.src.h(" *ptr;\n");
@@ -374,10 +363,10 @@ impl C {
         }
         self.src.h(" ");
         self.print_namespace(iface);
-        self.print_ty_name(iface, &Type::Id(ty));
+        self.print_ty_name(iface, &Type::Id(id));
         self.src.h("_t;\n");
         self.types
-            .insert(ty, mem::replace(&mut self.src.header, prev));
+            .insert(id, mem::replace(&mut self.src.header, prev));
     }
 
     fn is_empty_type(&self, iface: &Interface, ty: &Type) -> bool {
@@ -386,11 +375,16 @@ impl C {
             Type::Unit => return true,
             _ => return false,
         };
-        match &iface.types[id].kind {
-            TypeDefKind::Type(t) => self.is_empty_type(iface, t),
-            TypeDefKind::Record(r) => r.fields.is_empty(),
-            TypeDefKind::Tuple(t) => t.types.is_empty(),
-            _ => false,
+        match &iface.types[id] {
+            CustomType::Anonymous(ty) => match ty {
+                AnonymousType::Tuple(t) => t.types.is_empty(),
+                _ => false,
+            },
+            CustomType::Named(ty) => match &ty.kind {
+                NamedTypeKind::Type(t) => self.is_empty_type(iface, t),
+                NamedTypeKind::Record(r) => r.fields.is_empty(),
+                _ => false,
+            },
         }
     }
 
@@ -444,94 +438,97 @@ impl C {
         self.src.c(&self.src.header[pos..].to_string());
         self.src.h(";\n");
         self.src.c(" {\n");
-        match &iface.types[id].kind {
-            TypeDefKind::Type(t) => self.free(iface, t, "ptr"),
-
-            TypeDefKind::Flags(_) => {}
-            TypeDefKind::Enum(_) => {}
-
-            TypeDefKind::Record(r) => {
-                for field in r.fields.iter() {
-                    if !self.owns_anything(iface, &field.ty) {
-                        continue;
-                    }
-                    self.free(
-                        iface,
-                        &field.ty,
-                        &format!("&ptr->{}", field.name.to_snake_case()),
-                    );
-                }
-            }
-
-            TypeDefKind::Tuple(t) => {
-                for (i, ty) in t.types.iter().enumerate() {
-                    if !self.owns_anything(iface, ty) {
-                        continue;
-                    }
-                    self.free(iface, ty, &format!("&ptr->f{i}"));
-                }
-            }
-
-            TypeDefKind::List(t) => {
-                if self.owns_anything(iface, t) {
-                    self.src.c("for (size_t i = 0; i < ptr->len; i++) {\n");
-                    self.free(iface, t, "&ptr->ptr[i]");
+        match &iface.types[id] {
+            CustomType::Anonymous(ty) => match ty {
+                AnonymousType::Option(t) => {
+                    self.src.c("if (ptr->is_some) {\n");
+                    self.free(iface, t, "&ptr->val");
                     self.src.c("}\n");
                 }
-                self.src.c(&format!(
-                    "canonical_abi_free(ptr->ptr, ptr->len * {}, {});\n",
-                    self.sizes.size(t),
-                    self.sizes.align(t),
-                ));
-            }
 
-            TypeDefKind::Variant(v) => {
-                self.src.c("switch ((int32_t) ptr->tag) {\n");
-                for (i, case) in v.cases.iter().enumerate() {
-                    if !self.owns_anything(iface, &case.ty) {
-                        continue;
+                AnonymousType::Expected(e) => {
+                    self.src.c("if (!ptr->is_err) {\n");
+                    if self.owns_anything(iface, &e.ok) {
+                        self.free(iface, &e.ok, "&ptr->val.ok");
                     }
-                    self.src.c(&format!("case {}: {{\n", i));
-                    let expr = format!("&ptr->val.{}", case.name.to_snake_case());
-                    self.free(iface, &case.ty, &expr);
-                    self.src.c("break;\n");
+                    if self.owns_anything(iface, &e.err) {
+                        self.src.c("} else {\n");
+                        self.free(iface, &e.err, "&ptr->val.err");
+                    }
                     self.src.c("}\n");
                 }
-                self.src.c("}\n");
-            }
 
-            TypeDefKind::Union(u) => {
-                self.src.c("switch ((int32_t) ptr->tag) {\n");
-                for (i, case) in u.cases.iter().enumerate() {
-                    if !self.owns_anything(iface, &case.ty) {
-                        continue;
+                AnonymousType::Tuple(t) => {
+                    for (i, ty) in t.types.iter().enumerate() {
+                        if !self.owns_anything(iface, ty) {
+                            continue;
+                        }
+                        self.free(iface, ty, &format!("&ptr->f{i}"));
                     }
-                    self.src.c(&format!("case {i}: {{\n"));
-                    let expr = format!("&ptr->val.f{i}");
-                    self.free(iface, &case.ty, &expr);
-                    self.src.c("break;\n");
+                }
+
+                AnonymousType::List(t) => {
+                    if self.owns_anything(iface, t) {
+                        self.src.c("for (size_t i = 0; i < ptr->len; i++) {\n");
+                        self.free(iface, t, "&ptr->ptr[i]");
+                        self.src.c("}\n");
+                    }
+                    self.src.c(&format!(
+                        "canonical_abi_free(ptr->ptr, ptr->len * {}, {});\n",
+                        self.sizes.size(t),
+                        self.sizes.align(t),
+                    ));
+                }
+            },
+            CustomType::Named(ty) => match &ty.kind {
+                NamedTypeKind::Type(t) => self.free(iface, t, "ptr"),
+
+                NamedTypeKind::Flags(_) => {}
+                NamedTypeKind::Enum(_) => {}
+
+                NamedTypeKind::Record(r) => {
+                    for field in r.fields.iter() {
+                        if !self.owns_anything(iface, &field.ty) {
+                            continue;
+                        }
+                        self.free(
+                            iface,
+                            &field.ty,
+                            &format!("&ptr->{}", field.name.to_snake_case()),
+                        );
+                    }
+                }
+
+                NamedTypeKind::Variant(v) => {
+                    self.src.c("switch ((int32_t) ptr->tag) {\n");
+                    for (i, case) in v.cases.iter().enumerate() {
+                        if !self.owns_anything(iface, &case.ty) {
+                            continue;
+                        }
+                        self.src.c(&format!("case {}: {{\n", i));
+                        let expr = format!("&ptr->val.{}", case.name.to_snake_case());
+                        self.free(iface, &case.ty, &expr);
+                        self.src.c("break;\n");
+                        self.src.c("}\n");
+                    }
                     self.src.c("}\n");
                 }
-                self.src.c("}\n");
-            }
 
-            TypeDefKind::Option(t) => {
-                self.src.c("if (ptr->is_some) {\n");
-                self.free(iface, t, "&ptr->val");
-                self.src.c("}\n");
-            }
-
-            TypeDefKind::Expected(e) => {
-                self.src.c("if (!ptr->is_err) {\n");
-                if self.owns_anything(iface, &e.ok) {
-                    self.free(iface, &e.ok, "&ptr->val.ok");
+                NamedTypeKind::Union(u) => {
+                    self.src.c("switch ((int32_t) ptr->tag) {\n");
+                    for (i, case) in u.cases.iter().enumerate() {
+                        if !self.owns_anything(iface, &case.ty) {
+                            continue;
+                        }
+                        self.src.c(&format!("case {i}: {{\n"));
+                        let expr = format!("&ptr->val.f{i}");
+                        self.free(iface, &case.ty, &expr);
+                        self.src.c("break;\n");
+                        self.src.c("}\n");
+                    }
+                    self.src.c("}\n");
                 }
-                if self.owns_anything(iface, &e.err) {
-                    self.src.c("} else {\n");
-                    self.free(iface, &e.err, "&ptr->val.err");
-                }
-                self.src.c("}\n");
-            }
+            },
         }
         self.src.c("}\n");
     }
@@ -543,22 +540,30 @@ impl C {
             Type::Handle(_) => return true,
             _ => return false,
         };
-        match &iface.types[id].kind {
-            TypeDefKind::Type(t) => self.owns_anything(iface, t),
-            TypeDefKind::Record(r) => r.fields.iter().any(|t| self.owns_anything(iface, &t.ty)),
-            TypeDefKind::Tuple(t) => t.types.iter().any(|t| self.owns_anything(iface, t)),
-            TypeDefKind::Flags(_) => false,
-            TypeDefKind::Enum(_) => false,
-            TypeDefKind::List(_) => true,
-            TypeDefKind::Variant(v) => v.cases.iter().any(|c| self.owns_anything(iface, &c.ty)),
-            TypeDefKind::Union(v) => v
-                .cases
-                .iter()
-                .any(|case| self.owns_anything(iface, &case.ty)),
-            TypeDefKind::Option(t) => self.owns_anything(iface, t),
-            TypeDefKind::Expected(e) => {
-                self.owns_anything(iface, &e.ok) || self.owns_anything(iface, &e.err)
-            }
+        match &iface.types[id] {
+            CustomType::Anonymous(ty) => match ty {
+                AnonymousType::Option(t) => self.owns_anything(iface, t),
+                AnonymousType::Expected(e) => {
+                    self.owns_anything(iface, &e.ok) || self.owns_anything(iface, &e.err)
+                }
+                AnonymousType::Tuple(t) => t.types.iter().any(|t| self.owns_anything(iface, t)),
+                AnonymousType::List(_) => true,
+            },
+            CustomType::Named(ty) => match &ty.kind {
+                NamedTypeKind::Type(t) => self.owns_anything(iface, t),
+                NamedTypeKind::Record(r) => {
+                    r.fields.iter().any(|t| self.owns_anything(iface, &t.ty))
+                }
+                NamedTypeKind::Flags(_) => false,
+                NamedTypeKind::Enum(_) => false,
+                NamedTypeKind::Variant(v) => {
+                    v.cases.iter().any(|c| self.owns_anything(iface, &c.ty))
+                }
+                NamedTypeKind::Union(v) => v
+                    .cases
+                    .iter()
+                    .any(|case| self.owns_anything(iface, &case.ty)),
+            },
         }
     }
 
@@ -604,61 +609,68 @@ impl Return {
                 return;
             }
         };
-        match &iface.types[id].kind {
-            TypeDefKind::Type(t) => self.return_single(iface, t, orig_ty),
-
-            // Flags are returned as their bare values
-            TypeDefKind::Flags(_) => {
-                self.scalar = Some(Scalar::Type(*orig_ty));
-            }
-
-            // Tuples get splatted to multiple return pointers
-            TypeDefKind::Tuple(_) => self.splat_tuples(iface, ty, orig_ty),
-
-            // Record returns are always through a pointer
-            TypeDefKind::Record(_) => {
-                self.retptrs.push(*orig_ty);
-            }
-
-            // other records/lists/buffers always go to return pointers
-            TypeDefKind::List(_) => self.retptrs.push(*orig_ty),
-
-            // Enums are scalars
-            TypeDefKind::Enum(_) => {
-                self.scalar = Some(Scalar::Type(*orig_ty));
-            }
-
-            // Unpack optional returns where a boolean discriminant is
-            // returned and then the actual type returned is returned
-            // through a return pointer.
-            TypeDefKind::Option(ty) => {
-                self.scalar = Some(Scalar::OptionBool(*ty));
-                self.retptrs.push(*ty);
-            }
-
-            // Unpack `expected<T, E>` returns where `E` looks like an enum
-            // so we can return that in the scalar return and have `T` get
-            // returned through the normal returns.
-            TypeDefKind::Expected(e) => {
-                if let Type::Id(err) = e.err {
-                    if let TypeDefKind::Enum(enum_) = &iface.types[err].kind {
-                        self.scalar = Some(Scalar::ExpectedEnum {
-                            err,
-                            max_err: enum_.cases.len(),
-                        });
-                        self.splat_tuples(iface, &e.ok, &e.ok);
-                        return;
-                    }
+        match &iface.types[id] {
+            CustomType::Anonymous(anon) => match anon {
+                // Unpack optional returns where a boolean discriminant is
+                // returned and then the actual type returned is returned
+                // through a return pointer.
+                AnonymousType::Option(ty) => {
+                    self.scalar = Some(Scalar::OptionBool(*ty));
+                    self.retptrs.push(*ty);
                 }
 
-                // otherwise just return the variant via a normal
-                // return pointer
-                self.retptrs.push(*orig_ty);
-            }
+                // Unpack `expected<T, E>` returns where `E` looks like an enum
+                // so we can return that in the scalar return and have `T` get
+                // returned through the normal returns.
+                AnonymousType::Expected(e) => {
+                    if let Type::Id(err) = e.err {
+                        if let CustomType::Named(NamedType {
+                            kind: NamedTypeKind::Enum(enum_),
+                            ..
+                        }) = &iface.types[err]
+                        {
+                            self.scalar = Some(Scalar::ExpectedEnum {
+                                err,
+                                max_err: enum_.cases.len(),
+                            });
+                            self.splat_tuples(iface, &e.ok, &e.ok);
+                            return;
+                        }
+                    }
 
-            TypeDefKind::Variant(_) | TypeDefKind::Union(_) => {
-                self.retptrs.push(*orig_ty);
-            }
+                    // otherwise just return the variant via a normal
+                    // return pointer
+                    self.retptrs.push(*orig_ty);
+                }
+
+                // Tuples get splatted to multiple return pointers
+                AnonymousType::Tuple(_) => self.splat_tuples(iface, ty, orig_ty),
+
+                // other records/lists/buffers always go to return pointers
+                AnonymousType::List(_) => self.retptrs.push(*orig_ty),
+            },
+            CustomType::Named(named) => match &named.kind {
+                NamedTypeKind::Type(t) => self.return_single(iface, t, orig_ty),
+
+                // Flags are returned as their bare values
+                NamedTypeKind::Flags(_) => {
+                    self.scalar = Some(Scalar::Type(*orig_ty));
+                }
+
+                // Record returns are always through a pointer
+                NamedTypeKind::Record(_) => {
+                    self.retptrs.push(*orig_ty);
+                }
+
+                // Enums are scalars
+                NamedTypeKind::Enum(_) => {
+                    self.scalar = Some(Scalar::Type(*orig_ty));
+                }
+
+                NamedTypeKind::Variant(_) | NamedTypeKind::Union(_) => {
+                    self.retptrs.push(*orig_ty);
+                }
+            },
         }
     }
 
@@ -671,8 +683,8 @@ impl Return {
                 return;
             }
         };
-        match &iface.types[id].kind {
-            TypeDefKind::Tuple(t) => {
+        match &iface.types[id] {
+            CustomType::Anonymous(AnonymousType::Tuple(t)) => {
                 self.splat_tuple = true;
                 self.retptrs.extend(t.types.iter());
             }

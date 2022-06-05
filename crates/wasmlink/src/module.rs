@@ -10,7 +10,7 @@ use wasmparser::{
 };
 use wit_parser::{
     abi::{AbiVariant, WasmSignature, WasmType},
-    Function, Interface as WitInterface, SizeAlign, Type as WitType,
+    AnonymousType, CustomType, Function, Interface as WitInterface, SizeAlign, Type as WitType,
 };
 
 fn import_kind(ty: ImportSectionEntryType) -> &'static str {
@@ -41,21 +41,27 @@ pub(crate) fn export_kind(kind: ExternalKind) -> &'static str {
 }
 
 fn has_list(interface: &WitInterface, ty: &WitType) -> bool {
-    use wit_parser::{Type, TypeDefKind};
+    use wit_parser::{NamedTypeKind, Type};
 
     match ty {
         Type::String => true,
-        Type::Id(id) => match &interface.types[*id].kind {
-            TypeDefKind::List(_) => true,
-            TypeDefKind::Type(t) => has_list(interface, t),
-            TypeDefKind::Flags(_) => false,
-            TypeDefKind::Record(r) => r.fields.iter().any(|f| has_list(interface, &f.ty)),
-            TypeDefKind::Tuple(t) => t.types.iter().any(|ty| has_list(interface, ty)),
-            TypeDefKind::Variant(v) => v.cases.iter().any(|c| has_list(interface, &c.ty)),
-            TypeDefKind::Union(v) => v.cases.iter().any(|c| has_list(interface, &c.ty)),
-            TypeDefKind::Option(t) => has_list(interface, t),
-            TypeDefKind::Expected(e) => has_list(interface, &e.ok) || has_list(interface, &e.err),
-            TypeDefKind::Enum(_) => false,
+        Type::Id(id) => match &interface.types[*id] {
+            CustomType::Anonymous(ty) => match ty {
+                AnonymousType::Option(t) => has_list(interface, t),
+                AnonymousType::Expected(e) => {
+                    has_list(interface, &e.ok) || has_list(interface, &e.err)
+                }
+                AnonymousType::Tuple(t) => t.types.iter().any(|ty| has_list(interface, ty)),
+                AnonymousType::List(_) => true,
+            },
+            CustomType::Named(ty) => match &ty.kind {
+                NamedTypeKind::Type(t) => has_list(interface, t),
+                NamedTypeKind::Flags(_) => false,
+                NamedTypeKind::Record(r) => r.fields.iter().any(|f| has_list(interface, &f.ty)),
+                NamedTypeKind::Variant(v) => v.cases.iter().any(|c| has_list(interface, &c.ty)),
+                NamedTypeKind::Union(v) => v.cases.iter().any(|c| has_list(interface, &c.ty)),
+                NamedTypeKind::Enum(_) => false,
+            },
         },
         _ => false,
     }

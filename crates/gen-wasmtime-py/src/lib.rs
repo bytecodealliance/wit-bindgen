@@ -404,35 +404,26 @@ impl WasmtimePy {
             }
             Type::Id(id) => {
                 let ty = &iface.types[*id];
-                if let Some(name) = &ty.name {
-                    self.src.push_str(&name.to_camel_case());
-                    return;
-                }
-                match &ty.kind {
-                    TypeDefKind::Type(t) => self.print_ty(iface, t),
-                    TypeDefKind::Tuple(t) => self.print_tuple(iface, t),
-                    TypeDefKind::Record(_)
-                    | TypeDefKind::Flags(_)
-                    | TypeDefKind::Enum(_)
-                    | TypeDefKind::Variant(_)
-                    | TypeDefKind::Union(_) => {
-                        unreachable!()
-                    }
-                    TypeDefKind::Option(t) => {
-                        self.pyimport("typing", "Optional");
-                        self.src.push_str("Optional[");
-                        self.print_ty(iface, t);
-                        self.src.push_str("]");
-                    }
-                    TypeDefKind::Expected(e) => {
-                        self.needs_expected = true;
-                        self.src.push_str("Expected[");
-                        self.print_ty(iface, &e.ok);
-                        self.src.push_str(", ");
-                        self.print_ty(iface, &e.err);
-                        self.src.push_str("]");
-                    }
-                    TypeDefKind::List(t) => self.print_list(iface, t),
+                match ty {
+                    CustomType::Named(ty) => self.src.push_str(&ty.name.to_camel_case()),
+                    CustomType::Anonymous(ty) => match ty {
+                        AnonymousType::Option(t) => {
+                            self.pyimport("typing", "Optional");
+                            self.src.push_str("Optional[");
+                            self.print_ty(iface, t);
+                            self.src.push_str("]");
+                        }
+                        AnonymousType::Expected(e) => {
+                            self.needs_expected = true;
+                            self.src.push_str("Expected[");
+                            self.print_ty(iface, &e.ok);
+                            self.src.push_str(", ");
+                            self.print_ty(iface, &e.err);
+                            self.src.push_str("]");
+                        }
+                        AnonymousType::Tuple(t) => self.print_tuple(iface, t),
+                        AnonymousType::List(t) => self.print_list(iface, t),
+                    },
                 }
             }
         }
@@ -499,8 +490,11 @@ impl WasmtimePy {
             Type::Char => None,
             Type::Handle(_) => None,
             Type::String => None,
-            Type::Id(id) => match &iface.types[*id].kind {
-                TypeDefKind::Type(t) => self.array_ty(iface, t),
+            Type::Id(id) => match &iface.types[*id] {
+                CustomType::Named(NamedType {
+                    kind: NamedTypeKind::Type(t),
+                    ..
+                }) => self.array_ty(iface, t),
                 _ => None,
             },
         }

@@ -240,9 +240,15 @@ fn to_json(i: &Interface) -> String {
         .iter()
         .map(|(i, r)| TypeDef {
             idx: i.index(),
-            name: r.name.clone(),
+            name: match r {
+                CustomType::Named(ty) => Some(ty.name.clone()),
+                CustomType::Anonymous(_) => None,
+            },
             ty: translate_typedef(r),
-            foreign_module: r.foreign_module.clone(),
+            foreign_module: match r {
+                CustomType::Named(ty) => ty.foreign_module.clone(),
+                CustomType::Anonymous(_) => None,
+            },
         })
         .collect::<Vec<_>>();
     let functions = i
@@ -272,40 +278,44 @@ fn to_json(i: &Interface) -> String {
     };
     return serde_json::to_string_pretty(&iface).unwrap();
 
-    fn translate_typedef(ty: &wit_parser::TypeDef) -> Type {
-        match &ty.kind {
-            TypeDefKind::Type(t) => Type::Primitive(translate_type(t)),
-            TypeDefKind::Record(r) => Type::Record {
-                fields: r
-                    .fields
-                    .iter()
-                    .map(|f| (f.name.clone(), translate_type(&f.ty)))
-                    .collect(),
+    fn translate_typedef(ty: &wit_parser::CustomType) -> Type {
+        match ty {
+            CustomType::Anonymous(ty) => match ty {
+                AnonymousType::Option(t) => Type::Option(translate_type(t)),
+                AnonymousType::Expected(e) => Type::Expected {
+                    ok: translate_type(&e.ok),
+                    err: translate_type(&e.err),
+                },
+                AnonymousType::Tuple(t) => Type::Tuple {
+                    types: t.types.iter().map(|ty| translate_type(ty)).collect(),
+                },
+                AnonymousType::List(ty) => Type::List(translate_type(ty)),
             },
-            TypeDefKind::Tuple(t) => Type::Tuple {
-                types: t.types.iter().map(|ty| translate_type(ty)).collect(),
-            },
-            TypeDefKind::Flags(r) => Type::Flags {
-                flags: r.flags.iter().map(|f| f.name.clone()).collect(),
-            },
-            TypeDefKind::Enum(r) => Type::Enum {
-                cases: r.cases.iter().map(|f| f.name.clone()).collect(),
-            },
-            TypeDefKind::Variant(v) => Type::Variant {
-                cases: v
-                    .cases
-                    .iter()
-                    .map(|f| (f.name.clone(), translate_type(&f.ty)))
-                    .collect(),
-            },
-            TypeDefKind::Option(t) => Type::Option(translate_type(t)),
-            TypeDefKind::Expected(e) => Type::Expected {
-                ok: translate_type(&e.ok),
-                err: translate_type(&e.err),
-            },
-            TypeDefKind::List(ty) => Type::List(translate_type(ty)),
-            TypeDefKind::Union(u) => Type::Union {
-                cases: u.cases.iter().map(|c| translate_type(&c.ty)).collect(),
+            CustomType::Named(ty) => match &ty.kind {
+                NamedTypeKind::Type(t) => Type::Primitive(translate_type(t)),
+                NamedTypeKind::Record(r) => Type::Record {
+                    fields: r
+                        .fields
+                        .iter()
+                        .map(|f| (f.name.clone(), translate_type(&f.ty)))
+                        .collect(),
+                },
+                NamedTypeKind::Flags(r) => Type::Flags {
+                    flags: r.flags.iter().map(|f| f.name.clone()).collect(),
+                },
+                NamedTypeKind::Enum(r) => Type::Enum {
+                    cases: r.cases.iter().map(|f| f.name.clone()).collect(),
+                },
+                NamedTypeKind::Variant(v) => Type::Variant {
+                    cases: v
+                        .cases
+                        .iter()
+                        .map(|f| (f.name.clone(), translate_type(&f.ty)))
+                        .collect(),
+                },
+                NamedTypeKind::Union(u) => Type::Union {
+                    cases: u.cases.iter().map(|c| translate_type(&c.ty)).collect(),
+                },
             },
         }
     }
