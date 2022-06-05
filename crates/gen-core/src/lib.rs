@@ -125,7 +125,7 @@ pub trait Generator {
                         self.type_variant(iface, id, &ty.name, variant, &ty.docs)
                     }
                     NamedTypeKind::Union(u) => self.type_union(iface, id, &ty.name, u, &ty.docs),
-                    NamedTypeKind::Type(t) => self.type_alias(iface, id, &ty.name, t, &ty.docs),
+                    NamedTypeKind::Alias(t) => self.type_alias(iface, id, &ty.name, t, &ty.docs),
                 },
             }
         }
@@ -249,7 +249,7 @@ impl Types {
                         info |= self.type_info(iface, &case.ty);
                     }
                 }
-                NamedTypeKind::Type(ty) => {
+                NamedTypeKind::Alias(ty) => {
                     info = self.type_info(iface, ty);
                 }
                 NamedTypeKind::Union(u) => {
@@ -305,7 +305,7 @@ impl Types {
                         self.set_param_result_ty(iface, &case.ty, param, result)
                     }
                 }
-                NamedTypeKind::Type(ty) => self.set_param_result_ty(iface, ty, param, result),
+                NamedTypeKind::Alias(ty) => self.set_param_result_ty(iface, ty, param, result),
                 NamedTypeKind::Union(u) => {
                     for case in u.cases.iter() {
                         self.set_param_result_ty(iface, &case.ty, param, result)

@@ -492,7 +492,7 @@ impl WasmtimePy {
             Type::String => None,
             Type::Id(id) => match &iface.types[*id] {
                 CustomType::Named(NamedType {
-                    kind: NamedTypeKind::Type(t),
+                    kind: NamedTypeKind::Alias(t),
                     ..
                 }) => self.array_ty(iface, t),
                 _ => None,

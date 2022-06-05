@@ -23,7 +23,7 @@ impl SizeAlign {
                 AnonymousType::List(_) => (8, 4),
             },
             CustomType::Named(ty) => match &ty.kind {
-                NamedTypeKind::Type(t) => (self.size(t), self.align(t)),
+                NamedTypeKind::Alias(t) => (self.size(t), self.align(t)),
                 NamedTypeKind::Record(r) => self.record(r.fields.iter().map(|f| &f.ty)),
                 NamedTypeKind::Flags(f) => match f.repr() {
                     FlagsRepr::U8 => (1, 1),

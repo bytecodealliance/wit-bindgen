@@ -291,7 +291,7 @@ impl PartialEq for NamedTypeKey<'_> {
                         .zip(e2.cases.iter())
                         .all(|(c1, c2)| c1.name == c2.name)
                 }
-                (NamedTypeKind::Type(t1), NamedTypeKind::Type(t2)) => TypeKey {
+                (NamedTypeKind::Alias(t1), NamedTypeKind::Alias(t2)) => TypeKey {
                     interface: self.interface,
                     ty: *t1,
                 }
@@ -346,7 +346,7 @@ impl Hash for NamedTypeKey<'_> {
                     c.name.hash(state);
                 }
             }
-            NamedTypeKind::Type(ty) => {
+            NamedTypeKind::Alias(ty) => {
                 state.write_u8(8);
                 TypeKey {
                     interface: self.interface,
@@ -570,7 +570,7 @@ impl<'a> TypeEncoder<'a> {
                                     self.encode_union(interface, instance, u)?
                                 }
                                 NamedTypeKind::Enum(e) => self.encode_enum(e)?,
-                                NamedTypeKind::Type(ty) => {
+                                NamedTypeKind::Alias(ty) => {
                                     self.encode_type(interface, instance, ty)?
                                 }
                             };
@@ -818,7 +818,7 @@ impl RequiredOptions {
                         Self::for_types(interface, v.cases.iter().map(|c| &c.ty))
                     }
                     NamedTypeKind::Enum(_) => Self::None,
-                    NamedTypeKind::Type(t) => Self::for_type(interface, t),
+                    NamedTypeKind::Alias(t) => Self::for_type(interface, t),
                 },
             },
             Type::String => Self::Encoding,

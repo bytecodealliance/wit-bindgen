@@ -484,7 +484,7 @@ impl<'a> CallAdapter<'a> {
                     }
                 },
                 CustomType::Named(ty) => match &ty.kind {
-                    NamedTypeKind::Type(t) => Self::push_operands(
+                    NamedTypeKind::Alias(t) => Self::push_operands(
                         interface,
                         sizes,
                         t,
@@ -709,7 +709,7 @@ impl<'a> CallAdapter<'a> {
                     }
                 },
                 CustomType::Named(ty) => match &ty.kind {
-                    NamedTypeKind::Type(t) => Self::push_element_operands(
+                    NamedTypeKind::Alias(t) => Self::push_element_operands(
                         interface,
                         sizes,
                         t,

@@ -207,8 +207,8 @@ impl Resolver {
                         .unwrap_or_else(|| dep_name.to_string()),
                 ),
                 kind: match &ty.kind {
-                    NamedTypeKind::Type(t) => {
-                        NamedTypeKind::Type(self.copy_type(dep_name, dep, *t))
+                    NamedTypeKind::Alias(t) => {
+                        NamedTypeKind::Alias(self.copy_type(dep_name, dep, *t))
                     }
                     NamedTypeKind::Record(r) => NamedTypeKind::Record(Record {
                         fields: r
@@ -337,7 +337,7 @@ impl Resolver {
         Ok(match ty {
             super::TypeDefKind::Alias(alias) => {
                 let ty = self.resolve_type(&alias.target)?;
-                NamedTypeKind::Type(ty)
+                NamedTypeKind::Alias(ty)
             }
             super::TypeDefKind::Record(record) => {
                 let fields = record
@@ -666,7 +666,7 @@ impl Resolver {
                 }
             },
             CustomType::Named(ty) => match &ty.kind {
-                NamedTypeKind::Type(Type::Id(id)) => {
+                NamedTypeKind::Alias(Type::Id(id)) => {
                     self.validate_type_not_recursive(span, *id, visiting, valid)?
                 }
                 NamedTypeKind::Variant(v) => {
@@ -691,7 +691,7 @@ impl Resolver {
                     }
                 }
 
-                NamedTypeKind::Flags(_) | NamedTypeKind::Type(_) | NamedTypeKind::Enum(_) => {}
+                NamedTypeKind::Flags(_) | NamedTypeKind::Alias(_) | NamedTypeKind::Enum(_) => {}
             },
         }
 

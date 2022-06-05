@@ -55,7 +55,7 @@ fn has_list(interface: &WitInterface, ty: &WitType) -> bool {
                 AnonymousType::List(_) => true,
             },
             CustomType::Named(ty) => match &ty.kind {
-                NamedTypeKind::Type(t) => has_list(interface, t),
+                NamedTypeKind::Alias(t) => has_list(interface, t),
                 NamedTypeKind::Flags(_) => false,
                 NamedTypeKind::Record(r) => r.fields.iter().any(|f| has_list(interface, &f.ty)),
                 NamedTypeKind::Variant(v) => v.cases.iter().any(|c| has_list(interface, &c.ty)),

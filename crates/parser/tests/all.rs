@@ -292,7 +292,7 @@ fn to_json(i: &Interface) -> String {
                 AnonymousType::List(ty) => Type::List(translate_type(ty)),
             },
             CustomType::Named(ty) => match &ty.kind {
-                NamedTypeKind::Type(t) => Type::Primitive(translate_type(t)),
+                NamedTypeKind::Alias(t) => Type::Primitive(translate_type(t)),
                 NamedTypeKind::Record(r) => Type::Record {
                     fields: r
                         .fields

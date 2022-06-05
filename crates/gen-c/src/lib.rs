@@ -170,7 +170,7 @@ impl C {
                     AnonymousType::Tuple(_) | AnonymousType::List(_) => true,
                 },
                 CustomType::Named(ty) => match &ty.kind {
-                    NamedTypeKind::Type(t) => self.is_arg_by_pointer(iface, t),
+                    NamedTypeKind::Alias(t) => self.is_arg_by_pointer(iface, t),
                     NamedTypeKind::Variant(_) => true,
                     NamedTypeKind::Union(_) => true,
                     NamedTypeKind::Enum(_) => false,
@@ -381,7 +381,7 @@ impl C {
                 _ => false,
             },
             CustomType::Named(ty) => match &ty.kind {
-                NamedTypeKind::Type(t) => self.is_empty_type(iface, t),
+                NamedTypeKind::Alias(t) => self.is_empty_type(iface, t),
                 NamedTypeKind::Record(r) => r.fields.is_empty(),
                 _ => false,
             },
@@ -481,7 +481,7 @@ impl C {
                 }
             },
             CustomType::Named(ty) => match &ty.kind {
-                NamedTypeKind::Type(t) => self.free(iface, t, "ptr"),
+                NamedTypeKind::Alias(t) => self.free(iface, t, "ptr"),
 
                 NamedTypeKind::Flags(_) => {}
                 NamedTypeKind::Enum(_) => {}
@@ -550,7 +550,7 @@ impl C {
                 AnonymousType::List(_) => true,
             },
             CustomType::Named(ty) => match &ty.kind {
-                NamedTypeKind::Type(t) => self.owns_anything(iface, t),
+                NamedTypeKind::Alias(t) => self.owns_anything(iface, t),
                 NamedTypeKind::Record(r) => {
                     r.fields.iter().any(|t| self.owns_anything(iface, &t.ty))
                 }
@@ -650,7 +650,7 @@ impl Return {
                 AnonymousType::List(_) => self.retptrs.push(*orig_ty),
             },
             CustomType::Named(named) => match &named.kind {
-                NamedTypeKind::Type(t) => self.return_single(iface, t, orig_ty),
+                NamedTypeKind::Alias(t) => self.return_single(iface, t, orig_ty),
 
                 // Flags are returned as their bare values
                 NamedTypeKind::Flags(_) => {

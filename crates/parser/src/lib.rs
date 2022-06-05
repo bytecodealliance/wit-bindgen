@@ -63,12 +63,12 @@ pub struct NamedType {
 
 #[derive(Debug)]
 pub enum NamedTypeKind {
+    Alias(Type),
     Record(Record),
     Flags(Flags),
     Variant(Variant),
     Enum(Enum),
     Union(Union),
-    Type(Type),
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
@@ -428,7 +428,7 @@ impl Interface {
             },
             CustomType::Named(ty) => match &ty.kind {
                 NamedTypeKind::Flags(_) | NamedTypeKind::Enum(_) => {}
-                NamedTypeKind::Type(t) => self.topo_visit_ty(t, list, visited),
+                NamedTypeKind::Alias(t) => self.topo_visit_ty(t, list, visited),
                 NamedTypeKind::Record(r) => {
                     for f in r.fields.iter() {
                         self.topo_visit_ty(&f.ty, list, visited);
@@ -482,7 +482,7 @@ impl Interface {
                     NamedTypeKind::Variant(_)
                     | NamedTypeKind::Enum(_)
                     | NamedTypeKind::Union(_) => false,
-                    NamedTypeKind::Type(t) => self.all_bits_valid(t),
+                    NamedTypeKind::Alias(t) => self.all_bits_valid(t),
                     NamedTypeKind::Record(r) => r.fields.iter().all(|f| self.all_bits_valid(&f.ty)),
 
                     // FIXME: this could perhaps be `true` for multiples-of-32 but

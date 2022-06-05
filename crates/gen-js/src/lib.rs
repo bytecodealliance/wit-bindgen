@@ -141,7 +141,7 @@ impl Js {
             Type::String => None,
             Type::Id(id) => match &iface.types[*id] {
                 CustomType::Named(NamedType {
-                    kind: NamedTypeKind::Type(t),
+                    kind: NamedTypeKind::Alias(t),
                     ..
                 }) => self.array_ty(iface, t),
                 _ => None,
@@ -338,7 +338,7 @@ impl Js {
                 _ => None,
             },
             CustomType::Named(ty) => match &ty.kind {
-                NamedTypeKind::Type(t) => self.as_nullable(iface, t),
+                NamedTypeKind::Alias(t) => self.as_nullable(iface, t),
                 _ => None,
             },
         }

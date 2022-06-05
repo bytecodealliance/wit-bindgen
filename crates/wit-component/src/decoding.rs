@@ -317,7 +317,7 @@ impl<'a> InterfaceDecoder<'a> {
             validate_id(&name)
                 .with_context(|| format!("type name `{}` is not a valid identifier", name))?;
 
-            ty = Type::Id(self.alloc_named(name, NamedTypeKind::Type(ty)));
+            ty = Type::Id(self.alloc_named(name, NamedTypeKind::Alias(ty)));
         }
 
         Ok(ty)
@@ -543,7 +543,7 @@ impl<'a> InterfaceDecoder<'a> {
         let id = self.interface.types.alloc(CustomType::Anonymous(ty));
         if let Some(name) = name {
             // If this type is exported, we interpret it as a type alias.
-            self.alloc_named(name, NamedTypeKind::Type(Type::Id(id)))
+            self.alloc_named(name, NamedTypeKind::Alias(Type::Id(id)))
         } else {
             id
         }

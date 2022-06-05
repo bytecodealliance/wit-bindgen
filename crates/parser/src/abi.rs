@@ -980,7 +980,7 @@ impl Interface {
 
             Type::Id(id) => match &self.types[*id] {
                 CustomType::Named(ty) => match &ty.kind {
-                    NamedTypeKind::Type(t) => self.push_wasm(variant, t, result),
+                    NamedTypeKind::Alias(t) => self.push_wasm(variant, t, result),
 
                     NamedTypeKind::Record(r) => {
                         for field in r.fields.iter() {
@@ -1538,7 +1538,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                 },
                 CustomType::Named(named) => match &named.kind {
-                    NamedTypeKind::Type(t) => self.lower(t),
+                    NamedTypeKind::Alias(t) => self.lower(t),
                     NamedTypeKind::Record(record) => {
                         self.emit(&RecordLower {
                             record,
@@ -1749,7 +1749,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                 },
                 CustomType::Named(named) => match &named.kind {
-                    NamedTypeKind::Type(t) => self.lift(t),
+                    NamedTypeKind::Alias(t) => self.lift(t),
                     NamedTypeKind::Record(record) => {
                         let mut temp = Vec::new();
                         self.iface.push_wasm(self.variant, ty, &mut temp);
@@ -1898,7 +1898,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     AnonymousType::List(_) => self.write_list_to_memory(ty, addr, offset),
                 },
                 CustomType::Named(named) => match &named.kind {
-                    NamedTypeKind::Type(t) => self.write_to_memory(t, addr, offset),
+                    NamedTypeKind::Alias(t) => self.write_to_memory(t, addr, offset),
 
                     // Decompose the record into its components and then write all
                     // the components into memory one-by-one.
@@ -2079,7 +2079,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     AnonymousType::List(_) => self.read_list_from_memory(ty, addr, offset),
                 },
                 CustomType::Named(named) => match &named.kind {
-                    NamedTypeKind::Type(t) => self.read_from_memory(t, addr, offset),
+                    NamedTypeKind::Alias(t) => self.read_from_memory(t, addr, offset),
 
                     // Read and lift each field individually, adjusting the offset
                     // as we go along, then aggregate all the fields into the
@@ -2224,7 +2224,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
             Type::Char => true,
             Type::Id(id) => match &self.iface.types[*id] {
                 CustomType::Named(NamedType {
-                    kind: NamedTypeKind::Type(t),
+                    kind: NamedTypeKind::Alias(t),
                     ..
                 }) => self.is_char(t),
                 _ => false,
