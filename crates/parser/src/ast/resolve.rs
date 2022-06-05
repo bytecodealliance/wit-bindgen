@@ -32,8 +32,8 @@ impl Resolver {
 
         // With all names registered we can now fully expand and translate all
         // types.
-        for field in items {
-            let t = match field {
+        for item in items {
+            let t = match item {
                 Item::TypeDef(t) => t,
                 _ => continue,
             };
@@ -50,8 +50,8 @@ impl Resolver {
         // and additionally validate that types thesmelves are not recursive
         let mut valid_types = HashSet::new();
         let mut visiting = HashSet::new();
-        for field in items {
-            match field {
+        for item in items {
+            match item {
                 Item::Value(v) => self.resolve_value(v)?,
                 Item::Resource(r) => self.resolve_resource(r)?,
                 Item::TypeDef(t) => {
@@ -81,11 +81,11 @@ impl Resolver {
 
     fn process_use<'a>(
         &mut self,
-        fields: &[Item<'a>],
+        items: &[Item<'a>],
         deps: &'a HashMap<String, Interface>,
     ) -> Result<()> {
-        for field in fields {
-            let u = match field {
+        for items in items {
+            let u = match items {
                 Item::Use(u) => u,
                 _ => continue,
             };
@@ -267,8 +267,8 @@ impl Resolver {
     /// This is done so that types can still reference one another when they're defined out of order.
     fn register_names(&mut self, items: &[Item<'_>]) -> Result<()> {
         let mut values = HashSet::new();
-        for field in items {
-            match field {
+        for item in items {
+            match item {
                 Item::Resource(r) => {
                     let docs = self.docs(&r.docs);
                     let id = self.resources.alloc(Resource {

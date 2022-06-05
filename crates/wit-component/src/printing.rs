@@ -69,14 +69,14 @@ impl InterfacePrinter {
                 match ty {
                     CustomType::Named(ty) => self.output.push_str(&ty.name),
                     CustomType::Anonymous(ty) => match ty {
-                        AnonymousType::Tuple(t) => {
-                            self.print_tuple_type(interface, t)?;
-                        }
                         AnonymousType::Option(t) => {
                             self.print_option_type(interface, t)?;
                         }
                         AnonymousType::Expected(t) => {
                             self.print_expected_type(interface, t)?;
+                        }
+                        AnonymousType::Tuple(t) => {
+                            self.print_tuple_type(interface, t)?;
                         }
                         AnonymousType::List(ty) => {
                             self.output.push_str("list<");

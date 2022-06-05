@@ -201,6 +201,8 @@ impl Hash for AnonymousTypeKey<'_> {
                 }
                 .hash(state);
             }
+            // Note: if any extra cases get added here, all of the prefixes of the named types
+            // need to be updated to continue from where the counting stops here.
         }
     }
 }
