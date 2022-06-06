@@ -286,7 +286,7 @@ pub trait RustGenerator {
                 panic!("unsupported anonymous type reference: union")
             }
             TypeDefKind::Stream(_) => {
-                panic!("unsupported anonymous type reference: stream")
+                todo!("unsupported anonymous type reference: stream")
             }
 
             TypeDefKind::Type(t) => self.print_ty(iface, t, mode),

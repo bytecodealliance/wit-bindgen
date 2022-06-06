@@ -102,7 +102,7 @@ impl InterfacePrinter {
                     }
                     TypeDefKind::Type(ty) => self.print_type_name(interface, ty)?,
                     TypeDefKind::Stream(_) => {
-                        bail!("interface has an unnamed stream type")
+                        todo!("interface has an unnamed stream type")
                     }
                 }
             }
