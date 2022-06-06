@@ -2,16 +2,16 @@ enum e1 {
     a,
 }
 
-e1-arg: function(x: e1)
-e1-result: function() -> e1
+e1-arg: func(x: e1)
+e1-result: func() -> e1
 
 union u1 {
     u32,
     float32,
 }
 
-u1-arg: function(x: u1)
-u1-result: function() -> u1
+u1-arg: func(x: u1)
+u1-result: func() -> u1
 
 record empty {}
 
@@ -25,13 +25,13 @@ variant v1 {
     g(u32),
 }
 
-v1-arg: function(x: v1)
-v1-result: function() -> v1
+v1-arg: func(x: v1)
+v1-result: func() -> v1
 
-bool-arg: function(x: bool)
-bool-result: function() -> bool
+bool-arg: func(x: bool)
+bool-result: func() -> bool
 
-option-arg: function(
+option-arg: func(
   a: option<bool>,
   b: option<tuple<>>,
   c: option<u32>,
@@ -40,7 +40,7 @@ option-arg: function(
   f: option<u1>,
   g: option<option<bool>>,
 )
-option-result: function() -> tuple<
+option-result: func() -> tuple<
   option<bool>,
   option<tuple<>>,
   option<u32>,
@@ -80,7 +80,7 @@ variant casts6 {
   b(tuple<u32, u32>),
 }
 
-casts: function(
+casts: func(
   a: casts1,
   b: casts2,
   c: casts3,
@@ -96,7 +96,7 @@ casts: function(
   casts6,
 >
 
-expected-arg: function(
+expected-arg: func(
   a: expected<unit, unit>,
   b: expected<unit, e1>,
   c: expected<e1, unit>,
@@ -104,7 +104,7 @@ expected-arg: function(
   e: expected<u32, v1>,
   f: expected<string, list<u8>>,
 )
-expected-result: function() -> tuple<
+expected-result: func() -> tuple<
   expected<unit, unit>,
   expected<unit, e1>,
   expected<e1, unit>,
@@ -118,18 +118,18 @@ enum my-errno {
   bad2,
 }
 
-return-expected-sugar: function() -> expected<s32, my-errno>
-return-expected-sugar2: function() -> expected<unit, my-errno>
-return-expected-sugar3: function() -> expected<my-errno, my-errno>
-return-expected-sugar4: function() -> expected<tuple<s32, u32>, my-errno>
-return-option-sugar: function() -> option<s32>
-return-option-sugar2: function() -> option<my-errno>
+return-expected-sugar: func() -> expected<s32, my-errno>
+return-expected-sugar2: func() -> expected<unit, my-errno>
+return-expected-sugar3: func() -> expected<my-errno, my-errno>
+return-expected-sugar4: func() -> expected<tuple<s32, u32>, my-errno>
+return-option-sugar: func() -> option<s32>
+return-option-sugar2: func() -> option<my-errno>
 
-expected-simple: function() -> expected<u32, s32>
+expected-simple: func() -> expected<u32, s32>
 
 record is-clone {
   v1: v1,
 }
 
-is-clone-arg: function(a: is-clone)
-is-clone-return: function() -> is-clone
+is-clone-arg: func(a: is-clone)
+is-clone-return: func() -> is-clone

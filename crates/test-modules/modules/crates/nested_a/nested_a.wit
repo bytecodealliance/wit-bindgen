@@ -1,1 +1,1 @@
-inner: function(x: string) -> string
+inner: func(x: string) -> string

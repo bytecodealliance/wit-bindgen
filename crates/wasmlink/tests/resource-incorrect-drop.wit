@@ -1,3 +1,3 @@
 resource x
 
-acquire-an-x: function() -> x
+acquire-an-x: func() -> x

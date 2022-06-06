@@ -390,10 +390,10 @@ impl<'a> Value<'a> {
         let name = parse_id(tokens)?;
         tokens.expect(Token::Colon)?;
 
-        let kind = if tokens.eat(Token::Function)? {
+        let kind = if tokens.eat(Token::Func)? {
             parse_func(tokens, false)?
         } else if tokens.eat(Token::Async)? {
-            tokens.expect(Token::Function)?;
+            tokens.expect(Token::Func)?;
             parse_func(tokens, true)?
         } else {
             ValueKind::Global(Type::parse(tokens)?)

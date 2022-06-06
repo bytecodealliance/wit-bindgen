@@ -1,4 +1,4 @@
 // parse-fail
 
-foo: function()
-foo: function()
+foo: func()
+foo: func()

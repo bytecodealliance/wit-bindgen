@@ -1,2 +1,2 @@
-log: function(msg: string)
-error: function(msg: string)
+log: func(msg: string)
+error: func(msg: string)

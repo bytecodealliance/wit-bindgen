@@ -1,4 +1,4 @@
-many-arguments: function(
+many-arguments: func(
   a1: u64,
   a2: u64,
   a3: u64,

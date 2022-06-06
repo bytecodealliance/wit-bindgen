@@ -18,12 +18,12 @@ enum lang {
 
 
 resource config {
-  static new: function() -> config
+  static new: func() -> config
 
-  render: function(lang: lang, wit: string, import: bool) -> expected<files, string>
+  render: func(lang: lang, wit: string, import: bool) -> expected<files, string>
 
-  set-rust-unchecked: function(unchecked: bool)
-  set-wasmtime-tracing: function(unchecked: bool)
-  set-wasmtime-async: function(val: wasmtime-async)
-  set-wasmtime-custom-error: function(custom: bool)
+  set-rust-unchecked: func(unchecked: bool)
+  set-wasmtime-tracing: func(unchecked: bool)
+  set-wasmtime-async: func(val: wasmtime-async)
+  set-wasmtime-custom-error: func(custom: bool)
 }

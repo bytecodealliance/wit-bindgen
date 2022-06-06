@@ -1,18 +1,18 @@
-tuple-arg: function(x: tuple<char, u32>)
-tuple-result: function() -> tuple<char, u32>
+tuple-arg: func(x: tuple<char, u32>)
+tuple-result: func() -> tuple<char, u32>
 
 record empty {}
 
-empty-arg: function(x: empty)
-empty-result: function() -> empty
+empty-arg: func(x: empty)
+empty-result: func() -> empty
 
 record scalars {
     a: u32,
     b: u32,
 }
 
-scalar-arg: function(x: scalars)
-scalar-result: function() -> scalars
+scalar-arg: func(x: scalars)
+scalar-result: func() -> scalars
 
 flags really-flags {
     a,
@@ -26,8 +26,8 @@ flags really-flags {
     i,
 }
 
-flags-arg: function(x: really-flags)
-flags-result: function() -> really-flags
+flags-arg: func(x: really-flags)
+flags-result: func() -> really-flags
 
 record aggregates {
     a: scalars,
@@ -37,5 +37,5 @@ record aggregates {
     e: really-flags,
 }
 
-aggregate-arg: function(x: aggregates)
-aggregate-result: function() -> aggregates
+aggregate-arg: func(x: aggregates)
+aggregate-result: func() -> aggregates

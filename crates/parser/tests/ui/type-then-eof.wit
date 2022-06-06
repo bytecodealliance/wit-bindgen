@@ -1,1 +1,1 @@
-foo: function() -> string
+foo: func() -> string
