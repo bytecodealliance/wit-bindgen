@@ -678,7 +678,13 @@ fn test_tokenizer() {
     assert_eq!(collect("func").unwrap(), vec![Token::Func]);
     assert_eq!(
         collect("a: func()").unwrap(),
-        vec![Token::Id, Token::Colon, Token::Func, Token::LeftParen, Token::RightParen]
+        vec![
+            Token::Id,
+            Token::Colon,
+            Token::Func,
+            Token::LeftParen,
+            Token::RightParen
+        ]
     );
 
     assert!(collect("\u{149}").is_err(), "strongly discouraged");
