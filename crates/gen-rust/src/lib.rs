@@ -229,6 +229,7 @@ pub trait RustGenerator {
                     | TypeDefKind::Record(_)
                     | TypeDefKind::Option(_)
                     | TypeDefKind::Expected(_)
+                    | TypeDefKind::Stream(_)
                     | TypeDefKind::List(_)
                     | TypeDefKind::Flags(_)
                     | TypeDefKind::Enum(_)
@@ -283,6 +284,9 @@ pub trait RustGenerator {
             }
             TypeDefKind::Union(_) => {
                 panic!("unsupported anonymous type reference: union")
+            }
+            TypeDefKind::Stream(_) => {
+                todo!("unsupported anonymous type reference: stream")
             }
 
             TypeDefKind::Type(t) => self.print_ty(iface, t, mode),

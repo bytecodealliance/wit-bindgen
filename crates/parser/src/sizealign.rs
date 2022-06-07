@@ -30,6 +30,8 @@ impl SizeAlign {
             TypeDefKind::Option(t) => self.variant(Int::U8, [&Type::Unit, t]),
             TypeDefKind::Expected(e) => self.variant(Int::U8, [&e.ok, &e.err]),
             TypeDefKind::Union(u) => self.variant(u.tag(), u.cases.iter().map(|c| &c.ty)),
+            // A stream is represented as an index.
+            TypeDefKind::Stream(_) => (4, 4),
         }
     }
 

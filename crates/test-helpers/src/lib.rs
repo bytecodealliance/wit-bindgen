@@ -197,6 +197,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 let err = quote_ty(param, iface, &e.err);
                 quote::quote! { Result<#ok, #err> }
             }
+            TypeDefKind::Stream(_) => todo!("unknown stream"),
         }
     }
 }
