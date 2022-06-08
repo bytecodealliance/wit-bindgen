@@ -1,10 +1,14 @@
 use heck::*;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::mem;
 use wit_bindgen_gen_core::wit_parser::abi::{
     AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
 };
 use wit_bindgen_gen_core::{wit_parser::*, Direction, Files, Generator, Ns};
+
+mod dependencies;
+
+use dependencies::Dependencies;
 
 #[derive(Default)]
 pub struct WasmtimePy {
@@ -14,21 +18,8 @@ pub struct WasmtimePy {
     guest_imports: HashMap<String, Imports>,
     guest_exports: HashMap<String, Exports>,
     sizes: SizeAlign,
-    needs_clamp: bool,
-    needs_store: bool,
-    needs_load: bool,
-    needs_validate_guest_char: bool,
-    needs_expected: bool,
-    needs_i32_to_f32: bool,
-    needs_f32_to_i32: bool,
-    needs_i64_to_f64: bool,
-    needs_f64_to_i64: bool,
-    needs_decode_utf8: bool,
-    needs_encode_utf8: bool,
-    needs_list_canon_lift: bool,
-    needs_list_canon_lower: bool,
-    needs_t_typevar: bool,
-    pyimports: BTreeMap<String, Option<BTreeSet<String>>>,
+    /// Tracks the intrinsics and Python imports needed
+    dependencies: Dependencies,
 }
 
 #[derive(Default)]
@@ -94,400 +85,34 @@ impl WasmtimePy {
         self.src.deindent(2);
     }
 
-    fn print_intrinsics(&mut self, iface: &Interface) {
-        if self.needs_clamp {
-            self.src.push_str(
-                "
-                    def _clamp(i: int, min: int, max: int) -> int:
-                        if i < min or i > max:
-                            raise OverflowError(f'must be between {min} and {max}')
-                        return i
-                ",
-            );
-        }
-        if self.needs_store {
-            // TODO: this uses native endianness
-            self.pyimport("ctypes", None);
-            self.src.push_str(
-                "
-                    def _store(ty: Any, mem: wasmtime.Memory, store: wasmtime.Storelike, base: int, offset: int, val: Any) -> None:
-                        ptr = (base & 0xffffffff) + offset
-                        if ptr + ctypes.sizeof(ty) > mem.data_len(store):
-                            raise IndexError('out-of-bounds store')
-                        raw_base = mem.data_ptr(store)
-                        c_ptr = ctypes.POINTER(ty)(
-                            ty.from_address(ctypes.addressof(raw_base.contents) + ptr)
-                        )
-                        c_ptr[0] = val
-                ",
-            );
-        }
-        if self.needs_load {
-            // TODO: this uses native endianness
-            self.pyimport("ctypes", None);
-            self.src.push_str(
-                "
-                    def _load(ty: Any, mem: wasmtime.Memory, store: wasmtime.Storelike, base: int, offset: int) -> Any:
-                        ptr = (base & 0xffffffff) + offset
-                        if ptr + ctypes.sizeof(ty) > mem.data_len(store):
-                            raise IndexError('out-of-bounds store')
-                        raw_base = mem.data_ptr(store)
-                        c_ptr = ctypes.POINTER(ty)(
-                            ty.from_address(ctypes.addressof(raw_base.contents) + ptr)
-                        )
-                        return c_ptr[0]
-                ",
-            );
-        }
-        if self.needs_validate_guest_char {
-            self.src.push_str(
-                "
-                    def _validate_guest_char(i: int) -> str:
-                        if i > 0x10ffff or (i >= 0xd800 and i <= 0xdfff):
-                            raise TypeError('not a valid char');
-                        return chr(i)
-                ",
-            );
-        }
-        if self.needs_expected {
-            self.pyimport("dataclasses", "dataclass");
-            self.pyimport("typing", "TypeVar");
-            self.pyimport("typing", "Generic");
-            self.pyimport("typing", "Union");
-            self.needs_t_typevar = true;
-            self.src.push_str(
-                "
-                    @dataclass
-                    class Ok(Generic[T]):
-                        value: T
-                    E = TypeVar('E')
-                    @dataclass
-                    class Err(Generic[E]):
-                        value: E
-
-                    Expected = Union[Ok[T], Err[E]]
-                ",
-            );
-        }
-        if self.needs_i32_to_f32 || self.needs_f32_to_i32 {
-            self.pyimport("ctypes", None);
-            self.src
-                .push_str("_i32_to_f32_i32 = ctypes.pointer(ctypes.c_int32(0))\n");
-            self.src.push_str(
-                "_i32_to_f32_f32 = ctypes.cast(_i32_to_f32_i32, ctypes.POINTER(ctypes.c_float))\n",
-            );
-            if self.needs_i32_to_f32 {
-                self.src.push_str(
-                    "
-                        def _i32_to_f32(i: int) -> float:
-                            _i32_to_f32_i32[0] = i     # type: ignore
-                            return _i32_to_f32_f32[0]  # type: ignore
-                    ",
-                );
-            }
-            if self.needs_f32_to_i32 {
-                self.src.push_str(
-                    "
-                        def _f32_to_i32(i: float) -> int:
-                            _i32_to_f32_f32[0] = i    # type: ignore
-                            return _i32_to_f32_i32[0] # type: ignore
-                    ",
-                );
-            }
-        }
-        if self.needs_i64_to_f64 || self.needs_f64_to_i64 {
-            self.pyimport("ctypes", None);
-            self.src
-                .push_str("_i64_to_f64_i64 = ctypes.pointer(ctypes.c_int64(0))\n");
-            self.src.push_str(
-                "_i64_to_f64_f64 = ctypes.cast(_i64_to_f64_i64, ctypes.POINTER(ctypes.c_double))\n",
-            );
-            if self.needs_i64_to_f64 {
-                self.src.push_str(
-                    "
-                        def _i64_to_f64(i: int) -> float:
-                            _i64_to_f64_i64[0] = i    # type: ignore
-                            return _i64_to_f64_f64[0] # type: ignore
-                    ",
-                );
-            }
-            if self.needs_f64_to_i64 {
-                self.src.push_str(
-                    "
-                        def _f64_to_i64(i: float) -> int:
-                            _i64_to_f64_f64[0] = i    # type: ignore
-                            return _i64_to_f64_i64[0] # type: ignore
-                    ",
-                );
-            }
-        }
-        if self.needs_decode_utf8 {
-            self.pyimport("ctypes", None);
-            self.src.push_str(
-                "
-                    def _decode_utf8(mem: wasmtime.Memory, store: wasmtime.Storelike, ptr: int, len: int) -> str:
-                        ptr = ptr & 0xffffffff
-                        len = len & 0xffffffff
-                        if ptr + len > mem.data_len(store):
-                            raise IndexError('string out of bounds')
-                        base = mem.data_ptr(store)
-                        base = ctypes.POINTER(ctypes.c_ubyte)(
-                            ctypes.c_ubyte.from_address(ctypes.addressof(base.contents) + ptr)
-                        )
-                        return ctypes.string_at(base, len).decode('utf-8')
-                ",
-            );
-        }
-        if self.needs_encode_utf8 {
-            self.pyimport("ctypes", None);
-            self.pyimport("typing", "Tuple");
-            self.src.push_str(
-                "
-                    def _encode_utf8(val: str, realloc: wasmtime.Func, mem: wasmtime.Memory, store: wasmtime.Storelike) -> Tuple[int, int]:
-                        bytes = val.encode('utf8')
-                        ptr = realloc(store, 0, 0, 1, len(bytes))
-                        assert(isinstance(ptr, int))
-                        ptr = ptr & 0xffffffff
-                        if ptr + len(bytes) > mem.data_len(store):
-                            raise IndexError('string out of bounds')
-                        base = mem.data_ptr(store)
-                        base = ctypes.POINTER(ctypes.c_ubyte)(
-                            ctypes.c_ubyte.from_address(ctypes.addressof(base.contents) + ptr)
-                        )
-                        ctypes.memmove(base, bytes, len(bytes))
-                        return (ptr, len(bytes))
-                ",
-            );
-        }
-        if self.needs_list_canon_lift {
-            self.pyimport("ctypes", None);
-            self.pyimport("typing", "List");
-            // TODO: this is doing a native-endian read, not a little-endian
-            // read
-            self.src.push_str(
-                "
-                    def _list_canon_lift(ptr: int, len: int, size: int, ty: Any, mem: wasmtime.Memory ,store: wasmtime.Storelike) -> Any:
-                        ptr = ptr & 0xffffffff
-                        len = len & 0xffffffff
-                        if ptr + len * size > mem.data_len(store):
-                            raise IndexError('list out of bounds')
-                        raw_base = mem.data_ptr(store)
-                        base = ctypes.POINTER(ty)(
-                            ty.from_address(ctypes.addressof(raw_base.contents) + ptr)
-                        )
-                        if ty == ctypes.c_uint8:
-                            return ctypes.string_at(base, len)
-                        return base[:len]
-                ",
-            );
-        }
-        if self.needs_list_canon_lower {
-            self.pyimport("ctypes", None);
-            self.pyimport("typing", "List");
-            self.pyimport("typing", "Tuple");
-            // TODO: is there a faster way to memcpy other than iterating over
-            // the input list?
-            // TODO: this is doing a native-endian write, not a little-endian
-            // write
-            self.src.push_str(
-                "
-                    def _list_canon_lower(list: Any, ty: Any, size: int, align: int, realloc: wasmtime.Func, mem: wasmtime.Memory, store: wasmtime.Storelike) -> Tuple[int, int]:
-                        total_size = size * len(list)
-                        ptr = realloc(store, 0, 0, align, total_size)
-                        assert(isinstance(ptr, int))
-                        ptr = ptr & 0xffffffff
-                        if ptr + total_size > mem.data_len(store):
-                            raise IndexError('list realloc return of bounds')
-                        raw_base = mem.data_ptr(store)
-                        base = ctypes.POINTER(ty)(
-                            ty.from_address(ctypes.addressof(raw_base.contents) + ptr)
-                        )
-                        for i, val in enumerate(list):
-                            base[i] = val
-                        return (ptr, len(list))
-                ",
-            );
-        }
-
+    /// Creates a `Source` with all of the required intrinsics
+    fn intrinsics(&mut self, iface: &Interface) -> Source {
         if iface.resources.len() > 0 {
-            self.pyimport("typing", "TypeVar");
-            self.pyimport("typing", "Generic");
-            self.pyimport("typing", "List");
-            self.pyimport("typing", "Optional");
-            self.pyimport("dataclasses", "dataclass");
-            self.needs_t_typevar = true;
-            self.src.push_str(
-                "
-                    @dataclass
-                    class SlabEntry(Generic[T]):
-                        next: int
-                        val: Optional[T]
-
-                    class Slab(Generic[T]):
-                        head: int
-                        list: List[SlabEntry[T]]
-
-                        def __init__(self) -> None:
-                            self.list = []
-                            self.head = 0
-
-                        def insert(self, val: T) -> int:
-                            if self.head >= len(self.list):
-                                self.list.append(SlabEntry(next = len(self.list) + 1, val = None))
-                            ret = self.head
-                            slot = self.list[ret]
-                            self.head = slot.next
-                            slot.next = -1
-                            slot.val = val
-                            return ret
-
-                        def get(self, idx: int) -> T:
-                            if idx >= len(self.list):
-                                raise IndexError('handle index not valid')
-                            slot = self.list[idx]
-                            if slot.next == -1:
-                                assert(slot.val is not None)
-                                return slot.val
-                            raise IndexError('handle index not valid')
-
-                        def remove(self, idx: int) -> T:
-                            ret = self.get(idx)
-                            slot = self.list[idx]
-                            slot.val = None
-                            slot.next = self.head
-                            self.head = idx
-                            return ret
-                ",
-            );
+            self.dependencies.needs_resources = true;
+            self.pyimport("typing", "runtime_checkable");
         }
+        self.dependencies.intrinsics()
     }
 
-    fn type_string(&mut self, iface: &Interface, ty: &Type) -> String {
-        let prev = mem::take(&mut self.src);
-        self.print_ty(iface, ty);
-        mem::replace(&mut self.src, prev).into()
+    /// Utility wrapper for `Source::print_ty` on `self.src`
+    fn print_ty(&mut self, iface: &Interface, ty: &Type, forward_ref: bool) {
+        self.src
+            .print_ty(&mut self.dependencies, iface, ty, forward_ref);
     }
 
-    fn print_ty(&mut self, iface: &Interface, ty: &Type) {
-        match ty {
-            Type::Unit => self.src.push_str("None"),
-            Type::Bool => self.src.push_str("bool"),
-            Type::U8
-            | Type::S8
-            | Type::U16
-            | Type::S16
-            | Type::U32
-            | Type::S32
-            | Type::U64
-            | Type::S64 => self.src.push_str("int"),
-            Type::Float32 | Type::Float64 => self.src.push_str("float"),
-            Type::Char => self.src.push_str("str"),
-            Type::String => self.src.push_str("str"),
-            Type::Handle(id) => {
-                // In general we want to use quotes around this to support
-                // forward-references (such as a method on a resource returning
-                // that resource), but that would otherwise generate type alias
-                // annotations that look like `Foo = 'HandleType'` which isn't
-                // creating a type alias but rather a string definition. Hack
-                // around that here to detect the type alias scenario and don't
-                // surround the type with quotes, otherwise surround with
-                // single-quotes.
-                let suffix = if self.src.ends_with(" = ") {
-                    ""
-                } else {
-                    self.src.push_str("'");
-                    "'"
-                };
-                self.src
-                    .push_str(&iface.resources[*id].name.to_camel_case());
-                self.src.push_str(suffix);
-            }
-            Type::Id(id) => {
-                let ty = &iface.types[*id];
-                if let Some(name) = &ty.name {
-                    self.src.push_str(&name.to_camel_case());
-                    return;
-                }
-                match &ty.kind {
-                    TypeDefKind::Type(t) => self.print_ty(iface, t),
-                    TypeDefKind::Tuple(t) => self.print_tuple(iface, t),
-                    TypeDefKind::Record(_)
-                    | TypeDefKind::Flags(_)
-                    | TypeDefKind::Enum(_)
-                    | TypeDefKind::Variant(_)
-                    | TypeDefKind::Union(_) => {
-                        unreachable!()
-                    }
-                    TypeDefKind::Option(t) => {
-                        self.pyimport("typing", "Optional");
-                        self.src.push_str("Optional[");
-                        self.print_ty(iface, t);
-                        self.src.push_str("]");
-                    }
-                    TypeDefKind::Expected(e) => {
-                        self.needs_expected = true;
-                        self.src.push_str("Expected[");
-                        self.print_ty(iface, &e.ok);
-                        self.src.push_str(", ");
-                        self.print_ty(iface, &e.err);
-                        self.src.push_str("]");
-                    }
-                    TypeDefKind::List(t) => self.print_list(iface, t),
-                    TypeDefKind::Stream(s) => {
-                        self.src.push_str("Stream[");
-                        self.print_ty(iface, &s.element);
-                        self.src.push_str(", ");
-                        self.print_ty(iface, &s.end);
-                        self.src.push_str("]");
-                    }
-                }
-            }
-        }
-    }
-
+    /// Utility wrapper for `Source::print_tuple` on `self.src`
     fn print_tuple(&mut self, iface: &Interface, tuple: &Tuple) {
-        if tuple.types.is_empty() {
-            return self.src.push_str("None");
-        }
-        self.pyimport("typing", "Tuple");
-        self.src.push_str("Tuple[");
-        for (i, t) in tuple.types.iter().enumerate() {
-            if i > 0 {
-                self.src.push_str(", ");
-            }
-            self.print_ty(iface, t);
-        }
-        self.src.push_str("]");
+        self.src.print_tuple(&mut self.dependencies, iface, tuple);
     }
 
+    /// Utility wrapper for `Source::print_list` on `self.src`
     fn print_list(&mut self, iface: &Interface, element: &Type) {
-        match element {
-            Type::U8 => self.src.push_str("bytes"),
-            t => {
-                self.pyimport("typing", "List");
-                self.src.push_str("List[");
-                self.print_ty(iface, t);
-                self.src.push_str("]");
-            }
-        }
+        self.src.print_list(&mut self.dependencies, iface, element);
     }
 
+    /// Utility wrapper for `Dependencies::pyimport` on `self.dependencies`
     fn pyimport<'a>(&mut self, module: &str, name: impl Into<Option<&'a str>>) {
-        let name = name.into();
-        let list = self
-            .pyimports
-            .entry(module.to_string())
-            .or_insert(match name {
-                Some(_) => Some(BTreeSet::new()),
-                None => None,
-            });
-        match name {
-            Some(name) => {
-                assert!(list.is_some());
-                list.as_mut().unwrap().insert(name.to_string());
-            }
-            None => assert!(list.is_none()),
-        }
+        self.dependencies.pyimport(module, name);
     }
 
     fn array_ty(&self, iface: &Interface, ty: &Type) -> Option<&'static str> {
@@ -558,10 +183,10 @@ impl WasmtimePy {
             self.src.push_str(&param.to_snake_case());
             params.push(param.to_snake_case());
             self.src.push_str(": ");
-            self.print_ty(iface, ty);
+            self.print_ty(iface, ty, true);
         }
         self.src.push_str(") -> ");
-        self.print_ty(iface, &func.result);
+        self.print_ty(iface, &func.result, true);
         params
     }
 }
@@ -590,7 +215,7 @@ impl Generator for WasmtimePy {
             self.docs(&field.docs);
             self.src
                 .push_str(&format!("{}: ", field.name.to_snake_case()));
-            self.print_ty(iface, &field.ty);
+            self.print_ty(iface, &field.ty, true);
             self.src.push_str("\n");
         }
         if record.fields.is_empty() {
@@ -658,7 +283,7 @@ impl Generator for WasmtimePy {
             self.src.push_str(&format!("class {}:\n", name));
             self.indent();
             self.src.push_str("value: ");
-            self.print_ty(iface, &case.ty);
+            self.print_ty(iface, &case.ty, true);
             self.src.push_str("\n");
             self.deindent();
             self.src.push_str("\n");
@@ -674,6 +299,8 @@ impl Generator for WasmtimePy {
         self.src.push_str("\n");
     }
 
+    /// Appends a Python definition for the provided Union to the current `Source`.
+    /// e.g. `MyUnion = Union[float, str, int]`
     fn type_union(
         &mut self,
         iface: &Interface,
@@ -683,27 +310,19 @@ impl Generator for WasmtimePy {
         docs: &Docs,
     ) {
         self.docs(docs);
-        self.pyimport("dataclasses", "dataclass");
-        let mut cases = Vec::new();
-        let name = name.to_camel_case();
-        for (i, case) in union.cases.iter().enumerate() {
-            self.docs(&case.docs);
-            self.src.push_str("@dataclass\n");
-            let name = format!("{name}{i}");
-            self.src.push_str(&format!("class {name}:\n"));
-            self.indent();
-            self.src.push_str("value: ");
-            self.print_ty(iface, &case.ty);
-            self.src.push_str("\n");
-            self.deindent();
-            self.src.push_str("\n");
-            cases.push(name);
-        }
-
         self.pyimport("typing", "Union");
-        self.src
-            .push_str(&format!("{name} = Union[{}]\n", cases.join(", ")));
-        self.src.push_str("\n");
+        self.src.push_str(&name.to_camel_case());
+        self.src.push_str(" = Union[");
+        let mut first = true;
+        for case in union.cases.iter() {
+            self.docs(&case.docs);
+            if !first {
+                self.src.push_str(",");
+            }
+            self.print_ty(iface, &case.ty, true);
+            first = false;
+        }
+        self.src.push_str("]\n\n");
     }
 
     fn type_option(
@@ -716,9 +335,9 @@ impl Generator for WasmtimePy {
     ) {
         self.docs(docs);
         self.pyimport("typing", "Optional");
-        self.src
-            .push_str(&format!("{} = Optional[", name.to_camel_case()));
-        self.print_ty(iface, payload);
+        self.src.push_str(&name.to_camel_case());
+        self.src.push_str(" = Optional[");
+        self.print_ty(iface, payload, true);
         self.src.push_str("]\n\n");
     }
 
@@ -731,12 +350,12 @@ impl Generator for WasmtimePy {
         docs: &Docs,
     ) {
         self.docs(docs);
-        self.needs_expected = true;
+        self.dependencies.needs_expected = true;
         self.src
             .push_str(&format!("{} = Expected[", name.to_camel_case()));
-        self.print_ty(iface, &expected.ok);
+        self.print_ty(iface, &expected.ok, true);
         self.src.push_str(", ");
-        self.print_ty(iface, &expected.err);
+        self.print_ty(iface, &expected.err, true);
         self.src.push_str("]\n\n");
     }
 
@@ -780,7 +399,7 @@ impl Generator for WasmtimePy {
     fn type_alias(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.docs(docs);
         self.src.push_str(&format!("{} = ", name.to_camel_case()));
-        self.print_ty(iface, ty);
+        self.print_ty(iface, ty, false);
         self.src.push_str("\n");
     }
 
@@ -1004,10 +623,9 @@ impl Generator for WasmtimePy {
         self.pyimport("abc", "abstractmethod");
 
         let types = mem::take(&mut self.src);
-        self.print_intrinsics(iface);
-        let intrinsics = mem::take(&mut self.src);
+        let intrinsics = self.intrinsics(iface);
 
-        for (k, v) in self.pyimports.iter() {
+        for (k, v) in self.dependencies.pyimports.iter() {
             match v {
                 Some(list) => {
                     let list = list.iter().cloned().collect::<Vec<_>>().join(", ");
@@ -1030,7 +648,7 @@ impl Generator for WasmtimePy {
         );
         self.src.push_str("\n");
 
-        if self.needs_t_typevar {
+        if self.dependencies.needs_t_typevar {
             self.src.push_str("T = TypeVar('T')\n");
         }
 
@@ -1038,6 +656,7 @@ impl Generator for WasmtimePy {
         for (id, r) in iface.resources.iter() {
             let name = r.name.to_camel_case();
             if self.in_import {
+                self.src.push_str("@runtime_checkable\n");
                 self.src.push_str(&format!("class {}(Protocol):\n", name));
                 self.src.indent(2);
                 self.src.push_str("def drop(self) -> None:\n");
@@ -1331,13 +950,13 @@ impl FunctionBindgen<'_> {
     where
         T: std::fmt::Display,
     {
-        self.gen.needs_clamp = true;
+        self.gen.dependencies.needs_clamp = true;
         results.push(format!("_clamp({}, {}, {})", operands[0], min, max));
     }
 
     fn load(&mut self, ty: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
         self.needs_memory = true;
-        self.gen.needs_load = true;
+        self.gen.dependencies.needs_load = true;
         let tmp = self.locals.tmp("load");
         self.src.push_str(&format!(
             "{} = _load(ctypes.{}, memory, caller, {}, {})\n",
@@ -1348,7 +967,7 @@ impl FunctionBindgen<'_> {
 
     fn store(&mut self, ty: &str, offset: i32, operands: &[String]) {
         self.needs_memory = true;
-        self.gen.needs_store = true;
+        self.gen.dependencies.needs_store = true;
         self.src.push_str(&format!(
             "_store(ctypes.{}, memory, caller, {}, {}, {})\n",
             ty, operands[1], offset, operands[0]
@@ -1449,7 +1068,7 @@ impl Bindgen for FunctionBindgen<'_> {
             // Validate that i32 values coming from wasm are indeed valid code
             // points.
             Instruction::CharFromI32 => {
-                self.gen.needs_validate_guest_char = true;
+                self.gen.dependencies.needs_validate_guest_char = true;
                 results.push(format!("_validate_guest_char({})", operands[0]));
             }
 
@@ -1461,27 +1080,27 @@ impl Bindgen for FunctionBindgen<'_> {
                 for (cast, op) in casts.iter().zip(operands) {
                     match cast {
                         Bitcast::I32ToF32 => {
-                            self.gen.needs_i32_to_f32 = true;
+                            self.gen.dependencies.needs_i32_to_f32 = true;
                             results.push(format!("_i32_to_f32({})", op));
                         }
                         Bitcast::F32ToI32 => {
-                            self.gen.needs_f32_to_i32 = true;
+                            self.gen.dependencies.needs_f32_to_i32 = true;
                             results.push(format!("_f32_to_i32({})", op));
                         }
                         Bitcast::I64ToF64 => {
-                            self.gen.needs_i64_to_f64 = true;
+                            self.gen.dependencies.needs_i64_to_f64 = true;
                             results.push(format!("_i64_to_f64({})", op));
                         }
                         Bitcast::F64ToI64 => {
-                            self.gen.needs_f64_to_i64 = true;
+                            self.gen.dependencies.needs_f64_to_i64 = true;
                             results.push(format!("_f64_to_i64({})", op));
                         }
                         Bitcast::I64ToF32 => {
-                            self.gen.needs_i32_to_f32 = true;
+                            self.gen.dependencies.needs_i32_to_f32 = true;
                             results.push(format!("_i32_to_f32(({}) & 0xffffffff)", op));
                         }
                         Bitcast::F32ToI64 => {
-                            self.gen.needs_f32_to_i32 = true;
+                            self.gen.dependencies.needs_f32_to_i32 = true;
                             results.push(format!("_f32_to_i32({})", op));
                         }
                         Bitcast::I32ToI64 | Bitcast::I64ToI32 | Bitcast::None => {
@@ -1688,11 +1307,12 @@ impl Bindgen for FunctionBindgen<'_> {
                     .collect::<Vec<_>>();
 
                 let result = self.locals.tmp("variant");
-                self.src.push_str(&format!(
-                    "{}: {}\n",
-                    result,
-                    self.gen.type_string(iface, &Type::Id(*ty)),
-                ));
+                self.src.print_var_declaration(
+                    &mut self.gen.dependencies,
+                    iface,
+                    &result,
+                    &Type::Id(*ty),
+                );
                 for (i, (case, (block, block_results))) in
                     variant.cases.iter().zip(blocks).enumerate()
                 {
@@ -1748,14 +1368,16 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 let name = name.to_camel_case();
                 let op0 = &operands[0];
-                for (i, ((_case, (block, block_results)), payload)) in
+                for (i, ((case, (block, block_results)), payload)) in
                     union.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
                     self.src.push_str(if i == 0 { "if " } else { "elif " });
+                    self.src.push_str(&format!("isinstance({op0}, "));
                     self.src
-                        .push_str(&format!("isinstance({op0}, {name}{i}):\n"));
+                        .print_ty(&mut self.gen.dependencies, iface, &case.ty, false);
+                    self.src.push_str(&format!("):\n"));
                     self.src.indent(2);
-                    self.src.push_str(&format!("{payload} = {op0}.value\n"));
+                    self.src.push_str(&format!("{payload} = {op0}\n"));
                     self.src.push_str(&block);
                     for (i, result) in block_results.iter().enumerate() {
                         self.src.push_str(&format!("{} = {result}\n", results[i]));
@@ -1779,10 +1401,12 @@ impl Bindgen for FunctionBindgen<'_> {
                     .collect::<Vec<_>>();
 
                 let result = self.locals.tmp("variant");
-                self.src.push_str(&format!(
-                    "{result}: {}\n",
-                    self.gen.type_string(iface, &Type::Id(*ty)),
-                ));
+                self.src.print_var_declaration(
+                    &mut self.gen.dependencies,
+                    iface,
+                    &result,
+                    &Type::Id(*ty),
+                );
                 let name = name.to_camel_case();
                 let op0 = &operands[0];
                 for (i, (_case, (block, block_results))) in
@@ -1794,8 +1418,8 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.push_str(&block);
                     assert!(block_results.len() == 1);
                     let block_result = &block_results[0];
-                    self.src
-                        .push_str(&format!("{result} = {name}{i}({block_result})\n"));
+                    self.src.push_str(&format!("{result} = "));
+                    self.src.push_str(&format!("{block_result}\n"));
                     self.src.deindent(2);
                 }
                 self.src.push_str("else:\n");
@@ -1848,10 +1472,12 @@ impl Bindgen for FunctionBindgen<'_> {
                 assert_eq!(none_results[0], "None");
 
                 let result = self.locals.tmp("option");
-                self.src.push_str(&format!(
-                    "{result}: {}\n",
-                    self.gen.type_string(iface, &Type::Id(*ty)),
-                ));
+                self.src.print_var_declaration(
+                    &mut self.gen.dependencies,
+                    iface,
+                    &result,
+                    &Type::Id(*ty),
+                );
 
                 let op0 = &operands[0];
                 self.src.push_str(&format!("if {op0} == 0:\n"));
@@ -1923,10 +1549,12 @@ impl Bindgen for FunctionBindgen<'_> {
                 let ok_result = &ok_results[0];
 
                 let result = self.locals.tmp("expected");
-                self.src.push_str(&format!(
-                    "{result}: {}\n",
-                    self.gen.type_string(iface, &Type::Id(*ty)),
-                ));
+                self.src.print_var_declaration(
+                    &mut self.gen.dependencies,
+                    iface,
+                    &result,
+                    &Type::Id(*ty),
+                );
 
                 let op0 = &operands[0];
                 self.src.push_str(&format!("if {op0} == 0:\n"));
@@ -1967,7 +1595,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let ptr = self.locals.tmp("ptr");
                 let len = self.locals.tmp("len");
                 let array_ty = self.gen.array_ty(iface, element).unwrap();
-                self.gen.needs_list_canon_lower = true;
+                self.gen.dependencies.needs_list_canon_lower = true;
                 let size = self.gen.sizes.size(element);
                 let align = self.gen.sizes.align(element);
                 self.src.push_str(&format!(
@@ -1984,7 +1612,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.push_str(&format!("{} = {}\n", ptr, operands[0]));
                 self.src.push_str(&format!("{} = {}\n", len, operands[1]));
                 let array_ty = self.gen.array_ty(iface, element).unwrap();
-                self.gen.needs_list_canon_lift = true;
+                self.gen.dependencies.needs_list_canon_lift = true;
                 let lift = format!(
                     "_list_canon_lift({}, {}, {}, ctypes.{}, memory, caller)",
                     ptr,
@@ -1992,26 +1620,32 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.gen.sizes.size(element),
                     array_ty,
                 );
-                let pyty = match element {
-                    Type::U8 => "bytes".to_string(),
-                    _ => {
-                        self.gen.pyimport("typing", "List");
-                        format!("List[{}]", self.gen.type_string(iface, element))
-                    }
-                };
                 self.gen.pyimport("typing", "cast");
-                let result = format!("cast({}, {})", pyty, lift);
                 let align = self.gen.sizes.align(element);
                 match free {
                     Some(free) => {
                         self.needs_free = Some(free.to_string());
                         let list = self.locals.tmp("list");
-                        self.src.push_str(&format!("{} = {}\n", list, result));
+                        self.src.push_str(&list);
+                        self.src.push_str(" = cast(");
+                        self.src
+                            .print_list(&mut self.gen.dependencies, iface, element);
+                        self.src.push_str(", ");
+                        self.src.push_str(&lift);
+                        self.src.push_str(")\n");
                         self.src
                             .push_str(&format!("free(caller, {}, {}, {})\n", ptr, len, align));
                         results.push(list);
                     }
-                    None => results.push(result),
+                    None => {
+                        let mut result_src = Source::default();
+                        result_src.push_str("cast(");
+                        result_src.print_list(&mut self.gen.dependencies, iface, element);
+                        result_src.push_str(", ");
+                        result_src.push_str(&lift);
+                        result_src.push_str(")");
+                        results.push(result_src.s.to_string());
+                    }
                 }
             }
             Instruction::StringLower { realloc } => {
@@ -2024,7 +1658,7 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 let ptr = self.locals.tmp("ptr");
                 let len = self.locals.tmp("len");
-                self.gen.needs_encode_utf8 = true;
+                self.gen.dependencies.needs_encode_utf8 = true;
                 self.src.push_str(&format!(
                     "{}, {} = _encode_utf8({}, realloc, memory, caller)\n",
                     ptr, len, operands[0],
@@ -2038,7 +1672,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let len = self.locals.tmp("len");
                 self.src.push_str(&format!("{} = {}\n", ptr, operands[0]));
                 self.src.push_str(&format!("{} = {}\n", len, operands[1]));
-                self.gen.needs_decode_utf8 = true;
+                self.gen.dependencies.needs_decode_utf8 = true;
                 let result = format!("_decode_utf8(memory, caller, {}, {})", ptr, len);
                 match free {
                     Some(free) => {
@@ -2105,9 +1739,10 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.push_str(&format!("{} = {}\n", ptr, operands[0]));
                 self.src.push_str(&format!("{} = {}\n", len, operands[1]));
                 let result = self.locals.tmp("result");
-                let ty = self.gen.type_string(iface, element);
+                self.src.push_str(&format!("{}: List[", result));
                 self.src
-                    .push_str(&format!("{}: List[{}] = []\n", result, ty));
+                    .print_ty(&mut self.gen.dependencies, iface, element, true);
+                self.src.push_str("] = []\n");
 
                 let i = self.locals.tmp("i");
                 self.src
@@ -2328,6 +1963,132 @@ impl Source {
         }
     }
 
+    /// Appends a type's Python representation to this `Source`.
+    /// Records any required intrinsics and imports in the `deps`.
+    /// Uses Python forward reference syntax (e.g. 'Foo')
+    /// on the root type only if `forward_ref` is true.
+    fn print_ty(
+        &mut self,
+        deps: &mut Dependencies,
+        iface: &Interface,
+        ty: &Type,
+        forward_ref: bool,
+    ) {
+        match ty {
+            Type::Unit => self.push_str("None"),
+            Type::Bool => self.push_str("bool"),
+            Type::U8
+            | Type::S8
+            | Type::U16
+            | Type::S16
+            | Type::U32
+            | Type::S32
+            | Type::U64
+            | Type::S64 => self.push_str("int"),
+            Type::Float32 | Type::Float64 => self.push_str("float"),
+            Type::Char => self.push_str("str"),
+            Type::String => self.push_str("str"),
+            Type::Handle(id) => {
+                if forward_ref {
+                    self.push_str("'");
+                }
+                self.push_str(&iface.resources[*id].name.to_camel_case());
+                if forward_ref {
+                    self.push_str("'");
+                }
+            }
+            Type::Id(id) => {
+                let ty = &iface.types[*id];
+                if let Some(name) = &ty.name {
+                    self.push_str(&name.to_camel_case());
+                    return;
+                }
+                match &ty.kind {
+                    TypeDefKind::Type(t) => self.print_ty(deps, iface, t, forward_ref),
+                    TypeDefKind::Tuple(t) => self.print_tuple(deps, iface, t),
+                    TypeDefKind::Record(_)
+                    | TypeDefKind::Flags(_)
+                    | TypeDefKind::Enum(_)
+                    | TypeDefKind::Variant(_)
+                    | TypeDefKind::Union(_) => {
+                        unreachable!()
+                    }
+                    TypeDefKind::Option(t) => {
+                        deps.pyimport("typing", "Optional");
+                        self.push_str("Optional[");
+                        self.print_ty(deps, iface, t, true);
+                        self.push_str("]");
+                    }
+                    TypeDefKind::Expected(e) => {
+                        deps.needs_expected = true;
+                        self.push_str("Expected[");
+                        self.print_ty(deps, iface, &e.ok, true);
+                        self.push_str(", ");
+                        self.print_ty(deps, iface, &e.err, true);
+                        self.push_str("]");
+                    }
+                    TypeDefKind::List(t) => self.print_list(deps, iface, t),
+                    TypeDefKind::Stream(s) => {
+                        self.push_str("Stream[");
+                        self.print_ty(deps, iface, &s.element, true);
+                        self.push_str(", ");
+                        self.print_ty(deps, iface, &s.end, true);
+                        self.push_str("]");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Appends a tuple type's Python representation to this `Source`.
+    /// Records any required intrinsics and imports in the `deps`.
+    /// Uses Python forward reference syntax (e.g. 'Foo') for named type parameters.
+    fn print_tuple(&mut self, deps: &mut Dependencies, iface: &Interface, tuple: &Tuple) {
+        if tuple.types.is_empty() {
+            return self.push_str("None");
+        }
+        deps.pyimport("typing", "Tuple");
+        self.push_str("Tuple[");
+        for (i, t) in tuple.types.iter().enumerate() {
+            if i > 0 {
+                self.push_str(", ");
+            }
+            self.print_ty(deps, iface, t, true);
+        }
+        self.push_str("]");
+    }
+
+    /// Appends a Python type representing a sequence of the `element` type to this `Source`.
+    /// If the element type is `Type::U8`, the result type is `bytes` otherwise it is a `List[T]`
+    /// Records any required intrinsics and imports in the `deps`.
+    /// Uses Python forward reference syntax (e.g. 'Foo') for named type parameters.
+    fn print_list(&mut self, deps: &mut Dependencies, iface: &Interface, element: &Type) {
+        match element {
+            Type::U8 => self.push_str("bytes"),
+            t => {
+                deps.pyimport("typing", "List");
+                self.push_str("List[");
+                self.print_ty(deps, iface, t, true);
+                self.push_str("]");
+            }
+        }
+    }
+
+    /// Print variable declaration
+    /// Brings name into scope and binds type to it
+    fn print_var_declaration<'a>(
+        &mut self,
+        deps: &mut Dependencies,
+        iface: &Interface,
+        name: &'a str,
+        ty: &Type,
+    ) {
+        self.push_str(name);
+        self.push_str(": ");
+        self.print_ty(deps, iface, ty, true);
+        self.push_str("\n");
+    }
+
     pub fn indent(&mut self, amt: usize) {
         self.indent += amt;
         for _ in 0..amt {
@@ -2385,7 +2146,7 @@ fn wasm_ty_typing(ty: WasmType) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::Source;
+    use super::*;
 
     #[test]
     fn simple_append() {
@@ -2407,5 +2168,63 @@ mod tests {
         let mut s = Source::default();
         s.push_str("def foo():\n  return 1\n");
         assert_eq!(s.s, "def foo():\n  return 1\n");
+    }
+
+    #[test]
+    fn print_ty_forward_ref() {
+        let mut deps = Dependencies::default();
+        let mut iface = Interface::default();
+        // Set up a Resource type to refer to
+        let resource_id = iface.resources.alloc(Resource {
+            docs: Docs::default(),
+            name: "foo".into(),
+            foreign_module: None,
+        });
+        iface.resource_lookup.insert("foo".into(), resource_id);
+        let handle_ty = Type::Handle(resource_id);
+        // ForwardRef usage can be controlled by an argument to print_ty
+        let mut s1 = Source::default();
+        s1.print_ty(&mut deps, &iface, &handle_ty, true);
+        assert_eq!(s1.s, "'Foo'");
+        let mut s2 = Source::default();
+        s2.print_ty(&mut deps, &iface, &handle_ty, false);
+        assert_eq!(s2.s, "Foo");
+        // ForwardRef is used for any types within other types
+        // Even if the outer type is itself not allowed to be one
+        let option_id = iface.types.alloc(TypeDef {
+            docs: Docs::default(),
+            kind: TypeDefKind::Option(handle_ty),
+            name: None,
+            foreign_module: None,
+        });
+        let option_ty = Type::Id(option_id);
+        let mut s3 = Source::default();
+        s3.print_ty(&mut deps, &iface, &option_ty, false);
+        assert_eq!(s3.s, "Optional['Foo']");
+    }
+
+    #[test]
+    fn print_list_bytes() {
+        // If the element type is u8, it is interpreted as `bytes`
+        let mut deps = Dependencies::default();
+        let iface = Interface::default();
+        let mut source = Source::default();
+        source.print_list(&mut deps, &iface, &Type::U8);
+        assert_eq!(source.s, "bytes");
+        assert_eq!(deps.pyimports, BTreeMap::default());
+    }
+
+    #[test]
+    fn print_list_non_bytes() {
+        // If the element type is u8, it is interpreted as `bytes`
+        let mut deps = Dependencies::default();
+        let iface = Interface::default();
+        let mut source = Source::default();
+        source.print_list(&mut deps, &iface, &Type::Float32);
+        assert_eq!(source.s, "List[float]");
+        assert_eq!(
+            deps.pyimports,
+            BTreeMap::from([("typing".into(), Some(BTreeSet::from(["List".into()])))])
+        );
     }
 }
