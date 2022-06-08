@@ -25,7 +25,7 @@ pub struct Dependencies {
 
 impl Dependencies {
     /// Record that a Python import is required
-    /// 
+    ///
     /// Examples
     /// ```
     /// # let mut deps = Dependencies::default();
