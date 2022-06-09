@@ -1,0 +1,47 @@
+test-imports: function()
+
+union all-integers {
+    bool,
+    u8, u16, u32, u64,
+    s8, s16, s32, s64
+}
+union all-floats {
+    float32, float64
+}
+union all-text {
+    char, string
+}
+
+// Returns the same case as the input but with 1 added
+add-one-integer: function(num: all-integers) -> all-integers
+// Returns the same case as the input but with 1 added
+add-one-float: function(num: all-floats) -> all-floats
+// Returns the same case as the input but with the first character replaced
+replace-first-char: function(text: all-text, letter: char) -> all-text
+
+// Returns the index of the case provided
+identify-integer: function(num: all-integers) -> u8
+// Returns the index of the case provided
+identify-float: function(num: all-floats) -> u8
+// Returns the index of the case provided
+identify-text: function(text: all-text) -> u8
+
+union duplicated-s32 {
+    s32, s32, s32
+}
+
+// Returns the same case as the input but with 1 added
+add-one-duplicated: function(num: duplicated-s32) -> duplicated-s32
+
+// Returns the index of the case provided
+identify-duplicated: function(num: duplicated-s32) -> u8
+
+union distinguishable-num {
+    float64, s64
+}
+
+// Returns the same case as the input but with 1 added
+add-one-distinguishable-num: function(num: distinguishable-num) -> distinguishable-num
+
+// Returns the index of the case provided
+identify-distinguishable-num: function(num: distinguishable-num) -> u8

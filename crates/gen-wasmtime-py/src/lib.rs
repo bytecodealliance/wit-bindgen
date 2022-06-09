@@ -1,5 +1,5 @@
 use heck::*;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem;
 use wit_bindgen_gen_core::wit_parser::abi::{
     AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
@@ -20,6 +20,16 @@ pub struct WasmtimePy {
     sizes: SizeAlign,
     /// Tracks the intrinsics and Python imports needed
     dependencies: Dependencies,
+    /// Whether each union's cases can be distingished by their Python type
+    union_representation: HashMap<String, PyUnionRepresentation>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PyUnionRepresentation {
+    /// A union whose inner types are used directly
+    Raw,
+    /// A union whose inner types have been wrapped in dataclasses
+    Wrapped,
 }
 
 #[derive(Default)]
@@ -189,6 +199,46 @@ impl WasmtimePy {
         self.print_ty(iface, &func.result, true);
         params
     }
+
+    fn type_union_wrapped(&mut self, iface: &Interface, name: &str, union: &Union) {
+        self.pyimport("dataclasses", "dataclass");
+        let mut cases = Vec::new();
+        let name = name.to_camel_case();
+        for (i, case) in union.cases.iter().enumerate() {
+            self.docs(&case.docs);
+            self.src.push_str("@dataclass\n");
+            let name = format!("{name}{i}");
+            self.src.push_str(&format!("class {name}:\n"));
+            self.indent();
+            self.src.push_str("value: ");
+            self.print_ty(iface, &case.ty, true);
+            self.src.push_str("\n");
+            self.deindent();
+            self.src.push_str("\n");
+            cases.push(name);
+        }
+
+        self.pyimport("typing", "Union");
+        self.src
+            .push_str(&format!("{name} = Union[{}]\n", cases.join(", ")));
+        self.src.push_str("\n");
+    }
+
+    fn type_union_raw(&mut self, iface: &Interface, name: &str, union: &Union) {
+        self.pyimport("typing", "Union");
+        self.src.push_str(&name.to_camel_case());
+        self.src.push_str(" = Union[");
+        let mut first = true;
+        for case in union.cases.iter() {
+            self.docs(&case.docs);
+            if !first {
+                self.src.push_str(",");
+            }
+            self.print_ty(iface, &case.ty, true);
+            first = false;
+        }
+        self.src.push_str("]\n\n");
+    }
 }
 
 impl Generator for WasmtimePy {
@@ -310,19 +360,21 @@ impl Generator for WasmtimePy {
         docs: &Docs,
     ) {
         self.docs(docs);
-        self.pyimport("typing", "Union");
-        self.src.push_str(&name.to_camel_case());
-        self.src.push_str(" = Union[");
-        let mut first = true;
+        let mut py_type_classes = BTreeSet::new();
         for case in union.cases.iter() {
-            self.docs(&case.docs);
-            if !first {
-                self.src.push_str(",");
-            }
-            self.print_ty(iface, &case.ty, true);
-            first = false;
+            py_type_classes.insert(py_type_class_of(&case.ty));
         }
-        self.src.push_str("]\n\n");
+        if py_type_classes.len() != union.cases.len() {
+            // Some of the cases are not distinguishable
+            self.union_representation
+                .insert(name.to_string(), PyUnionRepresentation::Wrapped);
+            self.type_union_wrapped(iface, name, union);
+        } else {
+            // All of the cases are distinguishable
+            self.union_representation
+                .insert(name.to_string(), PyUnionRepresentation::Raw);
+            self.type_union_raw(iface, name, union);
+        }
     }
 
     fn type_option(
@@ -1366,6 +1418,8 @@ impl Bindgen for FunctionBindgen<'_> {
                     results.push(self.locals.tmp("variant"));
                 }
 
+                // Assumes that type_union has been called for this union
+                let union_representation = *self.gen.union_representation.get(&name.to_string()).unwrap();
                 let name = name.to_camel_case();
                 let op0 = &operands[0];
                 for (i, ((case, (block, block_results)), payload)) in
@@ -1373,11 +1427,29 @@ impl Bindgen for FunctionBindgen<'_> {
                 {
                     self.src.push_str(if i == 0 { "if " } else { "elif " });
                     self.src.push_str(&format!("isinstance({op0}, "));
-                    self.src
-                        .print_ty(&mut self.gen.dependencies, iface, &case.ty, false);
+                    match union_representation {
+                        // Prints the Python type for this union case
+                        PyUnionRepresentation::Raw => {
+                            self.src
+                                .print_ty(&mut self.gen.dependencies, iface, &case.ty, false);
+                        }
+                        // Prints the name of this union cases dataclass
+                        PyUnionRepresentation::Wrapped => {
+                            self.src.push_str(&format!("{name}{i}"));
+                        }
+                    }
                     self.src.push_str(&format!("):\n"));
                     self.src.indent(2);
-                    self.src.push_str(&format!("{payload} = {op0}\n"));
+                    match union_representation {
+                        // Uses the value directly
+                        PyUnionRepresentation::Raw => {
+                            self.src.push_str(&format!("{payload} = {op0}\n"))
+                        }
+                        // Uses this union case dataclass's inner value
+                        PyUnionRepresentation::Wrapped => {
+                            self.src.push_str(&format!("{payload} = {op0}.value\n"))
+                        }
+                    }
                     self.src.push_str(&block);
                     for (i, result) in block_results.iter().enumerate() {
                         self.src.push_str(&format!("{} = {result}\n", results[i]));
@@ -1407,6 +1479,8 @@ impl Bindgen for FunctionBindgen<'_> {
                     &result,
                     &Type::Id(*ty),
                 );
+                // Assumes that type_union has been called for this union
+                let union_representation = *self.gen.union_representation.get(&name.to_string()).unwrap();
                 let name = name.to_camel_case();
                 let op0 = &operands[0];
                 for (i, (_case, (block, block_results))) in
@@ -1419,7 +1493,15 @@ impl Bindgen for FunctionBindgen<'_> {
                     assert!(block_results.len() == 1);
                     let block_result = &block_results[0];
                     self.src.push_str(&format!("{result} = "));
-                    self.src.push_str(&format!("{block_result}\n"));
+                    match union_representation {
+                        // Uses the passed value directly
+                        PyUnionRepresentation::Raw => self.src.push_str(block_result),
+                        // Constructs an instance of the union cases dataclass
+                        PyUnionRepresentation::Wrapped => {
+                            self.src.push_str(&format!("{name}{i}({block_result})"))
+                        }
+                    }
+                    self.src.newline();
                     self.src.deindent(2);
                 }
                 self.src.push_str("else:\n");
@@ -2124,6 +2206,33 @@ impl From<Source> for String {
     fn from(s: Source) -> String {
         s.s
     }
+}
+
+fn py_type_class_of(ty: &Type) -> PyTypeClass {
+    match ty {
+        Type::Unit => PyTypeClass::None,
+        Type::Bool
+        | Type::U8
+        | Type::U16
+        | Type::U32
+        | Type::U64
+        | Type::S8
+        | Type::S16
+        | Type::S32
+        | Type::S64 => PyTypeClass::Int,
+        Type::Float32 | Type::Float64 => PyTypeClass::Float,
+        Type::Char | Type::String => PyTypeClass::Str,
+        Type::Handle(_) | Type::Id(_) => PyTypeClass::Custom,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum PyTypeClass {
+    None,
+    Int,
+    Str,
+    Float,
+    Custom,
 }
 
 fn wasm_ty_ctor(ty: WasmType) -> &'static str {
