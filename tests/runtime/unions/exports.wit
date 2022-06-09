@@ -1,4 +1,4 @@
-test-imports: function()
+test-imports: func()
 
 union all-integers {
     bool,
@@ -13,35 +13,35 @@ union all-text {
 }
 
 // Returns the same case as the input but with 1 added
-add-one-integer: function(num: all-integers) -> all-integers
+add-one-integer: func(num: all-integers) -> all-integers
 // Returns the same case as the input but with 1 added
-add-one-float: function(num: all-floats) -> all-floats
+add-one-float: func(num: all-floats) -> all-floats
 // Returns the same case as the input but with the first character replaced
-replace-first-char: function(text: all-text, letter: char) -> all-text
+replace-first-char: func(text: all-text, letter: char) -> all-text
 
 // Returns the index of the case provided
-identify-integer: function(num: all-integers) -> u8
+identify-integer: func(num: all-integers) -> u8
 // Returns the index of the case provided
-identify-float: function(num: all-floats) -> u8
+identify-float: func(num: all-floats) -> u8
 // Returns the index of the case provided
-identify-text: function(text: all-text) -> u8
+identify-text: func(text: all-text) -> u8
 
 union duplicated-s32 {
     s32, s32, s32
 }
 
 // Returns the same case as the input but with 1 added
-add-one-duplicated: function(num: duplicated-s32) -> duplicated-s32
+add-one-duplicated: func(num: duplicated-s32) -> duplicated-s32
 
 // Returns the index of the case provided
-identify-duplicated: function(num: duplicated-s32) -> u8
+identify-duplicated: func(num: duplicated-s32) -> u8
 
 union distinguishable-num {
     float64, s64
 }
 
 // Returns the same case as the input but with 1 added
-add-one-distinguishable-num: function(num: distinguishable-num) -> distinguishable-num
+add-one-distinguishable-num: func(num: distinguishable-num) -> distinguishable-num
 
 // Returns the index of the case provided
-identify-distinguishable-num: function(num: distinguishable-num) -> u8
+identify-distinguishable-num: func(num: distinguishable-num) -> u8
