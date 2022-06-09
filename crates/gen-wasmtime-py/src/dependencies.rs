@@ -106,7 +106,7 @@ impl Dependencies {
                 "
                     def _validate_guest_char(i: int) -> str:
                         if i > 0x10ffff or (i >= 0xd800 and i <= 0xdfff):
-                            raise TypeError('not a valid char');
+                            raise TypeError('not a valid char')
                         return chr(i)
                 ",
             );

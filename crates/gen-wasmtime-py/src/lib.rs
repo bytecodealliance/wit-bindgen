@@ -20,7 +20,7 @@ pub struct WasmtimePy {
     sizes: SizeAlign,
     /// Tracks the intrinsics and Python imports needed
     dependencies: Dependencies,
-    /// Whether each union's cases can be distingished by their Python type
+    /// Whether the Python Union being emited will wrap its cases with dataclasses
     union_representation: HashMap<String, PyUnionRepresentation>,
 }
 
@@ -226,11 +226,13 @@ impl WasmtimePy {
 
     fn type_union_raw(&mut self, iface: &Interface, name: &str, union: &Union) {
         self.pyimport("typing", "Union");
+        for case in union.cases.iter() {
+            self.docs(&case.docs);
+        }
         self.src.push_str(&name.to_camel_case());
         self.src.push_str(" = Union[");
         let mut first = true;
         for case in union.cases.iter() {
-            self.docs(&case.docs);
             if !first {
                 self.src.push_str(",");
             }

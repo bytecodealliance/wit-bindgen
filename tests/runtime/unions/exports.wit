@@ -1,6 +1,9 @@
 test-imports: func()
 
+/// A union of all of the integral types
 union all-integers {
+    /// Bool is equivalent to a 1 bit integer
+    /// and is treated that way in some languages
     bool,
     u8, u16, u32, u64,
     s8, s16, s32, s64
@@ -27,7 +30,12 @@ identify-float: func(num: all-floats) -> u8
 identify-text: func(text: all-text) -> u8
 
 union duplicated-s32 {
-    s32, s32, s32
+    /// The first s32
+    s32,
+    /// The second s32
+    s32,
+    /// The third s32
+    s32
 }
 
 // Returns the same case as the input but with 1 added
@@ -36,8 +44,12 @@ add-one-duplicated: func(num: duplicated-s32) -> duplicated-s32
 // Returns the index of the case provided
 identify-duplicated: func(num: duplicated-s32) -> u8
 
+/// A type containing numeric types that are distinct in most languages
 union distinguishable-num {
-    float64, s64
+    /// A Floating Point Number
+    float64,
+    /// A Signed Integer
+    s64
 }
 
 // Returns the same case as the input but with 1 added
