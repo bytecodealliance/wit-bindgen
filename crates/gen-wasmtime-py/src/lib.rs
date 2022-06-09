@@ -1419,7 +1419,11 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
 
                 // Assumes that type_union has been called for this union
-                let union_representation = *self.gen.union_representation.get(&name.to_string()).unwrap();
+                let union_representation = *self
+                    .gen
+                    .union_representation
+                    .get(&name.to_string())
+                    .unwrap();
                 let name = name.to_camel_case();
                 let op0 = &operands[0];
                 for (i, ((case, (block, block_results)), payload)) in
@@ -1480,7 +1484,11 @@ impl Bindgen for FunctionBindgen<'_> {
                     &Type::Id(*ty),
                 );
                 // Assumes that type_union has been called for this union
-                let union_representation = *self.gen.union_representation.get(&name.to_string()).unwrap();
+                let union_representation = *self
+                    .gen
+                    .union_representation
+                    .get(&name.to_string())
+                    .unwrap();
                 let name = name.to_camel_case();
                 let op0 = &operands[0];
                 for (i, (_case, (block, block_results))) in
