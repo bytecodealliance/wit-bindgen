@@ -49,7 +49,7 @@ pub enum Token {
     Use,
     Type,
     Resource,
-    Function,
+    Func,
     U8,
     U16,
     U32,
@@ -238,7 +238,7 @@ impl<'a> Tokenizer<'a> {
                     "use" => Use,
                     "type" => Type,
                     "resource" => Resource,
-                    "function" => Function,
+                    "func" => Func,
                     "u8" => U8,
                     "u16" => U16,
                     "u32" => U32,
@@ -501,7 +501,7 @@ impl Token {
             Use => "keyword `use`",
             Type => "keyword `type`",
             Resource => "keyword `resource`",
-            Function => "keyword `function`",
+            Func => "keyword `func`",
             U8 => "keyword `u8`",
             U16 => "keyword `u16`",
             U32 => "keyword `u32`",
@@ -677,6 +677,18 @@ fn test_tokenizer() {
     assert_eq!(collect("%a-a").unwrap(), vec![Token::ExplicitId]);
     assert_eq!(collect("%bool").unwrap(), vec![Token::ExplicitId]);
     assert_eq!(collect("%").unwrap(), vec![Token::ExplicitId]);
+
+    assert_eq!(collect("func").unwrap(), vec![Token::Func]);
+    assert_eq!(
+        collect("a: func()").unwrap(),
+        vec![
+            Token::Id,
+            Token::Colon,
+            Token::Func,
+            Token::LeftParen,
+            Token::RightParen
+        ]
+    );
 
     assert!(collect("\u{149}").is_err(), "strongly discouraged");
     assert!(collect("\u{673}").is_err(), "strongly discouraged");

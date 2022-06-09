@@ -1,1 +1,1 @@
-f1: function(a: s32, b: s64, c: float32, d: float64) -> u32
+f1: func(a: s32, b: s64, c: float32, d: float64) -> u32

@@ -1,1 +1,1 @@
-outer: function(x: string) -> string
+outer: func(x: string) -> string

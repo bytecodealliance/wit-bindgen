@@ -1,28 +1,28 @@
 // hello 🐱 world
 
-kebab-case: function()
+kebab-case: func()
 
 record ludicrous-speed {
   how-fast-are-you-going: u32,
   i-am-going-extremely-slow: u64,
 }
 
-foo: function(x: ludicrous-speed)
-%function-with-dashes: function()
-%function-with-no-weird-characters: function()
+foo: func(x: ludicrous-speed)
+%function-with-dashes: func()
+%function-with-no-weird-characters: func()
 
-apple: function()
-apple-pear: function()
-apple-pear-grape: function()
-garçon: function()
-hühnervögel: function()
-москва: function()
-東-京: function()
-garçon-hühnervögel-москва-東-京: function()
-a0: function()
+apple: func()
+apple-pear: func()
+apple-pear-grape: func()
+garçon: func()
+hühnervögel: func()
+москва: func()
+東-京: func()
+garçon-hühnervögel-москва-東-京: func()
+a0: func()
 
-%explicit: function()
-%explicit-kebab: function()
+%explicit: func()
+%explicit-kebab: func()
 
 // Identifiers with the same name as keywords are quoted.
-%bool: function()
+%bool: func()

@@ -3,7 +3,7 @@
 containing stuff, and also some code blocks, wit and other.
 
 ```wit
-x: function()
+x: func()
 ```
 
 Intervening content, including a non-wit codeblock:
@@ -12,7 +12,7 @@ function func() {}
 ```
 
 ```wit
-y: function()
+y: func()
 ```
 
 ## A new section
@@ -20,5 +20,5 @@ y: function()
 In which, another wit code block!
 
 ```wit
-z: function()
+z: func()
 ```
