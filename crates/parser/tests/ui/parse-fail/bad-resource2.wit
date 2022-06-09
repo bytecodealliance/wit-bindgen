@@ -1,6 +1,6 @@
 // parse-fail
 
 resource x {
-  x: function()
-  x: function()
+  x: func()
+  x: func()
 }

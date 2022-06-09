@@ -1,1 +1,1 @@
-f1: function() -> tuple<u32, u32>
+f1: func() -> tuple<u32, u32>
