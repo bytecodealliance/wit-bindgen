@@ -94,7 +94,7 @@ class MyImports:
         return i.Ok(HostState2(2))
 
     def host_state2_result_variant(self) -> i.HostStateResultVariant:
-        return i.HostStateResultVariant0(HostState2(2))
+        return HostState2(2)
 
     def host_state2_result_list(self) -> List[i.HostState2]:
         return [HostState2(2), HostState2(5)]
@@ -144,8 +144,8 @@ def run(wasm_file: str) -> None:
     wasm.wasm_state2_param_option(store, None)
     wasm.wasm_state2_param_result(store, e.Ok(d))
     wasm.wasm_state2_param_result(store, e.Err(2))
-    wasm.wasm_state2_param_variant(store, e.WasmStateParamVariant0(d))
-    wasm.wasm_state2_param_variant(store, e.WasmStateParamVariant1(2))
+    wasm.wasm_state2_param_variant(store, d)
+    wasm.wasm_state2_param_variant(store, 2)
     wasm.wasm_state2_param_list(store, [])
     wasm.wasm_state2_param_list(store, [d])
     wasm.wasm_state2_param_list(store, [d, d])
@@ -163,8 +163,8 @@ def run(wasm_file: str) -> None:
     result.value.drop(store)
     variant = wasm.wasm_state2_result_variant(store)
     print(variant)
-    assert(isinstance(variant, e.WasmStateResultVariant0))
-    variant.value.drop(store)
+    assert(isinstance(variant, e.WasmState2))
+    variant.drop(store)
     for val in wasm.wasm_state2_result_list(store):
         val.drop(store)
 
