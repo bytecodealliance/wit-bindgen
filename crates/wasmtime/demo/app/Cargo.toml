@@ -1,0 +1,16 @@
+[package]
+name = "app"
+version = "0.1.0"
+authors = ["Raimundo Saona <rasa200@gmail.com>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+wit-bindgen-wasmtime = { git = "https://github.com/bytecodealliance/wit-bindgen" }
+wasmtime-wasi = "0.32.0"
+wasmtime = "0.32.0"
+anyhow = "1.0.51"
+log = "0.4.14"
+
+[workspace]

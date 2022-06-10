@@ -1,0 +1,16 @@
+[package]
+name = "markdown"
+version = "0.1.0"
+authors = ["Raimundo Saona <rasa200@gmail.com>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pulldown-cmark = "0.8.0"
+wit-bindgen-rust = { git = "https://github.com/bytecodealliance/wit-bindgen" }
+
+[workspace]
