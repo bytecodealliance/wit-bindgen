@@ -222,7 +222,7 @@ impl<'a> Item<'a> {
             Some((_span, Token::Id)) | Some((_span, Token::ExplicitId)) => {
                 Value::parse(tokens, docs).map(Item::Value)
             }
-            other => Err(err_expected(tokens, "`type`, `resource`, or `fn`", other).into()),
+            other => Err(err_expected(tokens, "`type`, `resource`, or `func`", other).into()),
         }
     }
 }
