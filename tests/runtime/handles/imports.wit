@@ -1,55 +1,55 @@
 resource host-state
 resource host-state2
 
-host-state-create: function() -> host-state
-host-state-get: function(a: host-state) -> u32
+host-state-create: func() -> host-state
+host-state-get: func(a: host-state) -> u32
 
-host-state2-create: function() -> host-state2
-host-state2-saw-close: function() -> bool
-two-host-states: function(a: host-state, b: host-state2) -> tuple<host-state, host-state2>
+host-state2-create: func() -> host-state2
+host-state2-saw-close: func() -> bool
+two-host-states: func(a: host-state, b: host-state2) -> tuple<host-state, host-state2>
 
 record host-state-param-record { a: host-state2 }
-host-state2-param-record: function(a: host-state-param-record)
+host-state2-param-record: func(a: host-state-param-record)
 
 type host-state-param-tuple = tuple<host-state2>
-host-state2-param-tuple: function(a: host-state-param-tuple)
+host-state2-param-tuple: func(a: host-state-param-tuple)
 
 type host-state-param-option = option<host-state2>
-host-state2-param-option: function(a: host-state-param-option)
+host-state2-param-option: func(a: host-state-param-option)
 
 type host-state-param-result = expected<host-state2, u32>
-host-state2-param-result: function(a: host-state-param-result)
+host-state2-param-result: func(a: host-state-param-result)
 
 union host-state-param-variant { host-state2, u32 }
-host-state2-param-variant: function(a: host-state-param-variant)
+host-state2-param-variant: func(a: host-state-param-variant)
 
-host-state2-param-list: function(a: list<host-state2>)
+host-state2-param-list: func(a: list<host-state2>)
 
 
 record host-state-result-record { a: host-state2 }
-host-state2-result-record: function() -> host-state-result-record
+host-state2-result-record: func() -> host-state-result-record
 
 type host-state-result-tuple = tuple<host-state2>
-host-state2-result-tuple: function() -> host-state-result-tuple
+host-state2-result-tuple: func() -> host-state-result-tuple
 
 type host-state-result-option = option<host-state2>
-host-state2-result-option: function() -> host-state-result-option
+host-state2-result-option: func() -> host-state-result-option
 
 type host-state-result-result = expected<host-state2, u32>
-host-state2-result-result: function() -> host-state-result-result
+host-state2-result-result: func() -> host-state-result-result
 
 union host-state-result-variant { host-state2, u32 }
-host-state2-result-variant: function() -> host-state-result-variant
+host-state2-result-variant: func() -> host-state-result-variant
 
-host-state2-result-list: function() -> list<host-state2>
+host-state2-result-list: func() -> list<host-state2>
 
 resource markdown2 {
-  static create: function() -> markdown2
-  append: function(buf: string)
-  render: function() -> string
+  static create: func() -> markdown2
+  append: func(buf: string)
+  render: func() -> string
 }
 
 resource %odd-name {
-  static create: function() -> %odd-name
-  %frob-the-odd: function()
+  static create: func() -> %odd-name
+  %frob-the-odd: func()
 }

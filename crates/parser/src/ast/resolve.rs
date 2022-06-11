@@ -197,6 +197,10 @@ impl Resolver {
                         .collect(),
                 }),
                 AnonymousType::List(t) => AnonymousType::List(self.copy_type(dep_name, dep, *t)),
+                AnonymousType::Stream(e) => AnonymousType::Stream(Stream {
+                    element: self.copy_type(dep_name, dep, e.element),
+                    end: self.copy_type(dep_name, dep, e.end),
+                }),
             }),
             CustomType::Named(ty) => CustomType::Named(NamedType {
                 docs: ty.docs.clone(),
@@ -494,6 +498,11 @@ impl Resolver {
                 let ty = self.resolve_type(ty)?;
                 self.resolve_anon_type(AnonymousType::List(ty))
             }
+            super::Type::Stream(s) => {
+                let element = self.resolve_type(&s.element)?;
+                let end = self.resolve_type(&s.end)?;
+                self.resolve_anon_type(AnonymousType::Stream(Stream { element, end }))
+            }
         })
     }
 
@@ -662,6 +671,14 @@ impl Resolver {
                 AnonymousType::List(ty) => {
                     if let Type::Id(id) = ty {
                         self.validate_type_not_recursive(span, *id, visiting, valid)?
+                    }
+                }
+                AnonymousType::Stream(s) => {
+                    if let Type::Id(id) = s.element {
+                        self.validate_type_not_recursive(span, id, visiting, valid)?
+                    }
+                    if let Type::Id(id) = s.end {
+                        self.validate_type_not_recursive(span, id, visiting, valid)?
                     }
                 }
             },

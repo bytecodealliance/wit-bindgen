@@ -1027,6 +1027,10 @@ impl Interface {
                         result.push(WasmType::I32);
                         result.push(WasmType::I32);
                     }
+
+                    AnonymousType::Stream(_) => {
+                        result.push(WasmType::I32);
+                    }
                 },
             },
         }
@@ -1536,6 +1540,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             self.emit(&ListLower { element, realloc });
                         }
                     }
+                    AnonymousType::Stream(_) => todo!("lower stream"),
                 },
                 CustomType::Named(named) => match &named.kind {
                     NamedTypeKind::Alias(t) => self.lower(t),
@@ -1747,6 +1752,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                             });
                         }
                     }
+
+                    AnonymousType::Stream(_) => todo!("lift stream"),
                 },
                 CustomType::Named(named) => match &named.kind {
                     NamedTypeKind::Alias(t) => self.lift(t),
@@ -1896,6 +1903,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
 
                     AnonymousType::List(_) => self.write_list_to_memory(ty, addr, offset),
+
+                    AnonymousType::Stream(_) => todo!("write stream to memory"),
                 },
                 CustomType::Named(named) => match &named.kind {
                     NamedTypeKind::Alias(t) => self.write_to_memory(t, addr, offset),
@@ -2077,6 +2086,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
 
                     AnonymousType::List(_) => self.read_list_from_memory(ty, addr, offset),
+
+                    AnonymousType::Stream(_) => todo!("read stream from memory"),
                 },
                 CustomType::Named(named) => match &named.kind {
                     NamedTypeKind::Alias(t) => self.read_from_memory(t, addr, offset),

@@ -1,1 +1,1 @@
-f1: function(a: string) -> string
+f1: func(a: string) -> string

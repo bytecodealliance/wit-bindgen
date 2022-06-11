@@ -192,6 +192,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                     let t = quote_ty(param, iface, t);
                     quote::quote! { Vec<#t> }
                 }
+                AnonymousType::Stream(_) => todo!("unknown stream"),
             },
         }
     }

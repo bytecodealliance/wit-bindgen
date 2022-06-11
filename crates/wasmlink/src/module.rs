@@ -53,6 +53,7 @@ fn has_list(interface: &WitInterface, ty: &WitType) -> bool {
                 }
                 AnonymousType::Tuple(t) => t.types.iter().any(|ty| has_list(interface, ty)),
                 AnonymousType::List(_) => true,
+                AnonymousType::Stream(_) => todo!("has_list for stream"),
             },
             CustomType::Named(ty) => match &ty.kind {
                 NamedTypeKind::Alias(t) => has_list(interface, t),

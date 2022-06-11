@@ -1,4 +1,4 @@
-many-args: function(
+many-args: func(
   a1: u64,
   a2: u64,
   a3: u64,
@@ -44,4 +44,4 @@ record big-struct {
   a20: string,
 }
 
-big-argument: function(x: big-struct)
+big-argument: func(x: big-struct)

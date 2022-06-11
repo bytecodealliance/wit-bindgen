@@ -191,6 +191,7 @@ impl Js {
                             self.src.ts(">");
                         }
                         AnonymousType::List(v) => self.print_list(iface, v),
+                        AnonymousType::Stream(_) => todo!("anonymous stream"),
                     },
                 }
             }

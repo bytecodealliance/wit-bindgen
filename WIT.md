@@ -89,10 +89,10 @@ keywords is still in flux at this time but the current set is:
 keyword ::= 'use'
           | 'type'
           | 'resource'
-          | 'function'
+          | 'func'
           | 'u8' | 'u16' | 'u32' | 'u64'
           | 's8' | 's16' | 's32' | 's64'
-          | 'f32' | 'f64'
+          | 'float32' | 'float64'
           | 'char'
           | 'handle'
           | 'record'
@@ -368,22 +368,22 @@ union-cases ::= ty,
               | ty ',' union-cases?
 ```
 
-## Item: `function`
+## Item: `func`
 
 Functions can also be defined in a `*.wit` document. Functions have a name,
 parameters, and results. Functions can optionally also be declared as `async`
 functions.
 
 ```wit
-thunk: function()
-fibonacci: function(n: u32) -> u32
-sleep: async function(ms: u64)
+thunk: func()
+fibonacci: func(n: u32) -> u32
+sleep: async func(ms: u64)
 ```
 
 Specifically functions have the structure:
 
 ```wit
-func-item ::= id ':' 'async'? 'function' '(' func-args ')' func-ret
+func-item ::= id ':' 'async'? 'func' '(' func-args ')' func-ret
 
 func-args ::= func-arg
             | func-arg ',' func-args?
@@ -410,10 +410,10 @@ of the including resource, unless the function is flagged as `static`.
 resource file-descriptor
 
 resource request {
-    static new: function() -> request
+    static new: func() -> request
 
-    body: async function() -> list<u8>
-    headers: function() -> list<string>
+    body: async func() -> list<u8>
+    headers: func() -> list<string>
 }
 ```
 
@@ -449,7 +449,7 @@ Specifically the following types are available:
 ```wit
 ty ::= 'u8' | 'u16' | 'u32' | 'u64'
      | 's8' | 's16' | 's32' | 's64'
-     | 'f32' | 'f64'
+     | 'float32' | 'float64'
      | 'char'
      | 'bool'
      | 'string'
@@ -506,9 +506,9 @@ by '-'s starts with a `XID_Start` scalar value with a zero Canonical Combining
 Class:
 
 ```wit
-foo: function(bar: u32)
+foo: func(bar: u32)
 
-red-green-blue: function(r: u32, g: u32, b: u32)
+red-green-blue: func(r: u32, g: u32, b: u32)
 ```
 
 This form can't name identifiers which have the same name as wit keywords, so
@@ -516,12 +516,12 @@ the second form is the same syntax with the same restrictions as the first, but
 prefixed with '%':
 
 ```wit
-%foo: function(%bar: u32)
+%foo: func(%bar: u32)
 
-%red-green-blue: function(%r: u32, %g: u32, %b: u32)
+%red-green-blue: func(%r: u32, %g: u32, %b: u32)
 
 // This form also supports identifiers that would otherwise be keywords.
-%variant: function(%enum: s32)
+%variant: func(%enum: s32)
 ```
 
 [kebab-case]: https://en.wikipedia.org/wiki/Letter_case#Kebab_case

@@ -49,6 +49,7 @@ pub enum AnonymousType {
     Expected(Expected),
     Tuple(Tuple),
     List(Type),
+    Stream(Stream),
 }
 
 #[derive(Debug)]
@@ -225,6 +226,12 @@ impl Union {
             _ => panic!("too many cases to fit in a repr"),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Stream {
+    pub element: Type,
+    pub end: Type,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -425,6 +432,11 @@ impl Interface {
                     }
                 }
                 AnonymousType::List(t) => self.topo_visit_ty(t, list, visited),
+
+                AnonymousType::Stream(s) => {
+                    self.topo_visit_ty(&s.element, list, visited);
+                    self.topo_visit_ty(&s.end, list, visited);
+                }
             },
             CustomType::Named(ty) => match &ty.kind {
                 NamedTypeKind::Flags(_) | NamedTypeKind::Enum(_) => {}
@@ -476,7 +488,8 @@ impl Interface {
                     AnonymousType::Tuple(t) => t.types.iter().all(|t| self.all_bits_valid(t)),
                     AnonymousType::List(_)
                     | AnonymousType::Option(_)
-                    | AnonymousType::Expected(_) => false,
+                    | AnonymousType::Expected(_)
+                    | AnonymousType::Stream(_) => false,
                 },
                 CustomType::Named(ty) => match &ty.kind {
                     NamedTypeKind::Variant(_)

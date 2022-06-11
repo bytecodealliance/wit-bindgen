@@ -1,1 +1,1 @@
-render: function(markdown: string) -> string
+render: func(markdown: string) -> string

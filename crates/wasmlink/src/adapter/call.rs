@@ -482,6 +482,7 @@ impl<'a> CallAdapter<'a> {
                             operands: element_operands,
                         });
                     }
+                    AnonymousType::Stream(_) => todo!("push_operands for stream"),
                 },
                 CustomType::Named(ty) => match &ty.kind {
                     NamedTypeKind::Alias(t) => Self::push_operands(
@@ -707,6 +708,7 @@ impl<'a> CallAdapter<'a> {
                             operands: element_operands,
                         });
                     }
+                    AnonymousType::Stream(_) => todo!("push_element_operands for stream"),
                 },
                 CustomType::Named(ty) => match &ty.kind {
                     NamedTypeKind::Alias(t) => Self::push_element_operands(

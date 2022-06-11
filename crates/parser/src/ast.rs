@@ -103,6 +103,7 @@ enum Type<'a> {
     Tuple(Vec<Type<'a>>),
     Option(Box<Type<'a>>),
     Expected(Expected<'a>),
+    Stream(Stream<'a>),
 }
 
 /// A type alias, `type foo = bar`.
@@ -154,6 +155,11 @@ struct EnumCase<'a> {
 struct Expected<'a> {
     ok: Box<Type<'a>>,
     err: Box<Type<'a>>,
+}
+
+struct Stream<'a> {
+    element: Box<Type<'a>>,
+    end: Box<Type<'a>>,
 }
 
 pub struct Value<'a> {
@@ -227,7 +233,7 @@ impl<'a> Item<'a> {
             Some((_span, Token::Id)) | Some((_span, Token::ExplicitId)) => {
                 Value::parse(tokens, docs).map(Item::Value)
             }
-            other => Err(err_expected(tokens, "`type`, `resource`, or `fn`", other).into()),
+            other => Err(err_expected(tokens, "`type`, `resource`, or `func`", other).into()),
         }
     }
 }
@@ -405,10 +411,10 @@ impl<'a> Value<'a> {
         let name = parse_id(tokens)?;
         tokens.expect(Token::Colon)?;
 
-        let kind = if tokens.eat(Token::Function)? {
+        let kind = if tokens.eat(Token::Func)? {
             parse_func(tokens, false)?
         } else if tokens.eat(Token::Async)? {
-            tokens.expect(Token::Function)?;
+            tokens.expect(Token::Func)?;
             parse_func(tokens, true)?
         } else {
             ValueKind::Global(Type::parse(tokens)?)
@@ -527,6 +533,16 @@ impl<'a> Type<'a> {
                 let err = Box::new(Type::parse(tokens)?);
                 tokens.expect(Token::GreaterThan)?;
                 Ok(Type::Expected(Expected { ok, err }))
+            }
+
+            // stream<T, Z>
+            Some((_span, Token::Stream)) => {
+                tokens.expect(Token::LessThan)?;
+                let element = Box::new(Type::parse(tokens)?);
+                tokens.expect(Token::Comma)?;
+                let end = Box::new(Type::parse(tokens)?);
+                tokens.expect(Token::GreaterThan)?;
+                Ok(Type::Stream(Stream { element, end }))
             }
 
             // `foo`

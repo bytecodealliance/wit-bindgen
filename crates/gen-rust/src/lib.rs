@@ -247,6 +247,10 @@ pub trait RustGenerator {
                 }
 
                 AnonymousType::List(t) => self.print_list(iface, t, mode),
+
+                AnonymousType::Stream(_) => {
+                    todo!("unsupported anonymous type reference: stream")
+                }
             },
         }
     }

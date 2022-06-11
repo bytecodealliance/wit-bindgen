@@ -25,6 +25,10 @@ name = "records"
 test = false
 
 [[bin]]
+name = "unions"
+test = false
+
+[[bin]]
 name = "variants"
 test = false
 

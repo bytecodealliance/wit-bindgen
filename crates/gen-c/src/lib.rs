@@ -168,6 +168,7 @@ impl C {
                     AnonymousType::Option(_) => true,
                     AnonymousType::Expected(_) => true,
                     AnonymousType::Tuple(_) | AnonymousType::List(_) => true,
+                    AnonymousType::Stream(_) => todo!("is_arg_by_pointer for stream"),
                 },
                 CustomType::Named(ty) => match &ty.kind {
                     NamedTypeKind::Alias(t) => self.is_arg_by_pointer(iface, t),
@@ -305,6 +306,12 @@ impl C {
                             self.src.h("list_");
                             self.print_ty_name(iface, t);
                         }
+                        AnonymousType::Stream(s) => {
+                            self.src.h("stream_");
+                            self.print_ty_name(iface, &s.element);
+                            self.src.h("_");
+                            self.print_ty_name(iface, &s.end);
+                        }
                     },
                 }
             }
@@ -360,6 +367,7 @@ impl C {
                 self.src.h("size_t len;\n");
                 self.src.h("}");
             }
+            AnonymousType::Stream(_) => todo!("print_anonymous_type for stream"),
         }
         self.src.h(" ");
         self.print_namespace(iface);
@@ -479,6 +487,7 @@ impl C {
                         self.sizes.align(t),
                     ));
                 }
+                AnonymousType::Stream(_) => todo!("print_dtor for stream"),
             },
             CustomType::Named(ty) => match &ty.kind {
                 NamedTypeKind::Alias(t) => self.free(iface, t, "ptr"),
@@ -548,6 +557,7 @@ impl C {
                 }
                 AnonymousType::Tuple(t) => t.types.iter().any(|t| self.owns_anything(iface, t)),
                 AnonymousType::List(_) => true,
+                AnonymousType::Stream(_) => todo!("owns_anything for stream"),
             },
             CustomType::Named(ty) => match &ty.kind {
                 NamedTypeKind::Alias(t) => self.owns_anything(iface, t),
@@ -648,6 +658,7 @@ impl Return {
 
                 // other records/lists/buffers always go to return pointers
                 AnonymousType::List(_) => self.retptrs.push(*orig_ty),
+                AnonymousType::Stream(_) => todo!("return_single for stream"),
             },
             CustomType::Named(named) => match &named.kind {
                 NamedTypeKind::Alias(t) => self.return_single(iface, t, orig_ty),

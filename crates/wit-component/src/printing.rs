@@ -23,7 +23,7 @@ impl InterfacePrinter {
         }
 
         for func in &interface.functions {
-            write!(&mut self.output, "{}: function(", func.name)?;
+            write!(&mut self.output, "{}: func(", func.name)?;
             for (i, (name, ty)) in func.params.iter().enumerate() {
                 if i > 0 {
                     self.output.push_str(", ");
@@ -82,6 +82,9 @@ impl InterfacePrinter {
                             self.output.push_str("list<");
                             self.print_type_name(interface, ty)?;
                             self.output.push('>');
+                        }
+                        AnonymousType::Stream(_) => {
+                            todo!("interface has an unnamed stream type")
                         }
                     },
                 }
@@ -150,6 +153,7 @@ impl InterfacePrinter {
                         AnonymousType::Option(t) => self.declare_option(interface, t)?,
                         AnonymousType::Expected(e) => self.declare_expected(interface, e)?,
                         AnonymousType::Tuple(t) => self.declare_tuple(interface, t)?,
+                        AnonymousType::Stream(_) => todo!("declare stream"),
                         AnonymousType::List(inner) => self.declare_list(interface, inner)?,
                     },
                     CustomType::Named(ty) => match &ty.kind {

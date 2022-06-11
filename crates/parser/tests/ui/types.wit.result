@@ -63,7 +63,7 @@
     {
       "idx": 11,
       "name": "t12",
-      "primitive": "type-50"
+      "primitive": "type-54"
     },
     {
       "idx": 12,
@@ -73,27 +73,27 @@
     {
       "idx": 13,
       "name": "t14",
-      "primitive": "type-51"
+      "primitive": "type-55"
     },
     {
       "idx": 14,
       "name": "t15",
-      "primitive": "type-52"
+      "primitive": "type-56"
     },
     {
       "idx": 15,
       "name": "t16",
-      "primitive": "type-53"
+      "primitive": "type-57"
     },
     {
       "idx": 16,
       "name": "t17",
-      "primitive": "type-54"
+      "primitive": "type-58"
     },
     {
       "idx": 17,
       "name": "t18",
-      "primitive": "type-55"
+      "primitive": "type-59"
     },
     {
       "idx": 18,
@@ -185,22 +185,22 @@
     {
       "idx": 26,
       "name": "t26",
-      "primitive": "type-56"
+      "primitive": "type-60"
     },
     {
       "idx": 27,
       "name": "t27",
-      "primitive": "type-57"
+      "primitive": "type-61"
     },
     {
       "idx": 28,
       "name": "t28",
-      "primitive": "type-57"
+      "primitive": "type-61"
     },
     {
       "idx": 29,
       "name": "t29",
-      "primitive": "type-58"
+      "primitive": "type-62"
     },
     {
       "idx": 30,
@@ -302,7 +302,7 @@
           ],
           [
             "b",
-            "type-51"
+            "type-55"
           ]
         ]
       }
@@ -323,7 +323,7 @@
       "union": {
         "cases": [
           "u32",
-          "type-51"
+          "type-55"
         ]
       }
     },
@@ -333,7 +333,7 @@
       "union": {
         "cases": [
           "u32",
-          "type-51"
+          "type-55"
         ]
       }
     },
@@ -372,7 +372,7 @@
     {
       "idx": 45,
       "name": "t45",
-      "primitive": "type-61"
+      "primitive": "type-65"
     },
     {
       "idx": 46,
@@ -386,58 +386,78 @@
     },
     {
       "idx": 48,
-      "name": "foo",
-      "primitive": "type-49"
+      "name": "t48",
+      "primitive": "type-66"
     },
     {
       "idx": 49,
+      "name": "t49",
+      "primitive": "type-67"
+    },
+    {
+      "idx": 50,
+      "name": "t50",
+      "primitive": "type-68"
+    },
+    {
+      "idx": 51,
+      "name": "t51",
+      "primitive": "type-69"
+    },
+    {
+      "idx": 52,
+      "name": "foo",
+      "primitive": "type-53"
+    },
+    {
+      "idx": 53,
       "name": "bar",
       "primitive": "u32"
     },
     {
-      "idx": 50,
+      "idx": 54,
       "list": "char"
     },
     {
-      "idx": 51,
+      "idx": 55,
       "option": "u32"
     },
     {
-      "idx": 52,
-      "expected": {
-        "ok": "u32",
-        "err": "u32"
-      }
-    },
-    {
-      "idx": 53,
-      "expected": {
-        "ok": "unit",
-        "err": "u32"
-      }
-    },
-    {
-      "idx": 54,
-      "expected": {
-        "ok": "u32",
-        "err": "unit"
-      }
-    },
-    {
-      "idx": 55,
-      "expected": {
-        "ok": "unit",
-        "err": "unit"
-      }
-    },
-    {
       "idx": 56,
+      "expected": {
+        "ok": "u32",
+        "err": "u32"
+      }
+    },
+    {
+      "idx": 57,
+      "expected": {
+        "ok": "unit",
+        "err": "u32"
+      }
+    },
+    {
+      "idx": 58,
+      "expected": {
+        "ok": "u32",
+        "err": "unit"
+      }
+    },
+    {
+      "idx": 59,
+      "expected": {
+        "ok": "unit",
+        "err": "unit"
+      }
+    },
+    {
+      "idx": 60,
       "tuple": {
         "types": []
       }
     },
     {
-      "idx": 57,
+      "idx": 61,
       "tuple": {
         "types": [
           "u32"
@@ -445,7 +465,7 @@
       }
     },
     {
-      "idx": 58,
+      "idx": 62,
       "tuple": {
         "types": [
           "u32",
@@ -454,16 +474,44 @@
       }
     },
     {
-      "idx": 59,
+      "idx": 63,
       "list": "type-32"
     },
     {
-      "idx": 60,
-      "list": "type-59"
+      "idx": 64,
+      "list": "type-63"
     },
     {
-      "idx": 61,
-      "list": "type-60"
+      "idx": 65,
+      "list": "type-64"
+    },
+    {
+      "idx": 66,
+      "stream": {
+        "element": "u32",
+        "end": "u32"
+      }
+    },
+    {
+      "idx": 67,
+      "stream": {
+        "element": "unit",
+        "end": "u32"
+      }
+    },
+    {
+      "idx": 68,
+      "stream": {
+        "element": "u32",
+        "end": "unit"
+      }
+    },
+    {
+      "idx": 69,
+      "stream": {
+        "element": "unit",
+        "end": "unit"
+      }
     }
   ]
 }

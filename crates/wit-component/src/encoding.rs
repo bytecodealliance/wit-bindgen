@@ -200,8 +200,10 @@ impl Hash for AnonymousTypeKey<'_> {
                     ty: *ty,
                 }
                 .hash(state);
-            } // Note: if any extra cases get added here, all of the prefixes of the named types
-              // need to be updated to continue from where the counting stops here.
+            }
+            AnonymousType::Stream(_) => todo!("hash for stream"),
+            // Note: if any extra cases get added here, all of the prefixes of the named types
+            // need to be updated to continue from where the counting stops here.
         }
     }
 }
@@ -557,6 +559,7 @@ impl<'a> TypeEncoder<'a> {
                                 InterfaceTypeRef::Type(index)
                             }
                             AnonymousType::Tuple(t) => self.encode_tuple(interface, instance, t)?,
+                            AnonymousType::Stream(_) => todo!("encoding for stream type"),
                         },
                         CustomType::Named(ty) => {
                             let mut encoded = match &ty.kind {
@@ -806,6 +809,7 @@ impl RequiredOptions {
                         // type.
                         Self::for_type(interface, t) | Self::Into
                     }
+                    AnonymousType::Stream(_) => todo!("encoding for stream"),
                 },
                 CustomType::Named(ty) => match &ty.kind {
                     NamedTypeKind::Record(r) => {

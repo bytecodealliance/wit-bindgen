@@ -207,6 +207,7 @@ fn to_json(i: &Interface) -> String {
         Tuple { types: Vec<String> },
         Option(String),
         Expected { ok: String, err: String },
+        Stream { element: String, end: String },
         List(String),
         Union { cases: Vec<String> },
     }
@@ -290,6 +291,10 @@ fn to_json(i: &Interface) -> String {
                     types: t.types.iter().map(|ty| translate_type(ty)).collect(),
                 },
                 AnonymousType::List(ty) => Type::List(translate_type(ty)),
+                AnonymousType::Stream(s) => Type::Stream {
+                    element: translate_type(&s.element),
+                    end: translate_type(&s.end),
+                },
             },
             CustomType::Named(ty) => match &ty.kind {
                 NamedTypeKind::Alias(t) => Type::Primitive(translate_type(t)),

@@ -71,7 +71,6 @@ pub trait Generator {
         drop((iface, dir));
     }
 
-
     // Methods to print named types.
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_record(
@@ -245,6 +244,7 @@ impl Types {
                     info = self.type_info(iface, ty);
                     info.has_list = true;
                 }
+                AnonymousType::Stream(_) => todo!("type_id_info for stream"),
             },
             CustomType::Named(named) => match &named.kind {
                 NamedTypeKind::Record(r) => {
@@ -301,6 +301,7 @@ impl Types {
                     self.set_param_result_ty(iface, &e.ok, param, result);
                     self.set_param_result_ty(iface, &e.err, param, result);
                 }
+                AnonymousType::Stream(_) => todo!("set_param_result_id for stream"),
             },
             CustomType::Named(named) => match &named.kind {
                 NamedTypeKind::Record(r) => {

@@ -1,13 +1,13 @@
-roundtrip-u8: function(a: u8) -> u8
-roundtrip-s8: function(a: s8) -> s8
-roundtrip-u16: function(a: u16) -> u16
-roundtrip-s16: function(a: s16) -> s16
-roundtrip-char: function(a: char) -> char
+roundtrip-u8: func(a: u8) -> u8
+roundtrip-s8: func(a: s8) -> s8
+roundtrip-u16: func(a: u16) -> u16
+roundtrip-s16: func(a: s16) -> s16
+roundtrip-char: func(a: char) -> char
 
 enum e { a, b, c }
-roundtrip-enum: function(a: e) -> e
+roundtrip-enum: func(a: e) -> e
 
-roundtrip-bool: function(a: bool) -> bool
+roundtrip-bool: func(a: bool) -> bool
 
 resource host-state
-get-internal: function(a: host-state) -> u32
+get-internal: func(a: host-state) -> u32

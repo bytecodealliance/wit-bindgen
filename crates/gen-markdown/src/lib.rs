@@ -92,6 +92,13 @@ impl Markdown {
                             self.print_ty(iface, t);
                             self.src.push_str(">");
                         }
+                        AnonymousType::Stream(s) => {
+                            self.src.push_str("stream<");
+                            self.print_ty(iface, &s.element);
+                            self.src.push_str(", ");
+                            self.print_ty(iface, &s.end);
+                            self.src.push_str(">");
+                        }
                     },
                 }
             }

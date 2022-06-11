@@ -21,6 +21,8 @@ impl SizeAlign {
                 AnonymousType::Expected(e) => self.variant(Int::U8, [&e.ok, &e.err]),
                 AnonymousType::Tuple(t) => self.record(t.types.iter()),
                 AnonymousType::List(_) => (8, 4),
+                // A stream is represented as an index.
+                AnonymousType::Stream(_) => (4, 4),
             },
             CustomType::Named(ty) => match &ty.kind {
                 NamedTypeKind::Alias(t) => (self.size(t), self.align(t)),

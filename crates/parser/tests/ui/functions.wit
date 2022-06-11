@@ -1,7 +1,7 @@
-f1: function()
-f2: function(a: u32)
-f3: function(a: u32,)
-f4: function() -> u32
-f6: function() -> tuple<u32, u32>
-f7: function(a: float32, b: float32) -> tuple<u32, u32>
-f8: function(a: option<u32>) -> expected<u32, float32>
+f1: func()
+f2: func(a: u32)
+f3: func(a: u32,)
+f4: func() -> u32
+f6: func() -> tuple<u32, u32>
+f7: func(a: float32, b: float32) -> tuple<u32, u32>
+f8: func(a: option<u32>) -> expected<u32, float32>
