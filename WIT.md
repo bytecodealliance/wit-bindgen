@@ -368,7 +368,7 @@ union-cases ::= ty,
               | ty ',' union-cases?
 ```
 
-## Item: `function`
+## Item: `func`
 
 Functions can also be defined in a `*.wit` document. Functions have a name,
 parameters, and results. Functions can optionally also be declared as `async`
@@ -383,7 +383,7 @@ sleep: async func(ms: u64)
 Specifically functions have the structure:
 
 ```wit
-func-item ::= id ':' 'async'? 'function' '(' func-args ')' func-ret
+func-item ::= id ':' 'async'? 'func' '(' func-args ')' func-ret
 
 func-args ::= func-arg
             | func-arg ',' func-args?
