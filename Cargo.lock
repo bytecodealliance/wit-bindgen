@@ -480,19 +480,6 @@ checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 
 [[package]]
 name = "env_logger"
-version = "0.8.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a19187fea3ac7e84da7dacf48de0c45d63c6a76f9490dae389aead16c243fce3"
-dependencies = [
- "atty",
- "humantime",
- "log",
- "regex",
- "termcolor",
-]
-
-[[package]]
-name = "env_logger"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b2cf0344971ee6c64c31be0d530793fba457d322dfec2810c453d0ef228f9c3"
@@ -537,7 +524,7 @@ version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21e16290574b39ee41c71aeb90ae960c504ebaf1e2a1c87bd52aa56ed6e1a02f"
 dependencies = [
- "env_logger 0.9.0",
+ "env_logger",
  "log",
 ]
 
@@ -552,12 +539,6 @@ dependencies = [
  "redox_syscall",
  "winapi",
 ]
-
-[[package]]
-name = "fixedbitset"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37ab347416e802de484e4d03c7316c48f1ecb56574dfd4a46a80f173ce1de04d"
 
 [[package]]
 name = "fnv"
@@ -961,16 +942,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c520e05135d6e763148b6426a837e239041653ba7becd2e538c076c738025fc"
 
 [[package]]
-name = "petgraph"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "467d164a6de56270bd7c4d070df81d07beace25012d5103ced4e9ff08d6afdb7"
-dependencies = [
- "fixedbitset",
- "indexmap",
-]
-
-[[package]]
 name = "pin-project-lite"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -987,18 +958,6 @@ name = "ppv-lite86"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb9f9e6e233e5c4a35559a617bf40a4ec447db2e84c20b55a6f83167b7e57872"
-
-[[package]]
-name = "pretty_assertions"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cab0e7c02cf376875e9335e0ba1da535775beb5450d21e1dffca068818ed98b"
-dependencies = [
- "ansi_term",
- "ctor",
- "diff",
- "output_vt100",
-]
 
 [[package]]
 name = "pretty_assertions"
@@ -1408,17 +1367,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "test-modules"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "wasmlink",
- "wasmtime",
- "wasmtime-wasi",
- "wit-parser",
-]
-
-[[package]]
 name = "test-rust-wasm"
 version = "0.1.0"
 dependencies = [
@@ -1650,55 +1598,11 @@ dependencies = [
 
 [[package]]
 name = "wasm-encoder"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa9d9bf45fc46f71c407837c9b30b1e874197f2dc357588430b21e5017d290ab"
-dependencies = [
- "leb128",
-]
-
-[[package]]
-name = "wasm-encoder"
 version = "0.11.0"
 source = "git+https://github.com/bytecodealliance/wasm-tools#5f7171c417222c50ea2b12428c24844948876667"
 dependencies = [
  "leb128",
 ]
-
-[[package]]
-name = "wasmlink"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "heck 0.3.3",
- "lazy_static",
- "petgraph",
- "pretty_assertions 0.7.2",
- "wasm-encoder 0.10.0",
- "wasmparser 0.78.2",
- "wasmprinter 0.2.33",
- "wat 1.0.41",
- "wit-parser",
-]
-
-[[package]]
-name = "wasmlink-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "env_logger 0.8.4",
- "log",
- "structopt",
- "wasmlink",
- "wat 1.0.41",
- "wit-parser",
-]
-
-[[package]]
-name = "wasmparser"
-version = "0.78.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52144d4c78e5cf8b055ceab8e5fa22814ce4315d6002ad32cfd914f37c12fd65"
 
 [[package]]
 name = "wasmparser"
@@ -2252,11 +2156,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap 3.1.8",
- "env_logger 0.9.0",
+ "env_logger",
  "glob",
  "indexmap",
  "log",
- "pretty_assertions 1.2.0",
+ "pretty_assertions",
  "wasm-encoder 0.11.0",
  "wasmparser 0.84.0",
  "wasmprinter 0.2.34",

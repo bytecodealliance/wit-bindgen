@@ -1,9 +1,0 @@
-[package]
-name = "types-main"
-version = "0.1.0"
-authors = ["Peter Huene <peter@huene.dev>"]
-edition = "2018"
-publish = false
-
-[dependencies]
-wit-bindgen-rust = { path = "../../../../rust-wasm" }
