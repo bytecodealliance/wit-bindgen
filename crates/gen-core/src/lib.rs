@@ -71,21 +71,6 @@ pub trait Generator {
         drop((iface, dir));
     }
 
-    // Methods to print anonymous types (so, they have no names or docs).
-    // Unlike the rest of the printing methods, these have default (empty) implementations,
-    // since most languages already have these types built in and don't need to generate them.
-    fn type_option(&mut self, iface: &Interface, id: TypeId, payload: &Type) {
-        drop((iface, id, payload))
-    }
-    fn type_expected(&mut self, iface: &Interface, id: TypeId, expected: &Expected) {
-        drop((iface, id, expected))
-    }
-    fn type_tuple(&mut self, iface: &Interface, id: TypeId, tuple: &Tuple) {
-        drop((iface, id, tuple))
-    }
-    fn type_list(&mut self, iface: &Interface, id: TypeId, ty: &Type) {
-        drop((iface, id, ty))
-    }
 
     // Methods to print named types.
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
@@ -130,19 +115,9 @@ pub trait Generator {
     fn generate_one(&mut self, iface: &Interface, dir: Direction, files: &mut Files) {
         self.preprocess_one(iface, dir);
 
-        for (id, ty) in iface
-            .topological_types()
-            .into_iter()
-            .map(|id| (id, &iface.types[id]))
-        {
+        for (id, ty) in iface.types.iter() {
             // assert!(ty.foreign_module.is_none()); // TODO
             match ty {
-                CustomType::Anonymous(ty) => match ty {
-                    AnonymousType::Option(payload) => self.type_option(iface, id, payload),
-                    AnonymousType::Expected(expected) => self.type_expected(iface, id, expected),
-                    AnonymousType::Tuple(tuple) => self.type_tuple(iface, id, tuple),
-                    AnonymousType::List(ty) => self.type_list(iface, id, ty),
-                },
                 CustomType::Named(ty) => match &ty.kind {
                     NamedTypeKind::Record(record) => {
                         self.type_record(iface, id, &ty.name, record, &ty.docs)
@@ -159,6 +134,9 @@ pub trait Generator {
                     NamedTypeKind::Union(u) => self.type_union(iface, id, &ty.name, u, &ty.docs),
                     NamedTypeKind::Alias(t) => self.type_alias(iface, id, &ty.name, t, &ty.docs),
                 },
+                // Anonymous types don't need bindings to be generated.
+                // (Except in C, but that backend has its own custom system anyway.)
+                CustomType::Anonymous(_) => {}
             }
         }
 
