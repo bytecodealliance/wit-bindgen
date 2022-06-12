@@ -29,25 +29,25 @@ async function run() {
   wasm.testImports();
   assert.deepEqual(wasm.multipleResults(), [100, 200]);
   assert.deepStrictEqual(wasm.swapTuple([1, 2]), [2, 1]);
-  assert.deepEqual(wasm.roundtripFlags1(exports.F1_A), exports.F1_A);
-  assert.deepEqual(wasm.roundtripFlags1(0), 0);
-  assert.deepEqual(wasm.roundtripFlags1(exports.F1_A | exports.F1_B), exports.F1_A | exports.F1_B);
+  assert.deepEqual(wasm.roundtripFlags1({ a: true }), { a: true, b: false });
+  assert.deepEqual(wasm.roundtripFlags1({}), { a: false, b: false });
+  assert.deepEqual(wasm.roundtripFlags1({ a: true, b: true }), { a: true, b: true });
 
-  assert.deepEqual(wasm.roundtripFlags2(exports.F2_C), exports.F2_C);
-  assert.deepEqual(wasm.roundtripFlags2(0), 0);
-  assert.deepEqual(wasm.roundtripFlags2(exports.F2_D), exports.F2_D);
-  assert.deepEqual(wasm.roundtripFlags2(exports.F2_C | exports.F2_E), exports.F2_C | exports.F2_E);
+  assert.deepEqual(wasm.roundtripFlags2({ c: true }), { c: true, d: false, e: false });
+  assert.deepEqual(wasm.roundtripFlags2({}), { c: false, d: false, e: false });
+  assert.deepEqual(wasm.roundtripFlags2({ d: true }), { c: false, d: true, e: false });
+  assert.deepEqual(wasm.roundtripFlags2({ c: true, e: true }), { c: true, d: false, e: true });
 
   {
-    const { a, b } = wasm.roundtripRecord1({ a: 8, b: 0 });
+    const { a, b } = wasm.roundtripRecord1({ a: 8, b: {} });
     assert.deepEqual(a, 8);
-    assert.deepEqual(b, 0);
+    assert.deepEqual(b, { a: false, b: false });
   }
 
   {
-    const { a, b } = wasm.roundtripRecord1({ a: 0, b: exports.F1_A | exports.F1_B });
+    const { a, b } = wasm.roundtripRecord1({ a: 0, b: { a: true, b: true } });
     assert.deepEqual(a, 0);
-    assert.deepEqual(b, exports.F1_A | exports.F1_B);
+    assert.deepEqual(b, { a: true, b: true });
   }
 
   assert.deepStrictEqual(wasm.tuple0([]), []);
