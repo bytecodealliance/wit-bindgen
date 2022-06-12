@@ -62,6 +62,8 @@ enum Intrinsic {
     ValidateHostChar,
     ValidateFlags,
     ValidateFlags64,
+    /// Implementation of https://tc39.es/ecma262/#sec-tostring.
+    ToString,
     I32ToF32,
     F32ToI32,
     I64ToF64,
@@ -88,6 +90,7 @@ impl Intrinsic {
             Intrinsic::ValidateHostChar => "validate_host_char",
             Intrinsic::ValidateFlags => "validate_flags",
             Intrinsic::ValidateFlags64 => "validate_flags64",
+            Intrinsic::ToString => "to_string",
             Intrinsic::F32ToI32 => "f32ToI32",
             Intrinsic::I32ToF32 => "i32ToF32",
             Intrinsic::F64ToI64 => "f64ToI64",
@@ -534,25 +537,16 @@ impl Generator for Js {
         docs: &Docs,
     ) {
         self.docs(docs);
+        // TODO: generate docs for the enum's cases.
         self.src
-            .ts(&format!("export enum {} {{\n", name.to_camel_case()));
+            .ts(&format!("export type {} = ", name.to_camel_case()));
         for (i, case) in enum_.cases.iter().enumerate() {
-            self.docs(&case.docs);
-            let name = case.name.to_camel_case();
-            self.src.ts(&format!("{} = {},\n", name, i));
+            if i != 0 {
+                self.src.ts(" | ");
+            }
+            self.src.ts(&format!("\"{}\"", case.name));
         }
-        self.src.ts("}\n");
-
-        self.src.js(&format!(
-            "export const {} = Object.freeze({{\n",
-            name.to_camel_case()
-        ));
-        for (i, case) in enum_.cases.iter().enumerate() {
-            let name = case.name.to_camel_case();
-            self.src.js(&format!("{}: \"{}\",\n", i, name));
-            self.src.js(&format!("\"{}\": {},\n", name, i));
-        }
-        self.src.js("});\n");
+        self.src.ts(";\n");
     }
 
     fn type_resource(&mut self, _iface: &Interface, ty: ResourceId) {
@@ -1911,35 +1905,67 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("variant{tmp}"));
             }
 
-            Instruction::EnumLower { name, .. } => {
+            // Lowers an enum in accordance with https://webidl.spec.whatwg.org/#es-enumeration.
+            Instruction::EnumLower { name, enum_, .. } => {
                 let tmp = self.tmp();
-                self.src
-                    .js(&format!("const variant{} = {};\n", tmp, operands[0]));
 
-                let name = name.to_camel_case();
+                let to_string = self.gen.intrinsic(Intrinsic::ToString);
                 self.src
-                    .js(&format!("if (!(variant{} in {}))\n", tmp, name));
-                self.src.js(&format!(
-                    "throw new RangeError(\"invalid variant specified for {}\");\n",
-                    name,
-                ));
-                results.push(format!(
-                    "Number.isInteger(variant{}) ? variant{0} : {}[variant{0}]",
-                    tmp, name
-                ));
+                    .js(&format!("const val{tmp} = {to_string}({});\n", operands[0]));
+
+                // Declare a variable to hold the result.
+                self.src.js(&format!("let enum{tmp};\n"));
+
+                self.src.js(&format!("switch (val{tmp}) {{\n"));
+                for (i, case) in enum_.cases.iter().enumerate() {
+                    self.src.js(&format!(
+                        "\
+                        case \"{case}\": {{
+                            enum{tmp} = {i};
+                            break;
+                        }}
+                        ",
+                        case = case.name
+                    ));
+                }
+                self.src.js(&format!("\
+                        default: {{
+                            throw new TypeError(`\"${{val{tmp}}}\" is not one of the cases of {name}`);
+                        }}
+                    }}
+                "));
+
+                results.push(format!("enum{tmp}"));
             }
 
-            Instruction::EnumLift { name, .. } => {
+            Instruction::EnumLift { name, enum_, .. } => {
                 let tmp = self.tmp();
-                let name = name.to_camel_case();
-                self.src
-                    .js(&format!("const tag{} = {};\n", tmp, operands[0]));
-                self.src.js(&format!("if (!(tag{} in {}))\n", tmp, name));
+
+                self.src.js(&format!("let enum{tmp};\n"));
+
+                self.src.js(&format!("switch ({}) {{\n", operands[0]));
+                for (i, case) in enum_.cases.iter().enumerate() {
+                    self.src.js(&format!(
+                        "\
+                        case {i}: {{
+                            enum{tmp} = \"{case}\";
+                            break;
+                        }}
+                        ",
+                        case = case.name
+                    ));
+                }
                 self.src.js(&format!(
-                    "throw new RangeError(\"invalid discriminant specified for {}\");\n",
-                    name,
+                    "\
+                        default: {{
+                            throw new RangeError(\"invalid discriminant specified for {name}\");
+                        }}
+                    }}
+                    ",
+                    name = name.to_camel_case()
                 ));
-                results.push(format!("tag{}", tmp));
+
+                results.push(format!("enum{tmp}"));
             }
 
             Instruction::ListCanonLower { element, realloc } => {
@@ -2434,6 +2460,20 @@ impl Js {
                     if ((flags & ~mask) != 0n)
                         throw new TypeError('flags have extraneous bits set');
                     return flags;
+                }
+            "),
+
+            Intrinsic::ToString => self.src.js("
+                export function to_string(val) {
+                    if (typeof val === 'symbol') {
+                        throw new TypeError('symbols cannot be converted to strings');
+                    } else {
+                        // Calling `String` almost directly calls `ToString`, except that it also allows symbols,
+                        // which is why we have the symbol-rejecting branch above.
+                        //
+                        // Definition of `String`: https://tc39.es/ecma262/#sec-string-constructor-string-value
+                        return String(val);
+                    }
                 }
             "),
 

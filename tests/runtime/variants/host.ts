@@ -24,11 +24,11 @@ async function run() {
     variantEnums(a, b, c) {
       assert.deepStrictEqual(a, true);
       assert.deepStrictEqual(b, { tag: 'ok', val: undefined });
-      assert.deepStrictEqual(c, MyErrno.Success);
+      assert.deepStrictEqual(c, "success");
       return [
         false,
         { tag: 'err', val: undefined },
-        MyErrno.A,
+        "a",
       ];
     },
   };
@@ -50,16 +50,11 @@ async function run() {
   const f = Math.fround(5.2);
   assert.deepStrictEqual(wasm.roundtripResult({ tag: 'err', val: f }), { tag: 'err', val: 5 });
 
-  assert.deepStrictEqual(wasm.roundtripEnum(exports.E1.A), exports.E1.A);
-  assert.deepStrictEqual(wasm.roundtripEnum(exports.E1.B), exports.E1.B);
+  assert.deepStrictEqual(wasm.roundtripEnum("a"), "a");
+  assert.deepStrictEqual(wasm.roundtripEnum("b"), "b");
 
   assert.deepStrictEqual(wasm.invertBool(true), false);
   assert.deepStrictEqual(wasm.invertBool(false), true);
-
-  {
-    const a: exports.E1.A = exports.E1.A;
-    const b: exports.E1.B = exports.E1.B;
-  }
 
   {
     const [a1, a2, a3, a4, a5, a6] = wasm.variantCasts([
