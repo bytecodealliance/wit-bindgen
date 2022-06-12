@@ -425,8 +425,7 @@ resource-item ::= 'resource' id resource-contents
 resource-contents ::= nil
                     | '{' resource-defs '}'
 
-resource-defs ::= resource-def
-                | resource-def ',' resource-defs?
+resource-defs ::= resource-def resource-defs?
 
 resource-def ::= 'static'? func-item
 ```
