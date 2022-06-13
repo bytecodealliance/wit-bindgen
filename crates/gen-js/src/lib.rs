@@ -1511,13 +1511,9 @@ impl Bindgen for FunctionBindgen<'_> {
             // This lowers flags from a dictionary of booleans in accordance with https://webidl.spec.whatwg.org/#es-dictionary.
             Instruction::FlagsLower { flags, .. } => {
                 let op0 = &operands[0];
-                let num_results = match flags.repr() {
-                    FlagsRepr::U8 | FlagsRepr::U16 => 1,
-                    FlagsRepr::U32(n) => n,
-                };
 
                 // Generate the result names.
-                for _ in 0..num_results {
+                for _ in 0..flags.repr().count() {
                     let tmp = self.tmp();
                     let name = format!("flags{tmp}");
                     // Default to 0 so that in the null/undefined case, everything is false by default.
