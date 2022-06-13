@@ -1,1 +1,0 @@
-f1: func(a: s32, b: u32) -> tuple<u32, s32>

@@ -1,3 +1,0 @@
-resource x
-
-acquire-an-x: func() -> x
