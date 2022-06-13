@@ -34,8 +34,8 @@ impl exports::Exports for Exports {
         host_state2_param_option(None);
         host_state2_param_result(Ok(&s2));
         host_state2_param_result(Err(2));
-        host_state2_param_variant(HostStateParamVariant::V0(&s2));
-        host_state2_param_variant(HostStateParamVariant::V1(2));
+        host_state2_param_variant(HostStateParamVariant::HostState2(&s2));
+        host_state2_param_variant(HostStateParamVariant::U32(2));
         host_state2_param_list(&[]);
         host_state2_param_list(&[&s2]);
         host_state2_param_list(&[&s2, &s2]);
@@ -104,7 +104,7 @@ impl exports::Exports for Exports {
         Ok(WasmState2(555).into())
     }
     fn wasm_state2_result_variant() -> WasmStateResultVariant {
-        WasmStateResultVariant::V0(Handle::new(WasmState2(666)))
+        WasmStateResultVariant::WasmState2(Handle::new(WasmState2(666)))
     }
     fn wasm_state2_result_list() -> Vec<Handle<WasmState2>> {
         vec![WasmState2(777).into(), WasmState2(888).into()]

@@ -1,5 +1,6 @@
 use heck::*;
-use std::fmt;
+use std::fmt::{self, Write};
+use std::iter::zip;
 use wit_bindgen_gen_core::wit_parser::abi::{Bitcast, LiftLower, WasmType};
 use wit_bindgen_gen_core::{wit_parser::*, TypeInfo, Types};
 
@@ -379,6 +380,87 @@ pub trait RustGenerator {
         return result;
     }
 
+    /// Returns the camel-cased 'name' of the passed type, as used to name union variants.
+    fn name(&self, iface: &Interface, ty: &Type) -> String {
+        match ty {
+            Type::Unit => "Unit".to_owned(),
+            Type::Bool => "Bool".to_owned(),
+            Type::U8 => "U8".to_owned(),
+            Type::U16 => "U16".to_owned(),
+            Type::U32 => "U32".to_owned(),
+            Type::U64 => "U64".to_owned(),
+            Type::S8 => "I8".to_owned(),
+            Type::S16 => "I16".to_owned(),
+            Type::S32 => "I32".to_owned(),
+            Type::S64 => "I64".to_owned(),
+            Type::Float32 => "F32".to_owned(),
+            Type::Float64 => "F64".to_owned(),
+            Type::Char => "Char".to_owned(),
+            Type::String => "String".to_owned(),
+            Type::Handle(id) => iface.resources[*id].name.to_camel_case(),
+            Type::Id(id) => {
+                let ty = &iface.types[*id];
+                match &ty.name {
+                    Some(name) => name.to_camel_case(),
+                    None => match &ty.kind {
+                        TypeDefKind::Option(ty) => format!("Optional{}", self.name(iface, ty)),
+                        TypeDefKind::Expected(_) => "Result".to_owned(),
+                        TypeDefKind::Tuple(_) => "Tuple".to_owned(),
+                        TypeDefKind::List(ty) => format!("{}List", self.name(iface, ty)),
+                        TypeDefKind::Stream(s) => format!("{}Stream", self.name(iface, &s.element)),
+
+                        TypeDefKind::Type(ty) => self.name(iface, ty),
+                        TypeDefKind::Record(_) => "Record".to_owned(),
+                        TypeDefKind::Flags(_) => "Flags".to_owned(),
+                        TypeDefKind::Variant(_) => "Variant".to_owned(),
+                        TypeDefKind::Enum(_) => "Enum".to_owned(),
+                        TypeDefKind::Union(_) => "Union".to_owned(),
+                    },
+                }
+            }
+        }
+    }
+
+    /// Returns the names for the cases of the passed union.
+    fn union_case_names(&self, iface: &Interface, union: &Union) -> Vec<String> {
+        // A `Vec` of tuples of `(name, Option<suffix>)`.
+        // We do this instead of just modifying the strings so that we can
+        // still check against the original.
+        let mut case_names = Vec::new();
+        for case in union.cases.iter() {
+            let name = self.name(iface, &case.ty);
+            let mut suffix = None;
+
+            let mut same_named = case_names
+                .iter_mut()
+                .filter(|(other_name, _): &&mut (String, Option<usize>)| name == **other_name);
+
+            if let Some((_, first_suffix)) = same_named.next() {
+                let count = 1 + same_named.count();
+                // Add a suffix of which number case this is with the same name.
+                suffix = Some(count);
+
+                if first_suffix.is_none() {
+                    // Add a suffix of 0 to the first one if we didn't already.
+                    *first_suffix = Some(0);
+                }
+            }
+
+            case_names.push((name, suffix));
+        }
+
+        case_names
+            .into_iter()
+            .map(|(mut name, suffix)| {
+                if let Some(suffix) = suffix {
+                    // Append the suffix to the name.
+                    write!(name, "{suffix}").unwrap();
+                }
+                name
+            })
+            .collect()
+    }
+
     fn print_typedef_record(
         &mut self,
         iface: &Interface,
@@ -473,11 +555,8 @@ pub trait RustGenerator {
         self.print_rust_enum(
             iface,
             id,
-            union
-                .cases
-                .iter()
-                .enumerate()
-                .map(|(i, c)| (format!("V{i}"), &c.docs, &c.ty)),
+            zip(self.union_case_names(iface, union), &union.cases)
+                .map(|(name, case)| (name, &case.docs, &case.ty)),
             docs,
         );
     }

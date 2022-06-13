@@ -65,7 +65,7 @@ impl Imports for MyImports {
         Ok(())
     }
     fn host_state2_result_variant(&mut self) -> HostStateResultVariant<Self> {
-        HostStateResultVariant::V0(())
+        HostStateResultVariant::HostState2(())
     }
     fn host_state2_result_list(&mut self) -> Vec<()> {
         vec![(), ()]
@@ -130,8 +130,8 @@ fn run(wasm: &str) -> Result<()> {
     exports.wasm_state2_param_option(&mut store, None)?;
     exports.wasm_state2_param_result(&mut store, Ok(&s2))?;
     exports.wasm_state2_param_result(&mut store, Err(2))?;
-    exports.wasm_state2_param_variant(&mut store, WasmStateParamVariant::V0(&s2))?;
-    exports.wasm_state2_param_variant(&mut store, WasmStateParamVariant::V1(2))?;
+    exports.wasm_state2_param_variant(&mut store, WasmStateParamVariant::WasmState2(&s2))?;
+    exports.wasm_state2_param_variant(&mut store, WasmStateParamVariant::U32(2))?;
     exports.wasm_state2_param_list(&mut store, &[])?;
     exports.wasm_state2_param_list(&mut store, &[&s2])?;
     exports.wasm_state2_param_list(&mut store, &[&s2, &s2])?;
@@ -145,8 +145,8 @@ fn run(wasm: &str) -> Result<()> {
     exports.drop_wasm_state2(&mut store, s)?;
     let s = exports.wasm_state2_result_result(&mut store)?.unwrap();
     match exports.wasm_state2_result_variant(&mut store)? {
-        WasmStateResultVariant::V0(s) => exports.drop_wasm_state2(&mut store, s)?,
-        WasmStateResultVariant::V1(_) => panic!(),
+        WasmStateResultVariant::WasmState2(s) => exports.drop_wasm_state2(&mut store, s)?,
+        WasmStateResultVariant::U32(_) => panic!(),
     }
     exports.drop_wasm_state2(&mut store, s)?;
     for s in exports.wasm_state2_result_list(&mut store)? {
