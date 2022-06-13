@@ -1598,8 +1598,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-encoder"
-version = "0.11.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools#5f7171c417222c50ea2b12428c24844948876667"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31f0c17267a5ffd6ae3d897589460e21db1673c84fb7016b909c9691369a75ea"
 dependencies = [
  "leb128",
 ]
@@ -1618,29 +1619,21 @@ checksum = "718ed7c55c2add6548cca3ddd6383d738cd73b892df400e96b9aa876f0141d7a"
 
 [[package]]
 name = "wasmparser"
-version = "0.84.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools#5f7171c417222c50ea2b12428c24844948876667"
+version = "0.86.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bcbfe95447da2aa7ff171857fc8427513eb57c75a729bb190e974dc695e8f5c"
 dependencies = [
  "indexmap",
 ]
 
 [[package]]
 name = "wasmprinter"
-version = "0.2.33"
+version = "0.2.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f973822fb3ca7e03ab421910274514b405df19a3d53acb131ae4df3a2fc4eb58"
+checksum = "aa4cca415278da771add7c9ab7f3391f04b8d98719d2cf28a185d38d5206697e"
 dependencies = [
  "anyhow",
- "wasmparser 0.83.0",
-]
-
-[[package]]
-name = "wasmprinter"
-version = "0.2.34"
-source = "git+https://github.com/bytecodealliance/wasm-tools#5f7171c417222c50ea2b12428c24844948876667"
-dependencies = [
- "anyhow",
- "wasmparser 0.84.0",
+ "wasmparser 0.86.0",
 ]
 
 [[package]]
@@ -1673,7 +1666,7 @@ dependencies = [
  "wasmtime-fiber",
  "wasmtime-jit",
  "wasmtime-runtime",
- "wat 1.0.41",
+ "wat",
  "winapi",
 ]
 
@@ -1860,40 +1853,23 @@ dependencies = [
 
 [[package]]
 name = "wast"
-version = "39.0.0"
+version = "42.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9bbbd53432b267421186feee3e52436531fa69a7cfee9403f5204352df3dd05"
+checksum = "badcb03f976f983ff0daf294da9697be659442f61e6b0942bb37a2b6cbfe9dd4"
 dependencies = [
  "leb128",
  "memchr",
  "unicode-width",
-]
-
-[[package]]
-name = "wast"
-version = "40.0.0"
-source = "git+https://github.com/bytecodealliance/wasm-tools#5f7171c417222c50ea2b12428c24844948876667"
-dependencies = [
- "leb128",
- "memchr",
- "unicode-width",
+ "wasm-encoder 0.13.0",
 ]
 
 [[package]]
 name = "wat"
-version = "1.0.41"
+version = "1.0.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab98ed25494f97c69f28758617f27c3e92e5336040b5c3a14634f2dd3fe61830"
+checksum = "b92f20b742ac527066c8414bc0637352661b68cab07ef42586cefaba71c965cf"
 dependencies = [
- "wast 39.0.0",
-]
-
-[[package]]
-name = "wat"
-version = "1.0.42"
-source = "git+https://github.com/bytecodealliance/wasm-tools#5f7171c417222c50ea2b12428c24844948876667"
-dependencies = [
- "wast 40.0.0",
+ "wast 42.0.0",
 ]
 
 [[package]]
@@ -2000,7 +1976,7 @@ dependencies = [
 name = "wit-bindgen-demo"
 version = "0.1.0"
 dependencies = [
- "wasmprinter 0.2.33",
+ "wasmprinter",
  "wit-bindgen-gen-c",
  "wit-bindgen-gen-core",
  "wit-bindgen-gen-js",
@@ -2161,10 +2137,10 @@ dependencies = [
  "indexmap",
  "log",
  "pretty_assertions",
- "wasm-encoder 0.11.0",
- "wasmparser 0.84.0",
- "wasmprinter 0.2.34",
- "wat 1.0.42",
+ "wasm-encoder 0.13.0",
+ "wasmparser 0.86.0",
+ "wasmprinter",
+ "wat",
  "wit-parser",
 ]
 
