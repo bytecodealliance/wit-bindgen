@@ -1680,8 +1680,13 @@ impl Bindgen for FunctionBindgen<'_> {
                 let op0 = &operands[0];
                 self.push_str(&format!("match {op0} {{\n"));
                 let name = self.typename_lower(iface, *ty);
-                for (i, block) in blocks.iter().enumerate() {
-                    self.push_str(&format!("{name}::V{i}(e) => {block},\n"));
+                for (case_name, block) in self
+                    .gen
+                    .union_case_names(iface, union)
+                    .into_iter()
+                    .zip(blocks)
+                {
+                    self.push_str(&format!("{name}::{case_name}(e) => {block},\n"));
                 }
                 self.push_str("};\n");
             }
@@ -1694,8 +1699,14 @@ impl Bindgen for FunctionBindgen<'_> {
                 let op0 = &operands[0];
                 let mut result = format!("match {op0} {{\n");
                 let name = self.typename_lift(iface, *ty);
-                for (i, block) in blocks.iter().enumerate() {
-                    result.push_str(&format!("{i} => {name}::V{i}({block}),\n"));
+                for (i, (case_name, block)) in self
+                    .gen
+                    .union_case_names(iface, union)
+                    .into_iter()
+                    .zip(blocks)
+                    .enumerate()
+                {
+                    result.push_str(&format!("{i} => {name}::{case_name}({block}),\n"));
                 }
                 result.push_str(&format!("_ => return Err(invalid_variant(\"{name}\")),\n"));
                 result.push_str("}");

@@ -1,5 +1,7 @@
 use heck::*;
-use std::fmt;
+use std::collections::HashMap;
+use std::fmt::{self, Write};
+use std::iter::zip;
 use wit_bindgen_gen_core::wit_parser::abi::{Bitcast, LiftLower, WasmType};
 use wit_bindgen_gen_core::{wit_parser::*, TypeInfo, Types};
 
@@ -379,6 +381,106 @@ pub trait RustGenerator {
         return result;
     }
 
+    /// Writes the camel-cased 'name' of the passed type to `out`, as used to name union variants.
+    fn write_name(&self, iface: &Interface, ty: &Type, out: &mut String) {
+        match ty {
+            Type::Unit => out.push_str("Unit"),
+            Type::Bool => out.push_str("Bool"),
+            Type::U8 => out.push_str("U8"),
+            Type::U16 => out.push_str("U16"),
+            Type::U32 => out.push_str("U32"),
+            Type::U64 => out.push_str("U64"),
+            Type::S8 => out.push_str("I8"),
+            Type::S16 => out.push_str("I16"),
+            Type::S32 => out.push_str("I32"),
+            Type::S64 => out.push_str("I64"),
+            Type::Float32 => out.push_str("F32"),
+            Type::Float64 => out.push_str("F64"),
+            Type::Char => out.push_str("Char"),
+            Type::String => out.push_str("String"),
+            Type::Handle(id) => out.push_str(&iface.resources[*id].name.to_camel_case()),
+            Type::Id(id) => {
+                let ty = &iface.types[*id];
+                match &ty.name {
+                    Some(name) => out.push_str(&name.to_camel_case()),
+                    None => match &ty.kind {
+                        TypeDefKind::Option(ty) => {
+                            out.push_str("Optional");
+                            self.write_name(iface, ty, out);
+                        }
+                        TypeDefKind::Expected(_) => out.push_str("Result"),
+                        TypeDefKind::Tuple(_) => out.push_str("Tuple"),
+                        TypeDefKind::List(ty) => {
+                            self.write_name(iface, ty, out);
+                            out.push_str("List")
+                        }
+                        TypeDefKind::Stream(s) => {
+                            self.write_name(iface, &s.element, out);
+                            out.push_str("Stream");
+                        }
+
+                        TypeDefKind::Type(ty) => self.write_name(iface, ty, out),
+                        TypeDefKind::Record(_) => out.push_str("Record"),
+                        TypeDefKind::Flags(_) => out.push_str("Flags"),
+                        TypeDefKind::Variant(_) => out.push_str("Variant"),
+                        TypeDefKind::Enum(_) => out.push_str("Enum"),
+                        TypeDefKind::Union(_) => out.push_str("Union"),
+                    },
+                }
+            }
+        }
+    }
+
+    /// Returns the names for the cases of the passed union.
+    fn union_case_names(&self, iface: &Interface, union: &Union) -> Vec<String> {
+        enum UsedState<'a> {
+            /// This name has been used once before.
+            ///
+            /// Contains a reference to the name given to the first usage so that a suffix can be added to it.
+            Once(&'a mut String),
+            /// This name has already been used multiple times.
+            ///
+            /// Contains the number of times this has already been used.
+            Multiple(usize),
+        }
+
+        // A `Vec` of the names we're assigning each of the union's cases in order.
+        let mut case_names = vec![String::new(); union.cases.len()];
+        // A map from case names to their `UsedState`.
+        let mut used = HashMap::new();
+        for (case, name) in union.cases.iter().zip(case_names.iter_mut()) {
+            self.write_name(iface, &case.ty, name);
+
+            match used.get_mut(name.as_str()) {
+                None => {
+                    // Initialise this name's `UsedState`, with a mutable reference to this name
+                    // in case we have to add a suffix to it later.
+                    used.insert(name.clone(), UsedState::Once(name));
+                    // Since this is the first (and potentially only) usage of this name,
+                    // we don't need to add a suffix here.
+                }
+                Some(state) => match state {
+                    UsedState::Multiple(n) => {
+                        // Add a suffix of the index of this usage.
+                        write!(name, "{n}").unwrap();
+                        // Add one to the number of times this type has been used.
+                        *n += 1;
+                    }
+                    UsedState::Once(first) => {
+                        // Add a suffix of 0 to the first usage.
+                        first.push('0');
+                        // We now get a suffix of 1.
+                        name.push('1');
+                        // Then update the state.
+                        *state = UsedState::Multiple(2);
+                    }
+                },
+            }
+        }
+
+        case_names
+    }
+
     fn print_typedef_record(
         &mut self,
         iface: &Interface,
@@ -473,11 +575,8 @@ pub trait RustGenerator {
         self.print_rust_enum(
             iface,
             id,
-            union
-                .cases
-                .iter()
-                .enumerate()
-                .map(|(i, c)| (format!("V{i}"), &c.docs, &c.ty)),
+            zip(self.union_case_names(iface, union), &union.cases)
+                .map(|(name, case)| (name, &case.docs, &case.ty)),
             docs,
         );
     }

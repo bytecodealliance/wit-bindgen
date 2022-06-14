@@ -1086,8 +1086,13 @@ impl Bindgen for FunctionBindgen<'_> {
                 let op0 = &operands[0];
                 self.push_str(&format!("match {op0} {{\n"));
                 let name = self.typename_lower(iface, *ty);
-                for (i, block) in blocks.iter().enumerate() {
-                    self.push_str(&format!("{name}::V{i}(e) => {block},\n"));
+                for (case_name, block) in self
+                    .gen
+                    .union_case_names(iface, union)
+                    .into_iter()
+                    .zip(blocks)
+                {
+                    self.push_str(&format!("{name}::{case_name}(e) => {block},\n"));
                 }
                 self.push_str("};\n");
             }
@@ -1099,14 +1104,20 @@ impl Bindgen for FunctionBindgen<'_> {
                     .collect::<Vec<_>>();
                 let op0 = &operands[0];
                 let mut result = format!("match {op0} {{\n");
-                for (i, block) in blocks.iter().enumerate() {
+                for (i, (case_name, block)) in self
+                    .gen
+                    .union_case_names(iface, union)
+                    .into_iter()
+                    .zip(blocks)
+                    .enumerate()
+                {
                     let pat = if i == union.cases.len() - 1 && unchecked {
                         String::from("_")
                     } else {
                         i.to_string()
                     };
                     let name = self.typename_lift(iface, *ty);
-                    result.push_str(&format!("{pat} => {name}::V{i}({block}),\n"));
+                    result.push_str(&format!("{pat} => {name}::{case_name}({block}),\n"));
                 }
                 if !unchecked {
                     result.push_str("_ => panic!(\"invalid union discriminant\"),\n");

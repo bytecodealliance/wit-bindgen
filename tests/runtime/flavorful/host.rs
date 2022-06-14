@@ -41,8 +41,8 @@ impl Imports for MyImports {
         assert_eq!(a.unwrap(), "foo");
         assert_eq!(b.unwrap_err(), "bar");
         match c {
-            ListInVariant1V3::V0(s) => assert_eq!(s, "baz"),
-            ListInVariant1V3::V1(_) => panic!(),
+            ListInVariant1V3::String(s) => assert_eq!(s, "baz"),
+            ListInVariant1V3::F32(_) => panic!(),
         }
     }
 
@@ -135,7 +135,7 @@ fn run(wasm: &str) -> Result<()> {
         &mut store,
         Some("foo"),
         Err("bar"),
-        ListInVariant1V3::V0("baz"),
+        ListInVariant1V3::String("baz"),
     )?;
     assert_eq!(
         exports.list_in_variant2(&mut store)?,
