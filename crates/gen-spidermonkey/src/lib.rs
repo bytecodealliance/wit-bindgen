@@ -1983,7 +1983,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 name: _,
                 ty: _,
             } => todo!(),
-            abi::Instruction::CallWasm { module, name, sig } => {
+            abi::Instruction::CallWasm { iface, name, sig } => {
                 // Push the Wasm arguments.
                 //
                 // []
@@ -1996,7 +1996,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 let func_index = self
                     .gen
                     .import_fn_name_to_index
-                    .get(*module)
+                    .get(&iface.name)
                     .unwrap()
                     .get(*name)
                     .unwrap()
@@ -2200,7 +2200,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
         }
     }
 
-    fn return_pointer(&mut self, size: usize, align: usize) -> Self::Operand {
+    fn return_pointer(&mut self, _iface: &Interface, size: usize, align: usize) -> Self::Operand {
         self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
         self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
         let local = self.new_local(wasm_encoder::ValType::I32);

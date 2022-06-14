@@ -87,9 +87,15 @@ pub trait Generator {
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
-    // fn const_(&mut self, iface: &Interface, name: &str, ty: &str, val: u64, docs: &Docs);
+
+    fn preprocess_functions(&mut self, iface: &Interface, dir: Direction) {
+        drop((iface, dir));
+    }
     fn import(&mut self, iface: &Interface, func: &Function);
     fn export(&mut self, iface: &Interface, func: &Function);
+    fn finish_functions(&mut self, iface: &Interface, dir: Direction) {
+        drop((iface, dir));
+    }
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files);
 
@@ -127,9 +133,7 @@ pub trait Generator {
             self.type_resource(iface, id);
         }
 
-        // for c in module.constants() {
-        //     self.const_(&c.name, &c.ty, c.value, &c.docs);
-        // }
+        self.preprocess_functions(iface, dir);
 
         for f in iface.functions.iter() {
             match dir {
@@ -137,6 +141,8 @@ pub trait Generator {
                 Direction::Export => self.export(iface, &f),
             }
         }
+
+        self.finish_functions(iface, dir);
 
         self.finish_one(iface, files)
     }

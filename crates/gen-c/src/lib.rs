@@ -1419,7 +1419,7 @@ impl Bindgen for FunctionBindgen<'_> {
         self.blocks.push((src.into(), mem::take(operands)));
     }
 
-    fn return_pointer(&mut self, size: usize, align: usize) -> String {
+    fn return_pointer(&mut self, _iface: &Interface, size: usize, align: usize) -> String {
         self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
         self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
         let ptr = self.locals.tmp("ptr");

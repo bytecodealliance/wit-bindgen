@@ -19,6 +19,14 @@ pub fn validate_id(s: &str) -> Result<()> {
 #[derive(Debug, Default)]
 pub struct Interface {
     pub name: String,
+    /// The module name to use for bindings generation.
+    ///
+    /// If `None`, then the interface name will be used.
+    ///
+    /// If `Some`, then this value is used to format an export
+    /// name of `<module>#<name>` for exports or an import module
+    /// name of `<module>` for imports.
+    pub module: Option<String>,
     pub types: Arena<TypeDef>,
     pub type_lookup: HashMap<String, TypeId>,
     pub resources: Arena<Resource>,

@@ -46,12 +46,15 @@ pub struct Opts {
     #[cfg_attr(feature = "structopt", structopt(skip))]
     pub symbol_namespace: String,
 
-    /// The alias to use for the `wit_bindgen_rust` crate.
+    /// If true, the code generation is intended for standalone crates.
     ///
-    /// This allows code generators to alias the `wit_bindgen_rust` crate
-    /// to a re-export in another crate.
+    /// Standalone mode generates bindings without a wrapping module.
+    ///
+    /// For exported interfaces, an `export!` macro is also generated
+    /// that can be used to export an implementation from a different
+    /// crate.
     #[cfg_attr(feature = "structopt", structopt(skip))]
-    pub crate_alias: Option<String>,
+    pub standalone: bool,
 }
 
 #[derive(Default)]
@@ -79,6 +82,10 @@ impl RustWasm {
             Direction::Export => AbiVariant::GuestExport,
             Direction::Import => AbiVariant::GuestImport,
         }
+    }
+
+    fn ret_area_name(iface: &Interface) -> String {
+        format!("{}_RET_AREA", iface.name.to_shouty_snake_case())
     }
 }
 
@@ -150,12 +157,10 @@ impl Generator for RustWasm {
         self.in_import = variant == AbiVariant::GuestImport;
         self.types.analyze(iface);
         self.trait_name = iface.name.to_camel_case();
-        self.src
-            .push_str(&format!("mod {} {{\n", iface.name.to_snake_case()));
 
-        if let Some(alias) = &self.opts.crate_alias {
+        if !self.opts.standalone {
             self.src
-                .push_str(&format!("use {} as wit_bindgen_rust;\n", alias));
+                .push_str(&format!("mod {} {{\n", iface.name.to_snake_case()));
         }
 
         self.sizes.fill(iface);
@@ -456,6 +461,16 @@ impl Generator for RustWasm {
         self.src.push_str(";\n");
     }
 
+    fn preprocess_functions(&mut self, _iface: &Interface, dir: Direction) {
+        if self.opts.standalone && dir == Direction::Export {
+            self.src.push_str(
+                "/// Declares the export of the interface for the given type.\n\
+                 #[macro_export]\n\
+                 macro_rules! export(($t:ident) => {\n",
+            );
+        }
+    }
+
     fn import(&mut self, iface: &Interface, func: &Function) {
         let mut sig = FnSig::default();
         let param_mode = TypeMode::AllBorrowed("'_");
@@ -508,14 +523,25 @@ impl Generator for RustWasm {
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
-        let rust_name = func.name.to_snake_case();
+        let iface_name = iface.name.to_snake_case();
 
         self.src.push_str("#[export_name = \"");
-        self.src.push_str(&self.opts.symbol_namespace);
-        self.src.push_str(&func.name);
+        match &iface.module {
+            Some(module) => {
+                self.src.push_str(module);
+                self.src.push_str("#");
+                self.src.push_str(&func.name);
+            }
+            None => {
+                self.src.push_str(&self.opts.symbol_namespace);
+                self.src.push_str(&func.name);
+            }
+        }
         self.src.push_str("\"]\n");
         self.src.push_str("unsafe extern \"C\" fn __wit_bindgen_");
-        self.src.push_str(&rust_name);
+        self.src.push_str(&iface_name);
+        self.src.push_str("_");
+        self.src.push_str(&func.name.to_snake_case());
         self.src.push_str("(");
         let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
         let mut params = Vec::new();
@@ -537,7 +563,17 @@ impl Generator for RustWasm {
             }
             _ => unimplemented!(),
         }
-        self.src.push_str("{\n");
+
+        self.push_str("{\n");
+
+        if self.opts.standalone {
+            // Force the macro code to reference wit_bindgen_rust for standalone crates.
+            // Also ensure any referenced types are also used from the external crate.
+            self.src
+                .push_str("#[allow(unused_imports)]\nuse wit_bindgen_rust;\nuse ");
+            self.src.push_str(&iface_name);
+            self.src.push_str("::*;\n");
+        }
 
         if func.is_async {
             self.src.push_str("let future = async move {\n");
@@ -595,6 +631,26 @@ impl Generator for RustWasm {
         dst.push(mem::replace(&mut self.src, prev).into());
     }
 
+    fn finish_functions(&mut self, iface: &Interface, dir: Direction) {
+        if self.return_pointer_area_align > 0 {
+            self.src.push_str(&format!(
+                "
+                    #[repr(align({align}))]
+                    struct RetArea([u8; {size}]);
+                    static mut {name}: RetArea = RetArea([0; {size}]);
+                ",
+                name = Self::ret_area_name(iface),
+                align = self.return_pointer_area_align,
+                size = self.return_pointer_area_size,
+            ));
+        }
+
+        // For standalone generation, close the export! macro
+        if self.opts.standalone && dir == Direction::Export {
+            self.src.push_str("});\n");
+        }
+    }
+
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
         let mut src = mem::take(&mut self.src);
 
@@ -628,20 +684,10 @@ impl Generator for RustWasm {
             }
         }
 
-        if self.return_pointer_area_align > 0 {
-            src.push_str(&format!(
-                "
-                    #[repr(align({align}))]
-                    struct RetArea([u8; {size}]);
-                    static mut RET_AREA: RetArea = RetArea([0; {size}]);
-                ",
-                align = self.return_pointer_area_align,
-                size = self.return_pointer_area_size,
-            ));
-        }
-
         // Close the opening `mod`.
-        src.push_str("}\n");
+        if !self.opts.standalone {
+            src.push_str("}\n");
+        }
 
         if self.opts.rustfmt {
             let mut child = Command::new("rustfmt")
@@ -710,11 +756,13 @@ impl FunctionBindgen<'_> {
 
     fn declare_import(
         &mut self,
-        module: &str,
+        iface: &Interface,
         name: &str,
         params: &[WasmType],
         results: &[WasmType],
     ) -> String {
+        let module = iface.module.as_deref().unwrap_or(&iface.name);
+
         // Define the actual function we're calling inline
         self.push_str("#[link(wasm_import_module = \"");
         self.push_str(module);
@@ -808,13 +856,15 @@ impl Bindgen for FunctionBindgen<'_> {
         }
     }
 
-    fn return_pointer(&mut self, size: usize, align: usize) -> String {
+    fn return_pointer(&mut self, iface: &Interface, size: usize, align: usize) -> String {
         self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
         self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
         let tmp = self.tmp();
+
         self.push_str(&format!(
-            "let ptr{} = RET_AREA.0.as_mut_ptr() as i32;\n",
-            tmp
+            "let ptr{} = {}.0.as_mut_ptr() as i32;\n",
+            tmp,
+            RustWasm::ret_area_name(iface),
         ));
         format!("ptr{}", tmp)
     }
@@ -1397,8 +1447,8 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::IterBasePointer => results.push("base".to_string()),
 
-            Instruction::CallWasm { module, name, sig } => {
-                let func = self.declare_import(module, name, &sig.params, &sig.results);
+            Instruction::CallWasm { iface, name, sig } => {
+                let func = self.declare_import(iface, name, &sig.params, &sig.results);
 
                 // ... then call the function with all our operands
                 if sig.results.len() > 0 {
@@ -1412,7 +1462,7 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::CallWasmAsyncImport {
-                module,
+                iface,
                 name,
                 params: wasm_params,
                 results: wasm_results,
@@ -1455,7 +1505,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 // the canonical ABI `operands` we were provided, and the last
                 // two arguments are our completion callback and the context for
                 // the callback, our `tx` sender.
-                let func = self.declare_import(module, name, wasm_params, &[]);
+                let func = self.declare_import(iface, name, wasm_params, &[]);
                 self.push_str(&func);
                 self.push_str("(");
                 for op in operands {
@@ -1489,11 +1539,20 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push("result".to_string());
                 match &func.kind {
                     FunctionKind::Freestanding => {
-                        self.push_str(&format!(
-                            "<super::{m} as {m}>::{}",
-                            func.name.to_snake_case(),
-                            m = module.to_camel_case()
-                        ));
+                        if self.gen.opts.standalone {
+                            // For standalone mode, use the macro identifier
+                            self.push_str(&format!(
+                                "<$t as {t}>::{}",
+                                func.name.to_snake_case(),
+                                t = module.to_camel_case(),
+                            ));
+                        } else {
+                            self.push_str(&format!(
+                                "<super::{m} as {m}>::{}",
+                                func.name.to_snake_case(),
+                                m = module.to_camel_case()
+                            ));
+                        }
                     }
                     FunctionKind::Static { resource, name }
                     | FunctionKind::Method { resource, name } => {
