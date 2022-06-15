@@ -148,16 +148,6 @@ impl WasmtimePy {
         }
     }
 
-    fn docs(&mut self, docs: &Docs) {
-        let docs = match &docs.contents {
-            Some(docs) => docs,
-            None => return,
-        };
-        for line in docs.lines() {
-            self.src.push_str(&format!("# {}\n", line));
-        }
-    }
-
     fn print_sig(&mut self, iface: &Interface, func: &Function) -> Vec<String> {
         if !self.in_import {
             if let FunctionKind::Static { .. } = func.kind {
@@ -200,16 +190,16 @@ impl WasmtimePy {
         params
     }
 
-    fn type_union_wrapped(&mut self, iface: &Interface, name: &str, union: &Union) {
+    fn type_union_wrapped(&mut self, iface: &Interface, name: &str, union: &Union, docs: &Docs) {
         self.pyimport("dataclasses", "dataclass");
         let mut cases = Vec::new();
         let name = name.to_camel_case();
         for (i, case) in union.cases.iter().enumerate() {
-            self.docs(&case.docs);
             self.src.push_str("@dataclass\n");
             let name = format!("{name}{i}");
             self.src.push_str(&format!("class {name}:\n"));
             self.indent();
+            self.src.docstring(&case.docs);
             self.src.push_str("value: ");
             self.print_ty(iface, &case.ty, true);
             self.src.push_str("\n");
@@ -219,15 +209,17 @@ impl WasmtimePy {
         }
 
         self.pyimport("typing", "Union");
+        self.src.comment(docs);
         self.src
             .push_str(&format!("{name} = Union[{}]\n", cases.join(", ")));
         self.src.push_str("\n");
     }
 
-    fn type_union_raw(&mut self, iface: &Interface, name: &str, union: &Union) {
+    fn type_union_raw(&mut self, iface: &Interface, name: &str, union: &Union, docs: &Docs) {
         self.pyimport("typing", "Union");
+        self.src.comment(docs);
         for case in union.cases.iter() {
-            self.docs(&case.docs);
+            self.src.comment(&case.docs);
         }
         self.src.push_str(&name.to_camel_case());
         self.src.push_str(" = Union[");
@@ -258,13 +250,13 @@ impl Generator for WasmtimePy {
         record: &Record,
         docs: &Docs,
     ) {
-        self.docs(docs);
         self.pyimport("dataclasses", "dataclass");
         self.src
             .push_str(&format!("@dataclass\nclass {}:\n", name.to_camel_case()));
         self.indent();
+        self.src.docstring(docs);
         for field in record.fields.iter() {
-            self.docs(&field.docs);
+            self.src.comment(&field.docs);
             self.src
                 .push_str(&format!("{}: ", field.name.to_snake_case()));
             self.print_ty(iface, &field.ty, true);
@@ -285,7 +277,7 @@ impl Generator for WasmtimePy {
         tuple: &Tuple,
         docs: &Docs,
     ) {
-        self.docs(docs);
+        self.src.comment(docs);
         self.src.push_str(&format!("{} = ", name.to_camel_case()));
         self.print_tuple(iface, tuple);
         self.src.push_str("\n");
@@ -299,14 +291,14 @@ impl Generator for WasmtimePy {
         flags: &Flags,
         docs: &Docs,
     ) {
-        self.docs(docs);
         self.pyimport("enum", "Flag");
         self.pyimport("enum", "auto");
         self.src
             .push_str(&format!("class {}(Flag):\n", name.to_camel_case()));
         self.indent();
+        self.src.docstring(docs);
         for flag in flags.flags.iter() {
-            self.docs(&flag.docs);
+            self.src.comment(&flag.docs);
             self.src
                 .push_str(&format!("{} = auto()\n", flag.name.to_shouty_snake_case()));
         }
@@ -325,11 +317,10 @@ impl Generator for WasmtimePy {
         variant: &Variant,
         docs: &Docs,
     ) {
-        self.docs(docs);
         self.pyimport("dataclasses", "dataclass");
         let mut cases = Vec::new();
         for case in variant.cases.iter() {
-            self.docs(&case.docs);
+            self.src.docstring(&case.docs);
             self.src.push_str("@dataclass\n");
             let name = format!("{}{}", name.to_camel_case(), case.name.to_camel_case());
             self.src.push_str(&format!("class {}:\n", name));
@@ -343,6 +334,7 @@ impl Generator for WasmtimePy {
         }
 
         self.pyimport("typing", "Union");
+        self.src.comment(docs);
         self.src.push_str(&format!(
             "{} = Union[{}]\n",
             name.to_camel_case(),
@@ -361,7 +353,6 @@ impl Generator for WasmtimePy {
         union: &Union,
         docs: &Docs,
     ) {
-        self.docs(docs);
         let mut py_type_classes = BTreeSet::new();
         for case in union.cases.iter() {
             py_type_classes.insert(py_type_class_of(&case.ty));
@@ -370,12 +361,12 @@ impl Generator for WasmtimePy {
             // Some of the cases are not distinguishable
             self.union_representation
                 .insert(name.to_string(), PyUnionRepresentation::Wrapped);
-            self.type_union_wrapped(iface, name, union);
+            self.type_union_wrapped(iface, name, union, docs);
         } else {
             // All of the cases are distinguishable
             self.union_representation
                 .insert(name.to_string(), PyUnionRepresentation::Raw);
-            self.type_union_raw(iface, name, union);
+            self.type_union_raw(iface, name, union, docs);
         }
     }
 
@@ -387,8 +378,8 @@ impl Generator for WasmtimePy {
         payload: &Type,
         docs: &Docs,
     ) {
-        self.docs(docs);
         self.pyimport("typing", "Optional");
+        self.src.comment(docs);
         self.src.push_str(&name.to_camel_case());
         self.src.push_str(" = Optional[");
         self.print_ty(iface, payload, true);
@@ -403,8 +394,8 @@ impl Generator for WasmtimePy {
         expected: &Expected,
         docs: &Docs,
     ) {
-        self.docs(docs);
         self.dependencies.needs_expected = true;
+        self.src.comment(docs);
         self.src
             .push_str(&format!("{} = Expected[", name.to_camel_case()));
         self.print_ty(iface, &expected.ok, true);
@@ -421,13 +412,13 @@ impl Generator for WasmtimePy {
         enum_: &Enum,
         docs: &Docs,
     ) {
-        self.docs(docs);
         self.pyimport("enum", "Enum");
         self.src
             .push_str(&format!("class {}(Enum):\n", name.to_camel_case()));
         self.indent();
+        self.src.docstring(docs);
         for (i, case) in enum_.cases.iter().enumerate() {
-            self.docs(&case.docs);
+            self.src.comment(&case.docs);
 
             // TODO this handling of digits should be more general and
             // shouldn't be here just to fix the one case in wasi where an
@@ -451,14 +442,14 @@ impl Generator for WasmtimePy {
     }
 
     fn type_alias(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        self.docs(docs);
+        self.src.comment(docs);
         self.src.push_str(&format!("{} = ", name.to_camel_case()));
         self.print_ty(iface, ty, false);
         self.src.push_str("\n");
     }
 
     fn type_list(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        self.docs(docs);
+        self.src.comment(docs);
         self.src.push_str(&format!("{} = ", name.to_camel_case()));
         self.print_list(iface, ty);
         self.src.push_str("\n");
@@ -2179,6 +2170,32 @@ impl Source {
         self.push_str(": ");
         self.print_ty(deps, iface, ty, true);
         self.push_str("\n");
+    }
+
+    fn comment(&mut self, docs: &Docs) {
+        let docs = match &docs.contents {
+            Some(docs) => docs,
+            None => return,
+        };
+        for line in docs.lines() {
+            self.push_str(&format!("# {}\n", line));
+        }
+    }
+
+    fn docstring(&mut self, docs: &Docs) {
+        let docs = match &docs.contents {
+            Some(docs) => docs,
+            None => return,
+        };
+        let triple_quote = r#"""""#;
+        self.push_str(triple_quote);
+        self.newline();
+        for line in docs.lines() {
+            self.push_str(line);
+            self.newline();
+        }
+        self.push_str(triple_quote);
+        self.newline();
     }
 
     pub fn indent(&mut self, amt: usize) {
