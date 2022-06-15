@@ -6,14 +6,20 @@ record empty {}
 empty-arg: func(x: empty)
 empty-result: func() -> empty
 
+/// A record containing two scalar fields
+/// that both have the same type
 record scalars {
+    /// The first field, named a
     a: u32,
+    /// The second field, named b
     b: u32,
 }
 
 scalar-arg: func(x: scalars)
 scalar-result: func() -> scalars
 
+/// A record that is really just flags
+/// All of the fields are bool
 record really-flags {
     a: bool,
     b: bool,
