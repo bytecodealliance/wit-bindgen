@@ -60,8 +60,6 @@ enum Intrinsic {
     ValidateF64,
     ValidateGuestChar,
     ValidateHostChar,
-    ValidateFlags,
-    ValidateFlags64,
     I32ToF32,
     F32ToI32,
     I64ToF64,
@@ -86,8 +84,6 @@ impl Intrinsic {
             Intrinsic::ValidateF64 => "validate_f64",
             Intrinsic::ValidateGuestChar => "validate_guest_char",
             Intrinsic::ValidateHostChar => "validate_host_char",
-            Intrinsic::ValidateFlags => "validate_flags",
-            Intrinsic::ValidateFlags64 => "validate_flags64",
             Intrinsic::F32ToI32 => "f32ToI32",
             Intrinsic::I32ToF32 => "i32ToF32",
             Intrinsic::F64ToI64 => "f64ToI64",
@@ -2413,26 +2409,6 @@ impl Js {
                     if (typeof s !== 'string') \
                         throw new TypeError(`must be a string`);
                     return s.codePointAt(0);
-                }
-            "),
-
-            Intrinsic::ValidateFlags => self.src.js("
-                export function validate_flags(flags, mask) {
-                    if (!Number.isInteger(flags)) \
-                        throw new TypeError('flags were not an integer');
-                    if ((flags & ~mask) != 0)
-                        throw new TypeError('flags have extraneous bits set');
-                    return flags;
-                }
-            "),
-
-            Intrinsic::ValidateFlags64 => self.src.js("
-                export function validate_flags64(flags, mask) {
-                    if (typeof flags !== 'bigint')
-                        throw new TypeError('flags were not a bigint');
-                    if ((flags & ~mask) != 0n)
-                        throw new TypeError('flags have extraneous bits set');
-                    return flags;
                 }
             "),
 
