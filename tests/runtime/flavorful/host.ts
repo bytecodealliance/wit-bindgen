@@ -29,7 +29,7 @@ async function run() {
       return 'output3';
     },
 
-    errnoResult() { return { tag: 'err', val: MyErrno.B }; },
+    errnoResult() { return { tag: 'err', val: "b" }; },
     listTypedefs(x, y) {
       assert.strictEqual(x, 'typedef1');
       assert.deepStrictEqual(y, ['typedef2']);
@@ -39,11 +39,11 @@ async function run() {
     listOfVariants(bools, results, enums) {
       assert.deepStrictEqual(bools, [true, false]);
       assert.deepStrictEqual(results, [{ tag: 'ok', val: undefined }, { tag: 'err', val: undefined }]);
-      assert.deepStrictEqual(enums, [MyErrno.Success, MyErrno.A]);
+      assert.deepStrictEqual(enums, ["success", "a"]);
       return [
         [false, true],
         [{ tag: 'err', val: undefined }, { tag: 'ok', val: undefined }],
-        [MyErrno.A, MyErrno.B],
+        ["a", "b"],
       ];
     },
   };
