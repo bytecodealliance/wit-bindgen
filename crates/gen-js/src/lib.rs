@@ -1512,7 +1512,8 @@ impl Bindgen for FunctionBindgen<'_> {
                 for _ in 0..flags.repr().count() {
                     let tmp = self.tmp();
                     let name = format!("flags{tmp}");
-                    // Default to 0 so that in the null/undefined case, everything is false by default.
+                    // Default to 0 so that in the null/undefined case, everything is false by
+                    // default.
                     self.src.js(&format!("let {name} = 0;\n"));
                     results.push(name);
                 }
@@ -1542,22 +1543,37 @@ impl Bindgen for FunctionBindgen<'_> {
                     }}
                 "));
 
-                // We don't need to do anything else for the null/undefined case,
-                // since that's interpreted as everything false, and we already
-                // defaulted everyting to 0.
+                // We don't need to do anything else for the null/undefined
+                // case, since that's interpreted as everything false, and we
+                // already defaulted everyting to 0.
             }
 
             Instruction::FlagsLift { flags, .. } => {
                 let tmp = self.tmp();
                 results.push(format!("flags{tmp}"));
 
+                if let Some(op) = operands.last() {
+                    // We only need an extraneous bits check if the number of flags isn't a multiple
+                    // of 32, because if they are then all the bits are used and there are no
+                    // extraneous bits.
+                    if flags.flags.len() % 32 != 0 {
+                        let mask: u32 = 0xffffffff << (flags.flags.len() % 32);
+                        self.src.js(&format!(
+                            "\
+                            if (({op} & {mask}) !== 0) {{
+                                throw new TypeError('flags have extraneous bits set');
+                            }}
+                            "
+                        ));
+                    }
+                }
+
                 self.src.js(&format!("const flags{tmp} = {{\n"));
 
                 for (i, flag) in flags.flags.iter().enumerate() {
                     let flag = flag.name.to_mixed_case();
                     let op = &operands[i / 32];
-                    // Make this signed because that's how it's represented in JS.
-                    let mask: i32 = 1 << (i % 32);
+                    let mask: u32 = 1 << (i % 32);
                     self.src.js(&format!("{flag}: Boolean({op} & {mask}),\n"));
                 }
 
