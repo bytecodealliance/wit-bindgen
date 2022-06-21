@@ -1,4 +1,4 @@
-import { Demo, Lang, Config } from './demo.js';
+import { Demo, Config } from './demo.js';
 import * as browser from './browser.js';
 
 class Editor {
@@ -105,13 +105,15 @@ class Editor {
     const is_import = this.mode.value === 'import';
     let lang;
     switch (this.language.value) {
-      case "js": lang = Lang.Js; break;
-      case "rust": lang = Lang.Rust; break;
-      case "wasmtime": lang = Lang.Wasmtime; break;
-      case "wasmtime-py": lang = Lang.WasmtimePy; break;
-      case "c": lang = Lang.C; break;
-      case "markdown": lang = Lang.Markdown; break;
-      case "spidermonkey": lang = Lang.Spidermonkey; break;
+      case "js":
+      case "rust":
+      case "wasmtime":
+      case "wasmtime-py":
+      case "c":
+      case "markdown":
+      case "spidermonkey":
+        lang = this.language.value;
+        break;
       default: return;
     }
     const result = this.config.render(lang, wit, is_import);
