@@ -1,5 +1,6 @@
 use heck::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt::Write;
 use std::mem;
 use wit_bindgen_gen_core::wit_parser::abi::{
     AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
@@ -225,16 +226,19 @@ impl Js {
         self.src.ts("]");
     }
 
-    fn docs(&mut self, docs: &Docs) {
-        let docs = match &docs.contents {
-            Some(docs) => docs,
-            None => return,
-        };
+    fn docs_raw(&mut self, docs: &str) {
         self.src.ts("/**\n");
         for line in docs.lines() {
             self.src.ts(&format!(" * {}\n", line));
         }
         self.src.ts(" */\n");
+    }
+
+    fn docs(&mut self, docs: &Docs) {
+        match &docs.contents {
+            Some(docs) => self.docs_raw(docs),
+            None => return,
+        }
     }
 
     fn ts_func(&mut self, iface: &Interface, func: &Function) {
@@ -536,8 +540,29 @@ impl Generator for Js {
         enum_: &Enum,
         docs: &Docs,
     ) {
-        self.docs(docs);
-        // TODO: generate docs for the enum's cases.
+        // The complete documentation for this enum, including documentation for variants.
+        let mut complete_docs = String::new();
+
+        if let Some(docs) = &docs.contents {
+            complete_docs.push_str(docs);
+            // Add a gap before the `# Variants` section.
+            complete_docs.push('\n');
+        }
+
+        writeln!(complete_docs, "# Variants").unwrap();
+
+        for case in enum_.cases.iter() {
+            writeln!(complete_docs).unwrap();
+            writeln!(complete_docs, "## `\"{}\"`", case.name).unwrap();
+
+            if let Some(docs) = &case.docs.contents {
+                writeln!(complete_docs).unwrap();
+                complete_docs.push_str(docs);
+            }
+        }
+
+        self.docs_raw(&complete_docs);
+
         self.src
             .ts(&format!("export type {} = ", name.to_camel_case()));
         for (i, case) in enum_.cases.iter().enumerate() {
