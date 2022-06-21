@@ -1554,7 +1554,7 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 if let Some(op) = operands.last() {
                     // We only need an extraneous bits check if the number of flags isn't a multiple
-                    // of 32, because if they are then all the bits are used and there are no
+                    // of 32, because if it is then all the bits are used and there are no
                     // extraneous bits.
                     if flags.flags.len() % 32 != 0 {
                         let mask: u32 = 0xffffffff << (flags.flags.len() % 32);
