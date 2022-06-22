@@ -559,9 +559,7 @@ impl Resolver {
                 }
             }
         }
-        Docs {
-            contents: docs,
-        }
+        Docs { contents: docs }
     }
 
     fn resolve_value(&mut self, value: &Value<'_>) -> Result<()> {
