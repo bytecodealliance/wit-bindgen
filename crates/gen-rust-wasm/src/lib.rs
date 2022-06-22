@@ -1594,7 +1594,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::ReturnAsyncExport { .. } => {
                 self.emit_cleanup();
                 self.push_str(&format!(
-                    "unsafe {{ wit_bindgen_rust::rt::async_export_done({}, {}); }}\n",
+                    "wit_bindgen_rust::rt::async_export_done({}, {});\n",
                     operands[0], operands[1]
                 ));
             }
