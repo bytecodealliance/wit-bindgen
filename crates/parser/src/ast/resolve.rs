@@ -543,16 +543,15 @@ impl Resolver {
     }
 
     fn docs(&mut self, doc: &super::Docs<'_>) -> Docs {
-        if doc.docs.is_empty() {
-            return Docs { contents: None };
-        }
-        let mut docs = String::new();
+        let mut docs = None;
         for doc in doc.docs.iter() {
             // Comments which are not doc-comments are silently ignored
             if let Some(doc) = doc.strip_prefix("///") {
+                let docs = docs.get_or_insert_with(String::new);
                 docs.push_str(doc.trim_start_matches('/').trim());
                 docs.push('\n');
             } else if let Some(doc) = doc.strip_prefix("/**") {
+                let docs = docs.get_or_insert_with(String::new);
                 assert!(doc.ends_with("*/"));
                 for line in doc[..doc.len() - 2].lines() {
                     docs.push_str(line);
@@ -561,7 +560,7 @@ impl Resolver {
             }
         }
         Docs {
-            contents: Some(docs),
+            contents: docs,
         }
     }
 
