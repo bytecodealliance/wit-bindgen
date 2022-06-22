@@ -57,8 +57,6 @@ enum Intrinsic {
     ClampHost,
     ClampHost64,
     DataView,
-    ValidateF32,
-    ValidateF64,
     ValidateGuestChar,
     ValidateHostChar,
     ValidateFlags,
@@ -85,8 +83,6 @@ impl Intrinsic {
             Intrinsic::ClampHost => "clamp_host",
             Intrinsic::ClampHost64 => "clamp_host64",
             Intrinsic::DataView => "data_view",
-            Intrinsic::ValidateF32 => "validate_f32",
-            Intrinsic::ValidateF64 => "validate_f64",
             Intrinsic::ValidateGuestChar => "validate_guest_char",
             Intrinsic::ValidateHostChar => "validate_host_char",
             Intrinsic::ValidateFlags => "validate_flags",
@@ -1355,18 +1351,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(operands.pop().unwrap())
             }
 
-            // For f32 coming from the host we need to validate that the value
-            // is indeed a number and that the 32-bit value matches the
-            // original value.
-            Instruction::F32FromFloat32 => {
-                let validate = self.gen.intrinsic(Intrinsic::ValidateF32);
-                results.push(format!("{}({})", validate, operands[0]));
-            }
-
-            // Similar to f32, but no range checks, just checks it's a number
-            Instruction::F64FromFloat64 => {
-                let validate = self.gen.intrinsic(Intrinsic::ValidateF64);
-                results.push(format!("{}({})", validate, operands[0]));
+            Instruction::F32FromFloat32 | Instruction::F64FromFloat64 => {
+                // Use a unary `+` to cast to a float.
+                results.push(format!("+{}", operands[0]));
             }
 
             // Validate that i32 values coming from wasm are indeed valid code
@@ -2427,25 +2414,6 @@ impl Js {
                     if (i < min || i > max) \
                         throw new RangeError(`must be between ${min} and ${max}`);
                     return i;
-                }
-            "),
-
-            // TODO: test removing the isNan test and make sure something fails
-            Intrinsic::ValidateF32 => self.src.js("
-                export function validate_f32(val) {
-                    if (typeof val !== 'number') \
-                        throw new TypeError(`must be a number`);
-                    if (!Number.isNaN(val) && Math.fround(val) !== val) \
-                        throw new RangeError(`must be representable as f32`);
-                    return val;
-                }
-            "),
-
-            Intrinsic::ValidateF64 => self.src.js("
-                export function validate_f64(val) {
-                    if (typeof val !== 'number') \
-                        throw new TypeError(`must be a number`);
-                    return val;
                 }
             "),
 
