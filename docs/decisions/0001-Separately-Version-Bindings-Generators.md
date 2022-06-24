@@ -2,7 +2,7 @@
 # Configuration for the Jekyll template "Just the Docs"
 parent: Decisions
 nav_order: 100
-title: Bindings Generators Versioning Policy
+title: Separately Version Bindings Generators
 
 # These are optional elements. Feel free to remove any of them.
 status: proposed
@@ -13,13 +13,12 @@ consulted: Bailey Hayes
 ---
 <!-- we need to disable MD025, because we use the different heading "ADR Template" in the homepage (see above) than it is foreseen in the template -->
 <!-- markdownlint-disable-next-line MD025 -->
-# Bindings Generators Versioning Policy
+# Separately Version Bindings Generators
 
 ## Context and Problem Statement
 
 The `wit-bindgen` repository contains a collection of crates. These crates need to have a version ascribed to them collectively or separately.
 
-<!-- This is an optional element. Feel free to remove. -->
 ## Decision Drivers
 
 * Reflecting that individual bindings generators are developed separately and have their own API surfaces.
