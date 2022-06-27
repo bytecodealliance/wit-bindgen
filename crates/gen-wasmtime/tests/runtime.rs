@@ -52,7 +52,12 @@ fn instantiate<I: Default, E: Default, T>(
     Ok((exports, store))
 }
 
-fn instantiate_smw<I: Default, E: Default, T>(
+// TODO: This function needs to be updated to use the component model once it's ready.  See
+// https://github.com/bytecodealliance/wit-bindgen/issues/259 for details.
+//
+// Also, rename the ignore_host.rs files under the tests/runtime/smw_{functions|lists|strings} to host.rs and
+// remove the leading underscore from this function's name to re-enable the Spidermonkey tests.
+fn _instantiate_smw<I: Default, E: Default, T>(
     wasm: &str,
     add_imports: impl FnOnce(&mut Linker<Context<I, E>>) -> Result<()>,
     mk_exports: impl FnOnce(
@@ -62,7 +67,6 @@ fn instantiate_smw<I: Default, E: Default, T>(
     ) -> Result<(T, Instance)>,
 ) -> Result<(T, Store<Context<I, E>>)> {
     let mut config = default_config()?;
-    config.wasm_module_linking(true);
     config.wasm_multi_memory(true);
     let engine = Engine::new(&config)?;
 
@@ -71,9 +75,9 @@ fn instantiate_smw<I: Default, E: Default, T>(
     let smw = std::fs::read("../gen-spidermonkey/spidermonkey-wasm/spidermonkey.wasm")
         .context("failed to read `spidermonkey.wasm`")?;
     println!("compiling input wasm...");
-    let module = Module::new_with_name(&engine, &wasm, "wasm.wasm")?;
+    let module = Module::new(&engine, &wasm)?;
     println!("compiling spidermonkey.wasm...");
-    let smw = Module::new_with_name(&engine, &smw, "spidermonkey.wasm")?;
+    let smw = Module::new(&engine, &smw)?;
 
     let mut linker = Linker::new(&engine);
     add_imports(&mut linker)?;
@@ -89,10 +93,11 @@ fn instantiate_smw<I: Default, E: Default, T>(
     );
 
     println!("instantiating spidermonkey.wasm...");
-    let smw_instance = linker
+    let _smw_instance = linker
         .instantiate(&mut store, &smw)
         .context("failed to instantiate `spidermonkey.wasm`")?;
-    linker.define_name("spidermonkey", smw_instance)?;
+    // TODO: replace this with a component model equivalent:
+    // linker.define_name("spidermonkey", smw_instance)?;
 
     println!("instantiating input wasm...");
     let (exports, instance) = mk_exports(&mut store, &module, &mut linker)?;
