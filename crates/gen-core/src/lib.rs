@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::collections::{btree_map::Entry, BTreeMap, HashMap};
+use std::fmt::{self, Write};
 use std::ops::Deref;
 use std::path::Path;
 use wit_parser::*;
@@ -395,6 +396,13 @@ impl Source {
 
     pub fn as_mut_string(&mut self) -> &mut String {
         &mut self.s
+    }
+}
+
+impl Write for Source {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.push_str(s);
+        Ok(())
     }
 }
 
