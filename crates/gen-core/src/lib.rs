@@ -437,7 +437,7 @@ macro_rules! uwrite {
 /// Useful for writing to things with infallible `Write` implementations like
 /// `Source` and `String`.
 ///
-/// [`writeln!`]: std::write
+/// [`writeln!`]: std::writeln
 #[macro_export]
 macro_rules! uwriteln {
     ($dst:expr, $($arg:tt)*) => {
