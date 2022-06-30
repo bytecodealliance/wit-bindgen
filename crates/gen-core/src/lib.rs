@@ -419,6 +419,32 @@ impl From<Source> for String {
     }
 }
 
+/// Calls [`write!`] with the passed arguments and unwraps the result.
+///
+/// Useful for writing to things with infallible `Write` implementations like
+/// `Source` and `String`.
+///
+/// [`write!`]: std::write
+#[macro_export]
+macro_rules! uwrite {
+    ($dst:expr, $($arg:tt)*) => {
+        write!($dst, $($arg)*).unwrap()
+    };
+}
+
+/// Calls [`writeln!`] with the passed arguments and unwraps the result.
+///
+/// Useful for writing to things with infallible `Write` implementations like
+/// `Source` and `String`.
+///
+/// [`writeln!`]: std::write
+#[macro_export]
+macro_rules! uwriteln {
+    ($dst:expr, $($arg:tt)*) => {
+        writeln!($dst, $($arg)*).unwrap()
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Generator, Source};

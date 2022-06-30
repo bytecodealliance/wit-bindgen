@@ -5,7 +5,7 @@ use std::mem;
 use wit_bindgen_gen_core::wit_parser::abi::{
     AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
 };
-use wit_bindgen_gen_core::{wit_parser::*, Direction, Files, Generator, Ns};
+use wit_bindgen_gen_core::{uwrite, uwriteln, wit_parser::*, Direction, Files, Generator, Ns};
 
 #[derive(Default)]
 pub struct C {
@@ -342,7 +342,7 @@ impl C {
                 self.src.h("struct {\n");
                 for (i, t) in t.types.iter().enumerate() {
                     self.print_ty(iface, t);
-                    writeln!(self.src.h, " f{i};").unwrap();
+                    uwriteln!(self.src.h, " f{i};");
                 }
                 self.src.h("}");
             }
@@ -485,13 +485,12 @@ impl C {
                     self.free(iface, t, "&ptr->ptr[i]");
                     self.src.c("}\n");
                 }
-                writeln!(
+                uwriteln!(
                     self.src.c,
                     "canonical_abi_free(ptr->ptr, ptr->len * {}, {});",
                     self.sizes.size(t),
                     self.sizes.align(t),
-                )
-                .unwrap();
+                );
             }
 
             TypeDefKind::Variant(v) => {
@@ -500,7 +499,7 @@ impl C {
                     if !self.owns_anything(iface, &case.ty) {
                         continue;
                     }
-                    writeln!(self.src.c, "case {}: {{", i).unwrap();
+                    uwriteln!(self.src.c, "case {}: {{", i);
                     let expr = format!("&ptr->val.{}", case.name.to_snake_case());
                     self.free(iface, &case.ty, &expr);
                     self.src.c("break;\n");
@@ -515,7 +514,7 @@ impl C {
                     if !self.owns_anything(iface, &case.ty) {
                         continue;
                     }
-                    writeln!(self.src.c, "case {i}: {{").unwrap();
+                    uwriteln!(self.src.c, "case {i}: {{");
                     let expr = format!("&ptr->val.f{i}");
                     self.free(iface, &case.ty, &expr);
                     self.src.c("break;\n");
@@ -740,7 +739,7 @@ impl Generator for C {
         self.src.h("typedef struct {\n");
         for (i, ty) in tuple.types.iter().enumerate() {
             self.print_ty(iface, ty);
-            writeln!(self.src.h, " f{i};").unwrap();
+            uwriteln!(self.src.h, " f{i};");
         }
         self.src.h("} ");
         self.print_namespace(iface);
@@ -770,15 +769,14 @@ impl Generator for C {
         self.src.h("_t;\n");
 
         for (i, flag) in flags.flags.iter().enumerate() {
-            writeln!(
+            uwriteln!(
                 self.src.h,
                 "#define {}_{}_{} (1 << {})",
                 iface.name.to_shouty_snake_case(),
                 name.to_shouty_snake_case(),
                 flag.name.to_shouty_snake_case(),
                 i,
-            )
-            .unwrap();
+            );
         }
 
         self.types.insert(id, mem::replace(&mut self.src.h, prev));
@@ -814,15 +812,14 @@ impl Generator for C {
         self.src.h(&name.to_snake_case());
         self.src.h("_t;\n");
         for (i, case) in variant.cases.iter().enumerate() {
-            writeln!(
+            uwriteln!(
                 self.src.h,
                 "#define {}_{}_{} {}",
                 iface.name.to_shouty_snake_case(),
                 name.to_shouty_snake_case(),
                 case.name.to_shouty_snake_case(),
                 i,
-            )
-            .unwrap();
+            );
         }
 
         self.types.insert(id, mem::replace(&mut self.src.h, prev));
@@ -845,7 +842,7 @@ impl Generator for C {
         self.src.h("union {\n");
         for (i, case) in union.cases.iter().enumerate() {
             self.print_ty(iface, &case.ty);
-            writeln!(self.src.h, " f{i};").unwrap();
+            uwriteln!(self.src.h, " f{i};");
         }
         self.src.h("} val;\n");
         self.src.h("} ");
@@ -923,15 +920,14 @@ impl Generator for C {
         self.src.h(&name.to_snake_case());
         self.src.h("_t;\n");
         for (i, case) in enum_.cases.iter().enumerate() {
-            writeln!(
+            uwriteln!(
                 self.src.h,
                 "#define {}_{}_{} {}",
                 iface.name.to_shouty_snake_case(),
                 name.to_shouty_snake_case(),
                 case.name.to_shouty_snake_case(),
                 i,
-            )
-            .unwrap();
+            );
         }
 
         self.types.insert(id, mem::replace(&mut self.src.h, prev));
@@ -979,12 +975,12 @@ impl Generator for C {
         // In the private C file, print a function declaration which is the
         // actual wasm import that we'll be calling, and this has the raw wasm
         // signature.
-        writeln!(
+        uwriteln!(
             self.src.c,
             "__attribute__((import_module(\"{}\"), import_name(\"{}\")))",
-            iface.name, func.name
-        )
-        .unwrap();
+            iface.name,
+            func.name
+        );
         let import_name = self.names.tmp(&format!(
             "__wasm_import_{}_{}",
             iface.name.to_snake_case(),
@@ -1058,12 +1054,11 @@ impl Generator for C {
 
         // Generate, in the C source file, the raw wasm signature that has the
         // canonical ABI.
-        writeln!(
+        uwriteln!(
             self.src.c,
             "__attribute__((export_name(\"{}\")))",
             func.name
-        )
-        .unwrap();
+        );
         let import_name = self.names.tmp(&format!(
             "__wasm_export_{}_{}",
             iface.name.to_snake_case(),
@@ -1084,7 +1079,7 @@ impl Generator for C {
                 f.gen.src.c(", ");
             }
             let name = f.locals.tmp("arg");
-            write!(f.gen.src.c, "{} {}", wasm_type(*param), name).unwrap();
+            uwrite!(f.gen.src.c, "{} {}", wasm_type(*param), name);
             f.params.push(name);
         }
         if sig.params.len() == 0 {
@@ -1111,7 +1106,7 @@ impl Generator for C {
     }
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
-        write!(
+        uwrite!(
             self.src.h,
             "\
                 #ifndef __BINDINGS_{0}_H
@@ -1125,24 +1120,22 @@ impl Generator for C {
                 #include <stdbool.h>
             ",
             iface.name.to_shouty_snake_case(),
-        )
-        .unwrap();
-        write!(
+        );
+        uwrite!(
             self.src.c,
             "\
                 #include <stdlib.h>
                 #include <{}.h>
             ",
             iface.name.to_kebab_case(),
-        )
-        .unwrap();
+        );
 
         self.print_intrinsics();
 
         for (_, resource) in iface.resources.iter() {
             let ns = iface.name.to_snake_case();
             let name = resource.name.to_snake_case();
-            write!(
+            uwrite!(
                 self.src.h,
                 "
                     typedef struct {{
@@ -1153,9 +1146,8 @@ impl Generator for C {
                 ",
                 ns = ns,
                 name = name,
-            )
-            .unwrap();
-            write!(
+            );
+            uwrite!(
                 self.src.c,
                 "
                     __attribute__((import_module(\"canonical_abi\"), import_name(\"resource_drop_{name_orig}\")))
@@ -1175,15 +1167,14 @@ impl Generator for C {
                 ns = ns,
                 name = name,
                 name_orig = resource.name,
-            )
-            .unwrap();
+            );
 
             // Exported resources have more capabilities, they can create new
             // resources and get the private value that it was created with.
             // Furthermore we also define the destructor which delegates to the
             // actual user-defined destructor, if any.
             if !self.in_import {
-                write!(
+                uwrite!(
                     self.src.h,
                     "\
                         {ns}_{name}_t {ns}_{name}_new(void *data);
@@ -1194,9 +1185,8 @@ impl Generator for C {
                     ",
                     ns = ns,
                     name = name,
-                )
-                .unwrap();
-                write!(
+                );
+                uwrite!(
                     self.src.c,
                     "
                         __attribute__((import_module(\"canonical_abi\"), import_name(\"resource_new_{name_orig}\")))
@@ -1222,8 +1212,7 @@ impl Generator for C {
                     ns = ns,
                     name = name,
                     name_orig = resource.name,
-                )
-                .unwrap();
+                );
             }
         }
 
@@ -1258,7 +1247,7 @@ impl Generator for C {
         }
 
         if self.needs_string {
-            write!(
+            uwrite!(
                 self.src.h,
                 "
                     typedef struct {{
@@ -1271,10 +1260,9 @@ impl Generator for C {
                     void {0}_string_free({0}_string_t *ret);
                 ",
                 iface.name.to_snake_case(),
-            )
-            .unwrap();
+            );
             self.src.c("#include <string.h>\n");
-            write!(
+            uwrite!(
                 self.src.c,
                 "
                     void {0}_string_set({0}_string_t *ret, const char *s) {{
@@ -1295,8 +1283,7 @@ impl Generator for C {
                     }}
                 ",
                 iface.name.to_snake_case(),
-            )
-            .unwrap();
+            );
         }
 
         // Afterwards print all types. Note that this print must be in a
@@ -1313,15 +1300,15 @@ impl Generator for C {
         }
 
         if self.return_pointer_area_size > 0 {
-            write!(
+            uwrite!(
                 self.src.c,
                 "
                     __attribute__((aligned({})))
                     static uint8_t RET_AREA[{}];
                 ",
-                self.return_pointer_area_align, self.return_pointer_area_size,
-            )
-            .unwrap();
+                self.return_pointer_area_align,
+                self.return_pointer_area_size,
+            );
         }
 
         for (_module, funcs) in mem::take(&mut self.funcs) {
@@ -1397,12 +1384,14 @@ impl<'a> FunctionBindgen<'a> {
     }
 
     fn store(&mut self, ty: &str, offset: i32, operands: &[String]) {
-        writeln!(
+        uwriteln!(
             self.src,
             "*(({}*)({} + {})) = {};",
-            ty, operands[1], offset, operands[0]
-        )
-        .unwrap();
+            ty,
+            operands[1],
+            offset,
+            operands[0]
+        );
     }
 
     fn store_in_retptrs(&mut self, operands: &[String]) {
@@ -1444,7 +1433,7 @@ impl Bindgen for FunctionBindgen<'_> {
         self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
         self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
         let ptr = self.locals.tmp("ptr");
-        writeln!(self.src, "int32_t {} = (int32_t) &RET_AREA;", ptr).unwrap();
+        uwriteln!(self.src, "int32_t {} = (int32_t) &RET_AREA;", ptr);
         ptr
     }
 
@@ -1573,7 +1562,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let name = self.gen.type_string(iface, &Type::Id(*ty));
                 let mut result = format!("({}) {{\n", name);
                 for op in operands {
-                    writeln!(result, "{},", op).unwrap();
+                    uwriteln!(result, "{},", op);
                 }
                 result.push_str("}");
                 results.push(result);
@@ -1589,7 +1578,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let name = self.gen.type_string(iface, &Type::Id(*ty));
                 let mut result = format!("({}) {{\n", name);
                 for op in operands {
-                    writeln!(result, "{},", op).unwrap();
+                    uwriteln!(result, "{},", op);
                 }
                 result.push_str("}");
                 results.push(result);
@@ -1603,7 +1592,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 Int::U64 => {
                     let name = self.gen.type_string(iface, &Type::Id(*ty));
                     let tmp = self.locals.tmp("flags");
-                    writeln!(self.src, "{name} {tmp} = {};", operands[0]).unwrap();
+                    uwriteln!(self.src, "{name} {tmp} = {};", operands[0]);
                     results.push(format!("{tmp} & 0xffffffff"));
                     results.push(format!("({tmp} >> 32) & 0xffffffff"));
                 }
@@ -1654,19 +1643,20 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 let expr_to_match = format!("({}).tag", operands[0]);
 
-                writeln!(self.src, "switch ((int32_t) {}) {{", expr_to_match).unwrap();
+                uwriteln!(self.src, "switch ((int32_t) {}) {{", expr_to_match);
                 for (i, ((case, (block, block_results)), payload)) in
                     variant.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
-                    writeln!(self.src, "case {}: {{", i).unwrap();
+                    uwriteln!(self.src, "case {}: {{", i);
                     if !self.gen.is_empty_type(iface, &case.ty) {
                         let ty = self.gen.type_string(iface, &case.ty);
-                        write!(
+                        uwrite!(
                             self.src,
                             "const {} *{} = &({}).val",
-                            ty, payload, operands[0],
-                        )
-                        .unwrap();
+                            ty,
+                            payload,
+                            operands[0],
+                        );
                         self.src.push_str(".");
                         self.src.push_str(&case.name.to_snake_case());
                         self.src.push_str(";\n");
@@ -1674,7 +1664,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.push_str(&block);
 
                     for (name, result) in variant_results.iter().zip(&block_results) {
-                        writeln!(self.src, "{} = {};", name, result).unwrap();
+                        uwriteln!(self.src, "{} = {};", name, result);
                     }
                     self.src.push_str("break;\n}\n");
                 }
@@ -1689,13 +1679,13 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 let ty = self.gen.type_string(iface, &Type::Id(*ty));
                 let result = self.locals.tmp("variant");
-                writeln!(self.src, "{} {};", ty, result).unwrap();
-                writeln!(self.src, "{}.tag = {};", result, operands[0]).unwrap();
-                writeln!(self.src, "switch ((int32_t) {}.tag) {{", result).unwrap();
+                uwriteln!(self.src, "{} {};", ty, result);
+                uwriteln!(self.src, "{}.tag = {};", result, operands[0]);
+                uwriteln!(self.src, "switch ((int32_t) {}.tag) {{", result);
                 for (i, (case, (block, block_results))) in
                     variant.cases.iter().zip(blocks).enumerate()
                 {
-                    writeln!(self.src, "case {}: {{", i).unwrap();
+                    uwriteln!(self.src, "case {}: {{", i);
                     self.src.push_str(&block);
                     assert!(block_results.len() == 1);
 
@@ -1730,24 +1720,24 @@ impl Bindgen for FunctionBindgen<'_> {
                     let name = self.locals.tmp("unionres");
                     results.push(name.clone());
                     let ty = wasm_type(*ty);
-                    writeln!(self.src, "{ty} {name};").unwrap();
+                    uwriteln!(self.src, "{ty} {name};");
                     union_results.push(name);
                 }
 
                 let op0 = &operands[0];
-                writeln!(self.src, "switch (({op0}).tag) {{").unwrap();
+                uwriteln!(self.src, "switch (({op0}).tag) {{");
                 for (i, ((case, (block, block_results)), payload)) in
                     union.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
-                    writeln!(self.src, "case {i}: {{").unwrap();
+                    uwriteln!(self.src, "case {i}: {{");
                     if !self.gen.is_empty_type(iface, &case.ty) {
                         let ty = self.gen.type_string(iface, &case.ty);
-                        writeln!(self.src, "const {ty} *{payload} = &({op0}).val.f{i};").unwrap();
+                        uwriteln!(self.src, "const {ty} *{payload} = &({op0}).val.f{i};");
                     }
                     self.src.push_str(&block);
 
                     for (name, result) in union_results.iter().zip(&block_results) {
-                        writeln!(self.src, "{name} = {result};").unwrap();
+                        uwriteln!(self.src, "{name} = {result};");
                     }
                     self.src.push_str("break;\n}\n");
                 }
@@ -1762,13 +1752,13 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 let ty = self.gen.type_string(iface, &Type::Id(*ty));
                 let result = self.locals.tmp("unionres");
-                writeln!(self.src, "{} {};", ty, result).unwrap();
-                writeln!(self.src, "{}.tag = {};", result, operands[0]).unwrap();
-                writeln!(self.src, "switch ((int32_t) {}.tag) {{", result).unwrap();
+                uwriteln!(self.src, "{} {};", ty, result);
+                uwriteln!(self.src, "{}.tag = {};", result, operands[0]);
+                uwriteln!(self.src, "switch ((int32_t) {}.tag) {{", result);
                 for (i, (_case, (block, block_results))) in
                     union.cases.iter().zip(blocks).enumerate()
                 {
-                    writeln!(self.src, "case {i}: {{").unwrap();
+                    uwriteln!(self.src, "case {i}: {{");
                     self.src.push_str(&block);
 
                     assert!(block_results.len() == 1);
@@ -1798,9 +1788,9 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.push_str(&name);
                     self.src.push_str(";\n");
                     let some_result = &some_results[i];
-                    writeln!(some, "{name} = {some_result};").unwrap();
+                    uwriteln!(some, "{name} = {some_result};");
                     let none_result = &none_results[i];
-                    writeln!(none, "{name} = {none_result};").unwrap();
+                    uwriteln!(none, "{name} = {none_result};");
                 }
 
                 let op0 = &operands[0];
@@ -1810,7 +1800,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 } else {
                     format!("const {ty} *{some_payload} = &({op0}).val;")
                 };
-                write!(
+                uwrite!(
                     self.src,
                     "
                     if (({op0}).is_some) {{
@@ -1820,8 +1810,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         {none}
                     }}
                     "
-                )
-                .unwrap();
+                );
             }
 
             Instruction::OptionLift { payload, ty, .. } => {
@@ -1834,14 +1823,14 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 let ty = self.gen.type_string(iface, &Type::Id(*ty));
                 let result = self.locals.tmp("option");
-                writeln!(self.src, "{ty} {result};").unwrap();
+                uwriteln!(self.src, "{ty} {result};");
                 let op0 = &operands[0];
                 let set_some = if self.gen.is_empty_type(iface, payload) {
                     String::new()
                 } else {
                     format!("{result}.val = {some_result};")
                 };
-                write!(
+                uwrite!(
                     self.src,
                     "switch ({op0}) {{
                         case 0: {{
@@ -1856,8 +1845,7 @@ impl Bindgen for FunctionBindgen<'_> {
                             break;
                         }}
                     }}"
-                )
-                .unwrap();
+                );
                 results.push(result);
             }
 
@@ -1879,9 +1867,9 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.push_str(&name);
                     self.src.push_str(";\n");
                     let ok_result = &ok_results[i];
-                    writeln!(ok, "{name} = {ok_result};").unwrap();
+                    uwriteln!(ok, "{name} = {ok_result};");
                     let err_result = &err_results[i];
-                    writeln!(err, "{name} = {err_result};").unwrap();
+                    uwriteln!(err, "{name} = {err_result};");
                 }
 
                 let op0 = &operands[0];
@@ -1897,7 +1885,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 } else {
                     format!("const {err_ty} *{err_payload} = &({op0}).val.err;")
                 };
-                write!(
+                uwrite!(
                     self.src,
                     "
                     if (({op0}).is_err) {{
@@ -1908,8 +1896,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         {ok}
                     }}
                     "
-                )
-                .unwrap();
+                );
             }
 
             Instruction::ExpectedLift { expected, ty, .. } => {
@@ -1933,9 +1920,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 };
 
                 let ty = self.gen.type_string(iface, &Type::Id(*ty));
-                writeln!(self.src, "{ty} {result};").unwrap();
+                uwriteln!(self.src, "{ty} {result};");
                 let op0 = &operands[0];
-                write!(
+                uwrite!(
                     self.src,
                     "switch ({op0}) {{
                         case 0: {{
@@ -1951,8 +1938,7 @@ impl Bindgen for FunctionBindgen<'_> {
                             break;
                         }}
                     }}"
-                )
-                .unwrap();
+                );
                 results.push(result);
             }
 
@@ -2004,7 +1990,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.src.push_str(wasm_type(sig.results[0]));
                         let ret = self.locals.tmp("ret");
                         self.wasm_return = Some(ret.clone());
-                        write!(self.src, " {} = ", ret).unwrap();
+                        uwrite!(self.src, " {} = ", ret);
                         results.push(ret);
                     }
                     _ => unimplemented!(),
@@ -2029,7 +2015,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     if *byref {
                         let name = self.locals.tmp("arg");
                         let ty = self.gen.type_string(iface, &func.params[i].1);
-                        writeln!(self.src, "{} {} = {};", ty, name, op).unwrap();
+                        uwriteln!(self.src, "{} {} = {};", ty, name, op);
                         args.push_str("&");
                         args.push_str(&name);
                     } else {
@@ -2042,7 +2028,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         for ty in self.sig.ret.retptrs.iter() {
                             let name = self.locals.tmp("ret");
                             let ty = self.gen.type_string(iface, ty);
-                            writeln!(self.src, "{} {};", ty, name).unwrap();
+                            uwriteln!(self.src, "{} {};", ty, name);
                             if args.len() > 0 {
                                 args.push_str(", ");
                             }
@@ -2050,7 +2036,7 @@ impl Bindgen for FunctionBindgen<'_> {
                             args.push_str(&name);
                             retptrs.push(name);
                         }
-                        writeln!(self.src, "{}({});", self.sig.name, args).unwrap();
+                        uwriteln!(self.src, "{}({});", self.sig.name, args);
                         if self.sig.ret.splat_tuple {
                             let ty = self.gen.type_string(iface, &func.result);
                             results.push(format!("({}){{ {} }}", ty, retptrs.join(", ")));
@@ -2059,14 +2045,13 @@ impl Bindgen for FunctionBindgen<'_> {
                         }
                     }
                     Some(Scalar::Void) => {
-                        writeln!(self.src, "{}({});", self.sig.name, args).unwrap();
+                        uwriteln!(self.src, "{}({});", self.sig.name, args);
                         results.push("INVALID".to_string());
                     }
                     Some(Scalar::Type(_)) => {
                         let ret = self.locals.tmp("ret");
                         let ty = self.gen.type_string(iface, &func.result);
-                        writeln!(self.src, "{} {} = {}({});", ty, ret, self.sig.name, args)
-                            .unwrap();
+                        uwriteln!(self.src, "{} {} = {}({});", ty, ret, self.sig.name, args);
                         results.push(ret);
                     }
                     Some(Scalar::OptionBool(ty)) => {
@@ -2078,11 +2063,11 @@ impl Bindgen for FunctionBindgen<'_> {
                         args.push_str("&");
                         args.push_str(&val);
                         let payload_ty = self.gen.type_string(iface, ty);
-                        writeln!(self.src, "{} {};", payload_ty, val).unwrap();
-                        writeln!(self.src, "bool {} = {}({});", ret, self.sig.name, args).unwrap();
+                        uwriteln!(self.src, "{} {};", payload_ty, val);
+                        uwriteln!(self.src, "bool {} = {}({});", ret, self.sig.name, args);
                         let option_ty = self.gen.type_string(iface, &func.result);
                         let option_ret = self.locals.tmp("ret");
-                        write!(
+                        uwrite!(
                             self.src,
                             "
                                 {ty} {ret};
@@ -2093,8 +2078,7 @@ impl Bindgen for FunctionBindgen<'_> {
                             ret = option_ret,
                             tag = ret,
                             val = val,
-                        )
-                        .unwrap();
+                        );
                         results.push(option_ret);
                     }
                     Some(Scalar::ExpectedEnum { err, max_err }) => {
@@ -2108,19 +2092,21 @@ impl Bindgen for FunctionBindgen<'_> {
                             args.push_str("&");
                             args.push_str(&val);
                             let ty = self.gen.type_string(iface, ty);
-                            writeln!(self.src, "{} {};", ty, val).unwrap();
+                            uwriteln!(self.src, "{} {};", ty, val);
                             ok_names.push(val);
                         }
                         let err_ty = self.gen.type_string(iface, &Type::Id(*err));
-                        writeln!(
+                        uwriteln!(
                             self.src,
                             "{} {} = {}({});",
-                            err_ty, ret, self.sig.name, args,
-                        )
-                        .unwrap();
+                            err_ty,
+                            ret,
+                            self.sig.name,
+                            args,
+                        );
                         let expected_ty = self.gen.type_string(iface, &func.result);
                         let expected_ret = self.locals.tmp("ret");
-                        write!(
+                        uwrite!(
                             self.src,
                             "
                                 {ty} {ret};
@@ -2141,16 +2127,14 @@ impl Bindgen for FunctionBindgen<'_> {
                             } else if self.sig.ret.splat_tuple {
                                 let mut s = String::new();
                                 for (i, name) in ok_names.iter().enumerate() {
-                                    writeln!(s, "{}.val.ok.f{} = {};", expected_ret, i, name,)
-                                        .unwrap();
+                                    uwriteln!(s, "{}.val.ok.f{} = {};", expected_ret, i, name,);
                                 }
                                 s
                             } else {
                                 let name = ok_names.pop().unwrap();
                                 format!("{}.val.ok = {};", expected_ret, name)
                             },
-                        )
-                        .unwrap();
+                        );
                         results.push(expected_ret);
                     }
                 }
@@ -2180,13 +2164,13 @@ impl Bindgen for FunctionBindgen<'_> {
                     if self.sig.retptrs.len() > 0 {
                         self.store_in_retptrs(&[format!("{}.val.ok", variant)]);
                     }
-                    writeln!(self.src, "return {}.is_err ? {0}.val.err : -1;", variant).unwrap();
+                    uwriteln!(self.src, "return {}.is_err ? {0}.val.err : -1;", variant);
                 }
             },
             Instruction::Return { amt, .. } => {
                 assert!(*amt <= 1);
                 if *amt == 1 {
-                    writeln!(self.src, "return {};", operands[0]).unwrap();
+                    uwriteln!(self.src, "return {};", operands[0]);
                 }
             }
 
@@ -2215,7 +2199,7 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::Free { .. } => {
-                writeln!(self.src, "free((void*) ({}));", operands[0]).unwrap();
+                uwriteln!(self.src, "free((void*) ({}));", operands[0]);
             }
 
             i => unimplemented!("{:?}", i),
