@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::collections::{btree_map::Entry, BTreeMap, HashMap};
+use std::fmt::{self, Write};
 use std::ops::Deref;
 use std::path::Path;
 use wit_parser::*;
@@ -398,6 +399,13 @@ impl Source {
     }
 }
 
+impl Write for Source {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.push_str(s);
+        Ok(())
+    }
+}
+
 impl Deref for Source {
     type Target = str;
     fn deref(&self) -> &str {
@@ -409,6 +417,32 @@ impl From<Source> for String {
     fn from(s: Source) -> String {
         s.s
     }
+}
+
+/// Calls [`write!`] with the passed arguments and unwraps the result.
+///
+/// Useful for writing to things with infallible `Write` implementations like
+/// `Source` and `String`.
+///
+/// [`write!`]: std::write
+#[macro_export]
+macro_rules! uwrite {
+    ($dst:expr, $($arg:tt)*) => {
+        write!($dst, $($arg)*).unwrap()
+    };
+}
+
+/// Calls [`writeln!`] with the passed arguments and unwraps the result.
+///
+/// Useful for writing to things with infallible `Write` implementations like
+/// `Source` and `String`.
+///
+/// [`writeln!`]: std::writeln
+#[macro_export]
+macro_rules! uwriteln {
+    ($dst:expr, $($arg:tt)*) => {
+        writeln!($dst, $($arg)*).unwrap()
+    };
 }
 
 #[cfg(test)]
