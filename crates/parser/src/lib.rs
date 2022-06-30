@@ -19,6 +19,14 @@ pub fn validate_id(s: &str) -> Result<()> {
 #[derive(Debug, Default)]
 pub struct Interface {
     pub name: String,
+    /// The module name to use for bindings generation.
+    ///
+    /// If `None`, then the interface name will be used.
+    ///
+    /// If `Some`, then this value is used to format an export
+    /// name of `<module>#<name>` for exports or an import module
+    /// name of `<module>` for imports.
+    pub module: Option<String>,
     pub types: Arena<TypeDef>,
     pub type_lookup: HashMap<String, TypeId>,
     pub resources: Arena<Resource>,
@@ -46,17 +54,22 @@ pub struct TypeDef {
 #[derive(Debug)]
 pub enum TypeDefKind {
     Record(Record),
+    Flags(Flags),
+    Tuple(Tuple),
     Variant(Variant),
+    Enum(Enum),
+    Option(Type),
+    Expected(Expected),
+    Union(Union),
     List(Type),
-    Pointer(Type),
-    ConstPointer(Type),
-    PushBuffer(Type),
-    PullBuffer(Type),
+    Stream(Stream),
     Type(Type),
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum Type {
+    Unit,
+    Bool,
     U8,
     U16,
     U32,
@@ -65,11 +78,10 @@ pub enum Type {
     S16,
     S32,
     S64,
-    F32,
-    F64,
+    Float32,
+    Float64,
     Char,
-    CChar,
-    Usize,
+    String,
     Handle(ResourceId),
     Id(TypeId),
 }
@@ -85,14 +97,6 @@ pub enum Int {
 #[derive(Debug)]
 pub struct Record {
     pub fields: Vec<Field>,
-    pub kind: RecordKind,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum RecordKind {
-    Other,
-    Flags(Option<Int>),
-    Tuple,
 }
 
 #[derive(Debug)]
@@ -102,125 +106,126 @@ pub struct Field {
     pub ty: Type,
 }
 
-impl Record {
-    pub fn is_tuple(&self) -> bool {
-        matches!(self.kind, RecordKind::Tuple)
-    }
+#[derive(Debug, Clone)]
+pub struct Flags {
+    pub flags: Vec<Flag>,
+}
 
-    pub fn is_flags(&self) -> bool {
-        matches!(self.kind, RecordKind::Flags(_))
-    }
+#[derive(Debug, Clone)]
+pub struct Flag {
+    pub docs: Docs,
+    pub name: String,
+}
 
-    pub fn num_i32s(&self) -> usize {
-        (self.fields.len() + 31) / 32
+#[derive(Debug)]
+pub enum FlagsRepr {
+    U8,
+    U16,
+    U32(usize),
+}
+
+impl Flags {
+    pub fn repr(&self) -> FlagsRepr {
+        match self.flags.len() {
+            n if n <= 8 => FlagsRepr::U8,
+            n if n <= 16 => FlagsRepr::U16,
+            n => FlagsRepr::U32(sizealign::align_to(n, 32) / 32),
+        }
     }
 }
 
-impl RecordKind {
-    fn infer(types: &Arena<TypeDef>, fields: &[Field]) -> RecordKind {
-        if fields.is_empty() {
-            return RecordKind::Other;
-        }
-
-        // Structs-of-bools are classified to get represented as bitflags.
-        if fields.iter().all(|t| is_bool(&t.ty, types)) {
-            return RecordKind::Flags(None);
-        }
-
-        // fields with consecutive integer names get represented as tuples.
-        if fields
-            .iter()
-            .enumerate()
-            .all(|(i, m)| m.name.as_str().parse().ok() == Some(i))
-        {
-            return RecordKind::Tuple;
-        }
-
-        return RecordKind::Other;
-
-        fn is_bool(t: &Type, types: &Arena<TypeDef>) -> bool {
-            match t {
-                Type::Id(v) => match &types[*v].kind {
-                    TypeDefKind::Variant(v) => v.is_bool(),
-                    TypeDefKind::Type(t) => is_bool(t, types),
-                    _ => false,
-                },
-                _ => false,
-            }
+impl FlagsRepr {
+    pub fn count(&self) -> usize {
+        match self {
+            FlagsRepr::U8 => 1,
+            FlagsRepr::U16 => 1,
+            FlagsRepr::U32(n) => *n,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Tuple {
+    pub types: Vec<Type>,
 }
 
 #[derive(Debug)]
 pub struct Variant {
     pub cases: Vec<Case>,
-    /// The bit representation of the width of this variant's tag when the
-    /// variant is stored in memory.
-    pub tag: Int,
 }
 
 #[derive(Debug)]
 pub struct Case {
     pub docs: Docs,
     pub name: String,
-    pub ty: Option<Type>,
+    pub ty: Type,
 }
 
 impl Variant {
-    pub fn infer_tag(cases: usize) -> Int {
-        match cases {
+    pub fn tag(&self) -> Int {
+        match self.cases.len() {
             n if n <= u8::max_value() as usize => Int::U8,
             n if n <= u16::max_value() as usize => Int::U16,
             n if n <= u32::max_value() as usize => Int::U32,
-            n if n <= u64::max_value() as usize => Int::U64,
             _ => panic!("too many cases to fit in a repr"),
         }
     }
+}
 
-    pub fn is_bool(&self) -> bool {
-        self.cases.len() == 2
-            && self.cases[0].name == "false"
-            && self.cases[1].name == "true"
-            && self.cases[0].ty.is_none()
-            && self.cases[1].ty.is_none()
-    }
+#[derive(Debug)]
+pub struct Enum {
+    pub cases: Vec<EnumCase>,
+}
 
-    pub fn is_enum(&self) -> bool {
-        self.cases.iter().all(|c| c.ty.is_none())
-    }
+#[derive(Debug, Clone)]
+pub struct EnumCase {
+    pub docs: Docs,
+    pub name: String,
+}
 
-    pub fn is_union(&self) -> bool {
-        self.cases
-            .iter()
-            .enumerate()
-            .all(|(i, c)| c.name.parse().ok() == Some(i) && c.ty.is_some())
+impl Enum {
+    pub fn tag(&self) -> Int {
+        match self.cases.len() {
+            n if n <= u8::max_value() as usize => Int::U8,
+            n if n <= u16::max_value() as usize => Int::U16,
+            n if n <= u32::max_value() as usize => Int::U32,
+            _ => panic!("too many cases to fit in a repr"),
+        }
     }
+}
 
-    pub fn as_option(&self) -> Option<&Type> {
-        if self.cases.len() != 2 {
-            return None;
-        }
-        if self.cases[0].name != "none" || self.cases[0].ty.is_some() {
-            return None;
-        }
-        if self.cases[1].name != "some" {
-            return None;
-        }
-        self.cases[1].ty.as_ref()
-    }
+#[derive(Debug)]
+pub struct Expected {
+    pub ok: Type,
+    pub err: Type,
+}
 
-    pub fn as_expected(&self) -> Option<(Option<&Type>, Option<&Type>)> {
-        if self.cases.len() != 2 {
-            return None;
+#[derive(Debug)]
+pub struct Union {
+    pub cases: Vec<UnionCase>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnionCase {
+    pub docs: Docs,
+    pub ty: Type,
+}
+
+impl Union {
+    pub fn tag(&self) -> Int {
+        match self.cases.len() {
+            n if n <= u8::max_value() as usize => Int::U8,
+            n if n <= u16::max_value() as usize => Int::U16,
+            n if n <= u32::max_value() as usize => Int::U32,
+            _ => panic!("too many cases to fit in a repr"),
         }
-        if self.cases[0].name != "ok" {
-            return None;
-        }
-        if self.cases[1].name != "err" {
-            return None;
-        }
-        Some((self.cases[0].ty.as_ref(), self.cases[1].ty.as_ref()))
     }
+}
+
+#[derive(Debug)]
+pub struct Stream {
+    pub element: Type,
+    pub end: Type,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -246,13 +251,12 @@ pub struct Global {
 
 #[derive(Debug)]
 pub struct Function {
-    pub abi: abi::Abi,
     pub is_async: bool,
     pub docs: Docs,
     pub name: String,
     pub kind: FunctionKind,
     pub params: Vec<(String, Type)>,
-    pub results: Vec<(String, Type)>,
+    pub result: Type,
 }
 
 #[derive(Debug)]
@@ -404,23 +408,36 @@ impl Interface {
             return;
         }
         match &self.types[id].kind {
-            TypeDefKind::Type(t)
-            | TypeDefKind::List(t)
-            | TypeDefKind::PushBuffer(t)
-            | TypeDefKind::PullBuffer(t)
-            | TypeDefKind::Pointer(t)
-            | TypeDefKind::ConstPointer(t) => self.topo_visit_ty(t, list, visited),
+            TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => {}
+            TypeDefKind::Type(t) | TypeDefKind::List(t) => self.topo_visit_ty(t, list, visited),
             TypeDefKind::Record(r) => {
                 for f in r.fields.iter() {
                     self.topo_visit_ty(&f.ty, list, visited);
                 }
             }
+            TypeDefKind::Tuple(t) => {
+                for t in t.types.iter() {
+                    self.topo_visit_ty(t, list, visited);
+                }
+            }
             TypeDefKind::Variant(v) => {
                 for v in v.cases.iter() {
-                    if let Some(ty) = &v.ty {
-                        self.topo_visit_ty(ty, list, visited);
-                    }
+                    self.topo_visit_ty(&v.ty, list, visited);
                 }
+            }
+            TypeDefKind::Option(ty) => self.topo_visit_ty(ty, list, visited),
+            TypeDefKind::Expected(e) => {
+                self.topo_visit_ty(&e.ok, list, visited);
+                self.topo_visit_ty(&e.err, list, visited);
+            }
+            TypeDefKind::Union(u) => {
+                for t in u.cases.iter() {
+                    self.topo_visit_ty(&t.ty, list, visited);
+                }
+            }
+            TypeDefKind::Stream(s) => {
+                self.topo_visit_ty(&s.element, list, visited);
+                self.topo_visit_ty(&s.end, list, visited);
             }
         }
         list.push(id);
@@ -434,7 +451,8 @@ impl Interface {
 
     pub fn all_bits_valid(&self, ty: &Type) -> bool {
         match ty {
-            Type::U8
+            Type::Unit
+            | Type::U8
             | Type::S8
             | Type::U16
             | Type::S16
@@ -442,42 +460,31 @@ impl Interface {
             | Type::S32
             | Type::U64
             | Type::S64
-            | Type::F32
-            | Type::F64
-            | Type::CChar
-            | Type::Usize => true,
+            | Type::Float32
+            | Type::Float64 => true,
 
-            Type::Char | Type::Handle(_) => false,
+            Type::Bool | Type::Char | Type::Handle(_) | Type::String => false,
 
             Type::Id(id) => match &self.types[*id].kind {
                 TypeDefKind::List(_)
                 | TypeDefKind::Variant(_)
-                | TypeDefKind::PushBuffer(_)
-                | TypeDefKind::PullBuffer(_) => false,
+                | TypeDefKind::Enum(_)
+                | TypeDefKind::Option(_)
+                | TypeDefKind::Expected(_)
+                | TypeDefKind::Stream(_)
+                | TypeDefKind::Union(_) => false,
                 TypeDefKind::Type(t) => self.all_bits_valid(t),
                 TypeDefKind::Record(r) => r.fields.iter().all(|f| self.all_bits_valid(&f.ty)),
-                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => true,
+                TypeDefKind::Tuple(t) => t.types.iter().all(|t| self.all_bits_valid(t)),
+
+                // FIXME: this could perhaps be `true` for multiples-of-32 but
+                // seems better to probably leave this as unconditionally
+                // `false` for now, may want to reconsider later?
+                TypeDefKind::Flags(_) => false,
             },
         }
     }
 
-    pub fn has_preview1_pointer(&self, ty: &Type) -> bool {
-        match ty {
-            Type::Id(id) => match &self.types[*id].kind {
-                TypeDefKind::List(t) | TypeDefKind::PushBuffer(t) | TypeDefKind::PullBuffer(t) => {
-                    self.has_preview1_pointer(t)
-                }
-                TypeDefKind::Type(t) => self.has_preview1_pointer(t),
-                TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => true,
-                TypeDefKind::Record(r) => r.fields.iter().any(|f| self.has_preview1_pointer(&f.ty)),
-                TypeDefKind::Variant(v) => v.cases.iter().any(|c| match &c.ty {
-                    Some(ty) => self.has_preview1_pointer(ty),
-                    None => false,
-                }),
-            },
-            _ => false,
-        }
-    }
     pub fn get_variant(&self, ty: &Type) -> Option<&Variant> {
         if let Type::Id(id) = ty {
             match &self.types[*id].kind {
@@ -491,11 +498,21 @@ impl Interface {
 }
 
 fn load_fs(root: &Path, name: &str) -> Result<(PathBuf, String)> {
-    // TODO: only read one, not both
     let wit = root.join(name).with_extension("wit");
-    let witx = root.join(name).with_extension("witx");
-    let contents = fs::read_to_string(&wit)
-        .or_else(|_| fs::read_to_string(&witx))
-        .context(format!("failed to read `{}`", wit.display()))?;
-    Ok((wit, contents))
+
+    // Attempt to read a ".wit" file.
+    match fs::read_to_string(&wit) {
+        Ok(contents) => Ok((wit, contents)),
+
+        // If no such file was found, attempt to read a ".wit.md" file.
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            let wit_md = wit.with_extension("wit.md");
+            match fs::read_to_string(&wit_md) {
+                Ok(contents) => Ok((wit_md, contents)),
+                Err(_err) => Err(err.into()),
+            }
+        }
+
+        Err(err) => return Err(err.into()),
+    }
 }

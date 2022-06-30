@@ -11,16 +11,17 @@ function assertEq(a, b) {
 }
 
 export function test_imports() {
-  const { f1, f2, f3 } = imports;
+  const { f1, f2 } = imports;
+  // const { f1, f2, f3 } = imports;
   f1("Hello, WIT!");
 
   const s = f2();
   assertEq(s, "36 chambers");
 
-  const [a, b, c] = f3("", "🚀", "hello");
-  assertEq(a, "");
-  assertEq(b, "🚀");
-  assertEq(c, "hello");
+  // const [a, b, c] = f3("", "🚀", "hello");
+  // assertEq(a, "");
+  // assertEq(b, "🚀");
+  // assertEq(c, "hello");
 }
 
 export function f1(s) {

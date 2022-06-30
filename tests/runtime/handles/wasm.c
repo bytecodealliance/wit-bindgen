@@ -38,25 +38,25 @@ void exports_test_imports() {
     }
     {
       imports_host_state_param_option_t a;
-      a.tag = 1;
+      a.is_some = true;
       a.val = d;
       imports_host_state2_param_option(&a);
     }
     {
       imports_host_state_param_result_t a;
-      a.tag = 0;
+      a.is_err = false;
       a.val.ok = d;
       imports_host_state2_param_result(&a);
-      a.tag = 1;
+      a.is_err = true;
       a.val.err = 2;
       imports_host_state2_param_result(&a);
     }
     {
       imports_host_state_param_variant_t a;
-      a.tag = IMPORTS_HOST_STATE_PARAM_VARIANT_0;
+      a.tag = 0;
       a.val.f0 = d;
       imports_host_state2_param_variant(&a);
-      a.tag = IMPORTS_HOST_STATE_PARAM_VARIANT_1;
+      a.tag = 1;
       a.val.f1 = 2;
       imports_host_state2_param_variant(&a);
     }
@@ -95,7 +95,7 @@ void exports_test_imports() {
   {
     imports_host_state_result_result_t a;
     imports_host_state2_result_result(&a);
-    assert(a.tag == 0);
+    assert(!a.is_err);
     imports_host_state2_free(&a.val.ok);
   }
   {
@@ -194,12 +194,12 @@ bool exports_wasm_state2_result_option(exports_wasm_state2_t *ret0) {
 }
 
 void exports_wasm_state2_result_result(exports_wasm_state_result_result_t *ret0) {
-  ret0->tag = EXPORTS_WASM_STATE_RESULT_RESULT_OK;
+  ret0->is_err = false;
   ret0->val.ok = exports_wasm_state2_new((void*) 555);
 }
 
 void exports_wasm_state2_result_variant(exports_wasm_state_result_variant_t *ret0) {
-  ret0->tag = EXPORTS_WASM_STATE_RESULT_VARIANT_0;
+  ret0->tag = 0;
   ret0->val.f0 = exports_wasm_state2_new((void*) 666);
 }
 

@@ -34,16 +34,16 @@ jobs:
       run: rustup target add wasm32-wasi
 
     - run: |
-        curl https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-12/wasi-sdk-12.0-linux.tar.gz -L | tar xzvf -
-        echo "WASI_SDK_PATH=`pwd`/wasi-sdk-12.0" >> $GITHUB_ENV
+        curl https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-16/wasi-sdk-16.0-linux.tar.gz -L | tar xzvf -
+        echo "WASI_SDK_PATH=`pwd`/wasi-sdk-16.0" >> $GITHUB_ENV
       if : matrix.os == 'ubuntu-latest'
     - run: |
-        curl https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-12/wasi-sdk-12.0-macos.tar.gz -L | tar xzvf -
-        echo "WASI_SDK_PATH=`pwd`/wasi-sdk-12.0" >> $GITHUB_ENV
+        curl https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-16/wasi-sdk-16.0-macos.tar.gz -L | tar xzvf -
+        echo "WASI_SDK_PATH=`pwd`/wasi-sdk-16.0" >> $GITHUB_ENV
       if : matrix.os == 'macos-latest'
     - run: |
-        curl https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-12/wasi-sdk-12.0-mingw.tar.gz -L | tar xzvf -
-        echo "WASI_SDK_PATH=`pwd`/wasi-sdk-12.0" >> $GITHUB_ENV
+        curl https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-16/wasi-sdk-16.0-mingw.tar.gz -L | tar xzvf -
+        echo "WASI_SDK_PATH=`pwd`/wasi-sdk-16.0" >> $GITHUB_ENV
       if : matrix.os == 'windows-latest'
 
     - uses: actions/setup-node@v2
@@ -72,12 +72,6 @@ jobs:
       run: rustup update stable && rustup default stable && rustup component add rustfmt
     - name: Format source code
       run: cargo fmt -- --check
-    - name: Format test module source code
-      run: cargo fmt -- --check
-      working-directory: crates/test-modules/modules
-    - name: Format wasmlink runtime module source code
-      run: cargo fmt -- --check
-      working-directory: crates/wasmlink/runtime
 
   demo:
     name: Build wit-bindgen demo
@@ -95,31 +89,3 @@ jobs:
         folder: static
         single-commit: true
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-  wasmlink-demo:
-    name: Build wasmlink demo
-    runs-on: ubuntu-latest
-    env:
-      WASMTIME_VERSION: 0.28.0
-    steps:
-    - uses: actions/checkout@v2
-    - name: Download Wasmtime
-      run: wget -nv 'https://github.com/bytecodealliance/wasmtime/releases/download/v${{ env.WASMTIME_VERSION }}/wasmtime-v${{ env.WASMTIME_VERSION }}-x86_64-linux.tar.xz' -O /tmp/wasmtime.tar.xz
-    - name: Unpack Wasmtime
-      run: |
-        mkdir /tmp/wasmtime
-        tar xvf /tmp/wasmtime.tar.xz --strip-components=1 -C /tmp/wasmtime
-    - name: Install Rust
-      run: rustup update stable --no-self-update && rustup default stable
-    - name: Install wasm32-unknown-unknown target
-      run: rustup target add wasm32-unknown-unknown
-    - name: Install cargo-wasi
-      run: cargo install cargo-wasi
-    - name: Build the markdown component
-      run: cargo wasi build --release --manifest-path crates/wasmlink/demo/markdown/Cargo.toml
-    - name: Build the renderer component
-      run: cargo wasi build --release --manifest-path crates/wasmlink/demo/renderer/Cargo.toml
-    - name: Link the components
-      run: cargo run --release -p wasmlink-cli -- -m markdown=crates/wasmlink/demo/markdown/target/wasm32-wasi/release/markdown.wasm -i markdown=crates/wasmlink/demo/markdown/markdown.wit -p wasmtime -o linked.wasm crates/wasmlink/demo/renderer/target/wasm32-wasi/release/renderer.wasm
-    - name: Run the linked component with Wasmtime
-      run: printf '# Hello\nworld' | /tmp/wasmtime/wasmtime --enable-module-linking --enable-multi-memory linked.wasm | grep -q '<h1>Hello</h1>'

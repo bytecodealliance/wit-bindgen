@@ -1,5 +1,7 @@
-test-imports: function()
+test-imports: func()
 
-f1: function(s: string)
-f2: function() -> string
-f3: function(a: string, b:string, c: string) -> (string, string, string)
+f1: func(s: string)
+f2: func() -> string
+
+// TODO: should re-enable when fixed
+//f3: func(a: string, b:string, c: string) -> tuple<string, string, string>

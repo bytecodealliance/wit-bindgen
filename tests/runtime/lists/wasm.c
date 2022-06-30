@@ -187,17 +187,17 @@ void exports_test_imports() {
   {
     float f32[4] = {-FLT_MAX, FLT_MAX, -INFINITY, INFINITY};
     double f64[4] = {-DBL_MAX, DBL_MAX, -INFINITY, INFINITY};
-    imports_list_f32_t list_f32 = { f32, 4 };
-    imports_list_f64_t list_f64 = { f64, 4 };
-    imports_list_f32_t list_f32_out;
-    imports_list_f64_t list_f64_out;
-    imports_list_minmax_float(&list_f32, &list_f64, &list_f32_out, &list_f64_out);
-    assert(list_f32_out.len == 4 && list_f32_out.ptr[0] == -FLT_MAX && list_f32_out.ptr[1] == FLT_MAX);
-    assert(list_f32_out.ptr[2] == -INFINITY && list_f32_out.ptr[3] == INFINITY);
-    assert(list_f64_out.len == 4 && list_f64_out.ptr[0] == -DBL_MAX && list_f64_out.ptr[1] == DBL_MAX);
-    assert(list_f64_out.ptr[2] == -INFINITY && list_f64_out.ptr[3] == INFINITY);
-    imports_list_f32_free(&list_f32_out);
-    imports_list_f64_free(&list_f64_out);
+    imports_list_float32_t list_float32 = { f32, 4 };
+    imports_list_float64_t list_float64 = { f64, 4 };
+    imports_list_float32_t list_float32_out;
+    imports_list_float64_t list_float64_out;
+    imports_list_minmax_float(&list_float32, &list_float64, &list_float32_out, &list_float64_out);
+    assert(list_float32_out.len == 4 && list_float32_out.ptr[0] == -FLT_MAX && list_float32_out.ptr[1] == FLT_MAX);
+    assert(list_float32_out.ptr[2] == -INFINITY && list_float32_out.ptr[3] == INFINITY);
+    assert(list_float64_out.len == 4 && list_float64_out.ptr[0] == -DBL_MAX && list_float64_out.ptr[1] == DBL_MAX);
+    assert(list_float64_out.ptr[2] == -INFINITY && list_float64_out.ptr[3] == INFINITY);
+    imports_list_float32_free(&list_float32_out);
+    imports_list_float64_free(&list_float64_out);
   }
 }
 

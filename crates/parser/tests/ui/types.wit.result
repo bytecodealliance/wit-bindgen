@@ -52,12 +52,12 @@
     {
       "idx": 9,
       "name": "t9",
-      "primitive": "f32"
+      "primitive": "float32"
     },
     {
       "idx": 10,
       "name": "t10",
-      "primitive": "f64"
+      "primitive": "float64"
     },
     {
       "idx": 11,
@@ -72,86 +72,43 @@
     {
       "idx": 13,
       "name": "t13",
-      "list": "char"
+      "primitive": "string"
     },
     {
       "idx": 14,
       "name": "t14",
-      "variant": {
-        "cases": [
-          [
-            "none",
-            null
-          ],
-          [
-            "some",
-            "u32"
-          ]
-        ]
-      }
+      "option": "u32"
     },
     {
       "idx": 15,
       "name": "t15",
-      "variant": {
-        "cases": [
-          [
-            "ok",
-            "u32"
-          ],
-          [
-            "err",
-            "u32"
-          ]
-        ]
+      "expected": {
+        "ok": "u32",
+        "err": "u32"
       }
     },
     {
       "idx": 16,
       "name": "t16",
-      "variant": {
-        "cases": [
-          [
-            "ok",
-            null
-          ],
-          [
-            "err",
-            "u32"
-          ]
-        ]
+      "expected": {
+        "ok": "unit",
+        "err": "u32"
       }
     },
     {
       "idx": 17,
       "name": "t17",
-      "variant": {
-        "cases": [
-          [
-            "ok",
-            "u32"
-          ],
-          [
-            "err",
-            null
-          ]
-        ]
+      "expected": {
+        "ok": "u32",
+        "err": "unit"
       }
     },
     {
       "idx": 18,
       "name": "t18",
-      "variant": {
-        "cases": [
-          [
-            "ok",
-            null
-          ],
-          [
-            "err",
-            null
-          ]
-        ]
+      "expected": {
+        "ok": "unit",
+        "err": "unit"
       }
     },
     {
@@ -244,94 +201,64 @@
     {
       "idx": 27,
       "name": "t26",
-      "record": {
-        "fields": []
+      "tuple": {
+        "types": []
       }
     },
     {
       "idx": 28,
       "name": "t27",
-      "record": {
-        "fields": [
-          [
-            "0",
-            "u32"
-          ]
+      "tuple": {
+        "types": [
+          "u32"
         ]
       }
     },
     {
       "idx": 29,
       "name": "t28",
-      "record": {
-        "fields": [
-          [
-            "0",
-            "u32"
-          ]
+      "tuple": {
+        "types": [
+          "u32"
         ]
       }
     },
     {
       "idx": 30,
       "name": "t29",
-      "record": {
-        "fields": [
-          [
-            "0",
-            "u32"
-          ],
-          [
-            "1",
-            "u64"
-          ]
+      "tuple": {
+        "types": [
+          "u32",
+          "u64"
         ]
       }
     },
     {
       "idx": 31,
       "name": "t30",
-      "record": {
-        "fields": []
+      "flags": {
+        "flags": []
       }
     },
     {
       "idx": 32,
       "name": "t31",
-      "record": {
-        "fields": [
-          [
-            "a",
-            "type-53"
-          ],
-          [
-            "b",
-            "type-53"
-          ],
-          [
-            "c",
-            "type-53"
-          ]
+      "flags": {
+        "flags": [
+          "a",
+          "b",
+          "c"
         ]
       }
     },
     {
       "idx": 33,
       "name": "t32",
-      "record": {
-        "fields": [
-          [
-            "a",
-            "type-53"
-          ],
-          [
-            "b",
-            "type-53"
-          ],
-          [
-            "c",
-            "type-53"
-          ]
+      "flags": {
+        "flags": [
+          "a",
+          "b",
+          "c"
         ]
       }
     },
@@ -342,7 +269,7 @@
         "cases": [
           [
             "a",
-            null
+            "unit"
           ]
         ]
       }
@@ -354,11 +281,11 @@
         "cases": [
           [
             "a",
-            null
+            "unit"
           ],
           [
             "b",
-            null
+            "unit"
           ]
         ]
       }
@@ -370,11 +297,11 @@
         "cases": [
           [
             "a",
-            null
+            "unit"
           ],
           [
             "b",
-            null
+            "unit"
           ]
         ]
       }
@@ -386,7 +313,7 @@
         "cases": [
           [
             "a",
-            null
+            "unit"
           ],
           [
             "b",
@@ -402,11 +329,11 @@
         "cases": [
           [
             "a",
-            null
+            "unit"
           ],
           [
             "b",
-            "type-54"
+            "type-55"
           ]
         ]
       }
@@ -414,116 +341,69 @@
     {
       "idx": 39,
       "name": "t38",
-      "variant": {
+      "union": {
         "cases": [
-          [
-            "0",
-            "u32"
-          ],
-          [
-            "1",
-            "u64"
-          ]
+          "u32",
+          "u64"
         ]
       }
     },
     {
       "idx": 40,
       "name": "t39",
-      "variant": {
+      "union": {
         "cases": [
-          [
-            "0",
-            "u32"
-          ],
-          [
-            "1",
-            "type-54"
-          ]
+          "u32",
+          "type-55"
         ]
       }
     },
     {
       "idx": 41,
       "name": "t40",
-      "variant": {
+      "union": {
         "cases": [
-          [
-            "0",
-            "u32"
-          ],
-          [
-            "1",
-            "type-54"
-          ]
+          "u32",
+          "type-55"
         ]
       }
     },
     {
       "idx": 42,
       "name": "t41",
-      "variant": {
+      "enum": {
         "cases": [
-          [
-            "a",
-            null
-          ],
-          [
-            "b",
-            null
-          ],
-          [
-            "c",
-            null
-          ]
+          "a",
+          "b",
+          "c"
         ]
       }
     },
     {
       "idx": 43,
       "name": "t42",
-      "variant": {
+      "enum": {
         "cases": [
-          [
-            "a",
-            null
-          ],
-          [
-            "b",
-            null
-          ],
-          [
-            "c",
-            null
-          ]
+          "a",
+          "b",
+          "c"
         ]
       }
     },
     {
       "idx": 44,
       "name": "t43",
-      "variant": {
-        "cases": [
-          [
-            "false",
-            null
-          ],
-          [
-            "true",
-            null
-          ]
-        ]
-      }
+      "primitive": "bool"
     },
     {
       "idx": 45,
       "name": "t44",
-      "list": "char"
+      "primitive": "string"
     },
     {
       "idx": 46,
       "name": "t45",
-      "list": "type-56"
+      "list": "type-57"
     },
     {
       "idx": 47,
@@ -538,60 +418,56 @@
     {
       "idx": 49,
       "name": "t48",
-      "push-buffer": "u8"
+      "stream": {
+        "element": "u32",
+        "end": "u32"
+      }
     },
     {
       "idx": 50,
       "name": "t49",
-      "pull-buffer": "u8"
+      "stream": {
+        "element": "unit",
+        "end": "u32"
+      }
     },
     {
       "idx": 51,
-      "name": "foo",
-      "primitive": "type-52"
+      "name": "t50",
+      "stream": {
+        "element": "u32",
+        "end": "unit"
+      }
     },
     {
       "idx": 52,
+      "name": "t51",
+      "stream": {
+        "element": "unit",
+        "end": "unit"
+      }
+    },
+    {
+      "idx": 53,
+      "name": "foo",
+      "primitive": "type-54"
+    },
+    {
+      "idx": 54,
       "name": "bar",
       "primitive": "u32"
     },
     {
-      "idx": 53,
-      "variant": {
-        "cases": [
-          [
-            "false",
-            null
-          ],
-          [
-            "true",
-            null
-          ]
-        ]
-      }
-    },
-    {
-      "idx": 54,
-      "variant": {
-        "cases": [
-          [
-            "none",
-            null
-          ],
-          [
-            "some",
-            "u32"
-          ]
-        ]
-      }
-    },
-    {
       "idx": 55,
-      "list": "type-33"
+      "option": "u32"
     },
     {
       "idx": 56,
-      "list": "type-55"
+      "list": "type-33"
+    },
+    {
+      "idx": 57,
+      "list": "type-56"
     }
   ]
 }

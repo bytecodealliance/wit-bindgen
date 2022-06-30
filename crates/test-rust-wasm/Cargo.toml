@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 futures-util = { version = "0.3.17", default-features = true }
-wit-bindgen-rust = { path = "../rust-wasm", features = ['witx-compat'] }
+wit-bindgen-rust = { path = "../rust-wasm" }
 
 [features]
 unchecked = []
@@ -25,6 +25,10 @@ name = "records"
 test = false
 
 [[bin]]
+name = "unions"
+test = false
+
+[[bin]]
 name = "variants"
 test = false
 
@@ -37,10 +41,6 @@ name = "handles"
 test = false
 
 [[bin]]
-name = "buffers"
-test = false
-
-[[bin]]
 name = "flavorful"
 test = false
 
@@ -50,4 +50,8 @@ test = false
 
 [[bin]]
 name = "async_functions"
+test = false
+
+[[bin]]
+name = "many_arguments"
 test = false

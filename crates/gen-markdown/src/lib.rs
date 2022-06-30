@@ -1,7 +1,6 @@
 use heck::*;
 use pulldown_cmark::{html, Event, LinkType, Parser, Tag};
 use std::collections::HashMap;
-use wit_bindgen_gen_core::wit_parser::abi::AbiVariant;
 use wit_bindgen_gen_core::{wit_parser, Direction, Files, Generator, Source};
 use wit_parser::*;
 
@@ -34,16 +33,10 @@ impl Markdown {
         Markdown::default()
     }
 
-    fn abi_variant(dir: Direction) -> AbiVariant {
-        // This generator uses the obvious direction to ABI variant mapping.
-        match dir {
-            Direction::Export => AbiVariant::GuestExport,
-            Direction::Import => AbiVariant::GuestImport,
-        }
-    }
-
     fn print_ty(&mut self, iface: &Interface, ty: &Type, skip_name: bool) {
         match ty {
+            Type::Unit => self.src.push_str("`unit`"),
+            Type::Bool => self.src.push_str("`bool`"),
             Type::U8 => self.src.push_str("`u8`"),
             Type::S8 => self.src.push_str("`s8`"),
             Type::U16 => self.src.push_str("`u16`"),
@@ -52,11 +45,10 @@ impl Markdown {
             Type::S32 => self.src.push_str("`s32`"),
             Type::U64 => self.src.push_str("`u64`"),
             Type::S64 => self.src.push_str("`s64`"),
-            Type::F32 => self.src.push_str("`f32`"),
-            Type::F64 => self.src.push_str("`f64`"),
+            Type::Float32 => self.src.push_str("`float32`"),
+            Type::Float64 => self.src.push_str("`float64`"),
             Type::Char => self.src.push_str("`char`"),
-            Type::CChar => self.src.push_str("`c_char`"),
-            Type::Usize => self.src.push_str("`usize`"),
+            Type::String => self.src.push_str("`string`"),
             Type::Handle(id) => {
                 self.src.push_str("handle<");
                 self.src.push_str(&iface.resources[*id].name);
@@ -76,64 +68,45 @@ impl Markdown {
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty(iface, t, false),
-                    TypeDefKind::Record(r) => {
-                        assert!(r.is_tuple());
+                    TypeDefKind::Tuple(t) => {
                         self.src.push_str("(");
-                        for (i, f) in r.fields.iter().enumerate() {
+                        for (i, t) in t.types.iter().enumerate() {
                             if i > 0 {
                                 self.src.push_str(", ");
                             }
-                            self.print_ty(iface, &f.ty, false);
+                            self.print_ty(iface, t, false);
                         }
                         self.src.push_str(")");
                     }
-                    TypeDefKind::Variant(v) => {
-                        if v.is_bool() {
-                            self.src.push_str("`bool`");
-                        } else if let Some(t) = v.as_option() {
-                            self.src.push_str("option<");
-                            self.print_ty(iface, t, false);
-                            self.src.push_str(">");
-                        } else if let Some((ok, err)) = v.as_expected() {
-                            self.src.push_str("expected<");
-                            match ok {
-                                Some(t) => self.print_ty(iface, t, false),
-                                None => self.src.push_str("_"),
-                            }
-                            self.src.push_str(", ");
-                            match err {
-                                Some(t) => self.print_ty(iface, t, false),
-                                None => self.src.push_str("_"),
-                            }
-                            self.src.push_str(">");
-                        } else {
-                            unreachable!()
-                        }
+                    TypeDefKind::Record(_)
+                    | TypeDefKind::Flags(_)
+                    | TypeDefKind::Enum(_)
+                    | TypeDefKind::Variant(_)
+                    | TypeDefKind::Union(_) => {
+                        unreachable!()
                     }
-                    TypeDefKind::List(Type::Char) => self.src.push_str("`string`"),
+                    TypeDefKind::Option(t) => {
+                        self.src.push_str("option<");
+                        self.print_ty(iface, t, false);
+                        self.src.push_str(">");
+                    }
+                    TypeDefKind::Expected(e) => {
+                        self.src.push_str("expected<");
+                        self.print_ty(iface, &e.ok, false);
+                        self.src.push_str(", ");
+                        self.print_ty(iface, &e.err, false);
+                        self.src.push_str(">");
+                    }
                     TypeDefKind::List(t) => {
                         self.src.push_str("list<");
                         self.print_ty(iface, t, false);
                         self.src.push_str(">");
                     }
-                    TypeDefKind::PushBuffer(t) => {
-                        self.src.push_str("push-buffer<");
-                        self.print_ty(iface, t, false);
-                        self.src.push_str(">");
-                    }
-                    TypeDefKind::PullBuffer(t) => {
-                        self.src.push_str("pull-buffer<");
-                        self.print_ty(iface, t, false);
-                        self.src.push_str(">");
-                    }
-                    TypeDefKind::Pointer(t) => {
-                        self.src.push_str("pointer<");
-                        self.print_ty(iface, t, false);
-                        self.src.push_str(">");
-                    }
-                    TypeDefKind::ConstPointer(t) => {
-                        self.src.push_str("const-pointer<");
-                        self.print_ty(iface, t, false);
+                    TypeDefKind::Stream(s) => {
+                        self.src.push_str("stream<");
+                        self.print_ty(iface, &s.element, false);
+                        self.src.push_str(", ");
+                        self.print_ty(iface, &s.end, false);
                         self.src.push_str(">");
                     }
                 }
@@ -177,9 +150,8 @@ impl Markdown {
 }
 
 impl Generator for Markdown {
-    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        let variant = Self::abi_variant(dir);
-        self.sizes.fill(variant, iface);
+    fn preprocess_one(&mut self, iface: &Interface, _dir: Direction) {
+        self.sizes.fill(iface);
     }
 
     fn type_record(
@@ -194,7 +166,7 @@ impl Generator for Markdown {
         self.src.push_str("record\n\n");
         self.print_type_info(id, docs);
         self.src.push_str("\n### Record Fields\n\n");
-        for (i, field) in record.fields.iter().enumerate() {
+        for field in record.fields.iter() {
             self.src.push_str(&format!(
                 "- <a href=\"{r}.{f}\" name=\"{r}.{f}\"></a> [`{name}`](#{r}.{f}): ",
                 r = name.to_snake_case(),
@@ -210,9 +182,66 @@ impl Generator for Markdown {
             self.src.push_str("\n\n");
             self.docs(&field.docs);
             self.src.deindent(1);
-            if record.is_flags() {
-                self.src.push_str(&format!("Bit: {}\n", i));
-            }
+            self.src.push_str("\n");
+        }
+    }
+
+    fn type_tuple(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        tuple: &Tuple,
+        docs: &Docs,
+    ) {
+        self.print_type_header(name);
+        self.src.push_str("tuple\n\n");
+        self.print_type_info(id, docs);
+        self.src.push_str("\n### Tuple Fields\n\n");
+        for (i, ty) in tuple.types.iter().enumerate() {
+            self.src.push_str(&format!(
+                "- <a href=\"{r}.{f}\" name=\"{r}.{f}\"></a> [`{name}`](#{r}.{f}): ",
+                r = name.to_snake_case(),
+                f = i,
+                name = i,
+            ));
+            self.hrefs.insert(
+                format!("{}::{}", name, i),
+                format!("#{}.{}", name.to_snake_case(), i),
+            );
+            self.print_ty(iface, ty, false);
+            self.src.push_str("\n");
+        }
+    }
+
+    fn type_flags(
+        &mut self,
+        _iface: &Interface,
+        id: TypeId,
+        name: &str,
+        flags: &Flags,
+        docs: &Docs,
+    ) {
+        self.print_type_header(name);
+        self.src.push_str("record\n\n");
+        self.print_type_info(id, docs);
+        self.src.push_str("\n### Record Fields\n\n");
+        for (i, flag) in flags.flags.iter().enumerate() {
+            self.src.push_str(&format!(
+                "- <a href=\"{r}.{f}\" name=\"{r}.{f}\"></a> [`{name}`](#{r}.{f}): ",
+                r = name.to_snake_case(),
+                f = flag.name.to_snake_case(),
+                name = flag.name,
+            ));
+            self.hrefs.insert(
+                format!("{}::{}", name, flag.name),
+                format!("#{}.{}", name.to_snake_case(), flag.name.to_snake_case()),
+            );
+            self.src.indent(1);
+            self.src.push_str("\n\n");
+            self.docs(&flag.docs);
+            self.src.deindent(1);
+            self.src.push_str(&format!("Bit: {}\n", i));
             self.src.push_str("\n");
         }
     }
@@ -240,16 +269,99 @@ impl Generator for Markdown {
                 format!("{}::{}", name, case.name),
                 format!("#{}.{}", name.to_snake_case(), case.name.to_snake_case()),
             );
-            if let Some(ty) = &case.ty {
-                self.src.push_str(": ");
-                self.print_ty(iface, ty, false);
-            }
+            self.src.push_str(": ");
+            self.print_ty(iface, &case.ty, false);
             self.src.indent(1);
             self.src.push_str("\n\n");
             self.docs(&case.docs);
             self.src.deindent(1);
             self.src.push_str("\n");
         }
+    }
+
+    fn type_union(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        union: &Union,
+        docs: &Docs,
+    ) {
+        self.print_type_header(name);
+        self.src.push_str("union\n\n");
+        self.print_type_info(id, docs);
+        self.src.push_str("\n### Union Cases\n\n");
+        let snake = name.to_snake_case();
+        for (i, case) in union.cases.iter().enumerate() {
+            self.src.push_str(&format!(
+                "- <a href=\"{snake}.{i}\" name=\"{snake}.{i}\"></a> [`{i}`](#{snake}.{i})",
+            ));
+            self.hrefs
+                .insert(format!("{name}::{i}"), format!("#{snake}.{i}"));
+            self.src.push_str(": ");
+            self.print_ty(iface, &case.ty, false);
+            self.src.indent(1);
+            self.src.push_str("\n\n");
+            self.docs(&case.docs);
+            self.src.deindent(1);
+            self.src.push_str("\n");
+        }
+    }
+
+    fn type_enum(&mut self, _iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
+        self.print_type_header(name);
+        self.src.push_str("enum\n\n");
+        self.print_type_info(id, docs);
+        self.src.push_str("\n### Enum Cases\n\n");
+        for case in enum_.cases.iter() {
+            self.src.push_str(&format!(
+                "- <a href=\"{v}.{c}\" name=\"{v}.{c}\"></a> [`{name}`](#{v}.{c})",
+                v = name.to_snake_case(),
+                c = case.name.to_snake_case(),
+                name = case.name,
+            ));
+            self.hrefs.insert(
+                format!("{}::{}", name, case.name),
+                format!("#{}.{}", name.to_snake_case(), case.name.to_snake_case()),
+            );
+            self.src.indent(1);
+            self.src.push_str("\n\n");
+            self.docs(&case.docs);
+            self.src.deindent(1);
+            self.src.push_str("\n");
+        }
+    }
+
+    fn type_option(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        payload: &Type,
+        docs: &Docs,
+    ) {
+        self.print_type_header(name);
+        self.src.push_str("option<");
+        self.print_ty(iface, payload, false);
+        self.src.push_str(">");
+        self.print_type_info(id, docs);
+    }
+
+    fn type_expected(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        expected: &Expected,
+        docs: &Docs,
+    ) {
+        self.print_type_header(name);
+        self.src.push_str("expected<");
+        self.print_ty(iface, &expected.ok, false);
+        self.src.push_str(", ");
+        self.print_ty(iface, &expected.err, false);
+        self.src.push_str(">");
+        self.print_type_info(id, docs);
     }
 
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
@@ -268,42 +380,8 @@ impl Generator for Markdown {
         self.type_alias(iface, id, name, &Type::Id(id), docs);
     }
 
-    fn type_pointer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        _const: bool,
-        _ty: &Type,
-        docs: &Docs,
-    ) {
-        self.type_alias(iface, id, name, &Type::Id(id), docs);
-    }
-
     fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.type_alias(iface, id, name, ty, docs)
-    }
-
-    fn type_push_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        _ty: &Type,
-        docs: &Docs,
-    ) {
-        self.type_alias(iface, id, name, &Type::Id(id), docs);
-    }
-
-    fn type_pull_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        _ty: &Type,
-        docs: &Docs,
-    ) {
-        self.type_alias(iface, id, name, &Type::Id(id), docs);
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
@@ -337,14 +415,15 @@ impl Generator for Markdown {
                 self.src.push_str("\n");
             }
         }
-        if func.results.len() > 0 {
-            self.src.push_str("##### Results\n\n");
-            for (name, ty) in func.results.iter() {
+        match &func.result {
+            Type::Unit => {}
+            ty => {
+                self.src.push_str("##### Results\n\n");
                 self.src.push_str(&format!(
                     "- <a href=\"#{f}.{p}\" name=\"{f}.{p}\"></a> `{}`: ",
-                    name,
+                    "result",
                     f = func.name.to_snake_case(),
-                    p = name.to_snake_case(),
+                    p = "result",
                 ));
                 self.print_ty(iface, ty, false);
                 self.src.push_str("\n");

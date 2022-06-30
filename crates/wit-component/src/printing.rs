@@ -1,26 +1,28 @@
 use anyhow::{bail, Result};
-use std::collections::HashSet;
+use indexmap::IndexSet;
 use std::fmt::Write;
-use wit_parser::{Interface, Record, Type, TypeDefKind, TypeId, Variant};
+use wit_parser::{
+    Enum, Expected, Flags, Interface, Record, Tuple, Type, TypeDefKind, TypeId, Union, Variant,
+};
 
 /// A utility for printing WebAssembly interface definitions to a string.
 #[derive(Default)]
 pub struct InterfacePrinter {
     output: String,
-    declared: HashSet<TypeId>,
+    declared: IndexSet<TypeId>,
 }
 
 impl InterfacePrinter {
     /// Print the given WebAssembly interface to a string.
     pub fn print(&mut self, interface: &Interface) -> Result<String> {
         for func in &interface.functions {
-            for (_, ty) in func.params.iter().chain(func.results.iter()) {
+            for ty in func.params.iter().map(|p| &p.1).chain([&func.result]) {
                 self.declare_type(interface, ty)?;
             }
         }
 
         for func in &interface.functions {
-            write!(&mut self.output, "{}: function(", func.name)?;
+            write!(&mut self.output, "{}: func(", func.name)?;
             for (i, (name, ty)) in func.params.iter().enumerate() {
                 if i > 0 {
                     self.output.push_str(", ");
@@ -30,13 +32,13 @@ impl InterfacePrinter {
             }
             self.output.push(')');
 
-            if !func.results.is_empty() {
-                self.output.push_str(" -> ");
-                for (_, ty) in &func.results {
-                    self.print_type_name(interface, ty)?;
+            match &func.result {
+                Type::Unit => {}
+                other => {
+                    self.output.push_str(" -> ");
+                    self.print_type_name(interface, other)?;
                 }
             }
-
             self.output.push_str("\n\n");
         }
 
@@ -46,6 +48,8 @@ impl InterfacePrinter {
 
     fn print_type_name(&mut self, interface: &Interface, ty: &Type) -> Result<()> {
         match ty {
+            Type::Unit => self.output.push_str("unit"),
+            Type::Bool => self.output.push_str("bool"),
             Type::U8 => self.output.push_str("u8"),
             Type::U16 => self.output.push_str("u16"),
             Type::U32 => self.output.push_str("u32"),
@@ -54,9 +58,10 @@ impl InterfacePrinter {
             Type::S16 => self.output.push_str("s16"),
             Type::S32 => self.output.push_str("s32"),
             Type::S64 => self.output.push_str("s64"),
-            Type::F32 => self.output.push_str("f32"),
-            Type::F64 => self.output.push_str("f64"),
+            Type::Float32 => self.output.push_str("float32"),
+            Type::Float64 => self.output.push_str("float64"),
             Type::Char => self.output.push_str("char"),
+            Type::String => self.output.push_str("string"),
 
             Type::Id(id) => {
                 let ty = &interface.types[*id];
@@ -66,87 +71,82 @@ impl InterfacePrinter {
                 }
 
                 match &ty.kind {
-                    TypeDefKind::Record(r) => {
-                        self.print_record_type(interface, r)?;
+                    TypeDefKind::Tuple(t) => {
+                        self.print_tuple_type(interface, t)?;
                     }
-                    TypeDefKind::Variant(v) => {
-                        self.print_variant_type(interface, v)?;
+                    TypeDefKind::Option(t) => {
+                        self.print_option_type(interface, t)?;
+                    }
+                    TypeDefKind::Expected(t) => {
+                        self.print_expected_type(interface, t)?;
+                    }
+                    TypeDefKind::Record(_) => {
+                        bail!("interface has an unnamed record type");
+                    }
+                    TypeDefKind::Flags(_) => {
+                        bail!("interface has unnamed flags type")
+                    }
+                    TypeDefKind::Enum(_) => {
+                        bail!("interface has unnamed enum type")
+                    }
+                    TypeDefKind::Variant(_) => {
+                        bail!("interface has unnamed variant type")
+                    }
+                    TypeDefKind::Union(_) => {
+                        bail!("interface has unnamed union type")
                     }
                     TypeDefKind::List(ty) => {
-                        if let Type::Char = ty {
-                            self.output.push_str("string");
-                        } else {
-                            self.output.push_str("list<");
-                            self.print_type_name(interface, ty)?;
-                            self.output.push('>');
-                        }
+                        self.output.push_str("list<");
+                        self.print_type_name(interface, ty)?;
+                        self.output.push('>');
                     }
                     TypeDefKind::Type(ty) => self.print_type_name(interface, ty)?,
-
-                    TypeDefKind::Pointer(_)
-                    | TypeDefKind::ConstPointer(_)
-                    | TypeDefKind::PushBuffer(_)
-                    | TypeDefKind::PullBuffer(_) => bail!("interface has unsupported type"),
+                    TypeDefKind::Stream(_) => {
+                        todo!("interface has an unnamed stream type")
+                    }
                 }
             }
 
-            Type::CChar | Type::Usize | Type::Handle(_) => bail!("interface has unsupported type"),
+            Type::Handle(_) => bail!("interface has unsupported type"),
         }
 
         Ok(())
     }
 
-    fn print_record_type(&mut self, interface: &Interface, record: &Record) -> Result<()> {
-        if !record.is_tuple() {
-            bail!("interface has an unnamed record type");
-        }
-
+    fn print_tuple_type(&mut self, interface: &Interface, tuple: &Tuple) -> Result<()> {
         self.output.push_str("tuple<");
-        for (i, field) in record.fields.iter().enumerate() {
+        for (i, ty) in tuple.types.iter().enumerate() {
             if i > 0 {
                 self.output.push_str(", ");
             }
-            self.print_type_name(interface, &field.ty)?;
+            self.print_type_name(interface, ty)?;
         }
         self.output.push('>');
 
         Ok(())
     }
 
-    fn print_variant_type(&mut self, interface: &Interface, variant: &Variant) -> Result<()> {
-        if variant.is_bool() {
-            self.output.push_str("bool");
-            return Ok(());
-        }
+    fn print_option_type(&mut self, interface: &Interface, payload: &Type) -> Result<()> {
+        self.output.push_str("option<");
+        self.print_type_name(interface, payload)?;
+        self.output.push('>');
+        Ok(())
+    }
 
-        if let Some(ty) = variant.as_option() {
-            self.output.push_str("option<");
-            self.print_type_name(interface, ty)?;
-            self.output.push('>');
-            return Ok(());
-        }
-
-        if let Some((ok, err)) = variant.as_expected() {
-            self.output.push_str("expected<");
-            match ok {
-                Some(ty) => self.print_type_name(interface, ty)?,
-                None => self.output.push('_'),
-            }
-            self.output.push_str(", ");
-            match err {
-                Some(ty) => self.print_type_name(interface, ty)?,
-                None => self.output.push('_'),
-            }
-            self.output.push('>');
-            return Ok(());
-        }
-
-        bail!("interface has an unnamed variant type");
+    fn print_expected_type(&mut self, interface: &Interface, expected: &Expected) -> Result<()> {
+        self.output.push_str("expected<");
+        self.print_type_name(interface, &expected.ok)?;
+        self.output.push_str(", ");
+        self.print_type_name(interface, &expected.err)?;
+        self.output.push('>');
+        Ok(())
     }
 
     fn declare_type(&mut self, interface: &Interface, ty: &Type) -> Result<()> {
         match ty {
-            Type::U8
+            Type::Unit
+            | Type::Bool
+            | Type::U8
             | Type::U16
             | Type::U32
             | Type::U64
@@ -154,9 +154,10 @@ impl InterfacePrinter {
             | Type::S16
             | Type::S32
             | Type::S64
-            | Type::F32
-            | Type::F64
-            | Type::Char => return Ok(()),
+            | Type::Float32
+            | Type::Float64
+            | Type::Char
+            | Type::String => return Ok(()),
 
             Type::Id(id) => {
                 if !self.declared.insert(*id) {
@@ -168,9 +169,23 @@ impl InterfacePrinter {
                     TypeDefKind::Record(r) => {
                         self.declare_record(interface, ty.name.as_deref(), r)?
                     }
+                    TypeDefKind::Tuple(t) => {
+                        self.declare_tuple(interface, ty.name.as_deref(), t)?
+                    }
+                    TypeDefKind::Flags(f) => self.declare_flags(ty.name.as_deref(), f)?,
                     TypeDefKind::Variant(v) => {
                         self.declare_variant(interface, ty.name.as_deref(), v)?
                     }
+                    TypeDefKind::Union(u) => {
+                        self.declare_union(interface, ty.name.as_deref(), u)?
+                    }
+                    TypeDefKind::Option(t) => {
+                        self.declare_option(interface, ty.name.as_deref(), t)?
+                    }
+                    TypeDefKind::Expected(e) => {
+                        self.declare_expected(interface, ty.name.as_deref(), e)?
+                    }
+                    TypeDefKind::Enum(e) => self.declare_enum(ty.name.as_deref(), e)?,
                     TypeDefKind::List(inner) => {
                         self.declare_list(interface, ty.name.as_deref(), inner)?
                     }
@@ -182,15 +197,11 @@ impl InterfacePrinter {
                         }
                         None => bail!("unnamed type in interface"),
                     },
-
-                    TypeDefKind::Pointer(_)
-                    | TypeDefKind::ConstPointer(_)
-                    | TypeDefKind::PushBuffer(_)
-                    | TypeDefKind::PullBuffer(_) => bail!("interface has unsupported type"),
+                    TypeDefKind::Stream(_) => todo!("declare stream"),
                 }
             }
 
-            Type::CChar | Type::Usize | Type::Handle(_) => bail!("interface has unsupported type"),
+            Type::Handle(_) => bail!("interface has unsupported type"),
         }
         Ok(())
     }
@@ -203,29 +214,6 @@ impl InterfacePrinter {
     ) -> Result<()> {
         for field in record.fields.iter() {
             self.declare_type(interface, &field.ty)?;
-        }
-
-        if record.is_tuple() {
-            if let Some(name) = name {
-                write!(&mut self.output, "type {} = ", name)?;
-                self.print_record_type(interface, record)?;
-                self.output.push_str("\n\n");
-            }
-            return Ok(());
-        }
-
-        if record.is_flags() {
-            match name {
-                Some(name) => {
-                    writeln!(&mut self.output, "flags {} {{", name)?;
-                    for field in &record.fields {
-                        writeln!(&mut self.output, "  {},", field.name)?;
-                    }
-                    self.output.push_str("}\n\n");
-                }
-                None => bail!("interface has unnamed flags type"),
-            }
-            return Ok(());
         }
 
         match name {
@@ -244,6 +232,38 @@ impl InterfacePrinter {
         }
     }
 
+    fn declare_tuple(
+        &mut self,
+        interface: &Interface,
+        name: Option<&str>,
+        tuple: &Tuple,
+    ) -> Result<()> {
+        for ty in tuple.types.iter() {
+            self.declare_type(interface, ty)?;
+        }
+
+        if let Some(name) = name {
+            write!(&mut self.output, "type {} = ", name)?;
+            self.print_tuple_type(interface, tuple)?;
+            self.output.push_str("\n\n");
+        }
+        Ok(())
+    }
+
+    fn declare_flags(&mut self, name: Option<&str>, flags: &Flags) -> Result<()> {
+        match name {
+            Some(name) => {
+                writeln!(&mut self.output, "flags {} {{", name)?;
+                for flag in &flags.flags {
+                    writeln!(&mut self.output, "  {},", flag.name)?;
+                }
+                self.output.push_str("}\n\n");
+            }
+            None => bail!("interface has unnamed flags type"),
+        }
+        Ok(())
+    }
+
     fn declare_variant(
         &mut self,
         interface: &Interface,
@@ -251,57 +271,95 @@ impl InterfacePrinter {
         variant: &Variant,
     ) -> Result<()> {
         for case in variant.cases.iter() {
-            if let Some(ty) = &case.ty {
-                self.declare_type(interface, ty)?;
-            }
+            self.declare_type(interface, &case.ty)?;
         }
 
-        if variant.is_bool() || variant.as_option().is_some() || variant.as_expected().is_some() {
-            if let Some(name) = name {
-                write!(&mut self.output, "type {} = ", name)?;
-                self.print_variant_type(interface, variant)?;
-                self.output.push_str("\n\n");
+        let name = match name {
+            Some(name) => name,
+            None => bail!("interface has unnamed union type"),
+        };
+        writeln!(&mut self.output, "variant {} {{", name)?;
+        for case in &variant.cases {
+            write!(&mut self.output, "  {}", case.name)?;
+            if case.ty != Type::Unit {
+                self.output.push('(');
+                self.print_type_name(interface, &case.ty)?;
+                self.output.push(')');
             }
-            return Ok(());
+            self.output.push_str(",\n");
+        }
+        self.output.push_str("}\n\n");
+        Ok(())
+    }
+
+    fn declare_union(
+        &mut self,
+        interface: &Interface,
+        name: Option<&str>,
+        union: &Union,
+    ) -> Result<()> {
+        for case in union.cases.iter() {
+            self.declare_type(interface, &case.ty)?;
         }
 
-        match name {
-            Some(name) => {
-                if variant.is_enum() {
-                    writeln!(&mut self.output, "enum {} {{", name)?;
-                    for case in &variant.cases {
-                        writeln!(&mut self.output, "  {},", case.name)?;
-                    }
-                    self.output.push_str("}\n\n");
-                    return Ok(());
-                }
-
-                if variant.is_union() {
-                    writeln!(&mut self.output, "union {} {{", name)?;
-                    for case in &variant.cases {
-                        self.output.push_str("  ");
-                        self.print_type_name(interface, case.ty.as_ref().unwrap())?;
-                        self.output.push_str(",\n");
-                    }
-                    self.output.push_str("}\n\n");
-                    return Ok(());
-                }
-
-                writeln!(&mut self.output, "variant {} {{", name)?;
-                for case in &variant.cases {
-                    write!(&mut self.output, "  {}", case.name)?;
-                    if let Some(ty) = &case.ty {
-                        self.output.push('(');
-                        self.print_type_name(interface, ty)?;
-                        self.output.push(')');
-                    }
-                    self.output.push_str(",\n");
-                }
-                self.output.push_str("}\n\n");
-                Ok(())
-            }
-            None => bail!("interface has unnamed variant type"),
+        let name = match name {
+            Some(name) => name,
+            None => bail!("interface has unnamed union type"),
+        };
+        writeln!(&mut self.output, "union {} {{", name)?;
+        for case in &union.cases {
+            self.output.push_str("  ");
+            self.print_type_name(interface, &case.ty)?;
+            self.output.push_str(",\n");
         }
+        self.output.push_str("}\n\n");
+        Ok(())
+    }
+
+    fn declare_option(
+        &mut self,
+        interface: &Interface,
+        name: Option<&str>,
+        payload: &Type,
+    ) -> Result<()> {
+        self.declare_type(interface, payload)?;
+
+        if let Some(name) = name {
+            write!(&mut self.output, "type {} = ", name)?;
+            self.print_option_type(interface, payload)?;
+            self.output.push_str("\n\n");
+        }
+        Ok(())
+    }
+
+    fn declare_expected(
+        &mut self,
+        interface: &Interface,
+        name: Option<&str>,
+        expected: &Expected,
+    ) -> Result<()> {
+        self.declare_type(interface, &expected.ok)?;
+        self.declare_type(interface, &expected.err)?;
+
+        if let Some(name) = name {
+            write!(&mut self.output, "type {} = ", name)?;
+            self.print_expected_type(interface, expected)?;
+            self.output.push_str("\n\n");
+        }
+        Ok(())
+    }
+
+    fn declare_enum(&mut self, name: Option<&str>, enum_: &Enum) -> Result<()> {
+        let name = match name {
+            Some(name) => name,
+            None => bail!("interface has unnamed enum type"),
+        };
+        writeln!(&mut self.output, "enum {} {{", name)?;
+        for case in &enum_.cases {
+            writeln!(&mut self.output, "  {},", case.name)?;
+        }
+        self.output.push_str("}\n\n");
+        Ok(())
     }
 
     fn declare_list(&mut self, interface: &Interface, name: Option<&str>, ty: &Type) -> Result<()> {

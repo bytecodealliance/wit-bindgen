@@ -1,5 +1,5 @@
 Function "foo" already defined as a Type
      --> tests/ui/parse-fail/func-type-collide.wit:4:1
       |
-    4 | foo: function()
+    4 | foo: func()
       | ^--

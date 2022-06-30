@@ -11,7 +11,7 @@ test = false
 doctest = false
 
 [dependencies]
-wit-bindgen-gen-core = { path = '../gen-core', features = ['witx-compat'] }
+wit-bindgen-gen-core = { path = '../gen-core' }
 wit-bindgen-gen-rust-wasm = { path = '../gen-rust-wasm' }
 wit-bindgen-gen-wasmtime = { path = '../gen-wasmtime' }
 wit-bindgen-gen-wasmtime-py = { path = '../gen-wasmtime-py' }

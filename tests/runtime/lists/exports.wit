@@ -1,13 +1,13 @@
-test-imports: function()
-allocated-bytes: function() -> u32
+test-imports: func()
+allocated-bytes: func() -> u32
 
-list-param: function(a: list<u8>)
-list-param2: function(a: string)
-list-param3: function(a: list<string>)
-list-param4: function(a: list<list<string>>)
-list-result: function() -> list<u8>
-list-result2: function() -> string
-list-result3: function() -> list<string>
+list-param: func(a: list<u8>)
+list-param2: func(a: string)
+list-param3: func(a: list<string>)
+list-param4: func(a: list<list<string>>)
+list-result: func() -> list<u8>
+list-result2: func() -> string
+list-result3: func() -> list<string>
 
-list-roundtrip: function(a: list<u8>) -> list<u8>
-string-roundtrip: function(a: string) -> string
+list-roundtrip: func(a: list<u8>) -> list<u8>
+string-roundtrip: func(a: string) -> string

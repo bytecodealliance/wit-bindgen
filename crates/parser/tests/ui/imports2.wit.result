@@ -21,20 +21,11 @@
     {
       "idx": 2,
       "name": "some-record",
-      "record": {
-        "fields": [
-          [
-            "0",
-            "u32"
-          ],
-          [
-            "1",
-            "u64"
-          ],
-          [
-            "2",
-            "f32"
-          ]
+      "tuple": {
+        "types": [
+          "u32",
+          "u64",
+          "float32"
         ]
       },
       "foreign_module": "import-me"

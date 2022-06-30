@@ -16,25 +16,25 @@ flags flag64 {
   b56, b57, b58, b59, b60, b61, b62, b63,
 }
 
-list-param: function(a: list<u8>)
-list-param2: function(a: string)
-list-param3: function(a: list<string>)
-list-param4: function(a: list<list<string>>)
-list-result: function() -> list<u8>
-list-result2: function() -> string
-list-result3: function() -> list<string>
+list-param: func(a: list<u8>)
+list-param2: func(a: string)
+list-param3: func(a: list<string>)
+list-param4: func(a: list<list<string>>)
+list-result: func() -> list<u8>
+list-result2: func() -> string
+list-result3: func() -> list<string>
 
-list-minmax8: function(a: list<u8>, b: list<s8>) -> (list<u8>, list<s8>)
-list-minmax16: function(a: list<u16>, b: list<s16>) -> (list<u16>, list<s16>)
-list-minmax32: function(a: list<u32>, b: list<s32>) -> (list<u32>, list<s32>)
-list-minmax64: function(a: list<u64>, b: list<s64>) -> (list<u64>, list<s64>)
-list-minmax-float: function(a: list<f32>, b: list<f64>) -> (list<f32>, list<f64>)
+list-minmax8: func(a: list<u8>, b: list<s8>) -> tuple<list<u8>, list<s8>>
+list-minmax16: func(a: list<u16>, b: list<s16>) -> tuple<list<u16>, list<s16>>
+list-minmax32: func(a: list<u32>, b: list<s32>) -> tuple<list<u32>, list<s32>>
+list-minmax64: func(a: list<u64>, b: list<s64>) -> tuple<list<u64>, list<s64>>
+list-minmax-float: func(a: list<float32>, b: list<float64>) -> tuple<list<float32>, list<float64>>
 
-list-roundtrip: function(a: list<u8>) -> list<u8>
+list-roundtrip: func(a: list<u8>) -> list<u8>
 
-string-roundtrip: function(a: string) -> string
+string-roundtrip: func(a: string) -> string
 
-unaligned-roundtrip1: function(a: list<u16>, b: list<u32>, c: list<u64>, d: list<flag32>, e: list<flag64>)
+unaligned-roundtrip1: func(a: list<u16>, b: list<u32>, c: list<u64>, d: list<flag32>, e: list<flag64>)
 
 record unaligned-record { a: u32, b: u64 }
-unaligned-roundtrip2: function(a: list<unaligned-record>, b: list<f32>, c: list<f64>, d: list<string>, e: list<list<u8>>)
+unaligned-roundtrip2: func(a: list<unaligned-record>, b: list<float32>, c: list<float64>, d: list<string>, e: list<list<u8>>)

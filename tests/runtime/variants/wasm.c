@@ -4,39 +4,39 @@
 
 void exports_test_imports() {
   {
-    imports_option_f32_t a;
+    imports_option_float32_t a;
     uint8_t r;
-    a.tag = 1;
+    a.is_some = true;
     a.val = 1;
     assert(imports_roundtrip_option(&a, &r) && r == 1);
     assert(r == 1);
-    a.tag = 0;
+    a.is_some = false;
     assert(!imports_roundtrip_option(&a, &r));
-    a.tag = 2;
+    a.is_some = true;
     a.val = 2;
     assert(imports_roundtrip_option(&a, &r) && r == 2);
   }
 
 
   {
-    imports_expected_u32_f32_t a;
-    imports_expected_f64_u8_t b;
+    imports_expected_u32_float32_t a;
+    imports_expected_float64_u8_t b;
 
-    a.tag = 0;
+    a.is_err = false;
     a.val.ok = 2;
     imports_roundtrip_result(&a, &b);
-    assert(b.tag == 0);
+    assert(!b.is_err);
     assert(b.val.ok == 2.0);
 
     a.val.ok = 4;
     imports_roundtrip_result(&a, &b);
-    assert(b.tag == 0);
+    assert(!b.is_err);
     assert(b.val.ok == 4);
 
-    a.tag = 1;
+    a.is_err = true;
     a.val.err = 5.3;
     imports_roundtrip_result(&a, &b);
-    assert(b.tag == 1);
+    assert(b.is_err);
     assert(b.val.err == 5);
   }
 
@@ -144,37 +144,38 @@ void exports_test_imports() {
 
   {
     imports_option_typedef_t a;
-    a.tag = 0;
+    a.is_some = false;
     bool b = false;
     imports_result_typedef_t c;
-    c.tag = 1;
+    c.is_err = true;
     imports_variant_typedefs(&a, b, &c);
   }
 
   {
     bool a;
-    imports_expected_void_void_t b;
+    imports_expected_unit_unit_t b;
     imports_my_errno_t c;
-    imports_variant_enums(true, 0, IMPORTS_MY_ERRNO_SUCCESS, &a, &b, &c);
+    b.is_err = false;
+    imports_variant_enums(true, &b, IMPORTS_MY_ERRNO_SUCCESS, &a, &b, &c);
     assert(a == false);
-    assert(b == 1);
+    assert(b.is_err);
     assert(c == IMPORTS_MY_ERRNO_A);
   }
 }
 
-bool exports_roundtrip_option(exports_option_f32_t *a, uint8_t *ret0) {
-  if (a->tag) {
+bool exports_roundtrip_option(exports_option_float32_t *a, uint8_t *ret0) {
+  if (a->is_some) {
     *ret0 = a->val;
   }
-  return a->tag;
+  return a->is_some;
 }
 
-void exports_roundtrip_result(exports_expected_u32_f32_t *a, exports_expected_f64_u8_t *ret0) {
-  ret0->tag = a->tag;
-  if (a->tag == 0) {
-    ret0->val.ok = a->val.ok;
-  } else {
+void exports_roundtrip_result(exports_expected_u32_float32_t *a, exports_expected_float64_u8_t *ret0) {
+  ret0->is_err = a->is_err;
+  if (a->is_err) {
     ret0->val.err = a->val.err;
+  } else {
+    ret0->val.ok = a->val.ok;
   }
 }
 

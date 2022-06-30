@@ -1,9 +1,0 @@
-resource x
-
-acquire-an-x: function(s: string) -> x
-acquire-lots-of-x: function(s: list<string>) -> list<x>
-
-receive-an-x: function(val: x) -> string
-receive-lots-of-x: function(vals: list<x>) -> list<string>
-
-all-dropped: function() -> bool

@@ -1,6 +1,7 @@
-test-imports: function()
+test-imports: func()
 
-f1: function(l: list<u32>)
-f2: function() -> list<u32>
-f3: function(a: list<u32>, b: list<u32>) -> (list<u32>, list<u32>)
-f4: function(l: list<list<u32>>) -> list<list<u32>>
+f1: func(l: list<u32>)
+f2: func() -> list<u32>
+// TODO: should re-enable when re-implemented
+// f3: func(a: list<u32>, b: list<u32>) -> tuple<list<u32>, list<u32>>
+f4: func(l: list<list<u32>>) -> list<list<u32>>

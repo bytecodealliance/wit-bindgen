@@ -1,2 +1,4 @@
-take-char: function(x: char)
-return-char: function() -> char
+/// A function that accepts a character
+take-char: func(x: char)
+/// A function that returns a character
+return-char: func() -> char

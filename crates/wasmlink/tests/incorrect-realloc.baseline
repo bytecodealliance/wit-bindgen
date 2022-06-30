@@ -1,1 +1,0 @@
-required export `canonical_abi_realloc` from module `incorrect-realloc` does not have the expected function signature of [I32, I32, I32, I32] -> [I32]

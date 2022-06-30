@@ -1,0 +1,6 @@
+enum error {
+  success,
+  failure,
+}
+
+option-test: func() -> expected<option<string>, error>

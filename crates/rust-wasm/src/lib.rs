@@ -1,13 +1,15 @@
-pub use async_trait::async_trait;
 use std::fmt;
 use std::marker;
 use std::mem;
 use std::ops::Deref;
+
+#[cfg(feature = "macros")]
 pub use wit_bindgen_rust_impl::{export, import};
 
-pub mod exports;
+#[cfg(feature = "async")]
+pub use async_trait::async_trait;
+#[cfg(feature = "async")]
 mod futures;
-pub mod imports;
 
 // Re-export `bitflags` so that we can reference it from macros.
 #[doc(hidden)]
@@ -128,6 +130,7 @@ pub unsafe trait LocalHandle: HandleType {
 pub mod rt {
     use std::alloc::{self, Layout};
 
+    #[cfg(feature = "async")]
     pub use crate::futures::*;
 
     #[no_mangle]
@@ -155,7 +158,7 @@ pub mod rt {
     }
 
     #[no_mangle]
-    unsafe extern "C" fn canonical_abi_free(ptr: *mut u8, len: usize, align: usize) {
+    pub unsafe extern "C" fn canonical_abi_free(ptr: *mut u8, len: usize, align: usize) {
         if len == 0 {
             return;
         }

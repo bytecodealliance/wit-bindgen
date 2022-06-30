@@ -1,5 +1,0 @@
-invalid escape in string '\n'
-     --> tests/ui/parse-fail/string-bad-escape.wit:3:3
-      |
-    3 | "\
-      |   ^

@@ -1,1 +1,0 @@
-required export `canonical_abi_free` from module `incorrect-free` does not have the expected function signature of [I32, I32, I32] -> []

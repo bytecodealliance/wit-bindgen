@@ -8,8 +8,6 @@ pub use tracing_lib as tracing;
 pub use {anyhow, bitflags, wasmtime};
 
 mod error;
-pub mod exports;
-pub mod imports;
 mod le;
 mod region;
 mod slab;
@@ -19,16 +17,6 @@ pub use error::GuestError;
 pub use le::{Endian, Le};
 pub use region::{AllBytesValid, BorrowChecker, Region};
 pub use table::*;
-
-pub struct RawMemory {
-    pub slice: *mut [u8],
-}
-
-// This type is threadsafe despite its internal pointer because it allows no
-// safe access to the internal pointer. Consumers must uphold Send/Sync
-// guarantees themselves.
-unsafe impl Send for RawMemory {}
-unsafe impl Sync for RawMemory {}
 
 #[doc(hidden)]
 pub mod rt {
@@ -85,13 +73,16 @@ pub mod rt {
         Trap::new(msg)
     }
 
-    pub fn validate_flags<U>(
-        bits: i64,
-        all: i64,
+    pub fn validate_flags<T, U>(
+        bits: T,
+        all: T,
         name: &str,
-        mk: impl FnOnce(i64) -> U,
-    ) -> Result<U, Trap> {
-        if bits & !all != 0 {
+        mk: impl FnOnce(T) -> U,
+    ) -> Result<U, Trap>
+    where
+        T: std::ops::Not<Output = T> + std::ops::BitAnd<Output = T> + From<u8> + PartialEq + Copy,
+    {
+        if bits & !all != 0u8.into() {
             let msg = format!("invalid flags specified for `{}`", name);
             Err(Trap::new(msg))
         } else {
@@ -139,7 +130,7 @@ pub mod rt {
         memory: &Memory,
         base: i32,
         len: i32,
-        align: i32,
+        _align: i32,
     ) -> Result<Vec<T>, Trap> {
         let size = (len as u32)
             .checked_mul(mem::size_of::<T>() as u32)

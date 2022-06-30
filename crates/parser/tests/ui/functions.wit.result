@@ -2,32 +2,22 @@
   "types": [
     {
       "idx": 0,
-      "variant": {
-        "cases": [
-          [
-            "none",
-            null
-          ],
-          [
-            "some",
-            "u32"
-          ]
+      "tuple": {
+        "types": [
+          "u32",
+          "u32"
         ]
       }
     },
     {
       "idx": 1,
-      "variant": {
-        "cases": [
-          [
-            "ok",
-            "u32"
-          ],
-          [
-            "err",
-            "f32"
-          ]
-        ]
+      "option": "u32"
+    },
+    {
+      "idx": 2,
+      "expected": {
+        "ok": "u32",
+        "err": "float32"
       }
     }
   ],
@@ -35,109 +25,46 @@
     {
       "name": "f1",
       "params": [],
-      "results": []
+      "result": "unit"
     },
     {
       "name": "f2",
       "params": [
         "u32"
       ],
-      "results": []
+      "result": "unit"
     },
     {
       "name": "f3",
       "params": [
         "u32"
       ],
-      "results": []
+      "result": "unit"
     },
     {
       "name": "f4",
       "params": [],
-      "results": [
-        "u32"
-      ]
+      "result": "u32"
     },
     {
       "name": "f6",
       "params": [],
-      "results": [
-        "u32",
-        "u32"
-      ]
+      "result": "type-0"
     },
     {
       "name": "f7",
       "params": [
-        "f32",
-        "f32"
+        "float32",
+        "float32"
       ],
-      "results": [
-        "u32",
-        "u32"
-      ]
+      "result": "type-0"
     },
     {
       "name": "f8",
       "params": [
-        "type-0"
-      ],
-      "results": [
         "type-1"
-      ]
-    },
-    {
-      "name": "f9",
-      "params": [],
-      "results": [
-        "u32"
-      ]
-    },
-    {
-      "name": "f10",
-      "params": [],
-      "results": [
-        "u32"
-      ]
-    },
-    {
-      "name": "f11",
-      "params": [],
-      "results": [
-        "u32"
-      ]
-    },
-    {
-      "name": "f12",
-      "params": [],
-      "results": [
-        "u32",
-        "u32"
-      ]
-    },
-    {
-      "name": "f13",
-      "params": [],
-      "results": [
-        "u32",
-        "u32"
-      ]
-    },
-    {
-      "name": "f14",
-      "params": [],
-      "results": [
-        "u32",
-        "u32"
-      ]
-    },
-    {
-      "name": "f15",
-      "params": [],
-      "results": [
-        "u32",
-        "u32"
-      ]
+      ],
+      "result": "type-2"
     }
   ]
 }

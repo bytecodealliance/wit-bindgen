@@ -1,10 +1,11 @@
 use heck::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fmt::Write;
 use std::mem;
 use wit_bindgen_gen_core::wit_parser::abi::{
-    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType, WitxInstruction,
+    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
 };
-use wit_bindgen_gen_core::{wit_parser::*, Direction, Files, Generator, Ns};
+use wit_bindgen_gen_core::{uwrite, uwriteln, wit_parser::*, Direction, Files, Generator, Ns};
 
 #[derive(Default)]
 pub struct C {
@@ -12,7 +13,8 @@ pub struct C {
     in_import: bool,
     opts: Opts,
     funcs: HashMap<String, Vec<Func>>,
-    i64_return_pointer_area_size: usize,
+    return_pointer_area_size: usize,
+    return_pointer_area_align: usize,
     sizes: SizeAlign,
     names: Ns,
 
@@ -69,12 +71,9 @@ struct CSig {
 
 #[derive(Debug)]
 enum Scalar {
+    Void,
     OptionBool(Type),
-    ExpectedEnum {
-        err: TypeId,
-        ok: Option<Type>,
-        max_err: usize,
-    },
+    ExpectedEnum { err: TypeId, max_err: usize },
     Type(Type),
 }
 
@@ -97,11 +96,7 @@ impl C {
             scalar: None,
             retptrs: Vec::new(),
         };
-        match func.results.len() {
-            0 => {}
-            1 => ret.return_single(iface, &func.results[0].1, &func.results[0].1),
-            _ => ret.retptrs.extend(func.results.iter().map(|p| p.1)),
-        }
+        ret.return_single(iface, &func.result, &func.result);
         return ret;
     }
 
@@ -112,11 +107,11 @@ impl C {
             func.name.to_snake_case()
         );
         self.names.insert(&name).expect("duplicate symbols");
-        let start = self.src.header.len();
+        let start = self.src.h.len();
 
         let ret = self.classify_ret(iface, func);
         match &ret.scalar {
-            None => self.src.h("void"),
+            None | Some(Scalar::Void) => self.src.h("void"),
             Some(Scalar::OptionBool(_id)) => self.src.h("bool"),
             Some(Scalar::ExpectedEnum { err, .. }) => self.print_ty(iface, &Type::Id(*err)),
             Some(Scalar::Type(ty)) => self.print_ty(iface, ty),
@@ -155,7 +150,7 @@ impl C {
         }
         self.src.h(")");
 
-        let sig = self.src.header[start..].to_string();
+        let sig = self.src.h[start..].to_string();
         self.src.h(";\n");
 
         CSig {
@@ -171,15 +166,16 @@ impl C {
         match ty {
             Type::Id(id) => match &iface.types[*id].kind {
                 TypeDefKind::Type(t) => self.is_arg_by_pointer(iface, t),
-                TypeDefKind::Variant(v) => !v.is_enum(),
-                TypeDefKind::Record(r) if r.is_flags() => false,
-                TypeDefKind::Pointer(_)
-                | TypeDefKind::ConstPointer(_)
-                | TypeDefKind::Record(_)
-                | TypeDefKind::List(_)
-                | TypeDefKind::PushBuffer(_)
-                | TypeDefKind::PullBuffer(_) => true,
+                TypeDefKind::Variant(_) => true,
+                TypeDefKind::Union(_) => true,
+                TypeDefKind::Option(_) => true,
+                TypeDefKind::Expected(_) => true,
+                TypeDefKind::Enum(_) => false,
+                TypeDefKind::Flags(_) => false,
+                TypeDefKind::Tuple(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
+                TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
             },
+            Type::String => true,
             _ => false,
         }
     }
@@ -190,7 +186,7 @@ impl C {
         // want to keep track of new anonymous types that are *only* mentioned
         // in methods like this, so we can place those types in the C file
         // instead of the header interface file.
-        let prev = mem::take(&mut self.src.header);
+        let prev = mem::take(&mut self.src.h);
         let prev_public = mem::take(&mut self.public_anonymous_types);
         let prev_private = mem::take(&mut self.private_anonymous_types);
 
@@ -214,11 +210,13 @@ impl C {
             }
         }
 
-        mem::replace(&mut self.src.header, prev).into()
+        mem::replace(&mut self.src.h, prev).into()
     }
 
     fn print_ty(&mut self, iface: &Interface, ty: &Type) {
         match ty {
+            Type::Unit => self.src.h("void"),
+            Type::Bool => self.src.h("bool"),
             Type::Char => self.src.h("uint32_t"), // TODO: better type?
             Type::U8 => self.src.h("uint8_t"),
             Type::S8 => self.src.h("int8_t"),
@@ -228,59 +226,36 @@ impl C {
             Type::S32 => self.src.h("int32_t"),
             Type::U64 => self.src.h("uint64_t"),
             Type::S64 => self.src.h("int64_t"),
-            Type::CChar => self.src.h("char"),
-            Type::F32 => self.src.h("float"),
-            Type::F64 => self.src.h("double"),
-            Type::Usize => self.src.h("size_t"),
+            Type::Float32 => self.src.h("float"),
+            Type::Float64 => self.src.h("double"),
             Type::Handle(id) => {
                 self.print_namespace(iface);
                 self.src.h(&iface.resources[*id].name.to_snake_case());
                 self.src.h("_t");
             }
+            Type::String => {
+                self.print_namespace(iface);
+                self.src.h("string_t");
+                self.needs_string = true;
+            }
             Type::Id(id) => {
                 let ty = &iface.types[*id];
-                if let Some(name) = &ty.name {
-                    self.print_namespace(iface);
-                    self.src.h(&name.to_snake_case());
-                    self.src.h("_t");
-                    return;
-                }
-                match &ty.kind {
-                    TypeDefKind::Type(t) => self.print_ty(iface, t),
-                    TypeDefKind::Variant(v) => {
-                        if v.is_bool() {
-                            return self.src.h("bool");
+                match &ty.name {
+                    Some(name) => {
+                        self.print_namespace(iface);
+                        self.src.h(&name.to_snake_case());
+                        self.src.h("_t");
+                    }
+                    None => match &ty.kind {
+                        TypeDefKind::Type(t) => self.print_ty(iface, t),
+                        _ => {
+                            self.public_anonymous_types.insert(*id);
+                            self.private_anonymous_types.remove(id);
+                            self.print_namespace(iface);
+                            self.print_ty_name(iface, &Type::Id(*id));
+                            self.src.h("_t");
                         }
-                        self.public_anonymous_types.insert(*id);
-                        self.private_anonymous_types.remove(id);
-                        self.print_namespace(iface);
-                        self.print_ty_name(iface, &Type::Id(*id));
-                        self.src.h("_t");
-                    }
-                    TypeDefKind::Pointer(t) => {
-                        self.print_ty(iface, t);
-                        self.src.h("*");
-                    }
-                    TypeDefKind::ConstPointer(t) => {
-                        self.src.h("const ");
-                        self.print_ty(iface, t);
-                        self.src.h("*");
-                    }
-                    TypeDefKind::List(Type::Char) => {
-                        self.print_namespace(iface);
-                        self.src.h("string_t");
-                        self.needs_string = true;
-                    }
-                    TypeDefKind::Record(_)
-                    | TypeDefKind::List(_)
-                    | TypeDefKind::PushBuffer(_)
-                    | TypeDefKind::PullBuffer(_) => {
-                        self.public_anonymous_types.insert(*id);
-                        self.private_anonymous_types.remove(id);
-                        self.print_namespace(iface);
-                        self.print_ty_name(iface, &Type::Id(*id));
-                        self.src.h("_t");
-                    }
+                    },
                 }
             }
         }
@@ -288,6 +263,8 @@ impl C {
 
     fn print_ty_name(&mut self, iface: &Interface, ty: &Type) {
         match ty {
+            Type::Unit => self.src.h("unit"),
+            Type::Bool => self.src.h("bool"),
             Type::Char => self.src.h("char32"),
             Type::U8 => self.src.h("u8"),
             Type::S8 => self.src.h("s8"),
@@ -297,11 +274,10 @@ impl C {
             Type::S32 => self.src.h("s32"),
             Type::U64 => self.src.h("u64"),
             Type::S64 => self.src.h("s64"),
-            Type::CChar => self.src.h("char"),
-            Type::F32 => self.src.h("f32"),
-            Type::F64 => self.src.h("f64"),
-            Type::Usize => self.src.h("usize"),
+            Type::Float32 => self.src.h("float32"),
+            Type::Float64 => self.src.h("float64"),
             Type::Handle(id) => self.src.h(&iface.resources[*id].name.to_snake_case()),
+            Type::String => self.src.h("string"),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
                 if let Some(name) = &ty.name {
@@ -309,56 +285,40 @@ impl C {
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty_name(iface, t),
-                    TypeDefKind::Record(r) => {
-                        assert!(r.is_tuple());
+                    TypeDefKind::Record(_)
+                    | TypeDefKind::Flags(_)
+                    | TypeDefKind::Enum(_)
+                    | TypeDefKind::Variant(_)
+                    | TypeDefKind::Union(_) => {
+                        unimplemented!()
+                    }
+                    TypeDefKind::Tuple(t) => {
                         self.src.h("tuple");
-                        self.src.h(&r.fields.len().to_string());
-                        for field in r.fields.iter() {
+                        self.src.h(&t.types.len().to_string());
+                        for ty in t.types.iter() {
                             self.src.h("_");
-                            self.print_ty_name(iface, &field.ty);
-                        }
-                    }
-                    TypeDefKind::Variant(v) => {
-                        if let Some(ty) = v.as_option() {
-                            self.src.h("option_");
                             self.print_ty_name(iface, ty);
-                        } else if let Some((ok, err)) = v.as_expected() {
-                            self.src.h("expected_");
-                            match ok {
-                                Some(t) => self.print_ty_name(iface, t),
-                                None => self.src.h("void"),
-                            }
-                            self.src.h("_");
-                            match err {
-                                Some(t) => self.print_ty_name(iface, t),
-                                None => self.src.h("void"),
-                            }
-                        } else if v.is_bool() {
-                            self.src.h("bool");
-                        } else {
-                            unimplemented!();
                         }
                     }
-                    TypeDefKind::Pointer(t) => {
-                        self.src.h("ptr_");
-                        self.print_ty_name(iface, t);
+                    TypeDefKind::Option(ty) => {
+                        self.src.h("option_");
+                        self.print_ty_name(iface, ty);
                     }
-                    TypeDefKind::ConstPointer(t) => {
-                        self.src.h("const_ptr_ ");
-                        self.print_ty_name(iface, t);
+                    TypeDefKind::Expected(e) => {
+                        self.src.h("expected_");
+                        self.print_ty_name(iface, &e.ok);
+                        self.src.h("_");
+                        self.print_ty_name(iface, &e.err);
                     }
-                    TypeDefKind::List(Type::Char) => self.src.h("string"),
                     TypeDefKind::List(t) => {
                         self.src.h("list_");
                         self.print_ty_name(iface, t);
                     }
-                    TypeDefKind::PushBuffer(t) => {
-                        self.src.h("push_buffer_");
-                        self.print_ty_name(iface, t);
-                    }
-                    TypeDefKind::PullBuffer(t) => {
-                        self.src.h("pull_buffer_");
-                        self.print_ty_name(iface, t);
+                    TypeDefKind::Stream(s) => {
+                        self.src.h("stream_");
+                        self.print_ty_name(iface, &s.element);
+                        self.src.h("_");
+                        self.print_ty_name(iface, &s.end);
                     }
                 }
             }
@@ -366,56 +326,50 @@ impl C {
     }
 
     fn print_anonymous_type(&mut self, iface: &Interface, ty: TypeId) {
-        let prev = mem::take(&mut self.src.header);
+        let prev = mem::take(&mut self.src.h);
         self.src.h("typedef ");
         let kind = &iface.types[ty].kind;
         match kind {
-            TypeDefKind::Type(_) | TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {
+            TypeDefKind::Type(_)
+            | TypeDefKind::Flags(_)
+            | TypeDefKind::Record(_)
+            | TypeDefKind::Enum(_)
+            | TypeDefKind::Variant(_)
+            | TypeDefKind::Union(_) => {
                 unreachable!()
             }
-            TypeDefKind::Record(r) => {
-                assert!(r.is_tuple());
+            TypeDefKind::Tuple(t) => {
                 self.src.h("struct {\n");
-                for (i, f) in r.fields.iter().enumerate() {
-                    self.print_ty(iface, &f.ty);
-                    self.src.h(" ");
-                    self.src.h(&format!("f{};\n", i));
+                for (i, t) in t.types.iter().enumerate() {
+                    self.print_ty(iface, t);
+                    uwriteln!(self.src.h, " f{i};");
                 }
                 self.src.h("}");
             }
-            TypeDefKind::Variant(v) => {
-                if let Some(t) = v.as_option() {
-                    self.src.h("struct {\n");
-                    self.src.h("\
-                        // `true` if `val` is present, `false` otherwise
-                        bool tag;
-                    ");
+            TypeDefKind::Option(t) => {
+                self.src.h("struct {\n");
+                self.src.h("bool is_some;\n");
+                if !self.is_empty_type(iface, t) {
                     self.print_ty(iface, t);
                     self.src.h(" val;\n");
-                    self.src.h("}");
-                } else if let Some((ok, err)) = v.as_expected() {
-                    if ok.is_none() && err.is_none() {
-                        self.src.h("uint8_t");
-                    } else {
-                        self.src.h("struct {
-                            // 0 if `val` is `ok`, 1 otherwise
-                            uint8_t tag;
-                            union {
-                        ");
-                        if let Some(ok) = ok {
-                            self.print_ty(iface, ok);
-                            self.src.h(" ok;\n");
-                        }
-                        if let Some(err) = err {
-                            self.print_ty(iface, err);
-                            self.src.h(" err;\n");
-                        }
-                        self.src.h("} val;\n");
-                        self.src.h("}");
-                    }
-                } else {
-                    unimplemented!();
                 }
+                self.src.h("}");
+            }
+            TypeDefKind::Expected(e) => {
+                self.src.h("struct {
+                    bool is_err;
+                    union {
+                ");
+                if !self.is_empty_type(iface, &e.ok) {
+                    self.print_ty(iface, &e.ok);
+                    self.src.h(" ok;\n");
+                }
+                if !self.is_empty_type(iface, &e.err) {
+                    self.print_ty(iface, &e.err);
+                    self.src.h(" err;\n");
+                }
+                self.src.h("} val;\n");
+                self.src.h("}");
             }
             TypeDefKind::List(t) => {
                 self.src.h("struct {\n");
@@ -424,34 +378,25 @@ impl C {
                 self.src.h("size_t len;\n");
                 self.src.h("}");
             }
-            TypeDefKind::PushBuffer(t) | TypeDefKind::PullBuffer(t) => {
-                self.src.h("struct {\n");
-                self.src.h("int32_t is_handle;\n");
-                if let TypeDefKind::PullBuffer(_) = kind {
-                    self.src.h("const ");
-                }
-                self.print_ty(iface, t);
-                self.src.h(" *ptr;\n");
-                self.src.h("size_t len;\n");
-                self.src.h("}");
-            }
+            TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
         }
         self.src.h(" ");
         self.print_namespace(iface);
         self.print_ty_name(iface, &Type::Id(ty));
         self.src.h("_t;\n");
-        self.types
-            .insert(ty, mem::replace(&mut self.src.header, prev));
+        self.types.insert(ty, mem::replace(&mut self.src.h, prev));
     }
 
     fn is_empty_type(&self, iface: &Interface, ty: &Type) -> bool {
         let id = match ty {
             Type::Id(id) => *id,
+            Type::Unit => return true,
             _ => return false,
         };
         match &iface.types[id].kind {
             TypeDefKind::Type(t) => self.is_empty_type(iface, t),
             TypeDefKind::Record(r) => r.fields.is_empty(),
+            TypeDefKind::Tuple(t) => t.types.is_empty(),
             _ => false,
         }
     }
@@ -494,7 +439,7 @@ impl C {
         if !self.owns_anything(iface, &ty) {
             return;
         }
-        let pos = self.src.header.len();
+        let pos = self.src.h.len();
         self.src.h("void ");
         self.print_namespace(iface);
         self.print_ty_name(iface, &ty);
@@ -503,11 +448,14 @@ impl C {
         self.print_ty_name(iface, &ty);
         self.src.h("_t *ptr)");
 
-        self.src.c(&self.src.header[pos..].to_string());
+        self.src.c(&self.src.h[pos..].to_string());
         self.src.h(";\n");
         self.src.c(" {\n");
         match &iface.types[id].kind {
             TypeDefKind::Type(t) => self.free(iface, t, "ptr"),
+
+            TypeDefKind::Flags(_) => {}
+            TypeDefKind::Enum(_) => {}
 
             TypeDefKind::Record(r) => {
                 for field in r.fields.iter() {
@@ -517,12 +465,17 @@ impl C {
                     self.free(
                         iface,
                         &field.ty,
-                        &format!(
-                            "&ptr->{}{}",
-                            if r.is_tuple() { "f" } else { "" },
-                            field.name.to_snake_case()
-                        ),
+                        &format!("&ptr->{}", field.name.to_snake_case()),
                     );
+                }
+            }
+
+            TypeDefKind::Tuple(t) => {
+                for (i, ty) in t.types.iter().enumerate() {
+                    if !self.owns_anything(iface, ty) {
+                        continue;
+                    }
+                    self.free(iface, ty, &format!("&ptr->f{i}"));
                 }
             }
 
@@ -532,44 +485,62 @@ impl C {
                     self.free(iface, t, "&ptr->ptr[i]");
                     self.src.c("}\n");
                 }
-                let (size, align) = if *t == Type::Char {
-                    (1, 1)
-                } else {
-                    (self.sizes.size(t), self.sizes.align(t))
-                };
-                self.src.c(&format!(
-                    "canonical_abi_free(ptr->ptr, ptr->len * {}, {});\n",
-                    size, align,
-                ));
+                uwriteln!(
+                    self.src.c,
+                    "canonical_abi_free(ptr->ptr, ptr->len * {}, {});",
+                    self.sizes.size(t),
+                    self.sizes.align(t),
+                );
             }
 
             TypeDefKind::Variant(v) => {
-                self.src.c("switch (ptr->tag) {\n");
+                self.src.c("switch ((int32_t) ptr->tag) {\n");
                 for (i, case) in v.cases.iter().enumerate() {
-                    let case_ty = match &case.ty {
-                        Some(ty) => ty,
-                        None => continue,
-                    };
-                    if !self.owns_anything(iface, case_ty) {
+                    if !self.owns_anything(iface, &case.ty) {
                         continue;
                     }
-                    self.src.c(&format!("case {}: {{\n", i));
-                    let expr = if v.as_option().is_some() {
-                        String::from("&ptr->val")
-                    } else {
-                        format!("&ptr->val.{}", case_field_name(case))
-                    };
-                    self.free(iface, case_ty, &expr);
+                    uwriteln!(self.src.c, "case {}: {{", i);
+                    let expr = format!("&ptr->val.{}", case.name.to_snake_case());
+                    self.free(iface, &case.ty, &expr);
                     self.src.c("break;\n");
                     self.src.c("}\n");
                 }
                 self.src.c("}\n");
             }
 
-            TypeDefKind::PushBuffer(_)
-            | TypeDefKind::PullBuffer(_)
-            | TypeDefKind::Pointer(_)
-            | TypeDefKind::ConstPointer(_) => {}
+            TypeDefKind::Union(u) => {
+                self.src.c("switch ((int32_t) ptr->tag) {\n");
+                for (i, case) in u.cases.iter().enumerate() {
+                    if !self.owns_anything(iface, &case.ty) {
+                        continue;
+                    }
+                    uwriteln!(self.src.c, "case {i}: {{");
+                    let expr = format!("&ptr->val.f{i}");
+                    self.free(iface, &case.ty, &expr);
+                    self.src.c("break;\n");
+                    self.src.c("}\n");
+                }
+                self.src.c("}\n");
+            }
+
+            TypeDefKind::Option(t) => {
+                self.src.c("if (ptr->is_some) {\n");
+                self.free(iface, t, "&ptr->val");
+                self.src.c("}\n");
+            }
+
+            TypeDefKind::Expected(e) => {
+                self.src.c("if (!ptr->is_err) {\n");
+                if self.owns_anything(iface, &e.ok) {
+                    self.free(iface, &e.ok, "&ptr->val.ok");
+                }
+                if self.owns_anything(iface, &e.err) {
+                    self.src.c("} else {\n");
+                    self.free(iface, &e.err, "&ptr->val.err");
+                }
+                self.src.c("}\n");
+            }
+            TypeDefKind::Stream(_) => todo!("print_dtor for stream"),
         }
         self.src.c("}\n");
     }
@@ -577,28 +548,35 @@ impl C {
     fn owns_anything(&self, iface: &Interface, ty: &Type) -> bool {
         let id = match ty {
             Type::Id(id) => *id,
+            Type::String => return true,
             Type::Handle(_) => return true,
             _ => return false,
         };
         match &iface.types[id].kind {
             TypeDefKind::Type(t) => self.owns_anything(iface, t),
             TypeDefKind::Record(r) => r.fields.iter().any(|t| self.owns_anything(iface, &t.ty)),
+            TypeDefKind::Tuple(t) => t.types.iter().any(|t| self.owns_anything(iface, t)),
+            TypeDefKind::Flags(_) => false,
+            TypeDefKind::Enum(_) => false,
             TypeDefKind::List(_) => true,
-            TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => false,
-            TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => false,
-            TypeDefKind::Variant(v) => v
+            TypeDefKind::Variant(v) => v.cases.iter().any(|c| self.owns_anything(iface, &c.ty)),
+            TypeDefKind::Union(v) => v
                 .cases
                 .iter()
-                .filter_map(|c| c.ty.as_ref())
-                .any(|t| self.owns_anything(iface, t)),
+                .any(|case| self.owns_anything(iface, &case.ty)),
+            TypeDefKind::Option(t) => self.owns_anything(iface, t),
+            TypeDefKind::Expected(e) => {
+                self.owns_anything(iface, &e.ok) || self.owns_anything(iface, &e.err)
+            }
+            TypeDefKind::Stream(_) => todo!("owns_anything for stream"),
         }
     }
 
     fn free(&mut self, iface: &Interface, ty: &Type, expr: &str) {
-        let prev = mem::take(&mut self.src.header);
+        let prev = mem::take(&mut self.src.h);
         self.print_namespace(iface);
         self.print_ty_name(iface, ty);
-        let name = mem::replace(&mut self.src.header, prev);
+        let name = mem::replace(&mut self.src.h, prev);
 
         self.src.c(&name);
         self.src.c("_free(");
@@ -623,6 +601,14 @@ impl Return {
     fn return_single(&mut self, iface: &Interface, ty: &Type, orig_ty: &Type) {
         let id = match ty {
             Type::Id(id) => *id,
+            Type::String => {
+                self.retptrs.push(*orig_ty);
+                return;
+            }
+            Type::Unit => {
+                self.scalar = Some(Scalar::Void);
+                return;
+            }
             _ => {
                 self.scalar = Some(Scalar::Type(*orig_ty));
                 return;
@@ -632,78 +618,74 @@ impl Return {
             TypeDefKind::Type(t) => self.return_single(iface, t, orig_ty),
 
             // Flags are returned as their bare values
-            TypeDefKind::Record(r) if r.is_flags() => {
+            TypeDefKind::Flags(_) => {
                 self.scalar = Some(Scalar::Type(*orig_ty));
             }
 
-            // record returns may become many return pointers with tuples
-            TypeDefKind::Record(_) => self.splat_tuples(iface, ty, orig_ty),
+            // Tuples get splatted to multiple return pointers
+            TypeDefKind::Tuple(_) => self.splat_tuples(iface, ty, orig_ty),
+
+            // Record returns are always through a pointer
+            TypeDefKind::Record(_) => {
+                self.retptrs.push(*orig_ty);
+            }
 
             // other records/lists/buffers always go to return pointers
-            TypeDefKind::List(_) | TypeDefKind::PushBuffer(_) | TypeDefKind::PullBuffer(_) => {
-                self.retptrs.push(*orig_ty)
-            }
+            TypeDefKind::List(_) => self.retptrs.push(*orig_ty),
 
-            // pointers are scalars
-            TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => {
+            // Enums are scalars
+            TypeDefKind::Enum(_) => {
                 self.scalar = Some(Scalar::Type(*orig_ty));
             }
 
-            // Enums are scalars (this includes bools)
-            TypeDefKind::Variant(v) if v.is_enum() => {
-                self.scalar = Some(Scalar::Type(*orig_ty));
+            // Unpack optional returns where a boolean discriminant is
+            // returned and then the actual type returned is returned
+            // through a return pointer.
+            TypeDefKind::Option(ty) => {
+                self.scalar = Some(Scalar::OptionBool(*ty));
+                self.retptrs.push(*ty);
             }
 
-            TypeDefKind::Variant(r) => {
-                // Unpack optional returns where a boolean discriminant is
-                // returned and then the actual type returned is returned
-                // through a return pointer.
-                if let Some(ty) = r.as_option() {
-                    self.scalar = Some(Scalar::OptionBool(*ty));
-                    self.retptrs.push(*ty);
-                    return;
-                }
-
-                // Unpack `expected<T, E>` returns where `E` looks like an enum
-                // so we can return that in the scalar return and have `T` get
-                // returned through the normal returns.
-                if let Some((ok, err)) = r.as_expected() {
-                    if let Some(Type::Id(err)) = err {
-                        if let TypeDefKind::Variant(e) = &iface.types[*err].kind {
-                            if e.is_enum() {
-                                self.scalar = Some(Scalar::ExpectedEnum {
-                                    ok: ok.cloned(),
-                                    err: *err,
-                                    max_err: e.cases.len(),
-                                });
-                                if let Some(ok) = ok {
-                                    self.splat_tuples(iface, ok, ok);
-                                }
-                                return;
-                            }
-                        }
+            // Unpack `expected<T, E>` returns where `E` looks like an enum
+            // so we can return that in the scalar return and have `T` get
+            // returned through the normal returns.
+            TypeDefKind::Expected(e) => {
+                if let Type::Id(err) = e.err {
+                    if let TypeDefKind::Enum(enum_) = &iface.types[err].kind {
+                        self.scalar = Some(Scalar::ExpectedEnum {
+                            err,
+                            max_err: enum_.cases.len(),
+                        });
+                        self.splat_tuples(iface, &e.ok, &e.ok);
+                        return;
                     }
                 }
 
-                // If all that failed then just return the variant via a normal
+                // otherwise just return the variant via a normal
                 // return pointer
                 self.retptrs.push(*orig_ty);
             }
+
+            TypeDefKind::Variant(_) | TypeDefKind::Union(_) => {
+                self.retptrs.push(*orig_ty);
+            }
+            TypeDefKind::Stream(_) => todo!("return_single for stream"),
         }
     }
 
     fn splat_tuples(&mut self, iface: &Interface, ty: &Type, orig_ty: &Type) {
         let id = match ty {
             Type::Id(id) => *id,
+            Type::Unit => return,
             _ => {
                 self.retptrs.push(*orig_ty);
                 return;
             }
         };
         match &iface.types[id].kind {
-            TypeDefKind::Record(r) if r.is_tuple() => {
+            TypeDefKind::Tuple(t) => {
                 self.splat_tuple = true;
-                self.retptrs.extend(r.fields.iter().map(|f| f.ty));
+                self.retptrs.extend(t.types.iter());
             }
             _ => self.retptrs.push(*orig_ty),
         }
@@ -713,16 +695,8 @@ impl Return {
 impl Generator for C {
     fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
         let variant = Self::abi_variant(dir);
-        self.sizes.fill(variant, iface);
+        self.sizes.fill(iface);
         self.in_import = variant == AbiVariant::GuestImport;
-
-        for func in iface.functions.iter() {
-            let sig = iface.wasm_signature(variant, func);
-            if let Some(results) = sig.retptr {
-                self.i64_return_pointer_area_size =
-                    self.i64_return_pointer_area_size.max(results.len());
-            }
-        }
     }
 
     fn type_record(
@@ -733,48 +707,79 @@ impl Generator for C {
         record: &Record,
         docs: &Docs,
     ) {
-        let prev = mem::take(&mut self.src.header);
+        let prev = mem::take(&mut self.src.h);
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
-        if record.is_flags() {
-            self.src.h("typedef ");
-            let repr = iface
-                .flags_repr(record)
-                .expect("unsupported number of flags");
-            self.src.h(int_repr(repr));
+        self.src.h("typedef struct {\n");
+        for field in record.fields.iter() {
+            self.print_ty(iface, &field.ty);
             self.src.h(" ");
-            self.print_namespace(iface);
-            self.src.h(&name.to_snake_case());
-            self.src.h("_t;\n");
+            self.src.h(&field.name.to_snake_case());
+            self.src.h(";\n");
+        }
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
 
-            for (i, field) in record.fields.iter().enumerate() {
-                self.src.h(&format!(
-                    "#define {}_{}_{} (1 << {})\n",
-                    iface.name.to_shouty_snake_case(),
-                    name.to_shouty_snake_case(),
-                    field.name.to_shouty_snake_case(),
-                    i,
-                ));
-            }
-        } else {
-            self.src.h("typedef struct {\n");
-            for field in record.fields.iter() {
-                self.print_ty(iface, &field.ty);
-                self.src.h(" ");
-                if record.is_tuple() {
-                    self.src.h("f");
-                }
-                self.src.h(&field.name.to_snake_case());
-                self.src.h(";\n");
-            }
-            self.src.h("} ");
-            self.print_namespace(iface);
-            self.src.h(&name.to_snake_case());
-            self.src.h("_t;\n");
+        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+    }
+
+    fn type_tuple(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        tuple: &Tuple,
+        docs: &Docs,
+    ) {
+        let prev = mem::take(&mut self.src.h);
+        self.docs(docs);
+        self.names.insert(&name.to_snake_case()).unwrap();
+        self.src.h("typedef struct {\n");
+        for (i, ty) in tuple.types.iter().enumerate() {
+            self.print_ty(iface, ty);
+            uwriteln!(self.src.h, " f{i};");
+        }
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
+
+        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+    }
+
+    fn type_flags(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        flags: &Flags,
+        docs: &Docs,
+    ) {
+        let prev = mem::take(&mut self.src.h);
+        self.docs(docs);
+        self.names.insert(&name.to_snake_case()).unwrap();
+        self.src.h("typedef ");
+        let repr = flags_repr(flags);
+        self.src.h(int_repr(repr));
+        self.src.h(" ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
+
+        for (i, flag) in flags.flags.iter().enumerate() {
+            uwriteln!(
+                self.src.h,
+                "#define {}_{}_{} (1 << {})",
+                iface.name.to_shouty_snake_case(),
+                name.to_shouty_snake_case(),
+                flag.name.to_shouty_snake_case(),
+                i,
+            );
         }
 
-        self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
+        self.types.insert(id, mem::replace(&mut self.src.h, prev));
     }
 
     fn type_variant(
@@ -785,60 +790,147 @@ impl Generator for C {
         variant: &Variant,
         docs: &Docs,
     ) {
-        let prev = mem::take(&mut self.src.header);
+        let prev = mem::take(&mut self.src.h);
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
-        if variant.is_bool() {
-            self.src.h("typedef bool ");
-            self.print_namespace(iface);
-            self.src.h(&name.to_snake_case());
-            self.src.h("_t;\n");
-        } else if variant.is_enum() {
-            self.src.h("typedef ");
-            self.src.h(int_repr(variant.tag));
-            self.src.h(" ");
-            self.print_namespace(iface);
-            self.src.h(&name.to_snake_case());
-            self.src.h("_t;\n");
-        } else {
-            self.src.h("typedef struct {\n");
-            self.src.h(int_repr(variant.tag));
-            self.src.h(" tag;\n");
-            match variant.as_option() {
-                Some(ty) => {
-                    self.print_ty(iface, ty);
-                    self.src.h(" val;\n");
-                }
-                None => {
-                    self.src.h("union {\n");
-                    for case in variant.cases.iter() {
-                        if let Some(ty) = &case.ty {
-                            self.print_ty(iface, ty);
-                            self.src.h(" ");
-                            self.src.h(&case_field_name(case));
-                            self.src.h(";\n");
-                        }
-                    }
-                    self.src.h("} val;\n");
-                }
+        self.src.h("typedef struct {\n");
+        self.src.h(int_repr(variant.tag()));
+        self.src.h(" tag;\n");
+        self.src.h("union {\n");
+        for case in variant.cases.iter() {
+            if self.is_empty_type(iface, &case.ty) {
+                continue;
             }
-            self.src.h("} ");
-            self.print_namespace(iface);
-            self.src.h(&name.to_snake_case());
-            self.src.h("_t;\n");
+            self.print_ty(iface, &case.ty);
+            self.src.h(" ");
+            self.src.h(&case.name.to_snake_case());
+            self.src.h(";\n");
         }
+        self.src.h("} val;\n");
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
         for (i, case) in variant.cases.iter().enumerate() {
-            self.src.h(&format!(
-                "#define {}_{}_{} {}\n",
+            uwriteln!(
+                self.src.h,
+                "#define {}_{}_{} {}",
                 iface.name.to_shouty_snake_case(),
                 name.to_shouty_snake_case(),
                 case.name.to_shouty_snake_case(),
                 i,
-            ));
+            );
         }
 
-        self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
+        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+    }
+
+    fn type_union(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        union: &Union,
+        docs: &Docs,
+    ) {
+        let prev = mem::take(&mut self.src.h);
+        self.docs(docs);
+        self.names.insert(&name.to_snake_case()).unwrap();
+        self.src.h("typedef struct {\n");
+        self.src.h(int_repr(union.tag()));
+        self.src.h(" tag;\n");
+        self.src.h("union {\n");
+        for (i, case) in union.cases.iter().enumerate() {
+            self.print_ty(iface, &case.ty);
+            uwriteln!(self.src.h, " f{i};");
+        }
+        self.src.h("} val;\n");
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
+
+        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+    }
+
+    fn type_option(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        payload: &Type,
+        docs: &Docs,
+    ) {
+        let prev = mem::take(&mut self.src.h);
+        self.docs(docs);
+        self.names.insert(&name.to_snake_case()).unwrap();
+        self.src.h("typedef struct {\n");
+        self.src.h("bool is_some;\n");
+        if !self.is_empty_type(iface, payload) {
+            self.print_ty(iface, payload);
+            self.src.h(" val;\n");
+        }
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
+
+        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+    }
+
+    fn type_expected(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        expected: &Expected,
+        docs: &Docs,
+    ) {
+        let prev = mem::take(&mut self.src.h);
+        self.docs(docs);
+        self.names.insert(&name.to_snake_case()).unwrap();
+        self.src.h("typedef struct {\n");
+        self.src.h("bool is_err;\n");
+        self.src.h("union {\n");
+        if !self.is_empty_type(iface, &expected.ok) {
+            self.print_ty(iface, &expected.ok);
+            self.src.h(" ok;\n");
+        }
+        if !self.is_empty_type(iface, &expected.err) {
+            self.print_ty(iface, &expected.err);
+            self.src.h(" err;\n");
+        }
+        self.src.h("} val;\n");
+        self.src.h("} ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
+
+        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+    }
+
+    fn type_enum(&mut self, iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
+        let prev = mem::take(&mut self.src.h);
+        self.docs(docs);
+        self.names.insert(&name.to_snake_case()).unwrap();
+        self.src.h("typedef ");
+        self.src.h(int_repr(enum_.tag()));
+        self.src.h(" ");
+        self.print_namespace(iface);
+        self.src.h(&name.to_snake_case());
+        self.src.h("_t;\n");
+        for (i, case) in enum_.cases.iter().enumerate() {
+            uwriteln!(
+                self.src.h,
+                "#define {}_{}_{} {}",
+                iface.name.to_shouty_snake_case(),
+                name.to_shouty_snake_case(),
+                case.name.to_shouty_snake_case(),
+                i,
+            );
+        }
+
+        self.types.insert(id, mem::replace(&mut self.src.h, prev));
     }
 
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
@@ -846,7 +938,7 @@ impl Generator for C {
     }
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        let prev = mem::take(&mut self.src.header);
+        let prev = mem::take(&mut self.src.h);
         self.docs(docs);
         self.src.h("typedef ");
         self.print_ty(iface, ty);
@@ -854,70 +946,13 @@ impl Generator for C {
         self.print_namespace(iface);
         self.src.h(&name.to_snake_case());
         self.src.h("_t;\n");
-        self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
+        self.types.insert(id, mem::replace(&mut self.src.h, prev));
     }
 
     fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        let prev = mem::take(&mut self.src.header);
-        self.docs(docs);
-        if *ty == Type::Char {
-            self.src.h("typedef ");
-            self.print_namespace(iface);
-            self.src.h("string_t ");
-        } else {
-            self.src.h("typedef struct {\n");
-            self.print_ty(iface, ty);
-            self.src.h(" *ptr;\n");
-            self.src.h("size_t len;\n");
-            self.src.h("} ");
-        }
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
-        self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
-    }
-
-    fn type_pointer(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        const_: bool,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        drop((iface, _id, name, const_, ty, docs));
-    }
-
-    fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        drop((iface, _id, name, ty, docs));
-    }
-
-    fn type_push_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        self.type_pull_buffer(iface, id, name, ty, docs);
-    }
-
-    fn type_pull_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        let prev = mem::take(&mut self.src.header);
+        let prev = mem::take(&mut self.src.h);
         self.docs(docs);
         self.src.h("typedef struct {\n");
-        self.src.h("int32_t is_handle;\n");
         self.print_ty(iface, ty);
         self.src.h(" *ptr;\n");
         self.src.h("size_t len;\n");
@@ -925,8 +960,11 @@ impl Generator for C {
         self.print_namespace(iface);
         self.src.h(&name.to_snake_case());
         self.src.h("_t;\n");
-        self.types
-            .insert(id, mem::replace(&mut self.src.header, prev));
+        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+    }
+
+    fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        drop((iface, _id, name, ty, docs));
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
@@ -937,10 +975,12 @@ impl Generator for C {
         // In the private C file, print a function declaration which is the
         // actual wasm import that we'll be calling, and this has the raw wasm
         // signature.
-        self.src.c(&format!(
-            "__attribute__((import_module(\"{}\"), import_name(\"{}\")))\n",
-            iface.name, func.name
-        ));
+        uwriteln!(
+            self.src.c,
+            "__attribute__((import_module(\"{}\"), import_name(\"{}\")))",
+            iface.name,
+            func.name
+        );
         let import_name = self.names.tmp(&format!(
             "__wasm_import_{}_{}",
             iface.name.to_snake_case(),
@@ -1014,10 +1054,11 @@ impl Generator for C {
 
         // Generate, in the C source file, the raw wasm signature that has the
         // canonical ABI.
-        self.src.c(&format!(
-            "__attribute__((export_name(\"{}\")))\n",
+        uwriteln!(
+            self.src.c,
+            "__attribute__((export_name(\"{}\")))",
             func.name
-        ));
+        );
         let import_name = self.names.tmp(&format!(
             "__wasm_export_{}_{}",
             iface.name.to_snake_case(),
@@ -1038,7 +1079,7 @@ impl Generator for C {
                 f.gen.src.c(", ");
             }
             let name = f.locals.tmp("arg");
-            f.gen.src.c(&format!("{} {}", wasm_type(*param), name));
+            uwrite!(f.gen.src.c, "{} {}", wasm_type(*param), name);
             f.params.push(name);
         }
         if sig.params.len() == 0 {
@@ -1065,7 +1106,8 @@ impl Generator for C {
     }
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
-        self.src.h(&format!(
+        uwrite!(
+            self.src.h,
             "\
                 #ifndef __BINDINGS_{0}_H
                 #define __BINDINGS_{0}_H
@@ -1078,21 +1120,23 @@ impl Generator for C {
                 #include <stdbool.h>
             ",
             iface.name.to_shouty_snake_case(),
-        ));
-        self.src.c(&format!(
+        );
+        uwrite!(
+            self.src.c,
             "\
                 #include <stdlib.h>
                 #include <{}.h>
             ",
             iface.name.to_kebab_case(),
-        ));
+        );
 
         self.print_intrinsics();
 
         for (_, resource) in iface.resources.iter() {
             let ns = iface.name.to_snake_case();
             let name = resource.name.to_snake_case();
-            self.src.h(&format!(
+            uwrite!(
+                self.src.h,
                 "
                     typedef struct {{
                         uint32_t idx;
@@ -1102,8 +1146,9 @@ impl Generator for C {
                 ",
                 ns = ns,
                 name = name,
-            ));
-            self.src.c(&format!(
+            );
+            uwrite!(
+                self.src.c,
                 "
                     __attribute__((import_module(\"canonical_abi\"), import_name(\"resource_drop_{name_orig}\")))
                     void __resource_{name}_drop(uint32_t idx);
@@ -1122,14 +1167,15 @@ impl Generator for C {
                 ns = ns,
                 name = name,
                 name_orig = resource.name,
-            ));
+            );
 
             // Exported resources have more capabilities, they can create new
             // resources and get the private value that it was created with.
             // Furthermore we also define the destructor which delegates to the
             // actual user-defined destructor, if any.
             if !self.in_import {
-                self.src.h(&format!(
+                uwrite!(
+                    self.src.h,
                     "\
                         {ns}_{name}_t {ns}_{name}_new(void *data);
                         void* {ns}_{name}_get({ns}_{name}_t *ptr);
@@ -1139,8 +1185,9 @@ impl Generator for C {
                     ",
                     ns = ns,
                     name = name,
-                ));
-                self.src.c(&format!(
+                );
+                uwrite!(
+                    self.src.c,
                     "
                         __attribute__((import_module(\"canonical_abi\"), import_name(\"resource_new_{name_orig}\")))
                         uint32_t __resource_{name}_new(uint32_t val);
@@ -1165,7 +1212,7 @@ impl Generator for C {
                     ns = ns,
                     name = name,
                     name_orig = resource.name,
-                ));
+                );
             }
         }
 
@@ -1184,17 +1231,24 @@ impl Generator for C {
         // same loop as above, after we switch the sets. We record, however,
         // all private types in a local set here to later determine if the type
         // needs to be in the C file or the H file.
+        //
+        // Note though that we don't re-print a type (and consider it private)
+        // if we already printed it above as part of the public set.
         let mut private_types = HashSet::new();
         self.public_anonymous_types = mem::take(&mut self.private_anonymous_types);
         while !self.public_anonymous_types.is_empty() {
             for ty in mem::take(&mut self.public_anonymous_types) {
+                if self.types.contains_key(&ty) {
+                    continue;
+                }
                 private_types.insert(ty);
                 self.print_anonymous_type(iface, ty);
             }
         }
 
         if self.needs_string {
-            self.src.h(&format!(
+            uwrite!(
+                self.src.h,
                 "
                     typedef struct {{
                         char *ptr;
@@ -1206,9 +1260,10 @@ impl Generator for C {
                     void {0}_string_free({0}_string_t *ret);
                 ",
                 iface.name.to_snake_case(),
-            ));
+            );
             self.src.c("#include <string.h>\n");
-            self.src.c(&format!(
+            uwrite!(
+                self.src.c,
                 "
                     void {0}_string_set({0}_string_t *ret, const char *s) {{
                         ret->ptr = (char*) s;
@@ -1228,7 +1283,7 @@ impl Generator for C {
                     }}
                 ",
                 iface.name.to_snake_case(),
-            ));
+            );
         }
 
         // Afterwards print all types. Note that this print must be in a
@@ -1244,17 +1299,22 @@ impl Generator for C {
             }
         }
 
-        if self.i64_return_pointer_area_size > 0 {
-            self.src.c(&format!(
-                "static int64_t RET_AREA[{}];\n",
-                self.i64_return_pointer_area_size,
-            ));
+        if self.return_pointer_area_size > 0 {
+            uwrite!(
+                self.src.c,
+                "
+                    __attribute__((aligned({})))
+                    static uint8_t RET_AREA[{}];
+                ",
+                self.return_pointer_area_align,
+                self.return_pointer_area_size,
+            );
         }
 
         for (_module, funcs) in mem::take(&mut self.funcs) {
             for func in funcs {
-                self.src.h(&func.src.header);
-                self.src.c(&func.src.src);
+                self.src.h(&func.src.h);
+                self.src.c(&func.src.c);
             }
         }
 
@@ -1267,11 +1327,11 @@ impl Generator for C {
 
         files.push(
             &format!("{}.c", iface.name.to_kebab_case()),
-            self.src.src.as_bytes(),
+            self.src.c.as_bytes(),
         );
         files.push(
             &format!("{}.h", iface.name.to_kebab_case()),
-            self.src.header.as_bytes(),
+            self.src.h.as_bytes(),
         );
     }
 }
@@ -1324,10 +1384,14 @@ impl<'a> FunctionBindgen<'a> {
     }
 
     fn store(&mut self, ty: &str, offset: i32, operands: &[String]) {
-        self.src.push_str(&format!(
-            "*(({}*)({} + {})) = {};\n",
-            ty, operands[1], offset, operands[0]
-        ));
+        uwriteln!(
+            self.src,
+            "*(({}*)({} + {})) = {};",
+            ty,
+            operands[1],
+            offset,
+            operands[0]
+        );
     }
 
     fn store_in_retptrs(&mut self, operands: &[String]) {
@@ -1365,18 +1429,11 @@ impl Bindgen for FunctionBindgen<'_> {
         self.blocks.push((src.into(), mem::take(operands)));
     }
 
-    fn allocate_typed_space(&mut self, iface: &Interface, ty: TypeId) -> String {
-        let ty = self.gen.type_string(iface, &Type::Id(ty));
-        let name = self.locals.tmp("tmp");
-        self.src.push_str(&format!("{} {};\n", ty, name));
-        format!("(int32_t) (&{})", name)
-    }
-
-    fn i64_return_pointer_area(&mut self, amt: usize) -> String {
-        assert!(amt <= self.gen.i64_return_pointer_area_size);
+    fn return_pointer(&mut self, _iface: &Interface, size: usize, align: usize) -> String {
+        self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
+        self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
         let ptr = self.locals.tmp("ptr");
-        self.src
-            .push_str(&format!("int32_t {} = (int32_t) &RET_AREA;\n", ptr));
+        uwriteln!(self.src, "int32_t {} = (int32_t) &RET_AREA;", ptr);
         ptr
     }
 
@@ -1408,10 +1465,8 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::U32FromI32 => results.push(format!("(uint32_t) ({})", operands[0])),
             Instruction::S32FromI32 | Instruction::S64FromI64 => results.push(operands[0].clone()),
             Instruction::U64FromI64 => results.push(format!("(uint64_t) ({})", operands[0])),
-            Instruction::UsizeFromI32 => results.push(format!("(size_t) ({})", operands[0])),
 
-            Instruction::I32FromUsize
-            | Instruction::I32FromU8
+            Instruction::I32FromU8
             | Instruction::I32FromS8
             | Instruction::I32FromU16
             | Instruction::I32FromS16
@@ -1425,10 +1480,10 @@ impl Bindgen for FunctionBindgen<'_> {
 
             // f32/f64 have the same representation in the import type and in C,
             // so no conversions necessary.
-            Instruction::F32FromIf32
-            | Instruction::F64FromIf64
-            | Instruction::If32FromF32
-            | Instruction::If64FromF64 => {
+            Instruction::F32FromFloat32
+            | Instruction::F64FromFloat64
+            | Instruction::Float32FromF32
+            | Instruction::Float64FromF64 => {
                 results.push(operands[0].clone());
             }
 
@@ -1452,7 +1507,6 @@ impl Bindgen for FunctionBindgen<'_> {
                             results
                                 .push(format!("((union {{ float a; int32_t b; }}){{ {} }}).b", op));
                         }
-                        Bitcast::F32ToF64 | Bitcast::F64ToF32 => results.push(op.to_string()),
                         Bitcast::I64ToF64 => {
                             results.push(format!(
                                 "((union {{ int64_t a; double b; }}){{ {} }}).b",
@@ -1476,6 +1530,14 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
+            Instruction::UnitLower => {}
+            Instruction::UnitLift => {
+                results.push("INVALID".to_string());
+            }
+            Instruction::BoolFromI32 | Instruction::I32FromBool => {
+                results.push(operands[0].clone());
+            }
+
             Instruction::I32FromOwnedHandle { .. } | Instruction::I32FromBorrowedHandle { .. } => {
                 results.push(format!("({}).idx", operands[0]));
             }
@@ -1491,44 +1553,69 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::RecordLower { record, .. } => {
-                if record.is_tuple() {
-                    let op = &operands[0];
-                    for i in 0..record.fields.len() {
-                        results.push(format!("({}).f{}", op, i));
-                    }
-                } else {
-                    let op = &operands[0];
-                    for f in record.fields.iter() {
-                        results.push(format!("({}).{}", op, f.name.to_snake_case()));
-                    }
+                let op = &operands[0];
+                for f in record.fields.iter() {
+                    results.push(format!("({}).{}", op, f.name.to_snake_case()));
                 }
             }
             Instruction::RecordLift { ty, .. } => {
                 let name = self.gen.type_string(iface, &Type::Id(*ty));
                 let mut result = format!("({}) {{\n", name);
                 for op in operands {
-                    result.push_str(&format!("{},\n", op));
+                    uwriteln!(result, "{},", op);
+                }
+                result.push_str("}");
+                results.push(result);
+            }
+
+            Instruction::TupleLower { tuple, .. } => {
+                let op = &operands[0];
+                for i in 0..tuple.types.len() {
+                    results.push(format!("({}).f{}", op, i));
+                }
+            }
+            Instruction::TupleLift { ty, .. } => {
+                let name = self.gen.type_string(iface, &Type::Id(*ty));
+                let mut result = format!("({}) {{\n", name);
+                for op in operands {
+                    uwriteln!(result, "{},", op);
                 }
                 result.push_str("}");
                 results.push(result);
             }
 
             // TODO: checked
-            Instruction::FlagsLower { record, .. } | Instruction::FlagsLift { record, .. } => {
-                match record.num_i32s() {
-                    0 | 1 => results.push(operands.pop().unwrap()),
-                    _ => panic!("unsupported bitflags"),
+            Instruction::FlagsLower { flags, ty, .. } => match flags_repr(flags) {
+                Int::U8 | Int::U16 | Int::U32 => {
+                    results.push(operands.pop().unwrap());
                 }
-            }
-            Instruction::FlagsLower64 { .. } | Instruction::FlagsLift64 { .. } => {
-                results.push(operands.pop().unwrap());
-            }
+                Int::U64 => {
+                    let name = self.gen.type_string(iface, &Type::Id(*ty));
+                    let tmp = self.locals.tmp("flags");
+                    uwriteln!(self.src, "{name} {tmp} = {};", operands[0]);
+                    results.push(format!("{tmp} & 0xffffffff"));
+                    results.push(format!("({tmp} >> 32) & 0xffffffff"));
+                }
+            },
+
+            Instruction::FlagsLift { flags, ty, .. } => match flags_repr(flags) {
+                Int::U8 | Int::U16 | Int::U32 => {
+                    results.push(operands.pop().unwrap());
+                }
+                Int::U64 => {
+                    let name = self.gen.type_string(iface, &Type::Id(*ty));
+                    let op0 = &operands[0];
+                    let op1 = &operands[1];
+                    results.push(format!("(({name}) ({op0})) | ((({name}) ({op1})) << 32)"));
+                }
+            },
 
             Instruction::VariantPayloadName => {
                 let name = self.locals.tmp("payload");
                 results.push(format!("*{}", name));
                 self.payloads.push(name);
             }
+
             Instruction::VariantLower {
                 variant,
                 results: result_types,
@@ -1543,12 +1630,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     .drain(self.payloads.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
 
-                if results.len() == 1 && variant.is_enum() {
-                    results.push(format!("(int32_t) {}", operands[0]));
-                    return;
-                }
-
-                let mut variant_results = Vec::new();
+                let mut variant_results = Vec::with_capacity(result_types.len());
                 for ty in result_types.iter() {
                     let name = self.locals.tmp("variant");
                     results.push(name.clone());
@@ -1559,36 +1641,30 @@ impl Bindgen for FunctionBindgen<'_> {
                     variant_results.push(name);
                 }
 
-                let expr_to_match = if variant.is_enum() {
-                    operands[0].to_string()
-                } else {
-                    format!("({}).tag", operands[0])
-                };
+                let expr_to_match = format!("({}).tag", operands[0]);
 
-                self.src
-                    .push_str(&format!("switch ((int32_t) {}) {{\n", expr_to_match));
+                uwriteln!(self.src, "switch ((int32_t) {}) {{", expr_to_match);
                 for (i, ((case, (block, block_results)), payload)) in
                     variant.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
-                    self.src.push_str(&format!("case {}: {{\n", i));
-                    if let Some(ty) = &case.ty {
-                        if !self.gen.is_empty_type(iface, ty) {
-                            let ty = self.gen.type_string(iface, ty);
-                            self.src.push_str(&format!(
-                                "const {} *{} = &({}).val",
-                                ty, payload, operands[0],
-                            ));
-                            if !variant.as_option().is_some() {
-                                self.src.push_str(".");
-                                self.src.push_str(&case_field_name(case));
-                            }
-                            self.src.push_str(";\n");
-                        }
+                    uwriteln!(self.src, "case {}: {{", i);
+                    if !self.gen.is_empty_type(iface, &case.ty) {
+                        let ty = self.gen.type_string(iface, &case.ty);
+                        uwrite!(
+                            self.src,
+                            "const {} *{} = &({}).val",
+                            ty,
+                            payload,
+                            operands[0],
+                        );
+                        self.src.push_str(".");
+                        self.src.push_str(&case.name.to_snake_case());
+                        self.src.push_str(";\n");
                     }
                     self.src.push_str(&block);
 
                     for (name, result) in variant_results.iter().zip(&block_results) {
-                        self.src.push_str(&format!("{} = {};\n", name, result));
+                        uwriteln!(self.src, "{} = {};", name, result);
                     }
                     self.src.push_str("break;\n}\n");
                 }
@@ -1601,33 +1677,23 @@ impl Bindgen for FunctionBindgen<'_> {
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
 
-                if variant.is_enum() {
-                    return results.push(operands.pop().unwrap());
-                }
-
                 let ty = self.gen.type_string(iface, &Type::Id(*ty));
                 let result = self.locals.tmp("variant");
-                self.src.push_str(&format!("{} {};\n", ty, result));
-                self.src
-                    .push_str(&format!("{}.tag = {};\n", result, operands[0]));
-                self.src
-                    .push_str(&format!("switch ((int32_t) {}.tag) {{\n", result));
+                uwriteln!(self.src, "{} {};", ty, result);
+                uwriteln!(self.src, "{}.tag = {};", result, operands[0]);
+                uwriteln!(self.src, "switch ((int32_t) {}.tag) {{", result);
                 for (i, (case, (block, block_results))) in
                     variant.cases.iter().zip(blocks).enumerate()
                 {
-                    self.src.push_str(&format!("case {}: {{\n", i));
+                    uwriteln!(self.src, "case {}: {{", i);
                     self.src.push_str(&block);
+                    assert!(block_results.len() == 1);
 
-                    if case.ty.is_some() {
-                        assert!(block_results.len() == 1);
+                    if !self.gen.is_empty_type(iface, &case.ty) {
                         let mut dst = format!("{}.val", result);
-                        if !variant.as_option().is_some() {
-                            dst.push_str(".");
-                            dst.push_str(&case_field_name(case));
-                        }
+                        dst.push_str(".");
+                        dst.push_str(&case.name.to_snake_case());
                         self.store_op(&block_results[0], &dst);
-                    } else {
-                        assert!(block_results.is_empty());
                     }
                     self.src.push_str("break;\n}\n");
                 }
@@ -1635,19 +1701,267 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(result);
             }
 
-            Instruction::ListCanonLower { .. } => {
+            Instruction::UnionLower {
+                union,
+                results: result_types,
+                ..
+            } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - union.cases.len()..)
+                    .collect::<Vec<_>>();
+                let payloads = self
+                    .payloads
+                    .drain(self.payloads.len() - union.cases.len()..)
+                    .collect::<Vec<_>>();
+
+                let mut union_results = Vec::with_capacity(result_types.len());
+                for ty in result_types.iter() {
+                    let name = self.locals.tmp("unionres");
+                    results.push(name.clone());
+                    let ty = wasm_type(*ty);
+                    uwriteln!(self.src, "{ty} {name};");
+                    union_results.push(name);
+                }
+
+                let op0 = &operands[0];
+                uwriteln!(self.src, "switch (({op0}).tag) {{");
+                for (i, ((case, (block, block_results)), payload)) in
+                    union.cases.iter().zip(blocks).zip(payloads).enumerate()
+                {
+                    uwriteln!(self.src, "case {i}: {{");
+                    if !self.gen.is_empty_type(iface, &case.ty) {
+                        let ty = self.gen.type_string(iface, &case.ty);
+                        uwriteln!(self.src, "const {ty} *{payload} = &({op0}).val.f{i};");
+                    }
+                    self.src.push_str(&block);
+
+                    for (name, result) in union_results.iter().zip(&block_results) {
+                        uwriteln!(self.src, "{name} = {result};");
+                    }
+                    self.src.push_str("break;\n}\n");
+                }
+                self.src.push_str("}\n");
+            }
+
+            Instruction::UnionLift { union, ty, .. } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - union.cases.len()..)
+                    .collect::<Vec<_>>();
+
+                let ty = self.gen.type_string(iface, &Type::Id(*ty));
+                let result = self.locals.tmp("unionres");
+                uwriteln!(self.src, "{} {};", ty, result);
+                uwriteln!(self.src, "{}.tag = {};", result, operands[0]);
+                uwriteln!(self.src, "switch ((int32_t) {}.tag) {{", result);
+                for (i, (_case, (block, block_results))) in
+                    union.cases.iter().zip(blocks).enumerate()
+                {
+                    uwriteln!(self.src, "case {i}: {{");
+                    self.src.push_str(&block);
+
+                    assert!(block_results.len() == 1);
+                    let dst = format!("{result}.val.f{i}");
+                    self.store_op(&block_results[0], &dst);
+                    self.src.push_str("break;\n}\n");
+                }
+                self.src.push_str("}\n");
+                results.push(result);
+            }
+
+            Instruction::OptionLower {
+                results: result_types,
+                payload,
+                ..
+            } => {
+                let (mut some, some_results) = self.blocks.pop().unwrap();
+                let (mut none, none_results) = self.blocks.pop().unwrap();
+                let some_payload = self.payloads.pop().unwrap();
+                let _none_payload = self.payloads.pop().unwrap();
+
+                for (i, ty) in result_types.iter().enumerate() {
+                    let name = self.locals.tmp("option");
+                    results.push(name.clone());
+                    self.src.push_str(wasm_type(*ty));
+                    self.src.push_str(" ");
+                    self.src.push_str(&name);
+                    self.src.push_str(";\n");
+                    let some_result = &some_results[i];
+                    uwriteln!(some, "{name} = {some_result};");
+                    let none_result = &none_results[i];
+                    uwriteln!(none, "{name} = {none_result};");
+                }
+
+                let op0 = &operands[0];
+                let ty = self.gen.type_string(iface, payload);
+                let bind_some = if self.gen.is_empty_type(iface, payload) {
+                    String::new()
+                } else {
+                    format!("const {ty} *{some_payload} = &({op0}).val;")
+                };
+                uwrite!(
+                    self.src,
+                    "
+                    if (({op0}).is_some) {{
+                        {bind_some}
+                        {some}
+                    }} else {{
+                        {none}
+                    }}
+                    "
+                );
+            }
+
+            Instruction::OptionLift { payload, ty, .. } => {
+                let (some, some_results) = self.blocks.pop().unwrap();
+                let (none, none_results) = self.blocks.pop().unwrap();
+                assert!(none_results.len() == 1);
+                assert!(some_results.len() == 1);
+                let some_result = &some_results[0];
+                assert_eq!(none_results[0], "INVALID");
+
+                let ty = self.gen.type_string(iface, &Type::Id(*ty));
+                let result = self.locals.tmp("option");
+                uwriteln!(self.src, "{ty} {result};");
+                let op0 = &operands[0];
+                let set_some = if self.gen.is_empty_type(iface, payload) {
+                    String::new()
+                } else {
+                    format!("{result}.val = {some_result};")
+                };
+                uwrite!(
+                    self.src,
+                    "switch ({op0}) {{
+                        case 0: {{
+                            {result}.is_some = false;
+                            {none}
+                            break;
+                        }}
+                        case 1: {{
+                            {result}.is_some = true;
+                            {some}
+                            {set_some}
+                            break;
+                        }}
+                    }}"
+                );
+                results.push(result);
+            }
+
+            Instruction::ExpectedLower {
+                results: result_types,
+                expected,
+                ..
+            } => {
+                let (mut err, err_results) = self.blocks.pop().unwrap();
+                let (mut ok, ok_results) = self.blocks.pop().unwrap();
+                let err_payload = self.payloads.pop().unwrap();
+                let ok_payload = self.payloads.pop().unwrap();
+
+                for (i, ty) in result_types.iter().enumerate() {
+                    let name = self.locals.tmp("expected");
+                    results.push(name.clone());
+                    self.src.push_str(wasm_type(*ty));
+                    self.src.push_str(" ");
+                    self.src.push_str(&name);
+                    self.src.push_str(";\n");
+                    let ok_result = &ok_results[i];
+                    uwriteln!(ok, "{name} = {ok_result};");
+                    let err_result = &err_results[i];
+                    uwriteln!(err, "{name} = {err_result};");
+                }
+
+                let op0 = &operands[0];
+                let ok_ty = self.gen.type_string(iface, &expected.ok);
+                let err_ty = self.gen.type_string(iface, &expected.err);
+                let bind_ok = if self.gen.is_empty_type(iface, &expected.ok) {
+                    String::new()
+                } else {
+                    format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;")
+                };
+                let bind_err = if self.gen.is_empty_type(iface, &expected.err) {
+                    String::new()
+                } else {
+                    format!("const {err_ty} *{err_payload} = &({op0}).val.err;")
+                };
+                uwrite!(
+                    self.src,
+                    "
+                    if (({op0}).is_err) {{
+                        {bind_err}
+                        {err}
+                    }} else {{
+                        {bind_ok}
+                        {ok}
+                    }}
+                    "
+                );
+            }
+
+            Instruction::ExpectedLift { expected, ty, .. } => {
+                let (err, err_results) = self.blocks.pop().unwrap();
+                assert!(err_results.len() == 1);
+                let err_result = &err_results[0];
+                let (ok, ok_results) = self.blocks.pop().unwrap();
+                assert!(ok_results.len() == 1);
+                let ok_result = &ok_results[0];
+
+                let result = self.locals.tmp("expected");
+                let set_ok = if self.gen.is_empty_type(iface, &expected.ok) {
+                    String::new()
+                } else {
+                    format!("{result}.val.ok = {ok_result};")
+                };
+                let set_err = if self.gen.is_empty_type(iface, &expected.err) {
+                    String::new()
+                } else {
+                    format!("{result}.val.err = {err_result};")
+                };
+
+                let ty = self.gen.type_string(iface, &Type::Id(*ty));
+                uwriteln!(self.src, "{ty} {result};");
+                let op0 = &operands[0];
+                uwrite!(
+                    self.src,
+                    "switch ({op0}) {{
+                        case 0: {{
+                            {result}.is_err = false;
+                            {ok}
+                            {set_ok}
+                            break;
+                        }}
+                        case 1: {{
+                            {result}.is_err = true;
+                            {err}
+                            {set_err}
+                            break;
+                        }}
+                    }}"
+                );
+                results.push(result);
+            }
+
+            Instruction::EnumLower { .. } => results.push(format!("(int32_t) {}", operands[0])),
+            Instruction::EnumLift { .. } => results.push(operands.pop().unwrap()),
+
+            Instruction::ListCanonLower { .. } | Instruction::StringLower { .. } => {
                 results.push(format!("(int32_t) ({}).ptr", operands[0]));
                 results.push(format!("(int32_t) ({}).len", operands[0]));
             }
             Instruction::ListCanonLift { element, ty, .. } => {
                 let list_name = self.gen.type_string(iface, &Type::Id(*ty));
-                let elem_name = match element {
-                    Type::Char => "char".into(),
-                    _ => self.gen.type_string(iface, element),
-                };
+                let elem_name = self.gen.type_string(iface, element);
                 results.push(format!(
                     "({}) {{ ({}*)({}), (size_t)({}) }}",
                     list_name, elem_name, operands[0], operands[1]
+                ));
+            }
+            Instruction::StringLift { .. } => {
+                let list_name = self.gen.type_string(iface, &Type::String);
+                results.push(format!(
+                    "({}) {{ (char*)({}), (size_t)({}) }}",
+                    list_name, operands[0], operands[1]
                 ));
             }
 
@@ -1660,10 +1974,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::ListLift { element, ty, .. } => {
                 let _body = self.blocks.pop().unwrap();
                 let list_name = self.gen.type_string(iface, &Type::Id(*ty));
-                let elem_name = match element {
-                    Type::Char => "char".into(),
-                    _ => self.gen.type_string(iface, element),
-                };
+                let elem_name = self.gen.type_string(iface, element);
                 results.push(format!(
                     "({}) {{ ({}*)({}), (size_t)({}) }}",
                     list_name, elem_name, operands[0], operands[1]
@@ -1672,18 +1983,6 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::IterElem { .. } => results.push("e".to_string()),
             Instruction::IterBasePointer => results.push("base".to_string()),
 
-            Instruction::BufferLowerPtrLen { .. } => {
-                drop(self.blocks.pop().unwrap());
-                results.push(format!("({}).is_handle", operands[0]));
-                results.push(format!("(int32_t) ({}).ptr", operands[0]));
-                results.push(format!("({}).len", operands[0]));
-            }
-
-            Instruction::BufferLiftHandle { .. } => {
-                drop(self.blocks.pop().unwrap());
-                results.push(format!("({}).idx", operands[0]));
-            }
-
             Instruction::CallWasm { sig, .. } => {
                 match sig.results.len() {
                     0 => {}
@@ -1691,7 +1990,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.src.push_str(wasm_type(sig.results[0]));
                         let ret = self.locals.tmp("ret");
                         self.wasm_return = Some(ret.clone());
-                        self.src.push_str(&format!(" {} = ", ret));
+                        uwrite!(self.src, " {} = ", ret);
                         results.push(ret);
                     }
                     _ => unimplemented!(),
@@ -1716,7 +2015,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     if *byref {
                         let name = self.locals.tmp("arg");
                         let ty = self.gen.type_string(iface, &func.params[i].1);
-                        self.src.push_str(&format!("{} {} = {};\n", ty, name, op));
+                        uwriteln!(self.src, "{} {} = {};", ty, name, op);
                         args.push_str("&");
                         args.push_str(&name);
                     } else {
@@ -1729,7 +2028,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         for ty in self.sig.ret.retptrs.iter() {
                             let name = self.locals.tmp("ret");
                             let ty = self.gen.type_string(iface, ty);
-                            self.src.push_str(&format!("{} {};\n", ty, name));
+                            uwriteln!(self.src, "{} {};", ty, name);
                             if args.len() > 0 {
                                 args.push_str(", ");
                             }
@@ -1737,21 +2036,22 @@ impl Bindgen for FunctionBindgen<'_> {
                             args.push_str(&name);
                             retptrs.push(name);
                         }
-                        self.src
-                            .push_str(&format!("{}({});\n", self.sig.name, args));
+                        uwriteln!(self.src, "{}({});", self.sig.name, args);
                         if self.sig.ret.splat_tuple {
-                            let ty = self.gen.type_string(iface, &func.results[0].1);
+                            let ty = self.gen.type_string(iface, &func.result);
                             results.push(format!("({}){{ {} }}", ty, retptrs.join(", ")));
                         } else if self.sig.retptrs.len() > 0 {
                             results.extend(retptrs);
                         }
                     }
+                    Some(Scalar::Void) => {
+                        uwriteln!(self.src, "{}({});", self.sig.name, args);
+                        results.push("INVALID".to_string());
+                    }
                     Some(Scalar::Type(_)) => {
-                        assert_eq!(func.results.len(), 1);
                         let ret = self.locals.tmp("ret");
-                        let ty = self.gen.type_string(iface, &func.results[0].1);
-                        self.src
-                            .push_str(&format!("{} {} = {}({});\n", ty, ret, self.sig.name, args));
+                        let ty = self.gen.type_string(iface, &func.result);
+                        uwriteln!(self.src, "{} {} = {}({});", ty, ret, self.sig.name, args);
                         results.push(ret);
                     }
                     Some(Scalar::OptionBool(ty)) => {
@@ -1763,25 +2063,25 @@ impl Bindgen for FunctionBindgen<'_> {
                         args.push_str("&");
                         args.push_str(&val);
                         let payload_ty = self.gen.type_string(iface, ty);
-                        self.src.push_str(&format!("{} {};\n", payload_ty, val));
-                        self.src
-                            .push_str(&format!("bool {} = {}({});\n", ret, self.sig.name, args));
-                        let option_ty = self.gen.type_string(iface, &func.results[0].1);
+                        uwriteln!(self.src, "{} {};", payload_ty, val);
+                        uwriteln!(self.src, "bool {} = {}({});", ret, self.sig.name, args);
+                        let option_ty = self.gen.type_string(iface, &func.result);
                         let option_ret = self.locals.tmp("ret");
-                        self.src.push_str(&format!(
+                        uwrite!(
+                            self.src,
                             "
                                 {ty} {ret};
-                                {ret}.tag = {tag};
+                                {ret}.is_some = {tag};
                                 {ret}.val = {val};
                             ",
                             ty = option_ty,
                             ret = option_ret,
                             tag = ret,
                             val = val,
-                        ));
+                        );
                         results.push(option_ret);
                     }
-                    Some(Scalar::ExpectedEnum { err, max_err, .. }) => {
+                    Some(Scalar::ExpectedEnum { err, max_err }) => {
                         let ret = self.locals.tmp("ret");
                         let mut ok_names = Vec::new();
                         for ty in self.sig.ret.retptrs.iter() {
@@ -1792,24 +2092,29 @@ impl Bindgen for FunctionBindgen<'_> {
                             args.push_str("&");
                             args.push_str(&val);
                             let ty = self.gen.type_string(iface, ty);
-                            self.src.push_str(&format!("{} {};\n", ty, val));
+                            uwriteln!(self.src, "{} {};", ty, val);
                             ok_names.push(val);
                         }
                         let err_ty = self.gen.type_string(iface, &Type::Id(*err));
-                        self.src.push_str(&format!(
-                            "{} {} = {}({});\n",
-                            err_ty, ret, self.sig.name, args,
-                        ));
-                        let expected_ty = self.gen.type_string(iface, &func.results[0].1);
+                        uwriteln!(
+                            self.src,
+                            "{} {} = {}({});",
+                            err_ty,
+                            ret,
+                            self.sig.name,
+                            args,
+                        );
+                        let expected_ty = self.gen.type_string(iface, &func.result);
                         let expected_ret = self.locals.tmp("ret");
-                        self.src.push_str(&format!(
+                        uwrite!(
+                            self.src,
                             "
                                 {ty} {ret};
                                 if ({tag} <= {max}) {{
-                                    {ret}.tag = 1;
+                                    {ret}.is_err = true;
                                     {ret}.val.err = {tag};
                                 }} else {{
-                                    {ret}.tag = 0;
+                                    {ret}.is_err = false;
                                     {set_ok}
                                 }}
                             ",
@@ -1822,23 +2127,23 @@ impl Bindgen for FunctionBindgen<'_> {
                             } else if self.sig.ret.splat_tuple {
                                 let mut s = String::new();
                                 for (i, name) in ok_names.iter().enumerate() {
-                                    s.push_str(&format!(
-                                        "{}.val.ok.f{} = {};\n",
-                                        expected_ret, i, name,
-                                    ));
+                                    uwriteln!(s, "{}.val.ok.f{} = {};", expected_ret, i, name,);
                                 }
                                 s
                             } else {
                                 let name = ok_names.pop().unwrap();
                                 format!("{}.val.ok = {};", expected_ret, name)
                             },
-                        ));
+                        );
                         results.push(expected_ret);
                     }
                 }
             }
             Instruction::Return { .. } if self.gen.in_import => match self.sig.ret.scalar {
                 None => self.store_in_retptrs(operands),
+                Some(Scalar::Void) => {
+                    assert_eq!(operands, &["INVALID"]);
+                }
                 Some(Scalar::Type(_)) => {
                     assert_eq!(operands.len(), 1);
                     self.src.push_str("return ");
@@ -1851,7 +2156,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.store_in_retptrs(&[format!("{}.val", variant)]);
                     self.src.push_str("return ");
                     self.src.push_str(&variant);
-                    self.src.push_str(".tag;\n");
+                    self.src.push_str(".is_some;\n");
                 }
                 Some(Scalar::ExpectedEnum { .. }) => {
                     assert_eq!(operands.len(), 1);
@@ -1859,14 +2164,13 @@ impl Bindgen for FunctionBindgen<'_> {
                     if self.sig.retptrs.len() > 0 {
                         self.store_in_retptrs(&[format!("{}.val.ok", variant)]);
                     }
-                    self.src
-                        .push_str(&format!("return {}.tag ? {0}.val.err : -1;\n", variant,));
+                    uwriteln!(self.src, "return {}.is_err ? {0}.val.err : -1;", variant);
                 }
             },
             Instruction::Return { amt, .. } => {
                 assert!(*amt <= 1);
                 if *amt == 1 {
-                    self.src.push_str(&format!("return {};\n", operands[0]));
+                    uwriteln!(self.src, "return {};", operands[0]);
                 }
             }
 
@@ -1878,6 +2182,8 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::I64Store { offset } => self.store("int64_t", *offset, operands),
             Instruction::F32Store { offset } => self.store("float", *offset, operands),
             Instruction::F64Store { offset } => self.store("double", *offset, operands),
+            Instruction::I32Store8 { offset } => self.store("int8_t", *offset, operands),
+            Instruction::I32Store16 { offset } => self.store("int16_t", *offset, operands),
 
             Instruction::I32Load8U { offset } => {
                 self.load_ext("uint8_t", *offset, operands, results)
@@ -1892,25 +2198,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.load_ext("int16_t", *offset, operands, results)
             }
 
-            Instruction::I32Store8 { offset } | Instruction::I32Store16 { offset } => {
-                drop(offset);
-                self.src.push_str("INVALIDSTORE");
+            Instruction::Free { .. } => {
+                uwriteln!(self.src, "free((void*) ({}));", operands[0]);
             }
-
-            Instruction::Witx { instr } => match instr {
-                WitxInstruction::I32FromPointer | WitxInstruction::I32FromConstPointer => {
-                    results.push(format!("(int32_t) ({})", operands[0]))
-                }
-                WitxInstruction::AddrOf => {
-                    results.push(format!("(int32_t) (&{})", operands[0]));
-                }
-                WitxInstruction::ReuseReturn => {
-                    results.push(self.wasm_return.clone().unwrap());
-                }
-                i => unimplemented!("{:?}", i),
-            },
-
-            Instruction::BufferPayloadName => results.push("INVALID".into()),
 
             i => unimplemented!("{:?}", i),
         }
@@ -1919,16 +2209,16 @@ impl Bindgen for FunctionBindgen<'_> {
 
 #[derive(Default)]
 struct Source {
-    header: wit_bindgen_gen_core::Source,
-    src: wit_bindgen_gen_core::Source,
+    h: wit_bindgen_gen_core::Source,
+    c: wit_bindgen_gen_core::Source,
 }
 
 impl Source {
     fn c(&mut self, s: &str) {
-        self.src.push_str(s);
+        self.c.push_str(s);
     }
     fn h(&mut self, s: &str) {
-        self.header.push_str(s);
+        self.h.push_str(s);
     }
 }
 
@@ -1950,10 +2240,12 @@ fn int_repr(ty: Int) -> &'static str {
     }
 }
 
-fn case_field_name(case: &Case) -> String {
-    if case.name.parse::<u32>().is_ok() {
-        format!("f{}", case.name)
-    } else {
-        case.name.to_snake_case()
+fn flags_repr(f: &Flags) -> Int {
+    match f.repr() {
+        FlagsRepr::U8 => Int::U8,
+        FlagsRepr::U16 => Int::U16,
+        FlagsRepr::U32(1) => Int::U32,
+        FlagsRepr::U32(2) => Int::U64,
+        repr => panic!("unimplemented flags {:?}", repr),
     }
 }

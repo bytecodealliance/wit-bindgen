@@ -36,11 +36,11 @@ void exports_test_imports() {
     imports_list_in_variant1_v1_t a;
     imports_list_in_variant1_v2_t b;
     imports_list_in_variant1_v3_t c;
-    a.tag = IMPORTS_LIST_IN_VARIANT1_V1_SOME;
+    a.is_some = true;
     imports_string_set(&a.val, "foo");
-    b.tag = IMPORTS_LIST_IN_VARIANT1_V2_ERR;
+    b.is_err = true;
     imports_string_set(&b.val.err, "bar");
-    c.tag = IMPORTS_LIST_IN_VARIANT1_V3_0;
+    c.tag = 0;
     imports_string_set(&c.val.f0, "baz");
     imports_list_in_variant1(&a, &b, &c);
   }
@@ -54,7 +54,7 @@ void exports_test_imports() {
 
   {
     imports_list_in_variant3_t a;
-    a.tag = IMPORTS_LIST_IN_VARIANT3_SOME;
+    a.is_some = true;
     imports_string_set(&a.val, "input3");
     imports_string_t b;
     assert(imports_list_in_variant3_func(&a, &b));
@@ -90,10 +90,10 @@ void exports_test_imports() {
     a.ptr = a_val;
     a.len = 2;
 
-    imports_list_expected_void_void_t b;
-    imports_expected_void_void_t b_val[2];
-    b_val[0] = 0;
-    b_val[1] = 1;
+    imports_list_expected_unit_unit_t b;
+    imports_expected_unit_unit_t b_val[2];
+    b_val[0].is_err = false;
+    b_val[1].is_err = true;
     b.ptr = b_val;
     b.len = 2;
 
@@ -105,7 +105,7 @@ void exports_test_imports() {
     c.len = 2;
 
     imports_list_bool_t d;
-    imports_list_expected_void_void_t e;
+    imports_list_expected_unit_unit_t e;
     imports_list_my_errno_t f;
     imports_list_of_variants(&a, &b, &c, &d, &e, &f);
 
@@ -114,15 +114,15 @@ void exports_test_imports() {
     assert(d.ptr[1] == true);
 
     assert(e.len == 2);
-    assert(e.ptr[0] == 1);
-    assert(e.ptr[1] == 0);
+    assert(e.ptr[0].is_err == true);
+    assert(e.ptr[1].is_err == false);
 
     assert(f.len == 2);
     assert(f.ptr[0] == IMPORTS_MY_ERRNO_A);
     assert(f.ptr[1] == IMPORTS_MY_ERRNO_B);
 
     imports_list_bool_free(&d);
-    imports_list_expected_void_void_free(&e);
+    imports_list_expected_unit_unit_free(&e);
     imports_list_my_errno_free(&f);
   }
 }
@@ -149,15 +149,15 @@ void exports_list_in_record4_func(exports_list_in_alias_t *a, exports_list_in_al
 }
 
 void exports_list_in_variant1(exports_list_in_variant1_v1_t *a, exports_list_in_variant1_v2_t *b, exports_list_in_variant1_v3_t *c) {
-  assert(a->tag == EXPORTS_LIST_IN_VARIANT1_V1_SOME);
+  assert(a->is_some);
   assert(memcmp(a->val.ptr, "foo", a->val.len) == 0);
   exports_list_in_variant1_v1_free(a);
 
-  assert(b->tag == EXPORTS_LIST_IN_VARIANT1_V2_ERR);
+  assert(b->is_err);
   assert(memcmp(b->val.err.ptr, "bar", b->val.err.len) == 0);
   exports_list_in_variant1_v2_free(b);
 
-  assert(c->tag == EXPORTS_LIST_IN_VARIANT1_V3_0);
+  assert(c->tag == 0);
   assert(memcmp(c->val.f0.ptr, "baz", c->val.f0.len) == 0);
   exports_list_in_variant1_v3_free(c);
 }
@@ -168,7 +168,7 @@ bool exports_list_in_variant2_func(exports_string_t *ret0) {
 }
 
 bool exports_list_in_variant3_func(exports_list_in_variant3_t *a, exports_string_t *ret0) {
-  assert(a->tag == EXPORTS_LIST_IN_VARIANT3_SOME);
+  assert(a->is_some);
   assert(memcmp(a->val.ptr, "input3", a->val.len) == 0);
   exports_list_in_variant3_free(a);
   exports_string_dup(ret0, "output3");

@@ -1,53 +1,53 @@
-test-imports: function()
+test-imports: func()
 
 resource wasm-state
 resource wasm-state2
 
-wasm-state-create: function() -> wasm-state
-wasm-state-get-val: function(a: wasm-state) -> u32
+wasm-state-create: func() -> wasm-state
+wasm-state-get-val: func(a: wasm-state) -> u32
 
-wasm-state2-create: function() -> wasm-state2
-wasm-state2-saw-close: function() -> bool
-two-wasm-states: function(a: wasm-state, b: wasm-state2) -> (wasm-state, wasm-state2)
+wasm-state2-create: func() -> wasm-state2
+wasm-state2-saw-close: func() -> bool
+two-wasm-states: func(a: wasm-state, b: wasm-state2) -> tuple<wasm-state, wasm-state2>
 
 record wasm-state-param-record { a: wasm-state2 }
-wasm-state2-param-record: function(a: wasm-state-param-record)
+wasm-state2-param-record: func(a: wasm-state-param-record)
 
 type wasm-state-param-tuple = tuple<wasm-state2>
-wasm-state2-param-tuple: function(a: wasm-state-param-tuple)
+wasm-state2-param-tuple: func(a: wasm-state-param-tuple)
 
 type wasm-state-param-option = option<wasm-state2>
-wasm-state2-param-option: function(a: wasm-state-param-option)
+wasm-state2-param-option: func(a: wasm-state-param-option)
 
 type wasm-state-param-result = expected<wasm-state2, u32>
-wasm-state2-param-result: function(a: wasm-state-param-result)
+wasm-state2-param-result: func(a: wasm-state-param-result)
 
 union wasm-state-param-variant { wasm-state2, u32 }
-wasm-state2-param-variant: function(a: wasm-state-param-variant)
+wasm-state2-param-variant: func(a: wasm-state-param-variant)
 
-wasm-state2-param-list: function(a: list<wasm-state2>)
+wasm-state2-param-list: func(a: list<wasm-state2>)
 
 
 record wasm-state-result-record { a: wasm-state2 }
-wasm-state2-result-record: function() -> wasm-state-result-record
+wasm-state2-result-record: func() -> wasm-state-result-record
 
 type wasm-state-result-tuple = tuple<wasm-state2>
-wasm-state2-result-tuple: function() -> wasm-state-result-tuple
+wasm-state2-result-tuple: func() -> wasm-state-result-tuple
 
 type wasm-state-result-option = option<wasm-state2>
-wasm-state2-result-option: function() -> wasm-state-result-option
+wasm-state2-result-option: func() -> wasm-state-result-option
 
 type wasm-state-result-result = expected<wasm-state2, u32>
-wasm-state2-result-result: function() -> wasm-state-result-result
+wasm-state2-result-result: func() -> wasm-state-result-result
 
 union wasm-state-result-variant { wasm-state2, u32 }
-wasm-state2-result-variant: function() -> wasm-state-result-variant
+wasm-state2-result-variant: func() -> wasm-state-result-variant
 
-wasm-state2-result-list: function() -> list<wasm-state2>
+wasm-state2-result-list: func() -> list<wasm-state2>
 
 resource markdown {
-    static create: function() -> option<markdown>
-    append: function(buf: string)
-    render: function() -> string
+    static create: func() -> option<markdown>
+    append: func(buf: string)
+    render: func() -> string
 }
 

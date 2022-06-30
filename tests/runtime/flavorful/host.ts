@@ -21,7 +21,7 @@ async function run() {
     listInVariant1(a, b, c) {
       assert.strictEqual(a, 'foo');
       assert.deepStrictEqual(b, { tag: 'err', val: 'bar' });
-      assert.deepStrictEqual(c, { tag: '0', val: 'baz' });
+      assert.deepStrictEqual(c, { tag: 0, val: 'baz' });
     },
     listInVariant2Func() { return 'list_in_variant2'; },
     listInVariant3Func(x) {
@@ -29,7 +29,7 @@ async function run() {
       return 'output3';
     },
 
-    errnoResult() { return { tag: 'err', val: MyErrno.B }; },
+    errnoResult() { return { tag: 'err', val: "b" }; },
     listTypedefs(x, y) {
       assert.strictEqual(x, 'typedef1');
       assert.deepStrictEqual(y, ['typedef2']);
@@ -38,12 +38,12 @@ async function run() {
 
     listOfVariants(bools, results, enums) {
       assert.deepStrictEqual(bools, [true, false]);
-      assert.deepStrictEqual(results, [{ tag: 'ok' }, { tag: 'err' }]);
-      assert.deepStrictEqual(enums, [MyErrno.Success, MyErrno.A]);
+      assert.deepStrictEqual(results, [{ tag: 'ok', val: undefined }, { tag: 'err', val: undefined }]);
+      assert.deepStrictEqual(enums, ["success", "a"]);
       return [
         [false, true],
         [{ tag: 'err', val: undefined }, { tag: 'ok', val: undefined }],
-        [MyErrno.A, MyErrno.B],
+        ["a", "b"],
       ];
     },
   };
@@ -70,7 +70,7 @@ async function run() {
     { a: "result4" },
   );
 
-  wasm.listInVariant1("foo", { tag: 'err', val: 'bar' }, { tag: '0', val: 'baz' });
+  wasm.listInVariant1("foo", { tag: 'err', val: 'bar' }, { tag: 0, val: 'baz' });
 
   assert.deepStrictEqual(wasm.listInVariant2Func(), "list_in_variant2");
   assert.deepStrictEqual(wasm.listInVariant3Func("input3"), "output3");

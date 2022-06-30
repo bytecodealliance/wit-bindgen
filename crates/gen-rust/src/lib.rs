@@ -1,4 +1,7 @@
 use heck::*;
+use std::collections::HashMap;
+use std::fmt::{self, Write};
+use std::iter::zip;
 use wit_bindgen_gen_core::wit_parser::abi::{Bitcast, LiftLower, WasmType};
 use wit_bindgen_gen_core::{wit_parser::*, TypeInfo, Types};
 
@@ -14,8 +17,6 @@ pub trait RustGenerator {
     fn push_str(&mut self, s: &str);
     fn info(&self, ty: TypeId) -> TypeInfo;
     fn types_mut(&mut self) -> &mut Types;
-    fn print_usize(&mut self);
-    fn print_pointer(&mut self, iface: &Interface, const_: bool, ty: &Type);
     fn print_borrowed_slice(
         &mut self,
         iface: &Interface,
@@ -24,14 +25,6 @@ pub trait RustGenerator {
         lifetime: &'static str,
     );
     fn print_borrowed_str(&mut self, lifetime: &'static str);
-    fn print_lib_buffer(
-        &mut self,
-        iface: &Interface,
-        push: bool,
-        ty: &Type,
-        mode: TypeMode,
-        lt: &'static str,
-    );
     fn default_param_mode(&self) -> TypeMode;
     fn handle_projection(&self) -> Option<(&'static str, String)>;
     fn handle_wrapper(&self) -> Option<&'static str>;
@@ -95,10 +88,8 @@ pub trait RustGenerator {
         sig: &FnSig,
     ) -> Vec<String> {
         let params = self.print_docs_and_params(iface, func, param_mode, &sig);
-        if func.results.len() > 0 {
-            self.push_str(" -> ");
-            self.print_results(iface, func);
-        }
+        self.push_str(" -> ");
+        self.print_ty(iface, &func.result, TypeMode::Owned);
         params
     }
 
@@ -111,7 +102,8 @@ pub trait RustGenerator {
     ) -> Vec<String> {
         self.rustdoc(&func.docs);
         self.rustdoc_params(&func.params, "Parameters");
-        self.rustdoc_params(&func.results, "Return");
+        // TODO: re-add this when docs are back
+        // self.rustdoc_params(&func.results, "Return");
 
         if !sig.private {
             self.push_str("pub ");
@@ -154,23 +146,6 @@ pub trait RustGenerator {
         params
     }
 
-    fn print_results(&mut self, iface: &Interface, func: &Function) {
-        match func.results.len() {
-            0 => self.push_str("()"),
-            1 => {
-                self.print_ty(iface, &func.results[0].1, TypeMode::Owned);
-            }
-            _ => {
-                self.push_str("(");
-                for (_, result) in func.results.iter() {
-                    self.print_ty(iface, result, TypeMode::Owned);
-                    self.push_str(", ");
-                }
-                self.push_str(")");
-            }
-        }
-    }
-
     fn print_ty(&mut self, iface: &Interface, ty: &Type, mode: TypeMode) {
         match ty {
             Type::Id(t) => self.print_tyid(iface, *t, mode),
@@ -207,19 +182,25 @@ pub trait RustGenerator {
                 self.push_str(suffix);
             }
 
+            Type::Unit => self.push_str("()"),
+            Type::Bool => self.push_str("bool"),
             Type::U8 => self.push_str("u8"),
-            Type::CChar => self.push_str("u8"),
             Type::U16 => self.push_str("u16"),
             Type::U32 => self.push_str("u32"),
-            Type::Usize => self.print_usize(),
             Type::U64 => self.push_str("u64"),
             Type::S8 => self.push_str("i8"),
             Type::S16 => self.push_str("i16"),
             Type::S32 => self.push_str("i32"),
             Type::S64 => self.push_str("i64"),
-            Type::F32 => self.push_str("f32"),
-            Type::F64 => self.push_str("f64"),
+            Type::Float32 => self.push_str("f32"),
+            Type::Float64 => self.push_str("f64"),
             Type::Char => self.push_str("char"),
+            Type::String => match mode {
+                TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) => {
+                    self.print_borrowed_str(lt)
+                }
+                TypeMode::Owned | TypeMode::HandlesBorrowed(_) => self.push_str("String"),
+            },
         }
     }
 
@@ -248,12 +229,18 @@ pub trait RustGenerator {
                 match ty {
                     TypeDefKind::Variant(_)
                     | TypeDefKind::Record(_)
+                    | TypeDefKind::Option(_)
+                    | TypeDefKind::Expected(_)
+                    | TypeDefKind::Stream(_)
                     | TypeDefKind::List(_)
-                    | TypeDefKind::PushBuffer(_)
-                    | TypeDefKind::PullBuffer(_) => true,
+                    | TypeDefKind::Flags(_)
+                    | TypeDefKind::Enum(_)
+                    | TypeDefKind::Tuple(_)
+                    | TypeDefKind::Union(_) => true,
                     TypeDefKind::Type(Type::Id(t)) => needs_generics(iface, &iface.types[*t].kind),
+                    TypeDefKind::Type(Type::String) => true,
                     TypeDefKind::Type(Type::Handle(_)) => true,
-                    _ => false,
+                    TypeDefKind::Type(_) => false,
                 }
             }
         }
@@ -261,43 +248,29 @@ pub trait RustGenerator {
         match &ty.kind {
             TypeDefKind::List(t) => self.print_list(iface, t, mode),
 
-            TypeDefKind::Pointer(t) => self.print_pointer(iface, false, t),
-            TypeDefKind::ConstPointer(t) => self.print_pointer(iface, true, t),
+            TypeDefKind::Option(t) => {
+                self.push_str("Option<");
+                self.print_ty(iface, t, mode);
+                self.push_str(">");
+            }
 
-            // Variants can be printed natively if they're `Option`,
-            // `Result` , or `bool`, otherwise they must be named for now.
-            TypeDefKind::Variant(v) if v.is_bool() => self.push_str("bool"),
-            TypeDefKind::Variant(v) => match v.as_expected() {
-                Some((ok, err)) => {
-                    self.push_str("Result<");
-                    match ok {
-                        Some(ty) => self.print_ty(iface, ty, mode),
-                        None => self.push_str("()"),
-                    }
-                    self.push_str(",");
-                    match err {
-                        Some(ty) => self.print_ty(iface, ty, mode),
-                        None => self.push_str("()"),
-                    }
-                    self.push_str(">");
-                }
-                None => match v.as_option() {
-                    Some(ty) => {
-                        self.push_str("Option<");
-                        self.print_ty(iface, ty, mode);
-                        self.push_str(">");
-                    }
-                    None => panic!("unsupported anonymous variant"),
-                },
-            },
+            TypeDefKind::Expected(e) => {
+                self.push_str("Result<");
+                self.print_ty(iface, &e.ok, mode);
+                self.push_str(",");
+                self.print_ty(iface, &e.err, mode);
+                self.push_str(">");
+            }
+
+            TypeDefKind::Variant(_) => panic!("unsupported anonymous variant"),
 
             // Tuple-like records are mapped directly to Rust tuples of
             // types. Note the trailing comma after each member to
             // appropriately handle 1-tuples.
-            TypeDefKind::Record(r) if r.is_tuple() => {
+            TypeDefKind::Tuple(t) => {
                 self.push_str("(");
-                for field in r.fields.iter() {
-                    self.print_ty(iface, &field.ty, mode);
+                for ty in t.types.iter() {
+                    self.print_ty(iface, ty, mode);
                     self.push_str(",");
                 }
                 self.push_str(")");
@@ -305,57 +278,42 @@ pub trait RustGenerator {
             TypeDefKind::Record(_) => {
                 panic!("unsupported anonymous type reference: record")
             }
-
-            TypeDefKind::PushBuffer(r) => self.print_buffer(iface, true, r, mode),
-            TypeDefKind::PullBuffer(r) => self.print_buffer(iface, false, r, mode),
+            TypeDefKind::Flags(_) => {
+                panic!("unsupported anonymous type reference: flags")
+            }
+            TypeDefKind::Enum(_) => {
+                panic!("unsupported anonymous type reference: enum")
+            }
+            TypeDefKind::Union(_) => {
+                panic!("unsupported anonymous type reference: union")
+            }
+            TypeDefKind::Stream(_) => {
+                todo!("unsupported anonymous type reference: stream")
+            }
 
             TypeDefKind::Type(t) => self.print_ty(iface, t, mode),
         }
     }
 
     fn print_list(&mut self, iface: &Interface, ty: &Type, mode: TypeMode) {
-        match ty {
-            Type::Char => match mode {
-                TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) => {
-                    self.print_borrowed_str(lt)
-                }
-                TypeMode::Owned | TypeMode::HandlesBorrowed(_) => self.push_str("String"),
-            },
-            t => match mode {
-                TypeMode::AllBorrowed(lt) => {
-                    let mutbl = self.needs_mutable_slice(iface, ty);
-                    self.print_borrowed_slice(iface, mutbl, ty, lt);
-                }
-                TypeMode::LeafBorrowed(lt) => {
-                    if iface.all_bits_valid(t) {
-                        let mutbl = self.needs_mutable_slice(iface, ty);
-                        self.print_borrowed_slice(iface, mutbl, ty, lt);
-                    } else {
-                        self.push_str("Vec<");
-                        self.print_ty(iface, ty, mode);
-                        self.push_str(">");
-                    }
-                }
-                TypeMode::HandlesBorrowed(_) | TypeMode::Owned => {
+        match mode {
+            TypeMode::AllBorrowed(lt) => {
+                self.print_borrowed_slice(iface, false, ty, lt);
+            }
+            TypeMode::LeafBorrowed(lt) => {
+                if iface.all_bits_valid(ty) {
+                    self.print_borrowed_slice(iface, false, ty, lt);
+                } else {
                     self.push_str("Vec<");
                     self.print_ty(iface, ty, mode);
                     self.push_str(">");
                 }
-            },
-        }
-    }
-
-    fn print_buffer(&mut self, iface: &Interface, push: bool, ty: &Type, mode: TypeMode) {
-        let lt = match mode {
-            TypeMode::AllBorrowed(s) | TypeMode::HandlesBorrowed(s) | TypeMode::LeafBorrowed(s) => {
-                s
             }
-            TypeMode::Owned => unimplemented!(),
-        };
-        if iface.all_bits_valid(ty) {
-            self.print_borrowed_slice(iface, push, ty, lt)
-        } else {
-            self.print_lib_buffer(iface, push, ty, mode, lt)
+            TypeMode::HandlesBorrowed(_) | TypeMode::Owned => {
+                self.push_str("Vec<");
+                self.print_ty(iface, ty, mode);
+                self.push_str(">");
+            }
         }
     }
 
@@ -423,6 +381,106 @@ pub trait RustGenerator {
         return result;
     }
 
+    /// Writes the camel-cased 'name' of the passed type to `out`, as used to name union variants.
+    fn write_name(&self, iface: &Interface, ty: &Type, out: &mut String) {
+        match ty {
+            Type::Unit => out.push_str("Unit"),
+            Type::Bool => out.push_str("Bool"),
+            Type::U8 => out.push_str("U8"),
+            Type::U16 => out.push_str("U16"),
+            Type::U32 => out.push_str("U32"),
+            Type::U64 => out.push_str("U64"),
+            Type::S8 => out.push_str("I8"),
+            Type::S16 => out.push_str("I16"),
+            Type::S32 => out.push_str("I32"),
+            Type::S64 => out.push_str("I64"),
+            Type::Float32 => out.push_str("F32"),
+            Type::Float64 => out.push_str("F64"),
+            Type::Char => out.push_str("Char"),
+            Type::String => out.push_str("String"),
+            Type::Handle(id) => out.push_str(&iface.resources[*id].name.to_camel_case()),
+            Type::Id(id) => {
+                let ty = &iface.types[*id];
+                match &ty.name {
+                    Some(name) => out.push_str(&name.to_camel_case()),
+                    None => match &ty.kind {
+                        TypeDefKind::Option(ty) => {
+                            out.push_str("Optional");
+                            self.write_name(iface, ty, out);
+                        }
+                        TypeDefKind::Expected(_) => out.push_str("Result"),
+                        TypeDefKind::Tuple(_) => out.push_str("Tuple"),
+                        TypeDefKind::List(ty) => {
+                            self.write_name(iface, ty, out);
+                            out.push_str("List")
+                        }
+                        TypeDefKind::Stream(s) => {
+                            self.write_name(iface, &s.element, out);
+                            out.push_str("Stream");
+                        }
+
+                        TypeDefKind::Type(ty) => self.write_name(iface, ty, out),
+                        TypeDefKind::Record(_) => out.push_str("Record"),
+                        TypeDefKind::Flags(_) => out.push_str("Flags"),
+                        TypeDefKind::Variant(_) => out.push_str("Variant"),
+                        TypeDefKind::Enum(_) => out.push_str("Enum"),
+                        TypeDefKind::Union(_) => out.push_str("Union"),
+                    },
+                }
+            }
+        }
+    }
+
+    /// Returns the names for the cases of the passed union.
+    fn union_case_names(&self, iface: &Interface, union: &Union) -> Vec<String> {
+        enum UsedState<'a> {
+            /// This name has been used once before.
+            ///
+            /// Contains a reference to the name given to the first usage so that a suffix can be added to it.
+            Once(&'a mut String),
+            /// This name has already been used multiple times.
+            ///
+            /// Contains the number of times this has already been used.
+            Multiple(usize),
+        }
+
+        // A `Vec` of the names we're assigning each of the union's cases in order.
+        let mut case_names = vec![String::new(); union.cases.len()];
+        // A map from case names to their `UsedState`.
+        let mut used = HashMap::new();
+        for (case, name) in union.cases.iter().zip(case_names.iter_mut()) {
+            self.write_name(iface, &case.ty, name);
+
+            match used.get_mut(name.as_str()) {
+                None => {
+                    // Initialise this name's `UsedState`, with a mutable reference to this name
+                    // in case we have to add a suffix to it later.
+                    used.insert(name.clone(), UsedState::Once(name));
+                    // Since this is the first (and potentially only) usage of this name,
+                    // we don't need to add a suffix here.
+                }
+                Some(state) => match state {
+                    UsedState::Multiple(n) => {
+                        // Add a suffix of the index of this usage.
+                        write!(name, "{n}").unwrap();
+                        // Add one to the number of times this type has been used.
+                        *n += 1;
+                    }
+                    UsedState::Once(first) => {
+                        // Add a suffix of 0 to the first usage.
+                        first.push('0');
+                        // We now get a suffix of 1.
+                        name.push('1');
+                        // Then update the state.
+                        *state = UsedState::Multiple(2);
+                    }
+                },
+            }
+        }
+
+        case_names
+    }
+
     fn print_typedef_record(
         &mut self,
         iface: &Interface,
@@ -434,58 +492,59 @@ pub trait RustGenerator {
         for (name, mode) in self.modes_of(iface, id) {
             let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
-            if record.is_tuple() {
-                self.push_str(&format!("pub type {}", name));
-                self.print_generics(&info, lt, true);
-                self.push_str(" = (");
-                for field in record.fields.iter() {
-                    self.print_ty(iface, &field.ty, mode);
-                    self.push_str(",");
-                }
-                self.push_str(");\n");
-            } else {
-                if info.has_pull_buffer || info.has_push_buffer {
-                    // skip copy/clone ...
-                } else if !info.owns_data() {
-                    self.push_str("#[repr(C)]\n");
-                    self.push_str("#[derive(Copy, Clone)]\n");
-                } else if !info.has_handle {
-                    self.push_str("#[derive(Clone)]\n");
-                }
-                self.push_str(&format!("pub struct {}", name));
-                self.print_generics(&info, lt, true);
-                self.push_str(" {\n");
-                for field in record.fields.iter() {
-                    self.rustdoc(&field.docs);
-                    self.push_str("pub ");
-                    self.push_str(&to_rust_ident(&field.name));
-                    self.push_str(": ");
-                    self.print_ty(iface, &field.ty, mode);
-                    self.push_str(",\n");
-                }
-                self.push_str("}\n");
-
-                self.push_str("impl");
-                self.print_generics(&info, lt, true);
-                self.push_str(" std::fmt::Debug for ");
-                self.push_str(&name);
-                self.print_generics(&info, lt, false);
-                self.push_str(" {\n");
-                self.push_str(
-                    "fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
-                );
-                self.push_str(&format!("f.debug_struct(\"{}\")", name));
-                for field in record.fields.iter() {
-                    self.push_str(&format!(
-                        ".field(\"{}\", &self.{})",
-                        field.name,
-                        to_rust_ident(&field.name)
-                    ));
-                }
-                self.push_str(".finish()");
-                self.push_str("}\n");
-                self.push_str("}\n");
+            if !info.owns_data() {
+                self.push_str("#[repr(C)]\n");
+                self.push_str("#[derive(Copy, Clone)]\n");
+            } else if !info.has_handle {
+                self.push_str("#[derive(Clone)]\n");
             }
+            self.push_str(&format!("pub struct {}", name));
+            self.print_generics(&info, lt, true);
+            self.push_str(" {\n");
+            for field in record.fields.iter() {
+                self.rustdoc(&field.docs);
+                self.push_str("pub ");
+                self.push_str(&to_rust_ident(&field.name));
+                self.push_str(": ");
+                self.print_ty(iface, &field.ty, mode);
+                self.push_str(",\n");
+            }
+            self.push_str("}\n");
+
+            self.push_str("impl");
+            self.print_generics(&info, lt, true);
+            self.push_str(" std::fmt::Debug for ");
+            self.push_str(&name);
+            self.print_generics(&info, lt, false);
+            self.push_str(" {\n");
+            self.push_str("fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n");
+            self.push_str(&format!("f.debug_struct(\"{}\")", name));
+            for field in record.fields.iter() {
+                self.push_str(&format!(
+                    ".field(\"{}\", &self.{})",
+                    field.name,
+                    to_rust_ident(&field.name)
+                ));
+            }
+            self.push_str(".finish()");
+            self.push_str("}\n");
+            self.push_str("}\n");
+        }
+    }
+
+    fn print_typedef_tuple(&mut self, iface: &Interface, id: TypeId, tuple: &Tuple, docs: &Docs) {
+        let info = self.info(id);
+        for (name, mode) in self.modes_of(iface, id) {
+            let lt = self.lifetime_for(&info, mode);
+            self.rustdoc(docs);
+            self.push_str(&format!("pub type {}", name));
+            self.print_generics(&info, lt, true);
+            self.push_str(" = (");
+            for ty in tuple.types.iter() {
+                self.print_ty(iface, ty, mode);
+                self.push_str(",");
+            }
+            self.push_str(");\n");
         }
     }
 
@@ -493,165 +552,251 @@ pub trait RustGenerator {
         &mut self,
         iface: &Interface,
         id: TypeId,
-        name: &str,
         variant: &Variant,
         docs: &Docs,
-    ) {
-        // TODO: should this perhaps be an attribute in the wit file?
-        let is_error = name.contains("errno") && variant.is_enum();
+    ) where
+        Self: Sized,
+    {
+        self.print_rust_enum(
+            iface,
+            id,
+            variant
+                .cases
+                .iter()
+                .map(|c| (c.name.to_camel_case(), &c.docs, &c.ty)),
+            docs,
+        );
+    }
+
+    fn print_typedef_union(&mut self, iface: &Interface, id: TypeId, union: &Union, docs: &Docs)
+    where
+        Self: Sized,
+    {
+        self.print_rust_enum(
+            iface,
+            id,
+            zip(self.union_case_names(iface, union), &union.cases)
+                .map(|(name, case)| (name, &case.docs, &case.ty)),
+            docs,
+        );
+    }
+
+    fn print_rust_enum<'a>(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        cases: impl IntoIterator<Item = (String, &'a Docs, &'a Type)> + Clone,
+        docs: &Docs,
+    ) where
+        Self: Sized,
+    {
         let info = self.info(id);
 
         for (name, mode) in self.modes_of(iface, id) {
+            let name = name.to_camel_case();
             self.rustdoc(docs);
             let lt = self.lifetime_for(&info, mode);
-            if variant.is_bool() {
-                self.push_str(&format!("pub type {} = bool;\n", name));
-                continue;
-            } else if let Some(ty) = variant.as_option() {
-                self.push_str(&format!("pub type {}", name));
-                self.print_generics(&info, lt, true);
-                self.push_str("= Option<");
-                self.print_ty(iface, ty, mode);
-                self.push_str(">;\n");
-                continue;
-            } else if let Some((ok, err)) = variant.as_expected() {
-                self.push_str(&format!("pub type {}", name));
-                self.print_generics(&info, lt, true);
-                self.push_str("= Result<");
-                match ok {
-                    Some(ty) => self.print_ty(iface, ty, mode),
-                    None => self.push_str("()"),
-                }
-                self.push_str(",");
-                match err {
-                    Some(ty) => self.print_ty(iface, ty, mode),
-                    None => self.push_str("()"),
-                }
-                self.push_str(">;\n");
-                continue;
-            }
-            if variant.is_enum() {
-                self.push_str("#[repr(");
-                self.int_repr(variant.tag);
-                self.push_str(")]\n#[derive(Clone, Copy, PartialEq, Eq)]\n");
-            } else if info.has_pull_buffer || info.has_push_buffer {
-                // skip copy/clone
-            } else if !info.owns_data() {
+            if !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
+            } else if !info.has_handle {
+                self.push_str("#[derive(Clone)]\n");
             }
-            self.push_str(&format!("pub enum {}", name.to_camel_case()));
+            self.push_str(&format!("pub enum {name}"));
             self.print_generics(&info, lt, true);
             self.push_str("{\n");
-            for case in variant.cases.iter() {
-                self.rustdoc(&case.docs);
-                self.push_str(&case_name(&case.name));
-                if let Some(ty) = &case.ty {
+            for (case_name, docs, payload) in cases.clone() {
+                self.rustdoc(docs);
+                self.push_str(&case_name);
+                if *payload != Type::Unit {
                     self.push_str("(");
-                    self.print_ty(iface, ty, mode);
+                    self.print_ty(iface, payload, mode);
                     self.push_str(")")
                 }
                 self.push_str(",\n");
             }
             self.push_str("}\n");
 
-            // Auto-synthesize an implementation of the standard `Error` trait for
-            // error-looking types based on their name.
-            if is_error {
-                self.push_str("impl ");
-                self.push_str(&name);
-                self.push_str("{\n");
+            self.print_rust_enum_debug(
+                id,
+                mode,
+                &name,
+                cases
+                    .clone()
+                    .into_iter()
+                    .map(|(name, _docs, ty)| (name, ty)),
+            );
+        }
+    }
 
-                self.push_str("pub fn name(&self) -> &'static str {\n");
-                self.push_str("match self {\n");
-                for case in variant.cases.iter() {
-                    self.push_str(&name);
-                    self.push_str("::");
-                    self.push_str(&case_name(&case.name));
-                    self.push_str(" => \"");
-                    self.push_str(case.name.as_str());
-                    self.push_str("\",\n");
-                }
-                self.push_str("}\n");
-                self.push_str("}\n");
-
-                self.push_str("pub fn message(&self) -> &'static str {\n");
-                self.push_str("match self {\n");
-                for case in variant.cases.iter() {
-                    self.push_str(&name);
-                    self.push_str("::");
-                    self.push_str(&case_name(&case.name));
-                    self.push_str(" => \"");
-                    if let Some(contents) = &case.docs.contents {
-                        self.push_str(contents.trim());
-                    }
-                    self.push_str("\",\n");
-                }
-                self.push_str("}\n");
-                self.push_str("}\n");
-
-                self.push_str("}\n");
-
-                self.push_str("impl std::fmt::Debug for ");
-                self.push_str(&name);
-                self.push_str(
-                    "{\nfn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
-                );
-                self.push_str("f.debug_struct(\"");
-                self.push_str(&name);
-                self.push_str("\")\n");
-                self.push_str(".field(\"code\", &(*self as i32))\n");
-                self.push_str(".field(\"name\", &self.name())\n");
-                self.push_str(".field(\"message\", &self.message())\n");
-                self.push_str(".finish()\n");
-                self.push_str("}\n");
-                self.push_str("}\n");
-
-                self.push_str("impl std::fmt::Display for ");
-                self.push_str(&name);
-                self.push_str(
-                    "{\nfn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
-                );
-                self.push_str("write!(f, \"{} (error {})\", self.name(), *self as i32)");
-                self.push_str("}\n");
-                self.push_str("}\n");
-                self.push_str("\n");
-                self.push_str("impl std::error::Error for ");
-                self.push_str(&name);
-                self.push_str("{}\n");
-            } else {
-                self.push_str("impl");
-                self.print_generics(&info, lt, true);
-                self.push_str(" std::fmt::Debug for ");
-                self.push_str(&name);
-                self.print_generics(&info, lt, false);
-                self.push_str(" {\n");
-                self.push_str(
-                    "fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
-                );
-                self.push_str("match self {\n");
-                for case in variant.cases.iter() {
-                    self.push_str(&name);
-                    self.push_str("::");
-                    self.push_str(&case_name(&case.name));
-                    if case.ty.is_some() {
-                        self.push_str("(e)");
-                    }
-                    self.push_str(" => {\n");
-                    self.push_str(&format!(
-                        "f.debug_tuple(\"{}::{}\")",
-                        name,
-                        case_name(&case.name)
-                    ));
-                    if case.ty.is_some() {
-                        self.push_str(".field(e)");
-                    }
-                    self.push_str(".finish()\n");
-                    self.push_str("}\n");
-                }
-                self.push_str("}\n");
-                self.push_str("}\n");
-                self.push_str("}\n");
+    fn print_rust_enum_debug<'a>(
+        &mut self,
+        id: TypeId,
+        mode: TypeMode,
+        name: &str,
+        cases: impl IntoIterator<Item = (String, &'a Type)>,
+    ) where
+        Self: Sized,
+    {
+        let info = self.info(id);
+        let lt = self.lifetime_for(&info, mode);
+        self.push_str("impl");
+        self.print_generics(&info, lt, true);
+        self.push_str(" std::fmt::Debug for ");
+        self.push_str(name);
+        self.print_generics(&info, lt, false);
+        self.push_str(" {\n");
+        self.push_str("fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n");
+        self.push_str("match self {\n");
+        for (case_name, payload) in cases {
+            self.push_str(name);
+            self.push_str("::");
+            self.push_str(&case_name);
+            if *payload != Type::Unit {
+                self.push_str("(e)");
             }
+            self.push_str(" => {\n");
+            self.push_str(&format!("f.debug_tuple(\"{}::{}\")", name, case_name));
+            if *payload != Type::Unit {
+                self.push_str(".field(e)");
+            }
+            self.push_str(".finish()\n");
+            self.push_str("}\n");
+        }
+        self.push_str("}\n");
+        self.push_str("}\n");
+        self.push_str("}\n");
+    }
+
+    fn print_typedef_option(&mut self, iface: &Interface, id: TypeId, payload: &Type, docs: &Docs) {
+        let info = self.info(id);
+
+        for (name, mode) in self.modes_of(iface, id) {
+            self.rustdoc(docs);
+            let lt = self.lifetime_for(&info, mode);
+            self.push_str(&format!("pub type {}", name));
+            self.print_generics(&info, lt, true);
+            self.push_str("= Option<");
+            self.print_ty(iface, payload, mode);
+            self.push_str(">;\n");
+        }
+    }
+
+    fn print_typedef_expected(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        expected: &Expected,
+        docs: &Docs,
+    ) {
+        let info = self.info(id);
+
+        for (name, mode) in self.modes_of(iface, id) {
+            self.rustdoc(docs);
+            let lt = self.lifetime_for(&info, mode);
+            self.push_str(&format!("pub type {}", name));
+            self.print_generics(&info, lt, true);
+            self.push_str("= Result<");
+            self.print_ty(iface, &expected.ok, mode);
+            self.push_str(",");
+            self.print_ty(iface, &expected.err, mode);
+            self.push_str(">;\n");
+        }
+    }
+
+    fn print_typedef_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs)
+    where
+        Self: Sized,
+    {
+        // TODO: should this perhaps be an attribute in the wit file?
+        let is_error = name.contains("errno");
+
+        let name = name.to_camel_case();
+        self.rustdoc(docs);
+        self.push_str("#[repr(");
+        self.int_repr(enum_.tag());
+        self.push_str(")]\n#[derive(Clone, Copy, PartialEq, Eq)]\n");
+        self.push_str(&format!("pub enum {} {{\n", name.to_camel_case()));
+        for case in enum_.cases.iter() {
+            self.rustdoc(&case.docs);
+            self.push_str(&case.name.to_camel_case());
+            self.push_str(",\n");
+        }
+        self.push_str("}\n");
+
+        // Auto-synthesize an implementation of the standard `Error` trait for
+        // error-looking types based on their name.
+        if is_error {
+            self.push_str("impl ");
+            self.push_str(&name);
+            self.push_str("{\n");
+
+            self.push_str("pub fn name(&self) -> &'static str {\n");
+            self.push_str("match self {\n");
+            for case in enum_.cases.iter() {
+                self.push_str(&name);
+                self.push_str("::");
+                self.push_str(&case.name.to_camel_case());
+                self.push_str(" => \"");
+                self.push_str(case.name.as_str());
+                self.push_str("\",\n");
+            }
+            self.push_str("}\n");
+            self.push_str("}\n");
+
+            self.push_str("pub fn message(&self) -> &'static str {\n");
+            self.push_str("match self {\n");
+            for case in enum_.cases.iter() {
+                self.push_str(&name);
+                self.push_str("::");
+                self.push_str(&case.name.to_camel_case());
+                self.push_str(" => \"");
+                if let Some(contents) = &case.docs.contents {
+                    self.push_str(contents.trim());
+                }
+                self.push_str("\",\n");
+            }
+            self.push_str("}\n");
+            self.push_str("}\n");
+
+            self.push_str("}\n");
+
+            self.push_str("impl std::fmt::Debug for ");
+            self.push_str(&name);
+            self.push_str(
+                "{\nfn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
+            );
+            self.push_str("f.debug_struct(\"");
+            self.push_str(&name);
+            self.push_str("\")\n");
+            self.push_str(".field(\"code\", &(*self as i32))\n");
+            self.push_str(".field(\"name\", &self.name())\n");
+            self.push_str(".field(\"message\", &self.message())\n");
+            self.push_str(".finish()\n");
+            self.push_str("}\n");
+            self.push_str("}\n");
+
+            self.push_str("impl std::fmt::Display for ");
+            self.push_str(&name);
+            self.push_str(
+                "{\nfn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
+            );
+            self.push_str("write!(f, \"{} (error {})\", self.name(), *self as i32)");
+            self.push_str("}\n");
+            self.push_str("}\n");
+            self.push_str("\n");
+            self.push_str("impl std::error::Error for ");
+            self.push_str(&name);
+            self.push_str("{}\n");
+        } else {
+            self.print_rust_enum_debug(
+                id,
+                TypeMode::Owned,
+                &name,
+                enum_
+                    .cases
+                    .iter()
+                    .map(|c| (c.name.to_camel_case(), &Type::Unit)),
+            )
         }
     }
 
@@ -677,26 +822,6 @@ pub trait RustGenerator {
             self.print_generics(&info, lt, true);
             self.push_str(" = ");
             self.print_list(iface, ty, mode);
-            self.push_str(";\n");
-        }
-    }
-
-    fn print_typedef_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        push: bool,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        let info = self.info(id);
-        for (name, mode) in self.modes_of(iface, id) {
-            let lt = self.lifetime_for(&info, mode);
-            self.rustdoc(docs);
-            self.push_str(&format!("pub type {}", name));
-            self.print_generics(&info, lt, true);
-            self.push_str(" = ");
-            self.print_buffer(iface, push, ty, mode);
             self.push_str(";\n");
         }
     }
@@ -735,55 +860,12 @@ pub trait RustGenerator {
     fn lifetime_for(&self, info: &TypeInfo, mode: TypeMode) -> Option<&'static str> {
         match mode {
             TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s)
-                if info.has_list
-                    || info.has_handle
-                    || info.has_push_buffer
-                    || info.has_pull_buffer =>
+                if info.has_list || info.has_handle =>
             {
                 Some(s)
             }
-            TypeMode::HandlesBorrowed(s)
-                if info.has_handle || info.has_pull_buffer || info.has_push_buffer =>
-            {
-                Some(s)
-            }
+            TypeMode::HandlesBorrowed(s) if info.has_handle => Some(s),
             _ => None,
-        }
-    }
-
-    fn needs_mutable_slice(&mut self, iface: &Interface, ty: &Type) -> bool {
-        let info = self.types_mut().type_info(iface, ty);
-        // If there's any out-buffers transitively then a mutable slice is
-        // required because the out-buffers could be modified. Otherwise a
-        // mutable slice is also required if, transitively, `InBuffer` is used
-        // which is used when we're a buffer of a type where not all bits are
-        // valid (e.g. the rust representation and the canonical abi may differ).
-        info.has_push_buffer || self.has_pull_buffer_invalid_bits(iface, ty)
-    }
-
-    fn has_pull_buffer_invalid_bits(&self, iface: &Interface, ty: &Type) -> bool {
-        let id = match ty {
-            Type::Id(id) => *id,
-            _ => return false,
-        };
-        match &iface.types[id].kind {
-            TypeDefKind::Type(t)
-            | TypeDefKind::Pointer(t)
-            | TypeDefKind::ConstPointer(t)
-            | TypeDefKind::PushBuffer(t)
-            | TypeDefKind::List(t) => self.has_pull_buffer_invalid_bits(iface, t),
-            TypeDefKind::Record(r) => r
-                .fields
-                .iter()
-                .any(|t| self.has_pull_buffer_invalid_bits(iface, &t.ty)),
-            TypeDefKind::Variant(v) => v
-                .cases
-                .iter()
-                .filter_map(|c| c.ty.as_ref())
-                .any(|t| self.has_pull_buffer_invalid_bits(iface, t)),
-            TypeDefKind::PullBuffer(t) => {
-                !iface.all_bits_valid(t) || self.has_pull_buffer_invalid_bits(iface, t)
-            }
         }
     }
 }
@@ -839,35 +921,22 @@ pub trait RustFunctionGenerator {
         results: &mut Vec<String>,
     ) {
         let tmp = self.tmp();
-        if record.is_tuple() {
-            self.push_str("let (");
-            for i in 0..record.fields.len() {
-                let arg = format!("t{}_{}", tmp, i);
-                self.push_str(&arg);
-                self.push_str(", ");
-                results.push(arg);
-            }
-            self.push_str(") = ");
-            self.push_str(operand);
-            self.push_str(";\n");
-        } else {
-            self.push_str("let ");
-            let name = self.typename_lower(iface, id);
+        self.push_str("let ");
+        let name = self.typename_lower(iface, id);
+        self.push_str(&name);
+        self.push_str("{ ");
+        for field in record.fields.iter() {
+            let name = to_rust_ident(&field.name);
+            let arg = format!("{}{}", name, tmp);
             self.push_str(&name);
-            self.push_str("{ ");
-            for field in record.fields.iter() {
-                let name = to_rust_ident(&field.name);
-                let arg = format!("{}{}", name, tmp);
-                self.push_str(&name);
-                self.push_str(":");
-                self.push_str(&arg);
-                self.push_str(", ");
-                results.push(arg);
-            }
-            self.push_str("} = ");
-            self.push_str(operand);
-            self.push_str(";\n");
+            self.push_str(":");
+            self.push_str(&arg);
+            self.push_str(", ");
+            results.push(arg);
         }
+        self.push_str("} = ");
+        self.push_str(operand);
+        self.push_str(";\n");
     }
 
     fn record_lift(
@@ -878,23 +947,37 @@ pub trait RustFunctionGenerator {
         operands: &[String],
         results: &mut Vec<String>,
     ) {
-        if ty.is_tuple() {
-            if operands.len() == 1 {
-                results.push(format!("({},)", operands[0]));
-            } else {
-                results.push(format!("({})", operands.join(", ")));
-            }
+        let mut result = self.typename_lift(iface, id);
+        result.push_str("{");
+        for (field, val) in ty.fields.iter().zip(operands) {
+            result.push_str(&to_rust_ident(&field.name));
+            result.push_str(":");
+            result.push_str(&val);
+            result.push_str(", ");
+        }
+        result.push_str("}");
+        results.push(result);
+    }
+
+    fn tuple_lower(&mut self, tuple: &Tuple, operand: &str, results: &mut Vec<String>) {
+        let tmp = self.tmp();
+        self.push_str("let (");
+        for i in 0..tuple.types.len() {
+            let arg = format!("t{}_{}", tmp, i);
+            self.push_str(&arg);
+            self.push_str(", ");
+            results.push(arg);
+        }
+        self.push_str(") = ");
+        self.push_str(operand);
+        self.push_str(";\n");
+    }
+
+    fn tuple_lift(&mut self, operands: &[String], results: &mut Vec<String>) {
+        if operands.len() == 1 {
+            results.push(format!("({},)", operands[0]));
         } else {
-            let mut result = self.typename_lift(iface, id);
-            result.push_str("{");
-            for (field, val) in ty.fields.iter().zip(operands) {
-                result.push_str(&to_rust_ident(&field.name));
-                result.push_str(":");
-                result.push_str(&val);
-                result.push_str(", ");
-            }
-            result.push_str("}");
-            results.push(result);
+            results.push(format!("({})", operands.join(", ")));
         }
     }
 
@@ -909,100 +992,6 @@ pub trait RustFunctionGenerator {
         match self.lift_lower() {
             LiftLower::LiftArgsLowerResults => self.rust_gen().param_name(iface, id),
             LiftLower::LowerArgsLiftResults => self.rust_gen().result_name(iface, id),
-        }
-    }
-
-    fn variant_lower(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        ty: &Variant,
-        nresults: usize,
-        operand: &str,
-        results: &mut Vec<String>,
-        blocks: Vec<String>,
-    ) {
-        // If this is a named enum with no type payloads and we're
-        // producing a singular result, then we know we're directly
-        // converting from the Rust enum to the integer discriminant. In
-        // this scenario we can optimize a bit and use just `as i32`
-        // instead of letting LLVM figure out it can do the same with
-        // optimizing the `match` generated below.
-        let has_name = iface.types[id].name.is_some();
-        if nresults == 1 && has_name && ty.cases.iter().all(|c| c.ty.is_none()) {
-            results.push(format!("{} as i32", operand));
-            return;
-        }
-
-        self.let_results(nresults, results);
-        self.push_str("match ");
-        self.push_str(operand);
-        self.push_str("{\n");
-        for (case, block) in ty.cases.iter().zip(blocks) {
-            if ty.is_bool() {
-                self.push_str(case.name.as_str());
-            } else if ty.as_expected().is_some() {
-                self.push_str(&case.name.to_camel_case());
-                self.push_str("(");
-                self.push_str(if case.ty.is_some() { "e" } else { "()" });
-                self.push_str(")");
-            } else if ty.as_option().is_some() {
-                self.push_str(&case.name.to_camel_case());
-                if case.ty.is_some() {
-                    self.push_str("(e)");
-                }
-            } else if has_name {
-                let name = self.typename_lower(iface, id);
-                self.push_str(&name);
-                self.push_str("::");
-                self.push_str(&case_name(&case.name));
-                if case.ty.is_some() {
-                    self.push_str("(e)");
-                }
-            } else {
-                unimplemented!()
-            }
-            self.push_str(" => { ");
-            self.push_str(&block);
-            self.push_str("}\n");
-        }
-        self.push_str("};\n");
-    }
-
-    fn variant_lift_case(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        ty: &Variant,
-        case: &Case,
-        block: &str,
-        result: &mut String,
-    ) {
-        if ty.is_bool() {
-            result.push_str(case.name.as_str());
-        } else if ty.as_expected().is_some() {
-            result.push_str(&case.name.to_camel_case());
-            result.push_str("(");
-            result.push_str(block);
-            result.push_str(")");
-        } else if ty.as_option().is_some() {
-            result.push_str(&case.name.to_camel_case());
-            if case.ty.is_some() {
-                result.push_str("(");
-                result.push_str(block);
-                result.push_str(")");
-            }
-        } else if iface.types[id].name.is_some() {
-            result.push_str(&self.typename_lift(iface, id));
-            result.push_str("::");
-            result.push_str(&case_name(&case.name));
-            if case.ty.is_some() {
-                result.push_str("(");
-                result.push_str(block);
-                result.push_str(")");
-            }
-        } else {
-            unimplemented!()
         }
     }
 }
@@ -1043,15 +1032,7 @@ trait TypeInfoExt {
 
 impl TypeInfoExt for TypeInfo {
     fn owns_data(&self) -> bool {
-        self.has_list || self.has_handle || self.has_pull_buffer || self.has_push_buffer
-    }
-}
-
-pub fn case_name(id: &str) -> String {
-    if id.chars().next().unwrap().is_alphabetic() {
-        id.to_camel_case()
-    } else {
-        format!("V{}", id)
+        self.has_list || self.has_handle
     }
 }
 
@@ -1059,16 +1040,47 @@ pub fn bitcast(casts: &[Bitcast], operands: &[String], results: &mut Vec<String>
     for (cast, operand) in casts.iter().zip(operands) {
         results.push(match cast {
             Bitcast::None => operand.clone(),
-            Bitcast::F32ToF64 => format!("f64::from({})", operand),
             Bitcast::I32ToI64 => format!("i64::from({})", operand),
             Bitcast::F32ToI32 => format!("({}).to_bits() as i32", operand),
             Bitcast::F64ToI64 => format!("({}).to_bits() as i64", operand),
-            Bitcast::F64ToF32 => format!("{} as f32", operand),
             Bitcast::I64ToI32 => format!("{} as i32", operand),
             Bitcast::I32ToF32 => format!("f32::from_bits({} as u32)", operand),
             Bitcast::I64ToF64 => format!("f64::from_bits({} as u64)", operand),
             Bitcast::F32ToI64 => format!("i64::from(({}).to_bits())", operand),
             Bitcast::I64ToF32 => format!("f32::from_bits({} as u32)", operand),
         });
+    }
+}
+
+pub enum RustFlagsRepr {
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+}
+
+impl RustFlagsRepr {
+    pub fn new(f: &Flags) -> RustFlagsRepr {
+        match f.repr() {
+            FlagsRepr::U8 => RustFlagsRepr::U8,
+            FlagsRepr::U16 => RustFlagsRepr::U16,
+            FlagsRepr::U32(1) => RustFlagsRepr::U32,
+            FlagsRepr::U32(2) => RustFlagsRepr::U64,
+            FlagsRepr::U32(3 | 4) => RustFlagsRepr::U128,
+            FlagsRepr::U32(n) => panic!("unsupported number of flags: {}", n * 32),
+        }
+    }
+}
+
+impl fmt::Display for RustFlagsRepr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RustFlagsRepr::U8 => "u8".fmt(f),
+            RustFlagsRepr::U16 => "u16".fmt(f),
+            RustFlagsRepr::U32 => "u32".fmt(f),
+            RustFlagsRepr::U64 => "u64".fmt(f),
+            RustFlagsRepr::U128 => "u128".fmt(f),
+        }
     }
 }

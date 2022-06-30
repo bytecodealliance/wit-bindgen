@@ -17,9 +17,6 @@ structopt = { version = "0.3", default-features = false, optional = true }
 [dev-dependencies]
 anyhow = "1.0"
 test-helpers = { path = '../test-helpers', features = ['wit-bindgen-gen-wasmtime'] }
-wasmtime = "0.34.0"
-wasmtime-wasi = "0.34.0"
+wasmtime = "0.38.0"
+wasmtime-wasi = "0.38.0"
 wit-bindgen-wasmtime = { path = '../wasmtime', features = ['tracing', 'async'] }
-
-[features]
-witx-compat = ['wit-bindgen-gen-core/witx-compat']

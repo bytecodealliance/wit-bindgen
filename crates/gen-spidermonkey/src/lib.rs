@@ -16,7 +16,8 @@ use wasm_encoder::Instruction;
 use wit_bindgen_gen_core::{
     wit_parser::{
         abi::{self, AbiVariant, WasmSignature, WasmType},
-        Docs, Function, Interface, Record, ResourceId, SizeAlign, Type, TypeId, Variant,
+        Docs, Enum, Expected, Flags, Function, Interface, Record, ResourceId, SizeAlign, Tuple,
+        Type, TypeId, Union, Variant,
     },
     Direction, Files, Generator,
 };
@@ -48,7 +49,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -56,7 +58,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -64,7 +67,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -72,7 +76,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -80,7 +85,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -88,7 +94,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -96,7 +103,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -104,7 +112,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -112,7 +121,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -120,15 +130,17 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: None,
-            }
+                retptr: false,
+                indirect_params: false,
+    }
         ),
         (
             "SMW_clear_operands",
             WasmSignature {
                 params: vec![],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -136,7 +148,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -144,7 +157,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -152,7 +166,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -160,7 +175,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -168,7 +184,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -176,7 +193,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -184,7 +202,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -192,7 +211,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -200,7 +220,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -208,7 +229,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -216,7 +238,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -224,7 +247,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
         (
@@ -232,7 +256,8 @@ lazy_static! {
             WasmSignature {
                 params: vec![WasmType::I32],
                 results: vec![WasmType::I32],
-                retptr: None,
+                retptr: false,
+                indirect_params: false,
             },
         ),
     ];
@@ -324,7 +349,8 @@ pub struct SpiderMonkeyWasm<'a> {
     /// The JS source code.
     js: Cow<'a, str>,
 
-    i64_return_pointer_area_size: usize,
+    return_pointer_area_size: usize,
+    return_pointer_area_align: usize,
 
     num_import_functions: Option<u32>,
     num_export_functions: Option<u32>,
@@ -371,7 +397,8 @@ impl<'a> SpiderMonkeyWasm<'a> {
         SpiderMonkeyWasm {
             js_name,
             js,
-            i64_return_pointer_area_size: 0,
+            return_pointer_area_size: 0,
+            return_pointer_area_align: 0,
             num_import_functions: None,
             num_export_functions: None,
             import_spidermonkey: false,
@@ -386,14 +413,6 @@ impl<'a> SpiderMonkeyWasm<'a> {
             sizes: Default::default(),
             function_names: Vec::new(),
             local_names: Vec::new(),
-        }
-    }
-
-    fn abi_variant(dir: Direction) -> AbiVariant {
-        // This generator uses the obvious direction to ABI variant mapping.
-        match dir {
-            Direction::Export => AbiVariant::GuestExport,
-            Direction::Import => AbiVariant::GuestImport,
         }
     }
 
@@ -590,7 +609,8 @@ impl<'a> SpiderMonkeyWasm<'a> {
         let ty_index = self.intern_type(WasmSignature {
             params: vec![],
             results: vec![],
-            retptr: None,
+            retptr: false,
+            indirect_params: false,
         });
         funcs.function(ty_index);
 
@@ -631,16 +651,20 @@ impl<'a> SpiderMonkeyWasm<'a> {
 
         // Allocate space in the `spidermonkey.wasm` memory for the return
         // pointer area and save it to the return pointer global.
-        self.malloc_static_size(
-            &mut wizer_init,
-            u32::try_from(self.i64_return_pointer_area_size).unwrap(),
-            ret_ptr_local,
-        );
-        // []
-        wizer_init.instruction(&Instruction::LocalGet(ret_ptr_local));
-        // [i32]
-        wizer_init.instruction(&Instruction::GlobalSet(RET_PTR_GLOBAL));
-        // []
+        //
+        // TODO: handle `self.return_pointer_area_align` here
+        if self.return_pointer_area_size > 0 {
+            self.malloc_static_size(
+                &mut wizer_init,
+                u32::try_from(self.return_pointer_area_size).unwrap(),
+                ret_ptr_local,
+            );
+            // []
+            wizer_init.instruction(&Instruction::LocalGet(ret_ptr_local));
+            // [i32]
+            wizer_init.instruction(&Instruction::GlobalSet(RET_PTR_GLOBAL));
+            // []
+        }
 
         // Call `SMW_initialize_engine`:
         //
@@ -910,29 +934,10 @@ impl Generator for SpiderMonkeyWasm<'_> {
             Some(u32::try_from(imports.iter().map(|i| i.functions.len()).sum::<usize>()).unwrap());
         self.num_export_functions =
             Some(u32::try_from(exports.iter().map(|i| i.functions.len()).sum::<usize>()).unwrap());
-
-        // Figure out what the maximum return pointer area we will need is.
-        for (iface, variant) in imports
-            .iter()
-            .zip(std::iter::repeat(AbiVariant::GuestImport))
-            .chain(
-                exports
-                    .iter()
-                    .zip(std::iter::repeat(AbiVariant::GuestExport)),
-            )
-        {
-            for func in iface.functions.iter() {
-                let sig = iface.wasm_signature(variant, func);
-                if let Some(results) = sig.retptr {
-                    self.i64_return_pointer_area_size =
-                        self.i64_return_pointer_area_size.max(results.len());
-                }
-            }
-        }
     }
 
-    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        self.sizes.fill(Self::abi_variant(dir), iface);
+    fn preprocess_one(&mut self, iface: &Interface, _dir: Direction) {
+        self.sizes.fill(iface);
     }
 
     fn type_record(
@@ -947,6 +952,30 @@ impl Generator for SpiderMonkeyWasm<'_> {
         todo!()
     }
 
+    fn type_tuple(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        tuple: &Tuple,
+        docs: &Docs,
+    ) {
+        let _ = (iface, id, name, tuple, docs);
+        todo!()
+    }
+
+    fn type_flags(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        flags: &Flags,
+        docs: &Docs,
+    ) {
+        let _ = (iface, id, name, flags, docs);
+        todo!()
+    }
+
     fn type_variant(
         &mut self,
         iface: &Interface,
@@ -956,6 +985,47 @@ impl Generator for SpiderMonkeyWasm<'_> {
         docs: &Docs,
     ) {
         let _ = (iface, id, name, variant, docs);
+        todo!()
+    }
+
+    fn type_union(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        union: &Union,
+        docs: &Docs,
+    ) {
+        let _ = (iface, id, name, union, docs);
+        todo!()
+    }
+
+    fn type_option(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        payload: &Type,
+        docs: &Docs,
+    ) {
+        let _ = (iface, id, name, payload, docs);
+        todo!()
+    }
+
+    fn type_expected(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        name: &str,
+        expected: &Expected,
+        docs: &Docs,
+    ) {
+        let _ = (iface, id, name, expected, docs);
+        todo!()
+    }
+
+    fn type_enum(&mut self, iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
+        let _ = (iface, id, name, enum_, docs);
         todo!()
     }
 
@@ -974,54 +1044,13 @@ impl Generator for SpiderMonkeyWasm<'_> {
         todo!()
     }
 
-    fn type_pointer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        const_: bool,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        let _ = (iface, id, name, const_, ty, docs);
-        todo!()
-    }
-
     fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        let _ = (iface, id, name, name, ty, docs);
-        todo!()
-    }
-
-    fn type_push_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
-        let _ = (iface, id, name, name, ty, docs);
-        todo!()
-    }
-
-    fn type_pull_buffer(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        ty: &Type,
-        docs: &Docs,
-    ) {
         let _ = (iface, id, name, name, ty, docs);
         todo!()
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
-        assert!(
-            func.abi == abi::Abi::Canonical,
-            "We only support the canonical ABI right now"
-        );
 
         // Add the raw Wasm import.
         let wasm_sig = iface.wasm_signature(AbiVariant::GuestImport, func);
@@ -1059,10 +1088,6 @@ impl Generator for SpiderMonkeyWasm<'_> {
 
     fn export(&mut self, iface: &Interface, func: &Function) {
         assert!(!func.is_async, "async not supported yet");
-        assert!(
-            func.abi == abi::Abi::Canonical,
-            "We only support the canonical ABI right now"
-        );
 
         let wasm_sig = iface.wasm_signature(AbiVariant::GuestExport, func);
         let type_index = self.intern_type(wasm_sig.clone());
@@ -1142,7 +1167,8 @@ impl Generator for SpiderMonkeyWasm<'_> {
                 // bool
                 WasmType::I32,
             ],
-            retptr: None,
+            retptr: false,
+            indirect_params: false,
         });
         for f in &self.import_glue_fns {
             funcs.function(js_native_type_index);
@@ -1406,6 +1432,8 @@ enum Operand {
     Js(u32),
     /// The `n`th Wasm local.
     Wasm(u32),
+    /// A "unit" void type
+    Unit,
 }
 
 impl Operand {
@@ -1413,12 +1441,21 @@ impl Operand {
         match *self {
             Operand::Js(js) => js,
             Operand::Wasm(_) => panic!("Operand::unwrap_js on a Wasm operand"),
+            Operand::Unit => panic!("Operand::unwrap_js on a Unit operand"),
         }
     }
     fn unwrap_wasm(&self) -> u32 {
         match *self {
             Operand::Wasm(w) => w,
             Operand::Js(_) => panic!("Operand::unwrap_wasm on a JS operand"),
+            Operand::Unit => panic!("Operand::unwrap_wasm on a Unit operand"),
+        }
+    }
+    fn unwrap_unit(&self) {
+        match *self {
+            Operand::Unit => {}
+            Operand::Wasm(_) => panic!("Operand::unwrap_unit on a Wasm operand"),
+            Operand::Js(_) => panic!("Operand::unwrap_unit on a JS operand"),
         }
     }
 }
@@ -1528,10 +1565,8 @@ impl abi::Bindgen for Bindgen<'_, '_> {
             abi::Instruction::I32FromS16 => todo!(),
             abi::Instruction::I32FromU8 => todo!(),
             abi::Instruction::I32FromS8 => todo!(),
-            abi::Instruction::I32FromUsize => todo!(),
-            abi::Instruction::I32FromChar8 => todo!(),
-            abi::Instruction::F32FromIf32 => todo!(),
-            abi::Instruction::F64FromIf64 => todo!(),
+            abi::Instruction::F32FromFloat32 => todo!(),
+            abi::Instruction::F64FromFloat64 => todo!(),
             abi::Instruction::S8FromI32 => todo!(),
             abi::Instruction::U8FromI32 => todo!(),
             abi::Instruction::S16FromI32 => todo!(),
@@ -1556,15 +1591,14 @@ impl abi::Bindgen for Bindgen<'_, '_> {
             abi::Instruction::S64FromI64 => todo!(),
             abi::Instruction::U64FromI64 => todo!(),
             abi::Instruction::CharFromI32 => todo!(),
-            abi::Instruction::If32FromF32 => todo!(),
-            abi::Instruction::If64FromF64 => todo!(),
-            abi::Instruction::Char8FromI32 => todo!(),
-            abi::Instruction::UsizeFromI32 => todo!(),
+            abi::Instruction::Float32FromF32 => todo!(),
+            abi::Instruction::Float64FromF64 => todo!(),
             abi::Instruction::I32FromBorrowedHandle { ty: _ } => todo!(),
             abi::Instruction::I32FromOwnedHandle { ty: _ } => todo!(),
             abi::Instruction::HandleOwnedFromI32 { ty: _ } => todo!(),
             abi::Instruction::HandleBorrowedFromI32 { ty: _ } => todo!(),
-            abi::Instruction::ListCanonLower { element, realloc } => {
+            abi::Instruction::ListCanonLower { .. } => todo!(),
+            abi::Instruction::StringLower { realloc } => {
                 let js = pop_js(operands);
                 let ptr = self.new_local(wasm_encoder::ValType::I32);
                 let len = self.new_local(wasm_encoder::ValType::I32);
@@ -1572,8 +1606,8 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 // Make sure our return pointer area can hold at least two
                 // `u32`s, since we will use it that way with
                 // `SMW_{list,string}_canon_lower`.
-                self.gen.i64_return_pointer_area_size =
-                    self.gen.i64_return_pointer_area_size.max(1);
+                self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(1);
+                self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(4);
 
                 // []
                 self.inst(Instruction::GlobalGet(RET_PTR_GLOBAL));
@@ -1608,11 +1642,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 // If `realloc` is `None`, then we are responsible for freeing
                 // this pointer after the call.
                 if realloc.is_none() {
-                    self.to_free.push((
-                        ptr,
-                        len,
-                        u32::try_from(self.gen.sizes.align(element)).unwrap(),
-                    ));
+                    self.to_free.push((ptr, len, 1));
                 }
 
                 results.push(Operand::Wasm(ptr));
@@ -1739,13 +1769,8 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 results.push(Operand::Wasm(ptr));
                 results.push(Operand::Wasm(length));
             }
-            abi::Instruction::ListCanonLift {
-                element,
-                free,
-                ty: _,
-            } => {
-                assert_eq!(**element, Type::Char);
-
+            abi::Instruction::ListCanonLift { .. } => todo!(),
+            abi::Instruction::StringLift { free } => {
                 let len = pop_wasm(operands);
                 let ptr = pop_wasm(operands);
                 let result = self.next_js();
@@ -1768,7 +1793,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                     // [i32]
                     self.inst(Instruction::LocalGet(len));
                     // [i32 i32]
-                    self.inst(Instruction::I32Const(self.gen.sizes.align(element) as _));
+                    self.inst(Instruction::I32Const(1));
                     // [i32 i32 i32]
                     self.inst(Instruction::Call(self.gen.spidermonkey_import(free)));
                     // []
@@ -1908,11 +1933,6 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 results.push(Operand::Wasm(iter_base_pointer));
             }
 
-            abi::Instruction::BufferPayloadName => todo!(),
-            abi::Instruction::BufferLowerPtrLen { push: _, ty: _ } => todo!(),
-            abi::Instruction::BufferLowerHandle { push: _, ty: _ } => todo!(),
-            abi::Instruction::BufferLiftPtrLen { push: _, ty: _ } => todo!(),
-            abi::Instruction::BufferLiftHandle { push: _, ty: _ } => todo!(),
             abi::Instruction::RecordLower {
                 record: _,
                 name: _,
@@ -1923,23 +1943,15 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 name: _,
                 ty: _,
             } => todo!(),
+            abi::Instruction::TupleLower { tuple: _, ty: _ } => todo!(),
+            abi::Instruction::TupleLift { tuple: _, ty: _ } => todo!(),
             abi::Instruction::FlagsLower {
-                record: _,
-                name: _,
-                ty: _,
-            } => todo!(),
-            abi::Instruction::FlagsLower64 {
-                record: _,
+                flags: _,
                 name: _,
                 ty: _,
             } => todo!(),
             abi::Instruction::FlagsLift {
-                record: _,
-                name: _,
-                ty: _,
-            } => todo!(),
-            abi::Instruction::FlagsLift64 {
-                record: _,
+                flags: _,
                 name: _,
                 ty: _,
             } => todo!(),
@@ -1955,7 +1967,23 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 name: _,
                 ty: _,
             } => todo!(),
-            abi::Instruction::CallWasm { module, name, sig } => {
+            abi::Instruction::OptionLower { .. } => todo!(),
+            abi::Instruction::OptionLift { .. } => todo!(),
+            abi::Instruction::ExpectedLower { .. } => todo!(),
+            abi::Instruction::ExpectedLift { .. } => todo!(),
+            abi::Instruction::UnionLower { .. } => todo!(),
+            abi::Instruction::UnionLift { .. } => todo!(),
+            abi::Instruction::EnumLower {
+                enum_: _,
+                name: _,
+                ty: _,
+            } => todo!(),
+            abi::Instruction::EnumLift {
+                enum_: _,
+                name: _,
+                ty: _,
+            } => todo!(),
+            abi::Instruction::CallWasm { iface, name, sig } => {
                 // Push the Wasm arguments.
                 //
                 // []
@@ -1968,7 +1996,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 let func_index = self
                     .gen
                     .import_fn_name_to_index
-                    .get(*module)
+                    .get(&iface.name)
                     .unwrap()
                     .get(*name)
                     .unwrap()
@@ -2051,17 +2079,20 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                     u32::try_from(func.name.len()).unwrap(),
                 );
 
-                let first_result = if func.results.is_empty() {
+                let (first_result, num_results) = match &func.result {
                     // If there aren't any function results, then this argument
                     // to `SMW_call` is going to be ignored. Use a highly
                     // visible placeholder so that if this is ever accidentally
                     // used it is easier to debug.
-                    0xffffffff
-                } else {
-                    let js = self.next_js();
-                    results.push(js);
-                    results.extend((0..(func.results.len() - 1)).map(|_| self.next_js()));
-                    js.unwrap_js()
+                    Type::Unit => {
+                        results.push(Operand::Unit);
+                        (0xffffffff, 0)
+                    }
+                    _ => {
+                        let js = self.next_js();
+                        results.push(js);
+                        (js.unwrap_js(), 1)
+                    }
                 };
 
                 // Make the call.
@@ -2073,9 +2104,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                     i32::try_from(func.name.len()).unwrap(),
                 ));
                 // [i32 i32]
-                self.inst(Instruction::I32Const(
-                    u32::try_from(func.results.len()).unwrap() as _,
-                ));
+                self.inst(Instruction::I32Const(num_results));
                 // [i32 i32 i32]
                 self.inst(Instruction::I32Const(first_result as i32));
                 // [i32 i32 i32 i32]
@@ -2086,22 +2115,25 @@ impl abi::Bindgen for Bindgen<'_, '_> {
             abi::Instruction::CallWasmAsyncExport { .. } => todo!(),
             abi::Instruction::CallWasmAsyncImport { .. } => todo!(),
 
-            abi::Instruction::Return { amt, func: _ } => {
+            abi::Instruction::Return { func, amt } => {
                 match self.lift_lower {
                     abi::LiftLower::LowerArgsLiftResults => {
-                        if *amt != 0 {
-                            // Attach the return values to the `JS::CallArgs`:
-                            // build up the return values via a series of
-                            // `SMW_push_return_value` calls, followed by a
-                            // single `SMW_finish_returns` call.
-                            //
-                            // TODO: introduce fast path intrinsics for common
-                            // small numbers of return values so that we don't
-                            // have to do multiple intrinsic calls here, and can
-                            // instead do a single `SMW_return_{1,2,...,n}`
-                            // call.
-                            let vals: Vec<_> = (0..*amt).map(|_| pop_js(operands)).collect();
-                            for val in vals.into_iter().rev() {
+                        match &func.result {
+                            Type::Unit => {
+                                operands[0].unwrap_unit();
+                            }
+                            _ => {
+                                // Attach the return values to the `JS::CallArgs`:
+                                // build up the return values via a series of
+                                // `SMW_push_return_value` calls, followed by a
+                                // single `SMW_finish_returns` call.
+                                //
+                                // TODO: introduce fast path intrinsics for common
+                                // small numbers of return values so that we don't
+                                // have to do multiple intrinsic calls here, and can
+                                // instead do a single `SMW_return_{1,2,...,n}`
+                                // call.
+                                let val = pop_js(operands);
                                 // []
                                 self.inst(Instruction::I32Const(val as _));
                                 // [i32]
@@ -2109,16 +2141,15 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                                     self.gen.spidermonkey_import("SMW_push_return_value"),
                                 ));
                                 // []
+                                self.inst(Instruction::LocalGet(1));
+                                // [i32]
+                                self.inst(Instruction::LocalGet(2));
+                                // [i32 i32]
+                                self.inst(Instruction::Call(
+                                    self.gen.spidermonkey_import("SMW_finish_returns"),
+                                ));
+                                // []
                             }
-                            // []
-                            self.inst(Instruction::LocalGet(1));
-                            // [i32]
-                            self.inst(Instruction::LocalGet(2));
-                            // [i32 i32]
-                            self.inst(Instruction::Call(
-                                self.gen.spidermonkey_import("SMW_finish_returns"),
-                            ));
-                            // []
                         }
 
                         // NB: only clear the JS operands after we've attached
@@ -2151,21 +2182,27 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 }
             }
 
+            abi::Instruction::UnitLower { .. } => {
+                operands[0].unwrap_unit();
+            }
+            abi::Instruction::UnitLift { .. } => {
+                results.push(Operand::Unit);
+            }
+
+            abi::Instruction::I32FromBool { .. } => todo!(),
+            abi::Instruction::BoolFromI32 { .. } => todo!(),
+
             abi::Instruction::ReturnAsyncExport { .. } => todo!(),
             abi::Instruction::ReturnAsyncImport { .. } => todo!(),
 
-            abi::Instruction::Witx { instr: _ } => {
-                unreachable!("we do not support the preview1 ABI")
-            }
+            abi::Instruction::Malloc { .. } => todo!(),
+            abi::Instruction::Free { .. } => todo!(),
         }
     }
 
-    fn allocate_typed_space(&mut self, _iface: &Interface, _ty: TypeId) -> Self::Operand {
-        todo!()
-    }
-
-    fn i64_return_pointer_area(&mut self, amt: usize) -> Self::Operand {
-        assert!(amt <= self.gen.i64_return_pointer_area_size);
+    fn return_pointer(&mut self, _iface: &Interface, size: usize, align: usize) -> Self::Operand {
+        self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
+        self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
         let local = self.new_local(wasm_encoder::ValType::I32);
 
         // []
@@ -2186,7 +2223,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
     }
 
     fn sizes(&self) -> &SizeAlign {
-        todo!()
+        &self.gen.sizes
     }
 
     fn is_list_canonical(&self, _iface: &Interface, _ty: &Type) -> bool {

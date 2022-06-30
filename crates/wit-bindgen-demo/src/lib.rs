@@ -4,8 +4,8 @@ use wit_bindgen_gen_core::wit_parser::Interface;
 use wit_bindgen_gen_core::Generator;
 use wit_bindgen_rust::Handle;
 
-wit_bindgen_rust::export!("./crates/wit-bindgen-demo/demo.wit");
-wit_bindgen_rust::import!("./crates/wit-bindgen-demo/browser.wit");
+wit_bindgen_rust::export!("demo.wit");
+wit_bindgen_rust::import!("browser.wit");
 
 struct Demo;
 

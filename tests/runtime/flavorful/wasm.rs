@@ -1,5 +1,5 @@
-wit_bindgen_rust::import!("./tests/runtime/flavorful/imports.wit");
-wit_bindgen_rust::export!("./tests/runtime/flavorful/exports.wit");
+wit_bindgen_rust::import!("../../tests/runtime/flavorful/imports.wit");
+wit_bindgen_rust::export!("../../tests/runtime/flavorful/exports.wit");
 
 use exports::*;
 
@@ -29,7 +29,7 @@ impl exports::Exports for Exports {
             "result4"
         );
 
-        list_in_variant1(Some("foo"), Err("bar"), ListInVariant1V3::V0("baz"));
+        list_in_variant1(Some("foo"), Err("bar"), ListInVariant1V3::String("baz"));
         assert_eq!(list_in_variant2_func(), Some("list_in_variant2".to_string()));
         assert_eq!(
             list_in_variant3_func(Some("input3")),
@@ -85,8 +85,8 @@ impl exports::Exports for Exports {
         assert_eq!(a.unwrap(), "foo");
         assert_eq!(b.unwrap_err(), "bar");
         match c {
-            ListInVariant1V3::V0(s) => assert_eq!(s, "baz"),
-            ListInVariant1V3::V1(_) => panic!(),
+            ListInVariant1V3::String(s) => assert_eq!(s, "baz"),
+            ListInVariant1V3::F32(_) => panic!(),
         }
     }
 

@@ -16,6 +16,5 @@ wit-bindgen-gen-core = { path = "../gen-core", version = "0.1" }
 wit-bindgen-gen-wasmtime = { path = "../gen-wasmtime", version = "0.1" }
 
 [features]
-witx-compat = ['wit-bindgen-gen-wasmtime/witx-compat']
 tracing = []
 async = []

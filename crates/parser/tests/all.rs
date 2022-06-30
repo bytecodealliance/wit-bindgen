@@ -11,6 +11,7 @@ use anyhow::{bail, Context, Result};
 use rayon::prelude::*;
 use serde::Serialize;
 use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -118,7 +119,18 @@ impl Runner<'_> {
             to_json(&instance)
         };
 
-        let result_file = test.with_extension("wit.result");
+        // "foo.wit" => "foo.wit.result"
+        // "foo.wit.md" => "foo.wit.md.result"
+        let result_file = if test.extension() == Some(OsStr::new("md"))
+            && test
+                .file_stem()
+                .and_then(|path| Path::new(path).extension())
+                == Some(OsStr::new("wit"))
+        {
+            test.with_extension("md.result")
+        } else {
+            test.with_extension("wit.result")
+        };
         if env::var_os("BLESS").is_some() {
             fs::write(&result_file, result)?;
         } else {
@@ -188,17 +200,16 @@ fn to_json(i: &Interface) -> String {
     #[serde(rename_all = "kebab-case")]
     enum Type {
         Primitive(String),
-        Record {
-            fields: Vec<(String, String)>,
-        },
-        Variant {
-            cases: Vec<(String, Option<String>)>,
-        },
+        Record { fields: Vec<(String, String)> },
+        Flags { flags: Vec<String> },
+        Enum { cases: Vec<String> },
+        Variant { cases: Vec<(String, String)> },
+        Tuple { types: Vec<String> },
+        Option(String),
+        Expected { ok: String, err: String },
+        Stream { element: String, end: String },
         List(String),
-        PushBuffer(String),
-        PullBuffer(String),
-        Pointer(String),
-        ConstPointer(String),
+        Union { cases: Vec<String> },
     }
 
     #[derive(Serialize)]
@@ -207,7 +218,7 @@ fn to_json(i: &Interface) -> String {
         #[serde(rename = "async", skip_serializing_if = "Option::is_none")]
         is_async: Option<bool>,
         params: Vec<String>,
-        results: Vec<String>,
+        result: String,
     }
 
     #[derive(Serialize)]
@@ -242,7 +253,7 @@ fn to_json(i: &Interface) -> String {
             name: f.name.clone(),
             is_async: if f.is_async { Some(f.is_async) } else { None },
             params: f.params.iter().map(|(_, ty)| translate_type(ty)).collect(),
-            results: f.results.iter().map(|(_, ty)| translate_type(ty)).collect(),
+            result: translate_type(&f.result),
         })
         .collect::<Vec<_>>();
     let globals = i
@@ -272,37 +283,55 @@ fn to_json(i: &Interface) -> String {
                     .map(|f| (f.name.clone(), translate_type(&f.ty)))
                     .collect(),
             },
+            TypeDefKind::Tuple(t) => Type::Tuple {
+                types: t.types.iter().map(|ty| translate_type(ty)).collect(),
+            },
+            TypeDefKind::Flags(r) => Type::Flags {
+                flags: r.flags.iter().map(|f| f.name.clone()).collect(),
+            },
+            TypeDefKind::Enum(r) => Type::Enum {
+                cases: r.cases.iter().map(|f| f.name.clone()).collect(),
+            },
             TypeDefKind::Variant(v) => Type::Variant {
                 cases: v
                     .cases
                     .iter()
-                    .map(|f| (f.name.clone(), f.ty.as_ref().map(translate_type)))
+                    .map(|f| (f.name.clone(), translate_type(&f.ty)))
                     .collect(),
             },
-            TypeDefKind::PushBuffer(ty) => Type::PushBuffer(translate_type(ty)),
-            TypeDefKind::PullBuffer(ty) => Type::PullBuffer(translate_type(ty)),
+            TypeDefKind::Option(t) => Type::Option(translate_type(t)),
+            TypeDefKind::Expected(e) => Type::Expected {
+                ok: translate_type(&e.ok),
+                err: translate_type(&e.err),
+            },
+            TypeDefKind::Stream(s) => Type::Stream {
+                element: translate_type(&s.element),
+                end: translate_type(&s.end),
+            },
             TypeDefKind::List(ty) => Type::List(translate_type(ty)),
-            TypeDefKind::Pointer(ty) => Type::Pointer(translate_type(ty)),
-            TypeDefKind::ConstPointer(ty) => Type::ConstPointer(translate_type(ty)),
+            TypeDefKind::Union(u) => Type::Union {
+                cases: u.cases.iter().map(|c| translate_type(&c.ty)).collect(),
+            },
         }
     }
 
     fn translate_type(ty: &wit_parser::Type) -> String {
         use wit_parser::Type;
         match ty {
+            Type::Unit => format!("unit"),
+            Type::Bool => format!("bool"),
             Type::U8 => format!("u8"),
-            Type::CChar => format!("c_char"),
             Type::U16 => format!("u16"),
             Type::U32 => format!("u32"),
-            Type::Usize => format!("usize"),
             Type::U64 => format!("u64"),
             Type::S8 => format!("s8"),
             Type::S16 => format!("s16"),
             Type::S32 => format!("s32"),
             Type::S64 => format!("s64"),
-            Type::F32 => format!("f32"),
-            Type::F64 => format!("f64"),
+            Type::Float32 => format!("float32"),
+            Type::Float64 => format!("float64"),
             Type::Char => format!("char"),
+            Type::String => format!("string"),
             Type::Handle(resource) => format!("handle-{}", resource.index()),
             Type::Id(id) => format!("type-{}", id.index()),
         }

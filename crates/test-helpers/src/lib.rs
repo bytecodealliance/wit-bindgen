@@ -85,12 +85,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 .iter()
                 .map(|(_, t)| quote_ty(true, iface, t))
                 .collect::<Vec<_>>();
-            let mut results = f.results.iter().map(|(_, t)| quote_ty(false, iface, t));
-            let ret = match f.results.len() {
-                0 => quote::quote! { () },
-                1 => results.next().unwrap(),
-                _ => quote::quote! { (#(#results),*) },
-            };
+            let ret = quote_ty(false, iface, &f.result);
             let mut self_ = quote::quote!();
             if let FunctionKind::Method { .. } = &f.kind {
                 params.remove(0);
@@ -144,6 +139,8 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         ty: &wit_parser::Type,
     ) -> proc_macro2::TokenStream {
         match *ty {
+            Type::Unit => quote::quote! { () },
+            Type::Bool => quote::quote! { bool },
             Type::U8 => quote::quote! { u8 },
             Type::S8 => quote::quote! { i8 },
             Type::U16 => quote::quote! { u16 },
@@ -152,11 +149,10 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
             Type::S32 => quote::quote! { i32 },
             Type::U64 => quote::quote! { u64 },
             Type::S64 => quote::quote! { i64 },
-            Type::CChar => quote::quote! { u8 },
-            Type::Usize => quote::quote! { usize },
-            Type::F32 => quote::quote! { f32 },
-            Type::F64 => quote::quote! { f64 },
+            Type::Float32 => quote::quote! { f32 },
+            Type::Float64 => quote::quote! { f64 },
             Type::Char => quote::quote! { char },
+            Type::String => quote::quote! { String },
             Type::Handle(resource) => {
                 let name =
                     quote::format_ident!("{}", iface.resources[resource].name.to_camel_case());
@@ -179,48 +175,29 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         }
         match &ty.kind {
             TypeDefKind::Type(t) => quote_ty(param, iface, t),
-            TypeDefKind::Pointer(t) => {
-                let t = quote_ty(param, iface, t);
-                quote::quote! { *mut #t }
-            }
-            TypeDefKind::ConstPointer(t) => {
-                let t = quote_ty(param, iface, t);
-                quote::quote! { *const #t }
-            }
             TypeDefKind::List(t) => {
-                if *t == Type::Char {
-                    quote::quote! { String }
-                } else {
-                    let t = quote_ty(param, iface, t);
-                    quote::quote! { Vec<#t> }
-                }
+                let t = quote_ty(param, iface, t);
+                quote::quote! { Vec<#t> }
             }
-            TypeDefKind::PushBuffer(_) => panic!("unimplemented push-buffer"),
-            TypeDefKind::PullBuffer(_) => panic!("unimplemented pull-buffer"),
-            TypeDefKind::Record(r) => {
-                let fields = r.fields.iter().map(|f| quote_ty(param, iface, &f.ty));
+            TypeDefKind::Flags(_) => panic!("unknown flags"),
+            TypeDefKind::Enum(_) => panic!("unknown enum"),
+            TypeDefKind::Record(_) => panic!("unknown record"),
+            TypeDefKind::Variant(_) => panic!("unknown variant"),
+            TypeDefKind::Union(_) => panic!("unknown union"),
+            TypeDefKind::Tuple(t) => {
+                let fields = t.types.iter().map(|ty| quote_ty(param, iface, ty));
                 quote::quote! { (#(#fields,)*) }
             }
-            TypeDefKind::Variant(v) => {
-                if v.is_bool() {
-                    quote::quote! { bool }
-                } else if let Some(ty) = v.as_option() {
-                    let ty = quote_ty(param, iface, ty);
-                    quote::quote! { Option<#ty> }
-                } else if let Some((ok, err)) = v.as_expected() {
-                    let ok = match ok {
-                        Some(ok) => quote_ty(param, iface, ok),
-                        None => quote::quote! { () },
-                    };
-                    let err = match err {
-                        Some(err) => quote_ty(param, iface, err),
-                        None => quote::quote! { () },
-                    };
-                    quote::quote! { Result<#ok, #err> }
-                } else {
-                    panic!("unknown variant");
-                }
+            TypeDefKind::Option(ty) => {
+                let ty = quote_ty(param, iface, ty);
+                quote::quote! { Option<#ty> }
             }
+            TypeDefKind::Expected(e) => {
+                let ok = quote_ty(param, iface, &e.ok);
+                let err = quote_ty(param, iface, &e.err);
+                quote::quote! { Result<#ok, #err> }
+            }
+            TypeDefKind::Stream(_) => todo!("unknown stream"),
         }
     }
 }

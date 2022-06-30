@@ -49,7 +49,7 @@ pub enum Token {
     Use,
     Type,
     Resource,
-    Function,
+    Func,
     U8,
     U16,
     U32,
@@ -58,8 +58,8 @@ pub enum Token {
     S16,
     S32,
     S64,
-    F32,
-    F64,
+    Float32,
+    Float64,
     Char,
     Handle,
     Record,
@@ -71,22 +71,23 @@ pub enum Token {
     String_,
     Option_,
     Expected,
+    Stream,
     List,
     Underscore,
-    PushBuffer,
-    PullBuffer,
     As,
     From_,
     Static,
     Interface,
     Tuple,
     Async,
+    Unit,
 
     Id,
-    StrLit,
+    ExplicitId,
 }
 
 #[derive(Eq, PartialEq, Debug)]
+#[allow(dead_code)]
 pub enum Error {
     InvalidCharInString(usize, char),
     InvalidCharInId(usize, char),
@@ -135,16 +136,11 @@ impl<'a> Tokenizer<'a> {
         Ok(ret)
     }
 
-    pub fn parse_str(&self, span: Span) -> Result<String> {
-        let mut ret = String::new();
-        let s = self.get_span(span);
-        let mut l = Tokenizer::new(s)?;
-        assert!(matches!(l.chars.next(), Some((_, '"'))));
-        while let Some(c) = l.eat_str_char(0).unwrap() {
-            ret.push(c);
-        }
-        validate_id(span.start as usize, &ret)?;
-        Ok(ret)
+    pub fn parse_explicit_id(&self, span: Span) -> Result<String> {
+        let token = self.get_span(span);
+        let id_part = token.strip_prefix('%').unwrap();
+        validate_id(span.start as usize, id_part)?;
+        Ok(id_part.to_owned())
     }
 
     pub fn next(&mut self) -> Result<Option<(Span, Token)>, Error> {
@@ -213,9 +209,20 @@ impl<'a> Tokenizer<'a> {
                     return Err(Error::Unexpected(start, '-'));
                 }
             }
-            '"' => {
-                while let Some(_ch) = self.eat_str_char(start)? {}
-                StrLit
+            '%' => {
+                let mut iter = self.chars.clone();
+                if let Some((_, ch)) = iter.next() {
+                    if is_keylike_start(ch) {
+                        self.chars = iter.clone();
+                        while let Some((_, ch)) = iter.next() {
+                            if !is_keylike_continue(ch) {
+                                break;
+                            }
+                            self.chars = iter.clone();
+                        }
+                    }
+                }
+                ExplicitId
             }
             ch if is_keylike_start(ch) => {
                 let remaining = self.chars.chars.as_str().len();
@@ -231,7 +238,7 @@ impl<'a> Tokenizer<'a> {
                     "use" => Use,
                     "type" => Type,
                     "resource" => Resource,
-                    "function" => Function,
+                    "func" => Func,
                     "u8" => U8,
                     "u16" => U16,
                     "u32" => U32,
@@ -240,8 +247,8 @@ impl<'a> Tokenizer<'a> {
                     "s16" => S16,
                     "s32" => S32,
                     "s64" => S64,
-                    "f32" => F32,
-                    "f64" => F64,
+                    "float32" => Float32,
+                    "float64" => Float64,
                     "char" => Char,
                     "handle" => Handle,
                     "record" => Record,
@@ -253,16 +260,16 @@ impl<'a> Tokenizer<'a> {
                     "string" => String_,
                     "option" => Option_,
                     "expected" => Expected,
+                    "stream" => Stream,
                     "list" => List,
                     "_" => Underscore,
-                    "push-buffer" => PushBuffer,
-                    "pull-buffer" => PullBuffer,
                     "as" => As,
                     "from" => From_,
                     "static" => Static,
                     "interface" => Interface,
                     "tuple" => Tuple,
                     "async" => Async,
+                    "unit" => Unit,
                     _ => Id,
                 }
             }
@@ -341,32 +348,6 @@ impl<'a> Tokenizer<'a> {
             }
             _ => false,
         }
-    }
-
-    fn eat_str_char(&mut self, start: usize) -> Result<Option<char>, Error> {
-        let ch = match self.chars.next() {
-            Some((_, '"')) => return Ok(None),
-            Some((_, '\\')) => match self.chars.next() {
-                Some((_, '"')) => '"',
-                Some((_, '\'')) => ('\''),
-                Some((_, 't')) => ('\t'),
-                Some((_, 'n')) => ('\n'),
-                Some((_, 'r')) => ('\r'),
-                Some((_, '\\')) => ('\\'),
-                Some((i, c)) => return Err(Error::InvalidEscape(i, c)),
-                None => return Err(Error::UnterminatedString(start)),
-            },
-            Some((_, ch))
-                if ch == '\u{09}'
-                    || (('\u{20}'..='\u{10ffff}').contains(&ch) && ch != '\u{7f}') =>
-            {
-                ch
-            }
-            Some((i, '\n')) => return Err(Error::NewlineInString(i)),
-            Some((i, ch)) => return Err(Error::InvalidCharInString(i, ch)),
-            None => return Err(Error::UnterminatedString(start)),
-        };
-        Ok(Some(ch))
     }
 }
 
@@ -456,6 +437,11 @@ pub fn validate_id(start: usize, id: &str) -> Result<(), Error> {
         return Err(Error::IdNotSSNFC(start));
     }
 
+    // IDs must have at least one part.
+    if id.is_empty() {
+        return Err(Error::IdPartEmpty(start));
+    }
+
     // Ids consist of parts separated by '-'s.
     for part in id.split("-") {
         // Parts must be non-empty and start with a non-combining XID start.
@@ -515,7 +501,7 @@ impl Token {
             Use => "keyword `use`",
             Type => "keyword `type`",
             Resource => "keyword `resource`",
-            Function => "keyword `function`",
+            Func => "keyword `func`",
             U8 => "keyword `u8`",
             U16 => "keyword `u16`",
             U32 => "keyword `u32`",
@@ -524,8 +510,8 @@ impl Token {
             S16 => "keyword `s16`",
             S32 => "keyword `s32`",
             S64 => "keyword `s64`",
-            F32 => "keyword `f32`",
-            F64 => "keyword `f64`",
+            Float32 => "keyword `float32`",
+            Float64 => "keyword `float64`",
             Char => "keyword `char`",
             Handle => "keyword `handle`",
             Record => "keyword `record`",
@@ -537,12 +523,11 @@ impl Token {
             String_ => "keyword `string`",
             Option_ => "keyword `option`",
             Expected => "keyword `expected`",
+            Stream => "keyword `stream`",
             List => "keyword `list`",
             Underscore => "keyword `_`",
             Id => "an identifier",
-            StrLit => "a string",
-            PushBuffer => "keyword `push-buffer`",
-            PullBuffer => "keyword `pull-buffer`",
+            ExplicitId => "an '%' identifier",
             RArrow => "`->`",
             Star => "`*`",
             As => "keyword `as`",
@@ -551,6 +536,7 @@ impl Token {
             Interface => "keyword `interface`",
             Tuple => "keyword `tuple`",
             Async => "keyword `async`",
+            Unit => "keyword `unit`",
         }
     }
 }
@@ -614,17 +600,18 @@ fn test_validate_id() {
     validate_id(0, "a-a").unwrap();
     validate_id(0, "bool").unwrap();
 
+    assert!(validate_id(0, "").is_err());
     assert!(validate_id(0, "0").is_err());
-    assert!(validate_id(0, "@").is_err());
+    assert!(validate_id(0, "%").is_err());
     assert!(validate_id(0, "$").is_err());
     assert!(validate_id(0, "0a").is_err());
     assert!(validate_id(0, ".").is_err());
     assert!(validate_id(0, "·").is_err());
-    assert!(validate_id(0, "\"a a\"").is_err());
-    assert!(validate_id(0, "\"_\"").is_err());
-    assert!(validate_id(0, "\"-\"").is_err());
-    assert!(validate_id(0, "\"a-\"").is_err());
-    assert!(validate_id(0, "\"-a\"").is_err());
+    assert!(validate_id(0, "a a").is_err());
+    assert!(validate_id(0, "_").is_err());
+    assert!(validate_id(0, "-").is_err());
+    assert!(validate_id(0, "a-").is_err());
+    assert!(validate_id(0, "-a").is_err());
     assert!(validate_id(0, "Apple").is_err());
     assert!(validate_id(0, "APPLE").is_err());
     assert!(validate_id(0, "applE").is_err());
@@ -686,9 +673,22 @@ fn test_tokenizer() {
     );
     assert_eq!(collect("a0").unwrap(), vec![Token::Id]);
     assert_eq!(collect("a").unwrap(), vec![Token::Id]);
-    assert_eq!(collect("\"a\"").unwrap(), vec![Token::StrLit]);
-    assert_eq!(collect("\"a-a\"").unwrap(), vec![Token::StrLit]);
-    assert_eq!(collect("\"bool\"").unwrap(), vec![Token::StrLit]);
+    assert_eq!(collect("%a").unwrap(), vec![Token::ExplicitId]);
+    assert_eq!(collect("%a-a").unwrap(), vec![Token::ExplicitId]);
+    assert_eq!(collect("%bool").unwrap(), vec![Token::ExplicitId]);
+    assert_eq!(collect("%").unwrap(), vec![Token::ExplicitId]);
+
+    assert_eq!(collect("func").unwrap(), vec![Token::Func]);
+    assert_eq!(
+        collect("a: func()").unwrap(),
+        vec![
+            Token::Id,
+            Token::Colon,
+            Token::Func,
+            Token::LeftParen,
+            Token::RightParen
+        ]
+    );
 
     assert!(collect("\u{149}").is_err(), "strongly discouraged");
     assert!(collect("\u{673}").is_err(), "strongly discouraged");

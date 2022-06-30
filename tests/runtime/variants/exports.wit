@@ -1,30 +1,30 @@
-test-imports: function()
+test-imports: func()
 
-roundtrip-option: function(a: option<f32>) -> option<u8>
-roundtrip-result: function(a: expected<u32, f32>) -> expected<f64, u8>
+roundtrip-option: func(a: option<float32>) -> option<u8>
+roundtrip-result: func(a: expected<u32, float32>) -> expected<float64, u8>
 
 enum e1 { a, b }
-roundtrip-enum: function(a: e1) -> e1
+roundtrip-enum: func(a: e1) -> e1
 
-invert-bool: function(a: bool) -> bool
+invert-bool: func(a: bool) -> bool
 
 variant c1 { a(s32), b(s64) }
-variant c2 { a(s32), b(f32) }
-variant c3 { a(s32), b(f64) }
-variant c4 { a(s64), b(f32) }
-variant c5 { a(s64), b(f64) }
-variant c6 { a(f32), b(f64) }
+variant c2 { a(s32), b(float32) }
+variant c3 { a(s32), b(float64) }
+variant c4 { a(s64), b(float32) }
+variant c5 { a(s64), b(float64) }
+variant c6 { a(float32), b(float64) }
 type casts = tuple<c1, c2, c3, c4, c5, c6>
-variant-casts: function(a: casts) -> casts
+variant-casts: func(a: casts) -> casts
 
 variant z1 { a(s32), b }
 variant z2 { a(s64), b }
-variant z3 { a(f32), b }
-variant z4 { a(f64), b }
+variant z3 { a(float32), b }
+variant z4 { a(float64), b }
 type zeros = tuple<z1, z2, z3, z4>
-variant-zeros: function(a: zeros) -> zeros
+variant-zeros: func(a: zeros) -> zeros
 
 type option-typedef = option<u32>
 type bool-typedef = bool
-type result-typedef = expected<u32, _>
-variant-typedefs: function(a: option-typedef, b: bool-typedef, c: result-typedef)
+type result-typedef = expected<u32, unit>
+variant-typedefs: func(a: option-typedef, b: bool-typedef, c: result-typedef)

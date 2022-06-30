@@ -11,7 +11,8 @@ function assertEq(a, b) {
 }
 
 export function test_imports() {
-  const { f1, f2, f3, f4 } = imports;
+  // const { f1, f2, f3, f4 } = imports;
+  const { f1, f2, f4 } = imports;
   f1([1, 2, 3]);
 
   const l = f2();
@@ -20,12 +21,12 @@ export function test_imports() {
   assertEq(l[1], 2);
   assertEq(l[2], 3);
 
-  const [a, b] = f3([], [1, 2, 3]);
-  assertEq(a.length, 0);
-  assertEq(b.length, 3);
-  assertEq(b[0], 1);
-  assertEq(b[1], 2);
-  assertEq(b[2], 3);
+  // const [a, b] = f3([], [1, 2, 3]);
+  // assertEq(a.length, 0);
+  // assertEq(b.length, 3);
+  // assertEq(b[0], 1);
+  // assertEq(b[1], 2);
+  // assertEq(b[2], 3);
 
   const l2 = f4([[], [1], [2, 3]]);
   assertEq(l2.length, 3);

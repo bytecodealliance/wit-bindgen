@@ -1,1 +1,0 @@
-render: function(markdown: string) -> string

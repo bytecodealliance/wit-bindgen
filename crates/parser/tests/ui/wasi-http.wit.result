@@ -33,16 +33,10 @@
     {
       "idx": 4,
       "name": "error",
-      "variant": {
+      "enum": {
         "cases": [
-          [
-            "overflow",
-            null
-          ],
-          [
-            "unavailable",
-            null
-          ]
+          "overflow",
+          "unavailable"
         ]
       }
     },
@@ -64,45 +58,18 @@
     },
     {
       "idx": 6,
-      "list": "char"
+      "option": "string"
     },
     {
       "idx": 7,
-      "variant": {
-        "cases": [
-          [
-            "none",
-            null
-          ],
-          [
-            "some",
-            "type-6"
-          ]
-        ]
-      }
+      "list": "u8"
     },
     {
       "idx": 8,
-      "push-buffer": "u8"
-    },
-    {
-      "idx": 9,
-      "variant": {
-        "cases": [
-          [
-            "ok",
-            "u64"
-          ],
-          [
-            "err",
-            "type-4"
-          ]
-        ]
+      "expected": {
+        "ok": "u64",
+        "err": "type-4"
       }
-    },
-    {
-      "idx": 10,
-      "pull-buffer": "u8"
     }
   ],
   "functions": [
@@ -111,107 +78,83 @@
       "params": [
         "handle-0"
       ],
-      "results": [
-        "handle-1"
-      ]
+      "result": "handle-1"
     },
     {
       "name": "request::request",
       "params": [],
-      "results": [
-        "handle-0"
-      ]
+      "result": "handle-0"
     },
     {
       "name": "request::method",
       "params": [
         "handle-0"
       ],
-      "results": [
-        "type-6"
-      ]
+      "result": "string"
     },
     {
       "name": "request::headers",
       "params": [
         "handle-0"
       ],
-      "results": [
-        "handle-2"
-      ]
+      "result": "handle-2"
     },
     {
       "name": "request::body",
       "params": [
         "handle-0"
       ],
-      "results": [
-        "handle-3"
-      ]
+      "result": "handle-3"
     },
     {
       "name": "response::status",
       "params": [
         "handle-1"
       ],
-      "results": [
-        "u16"
-      ]
+      "result": "u16"
     },
     {
       "name": "response::headers",
       "params": [
         "handle-1"
       ],
-      "results": [
-        "handle-2"
-      ]
+      "result": "handle-2"
     },
     {
       "name": "response::body",
       "params": [
         "handle-1"
       ],
-      "results": [
-        "handle-3"
-      ]
+      "result": "handle-3"
     },
     {
       "name": "headers::get",
       "params": [
         "handle-2",
-        "type-6"
+        "string"
       ],
-      "results": [
-        "type-7"
-      ]
+      "result": "type-6"
     },
     {
       "name": "body::read",
       "params": [
         "handle-3",
-        "type-8"
+        "type-7"
       ],
-      "results": [
-        "type-9"
-      ]
+      "result": "type-8"
     },
     {
       "name": "body::write",
       "params": [
         "handle-3",
-        "type-10"
+        "type-7"
       ],
-      "results": [
-        "type-9"
-      ]
+      "result": "type-8"
     },
     {
       "name": "maybe-number",
       "params": [],
-      "results": [
-        "type-9"
-      ]
+      "result": "type-8"
     }
   ],
   "globals": [

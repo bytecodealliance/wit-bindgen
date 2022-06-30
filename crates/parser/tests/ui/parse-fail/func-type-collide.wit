@@ -1,4 +1,4 @@
 // parse-fail
 
 type foo = s32
-foo: function()
+foo: func()

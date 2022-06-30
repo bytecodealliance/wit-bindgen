@@ -8,7 +8,6 @@ fn main() {
 mod exports {
     test_helpers::codegen_wasmtime_export!(
         "*.wit"
-        "*.witx"
 
         // TODO: implement async support
         "!async-functions.wit"
@@ -42,7 +41,7 @@ mod imports {
 mod async_tests {
     mod not_async {
         wit_bindgen_wasmtime::export!({
-            src["x"]: "foo: function()",
+            src["x"]: "foo: func()",
             async: ["bar"],
         });
 
@@ -55,8 +54,8 @@ mod async_tests {
     mod one_async {
         wit_bindgen_wasmtime::export!({
             src["x"]: "
-                foo: function() -> list<u8>
-                bar: function()
+                foo: func() -> list<u8>
+                bar: func()
             ",
             async: ["bar"],
         });
@@ -75,8 +74,8 @@ mod async_tests {
     mod one_async_export {
         wit_bindgen_wasmtime::import!({
             src["x"]: "
-                foo: function(x: list<string>)
-                bar: function()
+                foo: func(x: list<string>)
+                bar: func()
             ",
             async: ["bar"],
         });
@@ -85,7 +84,7 @@ mod async_tests {
         wit_bindgen_wasmtime::export!({
             src["x"]: "
                 resource y {
-                    z: function() -> string
+                    z: func() -> string
                 }
             ",
             async: [],
@@ -96,13 +95,13 @@ mod async_tests {
 mod custom_errors {
     wit_bindgen_wasmtime::export!({
         src["x"]: "
-            foo: function()
-            bar: function() -> expected<_, u32>
+            foo: func()
+            bar: func() -> expected<unit, u32>
             enum errno {
                 bad1,
                 bad2,
             }
-            baz: function() -> expected<u32, errno>
+            baz: func() -> expected<u32, errno>
         ",
         custom_error: true,
     });

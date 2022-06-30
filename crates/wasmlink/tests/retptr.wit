@@ -1,1 +1,0 @@
-f1: function(a: s32, b: u32) -> (u32, s32)

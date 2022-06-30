@@ -19,13 +19,16 @@ pub struct Resolver {
 
 #[derive(PartialEq, Eq, Hash)]
 enum Key {
-    Variant(Vec<(String, Option<Type>)>),
+    Variant(Vec<(String, Type)>),
     Record(Vec<(String, Type)>),
+    Flags(Vec<String>),
+    Tuple(Vec<Type>),
+    Enum(Vec<String>),
     List(Type),
-    PushBuffer(Type),
-    PullBuffer(Type),
-    Pointer(Type),
-    ConstPointer(Type),
+    Option(Type),
+    Expected(Type, Type),
+    Union(Vec<Type>),
+    Stream(Type, Type),
 }
 
 impl Resolver {
@@ -74,6 +77,7 @@ impl Resolver {
 
         Ok(Interface {
             name: name.to_string(),
+            module: None,
             types: mem::take(&mut self.types),
             type_lookup: mem::take(&mut self.type_lookup),
             resources: mem::take(&mut self.resources),
@@ -206,7 +210,14 @@ impl Resolver {
                             ty: self.copy_type(dep_name, dep, field.ty),
                         })
                         .collect(),
-                    kind: r.kind,
+                }),
+                TypeDefKind::Flags(f) => TypeDefKind::Flags(f.clone()),
+                TypeDefKind::Tuple(t) => TypeDefKind::Tuple(Tuple {
+                    types: t
+                        .types
+                        .iter()
+                        .map(|ty| self.copy_type(dep_name, dep, *ty))
+                        .collect(),
                 }),
                 TypeDefKind::Variant(v) => TypeDefKind::Variant(Variant {
                     cases: v
@@ -215,22 +226,33 @@ impl Resolver {
                         .map(|case| Case {
                             docs: case.docs.clone(),
                             name: case.name.clone(),
-                            ty: case.ty.map(|t| self.copy_type(dep_name, dep, t)),
+                            ty: self.copy_type(dep_name, dep, case.ty),
                         })
                         .collect(),
-                    tag: v.tag,
+                }),
+                TypeDefKind::Enum(e) => TypeDefKind::Enum(Enum {
+                    cases: e.cases.clone(),
                 }),
                 TypeDefKind::List(t) => TypeDefKind::List(self.copy_type(dep_name, dep, *t)),
-                TypeDefKind::PullBuffer(t) => {
-                    TypeDefKind::PullBuffer(self.copy_type(dep_name, dep, *t))
-                }
-                TypeDefKind::PushBuffer(t) => {
-                    TypeDefKind::PushBuffer(self.copy_type(dep_name, dep, *t))
-                }
-                TypeDefKind::Pointer(t) => TypeDefKind::Pointer(self.copy_type(dep_name, dep, *t)),
-                TypeDefKind::ConstPointer(t) => {
-                    TypeDefKind::ConstPointer(self.copy_type(dep_name, dep, *t))
-                }
+                TypeDefKind::Option(t) => TypeDefKind::Option(self.copy_type(dep_name, dep, *t)),
+                TypeDefKind::Expected(e) => TypeDefKind::Expected(Expected {
+                    ok: self.copy_type(dep_name, dep, e.ok),
+                    err: self.copy_type(dep_name, dep, e.err),
+                }),
+                TypeDefKind::Union(u) => TypeDefKind::Union(Union {
+                    cases: u
+                        .cases
+                        .iter()
+                        .map(|c| UnionCase {
+                            docs: c.docs.clone(),
+                            ty: self.copy_type(dep_name, dep, c.ty),
+                        })
+                        .collect(),
+                }),
+                TypeDefKind::Stream(e) => TypeDefKind::Stream(Stream {
+                    element: self.copy_type(dep_name, dep, e.element),
+                    end: self.copy_type(dep_name, dep, e.end),
+                }),
             },
         };
         let id = self.types.alloc(ty);
@@ -359,6 +381,8 @@ impl Resolver {
 
     fn resolve_type_def(&mut self, ty: &super::Type<'_>) -> Result<TypeDefKind> {
         Ok(match ty {
+            super::Type::Unit => TypeDefKind::Type(Type::Unit),
+            super::Type::Bool => TypeDefKind::Type(Type::Bool),
             super::Type::U8 => TypeDefKind::Type(Type::U8),
             super::Type::U16 => TypeDefKind::Type(Type::U16),
             super::Type::U32 => TypeDefKind::Type(Type::U32),
@@ -367,11 +391,10 @@ impl Resolver {
             super::Type::S16 => TypeDefKind::Type(Type::S16),
             super::Type::S32 => TypeDefKind::Type(Type::S32),
             super::Type::S64 => TypeDefKind::Type(Type::S64),
-            super::Type::F32 => TypeDefKind::Type(Type::F32),
-            super::Type::F64 => TypeDefKind::Type(Type::F64),
+            super::Type::Float32 => TypeDefKind::Type(Type::Float32),
+            super::Type::Float64 => TypeDefKind::Type(Type::Float64),
             super::Type::Char => TypeDefKind::Type(Type::Char),
-            super::Type::CChar => TypeDefKind::Type(Type::CChar),
-            super::Type::Usize => TypeDefKind::Type(Type::Usize),
+            super::Type::String => TypeDefKind::Type(Type::String),
             super::Type::Handle(resource) => {
                 let id = match self.resource_lookup.get(&*resource.name) {
                     Some(id) => *id,
@@ -402,22 +425,6 @@ impl Resolver {
                 let ty = self.resolve_type(list)?;
                 TypeDefKind::List(ty)
             }
-            super::Type::Pointer(list) => {
-                let ty = self.resolve_type(list)?;
-                TypeDefKind::Pointer(ty)
-            }
-            super::Type::ConstPointer(list) => {
-                let ty = self.resolve_type(list)?;
-                TypeDefKind::ConstPointer(ty)
-            }
-            super::Type::PushBuffer(ty) => {
-                let ty = self.resolve_type(ty)?;
-                TypeDefKind::PushBuffer(ty)
-            }
-            super::Type::PullBuffer(ty) => {
-                let ty = self.resolve_type(ty)?;
-                TypeDefKind::PullBuffer(ty)
-            }
             super::Type::Record(record) => {
                 let fields = record
                     .fields
@@ -430,22 +437,25 @@ impl Resolver {
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
-                TypeDefKind::Record(Record {
-                    kind: if record.tuple_hint {
-                        RecordKind::Tuple
-                    } else if let Some(hint) = &record.flags_repr {
-                        RecordKind::Flags(Some(match &**hint {
-                            super::Type::U8 => Int::U8,
-                            super::Type::U16 => Int::U16,
-                            super::Type::U32 => Int::U32,
-                            super::Type::U64 => Int::U64,
-                            _ => panic!("unknown explicit flags repr"),
-                        }))
-                    } else {
-                        RecordKind::infer(&self.types, &fields)
-                    },
-                    fields,
-                })
+                TypeDefKind::Record(Record { fields })
+            }
+            super::Type::Flags(flags) => {
+                let flags = flags
+                    .flags
+                    .iter()
+                    .map(|flag| Flag {
+                        docs: self.docs(&flag.docs),
+                        name: flag.name.name.to_string(),
+                    })
+                    .collect::<Vec<_>>();
+                TypeDefKind::Flags(Flags { flags })
+            }
+            super::Type::Tuple(types) => {
+                let types = types
+                    .iter()
+                    .map(|ty| self.resolve_type(ty))
+                    .collect::<Result<Vec<_>>>()?;
+                TypeDefKind::Tuple(Tuple { types })
             }
             super::Type::Variant(variant) => {
                 if variant.cases.is_empty() {
@@ -463,47 +473,64 @@ impl Resolver {
                             docs: self.docs(&case.docs),
                             name: case.name.name.to_string(),
                             ty: match &case.ty {
-                                Some(ty) => Some(self.resolve_type(ty)?),
-                                None => None,
+                                Some(ty) => self.resolve_type(ty)?,
+                                None => Type::Unit,
                             },
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
-                TypeDefKind::Variant(Variant {
-                    tag: match &variant.tag {
-                        Some(ty) => self.get_variant_tag(ty),
-                        None => Variant::infer_tag(cases.len()),
-                    },
-                    cases,
-                })
+                TypeDefKind::Variant(Variant { cases })
             }
+            super::Type::Enum(e) => {
+                if e.cases.is_empty() {
+                    return Err(Error {
+                        span: e.span,
+                        msg: "empty enum".to_string(),
+                    }
+                    .into());
+                }
+                let cases = e
+                    .cases
+                    .iter()
+                    .map(|case| {
+                        Ok(EnumCase {
+                            docs: self.docs(&case.docs),
+                            name: case.name.name.to_string(),
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                TypeDefKind::Enum(Enum { cases })
+            }
+            super::Type::Option(ty) => TypeDefKind::Option(self.resolve_type(ty)?),
+            super::Type::Expected(e) => TypeDefKind::Expected(Expected {
+                ok: self.resolve_type(&e.ok)?,
+                err: self.resolve_type(&e.err)?,
+            }),
+            super::Type::Union(e) => {
+                if e.cases.is_empty() {
+                    return Err(Error {
+                        span: e.span,
+                        msg: "empty union".to_string(),
+                    }
+                    .into());
+                }
+                let cases = e
+                    .cases
+                    .iter()
+                    .map(|case| {
+                        Ok(UnionCase {
+                            docs: self.docs(&case.docs),
+                            ty: self.resolve_type(&case.ty)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                TypeDefKind::Union(Union { cases })
+            }
+            super::Type::Stream(s) => TypeDefKind::Stream(Stream {
+                element: self.resolve_type(&s.element)?,
+                end: self.resolve_type(&s.end)?,
+            }),
         })
-    }
-
-    fn get_variant_tag(&self, tag: &super::Type) -> Int {
-        match tag {
-            super::Type::U8 => Int::U8,
-            super::Type::U16 => Int::U16,
-            super::Type::U32 => Int::U32,
-            super::Type::U64 => Int::U64,
-            super::Type::Name(name) => {
-                let ty = self.type_lookup[&*name.name];
-                self.get_variant_tag_id(ty)
-            }
-            _ => panic!("unknown explicit variant tag"),
-        }
-    }
-
-    fn get_variant_tag_id(&self, ty: TypeId) -> Int {
-        match &self.types[ty].kind {
-            TypeDefKind::Type(Type::U8) => Int::U8,
-            TypeDefKind::Type(Type::U16) => Int::U16,
-            TypeDefKind::Type(Type::U32) => Int::U32,
-            TypeDefKind::Type(Type::U64) => Int::U64,
-            TypeDefKind::Type(Type::Id(id)) => self.get_variant_tag_id(*id),
-            TypeDefKind::Variant(v) => v.tag,
-            _ => panic!("unknown typedef"),
-        }
     }
 
     fn resolve_type(&mut self, ty: &super::Type<'_>) -> Result<Type> {
@@ -531,11 +558,18 @@ impl Resolver {
                     .map(|case| (case.name.clone(), case.ty))
                     .collect::<Vec<_>>(),
             ),
+            TypeDefKind::Flags(r) => {
+                Key::Flags(r.flags.iter().map(|f| f.name.clone()).collect::<Vec<_>>())
+            }
+            TypeDefKind::Tuple(t) => Key::Tuple(t.types.clone()),
+            TypeDefKind::Enum(r) => {
+                Key::Enum(r.cases.iter().map(|f| f.name.clone()).collect::<Vec<_>>())
+            }
             TypeDefKind::List(ty) => Key::List(*ty),
-            TypeDefKind::Pointer(ty) => Key::Pointer(*ty),
-            TypeDefKind::ConstPointer(ty) => Key::ConstPointer(*ty),
-            TypeDefKind::PushBuffer(ty) => Key::PushBuffer(*ty),
-            TypeDefKind::PullBuffer(ty) => Key::PullBuffer(*ty),
+            TypeDefKind::Option(t) => Key::Option(*t),
+            TypeDefKind::Expected(e) => Key::Expected(e.ok, e.err),
+            TypeDefKind::Union(u) => Key::Union(u.cases.iter().map(|c| c.ty).collect()),
+            TypeDefKind::Stream(s) => Key::Stream(s.element, s.end),
         };
         let types = &mut self.types;
         let id = self
@@ -546,16 +580,15 @@ impl Resolver {
     }
 
     fn docs(&mut self, doc: &super::Docs<'_>) -> Docs {
-        if doc.docs.is_empty() {
-            return Docs { contents: None };
-        }
-        let mut docs = String::new();
+        let mut docs = None;
         for doc in doc.docs.iter() {
             // Comments which are not doc-comments are silently ignored
             if let Some(doc) = doc.strip_prefix("///") {
+                let docs = docs.get_or_insert_with(String::new);
                 docs.push_str(doc.trim_start_matches('/').trim());
                 docs.push('\n');
             } else if let Some(doc) = doc.strip_prefix("/**") {
+                let docs = docs.get_or_insert_with(String::new);
                 assert!(doc.ends_with("*/"));
                 for line in doc[..doc.len() - 2].lines() {
                     docs.push_str(line);
@@ -563,9 +596,7 @@ impl Resolver {
                 }
             }
         }
-        Docs {
-            contents: Some(docs),
-        }
+        Docs { contents: docs }
     }
 
     fn resolve_value(&mut self, value: &Value<'_>) -> Result<()> {
@@ -573,25 +604,20 @@ impl Resolver {
         match &value.kind {
             ValueKind::Function {
                 is_async,
-                abi,
                 params,
-                results,
+                result,
             } => {
                 let params = params
                     .iter()
                     .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                     .collect::<Result<_>>()?;
-                let results = results
-                    .iter()
-                    .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
-                    .collect::<Result<_>>()?;
+                let result = self.resolve_type(result)?;
                 self.functions.push(Function {
-                    abi: *abi,
                     docs,
                     name: value.name.name.to_string(),
                     kind: FunctionKind::Freestanding,
                     params,
-                    results,
+                    result,
                     is_async: *is_async,
                 });
             }
@@ -611,13 +637,12 @@ impl Resolver {
         let mut names = HashSet::new();
         let id = self.resource_lookup[&*resource.name.name];
         for (statik, value) in resource.values.iter() {
-            let (abi, is_async, params, results) = match &value.kind {
+            let (is_async, params, result) = match &value.kind {
                 ValueKind::Function {
-                    abi,
                     is_async,
                     params,
-                    results,
-                } => (*abi, *is_async, params, results),
+                    result,
+                } => (*is_async, params, result),
                 ValueKind::Global(_) => {
                     return Err(Error {
                         span: value.name.span,
@@ -638,10 +663,7 @@ impl Resolver {
                 .iter()
                 .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
                 .collect::<Result<Vec<_>>>()?;
-            let results = results
-                .iter()
-                .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
-                .collect::<Result<_>>()?;
+            let result = self.resolve_type(result)?;
             let kind = if *statik {
                 FunctionKind::Static {
                     resource: id,
@@ -655,13 +677,12 @@ impl Resolver {
                 }
             };
             self.functions.push(Function {
-                abi,
                 is_async,
                 docs,
                 name: format!("{}::{}", resource.name.name, value.name.name),
                 kind,
                 params,
-                results,
+                result,
             });
         }
         Ok(())
@@ -686,17 +707,12 @@ impl Resolver {
         }
 
         match &self.types[ty].kind {
-            TypeDefKind::List(Type::Id(id))
-            | TypeDefKind::Pointer(Type::Id(id))
-            | TypeDefKind::ConstPointer(Type::Id(id))
-            | TypeDefKind::PushBuffer(Type::Id(id))
-            | TypeDefKind::PullBuffer(Type::Id(id))
-            | TypeDefKind::Type(Type::Id(id)) => {
+            TypeDefKind::List(Type::Id(id)) | TypeDefKind::Type(Type::Id(id)) => {
                 self.validate_type_not_recursive(span, *id, visiting, valid)?
             }
             TypeDefKind::Variant(v) => {
                 for case in v.cases.iter() {
-                    if let Some(Type::Id(id)) = case.ty {
+                    if let Type::Id(id) = case.ty {
                         self.validate_type_not_recursive(span, id, visiting, valid)?;
                     }
                 }
@@ -708,13 +724,47 @@ impl Resolver {
                     }
                 }
             }
+            TypeDefKind::Tuple(t) => {
+                for ty in t.types.iter() {
+                    if let Type::Id(id) = *ty {
+                        self.validate_type_not_recursive(span, id, visiting, valid)?;
+                    }
+                }
+            }
 
-            TypeDefKind::List(_)
-            | TypeDefKind::Pointer(_)
-            | TypeDefKind::ConstPointer(_)
-            | TypeDefKind::PushBuffer(_)
-            | TypeDefKind::PullBuffer(_)
-            | TypeDefKind::Type(_) => {}
+            TypeDefKind::Option(t) => {
+                if let Type::Id(id) = *t {
+                    self.validate_type_not_recursive(span, id, visiting, valid)?
+                }
+            }
+            TypeDefKind::Expected(e) => {
+                if let Type::Id(id) = e.ok {
+                    self.validate_type_not_recursive(span, id, visiting, valid)?
+                }
+                if let Type::Id(id) = e.err {
+                    self.validate_type_not_recursive(span, id, visiting, valid)?
+                }
+            }
+            TypeDefKind::Stream(s) => {
+                if let Type::Id(id) = s.element {
+                    self.validate_type_not_recursive(span, id, visiting, valid)?
+                }
+                if let Type::Id(id) = s.end {
+                    self.validate_type_not_recursive(span, id, visiting, valid)?
+                }
+            }
+            TypeDefKind::Union(u) => {
+                for c in u.cases.iter() {
+                    if let Type::Id(id) = c.ty {
+                        self.validate_type_not_recursive(span, id, visiting, valid)?
+                    }
+                }
+            }
+
+            TypeDefKind::Flags(_)
+            | TypeDefKind::List(_)
+            | TypeDefKind::Type(_)
+            | TypeDefKind::Enum(_) => {}
         }
 
         valid.insert(ty);

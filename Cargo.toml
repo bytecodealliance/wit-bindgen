@@ -8,9 +8,7 @@ edition = "2018"
 members = [
   "crates/test-rust-wasm",
   "crates/wit-bindgen-demo",
-  "crates/wasmlink-cli",
   "crates/wit-component",
-  "crates/test-modules",
 ]
 resolver = "2"
 
@@ -21,7 +19,7 @@ test = false
 [dependencies]
 anyhow = "1.0"
 structopt = { version = "0.3", default-features = false }
-wit-bindgen-gen-core = { path = 'crates/gen-core', features = ['witx-compat'] }
+wit-bindgen-gen-core = { path = 'crates/gen-core' }
 wit-bindgen-gen-rust-wasm = { path = 'crates/gen-rust-wasm', features = ['structopt'] }
 wit-bindgen-gen-wasmtime = { path = 'crates/gen-wasmtime', features = ['structopt'] }
 wit-bindgen-gen-wasmtime-py = { path = 'crates/gen-wasmtime-py', features = ['structopt'] }
