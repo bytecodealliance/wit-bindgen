@@ -333,7 +333,7 @@
           ],
           [
             "b",
-            "type-55"
+            "type-57"
           ]
         ]
       }
@@ -354,7 +354,7 @@
       "union": {
         "cases": [
           "u32",
-          "type-55"
+          "type-57"
         ]
       }
     },
@@ -364,7 +364,7 @@
       "union": {
         "cases": [
           "u32",
-          "type-55"
+          "type-57"
         ]
       }
     },
@@ -403,7 +403,7 @@
     {
       "idx": 46,
       "name": "t45",
-      "list": "type-57"
+      "list": "type-59"
     },
     {
       "idx": 47,
@@ -449,25 +449,35 @@
     },
     {
       "idx": 53,
-      "name": "foo",
-      "primitive": "type-54"
+      "name": "t52",
+      "future": "u32"
     },
     {
       "idx": 54,
+      "name": "t53",
+      "future": "unit"
+    },
+    {
+      "idx": 55,
+      "name": "foo",
+      "primitive": "type-56"
+    },
+    {
+      "idx": 56,
       "name": "bar",
       "primitive": "u32"
     },
     {
-      "idx": 55,
+      "idx": 57,
       "option": "u32"
     },
     {
-      "idx": 56,
+      "idx": 58,
       "list": "type-33"
     },
     {
-      "idx": 57,
-      "list": "type-56"
+      "idx": 59,
+      "list": "type-58"
     }
   ]
 }

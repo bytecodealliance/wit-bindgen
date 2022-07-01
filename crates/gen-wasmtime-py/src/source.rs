@@ -227,6 +227,11 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
                         self.push_str("]");
                     }
                     TypeDefKind::List(t) => self.print_list(t),
+                    TypeDefKind::Future(t) => {
+                        self.push_str("Future[");
+                        self.print_ty(t, true);
+                        self.push_str("]");
+                    }
                     TypeDefKind::Stream(s) => {
                         self.push_str("Stream[");
                         self.print_ty(&s.element, true);

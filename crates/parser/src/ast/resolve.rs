@@ -28,6 +28,7 @@ enum Key {
     Option(Type),
     Expected(Type, Type),
     Union(Vec<Type>),
+    Future(Type),
     Stream(Type, Type),
 }
 
@@ -249,6 +250,7 @@ impl Resolver {
                         })
                         .collect(),
                 }),
+                TypeDefKind::Future(t) => TypeDefKind::Future(self.copy_type(dep_name, dep, *t)),
                 TypeDefKind::Stream(e) => TypeDefKind::Stream(Stream {
                     element: self.copy_type(dep_name, dep, e.element),
                     end: self.copy_type(dep_name, dep, e.end),
@@ -489,6 +491,7 @@ impl Resolver {
                     .collect::<Result<Vec<_>>>()?;
                 TypeDefKind::Union(Union { cases })
             }
+            super::Type::Future(t) => TypeDefKind::Future(self.resolve_type(t)?),
             super::Type::Stream(s) => TypeDefKind::Stream(Stream {
                 element: self.resolve_type(&s.element)?,
                 end: self.resolve_type(&s.end)?,
@@ -532,6 +535,7 @@ impl Resolver {
             TypeDefKind::Option(t) => Key::Option(*t),
             TypeDefKind::Expected(e) => Key::Expected(e.ok, e.err),
             TypeDefKind::Union(u) => Key::Union(u.cases.iter().map(|c| c.ty).collect()),
+            TypeDefKind::Future(ty) => Key::Future(*ty),
             TypeDefKind::Stream(s) => Key::Stream(s.element, s.end),
         };
         let types = &mut self.types;
@@ -705,6 +709,11 @@ impl Resolver {
                     self.validate_type_not_recursive(span, id, visiting, valid)?
                 }
                 if let Type::Id(id) = e.err {
+                    self.validate_type_not_recursive(span, id, visiting, valid)?
+                }
+            }
+            TypeDefKind::Future(t) => {
+                if let Type::Id(id) = *t {
                     self.validate_type_not_recursive(span, id, visiting, valid)?
                 }
             }

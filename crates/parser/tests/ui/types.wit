@@ -52,6 +52,8 @@ type t48 = stream<u32, u32>
 type t49 = stream<unit, u32>
 type t50 = stream<u32, unit>
 type t51 = stream<unit, unit>
+type t52 = future<u32>
+type t53 = future<unit>
 
 // type order doesn't matter
 type foo = bar

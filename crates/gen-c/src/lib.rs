@@ -173,6 +173,7 @@ impl C {
                 TypeDefKind::Enum(_) => false,
                 TypeDefKind::Flags(_) => false,
                 TypeDefKind::Tuple(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
+                TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
                 TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
             },
             Type::String => true,
@@ -314,6 +315,10 @@ impl C {
                         self.src.h("list_");
                         self.print_ty_name(iface, t);
                     }
+                    TypeDefKind::Future(t) => {
+                        self.src.h("future_");
+                        self.print_ty_name(iface, t);
+                    }
                     TypeDefKind::Stream(s) => {
                         self.src.h("stream_");
                         self.print_ty_name(iface, &s.element);
@@ -378,6 +383,7 @@ impl C {
                 self.src.h("size_t len;\n");
                 self.src.h("}");
             }
+            TypeDefKind::Future(_) => todo!("print_anonymous_type for future"),
             TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
         }
         self.src.h(" ");
@@ -540,6 +546,7 @@ impl C {
                 }
                 self.src.c("}\n");
             }
+            TypeDefKind::Future(_) => todo!("print_dtor for future"),
             TypeDefKind::Stream(_) => todo!("print_dtor for stream"),
         }
         self.src.c("}\n");
@@ -568,6 +575,7 @@ impl C {
             TypeDefKind::Expected(e) => {
                 self.owns_anything(iface, &e.ok) || self.owns_anything(iface, &e.err)
             }
+            TypeDefKind::Future(_) => todo!("owns_anything for future"),
             TypeDefKind::Stream(_) => todo!("owns_anything for stream"),
         }
     }
@@ -669,6 +677,7 @@ impl Return {
             TypeDefKind::Variant(_) | TypeDefKind::Union(_) => {
                 self.retptrs.push(*orig_ty);
             }
+            TypeDefKind::Future(_) => todo!("return_single for future"),
             TypeDefKind::Stream(_) => todo!("return_single for stream"),
         }
     }

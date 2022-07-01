@@ -1026,6 +1026,10 @@ impl Interface {
                     self.push_wasm_variants(variant, u.cases.iter().map(|c| &c.ty), result);
                 }
 
+                TypeDefKind::Future(_) => {
+                    result.push(WasmType::I32);
+                }
+
                 TypeDefKind::Stream(_) => {
                     result.push(WasmType::I32);
                 }
@@ -1588,6 +1592,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         name: self.iface.types[id].name.as_deref().unwrap(),
                     });
                 }
+                TypeDefKind::Future(_) => todo!("lower future"),
                 TypeDefKind::Stream(_) => todo!("lower stream"),
             },
         }
@@ -1797,6 +1802,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
 
+                TypeDefKind::Future(_) => todo!("lift future"),
                 TypeDefKind::Stream(_) => todo!("lift stream"),
             },
         }
@@ -1968,6 +1974,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
 
+                TypeDefKind::Future(_) => todo!("write future to memory"),
                 TypeDefKind::Stream(_) => todo!("write stream to memory"),
             },
         }
@@ -2146,6 +2153,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     });
                 }
 
+                TypeDefKind::Future(_) => todo!("read future from memory"),
                 TypeDefKind::Stream(_) => todo!("read stream from memory"),
             },
         }
