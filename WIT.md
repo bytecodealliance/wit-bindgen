@@ -112,6 +112,8 @@ keyword ::= 'use'
           | 'interface'
           | 'tuple'
           | 'async'
+          | 'future'
+          | 'stream'
 ```
 
 ### Identifiers
@@ -456,6 +458,8 @@ ty ::= 'u8' | 'u16' | 'u32' | 'u64'
      | list
      | option
      | expected
+     | future
+     | stream
      | id
 
 tuple ::= 'tuple' '<' tuple-list '>'
@@ -469,6 +473,10 @@ option ::= 'option' '<' ty '>'
 expected ::= 'expected' '<' expected-ty ',' expected-ty '>'
 expected-ty ::= '_'
               | ty
+
+future ::= 'future' '<' ty '>'
+
+stream ::= 'stream' '<' ty ',' ty '>'
 ```
 
 The `tuple` type is semantically equivalent to a `record` with numerical fields,
