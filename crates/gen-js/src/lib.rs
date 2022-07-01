@@ -195,6 +195,7 @@ impl Js {
                     }
                     TypeDefKind::Variant(_) => panic!("anonymous variant"),
                     TypeDefKind::List(v) => self.print_list(iface, v),
+                    TypeDefKind::Future(_) => todo!("anonymous future"),
                     TypeDefKind::Stream(_) => todo!("anonymous stream"),
                 }
             }

@@ -62,6 +62,7 @@ pub enum TypeDefKind {
     Expected(Expected),
     Union(Union),
     List(Type),
+    Future(Type),
     Stream(Stream),
     Type(Type),
 }
@@ -435,6 +436,9 @@ impl Interface {
                     self.topo_visit_ty(&t.ty, list, visited);
                 }
             }
+            TypeDefKind::Future(ty) => {
+                self.topo_visit_ty(ty, list, visited);
+            }
             TypeDefKind::Stream(s) => {
                 self.topo_visit_ty(&s.element, list, visited);
                 self.topo_visit_ty(&s.end, list, visited);
@@ -471,6 +475,7 @@ impl Interface {
                 | TypeDefKind::Enum(_)
                 | TypeDefKind::Option(_)
                 | TypeDefKind::Expected(_)
+                | TypeDefKind::Future(_)
                 | TypeDefKind::Stream(_)
                 | TypeDefKind::Union(_) => false,
                 TypeDefKind::Type(t) => self.all_bits_valid(t),

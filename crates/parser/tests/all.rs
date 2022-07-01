@@ -207,6 +207,7 @@ fn to_json(i: &Interface) -> String {
         Tuple { types: Vec<String> },
         Option(String),
         Expected { ok: String, err: String },
+        Future(String),
         Stream { element: String, end: String },
         List(String),
         Union { cases: Vec<String> },
@@ -304,6 +305,7 @@ fn to_json(i: &Interface) -> String {
                 ok: translate_type(&e.ok),
                 err: translate_type(&e.err),
             },
+            TypeDefKind::Future(t) => Type::Future(translate_type(t)),
             TypeDefKind::Stream(s) => Type::Stream {
                 element: translate_type(&s.element),
                 end: translate_type(&s.end),

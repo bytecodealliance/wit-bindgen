@@ -231,6 +231,7 @@ pub trait RustGenerator {
                     | TypeDefKind::Record(_)
                     | TypeDefKind::Option(_)
                     | TypeDefKind::Expected(_)
+                    | TypeDefKind::Future(_)
                     | TypeDefKind::Stream(_)
                     | TypeDefKind::List(_)
                     | TypeDefKind::Flags(_)
@@ -286,6 +287,9 @@ pub trait RustGenerator {
             }
             TypeDefKind::Union(_) => {
                 panic!("unsupported anonymous type reference: union")
+            }
+            TypeDefKind::Future(_) => {
+                todo!("unsupported anonymous type reference: future")
             }
             TypeDefKind::Stream(_) => {
                 todo!("unsupported anonymous type reference: stream")
@@ -414,8 +418,13 @@ pub trait RustGenerator {
                             self.write_name(iface, ty, out);
                             out.push_str("List")
                         }
+                        TypeDefKind::Future(ty) => {
+                            self.write_name(iface, ty, out);
+                            out.push_str("Future");
+                        }
                         TypeDefKind::Stream(s) => {
                             self.write_name(iface, &s.element, out);
+                            self.write_name(iface, &s.end, out);
                             out.push_str("Stream");
                         }
 

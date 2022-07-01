@@ -97,6 +97,7 @@ enum Type<'a> {
     Enum(Enum<'a>),
     Option(Box<Type<'a>>),
     Expected(Expected<'a>),
+    Future(Box<Type<'a>>),
     Stream(Stream<'a>),
     Union(Union<'a>),
 }
@@ -518,6 +519,14 @@ impl<'a> Type<'a> {
                 let err = Box::new(Type::parse(tokens)?);
                 tokens.expect(Token::GreaterThan)?;
                 Ok(Type::Expected(Expected { ok, err }))
+            }
+
+            // future<T>
+            Some((_span, Token::Future)) => {
+                tokens.expect(Token::LessThan)?;
+                let ty = Box::new(Type::parse(tokens)?);
+                tokens.expect(Token::GreaterThan)?;
+                Ok(Type::Future(ty))
             }
 
             // stream<T, Z>
