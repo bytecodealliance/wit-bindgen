@@ -522,11 +522,13 @@ pub trait RustGenerator {
 
             self.push_str("impl");
             self.print_generics(&info, lt, true);
-            self.push_str(" std::fmt::Debug for ");
+            self.push_str(" core::fmt::Debug for ");
             self.push_str(&name);
             self.print_generics(&info, lt, false);
             self.push_str(" {\n");
-            self.push_str("fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n");
+            self.push_str(
+                "fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {\n",
+            );
             self.push_str(&format!("f.debug_struct(\"{}\")", name));
             for field in record.fields.iter() {
                 self.push_str(&format!(
@@ -650,11 +652,11 @@ pub trait RustGenerator {
         let lt = self.lifetime_for(&info, mode);
         self.push_str("impl");
         self.print_generics(&info, lt, true);
-        self.push_str(" std::fmt::Debug for ");
+        self.push_str(" core::fmt::Debug for ");
         self.push_str(name);
         self.print_generics(&info, lt, false);
         self.push_str(" {\n");
-        self.push_str("fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n");
+        self.push_str("fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {\n");
         self.push_str("match self {\n");
         for (case_name, payload) in cases {
             self.push_str(name);
@@ -769,10 +771,10 @@ pub trait RustGenerator {
 
             self.push_str("}\n");
 
-            self.push_str("impl std::fmt::Debug for ");
+            self.push_str("impl core::fmt::Debug for ");
             self.push_str(&name);
             self.push_str(
-                "{\nfn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
+                "{\nfn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {\n",
             );
             self.push_str("f.debug_struct(\"");
             self.push_str(&name);
@@ -784,10 +786,10 @@ pub trait RustGenerator {
             self.push_str("}\n");
             self.push_str("}\n");
 
-            self.push_str("impl std::fmt::Display for ");
+            self.push_str("impl core::fmt::Display for ");
             self.push_str(&name);
             self.push_str(
-                "{\nfn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n",
+                "{\nfn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {\n",
             );
             self.push_str("write!(f, \"{} (error {})\", self.name(), *self as i32)");
             self.push_str("}\n");
