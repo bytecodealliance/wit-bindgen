@@ -58,10 +58,10 @@ comment ::= '//' character-that-isnt-a-newline*
           | '/*' any-unicode-character* '*/'
 ```
 
-There is a special type of comment called `documentation comment`. A 
+There is a special type of comment called `documentation comment`. A
 `doc-comment` is either a line comment preceded with `///` whichends at the next
-newline (`\n`) character or it's a block comment which starts with `/**` and ends 
-with `*/`. Note that block comments are allowed to be nested and their delimiters 
+newline (`\n`) character or it's a block comment which starts with `/**` and ends
+with `*/`. Note that block comments are allowed to be nested and their delimiters
 must be balanced
 
 ```wit
@@ -72,7 +72,7 @@ doc-comment ::= '///' character-that-isnt-a-newline*
 ### Operators
 
 There are some common operators in the lexical structure of `wit` used for
-various constructs. Note that delimiters such as `{`, `(`, and `[` must all be
+various constructs. Note that delimiters such as `{` and `(` must all be
 balanced.
 
 ```wit
@@ -129,9 +129,7 @@ identifier ::= keylike+
              | string
 
 keylike ::= '-'
-          | '_'
           | 'a' ... 'z'
-          | 'A' ... 'Z'
           | '0' ... '9'
 ```
 
@@ -151,6 +149,9 @@ escape ::= '\\'
          | '\n'
          | '\r'
 ```
+
+In subsequent code blocks of lexical definitions, `identifier` may be referred
+to as `id` for short.
 
 ## Top-level items
 
@@ -454,6 +455,7 @@ ty ::= 'u8' | 'u16' | 'u32' | 'u64'
      | 'char'
      | 'bool'
      | 'string'
+     | 'unit'
      | tuple
      | list
      | option
@@ -470,9 +472,7 @@ list ::= 'list' '<' ty '>'
 
 option ::= 'option' '<' ty '>'
 
-expected ::= 'expected' '<' expected-ty ',' expected-ty '>'
-expected-ty ::= '_'
-              | ty
+expected ::= 'expected' '<' ty ',' ty '>'
 
 future ::= 'future' '<' ty '>'
 
