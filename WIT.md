@@ -116,43 +116,6 @@ keyword ::= 'use'
           | 'stream'
 ```
 
-### Identifiers
-
-Identifiers are used for the names of functions, parameters, etc. Identifiers
-can either be specified raw as a sequence of characters or as a string literal.
-As a string literal an identifier is allowed to be any valid unicode string,
-including those that might overlap otherwise with keywords. For example an
-identifier can't be `use` but it can be `"use"`:
-
-```wit
-identifier ::= keylike+
-             | string
-
-keylike ::= '-'
-          | 'a' ... 'z'
-          | '0' ... '9'
-```
-
-Strings are intended to be the same format as strings in the WebAssembly text
-format except that they're always valid unicode and don't have raw byte escapes:
-
-```wit
-string ::= '"' stringchar* '"'
-
-stringchar ::= c       if c == \u{9} or (\u{20} <= c <= \u{10ffff} and c != \u{7f}
-             | escape
-
-escape ::= '\\'
-         | '\"'
-         | '\''
-         | '\t'
-         | '\n'
-         | '\r'
-```
-
-In subsequent code blocks of lexical definitions, `identifier` may be referred
-to as `id` for short.
-
 ## Top-level items
 
 A `wit` document is a sequence of items specified at the top level. These items
