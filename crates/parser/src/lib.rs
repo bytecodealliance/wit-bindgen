@@ -238,6 +238,7 @@ pub struct Docs {
 pub struct Resource {
     pub docs: Docs,
     pub name: String,
+    pub supertype: Option<String>,
     /// `None` if this resource is defined within the containing instance,
     /// otherwise `Some` if it's defined in an instance named here.
     pub foreign_module: Option<String>,

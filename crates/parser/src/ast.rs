@@ -58,6 +58,7 @@ struct UseName<'a> {
 pub struct Resource<'a> {
     docs: Docs<'a>,
     name: Id<'a>,
+    supertype: Option<Id<'a>>,
     values: Vec<(bool, Value<'a>)>,
 }
 
@@ -377,6 +378,11 @@ impl<'a> Resource<'a> {
     fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Self> {
         tokens.expect(Token::Resource)?;
         let name = parse_id(tokens)?;
+        let supertype = if tokens.eat(Token::Implements)? {
+            Some(parse_id(tokens)?)
+        } else {
+            None
+        };
         let mut values = Vec::new();
         if tokens.eat(Token::LeftBrace)? {
             loop {
@@ -388,7 +394,7 @@ impl<'a> Resource<'a> {
                 values.push((statik, Value::parse(tokens, docs)?));
             }
         }
-        Ok(Resource { docs, name, values })
+        Ok(Resource { docs, name, supertype, values })
     }
 }
 
