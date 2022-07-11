@@ -280,7 +280,10 @@ impl Resolver {
                     let id = self.resources.alloc(Resource {
                         docs,
                         name: r.name.name.to_string(),
-                        supertype: r.supertype.as_ref().map(|supertype| supertype.name.to_string()),
+                        supertype: r
+                            .supertype
+                            .as_ref()
+                            .map(|supertype| supertype.name.to_string()),
                         foreign_module: None,
                     });
                     self.define_resource(&r.name.name, r.name.span, id)?;

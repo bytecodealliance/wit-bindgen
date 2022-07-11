@@ -394,7 +394,12 @@ impl<'a> Resource<'a> {
                 values.push((statik, Value::parse(tokens, docs)?));
             }
         }
-        Ok(Resource { docs, name, supertype, values })
+        Ok(Resource {
+            docs,
+            name,
+            supertype,
+            values,
+        })
     }
 }
 
