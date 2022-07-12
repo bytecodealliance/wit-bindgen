@@ -1580,10 +1580,8 @@ impl Bindgen for FunctionBindgen<'_> {
                 match amt {
                     0 => {}
                     1 => {
-                        if &operands[0] != "()" {
-                            self.push_str(&operands[0]);
-                            self.push_str("\n");
-                        }
+                        self.push_str(&operands[0]);
+                        self.push_str("\n");
                     }
                     _ => {
                         self.push_str("(");

@@ -88,10 +88,8 @@ pub trait RustGenerator {
         sig: &FnSig,
     ) -> Vec<String> {
         let params = self.print_docs_and_params(iface, func, param_mode, &sig);
-        if !std::matches!(func.result, Type::Unit) {
-            self.push_str(" -> ");
-            self.print_ty(iface, &func.result, TypeMode::Owned);
-        }
+        self.push_str(" -> ");
+        self.print_ty(iface, &func.result, TypeMode::Owned);
         params
     }
 
