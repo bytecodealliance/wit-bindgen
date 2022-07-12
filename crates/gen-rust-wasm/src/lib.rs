@@ -159,8 +159,10 @@ impl Generator for RustWasm {
         self.trait_name = iface.name.to_camel_case();
 
         if !self.opts.standalone {
-            self.src
-                .push_str(&format!("mod {} {{\n", iface.name.to_snake_case()));
+            self.src.push_str(&format!(
+                "#[allow(clippy::all)]\nmod {} {{\n",
+                iface.name.to_snake_case(),
+            ));
         }
 
         self.sizes.fill(iface);

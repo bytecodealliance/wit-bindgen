@@ -311,8 +311,10 @@ impl Generator for Wasmtime {
         self.types.analyze(iface);
         self.in_import = variant == AbiVariant::GuestImport;
         self.trait_name = iface.name.to_camel_case();
-        self.src
-            .push_str(&format!("pub mod {} {{\n", iface.name.to_snake_case()));
+        self.src.push_str(&format!(
+            "#[allow(clippy::all)]\npub mod {} {{\n",
+            iface.name.to_snake_case(),
+        ));
         self.src
             .push_str("#[allow(unused_imports)]\nuse wit_bindgen_wasmtime::{wasmtime, anyhow};\n");
         self.sizes.fill(iface);
