@@ -82,6 +82,7 @@ pub enum Token {
     Tuple,
     Async,
     Unit,
+    Implements,
 
     Id,
     ExplicitId,
@@ -272,6 +273,7 @@ impl<'a> Tokenizer<'a> {
                     "tuple" => Tuple,
                     "async" => Async,
                     "unit" => Unit,
+                    "implements" => Implements,
                     _ => Id,
                 }
             }
@@ -540,6 +542,7 @@ impl Token {
             Tuple => "keyword `tuple`",
             Async => "keyword `async`",
             Unit => "keyword `unit`",
+            Implements => "keyword `implements`",
         }
     }
 }

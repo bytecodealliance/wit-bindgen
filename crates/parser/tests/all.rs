@@ -182,6 +182,8 @@ fn to_json(i: &Interface) -> String {
     struct Resource {
         name: String,
         #[serde(skip_serializing_if = "Option::is_none")]
+        supertype: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         foreign_module: Option<String>,
     }
 
@@ -233,6 +235,7 @@ fn to_json(i: &Interface) -> String {
         .iter()
         .map(|(_, r)| Resource {
             name: r.name.clone(),
+            supertype: r.supertype.as_ref().map(|supertype| supertype.clone()),
             foreign_module: r.foreign_module.clone(),
         })
         .collect::<Vec<_>>();

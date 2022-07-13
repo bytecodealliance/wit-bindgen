@@ -436,6 +436,7 @@ mod tests {
         let resource_id = iface.resources.alloc(Resource {
             docs: Docs::default(),
             name: "foo".into(),
+            supertype: None,
             foreign_module: None,
         });
         iface.resource_lookup.insert("foo".into(), resource_id);
