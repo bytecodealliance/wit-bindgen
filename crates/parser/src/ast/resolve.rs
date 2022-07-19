@@ -554,12 +554,17 @@ impl Resolver {
                 let docs = docs.get_or_insert_with(String::new);
                 docs.push_str(doc.trim_start_matches('/').trim());
                 docs.push('\n');
-            } else if let Some(doc) = doc.strip_prefix("/**") {
-                let docs = docs.get_or_insert_with(String::new);
-                assert!(doc.ends_with("*/"));
-                for line in doc[..doc.len() - 2].lines() {
-                    docs.push_str(line);
-                    docs.push('\n');
+            } else if let Some(doc) = doc.strip_prefix("/*") {
+                // We have to strip this before checking if this is a doc
+                // comment to avoid breaking on empty block comments, `/**/`.
+                let doc = doc.strip_suffix("*/").unwrap();
+
+                if let Some(doc) = doc.strip_prefix("*") {
+                    let docs = docs.get_or_insert_with(String::new);
+                    for line in doc.lines() {
+                        docs.push_str(line);
+                        docs.push('\n');
+                    }
                 }
             }
         }
