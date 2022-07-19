@@ -341,7 +341,15 @@ impl Interface {
         visiting: &mut HashSet<PathBuf>,
         map: &mut HashMap<String, Interface>,
     ) -> Result<Interface> {
-        let mut name = filename.file_stem().unwrap();
+        let name = filename
+            .file_name()
+            .context("wit path must end in a file name")?
+            .to_str()
+            .context("wit filename must be valid unicode")?
+            // TODO: replace with `file_prefix` if/when that gets stabilized.
+            .split(".")
+            .next()
+            .unwrap();
         let mut contents = contents;
 
         // If we have a ".md" file, it's a wit file wrapped in a markdown file;
@@ -350,9 +358,6 @@ impl Interface {
         if filename.extension().and_then(|s| s.to_str()) == Some("md") {
             md_contents = unwrap_md(contents);
             contents = &md_contents[..];
-
-            // Also strip the inner ".wit" extension.
-            name = Path::new(name).file_stem().unwrap();
         }
 
         // Parse the `contents `into an AST
@@ -386,7 +391,7 @@ impl Interface {
         visiting.remove(filename);
 
         // and finally resolve everything into our final instance
-        match ast.resolve(name.to_str().unwrap(), map) {
+        match ast.resolve(name, map) {
             Ok(i) => Ok(i),
             Err(mut e) => {
                 let file = filename.display().to_string();
