@@ -254,8 +254,13 @@ impl Types {
                     info |= self.type_info(iface, &case.ty);
                 }
             }
-            TypeDefKind::Future(_) => todo!("type_id_info for future"),
-            TypeDefKind::Stream(_) => todo!("type_id_info for stream"),
+            TypeDefKind::Future(ty) => {
+                info = self.type_info(iface, ty);
+            }
+            TypeDefKind::Stream(stream) => {
+                info = self.type_info(iface, &stream.element);
+                info |= self.type_info(iface, &stream.end);
+            }
         }
         self.type_info.insert(ty, info);
         return info;
@@ -303,8 +308,11 @@ impl Types {
                     self.set_param_result_ty(iface, &case.ty, param, result)
                 }
             }
-            TypeDefKind::Future(_) => todo!("set_param_result_id for future"),
-            TypeDefKind::Stream(_) => todo!("set_param_result_id for stream"),
+            TypeDefKind::Future(ty) => self.set_param_result_ty(iface, ty, param, result),
+            TypeDefKind::Stream(stream) => {
+                self.set_param_result_ty(iface, &stream.element, param, result);
+                self.set_param_result_ty(iface, &stream.end, param, result);
+            }
         }
     }
 
