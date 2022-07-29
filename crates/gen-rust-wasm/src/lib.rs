@@ -84,8 +84,12 @@ impl RustWasm {
         }
     }
 
+    fn ret_area_type_name(iface: &Interface) -> String {
+        format!("__{}RetArea", iface.name.to_camel_case())
+    }
+
     fn ret_area_name(iface: &Interface) -> String {
-        format!("{}_RET_AREA", iface.name.to_shouty_snake_case())
+        format!("__{}_RET_AREA", iface.name.to_shouty_snake_case())
     }
 }
 
@@ -638,9 +642,10 @@ impl Generator for RustWasm {
             self.src.push_str(&format!(
                 "
                     #[repr(align({align}))]
-                    struct RetArea([u8; {size}]);
-                    static mut {name}: RetArea = RetArea([0; {size}]);
+                    struct {ty}([u8; {size}]);
+                    static mut {name}: {ty} = {ty}([0; {size}]);
                 ",
+                ty = Self::ret_area_type_name(iface),
                 name = Self::ret_area_name(iface),
                 align = self.return_pointer_area_align,
                 size = self.return_pointer_area_size,
