@@ -750,12 +750,16 @@ impl FunctionBindgen<'_> {
 
     fn emit_cleanup(&mut self) {
         for (ptr, layout) in mem::take(&mut self.cleanup) {
-            self.push_str(&format!("std::alloc::dealloc({}, {});\n", ptr, layout));
+            self.push_str(&format!(
+                "if {layout}.size() != 0 {{\nstd::alloc::dealloc({ptr}, {layout});\n}}\n"
+            ));
         }
         if self.needs_cleanup_list {
             self.push_str(
-                "for (ptr, layout) in cleanup_list {
-                    std::alloc::dealloc(ptr, layout);
+                "for (ptr, layout) in cleanup_list {\n
+                    if layout.size() != 0 {\n
+                        std::alloc::dealloc(ptr, layout);\n
+                    }\n
                 }\n",
             );
         }
@@ -1365,37 +1369,34 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::ListLower { element, realloc } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
-                let vec = format!("vec{}", tmp);
-                let result = format!("result{}", tmp);
-                let layout = format!("layout{}", tmp);
-                let len = format!("len{}", tmp);
-                self.push_str(&format!("let {} = {};\n", vec, operands[0]));
-                self.push_str(&format!("let {} = {}.len() as i32;\n", len, vec));
+                let vec = format!("vec{tmp}");
+                let result = format!("result{tmp}");
+                let layout = format!("layout{tmp}");
+                let len = format!("len{tmp}");
+                self.push_str(&format!(
+                    "let {vec} = {operand0};\n",
+                    operand0 = operands[0]
+                ));
+                self.push_str(&format!("let {len} = {vec}.len() as i32;\n"));
                 let size = self.gen.sizes.size(element);
                 let align = self.gen.sizes.align(element);
                 self.push_str(&format!(
-                    "let {} = core::alloc::Layout::from_size_align_unchecked({}.len() * {}, {});\n",
-                    layout, vec, size, align,
+                    "let {layout} = core::alloc::Layout::from_size_align_unchecked({vec}.len() * {size}, {align});\n",
                 ));
                 self.push_str(&format!(
-                    "let {} = std::alloc::alloc({});\n",
-                    result, layout,
+                    "let {result} = if {layout}.size() != 0\n{{\nlet ptr = std::alloc::alloc({layout});\n",
                 ));
                 self.push_str(&format!(
-                    "if {}.is_null() {{ std::alloc::handle_alloc_error({}); }}\n",
-                    result, layout,
+                    "if ptr.is_null()\n{{\nstd::alloc::handle_alloc_error({layout});\n}}\nptr\n}}",
                 ));
+                self.push_str(&format!("else {{\nstd::ptr::null_mut()\n}};\n",));
+                self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
                 self.push_str(&format!(
-                    "for (i, e) in {}.into_iter().enumerate() {{\n",
-                    vec
-                ));
-                self.push_str(&format!(
-                    "let base = {} as i32 + (i as i32) * {};\n",
-                    result, size,
+                    "let base = {result} as i32 + (i as i32) * {size};\n",
                 ));
                 self.push_str(&body);
                 self.push_str("}\n");
-                results.push(format!("{} as i32", result));
+                results.push(format!("{result} as i32"));
                 results.push(len);
 
                 if realloc.is_none() {
@@ -1414,14 +1415,19 @@ impl Bindgen for FunctionBindgen<'_> {
                 let tmp = self.tmp();
                 let size = self.gen.sizes.size(element);
                 let align = self.gen.sizes.align(element);
-                let len = format!("len{}", tmp);
-                let base = format!("base{}", tmp);
-                let result = format!("result{}", tmp);
-                self.push_str(&format!("let {} = {};\n", base, operands[0]));
-                self.push_str(&format!("let {} = {};\n", len, operands[1],));
+                let len = format!("len{tmp}");
+                let base = format!("base{tmp}");
+                let result = format!("result{tmp}");
                 self.push_str(&format!(
-                    "let mut {} = Vec::with_capacity({} as usize);\n",
-                    result, len,
+                    "let {base} = {operand0};\n",
+                    operand0 = operands[0]
+                ));
+                self.push_str(&format!(
+                    "let {len} = {operand1};\n",
+                    operand1 = operands[1]
+                ));
+                self.push_str(&format!(
+                    "let mut {result} = Vec::with_capacity({len} as usize);\n",
                 ));
 
                 self.push_str("for i in 0..");
@@ -1439,14 +1445,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str("}\n");
                 results.push(result);
                 self.push_str(&format!(
-                    "std::alloc::dealloc(
-                        {} as *mut _,
-                        std::alloc::Layout::from_size_align_unchecked(
-                            ({} as usize) * {},
-                            {},
-                        ),
-                    );\n",
-                    base, len, size, align
+                    "if {len} != 0 {{\nstd::alloc::dealloc({base} as *mut _, std::alloc::Layout::from_size_align_unchecked(({len} as usize) * {size}, {align}));\n}}\n",
                 ));
             }
 
