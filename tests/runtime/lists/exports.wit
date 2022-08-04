@@ -1,6 +1,11 @@
 test-imports: func()
 allocated-bytes: func() -> u32
 
+empty-list-param: func(a: list<u8>)
+empty-string-param: func(a: string)
+empty-list-result: func() -> list<u8>
+empty-string-result: func() -> string
+
 list-param: func(a: list<u8>)
 list-param2: func(a: string)
 list-param3: func(a: list<string>)
