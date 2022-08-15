@@ -313,8 +313,9 @@ impl Generator for Wasmtime {
             "#[allow(clippy::all)]\npub mod {} {{\n",
             iface.name.to_snake_case(),
         ));
-        self.src
-            .push_str("#[allow(unused_imports)]\nuse wit_bindgen_host_wasmtime_rust::{wasmtime, anyhow};\n");
+        self.src.push_str(
+            "#[allow(unused_imports)]\nuse wit_bindgen_host_wasmtime_rust::{wasmtime, anyhow};\n",
+        );
         self.sizes.fill(iface);
     }
 
@@ -334,7 +335,8 @@ impl Generator for Wasmtime {
         if self.modes_of(iface, id).len() > 0
             && record.fields.iter().all(|f| iface.all_bits_valid(&f.ty))
         {
-            self.src.push_str("impl wit_bindgen_host_wasmtime_rust::Endian for ");
+            self.src
+                .push_str("impl wit_bindgen_host_wasmtime_rust::Endian for ");
             self.src.push_str(&name.to_camel_case());
             self.src.push_str(" {\n");
 
@@ -794,7 +796,8 @@ impl Generator for Wasmtime {
             let module_camel = module.to_camel_case();
             let is_async = !self.opts.async_.is_none();
             if is_async {
-                self.src.push_str("#[wit_bindgen_host_wasmtime_rust::async_trait]\n");
+                self.src
+                    .push_str("#[wit_bindgen_host_wasmtime_rust::async_trait]\n");
             }
             self.src.push_str("pub trait ");
             self.src.push_str(&module_camel);
@@ -853,7 +856,8 @@ impl Generator for Wasmtime {
                 for handle in self.all_needed_handles.iter() {
                     self.src.push_str("pub(crate) ");
                     self.src.push_str(&handle.to_snake_case());
-                    self.src.push_str("_table: wit_bindgen_host_wasmtime_rust::Table<T::");
+                    self.src
+                        .push_str("_table: wit_bindgen_host_wasmtime_rust::Table<T::");
                     self.src.push_str(&handle.to_camel_case());
                     self.src.push_str(">,\n");
                 }
