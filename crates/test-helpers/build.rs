@@ -140,7 +140,8 @@ fn main() {
             let export = Interface::parse_file(&test_dir.join("exports.wit")).unwrap();
             let mut files = Default::default();
             let js = fs::read_to_string(&js_impl).unwrap();
-            let mut gen = wit_bindgen_gen_guest_spidermonkey_js::SpiderMonkeyWasm::new("wasm.js", &js);
+            let mut gen =
+                wit_bindgen_gen_guest_spidermonkey_js::SpiderMonkeyWasm::new("wasm.js", &js);
             gen.import_spidermonkey(true);
             gen.generate_all(&[import], &[export], &mut files);
 

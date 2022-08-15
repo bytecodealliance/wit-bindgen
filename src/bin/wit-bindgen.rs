@@ -19,7 +19,7 @@ enum Category {
         opts: wit_bindgen_gen_markdown::Opts,
         #[structopt(flatten)]
         common: Common,
-    }
+    },
 }
 
 #[derive(Debug, StructOpt)]
@@ -65,7 +65,6 @@ enum GuestGenerator {
         #[structopt(flatten)]
         common: Common,
     },
-
 }
 
 #[derive(Debug, StructOpt)]
@@ -89,8 +88,12 @@ fn main() -> Result<()> {
     let opt: Opt = Opt::from_args();
     let (mut generator, common): (Box<dyn Generator>, _) = match opt.category {
         Category::Guest(GuestGenerator::Rust { opts, common }) => (Box::new(opts.build()), common),
-        Category::Host(HostGenerator::Wasmtime { opts, common }) => (Box::new(opts.build()), common),
-        Category::Host(HostGenerator::WasmtimePy { opts, common }) => (Box::new(opts.build()), common),
+        Category::Host(HostGenerator::Wasmtime { opts, common }) => {
+            (Box::new(opts.build()), common)
+        }
+        Category::Host(HostGenerator::WasmtimePy { opts, common }) => {
+            (Box::new(opts.build()), common)
+        }
         Category::Host(HostGenerator::Js { opts, common }) => (Box::new(opts.build()), common),
         Category::Guest(GuestGenerator::C { opts, common }) => (Box::new(opts.build()), common),
         Category::Markdown { opts, common } => (Box::new(opts.build()), common),

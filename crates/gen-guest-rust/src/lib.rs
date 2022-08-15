@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
-use wit_bindgen_core::wit_parser::abi::{
-    AbiVariant, Bindgen, Instruction, LiftLower, WasmType,
-};
+use wit_bindgen_core::wit_parser::abi::{AbiVariant, Bindgen, Instruction, LiftLower, WasmType};
 use wit_bindgen_core::{wit_parser::*, Direction, Files, Generator, Source, TypeInfo, Types};
 use wit_bindgen_gen_rust_lib::{
     int_repr, wasm_type, FnSig, RustFlagsRepr, RustFunctionGenerator, RustGenerator, TypeMode,
