@@ -20,7 +20,7 @@ fn execute(name: &str, wasm: &Path, ts: &Path, imports: &Path, exports: &Path) {
     let imports = wit_bindgen_core::wit_parser::Interface::parse_file(imports).unwrap();
     let exports = wit_bindgen_core::wit_parser::Interface::parse_file(exports).unwrap();
     let mut files = Default::default();
-    wit_bindgen_gen_js::Opts::default()
+    wit_bindgen_gen_host_js::Opts::default()
         .build()
         .generate_all(&[exports], &[imports], &mut files);
     for (file, contents) in files.iter() {

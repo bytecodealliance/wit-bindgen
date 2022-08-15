@@ -92,7 +92,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 self_ = quote::quote!(&self,);
             }
             let async_ = if f.is_async {
-                async_trait = quote::quote!(#[wit_bindgen_gen_guest_rust::async_trait(?Send)]);
+                async_trait = quote::quote!(#[wit_bindgen_guest_rust::async_trait(?Send)]);
                 quote::quote!(async)
             } else {
                 quote::quote!()

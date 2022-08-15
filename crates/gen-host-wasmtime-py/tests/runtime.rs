@@ -21,7 +21,7 @@ fn execute(name: &str, wasm: &Path, py: &Path, imports: &Path, exports: &Path) {
     // implementing the host side of these APIs.
     let iface = wit_bindgen_core::wit_parser::Interface::parse_file(imports).unwrap();
     let mut files = Default::default();
-    wit_bindgen_gen_wasmtime_py::Opts::default()
+    wit_bindgen_gen_host_wasmtime_py::Opts::default()
         .build()
         .generate_all(&[], &[iface], &mut files);
     for (file, contents) in files.iter() {
@@ -31,7 +31,7 @@ fn execute(name: &str, wasm: &Path, py: &Path, imports: &Path, exports: &Path) {
 
     let iface = wit_bindgen_core::wit_parser::Interface::parse_file(exports).unwrap();
     let mut files = Default::default();
-    wit_bindgen_gen_wasmtime_py::Opts::default()
+    wit_bindgen_gen_host_wasmtime_py::Opts::default()
         .build()
         .generate_all(&[iface], &[], &mut files);
     for (file, contents) in files.iter() {
