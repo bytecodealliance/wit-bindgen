@@ -59,7 +59,7 @@ The actual way tests are hooked up looks roughly like:
 The general layout is then that if you want to run the JS host tests you run:
 
 ```
-$ cargo test -p wit-bindgen-gen-js
+$ cargo test -p wit-bindgen-gen-host-js
 ```
 
 and if you want to run all tests you can execute:

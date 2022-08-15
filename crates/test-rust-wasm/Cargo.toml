@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 futures-util = { version = "0.3.17", default-features = true }
-wit-bindgen-rust = { path = "../rust-wasm" }
+wit-bindgen-guest-rust = { path = "../guest-rust" }
 
 [features]
 unchecked = []
