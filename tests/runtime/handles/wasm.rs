@@ -1,10 +1,10 @@
-wit_bindgen_rust::import!("../../tests/runtime/handles/imports.wit");
-wit_bindgen_rust::export!("../../tests/runtime/handles/exports.wit");
+wit_bindgen_guest_rust::import!("../../tests/runtime/handles/imports.wit");
+wit_bindgen_guest_rust::export!("../../tests/runtime/handles/exports.wit");
 
 use exports::*;
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
-use wit_bindgen_rust::Handle;
+use wit_bindgen_guest_rust::Handle;
 
 struct Exports;
 

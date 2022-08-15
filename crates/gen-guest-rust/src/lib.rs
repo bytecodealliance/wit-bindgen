@@ -117,7 +117,7 @@ impl RustGenerator for RustWasm {
         if self.in_import {
             None
         } else {
-            Some("wit_bindgen_rust::Handle")
+            Some("wit_bindgen_guest_rust::Handle")
         }
     }
 
@@ -201,7 +201,7 @@ impl Generator for RustWasm {
         docs: &Docs,
     ) {
         self.src
-            .push_str("wit_bindgen_rust::bitflags::bitflags! {\n");
+            .push_str("wit_bindgen_guest_rust::bitflags::bitflags! {\n");
         self.rustdoc(docs);
         let repr = RustFlagsRepr::new(flags);
         self.src
@@ -295,7 +295,7 @@ impl Generator for RustWasm {
             ";
             self.src.push_str(&format!(
                 "
-                    unsafe impl wit_bindgen_rust::HandleType for super::{ty} {{
+                    unsafe impl wit_bindgen_guest_rust::HandleType for super::{ty} {{
                         #[inline]
                         fn clone(_val: i32) -> i32 {{
                             {panic_not_wasm}
@@ -323,7 +323,7 @@ impl Generator for RustWasm {
                         }}
                     }}
 
-                    unsafe impl wit_bindgen_rust::LocalHandle for super::{ty} {{
+                    unsafe impl wit_bindgen_guest_rust::LocalHandle for super::{ty} {{
                         #[inline]
                         fn new(_val: i32) -> i32 {{
                             {panic_not_wasm}
@@ -571,10 +571,10 @@ impl Generator for RustWasm {
         self.push_str("{\n");
 
         if self.opts.standalone {
-            // Force the macro code to reference wit_bindgen_rust for standalone crates.
+            // Force the macro code to reference wit_bindgen_guest_rust for standalone crates.
             // Also ensure any referenced types are also used from the external crate.
             self.src
-                .push_str("#[allow(unused_imports)]\nuse wit_bindgen_rust;\nuse ");
+                .push_str("#[allow(unused_imports)]\nuse wit_bindgen_guest_rust;\nuse ");
             self.src.push_str(&iface_name);
             self.src.push_str("::*;\n");
         }
@@ -600,7 +600,7 @@ impl Generator for RustWasm {
         if func.is_async {
             self.src.push_str("};\n");
             self.src
-                .push_str("wit_bindgen_rust::rt::execute(Box::pin(future));\n");
+                .push_str("wit_bindgen_guest_rust::rt::execute(Box::pin(future));\n");
         }
         self.src.push_str("}\n");
 
@@ -662,7 +662,7 @@ impl Generator for RustWasm {
         let any_async = iface.functions.iter().any(|f| f.is_async);
         for (name, trait_) in self.traits.iter() {
             if any_async {
-                src.push_str("#[wit_bindgen_rust::async_trait(?Send)]\n");
+                src.push_str("#[wit_bindgen_guest_rust::async_trait(?Send)]\n");
             }
             src.push_str("pub trait ");
             src.push_str(&name);
@@ -675,7 +675,7 @@ impl Generator for RustWasm {
 
             for (id, methods) in trait_.resource_methods.iter() {
                 if any_async {
-                    src.push_str("#[wit_bindgen_rust::async_trait(?Send)]\n");
+                    src.push_str("#[wit_bindgen_guest_rust::async_trait(?Send)]\n");
                 }
                 src.push_str(&format!(
                     "pub trait {} {{\n",
@@ -917,7 +917,7 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::I64FromU64 | Instruction::I64FromS64 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wit_bindgen_rust::rt::as_i64({})", s));
+                results.push(format!("wit_bindgen_guest_rust::rt::as_i64({})", s));
             }
             Instruction::I32FromChar
             | Instruction::I32FromU8
@@ -927,16 +927,16 @@ impl Bindgen for FunctionBindgen<'_> {
             | Instruction::I32FromU32
             | Instruction::I32FromS32 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wit_bindgen_rust::rt::as_i32({})", s));
+                results.push(format!("wit_bindgen_guest_rust::rt::as_i32({})", s));
             }
 
             Instruction::F32FromFloat32 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wit_bindgen_rust::rt::as_f32({})", s));
+                results.push(format!("wit_bindgen_guest_rust::rt::as_f32({})", s));
             }
             Instruction::F64FromFloat64 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wit_bindgen_rust::rt::as_f64({})", s));
+                results.push(format!("wit_bindgen_guest_rust::rt::as_f64({})", s));
             }
             Instruction::Float32FromF32
             | Instruction::Float64FromF64
@@ -999,13 +999,13 @@ impl Bindgen for FunctionBindgen<'_> {
             // handles in exports
             Instruction::I32FromOwnedHandle { .. } => {
                 results.push(format!(
-                    "wit_bindgen_rust::Handle::into_raw({})",
+                    "wit_bindgen_guest_rust::Handle::into_raw({})",
                     operands[0]
                 ));
             }
             Instruction::HandleBorrowedFromI32 { .. } => {
                 results.push(format!(
-                    "wit_bindgen_rust::Handle::from_raw({})",
+                    "wit_bindgen_guest_rust::Handle::from_raw({})",
                     operands[0],
                 ));
             }
@@ -1485,7 +1485,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.push_str(wasm_type(*result));
                 }
                 self.push_str(") {\n");
-                self.push_str("wit_bindgen_rust::rt::Sender::from_usize(sender).send((");
+                self.push_str("wit_bindgen_guest_rust::rt::Sender::from_usize(sender).send((");
                 for i in 0..wasm_results.len() {
                     self.push_str(&format!("ret{},", i));
                 }
@@ -1497,7 +1497,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 // sender (`tx`) will send something once over `rx`. The type of
                 // the `Oneshot` is the type of the `wasm_results` which is the
                 // canonical ABI of the results that this function produces.
-                self.push_str("let (rx, tx) = wit_bindgen_rust::rt::Oneshot::<(");
+                self.push_str("let (rx, tx) = wit_bindgen_guest_rust::rt::Oneshot::<(");
                 for ty in *wasm_results {
                     self.push_str(wasm_type(*ty));
                     self.push_str(", ");
@@ -1598,7 +1598,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::ReturnAsyncExport { .. } => {
                 self.emit_cleanup();
                 self.push_str(&format!(
-                    "wit_bindgen_rust::rt::async_export_done({}, {});\n",
+                    "wit_bindgen_guest_rust::rt::async_export_done({}, {});\n",
                     operands[0], operands[1]
                 ));
             }
@@ -1684,7 +1684,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 align,
             } => {
                 self.push_str(&format!(
-                    "wit_bindgen_rust::rt::canonical_abi_free({} as *mut u8, {}, {});\n",
+                    "wit_bindgen_guest_rust::rt::canonical_abi_free({} as *mut u8, {}, {});\n",
                     operands[0], size, align
                 ));
             }

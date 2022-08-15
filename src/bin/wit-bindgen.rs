@@ -5,6 +5,7 @@ use wit_bindgen_core::{wit_parser, Files, Generator};
 use wit_parser::Interface;
 
 #[derive(Debug, StructOpt)]
+/// A utility that generates language bindings for WIT itnerfaces.
 struct Opt {
     #[structopt(subcommand)]
     category: Category,
@@ -12,8 +13,11 @@ struct Opt {
 
 #[derive(Debug, StructOpt)]
 enum Category {
+    /// These generators are used when creating hosts that embed WASM modules/components.
     Host(HostGenerator),
+    /// These generators are used when writing guest WASM modules/components.
     Guest(GuestGenerator),
+    /// This generator outputs a Markdown file describing an interface.
     Markdown {
         #[structopt(flatten)]
         opts: wit_bindgen_gen_markdown::Opts,
@@ -24,18 +28,21 @@ enum Category {
 
 #[derive(Debug, StructOpt)]
 enum HostGenerator {
-    Wasmtime {
+    /// Generates bindings for Rust hosts using the Wasmtime engine.
+    WasmtimeRust {
         #[structopt(flatten)]
         opts: wit_bindgen_gen_host_wasmtime_rust::Opts,
         #[structopt(flatten)]
         common: Common,
     },
+    /// Generates bindings for Python hosts using the Wasmtime engine.
     WasmtimePy {
         #[structopt(flatten)]
         opts: wit_bindgen_gen_host_wasmtime_py::Opts,
         #[structopt(flatten)]
         common: Common,
     },
+    /// Generates bindings for JavaScript hosts.
     Js {
         #[structopt(flatten)]
         opts: wit_bindgen_gen_host_js::Opts,
@@ -46,19 +53,24 @@ enum HostGenerator {
 
 #[derive(Debug, StructOpt)]
 enum GuestGenerator {
+    /// Generates bindings for Rust guest modules.
     Rust {
         #[structopt(flatten)]
         opts: wit_bindgen_gen_guest_rust::Opts,
         #[structopt(flatten)]
         common: Common,
     },
+    /// Generates bindings for C/CPP guest modules.
     C {
         #[structopt(flatten)]
         opts: wit_bindgen_gen_guest_c::Opts,
         #[structopt(flatten)]
         common: Common,
     },
-    #[structopt(name = "spidermonkey")]
+    /// Generates bindings for JS guest modules.
+    /// This is achieved by embedding the SpiderMonkey JS runtime into the module
+    /// with the required JS stubs to interact with the defined interfaces.
+    #[structopt(name = "spidermonkey-js")]
     SpiderMonkeyJS {
         #[structopt(flatten)]
         opts: wit_bindgen_gen_guest_spidermonkey_js::Opts,
@@ -88,7 +100,7 @@ fn main() -> Result<()> {
     let opt: Opt = Opt::from_args();
     let (mut generator, common): (Box<dyn Generator>, _) = match opt.category {
         Category::Guest(GuestGenerator::Rust { opts, common }) => (Box::new(opts.build()), common),
-        Category::Host(HostGenerator::Wasmtime { opts, common }) => {
+        Category::Host(HostGenerator::WasmtimeRust { opts, common }) => {
             (Box::new(opts.build()), common)
         }
         Category::Host(HostGenerator::WasmtimePy { opts, common }) => {
