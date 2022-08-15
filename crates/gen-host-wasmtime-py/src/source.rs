@@ -130,9 +130,9 @@ impl From<Source> for String {
 ///
 /// You can create a [SourceBuilder] easily using a [Source]
 /// ```
-/// # use wit_bindgen_gen_wasmtime_py::dependencies::Dependencies;
+/// # use wit_bindgen_gen_host_wasmtime_py::dependencies::Dependencies;
 /// # use wit_bindgen_core::wit_parser::{Interface, Type};
-/// # use wit_bindgen_gen_wasmtime_py::source::Source;
+/// # use wit_bindgen_gen_host_wasmtime_py::source::Source;
 /// # let mut deps = Dependencies::default();
 /// # let mut interface = Interface::default();
 /// # let iface = &interface;

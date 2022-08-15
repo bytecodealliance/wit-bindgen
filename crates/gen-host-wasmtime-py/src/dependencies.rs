@@ -28,7 +28,7 @@ impl Dependencies {
     ///
     /// Examples
     /// ```
-    /// # use wit_bindgen_gen_wasmtime_py::dependencies::Dependencies;
+    /// # use wit_bindgen_gen_host_wasmtime_py::dependencies::Dependencies;
     /// # let mut deps = Dependencies::default();
     /// // Import a specific item from a module
     /// deps.pyimport("typing", "NamedTuple");
