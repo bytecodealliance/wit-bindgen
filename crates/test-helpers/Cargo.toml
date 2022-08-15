@@ -32,7 +32,10 @@ wit-bindgen-gen-guest-spidermonkey-js = { path = '../gen-guest-spidermonkey-js' 
 wit-bindgen-core = { path = '../bindgen-core' }
 
 [features]
-default = ['guest-rust', 'guest-c', 'guest-spidermonkey-js']
+default = ['guest-rust', 'guest-c', 'guest-spidermonkey-js', 'host-js', 'host-wasmtime-py', 'host-wasmtime-rust']
 guest-rust = []
 guest-c = []
 guest-spidermonkey-js = []
+host-js = []
+host-wasmtime-py = []
+host-wasmtime-rust = []

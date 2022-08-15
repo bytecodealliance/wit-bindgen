@@ -8,6 +8,16 @@ import * as assert from 'assert';
 async function run() {
   const importObj = {};
   const imports: Imports = {
+    emptyListParam(a) {
+      assert.deepStrictEqual(Array.from(a), []);
+    },
+    emptyStringParam(a) {
+      assert.strictEqual(a, '');
+    },
+    emptyListResult() {
+      return new Uint8Array([]);
+    },
+    emptyStringResult() { return ''; },
     listParam(a) {
       assert.deepStrictEqual(Array.from(a), [1, 2, 3, 4]);
     },
@@ -113,14 +123,18 @@ async function run() {
 
   const bytes = wasm.allocatedBytes();
   wasm.testImports();
+  wasm.emptyListParam(new Uint8Array([]));
+  wasm.emptyStringParam('');
   wasm.listParam(new Uint8Array([1, 2, 3, 4]));
   wasm.listParam2("foo");
   wasm.listParam3(["foo", "bar", "baz"]);
   wasm.listParam4([["foo", "bar"], ["baz"]]);
+  assert.deepStrictEqual(Array.from(wasm.emptyListResult()), []);
+  assert.deepStrictEqual(wasm.emptyStringResult(), "");
   assert.deepStrictEqual(Array.from(wasm.listResult()), [1, 2, 3, 4, 5]);
   assert.deepStrictEqual(wasm.listResult2(), "hello!");
   assert.deepStrictEqual(wasm.listResult3(), ["hello,", "world!"]);
-  
+
   const buffer = new ArrayBuffer(8);
   (new Uint8Array(buffer)).set(new Uint8Array([1, 2, 3, 4]), 2);
   // Create a view of the four bytes in the middle of the buffer
