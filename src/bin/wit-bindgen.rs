@@ -13,9 +13,9 @@ struct Opt {
 
 #[derive(Debug, StructOpt)]
 enum Category {
-    /// These generators are used when creating hosts that embed WASM modules/components.
+    /// Generators for creating hosts that embed WASM modules/components.
     Host(HostGenerator),
-    /// These generators are used when writing guest WASM modules/components.
+    /// Generators for writing guest WASM modules/components.
     Guest(GuestGenerator),
     /// This generator outputs a Markdown file describing an interface.
     Markdown {
