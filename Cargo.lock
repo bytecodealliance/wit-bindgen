@@ -1396,7 +1396,7 @@ dependencies = [
 
 [[package]]
 name = "test-helpers"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "backtrace",
  "filetime",
@@ -1416,7 +1416,7 @@ dependencies = [
 
 [[package]]
 name = "test-rust-wasm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "futures-util",
  "wit-bindgen-rust",
@@ -2051,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "structopt",
@@ -2067,7 +2067,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-demo"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "wasmprinter",
  "wit-bindgen-gen-c",
@@ -2083,7 +2083,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-c"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "heck 0.3.3",
  "structopt",
@@ -2093,7 +2093,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "wit-parser",
@@ -2101,7 +2101,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-js"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "heck 0.3.3",
  "structopt",
@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-markdown"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "heck 0.3.3",
  "pulldown-cmark",
@@ -2121,7 +2121,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-rust"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "heck 0.3.3",
  "wit-bindgen-gen-core",
@@ -2129,7 +2129,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-rust-wasm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "heck 0.3.3",
  "structopt",
@@ -2141,7 +2141,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-spidermonkey"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "heck 0.3.3",
  "lazy_static",
@@ -2154,7 +2154,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-wasmtime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "heck 0.3.3",
@@ -2169,7 +2169,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-wasmtime-py"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "heck 0.3.3",
  "structopt",
@@ -2179,7 +2179,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "bitflags",
@@ -2188,7 +2188,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-impl"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "syn",
@@ -2198,7 +2198,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-wasmtime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2211,7 +2211,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-wasmtime-impl"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "syn",
@@ -2221,7 +2221,7 @@ dependencies = [
 
 [[package]]
 name = "wit-component"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap 3.2.6",
@@ -2239,7 +2239,7 @@ dependencies = [
 
 [[package]]
 name = "wit-parser"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "id-arena",
