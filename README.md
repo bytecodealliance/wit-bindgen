@@ -40,11 +40,11 @@ This project can be used in cases such as:
 
 * You're writing JS host code in the browser that will consume a WebAssembly module and you don't want to deal with funky ABI details. The command `wit-bindgen host js` can generate the JS bindings and a TypeScript interface for you with native JS types.
 
-**Note:** This CLI experience is not the only way wit-bindgen can/will be used. For example it can be used in Rust through procedural macros and potentially in the future Cargo dependencies. Usage in a Web application would probably use a version of wit-bindgen compiled to WebAssembly and published to NPM.
+**Note:** This CLI experience is not the only way wit-bindgen can/will be used. For example it can be used in Rust through procedural macros and potentially in the future Cargo dependencies. Usage in a Web application would probably be through a version of wit-bindgen compiled to WebAssembly and published to NPM.
 
 ## Context
 The purpose of `wit-bindgen` is to provide a forwards-compatible toolchain and story for modules using the canonical ABI and eventually components in the emerging [Component Model](https://github.com/WebAssembly/component-model). This project was originally based on the [interface types
-proposal](https://github.com/webassembly/interface-types) and the [canonical ABI]. The interface types content relevant to this project is being incorporated into the Component Model, which will succeed it. This repository will be following upstream changes there, especially for the [`*.wit`](https://github.com/WebAssembly/component-model/blob/main/design/mvp/WIT.md) syntax.
+proposal](https://github.com/webassembly/interface-types) and the [canonical ABI]. The Component Model will eventually "absorb" the interface types proposal, so all references to interface types are effectively to interface types / the component model. This repository will be following upstream changes there, especially for the [`*.wit`](https://github.com/WebAssembly/component-model/blob/main/design/mvp/WIT.md) syntax.
 
 Currently, generated language bindings all use the [canonical ABI] for communication. This means that any language with supported guest bindings can be consumed in any environment with supported host bindings, which will interoperate through the [canonical ABI].
 
@@ -69,26 +69,34 @@ This CLI **IS NOT** stable and may change, do not expect it to be or rely on it 
 cargo install --git https://github.com/bytecodealliance/wit-bindgen wit-bindgen-cli
 ```
 
-## Supported Languages
+## Supported Generators
 
-Here's a list of supported language bindings generators.
 
-* `guest rust` - this is for Rust compiled to WebAssembly, typically using either
+
+### Guests
+
+These generators are for creating guest modules that import/export WIT types.
+
+* `rust` - this is for Rust compiled to WebAssembly, typically using either
   the `wasm32-wasi` or `wasm32-unknown-unknown` targets depending on your use
   case. In this mode you'd probably depend on the `wit-bindgen-guest-rust` crate
   (located at `crates/guest-rust`) and use the `import!` and `export!` macros to
   generate code.
 
-* `guest c` - this is for C compiled to WebAssembly, using either of the targets above
+* `c` - this is for C compiled to WebAssembly, using either of the targets above
   for Rust as well. With C the `wit-bindgen` CLI tool will emit a `*.h` and a
   `*.c` file to be compiled into the wasm module.
 
-* `host wasmtime-rust` - this is for Rust users using the `wasmtime` crate. This generator
-  is used through the `wit-bindgen-host-wasmtime-rust` crate (located at
-  `crates/host-wasmtime-rust`) and, like the compiled-to-wasm Rust support, has an
+### Hosts
+
+These generators are for hosts interacting with modules that import/export WIT types.
+
+* `wasmtime-rust` - this is for Rust users using the `wasmtime` crate. This generator 
+  can also be is used through the `wit-bindgen-host-wasmtime-rust` crate (located at
+  `crates/host-wasmtime-rust`) and, like the guest Rust support, has an
   `import!` and an `export!` macro for generating code.
 
-* `host js` - this is for JavaScript users executing WebAssembly modules. This could
+* `js` - this is for JavaScript users executing WebAssembly modules. This could
   be in a browsers, Node.js, or Deno. In theory this covers browser use cases
   like web workers and such as well. In this mode the `wit-bindgen` CLI tool
   will emit a `*.js` and a `*.d.ts` file describing the interface and providing
@@ -97,12 +105,21 @@ Here's a list of supported language bindings generators.
   itself to WebAssembly and publish NPM packages for popular JS build systems to
   integrate `wit-bindgen` into JS build processes.
 
-* `host wasmtime-py` - this is for Python users using the `wasmtime` PyPI package.
+* `wasmtime-py` - this is for Python users using the `wasmtime` PyPI package.
   This uses Wasmtime under the hood but you get to write Python in providing
   imports to WebAssembly modules or consume modules using interface types. This
   generates a `*.py` file which is annotated with types for usage in `mypy` or
   other type-checkers.
 
+### Other
+
+Finally in a sort of "miscellaneous" category the `wit-bindgen` CLI also
+supports:
+
+* `markdown` - generates a `*.md` and a `*.html` file with readable
+  documentation rendered from the comments in the source `*.wit` file.
+
+### Arguments
 All generators support the `--import` and `--export` flags in the `wit-bindgen`
 CLI tool:
 
@@ -116,25 +133,19 @@ Here "import" means "I want to import and call the functions in this interface"
 and "export" means "I want to define the functions in this interface for others
 to call".
 
-Finally in a sort of "miscellaneous" category the `wit-bindgen` CLI also
-supports:
 
-* `markdown` - generates a `*.md` and a `*.html` file with readable
-  documentation rendered from the comments in the source `*.wit` file.
+### Contributing Bindings
 
-Note that the list of supported languages here is a snapshot in time and is not
+The list of supported languages here is a snapshot in time and is not
 final. The purpose of the interface-types proposal is to be language agnostic
 both in how WebAssembly modules are written as well as how they are consumed. If
 you have a runtime that isn't listed here or you're compiling to WebAssembly and
 your language isn't listed here, it doesn't mean that it will never be
-supported! A language binding generator is intended to be not the hardest thing
-in the world (but unfortunately also not the easiest) to write, and the crates
-and support in this repository mostly exist to make writing generators as easy
-as possible.
+supported!
 
-Some other languages and runtimes, for example, that don't have support in
-`wit-bindgen` today but are possible in the future (and may get written here
-too) are:
+Writing language bindings generators is not trivial, but the crates and tooling in this repository exist to make writing generators as easy as practically possible. If you are interested in support for a language or runtime, please check our issues and file one if there isn't already an issue for it.
+
+Here is a non-exhaustive list of some generators that we don't currently support in `wit-bindgen` today but are possible in the future.
 
 * `host wasmtime-go` - same as for `host wasmtime-py` but for Go.
   Basically for Go users using the [`wasmtime-go` package](https://github.com/bytecodealliance/wasmtime-go) who want to work with interface types rather than raw pointers/memories/etc.
@@ -152,8 +163,4 @@ too) are:
   running in a JS environment you're probably best off running the JS there
   instead).
 
-Note that this is not an exclusive list, only intended to give you an idea of
-what other bindings could look like. There's a plethora of runtimes and
-languages that compile to WebAssembly, and interface types should be able to
-work with all of them and it's theoretically just some work-hours away from
-having support in `wit-bindgen`.
+There are a plethora of other languages that compile to WebAssembly and runtimes. Since interface types should be able to work with all of them, they're theoretically just some work-hours away from having support in `wit-bindgen`.
