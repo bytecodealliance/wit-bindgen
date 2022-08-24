@@ -1404,13 +1404,13 @@ dependencies = [
  "ignore",
  "proc-macro2",
  "quote",
- "wit-bindgen-gen-c",
- "wit-bindgen-gen-core",
- "wit-bindgen-gen-js",
- "wit-bindgen-gen-rust-wasm",
- "wit-bindgen-gen-spidermonkey",
- "wit-bindgen-gen-wasmtime",
- "wit-bindgen-gen-wasmtime-py",
+ "wit-bindgen-core",
+ "wit-bindgen-gen-guest-c",
+ "wit-bindgen-gen-guest-rust",
+ "wit-bindgen-gen-guest-spidermonkey-js",
+ "wit-bindgen-gen-host-js",
+ "wit-bindgen-gen-host-wasmtime-py",
+ "wit-bindgen-gen-host-wasmtime-rust",
  "wit-parser",
 ]
 
@@ -1419,7 +1419,7 @@ name = "test-rust-wasm"
 version = "0.2.0"
 dependencies = [
  "futures-util",
- "wit-bindgen-rust",
+ "wit-bindgen-guest-rust",
 ]
 
 [[package]]
@@ -2055,44 +2055,18 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "structopt",
- "wit-bindgen-gen-c",
- "wit-bindgen-gen-core",
- "wit-bindgen-gen-js",
+ "wit-bindgen-core",
+ "wit-bindgen-gen-guest-c",
+ "wit-bindgen-gen-guest-rust",
+ "wit-bindgen-gen-guest-spidermonkey-js",
+ "wit-bindgen-gen-host-js",
+ "wit-bindgen-gen-host-wasmtime-py",
+ "wit-bindgen-gen-host-wasmtime-rust",
  "wit-bindgen-gen-markdown",
- "wit-bindgen-gen-rust-wasm",
- "wit-bindgen-gen-spidermonkey",
- "wit-bindgen-gen-wasmtime",
- "wit-bindgen-gen-wasmtime-py",
 ]
 
 [[package]]
-name = "wit-bindgen-demo"
-version = "0.2.0"
-dependencies = [
- "wasmprinter",
- "wit-bindgen-gen-c",
- "wit-bindgen-gen-core",
- "wit-bindgen-gen-js",
- "wit-bindgen-gen-markdown",
- "wit-bindgen-gen-rust-wasm",
- "wit-bindgen-gen-spidermonkey",
- "wit-bindgen-gen-wasmtime",
- "wit-bindgen-gen-wasmtime-py",
- "wit-bindgen-rust",
-]
-
-[[package]]
-name = "wit-bindgen-gen-c"
-version = "0.2.0"
-dependencies = [
- "heck 0.3.3",
- "structopt",
- "test-helpers",
- "wit-bindgen-gen-core",
-]
-
-[[package]]
-name = "wit-bindgen-gen-core"
+name = "wit-bindgen-core"
 version = "0.2.0"
 dependencies = [
  "anyhow",
@@ -2100,13 +2074,89 @@ dependencies = [
 ]
 
 [[package]]
-name = "wit-bindgen-gen-js"
+name = "wit-bindgen-demo"
+version = "0.2.0"
+dependencies = [
+ "wasmprinter",
+ "wit-bindgen-core",
+ "wit-bindgen-gen-guest-c",
+ "wit-bindgen-gen-guest-rust",
+ "wit-bindgen-gen-guest-spidermonkey-js",
+ "wit-bindgen-gen-host-js",
+ "wit-bindgen-gen-host-wasmtime-py",
+ "wit-bindgen-gen-host-wasmtime-rust",
+ "wit-bindgen-gen-markdown",
+ "wit-bindgen-guest-rust",
+]
+
+[[package]]
+name = "wit-bindgen-gen-guest-c"
 version = "0.2.0"
 dependencies = [
  "heck 0.3.3",
  "structopt",
  "test-helpers",
- "wit-bindgen-gen-core",
+ "wit-bindgen-core",
+]
+
+[[package]]
+name = "wit-bindgen-gen-guest-rust"
+version = "0.2.0"
+dependencies = [
+ "heck 0.3.3",
+ "structopt",
+ "test-helpers",
+ "wit-bindgen-core",
+ "wit-bindgen-gen-rust-lib",
+ "wit-bindgen-guest-rust",
+]
+
+[[package]]
+name = "wit-bindgen-gen-guest-spidermonkey-js"
+version = "0.2.0"
+dependencies = [
+ "heck 0.3.3",
+ "lazy_static",
+ "structopt",
+ "test-helpers",
+ "wasm-encoder 0.8.0",
+ "wasmparser 0.80.2",
+ "wit-bindgen-core",
+]
+
+[[package]]
+name = "wit-bindgen-gen-host-js"
+version = "0.2.0"
+dependencies = [
+ "heck 0.3.3",
+ "structopt",
+ "test-helpers",
+ "wit-bindgen-core",
+]
+
+[[package]]
+name = "wit-bindgen-gen-host-wasmtime-py"
+version = "0.2.0"
+dependencies = [
+ "heck 0.3.3",
+ "structopt",
+ "test-helpers",
+ "wit-bindgen-core",
+]
+
+[[package]]
+name = "wit-bindgen-gen-host-wasmtime-rust"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "heck 0.3.3",
+ "structopt",
+ "test-helpers",
+ "wasmtime",
+ "wasmtime-wasi",
+ "wit-bindgen-core",
+ "wit-bindgen-gen-rust-lib",
+ "wit-bindgen-host-wasmtime-rust",
 ]
 
 [[package]]
@@ -2116,88 +2166,38 @@ dependencies = [
  "heck 0.3.3",
  "pulldown-cmark",
  "structopt",
- "wit-bindgen-gen-core",
+ "wit-bindgen-core",
 ]
 
 [[package]]
-name = "wit-bindgen-gen-rust"
+name = "wit-bindgen-gen-rust-lib"
 version = "0.2.0"
 dependencies = [
  "heck 0.3.3",
- "wit-bindgen-gen-core",
+ "wit-bindgen-core",
 ]
 
 [[package]]
-name = "wit-bindgen-gen-rust-wasm"
-version = "0.2.0"
-dependencies = [
- "heck 0.3.3",
- "structopt",
- "test-helpers",
- "wit-bindgen-gen-core",
- "wit-bindgen-gen-rust",
- "wit-bindgen-rust",
-]
-
-[[package]]
-name = "wit-bindgen-gen-spidermonkey"
-version = "0.2.0"
-dependencies = [
- "heck 0.3.3",
- "lazy_static",
- "structopt",
- "test-helpers",
- "wasm-encoder 0.8.0",
- "wasmparser 0.80.2",
- "wit-bindgen-gen-core",
-]
-
-[[package]]
-name = "wit-bindgen-gen-wasmtime"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "heck 0.3.3",
- "structopt",
- "test-helpers",
- "wasmtime",
- "wasmtime-wasi",
- "wit-bindgen-gen-core",
- "wit-bindgen-gen-rust",
- "wit-bindgen-wasmtime",
-]
-
-[[package]]
-name = "wit-bindgen-gen-wasmtime-py"
-version = "0.2.0"
-dependencies = [
- "heck 0.3.3",
- "structopt",
- "test-helpers",
- "wit-bindgen-gen-core",
-]
-
-[[package]]
-name = "wit-bindgen-rust"
+name = "wit-bindgen-guest-rust"
 version = "0.2.0"
 dependencies = [
  "async-trait",
  "bitflags",
- "wit-bindgen-rust-impl",
+ "wit-bindgen-guest-rust-macro",
 ]
 
 [[package]]
-name = "wit-bindgen-rust-impl"
+name = "wit-bindgen-guest-rust-macro"
 version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "syn",
- "wit-bindgen-gen-core",
- "wit-bindgen-gen-rust-wasm",
+ "wit-bindgen-core",
+ "wit-bindgen-gen-guest-rust",
 ]
 
 [[package]]
-name = "wit-bindgen-wasmtime"
+name = "wit-bindgen-host-wasmtime-rust"
 version = "0.2.0"
 dependencies = [
  "anyhow",
@@ -2206,17 +2206,17 @@ dependencies = [
  "thiserror",
  "tracing",
  "wasmtime",
- "wit-bindgen-wasmtime-impl",
+ "wit-bindgen-host-wasmtime-rust-macro",
 ]
 
 [[package]]
-name = "wit-bindgen-wasmtime-impl"
+name = "wit-bindgen-host-wasmtime-rust-macro"
 version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "syn",
- "wit-bindgen-gen-core",
- "wit-bindgen-gen-wasmtime",
+ "wit-bindgen-core",
+ "wit-bindgen-gen-host-wasmtime-rust",
 ]
 
 [[package]]

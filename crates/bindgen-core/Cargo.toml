@@ -1,0 +1,12 @@
+[package]
+name = "wit-bindgen-core"
+version = "0.2.0"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+edition = "2018"
+
+[lib]
+doctest = false
+
+[dependencies]
+wit-parser = { path = '../wit-parser' }
+anyhow = "1"

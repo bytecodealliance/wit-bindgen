@@ -1,7 +1,7 @@
 use heck::*;
 use pulldown_cmark::{html, Event, LinkType, Parser, Tag};
 use std::collections::HashMap;
-use wit_bindgen_gen_core::{wit_parser, Direction, Files, Generator, Source};
+use wit_bindgen_core::{wit_parser, Direction, Files, Generator, Source};
 use wit_parser::*;
 
 #[derive(Default)]

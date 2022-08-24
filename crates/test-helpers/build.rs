@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use wit_bindgen_gen_core::{wit_parser::Interface, Generator};
+use wit_bindgen_core::{wit_parser::Interface, Generator};
 
 fn main() {
     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
@@ -63,10 +63,10 @@ fn main() {
             let export = Interface::parse_file(&test_dir.join("exports.wit")).unwrap();
             let mut files = Default::default();
             // TODO: should combine this into one
-            wit_bindgen_gen_c::Opts::default()
+            wit_bindgen_gen_guest_c::Opts::default()
                 .build()
                 .generate_all(&[import], &[], &mut files);
-            wit_bindgen_gen_c::Opts::default()
+            wit_bindgen_gen_guest_c::Opts::default()
                 .build()
                 .generate_all(&[], &[export], &mut files);
 
@@ -140,7 +140,8 @@ fn main() {
             let export = Interface::parse_file(&test_dir.join("exports.wit")).unwrap();
             let mut files = Default::default();
             let js = fs::read_to_string(&js_impl).unwrap();
-            let mut gen = wit_bindgen_gen_spidermonkey::SpiderMonkeyWasm::new("wasm.js", &js);
+            let mut gen =
+                wit_bindgen_gen_guest_spidermonkey_js::SpiderMonkeyWasm::new("wasm.js", &js);
             gen.import_spidermonkey(true);
             gen.generate_all(&[import], &[export], &mut files);
 
