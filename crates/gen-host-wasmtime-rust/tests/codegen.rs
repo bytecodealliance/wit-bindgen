@@ -38,60 +38,6 @@ mod imports {
     );
 }
 
-mod async_tests {
-    mod not_async {
-        wit_bindgen_host_wasmtime_rust::export!({
-            src["x"]: "foo: func()",
-            async: ["bar"],
-        });
-
-        struct Me;
-
-        impl x::X for Me {
-            fn foo(&mut self) {}
-        }
-    }
-    mod one_async {
-        wit_bindgen_host_wasmtime_rust::export!({
-            src["x"]: "
-                foo: func() -> list<u8>
-                bar: func()
-            ",
-            async: ["bar"],
-        });
-
-        struct Me;
-
-        #[wit_bindgen_host_wasmtime_rust::async_trait]
-        impl x::X for Me {
-            fn foo(&mut self) -> Vec<u8> {
-                Vec::new()
-            }
-
-            async fn bar(&mut self) {}
-        }
-    }
-    mod one_async_export {
-        wit_bindgen_host_wasmtime_rust::import!({
-            src["x"]: "
-                foo: func(x: list<string>)
-                bar: func()
-            ",
-            async: ["bar"],
-        });
-    }
-    mod resource_with_none_async {
-        wit_bindgen_host_wasmtime_rust::export!({
-            src["x"]: "
-                resource y {
-                    z: func() -> string
-                }
-            ",
-            async: [],
-        });
-    }
-}
-
 mod custom_errors {
     wit_bindgen_host_wasmtime_rust::export!({
         src["x"]: "
