@@ -226,13 +226,11 @@ pub fn codegen_wasmtime_import(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
         Direction::Import,
-        &[
-            (
-                "import",
-                || wit_bindgen_gen_host_wasmtime_rust::Opts::default().build(),
-                |_| quote::quote!(),
-            ),
-        ],
+        &[(
+            "import",
+            || wit_bindgen_gen_host_wasmtime_rust::Opts::default().build(),
+            |_| quote::quote!(),
+        )],
     )
 }
 
