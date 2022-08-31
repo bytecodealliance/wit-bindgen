@@ -8,7 +8,6 @@ class Editor {
   files: HTMLSelectElement
   rustUnchecked: HTMLInputElement;
   wasmtimeTracing: HTMLInputElement;
-  wasmtimeAsync: HTMLInputElement;
   wasmtimeCustomError: HTMLInputElement;
   generatedFiles: Record<string, string>;
   demo: Demo;
@@ -25,7 +24,6 @@ class Editor {
     this.files = document.getElementById('file-select') as HTMLSelectElement;
     this.rustUnchecked = document.getElementById('rust-unchecked') as HTMLInputElement;
     this.wasmtimeTracing = document.getElementById('wasmtime-tracing') as HTMLInputElement;
-    this.wasmtimeAsync = document.getElementById('wasmtime-async') as HTMLInputElement;
     this.wasmtimeCustomError = document.getElementById('wasmtime-custom-error') as HTMLInputElement;
     this.outputHtml = document.getElementById('html-output') as HTMLDivElement;
 
@@ -74,15 +72,6 @@ class Editor {
 
     this.wasmtimeTracing.addEventListener('change', () => {
       this.config.setWasmtimeTracing(this.wasmtimeTracing.checked);
-      this.render();
-    });
-    this.wasmtimeAsync.addEventListener('change', () => {
-      let async_;
-      if (this.wasmtimeAsync.checked)
-        async_ = { tag: 'all' };
-      else
-        async_ = { tag: 'none' };
-      this.config.setWasmtimeAsync(async_);
       this.render();
     });
     this.wasmtimeCustomError.addEventListener('change', () => {

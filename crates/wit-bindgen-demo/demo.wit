@@ -1,11 +1,5 @@
 type files = list<tuple<string, string>>
 
-variant wasmtime-async {
-  all,
-  none,
-  only(list<string>),
-}
-
 enum lang {
   js,
   rust,
