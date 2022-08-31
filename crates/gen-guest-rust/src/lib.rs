@@ -1447,79 +1447,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str(");\n");
             }
 
-            Instruction::CallWasmAsyncImport {
-                iface,
-                name,
-                params: wasm_params,
-                results: wasm_results,
-            } => {
-                // The first thing we do here is define the completion callback
-                // which the host will invoke when the asynchronous call
-                // actually finishes. This receives our own custom state
-                // parameter as the first parameter which is the `Sender`
-                // converted to a `usize`. Afterwards it receives all the
-                // results which we'll transfer ove the `sender`, the canonical
-                // ABI of the results.
-                self.push_str("unsafe extern \"C\" fn completion_callback(sender: usize");
-                for (i, result) in wasm_results.iter().enumerate() {
-                    self.push_str(", ");
-                    self.push_str(&format!("ret{}: ", i));
-                    self.push_str(wasm_type(*result));
-                }
-                self.push_str(") {\n");
-                self.push_str("wit_bindgen_guest_rust::rt::Sender::from_usize(sender).send((");
-                for i in 0..wasm_results.len() {
-                    self.push_str(&format!("ret{},", i));
-                }
-                self.push_str("));\n");
-                self.push_str("}\n");
-
-                // Next we create the future channel which will be used to track
-                // the state of this import. The "oneshot" here means that the
-                // sender (`tx`) will send something once over `rx`. The type of
-                // the `Oneshot` is the type of the `wasm_results` which is the
-                // canonical ABI of the results that this function produces.
-                self.push_str("let (rx, tx) = wit_bindgen_guest_rust::rt::Oneshot::<(");
-                for ty in *wasm_results {
-                    self.push_str(wasm_type(*ty));
-                    self.push_str(", ");
-                }
-                self.push_str(")>::new();\n");
-
-                // Then we can actually call the function now that we have
-                // all the parameters. The first parameters to the import are
-                // the canonical ABI `operands` we were provided, and the last
-                // two arguments are our completion callback and the context for
-                // the callback, our `tx` sender.
-                let func = self.declare_import(iface, name, wasm_params, &[]);
-                self.push_str(&func);
-                self.push_str("(");
-                for op in operands {
-                    self.push_str(op);
-                    self.push_str(", ");
-                }
-                self.push_str("completion_callback as i32, ");
-                self.push_str("tx.into_usize() as i32");
-                self.push_str(");\n");
-
-                // And finally we want to "appear synchronous" with an async
-                // function, so we immediately `.await` the results of the
-                // oneshot. This binds all the canonical ABI results to then get
-                // translated in further instructions to the result of this
-                // function call.
-                let tmp = self.tmp();
-                self.push_str("let (");
-                for i in 0..wasm_results.len() {
-                    let name = format!("ret{}_{}", tmp, i);
-                    self.push_str(&name);
-                    self.push_str(",");
-                    results.push(name);
-                }
-                self.push_str(") = rx.await;\n");
-            }
-
-            Instruction::CallWasmAsyncExport { .. } => unreachable!(),
-
             Instruction::CallInterface { module, func } => {
                 self.push_str("let result = ");
                 results.push("result".to_string());
@@ -1573,15 +1500,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     }
                 }
             }
-
-            Instruction::ReturnAsyncExport { .. } => {
-                self.emit_cleanup();
-                self.push_str(&format!(
-                    "wit_bindgen_guest_rust::rt::async_export_done({}, {});\n",
-                    operands[0], operands[1]
-                ));
-            }
-            Instruction::ReturnAsyncImport { .. } => unreachable!(),
 
             Instruction::I32Load { offset } => {
                 results.push(format!("*(({} + {}) as *const i32)", operands[0], offset));

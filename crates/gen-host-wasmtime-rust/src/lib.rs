@@ -1911,9 +1911,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.caller_memory_available = false; // invalidated by call
             }
 
-            Instruction::CallWasmAsyncImport { .. } => unimplemented!(),
-            Instruction::CallWasmAsyncExport { .. } => unimplemented!(),
-
             Instruction::CallInterface { module: _, func } => {
                 for (i, operand) in operands.iter().enumerate() {
                     self.push_str(&format!("let param{} = {};\n", i, operand));
@@ -2000,9 +1997,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     None => self.push_str(&result),
                 }
             }
-
-            Instruction::ReturnAsyncExport { .. } => unimplemented!(),
-            Instruction::ReturnAsyncImport { .. } => unimplemented!(),
 
             Instruction::I32Load { offset } => results.push(self.load(*offset, "i32", operands)),
             Instruction::I32Load8U { offset } => {

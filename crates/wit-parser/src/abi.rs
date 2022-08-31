@@ -634,59 +634,11 @@ def_instruction! {
 
         /// Represents a call to a raw WebAssembly API. The module/name are
         /// provided inline as well as the types if necessary.
-        ///
-        /// Note that this instruction is not currently used for async
-        /// functions, instead `CallWasmAsyncImport` and `CallWasmAsyncExport`
-        /// are used.
         CallWasm {
             iface: &'a Interface,
             name: &'a str,
             sig: &'a WasmSignature,
         } : [sig.params.len()] => [sig.results.len()],
-
-        /// Represents a call to an asynchronous wasm import.
-        ///
-        /// This currently only happens when a compiled-to-wasm module calls as
-        /// async import. This instruction is used to indicate that the
-        /// specified import function should be called. The specified import
-        /// function has `params` as its types, but the final two parameters
-        /// must be synthesized by this instruction which are the
-        /// callback/callback state. The actual imported function does not
-        /// return anything but the callback will be called with the `i32` state
-        /// as the first parameter and `results` as the rest of the parameters.
-        /// The callback function should return nothing.
-        ///
-        /// It's up to the bindings generator to figure out how to make this
-        /// look synchronous despite it being callback-based in the middle.
-        CallWasmAsyncImport {
-            iface: &'a Interface,
-            name: &'a str,
-            params: &'a [WasmType],
-            results: &'a [WasmType],
-        } : [params.len() - 2] => [results.len()],
-
-        /// Represents a call to an asynchronous wasm export.
-        ///
-        /// This currently only happens when a host module calls an async
-        /// function on a wasm module. The specified function will take `params`
-        /// as its argument plus one more argument of an `i32` state that the
-        /// host needs to synthesize. The function being called doesn't actually
-        /// return anything. Instead wasm will call an `async_export_done`
-        /// intrinsic in the `canonical_abi` module. This intrinsic receives a
-        /// context value and a pointer into linear memory. The context value
-        /// lines up with the final `i32` parameter of this function call (which
-        /// the bindings generator must synthesize) and the pointer into linear
-        /// memory contains the `results`, stored at 8-byte offsets in the same
-        /// manner that multiple results are transferred.
-        ///
-        /// It's up to the bindings generator to figure out how to make this
-        /// look synchronous despite it being callback-based in the middle.
-        CallWasmAsyncExport {
-            module: &'a str,
-            name: &'a str,
-            params: &'a [WasmType],
-            results: &'a [WasmType],
-        } : [params.len() - 1] => [results.len()],
 
         /// Same as `CallWasm`, except the dual where an interface is being
         /// called rather than a raw wasm function.
@@ -699,38 +651,7 @@ def_instruction! {
 
         /// Returns `amt` values on the stack. This is always the last
         /// instruction.
-        ///
-        /// Note that this instruction is used for asynchronous functions where
-        /// the results are *lifted*, not when they're *lowered*, though. For
-        /// those modes the `ReturnAsyncExport` and `ReturnAsyncImport`
-        /// functions are used.
         Return { amt: usize, func: &'a Function } : [*amt] => [0],
-
-        /// "Returns" from an asynchronous export.
-        ///
-        /// This is only used for compiled-to-wasm modules at this time, and
-        /// only for the exports of async functions in those modules. This
-        /// instruction receives two parameters, the first of which is the
-        /// original context from the start of the function which was provided
-        /// when the export was first called (its last parameter). The second
-        /// argument is a pointer into linear memory with the results of the
-        /// asynchronous call already encoded. This instruction should then call
-        /// the `async_export_done` intrinsic in the `canonical_abi` module.
-        ReturnAsyncExport { func: &'a Function } : [2] => [0],
-
-        /// "Returns" from an asynchronous import.
-        ///
-        /// This is only used for host modules at this time, and
-        /// only for the import of async functions in those modules. This
-        /// instruction receives the operands used to call the completion
-        /// function in the wasm module. The first parameter to this instruction
-        /// is the index into the function table of the function to call, and
-        /// the remaining parameters are the parameters to invoke the function
-        /// with.
-        ReturnAsyncImport {
-            func: &'a Function,
-            params: usize,
-        } : [*params + 2] => [0],
 
         /// Calls the `realloc` function specified in a malloc-like fashion
         /// allocating `size` bytes with alignment `align`.

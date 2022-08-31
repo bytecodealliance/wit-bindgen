@@ -2108,9 +2108,6 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 // []
             }
 
-            abi::Instruction::CallWasmAsyncExport { .. } => todo!(),
-            abi::Instruction::CallWasmAsyncImport { .. } => todo!(),
-
             abi::Instruction::Return { func, amt } => {
                 match self.lift_lower {
                     abi::LiftLower::LowerArgsLiftResults => {
@@ -2187,9 +2184,6 @@ impl abi::Bindgen for Bindgen<'_, '_> {
 
             abi::Instruction::I32FromBool { .. } => todo!(),
             abi::Instruction::BoolFromI32 { .. } => todo!(),
-
-            abi::Instruction::ReturnAsyncExport { .. } => todo!(),
-            abi::Instruction::ReturnAsyncImport { .. } => todo!(),
 
             abi::Instruction::Malloc { .. } => todo!(),
             abi::Instruction::Free { .. } => todo!(),
