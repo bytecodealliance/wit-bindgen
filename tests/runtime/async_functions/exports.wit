@@ -1,4 +1,0 @@
-thunk: async func()
-allocated-bytes: func() -> u32
-
-test-concurrent: async func()

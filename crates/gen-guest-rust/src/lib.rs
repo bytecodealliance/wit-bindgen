@@ -478,7 +478,6 @@ impl Generator for RustWasm {
     fn import(&mut self, iface: &Interface, func: &Function) {
         let mut sig = FnSig::default();
         let param_mode = TypeMode::AllBorrowed("'_");
-        sig.async_ = func.is_async;
         match &func.kind {
             FunctionKind::Freestanding => {}
             FunctionKind::Static { resource, .. } | FunctionKind::Method { resource, .. } => {
@@ -579,10 +578,6 @@ impl Generator for RustWasm {
             self.src.push_str("::*;\n");
         }
 
-        if func.is_async {
-            self.src.push_str("let future = async move {\n");
-        }
-
         let mut f = FunctionBindgen::new(self, params);
         iface.call(
             AbiVariant::GuestExport,
@@ -597,18 +592,12 @@ impl Generator for RustWasm {
         } = f;
         assert!(!needs_cleanup_list);
         self.src.push_str(&String::from(src));
-        if func.is_async {
-            self.src.push_str("};\n");
-            self.src
-                .push_str("wit_bindgen_guest_rust::rt::execute(Box::pin(future));\n");
-        }
         self.src.push_str("}\n");
 
         let prev = mem::take(&mut self.src);
         self.in_trait = true;
         let mut sig = FnSig::default();
         sig.private = true;
-        sig.async_ = func.is_async;
         match &func.kind {
             FunctionKind::Freestanding => {}
             FunctionKind::Static { .. } => sig.use_item_name = true,
@@ -659,11 +648,7 @@ impl Generator for RustWasm {
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
         let mut src = mem::take(&mut self.src);
 
-        let any_async = iface.functions.iter().any(|f| f.is_async);
         for (name, trait_) in self.traits.iter() {
-            if any_async {
-                src.push_str("#[wit_bindgen_guest_rust::async_trait(?Send)]\n");
-            }
             src.push_str("pub trait ");
             src.push_str(&name);
             src.push_str(" {\n");
@@ -674,9 +659,6 @@ impl Generator for RustWasm {
             src.push_str("}\n");
 
             for (id, methods) in trait_.resource_methods.iter() {
-                if any_async {
-                    src.push_str("#[wit_bindgen_guest_rust::async_trait(?Send)]\n");
-                }
                 src.push_str(&format!(
                     "pub trait {} {{\n",
                     iface.resources[*id].name.to_camel_case()
@@ -1573,9 +1555,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
                 self.push_str(&operands.join(", "));
                 self.push_str(")");
-                if func.is_async {
-                    self.push_str(".await");
-                }
                 self.push_str(";\n");
             }
 

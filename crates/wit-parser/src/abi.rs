@@ -3,7 +3,6 @@ use crate::{
     Enum, Expected, Flags, FlagsRepr, Function, Int, Interface, Record, ResourceId, Tuple, Type,
     TypeDefKind, TypeId, Union, Variant,
 };
-use std::mem;
 
 /// A raw WebAssembly signature with params and results.
 #[derive(Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
@@ -906,44 +905,20 @@ impl Interface {
         self.push_wasm(variant, &func.result, &mut results);
 
         let mut retptr = false;
-        if func.is_async {
-            // Asynchronous functions never actually return anything since
-            // they're all callback-based, meaning that we always put all the
-            // results into a return pointer.
-            //
-            // Asynchronous exports take one extra parameter which is the
-            // context used to pass to the `async_export_done` intrinsic, and
-            // asynchronous imports take two extra parameters where the first is
-            // a pointer into the function table and the second is a context
-            // argument to pass to this function.
+
+        // Rust/C don't support multi-value well right now, so if a function
+        // would have multiple results then instead truncate it. Imports take a
+        // return pointer to write into and exports return a pointer they wrote
+        // into.
+        if results.len() > MAX_FLAT_RESULTS {
+            retptr = true;
+            results.truncate(0);
             match variant {
-                AbiVariant::GuestExport => {
-                    retptr = true;
-                    results.truncate(0);
-                    params.push(WasmType::I32);
-                }
                 AbiVariant::GuestImport => {
-                    retptr = true;
-                    results.truncate(0);
-                    params.push(WasmType::I32);
                     params.push(WasmType::I32);
                 }
-            }
-        } else {
-            // Rust/C don't support multi-value well right now, so if a function
-            // would have multiple results then instead truncate it. Imports take a
-            // return pointer to write into and exports return a pointer they wrote
-            // into.
-            if results.len() > MAX_FLAT_RESULTS {
-                retptr = true;
-                results.truncate(0);
-                match variant {
-                    AbiVariant::GuestImport => {
-                        params.push(WasmType::I32);
-                    }
-                    AbiVariant::GuestExport => {
-                        results.push(WasmType::I32);
-                    }
+                AbiVariant::GuestExport => {
+                    results.push(WasmType::I32);
                 }
             }
         }
@@ -1169,83 +1144,49 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.stack.push(ptr);
                 }
 
-                if func.is_async {
-                    // We emit custom instructions for async calls since they
-                    // have different parameters synthesized by the bindings
-                    // generator depending on what kind of call is being made.
-                    //
-                    // Note that no return pointer goop happens here because
-                    // that's all done through parameters of callbacks instead.
-                    let mut results = Vec::new();
-                    self.iface
-                        .push_wasm(self.variant, &func.result, &mut results);
-                    match self.variant {
-                        AbiVariant::GuestImport => {
-                            assert_eq!(self.stack.len(), sig.params.len() - 2);
-                            self.emit(&Instruction::CallWasmAsyncImport {
-                                iface: self.iface,
-                                name: &func.name,
-                                params: &sig.params,
-                                results: &results,
-                            });
-                        }
-                        AbiVariant::GuestExport => {
-                            assert_eq!(self.stack.len(), sig.params.len() - 1);
-                            self.emit(&Instruction::CallWasmAsyncExport {
-                                module: &self.iface.name,
-                                name: &func.name,
-                                params: &sig.params,
-                                results: &results,
-                            });
-                        }
-                    }
+                // If necessary we may need to prepare a return pointer for
+                // this ABI.
+                if self.variant == AbiVariant::GuestImport && sig.retptr {
+                    let size = self.bindgen.sizes().size(&func.result);
+                    let align = self.bindgen.sizes().align(&func.result);
+                    let ptr = self.bindgen.return_pointer(self.iface, size, align);
+                    self.return_pointer = Some(ptr.clone());
+                    self.stack.push(ptr);
+                }
 
+                // Now that all the wasm args are prepared we can call the
+                // actual wasm function.
+                assert_eq!(self.stack.len(), sig.params.len());
+                self.emit(&Instruction::CallWasm {
+                    iface: self.iface,
+                    name: &func.name,
+                    sig: &sig,
+                });
+
+                if !sig.retptr {
+                    // With no return pointer in use we can simply lift the
+                    // result of the function from the result of the core
+                    // wasm function.
                     self.lift(&func.result);
                 } else {
-                    // If necessary we may need to prepare a return pointer for
-                    // this ABI.
-                    if self.variant == AbiVariant::GuestImport && sig.retptr {
-                        let size = self.bindgen.sizes().size(&func.result);
-                        let align = self.bindgen.sizes().align(&func.result);
-                        let ptr = self.bindgen.return_pointer(self.iface, size, align);
-                        self.return_pointer = Some(ptr.clone());
-                        self.stack.push(ptr);
-                    }
+                    let ptr = match self.variant {
+                        // imports into guests means it's a wasm module
+                        // calling an imported function. We supplied the
+                        // return poitner as the last argument (saved in
+                        // `self.return_pointer`) so we use that to read
+                        // the result of the function from memory.
+                        AbiVariant::GuestImport => {
+                            assert!(sig.results.len() == 0);
+                            self.return_pointer.take().unwrap()
+                        }
 
-                    // Now that all the wasm args are prepared we can call the
-                    // actual wasm function.
-                    assert_eq!(self.stack.len(), sig.params.len());
-                    self.emit(&Instruction::CallWasm {
-                        iface: self.iface,
-                        name: &func.name,
-                        sig: &sig,
-                    });
+                        // guest exports means that this is a host
+                        // calling wasm so wasm returned a pointer to where
+                        // the result is stored
+                        AbiVariant::GuestExport => self.stack.pop().unwrap(),
+                    };
 
-                    if !sig.retptr {
-                        // With no return pointer in use we can simply lift the
-                        // result of the function from the result of the core
-                        // wasm function.
-                        self.lift(&func.result);
-                    } else {
-                        let ptr = match self.variant {
-                            // imports into guests means it's a wasm module
-                            // calling an imported function. We supplied the
-                            // return poitner as the last argument (saved in
-                            // `self.return_pointer`) so we use that to read
-                            // the result of the function from memory.
-                            AbiVariant::GuestImport => {
-                                assert!(sig.results.len() == 0);
-                                self.return_pointer.take().unwrap()
-                            }
-
-                            // guest exports means that this is a host
-                            // calling wasm so wasm returned a pointer to where
-                            // the result is stored
-                            AbiVariant::GuestExport => self.stack.pop().unwrap(),
-                        };
-
-                        self.read_from_memory(&func.result, ptr, 0);
-                    }
+                    self.read_from_memory(&func.result, ptr, 0);
                 }
 
                 self.emit(&Instruction::Return { func, amt: 1 });
@@ -1303,95 +1244,45 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     }
                 }
 
-                if func.is_async {
+                if !sig.retptr {
+                    // With no return pointer in use we simply lower the
+                    // result and return that directly from the function.
+                    self.lower(&func.result);
+                } else {
                     match self.variant {
-                        // Returning from a guest import means that the
-                        // completion callback needs to be called which is
-                        // currently given the lowered representation of the
-                        // result.
+                        // When a function is imported to a guest this means
+                        // it's a host providing the implementation of the
+                        // import. The result is stored in the pointer
+                        // specified in the last argument, so we get the
+                        // pointer here and then write the return value into
+                        // it.
                         AbiVariant::GuestImport => {
-                            self.lower(&func.result);
-
-                            let mut tys = Vec::new();
-                            self.iface.push_wasm(self.variant, &func.result, &mut tys);
-                            assert_eq!(self.stack.len(), tys.len());
-                            let operands = mem::take(&mut self.stack);
-                            // function index to call
-                            self.emit(&Instruction::GetArg {
-                                nth: sig.params.len() - 2,
-                            });
-                            // environment for the function
                             self.emit(&Instruction::GetArg {
                                 nth: sig.params.len() - 1,
                             });
-                            self.stack.extend(operands);
-                            self.emit(&Instruction::ReturnAsyncImport {
-                                func,
-                                params: tys.len(),
-                            });
+                            let ptr = self.stack.pop().unwrap();
+                            self.write_to_memory(&func.result, ptr, 0);
                         }
 
-                        // Returning from a guest export means that we need to
-                        // invoke the completion intrinsics with where the
-                        // result is stored in linear memory.
+                        // For a guest import this is a function defined in
+                        // wasm, so we're returning a pointer where the
+                        // value was stored at. Allocate some space here
+                        // (statically) and then write the result into that
+                        // memory, returning the pointer at the end.
                         AbiVariant::GuestExport => {
                             let size = self.bindgen.sizes().size(&func.result);
                             let align = self.bindgen.sizes().align(&func.result);
                             let ptr = self.bindgen.return_pointer(self.iface, size, align);
                             self.write_to_memory(&func.result, ptr.clone(), 0);
-
-                            // Get the caller's context index.
-                            self.emit(&Instruction::GetArg {
-                                nth: sig.params.len() - 1,
-                            });
                             self.stack.push(ptr);
-
-                            // This will call the "done" function with the
-                            // context/pointer argument
-                            self.emit(&Instruction::ReturnAsyncExport { func });
                         }
                     }
-                } else {
-                    if !sig.retptr {
-                        // With no return pointer in use we simply lower the
-                        // result and return that directly from the function.
-                        self.lower(&func.result);
-                    } else {
-                        match self.variant {
-                            // When a function is imported to a guest this means
-                            // it's a host providing the implementation of the
-                            // import. The result is stored in the pointer
-                            // specified in the last argument, so we get the
-                            // pointer here and then write the return value into
-                            // it.
-                            AbiVariant::GuestImport => {
-                                self.emit(&Instruction::GetArg {
-                                    nth: sig.params.len() - 1,
-                                });
-                                let ptr = self.stack.pop().unwrap();
-                                self.write_to_memory(&func.result, ptr, 0);
-                            }
-
-                            // For a guest import this is a function defined in
-                            // wasm, so we're returning a pointer where the
-                            // value was stored at. Allocate some space here
-                            // (statically) and then write the result into that
-                            // memory, returning the pointer at the end.
-                            AbiVariant::GuestExport => {
-                                let size = self.bindgen.sizes().size(&func.result);
-                                let align = self.bindgen.sizes().align(&func.result);
-                                let ptr = self.bindgen.return_pointer(self.iface, size, align);
-                                self.write_to_memory(&func.result, ptr.clone(), 0);
-                                self.stack.push(ptr);
-                            }
-                        }
-                    }
-
-                    self.emit(&Instruction::Return {
-                        func,
-                        amt: sig.results.len(),
-                    });
                 }
+
+                self.emit(&Instruction::Return {
+                    func,
+                    amt: sig.results.len(),
+                });
             }
         }
 

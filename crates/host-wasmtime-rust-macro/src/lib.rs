@@ -5,7 +5,6 @@ use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{token, Token};
 use wit_bindgen_core::{wit_parser::Interface, Direction, Files, Generator};
-use wit_bindgen_gen_host_wasmtime_rust::Async;
 
 /// Generate code to support consuming the given interfaces, importaing them
 /// from wasm modules.
@@ -80,7 +79,6 @@ impl Parse for Opts {
             for field in fields.into_pairs() {
                 match field.into_value() {
                     ConfigField::Interfaces(v) => interfaces = v,
-                    ConfigField::Async(v) => opts.async_ = v,
                     ConfigField::CustomError(v) => opts.custom_error = v,
                 }
             }
@@ -115,7 +113,6 @@ impl Parse for Opts {
 
 enum ConfigField {
     Interfaces(Vec<Interface>),
-    Async(wit_bindgen_gen_host_wasmtime_rust::Async),
     CustomError(bool),
 }
 
@@ -148,24 +145,6 @@ impl Parse for ConfigField {
                 interfaces.push(interface);
             }
             Ok(ConfigField::Interfaces(interfaces))
-        } else if l.peek(token::Async) {
-            if !cfg!(feature = "async") {
-                return Err(
-                    input.error("async support not enabled in the `wit-bindgen-wasmtime` crate")
-                );
-            }
-            input.parse::<token::Async>()?;
-            input.parse::<Token![:]>()?;
-            let val = if input.parse::<Option<Token![*]>>()?.is_some() {
-                Async::All
-            } else {
-                let names;
-                syn::bracketed!(names in input);
-                let paths = Punctuated::<syn::LitStr, Token![,]>::parse_terminated(&names)?;
-                let values = paths.iter().map(|s| s.value()).collect();
-                Async::Only(values)
-            };
-            Ok(ConfigField::Async(val))
         } else if l.peek(kw::custom_error) {
             input.parse::<kw::custom_error>()?;
             input.parse::<Token![:]>()?;

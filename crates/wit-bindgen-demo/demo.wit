@@ -24,6 +24,5 @@ resource config {
 
   set-rust-unchecked: func(unchecked: bool)
   set-wasmtime-tracing: func(unchecked: bool)
-  set-wasmtime-async: func(val: wasmtime-async)
   set-wasmtime-custom-error: func(custom: bool)
 }

@@ -89,13 +89,4 @@ impl demo::Config for Config {
         browser::log("custom error");
         self.wasmtime.borrow_mut().custom_error = custom_error;
     }
-    fn set_wasmtime_async(&self, async_: demo::WasmtimeAsync) {
-        use wit_bindgen_gen_host_wasmtime_rust::Async;
-
-        self.wasmtime.borrow_mut().async_ = match async_ {
-            demo::WasmtimeAsync::All => Async::All,
-            demo::WasmtimeAsync::None => Async::None,
-            demo::WasmtimeAsync::Only(list) => Async::Only(list.into_iter().collect()),
-        };
-    }
 }

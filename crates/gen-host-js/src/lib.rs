@@ -285,13 +285,7 @@ impl Js {
             self.print_ty(iface, ty);
         }
         self.src.ts("): ");
-        if func.is_async {
-            self.src.ts("Promise<");
-        }
         self.print_ty(iface, &func.result);
-        if func.is_async {
-            self.src.ts(">");
-        }
         self.src.ts(";\n");
     }
 
@@ -646,12 +640,6 @@ impl Generator for Js {
         }
         self.src.js(&src.js);
 
-        if func.is_async {
-            // Note that `catch_closure` here is defined by the `CallInterface`
-            // instruction.
-            self.src.js("}, catch_closure);\n"); // `.then` block
-            self.src.js("});\n"); // `with_current_promise` block.
-        }
         self.src.js("}");
 
         let src = mem::replace(&mut self.src, prev);
@@ -699,9 +687,6 @@ impl Generator for Js {
                 "this._obj".to_string()
             }
         };
-        if func.is_async {
-            self.src.js("async ");
-        }
         self.src.js(&format!(
             "{}({}) {{\n",
             func.item_name().to_mixed_case(),
@@ -914,8 +899,7 @@ impl Generator for Js {
                 addToImports(imports: any): void;
             ");
             self.src.js("addToImports(imports) {\n");
-            let any_async = iface.functions.iter().any(|f| f.is_async);
-            if self.exported_resources.len() > 0 || any_async {
+            if self.exported_resources.len() > 0 {
                 self.src
                     .js("if (!(\"canonical_abi\" in imports)) imports[\"canonical_abi\"] = {};\n");
             }
@@ -940,17 +924,6 @@ impl Generator for Js {
                     name = iface.resources[*r].name,
                     idx = r.index(),
                     class = iface.resources[*r].name.to_camel_case(),
-                ));
-            }
-            if any_async {
-                let promises = self.intrinsic(Intrinsic::Promises);
-                self.src.js(&format!(
-                    "
-                        imports.canonical_abi['async_export_done'] = (ctx, ptr) => {{
-                            {}.remove(ctx)(ptr >>> 0)
-                        }};
-                    ",
-                    promises
                 ));
             }
             self.src.js("}\n");
@@ -2251,31 +2224,9 @@ impl Bindgen for FunctionBindgen<'_> {
                     }
                 };
 
-                if func.is_async {
-                    let with = self.gen.intrinsic(Intrinsic::WithCurrentPromise);
-                    let promises = self.gen.intrinsic(Intrinsic::Promises);
-                    self.src.js(&with);
-                    self.src.js("(null, cur_promise => {\n");
-                    self.src.js(&format!(
-                        "const catch_closure = e => {}.remove(cur_promise)(e);\n",
-                        promises
-                    ));
-                    call(self);
-                    self.src.js(".then(e => {\n");
-                    match &func.result {
-                        Type::Unit => {
-                            results.push("".to_string());
-                        }
-                        _ => {
-                            bind_results(self);
-                            self.src.js("e;\n");
-                        }
-                    }
-                } else {
-                    bind_results(self);
-                    call(self);
-                    self.src.js(";\n");
-                }
+                bind_results(self);
+                call(self);
+                self.src.js(";\n");
             }
 
             Instruction::Return { amt, func: _ } => match amt {

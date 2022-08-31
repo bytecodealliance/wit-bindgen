@@ -6,11 +6,6 @@ use std::ops::Deref;
 #[cfg(feature = "macros")]
 pub use wit_bindgen_guest_rust_macro::{export, import};
 
-#[cfg(feature = "async")]
-pub use async_trait::async_trait;
-#[cfg(feature = "async")]
-mod futures;
-
 // Re-export `bitflags` so that we can reference it from macros.
 #[doc(hidden)]
 pub use bitflags;
@@ -129,9 +124,6 @@ pub unsafe trait LocalHandle: HandleType {
 #[doc(hidden)]
 pub mod rt {
     use std::alloc::{self, Layout};
-
-    #[cfg(feature = "async")]
-    pub use crate::futures::*;
 
     #[no_mangle]
     unsafe extern "C" fn canonical_abi_realloc(

@@ -352,7 +352,6 @@ impl Generator for WasmtimePy {
     // so a user "export" uses the "guest import" ABI variant on the inside of
     // this `Generator` implementation.
     fn export(&mut self, iface: &Interface, func: &Function) {
-        assert!(!func.is_async, "async not supported yet");
         let mut pysig = Source::default();
         let mut builder = pysig.builder(&mut self.deps, iface);
         builder.print_sig(func, self.in_import);
@@ -469,7 +468,6 @@ impl Generator for WasmtimePy {
     // so a user "import" uses the "export" ABI variant on the inside of
     // this `Generator` implementation.
     fn import(&mut self, iface: &Interface, func: &Function) {
-        assert!(!func.is_async, "async not supported yet");
         let mut func_body = Source::default();
         let mut builder = func_body.builder(&mut self.deps, iface);
 
