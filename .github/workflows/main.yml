@@ -51,7 +51,7 @@ jobs:
         node-version: '16'
     - name: Install NPM packages
       run: npm install
-      working-directory: crates/gen-js
+      working-directory: crates/gen-host-js
     - uses: actions/setup-python@v1
       with:
         python-version: 3.9

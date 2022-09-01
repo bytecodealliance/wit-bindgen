@@ -1,0 +1,24 @@
+[package]
+name = "wit-bindgen-host-wasmtime-rust"
+version = "0.2.0"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+edition = "2018"
+
+[dependencies]
+anyhow = "1.0"
+bitflags = "1.2"
+thiserror = "1.0"
+wasmtime = "0.39.1"
+wit-bindgen-host-wasmtime-rust-macro = { path = "../host-wasmtime-rust-macro", version = "0.2" }
+tracing-lib = { version = "0.1.26", optional = true, package = 'tracing' }
+async-trait = { version = "0.1.50", optional = true }
+
+[features]
+# Enables generated code to emit events via the `tracing` crate whenever wasm is
+# entered and when native functions are called. Note that tracing is currently
+# only done for imported functions.
+tracing = ['tracing-lib', 'wit-bindgen-host-wasmtime-rust-macro/tracing']
+
+# Enables async support for generated code, although when enabled this still
+# needs to be configured through the macro invocation.
+async = ['async-trait', 'wit-bindgen-host-wasmtime-rust-macro/async']

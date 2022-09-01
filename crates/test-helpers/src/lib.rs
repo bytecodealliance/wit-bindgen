@@ -4,10 +4,10 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
-use wit_bindgen_gen_core::{Direction, Generator};
+use wit_bindgen_core::{Direction, Generator};
 
 #[proc_macro]
-#[cfg(feature = "wit-bindgen-gen-rust-wasm")]
+#[cfg(feature = "guest-rust")]
 pub fn codegen_rust_wasm_import(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
@@ -15,13 +15,13 @@ pub fn codegen_rust_wasm_import(input: TokenStream) -> TokenStream {
         &[
             (
                 "import",
-                || wit_bindgen_gen_rust_wasm::Opts::default().build(),
+                || wit_bindgen_gen_guest_rust::Opts::default().build(),
                 |_| quote::quote!(),
             ),
             (
                 "import-unchecked",
                 || {
-                    let mut opts = wit_bindgen_gen_rust_wasm::Opts::default();
+                    let mut opts = wit_bindgen_gen_guest_rust::Opts::default();
                     opts.unchecked = true;
                     opts.build()
                 },
@@ -32,7 +32,7 @@ pub fn codegen_rust_wasm_import(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-#[cfg(feature = "wit-bindgen-gen-rust-wasm")]
+#[cfg(feature = "guest-rust")]
 pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
     use heck::*;
     use std::collections::BTreeMap;
@@ -44,13 +44,13 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         &[
             (
                 "export",
-                || wit_bindgen_gen_rust_wasm::Opts::default().build(),
+                || wit_bindgen_gen_guest_rust::Opts::default().build(),
                 gen_extra,
             ),
             (
                 "export-unchecked",
                 || {
-                    let mut opts = wit_bindgen_gen_rust_wasm::Opts::default();
+                    let mut opts = wit_bindgen_gen_guest_rust::Opts::default();
                     opts.unchecked = true;
                     opts.symbol_namespace = "unchecked".to_string();
                     opts.build()
@@ -92,7 +92,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 self_ = quote::quote!(&self,);
             }
             let async_ = if f.is_async {
-                async_trait = quote::quote!(#[wit_bindgen_rust::async_trait(?Send)]);
+                async_trait = quote::quote!(#[wit_bindgen_guest_rust::async_trait(?Send)]);
                 quote::quote!(async)
             } else {
                 quote::quote!()
@@ -156,7 +156,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
             Type::Handle(resource) => {
                 let name =
                     quote::format_ident!("{}", iface.resources[resource].name.to_camel_case());
-                quote::quote! { wit_bindgen_rust::Handle<#name> }
+                quote::quote! { wit_bindgen_guest_rust::Handle<#name> }
             }
             Type::Id(id) => quote_id(param, iface, id),
         }
@@ -197,13 +197,14 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 let err = quote_ty(param, iface, &e.err);
                 quote::quote! { Result<#ok, #err> }
             }
+            TypeDefKind::Future(_) => todo!("unknown future"),
             TypeDefKind::Stream(_) => todo!("unknown stream"),
         }
     }
 }
 
 #[proc_macro]
-#[cfg(feature = "wit-bindgen-gen-wasmtime")]
+#[cfg(feature = "host-wasmtime-rust")]
 pub fn codegen_wasmtime_export(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
@@ -211,13 +212,13 @@ pub fn codegen_wasmtime_export(input: TokenStream) -> TokenStream {
         &[
             (
                 "export",
-                || wit_bindgen_gen_wasmtime::Opts::default().build(),
+                || wit_bindgen_gen_host_wasmtime_rust::Opts::default().build(),
                 |_| quote::quote!(),
             ),
             (
                 "export-tracing-and-custom-error",
                 || {
-                    let mut opts = wit_bindgen_gen_wasmtime::Opts::default();
+                    let mut opts = wit_bindgen_gen_host_wasmtime_rust::Opts::default();
                     opts.tracing = true;
                     opts.custom_error = true;
                     opts.build()
@@ -227,8 +228,8 @@ pub fn codegen_wasmtime_export(input: TokenStream) -> TokenStream {
             (
                 "export-async",
                 || {
-                    let mut opts = wit_bindgen_gen_wasmtime::Opts::default();
-                    opts.async_ = wit_bindgen_gen_wasmtime::Async::All;
+                    let mut opts = wit_bindgen_gen_host_wasmtime_rust::Opts::default();
+                    opts.async_ = wit_bindgen_gen_host_wasmtime_rust::Async::All;
                     opts.build()
                 },
                 |_| quote::quote!(),
@@ -238,7 +239,7 @@ pub fn codegen_wasmtime_export(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-#[cfg(feature = "wit-bindgen-gen-wasmtime")]
+#[cfg(feature = "host-wasmtime-rust")]
 pub fn codegen_wasmtime_import(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
@@ -246,14 +247,14 @@ pub fn codegen_wasmtime_import(input: TokenStream) -> TokenStream {
         &[
             (
                 "import",
-                || wit_bindgen_gen_wasmtime::Opts::default().build(),
+                || wit_bindgen_gen_host_wasmtime_rust::Opts::default().build(),
                 |_| quote::quote!(),
             ),
             (
                 "import-async",
                 || {
-                    let mut opts = wit_bindgen_gen_wasmtime::Opts::default();
-                    opts.async_ = wit_bindgen_gen_wasmtime::Async::All;
+                    let mut opts = wit_bindgen_gen_host_wasmtime_rust::Opts::default();
+                    opts.async_ = wit_bindgen_gen_host_wasmtime_rust::Async::All;
                     opts.build()
                 },
                 |_| quote::quote!(),
@@ -263,68 +264,68 @@ pub fn codegen_wasmtime_import(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-#[cfg(feature = "wit-bindgen-gen-js")]
+#[cfg(feature = "host-js")]
 pub fn codegen_js_export(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Export, "export", || {
-        wit_bindgen_gen_js::Opts::default().build()
+        wit_bindgen_gen_host_js::Opts::default().build()
     })
 }
 
 #[proc_macro]
-#[cfg(feature = "wit-bindgen-gen-js")]
+#[cfg(feature = "host-js")]
 pub fn codegen_js_import(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Import, "import", || {
-        wit_bindgen_gen_js::Opts::default().build()
+        wit_bindgen_gen_host_js::Opts::default().build()
     })
 }
 
 #[proc_macro]
-#[cfg(feature = "wit-bindgen-gen-c")]
+#[cfg(feature = "guest-c")]
 pub fn codegen_c_import(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Import, "import", || {
-        wit_bindgen_gen_c::Opts::default().build()
+        wit_bindgen_gen_guest_c::Opts::default().build()
     })
 }
 
 #[proc_macro]
-#[cfg(feature = "wit-bindgen-gen-c")]
+#[cfg(feature = "guest-c")]
 pub fn codegen_c_export(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Export, "export", || {
-        wit_bindgen_gen_c::Opts::default().build()
+        wit_bindgen_gen_guest_c::Opts::default().build()
     })
 }
 
 #[proc_macro]
-#[cfg(feature = "wit-bindgen-gen-wasmtime-py")]
+#[cfg(feature = "host-wasmtime-py")]
 pub fn codegen_py_export(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Export, "export", || {
-        wit_bindgen_gen_wasmtime_py::Opts::default().build()
+        wit_bindgen_gen_host_wasmtime_py::Opts::default().build()
     })
 }
 
 #[proc_macro]
-#[cfg(feature = "wit-bindgen-gen-wasmtime-py")]
+#[cfg(feature = "host-wasmtime-py")]
 pub fn codegen_py_import(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Import, "import", || {
-        wit_bindgen_gen_wasmtime_py::Opts::default().build()
+        wit_bindgen_gen_host_wasmtime_py::Opts::default().build()
     })
 }
 
 #[proc_macro]
-#[cfg(feature = "wit-bindgen-gen-spidermonkey")]
+#[cfg(feature = "guest-spidermonkey-js")]
 pub fn codegen_spidermonkey_import(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Import, "import", || {
-        let mut gen = wit_bindgen_gen_spidermonkey::SpiderMonkeyWasm::new("foo.js", "");
+        let mut gen = wit_bindgen_gen_guest_spidermonkey_js::SpiderMonkeyWasm::new("foo.js", "");
         gen.import_spidermonkey(true);
         gen
     })
 }
 
 #[proc_macro]
-#[cfg(feature = "wit-bindgen-gen-spidermonkey")]
+#[cfg(feature = "guest-spidermonkey-js")]
 pub fn codegen_spidermonkey_export(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Export, "export", || {
-        let mut gen = wit_bindgen_gen_spidermonkey::SpiderMonkeyWasm::new("foo.js", "");
+        let mut gen = wit_bindgen_gen_guest_spidermonkey_js::SpiderMonkeyWasm::new("foo.js", "");
         gen.import_spidermonkey(true);
         gen
     })
@@ -522,7 +523,7 @@ pub fn runtime_tests(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-#[cfg(feature = "wit-bindgen-gen-wasmtime")]
+#[cfg(feature = "host-wasmtime-rust")]
 pub fn runtime_tests_wasmtime(_input: TokenStream) -> TokenStream {
     let mut tests = Vec::new();
     let cwd = std::env::current_dir().unwrap();

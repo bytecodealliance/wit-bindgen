@@ -1,0 +1,22 @@
+[package]
+name = "wit-bindgen-gen-host-wasmtime-rust"
+version = "0.2.0"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+edition = "2018"
+
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+wit-bindgen-core = { path = '../bindgen-core', version = '0.2.0' }
+wit-bindgen-gen-rust-lib = { path = '../gen-rust-lib', version = '0.2.0' }
+heck = "0.3"
+structopt = { version = "0.3", default-features = false, optional = true }
+
+[dev-dependencies]
+anyhow = "1.0"
+test-helpers = { path = '../test-helpers', features = ['host-wasmtime-rust'] }
+wasmtime = "0.39.1"
+wasmtime-wasi = "0.39.1"
+wit-bindgen-host-wasmtime-rust = { path = '../host-wasmtime-rust', features = ['tracing', 'async'] }

@@ -1,11 +1,11 @@
 use std::cell::RefCell;
 use std::sync::Once;
-use wit_bindgen_gen_core::wit_parser::Interface;
-use wit_bindgen_gen_core::Generator;
-use wit_bindgen_rust::Handle;
+use wit_bindgen_core::wit_parser::Interface;
+use wit_bindgen_core::Generator;
+use wit_bindgen_guest_rust::Handle;
 
-wit_bindgen_rust::export!("demo.wit");
-wit_bindgen_rust::import!("browser.wit");
+wit_bindgen_guest_rust::export!("demo.wit");
+wit_bindgen_guest_rust::import!("browser.wit");
 
 struct Demo;
 
@@ -13,13 +13,13 @@ impl demo::Demo for Demo {}
 
 #[derive(Default)]
 pub struct Config {
-    js: RefCell<wit_bindgen_gen_js::Opts>,
-    c: RefCell<wit_bindgen_gen_c::Opts>,
-    rust: RefCell<wit_bindgen_gen_rust_wasm::Opts>,
-    wasmtime: RefCell<wit_bindgen_gen_wasmtime::Opts>,
-    wasmtime_py: RefCell<wit_bindgen_gen_wasmtime_py::Opts>,
+    js: RefCell<wit_bindgen_gen_host_js::Opts>,
+    c: RefCell<wit_bindgen_gen_guest_c::Opts>,
+    rust: RefCell<wit_bindgen_gen_guest_rust::Opts>,
+    wasmtime: RefCell<wit_bindgen_gen_host_wasmtime_rust::Opts>,
+    wasmtime_py: RefCell<wit_bindgen_gen_host_wasmtime_py::Opts>,
     markdown: RefCell<wit_bindgen_gen_markdown::Opts>,
-    spidermonkey: RefCell<wit_bindgen_gen_spidermonkey::Opts>,
+    spidermonkey: RefCell<wit_bindgen_gen_guest_spidermonkey_js::Opts>,
 }
 
 impl demo::Config for Config {
@@ -90,7 +90,7 @@ impl demo::Config for Config {
         self.wasmtime.borrow_mut().custom_error = custom_error;
     }
     fn set_wasmtime_async(&self, async_: demo::WasmtimeAsync) {
-        use wit_bindgen_gen_wasmtime::Async;
+        use wit_bindgen_gen_host_wasmtime_rust::Async;
 
         self.wasmtime.borrow_mut().async_ = match async_ {
             demo::WasmtimeAsync::All => Async::All,

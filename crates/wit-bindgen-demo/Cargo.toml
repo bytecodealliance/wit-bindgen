@@ -1,6 +1,6 @@
 [package]
 name = "wit-bindgen-demo"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 edition = "2018"
 publish = false
@@ -11,13 +11,13 @@ test = false
 doctest = false
 
 [dependencies]
-wit-bindgen-gen-core = { path = '../gen-core' }
-wit-bindgen-gen-rust-wasm = { path = '../gen-rust-wasm' }
-wit-bindgen-gen-wasmtime = { path = '../gen-wasmtime' }
-wit-bindgen-gen-wasmtime-py = { path = '../gen-wasmtime-py' }
-wit-bindgen-gen-js = { path = '../gen-js' }
-wit-bindgen-gen-c = { path = '../gen-c' }
+wit-bindgen-core = { path = '../bindgen-core' }
+wit-bindgen-gen-guest-rust = { path = '../gen-guest-rust' }
+wit-bindgen-gen-host-wasmtime-rust = { path = '../gen-host-wasmtime-rust' }
+wit-bindgen-gen-host-wasmtime-py = { path = '../gen-host-wasmtime-py' }
+wit-bindgen-gen-host-js = { path = '../gen-host-js' }
+wit-bindgen-gen-guest-c = { path = '../gen-guest-c' }
 wit-bindgen-gen-markdown = { path = '../gen-markdown' }
-wit-bindgen-gen-spidermonkey = { path = '../gen-spidermonkey' }
-wit-bindgen-rust = { path = '../rust-wasm' }
+wit-bindgen-gen-guest-spidermonkey-js = { path = '../gen-guest-spidermonkey-js' }
+wit-bindgen-guest-rust = { path = '../guest-rust' }
 wasmprinter = "0.2.29"

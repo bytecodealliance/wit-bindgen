@@ -36,6 +36,32 @@ uint32_t exports_allocated_bytes(void) {
 
 void exports_test_imports() {
   {
+    uint8_t list[] = {};
+    imports_list_u8_t a;
+    a.ptr = list;
+    a.len = 0;
+    imports_empty_list_param(&a);
+  }
+
+  {
+    imports_string_t a;
+    imports_string_set(&a, "");
+    imports_empty_string_param(&a);
+  }
+
+  {
+    imports_list_u8_t a;
+    imports_empty_list_result(&a);
+    assert(a.len == 0);
+  }
+
+  {
+    imports_string_t a;
+    imports_empty_string_result(&a);
+    assert(a.len == 0);
+  }
+
+  {
     uint8_t list[] = {1, 2, 3, 4};
     imports_list_u8_t a;
     a.ptr = list;
@@ -199,6 +225,24 @@ void exports_test_imports() {
     imports_list_float32_free(&list_float32_out);
     imports_list_float64_free(&list_float64_out);
   }
+}
+
+void exports_empty_list_param(exports_list_u8_t *a) {
+  assert(a->len == 0);
+}
+
+void exports_empty_string_param(exports_string_t *a) {
+  assert(a->len == 0);
+}
+
+void exports_empty_list_result(exports_list_u8_t *ret0) {
+  ret0->ptr = 0;
+  ret0->len = 0;
+}
+
+void exports_empty_string_result(exports_string_t *ret0) {
+  ret0->ptr = 0;
+  ret0->len = 0;
 }
 
 void exports_list_param(exports_list_u8_t *a) {

@@ -13,4 +13,4 @@ pip install mypy wasmtime
 
 # Install NPM dependencies
 printf "Installing NPM Dependencies"
-cd crates/gen-js && npm install
+cd crates/gen-host-js && npm install

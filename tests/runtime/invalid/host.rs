@@ -1,4 +1,4 @@
-wit_bindgen_wasmtime::export!("../../tests/runtime/invalid/imports.wit");
+wit_bindgen_host_wasmtime_rust::export!("../../tests/runtime/invalid/imports.wit");
 
 use anyhow::Result;
 use imports::*;
@@ -36,7 +36,7 @@ impl Imports for MyImports {
     }
 }
 
-wit_bindgen_wasmtime::import!("../../tests/runtime/invalid/exports.wit");
+wit_bindgen_host_wasmtime_rust::import!("../../tests/runtime/invalid/exports.wit");
 
 fn run(wasm: &str) -> Result<()> {
     use exports::*;

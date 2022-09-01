@@ -1,5 +1,5 @@
-wit_bindgen_rust::import!("../../tests/runtime/lists/imports.wit");
-wit_bindgen_rust::export!("../../tests/runtime/lists/exports.wit");
+wit_bindgen_guest_rust::import!("../../tests/runtime/lists/imports.wit");
+wit_bindgen_guest_rust::export!("../../tests/runtime/lists/exports.wit");
 
 use std::alloc::{self, Layout};
 use std::mem;
@@ -16,6 +16,11 @@ impl exports::Exports for Exports {
         use imports::*;
 
         let _guard = test_rust_wasm::guard();
+
+        empty_list_param(&[]);
+        empty_string_param("");
+        assert!(empty_list_result().is_empty());
+        assert!(empty_string_result().is_empty());
 
         list_param(&[1, 2, 3, 4]);
         list_param2("foo");
@@ -123,6 +128,22 @@ impl exports::Exports for Exports {
                 vec![f64::MIN, f64::MAX, f64::NEG_INFINITY, f64::INFINITY],
             ),
         );
+    }
+
+    fn empty_list_param(a: Vec<u8>) {
+        assert!(a.is_empty());
+    }
+
+    fn empty_string_param(a: String) {
+        assert!(a.is_empty());
+    }
+
+    fn empty_list_result() -> Vec<u8> {
+        Vec::new()
+    }
+
+    fn empty_string_result() -> String {
+        String::new()
     }
 
     fn list_param(list: Vec<u8>) {

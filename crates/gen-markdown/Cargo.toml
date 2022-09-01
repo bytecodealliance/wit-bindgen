@@ -1,6 +1,6 @@
 [package]
 name = "wit-bindgen-gen-markdown"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2018"
 
 [lib]
@@ -11,4 +11,4 @@ test = false
 heck = "0.3"
 pulldown-cmark = { version = "0.8", default-features = false }
 structopt = { version = "0.3", default-features = false, optional = true }
-wit-bindgen-gen-core = { path = '../gen-core', version = '0.1.0' }
+wit-bindgen-core = { path = '../bindgen-core', version = '0.2.0' }

@@ -1,14 +1,30 @@
 use anyhow::Result;
 
-wit_bindgen_wasmtime::export!("../../tests/runtime/lists/imports.wit");
+wit_bindgen_host_wasmtime_rust::export!("../../tests/runtime/lists/imports.wit");
 
 use imports::*;
-use wit_bindgen_wasmtime::Le;
+use wit_bindgen_host_wasmtime_rust::Le;
 
 #[derive(Default)]
 pub struct MyImports;
 
 impl Imports for MyImports {
+    fn empty_list_param(&mut self, a: &[u8]) {
+        assert_eq!(a, []);
+    }
+
+    fn empty_string_param(&mut self, a: &str) {
+        assert_eq!(a, "");
+    }
+
+    fn empty_list_result(&mut self) -> Vec<u8> {
+        Vec::new()
+    }
+
+    fn empty_string_result(&mut self) -> String {
+        String::new()
+    }
+
     fn list_param(&mut self, list: &[u8]) {
         assert_eq!(list, [1, 2, 3, 4]);
     }
@@ -126,7 +142,7 @@ impl Imports for MyImports {
     }
 }
 
-wit_bindgen_wasmtime::import!("../../tests/runtime/lists/exports.wit");
+wit_bindgen_host_wasmtime_rust::import!("../../tests/runtime/lists/exports.wit");
 
 fn run(wasm: &str) -> Result<()> {
     use exports::*;
@@ -139,6 +155,10 @@ fn run(wasm: &str) -> Result<()> {
 
     let bytes = exports.allocated_bytes(&mut store)?;
     exports.test_imports(&mut store)?;
+    exports.empty_list_param(&mut store, &[])?;
+    exports.empty_string_param(&mut store, "")?;
+    assert_eq!(exports.empty_list_result(&mut store)?, []);
+    assert_eq!(exports.empty_string_result(&mut store)?, "");
     exports.list_param(&mut store, &[1, 2, 3, 4])?;
     exports.list_param2(&mut store, "foo")?;
     exports.list_param3(&mut store, &["foo", "bar", "baz"])?;

@@ -16,6 +16,11 @@ flags flag64 {
   b56, b57, b58, b59, b60, b61, b62, b63,
 }
 
+empty-list-param: func(a: list<u8>)
+empty-string-param: func(a: string)
+empty-list-result: func() -> list<u8>
+empty-string-result: func() -> string
+
 list-param: func(a: list<u8>)
 list-param2: func(a: string)
 list-param3: func(a: list<string>)

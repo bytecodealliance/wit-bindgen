@@ -1,0 +1,20 @@
+[package]
+name = "wit-bindgen-gen-guest-spidermonkey-js"
+version = "0.2.0"
+authors = ["Nick Fitzgerald <fitzgen@gmail.com>"]
+edition = "2018"
+
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+lazy_static = "1.4.0"
+structopt = { version = "0.3", optional = true }
+wasm-encoder = "0.8.0"
+wit-bindgen-core = { path = "../bindgen-core" }
+heck = "0.3"
+
+[dev-dependencies]
+test-helpers = { path = '../test-helpers', features = ['guest-spidermonkey-js'] }
+wasmparser = "0.80"

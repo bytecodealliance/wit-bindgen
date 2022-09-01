@@ -1,6 +1,6 @@
 [package]
 name = "wit-bindgen-cli"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 edition = "2018"
 
@@ -19,14 +19,14 @@ test = false
 [dependencies]
 anyhow = "1.0"
 structopt = { version = "0.3", default-features = false }
-wit-bindgen-gen-core = { path = 'crates/gen-core' }
-wit-bindgen-gen-rust-wasm = { path = 'crates/gen-rust-wasm', features = ['structopt'] }
-wit-bindgen-gen-wasmtime = { path = 'crates/gen-wasmtime', features = ['structopt'] }
-wit-bindgen-gen-wasmtime-py = { path = 'crates/gen-wasmtime-py', features = ['structopt'] }
-wit-bindgen-gen-js = { path = 'crates/gen-js', features = ['structopt'] }
-wit-bindgen-gen-c = { path = 'crates/gen-c', features = ['structopt'] }
+wit-bindgen-core = { path = 'crates/bindgen-core' }
+wit-bindgen-gen-guest-rust = { path = 'crates/gen-guest-rust', features = ['structopt'] }
+wit-bindgen-gen-host-wasmtime-rust = { path = 'crates/gen-host-wasmtime-rust', features = ['structopt'] }
+wit-bindgen-gen-host-wasmtime-py = { path = 'crates/gen-host-wasmtime-py', features = ['structopt'] }
+wit-bindgen-gen-host-js = { path = 'crates/gen-host-js', features = ['structopt'] }
+wit-bindgen-gen-guest-c = { path = 'crates/gen-guest-c', features = ['structopt'] }
 wit-bindgen-gen-markdown = { path = 'crates/gen-markdown', features = ['structopt'] }
-wit-bindgen-gen-spidermonkey = { path = 'crates/gen-spidermonkey', features = ['structopt'] }
+wit-bindgen-gen-guest-spidermonkey-js = { path = 'crates/gen-guest-spidermonkey-js', features = ['structopt'] }
 
 # Compiling `spidermonkey.wasm` takes way too long without this.
 [profile.dev.package.cranelift-codegen]

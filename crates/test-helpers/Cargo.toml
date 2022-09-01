@@ -1,6 +1,6 @@
 [package]
 name = "test-helpers"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 edition = "2018"
 publish = false
@@ -16,23 +16,26 @@ heck = "0.3"
 ignore = "0.4"
 proc-macro2 = "1.0.27"
 quote = "1.0.9"
-wit-bindgen-gen-core = { path = '../gen-core' }
-wit-bindgen-gen-rust-wasm = { path = '../gen-rust-wasm', optional = true }
-wit-bindgen-gen-wasmtime = { path = '../gen-wasmtime', optional = true }
-wit-bindgen-gen-wasmtime-py = { path = '../gen-wasmtime-py', optional = true }
-wit-bindgen-gen-js = { path = '../gen-js', optional = true }
-wit-bindgen-gen-c = { path = '../gen-c', optional = true }
-wit-bindgen-gen-spidermonkey = { path = '../gen-spidermonkey', optional = true }
-wit-parser = { path = '../parser' }
+wit-bindgen-core = { path = '../bindgen-core' }
+wit-bindgen-gen-guest-rust = { path = '../gen-guest-rust', optional = true }
+wit-bindgen-gen-host-wasmtime-rust = { path = '../gen-host-wasmtime-rust', optional = true }
+wit-bindgen-gen-host-wasmtime-py = { path = '../gen-host-wasmtime-py', optional = true }
+wit-bindgen-gen-host-js = { path = '../gen-host-js', optional = true }
+wit-bindgen-gen-guest-c = { path = '../gen-guest-c', optional = true }
+wit-bindgen-gen-guest-spidermonkey-js = { path = '../gen-guest-spidermonkey-js', optional = true }
+wit-parser = { path = '../wit-parser' }
 filetime = "0.2"
 
 [build-dependencies]
-wit-bindgen-gen-c = { path = '../gen-c' }
-wit-bindgen-gen-spidermonkey = { path = '../gen-spidermonkey' }
-wit-bindgen-gen-core = { path = '../gen-core' }
+wit-bindgen-gen-guest-c = { path = '../gen-guest-c' }
+wit-bindgen-gen-guest-spidermonkey-js = { path = '../gen-guest-spidermonkey-js' }
+wit-bindgen-core = { path = '../bindgen-core' }
 
 [features]
-default = ['wasm-rust', 'wasm-c', 'wasm-spidermonkey']
-wasm-rust = []
-wasm-c = []
-wasm-spidermonkey = []
+default = ['guest-rust', 'guest-c', 'guest-spidermonkey-js', 'host-js', 'host-wasmtime-py', 'host-wasmtime-rust']
+guest-rust = ['wit-bindgen-gen-guest-rust']
+guest-c = ['wit-bindgen-gen-guest-c']
+guest-spidermonkey-js = ['wit-bindgen-gen-guest-spidermonkey-js']
+host-js = ['wit-bindgen-gen-host-js']
+host-wasmtime-py = ['wit-bindgen-gen-host-wasmtime-py']
+host-wasmtime-rust = ['wit-bindgen-gen-host-wasmtime-rust']

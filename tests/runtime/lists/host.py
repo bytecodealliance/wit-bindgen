@@ -7,6 +7,18 @@ import sys
 import wasmtime
 
 class MyImports:
+    def empty_list_param(self, a: bytes) -> None:
+        assert(a == b'')
+
+    def empty_string_param(self, a: str) -> None:
+        assert(a == '')
+
+    def empty_list_result(self) -> bytes:
+        return b''
+
+    def empty_string_result(self) -> str:
+        return ''
+
     def list_param(self, a: bytes) -> None:
         assert(a == b'\x01\x02\x03\x04')
 
@@ -89,6 +101,10 @@ def run(wasm_file: str) -> None:
 
     allocated_bytes = wasm.allocated_bytes(store)
     wasm.test_imports(store)
+    wasm.empty_list_param(store, b'')
+    wasm.empty_string_param(store, '')
+    assert(wasm.empty_list_result(store) == b'')
+    assert(wasm.empty_string_result(store) == '')
     wasm.list_param(store, b'\x01\x02\x03\x04')
     wasm.list_param2(store, "foo")
     wasm.list_param3(store, ["foo", "bar", "baz"])

@@ -3,7 +3,8 @@
 #![deny(missing_docs)]
 
 use crate::{
-    decode_interface_component, encoding::ComponentEncoder, InterfacePrinter, StringEncoding,
+    decode_interface_component, ComponentEncoder, InterfaceEncoder, InterfacePrinter,
+    StringEncoding,
 };
 use anyhow::{bail, Context, Result};
 use clap::Parser;
@@ -53,7 +54,7 @@ pub struct WitComponentApp {
     #[clap(long, short = 'o', value_name = "OUTPUT")]
     pub output: Option<PathBuf>,
 
-    /// The default interface of the component.
+    /// The default interface the component exports.
     #[clap(long, short = 'i', value_name = "INTERFACE", parse(try_from_str = parse_unnamed_interface))]
     pub interface: Option<Interface>,
 
@@ -146,9 +147,7 @@ impl WitToWasmApp {
 
         let interface = parse_interface(None, &self.interface)?;
 
-        let encoder = ComponentEncoder::default()
-            .interface(&interface)
-            .types_only(true);
+        let encoder = InterfaceEncoder::new(&interface).validate(true);
 
         let bytes = encoder.encode().with_context(|| {
             format!(

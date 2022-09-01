@@ -1,7 +1,7 @@
 use heck::*;
 use pulldown_cmark::{html, Event, LinkType, Parser, Tag};
 use std::collections::HashMap;
-use wit_bindgen_gen_core::{wit_parser, Direction, Files, Generator, Source};
+use wit_bindgen_core::{wit_parser, Direction, Files, Generator, Source};
 use wit_parser::*;
 
 #[derive(Default)]
@@ -99,6 +99,11 @@ impl Markdown {
                     }
                     TypeDefKind::List(t) => {
                         self.src.push_str("list<");
+                        self.print_ty(iface, t, false);
+                        self.src.push_str(">");
+                    }
+                    TypeDefKind::Future(t) => {
+                        self.src.push_str("future<");
                         self.print_ty(iface, t, false);
                         self.src.push_str(">");
                     }
