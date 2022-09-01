@@ -54,13 +54,27 @@ impl Opts {
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 enum Intrinsic {
     ClampGuest,
-    ClampHost,
-    ClampHost64,
     DataView,
     ValidateGuestChar,
     ValidateHostChar,
     ValidateFlags,
     ValidateFlags64,
+    /// Implementation of https://tc39.es/ecma262/#sec-toint32.
+    ToInt32,
+    /// Implementation of https://tc39.es/ecma262/#sec-touint32.
+    ToUint32,
+    /// Implementation of https://tc39.es/ecma262/#sec-toint16.
+    ToInt16,
+    /// Implementation of https://tc39.es/ecma262/#sec-touint16.
+    ToUint16,
+    /// Implementation of https://tc39.es/ecma262/#sec-toint8.
+    ToInt8,
+    /// Implementation of https://tc39.es/ecma262/#sec-touint8.
+    ToUint8,
+    /// Implementation of https://tc39.es/ecma262/#sec-tobigint64.
+    ToBigInt64,
+    /// Implementation of https://tc39.es/ecma262/#sec-tobiguint64.
+    ToBigUint64,
     /// Implementation of https://tc39.es/ecma262/#sec-tostring.
     ToString,
     I32ToF32,
@@ -80,13 +94,19 @@ impl Intrinsic {
     fn name(&self) -> &'static str {
         match self {
             Intrinsic::ClampGuest => "clamp_guest",
-            Intrinsic::ClampHost => "clamp_host",
-            Intrinsic::ClampHost64 => "clamp_host64",
             Intrinsic::DataView => "data_view",
             Intrinsic::ValidateGuestChar => "validate_guest_char",
             Intrinsic::ValidateHostChar => "validate_host_char",
             Intrinsic::ValidateFlags => "validate_flags",
             Intrinsic::ValidateFlags64 => "validate_flags64",
+            Intrinsic::ToInt32 => "to_int32",
+            Intrinsic::ToUint32 => "to_uint32",
+            Intrinsic::ToInt16 => "to_int16",
+            Intrinsic::ToUint16 => "to_uint16",
+            Intrinsic::ToInt8 => "to_int8",
+            Intrinsic::ToUint8 => "to_uint8",
+            Intrinsic::ToBigInt64 => "to_int64",
+            Intrinsic::ToBigUint64 => "to_uint64",
             Intrinsic::ToString => "to_string",
             Intrinsic::F32ToI32 => "f32ToI32",
             Intrinsic::I32ToF32 => "i32ToF32",
@@ -1207,22 +1227,6 @@ impl FunctionBindgen<'_> {
         results.push(format!("{}({}, {}, {})", clamp, operands[0], min, max));
     }
 
-    fn clamp_host<T>(&mut self, results: &mut Vec<String>, operands: &[String], min: T, max: T)
-    where
-        T: std::fmt::Display,
-    {
-        let clamp = self.gen.intrinsic(Intrinsic::ClampHost);
-        results.push(format!("{}({}, {}, {})", clamp, operands[0], min, max));
-    }
-
-    fn clamp_host64<T>(&mut self, results: &mut Vec<String>, operands: &[String], min: T, max: T)
-    where
-        T: std::fmt::Display,
-    {
-        let clamp = self.gen.intrinsic(Intrinsic::ClampHost64);
-        results.push(format!("{}({}, {}n, {}n)", clamp, operands[0], min, max));
-    }
-
     fn load(&mut self, method: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
         self.needs_memory = true;
         let view = self.gen.intrinsic(Intrinsic::DataView);
@@ -1334,16 +1338,38 @@ impl Bindgen for FunctionBindgen<'_> {
 
             // All values coming from the host and going to wasm need to have
             // their ranges validated, since the host could give us any value.
-            Instruction::I32FromU8 => self.clamp_host(results, operands, u8::MIN, u8::MAX),
-            Instruction::I32FromS8 => self.clamp_host(results, operands, i8::MIN, i8::MAX),
-            Instruction::I32FromU16 => self.clamp_host(results, operands, u16::MIN, u16::MAX),
-            Instruction::I32FromS16 => self.clamp_host(results, operands, i16::MIN, i16::MAX),
-            Instruction::I32FromU32 => {
-                self.clamp_host(results, operands, u32::MIN, u32::MAX);
+            Instruction::I32FromU8 => {
+                let conv = self.gen.intrinsic(Intrinsic::ToUint8);
+                results.push(format!("{conv}({op})", op = operands[0]))
             }
-            Instruction::I32FromS32 => self.clamp_host(results, operands, i32::MIN, i32::MAX),
-            Instruction::I64FromU64 => self.clamp_host64(results, operands, u64::MIN, u64::MAX),
-            Instruction::I64FromS64 => self.clamp_host64(results, operands, i64::MIN, i64::MAX),
+            Instruction::I32FromS8 => {
+                let conv = self.gen.intrinsic(Intrinsic::ToInt8);
+                results.push(format!("{conv}({op})", op = operands[0]))
+            }
+            Instruction::I32FromU16 => {
+                let conv = self.gen.intrinsic(Intrinsic::ToUint16);
+                results.push(format!("{conv}({op})", op = operands[0]))
+            }
+            Instruction::I32FromS16 => {
+                let conv = self.gen.intrinsic(Intrinsic::ToInt16);
+                results.push(format!("{conv}({op})", op = operands[0]))
+            }
+            Instruction::I32FromU32 => {
+                let conv = self.gen.intrinsic(Intrinsic::ToUint32);
+                results.push(format!("{conv}({op})", op = operands[0]))
+            }
+            Instruction::I32FromS32 => {
+                let conv = self.gen.intrinsic(Intrinsic::ToInt32);
+                results.push(format!("{conv}({op})", op = operands[0]))
+            }
+            Instruction::I64FromU64 => {
+                let conv = self.gen.intrinsic(Intrinsic::ToBigUint64);
+                results.push(format!("{conv}({op})", op = operands[0]))
+            }
+            Instruction::I64FromS64 => {
+                let conv = self.gen.intrinsic(Intrinsic::ToBigInt64);
+                results.push(format!("{conv}({op})", op = operands[0]))
+            }
 
             // The native representation in JS of f32 and f64 is just a number,
             // so there's nothing to do here. Everything wasm gives us is
@@ -2388,15 +2414,6 @@ impl Js {
                     return i;
                 }
             "),
-            Intrinsic::ClampHost => self.src.js("
-                export function clamp_host(i, min, max) {
-                    if (!Number.isInteger(i)) \
-                        throw new TypeError(`must be an integer`);
-                    if (i < min || i > max) \
-                        throw new RangeError(`must be between ${min} and ${max}`);
-                    return i;
-                }
-            "),
 
             Intrinsic::DataView => self.src.js("
                 let DATA_VIEW = new DataView(new ArrayBuffer());
@@ -2405,16 +2422,6 @@ impl Js {
                     if (DATA_VIEW.buffer !== mem.buffer) \
                         DATA_VIEW = new DataView(mem.buffer);
                     return DATA_VIEW;
-                }
-            "),
-
-            Intrinsic::ClampHost64 => self.src.js("
-                export function clamp_host64(i, min, max) {
-                    if (typeof i !== 'bigint') \
-                        throw new TypeError(`must be a bigint`);
-                    if (i < min || i > max) \
-                        throw new RangeError(`must be between ${min} and ${max}`);
-                    return i;
                 }
             "),
 
@@ -2454,6 +2461,64 @@ impl Js {
                     if ((flags & ~mask) != 0n)
                         throw new TypeError('flags have extraneous bits set');
                     return flags;
+                }
+            "),
+
+
+            Intrinsic::ToInt32 => self.src.js("
+                export function to_int32(val) {
+                    return val >> 0;
+                }
+            "),
+            Intrinsic::ToUint32 => self.src.js("
+                export function to_uint32(val) {
+                    return val >>> 0;
+                }
+            "),
+
+            Intrinsic::ToInt16 => self.src.js("
+                export function to_int16(val) {
+                    val >>>= 0;
+                    val %= 2 ** 16;
+                    if (val >= 2 ** 15) {
+                        val -= 2 ** 16;
+                    }
+                    return val;
+                }
+            "),
+            Intrinsic::ToUint16 => self.src.js("
+                export function to_uint16(val) {
+                    val >>>= 0;
+                    val %= 2 ** 16;
+                    return val;
+                }
+            "),
+            Intrinsic::ToInt8 => self.src.js("
+                export function to_int8(val) {
+                    val >>>= 0;
+                    val %= 2 ** 8;
+                    if (val >= 2 ** 7) {
+                        val -= 2 ** 8;
+                    }
+                    return val;
+                }
+            "),
+            Intrinsic::ToUint8 => self.src.js("
+                export function to_uint8(val) {
+                    val >>>= 0;
+                    val %= 2 ** 8;
+                    return val;
+                }
+            "),
+
+            Intrinsic::ToBigInt64 => self.src.js("
+                export function to_int64(val) {
+                    return BigInt.asIntN(64, val);
+                }
+            "),
+            Intrinsic::ToBigUint64 => self.src.js("
+                export function to_uint64(val) {
+                    return BigInt.asUintN(64, val);
                 }
             "),
 
