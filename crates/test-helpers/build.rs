@@ -9,7 +9,7 @@ fn main() {
 
     let mut wasms = Vec::new();
 
-    if cfg!(feature = "wasm-rust") {
+    if cfg!(feature = "guest-rust") {
         let mut cmd = Command::new("cargo");
         cmd.arg("build")
             .current_dir("../test-rust-wasm")
@@ -46,7 +46,7 @@ fn main() {
         println!("cargo:rerun-if-changed=../test-rust-wasm/Cargo.toml");
     }
 
-    if cfg!(feature = "wasm-c") {
+    if cfg!(feature = "guest-c") {
         for test_dir in fs::read_dir("../../tests/runtime").unwrap() {
             let test_dir = test_dir.unwrap().path();
             let c_impl = test_dir.join("wasm.c");
@@ -123,7 +123,7 @@ fn main() {
         }
     }
 
-    if cfg!(feature = "wasm-spidermonkey") {
+    if cfg!(feature = "guest-spidermonkey") {
         for test_dir in fs::read_dir("../../tests/runtime").unwrap() {
             let test_dir = test_dir.unwrap().path();
             let js_impl = test_dir.join("wasm.js");
