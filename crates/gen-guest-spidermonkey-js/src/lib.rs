@@ -1050,8 +1050,6 @@ impl Generator for SpiderMonkeyWasm<'_> {
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
-        assert!(!func.is_async, "async not supported yet");
-
         // Add the raw Wasm import.
         let wasm_sig = iface.wasm_signature(AbiVariant::GuestImport, func);
         let type_index = self.intern_type(wasm_sig.clone());
@@ -1087,8 +1085,6 @@ impl Generator for SpiderMonkeyWasm<'_> {
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
-        assert!(!func.is_async, "async not supported yet");
-
         let wasm_sig = iface.wasm_signature(AbiVariant::GuestExport, func);
         let type_index = self.intern_type(wasm_sig.clone());
         let export_fn_index = self.wit_export(self.exports.len());
@@ -2112,9 +2108,6 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 // []
             }
 
-            abi::Instruction::CallWasmAsyncExport { .. } => todo!(),
-            abi::Instruction::CallWasmAsyncImport { .. } => todo!(),
-
             abi::Instruction::Return { func, amt } => {
                 match self.lift_lower {
                     abi::LiftLower::LowerArgsLiftResults => {
@@ -2191,9 +2184,6 @@ impl abi::Bindgen for Bindgen<'_, '_> {
 
             abi::Instruction::I32FromBool { .. } => todo!(),
             abi::Instruction::BoolFromI32 { .. } => todo!(),
-
-            abi::Instruction::ReturnAsyncExport { .. } => todo!(),
-            abi::Instruction::ReturnAsyncImport { .. } => todo!(),
 
             abi::Instruction::Malloc { .. } => todo!(),
             abi::Instruction::Free { .. } => todo!(),

@@ -2181,7 +2181,6 @@ dependencies = [
 name = "wit-bindgen-guest-rust"
 version = "0.2.0"
 dependencies = [
- "async-trait",
  "bitflags",
  "wit-bindgen-guest-rust-macro",
 ]

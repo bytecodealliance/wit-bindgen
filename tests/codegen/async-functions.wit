@@ -1,7 +1,0 @@
-async-no-args: async func()
-async-args: async func(a: u32, b: string, c: list<string>)
-async-results: async func() -> tuple<u32, string, list<string>>
-
-resource async-resource {
-  frob: async func()
-}

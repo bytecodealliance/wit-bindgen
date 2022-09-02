@@ -305,13 +305,7 @@ impl Js {
             self.print_ty(iface, ty);
         }
         self.src.ts("): ");
-        if func.is_async {
-            self.src.ts("Promise<");
-        }
         self.print_ty(iface, &func.result);
-        if func.is_async {
-            self.src.ts(">");
-        }
         self.src.ts(";\n");
     }
 
@@ -666,12 +660,6 @@ impl Generator for Js {
         }
         self.src.js(&src.js);
 
-        if func.is_async {
-            // Note that `catch_closure` here is defined by the `CallInterface`
-            // instruction.
-            self.src.js("}, catch_closure);\n"); // `.then` block
-            self.src.js("});\n"); // `with_current_promise` block.
-        }
         self.src.js("}");
 
         let src = mem::replace(&mut self.src, prev);
@@ -719,9 +707,6 @@ impl Generator for Js {
                 "this._obj".to_string()
             }
         };
-        if func.is_async {
-            self.src.js("async ");
-        }
         self.src.js(&format!(
             "{}({}) {{\n",
             func.item_name().to_mixed_case(),
@@ -934,8 +919,7 @@ impl Generator for Js {
                 addToImports(imports: any): void;
             ");
             self.src.js("addToImports(imports) {\n");
-            let any_async = iface.functions.iter().any(|f| f.is_async);
-            if self.exported_resources.len() > 0 || any_async {
+            if self.exported_resources.len() > 0 {
                 self.src
                     .js("if (!(\"canonical_abi\" in imports)) imports[\"canonical_abi\"] = {};\n");
             }
@@ -960,17 +944,6 @@ impl Generator for Js {
                     name = iface.resources[*r].name,
                     idx = r.index(),
                     class = iface.resources[*r].name.to_camel_case(),
-                ));
-            }
-            if any_async {
-                let promises = self.intrinsic(Intrinsic::Promises);
-                self.src.js(&format!(
-                    "
-                        imports.canonical_abi['async_export_done'] = (ctx, ptr) => {{
-                            {}.remove(ctx)(ptr >>> 0)
-                        }};
-                    ",
-                    promises
                 ));
             }
             self.src.js("}\n");
@@ -2190,65 +2163,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.js(");\n");
             }
 
-            Instruction::CallWasmAsyncExport {
-                module: _,
-                name,
-                params: _,
-                results: wasm_results,
-            } => {
-                self.bind_results(wasm_results.len(), results);
-                let promises = self.gen.intrinsic(Intrinsic::Promises);
-                self.src.js(&format!(
-                    "\
-                        await new Promise((resolve, reject) => {{
-                            const promise_ctx = {promises}.insert(val => {{
-                                if (typeof val !== 'number')
-                                    return reject(val);
-                                resolve(\
-                    ",
-                    promises = promises
-                ));
-
-                if wasm_results.len() > 0 {
-                    self.src.js("[");
-                    let operands = &["val".to_string()];
-                    let mut results = Vec::new();
-                    for (i, result) in wasm_results.iter().enumerate() {
-                        if i > 0 {
-                            self.src.js(", ");
-                        }
-                        let method = match result {
-                            WasmType::I32 => "getInt32",
-                            WasmType::I64 => "getBigInt64",
-                            WasmType::F32 => "getFloat32",
-                            WasmType::F64 => "getFloat64",
-                        };
-                        self.load(method, (i * 8) as i32, operands, &mut results);
-                        self.src.js(&results.pop().unwrap());
-                    }
-                    self.src.js("]");
-                }
-
-                // Finish the blocks from above
-                self.src.js(");\n"); // `resolve(...)`
-                self.src.js("});\n"); // `promises.insert(...)`
-
-                let with = self.gen.intrinsic(Intrinsic::WithCurrentPromise);
-                self.src.js(&with);
-                self.src.js("(promise_ctx, _prev => {\n");
-                self.src.js(&self.src_object);
-                self.src.js("._exports['");
-                self.src.js(&name);
-                self.src.js("'](");
-                for op in operands {
-                    self.src.js(op);
-                    self.src.js(", ");
-                }
-                self.src.js("promise_ctx);\n");
-                self.src.js("});\n"); // call to `with`
-                self.src.js("});\n"); // `await new Promise(...)`
-            }
-
             Instruction::CallInterface { module: _, func } => {
                 let call = |me: &mut FunctionBindgen<'_>| match &func.kind {
                     FunctionKind::Freestanding | FunctionKind::Static { .. } => {
@@ -2277,31 +2191,9 @@ impl Bindgen for FunctionBindgen<'_> {
                     }
                 };
 
-                if func.is_async {
-                    let with = self.gen.intrinsic(Intrinsic::WithCurrentPromise);
-                    let promises = self.gen.intrinsic(Intrinsic::Promises);
-                    self.src.js(&with);
-                    self.src.js("(null, cur_promise => {\n");
-                    self.src.js(&format!(
-                        "const catch_closure = e => {}.remove(cur_promise)(e);\n",
-                        promises
-                    ));
-                    call(self);
-                    self.src.js(".then(e => {\n");
-                    match &func.result {
-                        Type::Unit => {
-                            results.push("".to_string());
-                        }
-                        _ => {
-                            bind_results(self);
-                            self.src.js("e;\n");
-                        }
-                    }
-                } else {
-                    bind_results(self);
-                    call(self);
-                    self.src.js(";\n");
-                }
+                bind_results(self);
+                call(self);
+                self.src.js(";\n");
             }
 
             Instruction::Return { amt, func: _ } => match amt {
@@ -2312,33 +2204,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.js(&format!("return [{}];\n", operands.join(", ")));
                 }
             },
-
-            Instruction::ReturnAsyncImport { .. } => {
-                // When we reenter webassembly successfully that means that the
-                // host's promise resolved without exception. Take the current
-                // promise index saved as part of `CallInterface` and update the
-                // `CUR_PROMISE` global with what's currently being executed.
-                // This'll get reset once the wasm returns again.
-                //
-                // Note that the name `cur_promise` used here is introduced in
-                // the `CallInterface` codegen above in the closure for
-                // `with_current_promise` which we're using here.
-                //
-                // TODO: hardcoding `__indirect_function_table` and no help if
-                // it's not actually defined.
-                self.gen.needs_get_export = true;
-                let with = self.gen.intrinsic(Intrinsic::WithCurrentPromise);
-                self.src.js(&format!(
-                    "\
-                        {with}(cur_promise, _prev => {{
-                            get_export(\"__indirect_function_table\").get({})({});
-                        }});
-                    ",
-                    operands[0],
-                    operands[1..].join(", "),
-                    with = with,
-                ));
-            }
 
             Instruction::I32Load { offset } => self.load("getInt32", *offset, operands, results),
             Instruction::I64Load { offset } => self.load("getBigInt64", *offset, operands, results),

@@ -977,7 +977,6 @@ impl Generator for C {
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
-        assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
         let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
 
@@ -1053,7 +1052,6 @@ impl Generator for C {
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
-        assert!(!func.is_async, "async not supported yet");
         let prev = mem::take(&mut self.src);
         let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
 

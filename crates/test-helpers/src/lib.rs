@@ -77,7 +77,6 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         let mut methods = Vec::new();
         let mut resources = BTreeMap::new();
 
-        let mut async_trait = quote::quote!();
         for f in iface.functions.iter() {
             let name = quote::format_ident!("{}", f.item_name().to_snake_case());
             let mut params = f
@@ -91,14 +90,8 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 params.remove(0);
                 self_ = quote::quote!(&self,);
             }
-            let async_ = if f.is_async {
-                async_trait = quote::quote!(#[wit_bindgen_guest_rust::async_trait(?Send)]);
-                quote::quote!(async)
-            } else {
-                quote::quote!()
-            };
             let method = quote::quote! {
-                #async_ fn #name(#self_ #(_: #params),*) -> #ret {
+                fn #name(#self_ #(_: #params),*) -> #ret {
                     loop {}
                 }
             };
@@ -115,7 +108,6 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         ret.extend(quote::quote! {
             struct #camel;
 
-            #async_trait
             impl #snake::#camel for #camel {
                 #(#methods)*
             }
@@ -123,7 +115,6 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         for (id, methods) in resources {
             let name = quote::format_ident!("{}", iface.resources[id].name.to_camel_case());
             ret.extend(quote::quote! {
-                #async_trait
                 impl #snake::#name for #name {
                     #(#methods)*
                 }
@@ -225,15 +216,6 @@ pub fn codegen_wasmtime_export(input: TokenStream) -> TokenStream {
                 },
                 |_| quote::quote!(),
             ),
-            (
-                "export-async",
-                || {
-                    let mut opts = wit_bindgen_gen_host_wasmtime_rust::Opts::default();
-                    opts.async_ = wit_bindgen_gen_host_wasmtime_rust::Async::All;
-                    opts.build()
-                },
-                |_| quote::quote!(),
-            ),
         ],
     )
 }
@@ -244,22 +226,11 @@ pub fn codegen_wasmtime_import(input: TokenStream) -> TokenStream {
     gen_rust(
         input,
         Direction::Import,
-        &[
-            (
-                "import",
-                || wit_bindgen_gen_host_wasmtime_rust::Opts::default().build(),
-                |_| quote::quote!(),
-            ),
-            (
-                "import-async",
-                || {
-                    let mut opts = wit_bindgen_gen_host_wasmtime_rust::Opts::default();
-                    opts.async_ = wit_bindgen_gen_host_wasmtime_rust::Async::All;
-                    opts.build()
-                },
-                |_| quote::quote!(),
-            ),
-        ],
+        &[(
+            "import",
+            || wit_bindgen_gen_host_wasmtime_rust::Opts::default().build(),
+            |_| quote::quote!(),
+        )],
     )
 }
 

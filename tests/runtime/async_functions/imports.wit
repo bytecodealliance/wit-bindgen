@@ -1,5 +1,0 @@
-thunk: async func()
-
-concurrent1: async func(a: u32) -> u32
-concurrent2: async func(a: u32) -> u32
-concurrent3: async func(a: u32) -> u32

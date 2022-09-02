@@ -1,11 +1,5 @@
 type files = list<tuple<string, string>>
 
-variant wasmtime-async {
-  all,
-  none,
-  only(list<string>),
-}
-
 enum lang {
   js,
   rust,
@@ -24,6 +18,5 @@ resource config {
 
   set-rust-unchecked: func(unchecked: bool)
   set-wasmtime-tracing: func(unchecked: bool)
-  set-wasmtime-async: func(val: wasmtime-async)
   set-wasmtime-custom-error: func(custom: bool)
 }
