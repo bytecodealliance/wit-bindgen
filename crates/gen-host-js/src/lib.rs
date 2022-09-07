@@ -57,8 +57,6 @@ enum Intrinsic {
     DataView,
     ValidateGuestChar,
     ValidateHostChar,
-    ValidateFlags,
-    ValidateFlags64,
     /// Implementation of https://tc39.es/ecma262/#sec-toint32.
     ToInt32,
     /// Implementation of https://tc39.es/ecma262/#sec-touint32.
@@ -97,8 +95,6 @@ impl Intrinsic {
             Intrinsic::DataView => "data_view",
             Intrinsic::ValidateGuestChar => "validate_guest_char",
             Intrinsic::ValidateHostChar => "validate_host_char",
-            Intrinsic::ValidateFlags => "validate_flags",
-            Intrinsic::ValidateFlags64 => "validate_flags64",
             Intrinsic::ToInt32 => "to_int32",
             Intrinsic::ToUint32 => "to_uint32",
             Intrinsic::ToInt16 => "to_int16",
@@ -417,23 +413,14 @@ impl Generator for Js {
         docs: &Docs,
     ) {
         self.docs(docs);
-        let repr = js_flags_repr(flags);
-        let ty = repr.ty();
-        let suffix = repr.suffix();
         self.src
-            .ts(&format!("export type {} = {ty};\n", name.to_camel_case()));
-        let name = name.to_shouty_snake_case();
-        for (i, flag) in flags.flags.iter().enumerate() {
-            let flag = flag.name.to_shouty_snake_case();
-            self.src.js(&format!(
-                "export const {name}_{flag} = {}{suffix};\n",
-                1u128 << i,
-            ));
-            self.src.ts(&format!(
-                "export const {name}_{flag} = {}{suffix};\n",
-                1u128 << i,
-            ));
+            .ts(&format!("export interface {} {{\n", name.to_camel_case()));
+        for flag in flags.flags.iter() {
+            self.docs(&flag.docs);
+            let name = flag.name.to_mixed_case();
+            self.src.ts(&format!("{name}?: boolean,\n"));
         }
+        self.src.ts("}\n");
     }
 
     fn type_variant(
@@ -1523,56 +1510,80 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("[{}]", operands.join(", ")));
             }
 
+            // This lowers flags from a dictionary of booleans in accordance with https://webidl.spec.whatwg.org/#es-dictionary.
             Instruction::FlagsLower { flags, .. } => {
-                let repr = js_flags_repr(flags);
-                let validate = match repr {
-                    JsFlagsRepr::Number => self.gen.intrinsic(Intrinsic::ValidateFlags),
-                    JsFlagsRepr::Bigint => self.gen.intrinsic(Intrinsic::ValidateFlags64),
-                };
                 let op0 = &operands[0];
-                let len = flags.flags.len();
-                let n = repr.suffix();
-                let tmp = self.tmp();
-                let mask = (1u128 << len) - 1;
-                self.src.js(&format!(
-                    "const flags{tmp} = {validate}({op0}, {mask}{n});\n"
-                ));
-                match repr {
-                    JsFlagsRepr::Number => {
-                        results.push(format!("flags{}", tmp));
-                    }
-                    JsFlagsRepr::Bigint => {
-                        for i in 0..flags.repr().count() {
-                            let i = 32 * i;
-                            results.push(format!("Number((flags{tmp} >> {i}n) & 0xffffffffn)",));
-                        }
-                    }
+
+                // Generate the result names.
+                for _ in 0..flags.repr().count() {
+                    let tmp = self.tmp();
+                    let name = format!("flags{tmp}");
+                    // Default to 0 so that in the null/undefined case, everything is false by
+                    // default.
+                    self.src.js(&format!("let {name} = 0;\n"));
+                    results.push(name);
                 }
+
+                self.src.js(&format!(
+                    "if (typeof {op0} === \"object\" && {op0} !== null) {{\n"
+                ));
+
+                for (i, chunk) in flags.flags.chunks(32).enumerate() {
+                    let result_name = &results[i];
+
+                    self.src.js(&format!("{result_name} = "));
+                    for (i, flag) in chunk.iter().enumerate() {
+                        if i != 0 {
+                            self.src.js(" | ");
+                        }
+
+                        let flag = flag.name.to_mixed_case();
+                        self.src.js(&format!("Boolean({op0}.{flag}) << {i}"));
+                    }
+                    self.src.js(";\n");
+                }
+
+                self.src.js(&format!("\
+                    }} else if ({op0} !== null && {op0} !== undefined) {{
+                        throw new TypeError(\"only an object, undefined or null can be converted to flags\");
+                    }}
+                "));
+
+                // We don't need to do anything else for the null/undefined
+                // case, since that's interpreted as everything false, and we
+                // already defaulted everyting to 0.
             }
 
             Instruction::FlagsLift { flags, .. } => {
-                let repr = js_flags_repr(flags);
-                let n = repr.suffix();
                 let tmp = self.tmp();
-                let operand = match repr {
-                    JsFlagsRepr::Number => operands[0].clone(),
-                    JsFlagsRepr::Bigint => {
-                        self.src.js(&format!("let flags{tmp} = 0n;\n"));
-                        for (i, op) in operands.iter().enumerate() {
-                            let i = 32 * i;
-                            self.src
-                                .js(&format!("flags{tmp} |= BigInt({op}) << {i}n;\n",));
-                        }
-                        format!("flags{tmp}")
+                results.push(format!("flags{tmp}"));
+
+                if let Some(op) = operands.last() {
+                    // We only need an extraneous bits check if the number of flags isn't a multiple
+                    // of 32, because if it is then all the bits are used and there are no
+                    // extraneous bits.
+                    if flags.flags.len() % 32 != 0 {
+                        let mask: u32 = 0xffffffff << (flags.flags.len() % 32);
+                        self.src.js(&format!(
+                            "\
+                            if (({op} & {mask}) !== 0) {{
+                                throw new TypeError('flags have extraneous bits set');
+                            }}
+                            "
+                        ));
                     }
-                };
-                let validate = match repr {
-                    JsFlagsRepr::Number => self.gen.intrinsic(Intrinsic::ValidateFlags),
-                    JsFlagsRepr::Bigint => self.gen.intrinsic(Intrinsic::ValidateFlags64),
-                };
-                let len = flags.flags.len();
-                let mask = (1u128 << len) - 1;
-                results.push(format!("{validate}({operand}, {mask}{n})"));
+                }
+
+                self.src.js(&format!("const flags{tmp} = {{\n"));
+
+                for (i, flag) in flags.flags.iter().enumerate() {
+                    let flag = flag.name.to_mixed_case();
+                    let op = &operands[i / 32];
+                    let mask: u32 = 1 << (i % 32);
+                    self.src.js(&format!("{flag}: Boolean({op} & {mask}),\n"));
+                }
+
+                self.src.js("};\n");
             }
 
             Instruction::VariantPayloadName => results.push("e".to_string()),
@@ -2309,26 +2320,6 @@ impl Js {
                 }
             "),
 
-            Intrinsic::ValidateFlags => self.src.js("
-                export function validate_flags(flags, mask) {
-                    if (!Number.isInteger(flags)) \
-                        throw new TypeError('flags were not an integer');
-                    if ((flags & ~mask) != 0)
-                        throw new TypeError('flags have extraneous bits set');
-                    return flags;
-                }
-            "),
-
-            Intrinsic::ValidateFlags64 => self.src.js("
-                export function validate_flags64(flags, mask) {
-                    if (typeof flags !== 'bigint')
-                        throw new TypeError('flags were not a bigint');
-                    if ((flags & ~mask) != 0n)
-                        throw new TypeError('flags have extraneous bits set');
-                    return flags;
-                }
-            "),
-
 
             Intrinsic::ToInt32 => self.src.js("
                 export function to_int32(val) {
@@ -2548,32 +2539,5 @@ impl Source {
     }
     fn ts(&mut self, s: &str) {
         self.ts.push_str(s);
-    }
-}
-
-enum JsFlagsRepr {
-    Number,
-    Bigint,
-}
-
-impl JsFlagsRepr {
-    fn ty(&self) -> &'static str {
-        match self {
-            JsFlagsRepr::Number => "number",
-            JsFlagsRepr::Bigint => "bigint",
-        }
-    }
-    fn suffix(&self) -> &'static str {
-        match self {
-            JsFlagsRepr::Number => "",
-            JsFlagsRepr::Bigint => "n",
-        }
-    }
-}
-
-fn js_flags_repr(f: &Flags) -> JsFlagsRepr {
-    match f.repr() {
-        FlagsRepr::U8 | FlagsRepr::U16 | FlagsRepr::U32(1) => JsFlagsRepr::Number,
-        FlagsRepr::U32(_) => JsFlagsRepr::Bigint,
     }
 }
