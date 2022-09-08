@@ -407,7 +407,6 @@ impl Generator for WasmtimePy {
             src,
             needs_memory,
             needs_realloc,
-            needs_free,
             mut locals,
             ..
         } = f;
@@ -428,11 +427,6 @@ impl Generator for WasmtimePy {
             locals.insert("realloc").unwrap();
         }
 
-        if let Some(name) = needs_free {
-            builder.push_str(&format!("free = caller[\"{}\"]\n", name));
-            builder.push_str("assert(isinstance(free, wasmtime.Func))\n");
-            locals.insert("free").unwrap();
-        }
         builder.push_str(&src);
         builder.dedent();
 
@@ -507,7 +501,6 @@ impl Generator for WasmtimePy {
             src,
             needs_memory,
             needs_realloc,
-            needs_free,
             src_object,
             ..
         } = f;
@@ -525,13 +518,6 @@ impl Generator for WasmtimePy {
             ));
         }
 
-        if let Some(name) = &needs_free {
-            builder.push_str(&format!(
-                "free = {}._{}\n",
-                src_object,
-                name.to_snake_case(),
-            ));
-        }
         builder.push_str(&src);
         builder.dedent();
 
@@ -549,15 +535,6 @@ impl Generator for WasmtimePy {
             );
         }
         if let Some(name) = &needs_realloc {
-            exports.fields.insert(
-                name.clone(),
-                Export {
-                    python_type: "wasmtime.Func",
-                    base_name: name.clone(),
-                },
-            );
-        }
-        if let Some(name) = &needs_free {
             exports.fields.insert(
                 name.clone(),
                 Export {
@@ -887,7 +864,6 @@ struct FunctionBindgen<'a> {
     blocks: Vec<(String, Vec<String>)>,
     needs_memory: bool,
     needs_realloc: Option<String>,
-    needs_free: Option<String>,
     params: Vec<String>,
     payloads: Vec<String>,
     src_object: String,
@@ -910,7 +886,6 @@ impl FunctionBindgen<'_> {
             blocks: Vec::new(),
             needs_memory: false,
             needs_realloc: None,
-            needs_free: None,
             params,
             payloads: Vec::new(),
             src_object: "self".to_string(),
@@ -1588,7 +1563,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(ptr);
                 results.push(len);
             }
-            Instruction::ListCanonLift { element, free, .. } => {
+            Instruction::ListCanonLift { element, .. } => {
                 self.needs_memory = true;
                 let ptr = self.locals.tmp("ptr");
                 let len = self.locals.tmp("len");
@@ -1604,32 +1579,14 @@ impl Bindgen for FunctionBindgen<'_> {
                     array_ty,
                 );
                 builder.deps.pyimport("typing", "cast");
-                let align = self.gen.sizes.align(element);
-                match free {
-                    Some(free) => {
-                        self.needs_free = Some(free.to_string());
-                        let list = self.locals.tmp("list");
-                        builder.push_str(&list);
-                        builder.push_str(" = cast(");
-                        builder.print_list(element);
-                        builder.push_str(", ");
-                        builder.push_str(&lift);
-                        builder.push_str(")\n");
-                        builder.push_str(&format!("free(caller, {}, {}, {})\n", ptr, len, align));
-                        results.push(list);
-                    }
-                    None => {
-                        let mut result_src = Source::default();
-                        drop(builder);
-                        let mut builder = result_src.builder(&mut self.gen.deps, iface);
-                        builder.push_str("cast(");
-                        builder.print_list(element);
-                        builder.push_str(", ");
-                        builder.push_str(&lift);
-                        builder.push_str(")");
-                        results.push(result_src.to_string());
-                    }
-                }
+                let list = self.locals.tmp("list");
+                builder.push_str(&list);
+                builder.push_str(" = cast(");
+                builder.print_list(element);
+                builder.push_str(", ");
+                builder.push_str(&lift);
+                builder.push_str(")\n");
+                results.push(list);
             }
             Instruction::StringLower { realloc } => {
                 // Lowering only happens when we're passing strings into wasm,
@@ -1649,7 +1606,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(ptr);
                 results.push(len);
             }
-            Instruction::StringLift { free, .. } => {
+            Instruction::StringLift => {
                 self.needs_memory = true;
                 let ptr = self.locals.tmp("ptr");
                 let len = self.locals.tmp("len");
@@ -1657,17 +1614,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 builder.push_str(&format!("{} = {}\n", len, operands[1]));
                 builder.deps.needs_decode_utf8 = true;
                 let result = format!("_decode_utf8(memory, caller, {}, {})", ptr, len);
-                match free {
-                    Some(free) => {
-                        self.needs_free = Some(free.to_string());
-                        let list = self.locals.tmp("list");
-                        builder.push_str(&format!("{} = {}\n", list, result));
-                        self.src
-                            .push_str(&format!("free(caller, {}, {}, 1)\n", ptr, len));
-                        results.push(list);
-                    }
-                    None => results.push(result),
-                }
+                let list = self.locals.tmp("list");
+                builder.push_str(&format!("{} = {}\n", list, result));
+                results.push(list);
             }
 
             Instruction::ListLower { element, realloc } => {
@@ -1709,11 +1658,10 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(len);
             }
 
-            Instruction::ListLift { element, free, .. } => {
+            Instruction::ListLift { element, .. } => {
                 let (body, body_results) = self.blocks.pop().unwrap();
                 let base = self.payloads.pop().unwrap();
                 let size = self.gen.sizes.size(element);
-                let align = self.gen.sizes.align(element);
                 let ptr = self.locals.tmp("ptr");
                 let len = self.locals.tmp("len");
                 builder.push_str(&format!("{} = {}\n", ptr, operands[0]));
@@ -1731,14 +1679,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 assert_eq!(body_results.len(), 1);
                 builder.push_str(&format!("{}.append({})\n", result, body_results[0]));
                 builder.dedent();
-
-                if let Some(free) = free {
-                    self.needs_free = Some(free.to_string());
-                    builder.push_str(&format!(
-                        "free(caller, {}, {} * {}, {})\n",
-                        ptr, len, size, align,
-                    ));
-                }
                 results.push(result);
             }
 
@@ -1819,14 +1759,33 @@ impl Bindgen for FunctionBindgen<'_> {
                 builder.push_str("\n");
             }
 
-            Instruction::Return { amt, .. } => match amt {
-                0 => {}
-                1 => builder.push_str(&format!("return {}\n", operands[0])),
-                _ => {
-                    self.src
-                        .push_str(&format!("return ({})\n", operands.join(", ")));
+            Instruction::Return { amt, func, .. } => {
+                if !self.gen.in_import && iface.guest_export_needs_post_return(func) {
+                    let name = format!("cabi_post_{}", func.name);
+                    let exports = self
+                        .gen
+                        .guest_exports
+                        .entry(iface.name.to_string())
+                        .or_insert_with(Exports::default);
+                    exports.fields.insert(
+                        name.clone(),
+                        Export {
+                            python_type: "wasmtime.Func",
+                            base_name: name.clone(),
+                        },
+                    );
+                    let name = name.to_snake_case();
+                    builder.push_str(&format!("{}._{name}(caller, ret)\n", self.src_object));
                 }
-            },
+                match amt {
+                    0 => {}
+                    1 => builder.push_str(&format!("return {}\n", operands[0])),
+                    _ => {
+                        self.src
+                            .push_str(&format!("return ({})\n", operands.join(", ")));
+                    }
+                }
+            }
 
             Instruction::I32Load { offset } => self.load("c_int32", *offset, operands, results),
             Instruction::I64Load { offset } => self.load("c_int64", *offset, operands, results),

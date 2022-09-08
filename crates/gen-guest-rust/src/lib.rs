@@ -528,23 +528,20 @@ impl Generator for RustWasm {
     fn export(&mut self, iface: &Interface, func: &Function) {
         let iface_name = iface.name.to_snake_case();
 
-        self.src.push_str("#[export_name = \"");
-        match &iface.module {
+        let name_mangled = iface.mangle_funcname(func);
+        let name_snake = func.name.to_snake_case();
+        let name = match &iface.module {
             Some(module) => {
-                self.src.push_str(module);
-                self.src.push_str("#");
-                self.src.push_str(&iface.mangle_funcname(func));
+                format!("{module}#{}", name_mangled)
             }
-            None => {
-                self.src.push_str(&self.opts.symbol_namespace);
-                self.src.push_str(&iface.mangle_funcname(func));
-            }
-        }
-        self.src.push_str("\"]\n");
+            None => format!("{}{}", self.opts.symbol_namespace, name_mangled),
+        };
+
+        self.src.push_str(&format!("#[export_name = \"{name}\"]\n"));
         self.src.push_str("unsafe extern \"C\" fn __wit_bindgen_");
         self.src.push_str(&iface_name);
         self.src.push_str("_");
-        self.src.push_str(&func.name.to_snake_case());
+        self.src.push_str(&name_snake);
         self.src.push_str("(");
         let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
         let mut params = Vec::new();
@@ -593,6 +590,37 @@ impl Generator for RustWasm {
         assert!(!needs_cleanup_list);
         self.src.push_str(&String::from(src));
         self.src.push_str("}\n");
+
+        if iface.guest_export_needs_post_return(func) {
+            self.src.push_str(&format!(
+                "#[export_name = \"{}cabi_post_{}\"]\n",
+                self.opts.symbol_namespace, func.name,
+            ));
+            self.src.push_str(&format!(
+                "unsafe extern \"C\" fn __wit_bindgen_{iface_name}_{name_snake}_post_return("
+            ));
+            let mut params = Vec::new();
+            for (i, result) in sig.results.iter().enumerate() {
+                let name = format!("arg{}", i);
+                self.src.push_str(&name);
+                self.src.push_str(": ");
+                self.wasm_type(*result);
+                self.src.push_str(", ");
+                params.push(name);
+            }
+            self.src.push_str(") {\n");
+
+            let mut f = FunctionBindgen::new(self, params);
+            iface.post_return(func, &mut f);
+            let FunctionBindgen {
+                needs_cleanup_list,
+                src,
+                ..
+            } = f;
+            assert!(!needs_cleanup_list);
+            self.src.push_str(&String::from(src));
+            self.src.push_str("}\n");
+        }
 
         let prev = mem::take(&mut self.src);
         self.in_trait = true;
@@ -1290,10 +1318,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(len);
             }
 
-            Instruction::ListCanonLift { free, .. } => {
-                // This only happens when we're receiving a list from the
-                // outside world, so `free` should always be `Some`.
-                assert!(free.is_some());
+            Instruction::ListCanonLift { .. } => {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {} as usize;\n", len, operands[1]));
@@ -1324,10 +1349,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(len);
             }
 
-            Instruction::StringLift { free, .. } => {
-                // This only happens when we're receiving a string from the
-                // outside world, so `free` should always be `Some`.
-                assert!(free.is_some());
+            Instruction::StringLift => {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {} as usize;\n", len, operands[1]));
@@ -1383,10 +1405,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::ListLift { element, free, .. } => {
-                // This only happens when we're receiving a list from the
-                // outside world, so `free` should always be `Some`.
-                assert!(free.is_some());
+            Instruction::ListLift { element, .. } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let size = self.gen.sizes.size(element);
@@ -1421,7 +1440,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str("}\n");
                 results.push(result);
                 self.push_str(&format!(
-                    "if {len} != 0 {{\nstd::alloc::dealloc({base} as *mut _, std::alloc::Layout::from_size_align_unchecked(({len} as usize) * {size}, {align}));\n}}\n",
+                    "wit_bindgen_guest_rust::rt::dealloc({base}, ({len} as usize) * {size}, {align});\n",
                 ));
             }
 
@@ -1575,14 +1594,70 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::Malloc { .. } => unimplemented!(),
-            Instruction::Free {
-                free: _,
-                size,
-                align,
-            } => {
+
+            Instruction::GuestDeallocate { size, align } => {
                 self.push_str(&format!(
-                    "wit_bindgen_guest_rust::rt::canonical_abi_free({} as *mut u8, {}, {});\n",
+                    "wit_bindgen_guest_rust::rt::dealloc({}, {}, {});\n",
                     operands[0], size, align
+                ));
+            }
+
+            Instruction::GuestDeallocateString => {
+                self.push_str(&format!(
+                    "wit_bindgen_guest_rust::rt::dealloc({}, ({}) as usize, 1);\n",
+                    operands[0], operands[1],
+                ));
+            }
+
+            Instruction::GuestDeallocateVariant { blocks } => {
+                let max = blocks - 1;
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - blocks..)
+                    .collect::<Vec<_>>();
+                let op0 = &operands[0];
+                self.src.push_str(&format!("match {op0} {{\n"));
+                for (i, block) in blocks.into_iter().enumerate() {
+                    let pat = if i == max {
+                        String::from("_")
+                    } else {
+                        i.to_string()
+                    };
+                    self.src.push_str(&format!("{pat} => {block},\n"));
+                }
+                self.src.push_str("}\n");
+            }
+
+            Instruction::GuestDeallocateList { element } => {
+                let body = self.blocks.pop().unwrap();
+                let tmp = self.tmp();
+                let size = self.gen.sizes.size(element);
+                let align = self.gen.sizes.align(element);
+                let len = format!("len{tmp}");
+                let base = format!("base{tmp}");
+                self.push_str(&format!(
+                    "let {base} = {operand0};\n",
+                    operand0 = operands[0]
+                ));
+                self.push_str(&format!(
+                    "let {len} = {operand1};\n",
+                    operand1 = operands[1]
+                ));
+
+                if body != "()" {
+                    self.push_str("for i in 0..");
+                    self.push_str(&len);
+                    self.push_str(" {\n");
+                    self.push_str("let base = ");
+                    self.push_str(&base);
+                    self.push_str(" + i *");
+                    self.push_str(&size.to_string());
+                    self.push_str(";\n");
+                    self.push_str(&body);
+                    self.push_str("\n}\n");
+                }
+                self.push_str(&format!(
+                    "wit_bindgen_guest_rust::rt::dealloc({base}, ({len} as usize) * {size}, {align});\n",
                 ));
             }
         }

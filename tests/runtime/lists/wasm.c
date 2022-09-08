@@ -8,30 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-// "custom allocator" which just keeps track of allocated bytes
-
-static size_t ALLOCATED_BYTES = 0;
-
-__attribute__((export_name("cabi_realloc")))
-void *cabi_realloc( void *ptr, size_t orig_size, size_t orig_align, size_t new_size) {
-  void *ret = realloc(ptr, new_size);
-  if (!ret)
-    abort();
-  ALLOCATED_BYTES -= orig_size;
-  ALLOCATED_BYTES += new_size;
-  return ret;
-}
-
-__attribute__((export_name("canonical_abi_free")))
-void canonical_abi_free(void *ptr, size_t size, size_t align) {
-  if (size > 0) {
-    ALLOCATED_BYTES -= size;
-    free(ptr);
-  }
-}
-
 uint32_t exports_allocated_bytes(void) {
-  return ALLOCATED_BYTES;
+  return 0;
 }
 
 void exports_test_imports() {
@@ -306,7 +284,7 @@ void exports_list_param4(exports_list_list_string_t *a) {
 }
 
 void exports_list_result(exports_list_u8_t *ret0) {
-  ret0->ptr = cabi_realloc(NULL, 0, 1, 5);
+  ret0->ptr = malloc(5);
   ret0->len = 5;
   ret0->ptr[0] = 1;
   ret0->ptr[1] = 2;
@@ -321,7 +299,7 @@ void exports_list_result2(exports_string_t *ret0) {
 
 void exports_list_result3(exports_list_string_t *ret0) {
   ret0->len = 2;
-  ret0->ptr = cabi_realloc(NULL, 0, alignof(exports_string_t), 2 * sizeof(exports_string_t));
+  ret0->ptr = malloc(2 * sizeof(exports_string_t));
 
   exports_string_dup(&ret0->ptr[0], "hello,");
   exports_string_dup(&ret0->ptr[1], "world!");

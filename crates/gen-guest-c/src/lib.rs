@@ -450,15 +450,6 @@ impl C {
                     abort();
                 return ret;
             }
-
-            __attribute__((weak, export_name(\"canonical_abi_free\")))
-            void canonical_abi_free(
-                void *ptr,
-                size_t size,
-                size_t align
-            ) {
-                free(ptr);
-            }
         ");
     }
 
@@ -518,12 +509,9 @@ impl C {
                     self.free(iface, t, "&ptr->ptr[i]");
                     self.src.c("}\n");
                 }
-                uwriteln!(
-                    self.src.c,
-                    "canonical_abi_free(ptr->ptr, ptr->len * {}, {});",
-                    self.sizes.size(t),
-                    self.sizes.align(t),
-                );
+                uwriteln!(self.src.c, "if (ptr->len > 0) {{");
+                uwriteln!(self.src.c, "free(ptr->ptr);");
+                uwriteln!(self.src.c, "}}");
             }
 
             TypeDefKind::Variant(v) => {
@@ -1120,6 +1108,42 @@ impl Generator for C {
         self.src.c(&src);
         self.src.c("}\n");
 
+        if iface.guest_export_needs_post_return(func) {
+            uwriteln!(
+                self.src.c,
+                "__attribute__((export_name(\"cabi_post_{}\")))",
+                func.name
+            );
+            uwrite!(self.src.c, "void {import_name}_post_return(");
+
+            let mut params = Vec::new();
+            let mut c_sig = CSig {
+                name: String::from("INVALID"),
+                sig: String::from("INVALID"),
+                params: Vec::new(),
+                ret: Return {
+                    return_multiple: false,
+                    scalar: None,
+                    retptrs: Vec::new(),
+                },
+                retptrs: Vec::new(),
+            };
+            for (i, result) in sig.results.iter().enumerate() {
+                let name = format!("arg{i}");
+                uwrite!(self.src.c, "{} {name}", wasm_type(*result));
+                c_sig.params.push((false, name.clone()));
+                params.push(name);
+            }
+            self.src.c.push_str(") {\n");
+
+            let mut f = FunctionBindgen::new(self, c_sig, &import_name);
+            f.params = params;
+            iface.post_return(func, &mut f);
+            let FunctionBindgen { src, .. } = f;
+            self.src.c(&src);
+            self.src.c("}\n");
+        }
+
         let src = mem::replace(&mut self.src, prev);
         self.funcs
             .entry(iface.name.to_string())
@@ -1299,7 +1323,9 @@ impl Generator for C {
                     }}
 
                     void {0}_string_free({0}_string_t *ret) {{
-                        canonical_abi_free(ret->ptr, ret->len, 1);
+                        if (ret->len > 0) {{
+                            free(ret->ptr);
+                        }}
                         ret->ptr = NULL;
                         ret->len = 0;
                     }}
@@ -2204,8 +2230,46 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.load_ext("int16_t", *offset, operands, results)
             }
 
-            Instruction::Free { .. } => {
+            Instruction::GuestDeallocate { .. } => {
                 uwriteln!(self.src, "free((void*) ({}));", operands[0]);
+            }
+            Instruction::GuestDeallocateString => {
+                uwriteln!(self.src, "if (({}) > 0) {{", operands[1]);
+                uwriteln!(self.src, "free((void*) ({}));", operands[0]);
+                uwriteln!(self.src, "}}");
+            }
+            Instruction::GuestDeallocateVariant { blocks } => {
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - blocks..)
+                    .collect::<Vec<_>>();
+
+                uwriteln!(self.src, "switch ((int32_t) {}) {{", operands[0]);
+                for (i, (block, results)) in blocks.into_iter().enumerate() {
+                    assert!(results.is_empty());
+                    uwriteln!(self.src, "case {}: {{", i);
+                    self.src.push_str(&block);
+                    self.src.push_str("break;\n}\n");
+                }
+                self.src.push_str("}\n");
+            }
+            Instruction::GuestDeallocateList { element } => {
+                let (body, results) = self.blocks.pop().unwrap();
+                assert!(results.is_empty());
+                let ptr = self.locals.tmp("ptr");
+                let len = self.locals.tmp("len");
+                uwriteln!(self.src, "int32_t {ptr} = {};", operands[0]);
+                uwriteln!(self.src, "int32_t {len} = {};", operands[1]);
+                let i = self.locals.tmp("i");
+                uwriteln!(self.src, "for (int32_t {i} = 0; {i} < {len}; {i}++) {{");
+                let size = self.gen.sizes.size(element);
+                uwriteln!(self.src, "int32_t base = {ptr} + {i} * {size};");
+                uwriteln!(self.src, "(void) base;");
+                uwrite!(self.src, "{body}");
+                uwriteln!(self.src, "}}");
+                uwriteln!(self.src, "if ({len} > 0) {{");
+                uwriteln!(self.src, "free((void*) ({ptr}));");
+                uwriteln!(self.src, "}}");
             }
 
             i => unimplemented!("{:?}", i),

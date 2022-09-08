@@ -1,3 +1,5 @@
+#![allow(type_alias_bounds)] // TODO: should fix generated code to not fire this
+
 use anyhow::Result;
 use wasmtime::{Config, Engine, Instance, Linker, Module, Store};
 
