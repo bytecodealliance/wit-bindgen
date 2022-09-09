@@ -126,7 +126,7 @@ pub mod rt {
     use std::alloc::{self, Layout};
 
     #[no_mangle]
-    unsafe extern "C" fn canonical_abi_realloc(
+    unsafe extern "C" fn cabi_realloc(
         old_ptr: *mut u8,
         old_len: usize,
         align: usize,

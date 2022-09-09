@@ -912,7 +912,7 @@ impl RequiredOptions {
         }
 
         iter.push(CanonicalOption::Realloc(realloc_index.ok_or_else(
-            || anyhow!("module does not export a function named `canonical_abi_realloc`"),
+            || anyhow!("module does not export a function named `cabi_realloc`"),
         )?));
 
         if self == RequiredOptions::Realloc {
@@ -1356,7 +1356,7 @@ impl EncodingState {
                 &mut aliases,
                 instance_index,
                 ExportKind::Func,
-                "canonical_abi_realloc",
+                "cabi_realloc",
             ));
         }
 

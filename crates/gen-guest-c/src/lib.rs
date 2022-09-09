@@ -411,8 +411,8 @@ impl C {
         // Note that these intrinsics are declared as `weak` so they can be
         // overridden from some other symbol.
         self.src.c("
-            __attribute__((weak, export_name(\"canonical_abi_realloc\")))
-            void *canonical_abi_realloc(
+            __attribute__((weak, export_name(\"cabi_realloc\")))
+            void *cabi_realloc(
                 void *ptr,
                 size_t orig_size,
                 size_t org_align,
@@ -1279,7 +1279,7 @@ impl Generator for C {
 
                     void {0}_string_dup({0}_string_t *ret, const char *s) {{
                         ret->len = strlen(s);
-                        ret->ptr = canonical_abi_realloc(NULL, 0, 1, ret->len);
+                        ret->ptr = cabi_realloc(NULL, 0, 1, ret->len);
                         memcpy(ret->ptr, s, ret->len);
                     }}
 

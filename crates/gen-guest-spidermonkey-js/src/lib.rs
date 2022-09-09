@@ -63,7 +63,7 @@ lazy_static! {
             },
         ),
         (
-            "canonical_abi_realloc",
+            "cabi_realloc",
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![WasmType::I32],
@@ -1139,8 +1139,8 @@ impl Generator for SpiderMonkeyWasm<'_> {
             wasm_encoder::Export::Function(self.spidermonkey_import("canonical_abi_free")),
         );
         self.exports.export(
-            "canonical_abi_realloc",
-            wasm_encoder::Export::Function(self.spidermonkey_import("canonical_abi_realloc")),
+            "cabi_realloc",
+            wasm_encoder::Export::Function(self.spidermonkey_import("cabi_realloc")),
         );
 
         // Add the WIT function imports (add their import glue functions) to

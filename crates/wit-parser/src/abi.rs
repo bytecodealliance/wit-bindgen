@@ -1047,7 +1047,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // malloc needs to be called.
                         AbiVariant::GuestExport => {
                             self.emit(&Instruction::Malloc {
-                                realloc: "canonical_abi_realloc",
+                                realloc: "cabi_realloc",
                                 size,
                                 align,
                             });
@@ -1469,7 +1469,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
         // ownership in all other cases.
         match (self.variant, self.lift_lower) {
             (AbiVariant::GuestImport, LiftLower::LowerArgsLiftResults) => None,
-            _ => Some("canonical_abi_realloc"),
+            _ => Some("cabi_realloc"),
         }
     }
 
