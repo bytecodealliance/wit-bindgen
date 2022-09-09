@@ -19,8 +19,8 @@ void exports_test_imports() {
 
 
   {
-    imports_expected_u32_float32_t a;
-    imports_expected_float64_u8_t b;
+    imports_result_u32_float32_t a;
+    imports_result_float64_u8_t b;
 
     a.is_err = false;
     a.val.ok = 2;
@@ -153,7 +153,7 @@ void exports_test_imports() {
 
   {
     bool a;
-    imports_expected_unit_unit_t b;
+    imports_result_unit_unit_t b;
     imports_my_errno_t c;
     b.is_err = false;
     imports_variant_enums(true, &b, IMPORTS_MY_ERRNO_SUCCESS, &a, &b, &c);
@@ -170,7 +170,7 @@ bool exports_roundtrip_option(exports_option_float32_t *a, uint8_t *ret0) {
   return a->is_some;
 }
 
-void exports_roundtrip_result(exports_expected_u32_float32_t *a, exports_expected_float64_u8_t *ret0) {
+void exports_roundtrip_result(exports_result_u32_float32_t *a, exports_result_float64_u8_t *ret0) {
   ret0->is_err = a->is_err;
   if (a->is_err) {
     ret0->val.err = a->val.err;

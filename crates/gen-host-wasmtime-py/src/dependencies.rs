@@ -9,7 +9,7 @@ pub struct Dependencies {
     pub needs_store: bool,
     pub needs_load: bool,
     pub needs_validate_guest_char: bool,
-    pub needs_expected: bool,
+    pub needs_result: bool,
     pub needs_i32_to_f32: bool,
     pub needs_f32_to_i32: bool,
     pub needs_i64_to_f64: bool,
@@ -112,7 +112,7 @@ impl Dependencies {
                 ",
             );
         }
-        if self.needs_expected {
+        if self.needs_result {
             self.pyimport("dataclasses", "dataclass");
             self.pyimport("typing", "TypeVar");
             self.pyimport("typing", "Generic");
@@ -128,7 +128,7 @@ impl Dependencies {
                     class Err(Generic[E]):
                         value: E
 
-                    Expected = Union[Ok[T], Err[E]]
+                    Result = Union[Ok[T], Err[E]]
                 ",
             );
         }

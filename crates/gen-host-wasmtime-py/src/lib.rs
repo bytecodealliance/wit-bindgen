@@ -279,22 +279,22 @@ impl Generator for WasmtimePy {
         builder.push_str("]\n\n");
     }
 
-    fn type_expected(
+    fn type_result(
         &mut self,
         iface: &Interface,
         _id: TypeId,
         name: &str,
-        expected: &Expected,
+        result: &Result_,
         docs: &Docs,
     ) {
-        self.deps.needs_expected = true;
+        self.deps.needs_result = true;
 
         let mut builder = self.src.builder(&mut self.deps, iface);
         builder.comment(docs);
-        builder.push_str(&format!("{} = Expected[", name.to_camel_case()));
-        builder.print_ty(&expected.ok, true);
+        builder.push_str(&format!("{} = Result[", name.to_camel_case()));
+        builder.print_ty(&result.ok, true);
         builder.push_str(", ");
-        builder.print_ty(&expected.err, true);
+        builder.print_ty(&result.err, true);
         builder.push_str("]\n\n");
     }
 
@@ -1455,7 +1455,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(result);
             }
 
-            Instruction::ExpectedLower {
+            Instruction::ResultLower {
                 results: result_types,
                 ..
             } => {
@@ -1494,7 +1494,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 builder.dedent();
             }
 
-            Instruction::ExpectedLift { ty, .. } => {
+            Instruction::ResultLift { ty, .. } => {
                 let (err, err_results) = self.blocks.pop().unwrap();
                 let (ok, ok_results) = self.blocks.pop().unwrap();
                 assert!(err_results.len() == 1);

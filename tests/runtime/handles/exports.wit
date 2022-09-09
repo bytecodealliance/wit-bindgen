@@ -19,7 +19,7 @@ wasm-state2-param-tuple: func(a: wasm-state-param-tuple)
 type wasm-state-param-option = option<wasm-state2>
 wasm-state2-param-option: func(a: wasm-state-param-option)
 
-type wasm-state-param-result = expected<wasm-state2, u32>
+type wasm-state-param-result = result<wasm-state2, u32>
 wasm-state2-param-result: func(a: wasm-state-param-result)
 
 union wasm-state-param-variant { wasm-state2, u32 }
@@ -37,7 +37,7 @@ wasm-state2-result-tuple: func() -> wasm-state-result-tuple
 type wasm-state-result-option = option<wasm-state2>
 wasm-state2-result-option: func() -> wasm-state-result-option
 
-type wasm-state-result-result = expected<wasm-state2, u32>
+type wasm-state-result-result = result<wasm-state2, u32>
 wasm-state2-result-result: func() -> wasm-state-result-result
 
 union wasm-state-result-variant { wasm-state2, u32 }

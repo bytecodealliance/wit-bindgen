@@ -201,12 +201,12 @@ impl Js {
                             self.src.ts(" | null");
                         }
                     }
-                    TypeDefKind::Expected(e) => {
+                    TypeDefKind::Result(r) => {
                         self.needs_ty_result = true;
                         self.src.ts("Result<");
-                        self.print_ty(iface, &e.ok);
+                        self.print_ty(iface, &r.ok);
                         self.src.ts(", ");
-                        self.print_ty(iface, &e.err);
+                        self.print_ty(iface, &r.err);
                         self.src.ts(">");
                     }
                     TypeDefKind::Variant(_) => panic!("anonymous variant"),
@@ -512,21 +512,21 @@ impl Generator for Js {
         self.src.ts(";\n");
     }
 
-    fn type_expected(
+    fn type_result(
         &mut self,
         iface: &Interface,
         _id: TypeId,
         name: &str,
-        expected: &Expected,
+        result: &Result_,
         docs: &Docs,
     ) {
         self.docs(docs);
         let name = name.to_camel_case();
         self.needs_ty_result = true;
         self.src.ts(&format!("export type {name} = Result<"));
-        self.print_ty(iface, &expected.ok);
+        self.print_ty(iface, &result.ok);
         self.src.ts(", ");
-        self.print_ty(iface, &expected.err);
+        self.print_ty(iface, &result.err);
         self.src.ts(">;\n");
     }
 
@@ -1856,7 +1856,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("variant{tmp}"));
             }
 
-            Instruction::ExpectedLower {
+            Instruction::ResultLower {
                 results: result_types,
                 ..
             } => {
@@ -1891,14 +1891,14 @@ impl Bindgen for FunctionBindgen<'_> {
                             break;
                         }}
                         default: {{
-                            throw new RangeError(\"invalid variant specified for expected\");
+                            throw new RangeError(\"invalid variant specified for result\");
                         }}
                     }}
                     "
                 ));
             }
 
-            Instruction::ExpectedLift { .. } => {
+            Instruction::ResultLift { .. } => {
                 let (err, err_results) = self.blocks.pop().unwrap();
                 let (ok, ok_results) = self.blocks.pop().unwrap();
                 let err_result = &err_results[0];

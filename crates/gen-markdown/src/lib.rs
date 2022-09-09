@@ -90,11 +90,11 @@ impl Markdown {
                         self.print_ty(iface, t, false);
                         self.src.push_str(">");
                     }
-                    TypeDefKind::Expected(e) => {
-                        self.src.push_str("expected<");
-                        self.print_ty(iface, &e.ok, false);
+                    TypeDefKind::Result(r) => {
+                        self.src.push_str("result<");
+                        self.print_ty(iface, &r.ok, false);
                         self.src.push_str(", ");
-                        self.print_ty(iface, &e.err, false);
+                        self.print_ty(iface, &r.err, false);
                         self.src.push_str(">");
                     }
                     TypeDefKind::List(t) => {
@@ -352,19 +352,19 @@ impl Generator for Markdown {
         self.print_type_info(id, docs);
     }
 
-    fn type_expected(
+    fn type_result(
         &mut self,
         iface: &Interface,
         id: TypeId,
         name: &str,
-        expected: &Expected,
+        result: &Result_,
         docs: &Docs,
     ) {
         self.print_type_header(name);
-        self.src.push_str("expected<");
-        self.print_ty(iface, &expected.ok, false);
+        self.src.push_str("result<");
+        self.print_ty(iface, &result.ok, false);
         self.src.push_str(", ");
-        self.print_ty(iface, &expected.err, false);
+        self.print_ty(iface, &result.err, false);
         self.src.push_str(">");
         self.print_type_info(id, docs);
     }

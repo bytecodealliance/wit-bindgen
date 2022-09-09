@@ -25,7 +25,7 @@
 
 * Is there a better representation for flags than simply an integer?
 
-* Should functions returning `expected<T, E>` get translated in JS to functions
+* Should functions returning `result<T, E>` get translated in JS to functions
   that return `T` and throw `E`?
 
 * Adding imports to an import object is clunky because you need to also pass in

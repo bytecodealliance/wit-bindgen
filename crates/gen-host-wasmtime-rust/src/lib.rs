@@ -144,12 +144,12 @@ impl Wasmtime {
         }
 
         if let Type::Id(id) = &f.result {
-            if let TypeDefKind::Expected(e) = &iface.types[*id].kind {
-                if let Type::Id(err) = e.err {
+            if let TypeDefKind::Result(r) = &iface.types[*id].kind {
+                if let Type::Id(err) = r.err {
                     if let Some(name) = &iface.types[err].name {
                         self.needs_custom_error_to_types.insert(name.clone());
                         return FunctionRet::CustomToError {
-                            ok: e.ok,
+                            ok: r.ok,
                             err: name.to_string(),
                         };
                     }
@@ -409,15 +409,15 @@ impl Generator for Wasmtime {
         self.print_typedef_option(iface, id, payload, docs);
     }
 
-    fn type_expected(
+    fn type_result(
         &mut self,
         iface: &Interface,
         id: TypeId,
         _name: &str,
-        expected: &Expected,
+        result: &Result_,
         docs: &Docs,
     ) {
-        self.print_typedef_expected(iface, id, expected, docs);
+        self.print_typedef_result(iface, id, result, docs);
     }
 
     fn type_enum(&mut self, _iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
@@ -1614,7 +1614,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.gen.needs_invalid_variant = true;
             }
 
-            Instruction::ExpectedLower {
+            Instruction::ResultLower {
                 results: result_types,
                 ..
             } => {
@@ -1630,7 +1630,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 ));
             }
 
-            Instruction::ExpectedLift { .. } => {
+            Instruction::ResultLift { .. } => {
                 let err = self.blocks.pop().unwrap();
                 let ok = self.blocks.pop().unwrap();
                 let operand = &operands[0];
@@ -1638,7 +1638,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     "match {operand} {{
                         0 => Ok({ok}),
                         1 => Err({err}),
-                        _ => return Err(invalid_variant(\"expected\")),
+                        _ => return Err(invalid_variant(\"result\")),
                     }}"
                 ));
                 self.gen.needs_invalid_variant = true;

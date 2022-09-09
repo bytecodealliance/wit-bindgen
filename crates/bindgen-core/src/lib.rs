@@ -74,12 +74,12 @@ pub trait Generator {
         payload: &Type,
         docs: &Docs,
     );
-    fn type_expected(
+    fn type_result(
         &mut self,
         iface: &Interface,
         id: TypeId,
         name: &str,
-        expected: &Expected,
+        result: &Result_,
         docs: &Docs,
     );
     fn type_union(&mut self, iface: &Interface, id: TypeId, name: &str, union: &Union, docs: &Docs);
@@ -122,7 +122,7 @@ pub trait Generator {
                     self.type_variant(iface, id, name, variant, &ty.docs)
                 }
                 TypeDefKind::Option(t) => self.type_option(iface, id, name, t, &ty.docs),
-                TypeDefKind::Expected(e) => self.type_expected(iface, id, name, e, &ty.docs),
+                TypeDefKind::Result(r) => self.type_result(iface, id, name, r, &ty.docs),
                 TypeDefKind::Union(u) => self.type_union(iface, id, name, u, &ty.docs),
                 TypeDefKind::List(t) => self.type_list(iface, id, name, t, &ty.docs),
                 TypeDefKind::Type(t) => self.type_alias(iface, id, name, t, &ty.docs),
@@ -245,9 +245,9 @@ impl Types {
             TypeDefKind::Option(ty) => {
                 info = self.type_info(iface, ty);
             }
-            TypeDefKind::Expected(e) => {
-                info = self.type_info(iface, &e.ok);
-                info |= self.type_info(iface, &e.err);
+            TypeDefKind::Result(r) => {
+                info = self.type_info(iface, &r.ok);
+                info |= self.type_info(iface, &r.err);
             }
             TypeDefKind::Union(u) => {
                 for case in u.cases.iter() {
@@ -299,9 +299,9 @@ impl Types {
             TypeDefKind::List(ty) | TypeDefKind::Type(ty) | TypeDefKind::Option(ty) => {
                 self.set_param_result_ty(iface, ty, param, result)
             }
-            TypeDefKind::Expected(e) => {
-                self.set_param_result_ty(iface, &e.ok, param, result);
-                self.set_param_result_ty(iface, &e.err, param, result);
+            TypeDefKind::Result(r) => {
+                self.set_param_result_ty(iface, &r.ok, param, result);
+                self.set_param_result_ty(iface, &r.err, param, result);
             }
             TypeDefKind::Union(u) => {
                 for case in u.cases.iter() {

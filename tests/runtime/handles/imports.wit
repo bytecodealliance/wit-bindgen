@@ -17,7 +17,7 @@ host-state2-param-tuple: func(a: host-state-param-tuple)
 type host-state-param-option = option<host-state2>
 host-state2-param-option: func(a: host-state-param-option)
 
-type host-state-param-result = expected<host-state2, u32>
+type host-state-param-result = result<host-state2, u32>
 host-state2-param-result: func(a: host-state-param-result)
 
 union host-state-param-variant { host-state2, u32 }
@@ -35,7 +35,7 @@ host-state2-result-tuple: func() -> host-state-result-tuple
 type host-state-result-option = option<host-state2>
 host-state2-result-option: func() -> host-state-result-option
 
-type host-state-result-result = expected<host-state2, u32>
+type host-state-result-result = result<host-state2, u32>
 host-state2-result-result: func() -> host-state-result-result
 
 union host-state-result-variant { host-state2, u32 }

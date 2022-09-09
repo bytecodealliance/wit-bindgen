@@ -42,12 +42,12 @@ mod custom_errors {
     wit_bindgen_host_wasmtime_rust::export!({
         src["x"]: "
             foo: func()
-            bar: func() -> expected<unit, u32>
+            bar: func() -> result<unit, u32>
             enum errno {
                 bad1,
                 bad2,
             }
-            baz: func() -> expected<u32, errno>
+            baz: func() -> result<u32, errno>
         ",
         custom_error: true,
     });

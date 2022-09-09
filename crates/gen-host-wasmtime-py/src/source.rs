@@ -218,12 +218,12 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
                         self.print_ty(t, true);
                         self.push_str("]");
                     }
-                    TypeDefKind::Expected(e) => {
-                        self.deps.needs_expected = true;
-                        self.push_str("Expected[");
-                        self.print_ty(&e.ok, true);
+                    TypeDefKind::Result(r) => {
+                        self.deps.needs_result = true;
+                        self.push_str("Result[");
+                        self.print_ty(&r.ok, true);
                         self.push_str(", ");
-                        self.print_ty(&e.err, true);
+                        self.print_ty(&r.err, true);
                         self.push_str("]");
                     }
                     TypeDefKind::List(t) => self.print_list(t),
