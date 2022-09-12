@@ -533,11 +533,11 @@ impl Generator for RustWasm {
             Some(module) => {
                 self.src.push_str(module);
                 self.src.push_str("#");
-                self.src.push_str(&func.name);
+                self.src.push_str(&iface.mangle_funcname(func));
             }
             None => {
                 self.src.push_str(&self.opts.symbol_namespace);
-                self.src.push_str(&func.name);
+                self.src.push_str(&iface.mangle_funcname(func));
             }
         }
         self.src.push_str("\"]\n");
@@ -1433,8 +1433,13 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::IterBasePointer => results.push("base".to_string()),
 
-            Instruction::CallWasm { iface, name, sig } => {
-                let func = self.declare_import(iface, name, &sig.params, &sig.results);
+            Instruction::CallWasm {
+                iface,
+                base_name: _,
+                mangled_name,
+                sig,
+            } => {
+                let func = self.declare_import(iface, mangled_name, &sig.params, &sig.results);
 
                 // ... then call the function with all our operands
                 if sig.results.len() > 0 {

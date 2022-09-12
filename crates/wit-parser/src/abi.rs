@@ -636,7 +636,8 @@ def_instruction! {
         /// provided inline as well as the types if necessary.
         CallWasm {
             iface: &'a Interface,
-            name: &'a str,
+            base_name: &'a str,
+            mangled_name: String,
             sig: &'a WasmSignature,
         } : [sig.params.len()] => [sig.results.len()],
 
@@ -1080,7 +1081,8 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 assert_eq!(self.stack.len(), sig.params.len());
                 self.emit(&Instruction::CallWasm {
                     iface: self.iface,
-                    name: &func.name,
+                    base_name: &func.name,
+                    mangled_name: self.iface.mangle_funcname(func),
                     sig: &sig,
                 });
 

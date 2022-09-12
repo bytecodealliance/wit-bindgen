@@ -595,7 +595,7 @@ impl Generator for Wasmtime {
             .entry(iface.name.to_string())
             .or_insert(Vec::new())
             .push(Import {
-                name: func.name.to_string(),
+                name: iface.mangle_funcname(func),
                 closure,
                 trait_signature,
             });
@@ -703,7 +703,8 @@ impl Generator for Wasmtime {
                 format!("wasmtime::TypedFunc<{}>", cvt),
                 format!(
                     "instance.get_typed_func::<{}, _>(&mut store, \"{}\")?",
-                    cvt, func.name,
+                    cvt,
+                    iface.mangle_funcname(func),
                 ),
             ),
         );
@@ -1883,7 +1884,8 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::CallWasm {
                 iface: _,
-                name,
+                base_name,
+                mangled_name: _,
                 sig,
             } => {
                 if sig.results.len() > 0 {
@@ -1898,7 +1900,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.push_str(") = ");
                 }
                 self.push_str("self.");
-                self.push_str(&to_rust_ident(name));
+                self.push_str(&to_rust_ident(base_name));
                 self.push_str(".call(");
                 self.push_str("&mut caller, (");
                 for operand in operands {

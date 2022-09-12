@@ -41,7 +41,8 @@ struct Imports {
 }
 
 struct Import {
-    name: String,
+    base_name: String,
+    mangled_name: String,
     src: Source,
     wasm_ty: String,
     pysig: String,
@@ -443,7 +444,8 @@ impl Generator for WasmtimePy {
         );
         wasm_ty.push_str("])");
         let import = Import {
-            name: func.name.clone(),
+            base_name: func.name.clone(),
+            mangled_name: iface.mangle_funcname(func),
             src: func_body,
             wasm_ty,
             pysig,
@@ -538,7 +540,9 @@ impl Generator for WasmtimePy {
         if let Some(name) = &needs_free {
             exports.fields.insert(name.clone(), "wasmtime.Func");
         }
-        exports.fields.insert(func.name.clone(), "wasmtime.Func");
+        exports
+            .fields
+            .insert(iface.mangle_funcname(func), "wasmtime.Func");
 
         let dst = match &func.kind {
             FunctionKind::Freestanding => &mut exports.freestanding_funcs,
@@ -701,8 +705,8 @@ impl Generator for WasmtimePy {
                 self.src.push_str(&format!(
                     "linker.define('{}', '{}', wasmtime.Func(store, ty, {}, access_caller = True))\n",
                     iface.name,
-                    func.name,
-                    func.name.to_snake_case(),
+                    func.mangled_name,
+                    func.base_name.to_snake_case(),
                 ));
             }
 
@@ -1719,7 +1723,8 @@ impl Bindgen for FunctionBindgen<'_> {
             }
             Instruction::CallWasm {
                 iface: _,
-                name,
+                base_name,
+                mangled_name: _,
                 sig,
             } => {
                 if sig.results.len() > 0 {
@@ -1735,7 +1740,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
                 builder.push_str(&self.src_object);
                 builder.push_str("._");
-                builder.push_str(&name.to_snake_case());
+                builder.push_str(&base_name.to_snake_case());
                 builder.push_str("(caller");
                 if operands.len() > 0 {
                     builder.push_str(", ");

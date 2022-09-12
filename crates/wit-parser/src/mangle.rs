@@ -206,42 +206,33 @@ mod tests {
         let interface = Interface::default();
 
         assert_eq!(
-            interface.mangle_funcname(
-                "foo",
-                &Function {
-                    docs: Docs::default(),
-                    name: "bar".to_owned(),
-                    kind: FunctionKind::Freestanding,
-                    params: Vec::new(),
-                    result: Type::Unit
-                }
-            ),
+            interface.mangle_funcname(&Function {
+                docs: Docs::default(),
+                name: "foo".to_owned(),
+                kind: FunctionKind::Freestanding,
+                params: Vec::new(),
+                result: Type::Unit
+            }),
             "foo: func() -> unit"
         );
         assert_eq!(
-            interface.mangle_funcname(
-                "foo",
-                &Function {
-                    docs: Docs::default(),
-                    name: "bar".to_owned(),
-                    kind: FunctionKind::Freestanding,
-                    params: vec![("a".to_owned(), Type::S64)],
-                    result: Type::S32
-                }
-            ),
+            interface.mangle_funcname(&Function {
+                docs: Docs::default(),
+                name: "foo".to_owned(),
+                kind: FunctionKind::Freestanding,
+                params: vec![("a".to_owned(), Type::S64)],
+                result: Type::S32
+            }),
             "foo: func(a: s64) -> s32"
         );
         assert_eq!(
-            interface.mangle_funcname(
-                "foo",
-                &Function {
-                    docs: Docs::default(),
-                    name: "bar".to_owned(),
-                    kind: FunctionKind::Freestanding,
-                    params: vec![("a".to_owned(), Type::S64), ("b".to_owned(), Type::U64)],
-                    result: Type::S32
-                }
-            ),
+            interface.mangle_funcname(&Function {
+                docs: Docs::default(),
+                name: "foo".to_owned(),
+                kind: FunctionKind::Freestanding,
+                params: vec![("a".to_owned(), Type::S64), ("b".to_owned(), Type::U64)],
+                result: Type::S32
+            }),
             "foo: func(a: s64, b: u64) -> s32"
         );
     }

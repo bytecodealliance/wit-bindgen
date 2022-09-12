@@ -987,7 +987,7 @@ impl Generator for C {
             self.src.c,
             "__attribute__((import_module(\"{}\"), import_name(\"{}\")))",
             iface.name,
-            func.name
+            iface.mangle_funcname(func)
         );
         let import_name = self.names.tmp(&format!(
             "__wasm_import_{}_{}",
@@ -1064,7 +1064,7 @@ impl Generator for C {
         uwriteln!(
             self.src.c,
             "__attribute__((export_name(\"{}\")))",
-            func.name
+            iface.mangle_funcname(func)
         );
         let import_name = self.names.tmp(&format!(
             "__wasm_export_{}_{}",
