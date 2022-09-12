@@ -52,7 +52,12 @@ struct Import {
 struct Exports {
     freestanding_funcs: Vec<Source>,
     resource_funcs: BTreeMap<ResourceId, Vec<Source>>,
-    fields: BTreeMap<String, &'static str>,
+    fields: BTreeMap<String, Export>,
+}
+
+struct Export {
+    python_type: &'static str,
+    base_name: String,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -530,19 +535,39 @@ impl Generator for WasmtimePy {
             .entry(iface.name.to_string())
             .or_insert_with(Exports::default);
         if needs_memory {
-            exports
-                .fields
-                .insert("memory".to_string(), "wasmtime.Memory");
+            exports.fields.insert(
+                "memory".to_string(),
+                Export {
+                    python_type: "wasmtime.Memory",
+                    base_name: "memory".to_owned(),
+                },
+            );
         }
         if let Some(name) = &needs_realloc {
-            exports.fields.insert(name.clone(), "wasmtime.Func");
+            exports.fields.insert(
+                name.clone(),
+                Export {
+                    python_type: "wasmtime.Func",
+                    base_name: name.clone(),
+                },
+            );
         }
         if let Some(name) = &needs_free {
-            exports.fields.insert(name.clone(), "wasmtime.Func");
+            exports.fields.insert(
+                name.clone(),
+                Export {
+                    python_type: "wasmtime.Func",
+                    base_name: name.clone(),
+                },
+            );
         }
-        exports
-            .fields
-            .insert(iface.mangle_funcname(func), "wasmtime.Func");
+        exports.fields.insert(
+            iface.mangle_funcname(func),
+            Export {
+                python_type: "wasmtime.Func",
+                base_name: func.name.clone(),
+            },
+        );
 
         let dst = match &func.kind {
             FunctionKind::Freestanding => &mut exports.freestanding_funcs,
@@ -757,9 +782,12 @@ impl Generator for WasmtimePy {
             self.src.indent();
 
             self.src.push_str("instance: wasmtime.Instance\n");
-            for (name, ty) in exports.fields.iter() {
-                self.src
-                    .push_str(&format!("_{}: {}\n", name.to_snake_case(), ty));
+            for (_name, export) in exports.fields.iter() {
+                self.src.push_str(&format!(
+                    "_{}: {}\n",
+                    export.base_name.to_snake_case(),
+                    export.python_type
+                ));
             }
             for (id, r) in iface.resources.iter() {
                 self.src.push_str(&format!(
@@ -808,7 +836,7 @@ impl Generator for WasmtimePy {
                 .push_str("self.instance = linker.instantiate(store, module)\n");
             self.src
                 .push_str("exports = self.instance.exports(store)\n");
-            for (name, ty) in exports.fields.iter() {
+            for (name, export) in exports.fields.iter() {
                 self.src.push_str(&format!(
                     "
                         {snake} = exports['{name}']
@@ -816,8 +844,8 @@ impl Generator for WasmtimePy {
                         self._{snake} = {snake}
                     ",
                     name = name,
-                    snake = name.to_snake_case(),
-                    ty = ty,
+                    snake = export.base_name.to_snake_case(),
+                    ty = export.python_type,
                 ));
             }
             for (id, r) in iface.resources.iter() {
