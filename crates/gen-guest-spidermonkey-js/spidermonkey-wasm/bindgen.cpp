@@ -109,7 +109,7 @@ void canonical_abi_free(void* ptr, size_t size, size_t align) {
 }
 
 WASM_EXPORT
-void* canonical_abi_realloc(void* ptr, size_t old_size, size_t align, size_t new_size) {
+void* cabi_realloc(void* ptr, size_t old_size, size_t align, size_t new_size) {
     (void) old_size;
     (void) align;
     return realloc(ptr, new_size);

@@ -230,7 +230,7 @@ pub trait RustGenerator {
                     TypeDefKind::Variant(_)
                     | TypeDefKind::Record(_)
                     | TypeDefKind::Option(_)
-                    | TypeDefKind::Expected(_)
+                    | TypeDefKind::Result(_)
                     | TypeDefKind::Future(_)
                     | TypeDefKind::Stream(_)
                     | TypeDefKind::List(_)
@@ -255,11 +255,11 @@ pub trait RustGenerator {
                 self.push_str(">");
             }
 
-            TypeDefKind::Expected(e) => {
+            TypeDefKind::Result(r) => {
                 self.push_str("Result<");
-                self.print_ty(iface, &e.ok, mode);
+                self.print_ty(iface, &r.ok, mode);
                 self.push_str(",");
-                self.print_ty(iface, &e.err, mode);
+                self.print_ty(iface, &r.err, mode);
                 self.push_str(">");
             }
 
@@ -418,7 +418,7 @@ pub trait RustGenerator {
                             out.push_str("Optional");
                             self.write_name(iface, ty, out);
                         }
-                        TypeDefKind::Expected(_) => out.push_str("Result"),
+                        TypeDefKind::Result(_) => out.push_str("Result"),
                         TypeDefKind::Tuple(_) => out.push_str("Tuple"),
                         TypeDefKind::List(ty) => {
                             self.write_name(iface, ty, out);
@@ -698,11 +698,11 @@ pub trait RustGenerator {
         }
     }
 
-    fn print_typedef_expected(
+    fn print_typedef_result(
         &mut self,
         iface: &Interface,
         id: TypeId,
-        expected: &Expected,
+        result: &Result_,
         docs: &Docs,
     ) {
         let info = self.info(id);
@@ -713,9 +713,9 @@ pub trait RustGenerator {
             self.push_str(&format!("pub type {}", name));
             self.print_generics(&info, lt, true);
             self.push_str("= Result<");
-            self.print_ty(iface, &expected.ok, mode);
+            self.print_ty(iface, &result.ok, mode);
             self.push_str(",");
-            self.print_ty(iface, &expected.err, mode);
+            self.print_ty(iface, &result.err, mode);
             self.push_str(">;\n");
         }
     }

@@ -96,21 +96,21 @@ casts: func(
   casts6,
 >
 
-expected-arg: func(
-  a: expected<unit, unit>,
-  b: expected<unit, e1>,
-  c: expected<e1, unit>,
-  d: expected<tuple<>, tuple<>>,
-  e: expected<u32, v1>,
-  f: expected<string, list<u8>>,
+result-arg: func(
+  a: result<unit, unit>,
+  b: result<unit, e1>,
+  c: result<e1, unit>,
+  d: result<tuple<>, tuple<>>,
+  e: result<u32, v1>,
+  f: result<string, list<u8>>,
 )
-expected-result: func() -> tuple<
-  expected<unit, unit>,
-  expected<unit, e1>,
-  expected<e1, unit>,
-  expected<tuple<>, tuple<>>,
-  expected<u32, v1>,
-  expected<string, list<u8>>,
+result-result: func() -> tuple<
+  result<unit, unit>,
+  result<unit, e1>,
+  result<e1, unit>,
+  result<tuple<>, tuple<>>,
+  result<u32, v1>,
+  result<string, list<u8>>,
 >
 
 enum my-errno {
@@ -118,14 +118,14 @@ enum my-errno {
   bad2,
 }
 
-return-expected-sugar: func() -> expected<s32, my-errno>
-return-expected-sugar2: func() -> expected<unit, my-errno>
-return-expected-sugar3: func() -> expected<my-errno, my-errno>
-return-expected-sugar4: func() -> expected<tuple<s32, u32>, my-errno>
+return-result-sugar: func() -> result<s32, my-errno>
+return-result-sugar2: func() -> result<unit, my-errno>
+return-result-sugar3: func() -> result<my-errno, my-errno>
+return-result-sugar4: func() -> result<tuple<s32, u32>, my-errno>
 return-option-sugar: func() -> option<s32>
 return-option-sugar2: func() -> option<my-errno>
 
-expected-simple: func() -> expected<u32, s32>
+result-simple: func() -> result<u32, s32>
 
 record is-clone {
   v1: v1,

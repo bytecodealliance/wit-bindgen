@@ -41,7 +41,8 @@ struct Imports {
 }
 
 struct Import {
-    name: String,
+    base_name: String,
+    mangled_name: String,
     src: Source,
     wasm_ty: String,
     pysig: String,
@@ -51,7 +52,12 @@ struct Import {
 struct Exports {
     freestanding_funcs: Vec<Source>,
     resource_funcs: BTreeMap<ResourceId, Vec<Source>>,
-    fields: BTreeMap<String, &'static str>,
+    fields: BTreeMap<String, Export>,
+}
+
+struct Export {
+    python_type: &'static str,
+    base_name: String,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -279,22 +285,22 @@ impl Generator for WasmtimePy {
         builder.push_str("]\n\n");
     }
 
-    fn type_expected(
+    fn type_result(
         &mut self,
         iface: &Interface,
         _id: TypeId,
         name: &str,
-        expected: &Expected,
+        result: &Result_,
         docs: &Docs,
     ) {
-        self.deps.needs_expected = true;
+        self.deps.needs_result = true;
 
         let mut builder = self.src.builder(&mut self.deps, iface);
         builder.comment(docs);
-        builder.push_str(&format!("{} = Expected[", name.to_camel_case()));
-        builder.print_ty(&expected.ok, true);
+        builder.push_str(&format!("{} = Result[", name.to_camel_case()));
+        builder.print_ty(&result.ok, true);
         builder.push_str(", ");
-        builder.print_ty(&expected.err, true);
+        builder.print_ty(&result.err, true);
         builder.push_str("]\n\n");
     }
 
@@ -443,7 +449,8 @@ impl Generator for WasmtimePy {
         );
         wasm_ty.push_str("])");
         let import = Import {
-            name: func.name.clone(),
+            base_name: func.name.clone(),
+            mangled_name: iface.mangle_funcname(func),
             src: func_body,
             wasm_ty,
             pysig,
@@ -528,17 +535,39 @@ impl Generator for WasmtimePy {
             .entry(iface.name.to_string())
             .or_insert_with(Exports::default);
         if needs_memory {
-            exports
-                .fields
-                .insert("memory".to_string(), "wasmtime.Memory");
+            exports.fields.insert(
+                "memory".to_string(),
+                Export {
+                    python_type: "wasmtime.Memory",
+                    base_name: "memory".to_owned(),
+                },
+            );
         }
         if let Some(name) = &needs_realloc {
-            exports.fields.insert(name.clone(), "wasmtime.Func");
+            exports.fields.insert(
+                name.clone(),
+                Export {
+                    python_type: "wasmtime.Func",
+                    base_name: name.clone(),
+                },
+            );
         }
         if let Some(name) = &needs_free {
-            exports.fields.insert(name.clone(), "wasmtime.Func");
+            exports.fields.insert(
+                name.clone(),
+                Export {
+                    python_type: "wasmtime.Func",
+                    base_name: name.clone(),
+                },
+            );
         }
-        exports.fields.insert(func.name.clone(), "wasmtime.Func");
+        exports.fields.insert(
+            iface.mangle_funcname(func),
+            Export {
+                python_type: "wasmtime.Func",
+                base_name: func.name.clone(),
+            },
+        );
 
         let dst = match &func.kind {
             FunctionKind::Freestanding => &mut exports.freestanding_funcs,
@@ -701,8 +730,8 @@ impl Generator for WasmtimePy {
                 self.src.push_str(&format!(
                     "linker.define('{}', '{}', wasmtime.Func(store, ty, {}, access_caller = True))\n",
                     iface.name,
-                    func.name,
-                    func.name.to_snake_case(),
+                    func.mangled_name,
+                    func.base_name.to_snake_case(),
                 ));
             }
 
@@ -753,9 +782,12 @@ impl Generator for WasmtimePy {
             self.src.indent();
 
             self.src.push_str("instance: wasmtime.Instance\n");
-            for (name, ty) in exports.fields.iter() {
-                self.src
-                    .push_str(&format!("_{}: {}\n", name.to_snake_case(), ty));
+            for (_name, export) in exports.fields.iter() {
+                self.src.push_str(&format!(
+                    "_{}: {}\n",
+                    export.base_name.to_snake_case(),
+                    export.python_type
+                ));
             }
             for (id, r) in iface.resources.iter() {
                 self.src.push_str(&format!(
@@ -804,7 +836,7 @@ impl Generator for WasmtimePy {
                 .push_str("self.instance = linker.instantiate(store, module)\n");
             self.src
                 .push_str("exports = self.instance.exports(store)\n");
-            for (name, ty) in exports.fields.iter() {
+            for (name, export) in exports.fields.iter() {
                 self.src.push_str(&format!(
                     "
                         {snake} = exports['{name}']
@@ -812,8 +844,8 @@ impl Generator for WasmtimePy {
                         self._{snake} = {snake}
                     ",
                     name = name,
-                    snake = name.to_snake_case(),
-                    ty = ty,
+                    snake = export.base_name.to_snake_case(),
+                    ty = export.python_type,
                 ));
             }
             for (id, r) in iface.resources.iter() {
@@ -1455,7 +1487,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(result);
             }
 
-            Instruction::ExpectedLower {
+            Instruction::ResultLower {
                 results: result_types,
                 ..
             } => {
@@ -1494,7 +1526,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 builder.dedent();
             }
 
-            Instruction::ExpectedLift { ty, .. } => {
+            Instruction::ResultLift { ty, .. } => {
                 let (err, err_results) = self.blocks.pop().unwrap();
                 let (ok, ok_results) = self.blocks.pop().unwrap();
                 assert!(err_results.len() == 1);
@@ -1719,7 +1751,8 @@ impl Bindgen for FunctionBindgen<'_> {
             }
             Instruction::CallWasm {
                 iface: _,
-                name,
+                base_name,
+                mangled_name: _,
                 sig,
             } => {
                 if sig.results.len() > 0 {
@@ -1735,7 +1768,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
                 builder.push_str(&self.src_object);
                 builder.push_str("._");
-                builder.push_str(&name.to_snake_case());
+                builder.push_str(&base_name.to_snake_case());
                 builder.push_str("(caller");
                 if operands.len() > 0 {
                     builder.push_str(", ");

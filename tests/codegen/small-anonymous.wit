@@ -3,4 +3,4 @@ enum error {
   failure,
 }
 
-option-test: func() -> expected<option<string>, error>
+option-test: func() -> result<option<string>, error>

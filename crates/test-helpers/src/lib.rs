@@ -183,9 +183,9 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 let ty = quote_ty(param, iface, ty);
                 quote::quote! { Option<#ty> }
             }
-            TypeDefKind::Expected(e) => {
-                let ok = quote_ty(param, iface, &e.ok);
-                let err = quote_ty(param, iface, &e.err);
+            TypeDefKind::Result(r) => {
+                let ok = quote_ty(param, iface, &r.ok);
+                let err = quote_ty(param, iface, &r.err);
                 quote::quote! { Result<#ok, #err> }
             }
             TypeDefKind::Future(_) => todo!("unknown future"),

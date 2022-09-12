@@ -1,7 +1,7 @@
 test-imports: func()
 
 roundtrip-option: func(a: option<float32>) -> option<u8>
-roundtrip-result: func(a: expected<u32, float32>) -> expected<float64, u8>
+roundtrip-result: func(a: result<u32, float32>) -> result<float64, u8>
 
 enum e1 { a, b }
 roundtrip-enum: func(a: e1) -> e1
@@ -26,5 +26,5 @@ variant-zeros: func(a: zeros) -> zeros
 
 type option-typedef = option<u32>
 type bool-typedef = bool
-type result-typedef = expected<u32, unit>
+type result-typedef = result<u32, unit>
 variant-typedefs: func(a: option-typedef, b: bool-typedef, c: result-typedef)

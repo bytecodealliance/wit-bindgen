@@ -90,8 +90,8 @@ void exports_test_imports() {
     a.ptr = a_val;
     a.len = 2;
 
-    imports_list_expected_unit_unit_t b;
-    imports_expected_unit_unit_t b_val[2];
+    imports_list_result_unit_unit_t b;
+    imports_result_unit_unit_t b_val[2];
     b_val[0].is_err = false;
     b_val[1].is_err = true;
     b.ptr = b_val;
@@ -105,7 +105,7 @@ void exports_test_imports() {
     c.len = 2;
 
     imports_list_bool_t d;
-    imports_list_expected_unit_unit_t e;
+    imports_list_result_unit_unit_t e;
     imports_list_my_errno_t f;
     imports_list_of_variants(&a, &b, &c, &d, &e, &f);
 
@@ -122,7 +122,7 @@ void exports_test_imports() {
     assert(f.ptr[1] == IMPORTS_MY_ERRNO_B);
 
     imports_list_bool_free(&d);
-    imports_list_expected_unit_unit_free(&e);
+    imports_list_result_unit_unit_free(&e);
     imports_list_my_errno_free(&f);
   }
 }

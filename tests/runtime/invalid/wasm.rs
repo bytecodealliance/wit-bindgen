@@ -2,21 +2,21 @@ wit_bindgen_guest_rust::export!("../../tests/runtime/invalid/exports.wit");
 
 #[link(wasm_import_module = "imports")]
 extern "C" {
-    #[link_name = "roundtrip-bool"]
+    #[link_name = "roundtrip-bool: func(a: bool) -> bool"]
     fn roundtrip_bool(a: i32) -> i32;
-    #[link_name = "roundtrip-u16"]
+    #[link_name = "roundtrip-u16: func(a: u16) -> u16"]
     fn roundtrip_u16(a: i32) -> i32;
-    #[link_name = "roundtrip-u8"]
+    #[link_name = "roundtrip-u8: func(a: u8) -> u8"]
     fn roundtrip_u8(a: i32) -> i32;
-    #[link_name = "roundtrip-s16"]
+    #[link_name = "roundtrip-s16: func(a: s16) -> s16"]
     fn roundtrip_s16(a: i32) -> i32;
-    #[link_name = "roundtrip-s8"]
+    #[link_name = "roundtrip-s8: func(a: s8) -> s8"]
     fn roundtrip_s8(a: i32) -> i32;
-    #[link_name = "roundtrip-char"]
+    #[link_name = "roundtrip-char: func(a: char) -> char"]
     fn roundtrip_char(a: i32) -> i32;
-    #[link_name = "roundtrip-enum"]
+    #[link_name = "roundtrip-enum: func(a: enum { a, b, c }) -> enum { a, b, c }"]
     fn roundtrip_enum(a: i32) -> i32;
-    #[link_name = "get-internal"]
+    #[link_name = "get-internal: func(a: handle<host-state>) -> u32"]
     fn get_internal(a: i32) -> i32;
 }
 

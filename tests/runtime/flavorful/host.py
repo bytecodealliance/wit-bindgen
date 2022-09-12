@@ -33,7 +33,7 @@ class MyImports:
         assert(a == 'input3')
         return 'output3'
 
-    def errno_result(self) -> i.Expected[None, i.MyErrno]:
+    def errno_result(self) -> i.Result[None, i.MyErrno]:
         return i.Err(i.MyErrno.B)
 
     def list_typedefs(self, a: i.ListTypedef, c: i.ListTypedef3) -> Tuple[i.ListTypedef2, i.ListTypedef3]:
@@ -41,7 +41,7 @@ class MyImports:
         assert(c == ['typedef2'])
         return (b'typedef3', ['typedef4'])
 
-    def list_of_variants(self, a: List[bool], b: List[i.Expected[None, None]], c: List[i.MyErrno]) -> Tuple[List[bool], List[i.Expected[None, None]], List[i.MyErrno]]:
+    def list_of_variants(self, a: List[bool], b: List[i.Result[None, None]], c: List[i.MyErrno]) -> Tuple[List[bool], List[i.Result[None, None]], List[i.MyErrno]]:
           assert(a == [True, False])
           assert(b == [i.Ok(None), i.Err(None)])
           assert(c == [i.MyErrno.SUCCESS, i.MyErrno.A])

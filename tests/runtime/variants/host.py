@@ -12,7 +12,7 @@ class MyImports:
             return int(a)
         return None
 
-    def roundtrip_result(self, a: i.Expected[int, float]) -> i.Expected[float, int]:
+    def roundtrip_result(self, a: i.Result[int, float]) -> i.Result[float, int]:
         if isinstance(a, i.Ok):
             return i.Ok(float(a.value))
         return i.Err(int(a.value))
@@ -32,7 +32,7 @@ class MyImports:
     def variant_typedefs(self, a: i.OptionTypedef, b: i.BoolTypedef, c: i.ResultTypedef) -> None:
         pass
 
-    def variant_enums(self, a: bool, b: i.Expected[None, None], c: i.MyErrno) -> Tuple[bool, i.Expected[None, None], i.MyErrno]:
+    def variant_enums(self, a: bool, b: i.Result[None, None], c: i.MyErrno) -> Tuple[bool, i.Result[None, None], i.MyErrno]:
         assert(a)
         assert(isinstance(b, i.Ok))
         assert(c == i.MyErrno.SUCCESS)

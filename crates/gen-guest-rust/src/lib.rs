@@ -267,15 +267,15 @@ impl Generator for RustWasm {
         self.print_typedef_option(iface, id, payload, docs);
     }
 
-    fn type_expected(
+    fn type_result(
         &mut self,
         iface: &Interface,
         id: TypeId,
         _name: &str,
-        expected: &Expected,
+        result: &Result_,
         docs: &Docs,
     ) {
-        self.print_typedef_expected(iface, id, expected, docs);
+        self.print_typedef_result(iface, id, result, docs);
     }
 
     fn type_enum(&mut self, _iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
@@ -533,11 +533,11 @@ impl Generator for RustWasm {
             Some(module) => {
                 self.src.push_str(module);
                 self.src.push_str("#");
-                self.src.push_str(&func.name);
+                self.src.push_str(&iface.mangle_funcname(func));
             }
             None => {
                 self.src.push_str(&self.opts.symbol_namespace);
-                self.src.push_str(&func.name);
+                self.src.push_str(&iface.mangle_funcname(func));
             }
         }
         self.src.push_str("\"]\n");
@@ -1202,7 +1202,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 ));
             }
 
-            Instruction::ExpectedLower {
+            Instruction::ResultLower {
                 results: result_types,
                 ..
             } => {
@@ -1218,7 +1218,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 ));
             }
 
-            Instruction::ExpectedLift { .. } => {
+            Instruction::ResultLift { .. } => {
                 let err = self.blocks.pop().unwrap();
                 let ok = self.blocks.pop().unwrap();
                 let operand = &operands[0];
@@ -1433,8 +1433,13 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::IterBasePointer => results.push("base".to_string()),
 
-            Instruction::CallWasm { iface, name, sig } => {
-                let func = self.declare_import(iface, name, &sig.params, &sig.results);
+            Instruction::CallWasm {
+                iface,
+                base_name: _,
+                mangled_name,
+                sig,
+            } => {
+                let func = self.declare_import(iface, mangled_name, &sig.params, &sig.results);
 
                 // ... then call the function with all our operands
                 if sig.results.len() > 0 {

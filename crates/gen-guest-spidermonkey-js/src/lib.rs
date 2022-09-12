@@ -16,7 +16,7 @@ use wasm_encoder::Instruction;
 use wit_bindgen_core::{
     wit_parser::{
         abi::{self, AbiVariant, WasmSignature, WasmType},
-        Docs, Enum, Expected, Flags, Function, Interface, Record, ResourceId, SizeAlign, Tuple,
+        Docs, Enum, Flags, Function, Interface, Record, ResourceId, Result_, SizeAlign, Tuple,
         Type, TypeId, Union, Variant,
     },
     Direction, Files, Generator,
@@ -63,7 +63,7 @@ lazy_static! {
             },
         ),
         (
-            "canonical_abi_realloc",
+            "cabi_realloc",
             WasmSignature {
                 params: vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32],
                 results: vec![WasmType::I32],
@@ -1012,15 +1012,15 @@ impl Generator for SpiderMonkeyWasm<'_> {
         todo!()
     }
 
-    fn type_expected(
+    fn type_result(
         &mut self,
         iface: &Interface,
         id: TypeId,
         name: &str,
-        expected: &Expected,
+        result: &Result_,
         docs: &Docs,
     ) {
-        let _ = (iface, id, name, expected, docs);
+        let _ = (iface, id, name, result, docs);
         todo!()
     }
 
@@ -1056,7 +1056,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
         let import_fn_index = self.wit_import(self.imports.len());
         self.imports.import(
             &iface.name,
-            Some(&func.name),
+            Some(&iface.mangle_funcname(func)),
             wasm_encoder::EntityType::Function(type_index),
         );
 
@@ -1065,7 +1065,7 @@ impl Generator for SpiderMonkeyWasm<'_> {
             .entry(iface.name.clone())
             .or_default()
             .insert(
-                func.name.clone(),
+                iface.mangle_funcname(func),
                 (import_fn_index, u32::try_from(func.params.len()).unwrap()),
             );
         assert!(existing.is_none());
@@ -1088,8 +1088,10 @@ impl Generator for SpiderMonkeyWasm<'_> {
         let wasm_sig = iface.wasm_signature(AbiVariant::GuestExport, func);
         let type_index = self.intern_type(wasm_sig.clone());
         let export_fn_index = self.wit_export(self.exports.len());
-        self.exports
-            .export(&func.name, wasm_encoder::Export::Function(export_fn_index));
+        self.exports.export(
+            &iface.mangle_funcname(func),
+            wasm_encoder::Export::Function(export_fn_index),
+        );
         self.function_names
             .push((export_fn_index, format!("{}.{}", iface.name, func.name)));
 
@@ -1139,8 +1141,8 @@ impl Generator for SpiderMonkeyWasm<'_> {
             wasm_encoder::Export::Function(self.spidermonkey_import("canonical_abi_free")),
         );
         self.exports.export(
-            "canonical_abi_realloc",
-            wasm_encoder::Export::Function(self.spidermonkey_import("canonical_abi_realloc")),
+            "cabi_realloc",
+            wasm_encoder::Export::Function(self.spidermonkey_import("cabi_realloc")),
         );
 
         // Add the WIT function imports (add their import glue functions) to
@@ -1965,8 +1967,8 @@ impl abi::Bindgen for Bindgen<'_, '_> {
             } => todo!(),
             abi::Instruction::OptionLower { .. } => todo!(),
             abi::Instruction::OptionLift { .. } => todo!(),
-            abi::Instruction::ExpectedLower { .. } => todo!(),
-            abi::Instruction::ExpectedLift { .. } => todo!(),
+            abi::Instruction::ResultLower { .. } => todo!(),
+            abi::Instruction::ResultLift { .. } => todo!(),
             abi::Instruction::UnionLower { .. } => todo!(),
             abi::Instruction::UnionLift { .. } => todo!(),
             abi::Instruction::EnumLower {
@@ -1979,7 +1981,12 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                 name: _,
                 ty: _,
             } => todo!(),
-            abi::Instruction::CallWasm { iface, name, sig } => {
+            abi::Instruction::CallWasm {
+                iface,
+                base_name: _,
+                mangled_name,
+                sig,
+            } => {
                 // Push the Wasm arguments.
                 //
                 // []
@@ -1994,7 +2001,7 @@ impl abi::Bindgen for Bindgen<'_, '_> {
                     .import_fn_name_to_index
                     .get(&iface.name)
                     .unwrap()
-                    .get(*name)
+                    .get(&*mangled_name)
                     .unwrap()
                     .0;
                 self.inst(Instruction::Call(func_index));

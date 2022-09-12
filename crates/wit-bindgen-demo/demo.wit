@@ -14,7 +14,7 @@ enum lang {
 resource config {
   static new: func() -> config
 
-  render: func(lang: lang, wit: string, import: bool) -> expected<files, string>
+  render: func(lang: lang, wit: string, import: bool) -> result<files, string>
 
   set-rust-unchecked: func(unchecked: bool)
   set-wasmtime-tracing: func(unchecked: bool)

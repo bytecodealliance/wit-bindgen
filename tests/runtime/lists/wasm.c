@@ -12,8 +12,8 @@
 
 static size_t ALLOCATED_BYTES = 0;
 
-__attribute__((export_name("canonical_abi_realloc")))
-void *canonical_abi_realloc( void *ptr, size_t orig_size, size_t orig_align, size_t new_size) {
+__attribute__((export_name("cabi_realloc")))
+void *cabi_realloc( void *ptr, size_t orig_size, size_t orig_align, size_t new_size) {
   void *ret = realloc(ptr, new_size);
   if (!ret)
     abort();
@@ -306,7 +306,7 @@ void exports_list_param4(exports_list_list_string_t *a) {
 }
 
 void exports_list_result(exports_list_u8_t *ret0) {
-  ret0->ptr = canonical_abi_realloc(NULL, 0, 1, 5);
+  ret0->ptr = cabi_realloc(NULL, 0, 1, 5);
   ret0->len = 5;
   ret0->ptr[0] = 1;
   ret0->ptr[1] = 2;
@@ -321,7 +321,7 @@ void exports_list_result2(exports_string_t *ret0) {
 
 void exports_list_result3(exports_list_string_t *ret0) {
   ret0->len = 2;
-  ret0->ptr = canonical_abi_realloc(NULL, 0, alignof(exports_string_t), 2 * sizeof(exports_string_t));
+  ret0->ptr = cabi_realloc(NULL, 0, alignof(exports_string_t), 2 * sizeof(exports_string_t));
 
   exports_string_dup(&ret0->ptr[0], "hello,");
   exports_string_dup(&ret0->ptr[1], "world!");
