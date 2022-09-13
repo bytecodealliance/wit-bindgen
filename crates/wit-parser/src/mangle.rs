@@ -266,7 +266,7 @@ mod tests {
         let iface = Interface::default();
         assert_eq!(
             iface.mangle_valtypedef(&TypeDefKind::Record(Record { fields: Vec::new() })),
-            "record {}"
+            "record {  }"
         );
         assert_eq!(
             iface.mangle_valtypedef(&TypeDefKind::Record(Record {
@@ -323,7 +323,7 @@ mod tests {
         let iface = Interface::default();
         assert_eq!(
             iface.mangle_valtypedef(&TypeDefKind::Flags(Flags { flags: Vec::new() })),
-            "flags {}"
+            "flags {  }"
         );
         assert_eq!(
             iface.mangle_valtypedef(&TypeDefKind::Flags(Flags {
@@ -356,7 +356,7 @@ mod tests {
         let iface = Interface::default();
         assert_eq!(
             iface.mangle_valtypedef(&TypeDefKind::Variant(Variant { cases: Vec::new() })),
-            "variant {}"
+            "variant {  }"
         );
         assert_eq!(
             iface.mangle_valtypedef(&TypeDefKind::Variant(Variant {
@@ -392,7 +392,7 @@ mod tests {
         let iface = Interface::default();
         assert_eq!(
             iface.mangle_valtypedef(&TypeDefKind::Enum(Enum { cases: Vec::new() })),
-            "enum {}"
+            "enum {  }"
         );
         assert_eq!(
             iface.mangle_valtypedef(&TypeDefKind::Enum(Enum {
@@ -425,7 +425,7 @@ mod tests {
         let iface = Interface::default();
         assert_eq!(
             iface.mangle_valtypedef(&TypeDefKind::Union(Union { cases: Vec::new() })),
-            "union {}"
+            "union {  }"
         );
         assert_eq!(
             iface.mangle_valtypedef(&TypeDefKind::Union(Union {
