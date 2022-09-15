@@ -67,6 +67,13 @@ enum GuestGenerator {
         #[structopt(flatten)]
         common: Common,
     },
+    /// Generates bindings for TeaVM-based Java guest modules.
+    TeavmJava {
+        #[structopt(flatten)]
+        opts: wit_bindgen_gen_guest_teavm_java::Opts,
+        #[structopt(flatten)]
+        common: Common,
+    },
 }
 
 #[derive(Debug, StructOpt)]
@@ -98,6 +105,9 @@ fn main() -> Result<()> {
         }
         Category::Host(HostGenerator::Js { opts, common }) => (Box::new(opts.build()), common),
         Category::Guest(GuestGenerator::C { opts, common }) => (Box::new(opts.build()), common),
+        Category::Guest(GuestGenerator::TeavmJava { opts, common }) => {
+            (Box::new(opts.build()), common)
+        }
         Category::Markdown { opts, common } => (Box::new(opts.build()), common),
     };
 

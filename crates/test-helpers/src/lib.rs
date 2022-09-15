@@ -281,6 +281,25 @@ pub fn codegen_c_export(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
+#[cfg(feature = "guest-teavm-java")]
+pub fn codegen_teavm_java_import(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Import, "import", || {
+        wit_bindgen_gen_guest_teavm_java::Opts::default().build()
+    })
+}
+
+#[proc_macro]
+#[cfg(feature = "guest-teavm-java")]
+pub fn codegen_teavm_java_export(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Export, "export", || {
+        wit_bindgen_gen_guest_teavm_java::Opts {
+            generate_stub: true,
+        }
+        .build()
+    })
+}
+
+#[proc_macro]
 #[cfg(feature = "host-wasmtime-py")]
 pub fn codegen_py_export(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Export, "export", || {
