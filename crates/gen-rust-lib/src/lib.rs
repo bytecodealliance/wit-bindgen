@@ -89,7 +89,7 @@ pub trait RustGenerator {
     ) -> Vec<String> {
         let params = self.print_docs_and_params(iface, func, param_mode, &sig);
         self.push_str(" -> ");
-        self.print_ty(iface, &func.result, TypeMode::Owned);
+        self.print_result_params(iface, &func.results, TypeMode::Owned);
         params
     }
 
@@ -146,6 +146,17 @@ pub trait RustGenerator {
         params
     }
 
+    fn print_result_params(&mut self, iface: &Interface, results: &Results, mode: TypeMode) {
+        self.push_str("(");
+        for (i, ty) in results.iter_types().enumerate() {
+            self.print_ty(iface, ty, mode);
+            if i != 0 {
+                self.push_str(", ")
+            }
+        }
+        self.push_str(")")
+    }
+
     fn print_ty(&mut self, iface: &Interface, ty: &Type, mode: TypeMode) {
         match ty {
             Type::Id(t) => self.print_tyid(iface, *t, mode),
@@ -182,7 +193,6 @@ pub trait RustGenerator {
                 self.push_str(suffix);
             }
 
-            Type::Unit => self.push_str("()"),
             Type::Bool => self.push_str("bool"),
             Type::U8 => self.push_str("u8"),
             Type::U16 => self.push_str("u16"),
@@ -201,6 +211,13 @@ pub trait RustGenerator {
                 }
                 TypeMode::Owned | TypeMode::HandlesBorrowed(_) => self.push_str("String"),
             },
+        }
+    }
+
+    fn print_optional_ty(&mut self, iface: &Interface, ty: Option<&Type>, mode: TypeMode) {
+        match ty {
+            Some(ty) => self.print_ty(iface, ty, mode),
+            None => self.push_str("()"),
         }
     }
 
@@ -257,9 +274,9 @@ pub trait RustGenerator {
 
             TypeDefKind::Result(r) => {
                 self.push_str("Result<");
-                self.print_ty(iface, &r.ok, mode);
+                self.print_optional_ty(iface, r.ok.as_ref(), mode);
                 self.push_str(",");
-                self.print_ty(iface, &r.err, mode);
+                self.print_optional_ty(iface, r.err.as_ref(), mode);
                 self.push_str(">");
             }
 
@@ -290,14 +307,14 @@ pub trait RustGenerator {
             }
             TypeDefKind::Future(ty) => {
                 self.push_str("Future<");
-                self.print_ty(iface, ty, mode);
+                self.print_optional_ty(iface, ty.as_ref(), mode);
                 self.push_str(">");
             }
             TypeDefKind::Stream(stream) => {
                 self.push_str("Stream<");
-                self.print_ty(iface, &stream.element, mode);
+                self.print_optional_ty(iface, stream.element.as_ref(), mode);
                 self.push_str(",");
-                self.print_ty(iface, &stream.end, mode);
+                self.print_optional_ty(iface, stream.end.as_ref(), mode);
                 self.push_str(">");
             }
 
@@ -394,7 +411,6 @@ pub trait RustGenerator {
     /// Writes the camel-cased 'name' of the passed type to `out`, as used to name union variants.
     fn write_name(&self, iface: &Interface, ty: &Type, out: &mut String) {
         match ty {
-            Type::Unit => out.push_str("Unit"),
             Type::Bool => out.push_str("Bool"),
             Type::U8 => out.push_str("U8"),
             Type::U16 => out.push_str("U16"),
@@ -425,12 +441,12 @@ pub trait RustGenerator {
                             out.push_str("List")
                         }
                         TypeDefKind::Future(ty) => {
-                            self.write_name(iface, ty, out);
+                            self.write_optional_name(iface, ty.as_ref(), out);
                             out.push_str("Future");
                         }
                         TypeDefKind::Stream(s) => {
-                            self.write_name(iface, &s.element, out);
-                            self.write_name(iface, &s.end, out);
+                            self.write_optional_name(iface, s.element.as_ref(), out);
+                            self.write_optional_name(iface, s.end.as_ref(), out);
                             out.push_str("Stream");
                         }
 
@@ -443,6 +459,13 @@ pub trait RustGenerator {
                     },
                 }
             }
+        }
+    }
+
+    fn write_optional_name(&self, iface: &Interface, ty: Option<&Type>, out: &mut String) {
+        match ty {
+            Some(ty) => self.write_name(iface, ty, out),
+            None => out.push_str("()"),
         }
     }
 
@@ -580,7 +603,7 @@ pub trait RustGenerator {
             variant
                 .cases
                 .iter()
-                .map(|c| (c.name.to_camel_case(), &c.docs, &c.ty)),
+                .map(|c| (c.name.to_camel_case(), &c.docs, c.ty.as_ref())),
             docs,
         );
     }
@@ -593,7 +616,7 @@ pub trait RustGenerator {
             iface,
             id,
             zip(self.union_case_names(iface, union), &union.cases)
-                .map(|(name, case)| (name, &case.docs, &case.ty)),
+                .map(|(name, case)| (name, &case.docs, Some(&case.ty))),
             docs,
         );
     }
@@ -602,7 +625,7 @@ pub trait RustGenerator {
         &mut self,
         iface: &Interface,
         id: TypeId,
-        cases: impl IntoIterator<Item = (String, &'a Docs, &'a Type)> + Clone,
+        cases: impl IntoIterator<Item = (String, &'a Docs, Option<&'a Type>)> + Clone,
         docs: &Docs,
     ) where
         Self: Sized,
@@ -624,9 +647,9 @@ pub trait RustGenerator {
             for (case_name, docs, payload) in cases.clone() {
                 self.rustdoc(docs);
                 self.push_str(&case_name);
-                if *payload != Type::Unit {
+                if let Some(ty) = payload {
                     self.push_str("(");
-                    self.print_ty(iface, payload, mode);
+                    self.print_ty(iface, ty, mode);
                     self.push_str(")")
                 }
                 self.push_str(",\n");
@@ -650,7 +673,7 @@ pub trait RustGenerator {
         id: TypeId,
         mode: TypeMode,
         name: &str,
-        cases: impl IntoIterator<Item = (String, &'a Type)>,
+        cases: impl IntoIterator<Item = (String, Option<&'a Type>)>,
     ) where
         Self: Sized,
     {
@@ -668,12 +691,12 @@ pub trait RustGenerator {
             self.push_str(name);
             self.push_str("::");
             self.push_str(&case_name);
-            if *payload != Type::Unit {
+            if payload.is_some() {
                 self.push_str("(e)");
             }
             self.push_str(" => {\n");
             self.push_str(&format!("f.debug_tuple(\"{}::{}\")", name, case_name));
-            if *payload != Type::Unit {
+            if payload.is_some() {
                 self.push_str(".field(e)");
             }
             self.push_str(".finish()\n");
@@ -713,9 +736,9 @@ pub trait RustGenerator {
             self.push_str(&format!("pub type {}", name));
             self.print_generics(&info, lt, true);
             self.push_str("= Result<");
-            self.print_ty(iface, &result.ok, mode);
+            self.print_optional_ty(iface, result.ok.as_ref(), mode);
             self.push_str(",");
-            self.print_ty(iface, &result.err, mode);
+            self.print_optional_ty(iface, result.err.as_ref(), mode);
             self.push_str(">;\n");
         }
     }
@@ -809,10 +832,7 @@ pub trait RustGenerator {
                 id,
                 TypeMode::Owned,
                 &name,
-                enum_
-                    .cases
-                    .iter()
-                    .map(|c| (c.name.to_camel_case(), &Type::Unit)),
+                enum_.cases.iter().map(|c| (c.name.to_camel_case(), None)),
             )
         }
     }

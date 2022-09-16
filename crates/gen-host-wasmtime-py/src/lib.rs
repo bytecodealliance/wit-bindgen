@@ -107,7 +107,7 @@ impl WasmtimePy {
 
 fn array_ty(iface: &Interface, ty: &Type) -> Option<&'static str> {
     match ty {
-        Type::Unit | Type::Bool => None,
+        Type::Bool => None,
         Type::U8 => Some("c_uint8"),
         Type::S8 => Some("c_int8"),
         Type::U16 => Some("c_uint16"),
@@ -222,7 +222,7 @@ impl Generator for WasmtimePy {
             builder.push_str(&format!("class {case_name}:\n"));
             builder.indent();
             builder.push_str("value: ");
-            builder.print_ty(&case.ty, true);
+            builder.print_optional_ty(case.ty.as_ref(), true);
             builder.push_str("\n");
             builder.dedent();
             builder.push_str("\n");
@@ -298,9 +298,9 @@ impl Generator for WasmtimePy {
         let mut builder = self.src.builder(&mut self.deps, iface);
         builder.comment(docs);
         builder.push_str(&format!("{} = Result[", name.to_camel_case()));
-        builder.print_ty(&result.ok, true);
+        builder.print_optional_ty(result.ok.as_ref(), true);
         builder.push_str(", ");
-        builder.print_ty(&result.err, true);
+        builder.print_optional_ty(result.err.as_ref(), true);
         builder.push_str("]\n\n");
     }
 
@@ -1077,10 +1077,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::UnitLower => {}
-            Instruction::UnitLift => {
-                results.push("None".to_string());
-            }
             Instruction::BoolFromI32 => {
                 let op = self.locals.tmp("operand");
                 let ret = self.locals.tmp("boolean");
@@ -1785,17 +1781,24 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
             Instruction::CallInterface { module: _, func } => {
-                match &func.result {
-                    Type::Unit => {
-                        results.push("".to_string());
-                    }
-                    _ => {
+                match &func.results {
+                    Results::Named(rs) => match rs.len() {
+                        0 => results.push("".to_string()),
+                        1 => {
+                            let result = self.locals.tmp("ret");
+                            builder.push_str(&result);
+                            results.push(result);
+                            builder.push_str(" = ");
+                        }
+                        _ => todo!("multireturn: wasmtime host"),
+                    },
+                    Results::Anon(_) => {
                         let result = self.locals.tmp("ret");
                         builder.push_str(&result);
                         results.push(result);
                         builder.push_str(" = ");
                     }
-                }
+                };
                 match &func.kind {
                     FunctionKind::Freestanding | FunctionKind::Static { .. } => {
                         builder.push_str(&format!(
@@ -1863,7 +1866,6 @@ impl Bindgen for FunctionBindgen<'_> {
 
 fn py_type_class_of(ty: &Type) -> PyTypeClass {
     match ty {
-        Type::Unit => PyTypeClass::None,
         Type::Bool
         | Type::U8
         | Type::U16
@@ -1881,7 +1883,6 @@ fn py_type_class_of(ty: &Type) -> PyTypeClass {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum PyTypeClass {
-    None,
     Int,
     Str,
     Float,

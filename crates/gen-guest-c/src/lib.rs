@@ -96,7 +96,14 @@ impl C {
             scalar: None,
             retptrs: Vec::new(),
         };
-        ret.return_single(iface, &func.result, &func.result);
+        match &func.results {
+            Results::Named(rs) => match rs.len() {
+                0 => ret.return_none(),
+                1 => ret.return_single(iface, &rs[0].1, &rs[0].1),
+                _ => todo!("multireturn: c guest"),
+            },
+            Results::Anon(ty) => ret.return_single(iface, ty, ty),
+        };
         return ret;
     }
 
@@ -216,7 +223,6 @@ impl C {
 
     fn print_ty(&mut self, iface: &Interface, ty: &Type) {
         match ty {
-            Type::Unit => self.src.h("void"),
             Type::Bool => self.src.h("bool"),
             Type::Char => self.src.h("uint32_t"), // TODO: better type?
             Type::U8 => self.src.h("uint8_t"),
@@ -264,7 +270,6 @@ impl C {
 
     fn print_ty_name(&mut self, iface: &Interface, ty: &Type) {
         match ty {
-            Type::Unit => self.src.h("unit"),
             Type::Bool => self.src.h("bool"),
             Type::Char => self.src.h("char32"),
             Type::U8 => self.src.h("u8"),
@@ -307,9 +312,9 @@ impl C {
                     }
                     TypeDefKind::Result(r) => {
                         self.src.h("result_");
-                        self.print_ty_name(iface, &r.ok);
+                        self.print_optional_ty_name(iface, r.ok.as_ref());
                         self.src.h("_");
-                        self.print_ty_name(iface, &r.err);
+                        self.print_optional_ty_name(iface, r.err.as_ref());
                     }
                     TypeDefKind::List(t) => {
                         self.src.h("list_");
@@ -317,16 +322,23 @@ impl C {
                     }
                     TypeDefKind::Future(t) => {
                         self.src.h("future_");
-                        self.print_ty_name(iface, t);
+                        self.print_optional_ty_name(iface, t.as_ref());
                     }
                     TypeDefKind::Stream(s) => {
                         self.src.h("stream_");
-                        self.print_ty_name(iface, &s.element);
+                        self.print_optional_ty_name(iface, s.element.as_ref());
                         self.src.h("_");
-                        self.print_ty_name(iface, &s.end);
+                        self.print_optional_ty_name(iface, s.end.as_ref());
                     }
                 }
             }
+        }
+    }
+
+    fn print_optional_ty_name(&mut self, iface: &Interface, ty: Option<&Type>) {
+        match ty {
+            Some(ty) => self.print_ty_name(iface, ty),
+            None => self.src.h("void"),
         }
     }
 
@@ -365,12 +377,12 @@ impl C {
                     bool is_err;
                     union {
                 ");
-                if !self.is_empty_type(iface, &r.ok) {
-                    self.print_ty(iface, &r.ok);
+                if let Some(ok) = self.get_nonempty_type(iface, r.ok.as_ref()) {
+                    self.print_ty(iface, ok);
                     self.src.h(" ok;\n");
                 }
-                if !self.is_empty_type(iface, &r.err) {
-                    self.print_ty(iface, &r.err);
+                if let Some(err) = self.get_nonempty_type(iface, r.err.as_ref()) {
+                    self.print_ty(iface, err);
                     self.src.h(" err;\n");
                 }
                 self.src.h("} val;\n");
@@ -396,7 +408,6 @@ impl C {
     fn is_empty_type(&self, iface: &Interface, ty: &Type) -> bool {
         let id = match ty {
             Type::Id(id) => *id,
-            Type::Unit => return true,
             _ => return false,
         };
         match &iface.types[id].kind {
@@ -404,6 +415,19 @@ impl C {
             TypeDefKind::Record(r) => r.fields.is_empty(),
             TypeDefKind::Tuple(t) => t.types.is_empty(),
             _ => false,
+        }
+    }
+
+    fn get_nonempty_type<'o>(&self, iface: &Interface, ty: Option<&'o Type>) -> Option<&'o Type> {
+        match ty {
+            Some(ty) => {
+                if self.is_empty_type(iface, ty) {
+                    None
+                } else {
+                    Some(ty)
+                }
+            }
+            None => None,
         }
     }
 
@@ -502,14 +526,18 @@ impl C {
             TypeDefKind::Variant(v) => {
                 self.src.c("switch ((int32_t) ptr->tag) {\n");
                 for (i, case) in v.cases.iter().enumerate() {
-                    if !self.owns_anything(iface, &case.ty) {
-                        continue;
+                    if let Some(ty) = &case.ty {
+                        if !self.owns_anything(iface, ty) {
+                            continue;
+                        }
+                        uwriteln!(self.src.c, "case {}: {{", i);
+                        let expr = format!("&ptr->val.{}", case.name.to_snake_case());
+                        if let Some(ty) = &case.ty {
+                            self.free(iface, ty, &expr);
+                        }
+                        self.src.c("break;\n");
+                        self.src.c("}\n");
                     }
-                    uwriteln!(self.src.c, "case {}: {{", i);
-                    let expr = format!("&ptr->val.{}", case.name.to_snake_case());
-                    self.free(iface, &case.ty, &expr);
-                    self.src.c("break;\n");
-                    self.src.c("}\n");
                 }
                 self.src.c("}\n");
             }
@@ -537,12 +565,16 @@ impl C {
 
             TypeDefKind::Result(r) => {
                 self.src.c("if (!ptr->is_err) {\n");
-                if self.owns_anything(iface, &r.ok) {
-                    self.free(iface, &r.ok, "&ptr->val.ok");
+                if let Some(ok) = &r.ok {
+                    if self.owns_anything(iface, ok) {
+                        self.free(iface, ok, "&ptr->val.ok");
+                    }
                 }
-                if self.owns_anything(iface, &r.err) {
-                    self.src.c("} else {\n");
-                    self.free(iface, &r.err, "&ptr->val.err");
+                if let Some(err) = &r.err {
+                    if self.owns_anything(iface, err) {
+                        self.src.c("} else {\n");
+                        self.free(iface, err, "&ptr->val.err");
+                    }
                 }
                 self.src.c("}\n");
             }
@@ -566,17 +598,28 @@ impl C {
             TypeDefKind::Flags(_) => false,
             TypeDefKind::Enum(_) => false,
             TypeDefKind::List(_) => true,
-            TypeDefKind::Variant(v) => v.cases.iter().any(|c| self.owns_anything(iface, &c.ty)),
+            TypeDefKind::Variant(v) => v
+                .cases
+                .iter()
+                .any(|c| self.optional_owns_anything(iface, c.ty.as_ref())),
             TypeDefKind::Union(v) => v
                 .cases
                 .iter()
                 .any(|case| self.owns_anything(iface, &case.ty)),
             TypeDefKind::Option(t) => self.owns_anything(iface, t),
             TypeDefKind::Result(r) => {
-                self.owns_anything(iface, &r.ok) || self.owns_anything(iface, &r.err)
+                self.optional_owns_anything(iface, r.ok.as_ref())
+                    || self.optional_owns_anything(iface, r.err.as_ref())
             }
             TypeDefKind::Future(_) => todo!("owns_anything for future"),
             TypeDefKind::Stream(_) => todo!("owns_anything for stream"),
+        }
+    }
+
+    fn optional_owns_anything(&self, iface: &Interface, ty: Option<&Type>) -> bool {
+        match ty {
+            Some(ty) => self.owns_anything(iface, ty),
+            None => false,
         }
     }
 
@@ -611,10 +654,6 @@ impl Return {
             Type::Id(id) => *id,
             Type::String => {
                 self.retptrs.push(*orig_ty);
-                return;
-            }
-            Type::Unit => {
-                self.scalar = Some(Scalar::Void);
                 return;
             }
             _ => {
@@ -658,13 +697,15 @@ impl Return {
             // so we can return that in the scalar return and have `T` get
             // returned through the normal returns.
             TypeDefKind::Result(r) => {
-                if let Type::Id(err) = r.err {
+                if let Some(Type::Id(err)) = r.err {
                     if let TypeDefKind::Enum(enum_) = &iface.types[err].kind {
                         self.scalar = Some(Scalar::ResultEnum {
                             err,
                             max_err: enum_.cases.len(),
                         });
-                        self.splat_tuples(iface, &r.ok, &r.ok);
+                        if let Some(ok) = r.ok {
+                            self.splat_tuples(iface, &ok, &ok);
+                        }
                         return;
                     }
                 }
@@ -682,10 +723,13 @@ impl Return {
         }
     }
 
+    fn return_none(&mut self) {
+        self.scalar = Some(Scalar::Void);
+    }
+
     fn splat_tuples(&mut self, iface: &Interface, ty: &Type, orig_ty: &Type) {
         let id = match ty {
             Type::Id(id) => *id,
-            Type::Unit => return,
             _ => {
                 self.retptrs.push(*orig_ty);
                 return;
@@ -807,13 +851,12 @@ impl Generator for C {
         self.src.h(" tag;\n");
         self.src.h("union {\n");
         for case in variant.cases.iter() {
-            if self.is_empty_type(iface, &case.ty) {
-                continue;
+            if let Some(ty) = self.get_nonempty_type(iface, case.ty.as_ref()) {
+                self.print_ty(iface, ty);
+                self.src.h(" ");
+                self.src.h(&case.name.to_snake_case());
+                self.src.h(";\n");
             }
-            self.print_ty(iface, &case.ty);
-            self.src.h(" ");
-            self.src.h(&case.name.to_snake_case());
-            self.src.h(";\n");
         }
         self.src.h("} val;\n");
         self.src.h("} ");
@@ -901,12 +944,12 @@ impl Generator for C {
         self.src.h("typedef struct {\n");
         self.src.h("bool is_err;\n");
         self.src.h("union {\n");
-        if !self.is_empty_type(iface, &result.ok) {
-            self.print_ty(iface, &result.ok);
+        if let Some(ok) = self.get_nonempty_type(iface, result.ok.as_ref()) {
+            self.print_ty(iface, ok);
             self.src.h(" ok;\n");
         }
-        if !self.is_empty_type(iface, &result.err) {
-            self.print_ty(iface, &result.err);
+        if let Some(err) = self.get_nonempty_type(iface, result.err.as_ref()) {
+            self.print_ty(iface, err);
             self.src.h(" err;\n");
         }
         self.src.h("} val;\n");
@@ -1537,10 +1580,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::UnitLower => {}
-            Instruction::UnitLift => {
-                results.push("INVALID".to_string());
-            }
             Instruction::BoolFromI32 | Instruction::I32FromBool => {
                 results.push(operands[0].clone());
             }
@@ -1655,8 +1694,8 @@ impl Bindgen for FunctionBindgen<'_> {
                     variant.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
                     uwriteln!(self.src, "case {}: {{", i);
-                    if !self.gen.is_empty_type(iface, &case.ty) {
-                        let ty = self.gen.type_string(iface, &case.ty);
+                    if let Some(ty) = self.gen.get_nonempty_type(iface, case.ty.as_ref()) {
+                        let ty = self.gen.type_string(iface, ty);
                         uwrite!(
                             self.src,
                             "const {} *{} = &({}).val",
@@ -1696,7 +1735,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.push_str(&block);
                     assert!(block_results.len() == 1);
 
-                    if !self.gen.is_empty_type(iface, &case.ty) {
+                    if let Some(_) = self.gen.get_nonempty_type(iface, case.ty.as_ref()) {
                         let mut dst = format!("{}.val", result);
                         dst.push_str(".");
                         dst.push_str(&case.name.to_snake_case());
@@ -1880,18 +1919,20 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
 
                 let op0 = &operands[0];
-                let ok_ty = self.gen.type_string(iface, &result.ok);
-                let err_ty = self.gen.type_string(iface, &result.err);
-                let bind_ok = if self.gen.is_empty_type(iface, &result.ok) {
-                    String::new()
-                } else {
-                    format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;")
-                };
-                let bind_err = if self.gen.is_empty_type(iface, &result.err) {
-                    String::new()
-                } else {
-                    format!("const {err_ty} *{err_payload} = &({op0}).val.err;")
-                };
+                let bind_ok =
+                    if let Some(ok) = self.gen.get_nonempty_type(iface, result.ok.as_ref()) {
+                        let ok_ty = self.gen.type_string(iface, ok);
+                        format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;")
+                    } else {
+                        String::new()
+                    };
+                let bind_err =
+                    if let Some(err) = self.gen.get_nonempty_type(iface, result.err.as_ref()) {
+                        let err_ty = self.gen.type_string(iface, err);
+                        format!("const {err_ty} *{err_payload} = &({op0}).val.err;")
+                    } else {
+                        String::new()
+                    };
                 uwrite!(
                     self.src,
                     "
@@ -1915,16 +1956,18 @@ impl Bindgen for FunctionBindgen<'_> {
                 let ok_result = &ok_results[0];
 
                 let result_tmp = self.locals.tmp("result");
-                let set_ok = if self.gen.is_empty_type(iface, &result.ok) {
-                    String::new()
-                } else {
+                let set_ok = if let Some(_) = self.gen.get_nonempty_type(iface, result.ok.as_ref())
+                {
                     format!("{result_tmp}.val.ok = {ok_result};")
-                };
-                let set_err = if self.gen.is_empty_type(iface, &result.err) {
-                    String::new()
                 } else {
-                    format!("{result_tmp}.val.err = {err_result};")
+                    String::new()
                 };
+                let set_err =
+                    if let Some(_) = self.gen.get_nonempty_type(iface, result.err.as_ref()) {
+                        format!("{result_tmp}.val.err = {err_result};")
+                    } else {
+                        String::new()
+                    };
 
                 let ty = self.gen.type_string(iface, &Type::Id(*ty));
                 uwriteln!(self.src, "{ty} {result_tmp};");
@@ -2045,7 +2088,10 @@ impl Bindgen for FunctionBindgen<'_> {
                         }
                         uwriteln!(self.src, "{}({});", self.sig.name, args);
                         if self.sig.ret.splat_tuple {
-                            let ty = self.gen.type_string(iface, &func.result);
+                            let ty = match &func.results {
+                                Results::Named(_rs) => todo!("multireturn: c guest"),
+                                Results::Anon(ty) => self.gen.type_string(iface, ty),
+                            };
                             results.push(format!("({}){{ {} }}", ty, retptrs.join(", ")));
                         } else if self.sig.retptrs.len() > 0 {
                             results.extend(retptrs);
@@ -2057,7 +2103,10 @@ impl Bindgen for FunctionBindgen<'_> {
                     }
                     Some(Scalar::Type(_)) => {
                         let ret = self.locals.tmp("ret");
-                        let ty = self.gen.type_string(iface, &func.result);
+                        let ty = match &func.results {
+                            Results::Named(_rs) => todo!("multireturn: c guest"),
+                            Results::Anon(ty) => self.gen.type_string(iface, ty),
+                        };
                         uwriteln!(self.src, "{} {} = {}({});", ty, ret, self.sig.name, args);
                         results.push(ret);
                     }
@@ -2072,7 +2121,10 @@ impl Bindgen for FunctionBindgen<'_> {
                         let payload_ty = self.gen.type_string(iface, ty);
                         uwriteln!(self.src, "{} {};", payload_ty, val);
                         uwriteln!(self.src, "bool {} = {}({});", ret, self.sig.name, args);
-                        let option_ty = self.gen.type_string(iface, &func.result);
+                        let option_ty = match &func.results {
+                            Results::Named(_rs) => todo!("multireturn: c guests"),
+                            Results::Anon(ty) => self.gen.type_string(iface, ty),
+                        };
                         let option_ret = self.locals.tmp("ret");
                         uwrite!(
                             self.src,
@@ -2111,7 +2163,10 @@ impl Bindgen for FunctionBindgen<'_> {
                             self.sig.name,
                             args,
                         );
-                        let result_ty = self.gen.type_string(iface, &func.result);
+                        let result_ty = match &func.results {
+                            Results::Named(_rs) => todo!("multireturn: c guest"),
+                            Results::Anon(ty) => self.gen.type_string(iface, ty),
+                        };
                         let result_ret = self.locals.tmp("ret");
                         uwrite!(
                             self.src,

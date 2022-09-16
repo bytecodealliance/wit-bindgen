@@ -12,7 +12,7 @@ list-in-record3: func(a: list-in-record3) -> list-in-record3
 list-in-record4: func(a: list-in-alias) -> list-in-alias
 
 type list-in-variant1-v1 = option<string>
-type list-in-variant1-v2 = result<unit, string>
+type list-in-variant1-v2 = result<_, string>
 union list-in-variant1-v3 { string, float32 }
 list-in-variant1: func(a: list-in-variant1-v1, b: list-in-variant1-v2, c: list-in-variant1-v3)
 
@@ -23,7 +23,7 @@ type list-in-variant3 = option<string>
 list-in-variant3: func(a: list-in-variant3) -> list-in-variant3
 
 enum my-errno { success, a, b }
-errno-result: func() -> result<unit, my-errno>
+errno-result: func() -> result<_, my-errno>
 
 type list-typedef = string
 type list-typedef2 = list<u8>

@@ -35,7 +35,6 @@ impl Markdown {
 
     fn print_ty(&mut self, iface: &Interface, ty: &Type, skip_name: bool) {
         match ty {
-            Type::Unit => self.src.push_str("`unit`"),
             Type::Bool => self.src.push_str("`bool`"),
             Type::U8 => self.src.push_str("`u8`"),
             Type::S8 => self.src.push_str("`s8`"),
@@ -90,30 +89,65 @@ impl Markdown {
                         self.print_ty(iface, t, false);
                         self.src.push_str(">");
                     }
-                    TypeDefKind::Result(r) => {
-                        self.src.push_str("result<");
-                        self.print_ty(iface, &r.ok, false);
-                        self.src.push_str(", ");
-                        self.print_ty(iface, &r.err, false);
-                        self.src.push_str(">");
-                    }
+                    TypeDefKind::Result(r) => match (r.ok, r.err) {
+                        (Some(ok), Some(err)) => {
+                            self.src.push_str("result<");
+                            self.print_ty(iface, &ok, false);
+                            self.src.push_str(", ");
+                            self.print_ty(iface, &err, false);
+                            self.src.push_str(">");
+                        }
+                        (None, Some(err)) => {
+                            self.src.push_str("result<_, ");
+                            self.print_ty(iface, &err, false);
+                            self.src.push_str(">");
+                        }
+                        (Some(ok), None) => {
+                            self.src.push_str("result<");
+                            self.print_ty(iface, &ok, false);
+                            self.src.push_str(">");
+                        }
+                        (None, None) => {
+                            self.src.push_str("result");
+                        }
+                    },
                     TypeDefKind::List(t) => {
                         self.src.push_str("list<");
                         self.print_ty(iface, t, false);
                         self.src.push_str(">");
                     }
-                    TypeDefKind::Future(t) => {
-                        self.src.push_str("future<");
-                        self.print_ty(iface, t, false);
-                        self.src.push_str(">");
-                    }
-                    TypeDefKind::Stream(s) => {
-                        self.src.push_str("stream<");
-                        self.print_ty(iface, &s.element, false);
-                        self.src.push_str(", ");
-                        self.print_ty(iface, &s.end, false);
-                        self.src.push_str(">");
-                    }
+                    TypeDefKind::Future(t) => match t {
+                        Some(t) => {
+                            self.src.push_str("future<");
+                            self.print_ty(iface, t, false);
+                            self.src.push_str(">");
+                        }
+                        None => {
+                            self.src.push_str("future");
+                        }
+                    },
+                    TypeDefKind::Stream(s) => match (s.element, s.end) {
+                        (Some(element), Some(end)) => {
+                            self.src.push_str("stream<");
+                            self.print_ty(iface, &element, false);
+                            self.src.push_str(", ");
+                            self.print_ty(iface, &end, false);
+                            self.src.push_str(">");
+                        }
+                        (None, Some(end)) => {
+                            self.src.push_str("stream<_, ");
+                            self.print_ty(iface, &end, false);
+                            self.src.push_str(">");
+                        }
+                        (Some(element), None) => {
+                            self.src.push_str("stream<");
+                            self.print_ty(iface, &element, false);
+                            self.src.push_str(">");
+                        }
+                        (None, None) => {
+                            self.src.push_str("stream");
+                        }
+                    },
                 }
             }
         }
@@ -274,8 +308,10 @@ impl Generator for Markdown {
                 format!("{}::{}", name, case.name),
                 format!("#{}.{}", name.to_snake_case(), case.name.to_snake_case()),
             );
-            self.src.push_str(": ");
-            self.print_ty(iface, &case.ty, false);
+            if let Some(ty) = &case.ty {
+                self.src.push_str(": ");
+                self.print_ty(iface, ty, false);
+            }
             self.src.indent(1);
             self.src.push_str("\n\n");
             self.docs(&case.docs);
@@ -361,11 +397,28 @@ impl Generator for Markdown {
         docs: &Docs,
     ) {
         self.print_type_header(name);
-        self.src.push_str("result<");
-        self.print_ty(iface, &result.ok, false);
-        self.src.push_str(", ");
-        self.print_ty(iface, &result.err, false);
-        self.src.push_str(">");
+        match (result.ok, result.err) {
+            (Some(ok), Some(err)) => {
+                self.src.push_str("result<");
+                self.print_ty(iface, &ok, false);
+                self.src.push_str(", ");
+                self.print_ty(iface, &err, false);
+                self.src.push_str(">");
+            }
+            (None, Some(err)) => {
+                self.src.push_str("result<_, ");
+                self.print_ty(iface, &err, false);
+                self.src.push_str(">");
+            }
+            (Some(ok), None) => {
+                self.src.push_str("result<");
+                self.print_ty(iface, &ok, false);
+                self.src.push_str(">");
+            }
+            (None, None) => {
+                self.src.push_str("result");
+            }
+        }
         self.print_type_info(id, docs);
     }
 
@@ -420,9 +473,10 @@ impl Generator for Markdown {
                 self.src.push_str("\n");
             }
         }
-        match &func.result {
-            Type::Unit => {}
-            ty => {
+
+        match &func.results {
+            Results::Named(_rs) => todo!("multireturn: markdown"),
+            Results::Anon(ty) => {
                 self.src.push_str("##### Results\n\n");
                 self.src.push_str(&format!(
                     "- <a href=\"#{f}.{p}\" name=\"{f}.{p}\"></a> `{}`: ",

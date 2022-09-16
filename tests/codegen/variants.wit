@@ -97,17 +97,17 @@ casts: func(
 >
 
 result-arg: func(
-  a: result<unit, unit>,
-  b: result<unit, e1>,
-  c: result<e1, unit>,
+  a: result,
+  b: result<_, e1>,
+  c: result<e1>,
   d: result<tuple<>, tuple<>>,
   e: result<u32, v1>,
   f: result<string, list<u8>>,
 )
 result-result: func() -> tuple<
-  result<unit, unit>,
-  result<unit, e1>,
-  result<e1, unit>,
+  result,
+  result<_, e1>,
+  result<e1>,
   result<tuple<>, tuple<>>,
   result<u32, v1>,
   result<string, list<u8>>,
@@ -119,7 +119,7 @@ enum my-errno {
 }
 
 return-result-sugar: func() -> result<s32, my-errno>
-return-result-sugar2: func() -> result<unit, my-errno>
+return-result-sugar2: func() -> result<_, my-errno>
 return-result-sugar3: func() -> result<my-errno, my-errno>
 return-result-sugar4: func() -> result<tuple<s32, u32>, my-errno>
 return-option-sugar: func() -> option<s32>

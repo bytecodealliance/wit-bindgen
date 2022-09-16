@@ -88,7 +88,7 @@ enum FunctionRet {
     /// The function returns a `Result` in both wasm and in Rust, but the
     /// Rust error type is a custom error and must be converted to `err`. The
     /// `ok` variant payload is provided here too.
-    CustomToError { ok: Type, err: String },
+    CustomToError { ok: Option<Type>, err: String },
 }
 
 impl Wasmtime {
@@ -143,22 +143,46 @@ impl Wasmtime {
             return FunctionRet::Normal;
         }
 
-        if let Type::Id(id) = &f.result {
-            if let TypeDefKind::Result(r) = &iface.types[*id].kind {
-                if let Type::Id(err) = r.err {
-                    if let Some(name) = &iface.types[err].name {
-                        self.needs_custom_error_to_types.insert(name.clone());
-                        return FunctionRet::CustomToError {
-                            ok: r.ok,
-                            err: name.to_string(),
-                        };
+        match &f.results {
+            Results::Named(_rs) => todo!("multireturn: rust host: custom error handling configuration"),
+            Results::Anon(Type::Id(id)) => {
+                if let TypeDefKind::Result(r) = &iface.types[*id].kind {
+                    if let Some(Type::Id(err)) = r.err {
+                        if let Some(name) = &iface.types[err].name {
+                            self.needs_custom_error_to_types.insert(name.clone());
+                            return FunctionRet::CustomToError {
+                                ok: r.ok,
+                                err: name.to_string(),
+                            };
+                        }
                     }
                 }
             }
+            Results::Anon(..) => (),
         }
 
         self.needs_custom_error_to_trap = true;
         FunctionRet::CustomToTrap
+    }
+
+    fn print_result_ty(&mut self, iface: &Interface, results: &Results, mode: TypeMode) {
+        match results {
+            Results::Named(rs) => match rs.len() {
+                0 => self.push_str("()"),
+                1 => self.print_ty(iface, &rs[0].1, mode),
+                _ => {
+                    self.push_str("(");
+                    for (i, (_, ty)) in rs.iter().enumerate() {
+                        if i > 0 {
+                            self.push_str(", ")
+                        }
+                        self.print_ty(iface, ty, mode)
+                    }
+                    self.push_str(")");
+                }
+            },
+            Results::Anon(ty) => self.print_ty(iface, ty, mode),
+        }
     }
 }
 
@@ -509,16 +533,20 @@ impl Generator for Wasmtime {
         match self.classify_fn_ret(iface, func) {
             FunctionRet::Normal => {
                 self.push_str(" -> ");
-                self.print_ty(iface, &func.result, TypeMode::Owned);
+                self.print_result_ty(iface, &func.results, TypeMode::Owned);
             }
             FunctionRet::CustomToTrap => {
                 self.push_str(" -> Result<");
-                self.print_ty(iface, &func.result, TypeMode::Owned);
+                self.print_result_ty(iface, &func.results, TypeMode::Owned);
                 self.push_str(", Self::Error>");
             }
             FunctionRet::CustomToError { ok, .. } => {
                 self.push_str(" -> Result<");
-                self.print_ty(iface, &ok, TypeMode::Owned);
+                if let Some(ok) = ok {
+                    self.print_ty(iface, &ok, TypeMode::Owned);
+                } else {
+                    self.push_str("()");
+                }
                 self.push_str(", Self::Error>");
             }
         }
@@ -611,7 +639,10 @@ impl Generator for Wasmtime {
         sig.self_arg = Some("&self, mut caller: impl wasmtime::AsContextMut<Data = T>".to_string());
         self.print_docs_and_params(iface, func, TypeMode::AllBorrowed("'_"), &sig);
         self.push_str("-> Result<");
-        self.print_ty(iface, &func.result, TypeMode::Owned);
+        match &func.results {
+            Results::Named(_rs) => todo!("multireturn: rust host"),
+            Results::Anon(ty) => self.print_ty(iface, ty, TypeMode::Owned),
+        };
         self.push_str(", wasmtime::Trap> {\n");
 
         let params = func
@@ -1378,13 +1409,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 wit_bindgen_gen_rust_lib::bitcast(casts, operands, results)
             }
 
-            Instruction::UnitLower => {
-                self.push_str(&format!("let () = {};\n", operands[0]));
-            }
-            Instruction::UnitLift => {
-                results.push("()".to_string());
-            }
-
             Instruction::I32FromBool => {
                 results.push(format!("match {} {{ true => 1, false => 0 }}", operands[0]));
             }
@@ -1505,7 +1529,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 for (case, block) in variant.cases.iter().zip(blocks) {
                     let case_name = case.name.to_camel_case();
                     self.push_str(&format!("{name}::{case_name}"));
-                    if case.ty == Type::Unit {
+                    if case.ty.is_none() {
                         self.push_str(&format!(" => {{\nlet e = ();\n{block}\n}}\n"));
                     } else {
                         self.push_str(&format!("(e) => {block},\n"));
@@ -1523,7 +1547,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let mut result = format!("match {op0} {{\n");
                 let name = self.typename_lift(iface, *ty);
                 for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
-                    let block = if case.ty != Type::Unit {
+                    let block = if case.ty.is_some() {
                         format!("({block})")
                     } else {
                         String::new()
@@ -1967,18 +1991,22 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
                 self.push_str(";\n");
                 self.after_call = true;
-                match &func.result {
-                    Type::Unit => {}
-                    _ if self.gen.opts.tracing => {
-                        self.push_str("wit_bindgen_host_wasmtime_rust::tracing::event!(\n");
-                        self.push_str("wit_bindgen_host_wasmtime_rust::tracing::Level::TRACE,\n");
-                        self.push_str(&format!(
-                            "{} = wit_bindgen_host_wasmtime_rust::tracing::field::debug(&{0}),\n",
-                            results[0],
-                        ));
-                        self.push_str(");\n");
+                // TODO(multireturn): should this emit more for more return types?
+                match func.results.iter_types().next() {
+                    Some(_) => {
+                        if self.gen.opts.tracing {
+                            self.push_str("wit_bindgen_host_wasmtime_rust::tracing::event!(\n");
+                            self.push_str(
+                                "wit_bindgen_host_wasmtime_rust::tracing::Level::TRACE,\n",
+                            );
+                            self.push_str(&format!(
+                                "{} = wit_bindgen_host_wasmtime_rust::tracing::field::debug(&{0}),\n",
+                                results[0],
+                            ));
+                            self.push_str(");\n");
+                        }
                     }
-                    _ => {}
+                    None => (),
                 }
             }
 

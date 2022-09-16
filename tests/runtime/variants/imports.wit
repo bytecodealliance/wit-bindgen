@@ -24,8 +24,8 @@ variant-zeros: func(a: zeros) -> zeros
 
 type option-typedef = option<u32>
 type bool-typedef = bool
-type result-typedef = result<u32, unit>
+type result-typedef = result<u32>
 variant-typedefs: func(a: option-typedef, b: bool-typedef, c: result-typedef)
 
 enum my-errno { success, a, b }
-variant-enums: func(a: bool, b: result<unit, unit>, c: my-errno) -> tuple<bool, result<unit, unit>, my-errno>
+variant-enums: func(a: bool, b: result, c: my-errno) -> tuple<bool, result, my-errno>

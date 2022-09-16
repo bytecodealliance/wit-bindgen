@@ -141,7 +141,7 @@ impl Js {
 
     fn array_ty(&self, iface: &Interface, ty: &Type) -> Option<&'static str> {
         match ty {
-            Type::Unit | Type::Bool => None,
+            Type::Bool => None,
             Type::U8 => Some("Uint8Array"),
             Type::S8 => Some("Int8Array"),
             Type::U16 => Some("Uint16Array"),
@@ -164,7 +164,6 @@ impl Js {
 
     fn print_ty(&mut self, iface: &Interface, ty: &Type) {
         match ty {
-            Type::Unit => self.src.ts("void"),
             Type::Bool => self.src.ts("boolean"),
             Type::U8
             | Type::S8
@@ -204,9 +203,9 @@ impl Js {
                     TypeDefKind::Result(r) => {
                         self.needs_ty_result = true;
                         self.src.ts("Result<");
-                        self.print_ty(iface, &r.ok);
+                        self.print_optional_ty(iface, r.ok.as_ref());
                         self.src.ts(", ");
-                        self.print_ty(iface, &r.err);
+                        self.print_optional_ty(iface, r.err.as_ref());
                         self.src.ts(">");
                     }
                     TypeDefKind::Variant(_) => panic!("anonymous variant"),
@@ -215,6 +214,13 @@ impl Js {
                     TypeDefKind::Stream(_) => todo!("anonymous stream"),
                 }
             }
+        }
+    }
+
+    fn print_optional_ty(&mut self, iface: &Interface, ty: Option<&Type>) {
+        match ty {
+            Some(ty) => self.print_ty(iface, ty),
+            None => self.src.ts("void"),
         }
     }
 
@@ -301,7 +307,10 @@ impl Js {
             self.print_ty(iface, ty);
         }
         self.src.ts("): ");
-        self.print_ty(iface, &func.result);
+        match &func.results {
+            Results::Named(_rs) => todo!("multireturn: host js"),
+            Results::Anon(ty) => self.print_ty(iface, &ty),
+        }
         self.src.ts(";\n");
     }
 
@@ -451,9 +460,9 @@ impl Generator for Js {
             self.src.ts("tag: \"");
             self.src.ts(&case.name);
             self.src.ts("\",\n");
-            if case.ty != Type::Unit {
+            if let Some(ty) = case.ty {
                 self.src.ts("val: ");
-                self.print_ty(iface, &case.ty);
+                self.print_ty(iface, &ty);
                 self.src.ts(",\n");
             }
             self.src.ts("}\n");
@@ -524,9 +533,9 @@ impl Generator for Js {
         let name = name.to_camel_case();
         self.needs_ty_result = true;
         self.src.ts(&format!("export type {name} = Result<"));
-        self.print_ty(iface, &result.ok);
+        self.print_optional_ty(iface, result.ok.as_ref());
         self.src.ts(", ");
-        self.print_ty(iface, &result.err);
+        self.print_optional_ty(iface, result.err.as_ref());
         self.src.ts(">;\n");
     }
 
@@ -1391,11 +1400,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::UnitLower => {}
-            Instruction::UnitLift => {
-                results.push("undefined".to_string());
-            }
-
             Instruction::BoolFromI32 => {
                 let tmp = self.tmp();
                 self.src
@@ -1613,7 +1617,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 for (case, (block, block_results)) in variant.cases.iter().zip(blocks) {
                     self.src
                         .js(&format!("case \"{}\": {{\n", case.name.as_str()));
-                    if case.ty != Type::Unit {
+                    if case.ty.is_some() {
                         self.src.js(&format!("const e = variant{}.val;\n", tmp));
                     }
                     self.src.js(&block);
@@ -1652,7 +1656,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.js(&format!("variant{} = {{\n", tmp));
                     self.src.js(&format!("tag: \"{}\",\n", case.name.as_str()));
                     assert!(block_results.len() == 1);
-                    if case.ty != Type::Unit {
+                    if case.ty.is_some() {
                         self.src.js(&format!("val: {},\n", block_results[0]));
                     } else {
                         assert_eq!(block_results[0], "undefined");
@@ -2193,10 +2197,8 @@ impl Bindgen for FunctionBindgen<'_> {
                         ));
                     }
                 };
-                let mut bind_results = |me: &mut FunctionBindgen<'_>| match &func.result {
-                    Type::Unit => {
-                        results.push("".to_string());
-                    }
+                let mut bind_results = |me: &mut FunctionBindgen<'_>| match &func.results {
+                    // TODO(multireturn: js) This probably needs to change?
                     _ => {
                         me.src.js("const ret = ");
                         results.push("ret".to_string());

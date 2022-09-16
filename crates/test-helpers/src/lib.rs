@@ -81,8 +81,8 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
             let name = quote::format_ident!("{}", f.item_name().to_snake_case());
             let mut params = f
                 .params
-                .iter()
-                .map(|(_, t)| quote_ty(true, iface, t))
+                .iter_types()
+                .map(|t| quote_ty(true, iface, t))
                 .collect::<Vec<_>>();
             let ret = quote_ty(false, iface, &f.result);
             let mut self_ = quote::quote!();
@@ -130,7 +130,6 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         ty: &wit_parser::Type,
     ) -> proc_macro2::TokenStream {
         match *ty {
-            Type::Unit => quote::quote! { () },
             Type::Bool => quote::quote! { bool },
             Type::U8 => quote::quote! { u8 },
             Type::S8 => quote::quote! { i8 },
