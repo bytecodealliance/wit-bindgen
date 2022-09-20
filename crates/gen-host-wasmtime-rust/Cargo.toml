@@ -17,6 +17,6 @@ structopt = { version = "0.3", default-features = false, optional = true }
 [dev-dependencies]
 anyhow = "1.0"
 test-helpers = { path = '../test-helpers', features = ['host-wasmtime-rust'] }
-wasmtime = "0.39.1"
-wasmtime-wasi = "0.39.1"
+wasmtime = "1.0"
+wasmtime-wasi = "1.0"
 wit-bindgen-host-wasmtime-rust = { path = '../host-wasmtime-rust', features = ['tracing', 'async'] }
