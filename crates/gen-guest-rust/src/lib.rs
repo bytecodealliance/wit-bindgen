@@ -1055,7 +1055,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     if case.ty.is_some() {
                         self.push_str(&format!("(e) => {block},\n"));
                     } else {
-                        self.push_str(&format!(" => {{\nlet e = ();\n{block}\n}}\n"));
+                        self.push_str(&format!(" => {{\n{block}\n}}\n"));
                     }
                 }
                 self.push_str("};\n");
@@ -1171,7 +1171,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str(&format!(
                     "match {operand} {{
                         Some(e) => {some},
-                        None => {{\nlet e = ();\n{none}\n}},
+                        None => {{\n{none}\n}},
                     }};"
                 ));
             }
@@ -1197,16 +1197,19 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::ResultLower {
                 results: result_types,
+                result,
                 ..
             } => {
                 let err = self.blocks.pop().unwrap();
                 let ok = self.blocks.pop().unwrap();
                 self.let_results(result_types.len(), results);
                 let operand = &operands[0];
+                let ok_binding = if result.ok.is_some() { "e" } else { "_" };
+                let err_binding = if result.err.is_some() { "e" } else { "_" };
                 self.push_str(&format!(
                     "match {operand} {{
-                        Ok(e) => {{ {ok} }},
-                        Err(e) => {{ {err} }},
+                        Ok({ok_binding}) => {{ {ok} }},
+                        Err({err_binding}) => {{ {err} }},
                     }};"
                 ));
             }
@@ -1446,8 +1449,7 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::CallInterface { module, func } => {
-                self.push_str("let result = ");
-                results.push("result".to_string());
+                self.let_results(func.results.len(), results);
                 match &func.kind {
                     FunctionKind::Freestanding => {
                         if self.gen.opts.standalone {

@@ -307,9 +307,19 @@ impl Js {
             self.print_ty(iface, ty);
         }
         self.src.ts("): ");
-        match &func.results {
-            Results::Named(_rs) => todo!("multireturn: host js"),
-            Results::Anon(ty) => self.print_ty(iface, &ty),
+        match func.results.len() {
+            0 => self.src.ts("void"),
+            1 => self.print_ty(iface, func.results.iter_types().next().unwrap()),
+            _ => {
+                self.src.ts("[");
+                for (i, ty) in func.results.iter_types().enumerate() {
+                    if i != 0 {
+                        self.src.ts(", ");
+                    }
+                    self.print_ty(iface, ty);
+                }
+                self.src.ts("]");
+            }
         }
         self.src.ts(";\n");
     }
@@ -1655,11 +1665,11 @@ impl Bindgen for FunctionBindgen<'_> {
 
                     self.src.js(&format!("variant{} = {{\n", tmp));
                     self.src.js(&format!("tag: \"{}\",\n", case.name.as_str()));
-                    assert!(block_results.len() == 1);
                     if case.ty.is_some() {
+                        assert!(block_results.len() == 1);
                         self.src.js(&format!("val: {},\n", block_results[0]));
                     } else {
-                        assert_eq!(block_results[0], "undefined");
+                        assert!(block_results.len() == 0);
                     }
                     self.src.js("};\n");
                     self.src.js("break;\n}\n");
@@ -1811,10 +1821,9 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::OptionLift { payload, .. } => {
                 let (some, some_results) = self.blocks.pop().unwrap();
                 let (none, none_results) = self.blocks.pop().unwrap();
-                assert!(none_results.len() == 1);
+                assert!(none_results.len() == 0);
                 assert!(some_results.len() == 1);
                 let some_result = &some_results[0];
-                assert_eq!(none_results[0], "undefined");
 
                 let tmp = self.tmp();
 
@@ -1902,11 +1911,23 @@ impl Bindgen for FunctionBindgen<'_> {
                 ));
             }
 
-            Instruction::ResultLift { .. } => {
+            Instruction::ResultLift { result, .. } => {
                 let (err, err_results) = self.blocks.pop().unwrap();
                 let (ok, ok_results) = self.blocks.pop().unwrap();
-                let err_result = &err_results[0];
-                let ok_result = &ok_results[0];
+                let ok_result = if result.ok.is_some() {
+                    assert_eq!(ok_results.len(), 1);
+                    format!("{}", ok_results[0])
+                } else {
+                    assert_eq!(ok_results.len(), 0);
+                    String::from("undefined")
+                };
+                let err_result = if result.err.is_some() {
+                    assert_eq!(err_results.len(), 1);
+                    format!("{}", err_results[0])
+                } else {
+                    assert_eq!(err_results.len(), 0);
+                    String::from("undefined")
+                };
                 let tmp = self.tmp();
                 let op0 = &operands[0];
                 self.src.js(&format!(
@@ -2197,12 +2218,24 @@ impl Bindgen for FunctionBindgen<'_> {
                         ));
                     }
                 };
-                let mut bind_results = |me: &mut FunctionBindgen<'_>| match &func.results {
-                    // TODO(multireturn: js) This probably needs to change?
-                    _ => {
-                        me.src.js("const ret = ");
-                        results.push("ret".to_string());
+                let mut bind_results = |me: &mut FunctionBindgen<'_>| {
+                    let amt = func.results.len();
+                    if amt == 0 {
+                        return;
                     }
+                    me.src.js("const ");
+                    if amt > 1 {
+                        me.src.js("[");
+                    }
+                    for i in 0..amt {
+                        let name = format!("ret{i}");
+                        me.src.js(&name);
+                        results.push(name);
+                    }
+                    if amt > 1 {
+                        me.src.js("]");
+                    }
+                    me.src.js(" = ");
                 };
 
                 bind_results(self);

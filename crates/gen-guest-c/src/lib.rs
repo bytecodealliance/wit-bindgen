@@ -1733,7 +1733,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 {
                     uwriteln!(self.src, "case {}: {{", i);
                     self.src.push_str(&block);
-                    assert!(block_results.len() == 1);
+                    assert!(block_results.len() == (case.ty.is_some() as usize));
 
                     if let Some(_) = self.gen.get_nonempty_type(iface, case.ty.as_ref()) {
                         let mut dst = format!("{}.val", result);
@@ -1862,10 +1862,9 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::OptionLift { payload, ty, .. } => {
                 let (some, some_results) = self.blocks.pop().unwrap();
                 let (none, none_results) = self.blocks.pop().unwrap();
-                assert!(none_results.len() == 1);
+                assert!(none_results.len() == 0);
                 assert!(some_results.len() == 1);
                 let some_result = &some_results[0];
-                assert_eq!(none_results[0], "INVALID");
 
                 let ty = self.gen.type_string(iface, &Type::Id(*ty));
                 let result = self.locals.tmp("option");
@@ -1949,21 +1948,21 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::ResultLift { result, ty, .. } => {
                 let (err, err_results) = self.blocks.pop().unwrap();
-                assert!(err_results.len() == 1);
-                let err_result = &err_results[0];
+                assert!(err_results.len() == (result.err.is_some() as usize));
                 let (ok, ok_results) = self.blocks.pop().unwrap();
-                assert!(ok_results.len() == 1);
-                let ok_result = &ok_results[0];
+                assert!(ok_results.len() == (result.ok.is_some() as usize));
 
                 let result_tmp = self.locals.tmp("result");
                 let set_ok = if let Some(_) = self.gen.get_nonempty_type(iface, result.ok.as_ref())
                 {
+                    let ok_result = &ok_results[0];
                     format!("{result_tmp}.val.ok = {ok_result};")
                 } else {
                     String::new()
                 };
                 let set_err =
                     if let Some(_) = self.gen.get_nonempty_type(iface, result.err.as_ref()) {
+                        let err_result = &err_results[0];
                         format!("{result_tmp}.val.err = {err_result};")
                     } else {
                         String::new()
@@ -2099,7 +2098,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     }
                     Some(Scalar::Void) => {
                         uwriteln!(self.src, "{}({});", self.sig.name, args);
-                        results.push("INVALID".to_string());
                     }
                     Some(Scalar::Type(_)) => {
                         let ret = self.locals.tmp("ret");
@@ -2204,7 +2202,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::Return { .. } if self.gen.in_import => match self.sig.ret.scalar {
                 None => self.store_in_retptrs(operands),
                 Some(Scalar::Void) => {
-                    assert_eq!(operands, &["INVALID"]);
+                    assert!(operands.is_empty());
                 }
                 Some(Scalar::Type(_)) => {
                     assert_eq!(operands.len(), 1);

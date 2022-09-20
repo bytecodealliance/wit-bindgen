@@ -143,9 +143,8 @@ impl Wasmtime {
             return FunctionRet::Normal;
         }
 
-        match &f.results {
-            Results::Named(_rs) => todo!("multireturn: rust host: custom error handling configuration"),
-            Results::Anon(Type::Id(id)) => {
+        if f.results.len() == 1 {
+            if let Type::Id(id) = f.results.iter_types().next().unwrap() {
                 if let TypeDefKind::Result(r) = &iface.types[*id].kind {
                     if let Some(Type::Id(err)) = r.err {
                         if let Some(name) = &iface.types[err].name {
@@ -158,7 +157,6 @@ impl Wasmtime {
                     }
                 }
             }
-            Results::Anon(..) => (),
         }
 
         self.needs_custom_error_to_trap = true;
@@ -639,10 +637,22 @@ impl Generator for Wasmtime {
         sig.self_arg = Some("&self, mut caller: impl wasmtime::AsContextMut<Data = T>".to_string());
         self.print_docs_and_params(iface, func, TypeMode::AllBorrowed("'_"), &sig);
         self.push_str("-> Result<");
-        match &func.results {
-            Results::Named(_rs) => todo!("multireturn: rust host"),
-            Results::Anon(ty) => self.print_ty(iface, ty, TypeMode::Owned),
-        };
+        match func.results.len() {
+            0 => self.push_str("()"),
+            1 => self.print_ty(
+                iface,
+                func.results.iter_types().next().unwrap(),
+                TypeMode::Owned,
+            ),
+            _ => {
+                self.push_str("(");
+                for ty in func.results.iter_types() {
+                    self.print_ty(iface, ty, TypeMode::Owned);
+                    self.push_str(", ");
+                }
+                self.push_str(")");
+            }
+        }
         self.push_str(", wasmtime::Trap> {\n");
 
         let params = func
@@ -1530,7 +1540,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     let case_name = case.name.to_camel_case();
                     self.push_str(&format!("{name}::{case_name}"));
                     if case.ty.is_none() {
-                        self.push_str(&format!(" => {{\nlet e = ();\n{block}\n}}\n"));
+                        self.push_str(&format!(" => {{\n{block}\n}}\n"));
                     } else {
                         self.push_str(&format!("(e) => {block},\n"));
                     }
@@ -1619,7 +1629,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str(&format!(
                     "match {operand} {{
                         Some(e) => {some},
-                        None => {{\nlet e = ();\n{none}\n}},
+                        None => {{\n{none}\n}},
                     }};"
                 ));
             }
@@ -1641,16 +1651,19 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::ResultLower {
                 results: result_types,
+                result,
                 ..
             } => {
                 let err = self.blocks.pop().unwrap();
                 let ok = self.blocks.pop().unwrap();
                 self.let_results(result_types.len(), results);
                 let operand = &operands[0];
+                let ok_binding = if result.ok.is_some() { "e" } else { "()" };
+                let err_binding = if result.err.is_some() { "e" } else { "()" };
                 self.push_str(&format!(
                     "match {operand} {{
-                        Ok(e) => {{ {ok} }},
-                        Err(e) => {{ {err} }},
+                        Ok({ok_binding}) => {{ {ok} }},
+                        Err({err_binding}) => {{ {err} }},
                     }};"
                 ));
             }
@@ -1960,8 +1973,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
                 call.push_str(")");
 
-                self.push_str("let result = ");
-                results.push("result".to_string());
+                self.let_results(func.results.len(), results);
                 match self.gen.classify_fn_ret(iface, func) {
                     FunctionRet::Normal => self.push_str(&call),
                     // Unwrap the result, translating errors to unconditional
@@ -1991,22 +2003,15 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
                 self.push_str(";\n");
                 self.after_call = true;
-                // TODO(multireturn): should this emit more for more return types?
-                match func.results.iter_types().next() {
-                    Some(_) => {
-                        if self.gen.opts.tracing {
-                            self.push_str("wit_bindgen_host_wasmtime_rust::tracing::event!(\n");
-                            self.push_str(
-                                "wit_bindgen_host_wasmtime_rust::tracing::Level::TRACE,\n",
-                            );
-                            self.push_str(&format!(
-                                "{} = wit_bindgen_host_wasmtime_rust::tracing::field::debug(&{0}),\n",
-                                results[0],
-                            ));
-                            self.push_str(");\n");
-                        }
+                if self.gen.opts.tracing && func.results.len() > 0 {
+                    self.push_str("wit_bindgen_host_wasmtime_rust::tracing::event!(\n");
+                    self.push_str("wit_bindgen_host_wasmtime_rust::tracing::Level::TRACE,\n");
+                    for result in results.iter() {
+                        self.push_str(&format!(
+                            "{result} = wit_bindgen_host_wasmtime_rust::tracing::field::debug(&{result}),\n",
+                        ));
                     }
-                    None => (),
+                    self.push_str(");\n");
                 }
             }
 

@@ -273,6 +273,13 @@ impl<'a> Iterator for ResultsTypeIter<'a> {
             ResultsTypeIter::Anon(ty) => ty.next(),
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            ResultsTypeIter::Named(ps) => ps.size_hint(),
+            ResultsTypeIter::Anon(ty) => ty.size_hint(),
+        }
+    }
 }
 
 impl<'a> ExactSizeIterator for ResultsTypeIter<'a> {}
@@ -281,6 +288,13 @@ impl Results {
     // For the common case of an empty results list.
     pub fn empty() -> Results {
         Results::Named(Vec::new())
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Results::Named(params) => params.len(),
+            Results::Anon(_) => 1,
+        }
     }
 
     pub fn iter_types(&self) -> ResultsTypeIter {

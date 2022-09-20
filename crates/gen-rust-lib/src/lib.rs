@@ -147,14 +147,20 @@ pub trait RustGenerator {
     }
 
     fn print_result_params(&mut self, iface: &Interface, results: &Results, mode: TypeMode) {
-        self.push_str("(");
-        for (i, ty) in results.iter_types().enumerate() {
-            self.print_ty(iface, ty, mode);
-            if i != 0 {
-                self.push_str(", ")
+        match results.len() {
+            0 => self.push_str("()"),
+            1 => self.print_ty(iface, results.iter_types().next().unwrap(), mode),
+            _ => {
+                self.push_str("(");
+                for (i, ty) in results.iter_types().enumerate() {
+                    self.print_ty(iface, ty, mode);
+                    if i != 0 {
+                        self.push_str(", ")
+                    }
+                }
+                self.push_str(")")
             }
         }
-        self.push_str(")")
     }
 
     fn print_ty(&mut self, iface: &Interface, ty: &Type, mode: TypeMode) {

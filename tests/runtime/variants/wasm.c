@@ -153,7 +153,7 @@ void exports_test_imports() {
 
   {
     bool a;
-    imports_result_unit_unit_t b;
+    imports_result_void_void_t b;
     imports_my_errno_t c;
     b.is_err = false;
     imports_variant_enums(true, &b, IMPORTS_MY_ERRNO_SUCCESS, &a, &b, &c);

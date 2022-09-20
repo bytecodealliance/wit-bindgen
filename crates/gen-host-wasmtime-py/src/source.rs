@@ -362,10 +362,11 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
             self.print_ty(ty, true);
         }
         self.source.push_str(") -> ");
-        match &func.results {
-            Results::Named(_rs) => todo!("multireturn: python host"),
-            Results::Anon(ty) => self.print_ty(ty, true),
-        };
+        match func.results.len() {
+            0 => self.source.push_str("None"),
+            1 => self.print_ty(func.results.iter_types().next().unwrap(), true),
+            _ => todo!("multireturn: python host"),
+        }
         params
     }
 
@@ -375,11 +376,11 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
     /// @dataclass
     /// class Foo0:
     ///     value: int
-    ///  
+    ///
     /// @dataclass
     /// class Foo1:
     ///     value: int
-    ///  
+    ///
     /// Foo = Union[Foo0, Foo1]
     /// ```
     pub fn print_union_wrapped(&mut self, name: &str, union: &Union, docs: &Docs) {
