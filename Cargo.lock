@@ -245,13 +245,9 @@ version = "2.34.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a0610544180c38b88101fecf2dd634b174a62eef6946f84dfc6a7127512b381c"
 dependencies = [
- "ansi_term",
- "atty",
  "bitflags",
- "strsim 0.8.0",
  "textwrap 0.11.0",
  "unicode-width",
- "vec_map",
 ]
 
 [[package]]
@@ -266,7 +262,7 @@ dependencies = [
  "clap_lex",
  "indexmap",
  "once_cell",
- "strsim 0.10.0",
+ "strsim",
  "termcolor",
  "textwrap 0.15.0",
 ]
@@ -1328,12 +1324,6 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "strsim"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ea5119cdb4c55b55d432abb513a0429384878c15dde60cc77b1c99de1a95a6a"
-
-[[package]]
-name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
@@ -1417,7 +1407,6 @@ dependencies = [
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
  "wit-bindgen-gen-guest-rust",
- "wit-bindgen-gen-guest-spidermonkey-js",
  "wit-bindgen-gen-host-js",
  "wit-bindgen-gen-host-wasmtime-py",
  "wit-bindgen-gen-host-wasmtime-rust",
@@ -1582,12 +1571,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "957e51f3646910546462e67d5f7599b9e4fb8acdd304b087a6494730f9eebf04"
 
 [[package]]
-name = "vec_map"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
-
-[[package]]
 name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1654,15 +1637,6 @@ dependencies = [
 
 [[package]]
 name = "wasm-encoder"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db0c351632e46cc06a58a696a6c11e4cf90cad4b9f8f07a0b59128d616c29bb0"
-dependencies = [
- "leb128",
-]
-
-[[package]]
-name = "wasm-encoder"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "31f0c17267a5ffd6ae3d897589460e21db1673c84fb7016b909c9691369a75ea"
@@ -1678,12 +1652,6 @@ checksum = "d443c5a7daae71697d97ec12ad70b4fe8766d3a0f4db16158ac8b781365892f7"
 dependencies = [
  "leb128",
 ]
-
-[[package]]
-name = "wasmparser"
-version = "0.80.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "449167e2832691a1bff24cde28d2804e90e09586a448c8e76984792c44334a6b"
 
 [[package]]
 name = "wasmparser"
@@ -2089,7 +2057,6 @@ dependencies = [
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
  "wit-bindgen-gen-guest-rust",
- "wit-bindgen-gen-guest-spidermonkey-js",
  "wit-bindgen-gen-host-js",
  "wit-bindgen-gen-host-wasmtime-py",
  "wit-bindgen-gen-host-wasmtime-rust",
@@ -2112,7 +2079,6 @@ dependencies = [
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
  "wit-bindgen-gen-guest-rust",
- "wit-bindgen-gen-guest-spidermonkey-js",
  "wit-bindgen-gen-host-js",
  "wit-bindgen-gen-host-wasmtime-py",
  "wit-bindgen-gen-host-wasmtime-rust",
@@ -2140,19 +2106,6 @@ dependencies = [
  "wit-bindgen-core",
  "wit-bindgen-gen-rust-lib",
  "wit-bindgen-guest-rust",
-]
-
-[[package]]
-name = "wit-bindgen-gen-guest-spidermonkey-js"
-version = "0.2.0"
-dependencies = [
- "heck 0.3.3",
- "lazy_static",
- "structopt",
- "test-helpers",
- "wasm-encoder 0.8.0",
- "wasmparser 0.80.2",
- "wit-bindgen-core",
 ]
 
 [[package]]

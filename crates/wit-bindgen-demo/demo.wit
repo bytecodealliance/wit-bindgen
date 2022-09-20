@@ -7,7 +7,6 @@ enum lang {
   wasmtime-py,
   c,
   markdown,
-  spidermonkey,
 }
 
 

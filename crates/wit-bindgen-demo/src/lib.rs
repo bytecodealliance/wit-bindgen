@@ -19,7 +19,6 @@ pub struct Config {
     wasmtime: RefCell<wit_bindgen_gen_host_wasmtime_rust::Opts>,
     wasmtime_py: RefCell<wit_bindgen_gen_host_wasmtime_py::Opts>,
     markdown: RefCell<wit_bindgen_gen_markdown::Opts>,
-    spidermonkey: RefCell<wit_bindgen_gen_guest_spidermonkey_js::Opts>,
 }
 
 impl demo::Config for Config {
@@ -49,13 +48,6 @@ impl demo::Config for Config {
             demo::Lang::Js => Box::new(self.js.borrow().clone().build()),
             demo::Lang::C => Box::new(self.c.borrow().clone().build()),
             demo::Lang::Markdown => Box::new(self.markdown.borrow().clone().build()),
-            demo::Lang::Spidermonkey => {
-                let mut opts = self.spidermonkey.borrow_mut();
-                opts.import_spidermonkey = true;
-                opts.js = "foo.js".into();
-                let script = "throw new Error('unimplemented');";
-                Box::new(opts.clone().build(script))
-            }
         };
         let iface = Interface::parse("input", &wit).map_err(|e| format!("{:?}", e))?;
         let mut files = Default::default();

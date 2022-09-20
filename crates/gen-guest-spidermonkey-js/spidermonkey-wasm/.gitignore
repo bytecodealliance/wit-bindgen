@@ -1,7 +1,0 @@
-spidermonkey-*
-lib/*
-*.o
-spidermonkey.initial.wasm
-wasi-sdk-12.0
-mozbuild
-.exports
