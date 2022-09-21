@@ -474,12 +474,11 @@ impl Generator for Markdown {
             }
         }
 
-        match &func.results {
-            Results::Named(_rs) => todo!("multireturn: markdown"),
-            Results::Anon(ty) => {
-                self.src.push_str("##### Results\n\n");
+        if func.results.len() > 0 {
+            self.src.push_str("##### Results\n\n");
+            for (i, ty) in func.results.iter_types().enumerate() {
                 self.src.push_str(&format!(
-                    "- <a href=\"#{f}.{p}\" name=\"{f}.{p}\"></a> `{}`: ",
+                    "- <a href=\"#{f}.{p}{i}\" name=\"{f}.{p}{i}\"></a> `{}{i}`: ",
                     "result",
                     f = func.name.to_snake_case(),
                     p = "result",
