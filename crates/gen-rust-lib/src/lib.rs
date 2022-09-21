@@ -152,11 +152,9 @@ pub trait RustGenerator {
             1 => self.print_ty(iface, results.iter_types().next().unwrap(), mode),
             _ => {
                 self.push_str("(");
-                for (i, ty) in results.iter_types().enumerate() {
+                for ty in results.iter_types() {
                     self.print_ty(iface, ty, mode);
-                    if i != 0 {
-                        self.push_str(", ")
-                    }
+                    self.push_str(", ")
                 }
                 self.push_str(")")
             }

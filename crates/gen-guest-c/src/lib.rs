@@ -56,7 +56,7 @@ impl Opts {
 
 #[derive(Debug)]
 struct Return {
-    splat_tuple: bool,
+    return_multiple: bool,
     scalar: Option<Scalar>,
     retptrs: Vec<Type>,
 }
@@ -92,18 +92,21 @@ impl C {
 
     fn classify_ret(&mut self, iface: &Interface, func: &Function) -> Return {
         let mut ret = Return {
-            splat_tuple: false,
+            return_multiple: false,
             scalar: None,
             retptrs: Vec::new(),
         };
-        match &func.results {
-            Results::Named(rs) => match rs.len() {
-                0 => ret.return_none(),
-                1 => ret.return_single(iface, &rs[0].1, &rs[0].1),
-                _ => todo!("multireturn: c guest"),
-            },
-            Results::Anon(ty) => ret.return_single(iface, ty, ty),
-        };
+        match func.results.len() {
+            0 => ret.scalar = Some(Scalar::Void),
+            1 => {
+                let ty = func.results.iter_types().next().unwrap();
+                ret.return_single(iface, ty, ty);
+            }
+            _ => {
+                ret.return_multiple = true;
+                ret.retptrs.extend(func.results.iter_types().cloned());
+            }
+        }
         return ret;
     }
 
@@ -662,27 +665,12 @@ impl Return {
             }
         };
         match &iface.types[id].kind {
-            TypeDefKind::Type(t) => self.return_single(iface, t, orig_ty),
+            TypeDefKind::Type(t) => return self.return_single(iface, t, orig_ty),
 
-            // Flags are returned as their bare values
-            TypeDefKind::Flags(_) => {
+            // Flags are returned as their bare values, and enums are scalars
+            TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => {
                 self.scalar = Some(Scalar::Type(*orig_ty));
-            }
-
-            // Tuples get splatted to multiple return pointers
-            TypeDefKind::Tuple(_) => self.splat_tuples(iface, ty, orig_ty),
-
-            // Record returns are always through a pointer
-            TypeDefKind::Record(_) => {
-                self.retptrs.push(*orig_ty);
-            }
-
-            // other records/lists/buffers always go to return pointers
-            TypeDefKind::List(_) => self.retptrs.push(*orig_ty),
-
-            // Enums are scalars
-            TypeDefKind::Enum(_) => {
-                self.scalar = Some(Scalar::Type(*orig_ty));
+                return;
             }
 
             // Unpack optional returns where a boolean discriminant is
@@ -691,6 +679,7 @@ impl Return {
             TypeDefKind::Option(ty) => {
                 self.scalar = Some(Scalar::OptionBool(*ty));
                 self.retptrs.push(*ty);
+                return;
             }
 
             // Unpack `result<T, E>` returns where `E` looks like an enum
@@ -704,44 +693,27 @@ impl Return {
                             max_err: enum_.cases.len(),
                         });
                         if let Some(ok) = r.ok {
-                            self.splat_tuples(iface, &ok, &ok);
+                            self.retptrs.push(ok);
                         }
                         return;
                     }
                 }
 
-                // otherwise just return the variant via a normal
-                // return pointer
-                self.retptrs.push(*orig_ty);
+                // fall through to the return pointer case
             }
 
-            TypeDefKind::Variant(_) | TypeDefKind::Union(_) => {
-                self.retptrs.push(*orig_ty);
-            }
+            // These types are always returned indirectly.
+            TypeDefKind::Tuple(_)
+            | TypeDefKind::Record(_)
+            | TypeDefKind::List(_)
+            | TypeDefKind::Variant(_)
+            | TypeDefKind::Union(_) => {}
+
             TypeDefKind::Future(_) => todo!("return_single for future"),
             TypeDefKind::Stream(_) => todo!("return_single for stream"),
         }
-    }
 
-    fn return_none(&mut self) {
-        self.scalar = Some(Scalar::Void);
-    }
-
-    fn splat_tuples(&mut self, iface: &Interface, ty: &Type, orig_ty: &Type) {
-        let id = match ty {
-            Type::Id(id) => *id,
-            _ => {
-                self.retptrs.push(*orig_ty);
-                return;
-            }
-        };
-        match &iface.types[id].kind {
-            TypeDefKind::Tuple(t) => {
-                self.splat_tuple = true;
-                self.retptrs.extend(t.types.iter());
-            }
-            _ => self.retptrs.push(*orig_ty),
-        }
+        self.retptrs.push(*orig_ty);
     }
 }
 
@@ -1445,18 +1417,9 @@ impl<'a> FunctionBindgen<'a> {
     }
 
     fn store_in_retptrs(&mut self, operands: &[String]) {
-        if self.sig.ret.splat_tuple {
-            assert_eq!(operands.len(), 1);
-            let op = &operands[0];
-            for (i, ptr) in self.sig.retptrs.clone().into_iter().enumerate() {
-                self.store_op(&format!("{}.f{}", op, i), &format!("*{}", ptr));
-            }
-            // ...
-        } else {
-            assert_eq!(operands.len(), self.sig.retptrs.len());
-            for (op, ptr) in operands.iter().zip(self.sig.retptrs.clone()) {
-                self.store_op(op, &format!("*{}", ptr));
-            }
+        assert_eq!(operands.len(), self.sig.retptrs.len());
+        for (op, ptr) in operands.iter().zip(self.sig.retptrs.clone()) {
+            self.store_op(op, &format!("*{}", ptr));
         }
     }
 }
@@ -2086,25 +2049,16 @@ impl Bindgen for FunctionBindgen<'_> {
                             retptrs.push(name);
                         }
                         uwriteln!(self.src, "{}({});", self.sig.name, args);
-                        if self.sig.ret.splat_tuple {
-                            let ty = match &func.results {
-                                Results::Named(_rs) => todo!("multireturn: c guest"),
-                                Results::Anon(ty) => self.gen.type_string(iface, ty),
-                            };
-                            results.push(format!("({}){{ {} }}", ty, retptrs.join(", ")));
-                        } else if self.sig.retptrs.len() > 0 {
-                            results.extend(retptrs);
-                        }
+                        results.extend(retptrs);
                     }
                     Some(Scalar::Void) => {
                         uwriteln!(self.src, "{}({});", self.sig.name, args);
                     }
                     Some(Scalar::Type(_)) => {
                         let ret = self.locals.tmp("ret");
-                        let ty = match &func.results {
-                            Results::Named(_rs) => todo!("multireturn: c guest"),
-                            Results::Anon(ty) => self.gen.type_string(iface, ty),
-                        };
+                        let ty = self
+                            .gen
+                            .type_string(iface, func.results.iter_types().next().unwrap());
                         uwriteln!(self.src, "{} {} = {}({});", ty, ret, self.sig.name, args);
                         results.push(ret);
                     }
@@ -2119,10 +2073,9 @@ impl Bindgen for FunctionBindgen<'_> {
                         let payload_ty = self.gen.type_string(iface, ty);
                         uwriteln!(self.src, "{} {};", payload_ty, val);
                         uwriteln!(self.src, "bool {} = {}({});", ret, self.sig.name, args);
-                        let option_ty = match &func.results {
-                            Results::Named(_rs) => todo!("multireturn: c guests"),
-                            Results::Anon(ty) => self.gen.type_string(iface, ty),
-                        };
+                        let option_ty = self
+                            .gen
+                            .type_string(iface, func.results.iter_types().next().unwrap());
                         let option_ret = self.locals.tmp("ret");
                         uwrite!(
                             self.src,
@@ -2161,10 +2114,9 @@ impl Bindgen for FunctionBindgen<'_> {
                             self.sig.name,
                             args,
                         );
-                        let result_ty = match &func.results {
-                            Results::Named(_rs) => todo!("multireturn: c guest"),
-                            Results::Anon(ty) => self.gen.type_string(iface, ty),
-                        };
+                        let result_ty = self
+                            .gen
+                            .type_string(iface, func.results.iter_types().next().unwrap());
                         let result_ret = self.locals.tmp("ret");
                         uwrite!(
                             self.src,
@@ -2184,12 +2136,6 @@ impl Bindgen for FunctionBindgen<'_> {
                             max = max_err,
                             set_ok = if self.sig.ret.retptrs.len() == 0 {
                                 String::new()
-                            } else if self.sig.ret.splat_tuple {
-                                let mut s = String::new();
-                                for (i, name) in ok_names.iter().enumerate() {
-                                    uwriteln!(s, "{}.val.ok.f{} = {};", result_ret, i, name,);
-                                }
-                                s
                             } else {
                                 let name = ok_names.pop().unwrap();
                                 format!("{}.val.ok = {};", result_ret, name)

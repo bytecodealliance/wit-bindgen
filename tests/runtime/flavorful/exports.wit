@@ -28,4 +28,5 @@ errno-result: func() -> result<_, my-errno>
 type list-typedef = string
 type list-typedef2 = list<u8>
 type list-typedef3 = list<string>
-list-typedefs: func(a: list-typedef, c: list-typedef3) -> tuple<list-typedef2, list-typedef3>
+list-typedefs: func(a: list-typedef, c: list-typedef3)
+  -> (a: list-typedef2, b: list-typedef3)

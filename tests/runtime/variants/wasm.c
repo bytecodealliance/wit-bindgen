@@ -47,13 +47,7 @@ void exports_test_imports() {
   assert(imports_invert_bool(false) == true);
 
   {
-    imports_casts_t c;
-    imports_c1_t r1;
-    imports_c2_t r2;
-    imports_c3_t r3;
-    imports_c4_t r4;
-    imports_c5_t r5;
-    imports_c6_t r6;
+    imports_casts_t c, ret;
     c.f0.tag = IMPORTS_C1_A;
     c.f0.val.a = 1;
     c.f1.tag = IMPORTS_C2_A;
@@ -66,23 +60,17 @@ void exports_test_imports() {
     c.f4.val.a = 5;
     c.f5.tag = IMPORTS_C6_A;
     c.f5.val.a = 6;
-    imports_variant_casts(&c, &r1, &r2, &r3, &r4, &r5, &r6);
-    assert(r1.tag == IMPORTS_C1_A && r1.val.a == 1);
-    assert(r2.tag == IMPORTS_C2_A && r2.val.a == 2);
-    assert(r3.tag == IMPORTS_C3_A && r3.val.a == 3);
-    assert(r4.tag == IMPORTS_C4_A && r4.val.a == 4);
-    assert(r5.tag == IMPORTS_C5_A && r5.val.a == 5);
-    assert(r6.tag == IMPORTS_C6_A && r6.val.a == 6);
+    imports_variant_casts(&c, &ret);
+    assert(ret.f0.tag == IMPORTS_C1_A && ret.f0.val.a == 1);
+    assert(ret.f1.tag == IMPORTS_C2_A && ret.f1.val.a == 2);
+    assert(ret.f2.tag == IMPORTS_C3_A && ret.f2.val.a == 3);
+    assert(ret.f3.tag == IMPORTS_C4_A && ret.f3.val.a == 4);
+    assert(ret.f4.tag == IMPORTS_C5_A && ret.f4.val.a == 5);
+    assert(ret.f5.tag == IMPORTS_C6_A && ret.f5.val.a == 6);
   }
 
   {
-    imports_casts_t c;
-    imports_c1_t r1;
-    imports_c2_t r2;
-    imports_c3_t r3;
-    imports_c4_t r4;
-    imports_c5_t r5;
-    imports_c6_t r6;
+    imports_casts_t c, ret;
     c.f0.tag = IMPORTS_C1_B;
     c.f0.val.b = 1;
     c.f1.tag = IMPORTS_C2_B;
@@ -95,21 +83,17 @@ void exports_test_imports() {
     c.f4.val.b = 5;
     c.f5.tag = IMPORTS_C6_B;
     c.f5.val.b = 6;
-    imports_variant_casts(&c, &r1, &r2, &r3, &r4, &r5, &r6);
-    assert(r1.tag == IMPORTS_C1_B && r1.val.b == 1);
-    assert(r2.tag == IMPORTS_C2_B && r2.val.b == 2);
-    assert(r3.tag == IMPORTS_C3_B && r3.val.b == 3);
-    assert(r4.tag == IMPORTS_C4_B && r4.val.b == 4);
-    assert(r5.tag == IMPORTS_C5_B && r5.val.b == 5);
-    assert(r6.tag == IMPORTS_C6_B && r6.val.b == 6);
+    imports_variant_casts(&c, &ret);
+    assert(ret.f0.tag == IMPORTS_C1_B && ret.f0.val.b == 1);
+    assert(ret.f1.tag == IMPORTS_C2_B && ret.f1.val.b == 2);
+    assert(ret.f2.tag == IMPORTS_C3_B && ret.f2.val.b == 3);
+    assert(ret.f3.tag == IMPORTS_C4_B && ret.f3.val.b == 4);
+    assert(ret.f4.tag == IMPORTS_C5_B && ret.f4.val.b == 5);
+    assert(ret.f5.tag == IMPORTS_C6_B && ret.f5.val.b == 6);
   }
 
   {
-    imports_zeros_t c;
-    imports_z1_t r1;
-    imports_z2_t r2;
-    imports_z3_t r3;
-    imports_z4_t r4;
+    imports_zeros_t c, ret;
     c.f0.tag = IMPORTS_Z1_A;
     c.f0.val.a = 1;
     c.f1.tag = IMPORTS_Z2_A;
@@ -118,28 +102,24 @@ void exports_test_imports() {
     c.f2.val.a = 3;
     c.f3.tag = IMPORTS_Z4_A;
     c.f3.val.a = 4;
-    imports_variant_zeros(&c, &r1, &r2, &r3, &r4);
-    assert(r1.tag == IMPORTS_Z1_A && r1.val.a == 1);
-    assert(r2.tag == IMPORTS_Z2_A && r2.val.a == 2);
-    assert(r3.tag == IMPORTS_Z3_A && r3.val.a == 3);
-    assert(r4.tag == IMPORTS_Z4_A && r4.val.a == 4);
+    imports_variant_zeros(&c, &ret);
+    assert(ret.f0.tag == IMPORTS_Z1_A && ret.f0.val.a == 1);
+    assert(ret.f1.tag == IMPORTS_Z2_A && ret.f1.val.a == 2);
+    assert(ret.f2.tag == IMPORTS_Z3_A && ret.f2.val.a == 3);
+    assert(ret.f3.tag == IMPORTS_Z4_A && ret.f3.val.a == 4);
   }
 
   {
-    imports_zeros_t c;
-    imports_z1_t r1;
-    imports_z2_t r2;
-    imports_z3_t r3;
-    imports_z4_t r4;
+    imports_zeros_t c, ret;
     c.f0.tag = IMPORTS_Z1_B;
     c.f1.tag = IMPORTS_Z2_B;
     c.f2.tag = IMPORTS_Z3_B;
     c.f3.tag = IMPORTS_Z4_B;
-    imports_variant_zeros(&c, &r1, &r2, &r3, &r4);
-    assert(r1.tag == IMPORTS_Z1_B);
-    assert(r2.tag == IMPORTS_Z2_B);
-    assert(r3.tag == IMPORTS_Z3_B);
-    assert(r4.tag == IMPORTS_Z4_B);
+    imports_variant_zeros(&c, &ret);
+    assert(ret.f0.tag == IMPORTS_Z1_B);
+    assert(ret.f1.tag == IMPORTS_Z2_B);
+    assert(ret.f2.tag == IMPORTS_Z3_B);
+    assert(ret.f3.tag == IMPORTS_Z4_B);
   }
 
   {
@@ -152,14 +132,13 @@ void exports_test_imports() {
   }
 
   {
-    bool a;
+    imports_tuple3_bool_result_void_void_my_errno_t ret;
     imports_result_void_void_t b;
-    imports_my_errno_t c;
     b.is_err = false;
-    imports_variant_enums(true, &b, IMPORTS_MY_ERRNO_SUCCESS, &a, &b, &c);
-    assert(a == false);
-    assert(b.is_err);
-    assert(c == IMPORTS_MY_ERRNO_A);
+    imports_variant_enums(true, &b, IMPORTS_MY_ERRNO_SUCCESS, &ret);
+    assert(ret.f0 == false);
+    assert(ret.f1.is_err);
+    assert(ret.f2 == IMPORTS_MY_ERRNO_A);
   }
 }
 
@@ -187,20 +166,12 @@ bool exports_invert_bool(bool a) {
   return !a;
 }
 
-void exports_variant_casts(exports_casts_t *a, exports_c1_t *ret0, exports_c2_t *ret1, exports_c3_t *ret2, exports_c4_t *ret3, exports_c5_t *ret4, exports_c6_t *ret5) {
-  *ret0 = a->f0;
-  *ret1 = a->f1;
-  *ret2 = a->f2;
-  *ret3 = a->f3;
-  *ret4 = a->f4;
-  *ret5 = a->f5;
+void exports_variant_casts(exports_casts_t *a, exports_casts_t *ret) {
+  *ret = *a;
 }
 
-void exports_variant_zeros(exports_zeros_t *a, exports_z1_t *ret0, exports_z2_t *ret1, exports_z3_t *ret2, exports_z4_t *ret3) {
-  *ret0 = a->f0;
-  *ret1 = a->f1;
-  *ret2 = a->f2;
-  *ret3 = a->f3;
+void exports_variant_zeros(exports_zeros_t *a, exports_zeros_t *b) {
+  *b = *a;
 }
 
 void exports_variant_typedefs(exports_option_typedef_t *a, exports_bool_typedef_t b, exports_result_typedef_t *c) {

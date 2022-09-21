@@ -12,13 +12,12 @@ void exports_test_imports() {
   }
 
   imports_tuple2_u8_u32_t input;
+  imports_tuple2_u32_u8_t output;
   input.f0 = 1;
   input.f1 = 2;
-  uint32_t a;
-  uint8_t b;
-  imports_swap_tuple(&input, &a, &b);
-  assert(a == 2);
-  assert(b == 1);
+  imports_swap_tuple(&input, &output);
+  assert(output.f0 == 2);
+  assert(output.f1 == 1);
 
   assert(imports_roundtrip_flags1(IMPORTS_F1_A) == IMPORTS_F1_A);
   assert(imports_roundtrip_flags1(0) == 0);
@@ -60,13 +59,12 @@ void exports_test_imports() {
   }
 
   imports_tuple0_t t0;
-  imports_tuple0(&t0);
+  imports_tuple0(&t0, &t0);
 
-  imports_tuple1_u8_t t1;
+  imports_tuple1_u8_t t1, t2;
   t1.f0 = 1;
-  uint8_t ret;
-  imports_tuple1(&t1, &ret);
-  assert(ret == 1);
+  imports_tuple1(&t1, &t2);
+  assert(t2.f0 == 1);
 }
 
 void exports_multiple_results(uint8_t *ret0, uint16_t *ret1) {
@@ -74,9 +72,9 @@ void exports_multiple_results(uint8_t *ret0, uint16_t *ret1) {
   *ret1 = 200;
 }
 
-void exports_swap_tuple(exports_tuple2_u8_u32_t *a, uint32_t *ret0, uint8_t *ret1) {
-  *ret0 = a->f1;
-  *ret1 = a->f0;
+void exports_swap_tuple(exports_tuple2_u8_u32_t *a, exports_tuple2_u32_u8_t *b) {
+  b->f0 = a->f1;
+  b->f1 = a->f0;
 }
 
 exports_f1_t exports_roundtrip_flags1(exports_f1_t a) {
@@ -98,9 +96,9 @@ void exports_roundtrip_record1(exports_r1_t *a, exports_r1_t *ret0) {
   *ret0 = *a;
 }
 
-void exports_tuple0(exports_tuple0_t *a) {
+void exports_tuple0(exports_tuple0_t *a, exports_tuple0_t *b) {
 }
 
-void exports_tuple1(exports_tuple1_u8_t *a, uint8_t *ret0) {
-  *ret0 = a->f0;
+void exports_tuple1(exports_tuple1_u8_t *a, exports_tuple1_u8_t *b) {
+  b->f0 = a->f0;
 }

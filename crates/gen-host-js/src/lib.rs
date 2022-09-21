@@ -631,7 +631,7 @@ impl Generator for Js {
             .js(&format!("function({}) {{\n", params.join(", ")));
         self.ts_func(iface, func);
 
-        let mut f = FunctionBindgen::new(self, false, params);
+        let mut f = FunctionBindgen::new(self, params);
         iface.call(
             AbiVariant::GuestImport,
             LiftLower::LiftArgsLowerResults,
@@ -723,7 +723,7 @@ impl Generator for Js {
         if !first_is_operand {
             params.remove(0);
         }
-        let mut f = FunctionBindgen::new(self, false, params);
+        let mut f = FunctionBindgen::new(self, params);
         f.src_object = src_object;
         iface.call(
             AbiVariant::GuestExport,
@@ -1167,7 +1167,6 @@ struct FunctionBindgen<'a> {
     src: Source,
     block_storage: Vec<wit_bindgen_core::Source>,
     blocks: Vec<(String, Vec<String>)>,
-    in_import: bool,
     needs_memory: bool,
     needs_realloc: Option<String>,
     needs_free: Option<String>,
@@ -1176,14 +1175,13 @@ struct FunctionBindgen<'a> {
 }
 
 impl FunctionBindgen<'_> {
-    fn new(gen: &mut Js, in_import: bool, params: Vec<String>) -> FunctionBindgen<'_> {
+    fn new(gen: &mut Js, params: Vec<String>) -> FunctionBindgen<'_> {
         FunctionBindgen {
             gen,
             tmp: 0,
             src: Source::default(),
             block_storage: Vec::new(),
             blocks: Vec::new(),
-            in_import,
             needs_memory: false,
             needs_realloc: None,
             needs_free: None,
@@ -2228,6 +2226,9 @@ impl Bindgen for FunctionBindgen<'_> {
                         me.src.js("[");
                     }
                     for i in 0..amt {
+                        if i > 0 {
+                            me.src.js(", ");
+                        }
                         let name = format!("ret{i}");
                         me.src.js(&name);
                         results.push(name);
@@ -2246,10 +2247,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::Return { amt, func: _ } => match amt {
                 0 => {}
                 1 => self.src.js(&format!("return {};\n", operands[0])),
-                _ => {
-                    assert!(self.in_import);
-                    self.src.js(&format!("return [{}];\n", operands.join(", ")));
-                }
+                _ => self.src.js(&format!("return [{}];\n", operands.join(", "))),
             },
 
             Instruction::I32Load { offset } => self.load("getInt32", *offset, operands, results),

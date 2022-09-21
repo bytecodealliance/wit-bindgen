@@ -83,9 +83,9 @@ void exports_test_imports() {
     imports_host_state2_free(&a.a);
   }
   {
-    imports_host_state2_t a;
+    imports_host_state_result_tuple_t a;
     imports_host_state2_result_tuple(&a);
-    imports_host_state2_free(&a);
+    imports_host_state2_free(&a.f0);
   }
   {
     imports_host_state2_t a;
@@ -184,8 +184,8 @@ void exports_wasm_state2_result_record(exports_wasm_state_result_record_t *ret0)
   ret0->a = exports_wasm_state2_new((void*) 222);
 }
 
-void exports_wasm_state2_result_tuple(exports_wasm_state2_t *ret0) {
-  *ret0 = exports_wasm_state2_new((void*) 333);
+void exports_wasm_state2_result_tuple(exports_wasm_state_result_tuple_t *ret0) {
+  ret0->f0 = exports_wasm_state2_new((void*) 333);
 }
 
 bool exports_wasm_state2_result_option(exports_wasm_state2_t *ret0) {

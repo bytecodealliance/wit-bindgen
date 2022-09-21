@@ -365,7 +365,17 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
         match func.results.len() {
             0 => self.source.push_str("None"),
             1 => self.print_ty(func.results.iter_types().next().unwrap(), true),
-            _ => todo!("multireturn: python host"),
+            _ => {
+                self.deps.pyimport("typing", "Tuple");
+                self.push_str("Tuple[");
+                for (i, ty) in func.results.iter_types().enumerate() {
+                    if i > 0 {
+                        self.source.push_str(", ");
+                    }
+                    self.print_ty(ty, true);
+                }
+                self.source.push_str("]");
+            }
         }
         params
     }
