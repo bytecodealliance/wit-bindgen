@@ -67,16 +67,6 @@ enum GuestGenerator {
         #[structopt(flatten)]
         common: Common,
     },
-    /// Generates bindings for JS guest modules.
-    /// This is achieved by embedding the SpiderMonkey JS runtime into the module
-    /// with the required JS stubs to interact with the defined interfaces.
-    #[structopt(name = "spidermonkey-js")]
-    SpiderMonkeyJS {
-        #[structopt(flatten)]
-        opts: wit_bindgen_gen_guest_spidermonkey_js::Opts,
-        #[structopt(flatten)]
-        common: Common,
-    },
 }
 
 #[derive(Debug, StructOpt)]
@@ -109,11 +99,6 @@ fn main() -> Result<()> {
         Category::Host(HostGenerator::Js { opts, common }) => (Box::new(opts.build()), common),
         Category::Guest(GuestGenerator::C { opts, common }) => (Box::new(opts.build()), common),
         Category::Markdown { opts, common } => (Box::new(opts.build()), common),
-        Category::Guest(GuestGenerator::SpiderMonkeyJS { opts, common }) => {
-            let js_source = std::fs::read_to_string(&opts.js)
-                .with_context(|| format!("failed to read {}", opts.js.display()))?;
-            (Box::new(opts.build(js_source)), common)
-        }
     };
 
     let imports = common

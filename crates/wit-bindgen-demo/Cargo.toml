@@ -18,6 +18,5 @@ wit-bindgen-gen-host-wasmtime-py = { path = '../gen-host-wasmtime-py' }
 wit-bindgen-gen-host-js = { path = '../gen-host-js' }
 wit-bindgen-gen-guest-c = { path = '../gen-guest-c' }
 wit-bindgen-gen-markdown = { path = '../gen-markdown' }
-wit-bindgen-gen-guest-spidermonkey-js = { path = '../gen-guest-spidermonkey-js' }
 wit-bindgen-guest-rust = { path = '../guest-rust' }
 wasmprinter = "0.2.29"

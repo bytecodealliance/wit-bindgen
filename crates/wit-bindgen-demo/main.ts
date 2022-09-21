@@ -100,7 +100,6 @@ class Editor {
       case "wasmtime-py":
       case "c":
       case "markdown":
-      case "spidermonkey":
         lang = this.language.value;
         break;
       default: return;
