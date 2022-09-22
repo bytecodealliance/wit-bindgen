@@ -84,7 +84,6 @@ enum Intrinsic {
     Utf8EncodedLen,
     Slab,
     Promises,
-    WithCurrentPromise,
     ThrowInvalidBool,
 }
 
@@ -113,7 +112,6 @@ impl Intrinsic {
             Intrinsic::Utf8EncodedLen => "UTF8_ENCODED_LEN",
             Intrinsic::Slab => "Slab",
             Intrinsic::Promises => "PROMISES",
-            Intrinsic::WithCurrentPromise => "with_current_promise",
             Intrinsic::ThrowInvalidBool => "throw_invalid_bool",
         }
     }
@@ -643,7 +641,6 @@ impl Generator for Js {
             src,
             needs_memory,
             needs_realloc,
-            needs_free,
             ..
         } = f;
 
@@ -659,11 +656,6 @@ impl Generator for Js {
                 .js(&format!("const realloc = get_export(\"{}\");\n", name));
         }
 
-        if let Some(name) = needs_free {
-            self.needs_get_export = true;
-            self.src
-                .js(&format!("const free = get_export(\"{}\");\n", name));
-        }
         self.src.js(&src.js);
 
         self.src.js("}");
@@ -736,7 +728,6 @@ impl Generator for Js {
             src,
             needs_memory,
             needs_realloc,
-            needs_free,
             src_object,
             ..
         } = f;
@@ -753,12 +744,6 @@ impl Generator for Js {
             ));
         }
 
-        if let Some(name) = needs_free {
-            self.src.js(&format!(
-                "const free = {}._exports[\"{}\"];\n",
-                src_object, name
-            ));
-        }
         self.src.js(&src.js);
         self.src.js("}\n");
 
@@ -1169,7 +1154,6 @@ struct FunctionBindgen<'a> {
     blocks: Vec<(String, Vec<String>)>,
     needs_memory: bool,
     needs_realloc: Option<String>,
-    needs_free: Option<String>,
     params: Vec<String>,
     src_object: String,
 }
@@ -1184,7 +1168,6 @@ impl FunctionBindgen<'_> {
             blocks: Vec::new(),
             needs_memory: false,
             needs_realloc: None,
-            needs_free: None,
             params,
             src_object: "this".to_string(),
         }
@@ -2041,32 +2024,18 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("ptr{}", tmp));
                 results.push(format!("len{}", tmp));
             }
-            Instruction::ListCanonLift { element, free, .. } => {
+            Instruction::ListCanonLift { element, .. } => {
                 self.needs_memory = true;
                 let tmp = self.tmp();
-                self.src
-                    .js(&format!("const ptr{} = {};\n", tmp, operands[0]));
-                self.src
-                    .js(&format!("const len{} = {};\n", tmp, operands[1]));
+                self.src.js(&format!("const ptr{tmp} = {};\n", operands[0]));
+                self.src.js(&format!("const len{tmp} = {};\n", operands[1]));
                 // TODO: this is the wrong endianness
                 let array_ty = self.gen.array_ty(iface, element).unwrap();
-                let result = format!(
-                    "new {}(memory.buffer.slice(ptr{}, ptr{1} + len{1} * {}))",
-                    array_ty,
-                    tmp,
+                self.src.js(&format!(
+                    "const result{tmp} = new {array_ty}(memory.buffer.slice(ptr{tmp}, ptr{tmp} + len{tmp} * {}));\n",
                     self.gen.sizes.size(element),
-                );
-                let align = self.gen.sizes.align(element);
-                match free {
-                    Some(free) => {
-                        self.needs_free = Some(free.to_string());
-                        self.src.js(&format!("const list{} = {};\n", tmp, result));
-                        self.src
-                            .js(&format!("free(ptr{}, len{0}, {});\n", tmp, align));
-                        results.push(format!("list{}", tmp));
-                    }
-                    None => results.push(result),
-                }
+                ));
+                results.push(format!("result{tmp}"));
             }
             Instruction::StringLower { realloc } => {
                 // Lowering only happens when we're passing strings into wasm,
@@ -2089,27 +2058,16 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("ptr{}", tmp));
                 results.push(format!("len{}", tmp));
             }
-            Instruction::StringLift { free } => {
+            Instruction::StringLift => {
                 self.needs_memory = true;
                 let tmp = self.tmp();
-                self.src
-                    .js(&format!("const ptr{} = {};\n", tmp, operands[0]));
-                self.src
-                    .js(&format!("const len{} = {};\n", tmp, operands[1]));
+                self.src.js(&format!("const ptr{tmp} = {};\n", operands[0]));
+                self.src.js(&format!("const len{tmp} = {};\n", operands[1]));
                 let decoder = self.gen.intrinsic(Intrinsic::Utf8Decoder);
-                let result = format!(
-                    "{}.decode(new Uint8Array(memory.buffer, ptr{}, len{1}))",
-                    decoder, tmp,
-                );
-                match free {
-                    Some(free) => {
-                        self.needs_free = Some(free.to_string());
-                        self.src.js(&format!("const list{} = {};\n", tmp, result));
-                        self.src.js(&format!("free(ptr{}, len{0}, 1);\n", tmp));
-                        results.push(format!("list{}", tmp));
-                    }
-                    None => results.push(result),
-                }
+                self.src.js(&format!(
+                    "const result{tmp} = {decoder}.decode(new Uint8Array(memory.buffer, ptr{tmp}, len{tmp}));\n",
+                ));
+                results.push(format!("result{tmp}"));
             }
 
             Instruction::ListLower { element, realloc } => {
@@ -2149,11 +2107,10 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(len);
             }
 
-            Instruction::ListLift { element, free, .. } => {
+            Instruction::ListLift { element, .. } => {
                 let (body, body_results) = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let size = self.gen.sizes.size(element);
-                let align = self.gen.sizes.align(element);
                 let len = format!("len{}", tmp);
                 self.src.js(&format!("const {} = {};\n", len, operands[1]));
                 let base = format!("base{}", tmp);
@@ -2171,12 +2128,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src
                     .js(&format!("{}.push({});\n", result, body_results[0]));
                 self.src.js("}\n");
-
-                if let Some(free) = free {
-                    self.needs_free = Some(free.to_string());
-                    self.src
-                        .js(&format!("free({}, {} * {}, {});\n", base, len, size, align,));
-                }
             }
 
             Instruction::IterElem { .. } => results.push("e".to_string()),
@@ -2244,11 +2195,21 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.js(";\n");
             }
 
-            Instruction::Return { amt, func: _ } => match amt {
-                0 => {}
-                1 => self.src.js(&format!("return {};\n", operands[0])),
-                _ => self.src.js(&format!("return [{}];\n", operands.join(", "))),
-            },
+            Instruction::Return { amt, func } => {
+                if !self.gen.in_import && iface.guest_export_needs_post_return(func) {
+                    let name = &func.name;
+                    self.src.js(&format!(
+                        "{}._exports[\"cabi_post_{name}\"](ret);\n",
+                        self.src_object
+                    ));
+                }
+
+                match amt {
+                    0 => {}
+                    1 => self.src.js(&format!("return {};\n", operands[0])),
+                    _ => self.src.js(&format!("return [{}];\n", operands.join(", "))),
+                }
+            }
 
             Instruction::I32Load { offset } => self.load("getInt32", *offset, operands, results),
             Instruction::I64Load { offset } => self.load("getBigInt64", *offset, operands, results),
@@ -2532,18 +2493,6 @@ impl Js {
             "),
 
             Intrinsic::Promises => self.src.js("export const PROMISES = new Slab();\n"),
-            Intrinsic::WithCurrentPromise => self.src.js("
-                let CUR_PROMISE = null;
-                export function with_current_promise(val, closure) {
-                    const prev = CUR_PROMISE;
-                    CUR_PROMISE = val;
-                    try {
-                        closure(prev);
-                    } finally {
-                        CUR_PROMISE = prev;
-                    }
-                }
-            "),
             Intrinsic::ThrowInvalidBool => self.src.js("
                 export function throw_invalid_bool() {
                     throw new RangeError(\"invalid variant discriminant for bool\");

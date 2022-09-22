@@ -78,6 +78,7 @@ fn execute(name: &str, wasm: &Path, ts: &Path, imports: &Path, exports: &Path) {
     println!("{:?}", std::env::join_paths(&path));
     run(Command::new("node")
         .arg("--experimental-wasi-unstable-preview1")
+        .arg("--stack-trace-limit=1000")
         .arg(dir.join("host.js"))
         .env("NODE_PATH", std::env::join_paths(&path).unwrap())
         .arg(wasm));

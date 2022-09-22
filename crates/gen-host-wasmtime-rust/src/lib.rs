@@ -38,7 +38,6 @@ pub struct Wasmtime {
 
 enum NeededFunction {
     Realloc,
-    Free,
 }
 
 struct Import {
@@ -507,7 +506,6 @@ impl Generator for Wasmtime {
         );
         let FunctionBindgen {
             src,
-            cleanup,
             needs_borrow_checker,
             needs_memory,
             needs_buffer_transaction,
@@ -515,7 +513,6 @@ impl Generator for Wasmtime {
             closures,
             ..
         } = f;
-        assert!(cleanup.is_none());
         assert!(!needs_buffer_transaction);
 
         // Generate the signature this function will have in the final trait
@@ -633,6 +630,7 @@ impl Generator for Wasmtime {
     fn import(&mut self, iface: &Interface, func: &Function) {
         let prev = mem::take(&mut self.src);
 
+        let wasm_sig = iface.wasm_signature(AbiVariant::GuestExport, func);
         let mut sig = FnSig::default();
         sig.self_arg = Some("&self, mut caller: impl wasmtime::AsContextMut<Data = T>".to_string());
         self.print_docs_and_params(iface, func, TypeMode::AllBorrowed("'_"), &sig);
@@ -691,6 +689,23 @@ impl Generator for Wasmtime {
             );
             exports.fields.insert(name, (func.ty(), get));
         }
+        if iface.guest_export_needs_post_return(func) {
+            let name = func.name.to_snake_case();
+            self.src
+                .push_str(&format!("let post_return = &self.{name}_post_return;\n"));
+            let ret = match wasm_sig.results.len() {
+                1 => wasm_type(wasm_sig.results[0]),
+                _ => unimplemented!(),
+            };
+            let get = format!(
+                "instance.get_typed_func::<{ret}, (), _>(&mut store, \"cabi_post_{}\")?",
+                func.name
+            );
+            exports.fields.insert(
+                format!("{name}_post_return"),
+                (format!("wasmtime::TypedFunc<{ret}, ()>"), get),
+            );
+        }
 
         self.src.push_str(&closures);
 
@@ -726,14 +741,13 @@ impl Generator for Wasmtime {
         // Create the code snippet which will define the type of this field in
         // the struct that we're exporting and additionally extracts the
         // function from an instantiated instance.
-        let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
         let mut cvt = "(".to_string();
-        for param in sig.params.iter() {
+        for param in wasm_sig.params.iter() {
             cvt.push_str(wasm_type(*param));
             cvt.push_str(",");
         }
         cvt.push_str("), (");
-        for result in sig.results.iter() {
+        for result in wasm_sig.results.iter() {
             cvt.push_str(wasm_type(*result));
             cvt.push_str(",");
         }
@@ -1179,9 +1193,6 @@ struct FunctionBindgen<'a> {
     // Whether or not the `caller_memory` variable has been defined and is
     // available for use.
     caller_memory_available: bool,
-    // Code that must be executed before a return, generated during instruction
-    // lowering.
-    cleanup: Option<String>,
 
     // Rust clousures for buffers that must be placed at the front of the
     // function.
@@ -1193,6 +1204,9 @@ struct FunctionBindgen<'a> {
     needs_borrow_checker: bool,
     needs_memory: bool,
     needs_functions: HashMap<String, NeededFunction>,
+
+    // Results of the `CallWasm` call, if one was found.
+    wasm_results: Option<Vec<String>>,
 }
 
 impl FunctionBindgen<'_> {
@@ -1205,13 +1219,13 @@ impl FunctionBindgen<'_> {
             after_call: false,
             caller_memory_available: false,
             tmp: 0,
-            cleanup: None,
             closures: Source::default(),
             needs_buffer_transaction: false,
             needs_borrow_checker: false,
             needs_memory: false,
             needs_functions: HashMap::new(),
             params,
+            wasm_results: None,
         }
     }
 
@@ -1731,45 +1745,33 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("{}.len() as i32", val));
             }
 
-            Instruction::ListCanonLift { element, free, .. } => match free {
-                Some(free) => {
+            Instruction::ListCanonLift { element, .. } => {
+                let tmp = self.tmp();
+                let ptr = &operands[0];
+                let len = &operands[1];
+                self.push_str(&format!("let ptr{tmp} = {ptr};\n"));
+                self.push_str(&format!("let len{tmp} = {len};\n"));
+
+                if self.gen.in_import {
+                    self.needs_borrow_checker = true;
+                    let slice = format!("_bc.slice(ptr{0}, len{0})?", tmp);
+                    results.push(slice);
+                } else {
                     self.needs_memory = true;
                     self.gen.needs_copy_slice = true;
-                    self.needs_functions
-                        .insert(free.to_string(), NeededFunction::Free);
-                    let (align, el_size) =
-                        (self.sizes().align(element), self.sizes().size(element));
-                    let tmp = self.tmp();
-                    self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
-                    self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
+                    let align = self.sizes().align(element);
                     self.push_str(&format!(
                         "
                             let data{tmp} = copy_slice(
                                 &mut caller,
                                 memory,
-                                ptr{tmp}, len{tmp}, {}
+                                ptr{tmp}, len{tmp}, {align}
                             )?;
                         ",
-                        align,
-                        tmp = tmp,
                     ));
-                    self.call_intrinsic(
-                        free,
-                        // we use normal multiplication here as copy_slice has
-                        // already verified that multiplied size fits i32
-                        format!("(ptr{tmp}, len{tmp} * {}, {})", el_size, align, tmp = tmp),
-                    );
-                    results.push(format!("data{}", tmp));
+                    results.push(format!("data{tmp}"));
                 }
-                None => {
-                    self.needs_borrow_checker = true;
-                    let tmp = self.tmp();
-                    self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
-                    self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
-                    let slice = format!("_bc.slice(ptr{0}, len{0})?", tmp);
-                    results.push(slice);
-                }
-            },
+            }
 
             Instruction::StringLower { realloc } => {
                 // see above for this unwrap
@@ -1799,15 +1801,20 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("{}.len() as i32", val));
             }
 
-            Instruction::StringLift { free } => match free {
-                Some(free) => {
+            Instruction::StringLift => {
+                let tmp = self.tmp();
+                let ptr = &operands[0];
+                let len = &operands[1];
+                self.push_str(&format!("let ptr{tmp} = {ptr};\n"));
+                self.push_str(&format!("let len{tmp} = {len};\n"));
+
+                if self.gen.in_import {
+                    self.needs_borrow_checker = true;
+                    let slice = format!("_bc.slice_str(ptr{0}, len{0})?", tmp);
+                    results.push(slice);
+                } else {
                     self.needs_memory = true;
                     self.gen.needs_copy_slice = true;
-                    self.needs_functions
-                        .insert(free.to_string(), NeededFunction::Free);
-                    let tmp = self.tmp();
-                    self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
-                    self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
                     self.push_str(&format!(
                         "
                             let data{tmp} = copy_slice(
@@ -1818,27 +1825,13 @@ impl Bindgen for FunctionBindgen<'_> {
                         ",
                         tmp = tmp,
                     ));
-                    self.call_intrinsic(
-                        free,
-                        // we use normal multiplication here as copy_slice has
-                        // already verified that multiplied size fits i32
-                        format!("(ptr{tmp}, len{tmp}, 1)", tmp = tmp),
-                    );
                     results.push(format!(
                         "String::from_utf8(data{})
-                            .map_err(|_| wasmtime::Trap::new(\"invalid utf-8\"))?",
+                                .map_err(|_| wasmtime::Trap::new(\"invalid utf-8\"))?",
                         tmp,
                     ));
                 }
-                None => {
-                    self.needs_borrow_checker = true;
-                    let tmp = self.tmp();
-                    self.push_str(&format!("let ptr{} = {};\n", tmp, operands[0]));
-                    self.push_str(&format!("let len{} = {};\n", tmp, operands[1]));
-                    let slice = format!("_bc.slice_str(ptr{0}, len{0})?", tmp);
-                    results.push(slice);
-                }
-            },
+            }
 
             Instruction::ListLower { element, realloc } => {
                 let realloc = realloc.unwrap();
@@ -1875,11 +1868,10 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(len);
             }
 
-            Instruction::ListLift { element, free, .. } => {
+            Instruction::ListLift { element, .. } => {
                 let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let size = self.gen.sizes.size(element);
-                let align = self.gen.sizes.align(element);
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {};\n", len, operands[1]));
                 let base = format!("base{}", tmp);
@@ -1904,12 +1896,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str(");\n");
                 self.push_str("}\n");
                 results.push(result);
-
-                if let Some(free) = free {
-                    self.call_intrinsic(free, format!("({}, {} * {}, {})", base, len, size, align));
-                    self.needs_functions
-                        .insert(free.to_string(), NeededFunction::Free);
-                }
             }
 
             Instruction::IterElem { .. } => {
@@ -1948,6 +1934,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str("?;\n");
                 self.after_call = true;
                 self.caller_memory_available = false; // invalidated by call
+
+                assert!(self.wasm_results.is_none());
+                self.wasm_results = Some(results.clone());
             }
 
             Instruction::CallInterface { module: _, func } => {
@@ -2015,22 +2004,21 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::Return { amt, .. } => {
-                let result = match amt {
+            Instruction::Return { amt, func, .. } => {
+                let mut result = match amt {
                     0 => format!("Ok(())\n"),
                     1 => format!("Ok({})\n", operands[0]),
                     _ => format!("Ok(({}))\n", operands.join(", ")),
                 };
-                match self.cleanup.take() {
-                    Some(cleanup) => {
-                        self.push_str("let ret = ");
-                        self.push_str(&result);
-                        self.push_str(";\n");
-                        self.push_str(&cleanup);
-                        self.push_str("ret");
-                    }
-                    None => self.push_str(&result),
+                if !self.gen.in_import && iface.guest_export_needs_post_return(func) {
+                    let tmp = self.tmp();
+                    self.push_str(&format!("let result{tmp} = {result};\n"));
+                    result = format!("result{tmp}");
+
+                    let result = &self.wasm_results.as_ref().unwrap()[0];
+                    self.push_str(&format!("post_return.call(&mut caller, {result})?;\n",));
                 }
+                self.push_str(&result);
             }
 
             Instruction::I32Load { offset } => results.push(self.load(*offset, "i32", operands)),
@@ -2079,7 +2067,10 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(ptr);
             }
 
-            Instruction::Free { .. } => unimplemented!(),
+            Instruction::GuestDeallocate { .. } => unreachable!(),
+            Instruction::GuestDeallocateString { .. } => unreachable!(),
+            Instruction::GuestDeallocateVariant { .. } => unreachable!(),
+            Instruction::GuestDeallocateList { .. } => unreachable!(),
         }
     }
 }
@@ -2088,7 +2079,6 @@ impl NeededFunction {
     fn cvt(&self) -> &'static str {
         match self {
             NeededFunction::Realloc => "(i32, i32, i32, i32), i32",
-            NeededFunction::Free => "(i32, i32, i32), ()",
         }
     }
 

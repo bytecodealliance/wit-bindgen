@@ -149,13 +149,12 @@ pub mod rt {
         return ptr;
     }
 
-    #[no_mangle]
-    pub unsafe extern "C" fn canonical_abi_free(ptr: *mut u8, len: usize, align: usize) {
-        if len == 0 {
+    pub unsafe fn dealloc(ptr: i32, size: usize, align: usize) {
+        if size == 0 {
             return;
         }
-        let layout = Layout::from_size_align_unchecked(len, align);
-        alloc::dealloc(ptr, layout);
+        let layout = Layout::from_size_align_unchecked(size, align);
+        alloc::dealloc(ptr as *mut u8, layout);
     }
 
     macro_rules! as_traits {
