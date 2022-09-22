@@ -107,7 +107,7 @@ impl WasmtimePy {
 
 fn array_ty(iface: &Interface, ty: &Type) -> Option<&'static str> {
     match ty {
-        Type::Unit | Type::Bool => None,
+        Type::Bool => None,
         Type::U8 => Some("c_uint8"),
         Type::S8 => Some("c_int8"),
         Type::U16 => Some("c_uint16"),
@@ -221,8 +221,13 @@ impl Generator for WasmtimePy {
             let case_name = format!("{}{}", name.to_camel_case(), case.name.to_camel_case());
             builder.push_str(&format!("class {case_name}:\n"));
             builder.indent();
-            builder.push_str("value: ");
-            builder.print_ty(&case.ty, true);
+            match &case.ty {
+                Some(ty) => {
+                    builder.push_str("value: ");
+                    builder.print_ty(ty, true);
+                }
+                None => builder.push_str("pass"),
+            }
             builder.push_str("\n");
             builder.dedent();
             builder.push_str("\n");
@@ -298,9 +303,9 @@ impl Generator for WasmtimePy {
         let mut builder = self.src.builder(&mut self.deps, iface);
         builder.comment(docs);
         builder.push_str(&format!("{} = Result[", name.to_camel_case()));
-        builder.print_ty(&result.ok, true);
+        builder.print_optional_ty(result.ok.as_ref(), true);
         builder.push_str(", ");
-        builder.print_ty(&result.err, true);
+        builder.print_optional_ty(result.err.as_ref(), true);
         builder.push_str("]\n\n");
     }
 
@@ -1077,10 +1082,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::UnitLower => {}
-            Instruction::UnitLift => {
-                results.push("None".to_string());
-            }
             Instruction::BoolFromI32 => {
                 let op = self.locals.tmp("operand");
                 let ret = self.locals.tmp("boolean");
@@ -1246,7 +1247,9 @@ impl Bindgen for FunctionBindgen<'_> {
                         case.name.to_camel_case()
                     ));
                     builder.indent();
-                    builder.push_str(&format!("{} = {}.value\n", payload, operands[0]));
+                    if case.ty.is_some() {
+                        builder.push_str(&format!("{} = {}.value\n", payload, operands[0]));
+                    }
                     builder.push_str(&block);
 
                     for (i, result) in block_results.iter().enumerate() {
@@ -1292,8 +1295,10 @@ impl Bindgen for FunctionBindgen<'_> {
                         name.to_camel_case(),
                         case.name.to_camel_case()
                     ));
-                    assert!(block_results.len() == 1);
-                    builder.push_str(&block_results[0]);
+                    if block_results.len() > 0 {
+                        assert!(block_results.len() == 1);
+                        builder.push_str(&block_results[0]);
+                    }
                     builder.push_str(")\n");
                     builder.dedent();
                 }
@@ -1459,10 +1464,9 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::OptionLift { ty, .. } => {
                 let (some, some_results) = self.blocks.pop().unwrap();
                 let (none, none_results) = self.blocks.pop().unwrap();
-                assert!(none_results.len() == 1);
+                assert!(none_results.len() == 0);
                 assert!(some_results.len() == 1);
                 let some_result = &some_results[0];
-                assert_eq!(none_results[0], "None");
 
                 let result = self.locals.tmp("option");
                 builder.print_var_declaration(&result, &Type::Id(*ty));
@@ -1529,10 +1533,9 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::ResultLift { ty, .. } => {
                 let (err, err_results) = self.blocks.pop().unwrap();
                 let (ok, ok_results) = self.blocks.pop().unwrap();
-                assert!(err_results.len() == 1);
-                let err_result = &err_results[0];
-                assert!(ok_results.len() == 1);
-                let ok_result = &ok_results[0];
+                let none = String::from("None");
+                let err_result = err_results.get(0).unwrap_or(&none);
+                let ok_result = ok_results.get(0).unwrap_or(&none);
 
                 let result = self.locals.tmp("expected");
                 builder.print_var_declaration(&result, &Type::Id(*ty));
@@ -1785,16 +1788,16 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
             Instruction::CallInterface { module: _, func } => {
-                match &func.result {
-                    Type::Unit => {
-                        results.push("".to_string());
+                for i in 0..func.results.len() {
+                    if i > 0 {
+                        builder.push_str(", ");
                     }
-                    _ => {
-                        let result = self.locals.tmp("ret");
-                        builder.push_str(&result);
-                        results.push(result);
-                        builder.push_str(" = ");
-                    }
+                    let result = self.locals.tmp("ret");
+                    builder.push_str(&result);
+                    results.push(result);
+                }
+                if func.results.len() > 0 {
+                    builder.push_str(" = ");
                 }
                 match &func.kind {
                     FunctionKind::Freestanding | FunctionKind::Static { .. } => {
@@ -1863,7 +1866,6 @@ impl Bindgen for FunctionBindgen<'_> {
 
 fn py_type_class_of(ty: &Type) -> PyTypeClass {
     match ty {
-        Type::Unit => PyTypeClass::None,
         Type::Bool
         | Type::U8
         | Type::U16
@@ -1881,7 +1883,6 @@ fn py_type_class_of(ty: &Type) -> PyTypeClass {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum PyTypeClass {
-    None,
     Int,
     Str,
     Float,

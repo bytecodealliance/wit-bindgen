@@ -6,7 +6,7 @@ host-state-get: func(a: host-state) -> u32
 
 host-state2-create: func() -> host-state2
 host-state2-saw-close: func() -> bool
-two-host-states: func(a: host-state, b: host-state2) -> tuple<host-state, host-state2>
+two-host-states: func(a: host-state, b: host-state2) -> (a: host-state, b: host-state2)
 
 record host-state-param-record { a: host-state2 }
 host-state2-param-record: func(a: host-state-param-record)

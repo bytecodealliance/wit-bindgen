@@ -26,5 +26,5 @@ variant-zeros: func(a: zeros) -> zeros
 
 type option-typedef = option<u32>
 type bool-typedef = bool
-type result-typedef = result<u32, unit>
+type result-typedef = result<u32>
 variant-typedefs: func(a: option-typedef, b: bool-typedef, c: result-typedef)

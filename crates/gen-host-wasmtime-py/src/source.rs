@@ -173,7 +173,6 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
     /// on the root type only if `forward_ref` is true.
     pub fn print_ty(&mut self, ty: &Type, forward_ref: bool) {
         match ty {
-            Type::Unit => self.push_str("None"),
             Type::Bool => self.push_str("bool"),
             Type::U8
             | Type::S8
@@ -221,26 +220,38 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
                     TypeDefKind::Result(r) => {
                         self.deps.needs_result = true;
                         self.push_str("Result[");
-                        self.print_ty(&r.ok, true);
+                        self.print_optional_ty(r.ok.as_ref(), true);
                         self.push_str(", ");
-                        self.print_ty(&r.err, true);
+                        self.print_optional_ty(r.err.as_ref(), true);
                         self.push_str("]");
                     }
                     TypeDefKind::List(t) => self.print_list(t),
                     TypeDefKind::Future(t) => {
                         self.push_str("Future[");
-                        self.print_ty(t, true);
+                        self.print_optional_ty(t.as_ref(), true);
                         self.push_str("]");
                     }
                     TypeDefKind::Stream(s) => {
                         self.push_str("Stream[");
-                        self.print_ty(&s.element, true);
+                        self.print_optional_ty(s.element.as_ref(), true);
                         self.push_str(", ");
-                        self.print_ty(&s.end, true);
+                        self.print_optional_ty(s.end.as_ref(), true);
                         self.push_str("]");
                     }
                 }
             }
+        }
+    }
+
+    /// Appends an optional type's Python representation to this `Source`, or
+    /// Python `None` if the type is `None`.
+    /// Records any required intrinsics and imports in the `deps`.
+    /// Uses Python forward reference syntax (e.g. 'Foo')
+    /// on the root type only if `forward_ref` is true.
+    pub fn print_optional_ty(&mut self, ty: Option<&Type>, forward_ref: bool) {
+        match ty {
+            Some(ty) => self.print_ty(ty, forward_ref),
+            None => self.push_str("None"),
         }
     }
 
@@ -260,6 +271,32 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
             self.print_ty(t, true);
         }
         self.push_str("]");
+    }
+
+    /// Appends (potentially multiple) return type's Python representation to this `Source`.
+    /// Records any required intrinsics and imports in the `deps`.
+    /// Uses Python forward reference syntax (e.g. 'Foo') for named type parameters.
+    pub fn print_return_types(&mut self, return_types: &Params) {
+        // Return None for empty wit return types.
+        if return_types.len() == 0 {
+            return self.push_str("None");
+        }
+        // Return the type directly for a single wit return type (whether named or not).
+        if return_types.len() == 1 {
+            let ty = &return_types.iter().next().unwrap().1;
+            self.print_ty(ty, true);
+        } else {
+            // Return a tuple for multiple wit return types.
+            self.deps.pyimport("typing", "Tuple");
+            self.push_str("Tuple[");
+            for (i, (_, t)) in return_types.iter().enumerate() {
+                if i > 0 {
+                    self.push_str(", ");
+                }
+                self.print_ty(t, true);
+            }
+            self.push_str("]");
+        }
     }
 
     /// Appends a Python type representing a sequence of the `element` type to this `Source`.
@@ -325,7 +362,21 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
             self.print_ty(ty, true);
         }
         self.source.push_str(") -> ");
-        self.print_ty(&func.result, true);
+        match func.results.len() {
+            0 => self.source.push_str("None"),
+            1 => self.print_ty(func.results.iter_types().next().unwrap(), true),
+            _ => {
+                self.deps.pyimport("typing", "Tuple");
+                self.push_str("Tuple[");
+                for (i, ty) in func.results.iter_types().enumerate() {
+                    if i > 0 {
+                        self.source.push_str(", ");
+                    }
+                    self.print_ty(ty, true);
+                }
+                self.source.push_str("]");
+            }
+        }
         params
     }
 
@@ -335,11 +386,11 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
     /// @dataclass
     /// class Foo0:
     ///     value: int
-    ///  
+    ///
     /// @dataclass
     /// class Foo1:
     ///     value: int
-    ///  
+    ///
     /// Foo = Union[Foo0, Foo1]
     /// ```
     pub fn print_union_wrapped(&mut self, name: &str, union: &Union, docs: &Docs) {

@@ -1,0 +1,5 @@
+a: func()
+b: func() -> ()
+c: func() -> u32
+d: func() -> (a: u32)
+e: func() -> (a: u32, b: float32)

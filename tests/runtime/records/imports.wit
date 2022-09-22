@@ -1,4 +1,4 @@
-multiple-results: func() -> tuple<u8, u16>
+multiple-results: func() -> (a: u8, b: u16)
 
 swap-tuple: func(a: tuple<u8, u32>) -> tuple<u32, u8>
 
@@ -35,7 +35,8 @@ flags flag64 {
   b56, b57, b58, b59, b60, b61, b62, b63,
 }
 
-roundtrip-flags3: func(a: flag8, b: flag16, c: flag32, d: flag64) -> tuple<flag8, flag16, flag32, flag64>
+roundtrip-flags3: func(a: flag8, b: flag16, c: flag32, d: flag64) ->
+  (f8: flag8, f16: flag16, f32: flag32, f64: flag64)
 
 record r1 { a: u8, b: f1 }
 roundtrip-record1: func(a: r1) -> r1

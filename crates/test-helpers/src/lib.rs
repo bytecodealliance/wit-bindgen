@@ -84,12 +84,21 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 .iter()
                 .map(|(_, t)| quote_ty(true, iface, t))
                 .collect::<Vec<_>>();
-            let ret = quote_ty(false, iface, &f.result);
+            let rets = f
+                .results
+                .iter_types()
+                .map(|t| quote_ty(false, iface, t))
+                .collect::<Vec<_>>();
             let mut self_ = quote::quote!();
             if let FunctionKind::Method { .. } = &f.kind {
                 params.remove(0);
                 self_ = quote::quote!(&self,);
             }
+            let ret = match rets.len() {
+                0 => quote::quote!(()),
+                1 => rets[0].clone(),
+                _ => quote::quote!((#(#rets,)*)),
+            };
             let method = quote::quote! {
                 fn #name(#self_ #(_: #params),*) -> #ret {
                     loop {}
@@ -130,7 +139,6 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         ty: &wit_parser::Type,
     ) -> proc_macro2::TokenStream {
         match *ty {
-            Type::Unit => quote::quote! { () },
             Type::Bool => quote::quote! { bool },
             Type::U8 => quote::quote! { u8 },
             Type::S8 => quote::quote! { i8 },
@@ -184,8 +192,14 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 quote::quote! { Option<#ty> }
             }
             TypeDefKind::Result(r) => {
-                let ok = quote_ty(param, iface, &r.ok);
-                let err = quote_ty(param, iface, &r.err);
+                let ok = match &r.ok {
+                    Some(t) => quote_ty(param, iface, t),
+                    None => quote::quote!(()),
+                };
+                let err = match &r.err {
+                    Some(t) => quote_ty(param, iface, t),
+                    None => quote::quote!(()),
+                };
                 quote::quote! { Result<#ok, #err> }
             }
             TypeDefKind::Future(_) => todo!("unknown future"),

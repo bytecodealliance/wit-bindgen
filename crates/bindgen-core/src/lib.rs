@@ -204,7 +204,9 @@ impl Types {
             for (_, ty) in f.params.iter() {
                 self.set_param_result_ty(iface, ty, true, false);
             }
-            self.set_param_result_ty(iface, &f.result, false, true);
+            for ty in f.results.iter_types() {
+                self.set_param_result_ty(iface, ty, false, true);
+            }
         }
     }
 
@@ -232,7 +234,7 @@ impl Types {
             TypeDefKind::Enum(_) => {}
             TypeDefKind::Variant(v) => {
                 for case in v.cases.iter() {
-                    info |= self.type_info(iface, &case.ty);
+                    info |= self.optional_type_info(iface, case.ty.as_ref());
                 }
             }
             TypeDefKind::List(ty) => {
@@ -246,8 +248,8 @@ impl Types {
                 info = self.type_info(iface, ty);
             }
             TypeDefKind::Result(r) => {
-                info = self.type_info(iface, &r.ok);
-                info |= self.type_info(iface, &r.err);
+                info = self.optional_type_info(iface, r.ok.as_ref());
+                info |= self.optional_type_info(iface, r.err.as_ref());
             }
             TypeDefKind::Union(u) => {
                 for case in u.cases.iter() {
@@ -255,11 +257,11 @@ impl Types {
                 }
             }
             TypeDefKind::Future(ty) => {
-                info = self.type_info(iface, ty);
+                info = self.optional_type_info(iface, ty.as_ref());
             }
             TypeDefKind::Stream(stream) => {
-                info = self.type_info(iface, &stream.element);
-                info |= self.type_info(iface, &stream.end);
+                info = self.optional_type_info(iface, stream.element.as_ref());
+                info |= self.optional_type_info(iface, stream.end.as_ref());
             }
         }
         self.type_info.insert(ty, info);
@@ -275,6 +277,13 @@ impl Types {
             _ => {}
         }
         info
+    }
+
+    fn optional_type_info(&mut self, iface: &Interface, ty: Option<&Type>) -> TypeInfo {
+        match ty {
+            Some(ty) => self.type_info(iface, ty),
+            None => TypeInfo::default(),
+        }
     }
 
     fn set_param_result_id(&mut self, iface: &Interface, ty: TypeId, param: bool, result: bool) {
@@ -293,25 +302,27 @@ impl Types {
             TypeDefKind::Enum(_) => {}
             TypeDefKind::Variant(v) => {
                 for case in v.cases.iter() {
-                    self.set_param_result_ty(iface, &case.ty, param, result)
+                    self.set_param_result_optional_ty(iface, case.ty.as_ref(), param, result)
                 }
             }
             TypeDefKind::List(ty) | TypeDefKind::Type(ty) | TypeDefKind::Option(ty) => {
                 self.set_param_result_ty(iface, ty, param, result)
             }
             TypeDefKind::Result(r) => {
-                self.set_param_result_ty(iface, &r.ok, param, result);
-                self.set_param_result_ty(iface, &r.err, param, result);
+                self.set_param_result_optional_ty(iface, r.ok.as_ref(), param, result);
+                self.set_param_result_optional_ty(iface, r.err.as_ref(), param, result);
             }
             TypeDefKind::Union(u) => {
                 for case in u.cases.iter() {
                     self.set_param_result_ty(iface, &case.ty, param, result)
                 }
             }
-            TypeDefKind::Future(ty) => self.set_param_result_ty(iface, ty, param, result),
+            TypeDefKind::Future(ty) => {
+                self.set_param_result_optional_ty(iface, ty.as_ref(), param, result)
+            }
             TypeDefKind::Stream(stream) => {
-                self.set_param_result_ty(iface, &stream.element, param, result);
-                self.set_param_result_ty(iface, &stream.end, param, result);
+                self.set_param_result_optional_ty(iface, stream.element.as_ref(), param, result);
+                self.set_param_result_optional_ty(iface, stream.end.as_ref(), param, result);
             }
         }
     }
@@ -328,6 +339,19 @@ impl Types {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn set_param_result_optional_ty(
+        &mut self,
+        iface: &Interface,
+        ty: Option<&Type>,
+        param: bool,
+        result: bool,
+    ) {
+        match ty {
+            Some(ty) => self.set_param_result_ty(iface, ty, param, result),
+            None => (),
         }
     }
 }

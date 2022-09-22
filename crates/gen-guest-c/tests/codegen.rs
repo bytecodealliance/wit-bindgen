@@ -4,7 +4,6 @@ use std::process::Command;
 
 mod imports {
     test_helpers::codegen_c_import!(
-        // ...
         "*.wit"
 
         // TODO: implement async support

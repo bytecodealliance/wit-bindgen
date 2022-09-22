@@ -141,7 +141,7 @@ impl Js {
 
     fn array_ty(&self, iface: &Interface, ty: &Type) -> Option<&'static str> {
         match ty {
-            Type::Unit | Type::Bool => None,
+            Type::Bool => None,
             Type::U8 => Some("Uint8Array"),
             Type::S8 => Some("Int8Array"),
             Type::U16 => Some("Uint16Array"),
@@ -164,7 +164,6 @@ impl Js {
 
     fn print_ty(&mut self, iface: &Interface, ty: &Type) {
         match ty {
-            Type::Unit => self.src.ts("void"),
             Type::Bool => self.src.ts("boolean"),
             Type::U8
             | Type::S8
@@ -204,9 +203,9 @@ impl Js {
                     TypeDefKind::Result(r) => {
                         self.needs_ty_result = true;
                         self.src.ts("Result<");
-                        self.print_ty(iface, &r.ok);
+                        self.print_optional_ty(iface, r.ok.as_ref());
                         self.src.ts(", ");
-                        self.print_ty(iface, &r.err);
+                        self.print_optional_ty(iface, r.err.as_ref());
                         self.src.ts(">");
                     }
                     TypeDefKind::Variant(_) => panic!("anonymous variant"),
@@ -215,6 +214,13 @@ impl Js {
                     TypeDefKind::Stream(_) => todo!("anonymous stream"),
                 }
             }
+        }
+    }
+
+    fn print_optional_ty(&mut self, iface: &Interface, ty: Option<&Type>) {
+        match ty {
+            Some(ty) => self.print_ty(iface, ty),
+            None => self.src.ts("void"),
         }
     }
 
@@ -301,7 +307,20 @@ impl Js {
             self.print_ty(iface, ty);
         }
         self.src.ts("): ");
-        self.print_ty(iface, &func.result);
+        match func.results.len() {
+            0 => self.src.ts("void"),
+            1 => self.print_ty(iface, func.results.iter_types().next().unwrap()),
+            _ => {
+                self.src.ts("[");
+                for (i, ty) in func.results.iter_types().enumerate() {
+                    if i != 0 {
+                        self.src.ts(", ");
+                    }
+                    self.print_ty(iface, ty);
+                }
+                self.src.ts("]");
+            }
+        }
         self.src.ts(";\n");
     }
 
@@ -451,9 +470,9 @@ impl Generator for Js {
             self.src.ts("tag: \"");
             self.src.ts(&case.name);
             self.src.ts("\",\n");
-            if case.ty != Type::Unit {
+            if let Some(ty) = case.ty {
                 self.src.ts("val: ");
-                self.print_ty(iface, &case.ty);
+                self.print_ty(iface, &ty);
                 self.src.ts(",\n");
             }
             self.src.ts("}\n");
@@ -524,9 +543,9 @@ impl Generator for Js {
         let name = name.to_camel_case();
         self.needs_ty_result = true;
         self.src.ts(&format!("export type {name} = Result<"));
-        self.print_ty(iface, &result.ok);
+        self.print_optional_ty(iface, result.ok.as_ref());
         self.src.ts(", ");
-        self.print_ty(iface, &result.err);
+        self.print_optional_ty(iface, result.err.as_ref());
         self.src.ts(">;\n");
     }
 
@@ -612,7 +631,7 @@ impl Generator for Js {
             .js(&format!("function({}) {{\n", params.join(", ")));
         self.ts_func(iface, func);
 
-        let mut f = FunctionBindgen::new(self, false, params);
+        let mut f = FunctionBindgen::new(self, params);
         iface.call(
             AbiVariant::GuestImport,
             LiftLower::LiftArgsLowerResults,
@@ -704,7 +723,7 @@ impl Generator for Js {
         if !first_is_operand {
             params.remove(0);
         }
-        let mut f = FunctionBindgen::new(self, false, params);
+        let mut f = FunctionBindgen::new(self, params);
         f.src_object = src_object;
         iface.call(
             AbiVariant::GuestExport,
@@ -1148,7 +1167,6 @@ struct FunctionBindgen<'a> {
     src: Source,
     block_storage: Vec<wit_bindgen_core::Source>,
     blocks: Vec<(String, Vec<String>)>,
-    in_import: bool,
     needs_memory: bool,
     needs_realloc: Option<String>,
     needs_free: Option<String>,
@@ -1157,14 +1175,13 @@ struct FunctionBindgen<'a> {
 }
 
 impl FunctionBindgen<'_> {
-    fn new(gen: &mut Js, in_import: bool, params: Vec<String>) -> FunctionBindgen<'_> {
+    fn new(gen: &mut Js, params: Vec<String>) -> FunctionBindgen<'_> {
         FunctionBindgen {
             gen,
             tmp: 0,
             src: Source::default(),
             block_storage: Vec::new(),
             blocks: Vec::new(),
-            in_import,
             needs_memory: false,
             needs_realloc: None,
             needs_free: None,
@@ -1391,11 +1408,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::UnitLower => {}
-            Instruction::UnitLift => {
-                results.push("undefined".to_string());
-            }
-
             Instruction::BoolFromI32 => {
                 let tmp = self.tmp();
                 self.src
@@ -1613,7 +1625,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 for (case, (block, block_results)) in variant.cases.iter().zip(blocks) {
                     self.src
                         .js(&format!("case \"{}\": {{\n", case.name.as_str()));
-                    if case.ty != Type::Unit {
+                    if case.ty.is_some() {
                         self.src.js(&format!("const e = variant{}.val;\n", tmp));
                     }
                     self.src.js(&block);
@@ -1651,11 +1663,11 @@ impl Bindgen for FunctionBindgen<'_> {
 
                     self.src.js(&format!("variant{} = {{\n", tmp));
                     self.src.js(&format!("tag: \"{}\",\n", case.name.as_str()));
-                    assert!(block_results.len() == 1);
-                    if case.ty != Type::Unit {
+                    if case.ty.is_some() {
+                        assert!(block_results.len() == 1);
                         self.src.js(&format!("val: {},\n", block_results[0]));
                     } else {
-                        assert_eq!(block_results[0], "undefined");
+                        assert!(block_results.len() == 0);
                     }
                     self.src.js("};\n");
                     self.src.js("break;\n}\n");
@@ -1807,10 +1819,9 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::OptionLift { payload, .. } => {
                 let (some, some_results) = self.blocks.pop().unwrap();
                 let (none, none_results) = self.blocks.pop().unwrap();
-                assert!(none_results.len() == 1);
+                assert!(none_results.len() == 0);
                 assert!(some_results.len() == 1);
                 let some_result = &some_results[0];
-                assert_eq!(none_results[0], "undefined");
 
                 let tmp = self.tmp();
 
@@ -1898,11 +1909,23 @@ impl Bindgen for FunctionBindgen<'_> {
                 ));
             }
 
-            Instruction::ResultLift { .. } => {
+            Instruction::ResultLift { result, .. } => {
                 let (err, err_results) = self.blocks.pop().unwrap();
                 let (ok, ok_results) = self.blocks.pop().unwrap();
-                let err_result = &err_results[0];
-                let ok_result = &ok_results[0];
+                let ok_result = if result.ok.is_some() {
+                    assert_eq!(ok_results.len(), 1);
+                    format!("{}", ok_results[0])
+                } else {
+                    assert_eq!(ok_results.len(), 0);
+                    String::from("undefined")
+                };
+                let err_result = if result.err.is_some() {
+                    assert_eq!(err_results.len(), 1);
+                    format!("{}", err_results[0])
+                } else {
+                    assert_eq!(err_results.len(), 0);
+                    String::from("undefined")
+                };
                 let tmp = self.tmp();
                 let op0 = &operands[0];
                 self.src.js(&format!(
@@ -2193,14 +2216,27 @@ impl Bindgen for FunctionBindgen<'_> {
                         ));
                     }
                 };
-                let mut bind_results = |me: &mut FunctionBindgen<'_>| match &func.result {
-                    Type::Unit => {
-                        results.push("".to_string());
+                let mut bind_results = |me: &mut FunctionBindgen<'_>| {
+                    let amt = func.results.len();
+                    if amt == 0 {
+                        return;
                     }
-                    _ => {
-                        me.src.js("const ret = ");
-                        results.push("ret".to_string());
+                    me.src.js("const ");
+                    if amt > 1 {
+                        me.src.js("[");
                     }
+                    for i in 0..amt {
+                        if i > 0 {
+                            me.src.js(", ");
+                        }
+                        let name = format!("ret{i}");
+                        me.src.js(&name);
+                        results.push(name);
+                    }
+                    if amt > 1 {
+                        me.src.js("]");
+                    }
+                    me.src.js(" = ");
                 };
 
                 bind_results(self);
@@ -2211,10 +2247,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::Return { amt, func: _ } => match amt {
                 0 => {}
                 1 => self.src.js(&format!("return {};\n", operands[0])),
-                _ => {
-                    assert!(self.in_import);
-                    self.src.js(&format!("return [{}];\n", operands.join(", ")));
-                }
+                _ => self.src.js(&format!("return [{}];\n", operands.join(", "))),
             },
 
             Instruction::I32Load { offset } => self.load("getInt32", *offset, operands, results),

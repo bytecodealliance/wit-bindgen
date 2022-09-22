@@ -950,13 +950,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 wit_bindgen_gen_rust_lib::bitcast(casts, operands, results)
             }
 
-            Instruction::UnitLower => {
-                self.push_str(&format!("let () = {};\n", operands[0]));
-            }
-            Instruction::UnitLift => {
-                results.push("()".to_string());
-            }
-
             Instruction::I32FromBool => {
                 results.push(format!("match {} {{ true => 1, false => 0 }}", operands[0]));
             }
@@ -1059,10 +1052,10 @@ impl Bindgen for FunctionBindgen<'_> {
                 for (case, block) in variant.cases.iter().zip(blocks) {
                     let case_name = case.name.to_camel_case();
                     self.push_str(&format!("{name}::{case_name}"));
-                    if case.ty == Type::Unit {
-                        self.push_str(&format!(" => {{\nlet e = ();\n{block}\n}}\n"));
-                    } else {
+                    if case.ty.is_some() {
                         self.push_str(&format!("(e) => {block},\n"));
+                    } else {
+                        self.push_str(&format!(" => {{\n{block}\n}}\n"));
                     }
                 }
                 self.push_str("};\n");
@@ -1071,7 +1064,7 @@ impl Bindgen for FunctionBindgen<'_> {
             // In unchecked mode when this type is a named enum then we know we
             // defined the type so we can transmute directly into it.
             Instruction::VariantLift { name, variant, .. }
-                if variant.cases.iter().all(|c| c.ty == Type::Unit) && unchecked =>
+                if variant.cases.iter().all(|c| c.ty.is_none()) && unchecked =>
             {
                 self.blocks.drain(self.blocks.len() - variant.cases.len()..);
                 let mut result = format!("core::mem::transmute::<_, ");
@@ -1098,7 +1091,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     } else {
                         i.to_string()
                     };
-                    let block = if case.ty != Type::Unit {
+                    let block = if case.ty.is_some() {
                         format!("({block})")
                     } else {
                         String::new()
@@ -1178,7 +1171,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str(&format!(
                     "match {operand} {{
                         Some(e) => {some},
-                        None => {{\nlet e = ();\n{none}\n}},
+                        None => {{\n{none}\n}},
                     }};"
                 ));
             }
@@ -1204,16 +1197,19 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::ResultLower {
                 results: result_types,
+                result,
                 ..
             } => {
                 let err = self.blocks.pop().unwrap();
                 let ok = self.blocks.pop().unwrap();
                 self.let_results(result_types.len(), results);
                 let operand = &operands[0];
+                let ok_binding = if result.ok.is_some() { "e" } else { "_" };
+                let err_binding = if result.err.is_some() { "e" } else { "_" };
                 self.push_str(&format!(
                     "match {operand} {{
-                        Ok(e) => {{ {ok} }},
-                        Err(e) => {{ {err} }},
+                        Ok({ok_binding}) => {{ {ok} }},
+                        Err({err_binding}) => {{ {err} }},
                     }};"
                 ));
             }
@@ -1453,8 +1449,7 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::CallInterface { module, func } => {
-                self.push_str("let result = ");
-                results.push("result".to_string());
+                self.let_results(func.results.len(), results);
                 match &func.kind {
                     FunctionKind::Freestanding => {
                         if self.gen.opts.standalone {
