@@ -25,4 +25,5 @@ wit-bindgen-gen-host-wasmtime-rust = { path = 'crates/gen-host-wasmtime-rust', f
 wit-bindgen-gen-host-wasmtime-py = { path = 'crates/gen-host-wasmtime-py', features = ['structopt'] }
 wit-bindgen-gen-host-js = { path = 'crates/gen-host-js', features = ['structopt'] }
 wit-bindgen-gen-guest-c = { path = 'crates/gen-guest-c', features = ['structopt'] }
+wit-bindgen-gen-guest-go = { path = 'crates/gen-guest-go', features = ['structopt'] }
 wit-bindgen-gen-markdown = { path = 'crates/gen-markdown', features = ['structopt'] }

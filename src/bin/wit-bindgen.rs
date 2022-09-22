@@ -67,6 +67,13 @@ enum GuestGenerator {
         #[structopt(flatten)]
         common: Common,
     },
+    /// Generates bindings for Go guest modules.
+    Go {
+        #[structopt(flatten)]
+        opts: wit_bindgen_gen_guest_go::Opts,
+        #[structopt(flatten)]
+        common: Common,
+    },
 }
 
 #[derive(Debug, StructOpt)]
@@ -98,6 +105,7 @@ fn main() -> Result<()> {
         }
         Category::Host(HostGenerator::Js { opts, common }) => (Box::new(opts.build()), common),
         Category::Guest(GuestGenerator::C { opts, common }) => (Box::new(opts.build()), common),
+        Category::Guest(GuestGenerator::Go { opts, common }) => (Box::new(opts.build()), common),
         Category::Markdown { opts, common } => (Box::new(opts.build()), common),
     };
 

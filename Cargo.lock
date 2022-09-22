@@ -1406,6 +1406,7 @@ dependencies = [
  "quote",
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
+ "wit-bindgen-gen-guest-go",
  "wit-bindgen-gen-guest-rust",
  "wit-bindgen-gen-host-js",
  "wit-bindgen-gen-host-wasmtime-py",
@@ -2047,6 +2048,7 @@ dependencies = [
  "structopt",
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
+ "wit-bindgen-gen-guest-go",
  "wit-bindgen-gen-guest-rust",
  "wit-bindgen-gen-host-js",
  "wit-bindgen-gen-host-wasmtime-py",
@@ -2084,6 +2086,15 @@ dependencies = [
  "heck 0.3.3",
  "structopt",
  "test-helpers",
+ "wit-bindgen-core",
+]
+
+[[package]]
+name = "wit-bindgen-gen-guest-go"
+version = "0.1.0"
+dependencies = [
+ "heck 0.3.3",
+ "structopt",
  "wit-bindgen-core",
 ]
 

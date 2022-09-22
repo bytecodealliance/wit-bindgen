@@ -1,0 +1,15 @@
+[package]
+name = "wit-bindgen-gen-guest-go"
+version = "0.1.0"
+authors = ["Jiaxiao Zhou <duibao55328@gmail.com>"]
+edition = "2021"
+
+[lib]
+doctest = false
+test = false
+
+[dependencies]
+wit-bindgen-core = { path = '../bindgen-core', version = '0.2.0' }
+heck = "0.3"
+structopt = { version = "0.3", default-features = false, optional = true }
+# wit-bindgen-gen-guest-c = { path = '../gen-guest-c', version = '0.2.0' }

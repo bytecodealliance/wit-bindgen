@@ -22,6 +22,7 @@ wit-bindgen-gen-host-wasmtime-rust = { path = '../gen-host-wasmtime-rust', optio
 wit-bindgen-gen-host-wasmtime-py = { path = '../gen-host-wasmtime-py', optional = true }
 wit-bindgen-gen-host-js = { path = '../gen-host-js', optional = true }
 wit-bindgen-gen-guest-c = { path = '../gen-guest-c', optional = true }
+wit-bindgen-gen-guest-go = { path = '../gen-guest-go', optional = true }
 wit-parser = { path = '../wit-parser' }
 filetime = "0.2"
 
@@ -33,6 +34,7 @@ wit-bindgen-core = { path = '../bindgen-core' }
 default = ['guest-rust', 'guest-c', 'host-js', 'host-wasmtime-py', 'host-wasmtime-rust']
 guest-rust = ['wit-bindgen-gen-guest-rust']
 guest-c = ['wit-bindgen-gen-guest-c']
+guest-go = ['wit-bindgen-gen-guest-go']
 host-js = ['wit-bindgen-gen-host-js']
 host-wasmtime-py = ['wit-bindgen-gen-host-wasmtime-py']
 host-wasmtime-rust = ['wit-bindgen-gen-host-wasmtime-rust']
