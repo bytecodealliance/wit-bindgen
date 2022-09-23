@@ -88,7 +88,7 @@ impl Go {
             Type::S64 => "int64_t",
             Type::Float32 => "float",
             Type::Float64 => "double",
-            Type::Char => "char",
+            Type::Char => "uint32_t",
             Type::String => todo!(),
             Type::Handle(_) => todo!(),
             Type::Id(_) => todo!(),
