@@ -339,10 +339,10 @@ impl Generator for Go {
                 match func.results.len() {
                     0 => {}
                     1 => {
-                        self.src.push_str("    return ");
+                        self.src.push_str("return ");
                         let ty = self.get_func_results(iface, func);
                         self.src.push_str(&ty);
-                        self.src.push_str("(res)");
+                        self.src.push_str("(res)\n");
                     }
                     _ => todo!(),
                 };
@@ -357,30 +357,39 @@ impl Generator for Go {
     fn export(&mut self, iface: &Interface, func: &Function) {
         println!("export {:?}", func);
 
-        let interface_method_decl = format!(
-            "{}({}) {}",
-            func.name.to_camel_case(),
-            self.get_func_params(iface, func),
-            self.get_func_results(iface, func)
-        );
-        let export_func = {
-            let mut src = String::new();
-            src.push_str("//export ");
-            let name = format!(
-                "{}_{}",
-                iface.name.to_snake_case(),
-                func.name.to_snake_case()
-            );
-            src.push_str(&name);
-            src.push_str("\n");
+        // FIXME: for now I only care about the freestanding kind of functions.
+        // I don't care about the static and methods yet.
+        match func.kind {
+            FunctionKind::Freestanding => {
+                let interface_method_decl = format!(
+                    "{}({}) {}",
+                    func.name.to_camel_case(),
+                    self.get_func_params(iface, func),
+                    self.get_func_results(iface, func)
+                );
+                let export_func = {
+                    let mut src = String::new();
+                    src.push_str("//export ");
+                    let name = format!(
+                        "{}_{}",
+                        iface.name.to_snake_case(),
+                        func.name.to_snake_case()
+                    );
+                    src.push_str(&name);
+                    src.push_str("\n");
 
-            src.push_str(&self.get_c_func_signature(iface, func));
-            src.push_str(" {\n");
-            src.push_str(&self.get_c_func_impl(iface, func));
-            src.push_str("\n}\n");
-            src
-        };
-        self.export_funcs.push((interface_method_decl, export_func));
+                    src.push_str(&self.get_c_func_signature(iface, func));
+                    src.push_str(" {\n");
+                    src.push_str(&self.get_c_func_impl(iface, func));
+                    src.push_str("\n}\n");
+                    src
+                };
+                self.export_funcs.push((interface_method_decl, export_func));
+            },
+            _ => {
+                panic!("functions other than freestanding are not supported yet");
+            }
+        }
     }
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
