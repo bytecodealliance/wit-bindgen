@@ -64,7 +64,7 @@ impl Go {
             Type::S64 => "int64",
             Type::Float32 => "float32",
             Type::Float64 => "float64",
-            Type::Char => "byte",
+            Type::Char => "uint32",
             Type::String => "string",
             Type::Handle(_) => todo!(),
             Type::Id(_) => todo!(),
@@ -385,7 +385,7 @@ impl Generator for Go {
                     src
                 };
                 self.export_funcs.push((interface_method_decl, export_func));
-            },
+            }
             _ => {
                 panic!("functions other than freestanding are not supported yet");
             }
