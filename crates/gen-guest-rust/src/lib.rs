@@ -653,7 +653,7 @@ impl Generator for RustWasm {
     }
 
     fn finish_functions(&mut self, iface: &Interface, dir: Direction) {
-        if self.return_pointer_area_align > 0 {
+        if !self.in_import && self.return_pointer_area_align > 0 {
             self.src.push_str(&format!(
                 "
                     #[repr(align({align}))]
@@ -810,6 +810,16 @@ impl FunctionBindgen<'_> {
         self.push_str(";\n}\n");
         "wit_import".to_string()
     }
+
+    fn ret_area_name(&self, iface: &Interface) -> String {
+        // For imports, we allocate the return area on the stack; for exports,
+        // we statically allocate it.
+        if self.gen.in_import {
+            format!("__{}_ret_area", iface.name.to_snake_case())
+        } else {
+            format!("__{}_RET_AREA", iface.name.to_shouty_snake_case())
+        }
+    }
 }
 
 impl RustFunctionGenerator for FunctionBindgen<'_> {
@@ -880,10 +890,22 @@ impl Bindgen for FunctionBindgen<'_> {
         self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
         let tmp = self.tmp();
 
+        if self.gen.in_import {
+            self.push_str(&format!(
+                "
+                    #[repr(align({align}))]
+                    struct {ty}([u8; {size}]);
+                    let mut {name}: {ty} = {ty}([0; {size}]);
+                ",
+                ty = RustWasm::ret_area_type_name(iface),
+                name = self.ret_area_name(iface),
+            ));
+        }
+
         self.push_str(&format!(
             "let ptr{} = {}.0.as_mut_ptr() as i32;\n",
             tmp,
-            RustWasm::ret_area_name(iface),
+            self.ret_area_name(iface),
         ));
         format!("ptr{}", tmp)
     }

@@ -1347,7 +1347,10 @@ impl Generator for C {
             }
         }
 
-        if self.return_pointer_area_size > 0 {
+        // Declare a statically-allocated return area, if needed. We only do
+        // this for export bindings, because import bindings allocate their
+        // return-area on the stack.
+        if !self.in_import && self.return_pointer_area_size > 0 {
             uwrite!(
                 self.src.c,
                 "
@@ -1472,7 +1475,26 @@ impl Bindgen for FunctionBindgen<'_> {
         self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
         self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
         let ptr = self.locals.tmp("ptr");
-        uwriteln!(self.src, "int32_t {} = (int32_t) &RET_AREA;", ptr);
+
+        if self.gen.in_import {
+            // Declare a stack-allocated return area. We only do this for
+            // imports, because exports need their return area to be live until
+            // the post-return call.
+            uwrite!(
+                self.src,
+                "
+                    __attribute__((aligned({})))
+                    uint8_t ret_area[{}];
+                ",
+                align,
+                size,
+            );
+            uwriteln!(self.src, "int32_t {} = (int32_t) &ret_area;", ptr);
+        } else {
+            // Declare a statically-allocated return area.
+            uwriteln!(self.src, "int32_t {} = (int32_t) &RET_AREA;", ptr);
+        }
+
         ptr
     }
 
