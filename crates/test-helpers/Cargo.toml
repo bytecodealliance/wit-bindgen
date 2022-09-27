@@ -30,6 +30,7 @@ filetime = "0.2"
 wit-bindgen-gen-guest-c = { workspace = true }
 wit-bindgen-gen-guest-teavm-java = { workspace = true }
 wit-bindgen-core = { workspace = true }
+wit-component = { workspace = true }
 
 [features]
 default = ['guest-rust', 'guest-c', 'guest-teavm-java', 'host-js', 'host-wasmtime-py', 'host-wasmtime-rust']

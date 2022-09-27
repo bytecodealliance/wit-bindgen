@@ -1,5 +1,5 @@
 use crate::{
-    validation::{expected_export_name, validate_module},
+    validation::{expected_export_name, validate_module, ValidatedAdapter, ValidatedModule},
     StringEncoding,
 };
 use anyhow::{anyhow, bail, Context, Result};
@@ -471,32 +471,42 @@ impl<'a> TypeEncoder<'a> {
     fn encode_instance_imports(
         &mut self,
         interfaces: &'a [Interface],
-        required_imports: &IndexMap<&'a str, IndexSet<&'a str>>,
+        info: &ValidatedModule<'a>,
         imports: &mut ImportEncoder<'a>,
     ) -> Result<()> {
         for import in interfaces {
-            let required_funcs = match required_imports.get(import.name.as_str()) {
+            let required_funcs = match info.required_imports.get(import.name.as_str()) {
                 Some(required) => required,
                 None => continue,
             };
-
-            Self::validate_interface(import)?;
-
-            let mut instance = InstanceTypeEncoder::default();
-
-            for func in &import.functions {
-                if !required_funcs.contains(func.name.as_str()) {
-                    continue;
-                }
-                Self::validate_function(func)?;
-
-                let index = self.encode_func_type(import, func, false)?;
-                instance.export(&func.name, ComponentTypeRef::Func(index))?;
-            }
-
-            let index = self.encode_instance_type(&instance.ty);
-            imports.import(import, ComponentTypeRef::Instance(index), required_funcs)?;
+            self.encode_instance_import(import, required_funcs, imports)?;
         }
+
+        Ok(())
+    }
+
+    fn encode_instance_import(
+        &mut self,
+        import: &'a Interface,
+        required_funcs: &IndexSet<&'a str>,
+        imports: &mut ImportEncoder<'a>,
+    ) -> Result<()> {
+        Self::validate_interface(import)?;
+
+        let mut instance = InstanceTypeEncoder::default();
+
+        for func in &import.functions {
+            if !required_funcs.contains(func.name.as_str()) {
+                continue;
+            }
+            Self::validate_function(func)?;
+
+            let index = self.encode_func_type(import, func, false)?;
+            instance.export(&func.name, ComponentTypeRef::Func(index))?;
+        }
+
+        let index = self.encode_instance_type(&instance.ty);
+        imports.import(import, ComponentTypeRef::Instance(index), required_funcs)?;
 
         Ok(())
     }
@@ -1076,7 +1086,7 @@ impl TypeContents {
 
 /// State relating to encoding a component.
 #[derive(Default)]
-struct EncodingState {
+struct EncodingState<'a> {
     /// The component being encoded.
     component: ComponentEncoding,
     /// The index into the core module index space for the inner core module.
@@ -1103,9 +1113,18 @@ struct EncodingState {
     ///
     /// If `None`, then a fixup module has not yet been encoded.
     fixups_module_index: Option<u32>,
+
+    /// A map of named adapter modules and the index that the module was defined
+    /// at.
+    adapter_modules: IndexMap<&'a str, u32>,
+    /// A map of adapter module instances and the index of their instance.
+    adapter_instances: IndexMap<&'a str, u32>,
+    /// A map of the index of the aliased realloc function for each adapter
+    /// module.
+    adapter_reallocs: IndexMap<&'a str, Option<u32>>,
 }
 
-impl EncodingState {
+impl<'a> EncodingState<'a> {
     fn encode_core_module(&mut self, module: &[u8]) -> u32 {
         assert!(self.module_index.is_none());
         let ret = self.component.core_module_raw(module);
@@ -1113,53 +1132,89 @@ impl EncodingState {
         ret
     }
 
+    fn encode_core_adapter_module(&mut self, name: &'a str, module: &[u8]) -> u32 {
+        let index = self.component.core_module_raw(module);
+        assert!(self.adapter_modules.insert(name, index).is_none());
+        index
+    }
+
     fn encode_core_instantiation(
         &mut self,
         encoding: StringEncoding,
-        imports: &ImportEncoder,
-        has_memory: bool,
-        has_realloc: bool,
+        imports: &ImportEncoder<'a>,
+        info: &ValidatedModule<'a>,
     ) -> Result<()> {
         if imports.map.is_empty() {
-            self.instantiate_core_module([], has_memory, has_realloc);
+            self.instantiate_core_module([], info);
             return Ok(());
         }
 
         // Encode a shim instantiation if needed
-        self.encode_shim_instantiation(imports);
+        let shims = self.encode_shim_instantiation(imports, info);
 
-        let args: Vec<_> = imports
-            .map
-            .iter()
-            .enumerate()
-            .map(|(instance_index, (name, import))| {
-                let mut exports = Vec::with_capacity(import.direct.len() + import.indirect.len());
+        let mut args = Vec::new();
+        for name in info.required_imports.keys() {
+            let index = self.import_instance_to_lowered_core_instance(
+                CustomModule::Main,
+                name,
+                imports,
+                &shims,
+            );
+            args.push((*name, ModuleArg::Instance(index)));
+        }
+        for (name, funcs) in info.adapters_required.iter() {
+            let shim_instance = self
+                .shim_instance_index
+                .expect("shim should be instantiated");
+            let mut exports = Vec::new();
 
-                for lowering in &import.indirect {
-                    let index = self.component.alias_core_item(
-                        self.shim_instance_index
-                            .expect("shim should be instantiated"),
-                        ExportKind::Func,
-                        &lowering.export_name,
-                    );
-                    exports.push((lowering.name, ExportKind::Func, index));
-                }
+            for (func, _ty) in funcs {
+                let index = self.component.alias_core_item(
+                    shim_instance,
+                    ExportKind::Func,
+                    &shims.adapter_shim_names[&(*name, *func)].clone(),
+                );
+                exports.push((*func, ExportKind::Func, index));
+            }
 
-                for lowering in &import.direct {
-                    let func_index = self
-                        .component
-                        .alias_func(instance_index as u32, lowering.name);
-                    let core_func_index = self.component.lower_func(func_index, []);
-                    exports.push((lowering.name, ExportKind::Func, core_func_index));
-                }
+            let index = self.component.instantiate_core_exports(exports);
+            args.push((*name, ModuleArg::Instance(index)));
+        }
 
-                let index = self.component.instantiate_core_exports(exports);
-                (*name, ModuleArg::Instance(index))
-            })
-            .collect();
+        self.instantiate_core_module(args, info);
+        self.instantiate_adapter_modules(imports, info, &shims);
+        self.encode_indirect_lowerings(encoding, imports, shims)
+    }
 
-        self.instantiate_core_module(args, has_memory, has_realloc);
-        self.encode_indirect_lowerings(encoding, imports)
+    fn import_instance_to_lowered_core_instance(
+        &mut self,
+        for_module: CustomModule<'_>,
+        name: &str,
+        imports: &ImportEncoder<'_>,
+        shims: &Shims<'_>,
+    ) -> u32 {
+        let (instance_index, _, import) = imports.map.get_full(name).unwrap();
+        let mut exports = Vec::with_capacity(import.direct.len() + import.indirect.len());
+
+        for (i, lowering) in import.indirect.iter().enumerate() {
+            let index = self.component.alias_core_item(
+                self.shim_instance_index
+                    .expect("shim should be instantiated"),
+                ExportKind::Func,
+                &shims.indirect_lowering_names[&(for_module, name, i)],
+            );
+            exports.push((lowering.name, ExportKind::Func, index));
+        }
+
+        for lowering in &import.direct {
+            let func_index = self
+                .component
+                .alias_func(instance_index as u32, lowering.name);
+            let core_func_index = self.component.lower_func(func_index, []);
+            exports.push((lowering.name, ExportKind::Func, core_func_index));
+        }
+
+        self.component.instantiate_core_exports(exports)
     }
 
     fn encode_imports(&mut self, imports: &ImportEncoder) {
@@ -1168,11 +1223,11 @@ impl EncodingState {
         }
     }
 
-    fn encode_exports<'a>(
+    fn encode_exports<'b>(
         &mut self,
         encoding: StringEncoding,
-        exports: impl Iterator<Item = (&'a Interface, bool)>,
-        func_types: &IndexMap<FunctionKey<'a>, u32>,
+        exports: impl Iterator<Item = (&'b Interface, bool)>,
+        func_types: &IndexMap<FunctionKey<'b>, u32>,
     ) -> Result<()> {
         let core_instance_index = self.instance_index.expect("must be instantiated");
 
@@ -1239,9 +1294,51 @@ impl EncodingState {
         Ok(())
     }
 
-    fn encode_shim_instantiation(&mut self, imports: &ImportEncoder) {
-        if imports.indirect_count == 0 {
-            return;
+    fn encode_shim_instantiation(
+        &mut self,
+        imports: &ImportEncoder<'a>,
+        info: &ValidatedModule<'a>,
+    ) -> Shims<'a> {
+        let mut signatures = Vec::new();
+        let mut ret = Shims::default();
+        for name in info.required_imports.keys() {
+            let import = &imports.map[name];
+            ret.append_indirect(name, CustomModule::Main, import, &mut signatures);
+        }
+
+        for (adapter, funcs) in info.adapters_required.iter() {
+            let info = &imports.adapters[adapter];
+            if let Some(name) = info.required_import {
+                let import = &imports.map[name];
+                ret.append_indirect(
+                    name,
+                    CustomModule::Adapter(adapter),
+                    import,
+                    &mut signatures,
+                );
+            }
+            for (func, ty) in funcs {
+                let name = ret.list.len().to_string();
+                log::debug!("shim {name} is adapter `{adapter}::{func}`");
+                signatures.push(WasmSignature {
+                    params: ty.params().iter().map(to_wasm_type).collect(),
+                    results: ty.results().iter().map(to_wasm_type).collect(),
+                    indirect_params: false,
+                    retptr: false,
+                });
+                ret.list.push(Shim {
+                    name: name.clone(),
+                    // Pessimistically assume that all adapters require memory
+                    // in one form or another. While this isn't technically true
+                    // it's true enough for WASI.
+                    options: RequiredOptions::MEMORY,
+                    kind: ShimKind::Adapter { adapter, func },
+                });
+                ret.adapter_shim_names.insert((adapter, func), name);
+            }
+        }
+        if ret.list.is_empty() {
+            return ret;
         }
 
         assert!(self.shim_instance_index.is_none());
@@ -1265,38 +1362,29 @@ impl EncodingState {
         let mut elements = ElementSection::new();
         let mut func_indexes = Vec::new();
 
-        let mut func_index = 0;
-        for import in imports.map.values() {
-            for lowering in &import.indirect {
-                let type_index = *sigs.entry(&lowering.sig).or_insert_with(|| {
-                    let index = types.len();
-                    types.function(
-                        lowering.sig.params.iter().map(to_val_type),
-                        lowering.sig.results.iter().map(to_val_type),
-                    );
-                    index
-                });
-
-                functions.function(type_index);
-                Self::encode_shim_function(
-                    type_index,
-                    func_index,
-                    &mut code,
-                    lowering.sig.params.len() as u32,
+        for (i, (sig, shim)) in signatures.iter().zip(&ret.list).enumerate() {
+            let i = i as u32;
+            let type_index = *sigs.entry(sig).or_insert_with(|| {
+                let index = types.len();
+                types.function(
+                    sig.params.iter().map(to_val_type),
+                    sig.results.iter().map(to_val_type),
                 );
-                exports.export(&lowering.export_name, ExportKind::Func, func_index);
+                index
+            });
 
-                imports_section.import("", &lowering.export_name, EntityType::Function(type_index));
-                func_indexes.push(func_index);
+            functions.function(type_index);
+            Self::encode_shim_function(type_index, i, &mut code, sig.params.len() as u32);
+            exports.export(&shim.name, ExportKind::Func, i);
 
-                func_index += 1;
-            }
+            imports_section.import("", &shim.name, EntityType::Function(type_index));
+            func_indexes.push(i);
         }
 
         let table_type = TableType {
             element_type: ValType::FuncRef,
-            minimum: func_index,
-            maximum: Some(func_index),
+            minimum: signatures.len() as u32,
+            maximum: Some(signatures.len() as u32),
         };
 
         tables.table(table_type);
@@ -1326,6 +1414,18 @@ impl EncodingState {
         let shim_module_index = self.component.core_module(&shim);
         self.fixups_module_index = Some(self.component.core_module(&fixups));
         self.shim_instance_index = Some(self.component.instantiate(shim_module_index, []));
+
+        return ret;
+
+        fn to_wasm_type(ty: &wasmparser::ValType) -> WasmType {
+            match ty {
+                wasmparser::ValType::I32 => WasmType::I32,
+                wasmparser::ValType::I64 => WasmType::I64,
+                wasmparser::ValType::F32 => WasmType::F32,
+                wasmparser::ValType::F64 => WasmType::F64,
+                _ => unreachable!(),
+            }
+        }
     }
 
     fn encode_shim_function(
@@ -1351,8 +1451,9 @@ impl EncodingState {
         &mut self,
         encoding: StringEncoding,
         imports: &ImportEncoder,
+        shims: Shims<'_>,
     ) -> Result<()> {
-        if imports.indirect_count == 0 {
+        if shims.list.is_empty() {
             return Ok(());
         }
 
@@ -1369,25 +1470,38 @@ impl EncodingState {
         let mut exports = Vec::with_capacity(imports.indirect_count as usize);
         exports.push((INDIRECT_TABLE_NAME, ExportKind::Table, table_index));
 
-        for (instance_index, import) in imports.map.values().enumerate() {
-            for lowering in &import.indirect {
-                let func_index = self
-                    .component
-                    .alias_func(instance_index as u32, lowering.name);
+        for shim in shims.list.iter() {
+            let core_func_index = match &shim.kind {
+                ShimKind::IndirectLowering {
+                    interface,
+                    indirect_index,
+                    realloc,
+                } => {
+                    let (instance_index, _, interface) = imports.map.get_full(interface).unwrap();
+                    let func_index = self.component.alias_func(
+                        instance_index as u32,
+                        &interface.indirect[*indirect_index].name,
+                    );
 
-                let core_func_index = self.component.lower_func(
-                    func_index,
-                    lowering
-                        .options
-                        .into_iter(encoding, self.memory_index, self.realloc_index)?,
-                );
+                    let realloc = match realloc {
+                        CustomModule::Main => self.realloc_index,
+                        CustomModule::Adapter(name) => self.adapter_reallocs[name],
+                    };
 
-                exports.push((
-                    lowering.export_name.as_str(),
+                    self.component.lower_func(
+                        func_index,
+                        shim.options
+                            .into_iter(encoding, self.memory_index, realloc)?,
+                    )
+                }
+                ShimKind::Adapter { adapter, func } => self.component.alias_core_item(
+                    self.adapter_instances[adapter],
                     ExportKind::Func,
-                    core_func_index,
-                ));
-            }
+                    func,
+                ),
+            };
+
+            exports.push((shim.name.as_str(), ExportKind::Func, core_func_index));
         }
 
         let instance_index = self.component.instantiate_core_exports(exports);
@@ -1398,9 +1512,9 @@ impl EncodingState {
         Ok(())
     }
 
-    fn instantiate_core_module<'a, A>(&mut self, args: A, has_memory: bool, has_realloc: bool)
+    fn instantiate_core_module<'b, A>(&mut self, args: A, info: &ValidatedModule<'_>)
     where
-        A: IntoIterator<Item = (&'a str, ModuleArg)>,
+        A: IntoIterator<Item = (&'b str, ModuleArg)>,
         A::IntoIter: ExactSizeIterator,
     {
         assert!(self.instance_index.is_none());
@@ -1409,7 +1523,7 @@ impl EncodingState {
             .component
             .instantiate(self.module_index.expect("core module encoded"), args);
 
-        if has_memory {
+        if info.has_memory {
             self.memory_index = Some(self.component.alias_core_item(
                 instance_index,
                 ExportKind::Memory,
@@ -1417,7 +1531,7 @@ impl EncodingState {
             ));
         }
 
-        if has_realloc {
+        if info.has_realloc {
             self.realloc_index = Some(self.component.alias_core_item(
                 instance_index,
                 ExportKind::Func,
@@ -1426,6 +1540,108 @@ impl EncodingState {
         }
 
         self.instance_index = Some(instance_index);
+    }
+
+    fn instantiate_adapter_modules(
+        &mut self,
+        imports: &ImportEncoder<'a>,
+        info: &ValidatedModule<'a>,
+        shims: &Shims<'_>,
+    ) {
+        for name in info.adapters_required.keys() {
+            let info = &imports.adapters[name];
+            let mut args = Vec::new();
+            if let Some((module, name)) = &info.needs_memory {
+                let memory = self.memory_index.unwrap();
+                let instance = self.component.instantiate_core_exports([(
+                    name.as_str(),
+                    ExportKind::Memory,
+                    memory,
+                )]);
+                args.push((module.as_str(), ModuleArg::Instance(instance)));
+            }
+            if let Some(import_name) = info.required_import {
+                let instance = self.import_instance_to_lowered_core_instance(
+                    CustomModule::Adapter(name),
+                    import_name,
+                    imports,
+                    shims,
+                );
+                args.push((import_name, ModuleArg::Instance(instance)));
+            }
+            let instance = self.component.instantiate(self.adapter_modules[name], args);
+            self.adapter_instances.insert(name, instance);
+            let realloc = if info.has_realloc {
+                Some(
+                    self.component
+                        .alias_core_item(instance, ExportKind::Func, "cabi_realloc"),
+                )
+            } else {
+                None
+            };
+            self.adapter_reallocs.insert(name, realloc);
+        }
+    }
+}
+
+#[derive(Default)]
+struct Shims<'a> {
+    list: Vec<Shim<'a>>,
+    indirect_lowering_names: IndexMap<(CustomModule<'a>, &'a str, usize), String>,
+    adapter_shim_names: IndexMap<(&'a str, &'a str), String>,
+}
+
+struct Shim<'a> {
+    options: RequiredOptions,
+    name: String,
+    kind: ShimKind<'a>,
+}
+
+enum ShimKind<'a> {
+    IndirectLowering {
+        interface: &'a str,
+        indirect_index: usize,
+        realloc: CustomModule<'a>,
+    },
+    Adapter {
+        adapter: &'a str,
+        func: &'a str,
+    },
+}
+
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+enum CustomModule<'a> {
+    Main,
+    Adapter(&'a str),
+}
+
+impl<'a> Shims<'a> {
+    fn append_indirect(
+        &mut self,
+        name: &'a str,
+        for_module: CustomModule<'a>,
+        import: &ImportedInterface<'a>,
+        sigs: &mut Vec<WasmSignature>,
+    ) {
+        for (indirect_index, lowering) in import.indirect.iter().enumerate() {
+            let shim_name = self.list.len().to_string();
+            log::debug!(
+                "shim {shim_name} is import `{name}` lowering {indirect_index} `{}`",
+                lowering.name
+            );
+            sigs.push(lowering.sig.clone());
+            self.list.push(Shim {
+                name: shim_name.clone(),
+                options: lowering.options,
+                kind: ShimKind::IndirectLowering {
+                    interface: name,
+                    indirect_index,
+                    realloc: for_module,
+                },
+            });
+            self.indirect_lowering_names
+                .insert((for_module, name, indirect_index), shim_name);
+        }
     }
 }
 
@@ -1439,7 +1655,6 @@ struct IndirectLowering<'a> {
     name: &'a str,
     sig: WasmSignature,
     options: RequiredOptions,
-    export_name: String,
 }
 
 #[derive(Debug)]
@@ -1635,6 +1850,7 @@ fn inc(idx: &mut u32) -> u32 {
 #[derive(Debug, Default)]
 struct ImportEncoder<'a> {
     map: IndexMap<&'a str, ImportedInterface<'a>>,
+    adapters: IndexMap<&'a str, ValidatedAdapter<'a>>,
     direct_count: u32,
     indirect_count: u32,
 }
@@ -1665,14 +1881,12 @@ impl<'a> ImportEncoder<'a> {
                         self.direct_count += 1;
                         direct.push(DirectLowering { name: &f.name });
                     } else {
-                        let element_index = self.indirect_count;
                         let sig = interface.wasm_signature(AbiVariant::GuestImport, f);
                         self.indirect_count += 1;
                         indirect.push(IndirectLowering {
                             name: &f.name,
                             sig,
                             options,
-                            export_name: element_index.to_string(),
                         });
                     }
                 }
@@ -1699,6 +1913,7 @@ pub struct ComponentEncoder<'a> {
     exports: &'a [Interface],
     validate: bool,
     types_only: bool,
+    adapters: IndexMap<&'a str, (&'a [u8], &'a Interface)>,
 }
 
 impl<'a> ComponentEncoder<'a> {
@@ -1738,12 +1953,41 @@ impl<'a> ComponentEncoder<'a> {
         self
     }
 
+    /// Specifies a new adapter which is used to translate from a historical
+    /// wasm ABI to the canonical ABI and the `interface` provided.
+    ///
+    /// This is primarily used to polyfill, for example,
+    /// `wasi_snapshot_preview1` with a component-model using interface. The
+    /// `name` provided is the module name of the adapter that is being
+    /// polyfilled, for example `"wasi_snapshot_preview1"`.
+    ///
+    /// The `bytes` provided is a core wasm module which implements the `name`
+    /// interface in terms of the `interface` interface. This core wasm module
+    /// is severely restricted in its shape, for example it cannot have any data
+    /// segments or element segments.
+    ///
+    /// The `interface` provided is the component-model-using-interface that the
+    /// wasm module specified by `bytes` imports. The `bytes` will then import
+    /// `interface` and export functions to get imported from the module `name`
+    /// in the core wasm that's being wrapped.
+    pub fn adapter(mut self, name: &'a str, bytes: &'a [u8], interface: &'a Interface) -> Self {
+        self.adapters.insert(name, (bytes, interface));
+        self
+    }
+
     /// Encode the component and return the bytes.
     pub fn encode(&self) -> Result<Vec<u8>> {
-        let (required_imports, has_memory, has_realloc) = if !self.module.is_empty() {
-            validate_module(self.module, &self.interface, self.imports, self.exports)?
+        let info = if !self.module.is_empty() {
+            let adapters = self.adapters.keys().copied().collect::<IndexSet<_>>();
+            validate_module(
+                self.module,
+                &self.interface,
+                self.imports,
+                self.exports,
+                &adapters,
+            )?
         } else {
-            (Default::default(), false, false)
+            Default::default()
         };
 
         let exports = self
@@ -1757,25 +2001,37 @@ impl<'a> ComponentEncoder<'a> {
         let mut types = TypeEncoder::default();
         let mut imports = ImportEncoder::default();
         types.encode_func_types(exports.clone(), false)?;
-        types.encode_instance_imports(self.imports, &required_imports, &mut imports)?;
-        types.finish(&mut state.component);
+        types.encode_instance_imports(self.imports, &info, &mut imports)?;
 
         if self.types_only {
             if !self.module.is_empty() {
                 bail!("a module cannot be specified for a types-only encoding");
             }
+            types.finish(&mut state.component);
         } else {
             if self.module.is_empty() {
                 bail!("a module is required when encoding a component");
             }
 
+            for (name, required) in info.adapters_required.iter() {
+                let (wasm, interface) = &self.adapters[*name];
+                let (min_wasm, info) = crate::adapter::adapt(wasm, interface, required)?;
+                state.encode_core_adapter_module(name, &min_wasm);
+                types.encode_instance_import(interface, &info.required_funcs, &mut imports)?;
+                imports.adapters.insert(name, info);
+            }
+
+            types.finish(&mut state.component);
+
             state.encode_imports(&imports);
             state.encode_core_module(self.module);
-            state.encode_core_instantiation(self.encoding, &imports, has_memory, has_realloc)?;
+            state.encode_core_instantiation(self.encoding, &imports, &info)?;
             state.encode_exports(self.encoding, exports, &types.func_type_map)?;
         }
 
         let bytes = state.component.finish();
+
+        println!("{}", wasmprinter::print_bytes(&bytes).unwrap());
 
         if self.validate {
             let mut validator = Validator::new_with_features(WasmFeatures {

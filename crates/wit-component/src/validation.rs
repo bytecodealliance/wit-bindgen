@@ -10,10 +10,6 @@ use wit_parser::{
     Interface,
 };
 
-fn is_wasi(name: &str) -> bool {
-    name == "wasi_unstable" || name == "wasi_snapshot_preview1"
-}
-
 fn is_canonical_function(name: &str) -> bool {
     name.starts_with("cabi_")
 }
@@ -43,6 +39,14 @@ fn wasm_sig_to_func_type(signature: WasmSignature) -> FuncType {
     )
 }
 
+#[derive(Default)]
+pub struct ValidatedModule<'a> {
+    pub required_imports: IndexMap<&'a str, IndexSet<&'a str>>,
+    pub has_memory: bool,
+    pub has_realloc: bool,
+    pub adapters_required: IndexMap<&'a str, IndexMap<&'a str, FuncType>>,
+}
+
 /// This function validates the following:
 /// * The bytes represent a core WebAssembly module.
 /// * The module's imports are all satisfied by the given import interfaces.
@@ -55,7 +59,8 @@ pub fn validate_module<'a>(
     interface: &Option<&Interface>,
     imports: &[Interface],
     exports: &[Interface],
-) -> Result<(IndexMap<&'a str, IndexSet<&'a str>>, bool, bool)> {
+    adapters: &IndexSet<&str>,
+) -> Result<ValidatedModule<'a>> {
     let imports: IndexMap<&str, &Interface> =
         imports.iter().map(|i| (i.name.as_str(), i)).collect();
     let exports: IndexMap<&str, &Interface> =
@@ -65,8 +70,7 @@ pub fn validate_module<'a>(
     let mut types = None;
     let mut import_funcs = IndexMap::new();
     let mut export_funcs = IndexMap::new();
-    let mut has_memory = false;
-    let mut has_realloc = false;
+    let mut ret = ValidatedModule::default();
 
     for payload in Parser::new(0).parse_all(bytes) {
         let payload = payload?;
@@ -82,9 +86,6 @@ pub fn validate_module<'a>(
             Payload::ImportSection(s) => {
                 for import in s {
                     let import = import?;
-                    if is_wasi(import.module) {
-                        continue;
-                    }
                     match import.ty {
                         TypeRef::Func(ty) => {
                             let map = match import_funcs.entry(import.module) {
@@ -107,7 +108,7 @@ pub fn validate_module<'a>(
                             if is_canonical_function(export.name) {
                                 if export.name == "cabi_realloc" {
                                     // TODO: validate that the cabi_realloc function is [i32, i32, i32, i32] -> [i32]
-                                    has_realloc = true;
+                                    ret.has_realloc = true;
                                 }
                                 continue;
                             }
@@ -116,7 +117,7 @@ pub fn validate_module<'a>(
                         }
                         ExternalKind::Memory => {
                             if export.name == "memory" {
-                                has_memory = true;
+                                ret.has_memory = true;
                             }
                         }
                         _ => continue,
@@ -137,6 +138,16 @@ pub fn validate_module<'a>(
         match imports.get(name) {
             Some(interface) => {
                 validate_imported_interface(interface, name, funcs, &types)?;
+                let funcs = funcs.into_iter().map(|(f, _ty)| *f).collect();
+                let prev = ret.required_imports.insert(name, funcs);
+                assert!(prev.is_none());
+            }
+            None if adapters.contains(name) => {
+                let map = ret.adapters_required.entry(name).or_insert(IndexMap::new());
+                for (func, ty) in funcs {
+                    let ty = types.func_type_at(*ty).unwrap();
+                    map.insert(func, ty.clone());
+                }
             }
             None => bail!("module requires an import interface named `{}`", name),
         }
@@ -154,22 +165,144 @@ pub fn validate_module<'a>(
         validate_exported_interface(interface, Some(name), &export_funcs, &types)?;
     }
 
-    Ok((
-        import_funcs
-            .into_iter()
-            .map(|(name, funcs)| (name, funcs.into_iter().map(|(f, _ty)| f).collect()))
-            .collect(),
-        has_memory,
-        has_realloc,
-    ))
+    Ok(ret)
 }
 
-fn validate_imported_interface(
-    interface: &Interface,
+#[derive(Default, Debug)]
+pub struct ValidatedAdapter<'a> {
+    pub required_funcs: IndexSet<&'a str>,
+    pub required_import: Option<&'a str>,
+    pub needs_memory: Option<(String, String)>,
+    pub has_realloc: bool,
+}
+
+/// TODO
+pub fn validate_adapter_module<'a>(
+    bytes: &[u8],
+    interface: &'a Interface,
+    required: &IndexMap<&str, FuncType>,
+) -> Result<ValidatedAdapter<'a>> {
+    let mut validator = Validator::new();
+    let mut import_funcs = IndexMap::new();
+    let mut export_funcs = IndexMap::new();
+    let mut types = None;
+    let mut funcs = Vec::new();
+    let mut ret = ValidatedAdapter::default();
+
+    for payload in Parser::new(0).parse_all(bytes) {
+        let payload = payload?;
+        match validator.payload(&payload)? {
+            ValidPayload::End(tys) => {
+                types = Some(tys);
+                break;
+            }
+            ValidPayload::Func(validator, body) => {
+                funcs.push((validator, body));
+            }
+            _ => {}
+        }
+
+        match payload {
+            Payload::Version { encoding, .. } if encoding != Encoding::Module => {
+                bail!("data is not a WebAssembly module");
+            }
+
+            Payload::ImportSection(s) => {
+                for import in s {
+                    let import = import?;
+                    match import.ty {
+                        TypeRef::Func(ty) => {
+                            let map = match import_funcs.entry(import.module) {
+                                Entry::Occupied(e) => e.into_mut(),
+                                Entry::Vacant(e) => e.insert(IndexMap::new()),
+                            };
+
+                            assert!(map.insert(import.name, ty).is_none());
+                        }
+
+                        // A memory is allowed to be imported into the adapter
+                        // module so that's skipped here
+                        TypeRef::Memory(_) => {
+                            ret.needs_memory =
+                                Some((import.module.to_string(), import.name.to_string()));
+                        }
+
+                        _ => {
+                            bail!("adapter module is only allowed to import functions and memories")
+                        }
+                    }
+                }
+            }
+            Payload::ExportSection(s) => {
+                for export in s {
+                    let export = export?;
+
+                    match export.kind {
+                        ExternalKind::Func => {
+                            export_funcs.insert(export.name, export.index);
+                            if export.name == "cabi_realloc" {
+                                ret.has_realloc = true;
+                            }
+                        }
+                        _ => continue,
+                    }
+                }
+            }
+            _ => continue,
+        }
+    }
+
+    let mut resources = Default::default();
+    for (validator, body) in funcs {
+        let mut validator = validator.into_validator(resources);
+        validator.validate(&body)?;
+        resources = validator.into_allocations();
+    }
+
+    let types = types.unwrap();
+    for (name, funcs) in &import_funcs {
+        if *name != interface.name {
+            bail!(
+                "adapter module imports from `{name}` which does not match \
+                 its interface `{}`",
+                interface.name
+            );
+        }
+        ret.required_funcs = validate_imported_interface(interface, name, funcs, &types)?;
+        ret.required_import = Some(interface.name.as_str());
+    }
+
+    for (name, ty) in required {
+        let idx = match export_funcs.get(name) {
+            Some(idx) => *idx,
+            None => bail!("adapter module did not export `{name}`"),
+        };
+        let actual = types.function_at(idx).unwrap();
+        if ty == actual {
+            continue;
+        }
+        bail!(
+            "adapter module export `{name}` does not match the expected signature:\n\
+            expected: {:?} -> {:?}\n\
+            actual:   {:?} -> {:?}\n\
+            ",
+            ty.params(),
+            ty.results(),
+            actual.params(),
+            actual.results(),
+        );
+    }
+
+    Ok(ret)
+}
+
+fn validate_imported_interface<'a>(
+    interface: &'a Interface,
     name: &str,
     imports: &IndexMap<&str, u32>,
     types: &Types,
-) -> Result<()> {
+) -> Result<IndexSet<&'a str>> {
+    let mut funcs = IndexSet::new();
     for (func_name, ty) in imports {
         let f = interface
             .functions
@@ -187,18 +320,20 @@ fn validate_imported_interface(
         let ty = types.func_type_at(*ty).unwrap();
         if ty != &expected {
             bail!(
-                    "type mismatch for function `{}` on imported interface `{}`: expected `{:?} -> {:?}` but found `{:?} -> {:?}`",
-                    func_name,
-                    name,
-                    expected.params(),
-                    expected.results(),
-                    ty.params(),
-                    ty.results()
-                );
+                "type mismatch for function `{}` on imported interface `{}`: expected `{:?} -> {:?}` but found `{:?} -> {:?}`",
+                f.name,
+                name,
+                expected.params(),
+                expected.results(),
+                ty.params(),
+                ty.results()
+            );
         }
+
+        funcs.insert(f.name.as_str());
     }
 
-    Ok(())
+    Ok(funcs)
 }
 
 fn validate_exported_interface(

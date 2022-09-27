@@ -1371,6 +1371,7 @@ dependencies = [
  "wit-bindgen-gen-host-js",
  "wit-bindgen-gen-host-wasmtime-py",
  "wit-bindgen-gen-host-wasmtime-rust",
+ "wit-component",
  "wit-parser",
 ]
 
@@ -1584,8 +1585,7 @@ dependencies = [
 [[package]]
 name = "wasm-encoder"
 version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e7ca71c70a6de5b10968ae4d298e548366d9cd9588176e6ff8866f3c49c96ee"
+source = "git+https://github.com/alexcrichton/wasm-tools?branch=change-some-names#fbe9292d713440a285ae1fd0d037ada6dd502a8f"
 dependencies = [
  "leb128",
 ]
@@ -1602,8 +1602,7 @@ dependencies = [
 [[package]]
 name = "wasmparser"
 version = "0.91.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "239cdca8b8f356af8118c522d5fea23da45b60832ed4e18ef90bb3c9d8dce24a"
+source = "git+https://github.com/alexcrichton/wasm-tools?branch=change-some-names#fbe9292d713440a285ae1fd0d037ada6dd502a8f"
 dependencies = [
  "indexmap",
 ]
