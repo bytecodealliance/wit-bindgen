@@ -14,6 +14,9 @@ class HostState(i.HostState):
     def __init__(self, val: int) -> None:
         self.val = val
 
+    def drop(self) -> None:
+        pass
+
 
 HOST_STATE2_CLOSED = False
 
@@ -40,9 +43,15 @@ class Markdown(i.Markdown2):
     def render(self) -> str:
         return self.buf.replace('red', 'green')
 
+    def drop(self) -> None:
+        pass
+
 
 class OddName(i.OddName):
     def frob_the_odd(self) -> None:
+        pass
+
+    def drop(self) -> None:
         pass
 
 
