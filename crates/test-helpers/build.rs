@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use wit_bindgen_core::{wit_parser::Interface, Generator};
+use wit_bindgen_core::{wit_parser::Interface, Direction, Generator};
 
 fn main() {
     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
@@ -123,6 +123,116 @@ fn main() {
         }
     }
 
+    if cfg!(feature = "guest-teavm-java") {
+        for test_dir in fs::read_dir("../../tests/runtime").unwrap() {
+            let test_dir = test_dir.unwrap().path();
+            let java_impl = test_dir.join("wasm.java");
+            if !java_impl.exists() {
+                continue;
+            }
+            println!("cargo:rerun-if-changed={}", java_impl.display());
+
+            let out_dir = out_dir.join(format!(
+                "java-{}",
+                test_dir.file_name().unwrap().to_str().unwrap()
+            ));
+
+            drop(fs::remove_dir_all(&out_dir));
+
+            let java_dir = out_dir.join("src/main/java");
+
+            for (wit, direction) in [
+                ("imports.wit", Direction::Import),
+                ("exports.wit", Direction::Export),
+            ] {
+                let path = test_dir.join(wit);
+                println!("cargo:rerun-if-changed={}", path.display());
+                let iface = Interface::parse_file(&path).unwrap();
+                let package_dir = java_dir.join(&format!("wit_{}", iface.name));
+                fs::create_dir_all(&package_dir).unwrap();
+                let ifaces = &[iface];
+                let mut files = Default::default();
+
+                wit_bindgen_gen_guest_teavm_java::Opts::default()
+                    .build()
+                    .generate_all(
+                        if direction == Direction::Import {
+                            ifaces
+                        } else {
+                            &[]
+                        },
+                        if direction == Direction::Export {
+                            ifaces
+                        } else {
+                            &[]
+                        },
+                        &mut files,
+                    );
+
+                for (file, contents) in files.iter() {
+                    let dst = package_dir.join(file);
+                    fs::write(dst, contents).unwrap();
+                }
+            }
+
+            fs::copy(&java_impl, java_dir.join("wit_exports/ExportsImpl.java")).unwrap();
+            fs::write(out_dir.join("pom.xml"), pom_xml(&["wit_exports.Exports"])).unwrap();
+            fs::write(
+                java_dir.join("Main.java"),
+                include_bytes!("../gen-guest-teavm-java/tests/Main.java"),
+            )
+            .unwrap();
+
+            let mut cmd = Command::new("mvn");
+            cmd.arg("prepare-package").arg("-e").current_dir(&out_dir);
+
+            println!("{:?}", cmd);
+            let output = match cmd.output() {
+                Ok(output) => output,
+                Err(e) => panic!("failed to run Maven: {}", e),
+            };
+
+            if !output.status.success() {
+                println!("status: {}", output.status);
+                println!("stdout: ------------------------------------------");
+                println!("{}", String::from_utf8_lossy(&output.stdout));
+                println!("stderr: ------------------------------------------");
+                println!("{}", String::from_utf8_lossy(&output.stderr));
+                panic!("failed to build");
+            }
+
+            wasms.push((
+                "java",
+                test_dir.file_stem().unwrap().to_str().unwrap().to_string(),
+                out_dir
+                    .join("target/generated/wasm/teavm-wasm/classes.wasm")
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+            ));
+        }
+    }
+
     let src = format!("const WASMS: &[(&str, &str, &str)] = &{:?};", wasms);
     std::fs::write(out_dir.join("wasms.rs"), src).unwrap();
+}
+
+fn pom_xml(classes_to_preserve: &[&str]) -> Vec<u8> {
+    let xml = include_str!("../gen-guest-teavm-java/tests/pom.xml");
+    let position = xml.find("<mainClass>").unwrap();
+    let (before, after) = xml.split_at(position);
+    let classes_to_preserve = classes_to_preserve
+        .iter()
+        .map(|&class| format!("<param>{class}</param>"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        "{before}
+         <classesToPreserve>
+            {classes_to_preserve}
+         </classesToPreserve>
+         {after}"
+    )
+    .into_bytes()
 }

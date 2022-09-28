@@ -2060,6 +2060,7 @@ dependencies = [
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
  "wit-bindgen-gen-guest-rust",
+ "wit-bindgen-gen-guest-teavm-java",
  "wit-bindgen-gen-host-js",
  "wit-bindgen-gen-host-wasmtime-py",
  "wit-bindgen-gen-host-wasmtime-rust",

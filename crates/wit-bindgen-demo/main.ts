@@ -96,6 +96,7 @@ class Editor {
     switch (this.language.value) {
       case "js":
       case "rust":
+      case "java":
       case "wasmtime":
       case "wasmtime-py":
       case "c":
@@ -161,6 +162,8 @@ class Editor {
       this.outputEditor.session.setMode("ace/mode/markdown");
     else if (this.files.value.endsWith('.py'))
       this.outputEditor.session.setMode("ace/mode/python");
+    else if (this.files.value.endsWith('.java'))
+      this.outputEditor.session.setMode("ace/mode/java");
     else
       this.outputEditor.session.setMode(null);
   }

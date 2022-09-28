@@ -25,8 +25,8 @@ mod exports {
 
 fn verify(dir: &str, name: &str) {
     let dir = Path::new(dir);
-    let java_dir = &dir.join("src").join("main").join("java");
-    let package_dir = &java_dir.join(format!("wit_{}", &name.to_snake_case()));
+    let java_dir = &dir.join("src/main/java");
+    let package_dir = &java_dir.join(format!("wit_{}", name.to_snake_case()));
 
     fs::create_dir_all(package_dir).unwrap();
 
@@ -41,7 +41,15 @@ fn verify(dir: &str, name: &str) {
         }
     }
 
-    fs::write(dir.join("pom.xml"), include_bytes!("pom.xml")).unwrap();
+    fs::write(
+        dir.join("pom.xml"),
+        pom_xml(&[&format!(
+            "wit_{}.{}",
+            name.to_snake_case(),
+            name.to_upper_camel_case()
+        )]),
+    )
+    .unwrap();
     fs::write(java_dir.join("Main.java"), include_bytes!("Main.java")).unwrap();
 
     let mut cmd = Command::new("mvn");
@@ -62,4 +70,24 @@ fn verify(dir: &str, name: &str) {
     println!("stderr: ------------------------------------------");
     println!("{}", String::from_utf8_lossy(&output.stderr));
     panic!("failed to build");
+}
+
+fn pom_xml(classes_to_preserve: &[&str]) -> Vec<u8> {
+    let xml = include_str!("pom.xml");
+    let position = xml.find("<mainClass>").unwrap();
+    let (before, after) = xml.split_at(position);
+    let classes_to_preserve = classes_to_preserve
+        .iter()
+        .map(|&class| format!("<param>{class}</param>"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        "{before}
+         <classesToPreserve>
+            {classes_to_preserve}
+         </classesToPreserve>
+         {after}"
+    )
+    .into_bytes()
 }

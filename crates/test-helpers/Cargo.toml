@@ -28,10 +28,11 @@ filetime = "0.2"
 
 [build-dependencies]
 wit-bindgen-gen-guest-c = { path = '../gen-guest-c' }
+wit-bindgen-gen-guest-teavm-java = { path = '../gen-guest-teavm-java' }
 wit-bindgen-core = { path = '../bindgen-core' }
 
 [features]
-default = ['guest-rust', 'guest-c', 'host-js', 'host-wasmtime-py', 'host-wasmtime-rust']
+default = ['guest-rust', 'guest-c', 'guest-teavm-java', 'host-js', 'host-wasmtime-py', 'host-wasmtime-rust']
 guest-rust = ['wit-bindgen-gen-guest-rust']
 guest-c = ['wit-bindgen-gen-guest-c']
 guest-teavm-java = ['wit-bindgen-gen-guest-teavm-java']

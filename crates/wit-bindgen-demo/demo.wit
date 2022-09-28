@@ -3,6 +3,7 @@ type files = list<tuple<string, string>>
 enum lang {
   js,
   rust,
+  java,
   wasmtime,
   wasmtime-py,
   c,

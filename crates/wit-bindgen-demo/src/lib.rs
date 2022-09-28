@@ -16,6 +16,7 @@ pub struct Config {
     js: RefCell<wit_bindgen_gen_host_js::Opts>,
     c: RefCell<wit_bindgen_gen_guest_c::Opts>,
     rust: RefCell<wit_bindgen_gen_guest_rust::Opts>,
+    java: RefCell<wit_bindgen_gen_guest_teavm_java::Opts>,
     wasmtime: RefCell<wit_bindgen_gen_host_wasmtime_rust::Opts>,
     wasmtime_py: RefCell<wit_bindgen_gen_host_wasmtime_py::Opts>,
     markdown: RefCell<wit_bindgen_gen_markdown::Opts>,
@@ -43,6 +44,7 @@ impl demo::Config for Config {
     ) -> Result<Vec<(String, String)>, String> {
         let mut gen: Box<dyn Generator> = match lang {
             demo::Lang::Rust => Box::new(self.rust.borrow().clone().build()),
+            demo::Lang::Java => Box::new(self.java.borrow().clone().build()),
             demo::Lang::Wasmtime => Box::new(self.wasmtime.borrow().clone().build()),
             demo::Lang::WasmtimePy => Box::new(self.wasmtime_py.borrow().clone().build()),
             demo::Lang::Js => Box::new(self.js.borrow().clone().build()),
