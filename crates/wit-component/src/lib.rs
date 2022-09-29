@@ -13,10 +13,12 @@ mod decoding;
 mod encoding;
 mod gc;
 mod printing;
+mod transcode;
 mod validation;
 
 pub use encoding::*;
 pub use printing::*;
+pub use transcode::*;
 
 /// Supported string encoding formats.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

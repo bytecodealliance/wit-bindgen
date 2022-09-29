@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use pretty_assertions::assert_eq;
 use std::{fs, path::Path};
-use wit_component::{decode_interface_component, ComponentEncoder, InterfaceEncoder};
+use wit_component::{transcode, ComponentEncoder, InterfaceEncoder};
 use wit_parser::Interface;
 
 fn read_interface(path: &Path) -> Result<Interface> {
@@ -199,8 +199,6 @@ fn component_encoding_via_custom_section() -> Result<()> {
         let mut module = wat::parse_file(&module_path)
             .with_context(|| format!("expected file `{}`", module_path.display()))?;
 
-        let base_module = module.clone();
-
         fn encode_interface(i: &Interface, module: &mut Vec<u8>, kind: &str) -> Result<()> {
             let name = &format!("component-type:{}:{}", kind, i.name);
             let contents = InterfaceEncoder::new(&i).validate(true).encode()?;
@@ -226,53 +224,8 @@ fn component_encoding_via_custom_section() -> Result<()> {
 
         // Everything is now encoded into `module`: now lets deconstruct it
 
-        let mut encoder = ComponentEncoder::default()
-            .module(&base_module)
-            .validate(true);
+        let r = transcode(&module);
 
-        let mut interface = None;
-        let mut imports = Vec::new();
-        let mut exports = Vec::new();
-        for payload in wasmparser::Parser::new(0).parse_all(&module) {
-            match payload.context("decoding item in module")? {
-                wasmparser::Payload::CustomSection(cs) => {
-                    if let Some(export) = cs.name().strip_prefix("component-type:export:") {
-                        let mut i = decode_interface_component(cs.data()).with_context(|| {
-                            format!("decoding component-type in export section {}", export)
-                        })?;
-                        i.name = export.to_owned();
-                        interface = Some(i);
-                    } else if let Some(import) = cs.name().strip_prefix("component-type:import:") {
-                        let mut interface =
-                            decode_interface_component(cs.data()).with_context(|| {
-                                format!("decoding component-type in import section {}", import)
-                            })?;
-                        interface.name = import.to_owned();
-                        imports.push(interface);
-                    } else if let Some(export_instance) =
-                        cs.name().strip_prefix("component-type:export-instance:")
-                    {
-                        let mut interface =
-                            decode_interface_component(cs.data()).with_context(|| {
-                                format!(
-                                    "decoding component-type in export-instance section {}",
-                                    export_instance
-                                )
-                            })?;
-                        interface.name = export_instance.to_owned();
-                        exports.push(interface);
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        encoder = encoder.imports(&imports).exports(&exports);
-        if let Some(interface) = &interface {
-            encoder = encoder.interface(&interface);
-        }
-
-        let r = encoder.encode();
         let (output, baseline_path) = if error_path.is_file() {
             match r {
                 Ok(_) => bail!("encoding should fail for test case `{}`", test_case),
