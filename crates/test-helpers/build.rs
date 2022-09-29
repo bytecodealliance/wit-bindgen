@@ -183,7 +183,7 @@ fn main() {
             )
             .unwrap();
 
-            let mut cmd = Command::new("mvn");
+            let mut cmd = mvn();
             cmd.arg("prepare-package").arg("-e").current_dir(&out_dir);
 
             println!("{:?}", cmd);
@@ -215,6 +215,18 @@ fn main() {
 
     let src = format!("const WASMS: &[(&str, &str, &str)] = &{:?};", wasms);
     std::fs::write(out_dir.join("wasms.rs"), src).unwrap();
+}
+
+#[cfg(unix)]
+fn mvn() -> Command {
+    Command::new("mvn")
+}
+
+#[cfg(windows)]
+fn mvn() -> Command {
+    let mut cmd = Command::new("cmd");
+    cmd.args(&["/c", "mvn"]);
+    cmd
 }
 
 fn pom_xml(classes_to_preserve: &[&str]) -> Vec<u8> {

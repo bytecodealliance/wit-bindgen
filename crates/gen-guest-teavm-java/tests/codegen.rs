@@ -52,7 +52,7 @@ fn verify(dir: &str, name: &str) {
     .unwrap();
     fs::write(java_dir.join("Main.java"), include_bytes!("Main.java")).unwrap();
 
-    let mut cmd = Command::new("mvn");
+    let mut cmd = mvn();
     cmd.arg("prepare-package").current_dir(dir);
 
     println!("{cmd:?}");
@@ -70,6 +70,18 @@ fn verify(dir: &str, name: &str) {
     println!("stderr: ------------------------------------------");
     println!("{}", String::from_utf8_lossy(&output.stderr));
     panic!("failed to build");
+}
+
+#[cfg(unix)]
+fn mvn() -> Command {
+    Command::new("mvn")
+}
+
+#[cfg(windows)]
+fn mvn() -> Command {
+    let mut cmd = Command::new("cmd");
+    cmd.args(&["/c", "mvn"]);
+    cmd
 }
 
 fn pom_xml(classes_to_preserve: &[&str]) -> Vec<u8> {
