@@ -2046,6 +2046,7 @@ dependencies = [
  "wit-bindgen-core",
  "wit-bindgen-gen-rust-lib",
  "wit-bindgen-guest-rust",
+ "wit-component",
 ]
 
 [[package]]

@@ -11,6 +11,7 @@ doctest = false
 [dependencies]
 wit-bindgen-core = { workspace = true }
 wit-bindgen-gen-rust-lib = { workspace = true }
+wit-component = { workspace = true }
 heck = { workspace = true }
 clap = { workspace = true, optional = true }
 
