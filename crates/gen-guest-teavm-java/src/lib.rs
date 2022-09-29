@@ -1,15 +1,10 @@
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Write,
-    iter, mem,
-    ops::Deref,
-};
+use std::{collections::HashSet, fmt::Write, iter, mem, ops::Deref};
 use wit_bindgen_core::{
     uwrite, uwriteln,
     wit_parser::{
         abi::{AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
-        Case, Docs, Enum, Field, Flags, FlagsRepr, Function, FunctionKind, Int, Interface, Record,
+        Case, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Int, Interface, Record,
         ResourceId, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Union, Variant,
     },
     Direction, Files, Generator, Ns,
@@ -20,13 +15,12 @@ pub struct TeaVmJava {
     opts: Opts,
     src: String,
     stub: String,
-    aliases: HashMap<TypeId, Type>,
-    list_aliases: HashMap<TypeId, Type>,
     sizes: SizeAlign,
-    anonymous_types: HashSet<TypeId>,
+    tuple_counts: HashSet<usize>,
     return_area_size: usize,
     return_area_align: usize,
     needs_cleanup: bool,
+    needs_result: bool,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -68,37 +62,82 @@ impl TeaVmJava {
             Type::Handle(_) => todo!("resources"),
             Type::String => "String".into(),
             Type::Id(id) => {
-                // TODO: can we rely on all relevant type aliases being known by the time we reach here?  If not,
-                // we'll need to refactor to ensure `type_name` isn't called until all aliases are known.
-                if let Some(ty) = self.aliases.get(id).copied() {
-                    self.type_name_with_qualifier(iface, &ty, qualifier)
-                } else if let Some(ty) = self.list_aliases.get(id).copied() {
-                    format!("{}[]", self.type_name_with_qualifier(iface, &ty, qualifier))
-                } else {
-                    let ty = &iface.types[*id];
-                    match &ty.name {
-                        Some(name) => {
-                            format!("{}{}", qualifier.unwrap_or(""), name.to_upper_camel_case())
+                let ty = &iface.types[*id];
+                match &ty.kind {
+                    TypeDefKind::Type(ty) => self.type_name_with_qualifier(iface, ty, qualifier),
+                    TypeDefKind::List(ty) => {
+                        if is_primitive(ty) {
+                            format!("{}[]", self.type_name(iface, ty))
+                        } else {
+                            format!("ArrayList<{}>", self.type_name_boxed(iface, ty, qualifier))
                         }
-                        None => match &ty.kind {
-                            TypeDefKind::Type(ty) => {
-                                self.type_name_with_qualifier(iface, ty, qualifier)
-                            }
-                            TypeDefKind::List(ty) => {
-                                format!("{}[]", self.type_name_with_qualifier(iface, ty, qualifier))
-                            }
-                            _ => {
-                                self.anonymous_types.insert(*id);
-                                format!(
-                                    "{}{}",
-                                    qualifier.unwrap_or(""),
-                                    encoded_type_name(iface, &Type::Id(*id))
-                                )
-                            }
-                        },
+                    }
+                    TypeDefKind::Tuple(tuple) => {
+                        let count = tuple.types.len();
+                        self.tuple_counts.insert(count);
+
+                        let params = if count == 0 {
+                            String::new()
+                        } else {
+                            format!(
+                                "<{}>",
+                                tuple
+                                    .types
+                                    .iter()
+                                    .map(|ty| self.type_name_boxed(iface, ty, qualifier))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            )
+                        };
+
+                        format!("{}Tuple{count}{params}", qualifier.unwrap_or(""))
+                    }
+                    TypeDefKind::Option(ty) => self.type_name_boxed(iface, ty, qualifier),
+                    TypeDefKind::Result(result) => {
+                        self.needs_result = true;
+                        let mut name = |ty: &Option<Type>| {
+                            ty.as_ref()
+                                .map(|ty| self.type_name_boxed(iface, ty, qualifier))
+                                .unwrap_or_else(|| {
+                                    self.tuple_counts.insert(0);
+
+                                    format!("{}Tuple0", qualifier.unwrap_or(""))
+                                })
+                        };
+                        let ok = name(&result.ok);
+                        let err = name(&result.err);
+
+                        format!("{}Result<{ok}, {err}>", qualifier.unwrap_or(""))
+                    }
+                    _ => {
+                        if let Some(name) = &ty.name {
+                            format!("{}{}", qualifier.unwrap_or(""), name.to_upper_camel_case())
+                        } else {
+                            unreachable!()
+                        }
                     }
                 }
             }
+        }
+    }
+
+    fn type_name_boxed(&mut self, iface: &Interface, ty: &Type, qualifier: Option<&str>) -> String {
+        match ty {
+            Type::Bool => "Boolean".into(),
+            Type::U8 | Type::S8 => "Byte".into(),
+            Type::U16 | Type::S16 => "Short".into(),
+            Type::U32 | Type::S32 | Type::Char => "Integer".into(),
+            Type::U64 | Type::S64 => "Long".into(),
+            Type::Float32 => "Float".into(),
+            Type::Float64 => "Double".into(),
+            Type::Id(id) => {
+                let def = &iface.types[*id];
+                match &def.kind {
+                    TypeDefKind::Type(ty) => self.type_name_boxed(iface, ty, qualifier),
+                    _ => self.type_name_with_qualifier(iface, ty, qualifier),
+                }
+            }
+            _ => self.type_name_with_qualifier(iface, ty, qualifier),
         }
     }
 
@@ -119,45 +158,6 @@ impl TeaVmJava {
                  */
                 "
             )
-        }
-    }
-
-    fn print_anonymous_type(&mut self, iface: &Interface, ty: TypeId) {
-        match &iface.types[ty].kind {
-            TypeDefKind::Type(_)
-            | TypeDefKind::Flags(_)
-            | TypeDefKind::Record(_)
-            | TypeDefKind::Enum(_)
-            | TypeDefKind::Variant(_)
-            | TypeDefKind::Union(_)
-            | TypeDefKind::List(_) => unreachable!(),
-
-            TypeDefKind::Tuple(tuple) => self.type_tuple(
-                iface,
-                ty,
-                &encoded_type_name(iface, &Type::Id(ty)),
-                tuple,
-                &Docs::default(),
-            ),
-
-            TypeDefKind::Option(payload) => self.type_option(
-                iface,
-                ty,
-                &encoded_type_name(iface, &Type::Id(ty)),
-                payload,
-                &Docs::default(),
-            ),
-
-            TypeDefKind::Result(result) => self.type_result(
-                iface,
-                ty,
-                &encoded_type_name(iface, &Type::Id(ty)),
-                result,
-                &Docs::default(),
-            ),
-
-            TypeDefKind::Future(_) => todo!("print_anonymous_type for future"),
-            TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
         }
     }
 
@@ -237,6 +237,8 @@ impl Generator for TeaVmJava {
             uwrite!(
                 self.stub,
                 "package {package};
+
+                 import java.util.ArrayList;
 
                  public class {name}Impl {{
                 "
@@ -364,28 +366,11 @@ impl Generator for TeaVmJava {
         &mut self,
         iface: &Interface,
         id: TypeId,
-        name: &str,
-        tuple: &Tuple,
-        docs: &Docs,
+        _name: &str,
+        _tuple: &Tuple,
+        _docs: &Docs,
     ) {
-        self.type_record(
-            iface,
-            id,
-            name,
-            &Record {
-                fields: tuple
-                    .types
-                    .iter()
-                    .enumerate()
-                    .map(|(i, ty)| Field {
-                        docs: Docs::default(),
-                        name: format!("f{i}"),
-                        ty: *ty,
-                    })
-                    .collect(),
-            },
-            docs,
-        )
+        self.type_name(iface, &Type::Id(id));
     }
 
     fn type_variant(
@@ -485,60 +470,22 @@ impl Generator for TeaVmJava {
         &mut self,
         iface: &Interface,
         id: TypeId,
-        name: &str,
-        payload: &Type,
-        docs: &Docs,
+        _name: &str,
+        _payload: &Type,
+        _docs: &Docs,
     ) {
-        self.type_variant(
-            iface,
-            id,
-            name,
-            &Variant {
-                cases: vec![
-                    Case {
-                        docs: Docs::default(),
-                        name: "none".into(),
-                        ty: None,
-                    },
-                    Case {
-                        docs: Docs::default(),
-                        name: "some".into(),
-                        ty: Some(*payload),
-                    },
-                ],
-            },
-            docs,
-        )
+        self.type_name(iface, &Type::Id(id));
     }
 
     fn type_result(
         &mut self,
         iface: &Interface,
         id: TypeId,
-        name: &str,
-        result: &Result_,
-        docs: &Docs,
+        _name: &str,
+        _result: &Result_,
+        _docs: &Docs,
     ) {
-        self.type_variant(
-            iface,
-            id,
-            name,
-            &Variant {
-                cases: vec![
-                    Case {
-                        docs: Docs::default(),
-                        name: "ok".into(),
-                        ty: result.ok,
-                    },
-                    Case {
-                        docs: Docs::default(),
-                        name: "err".into(),
-                        ty: result.err,
-                    },
-                ],
-            },
-            docs,
-        )
+        self.type_name(iface, &Type::Id(id));
     }
 
     fn type_union(
@@ -602,12 +549,12 @@ impl Generator for TeaVmJava {
         todo!("resources")
     }
 
-    fn type_alias(&mut self, _iface: &Interface, id: TypeId, _name: &str, ty: &Type, _docs: &Docs) {
-        self.aliases.insert(id, *ty);
+    fn type_alias(&mut self, iface: &Interface, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
+        self.type_name(iface, &Type::Id(id));
     }
 
-    fn type_list(&mut self, _iface: &Interface, id: TypeId, _name: &str, ty: &Type, _docs: &Docs) {
-        self.list_aliases.insert(id, *ty);
+    fn type_list(&mut self, iface: &Interface, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
+        self.type_name(iface, &Type::Id(id));
     }
 
     fn type_builtin(
@@ -788,33 +735,111 @@ impl Generator for TeaVmJava {
     }
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
-        let mut printed = HashSet::new();
-        while !self.anonymous_types.is_empty() {
-            for ty in mem::take(&mut self.anonymous_types) {
-                let name = encoded_type_name(iface, &Type::Id(ty));
-                if !printed.contains(&name) {
-                    printed.insert(name);
-                    self.print_anonymous_type(iface, ty);
-                }
-            }
-        }
+        for &count in &self.tuple_counts {
+            let (type_params, instance) = if count == 0 {
+                (
+                    String::new(),
+                    "public static final Tuple0 INSTANCE = new Tuple0();",
+                )
+            } else {
+                (
+                    format!(
+                        "<{}>",
+                        (0..count)
+                            .map(|index| format!("T{index}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                    "",
+                )
+            };
+            let value_params = (0..count)
+                .map(|index| format!("T{index} f{index}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let fields = (0..count)
+                .map(|index| format!("public final T{index} f{index};"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let inits = (0..count)
+                .map(|index| format!("this.f{index} = f{index};"))
+                .collect::<Vec<_>>()
+                .join("\n");
 
-        if self.needs_cleanup {
             uwrite!(
                 self.src,
                 "
-                private static final class Cleanup {{
+                public static final class Tuple{count}{type_params} {{
+                    {fields}
+
+                    public Tuple{count}({value_params}) {{
+                        {inits}
+                    }}
+
+                    {instance}
+                }}
+                "
+            )
+        }
+
+        if self.needs_result {
+            self.src.push_str(
+                r#"
+                public static final class Result<Ok, Err> {
+                    public final byte tag;
+                    private final Object value;
+
+                    private Result(byte tag, Object value) {
+                        this.tag = tag;
+                        this.value = value;
+                    }
+
+                    public static <Ok, Err> Result<Ok, Err> ok(Ok ok) {
+                        return new Result<>(OK, ok);
+                    }
+
+                    public static <Ok, Err> Result<Ok, Err> err(Err err) {
+                        return new Result<>(ERR, err);
+                    }
+
+                    public Ok getOk() {
+                        if (this.tag == OK) {
+                            return (Ok) this.value;
+                        } else {
+                            throw new RuntimeException("expected OK, got " + this.tag);
+                        }
+                    }
+
+                    public Err getErr() {
+                        if (this.tag == ERR) {
+                            return (Err) this.value;
+                        } else {
+                            throw new RuntimeException("expected ERR, got " + this.tag);
+                        }
+                    }
+
+                    public static final byte OK = 0;
+                    public static final byte ERR = 1;
+                }
+                "#,
+            )
+        }
+
+        if self.needs_cleanup {
+            self.src.push_str(
+                "
+                private static final class Cleanup {
                     public final int address;
                     public final int size;
                     public final int align;
 
-                    public Cleanup(int address, int size, int align) {{
+                    public Cleanup(int address, int size, int align) {
                         this.address = address;
                         this.size = size;
                         this.align = align;
-                    }}
-                }}
-                "
+                    }
+                }
+                ",
             );
         }
 
@@ -992,6 +1017,7 @@ impl<'a> FunctionBindgen<'a> {
             .collect::<Vec<_>>();
 
         let ty = self.gen.type_name(iface, ty);
+        let generics_position = ty.find('<');
         let lifted = self.locals.tmp("lifted");
 
         let cases = cases
@@ -1001,16 +1027,25 @@ impl<'a> FunctionBindgen<'a> {
             .map(|(i, ((case_name, case_ty), Block { body, results, .. }))| {
                 let payload = if self.gen.non_empty_type(iface, case_ty.as_ref()).is_some() {
                     results.into_iter().next().unwrap()
+                } else if generics_position.is_some() {
+                    "Tuple0.INSTANCE".into()
                 } else {
                     String::new()
                 };
 
                 let method = case_name.to_lower_camel_case();
 
+                let call = if let Some(position) = generics_position {
+                    let (ty, generics) = ty.split_at(position);
+                    format!("{ty}.{generics}{method}")
+                } else {
+                    format!("{ty}.{method}")
+                };
+
                 format!(
                     "case {i}: {{
                          {body}
-                         {lifted} = {ty}.{method}({payload});
+                         {lifted} = {call}({payload});
                          break;
                      }}"
                 )
@@ -1240,21 +1275,108 @@ impl Bindgen for FunctionBindgen<'_> {
                 results: lowered_types,
                 payload,
                 ..
-            } => self.lower_variant(
-                &[None, Some(**payload)],
-                lowered_types,
-                iface,
-                &operands[0],
-                results,
-            ),
+            } => {
+                let some = self.blocks.pop().unwrap();
+                let none = self.blocks.pop().unwrap();
+                let some_payload = self.payloads.pop().unwrap();
+                let none_payload = self.payloads.pop().unwrap();
 
-            Instruction::OptionLift { payload, ty } => self.lift_variant(
-                &Type::Id(*ty),
-                &[("none", None), ("some", Some(**payload))],
-                iface,
-                &operands[0],
-                results,
-            ),
+                let lowered = lowered_types
+                    .iter()
+                    .map(|_| self.locals.tmp("lowered"))
+                    .collect::<Vec<_>>();
+
+                results.extend(lowered.iter().cloned());
+
+                let declarations = lowered
+                    .iter()
+                    .zip(lowered_types.iter())
+                    .map(|(lowered, ty)| format!("{} {lowered};", wasm_type(*ty)))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                let op = &operands[0];
+
+                let mut block = |ty: Option<&Type>, Block { body, results, .. }, payload| {
+                    let payload = if let Some(ty) = self.gen.non_empty_type(iface, ty) {
+                        let ty = self.gen.type_name(iface, ty);
+
+                        format!("{ty} {payload} = ({ty}) ({op});")
+                    } else {
+                        String::new()
+                    };
+
+                    let assignments = lowered
+                        .iter()
+                        .zip(&results)
+                        .map(|(lowered, result)| format!("{lowered} = {result};\n"))
+                        .collect::<Vec<_>>()
+                        .concat();
+
+                    format!(
+                        "{payload}
+                         {body}
+                         {assignments}"
+                    )
+                };
+
+                let none = block(None, none, none_payload);
+                let some = block(Some(payload), some, some_payload);
+
+                uwrite!(
+                    self.src,
+                    r#"
+                    {declarations}
+
+                    if (({op}) == null) {{
+                        {none}
+                    }} else {{
+                        {some}
+                    }}
+                    "#
+                );
+            }
+
+            Instruction::OptionLift { payload, ty } => {
+                let some = self.blocks.pop().unwrap();
+                let _none = self.blocks.pop().unwrap();
+
+                let ty = self.gen.type_name(iface, &Type::Id(*ty));
+                let lifted = self.locals.tmp("lifted");
+                let op = &operands[0];
+
+                let payload = if self.gen.non_empty_type(iface, Some(*payload)).is_some() {
+                    some.results.into_iter().next().unwrap()
+                } else {
+                    "null".into()
+                };
+
+                let some = some.body;
+
+                uwrite!(
+                    self.src,
+                    r#"
+                    {ty} {lifted};
+
+                    switch ({op}) {{
+                        case 0: {{
+                            {lifted} = null;
+                            break;
+                        }}
+
+                        case 1: {{
+                            {some}
+                            {lifted} = {payload};
+                            break;
+                        }}
+
+                        default: throw new AssertionError("invalid discriminant: " + ({op}));
+                    }}
+                    "#
+                );
+
+                results.push(lifted);
+            }
 
             Instruction::ResultLower {
                 results: lowered_types,
@@ -1396,9 +1518,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 uwrite!(
                     self.src,
                     "
-                    int {address} = Memory.malloc(({op}).length * {size}, {align}).toInt();
-                    for (int {index} = 0; {index} < ({op}).length; ++{index}) {{
-                        {ty} {block_element} = ({op})[{index}];
+                    int {address} = Memory.malloc(({op}).size() * {size}, {align}).toInt();
+                    for (int {index} = 0; {index} < ({op}).size(); ++{index}) {{
+                        {ty} {block_element} = ({op}).get({index});
                         int {base} = {address} + ({index} * {size});
                         {body}
                     }}
@@ -1414,7 +1536,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
 
                 results.push(address);
-                results.push(format!("({op}).length"));
+                results.push(format!("({op}).size()"));
             }
 
             Instruction::ListLift { element, .. } => {
@@ -1437,21 +1559,14 @@ impl Bindgen for FunctionBindgen<'_> {
                     _ => todo!("result count == {}", results.len()),
                 };
 
-                let new = if let Some(position) = ty.find('[') {
-                    let (name, brackets) = ty.split_at(position);
-                    format!("new {name}[{length}]{brackets}")
-                } else {
-                    format!("new {ty}[{length}]")
-                };
-
                 uwrite!(
                     self.src,
                     "
-                    {ty}[] {array} = {new};
-                    for (int {index} = 0; {index} < {array}.length; ++{index}) {{
+                    ArrayList<{ty}> {array} = new ArrayList<>({length});
+                    for (int {index} = 0; {index} < ({length}); ++{index}) {{
                         int {base} = ({address}) + ({index} * {size});
                         {body}
-                        {array}[{index}] = {result};
+                        {array}.add({result});
                     }}
                     Memory.free(Address.fromInt({address}), ({length}) * {size}, {align});
                     "
@@ -1769,19 +1884,7 @@ impl Bindgen for FunctionBindgen<'_> {
     }
 
     fn is_list_canonical(&self, _iface: &Interface, element: &Type) -> bool {
-        matches!(
-            element,
-            Type::U8
-                | Type::S8
-                | Type::U16
-                | Type::S16
-                | Type::U32
-                | Type::S32
-                | Type::U64
-                | Type::S64
-                | Type::Float32
-                | Type::Float64
-        )
+        is_primitive(element)
     }
 }
 
@@ -1825,80 +1928,6 @@ fn list_element_info(ty: &Type) -> (usize, &'static str) {
     }
 }
 
-fn encoded_type_name(iface: &Interface, ty: &Type) -> String {
-    match ty {
-        Type::Bool => "Bool".into(),
-        Type::Char => "Char32".into(),
-        Type::U8 => "Unsigned8".into(),
-        Type::S8 => "Signed8".into(),
-        Type::U16 => "Unsigned16".into(),
-        Type::S16 => "Signed16".into(),
-        Type::U32 => "Unsigned32".into(),
-        Type::S32 => "Signed32".into(),
-        Type::U64 => "Unsigned64".into(),
-        Type::S64 => "Signed64".into(),
-        Type::Float32 => "Float32".into(),
-        Type::Float64 => "Float64".into(),
-        Type::Handle(id) => iface.resources[*id].name.to_upper_camel_case(),
-        Type::String => "String".into(),
-        Type::Id(id) => {
-            let ty = &iface.types[*id];
-            if let Some(name) = &ty.name {
-                name.to_upper_camel_case()
-            } else {
-                match &ty.kind {
-                    TypeDefKind::Type(t) => encoded_type_name(iface, t),
-                    TypeDefKind::Record(_)
-                    | TypeDefKind::Flags(_)
-                    | TypeDefKind::Enum(_)
-                    | TypeDefKind::Variant(_)
-                    | TypeDefKind::Union(_) => {
-                        unimplemented!()
-                    }
-                    TypeDefKind::Tuple(tuple) => {
-                        let length = tuple.types.len();
-                        let types = tuple
-                            .types
-                            .iter()
-                            .map(|ty| encoded_type_name(iface, ty))
-                            .collect::<Vec<_>>()
-                            .concat();
-
-                        format!("Tuple{length}{types}")
-                    }
-                    TypeDefKind::Option(ty) => {
-                        format!("Option{}", encoded_type_name(iface, ty))
-                    }
-                    TypeDefKind::Result(result) => format!(
-                        "Result{}{}",
-                        optional_encoded_type_name(iface, result.ok.as_ref()),
-                        optional_encoded_type_name(iface, result.err.as_ref())
-                    ),
-                    TypeDefKind::List(ty) => {
-                        format!("List{}", encoded_type_name(iface, ty))
-                    }
-                    TypeDefKind::Future(ty) => {
-                        format!("Future{}", optional_encoded_type_name(iface, ty.as_ref()))
-                    }
-                    TypeDefKind::Stream(stream) => format!(
-                        "Stream{}{}",
-                        optional_encoded_type_name(iface, stream.element.as_ref()),
-                        optional_encoded_type_name(iface, stream.end.as_ref())
-                    ),
-                }
-            }
-        }
-    }
-}
-
-fn optional_encoded_type_name(iface: &Interface, ty: Option<&Type>) -> String {
-    if let Some(ty) = ty {
-        encoded_type_name(iface, ty)
-    } else {
-        "Void".into()
-    }
-}
-
 fn indent(code: &str) -> String {
     let mut indented = String::with_capacity(code.len());
     let mut indent = 0;
@@ -1915,4 +1944,20 @@ fn indent(code: &str) -> String {
         indented.push('\n');
     }
     indented
+}
+
+fn is_primitive(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::U8
+            | Type::S8
+            | Type::U16
+            | Type::S16
+            | Type::U32
+            | Type::S32
+            | Type::U64
+            | Type::S64
+            | Type::Float32
+            | Type::Float64
+    )
 }

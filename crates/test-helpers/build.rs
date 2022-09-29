@@ -184,7 +184,7 @@ fn main() {
             .unwrap();
 
             let mut cmd = mvn();
-            cmd.arg("prepare-package").arg("-e").current_dir(&out_dir);
+            cmd.arg("prepare-package").current_dir(&out_dir);
 
             println!("{:?}", cmd);
             let output = match cmd.output() {
