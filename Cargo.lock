@@ -720,6 +720,9 @@ name = "heck"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2540771e65fc8cb83cd6e8a237f70c319bd5c29f78ed1084ba5d50eeac86f7f9"
+dependencies = [
+ "unicode-segmentation",
+]
 
 [[package]]
 name = "hermit-abi"
@@ -1401,6 +1404,7 @@ dependencies = [
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
  "wit-bindgen-gen-guest-rust",
+ "wit-bindgen-gen-guest-teavm-java",
  "wit-bindgen-gen-host-js",
  "wit-bindgen-gen-host-wasmtime-py",
  "wit-bindgen-gen-host-wasmtime-rust",
@@ -2033,6 +2037,7 @@ dependencies = [
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
  "wit-bindgen-gen-guest-rust",
+ "wit-bindgen-gen-guest-teavm-java",
  "wit-bindgen-gen-host-js",
  "wit-bindgen-gen-host-wasmtime-py",
  "wit-bindgen-gen-host-wasmtime-rust",
@@ -2055,6 +2060,7 @@ dependencies = [
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
  "wit-bindgen-gen-guest-rust",
+ "wit-bindgen-gen-guest-teavm-java",
  "wit-bindgen-gen-host-js",
  "wit-bindgen-gen-host-wasmtime-py",
  "wit-bindgen-gen-host-wasmtime-rust",
@@ -2082,6 +2088,16 @@ dependencies = [
  "wit-bindgen-core",
  "wit-bindgen-gen-rust-lib",
  "wit-bindgen-guest-rust",
+]
+
+[[package]]
+name = "wit-bindgen-gen-guest-teavm-java"
+version = "0.1.0"
+dependencies = [
+ "heck 0.4.0",
+ "structopt",
+ "test-helpers",
+ "wit-bindgen-core",
 ]
 
 [[package]]
