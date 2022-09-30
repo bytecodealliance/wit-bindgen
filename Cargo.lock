@@ -2199,6 +2199,7 @@ name = "wit-component"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "bitflags",
  "clap 3.2.22",
  "env_logger",
  "glob",
