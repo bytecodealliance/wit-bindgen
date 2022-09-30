@@ -674,7 +674,7 @@ impl Generator for Js {
                 .entry(*resource)
                 .or_insert(Vec::new()),
         };
-        dst.push((iface.mangle_funcname(func), src));
+        dst.push((func.name.to_string(), src));
     }
 
     // As with `abi_variant` above, we're generating host-side bindings here
@@ -2136,14 +2136,13 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::CallWasm {
                 iface: _,
-                base_name: _,
-                mangled_name,
+                name,
                 sig,
             } => {
                 self.bind_results(sig.results.len(), results);
                 self.src.js(&self.src_object);
                 self.src.js("._exports['");
-                self.src.js(&mangled_name);
+                self.src.js(&name);
                 self.src.js("'](");
                 self.src.js(&operands.join(", "));
                 self.src.js(");\n");

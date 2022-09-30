@@ -650,7 +650,7 @@ impl Generator for TeaVmJava {
         };
 
         let module = &iface.name;
-        let name = iface.mangle_funcname(func);
+        let name = &func.name;
 
         let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
 
@@ -706,7 +706,7 @@ impl Generator for TeaVmJava {
         assert!(!bindgen.needs_cleanup_list);
 
         let src = bindgen.src;
-        let name = iface.mangle_funcname(func);
+        let name = &func.name;
 
         let result_type = match &sig.results[..] {
             [] => "void",
