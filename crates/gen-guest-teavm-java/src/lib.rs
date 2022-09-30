@@ -193,7 +193,18 @@ impl TeaVmJava {
                 func.results.iter_types().next().unwrap(),
                 qualifier,
             ),
-            _ => todo!("multiple return values"),
+            count => {
+                self.tuple_counts.insert(count);
+                format!(
+                    "{}Tuple{count}<{}>",
+                    qualifier.unwrap_or(""),
+                    func.results
+                        .iter_types()
+                        .map(|ty| self.type_name_boxed(iface, ty, qualifier))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
         };
 
         let params = func
@@ -335,13 +346,15 @@ impl Generator for TeaVmJava {
             .iter()
             .enumerate()
             .map(|(i, flag)| {
-                let name = flag.name.to_shouty_snake_case();
+                let flag_name = flag.name.to_shouty_snake_case();
                 let suffix = if matches!(flags.repr(), FlagsRepr::U32(2)) {
                     "L"
                 } else {
                     ""
                 };
-                format!("public static final {ty} {name} = ({ty}) (1{suffix} << {i});")
+                format!(
+                    "public static final {name} {flag_name} = new {name}(({ty}) (1{suffix} << {i}));"
+                )
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -604,7 +617,7 @@ impl Generator for TeaVmJava {
         let result_type = match &sig.results[..] {
             [] => "void",
             [result] => wasm_type(*result),
-            _ => todo!("multi-value return"),
+            _ => unreachable!(),
         };
 
         let camel_name = func.name.to_upper_camel_case();
@@ -658,7 +671,7 @@ impl Generator for TeaVmJava {
         let result_type = match &sig.results[..] {
             [] => "void",
             [result] => wasm_type(*result),
-            _ => todo!("multi-value return"),
+            _ => unreachable!(),
         };
 
         let camel_name = func.name.to_upper_camel_case();
@@ -1606,8 +1619,8 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::CallInterface { module, func } => {
-                let assignment = match func.results.len() {
-                    0 => String::new(),
+                let (assignment, destructure) = match func.results.len() {
+                    0 => (String::new(), String::new()),
                     1 => {
                         let ty = self
                             .gen
@@ -1615,9 +1628,38 @@ impl Bindgen for FunctionBindgen<'_> {
                         let result = self.locals.tmp("result");
                         let assignment = format!("{ty} {result} = ");
                         results.push(result);
-                        assignment
+                        (assignment, String::new())
                     }
-                    _ => todo!("multiple return values"),
+                    count => {
+                        self.gen.tuple_counts.insert(count);
+                        let ty = format!(
+                            "Tuple{count}<{}>",
+                            func.results
+                                .iter_types()
+                                .map(|ty| self.gen.type_name_boxed(iface, ty, None))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        );
+
+                        let result = self.locals.tmp("result");
+                        let assignment = format!("{ty} {result} = ");
+
+                        let destructure = func
+                            .results
+                            .iter_types()
+                            .enumerate()
+                            .map(|(index, ty)| {
+                                let ty = self.gen.type_name(iface, ty);
+                                let my_result = self.locals.tmp("result");
+                                let assignment = format!("{ty} {my_result} = {result}.f{index};");
+                                results.push(my_result);
+                                assignment
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+
+                        (assignment, destructure)
+                    }
                 };
 
                 let module = module.to_upper_camel_case();
@@ -1629,6 +1671,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src,
                     "
                     {assignment}{module}Impl.{name}({args});
+                    {destructure}
                     "
                 );
             }
@@ -1654,13 +1697,16 @@ impl Bindgen for FunctionBindgen<'_> {
                             Memory.free(Address.fromInt(cleanup.address), cleanup.size, cleanup.align);
                         }}
                         "
-                        );
+                    );
                 }
 
-                match amt {
+                match *amt {
                     0 => (),
                     1 => uwriteln!(self.src, "return {};", operands[0]),
-                    _ => unreachable!(),
+                    count => {
+                        let results = operands.join(", ");
+                        uwriteln!(self.src, "return new Tuple{count}<>({results});")
+                    }
                 }
             }
 
@@ -1931,8 +1977,18 @@ fn list_element_info(ty: &Type) -> (usize, &'static str) {
 fn indent(code: &str) -> String {
     let mut indented = String::with_capacity(code.len());
     let mut indent = 0;
+    let mut was_empty = false;
     for line in code.lines() {
         let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if was_empty {
+                continue;
+            }
+            was_empty = true;
+        } else {
+            was_empty = false;
+        }
+
         if trimmed.starts_with('}') {
             indent -= 1;
         }

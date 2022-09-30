@@ -5,10 +5,9 @@ mod imports {
     test_helpers::codegen_teavm_java_import!(
         "*.wit"
 
-        // TODO: implement async, resource, and multi-return support
+        // TODO: implement async and resource support
         "!async-functions.wit"
         "!resource.wit"
-        "!multi-return.wit"
     );
 }
 
@@ -16,10 +15,9 @@ mod exports {
     test_helpers::codegen_teavm_java_export!(
         "*.wit"
 
-        // TODO: implement async, resource, and multi-return support
+        // TODO: implement async and resource support
         "!async-functions.wit"
         "!resource.wit"
-        "!multi-return.wit"
     );
 }
 

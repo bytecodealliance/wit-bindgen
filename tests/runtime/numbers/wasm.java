@@ -3,7 +3,6 @@ package wit_exports;
 import wit_imports.Imports;
 
 public class ExportsImpl {
-
     public static byte roundtripU8(byte a) {
         return a;
     }
