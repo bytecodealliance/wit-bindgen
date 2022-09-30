@@ -468,7 +468,7 @@ impl Generator for RustWasm {
                 "#[link_section = \"component-type:{direction}:{iface_name}\"]\n"
             ));
             self.src.push_str(&format!(
-                "const __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",
+                "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",
                 component_type.len()
             ));
             self.src.push_str(&format!("{:?};\n", component_type));
