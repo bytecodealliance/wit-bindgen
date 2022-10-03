@@ -1,18 +1,18 @@
 [package]
 name = "wit-bindgen-gen-guest-rust"
-version = "0.2.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [lib]
 test = false
 doctest = false
 
 [dependencies]
-wit-bindgen-core = { path = '../bindgen-core', version = '0.2.0' }
-wit-bindgen-gen-rust-lib = { path = '../gen-rust-lib', version = '0.2.0' }
-heck = "0.3"
-structopt = { version = "0.3", default-features = false, optional = true }
+wit-bindgen-core = { workspace = true }
+wit-bindgen-gen-rust-lib = { workspace = true }
+heck = { workspace = true }
+structopt = { workspace = true, optional = true }
 
 [dev-dependencies]
 wit-bindgen-guest-rust = { path = '../guest-rust' }

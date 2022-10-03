@@ -1,12 +1,12 @@
 [package]
 name = "wit-bindgen-gen-guest-teavm-java"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
-wit-bindgen-core = { path = '../bindgen-core', version = '0.2.0' }
-heck = { version = "0.4.0", features = [ "unicode" ] }
-structopt = { version = "0.3", default-features = false, optional = true }
+wit-bindgen-core = { workspace = true }
+heck = { version = "0.4", features = [ "unicode" ] }
+structopt = { workspace = true, optional = true }
 
 [dev-dependencies]
 test-helpers = { path = '../test-helpers', default-features = false, features = ['guest-teavm-java'] }

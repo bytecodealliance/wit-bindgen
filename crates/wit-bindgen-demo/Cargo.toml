@@ -1,8 +1,8 @@
 [package]
 name = "wit-bindgen-demo"
-version = "0.2.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 publish = false
 
 [lib]
@@ -11,13 +11,13 @@ test = false
 doctest = false
 
 [dependencies]
-wit-bindgen-core = { path = '../bindgen-core' }
-wit-bindgen-gen-guest-rust = { path = '../gen-guest-rust' }
-wit-bindgen-gen-host-wasmtime-rust = { path = '../gen-host-wasmtime-rust' }
-wit-bindgen-gen-host-wasmtime-py = { path = '../gen-host-wasmtime-py' }
-wit-bindgen-gen-host-js = { path = '../gen-host-js' }
-wit-bindgen-gen-guest-c = { path = '../gen-guest-c' }
-wit-bindgen-gen-guest-teavm-java = { path = '../gen-guest-teavm-java' }
-wit-bindgen-gen-markdown = { path = '../gen-markdown' }
-wit-bindgen-guest-rust = { path = '../guest-rust' }
-wasmprinter = "0.2.29"
+wit-bindgen-core = { workspace = true }
+wit-bindgen-gen-guest-rust = { workspace = true }
+wit-bindgen-gen-host-wasmtime-rust = { workspace = true }
+wit-bindgen-gen-host-wasmtime-py = { workspace = true }
+wit-bindgen-gen-host-js = { workspace = true }
+wit-bindgen-gen-guest-c = { workspace = true }
+wit-bindgen-gen-guest-teavm-java = { workspace = true }
+wit-bindgen-gen-markdown = { workspace = true }
+wit-bindgen-guest-rust = { workspace = true }
+wasmprinter = { workspace = true }
