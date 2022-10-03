@@ -1,100 +1,102 @@
 use anyhow::{Context, Result};
+use clap::Parser;
 use std::path::PathBuf;
-use structopt::StructOpt;
 use wit_bindgen_core::{wit_parser, Files, Generator};
 use wit_parser::Interface;
 
-#[derive(Debug, StructOpt)]
-/// A utility that generates language bindings for WIT itnerfaces.
+#[derive(Debug, Parser)]
+/// A utility that generates language bindings for WIT interfaces.
 struct Opt {
-    #[structopt(subcommand)]
+    #[command(subcommand)]
     category: Category,
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 enum Category {
     /// Generators for creating hosts that embed WASM modules/components.
+    #[command(subcommand)]
     Host(HostGenerator),
     /// Generators for writing guest WASM modules/components.
+    #[command(subcommand)]
     Guest(GuestGenerator),
     /// This generator outputs a Markdown file describing an interface.
     Markdown {
-        #[structopt(flatten)]
+        #[clap(flatten)]
         opts: wit_bindgen_gen_markdown::Opts,
-        #[structopt(flatten)]
+        #[clap(flatten)]
         common: Common,
     },
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 enum HostGenerator {
     /// Generates bindings for Rust hosts using the Wasmtime engine.
     WasmtimeRust {
-        #[structopt(flatten)]
+        #[clap(flatten)]
         opts: wit_bindgen_gen_host_wasmtime_rust::Opts,
-        #[structopt(flatten)]
+        #[clap(flatten)]
         common: Common,
     },
     /// Generates bindings for Python hosts using the Wasmtime engine.
     WasmtimePy {
-        #[structopt(flatten)]
+        #[clap(flatten)]
         opts: wit_bindgen_gen_host_wasmtime_py::Opts,
-        #[structopt(flatten)]
+        #[clap(flatten)]
         common: Common,
     },
     /// Generates bindings for JavaScript hosts.
     Js {
-        #[structopt(flatten)]
+        #[clap(flatten)]
         opts: wit_bindgen_gen_host_js::Opts,
-        #[structopt(flatten)]
+        #[clap(flatten)]
         common: Common,
     },
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 enum GuestGenerator {
     /// Generates bindings for Rust guest modules.
     Rust {
-        #[structopt(flatten)]
+        #[clap(flatten)]
         opts: wit_bindgen_gen_guest_rust::Opts,
-        #[structopt(flatten)]
+        #[clap(flatten)]
         common: Common,
     },
     /// Generates bindings for C/CPP guest modules.
     C {
-        #[structopt(flatten)]
+        #[clap(flatten)]
         opts: wit_bindgen_gen_guest_c::Opts,
-        #[structopt(flatten)]
+        #[clap(flatten)]
         common: Common,
     },
     /// Generates bindings for TeaVM-based Java guest modules.
     TeavmJava {
-        #[structopt(flatten)]
+        #[clap(flatten)]
         opts: wit_bindgen_gen_guest_teavm_java::Opts,
-        #[structopt(flatten)]
+        #[clap(flatten)]
         common: Common,
     },
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 struct Common {
     /// Where to place output files
-    #[structopt(long = "out-dir")]
+    #[clap(long = "out-dir")]
     out_dir: Option<PathBuf>,
 
     /// Generate import bindings for the given `*.wit` interface. Can be
     /// specified multiple times.
-    #[structopt(long = "import", short)]
+    #[clap(long = "import", short)]
     imports: Vec<PathBuf>,
 
     /// Generate export bindings for the given `*.wit` interface. Can be
     /// specified multiple times.
-    #[structopt(long = "export", short)]
+    #[clap(long = "export", short)]
     exports: Vec<PathBuf>,
 }
 
 fn main() -> Result<()> {
-    let opt: Opt = Opt::from_args();
+    let opt: Opt = Opt::parse();
     let (mut generator, common): (Box<dyn Generator>, _) = match opt.category {
         Category::Guest(GuestGenerator::Rust { opts, common }) => (Box::new(opts.build()), common),
         Category::Host(HostGenerator::WasmtimeRust { opts, common }) => {

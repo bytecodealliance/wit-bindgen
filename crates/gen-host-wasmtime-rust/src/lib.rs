@@ -53,19 +53,19 @@ struct Exports {
 }
 
 #[derive(Default, Debug, Clone)]
-#[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
     /// Whether or not `rustfmt` is executed to format generated code.
-    #[cfg_attr(feature = "structopt", structopt(long))]
+    #[cfg_attr(feature = "clap", arg(long))]
     pub rustfmt: bool,
 
     /// Whether or not to emit `tracing` macro calls on function entry/exit.
-    #[cfg_attr(feature = "structopt", structopt(long))]
+    #[cfg_attr(feature = "clap", arg(long))]
     pub tracing: bool,
 
     /// A flag to indicate that all trait methods in imports should return a
     /// custom trait-defined error. Applicable for import bindings.
-    #[cfg_attr(feature = "structopt", structopt(long))]
+    #[cfg_attr(feature = "clap", arg(long))]
     pub custom_error: bool,
 }
 

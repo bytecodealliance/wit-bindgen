@@ -12,7 +12,7 @@ doctest = false
 wit-bindgen-core = { workspace = true }
 wit-bindgen-gen-rust-lib = { workspace = true }
 heck = { workspace = true }
-structopt = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
 
 [dev-dependencies]
 wit-bindgen-guest-rust = { path = '../guest-rust' }

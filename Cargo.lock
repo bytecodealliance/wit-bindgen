@@ -231,37 +231,24 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "clap"
-version = "2.34.0"
+version = "4.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0610544180c38b88101fecf2dd634b174a62eef6946f84dfc6a7127512b381c"
-dependencies = [
- "bitflags",
- "textwrap 0.11.0",
- "unicode-width",
-]
-
-[[package]]
-name = "clap"
-version = "3.2.22"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86447ad904c7fb335a790c9d7fe3d0d971dc523b8ccd1561a520de9a85302750"
+checksum = "30607dd93c420c6f1f80b544be522a0238a7db35e6a12968d28910983fee0df0"
 dependencies = [
  "atty",
  "bitflags",
  "clap_derive",
  "clap_lex",
- "indexmap",
  "once_cell",
  "strsim",
  "termcolor",
- "textwrap 0.15.1",
 ]
 
 [[package]]
 name = "clap_derive"
-version = "3.2.18"
+version = "4.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea0c8bce528c4be4da13ea6fead8965e95b6073585a2f05204bd8f4119f82a65"
+checksum = "a4a307492e1a34939f79d3b6b9650bd2b971513cd775436bf2b78defeb5af00b"
 dependencies = [
  "heck 0.4.0",
  "proc-macro-error",
@@ -272,9 +259,9 @@ dependencies = [
 
 [[package]]
 name = "clap_lex"
-version = "0.2.4"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2850f2f5a82cbf437dd5af4d49848fbdfc27c157c3d010345776f952765261c5"
+checksum = "0d4198f73e42b4936b35b5bb248d81d2b595ecb170da0bac7655c54eedfa8da8"
 dependencies = [
  "os_str_bytes",
 ]
@@ -1326,30 +1313,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
-name = "structopt"
-version = "0.3.26"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c6b5c64445ba8094a6ab0c3cd2ad323e07171012d9c98b0b15651daf1787a10"
-dependencies = [
- "clap 2.34.0",
- "lazy_static",
- "structopt-derive",
-]
-
-[[package]]
-name = "structopt-derive"
-version = "0.4.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcb5ae327f9cc13b68763b5749770cb9e048a99bd9dfdfa58d0cf05d5f64afe0"
-dependencies = [
- "heck 0.3.3",
- "proc-macro-error",
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "syn"
 version = "1.0.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1418,21 +1381,6 @@ dependencies = [
  "futures-util",
  "wit-bindgen-guest-rust",
 ]
-
-[[package]]
-name = "textwrap"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d326610f408c7a4eb6f51c37c330e496b08506c9457c9d34287ecc38809fb060"
-dependencies = [
- "unicode-width",
-]
-
-[[package]]
-name = "textwrap"
-version = "0.15.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "949517c0cf1bf4ee812e2e07e08ab448e3ae0d23472aee8a06c985f0c8815b16"
 
 [[package]]
 name = "thiserror"
@@ -2033,7 +1981,7 @@ name = "wit-bindgen-cli"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "structopt",
+ "clap",
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
  "wit-bindgen-gen-guest-rust",
@@ -2072,8 +2020,8 @@ dependencies = [
 name = "wit-bindgen-gen-guest-c"
 version = "0.2.0"
 dependencies = [
+ "clap",
  "heck 0.3.3",
- "structopt",
  "test-helpers",
  "wit-bindgen-core",
 ]
@@ -2082,8 +2030,8 @@ dependencies = [
 name = "wit-bindgen-gen-guest-rust"
 version = "0.2.0"
 dependencies = [
+ "clap",
  "heck 0.3.3",
- "structopt",
  "test-helpers",
  "wit-bindgen-core",
  "wit-bindgen-gen-rust-lib",
@@ -2094,8 +2042,8 @@ dependencies = [
 name = "wit-bindgen-gen-guest-teavm-java"
 version = "0.2.0"
 dependencies = [
+ "clap",
  "heck 0.4.0",
- "structopt",
  "test-helpers",
  "wit-bindgen-core",
 ]
@@ -2104,8 +2052,8 @@ dependencies = [
 name = "wit-bindgen-gen-host-js"
 version = "0.2.0"
 dependencies = [
+ "clap",
  "heck 0.3.3",
- "structopt",
  "test-helpers",
  "wit-bindgen-core",
 ]
@@ -2114,8 +2062,8 @@ dependencies = [
 name = "wit-bindgen-gen-host-wasmtime-py"
 version = "0.2.0"
 dependencies = [
+ "clap",
  "heck 0.3.3",
- "structopt",
  "test-helpers",
  "wit-bindgen-core",
 ]
@@ -2125,8 +2073,8 @@ name = "wit-bindgen-gen-host-wasmtime-rust"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "clap",
  "heck 0.3.3",
- "structopt",
  "test-helpers",
  "wasmtime",
  "wasmtime-wasi",
@@ -2139,9 +2087,9 @@ dependencies = [
 name = "wit-bindgen-gen-markdown"
 version = "0.2.0"
 dependencies = [
+ "clap",
  "heck 0.3.3",
  "pulldown-cmark",
- "structopt",
  "wit-bindgen-core",
 ]
 
@@ -2200,7 +2148,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "bitflags",
- "clap 3.2.22",
+ "clap",
  "env_logger",
  "glob",
  "indexmap",

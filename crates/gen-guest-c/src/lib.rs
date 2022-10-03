@@ -41,7 +41,7 @@ struct Func {
 }
 
 #[derive(Default, Debug, Clone)]
-#[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
     // ...
 }

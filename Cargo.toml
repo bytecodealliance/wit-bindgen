@@ -20,9 +20,8 @@ version = "0.2.0"
 anyhow = "1.0.65"
 bitflags = "1.3.2"
 heck = "0.3"
-structopt = { version = "0.3", default-features = false }
 pulldown-cmark = { version = "0.8", default-features = false }
-clap = { version = "3.2.22", features = ["derive"] }
+clap = { version = "4.0.9", features = ["derive"] }
 
 wasmtime = "1.0"
 wasmtime-wasi = "1.0"
@@ -50,12 +49,12 @@ test = false
 
 [dependencies]
 anyhow = { workspace = true }
-structopt = { version = "0.3", default-features = false }
+clap = { workspace = true }
 wit-bindgen-core = { path = 'crates/bindgen-core' }
-wit-bindgen-gen-guest-rust = { path = 'crates/gen-guest-rust', features = ['structopt'] }
-wit-bindgen-gen-host-wasmtime-rust = { path = 'crates/gen-host-wasmtime-rust', features = ['structopt'] }
-wit-bindgen-gen-host-wasmtime-py = { path = 'crates/gen-host-wasmtime-py', features = ['structopt'] }
-wit-bindgen-gen-host-js = { path = 'crates/gen-host-js', features = ['structopt'] }
-wit-bindgen-gen-guest-c = { path = 'crates/gen-guest-c', features = ['structopt'] }
-wit-bindgen-gen-markdown = { path = 'crates/gen-markdown', features = ['structopt'] }
-wit-bindgen-gen-guest-teavm-java = { path = 'crates/gen-guest-teavm-java', features = ['structopt'] }
+wit-bindgen-gen-guest-rust = { path = 'crates/gen-guest-rust', features = ['clap'] }
+wit-bindgen-gen-host-wasmtime-rust = { path = 'crates/gen-host-wasmtime-rust', features = ['clap'] }
+wit-bindgen-gen-host-wasmtime-py = { path = 'crates/gen-host-wasmtime-py', features = ['clap'] }
+wit-bindgen-gen-host-js = { path = 'crates/gen-host-js', features = ['clap'] }
+wit-bindgen-gen-guest-c = { path = 'crates/gen-guest-c', features = ['clap'] }
+wit-bindgen-gen-markdown = { path = 'crates/gen-markdown', features = ['clap'] }
+wit-bindgen-gen-guest-teavm-java = { path = 'crates/gen-guest-teavm-java', features = ['clap'] }
