@@ -213,7 +213,9 @@ pub trait RustGenerator {
                 TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) => {
                     self.print_borrowed_str(lt)
                 }
-                TypeMode::Owned | TypeMode::HandlesBorrowed(_) => self.push_str("String"),
+                TypeMode::Owned | TypeMode::HandlesBorrowed(_) => {
+                    self.push_str("alloc::string::String")
+                }
             },
         }
     }
@@ -335,13 +337,13 @@ pub trait RustGenerator {
                 if iface.all_bits_valid(ty) {
                     self.print_borrowed_slice(iface, false, ty, lt);
                 } else {
-                    self.push_str("Vec<");
+                    self.push_str("alloc::vec::Vec<");
                     self.print_ty(iface, ty, mode);
                     self.push_str(">");
                 }
             }
             TypeMode::HandlesBorrowed(_) | TypeMode::Owned => {
-                self.push_str("Vec<");
+                self.push_str("alloc::vec::Vec<");
                 self.print_ty(iface, ty, mode);
                 self.push_str(">");
             }
@@ -828,9 +830,11 @@ pub trait RustGenerator {
             self.push_str("}\n");
             self.push_str("}\n");
             self.push_str("\n");
-            self.push_str("impl std::error::Error for ");
-            self.push_str(&name);
-            self.push_str("{}\n");
+            if cfg!(feature = "std") {
+                self.push_str("impl std::error::Error for ");
+                self.push_str(&name);
+                self.push_str("{}\n");
+            }
         } else {
             self.print_rust_enum_debug(
                 id,

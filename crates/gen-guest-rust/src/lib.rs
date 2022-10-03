@@ -510,7 +510,9 @@ impl Generator for RustWasm {
         } = f;
 
         if needs_cleanup_list {
-            self.src.push_str("let mut cleanup_list = Vec::new();\n");
+            self.src.push_str("extern crate alloc;\n");
+            self.src
+                .push_str("let mut cleanup_list = alloc::vec::Vec::new();\n");
         }
         self.src.push_str(&String::from(src));
 
@@ -758,14 +760,15 @@ impl FunctionBindgen<'_> {
     fn emit_cleanup(&mut self) {
         for (ptr, layout) in mem::take(&mut self.cleanup) {
             self.push_str(&format!(
-                "if {layout}.size() != 0 {{\nstd::alloc::dealloc({ptr}, {layout});\n}}\n"
+                "if {layout}.size() != 0 {{\nextern crate alloc;\nalloc::alloc::dealloc({ptr}, {layout});\n}}\n"
             ));
         }
         if self.needs_cleanup_list {
             self.push_str(
                 "for (ptr, layout) in cleanup_list {\n
                     if layout.size() != 0 {\n
-                        std::alloc::dealloc(ptr, layout);\n
+                        extern crate alloc;\n
+                        alloc::alloc::dealloc(ptr, layout);\n
                     }\n
                 }\n",
             );
@@ -1231,7 +1234,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 assert_eq!(none, "()");
                 let operand = &operands[0];
                 let invalid = if unchecked {
-                    "std::hint::unreachable_unchecked()"
+                    "core::hint::unreachable_unchecked()"
                 } else {
                     "panic!(\"invalid enum discriminant\")"
                 };
@@ -1268,7 +1271,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let ok = self.blocks.pop().unwrap();
                 let operand = &operands[0];
                 let invalid = if unchecked {
-                    "std::hint::unreachable_unchecked()"
+                    "core::hint::unreachable_unchecked()"
                 } else {
                     "panic!(\"invalid enum discriminant\")"
                 };
@@ -1343,8 +1346,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {} as usize;\n", len, operands[1]));
+                self.push_str("extern crate alloc;\n");
                 let result = format!(
-                    "Vec::from_raw_parts({} as *mut _, {1}, {1})",
+                    "alloc::vec::Vec::from_raw_parts({} as *mut _, {1}, {1})",
                     operands[0], len
                 );
                 results.push(result);
@@ -1374,14 +1378,21 @@ impl Bindgen for FunctionBindgen<'_> {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {} as usize;\n", len, operands[1]));
+                self.push_str("extern crate alloc;\n");
                 let result = format!(
-                    "Vec::from_raw_parts({} as *mut _, {1}, {1})",
+                    "alloc::vec::Vec::from_raw_parts({} as *mut _, {1}, {1})",
                     operands[0], len
                 );
                 if unchecked {
-                    results.push(format!("String::from_utf8_unchecked({})", result));
+                    results.push(format!(
+                        "alloc::string::String::from_utf8_unchecked({})",
+                        result
+                    ));
                 } else {
-                    results.push(format!("String::from_utf8({}).unwrap()", result));
+                    results.push(format!(
+                        "alloc::string::String::from_utf8({}).unwrap()",
+                        result
+                    ));
                 }
             }
 
@@ -1403,12 +1414,12 @@ impl Bindgen for FunctionBindgen<'_> {
                     "let {layout} = core::alloc::Layout::from_size_align_unchecked({vec}.len() * {size}, {align});\n",
                 ));
                 self.push_str(&format!(
-                    "let {result} = if {layout}.size() != 0\n{{\nlet ptr = std::alloc::alloc({layout});\n",
+                    "let {result} = if {layout}.size() != 0\n{{\nextern crate alloc;\nlet ptr = alloc::alloc::alloc({layout});\n",
                 ));
                 self.push_str(&format!(
-                    "if ptr.is_null()\n{{\nstd::alloc::handle_alloc_error({layout});\n}}\nptr\n}}",
+                    "if ptr.is_null()\n{{\nextern crate alloc;\nalloc::alloc::handle_alloc_error({layout});\n}}\nptr\n}}",
                 ));
-                self.push_str(&format!("else {{\nstd::ptr::null_mut()\n}};\n",));
+                self.push_str(&format!("else {{\ncore::ptr::null_mut()\n}};\n",));
                 self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
                 self.push_str(&format!(
                     "let base = {result} as i32 + (i as i32) * {size};\n",
@@ -1442,8 +1453,9 @@ impl Bindgen for FunctionBindgen<'_> {
                     "let {len} = {operand1};\n",
                     operand1 = operands[1]
                 ));
+                self.push_str("extern crate alloc;\n");
                 self.push_str(&format!(
-                    "let mut {result} = Vec::with_capacity({len} as usize);\n",
+                    "let mut {result} = alloc::vec::Vec::with_capacity({len} as usize);\n",
                 ));
 
                 self.push_str("for i in 0..");

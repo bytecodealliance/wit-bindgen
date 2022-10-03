@@ -11,3 +11,7 @@ test = false
 [dependencies]
 wit-bindgen-core = { workspace = true }
 heck = { workspace = true }
+
+[features]
+default = ["std"]
+std = []
