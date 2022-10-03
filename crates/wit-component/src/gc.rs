@@ -485,59 +485,57 @@ impl<'a> Module<'a> {
         // local to this module. This only happens if a memory is preserved and
         // a stack pointer global is found.
         let mut start = None;
-        let mutable_globals = self
-            .live_globals()
-            .filter(|(_, g)| g.ty.mutable)
-            .collect::<Vec<_>>();
-        if num_memories > 0 && mutable_globals.len() > 0 {
-            use wasm_encoder::Instruction::*;
+        let sp = self.find_stack_pointer()?;
+        if let Some(sp) = sp {
+            if num_memories > 0 {
+                use wasm_encoder::Instruction::*;
 
-            // If there are any memories or any mutable globals there must be
-            // precisely one of each as otherwise we don't know how to filter
-            // down to the right one.
-            if num_memories != 1 {
-                bail!("adapter modules don't support multi-memory");
+                // If there are any memories or any mutable globals there must be
+                // precisely one of each as otherwise we don't know how to filter
+                // down to the right one.
+                if num_memories != 1 {
+                    bail!("adapter modules don't support multi-memory");
+                }
+
+                let sp = map.globals.remap(sp);
+
+                // Generate a function type for this start function, adding a new
+                // function type to the module if necessary.
+                let empty_type = empty_type.unwrap_or_else(|| {
+                    types.function([], []);
+                    types.len() - 1
+                });
+                funcs.function(empty_type);
+
+                let mut func = wasm_encoder::Function::new([(1, wasm_encoder::ValType::I32)]);
+                // Grow the memory by 1 page to allocate ourselves some stack space.
+                func.instruction(&I32Const(1));
+                func.instruction(&MemoryGrow(0));
+                func.instruction(&LocalTee(0));
+
+                // Test if the return value of the growth was -1 and trap if so
+                // since we don't have a stack page.
+                func.instruction(&I32Const(-1));
+                func.instruction(&I32Eq);
+                func.instruction(&If(wasm_encoder::BlockType::Empty));
+                func.instruction(&Unreachable);
+                func.instruction(&End);
+
+                // Set our stack pointer to the top of the page we were given, which
+                // is the page index times the page size plus the size of a page.
+                func.instruction(&LocalGet(0));
+                func.instruction(&I32Const(1));
+                func.instruction(&I32Add);
+                func.instruction(&I32Const(16));
+                func.instruction(&I32Shl);
+                func.instruction(&GlobalSet(sp));
+                func.instruction(&End);
+                code.function(&func);
+
+                start = Some(wasm_encoder::StartSection {
+                    function_index: num_funcs,
+                });
             }
-            assert_eq!(mutable_globals.len(), 1);
-            assert_eq!(mutable_globals[0].1.ty.content_type, ValType::I32);
-            let sp = map.globals.remap(mutable_globals[0].0);
-
-            // Generate a function type for this start function, adding a new
-            // function type to the module if necessary.
-            let empty_type = empty_type.unwrap_or_else(|| {
-                types.function([], []);
-                types.len() - 1
-            });
-            funcs.function(empty_type);
-
-            let mut func = wasm_encoder::Function::new([(1, wasm_encoder::ValType::I32)]);
-            // Grow the memory by 1 page to allocate ourselves some stack space.
-            func.instruction(&I32Const(1));
-            func.instruction(&MemoryGrow(0));
-            func.instruction(&LocalTee(0));
-
-            // Test if the return value of the growth was -1 and trap if so
-            // since we don't have a stack page.
-            func.instruction(&I32Const(-1));
-            func.instruction(&I32Eq);
-            func.instruction(&If(wasm_encoder::BlockType::Empty));
-            func.instruction(&Unreachable);
-            func.instruction(&End);
-
-            // Set our stack pointer to the top of the page we were given, which
-            // is the page index times the page size plus the size of a page.
-            func.instruction(&LocalGet(0));
-            func.instruction(&I32Const(1));
-            func.instruction(&I32Add);
-            func.instruction(&I32Const(16));
-            func.instruction(&I32Shl);
-            func.instruction(&GlobalSet(sp));
-            func.instruction(&End);
-            code.function(&func);
-
-            start = Some(wasm_encoder::StartSection {
-                function_index: num_funcs,
-            });
         }
 
         // Sanity-check the shape of the module since some parts won't work if
@@ -659,6 +657,41 @@ impl<'a> Module<'a> {
         }
 
         Ok(ret.finish())
+    }
+
+    fn find_stack_pointer(&self) -> Result<Option<u32>> {
+        let mutable_i32_globals = self
+            .live_globals()
+            .filter(|(_, g)| g.ty.mutable && g.ty.content_type == ValType::I32)
+            .collect::<Vec<_>>();
+
+        // If there are no 32-bit mutable globals then there's definitely no
+        // stack pointer in this module
+        if mutable_i32_globals.is_empty() {
+            return Ok(None);
+        }
+
+        // If there are some mutable 32-bit globals then there's currently no
+        // great way of determining which is the stack pointer. For now a hack
+        // is used where we use the name section to find the name that LLVM
+        // injects. This hopefully can be improved in the future.
+        let stack_pointers = mutable_i32_globals
+            .iter()
+            .filter_map(|(i, _)| {
+                let name = *self.global_names.get(&i)?;
+                if name == "__stack_pointer" {
+                    Some(*i)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        match stack_pointers.len() {
+            0 => Ok(None),
+            1 => Ok(Some(stack_pointers[0])),
+            n => bail!("found {n} globals that look like the stack pointer"),
+        }
     }
 }
 

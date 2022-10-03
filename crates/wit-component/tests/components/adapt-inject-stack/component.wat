@@ -7,12 +7,12 @@
     (import "new" "get-two" (func $get_two (;0;) (type 0)))
     (func (;1;) (type 1) (result i32)
       (local i32 i32)
-      global.get $sp
+      global.get $__stack_pointer
       local.tee 0
       i32.const 8
       i32.sub
       local.tee 1
-      global.set $sp
+      global.set $__stack_pointer
       local.get 1
       call $get_two
       local.get 1
@@ -20,8 +20,10 @@
       local.get 1
       i32.load offset=4
       i32.add
+      global.get $some_other_mutable_global
+      global.set $some_other_mutable_global
       local.get 0
-      global.set $sp
+      global.set $__stack_pointer
     )
     (func $initialize_stack_pointer (;2;) (type 2)
       (local i32)
@@ -38,9 +40,10 @@
       i32.add
       i32.const 16
       i32.shl
-      global.set $sp
+      global.set $__stack_pointer
     )
-    (global $sp (;0;) (mut i32) i32.const 0)
+    (global $__stack_pointer (;0;) (mut i32) i32.const 0)
+    (global $some_other_mutable_global (;1;) (mut i32) i32.const 0)
     (export "get_sum" (func 1))
     (start $initialize_stack_pointer)
   )
