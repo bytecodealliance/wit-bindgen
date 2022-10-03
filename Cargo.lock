@@ -1585,7 +1585,17 @@ dependencies = [
 [[package]]
 name = "wasm-encoder"
 version = "0.17.0"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=change-some-names#a65f3cbcea01437371c854cd4aea8cd44aac88f9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e7ca71c70a6de5b10968ae4d298e548366d9cd9588176e6ff8866f3c49c96ee"
+dependencies = [
+ "leb128",
+]
+
+[[package]]
+name = "wasm-encoder"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c64ac98d5d61192cc45c701b7e4bd0b9aff91e2edfc7a088406cfe2288581e2c"
 dependencies = [
  "leb128",
 ]
@@ -1601,19 +1611,21 @@ dependencies = [
 
 [[package]]
 name = "wasmparser"
-version = "0.91.0"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=change-some-names#a65f3cbcea01437371c854cd4aea8cd44aac88f9"
+version = "0.92.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da34cec2a8c23db906cdf8b26e988d7a7f0d549eb5d51299129647af61a1b37"
 dependencies = [
  "indexmap",
 ]
 
 [[package]]
 name = "wasmprinter"
-version = "0.2.40"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=change-some-names#a65f3cbcea01437371c854cd4aea8cd44aac88f9"
+version = "0.2.41"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca4374ec27194a12b85aa0e1681a42d5800e97f11c036fa85dea8087c8ccb10b"
 dependencies = [
  "anyhow",
- "wasmparser 0.91.0",
+ "wasmparser 0.92.0",
 ]
 
 [[package]]
@@ -1835,7 +1847,7 @@ dependencies = [
  "leb128",
  "memchr",
  "unicode-width",
- "wasm-encoder",
+ "wasm-encoder 0.17.0",
 ]
 
 [[package]]
@@ -2152,8 +2164,8 @@ dependencies = [
  "indexmap",
  "log",
  "pretty_assertions",
- "wasm-encoder",
- "wasmparser 0.91.0",
+ "wasm-encoder 0.18.0",
+ "wasmparser 0.92.0",
  "wasmprinter",
  "wat",
  "wit-parser",

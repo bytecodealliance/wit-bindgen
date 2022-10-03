@@ -7,11 +7,11 @@ use std::str::FromStr;
 use wasm_encoder::CanonicalOption;
 use wit_parser::Interface;
 
-mod adapter;
 #[cfg(feature = "cli")]
 pub mod cli;
 mod decoding;
 mod encoding;
+mod gc;
 mod printing;
 mod validation;
 

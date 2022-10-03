@@ -40,8 +40,16 @@ pub fn run(wasm: &[u8], required: &IndexMap<&str, FuncType>) -> Result<Vec<u8>> 
     module.encode()
 }
 
+// Representation of a wasm module which is used to GC a module to its minimal
+// set of required items necessary to implement the `exports`
+//
+// Note that this is not a complete representation of a wasm module since it
+// doesn't represent everything such as data and element segments. This is only
+// used for adapter modules which otherwise have these restrictions and makes
+// this gc pass a bit easier to write.
 #[derive(Default)]
 struct Module<'a> {
+    // Definitions found when parsing a module
     types: Vec<wasmparser::Type>,
     tables: Vec<Table<'a>>,
     globals: Vec<Global<'a>>,
@@ -50,47 +58,44 @@ struct Module<'a> {
     exports: IndexMap<&'a str, Export<'a>>,
     func_names: HashMap<u32, &'a str>,
 
-    worklist: Vec<(u32, fn(&mut Module<'a>, u32) -> Result<()>)>,
+    // Known-live sets of indices after the `liveness` pass has run.
     live_types: BitVec,
     live_tables: BitVec,
     live_globals: BitVec,
     live_memories: BitVec,
     live_funcs: BitVec,
-}
 
-enum Definition<'a> {
-    Import(&'a str, &'a str),
-    Local,
+    // Helper data structure used during the `liveness` path to avoid recursion.
+    // When calculating the liveness of an item this `worklist` is pushed to and
+    // then processed until it's empty. An item pushed onto this list represents
+    // a new index that has been discovered to be live and the function is wehat
+    // walks the item's definition to find other items that it references.
+    worklist: Vec<(u32, fn(&mut Module<'a>, u32) -> Result<()>)>,
 }
 
 struct Table<'a> {
-    def: Definition<'a>,
+    def: Definition<'a, ()>,
     ty: TableType,
 }
 
 struct Memory<'a> {
-    def: Definition<'a>,
+    def: Definition<'a, ()>,
     ty: MemoryType,
 }
 
 struct Global<'a> {
-    def: GlobalDefinition<'a>,
+    def: Definition<'a, ConstExpr<'a>>,
     ty: GlobalType,
 }
 
-enum GlobalDefinition<'a> {
-    Import(&'a str, &'a str),
-    Local(ConstExpr<'a>),
-}
-
 struct Func<'a> {
-    def: FuncDefinition<'a>,
+    def: Definition<'a, FunctionBody<'a>>,
     ty: u32,
 }
 
-enum FuncDefinition<'a> {
+enum Definition<'a, T> {
     Import(&'a str, &'a str),
-    Local(FunctionBody<'a>),
+    Local(T),
 }
 
 impl<'a> Module<'a> {
@@ -117,7 +122,7 @@ impl<'a> Module<'a> {
                         let i = i?;
                         match i.ty {
                             TypeRef::Func(ty) => self.funcs.push(Func {
-                                def: FuncDefinition::Import(i.module, i.name),
+                                def: Definition::Import(i.module, i.name),
                                 ty,
                             }),
                             TypeRef::Table(ty) => self.tables.push(Table {
@@ -125,7 +130,7 @@ impl<'a> Module<'a> {
                                 ty,
                             }),
                             TypeRef::Global(ty) => self.globals.push(Global {
-                                def: GlobalDefinition::Import(i.module, i.name),
+                                def: Definition::Import(i.module, i.name),
                                 ty,
                             }),
                             TypeRef::Memory(ty) => self.memories.push(Memory {
@@ -140,7 +145,7 @@ impl<'a> Module<'a> {
                     for ty in s {
                         let ty = ty?;
                         self.tables.push(Table {
-                            def: Definition::Local,
+                            def: Definition::Local(()),
                             ty,
                         });
                     }
@@ -149,7 +154,7 @@ impl<'a> Module<'a> {
                     for ty in s {
                         let ty = ty?;
                         self.memories.push(Memory {
-                            def: Definition::Local,
+                            def: Definition::Local(()),
                             ty,
                         });
                     }
@@ -158,7 +163,7 @@ impl<'a> Module<'a> {
                     for g in s {
                         let g = g?;
                         self.globals.push(Global {
-                            def: GlobalDefinition::Local(g.init_expr),
+                            def: Definition::Local(g.init_expr),
                             ty: g.ty,
                         });
                     }
@@ -176,7 +181,9 @@ impl<'a> Module<'a> {
                     for ty in s {
                         let ty = ty?;
                         self.funcs.push(Func {
-                            def: FuncDefinition::Local(FunctionBody::new(0, &[])),
+                            // Specify a dummy definition to get filled in later
+                            // when parsing the code section.
+                            def: Definition::Local(FunctionBody::new(0, &[])),
                             ty,
                         });
                     }
@@ -184,16 +191,16 @@ impl<'a> Module<'a> {
 
                 Payload::CodeSectionStart { .. } => {}
                 Payload::CodeSectionEntry(body) => {
-                    self.funcs[next_code_index].def = FuncDefinition::Local(body);
+                    self.funcs[next_code_index].def = Definition::Local(body);
                     next_code_index += 1;
                 }
 
-                // drop all custom sections
+                // Ignore all custom sections except for the `name` section
+                // which we parse, but ignore errors within.
                 Payload::CustomSection(s) => {
-                    if s.name() != "name" {
-                        continue;
+                    if s.name() == "name" {
+                        drop(self.parse_name_section(&s));
                     }
-                    drop(self.parse_name_section(&s));
                 }
 
                 // sections that shouldn't appear in the specially-crafted core wasm
@@ -244,6 +251,8 @@ impl<'a> Module<'a> {
         Ok(())
     }
 
+    /// Iteratively calculates the set of live items within this module
+    /// considering all exports as the root of live functions.
     fn liveness(&mut self) -> Result<()> {
         let exports = mem::take(&mut self.exports);
         for (_, e) in exports.iter() {
@@ -271,8 +280,8 @@ impl<'a> Module<'a> {
             let func = &me.funcs[func as usize];
             me.live_types.insert(func.ty);
             let mut body = match &func.def {
-                FuncDefinition::Import(..) => return Ok(()),
-                FuncDefinition::Local(e) => e.get_binary_reader(),
+                Definition::Import(..) => return Ok(()),
+                Definition::Local(e) => e.get_binary_reader(),
             };
             let local_count = body.read_var_u32()?;
             for _ in 0..local_count {
@@ -289,8 +298,8 @@ impl<'a> Module<'a> {
         }
         self.worklist.push((global, |me, global| {
             let init = match &me.globals[global as usize].def {
-                GlobalDefinition::Import(..) => return Ok(()),
-                GlobalDefinition::Local(e) => e,
+                Definition::Import(..) => return Ok(()),
+                Definition::Local(e) => e,
             };
             me.operators(init.get_binary_reader())
         }));
@@ -337,9 +346,15 @@ impl<'a> Module<'a> {
         live_iter(&self.live_tables, self.tables.iter())
     }
 
+    /// Encodes this `Module` to a new wasm module which is gc'd and only
+    /// contains the items that are live as calculated by the `liveness` pass.
     fn encode(&mut self) -> Result<Vec<u8>> {
+        // Data structure used to track the mapping of old index to new index
+        // for all live items.
         let mut map = Encoder::default();
 
+        // Sections that will be assembled into the final module at the end of
+        // this function.
         let mut types = wasm_encoder::TypeSection::new();
         let mut imports = wasm_encoder::ImportSection::new();
         let mut funcs = wasm_encoder::FunctionSection::new();
@@ -357,6 +372,10 @@ impl<'a> Module<'a> {
                         ty.params().iter().copied().map(valty),
                         ty.results().iter().copied().map(valty),
                     );
+
+                    // Keep track of the "empty type" to see if we can reuse an
+                    // existing one or one needs to be injected if a `start`
+                    // function is calculated at the end.
                     if ty.params().len() == 0 && ty.results().len() == 0 {
                         empty_type = Some(map.types.remap(i));
                     }
@@ -377,7 +396,7 @@ impl<'a> Module<'a> {
                 Definition::Import(m, n) => {
                     imports.import(m, n, ty);
                 }
-                Definition::Local => {
+                Definition::Local(()) => {
                     memories.memory(ty);
                 }
             }
@@ -395,7 +414,7 @@ impl<'a> Module<'a> {
                 Definition::Import(m, n) => {
                     imports.import(m, n, ty);
                 }
-                Definition::Local => {
+                Definition::Local(()) => {
                     tables.table(ty);
                 }
             }
@@ -408,10 +427,10 @@ impl<'a> Module<'a> {
                 val_type: valty(global.ty.content_type),
             };
             match &global.def {
-                GlobalDefinition::Import(m, n) => {
+                Definition::Import(m, n) => {
                     imports.import(m, n, ty);
                 }
-                GlobalDefinition::Local(init) => {
+                Definition::Local(init) => {
                     let mut bytes = map.operators(init.get_binary_reader())?;
                     assert_eq!(bytes.pop(), Some(0xb));
                     globals.global(ty, &wasm_encoder::ConstExpr::raw(bytes));
@@ -419,15 +438,18 @@ impl<'a> Module<'a> {
             }
         }
 
+        // For functions first assign a new index to all functions and then
+        // afterwards actually map the body of all functions so the `map` of all
+        // index mappings is fully populated before instructions are mapped.
         let mut num_funcs = 0;
         for (i, func) in self.live_funcs() {
             map.funcs.push(i);
             let ty = map.types.remap(func.ty);
             match &func.def {
-                FuncDefinition::Import(m, n) => {
+                Definition::Import(m, n) => {
                     imports.import(m, n, EntityType::Function(ty));
                 }
-                FuncDefinition::Local(_) => {
+                Definition::Local(_) => {
                     funcs.function(ty);
                 }
             }
@@ -436,8 +458,8 @@ impl<'a> Module<'a> {
 
         for (_, func) in self.live_funcs() {
             let mut body = match &func.def {
-                FuncDefinition::Import(..) => continue,
-                FuncDefinition::Local(body) => body.get_binary_reader(),
+                Definition::Import(..) => continue,
+                Definition::Local(body) => body.get_binary_reader(),
             };
             let mut locals = Vec::new();
             for _ in 0..body.read_var_u32()? {
@@ -546,30 +568,32 @@ impl<'a> Module<'a> {
             ret.section(&globals);
         }
 
-        let mut exports = wasm_encoder::ExportSection::new();
-        for (_, export) in self.exports.iter() {
-            let (kind, index) = match export.kind {
-                ExternalKind::Func => (
-                    wasm_encoder::ExportKind::Func,
-                    map.funcs.remap(export.index),
-                ),
-                ExternalKind::Table => (
-                    wasm_encoder::ExportKind::Table,
-                    map.tables.remap(export.index),
-                ),
-                ExternalKind::Memory => (
-                    wasm_encoder::ExportKind::Memory,
-                    map.memories.remap(export.index),
-                ),
-                ExternalKind::Global => (
-                    wasm_encoder::ExportKind::Global,
-                    map.globals.remap(export.index),
-                ),
-                kind => bail!("unsupported export kind {kind:?}"),
-            };
-            exports.export(export.name, kind, index);
+        if !self.exports.is_empty() {
+            let mut exports = wasm_encoder::ExportSection::new();
+            for (_, export) in self.exports.iter() {
+                let (kind, index) = match export.kind {
+                    ExternalKind::Func => (
+                        wasm_encoder::ExportKind::Func,
+                        map.funcs.remap(export.index),
+                    ),
+                    ExternalKind::Table => (
+                        wasm_encoder::ExportKind::Table,
+                        map.tables.remap(export.index),
+                    ),
+                    ExternalKind::Memory => (
+                        wasm_encoder::ExportKind::Memory,
+                        map.memories.remap(export.index),
+                    ),
+                    ExternalKind::Global => (
+                        wasm_encoder::ExportKind::Global,
+                        map.globals.remap(export.index),
+                    ),
+                    kind => bail!("unsupported export kind {kind:?}"),
+                };
+                exports.export(export.name, kind, index);
+            }
+            ret.section(&exports);
         }
-        ret.section(&exports);
 
         if let Some(start) = &start {
             ret.section(start);
@@ -579,7 +603,8 @@ impl<'a> Module<'a> {
             ret.section(&code);
         }
 
-        // Append a custom `name` section if one is found
+        // Append a custom `name` section using the names of the functions that
+        // were found prior to the GC pass in the original module.
         let mut func_names = Vec::new();
         for (i, _func) in self.live_funcs() {
             let name = match self.func_names.get(&i) {
@@ -779,7 +804,7 @@ macro_rules! define_encode {
     // translated to wasm-encoder fields.
     (mk $op:ident $($arg:ident)*) => ($op { $($arg),* });
 
-    // Individual cases of mapping one argument type to another, similar tot he
+    // Individual cases of mapping one argument type to another, similar to the
     // `define_visit` macro above.
     (map $self:ident $arg:ident memarg) => {$self.memarg($arg)};
     (map $self:ident $arg:ident blockty) => {$self.blockty($arg)};
@@ -828,6 +853,8 @@ fn valty(ty: wasmparser::ValType) -> wasm_encoder::ValType {
     }
 }
 
+// Minimal definition of a bit vector necessary for the liveness calculations
+// above.
 mod bitvec {
     use std::mem;
 
@@ -839,6 +866,8 @@ mod bitvec {
     }
 
     impl BitVec {
+        /// Inserts `idx` into this bit vector, returning whether it was not
+        /// previously present.
         pub fn insert(&mut self, idx: u32) -> bool {
             let (idx, bit) = idx_bit(idx);
             match self.bits.get_mut(idx) {
@@ -856,6 +885,7 @@ mod bitvec {
             true
         }
 
+        /// Returns whether this bit vector contains the specified `idx`th bit.
         pub fn contains(&self, idx: u32) -> bool {
             let (idx, bit) = idx_bit(idx);
             match self.bits.get(idx) {
@@ -874,19 +904,33 @@ mod bitvec {
     }
 }
 
+/// Small data structure used to track index mappings from an old index space to
+/// a new.
 #[derive(Default)]
 struct Remap {
+    /// Map, indexed by the old index set, to the new index set.
+    ///
+    /// Placeholders of `u32::MAX` means that the old index is not present in
+    /// the new index space.
     map: Vec<u32>,
+    /// The next available index in the new index space.
     next: u32,
 }
 
 impl Remap {
-    fn push(&mut self, idx: u32) {
-        self.map.resize(idx as usize, u32::MAX);
+    /// Appends a new live "old index" into this remapping structure.
+    ///
+    /// This will assign a new index for the old index provided. This method
+    /// must be called in increasing order of old indexes.
+    fn push(&mut self, old: u32) {
+        self.map.resize(old as usize, u32::MAX);
         self.map.push(self.next);
         self.next += 1;
     }
 
+    /// Returns the new index corresponding to an old index.
+    ///
+    /// Panics if the `old` index was not added via `push` above.
     fn remap(&self, old: u32) -> u32 {
         let ret = self.map[old as usize];
         assert!(ret != u32::MAX);

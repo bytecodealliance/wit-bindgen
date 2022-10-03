@@ -61,16 +61,14 @@ fn main() {
 
             let import = Interface::parse_file(&test_dir.join("imports.wit")).unwrap();
             let export = Interface::parse_file(&test_dir.join("exports.wit")).unwrap();
-            let imports = &[import];
-            let exports = &[export];
             let mut files = Default::default();
             // TODO: should combine this into one
             wit_bindgen_gen_guest_c::Opts::default()
                 .build()
-                .generate_all(imports, &[], &mut files);
+                .generate_all(&[import], &[], &mut files);
             wit_bindgen_gen_guest_c::Opts::default()
                 .build()
-                .generate_all(&[], exports, &mut files);
+                .generate_all(&[], &[export], &mut files);
 
             let out_dir = out_dir.join(format!(
                 "c-{}",
@@ -122,16 +120,6 @@ fn main() {
                 test_dir.file_stem().unwrap().to_str().unwrap().to_string(),
                 out_wasm.to_str().unwrap().to_string(),
             ));
-
-            let wasm = std::fs::read(&out_wasm).unwrap();
-            wit_component::ComponentEncoder::default()
-                .validate(true)
-                .module(&wasm)
-                .imports(imports)
-                .interface(&exports[0])
-                .wasi(true)
-                .encode()
-                .unwrap();
         }
     }
 
