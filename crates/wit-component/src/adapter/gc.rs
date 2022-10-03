@@ -636,6 +636,7 @@ macro_rules! define_visit {
     (mark_live $self:ident $arg:ident dst_table) => {$self.table($arg);};
     (mark_live $self:ident $arg:ident table_index) => {$self.table($arg);};
     (mark_live $self:ident $arg:ident table) => {$self.table($arg);};
+    (mark_live $self:ident $arg:ident table_index) => {$self.table($arg);};
     (mark_live $self:ident $arg:ident global_index) => {$self.global($arg);};
     (mark_live $self:ident $arg:ident function_index) => {$self.func($arg);};
     (mark_live $self:ident $arg:ident mem) => {$self.memory($arg);};
@@ -647,7 +648,6 @@ macro_rules! define_visit {
     (mark_live $self:ident $arg:ident lanes) => {};
     (mark_live $self:ident $arg:ident flags) => {};
     (mark_live $self:ident $arg:ident value) => {};
-    (mark_live $self:ident $arg:ident segment) => {};
     (mark_live $self:ident $arg:ident mem_byte) => {};
     (mark_live $self:ident $arg:ident table_byte) => {};
     (mark_live $self:ident $arg:ident local_index) => {};
@@ -655,6 +655,8 @@ macro_rules! define_visit {
     (mark_live $self:ident $arg:ident tag_index) => {};
     (mark_live $self:ident $arg:ident targets) => {};
     (mark_live $self:ident $arg:ident ty) => {};
+    (mark_live $self:ident $arg:ident data_index) => {};
+    (mark_live $self:ident $arg:ident elem_index) => {};
 }
 
 impl<'a> VisitOperator<'a> for Module<'a> {
@@ -715,10 +717,6 @@ impl Encoder {
     }
 }
 
-fn unsupported_insn(x: &str) -> wasm_encoder::Instruction<'static> {
-    panic!("unsupported instruction {x}")
-}
-
 // This is a helper macro to translate all `wasmparser` instructions to
 // `wasm-encoder` instructions without having to list out every single
 // instruction itself.
@@ -732,7 +730,12 @@ macro_rules! define_encode {
             fn $visit(&mut self, _offset: usize $(, $($arg: $argty),*)?)  {
                 #[allow(unused_imports)]
                 use wasm_encoder::Instruction::*;
-                let insn = define_encode!(mk self $op $({ $($arg: $argty),* })?);
+                $(
+                    $(
+                        let $arg = define_encode!(map self $arg $arg);
+                    )*
+                )?
+                let insn = define_encode!(mk $op $($($arg)*)?);
                 insn.encode(&mut self.buf);
             }
         )*
@@ -740,43 +743,41 @@ macro_rules! define_encode {
 
     // No-payload instructions are named the same in wasmparser as they are in
     // wasm-encoder
-    (mk $self:ident $op:ident) => ($op);
-
-    // Instructions supported in wasmparser but not in wasm-encoder
-    (mk $self:ident ReturnCall $x:tt) => (unsupported_insn("ReturnCall"));
-    (mk $self:ident ReturnCallIndirect $x:tt) => (unsupported_insn("ReturnCallIndirect"));
+    (mk $op:ident) => ($op);
 
     // Instructions which need "special care" to map from wasmparser to
     // wasm-encoder
-    (mk $self:ident BrTable { $arg:ident: $ty:ty }) => ({
-        let targets = $arg.targets().map(|i| i.unwrap()).collect::<Vec<_>>();
-        BrTable(targets.into(), $arg.default())
+    (mk BrTable $arg:ident) => ({
+        BrTable($arg.0, $arg.1)
     });
-    (mk $self:ident CallIndirect { $ty:ident: $a:ty, $table:ident: $b:ty, table_byte: $c:ty }) => ({
-        CallIndirect { ty: $self.types.remap($ty), table: $self.tables.remap($table) }
+    (mk CallIndirect $ty:ident $table:ident $table_byte:ident) => ({
+        drop($table_byte);
+        CallIndirect { ty: $ty, table: $table }
     });
-    (mk $self:ident MemorySize { $mem:ident: $a:ty, mem_byte: $b:ty }) => ({
-        MemorySize($self.memories.remap($mem))
+    (mk ReturnCallIndirect $ty:ident $table:ident) => (
+        ReturnCallIndirect { ty: $ty, table: $table }
+    );
+    (mk MemorySize $mem:ident $mem_byte:ident) => ({
+        drop($mem_byte);
+        MemorySize($mem)
     });
-    (mk $self:ident MemoryGrow { $mem:ident: $a:ty, mem_byte: $b:ty }) => ({
-        MemoryGrow($self.memories.remap($mem))
+    (mk MemoryGrow $mem:ident $mem_byte:ident) => ({
+        drop($mem_byte);
+        MemoryGrow($mem)
     });
-    (mk self AtomicFence $x:tt) => (AtomicFence);
-    (mk self I32Const { $v:ident: $t:ty }) => (I32Const($v));
-    (mk self I64Const { $v:ident: $t:ty }) => (I64Const($v));
-    (mk self F32Const { $v:ident: $t:ty }) => (F32Const(f32::from_bits($v.bits())));
-    (mk self F64Const { $v:ident: $t:ty }) => (F64Const(f64::from_bits($v.bits())));
-    (mk self V128Const { $v:ident: $t:ty }) => (V128Const($v.i128()));
+    (mk I32Const $v:ident) => (I32Const($v));
+    (mk I64Const $v:ident) => (I64Const($v));
+    (mk F32Const $v:ident) => (F32Const(f32::from_bits($v.bits())));
+    (mk F64Const $v:ident) => (F64Const(f64::from_bits($v.bits())));
+    (mk V128Const $v:ident) => (V128Const($v.i128()));
 
     // Catch-all for the translation of one payload argument which is typically
     // represented as a tuple-enum in wasm-encoder.
-    (mk $self:ident $op:ident { $arg:ident: $t:ty }) => ($op(define_encode!(map $self $arg $arg)));
+    (mk $op:ident $arg:ident) => ($op($arg));
 
     // Catch-all of everything else where the wasmparser fields are simply
     // translated to wasm-encoder fields.
-    (mk $self:ident $op:ident { $($arg:ident: $ty:ty),* }) => ($op {
-        $($arg: define_encode!(map $self $arg $arg)),*
-    });
+    (mk $op:ident $($arg:ident)*) => ($op { $($arg),* });
 
     // Individual cases of mapping one argument type to another, similar tot he
     // `define_visit` macro above.
@@ -790,13 +791,23 @@ macro_rules! define_encode {
     (map $self:ident $arg:ident src_mem) => {$self.memories.remap($arg)};
     (map $self:ident $arg:ident dst_mem) => {$self.memories.remap($arg)};
     (map $self:ident $arg:ident table) => {$self.tables.remap($arg)};
+    (map $self:ident $arg:ident table_index) => {$self.tables.remap($arg)};
     (map $self:ident $arg:ident src_table) => {$self.tables.remap($arg)};
     (map $self:ident $arg:ident dst_table) => {$self.tables.remap($arg)};
+    (map $self:ident $arg:ident type_index) => {$self.types.remap($arg)};
     (map $self:ident $arg:ident ty) => {valty($arg)};
     (map $self:ident $arg:ident local_index) => {$arg};
-    (map $self:ident $arg:ident segment) => {$arg};
     (map $self:ident $arg:ident lane) => {$arg};
     (map $self:ident $arg:ident lanes) => {$arg};
+    (map $self:ident $arg:ident elem_index) => {$arg};
+    (map $self:ident $arg:ident data_index) => {$arg};
+    (map $self:ident $arg:ident table_byte) => {$arg};
+    (map $self:ident $arg:ident mem_byte) => {$arg};
+    (map $self:ident $arg:ident value) => {$arg};
+    (map $self:ident $arg:ident targets) => ((
+        $arg.targets().map(|i| i.unwrap()).collect::<Vec<_>>().into(),
+        $arg.default(),
+    ));
 }
 
 impl<'a> VisitOperator<'a> for Encoder {

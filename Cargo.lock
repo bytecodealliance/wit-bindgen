@@ -1585,7 +1585,7 @@ dependencies = [
 [[package]]
 name = "wasm-encoder"
 version = "0.17.0"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=change-some-names#fbe9292d713440a285ae1fd0d037ada6dd502a8f"
+source = "git+https://github.com/alexcrichton/wasm-tools?branch=change-some-names#a65f3cbcea01437371c854cd4aea8cd44aac88f9"
 dependencies = [
  "leb128",
 ]
@@ -1602,7 +1602,7 @@ dependencies = [
 [[package]]
 name = "wasmparser"
 version = "0.91.0"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=change-some-names#fbe9292d713440a285ae1fd0d037ada6dd502a8f"
+source = "git+https://github.com/alexcrichton/wasm-tools?branch=change-some-names#a65f3cbcea01437371c854cd4aea8cd44aac88f9"
 dependencies = [
  "indexmap",
 ]
@@ -1610,8 +1610,7 @@ dependencies = [
 [[package]]
 name = "wasmprinter"
 version = "0.2.40"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85b5931cf673c4bece6299719c024c08ebe52cbac7124160487a602c81e598c8"
+source = "git+https://github.com/alexcrichton/wasm-tools?branch=change-some-names#a65f3cbcea01437371c854cd4aea8cd44aac88f9"
 dependencies = [
  "anyhow",
  "wasmparser 0.91.0",
