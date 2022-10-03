@@ -522,6 +522,7 @@ impl<'a> Module<'a> {
             func.instruction(&I32Const(16));
             func.instruction(&I32Shl);
             func.instruction(&GlobalSet(sp));
+            func.instruction(&End);
             code.function(&func);
 
             start = Some(wasm_encoder::StartSection {
