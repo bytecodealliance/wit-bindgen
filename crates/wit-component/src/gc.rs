@@ -625,6 +625,9 @@ impl<'a> Module<'a> {
             };
             func_names.push((map.funcs.remap(i), *name));
         }
+        if start.is_some() {
+            func_names.push((num_funcs, "initialize_stack_pointer"));
+        }
         for (i, _global) in self.live_globals() {
             let name = match self.global_names.get(&i) {
                 Some(name) => name,
@@ -632,26 +635,23 @@ impl<'a> Module<'a> {
             };
             global_names.push((map.globals.remap(i), *name));
         }
-        if start.is_some() {
-            func_names.push((num_funcs, "initialize_stack_pointer"));
-        }
-        if !func_names.is_empty() || !global_names.is_empty() {
-            let mut section = Vec::new();
-            let mut encode_subsection = |code: u8, names: &[(u32, &str)]| {
-                if names.is_empty() {
-                    return;
-                }
-                let mut subsection = Vec::new();
-                names.len().encode(&mut subsection);
-                for (i, name) in names {
-                    i.encode(&mut subsection);
-                    name.encode(&mut subsection);
-                }
-                section.push(code);
-                subsection.encode(&mut section);
-            };
-            encode_subsection(0x01, &func_names);
-            encode_subsection(0x07, &global_names);
+        let mut section = Vec::new();
+        let mut encode_subsection = |code: u8, names: &[(u32, &str)]| {
+            if names.is_empty() {
+                return;
+            }
+            let mut subsection = Vec::new();
+            names.len().encode(&mut subsection);
+            for (i, name) in names {
+                i.encode(&mut subsection);
+                name.encode(&mut subsection);
+            }
+            section.push(code);
+            subsection.encode(&mut section);
+        };
+        encode_subsection(0x01, &func_names);
+        encode_subsection(0x07, &global_names);
+        if !section.is_empty() {
             ret.section(&wasm_encoder::CustomSection {
                 name: "name",
                 data: &section,
