@@ -57,6 +57,7 @@ struct Module<'a> {
     funcs: Vec<Func<'a>>,
     exports: IndexMap<&'a str, Export<'a>>,
     func_names: HashMap<u32, &'a str>,
+    global_names: HashMap<u32, &'a str>,
 
     // Known-live sets of indices after the `liveness` pass has run.
     live_types: BitVec,
@@ -243,6 +244,13 @@ impl<'a> Module<'a> {
                     for _ in 0..map.get_count() {
                         let naming = map.read()?;
                         self.func_names.insert(naming.index, naming.name);
+                    }
+                }
+                Name::Global(map) => {
+                    let mut map = map.get_map()?;
+                    for _ in 0..map.get_count() {
+                        let naming = map.read()?;
+                        self.global_names.insert(naming.index, naming.name);
                     }
                 }
                 _ => {}
@@ -487,7 +495,9 @@ impl<'a> Module<'a> {
             // If there are any memories or any mutable globals there must be
             // precisely one of each as otherwise we don't know how to filter
             // down to the right one.
-            assert_eq!(num_memories, 1);
+            if num_memories != 1 {
+                bail!("adapter modules don't support multi-memory");
+            }
             assert_eq!(mutable_globals.len(), 1);
             assert_eq!(mutable_globals[0].1.ty.content_type, ValType::I32);
             let sp = map.globals.remap(mutable_globals[0].0);
@@ -607,6 +617,7 @@ impl<'a> Module<'a> {
         // Append a custom `name` section using the names of the functions that
         // were found prior to the GC pass in the original module.
         let mut func_names = Vec::new();
+        let mut global_names = Vec::new();
         for (i, _func) in self.live_funcs() {
             let name = match self.func_names.get(&i) {
                 Some(name) => name,
@@ -614,19 +625,33 @@ impl<'a> Module<'a> {
             };
             func_names.push((map.funcs.remap(i), *name));
         }
+        for (i, _global) in self.live_globals() {
+            let name = match self.global_names.get(&i) {
+                Some(name) => name,
+                None => continue,
+            };
+            global_names.push((map.globals.remap(i), *name));
+        }
         if start.is_some() {
             func_names.push((num_funcs, "initialize_stack_pointer"));
         }
-        if !func_names.is_empty() {
-            let mut subsection = Vec::new();
-            func_names.len().encode(&mut subsection);
-            for (i, name) in func_names {
-                i.encode(&mut subsection);
-                name.encode(&mut subsection);
-            }
+        if !func_names.is_empty() || !global_names.is_empty() {
             let mut section = Vec::new();
-            section.push(0x01);
-            subsection.encode(&mut section);
+            let mut encode_subsection = |code: u8, names: &[(u32, &str)]| {
+                if names.is_empty() {
+                    return;
+                }
+                let mut subsection = Vec::new();
+                names.len().encode(&mut subsection);
+                for (i, name) in names {
+                    i.encode(&mut subsection);
+                    name.encode(&mut subsection);
+                }
+                section.push(code);
+                subsection.encode(&mut section);
+            };
+            encode_subsection(0x01, &func_names);
+            encode_subsection(0x07, &global_names);
             ret.section(&wasm_encoder::CustomSection {
                 name: "name",
                 data: &section,
