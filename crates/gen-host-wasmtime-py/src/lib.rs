@@ -41,8 +41,7 @@ struct Imports {
 }
 
 struct Import {
-    base_name: String,
-    mangled_name: String,
+    name: String,
     src: Source,
     wasm_ty: String,
     pysig: String,
@@ -57,7 +56,7 @@ struct Exports {
 
 struct Export {
     python_type: &'static str,
-    base_name: String,
+    name: String,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -448,8 +447,7 @@ impl Generator for WasmtimePy {
         );
         wasm_ty.push_str("])");
         let import = Import {
-            base_name: func.name.clone(),
-            mangled_name: iface.mangle_funcname(func),
+            name: func.name.clone(),
             src: func_body,
             wasm_ty,
             pysig,
@@ -530,7 +528,7 @@ impl Generator for WasmtimePy {
                 "memory".to_string(),
                 Export {
                     python_type: "wasmtime.Memory",
-                    base_name: "memory".to_owned(),
+                    name: "memory".to_owned(),
                 },
             );
         }
@@ -539,15 +537,15 @@ impl Generator for WasmtimePy {
                 name.clone(),
                 Export {
                     python_type: "wasmtime.Func",
-                    base_name: name.clone(),
+                    name: name.clone(),
                 },
             );
         }
         exports.fields.insert(
-            iface.mangle_funcname(func),
+            func.name.clone(),
             Export {
                 python_type: "wasmtime.Func",
-                base_name: func.name.clone(),
+                name: func.name.clone(),
             },
         );
 
@@ -712,8 +710,8 @@ impl Generator for WasmtimePy {
                 self.src.push_str(&format!(
                     "linker.define('{}', '{}', wasmtime.Func(store, ty, {}, access_caller = True))\n",
                     iface.name,
-                    func.mangled_name,
-                    func.base_name.to_snake_case(),
+                    func.name,
+                    func.name.to_snake_case(),
                 ));
             }
 
@@ -767,7 +765,7 @@ impl Generator for WasmtimePy {
             for (_name, export) in exports.fields.iter() {
                 self.src.push_str(&format!(
                     "_{}: {}\n",
-                    export.base_name.to_snake_case(),
+                    export.name.to_snake_case(),
                     export.python_type
                 ));
             }
@@ -826,7 +824,7 @@ impl Generator for WasmtimePy {
                         self._{snake} = {snake}
                     ",
                     name = name,
-                    snake = export.base_name.to_snake_case(),
+                    snake = export.name.to_snake_case(),
                     ty = export.python_type,
                 ));
             }
@@ -1694,8 +1692,7 @@ impl Bindgen for FunctionBindgen<'_> {
             }
             Instruction::CallWasm {
                 iface: _,
-                base_name,
-                mangled_name: _,
+                name,
                 sig,
             } => {
                 if sig.results.len() > 0 {
@@ -1711,7 +1708,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
                 builder.push_str(&self.src_object);
                 builder.push_str("._");
-                builder.push_str(&base_name.to_snake_case());
+                builder.push_str(&name.to_snake_case());
                 builder.push_str("(caller");
                 if operands.len() > 0 {
                     builder.push_str(", ");
@@ -1771,7 +1768,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         name.clone(),
                         Export {
                             python_type: "wasmtime.Func",
-                            base_name: name.clone(),
+                            name: name.clone(),
                         },
                     );
                     let name = name.to_snake_case();
