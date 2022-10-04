@@ -19,5 +19,5 @@ wit-bindgen-gen-host-js = { workspace = true }
 wit-bindgen-gen-guest-c = { workspace = true }
 wit-bindgen-gen-guest-teavm-java = { workspace = true }
 wit-bindgen-gen-markdown = { workspace = true }
-wit-bindgen-guest-rust = { workspace = true }
+wit-bindgen-guest-rust = { workspace = true, features = ["macros"] }
 wasmprinter = { workspace = true }
