@@ -39,21 +39,51 @@ fn wasm_sig_to_func_type(signature: WasmSignature) -> FuncType {
     )
 }
 
+/// Metadata about a validated module and what was found internally.
+///
+/// All imports to the module are described by the union of `required_imports`
+/// and `adapters_required`.
+///
+/// This structure is created by the `validate_module` function.
 #[derive(Default)]
 pub struct ValidatedModule<'a> {
+    /// The required imports into this module which are to be satisfied by
+    /// imported component model instances.
+    ///
+    /// The key of this map is the name of the interface that the module imports
+    /// from and the value is the set of functions required from that interface.
+    /// This is used to generate an appropriate instance import in the generated
+    /// component which imports only the set of required functions.
     pub required_imports: IndexMap<&'a str, IndexSet<&'a str>>,
-    pub has_memory: bool,
-    pub has_realloc: bool,
+
+    /// This is the set of imports into the module which were not satisfied by
+    /// imported interfaces but are required to be satisfied by adapter modules.
+    ///
+    /// The key of this map is the name of the adapter that was imported into
+    /// the module and the value is a further map from function to function type
+    /// as required by this module. This map is used to shrink adapter modules
+    /// to the precise size required for this module by ensuring it doesn't
+    /// export (and subsequently import) extraneous functions.
     pub adapters_required: IndexMap<&'a str, IndexMap<&'a str, FuncType>>,
+
+    /// Whether or not this module exported a linear memory.
+    pub has_memory: bool,
+
+    /// Whether or not this module exported a `cabi_realloc` function.
+    pub has_realloc: bool,
 }
 
 /// This function validates the following:
-/// * The bytes represent a core WebAssembly module.
-/// * The module's imports are all satisfied by the given import interfaces.
-/// * The given default and exported interfaces are satisfied by the module's exports.
 ///
-/// Returns a tuple of the set of imported interfaces required by the module, whether
-/// the module exports a memory, and whether the module exports a realloc function.
+/// * The `bytes` represent a valid core WebAssembly module.
+/// * The module's imports are all satisfied by the given `imports` interfaces
+///   or the `adapters` set.
+/// * The given default and exported interfaces are satisfied by the module's
+///   exports.
+///
+/// The `ValidatedModule` return value contains the metadata which describes the
+/// input module on success. This is then further used to generate a component
+/// for this module.
 pub fn validate_module<'a>(
     bytes: &'a [u8],
     interface: &Option<&Interface>,
@@ -168,15 +198,48 @@ pub fn validate_module<'a>(
     Ok(ret)
 }
 
+/// Validation information from an "adapter module" which is distinct from a
+/// "main module" validated above.
+///
+/// This is created by the `validate_adapter_module` function.
 #[derive(Default, Debug)]
 pub struct ValidatedAdapter<'a> {
-    pub required_funcs: IndexSet<&'a str>,
+    /// If specified then this is the name of the required interface imported
+    /// into the adapter module.
+    ///
+    /// At this time only one interface import is supported. If this is `None`
+    /// then the adapter module didn't import any component model functions to
+    /// implement the required functionality.
     pub required_import: Option<&'a str>,
+
+    /// This is the set of required functions imported from `required_import`,
+    /// if `required_import` is specified.
+    pub required_funcs: IndexSet<&'a str>,
+
+    /// This is the module and field name of the memory import, if one is
+    /// specified.
+    ///
+    /// Due to LLVM codegen this is typically `env::memory` as a totally separte
+    /// import from the `required_import` above.
     pub needs_memory: Option<(String, String)>,
+
+    /// Flag for whether a `cabi_realloc` function was found within this module.
     pub has_realloc: bool,
 }
 
-/// TODO
+/// This function will validate the `bytes` provided as a wasm adapter module.
+/// Notably this will validate the wasm module itself in addition to ensuring
+/// that it has the "shape" of an adapter module. Current constraints are:
+///
+/// * The adapter module can import only one memory
+/// * The adapter module can only import from the name of `interface` specified,
+///   and all function imports must match the `required` types which correspond
+///   to the lowered types of the functions in `interface`.
+///
+/// The wasm module passed into this function is the output of the GC pass of an
+/// adapter module's original source. This means that the adapter module is
+/// already minimized and this is a double-check that the minimization pass
+/// didn't accidentally break the wasm module.
 pub fn validate_adapter_module<'a>(
     bytes: &[u8],
     interface: &'a Interface,
