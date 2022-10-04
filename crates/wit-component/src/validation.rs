@@ -260,7 +260,8 @@ pub fn validate_adapter_module<'a>(
     }
 
     let types = types.unwrap();
-    for (name, funcs) in &import_funcs {
+    let mut import_funcs = import_funcs.iter();
+    if let Some((name, funcs)) = import_funcs.next() {
         if *name != interface.name {
             bail!(
                 "adapter module imports from `{name}` which does not match \
@@ -270,6 +271,10 @@ pub fn validate_adapter_module<'a>(
         }
         ret.required_funcs = validate_imported_interface(interface, name, funcs, &types)?;
         ret.required_import = Some(interface.name.as_str());
+
+        if let Some((name, _)) = import_funcs.next() {
+            bail!("adapter module cannot import from a second interface `{name}`")
+        }
     }
 
     for (name, ty) in required {
