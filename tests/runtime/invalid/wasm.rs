@@ -16,14 +16,6 @@ extern "C" {
     fn roundtrip_char(a: i32) -> i32;
     #[link_name = "roundtrip-enum"]
     fn roundtrip_enum(a: i32) -> i32;
-    #[link_name = "get-internal"]
-    fn get_internal(a: i32) -> i32;
-}
-
-#[link(wasm_import_module = "canonical_abi")]
-extern "C" {
-    #[link_name = "resource_drop_host-state"]
-    fn resource_drop_host_state(a: i32);
 }
 
 struct Exports;
@@ -68,20 +60,6 @@ impl exports::Exports for Exports {
     fn invalid_enum() {
         unsafe {
             roundtrip_enum(400);
-        }
-        unreachable!();
-    }
-
-    fn invalid_handle() {
-        unsafe {
-            get_internal(100);
-        }
-        unreachable!();
-    }
-
-    fn invalid_handle_close() {
-        unsafe {
-            resource_drop_host_state(100);
         }
         unreachable!();
     }

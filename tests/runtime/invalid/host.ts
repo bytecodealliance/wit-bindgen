@@ -14,7 +14,6 @@ async function run() {
     roundtripBool(x) { throw new Error('unreachable'); },
     roundtripChar(x) { throw new Error('unreachable'); },
     roundtripEnum(x) { throw new Error('unreachable'); },
-    getInternal(x) { throw new Error('unreachable'); },
   };
   let instance: WebAssembly.Instance;
   addImportsToImports(importObj, imports);
@@ -32,8 +31,6 @@ async function run() {
   assert.throws(() => wasm.invalidS16(), /must be between/);
   assert.throws(() => wasm.invalidChar(), /not a valid char/);
   assert.throws(() => wasm.invalidEnum(), /invalid discriminant specified for E/);
-  assert.throws(() => wasm.invalidHandle(), /handle index not valid/);
-  assert.throws(() => wasm.invalidHandleClose(), /handle index not valid/);
 }
 
 await run()

@@ -26,7 +26,6 @@ pub struct Wasmtime {
     needs_custom_error_to_trap: bool,
     needs_custom_error_to_types: BTreeSet<String>,
     all_needed_handles: BTreeSet<String>,
-    exported_resources: BTreeSet<ResourceId>,
     types: Types,
     guest_imports: HashMap<String, Vec<Import>>,
     guest_exports: HashMap<String, Exports>,
@@ -195,22 +194,6 @@ impl RustGenerator for Wasmtime {
             // in the parameter position.
             TypeMode::AllBorrowed("'a")
         }
-    }
-
-    fn handle_projection(&self) -> Option<(&'static str, String)> {
-        if self.in_import {
-            if self.in_trait {
-                Some(("Self", self.trait_name.clone()))
-            } else {
-                Some(("T", self.trait_name.clone()))
-            }
-        } else {
-            None
-        }
-    }
-
-    fn handle_wrapper(&self) -> Option<&'static str> {
-        None
     }
 
     fn push_str(&mut self, s: &str) {
@@ -443,29 +426,6 @@ impl Generator for Wasmtime {
 
     fn type_enum(&mut self, _iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         self.print_typedef_enum(id, name, enum_, docs);
-    }
-
-    fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
-        let name = &iface.resources[ty].name;
-        self.all_needed_handles.insert(name.to_string());
-
-        // If we're binding imports then all handles are associated types so
-        // there's nothing that we need to do about that.
-        if self.in_import {
-            return;
-        }
-
-        self.exported_resources.insert(ty);
-
-        // ... otherwise for exports we generate a newtype wrapper around an
-        // `i32` to manage the resultt.
-        let tyname = name.to_camel_case();
-        self.rustdoc(&iface.resources[ty].docs);
-        self.src.push_str("#[derive(Debug)]\n");
-        self.src.push_str(&format!(
-            "pub struct {}(wit_bindgen_host_wasmtime_rust::rt::ResourceIndex);\n",
-            tyname
-        ));
     }
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
@@ -764,7 +724,7 @@ impl Generator for Wasmtime {
         );
     }
 
-    fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
+    fn finish_one(&mut self, _iface: &Interface, files: &mut Files) {
         for (module, funcs) in sorted_iter(&self.guest_imports) {
             let module_camel = module.to_camel_case();
             self.src.push_str("pub trait ");
@@ -842,11 +802,7 @@ impl Generator for Wasmtime {
             let module_camel = module.to_camel_case();
             self.push_str("\npub fn add_to_linker<T, U>(linker: &mut wasmtime::Linker<T>");
             self.push_str(", get: impl Fn(&mut T) -> ");
-            if self.all_needed_handles.is_empty() {
-                self.push_str("&mut U");
-            } else {
-                self.push_str(&format!("(&mut U, &mut {}Tables<U>)", module_camel));
-            }
+            self.push_str("&mut U");
             self.push_str("+ Send + Sync + Copy + 'static) -> anyhow::Result<()> \n");
             self.push_str("where U: ");
             self.push_str(&module_camel);
@@ -862,27 +818,6 @@ impl Generator for Wasmtime {
                 self.push_str(&format!(
                     "linker.{}(\"{}\", \"{}\", {})?;\n",
                     method, module, f.name, f.closure,
-                ));
-            }
-            for handle in self.all_needed_handles.iter() {
-                self.src.push_str(&format!(
-                    "linker.func_wrap(
-                        \"canonical_abi\",
-                        \"resource_drop_{name}\",
-                        move |mut caller: wasmtime::Caller<'_, T>, handle: u32| {{
-                            let (host, tables) = get(caller.data_mut());
-                            let handle = tables
-                                .{snake}_table
-                                .remove(handle)
-                                .map_err(|e| {{
-                                    wasmtime::Trap::new(format!(\"failed to remove handle: {{}}\", e))
-                                }})?;
-                            host.drop_{snake}(handle);
-                            Ok(())
-                        }}
-                    )?;\n",
-                    name = handle,
-                    snake = handle.to_snake_case(),
                 ));
             }
             self.push_str("Ok(())\n}\n");
@@ -907,16 +842,6 @@ impl Generator for Wasmtime {
             self.push_str("pub struct ");
             self.push_str(&name);
             self.push_str("Data {\n");
-            for r in self.exported_resources.iter() {
-                self.src.push_str(&format!(
-                    "
-                        index_slab{}: wit_bindgen_host_wasmtime_rust::rt::IndexSlab,
-                        resource_slab{0}: wit_bindgen_host_wasmtime_rust::rt::ResourceSlab,
-                        dtor{0}: Option<wasmtime::TypedFunc<i32, ()>>,
-                    ",
-                    r.index()
-                ));
-            }
             self.push_str("}\n");
 
             self.push_str("pub struct ");
@@ -935,84 +860,6 @@ impl Generator for Wasmtime {
             self.push_str("}\n");
             let bound = "";
             self.push_str(&format!("impl<T{}> {}<T> {{\n", bound, name));
-
-            if self.exported_resources.len() == 0 {
-                self.push_str("#[allow(unused_variables)]\n");
-            }
-            self.push_str(&format!(
-                "
-                    /// Adds any intrinsics, if necessary for this exported wasm
-                    /// functionality to the `linker` provided.
-                    ///
-                    /// The `get_state` closure is required to access the
-                    /// auxiliary data necessary for these wasm exports from
-                    /// the general store's state.
-                    pub fn add_to_linker(
-                        linker: &mut wasmtime::Linker<T>,
-                        get_state: impl Fn(&mut T) -> &mut {}Data + Send + Sync + Copy + 'static,
-                    ) -> anyhow::Result<()> {{
-                ",
-                name,
-            ));
-            for r in self.exported_resources.iter() {
-                let (func_wrap, call, wait, prefix, suffix) = ("func_wrap", "call", "", "", "");
-                self.src.push_str(&format!(
-                    "
-                        linker.{func_wrap}(
-                            \"canonical_abi\",
-                            \"resource_drop_{name}\",
-                            move |mut caller: wasmtime::Caller<'_, T>, idx: u32| {prefix}{{
-                                let state = get_state(caller.data_mut());
-                                let resource_idx = state.index_slab{idx}.remove(idx)?;
-                                let wasm = match state.resource_slab{idx}.drop(resource_idx) {{
-                                    Some(wasm) => wasm,
-                                    None => return Ok(()),
-                                }};
-                                let dtor = state.dtor{idx}.expect(\"destructor not set yet\");
-                                dtor.{call}(&mut caller, wasm){wait}?;
-                                Ok(())
-                            }}{suffix},
-                        )?;
-                        linker.func_wrap(
-                            \"canonical_abi\",
-                            \"resource_clone_{name}\",
-                            move |mut caller: wasmtime::Caller<'_, T>, idx: u32| {{
-                                let state = get_state(caller.data_mut());
-                                let resource_idx = state.index_slab{idx}.get(idx)?;
-                                state.resource_slab{idx}.clone(resource_idx)?;
-                                Ok(state.index_slab{idx}.insert(resource_idx))
-                            }},
-                        )?;
-                        linker.func_wrap(
-                            \"canonical_abi\",
-                            \"resource_get_{name}\",
-                            move |mut caller: wasmtime::Caller<'_, T>, idx: u32| {{
-                                let state = get_state(caller.data_mut());
-                                let resource_idx = state.index_slab{idx}.get(idx)?;
-                                Ok(state.resource_slab{idx}.get(resource_idx))
-                            }},
-                        )?;
-                        linker.func_wrap(
-                            \"canonical_abi\",
-                            \"resource_new_{name}\",
-                            move |mut caller: wasmtime::Caller<'_, T>, val: i32| {{
-                                let state = get_state(caller.data_mut());
-                                let resource_idx = state.resource_slab{idx}.insert(val);
-                                Ok(state.index_slab{idx}.insert(resource_idx))
-                            }},
-                        )?;
-                    ",
-                    name = iface.resources[*r].name,
-                    idx = r.index(),
-                    func_wrap = func_wrap,
-                    call = call,
-                    wait = wait,
-                    prefix = prefix,
-                    suffix = suffix,
-                ));
-            }
-            self.push_str("Ok(())\n");
-            self.push_str("}\n");
 
             let (instantiate, wait) = ("", "");
             self.push_str(&format!(
@@ -1037,7 +884,6 @@ impl Generator for Wasmtime {
                         linker: &mut wasmtime::Linker<T>,
                         get_state: impl Fn(&mut T) -> &mut {}Data + Send + Sync + Copy + 'static,
                     ) -> anyhow::Result<(Self, wasmtime::Instance)> {{
-                        Self::add_to_linker(linker, get_state)?;
                         let instance = linker.instantiate{}(&mut store, module){}?;
                         Ok((Self::new(store, &instance,get_state)?, instance))
                     }}
@@ -1072,19 +918,6 @@ impl Generator for Wasmtime {
                 self.push_str(&get);
                 self.push_str(";\n");
             }
-            for r in self.exported_resources.iter() {
-                self.src.push_str(&format!(
-                    "
-                        get_state(store.data_mut()).dtor{} = \
-                            Some(instance.get_typed_func::<i32, (), _>(\
-                                &mut store, \
-                                \"canonical_abi_drop_{}\", \
-                            )?);\n
-                    ",
-                    r.index(),
-                    iface.resources[*r].name,
-                ));
-            }
             self.push_str("Ok(");
             self.push_str(&name);
             self.push_str("{\n");
@@ -1098,40 +931,6 @@ impl Generator for Wasmtime {
 
             for func in exports.funcs.iter() {
                 self.push_str(func);
-            }
-
-            for r in self.exported_resources.iter() {
-                let (call, wait) = ("call", "");
-                self.src.push_str(&format!(
-                    "
-                        /// Drops the host-owned handle to the resource
-                        /// specified.
-                        ///
-                        /// Note that this may execute the WebAssembly-defined
-                        /// destructor for this type. This also may not run
-                        /// the destructor if there are still other references
-                        /// to this type.
-                        pub fn drop_{name_snake}(
-                            &self,
-                            mut store: impl wasmtime::AsContextMut<Data = T>,
-                            val: {name_camel},
-                        ) -> Result<(), wasmtime::Trap> {{
-                            let mut store = store.as_context_mut();
-                            let data = (self.get_state)(store.data_mut());
-                            let wasm = match data.resource_slab{idx}.drop(val.0) {{
-                                Some(val) => val,
-                                None => return Ok(()),
-                            }};
-                            data.dtor{idx}.unwrap().{call}(&mut store, wasm){wait}?;
-                            Ok(())
-                        }}
-                    ",
-                    name_snake = iface.resources[*r].name.to_snake_case(),
-                    name_camel = iface.resources[*r].name.to_camel_case(),
-                    idx = r.index(),
-                    call = call,
-                    wait = wait,
-                ));
             }
 
             self.push_str("}\n");
@@ -1445,52 +1244,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     }}",
                     operands[0],
                 ));
-            }
-
-            Instruction::I32FromOwnedHandle { ty } => {
-                let name = &iface.resources[*ty].name;
-                results.push(format!(
-                    "_tables.{}_table.insert({}) as i32",
-                    name.to_snake_case(),
-                    operands[0]
-                ));
-            }
-            Instruction::HandleBorrowedFromI32 { ty } => {
-                let name = &iface.resources[*ty].name;
-                results.push(format!(
-                    "_tables.{}_table.get(({}) as u32).ok_or_else(|| {{
-                            wasmtime::Trap::new(\"invalid handle index\")
-                        }})?",
-                    name.to_snake_case(),
-                    operands[0]
-                ));
-            }
-            Instruction::I32FromBorrowedHandle { ty } => {
-                let tmp = self.tmp();
-                self.push_str(&format!(
-                    "
-                        let obj{tmp} = {op};
-                        (self.get_state)(caller.as_context_mut().data_mut()).resource_slab{idx}.clone(obj{tmp}.0)?;
-                        let handle{tmp} = (self.get_state)(caller.as_context_mut().data_mut()).index_slab{idx}.insert(obj{tmp}.0);
-                    ",
-                    tmp = tmp,
-                    idx = ty.index(),
-                    op = operands[0],
-                ));
-
-                results.push(format!("handle{} as i32", tmp,));
-            }
-            Instruction::HandleOwnedFromI32 { ty } => {
-                let tmp = self.tmp();
-                self.push_str(&format!(
-                    "let handle{} = (self.get_state)(caller.as_context_mut().data_mut()).index_slab{}.remove({} as u32)?;\n",
-                    tmp,
-                    ty.index(),
-                    operands[0],
-                ));
-
-                let name = iface.resources[*ty].name.to_camel_case();
-                results.push(format!("{}(handle{})", name, tmp));
             }
 
             Instruction::RecordLower { ty, record, .. } => {

@@ -8,8 +8,6 @@ use wasmtime::Trap;
 pub struct MyImports;
 
 impl Imports for MyImports {
-    type HostState = ();
-
     fn roundtrip_u8(&mut self, _: u8) -> u8 {
         unreachable!()
     }
@@ -31,9 +29,6 @@ impl Imports for MyImports {
     fn roundtrip_enum(&mut self, _: imports::E) -> imports::E {
         unreachable!()
     }
-    fn get_internal(&mut self, _: &()) -> u32 {
-        unreachable!()
-    }
 }
 
 wit_bindgen_host_wasmtime_rust::import!("../../tests/runtime/invalid/exports.wit");
@@ -44,12 +39,9 @@ fn run(wasm: &str) -> Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
         |linker| {
-            imports::add_to_linker(
-                linker,
-                |cx: &mut crate::Context<(MyImports, imports::ImportsTables<MyImports>), _>| {
-                    (&mut cx.imports.0, &mut cx.imports.1)
-                },
-            )
+            imports::add_to_linker(linker, |cx: &mut crate::Context<MyImports, _>| {
+                &mut cx.imports
+            })
         },
         |store, module, linker| Exports::instantiate(store, module, linker, |cx| &mut cx.exports),
     )?;
@@ -81,11 +73,6 @@ fn run(wasm: &str) -> Result<()> {
     assert_err(
         exports.invalid_enum(&mut store),
         "invalid discriminant for `E`",
-    )?;
-    assert_err(exports.invalid_handle(&mut store), "invalid handle index")?;
-    assert_err(
-        exports.invalid_handle_close(&mut store),
-        "invalid handle index",
     )?;
     return Ok(());
 
