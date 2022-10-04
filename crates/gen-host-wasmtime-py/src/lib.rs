@@ -60,9 +60,9 @@ struct Export {
 }
 
 #[derive(Default, Debug, Clone)]
-#[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
-    #[cfg_attr(feature = "structopt", structopt(long = "no-typescript"))]
+    #[cfg_attr(feature = "clap", arg(long = "no-typescript"))]
     pub no_typescript: bool,
 }
 

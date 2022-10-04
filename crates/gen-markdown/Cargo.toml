@@ -10,5 +10,5 @@ test = false
 [dependencies]
 heck = { workspace = true }
 pulldown-cmark = { workspace = true }
-structopt = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
 wit-bindgen-core = { workspace = true }

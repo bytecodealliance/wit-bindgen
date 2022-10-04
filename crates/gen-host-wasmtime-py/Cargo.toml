@@ -7,7 +7,7 @@ edition.workspace = true
 [dependencies]
 wit-bindgen-core = { workspace = true }
 heck = { workspace = true }
-structopt = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
 
 [dev-dependencies]
 test-helpers = { path = '../test-helpers', features = ['host-wasmtime-py'] }

@@ -24,10 +24,10 @@ pub struct TeaVmJava {
 }
 
 #[derive(Default, Debug, Clone)]
-#[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
     /// Whether or not to generate a stub class for exported functions
-    #[cfg_attr(feature = "structopt", structopt(long))]
+    #[cfg_attr(feature = "clap", arg(long))]
     pub generate_stub: bool,
 }
 

@@ -24,24 +24,24 @@ pub struct RustWasm {
 }
 
 #[derive(Default, Debug, Clone)]
-#[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
     /// Whether or not `rustfmt` is executed to format generated code.
-    #[cfg_attr(feature = "structopt", structopt(long))]
+    #[cfg_attr(feature = "clap", arg(long))]
     pub rustfmt: bool,
 
     /// Adds the wit module name into import binding names when enabled.
-    #[cfg_attr(feature = "structopt", structopt(long))]
+    #[cfg_attr(feature = "clap", arg(long))]
     pub multi_module: bool,
 
     /// Whether or not the bindings assume interface values are always
     /// well-formed or whether checks are performed.
-    #[cfg_attr(feature = "structopt", structopt(long))]
+    #[cfg_attr(feature = "clap", arg(long))]
     pub unchecked: bool,
 
     /// A prefix to prepend to all exported symbols. Note that this is only
     /// intended for testing because it breaks the general form of the ABI.
-    #[cfg_attr(feature = "structopt", structopt(skip))]
+    #[cfg_attr(feature = "clap", arg(skip))]
     pub symbol_namespace: String,
 
     /// If true, the code generation is intended for standalone crates.
@@ -51,7 +51,7 @@ pub struct Opts {
     /// For exported interfaces, an `export!` macro is also generated
     /// that can be used to export an implementation from a different
     /// crate.
-    #[cfg_attr(feature = "structopt", structopt(skip))]
+    #[cfg_attr(feature = "clap", arg(skip))]
     pub standalone: bool,
 }
 
