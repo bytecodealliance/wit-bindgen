@@ -456,6 +456,7 @@ impl Generator for RustWasm {
             ));
         }
 
+        // TODO make this infallible once we get rid of handle tests from the tree
         if let Ok(component_type) = wit_component::InterfaceEncoder::new(iface).encode() {
             let direction = match dir {
                 Direction::Import => "import",
