@@ -14,6 +14,8 @@ fn main() {
         let mut cmd = Command::new("cargo");
         cmd.arg("build")
             .current_dir("../test-rust-wasm")
+            // TODO: this should go back to wasm32-wasi once we have an adapter
+            // for snapshot 1 to a component
             .arg("--target=wasm32-unknown-unknown")
             .env("CARGO_TARGET_DIR", &out_dir)
             .env("CARGO_PROFILE_DEV_DEBUG", "1")
@@ -36,24 +38,20 @@ fn main() {
                 file.to_str().unwrap().to_string(),
             ));
 
-            // TODO: add an adapter for snapshot 1, and go back to compiling this target for
-            // wasm32-wasi
-            let module = fs::read(&file).expect("failed to read wasm file");
-            match ComponentEncoder::default()
-                .module(module.as_slice())
-                .expect("pull custom sections from module")
-                .validate(true)
-                .encode()
-            {
-                Ok(_) => {}
-                Err(e) => {
-                    if !["invalid", "handles"]
-                        .iter()
-                        .any(|s| *s == file.file_stem().unwrap().to_str().unwrap())
-                    {
-                        panic!("component encoder for {:?} failed: {:?}", file, e);
-                    }
-                }
+            // The "invalid" test doesn't actually use the rust-guest macro
+            // and doesn't put the custom sections in, so component translation
+            // will fail.
+            if file.file_stem().unwrap().to_str().unwrap() != "invalid" {
+                // Validate that the module can be translated to a component, using
+                // the component-type custom sections. We don't yet consume this component
+                // anywhere.
+                let module = fs::read(&file).expect("failed to read wasm file");
+                ComponentEncoder::default()
+                    .module(module.as_slice())
+                    .expect("pull custom sections from module")
+                    .validate(true)
+                    .encode()
+                    .expect("module can be translated to a component");
             }
 
             let dep_file = file.with_extension("d");
