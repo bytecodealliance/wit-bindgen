@@ -53,6 +53,7 @@
 //! component model.
 
 use crate::{
+    decode_interface_component,
     validation::{
         expected_export_name, validate_adapter_module, validate_module, ValidatedAdapter,
         ValidatedModule,
@@ -2107,9 +2108,43 @@ pub struct ComponentEncoder<'a> {
 
 impl<'a> ComponentEncoder<'a> {
     /// Set the core module to encode as a component.
-    pub fn module(mut self, module: &'a [u8]) -> Self {
+    /// This method will also parse any component type information stored in custom sections
+    /// inside the module, and add them as the interface, imports, and exports.
+    pub fn module(mut self, module: &'a [u8]) -> Result<Self> {
+        for payload in wasmparser::Parser::new(0).parse_all(&module) {
+            match payload.context("decoding item in module")? {
+                wasmparser::Payload::CustomSection(cs) => {
+                    if let Some(export) = cs.name().strip_prefix("component-type:export:") {
+                        let mut i = decode_interface_component(cs.data()).with_context(|| {
+                            format!("decoding component-type in export section {}", export)
+                        })?;
+                        i.name = export.to_owned();
+                        self.interface = Some(i);
+                    } else if let Some(import) = cs.name().strip_prefix("component-type:import:") {
+                        let mut i = decode_interface_component(cs.data()).with_context(|| {
+                            format!("decoding component-type in import section {}", import)
+                        })?;
+                        i.name = import.to_owned();
+                        self.imports.push(i);
+                    } else if let Some(export_instance) =
+                        cs.name().strip_prefix("component-type:export-instance:")
+                    {
+                        let mut i = decode_interface_component(cs.data()).with_context(|| {
+                            format!(
+                                "decoding component-type in export-instance section {}",
+                                export_instance
+                            )
+                        })?;
+                        i.name = export_instance.to_owned();
+                        self.exports.push(i);
+                    }
+                }
+                _ => {}
+            }
+        }
+
         self.module = module;
-        self
+        Ok(self)
     }
 
     /// Set the string encoding expected by the core module.

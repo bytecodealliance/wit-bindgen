@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use pretty_assertions::assert_eq;
 use std::{fs, path::Path};
-use wit_component::{transcode, ComponentEncoder, InterfaceEncoder};
+use wit_component::{ComponentEncoder, InterfaceEncoder};
 use wit_parser::Interface;
 
 fn read_interface(path: &Path) -> Result<Interface> {
@@ -105,7 +105,7 @@ fn component_encoding_via_flags() -> Result<()> {
         let adapters = read_adapters(&path)?;
 
         let mut encoder = ComponentEncoder::default()
-            .module(&module)
+            .module(&module)?
             .imports(&imports)
             .exports(&exports)
             .validate(true);
@@ -119,6 +119,7 @@ fn component_encoding_via_flags() -> Result<()> {
         }
 
         let r = encoder.encode();
+
         let (output, baseline_path) = if error_path.is_file() {
             match r {
                 Ok(_) => bail!("encoding should fail for test case `{}`", test_case),
@@ -157,30 +158,20 @@ fn component_encoding_via_flags() -> Result<()> {
 
 /// Tests the encoding of components.
 ///
-/// This test looks in the `components/` directory for test cases.
+/// This test looks in the `components/` directory for test cases. It parses
+/// the inputs to the test out of that directly exactly like
+/// `component_encoding_via_flags` does in this same file.
 ///
-/// The expected input files for a test case are:
+/// Rather than pass the default interface, imports, and exports directly to
+/// the `ComponentEncoder`, this test encodes those Interfaces as component
+/// types in custom sections of the wasm Module.
 ///
-/// * [required] `module.wat` - contains the core module definition to be encoded
-///   as a component.
-/// * [optional] `default.wit` - represents the component's default interface.
-/// * [optional] `export-<name>.wit` - represents an interface exported by the component.
-/// * [optional] `import-<name>.wit` - represents an interface imported by the component.
-///
-/// And the output files are one of the following:
-///
-/// * `component.wat` - the expected encoded component in text format if the encoding
-///   is expected to succeed.
-/// * `error.txt` - the expected error message if the encoding is expected to fail.
-///
-/// The test encodes a component based on the input files. If the encoding succeeds,
-/// it expects the output to match `component.wat`. If the encoding fails, it expects
-/// the output to match `error.txt`.
-///
-/// Run the test with the environment variable `BLESS` set to update
-/// either `component.wat` or `error.txt` depending on the outcome of the encoding.
+/// This simulates the flow that toolchains which don't yet know how to
+/// emit a Component will emit a canonical ABI Module containing these custom sections,
+/// and those will then be translated by wit-component to a Component without
+/// needing the wit files passed in as well.
 #[test]
-fn component_encoding_via_custom_section() -> Result<()> {
+fn component_encoding_via_custom_sections() -> Result<()> {
     use wasm_encoder::{Encode, Section};
 
     for entry in fs::read_dir("tests/components")? {
@@ -211,6 +202,8 @@ fn component_encoding_via_custom_section() -> Result<()> {
             Ok(())
         }
 
+        // Encode the interface, exports, and imports into the module, instead of
+        // passing them to the ComponentEncoder explicitly.
         if interface_path.is_file() {
             let i = read_interface(&interface_path)?;
             encode_interface(&i, &mut module, "export")?;
@@ -221,10 +214,16 @@ fn component_encoding_via_custom_section() -> Result<()> {
         for i in read_interfaces(&path, "export-*.wit")? {
             encode_interface(&i, &mut module, "export-instance")?;
         }
+        //
+        let adapters = read_adapters(&path)?;
 
-        // Everything is now encoded into `module`: now lets deconstruct it
+        let mut encoder = ComponentEncoder::default().module(&module)?.validate(true);
 
-        let r = transcode(&module);
+        for (name, wasm, interface) in adapters.iter() {
+            encoder = encoder.adapter(name, wasm, interface);
+        }
+
+        let r = encoder.encode();
 
         let (output, baseline_path) = if error_path.is_file() {
             match r {

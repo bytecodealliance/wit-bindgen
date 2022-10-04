@@ -3,7 +3,7 @@
 #![deny(missing_docs)]
 
 use crate::{
-    decode_interface_component, transcode, ComponentEncoder, InterfaceEncoder, InterfacePrinter,
+    decode_interface_component, ComponentEncoder, InterfaceEncoder, InterfacePrinter,
     StringEncoding,
 };
 use anyhow::{bail, Context, Result};
@@ -109,11 +109,6 @@ pub struct WitComponentApp {
     #[clap(long)]
     pub skip_validation: bool,
 
-    /// Transcode the WebAssembly module into a Component using only the interface definitions
-    /// found in custom sections.
-    #[clap(long)]
-    pub transcode: bool,
-
     /// The expected string encoding format for the component.
     /// Supported values are: `utf8` (default), `utf16`, and `compact-utf16`.
     #[clap(long, value_name = "ENCODING")]
@@ -143,34 +138,30 @@ impl WitComponentApp {
         let module = wat::parse_file(&self.module)
             .with_context(|| format!("failed to parse module `{}`", self.module.display()))?;
 
-        let bytes = if self.transcode {
-            transcode(&module)?
-        } else {
-            let mut encoder = ComponentEncoder::default()
-                .module(&module)
-                .imports(&self.imports)
-                .exports(&self.exports)
-                .validate(!self.skip_validation);
+        let mut encoder = ComponentEncoder::default()
+            .module(&module)?
+            .imports(&self.imports)
+            .exports(&self.exports)
+            .validate(!self.skip_validation);
 
-            for (name, wasm, interface) in self.adapters.iter() {
-                encoder = encoder.adapter(name, wasm, interface);
-            }
+        for (name, wasm, interface) in self.adapters.iter() {
+            encoder = encoder.adapter(name, wasm, interface);
+        }
 
-            if let Some(interface) = &self.interface {
-                encoder = encoder.interface(interface);
-            }
+        if let Some(interface) = &self.interface {
+            encoder = encoder.interface(interface);
+        }
 
-            if let Some(encoding) = &self.encoding {
-                encoder = encoder.encoding(*encoding);
-            }
+        if let Some(encoding) = &self.encoding {
+            encoder = encoder.encoding(*encoding);
+        }
 
-            encoder.encode().with_context(|| {
-                format!(
-                    "failed to encode a component from module `{}`",
-                    self.module.display()
-                )
-            })?
-        };
+        let bytes = encoder.encode().with_context(|| {
+            format!(
+                "failed to encode a component from module `{}`",
+                self.module.display()
+            )
+        })?;
 
         std::fs::write(&output, bytes)
             .with_context(|| format!("failed to write output file `{}`", output.display()))?;
