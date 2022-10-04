@@ -11,12 +11,11 @@ enum lang {
 }
 
 
-resource config {
-  static new: func() -> config
-
-  render: func(lang: lang, wit: string, import: bool) -> result<files, string>
-
-  set-rust-unchecked: func(unchecked: bool)
-  set-wasmtime-tracing: func(unchecked: bool)
-  set-wasmtime-custom-error: func(custom: bool)
+record options {
+  rust-unchecked: bool,
+  wasmtime-tracing: bool,
+  wasmtime-custom-error: bool,
+  import: bool,
 }
+
+render: func(lang: lang, wit: string, options: options) -> result<files, string>

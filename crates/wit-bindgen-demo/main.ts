@@ -1,4 +1,4 @@
-import { Demo, Config } from './demo.js';
+import { Demo, Options } from './demo.js';
 import * as browser from './browser.js';
 
 class Editor {
@@ -11,7 +11,7 @@ class Editor {
   wasmtimeCustomError: HTMLInputElement;
   generatedFiles: Record<string, string>;
   demo: Demo;
-  config: Config | null;
+  options: Options;
   rerender: number | null;
   inputEditor: AceAjax.Editor;
   outputEditor: AceAjax.Editor;
@@ -37,7 +37,12 @@ class Editor {
 
     this.generatedFiles = {};
     this.demo = new Demo();
-    this.config = null;
+    this.options = {
+      rustUnchecked: false,
+      wasmtimeTracing: false,
+      wasmtimeCustomError: false,
+      import: false,
+    };
     this.rerender = null;
   }
 
@@ -49,7 +54,6 @@ class Editor {
     };
     browser.addBrowserToImports(imports, obj, name => this.demo.instance.exports[name]);
     await this.demo.instantiate(fetch('./demo.wasm'), imports);
-    this.config = Config.new(this.demo);
     this.installListeners();
     this.render();
   }
@@ -66,16 +70,16 @@ class Editor {
     this.mode.addEventListener('change', () => this.render());
 
     this.rustUnchecked.addEventListener('change', () => {
-      this.config.setRustUnchecked(this.rustUnchecked.checked);
+      this.options.rustUnchecked = this.rustUnchecked.checked;
       this.render();
     });
 
     this.wasmtimeTracing.addEventListener('change', () => {
-      this.config.setWasmtimeTracing(this.wasmtimeTracing.checked);
+      this.options.wasmtimeTracing = this.wasmtimeTracing.checked;
       this.render();
     });
     this.wasmtimeCustomError.addEventListener('change', () => {
-      this.config.setWasmtimeCustomError(this.wasmtimeCustomError.checked);
+      this.options.wasmtimeCustomError = this.wasmtimeCustomError.checked;
       this.render();
     });
     this.files.addEventListener('change', () => this.updateSelectedFile());
@@ -105,7 +109,8 @@ class Editor {
         break;
       default: return;
     }
-    const result = this.config.render(lang, wit, is_import);
+    this.options.import = is_import;
+    const result = this.demo.render(lang, wit, this.options);
     if (result.tag === 'err') {
       this.outputEditor.setValue(result.val);
       this.outputEditor.clearSelection();

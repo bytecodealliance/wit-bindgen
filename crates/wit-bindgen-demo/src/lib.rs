@@ -1,29 +1,18 @@
-use std::cell::RefCell;
 use std::sync::Once;
 use wit_bindgen_core::wit_parser::Interface;
 use wit_bindgen_core::Generator;
-use wit_bindgen_guest_rust::Handle;
 
 wit_bindgen_guest_rust::export!("demo.wit");
 wit_bindgen_guest_rust::import!("browser.wit");
 
 struct Demo;
 
-impl demo::Demo for Demo {}
-
-#[derive(Default)]
-pub struct Config {
-    js: RefCell<wit_bindgen_gen_host_js::Opts>,
-    c: RefCell<wit_bindgen_gen_guest_c::Opts>,
-    rust: RefCell<wit_bindgen_gen_guest_rust::Opts>,
-    java: RefCell<wit_bindgen_gen_guest_teavm_java::Opts>,
-    wasmtime: RefCell<wit_bindgen_gen_host_wasmtime_rust::Opts>,
-    wasmtime_py: RefCell<wit_bindgen_gen_host_wasmtime_py::Opts>,
-    markdown: RefCell<wit_bindgen_gen_markdown::Opts>,
-}
-
-impl demo::Config for Config {
-    fn new() -> Handle<Config> {
+impl demo::Demo for Demo {
+    fn render(
+        lang: demo::Lang,
+        wit: String,
+        options: demo::Options,
+    ) -> Result<Vec<(String, String)>, String> {
         static INIT: Once = Once::new();
         INIT.call_once(|| {
             let prev_hook = std::panic::take_hook();
@@ -33,27 +22,29 @@ impl demo::Config for Config {
             }));
         });
 
-        Config::default().into()
-    }
-
-    fn render(
-        &self,
-        lang: demo::Lang,
-        wit: String,
-        import: bool,
-    ) -> Result<Vec<(String, String)>, String> {
         let mut gen: Box<dyn Generator> = match lang {
-            demo::Lang::Rust => Box::new(self.rust.borrow().clone().build()),
-            demo::Lang::Java => Box::new(self.java.borrow().clone().build()),
-            demo::Lang::Wasmtime => Box::new(self.wasmtime.borrow().clone().build()),
-            demo::Lang::WasmtimePy => Box::new(self.wasmtime_py.borrow().clone().build()),
-            demo::Lang::Js => Box::new(self.js.borrow().clone().build()),
-            demo::Lang::C => Box::new(self.c.borrow().clone().build()),
-            demo::Lang::Markdown => Box::new(self.markdown.borrow().clone().build()),
+            demo::Lang::Rust => Box::new({
+                let mut opts = wit_bindgen_gen_guest_rust::Opts::default();
+                opts.unchecked = options.rust_unchecked;
+                opts.build()
+            }),
+            demo::Lang::Java => Box::new(wit_bindgen_gen_guest_teavm_java::Opts::default().build()),
+            demo::Lang::Wasmtime => Box::new({
+                let mut opts = wit_bindgen_gen_host_wasmtime_rust::Opts::default();
+                opts.tracing = options.wasmtime_tracing;
+                opts.custom_error = options.wasmtime_custom_error;
+                opts.build()
+            }),
+            demo::Lang::WasmtimePy => {
+                Box::new(wit_bindgen_gen_host_wasmtime_py::Opts::default().build())
+            }
+            demo::Lang::Js => Box::new(wit_bindgen_gen_host_js::Opts::default().build()),
+            demo::Lang::C => Box::new(wit_bindgen_gen_guest_c::Opts::default().build()),
+            demo::Lang::Markdown => Box::new(wit_bindgen_gen_markdown::Opts::default().build()),
         };
         let iface = Interface::parse("input", &wit).map_err(|e| format!("{:?}", e))?;
         let mut files = Default::default();
-        let (imports, exports) = if import {
+        let (imports, exports) = if options.import {
             (vec![iface], vec![])
         } else {
             (vec![], vec![iface])
@@ -70,17 +61,5 @@ impl demo::Config for Config {
                 (name.to_string(), contents)
             })
             .collect())
-    }
-
-    fn set_rust_unchecked(&self, unchecked: bool) {
-        self.rust.borrow_mut().unchecked = unchecked;
-    }
-
-    fn set_wasmtime_tracing(&self, tracing: bool) {
-        self.wasmtime.borrow_mut().tracing = tracing;
-    }
-    fn set_wasmtime_custom_error(&self, custom_error: bool) {
-        browser::log("custom error");
-        self.wasmtime.borrow_mut().custom_error = custom_error;
     }
 }
