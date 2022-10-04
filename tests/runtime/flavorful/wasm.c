@@ -8,10 +8,10 @@ void exports_test_imports() {
   {
     imports_list_in_record1_t a;
     imports_string_set(&a.a, "list_in_record1");
-    imports_list_in_record1(&a);
+    imports_f_list_in_record1(&a);
 
     imports_list_in_record2_t b;
-    imports_list_in_record2(&b);
+    imports_f_list_in_record2(&b);
     assert(memcmp(b.a.ptr, "list_in_record2", b.a.len) == 0);
     imports_list_in_record2_free(&b);
   }
@@ -19,7 +19,7 @@ void exports_test_imports() {
   {
     imports_list_in_record3_t a, b;
     imports_string_set(&a.a, "list_in_record3 input");
-    imports_list_in_record3(&a, &b);
+    imports_f_list_in_record3(&a, &b);
     assert(memcmp(b.a.ptr, "list_in_record3 output", b.a.len) == 0);
     imports_list_in_record3_free(&b);
   }
@@ -27,7 +27,7 @@ void exports_test_imports() {
   {
     imports_list_in_record4_t a, b;
     imports_string_set(&a.a, "input4");
-    imports_list_in_record4(&a, &b);
+    imports_f_list_in_record4(&a, &b);
     assert(memcmp(b.a.ptr, "result4", b.a.len) == 0);
     imports_list_in_record4_free(&b);
   }
@@ -42,12 +42,12 @@ void exports_test_imports() {
     imports_string_set(&b.val.err, "bar");
     c.tag = 0;
     imports_string_set(&c.val.f0, "baz");
-    imports_list_in_variant1(&a, &b, &c);
+    imports_f_list_in_variant1(&a, &b, &c);
   }
 
   {
     imports_string_t a;
-    assert(imports_list_in_variant2(&a));
+    assert(imports_f_list_in_variant2(&a));
     assert(memcmp(a.ptr, "list_in_variant2", a.len) == 0);
     imports_string_free(&a);
   }
@@ -57,7 +57,7 @@ void exports_test_imports() {
     a.is_some = true;
     imports_string_set(&a.val, "input3");
     imports_string_t b;
-    assert(imports_list_in_variant3(&a, &b));
+    assert(imports_f_list_in_variant3(&a, &b));
     assert(memcmp(b.ptr, "output3", b.len) == 0);
     imports_string_free(&b);
   }
@@ -127,28 +127,28 @@ void exports_test_imports() {
   }
 }
 
-void exports_list_in_record1(exports_list_in_record1_t *a) {
+void exports_f_list_in_record1(exports_list_in_record1_t *a) {
   assert(memcmp(a->a.ptr, "list_in_record1", a->a.len) == 0);
   exports_list_in_record1_free(a);
 }
 
-void exports_list_in_record2(exports_list_in_record2_t *ret0) {
+void exports_f_list_in_record2(exports_list_in_record2_t *ret0) {
   exports_string_dup(&ret0->a, "list_in_record2");
 }
 
-void exports_list_in_record3(exports_list_in_record3_t *a, exports_list_in_record3_t *ret0) {
+void exports_f_list_in_record3(exports_list_in_record3_t *a, exports_list_in_record3_t *ret0) {
   assert(memcmp(a->a.ptr, "list_in_record3 input", a->a.len) == 0);
   exports_list_in_record3_free(a);
   exports_string_dup(&ret0->a, "list_in_record3 output");
 }
 
-void exports_list_in_record4(exports_list_in_alias_t *a, exports_list_in_alias_t *ret0) {
+void exports_f_list_in_record4(exports_list_in_alias_t *a, exports_list_in_alias_t *ret0) {
   assert(memcmp(a->a.ptr, "input4", a->a.len) == 0);
   exports_list_in_alias_free(a);
   exports_string_dup(&ret0->a, "result4");
 }
 
-void exports_list_in_variant1(exports_list_in_variant1_v1_t *a, exports_list_in_variant1_v2_t *b, exports_list_in_variant1_v3_t *c) {
+void exports_f_list_in_variant1(exports_list_in_variant1_v1_t *a, exports_list_in_variant1_v2_t *b, exports_list_in_variant1_v3_t *c) {
   assert(a->is_some);
   assert(memcmp(a->val.ptr, "foo", a->val.len) == 0);
   exports_list_in_variant1_v1_free(a);
@@ -162,12 +162,12 @@ void exports_list_in_variant1(exports_list_in_variant1_v1_t *a, exports_list_in_
   exports_list_in_variant1_v3_free(c);
 }
 
-bool exports_list_in_variant2(exports_string_t *ret0) {
+bool exports_f_list_in_variant2(exports_string_t *ret0) {
   exports_string_dup(ret0, "list_in_variant2");
   return true;
 }
 
-bool exports_list_in_variant3(exports_list_in_variant3_t *a, exports_string_t *ret0) {
+bool exports_f_list_in_variant3(exports_list_in_variant3_t *a, exports_string_t *ret0) {
   assert(a->is_some);
   assert(memcmp(a->val.ptr, "input3", a->val.len) == 0);
   exports_list_in_variant3_free(a);

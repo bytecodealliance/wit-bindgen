@@ -8,23 +8,23 @@ import * as assert from 'assert';
 async function run() {
   const importObj = {};
   const imports: Imports = {
-    listInRecord1(x) {},
-    listInRecord2() { return { a: 'list_in_record2' }; },
-    listInRecord3(x) {
+    fListInRecord1(x) {},
+    fListInRecord2() { return { a: 'list_in_record2' }; },
+    fListInRecord3(x) {
       assert.strictEqual(x.a, 'list_in_record3 input');
       return { a: 'list_in_record3 output' };
     },
-    listInRecord4(x) {
+    fListInRecord4(x) {
       assert.strictEqual(x.a, 'input4');
       return { a: 'result4' };
     },
-    listInVariant1(a, b, c) {
+    fListInVariant1(a, b, c) {
       assert.strictEqual(a, 'foo');
       assert.deepStrictEqual(b, { tag: 'err', val: 'bar' });
       assert.deepStrictEqual(c, { tag: 0, val: 'baz' });
     },
-    listInVariant2() { return 'list_in_variant2'; },
-    listInVariant3(x) {
+    fListInVariant2() { return 'list_in_variant2'; },
+    fListInVariant3(x) {
       assert.strictEqual(x, 'input3');
       return 'output3';
     },
@@ -57,23 +57,23 @@ async function run() {
   instance = wasm.instance;
 
   wasm.testImports();
-  wasm.listInRecord1({ a: "list_in_record1" });
-  assert.deepStrictEqual(wasm.listInRecord2(), { a: "list_in_record2" });
+  wasm.fListInRecord1({ a: "list_in_record1" });
+  assert.deepStrictEqual(wasm.fListInRecord2(), { a: "list_in_record2" });
 
   assert.deepStrictEqual(
-    wasm.listInRecord3({ a: "list_in_record3 input" }),
+    wasm.fListInRecord3({ a: "list_in_record3 input" }),
     { a: "list_in_record3 output" },
   );
 
   assert.deepStrictEqual(
-    wasm.listInRecord4({ a: "input4" }),
+    wasm.fListInRecord4({ a: "input4" }),
     { a: "result4" },
   );
 
-  wasm.listInVariant1("foo", { tag: 'err', val: 'bar' }, { tag: 0, val: 'baz' });
+  wasm.fListInVariant1("foo", { tag: 'err', val: 'bar' }, { tag: 0, val: 'baz' });
 
-  assert.deepStrictEqual(wasm.listInVariant2(), "list_in_variant2");
-  assert.deepStrictEqual(wasm.listInVariant3("input3"), "output3");
+  assert.deepStrictEqual(wasm.fListInVariant2(), "list_in_variant2");
+  assert.deepStrictEqual(wasm.fListInVariant3("input3"), "output3");
 
   assert.deepStrictEqual(wasm.errnoResult().tag, 'err');
 

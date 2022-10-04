@@ -8,31 +8,31 @@ use imports::*;
 pub struct MyImports;
 
 impl Imports for MyImports {
-    fn list_in_record1(&mut self, ty: ListInRecord1<'_>) {
+    fn f_list_in_record1(&mut self, ty: ListInRecord1<'_>) {
         assert_eq!(ty.a, "list_in_record1");
     }
 
-    fn list_in_record2(&mut self) -> ListInRecord2 {
+    fn f_list_in_record2(&mut self) -> ListInRecord2 {
         ListInRecord2 {
             a: "list_in_record2".to_string(),
         }
     }
 
-    fn list_in_record3(&mut self, a: ListInRecord3Param<'_>) -> ListInRecord3Result {
+    fn f_list_in_record3(&mut self, a: ListInRecord3Param<'_>) -> ListInRecord3Result {
         assert_eq!(a.a, "list_in_record3 input");
         ListInRecord3Result {
             a: "list_in_record3 output".to_string(),
         }
     }
 
-    fn list_in_record4(&mut self, a: ListInAliasParam<'_>) -> ListInAliasResult {
+    fn f_list_in_record4(&mut self, a: ListInAliasParam<'_>) -> ListInAliasResult {
         assert_eq!(a.a, "input4");
         ListInRecord4Result {
             a: "result4".to_string(),
         }
     }
 
-    fn list_in_variant1(
+    fn f_list_in_variant1(
         &mut self,
         a: ListInVariant1V1<'_>,
         b: ListInVariant1V2<'_>,
@@ -46,11 +46,11 @@ impl Imports for MyImports {
         }
     }
 
-    fn list_in_variant2(&mut self) -> Option<String> {
+    fn f_list_in_variant2(&mut self) -> Option<String> {
         Some("list_in_variant2".to_string())
     }
 
-    fn list_in_variant3(&mut self, a: ListInVariant3Param<'_>) -> Option<String> {
+    fn f_list_in_variant3(&mut self, a: ListInVariant3Param<'_>) -> Option<String> {
         assert_eq!(a.unwrap(), "input3");
         Some("output3".to_string())
     }
@@ -104,17 +104,17 @@ fn run(wasm: &str) -> Result<()> {
 
     exports.test_imports(&mut store)?;
 
-    exports.list_in_record1(
+    exports.f_list_in_record1(
         &mut store,
         ListInRecord1 {
             a: "list_in_record1",
         },
     )?;
-    assert_eq!(exports.list_in_record2(&mut store)?.a, "list_in_record2");
+    assert_eq!(exports.f_list_in_record2(&mut store)?.a, "list_in_record2");
 
     assert_eq!(
         exports
-            .list_in_record3(
+            .f_list_in_record3(
                 &mut store,
                 ListInRecord3Param {
                     a: "list_in_record3 input"
@@ -126,23 +126,23 @@ fn run(wasm: &str) -> Result<()> {
 
     assert_eq!(
         exports
-            .list_in_record4(&mut store, ListInAliasParam { a: "input4" })?
+            .f_list_in_record4(&mut store, ListInAliasParam { a: "input4" })?
             .a,
         "result4"
     );
 
-    exports.list_in_variant1(
+    exports.f_list_in_variant1(
         &mut store,
         Some("foo"),
         Err("bar"),
         ListInVariant1V3::String("baz"),
     )?;
     assert_eq!(
-        exports.list_in_variant2(&mut store)?,
+        exports.f_list_in_variant2(&mut store)?,
         Some("list_in_variant2".to_string())
     );
     assert_eq!(
-        exports.list_in_variant3(&mut store, Some("input3"))?,
+        exports.f_list_in_variant3(&mut store, Some("input3"))?,
         Some("output3".to_string())
     );
 

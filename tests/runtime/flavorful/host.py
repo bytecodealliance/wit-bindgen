@@ -7,29 +7,29 @@ import sys
 import wasmtime
 
 class MyImports:
-    def list_in_record1(self, a: i.ListInRecord1) -> None:
+    def f_list_in_record1(self, a: i.ListInRecord1) -> None:
         pass
 
-    def list_in_record2(self) -> i.ListInRecord2:
+    def f_list_in_record2(self) -> i.ListInRecord2:
         return i.ListInRecord2('list_in_record2')
 
-    def list_in_record3(self, a: i.ListInRecord3) -> i.ListInRecord3:
+    def f_list_in_record3(self, a: i.ListInRecord3) -> i.ListInRecord3:
         assert(a.a == 'list_in_record3 input')
         return i.ListInRecord3('list_in_record3 output')
 
-    def list_in_record4(self, a: i.ListInAlias) -> i.ListInAlias:
+    def f_list_in_record4(self, a: i.ListInAlias) -> i.ListInAlias:
         assert(a.a == 'input4')
         return i.ListInRecord4('result4')
 
-    def list_in_variant1(self, a: i.ListInVariant1V1, b: i.ListInVariant1V2, c: i.ListInVariant1V3) -> None:
+    def f_list_in_variant1(self, a: i.ListInVariant1V1, b: i.ListInVariant1V2, c: i.ListInVariant1V3) -> None:
         assert(a == 'foo')
         assert(b == i.Err('bar'))
         assert(c == 'baz')
 
-    def list_in_variant2(self) -> i.ListInVariant2:
+    def f_list_in_variant2(self) -> i.ListInVariant2:
         return 'list_in_variant2'
 
-    def list_in_variant3(self, a: i.ListInVariant3) -> i.ListInVariant3:
+    def f_list_in_variant3(self, a: i.ListInVariant3) -> i.ListInVariant3:
         assert(a == 'input3')
         return 'output3'
 
@@ -66,15 +66,15 @@ def run(wasm_file: str) -> None:
     wasm = Exports(store, linker, module)
 
     wasm.test_imports(store)
-    wasm.list_in_record1(store, e.ListInRecord1("list_in_record1"))
-    assert(wasm.list_in_record2(store) == e.ListInRecord2(a="list_in_record2"))
+    wasm.f_list_in_record1(store, e.ListInRecord1("list_in_record1"))
+    assert(wasm.f_list_in_record2(store) == e.ListInRecord2(a="list_in_record2"))
 
-    assert(wasm.list_in_record3(store, e.ListInRecord3("list_in_record3 input")).a == "list_in_record3 output")
-    assert(wasm.list_in_record4(store, e.ListInRecord4("input4")).a == "result4")
+    assert(wasm.f_list_in_record3(store, e.ListInRecord3("list_in_record3 input")).a == "list_in_record3 output")
+    assert(wasm.f_list_in_record4(store, e.ListInRecord4("input4")).a == "result4")
 
-    wasm.list_in_variant1(store, "foo", e.Err("bar"), 'baz')
-    assert(wasm.list_in_variant2(store) == "list_in_variant2")
-    assert(wasm.list_in_variant3(store, "input3") == "output3")
+    wasm.f_list_in_variant1(store, "foo", e.Err("bar"), 'baz')
+    assert(wasm.f_list_in_variant2(store) == "list_in_variant2")
+    assert(wasm.f_list_in_variant3(store, "input3") == "output3")
 
     assert(isinstance(wasm.errno_result(store), e.Err))
 
