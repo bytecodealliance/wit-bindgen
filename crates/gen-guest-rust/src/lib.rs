@@ -456,24 +456,27 @@ impl Generator for RustWasm {
             ));
         }
 
-        // TODO make this infallible once we get rid of handle tests from the tree
-        if let Ok(component_type) = wit_component::InterfaceEncoder::new(iface).encode() {
-            let direction = match dir {
-                Direction::Import => "import",
-                Direction::Export => "export",
-            };
-            let iface_name = &iface.name;
+        let component_type = wit_component::InterfaceEncoder::new(iface)
+            .encode()
+            .expect(&format!(
+                "encoding interface {} as a component type",
+                iface.name
+            ));
+        let direction = match dir {
+            Direction::Import => "import",
+            Direction::Export => "export",
+        };
+        let iface_name = &iface.name;
 
-            self.src.push_str("#[cfg(target_arch = \"wasm32\")]\n");
-            self.src.push_str(&format!(
-                "#[link_section = \"component-type:{direction}:{iface_name}\"]\n"
-            ));
-            self.src.push_str(&format!(
-                "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",
-                component_type.len()
-            ));
-            self.src.push_str(&format!("{:?};\n", component_type));
-        }
+        self.src.push_str("#[cfg(target_arch = \"wasm32\")]\n");
+        self.src.push_str(&format!(
+            "#[link_section = \"component-type:{direction}:{iface_name}\"]\n"
+        ));
+        self.src.push_str(&format!(
+            "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",
+            component_type.len()
+        ));
+        self.src.push_str(&format!("{:?};\n", component_type));
 
         // For standalone generation, close the export! macro
         if self.opts.standalone && dir == Direction::Export {
