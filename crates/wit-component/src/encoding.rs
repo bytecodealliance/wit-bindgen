@@ -2097,9 +2097,9 @@ impl<'a> ImportEncoder<'a> {
 pub struct ComponentEncoder<'a> {
     module: &'a [u8],
     encoding: StringEncoding,
-    interface: Option<&'a Interface>,
-    imports: &'a [Interface],
-    exports: &'a [Interface],
+    interface: Option<Interface>,
+    imports: Vec<Interface>,
+    exports: Vec<Interface>,
     validate: bool,
     types_only: bool,
     adapters: IndexMap<&'a str, (&'a [u8], &'a Interface)>,
@@ -2126,19 +2126,23 @@ impl<'a> ComponentEncoder<'a> {
 
     /// Set the default interface exported by the component.
     pub fn interface(mut self, interface: &'a Interface) -> Self {
-        self.interface = Some(interface);
+        self.interface = Some(interface.clone());
         self
     }
 
     /// Set the interfaces the component imports.
     pub fn imports(mut self, imports: &'a [Interface]) -> Self {
-        self.imports = imports;
+        for i in imports {
+            self.imports.push(i.clone())
+        }
         self
     }
 
     /// Set the interfaces the component exports.
     pub fn exports(mut self, exports: &'a [Interface]) -> Self {
-        self.exports = exports;
+        for e in exports {
+            self.exports.push(e.clone())
+        }
         self
     }
 
@@ -2171,8 +2175,8 @@ impl<'a> ComponentEncoder<'a> {
             validate_module(
                 self.module,
                 &self.interface,
-                self.imports,
-                self.exports,
+                &self.imports,
+                &self.exports,
                 &adapters,
             )?
         } else {
@@ -2182,7 +2186,6 @@ impl<'a> ComponentEncoder<'a> {
         let exports = self
             .interface
             .iter()
-            .copied()
             .map(|i| (i, true))
             .chain(self.exports.iter().map(|i| (i, false)));
 
@@ -2190,7 +2193,7 @@ impl<'a> ComponentEncoder<'a> {
         let mut types = TypeEncoder::default();
         let mut imports = ImportEncoder::default();
         types.encode_func_types(exports.clone(), false)?;
-        types.encode_instance_imports(self.imports, &info, &mut imports)?;
+        types.encode_instance_imports(&self.imports, &info, &mut imports)?;
 
         if self.types_only {
             if !self.module.is_empty() {
