@@ -58,7 +58,6 @@ pub struct Opts {
 #[derive(Default)]
 struct Trait {
     methods: Vec<String>,
-    resource_methods: BTreeMap<ResourceId, Vec<String>>,
 }
 
 impl Opts {
@@ -102,22 +101,6 @@ impl RustGenerator for RustWasm {
             // In exports everythig is always owned, slices and handles and all.
             // Nothing is borrowed.
             TypeMode::Owned
-        }
-    }
-
-    fn handle_projection(&self) -> Option<(&'static str, String)> {
-        None
-    }
-
-    fn handle_in_super(&self) -> bool {
-        !self.in_import
-    }
-
-    fn handle_wrapper(&self) -> Option<&'static str> {
-        if self.in_import {
-            None
-        } else {
-            Some("wit_bindgen_guest_rust::Handle")
         }
     }
 
@@ -282,172 +265,6 @@ impl Generator for RustWasm {
         self.print_typedef_enum(id, name, enum_, docs);
     }
 
-    fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
-        // For exported handles we synthesize some trait implementations
-        // automatically for runtime-required traits.
-        if !self.in_import {
-            let panic = "
-                #[cfg(not(target_arch = \"wasm32\"))]
-                {
-                    panic!(\"handles can only be used on wasm32\");
-                }
-                #[cfg(target_arch = \"wasm32\")]
-            ";
-            self.src.push_str(&format!(
-                "
-                    unsafe impl wit_bindgen_guest_rust::HandleType for super::{ty} {{
-                        #[inline]
-                        fn clone(_val: i32) -> i32 {{
-                            {panic_not_wasm}
-                            {{
-                                #[link(wasm_import_module = \"canonical_abi\")]
-                                extern \"C\" {{
-                                    #[link_name = \"resource_clone_{name}\"]
-                                    fn clone(val: i32) -> i32;
-                                }}
-                                unsafe {{ clone(_val) }}
-                            }}
-                        }}
-
-                        #[inline]
-                        fn drop(_val: i32) {{
-                            {panic_not_wasm}
-                            {{
-                                #[link(wasm_import_module = \"canonical_abi\")]
-                                extern \"C\" {{
-                                    #[link_name = \"resource_drop_{name}\"]
-                                    fn drop(val: i32);
-                                }}
-                                unsafe {{ drop(_val) }}
-                            }}
-                        }}
-                    }}
-
-                    unsafe impl wit_bindgen_guest_rust::LocalHandle for super::{ty} {{
-                        #[inline]
-                        fn new(_val: i32) -> i32 {{
-                            {panic_not_wasm}
-                            {{
-                                #[link(wasm_import_module = \"canonical_abi\")]
-                                extern \"C\" {{
-                                    #[link_name = \"resource_new_{name}\"]
-                                    fn new(val: i32) -> i32;
-                                }}
-                                unsafe {{ new(_val) }}
-                            }}
-                        }}
-
-                        #[inline]
-                        fn get(_val: i32) -> i32 {{
-                            {panic_not_wasm}
-                            {{
-                                #[link(wasm_import_module = \"canonical_abi\")]
-                                extern \"C\" {{
-                                    #[link_name = \"resource_get_{name}\"]
-                                    fn get(val: i32) -> i32;
-                                }}
-                                unsafe {{ get(_val) }}
-                            }}
-                        }}
-                    }}
-
-                    const _: () = {{
-                        #[export_name = \"{ns}canonical_abi_drop_{name}\"]
-                        extern \"C\" fn drop(ty: Box<super::{ty}>) {{
-                            <super::{iface} as {iface}>::drop_{name_snake}(*ty)
-                        }}
-                    }};
-                ",
-                ty = iface.resources[ty].name.to_camel_case(),
-                name = iface.resources[ty].name,
-                name_snake = iface.resources[ty].name.to_snake_case(),
-                iface = iface.name.to_camel_case(),
-                ns = self.opts.symbol_namespace,
-                panic_not_wasm = panic,
-            ));
-            let trait_ = self
-                .traits
-                .entry(iface.name.to_camel_case())
-                .or_insert(Trait::default());
-            trait_.methods.push(format!(
-                "
-                    /// An optional callback invoked when a handle is finalized
-                    /// and destroyed.
-                    fn drop_{}(val: super::{}) {{
-                        drop(val);
-                    }}
-                ",
-                iface.resources[ty].name.to_snake_case(),
-                iface.resources[ty].name.to_camel_case(),
-            ));
-            return;
-        }
-
-        let resource = &iface.resources[ty];
-        let name = &resource.name;
-
-        self.rustdoc(&resource.docs);
-        self.src.push_str("#[derive(Debug)]\n");
-        self.src.push_str("#[repr(transparent)]\n");
-        self.src
-            .push_str(&format!("pub struct {}(i32);\n", name.to_camel_case()));
-        self.src.push_str("impl ");
-        self.src.push_str(&name.to_camel_case());
-        self.src.push_str(
-            " {
-                pub unsafe fn from_raw(raw: i32) -> Self {
-                    Self(raw)
-                }
-
-                pub fn into_raw(self) -> i32 {
-                    let ret = self.0;
-                    core::mem::forget(self);
-                    return ret;
-                }
-
-                pub fn as_raw(&self) -> i32 {
-                    self.0
-                }
-            }\n",
-        );
-
-        self.src.push_str("impl Drop for ");
-        self.src.push_str(&name.to_camel_case());
-        self.src.push_str(&format!(
-            "{{
-                fn drop(&mut self) {{
-                    #[link(wasm_import_module = \"canonical_abi\")]
-                    extern \"C\" {{
-                        #[link_name = \"resource_drop_{}\"]
-                        fn close(fd: i32);
-                    }}
-                    unsafe {{
-                        close(self.0);
-                    }}
-                }}
-            }}\n",
-            name,
-        ));
-
-        self.src.push_str("impl Clone for ");
-        self.src.push_str(&name.to_camel_case());
-        self.src.push_str(&format!(
-            "{{
-                fn clone(&self) -> Self {{
-                    #[link(wasm_import_module = \"canonical_abi\")]
-                    extern \"C\" {{
-                        #[link_name = \"resource_clone_{}\"]
-                        fn clone(val: i32) -> i32;
-                    }}
-                    unsafe {{
-                        Self(clone(self.0))
-                    }}
-                }}
-            }}\n",
-            name,
-        ));
-    }
-
     fn type_alias(&mut self, iface: &Interface, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
         self.print_typedef_alias(iface, id, ty, docs);
     }
@@ -476,21 +293,10 @@ impl Generator for RustWasm {
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
-        let mut sig = FnSig::default();
+        let sig = FnSig::default();
         let param_mode = TypeMode::AllBorrowed("'_");
         match &func.kind {
             FunctionKind::Freestanding => {}
-            FunctionKind::Static { resource, .. } | FunctionKind::Method { resource, .. } => {
-                sig.use_item_name = true;
-                self.src.push_str(&format!(
-                    "impl {} {{\n",
-                    iface.resources[*resource].name.to_camel_case()
-                ));
-            }
-        }
-        if let FunctionKind::Method { .. } = func.kind {
-            sig.self_arg = Some("&self".to_string());
-            sig.self_is_first_param = true;
         }
         let params = self.print_signature(iface, func, param_mode, &sig);
         self.src.push_str("{\n");
@@ -519,9 +325,6 @@ impl Generator for RustWasm {
 
         match &func.kind {
             FunctionKind::Freestanding => {}
-            FunctionKind::Static { .. } | FunctionKind::Method { .. } => {
-                self.src.push_str("}\n");
-            }
         }
     }
 
@@ -625,15 +428,6 @@ impl Generator for RustWasm {
         self.in_trait = true;
         let mut sig = FnSig::default();
         sig.private = true;
-        match &func.kind {
-            FunctionKind::Freestanding => {}
-            FunctionKind::Static { .. } => sig.use_item_name = true,
-            FunctionKind::Method { .. } => {
-                sig.use_item_name = true;
-                sig.self_is_first_param = true;
-                sig.self_arg = Some("&self".to_string());
-            }
-        }
         self.print_signature(iface, func, TypeMode::Owned, &sig);
         self.src.push_str(";");
         self.in_trait = false;
@@ -643,10 +437,6 @@ impl Generator for RustWasm {
             .or_insert(Trait::default());
         let dst = match &func.kind {
             FunctionKind::Freestanding => &mut trait_.methods,
-            FunctionKind::Static { resource, .. } | FunctionKind::Method { resource, .. } => trait_
-                .resource_methods
-                .entry(*resource)
-                .or_insert(Vec::new()),
         };
         dst.push(mem::replace(&mut self.src, prev).into());
     }
@@ -672,7 +462,7 @@ impl Generator for RustWasm {
         }
     }
 
-    fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
+    fn finish_one(&mut self, _iface: &Interface, files: &mut Files) {
         let mut src = mem::take(&mut self.src);
 
         for (name, trait_) in self.traits.iter() {
@@ -684,18 +474,6 @@ impl Generator for RustWasm {
                 src.push_str("\n");
             }
             src.push_str("}\n");
-
-            for (id, methods) in trait_.resource_methods.iter() {
-                src.push_str(&format!(
-                    "pub trait {} {{\n",
-                    iface.resources[*id].name.to_camel_case()
-                ));
-                for f in methods {
-                    src.push_str(&f);
-                    src.push_str("\n");
-                }
-                src.push_str("}\n");
-            }
         }
 
         // Close the opening `mod`.
@@ -1018,32 +796,6 @@ impl Bindgen for FunctionBindgen<'_> {
                         operands[0],
                     ));
                 }
-            }
-
-            // handles in exports
-            Instruction::I32FromOwnedHandle { .. } => {
-                results.push(format!(
-                    "wit_bindgen_guest_rust::Handle::into_raw({})",
-                    operands[0]
-                ));
-            }
-            Instruction::HandleBorrowedFromI32 { .. } => {
-                results.push(format!(
-                    "wit_bindgen_guest_rust::Handle::from_raw({})",
-                    operands[0],
-                ));
-            }
-
-            // handles in imports
-            Instruction::I32FromBorrowedHandle { .. } => {
-                results.push(format!("{}.0", operands[0]));
-            }
-            Instruction::HandleOwnedFromI32 { ty } => {
-                results.push(format!(
-                    "{}({})",
-                    iface.resources[*ty].name.to_camel_case(),
-                    operands[0]
-                ));
             }
 
             Instruction::FlagsLower { flags, .. } => {
@@ -1502,19 +1254,8 @@ impl Bindgen for FunctionBindgen<'_> {
                             ));
                         }
                     }
-                    FunctionKind::Static { resource, name }
-                    | FunctionKind::Method { resource, name } => {
-                        self.push_str(&format!(
-                            "<super::{r} as {r}>::{}",
-                            name.to_snake_case(),
-                            r = iface.resources[*resource].name.to_camel_case(),
-                        ));
-                    }
                 }
                 self.push_str("(");
-                if let FunctionKind::Method { .. } = func.kind {
-                    self.push_str("&");
-                }
                 self.push_str(&operands.join(", "));
                 self.push_str(")");
                 self.push_str(";\n");

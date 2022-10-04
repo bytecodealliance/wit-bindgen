@@ -48,11 +48,6 @@ impl Markdown {
             Type::Float64 => self.src.push_str("`float64`"),
             Type::Char => self.src.push_str("`char`"),
             Type::String => self.src.push_str("`string`"),
-            Type::Handle(id) => {
-                self.src.push_str("handle<");
-                self.src.push_str(&iface.resources[*id].name);
-                self.src.push_str(">");
-            }
             Type::Id(id) => {
                 let ty = &iface.types[*id];
                 if !skip_name {
@@ -420,10 +415,6 @@ impl Generator for Markdown {
             }
         }
         self.print_type_info(id, docs);
-    }
-
-    fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
-        drop((iface, ty));
     }
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {

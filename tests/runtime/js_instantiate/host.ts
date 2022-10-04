@@ -12,7 +12,6 @@ async function run() {
   (new Exports()).instantiate(new WebAssembly.Module(getWasm()), importObj);
   {
     const obj = new Exports();
-    obj.addToImports(importObj);
     obj.instantiate(new WebAssembly.Instance(new WebAssembly.Module(getWasm()), importObj));
   }
 }

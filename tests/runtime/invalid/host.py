@@ -27,9 +27,6 @@ class MyImports(Imports):
     def roundtrip_enum(self, x: i.E) -> i.E:
         raise Exception('unreachable')
 
-    def get_internal(self, x: i.HostState) -> int:
-        raise Exception('unreachable')
-
 def run(wasm_file: str) -> None:
     store = wasmtime.Store()
     module = wasmtime.Module.from_file(store.engine, wasm_file)
@@ -67,8 +64,6 @@ def run(wasm_file: str) -> None:
     assert_throws(lambda: wasm.invalid_s16(store), 'must be between')
     assert_throws(lambda: wasm.invalid_char(store), 'not a valid char')
     assert_throws(lambda: wasm.invalid_enum(store), 'not a valid E')
-    assert_throws(lambda: wasm.invalid_handle(store), 'handle index not valid')
-    assert_throws(lambda: wasm.invalid_handle_close(store), 'handle index not valid')
 
 if __name__ == '__main__':
     run(sys.argv[1])

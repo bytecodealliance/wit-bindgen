@@ -10,7 +10,6 @@ pub enum TypeMode {
     Owned,
     AllBorrowed(&'static str),
     LeafBorrowed(&'static str),
-    HandlesBorrowed(&'static str),
 }
 
 pub trait RustGenerator {
@@ -26,11 +25,6 @@ pub trait RustGenerator {
     );
     fn print_borrowed_str(&mut self, lifetime: &'static str);
     fn default_param_mode(&self) -> TypeMode;
-    fn handle_projection(&self) -> Option<(&'static str, String)>;
-    fn handle_wrapper(&self) -> Option<&'static str>;
-    fn handle_in_super(&self) -> bool {
-        false
-    }
 
     fn rustdoc(&mut self, docs: &Docs) {
         let docs = match &docs.contents {
@@ -164,39 +158,6 @@ pub trait RustGenerator {
     fn print_ty(&mut self, iface: &Interface, ty: &Type, mode: TypeMode) {
         match ty {
             Type::Id(t) => self.print_tyid(iface, *t, mode),
-            Type::Handle(r) => {
-                let mut info = TypeInfo::default();
-                info.has_handle = true;
-                let lt = self.lifetime_for(&info, mode);
-                // Borrowed handles are always behind a reference since
-                // in that case we never take ownership of the handle.
-                if let Some(lt) = lt {
-                    self.push_str("&");
-                    if lt != "'_" {
-                        self.push_str(lt);
-                    }
-                    self.push_str(" ");
-                }
-
-                let suffix = match self.handle_wrapper() {
-                    Some(wrapper) => {
-                        self.push_str(wrapper);
-                        self.push_str("<");
-                        ">"
-                    }
-                    None => "",
-                };
-                if self.handle_in_super() {
-                    self.push_str("super::");
-                }
-                if let Some((proj, _)) = self.handle_projection() {
-                    self.push_str(proj);
-                    self.push_str("::");
-                }
-                self.push_str(&iface.resources[*r].name.to_camel_case());
-                self.push_str(suffix);
-            }
-
             Type::Bool => self.push_str("bool"),
             Type::U8 => self.push_str("u8"),
             Type::U16 => self.push_str("u16"),
@@ -213,7 +174,7 @@ pub trait RustGenerator {
                 TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) => {
                     self.print_borrowed_str(lt)
                 }
-                TypeMode::Owned | TypeMode::HandlesBorrowed(_) => self.push_str("String"),
+                TypeMode::Owned => self.push_str("String"),
             },
         }
     }
@@ -241,7 +202,7 @@ pub trait RustGenerator {
             // variant/record/list, then we need to place the
             // lifetime parameter on the type as well.
             if info.owns_data() && needs_generics(iface, &ty.kind) {
-                self.print_generics(&info, lt, false);
+                self.print_generics(lt);
             }
 
             return;
@@ -261,7 +222,6 @@ pub trait RustGenerator {
                     | TypeDefKind::Union(_) => true,
                     TypeDefKind::Type(Type::Id(t)) => needs_generics(iface, &iface.types[*t].kind),
                     TypeDefKind::Type(Type::String) => true,
-                    TypeDefKind::Type(Type::Handle(_)) => true,
                     TypeDefKind::Type(_) => false,
                 }
             }
@@ -340,7 +300,7 @@ pub trait RustGenerator {
                     self.push_str(">");
                 }
             }
-            TypeMode::HandlesBorrowed(_) | TypeMode::Owned => {
+            TypeMode::Owned => {
                 self.push_str("Vec<");
                 self.print_ty(iface, ty, mode);
                 self.push_str(">");
@@ -368,26 +328,14 @@ pub trait RustGenerator {
         self.push_str("]");
     }
 
-    fn print_generics(&mut self, info: &TypeInfo, lifetime: Option<&str>, bound: bool) {
-        let proj = if info.has_handle {
-            self.handle_projection()
-        } else {
-            None
-        };
-        if lifetime.is_none() && proj.is_none() {
+    fn print_generics(&mut self, lifetime: Option<&str>) {
+        if lifetime.is_none() {
             return;
         }
         self.push_str("<");
         if let Some(lt) = lifetime {
             self.push_str(lt);
             self.push_str(",");
-        }
-        if let Some((proj, trait_bound)) = proj {
-            self.push_str(proj);
-            if bound {
-                self.push_str(": ");
-                self.push_str(&trait_bound);
-            }
         }
         self.push_str(">");
     }
@@ -428,7 +376,6 @@ pub trait RustGenerator {
             Type::Float64 => out.push_str("F64"),
             Type::Char => out.push_str("Char"),
             Type::String => out.push_str("String"),
-            Type::Handle(id) => out.push_str(&iface.resources[*id].name.to_camel_case()),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
                 match &ty.name {
@@ -537,11 +484,11 @@ pub trait RustGenerator {
             if !info.owns_data() {
                 self.push_str("#[repr(C)]\n");
                 self.push_str("#[derive(Copy, Clone)]\n");
-            } else if !info.has_handle {
+            } else {
                 self.push_str("#[derive(Clone)]\n");
             }
             self.push_str(&format!("pub struct {}", name));
-            self.print_generics(&info, lt, true);
+            self.print_generics(lt);
             self.push_str(" {\n");
             for field in record.fields.iter() {
                 self.rustdoc(&field.docs);
@@ -554,10 +501,10 @@ pub trait RustGenerator {
             self.push_str("}\n");
 
             self.push_str("impl");
-            self.print_generics(&info, lt, true);
+            self.print_generics(lt);
             self.push_str(" core::fmt::Debug for ");
             self.push_str(&name);
-            self.print_generics(&info, lt, false);
+            self.print_generics(lt);
             self.push_str(" {\n");
             self.push_str(
                 "fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {\n",
@@ -582,7 +529,7 @@ pub trait RustGenerator {
             let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
             self.push_str(&format!("pub type {}", name));
-            self.print_generics(&info, lt, true);
+            self.print_generics(lt);
             self.push_str(" = (");
             for ty in tuple.types.iter() {
                 self.print_ty(iface, ty, mode);
@@ -642,11 +589,11 @@ pub trait RustGenerator {
             let lt = self.lifetime_for(&info, mode);
             if !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
-            } else if !info.has_handle {
+            } else {
                 self.push_str("#[derive(Clone)]\n");
             }
             self.push_str(&format!("pub enum {name}"));
-            self.print_generics(&info, lt, true);
+            self.print_generics(lt);
             self.push_str("{\n");
             for (case_name, docs, payload) in cases.clone() {
                 self.rustdoc(docs);
@@ -684,10 +631,10 @@ pub trait RustGenerator {
         let info = self.info(id);
         let lt = self.lifetime_for(&info, mode);
         self.push_str("impl");
-        self.print_generics(&info, lt, true);
+        self.print_generics(lt);
         self.push_str(" core::fmt::Debug for ");
         self.push_str(name);
-        self.print_generics(&info, lt, false);
+        self.print_generics(lt);
         self.push_str(" {\n");
         self.push_str("fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {\n");
         self.push_str("match self {\n");
@@ -718,7 +665,7 @@ pub trait RustGenerator {
             self.rustdoc(docs);
             let lt = self.lifetime_for(&info, mode);
             self.push_str(&format!("pub type {}", name));
-            self.print_generics(&info, lt, true);
+            self.print_generics(lt);
             self.push_str("= Option<");
             self.print_ty(iface, payload, mode);
             self.push_str(">;\n");
@@ -738,7 +685,7 @@ pub trait RustGenerator {
             self.rustdoc(docs);
             let lt = self.lifetime_for(&info, mode);
             self.push_str(&format!("pub type {}", name));
-            self.print_generics(&info, lt, true);
+            self.print_generics(lt);
             self.push_str("= Result<");
             self.print_optional_ty(iface, result.ok.as_ref(), mode);
             self.push_str(",");
@@ -847,7 +794,7 @@ pub trait RustGenerator {
             self.rustdoc(docs);
             self.push_str(&format!("pub type {}", name));
             let lt = self.lifetime_for(&info, mode);
-            self.print_generics(&info, lt, true);
+            self.print_generics(lt);
             self.push_str(" = ");
             self.print_ty(iface, ty, mode);
             self.push_str(";\n");
@@ -860,7 +807,7 @@ pub trait RustGenerator {
             let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
             self.push_str(&format!("pub type {}", name));
-            self.print_generics(&info, lt, true);
+            self.print_generics(lt);
             self.push_str(" = ");
             self.print_list(iface, ty, mode);
             self.push_str(";\n");
@@ -893,19 +840,13 @@ pub trait RustGenerator {
             && info.result
             && match self.default_param_mode() {
                 TypeMode::AllBorrowed(_) | TypeMode::LeafBorrowed(_) => true,
-                TypeMode::HandlesBorrowed(_) => info.has_handle,
                 TypeMode::Owned => false,
             }
     }
 
     fn lifetime_for(&self, info: &TypeInfo, mode: TypeMode) -> Option<&'static str> {
         match mode {
-            TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s)
-                if info.has_list || info.has_handle =>
-            {
-                Some(s)
-            }
-            TypeMode::HandlesBorrowed(s) if info.has_handle => Some(s),
+            TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s) if info.has_list => Some(s),
             _ => None,
         }
     }
@@ -1119,7 +1060,7 @@ trait TypeInfoExt {
 
 impl TypeInfoExt for TypeInfo {
     fn owns_data(&self) -> bool {
-        self.has_list || self.has_handle
+        self.has_list
     }
 }
 

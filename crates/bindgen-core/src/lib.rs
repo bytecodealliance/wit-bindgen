@@ -84,7 +84,6 @@ pub trait Generator {
     );
     fn type_union(&mut self, iface: &Interface, id: TypeId, name: &str, union: &Union, docs: &Docs);
     fn type_enum(&mut self, iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs);
-    fn type_resource(&mut self, iface: &Interface, ty: ResourceId);
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
@@ -129,10 +128,6 @@ pub trait Generator {
                 TypeDefKind::Future(_) => todo!("generate for future"),
                 TypeDefKind::Stream(_) => todo!("generate for stream"),
             }
-        }
-
-        for (id, _resource) in iface.resources.iter() {
-            self.type_resource(iface, id);
         }
 
         self.preprocess_functions(iface, dir);
@@ -181,9 +176,6 @@ pub struct TypeInfo {
 
     /// Whether or not this type (transitively) has a list.
     pub has_list: bool,
-
-    /// Whether or not this type (transitively) has a handle.
-    pub has_handle: bool,
 }
 
 impl std::ops::BitOrAssign for TypeInfo {
@@ -191,7 +183,6 @@ impl std::ops::BitOrAssign for TypeInfo {
         self.param |= rhs.param;
         self.result |= rhs.result;
         self.has_list |= rhs.has_list;
-        self.has_handle |= rhs.has_handle;
     }
 }
 
@@ -271,7 +262,6 @@ impl Types {
     pub fn type_info(&mut self, iface: &Interface, ty: &Type) -> TypeInfo {
         let mut info = TypeInfo::default();
         match ty {
-            Type::Handle(_) => info.has_handle = true,
             Type::String => info.has_list = true,
             Type::Id(id) => return self.type_id_info(iface, *id),
             _ => {}
