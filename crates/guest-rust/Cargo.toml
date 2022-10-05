@@ -5,10 +5,9 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-wit-bindgen-guest-rust-macro = { path = "../guest-rust-macro", optional = true, default-features = false }
+wit-bindgen-guest-rust-macro = { path = "../guest-rust-macro", optional = true }
 bitflags = { workspace = true }
 
 [features]
-default = ["macros", "std"]
+default = ["macros"]
 macros = ["wit-bindgen-guest-rust-macro"]
-std = ["wit-bindgen-guest-rust-macro/std"]

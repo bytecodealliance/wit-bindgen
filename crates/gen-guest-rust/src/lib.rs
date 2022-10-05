@@ -53,6 +53,10 @@ pub struct Opts {
     /// crate.
     #[cfg_attr(feature = "clap", arg(skip))]
     pub standalone: bool,
+
+    /// If true, code generation should avoid any features that depend on `std`.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub no_std: bool,
 }
 
 #[derive(Default)]
@@ -92,6 +96,10 @@ impl RustWasm {
 }
 
 impl RustGenerator for RustWasm {
+    fn use_std(&self) -> bool {
+        !self.opts.no_std
+    }
+
     fn default_param_mode(&self) -> TypeMode {
         if self.in_import {
             // We default to borrowing as much as possible to maximize the ability
