@@ -1069,9 +1069,6 @@ impl Generator for C {
             func.name.to_snake_case()
         ));
 
-        // need to copy this before mutable borrow of self
-        let direction = self.direction;
-
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         match sig.results.len() {
             0 => f.gen.src.c("void"),
@@ -1093,13 +1090,6 @@ impl Generator for C {
             f.gen.src.c("void");
         }
         f.gen.src.c(") {\n");
-
-        // Force linking to the component type object if this function is live
-        uwrite!(
-            f.gen.src.c,
-            "(void) {};",
-            component_type_object::linking_symbol(iface, direction)
-        );
 
         // Perform all lifting/lowering and append it to our src.
         iface.call(
@@ -1171,16 +1161,22 @@ impl Generator for C {
             ",
             iface.name.to_shouty_snake_case(),
         );
+        let linking_symbol = component_type_object::linking_symbol(iface, self.direction);
         uwrite!(
             self.src.c,
             "\
                 #include <stdlib.h>
                 #include <{}.h>
 
-                extern void {}(void);
+                // The following symbols are never called, but they are sufficient
+                // to get the custom sections in the component type object linked
+                // into the wasm when this compilation unit is linked.
+                extern void {linking_symbol}(void);
+                void {linking_symbol}_public_use_in_this_compilation_unit(void) {{
+                    {linking_symbol}();
+                }}
             ",
             iface.name.to_kebab_case(),
-            component_type_object::linking_symbol(iface, self.direction),
         );
 
         self.print_intrinsics();
