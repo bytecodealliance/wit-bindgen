@@ -159,17 +159,15 @@ fn main() {
                 // Validate that the module can be translated to a component, using
                 // the component-type custom sections. We don't yet consume this component
                 // anywhere.
-                // FIXME need a wasi_snapshot_preview1 shim in order to be able to encode as a
-                // component - then we can uncomment below
-                /*
                 let module = fs::read(&out_wasm).expect("failed to read wasm file");
                 ComponentEncoder::default()
                     .module(module.as_slice())
                     .expect("pull custom sections from module")
                     .validate(true)
+                    .adapter_file(&wasi_adapter)
+                    .expect("adapter failed to get loaded")
                     .encode()
                     .expect("module can be translated to a component");
-                */
             }
         }
     }
