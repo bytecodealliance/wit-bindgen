@@ -1,3 +1,5 @@
+mod component_type_object;
+
 use heck::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
@@ -34,6 +36,8 @@ pub struct C {
     types: HashMap<TypeId, wit_bindgen_core::Source>,
 
     needs_string: bool,
+
+    direction: Direction,
 }
 
 struct Func {
@@ -1064,6 +1068,9 @@ impl Generator for C {
             func.name.to_snake_case()
         ));
 
+        // need to copy this before mutable borrow of self
+        let direction = self.direction;
+
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         match sig.results.len() {
             0 => f.gen.src.c("void"),
@@ -1085,6 +1092,13 @@ impl Generator for C {
             f.gen.src.c("void");
         }
         f.gen.src.c(") {\n");
+
+        // Force linking to the component type object if this function is live
+        uwrite!(
+            f.gen.src.c,
+            "(void) {};",
+            component_type_object::linking_symbol(iface, direction)
+        );
 
         // Perform all lifting/lowering and append it to our src.
         iface.call(
@@ -1161,8 +1175,11 @@ impl Generator for C {
             "\
                 #include <stdlib.h>
                 #include <{}.h>
+
+                extern void {}(void);
             ",
             iface.name.to_kebab_case(),
+            component_type_object::linking_symbol(iface, self.direction),
         );
 
         self.print_intrinsics();
@@ -1288,6 +1305,12 @@ impl Generator for C {
         files.push(
             &format!("{}.h", iface.name.to_kebab_case()),
             self.src.h.as_bytes(),
+        );
+        files.push(
+            &format!("{}_component_type.o", iface.name.to_kebab_case()),
+            component_type_object::object(iface, self.direction)
+                .unwrap()
+                .as_slice(),
         );
     }
 }
