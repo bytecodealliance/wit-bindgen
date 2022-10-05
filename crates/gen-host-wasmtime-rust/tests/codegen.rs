@@ -9,9 +9,6 @@ mod exports {
     test_helpers::codegen_wasmtime_export!(
         "*.wit"
 
-        // TODO: implement async support
-        "!async-functions.wit"
-
         // If you want to exclude a specific test you can include it here with
         // gitignore glob syntax:
         //
@@ -24,17 +21,10 @@ mod exports {
     );
 }
 
+#[rustfmt::skip]
 mod imports {
     test_helpers::codegen_wasmtime_import!(
         "*.wit"
-
-        // TODO: implement async support
-        "!async-functions.wit"
-
-        // TODO: these use push/pull buffer which isn't implemented in the test
-        // generator just yet
-        "!wasi-next.wit"
-        "!host.wit"
     );
 }
 

@@ -2,26 +2,27 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[rustfmt::skip]
 mod imports {
     test_helpers::codegen_c_import!(
         "*.wit"
 
-        // TODO: implement async support
-        "!async-functions.wit"
+        // If you want to exclude a specific test you can include it here with
+        // gitignore glob syntax:
+        //
+        // "!wasm.wit"
+        // "!host.wit"
+        //
+        //
+        // Similarly you can also just remove the `*.wit` glob and list tests
+        // individually if you're debugging.
     );
 }
 
+#[rustfmt::skip]
 mod exports {
     test_helpers::codegen_c_export!(
         "*.wit"
-
-        // TODO: implement async support
-        "!async-functions.wit"
-
-        // TODO: these use push/pull buffer in exports which isn't implemented
-        // yet
-        "!wasi-next.wit"
-        "!host.wit"
     );
 }
 

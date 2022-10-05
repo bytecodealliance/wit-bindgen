@@ -20,13 +20,9 @@ mod imports {
     );
 }
 
+#[rustfmt::skip]
 mod exports {
     test_helpers::codegen_rust_wasm_export!(
         "*.wit"
-
-        // TODO: these use push/pull buffer which isn't implemented in the test
-        // generator just yet
-        "!wasi-next.wit"
-        "!host.wit"
     );
 }
