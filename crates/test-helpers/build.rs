@@ -38,21 +38,16 @@ fn main() {
                 file.to_str().unwrap().to_string(),
             ));
 
-            // The "invalid" test doesn't actually use the rust-guest macro
-            // and doesn't put the custom sections in, so component translation
-            // will fail.
-            if file.file_stem().unwrap().to_str().unwrap() != "invalid" {
-                // Validate that the module can be translated to a component, using
-                // the component-type custom sections. We don't yet consume this component
-                // anywhere.
-                let module = fs::read(&file).expect("failed to read wasm file");
-                ComponentEncoder::default()
-                    .module(module.as_slice())
-                    .expect("pull custom sections from module")
-                    .validate(true)
-                    .encode()
-                    .expect("module can be translated to a component");
-            }
+            // Validate that the module can be translated to a component, using
+            // the component-type custom sections. We don't yet consume this component
+            // anywhere.
+            let module = fs::read(&file).expect("failed to read wasm file");
+            ComponentEncoder::default()
+                .module(module.as_slice())
+                .expect("pull custom sections from module")
+                .validate(true)
+                .encode()
+                .expect("module can be translated to a component");
 
             let dep_file = file.with_extension("d");
             let deps = fs::read_to_string(&dep_file).expect("failed to read dep file");
