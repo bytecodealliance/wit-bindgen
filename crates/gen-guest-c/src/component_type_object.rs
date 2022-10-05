@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use heck::SnakeCase;
 use wasm_encoder::{
     CodeSection, CustomSection, Encode, Function, FunctionSection, Module, TypeSection,
 };
@@ -8,7 +9,7 @@ use wit_component::InterfaceEncoder;
 pub fn linking_symbol(iface: &Interface, direction: Direction) -> String {
     format!(
         "__component_type_object_force_link_{}_{}",
-        iface.name,
+        iface.name.to_snake_case(),
         match direction {
             Direction::Import => "import",
             Direction::Export => "export",
