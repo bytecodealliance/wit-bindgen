@@ -152,23 +152,18 @@ fn main() {
                 out_wasm.to_str().unwrap().to_string(),
             ));
 
-            // The "invalid" test doesn't actually use the rust-guest macro
-            // and doesn't put the custom sections in, so component translation
-            // will fail.
-            if test_dir.file_stem().unwrap().to_str().unwrap() != "invalid" {
-                // Validate that the module can be translated to a component, using
-                // the component-type custom sections. We don't yet consume this component
-                // anywhere.
-                let module = fs::read(&out_wasm).expect("failed to read wasm file");
-                ComponentEncoder::default()
-                    .module(module.as_slice())
-                    .expect("pull custom sections from module")
-                    .validate(true)
-                    .adapter_file(&wasi_adapter)
-                    .expect("adapter failed to get loaded")
-                    .encode()
-                    .expect("module can be translated to a component");
-            }
+            // Validate that the module can be translated to a component, using
+            // the component-type custom sections. We don't yet consume this component
+            // anywhere.
+            let module = fs::read(&out_wasm).expect("failed to read wasm file");
+            ComponentEncoder::default()
+                .module(module.as_slice())
+                .expect("pull custom sections from module")
+                .validate(true)
+                .adapter_file(&wasi_adapter)
+                .expect("adapter failed to get loaded")
+                .encode()
+                .expect("module can be translated to a component");
         }
     }
 
