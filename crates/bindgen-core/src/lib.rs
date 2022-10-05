@@ -33,8 +33,9 @@ pub use ns::Ns;
 /// `export` means I'm exporting functions to be called, and `import` means I'm
 /// importing functions that I'm going to call, in both wasm modules and host
 /// code. The enum here represents this user perspective.
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Default)]
 pub enum Direction {
+    #[default]
     Import,
     Export,
 }
