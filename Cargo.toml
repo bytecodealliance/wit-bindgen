@@ -9,6 +9,7 @@ members = [
   "crates/test-rust-wasm",
   "crates/wit-bindgen-demo",
   "crates/wit-component",
+  "crates/wasi_snapshot_preview1",
 ]
 resolver = "2"
 
