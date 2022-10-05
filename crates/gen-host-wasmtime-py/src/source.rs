@@ -185,16 +185,6 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
             Type::Float32 | Type::Float64 => self.push_str("float"),
             Type::Char => self.push_str("str"),
             Type::String => self.push_str("str"),
-            Type::Handle(id) => {
-                if forward_ref {
-                    self.push_str("'");
-                }
-                let handle_name = &self.iface.resources[*id].name.to_camel_case();
-                self.source.push_str(handle_name);
-                if forward_ref {
-                    self.push_str("'");
-                }
-            }
             Type::Id(id) => {
                 let ty = &self.iface.types[*id];
                 if let Some(name) = &ty.name {
@@ -325,36 +315,15 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
     }
 
     pub fn print_sig(&mut self, func: &Function, in_import: bool) -> Vec<String> {
-        if !in_import {
-            if let FunctionKind::Static { .. } = func.kind {
-                self.push_str("@classmethod\n");
-            }
-        }
         self.source.push_str("def ");
-        match &func.kind {
-            FunctionKind::Method { .. } => self.source.push_str(&func.item_name().to_snake_case()),
-            FunctionKind::Static { .. } if !in_import => {
-                self.source.push_str(&func.item_name().to_snake_case())
-            }
-            _ => self.source.push_str(&func.name.to_snake_case()),
-        }
+        self.source.push_str(&func.name.to_snake_case());
         if in_import {
             self.source.push_str("(self");
-        } else if let FunctionKind::Static { .. } = func.kind {
-            self.source.push_str("(cls, caller: wasmtime.Store, obj: '");
-            self.source.push_str(&self.iface.name.to_camel_case());
-            self.source.push_str("'");
         } else {
             self.source.push_str("(self, caller: wasmtime.Store");
         }
         let mut params = Vec::new();
-        for (i, (param, ty)) in func.params.iter().enumerate() {
-            if i == 0 {
-                if let FunctionKind::Method { .. } = func.kind {
-                    params.push("self".to_string());
-                    continue;
-                }
-            }
+        for (param, ty) in func.params.iter() {
             self.source.push_str(", ");
             self.source.push_str(&param.to_snake_case());
             params.push(param.to_snake_case());
@@ -477,48 +446,6 @@ mod tests {
         let mut s = Source::default();
         s.push_str("def foo():\n  return 1\n");
         assert_eq!(s.s, "def foo():\n  return 1\n");
-    }
-
-    #[test]
-    fn print_ty_forward_ref() {
-        let mut deps = Dependencies::default();
-        let mut iface = Interface::default();
-        // Set up a Resource type to refer to
-        let resource_id = iface.resources.alloc(Resource {
-            docs: Docs::default(),
-            name: "foo".into(),
-            supertype: None,
-            foreign_module: None,
-        });
-        iface.resource_lookup.insert("foo".into(), resource_id);
-        let handle_ty = Type::Handle(resource_id);
-        // ForwardRef usage can be controlled by an argument to print_ty
-        let mut s1 = Source::default();
-        let mut builder = s1.builder(&mut deps, &iface);
-        builder.print_ty(&handle_ty, true);
-        drop(builder);
-        assert_eq!(s1.s, "'Foo'");
-
-        let mut s2 = Source::default();
-        let mut builder = s2.builder(&mut deps, &iface);
-        builder.print_ty(&handle_ty, false);
-        drop(builder);
-        assert_eq!(s2.s, "Foo");
-
-        // ForwardRef is used for any types within other types
-        // Even if the outer type is itself not allowed to be one
-        let option_id = iface.types.alloc(TypeDef {
-            docs: Docs::default(),
-            kind: TypeDefKind::Option(handle_ty),
-            name: None,
-            foreign_module: None,
-        });
-        let option_ty = Type::Id(option_id);
-        let mut s3 = Source::default();
-        let mut builder = s3.builder(&mut deps, &iface);
-        builder.print_ty(&option_ty, false);
-        drop(builder);
-        assert_eq!(s3.s, "Optional['Foo']");
     }
 
     #[test]

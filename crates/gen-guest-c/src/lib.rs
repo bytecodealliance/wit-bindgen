@@ -238,11 +238,6 @@ impl C {
             Type::S64 => self.src.h("int64_t"),
             Type::Float32 => self.src.h("float"),
             Type::Float64 => self.src.h("double"),
-            Type::Handle(id) => {
-                self.print_namespace(iface);
-                self.src.h(&iface.resources[*id].name.to_snake_case());
-                self.src.h("_t");
-            }
             Type::String => {
                 self.print_namespace(iface);
                 self.src.h("string_t");
@@ -285,7 +280,6 @@ impl C {
             Type::S64 => self.src.h("s64"),
             Type::Float32 => self.src.h("float32"),
             Type::Float64 => self.src.h("float64"),
-            Type::Handle(id) => self.src.h(&iface.resources[*id].name.to_snake_case()),
             Type::String => self.src.h("string"),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
@@ -579,7 +573,6 @@ impl C {
         let id = match ty {
             Type::Id(id) => *id,
             Type::String => return true,
-            Type::Handle(_) => return true,
             _ => return false,
         };
         match &iface.types[id].kind {
@@ -945,10 +938,6 @@ impl Generator for C {
         self.types.insert(id, mem::replace(&mut self.src.h, prev));
     }
 
-    fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
-        drop((iface, ty));
-    }
-
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let prev = mem::take(&mut self.src.h);
         self.docs(docs);
@@ -1177,90 +1166,6 @@ impl Generator for C {
         );
 
         self.print_intrinsics();
-
-        for (_, resource) in iface.resources.iter() {
-            let ns = iface.name.to_snake_case();
-            let name = resource.name.to_snake_case();
-            uwrite!(
-                self.src.h,
-                "
-                    typedef struct {{
-                        uint32_t idx;
-                    }} {ns}_{name}_t;
-                    void {ns}_{name}_free({ns}_{name}_t *ptr);
-                    {ns}_{name}_t {ns}_{name}_clone({ns}_{name}_t *ptr);
-                ",
-                ns = ns,
-                name = name,
-            );
-            uwrite!(
-                self.src.c,
-                "
-                    __attribute__((import_module(\"canonical_abi\"), import_name(\"resource_drop_{name_orig}\")))
-                    void __resource_{name}_drop(uint32_t idx);
-
-                    void {ns}_{name}_free({ns}_{name}_t *ptr) {{
-                        __resource_{name}_drop(ptr->idx);
-                    }}
-
-                    __attribute__((import_module(\"canonical_abi\"), import_name(\"resource_clone_{name_orig}\")))
-                    uint32_t __resource_{name}_clone(uint32_t idx);
-
-                    {ns}_{name}_t {ns}_{name}_clone({ns}_{name}_t *ptr) {{
-                        return ({ns}_{name}_t){{__resource_{name}_clone(ptr->idx)}};
-                    }}
-                ",
-                ns = ns,
-                name = name,
-                name_orig = resource.name,
-            );
-
-            // Exported resources have more capabilities, they can create new
-            // resources and get the private value that it was created with.
-            // Furthermore we also define the destructor which delegates to the
-            // actual user-defined destructor, if any.
-            if !self.in_import {
-                uwrite!(
-                    self.src.h,
-                    "\
-                        {ns}_{name}_t {ns}_{name}_new(void *data);
-                        void* {ns}_{name}_get({ns}_{name}_t *ptr);
-
-                        __attribute__((weak))
-                        void {ns}_{name}_dtor(void *data);
-                    ",
-                    ns = ns,
-                    name = name,
-                );
-                uwrite!(
-                    self.src.c,
-                    "
-                        __attribute__((import_module(\"canonical_abi\"), import_name(\"resource_new_{name_orig}\")))
-                        uint32_t __resource_{name}_new(uint32_t val);
-
-                        {ns}_{name}_t {ns}_{name}_new(void *data) {{
-                            return ({ns}_{name}_t){{__resource_{name}_new((uint32_t) data)}};
-                        }}
-
-                        __attribute__((import_module(\"canonical_abi\"), import_name(\"resource_get_{name_orig}\")))
-                        uint32_t __resource_{name}_get(uint32_t idx);
-
-                        void* {ns}_{name}_get({ns}_{name}_t *ptr) {{
-                            return (void*) __resource_{name}_get(ptr->idx);
-                        }}
-
-                        __attribute__((export_name(\"canonical_abi_drop_{name_orig}\")))
-                        void __resource_{name}_dtor(uint32_t val) {{
-                            if ({ns}_{name}_dtor)
-                                {ns}_{name}_dtor((void*) val);
-                        }}
-                    ",
-                    ns = ns,
-                    name = name,
-                    name_orig = resource.name,
-                );
-            }
-        }
 
         // Continuously generate anonymous types while we continue to find more
         //
@@ -1593,20 +1498,6 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::BoolFromI32 | Instruction::I32FromBool => {
                 results.push(operands[0].clone());
-            }
-
-            Instruction::I32FromOwnedHandle { .. } | Instruction::I32FromBorrowedHandle { .. } => {
-                results.push(format!("({}).idx", operands[0]));
-            }
-
-            Instruction::HandleBorrowedFromI32 { ty, .. }
-            | Instruction::HandleOwnedFromI32 { ty, .. } => {
-                results.push(format!(
-                    "({}_{}_t){{ {} }}",
-                    iface.name.to_snake_case(),
-                    iface.resources[*ty].name.to_snake_case(),
-                    operands[0],
-                ));
             }
 
             Instruction::RecordLower { record, .. } => {

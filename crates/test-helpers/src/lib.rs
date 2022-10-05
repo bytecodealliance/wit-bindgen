@@ -35,7 +35,6 @@ pub fn codegen_rust_wasm_import(input: TokenStream) -> TokenStream {
 #[cfg(feature = "guest-rust")]
 pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
     use heck::*;
-    use std::collections::BTreeMap;
     use wit_parser::{FunctionKind, Type, TypeDefKind};
 
     return gen_rust(
@@ -62,24 +61,18 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
 
     fn gen_extra(iface: &wit_parser::Interface) -> proc_macro2::TokenStream {
         let mut ret = quote::quote!();
-        if iface.resources.len() == 0 && iface.functions.len() == 0 {
+        if iface.functions.len() == 0 {
             return ret;
         }
 
         let snake = quote::format_ident!("{}", iface.name.to_snake_case());
         let camel = quote::format_ident!("{}", iface.name.to_camel_case());
 
-        for (_, r) in iface.resources.iter() {
-            let name = quote::format_ident!("{}", r.name.to_camel_case());
-            ret.extend(quote::quote!(pub struct #name;));
-        }
-
         let mut methods = Vec::new();
-        let mut resources = BTreeMap::new();
 
         for f in iface.functions.iter() {
             let name = quote::format_ident!("{}", f.item_name().to_snake_case());
-            let mut params = f
+            let params = f
                 .params
                 .iter()
                 .map(|(_, t)| quote_ty(true, iface, t))
@@ -89,29 +82,18 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 .iter_types()
                 .map(|t| quote_ty(false, iface, t))
                 .collect::<Vec<_>>();
-            let mut self_ = quote::quote!();
-            if let FunctionKind::Method { .. } = &f.kind {
-                params.remove(0);
-                self_ = quote::quote!(&self,);
-            }
             let ret = match rets.len() {
                 0 => quote::quote!(()),
                 1 => rets[0].clone(),
                 _ => quote::quote!((#(#rets,)*)),
             };
             let method = quote::quote! {
-                fn #name(#self_ #(_: #params),*) -> #ret {
+                fn #name(#(_: #params),*) -> #ret {
                     loop {}
                 }
             };
             match &f.kind {
                 FunctionKind::Freestanding => methods.push(method),
-                FunctionKind::Static { resource, .. } | FunctionKind::Method { resource, .. } => {
-                    resources
-                        .entry(*resource)
-                        .or_insert(Vec::new())
-                        .push(method);
-                }
             }
         }
         ret.extend(quote::quote! {
@@ -121,14 +103,6 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
                 #(#methods)*
             }
         });
-        for (id, methods) in resources {
-            let name = quote::format_ident!("{}", iface.resources[id].name.to_camel_case());
-            ret.extend(quote::quote! {
-                impl #snake::#name for #name {
-                    #(#methods)*
-                }
-            });
-        }
 
         ret
     }
@@ -152,11 +126,6 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
             Type::Float64 => quote::quote! { f64 },
             Type::Char => quote::quote! { char },
             Type::String => quote::quote! { String },
-            Type::Handle(resource) => {
-                let name =
-                    quote::format_ident!("{}", iface.resources[resource].name.to_camel_case());
-                quote::quote! { wit_bindgen_guest_rust::Handle<#name> }
-            }
             Type::Id(id) => quote_id(param, iface, id),
         }
     }

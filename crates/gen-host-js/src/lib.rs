@@ -18,8 +18,6 @@ pub struct Js {
     intrinsics: BTreeMap<Intrinsic, String>,
     all_intrinsics: BTreeSet<Intrinsic>,
     needs_get_export: bool,
-    imported_resources: BTreeSet<ResourceId>,
-    exported_resources: BTreeSet<ResourceId>,
     needs_ty_option: bool,
     needs_ty_result: bool,
 }
@@ -27,13 +25,11 @@ pub struct Js {
 #[derive(Default)]
 struct Imports {
     freestanding_funcs: Vec<(String, Source)>,
-    resource_funcs: BTreeMap<ResourceId, Vec<(String, Source)>>,
 }
 
 #[derive(Default)]
 struct Exports {
     freestanding_funcs: Vec<Source>,
-    resource_funcs: BTreeMap<ResourceId, Vec<Source>>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -151,7 +147,6 @@ impl Js {
             Type::Float32 => Some("Float32Array"),
             Type::Float64 => Some("Float64Array"),
             Type::Char => None,
-            Type::Handle(_) => None,
             Type::String => None,
             Type::Id(id) => match &iface.types[*id].kind {
                 TypeDefKind::Type(t) => self.array_ty(iface, t),
@@ -173,7 +168,6 @@ impl Js {
             | Type::Float64 => self.src.ts("number"),
             Type::U64 | Type::S64 => self.src.ts("bigint"),
             Type::Char => self.src.ts("string"),
-            Type::Handle(id) => self.src.ts(&iface.resources[*id].name.to_camel_case()),
             Type::String => self.src.ts("string"),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
@@ -261,39 +255,11 @@ impl Js {
     fn ts_func(&mut self, iface: &Interface, func: &Function) {
         self.docs(&func.docs);
 
-        let mut name_printed = false;
-        if let FunctionKind::Static { .. } = &func.kind {
-            // static methods in imports are still wired up to an imported host
-            // object, but static methods on exports are actually static
-            // methods on the resource object.
-            if self.in_import {
-                name_printed = true;
-                self.src.ts(&func.name.to_mixed_case());
-            } else {
-                self.src.ts("static ");
-            }
-        }
-        if !name_printed {
-            self.src.ts(&func.item_name().to_mixed_case());
-        }
+        self.src.ts(&func.item_name().to_mixed_case());
         self.src.ts("(");
 
         let param_start = match &func.kind {
             FunctionKind::Freestanding => 0,
-            FunctionKind::Static { .. } if self.in_import => 0,
-            FunctionKind::Static { .. } => {
-                // the 0th argument for exported static methods will be the
-                // instantiated interface
-                self.src.ts(&iface.name.to_mixed_case());
-                self.src.ts(": ");
-                self.src.ts(&iface.name.to_camel_case());
-                if func.params.len() > 0 {
-                    self.src.ts(", ");
-                }
-                0
-            }
-            // skip the first parameter on methods which is `this`
-            FunctionKind::Method { .. } => 1,
         };
 
         for (i, (name, ty)) in func.params[param_start..].iter().enumerate() {
@@ -589,12 +555,6 @@ impl Generator for Js {
         self.src.ts(";\n");
     }
 
-    fn type_resource(&mut self, _iface: &Interface, ty: ResourceId) {
-        if !self.in_import {
-            self.exported_resources.insert(ty);
-        }
-    }
-
     fn type_alias(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.docs(docs);
         self.src
@@ -666,13 +626,7 @@ impl Generator for Js {
             .entry(iface.name.to_string())
             .or_insert(Imports::default());
         let dst = match &func.kind {
-            FunctionKind::Freestanding | FunctionKind::Static { .. } => {
-                &mut imports.freestanding_funcs
-            }
-            FunctionKind::Method { resource, .. } => imports
-                .resource_funcs
-                .entry(*resource)
-                .or_insert(Vec::new()),
+            FunctionKind::Freestanding => &mut imports.freestanding_funcs,
         };
         dst.push((func.name.to_string(), src));
     }
@@ -683,38 +637,22 @@ impl Generator for Js {
     fn import(&mut self, iface: &Interface, func: &Function) {
         let prev = mem::take(&mut self.src);
 
-        let mut params = func
+        let params = func
             .params
             .iter()
             .enumerate()
             .map(|(i, _)| format!("arg{}", i))
             .collect::<Vec<_>>();
-        let mut sig_start = 0;
-        let mut first_is_operand = true;
         let src_object = match &func.kind {
             FunctionKind::Freestanding => "this".to_string(),
-            FunctionKind::Static { .. } => {
-                self.src.js("static ");
-                params.insert(0, iface.name.to_mixed_case());
-                first_is_operand = false;
-                iface.name.to_mixed_case()
-            }
-            FunctionKind::Method { .. } => {
-                params[0] = "this".to_string();
-                sig_start = 1;
-                "this._obj".to_string()
-            }
         };
         self.src.js(&format!(
             "{}({}) {{\n",
             func.item_name().to_mixed_case(),
-            params[sig_start..].join(", ")
+            params.join(", ")
         ));
         self.ts_func(iface, func);
 
-        if !first_is_operand {
-            params.remove(0);
-        }
         let mut f = FunctionBindgen::new(self, params);
         f.src_object = src_object;
         iface.call(
@@ -757,13 +695,6 @@ impl Generator for Js {
             FunctionKind::Freestanding => {
                 exports.freestanding_funcs.push(func_body);
             }
-            FunctionKind::Static { resource, .. } | FunctionKind::Method { resource, .. } => {
-                exports
-                    .resource_funcs
-                    .entry(*resource)
-                    .or_insert(Vec::new())
-                    .push(func_body);
-            }
         }
     }
 
@@ -796,64 +727,18 @@ impl Generator for Js {
             self.src
                 .ts(&format!("export interface {} {{\n", module.to_camel_case()));
 
-            for (name, src) in funcs
-                .freestanding_funcs
-                .iter()
-                .chain(funcs.resource_funcs.values().flat_map(|v| v))
-            {
+            for (name, src) in funcs.freestanding_funcs.iter() {
                 self.src.js(&format!(
-                    "imports[\"{}\"][\"{}\"] = {};\n",
-                    module,
-                    name,
-                    src.js.trim(),
+                    "imports[\"{module}\"][\"{name}\"] = {};\n",
+                    src.js.trim()
                 ));
-            }
-
-            for (_, src) in funcs.freestanding_funcs.iter() {
                 self.src.ts(&src.ts);
             }
 
-            if self.imported_resources.len() > 0 {
-                self.src
-                    .js("if (!(\"canonical_abi\" in imports)) imports[\"canonical_abi\"] = {};\n");
-            }
-            for resource in self.imported_resources.clone() {
-                let slab = self.intrinsic(Intrinsic::Slab);
-                self.src.js(&format!(
-                    "
-                        const resources{idx} = new {slab}();
-                        imports.canonical_abi[\"resource_drop_{name}\"] = (i) => {{
-                            const val = resources{idx}.remove(i);
-                            if (obj.drop{camel})
-                                obj.drop{camel}(val);
-                        }};
-                    ",
-                    name = iface.resources[resource].name,
-                    camel = iface.resources[resource].name.to_camel_case(),
-                    idx = resource.index(),
-                    slab = slab,
-                ));
-                self.src.ts(&format!(
-                    "drop{}?: (val: {0}) => void;\n",
-                    iface.resources[resource].name.to_camel_case()
-                ));
-            }
             self.src.js("}");
             self.src.ts("}\n");
-
-            for (resource, _) in iface.resources.iter() {
-                self.src.ts(&format!(
-                    "export interface {} {{\n",
-                    iface.resources[resource].name.to_camel_case()
-                ));
-                if let Some(funcs) = funcs.resource_funcs.get(&resource) {
-                    for (_, src) in funcs {
-                        self.src.ts(&src.ts);
-                    }
-                }
-                self.src.ts("}\n");
-            }
         }
+
         let imports = mem::take(&mut self.src);
 
         for (module, exports) in mem::take(&mut self.guest_exports) {
@@ -869,75 +754,6 @@ impl Generator for Js {
                 */
                 instance: WebAssembly.Instance;
             ");
-
-            self.src.ts("
-               /**
-                * Constructs a new instance with internal state necessary to
-                * manage a wasm instance.
-                *
-                * Note that this does not actually instantiate the WebAssembly
-                * instance or module, you'll need to call the `instantiate`
-                * method below to \"activate\" this class.
-                */
-                constructor();
-            ");
-            if self.exported_resources.len() > 0 {
-                self.src.js("constructor() {\n");
-                let slab = self.intrinsic(Intrinsic::Slab);
-                for r in self.exported_resources.iter() {
-                    self.src.js(&format!(
-                        "this._resource{}_slab = new {}();\n",
-                        r.index(),
-                        slab
-                    ));
-                }
-                self.src.js("}\n");
-            }
-
-            self.src.ts("
-               /**
-                * This is a low-level method which can be used to add any
-                * intrinsics necessary for this instance to operate to an
-                * import object.
-                *
-                * The `import` object given here is expected to be used later
-                * to actually instantiate the module this class corresponds to.
-                * If the `instantiate` method below actually does the
-                * instantiation then there's no need to call this method, but
-                * if you're instantiating manually elsewhere then this can be
-                * used to prepare the import object for external instantiation.
-                */
-                addToImports(imports: any): void;
-            ");
-            self.src.js("addToImports(imports) {\n");
-            if self.exported_resources.len() > 0 {
-                self.src
-                    .js("if (!(\"canonical_abi\" in imports)) imports[\"canonical_abi\"] = {};\n");
-            }
-            for r in self.exported_resources.iter() {
-                self.src.js(&format!(
-                    "
-                        imports.canonical_abi['resource_drop_{name}'] = i => {{
-                            this._resource{idx}_slab.remove(i).drop();
-                        }};
-                        imports.canonical_abi['resource_clone_{name}'] = i => {{
-                            const obj = this._resource{idx}_slab.get(i);
-                            return this._resource{idx}_slab.insert(obj.clone())
-                        }};
-                        imports.canonical_abi['resource_get_{name}'] = i => {{
-                            return this._resource{idx}_slab.get(i)._wasm_val;
-                        }};
-                        imports.canonical_abi['resource_new_{name}'] = i => {{
-                            const registry = this._registry{idx};
-                            return this._resource{idx}_slab.insert(new {class}(i, this));
-                        }};
-                    ",
-                    name = iface.resources[*r].name,
-                    idx = r.index(),
-                    class = iface.resources[*r].name.to_camel_case(),
-                ));
-            }
-            self.src.js("}\n");
 
             self.src.ts(&format!(
                 "
@@ -980,7 +796,6 @@ impl Generator for Js {
             self.src.js("
                 async instantiate(module, imports) {
                     imports = imports || {};
-                    this.addToImports(imports);
             ");
 
             // With intrinsics prep'd we can now instantiate the module. JS has
@@ -1000,17 +815,6 @@ impl Generator for Js {
                 }
                 this._exports = this.instance.exports;
             ");
-
-            // Exported resources all get a finalization registry, and we
-            // created them after instantiation so we can pass the raw wasm
-            // export as the destructor callback.
-            for r in self.exported_resources.iter() {
-                self.src.js(&format!(
-                    "this._registry{} = new FinalizationRegistry(this._exports['canonical_abi_drop_{}']);\n",
-                    r.index(),
-                    iface.resources[*r].name,
-                ));
-            }
             self.src.js("}\n");
 
             for func in exports.freestanding_funcs.iter() {
@@ -1019,81 +823,6 @@ impl Generator for Js {
             }
             self.src.ts("}\n");
             self.src.js("}\n");
-
-            for &ty in self.exported_resources.iter() {
-                self.src.js(&format!(
-                    "
-                        export class {} {{
-                            constructor(wasm_val, obj) {{
-                                this._wasm_val = wasm_val;
-                                this._obj = obj;
-                                this._refcnt = 1;
-                                obj._registry{idx}.register(this, wasm_val, this);
-                            }}
-
-                            clone() {{
-                                this._refcnt += 1;
-                                return this;
-                            }}
-
-                            drop() {{
-                                this._refcnt -= 1;
-                                if (this._refcnt !== 0)
-                                    return;
-                                this._obj._registry{idx}.unregister(this);
-                                const dtor = this._obj._exports['canonical_abi_drop_{}'];
-                                const wasm_val = this._wasm_val;
-                                delete this._obj;
-                                delete this._refcnt;
-                                delete this._wasm_val;
-                                dtor(wasm_val);
-                            }}
-                    ",
-                    iface.resources[ty].name.to_camel_case(),
-                    iface.resources[ty].name,
-                    idx = ty.index(),
-                ));
-                self.src.ts(&format!(
-                    "
-                        export class {} {{
-                            // Creates a new strong reference count as a new
-                            // object.  This is only required if you're also
-                            // calling `drop` below and want to manually manage
-                            // the reference count from JS.
-                            //
-                            // If you don't call `drop`, you don't need to call
-                            // this and can simply use the object from JS.
-                            clone(): {0};
-
-                            // Explicitly indicate that this JS object will no
-                            // longer be used. If the internal reference count
-                            // reaches zero then this will deterministically
-                            // destroy the underlying wasm object.
-                            //
-                            // This is not required to be called from JS. Wasm
-                            // destructors will be automatically called for you
-                            // if this is not called using the JS
-                            // `FinalizationRegistry`.
-                            //
-                            // Calling this method does not guarantee that the
-                            // underlying wasm object is deallocated. Something
-                            // else (including wasm) may be holding onto a
-                            // strong reference count.
-                            drop(): void;
-                    ",
-                    iface.resources[ty].name.to_camel_case(),
-                ));
-
-                if let Some(funcs) = exports.resource_funcs.get(&ty) {
-                    for func in funcs {
-                        self.src.js(&func.js);
-                        self.src.ts(&func.ts);
-                    }
-                }
-
-                self.src.ts("}\n");
-                self.src.js("}\n");
-            }
         }
 
         let exports = mem::take(&mut self.src);
@@ -1402,54 +1131,6 @@ impl Bindgen for FunctionBindgen<'_> {
             }
             Instruction::I32FromBool => {
                 results.push(format!("{} ? 1 : 0", operands[0]));
-            }
-
-            // These instructions are used with handles when we're implementing
-            // imports. This means we interact with the `resources` slabs to
-            // translate the wasm-provided index into a JS value.
-            Instruction::I32FromOwnedHandle { ty } => {
-                self.gen.imported_resources.insert(*ty);
-                results.push(format!("resources{}.insert({})", ty.index(), operands[0]));
-            }
-            Instruction::HandleBorrowedFromI32 { ty } => {
-                self.gen.imported_resources.insert(*ty);
-                results.push(format!("resources{}.get({})", ty.index(), operands[0]));
-            }
-
-            // These instructions are used for handles to objects owned in wasm.
-            // This means that they're interacting with a wrapper class defined
-            // in JS.
-            Instruction::I32FromBorrowedHandle { ty } => {
-                let tmp = self.tmp();
-                self.src
-                    .js(&format!("const obj{} = {};\n", tmp, operands[0]));
-
-                // If this is the `this` argument then it's implicitly already valid
-                if operands[0] != "this" {
-                    self.src.js(&format!(
-                        "if (!(obj{} instanceof {})) ",
-                        tmp,
-                        iface.resources[*ty].name.to_camel_case()
-                    ));
-                    self.src.js(&format!(
-                        "throw new TypeError('expected instance of {}');\n",
-                        iface.resources[*ty].name.to_camel_case()
-                    ));
-                }
-                results.push(format!(
-                    "{}._resource{}_slab.insert(obj{}.clone())",
-                    self.src_object,
-                    ty.index(),
-                    tmp,
-                ));
-            }
-            Instruction::HandleOwnedFromI32 { ty } => {
-                results.push(format!(
-                    "{}._resource{}_slab.remove({})",
-                    self.src_object,
-                    ty.index(),
-                    operands[0],
-                ));
             }
 
             Instruction::RecordLower { record, .. } => {
@@ -2150,19 +1831,11 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::CallInterface { module: _, func } => {
                 let call = |me: &mut FunctionBindgen<'_>| match &func.kind {
-                    FunctionKind::Freestanding | FunctionKind::Static { .. } => {
+                    FunctionKind::Freestanding => {
                         me.src.js(&format!(
                             "obj.{}({})",
                             func.name.to_mixed_case(),
                             operands.join(", "),
-                        ));
-                    }
-                    FunctionKind::Method { name, .. } => {
-                        me.src.js(&format!(
-                            "{}.{}({})",
-                            operands[0],
-                            name.to_mixed_case(),
-                            operands[1..].join(", "),
                         ));
                     }
                 };

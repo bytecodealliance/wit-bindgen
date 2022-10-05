@@ -8,6 +8,3 @@ enum e { a, b, c }
 roundtrip-enum: func(a: e) -> e
 
 roundtrip-bool: func(a: bool) -> bool
-
-resource host-state
-get-internal: func(a: host-state) -> u32

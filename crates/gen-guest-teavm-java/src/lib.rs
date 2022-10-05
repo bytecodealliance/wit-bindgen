@@ -5,7 +5,7 @@ use wit_bindgen_core::{
     wit_parser::{
         abi::{AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
         Case, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Int, Interface, Record,
-        ResourceId, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Union, Variant,
+        Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Union, Variant,
     },
     Direction, Files, Generator, Ns,
 };
@@ -59,7 +59,6 @@ impl TeaVmJava {
             Type::U64 | Type::S64 => "long".into(),
             Type::Float32 => "float".into(),
             Type::Float64 => "double".into(),
-            Type::Handle(_) => todo!("resources"),
             Type::String => "String".into(),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
@@ -556,10 +555,6 @@ impl Generator for TeaVmJava {
             }}
             "
         );
-    }
-
-    fn type_resource(&mut self, _iface: &Interface, _ty: ResourceId) {
-        todo!("resources")
     }
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
@@ -1152,14 +1147,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("({} ? 1 : 0)", operands[0]));
             }
             Instruction::BoolFromI32 => results.push(format!("({} != 0)", operands[0])),
-
-            // handles in exports
-            Instruction::I32FromOwnedHandle { .. } => todo!("resources"),
-            Instruction::HandleBorrowedFromI32 { .. } => todo!("resources"),
-
-            // handles in imports
-            Instruction::I32FromBorrowedHandle { .. } => todo!("resources"),
-            Instruction::HandleOwnedFromI32 { .. } => todo!("resources"),
 
             // TODO: checked
             Instruction::FlagsLower { flags, .. } => match flags_repr(flags) {

@@ -37,10 +37,6 @@ name = "lists"
 test = false
 
 [[bin]]
-name = "handles"
-test = false
-
-[[bin]]
 name = "flavorful"
 test = false
 
