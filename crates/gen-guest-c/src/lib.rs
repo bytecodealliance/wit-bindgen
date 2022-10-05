@@ -704,6 +704,7 @@ impl Return {
 
 impl Generator for C {
     fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
+        self.direction = dir;
         let variant = Self::abi_variant(dir);
         self.sizes.fill(iface);
         self.in_import = variant == AbiVariant::GuestImport;

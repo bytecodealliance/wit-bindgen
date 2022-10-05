@@ -118,7 +118,9 @@ fn main() {
             cmd.arg("--sysroot").arg(path.join("share/wasi-sysroot"));
             cmd.arg(c_impl)
                 .arg(out_dir.join("imports.c"))
+                .arg(out_dir.join("imports_component_type.o"))
                 .arg(out_dir.join("exports.c"))
+                .arg(out_dir.join("exports_component_type.o"))
                 .arg("-I")
                 .arg(&out_dir)
                 .arg("-Wall")
@@ -149,6 +151,26 @@ fn main() {
                 test_dir.file_stem().unwrap().to_str().unwrap().to_string(),
                 out_wasm.to_str().unwrap().to_string(),
             ));
+
+            // The "invalid" test doesn't actually use the rust-guest macro
+            // and doesn't put the custom sections in, so component translation
+            // will fail.
+            if test_dir.file_stem().unwrap().to_str().unwrap() != "invalid" {
+                // Validate that the module can be translated to a component, using
+                // the component-type custom sections. We don't yet consume this component
+                // anywhere.
+                // FIXME need a wasi_snapshot_preview1 shim in order to be able to encode as a
+                // component - then we can uncomment below
+                /*
+                let module = fs::read(&out_wasm).expect("failed to read wasm file");
+                ComponentEncoder::default()
+                    .module(module.as_slice())
+                    .expect("pull custom sections from module")
+                    .validate(true)
+                    .encode()
+                    .expect("module can be translated to a component");
+                */
+            }
         }
     }
 
