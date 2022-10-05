@@ -14,6 +14,11 @@ pub enum TypeMode {
 }
 
 pub trait RustGenerator {
+    /// Return true iff the generator can use `std` features in its output.
+    fn use_std(&self) -> bool {
+        true
+    }
+
     fn push_str(&mut self, s: &str);
     fn info(&self, ty: TypeId) -> TypeInfo;
     fn types_mut(&mut self) -> &mut Types;
@@ -828,9 +833,11 @@ pub trait RustGenerator {
             self.push_str("}\n");
             self.push_str("}\n");
             self.push_str("\n");
-            self.push_str("impl std::error::Error for ");
-            self.push_str(&name);
-            self.push_str("{}\n");
+            if self.use_std() {
+                self.push_str("impl std::error::Error for ");
+                self.push_str(&name);
+                self.push_str("{}\n");
+            }
         } else {
             self.print_rust_enum_debug(
                 id,

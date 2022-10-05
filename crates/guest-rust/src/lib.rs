@@ -1,7 +1,12 @@
-use std::fmt;
-use std::marker;
-use std::mem;
-use std::ops::Deref;
+#![no_std]
+
+extern crate alloc;
+
+use alloc::boxed::Box;
+use core::fmt;
+use core::marker;
+use core::mem;
+use core::ops::Deref;
 
 #[cfg(feature = "macros")]
 pub use wit_bindgen_guest_rust_macro::{export, import};
@@ -123,7 +128,10 @@ pub unsafe trait LocalHandle: HandleType {
 
 #[doc(hidden)]
 pub mod rt {
-    use std::alloc::{self, Layout};
+    use super::alloc::alloc::Layout;
+
+    // Re-export things from liballoc for convenient use.
+    pub use super::alloc::{alloc, string, vec};
 
     #[no_mangle]
     unsafe extern "C" fn cabi_realloc(

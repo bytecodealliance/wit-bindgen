@@ -53,6 +53,10 @@ pub struct Opts {
     /// crate.
     #[cfg_attr(feature = "clap", arg(skip))]
     pub standalone: bool,
+
+    /// If true, code generation should avoid any features that depend on `std`.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub no_std: bool,
 }
 
 #[derive(Default)]
@@ -92,6 +96,10 @@ impl RustWasm {
 }
 
 impl RustGenerator for RustWasm {
+    fn use_std(&self) -> bool {
+        !self.opts.no_std
+    }
+
     fn default_param_mode(&self) -> TypeMode {
         if self.in_import {
             // We default to borrowing as much as possible to maximize the ability
@@ -166,6 +174,10 @@ impl Generator for RustWasm {
                 iface.name.to_snake_case(),
             ));
         }
+
+        self.src.push_str("#[allow(unused_imports)]");
+        self.src
+            .push_str("use wit_bindgen_guest_rust::rt::{alloc, vec::Vec, string::String};");
 
         self.sizes.fill(iface);
     }
@@ -758,14 +770,14 @@ impl FunctionBindgen<'_> {
     fn emit_cleanup(&mut self) {
         for (ptr, layout) in mem::take(&mut self.cleanup) {
             self.push_str(&format!(
-                "if {layout}.size() != 0 {{\nstd::alloc::dealloc({ptr}, {layout});\n}}\n"
+                "if {layout}.size() != 0 {{\nalloc::dealloc({ptr}, {layout});\n}}\n"
             ));
         }
         if self.needs_cleanup_list {
             self.push_str(
                 "for (ptr, layout) in cleanup_list {\n
                     if layout.size() != 0 {\n
-                        std::alloc::dealloc(ptr, layout);\n
+                        alloc::dealloc(ptr, layout);\n
                     }\n
                 }\n",
             );
@@ -1231,7 +1243,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 assert_eq!(none, "()");
                 let operand = &operands[0];
                 let invalid = if unchecked {
-                    "std::hint::unreachable_unchecked()"
+                    "core::hint::unreachable_unchecked()"
                 } else {
                     "panic!(\"invalid enum discriminant\")"
                 };
@@ -1268,7 +1280,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let ok = self.blocks.pop().unwrap();
                 let operand = &operands[0];
                 let invalid = if unchecked {
-                    "std::hint::unreachable_unchecked()"
+                    "core::hint::unreachable_unchecked()"
                 } else {
                     "panic!(\"invalid enum discriminant\")"
                 };
@@ -1400,15 +1412,15 @@ impl Bindgen for FunctionBindgen<'_> {
                 let size = self.gen.sizes.size(element);
                 let align = self.gen.sizes.align(element);
                 self.push_str(&format!(
-                    "let {layout} = core::alloc::Layout::from_size_align_unchecked({vec}.len() * {size}, {align});\n",
+                    "let {layout} = alloc::Layout::from_size_align_unchecked({vec}.len() * {size}, {align});\n",
                 ));
                 self.push_str(&format!(
-                    "let {result} = if {layout}.size() != 0\n{{\nlet ptr = std::alloc::alloc({layout});\n",
+                    "let {result} = if {layout}.size() != 0\n{{\nlet ptr = alloc::alloc({layout});\n",
                 ));
                 self.push_str(&format!(
-                    "if ptr.is_null()\n{{\nstd::alloc::handle_alloc_error({layout});\n}}\nptr\n}}",
+                    "if ptr.is_null()\n{{\nalloc::handle_alloc_error({layout});\n}}\nptr\n}}",
                 ));
-                self.push_str(&format!("else {{\nstd::ptr::null_mut()\n}};\n",));
+                self.push_str(&format!("else {{\ncore::ptr::null_mut()\n}};\n",));
                 self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
                 self.push_str(&format!(
                     "let base = {result} as i32 + (i as i32) * {size};\n",
