@@ -2,12 +2,6 @@
 
 extern crate alloc;
 
-// use alloc::boxed::Box;
-// use core::fmt;
-// use core::marker;
-// use core::mem;
-// use core::ops::Deref;
-
 #[cfg(feature = "macros")]
 pub use wit_bindgen_guest_rust_macro::{export, import};
 
