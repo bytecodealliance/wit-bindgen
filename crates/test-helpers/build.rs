@@ -3,6 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use wit_bindgen_core::{wit_parser::Interface, Direction, Generator};
+use wit_component::ComponentEncoder;
 
 fn main() {
     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
@@ -13,14 +14,20 @@ fn main() {
         let mut cmd = Command::new("cargo");
         cmd.arg("build")
             .current_dir("../test-rust-wasm")
-            .arg("--target=wasm32-wasi")
+            // TODO: this should go back to wasm32-wasi once we have an adapter
+            // for snapshot 1 to a component
+            .arg("--target=wasm32-unknown-unknown")
             .env("CARGO_TARGET_DIR", &out_dir)
             .env("CARGO_PROFILE_DEV_DEBUG", "1")
             .env("RUSTFLAGS", "-Clink-args=--export-table")
             .env_remove("CARGO_ENCODED_RUSTFLAGS");
         let status = cmd.status().unwrap();
         assert!(status.success());
-        for file in out_dir.join("wasm32-wasi/debug").read_dir().unwrap() {
+        for file in out_dir
+            .join("wasm32-unknown-unknown/debug")
+            .read_dir()
+            .unwrap()
+        {
             let file = file.unwrap().path();
             if file.extension().and_then(|s| s.to_str()) != Some("wasm") {
                 continue;
@@ -30,6 +37,22 @@ fn main() {
                 file.file_stem().unwrap().to_str().unwrap().to_string(),
                 file.to_str().unwrap().to_string(),
             ));
+
+            // The "invalid" test doesn't actually use the rust-guest macro
+            // and doesn't put the custom sections in, so component translation
+            // will fail.
+            if file.file_stem().unwrap().to_str().unwrap() != "invalid" {
+                // Validate that the module can be translated to a component, using
+                // the component-type custom sections. We don't yet consume this component
+                // anywhere.
+                let module = fs::read(&file).expect("failed to read wasm file");
+                ComponentEncoder::default()
+                    .module(module.as_slice())
+                    .expect("pull custom sections from module")
+                    .validate(true)
+                    .encode()
+                    .expect("module can be translated to a component");
+            }
 
             let dep_file = file.with_extension("d");
             let deps = fs::read_to_string(&dep_file).expect("failed to read dep file");
