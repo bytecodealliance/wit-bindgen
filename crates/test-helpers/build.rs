@@ -41,17 +41,11 @@ fn main() {
             if file.extension().and_then(|s| s.to_str()) != Some("wasm") {
                 continue;
             }
-            wasms.push((
-                "rust",
-                file.file_stem().unwrap().to_str().unwrap().to_string(),
-                file.to_str().unwrap().to_string(),
-            ));
+            let stem = file.file_stem().unwrap().to_str().unwrap().to_string();
 
-            // Validate that the module can be translated to a component, using
-            // the component-type custom sections. We don't yet consume this component
-            // anywhere.
+            // Translate the canonical ABI module into a component.
             let module = fs::read(&file).expect("failed to read wasm file");
-            ComponentEncoder::default()
+            let component = ComponentEncoder::default()
                 .module(module.as_slice())
                 .expect("pull custom sections from module")
                 .validate(true)
@@ -62,6 +56,10 @@ fn main() {
                     "module {:?} can be translated to a component",
                     file
                 ));
+            let component_path = out_dir.join(format!("{}.component.wasm", stem));
+            fs::write(&component_path, component).expect("write component to disk");
+
+            wasms.push(("rust", stem, component_path.to_str().unwrap().to_string()));
 
             let dep_file = file.with_extension("d");
             let deps = fs::read_to_string(&dep_file).expect("failed to read dep file");
@@ -149,17 +147,11 @@ fn main() {
                 panic!("failed to compile");
             }
 
-            wasms.push((
-                "c",
-                test_dir.file_stem().unwrap().to_str().unwrap().to_string(),
-                out_wasm.to_str().unwrap().to_string(),
-            ));
+            let stem = test_dir.file_stem().unwrap().to_str().unwrap().to_string();
 
-            // Validate that the module can be translated to a component, using
-            // the component-type custom sections. We don't yet consume this component
-            // anywhere.
+            // Translate the canonical ABI module into a component.
             let module = fs::read(&out_wasm).expect("failed to read wasm file");
-            ComponentEncoder::default()
+            let component = ComponentEncoder::default()
                 .module(module.as_slice())
                 .expect("pull custom sections from module")
                 .validate(true)
@@ -170,6 +162,10 @@ fn main() {
                     "module {:?} can be translated to a component",
                     out_wasm
                 ));
+            let component_path = out_dir.join("c.component.wasm");
+            fs::write(&component_path, component).expect("write component to disk");
+
+            wasms.push(("c", stem, component_path.to_str().unwrap().to_string()));
         }
     }
 
@@ -253,21 +249,15 @@ fn main() {
 
             let out_wasm = out_dir.join("target/generated/wasm/teavm-wasm/classes.wasm");
 
-            wasms.push((
-                "java",
-                test_dir.file_stem().unwrap().to_str().unwrap().to_string(),
-                out_wasm.to_str().unwrap().to_string(),
-            ));
-
             let imports = [Interface::parse_file(test_dir.join("imports.wit")).unwrap()];
             let interface = Interface::parse_file(test_dir.join("exports.wit")).unwrap();
 
-            // Validate that the module can be translated to a component, using
-            // wit interfaces explicitly passed to ComponentEncoder, because the
-            // TeaVM guest doesnt yet support putting component types into custom
-            // sections.
+            // Translate the canonical ABI module into a component.
+            // The wit interfaces are explicitly passed to ComponentEncoder,
+            // because the TeaVM guest doesnt yet support putting component
+            // types into custom sections.
             let module = fs::read(&out_wasm).expect("failed to read wasm file");
-            ComponentEncoder::default()
+            let component = ComponentEncoder::default()
                 .imports(&imports)
                 .interface(&interface)
                 .module(module.as_slice())
@@ -280,6 +270,15 @@ fn main() {
                     "module {:?} can be translated to a component",
                     out_wasm
                 ));
+            let component_path =
+                out_dir.join("target/generated/wasm/teavm-wasm/classes.component.wasm");
+            fs::write(&component_path, component).expect("write component to disk");
+
+            wasms.push((
+                "java",
+                test_dir.file_stem().unwrap().to_str().unwrap().to_string(),
+                component_path.to_str().unwrap().to_string(),
+            ));
         }
     }
 
