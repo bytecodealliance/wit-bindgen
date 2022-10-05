@@ -2038,10 +2038,13 @@ dependencies = [
 name = "wit-bindgen-gen-guest-c"
 version = "0.2.0"
 dependencies = [
+ "anyhow",
  "clap",
  "heck 0.3.3",
  "test-helpers",
+ "wasm-encoder 0.18.0",
  "wit-bindgen-core",
+ "wit-component",
 ]
 
 [[package]]

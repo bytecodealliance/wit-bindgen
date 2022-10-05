@@ -1,3 +1,5 @@
+mod component_type_object;
+
 use heck::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
@@ -34,6 +36,8 @@ pub struct C {
     types: HashMap<TypeId, wit_bindgen_core::Source>,
 
     needs_string: bool,
+
+    direction: Direction,
 }
 
 struct Func {
@@ -700,6 +704,7 @@ impl Return {
 
 impl Generator for C {
     fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
+        self.direction = dir;
         let variant = Self::abi_variant(dir);
         self.sizes.fill(iface);
         self.in_import = variant == AbiVariant::GuestImport;
@@ -1156,11 +1161,20 @@ impl Generator for C {
             ",
             iface.name.to_shouty_snake_case(),
         );
+        let linking_symbol = component_type_object::linking_symbol(iface, self.direction);
         uwrite!(
             self.src.c,
             "\
                 #include <stdlib.h>
                 #include <{}.h>
+
+                // The following symbols are never called, but they are sufficient
+                // to get the custom sections in the component type object linked
+                // into the wasm when this compilation unit is linked.
+                extern void {linking_symbol}(void);
+                void {linking_symbol}_public_use_in_this_compilation_unit(void) {{
+                    {linking_symbol}();
+                }}
             ",
             iface.name.to_kebab_case(),
         );
@@ -1288,6 +1302,12 @@ impl Generator for C {
         files.push(
             &format!("{}.h", iface.name.to_kebab_case()),
             self.src.h.as_bytes(),
+        );
+        files.push(
+            &format!("{}_component_type.o", iface.name.to_kebab_case()),
+            component_type_object::object(iface, self.direction)
+                .unwrap()
+                .as_slice(),
         );
     }
 }
