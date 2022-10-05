@@ -53,6 +53,7 @@ mod kw {
     syn::custom_keyword!(unchecked);
     syn::custom_keyword!(multi_module);
     syn::custom_keyword!(no_std);
+    syn::custom_keyword!(raw_strings);
 }
 
 impl Parse for Opts {
@@ -71,6 +72,7 @@ impl Parse for Opts {
                     ConfigField::MultiModule => opts.multi_module = true,
                     ConfigField::Interfaces(v) => interfaces = v,
                     ConfigField::NoStd => opts.no_std = true,
+                    ConfigField::RawStrings => opts.raw_strings = true,
                 }
             }
             if interfaces.is_empty() {
@@ -107,6 +109,7 @@ enum ConfigField {
     Unchecked,
     MultiModule,
     NoStd,
+    RawStrings,
 }
 
 impl Parse for ConfigField {
@@ -147,6 +150,9 @@ impl Parse for ConfigField {
         } else if l.peek(kw::no_std) {
             input.parse::<kw::no_std>()?;
             Ok(ConfigField::NoStd)
+        } else if l.peek(kw::raw_strings) {
+            input.parse::<kw::raw_strings>()?;
+            Ok(ConfigField::RawStrings)
         } else {
             Err(l.error())
         }
