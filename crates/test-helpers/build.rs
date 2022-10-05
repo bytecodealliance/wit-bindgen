@@ -10,24 +10,33 @@ fn main() {
 
     let mut wasms = Vec::new();
 
+    // Build the `wasi_snapshot_preview1.wasm` adapter which is used to convert
+    // core wasm modules below into components via `wit-component`.
+    let mut cmd = Command::new("cargo");
+    cmd.arg("build")
+        .arg("--release")
+        .current_dir("../wasi_snapshot_preview1")
+        .arg("--target=wasm32-unknown-unknown")
+        .env("CARGO_TARGET_DIR", &out_dir)
+        .env("RUSTFLAGS", "-Clink-args=--import-memory")
+        .env_remove("CARGO_ENCODED_RUSTFLAGS");
+    let status = cmd.status().unwrap();
+    assert!(status.success());
+    println!("cargo:rerun-if-changed=../wasi_snapshot_preview1");
+    let wasi_adapter = out_dir.join("wasm32-unknown-unknown/release/wasi_snapshot_preview1.wasm");
+
     if cfg!(feature = "guest-rust") {
         let mut cmd = Command::new("cargo");
         cmd.arg("build")
             .current_dir("../test-rust-wasm")
-            // TODO: this should go back to wasm32-wasi once we have an adapter
-            // for snapshot 1 to a component
-            .arg("--target=wasm32-unknown-unknown")
+            .arg("--target=wasm32-wasi")
             .env("CARGO_TARGET_DIR", &out_dir)
             .env("CARGO_PROFILE_DEV_DEBUG", "1")
             .env("RUSTFLAGS", "-Clink-args=--export-table")
             .env_remove("CARGO_ENCODED_RUSTFLAGS");
         let status = cmd.status().unwrap();
         assert!(status.success());
-        for file in out_dir
-            .join("wasm32-unknown-unknown/debug")
-            .read_dir()
-            .unwrap()
-        {
+        for file in out_dir.join("wasm32-wasi/debug").read_dir().unwrap() {
             let file = file.unwrap().path();
             if file.extension().and_then(|s| s.to_str()) != Some("wasm") {
                 continue;
@@ -46,6 +55,8 @@ fn main() {
                 .module(module.as_slice())
                 .expect("pull custom sections from module")
                 .validate(true)
+                .adapter_file(&wasi_adapter)
+                .expect("adapter failed to get loaded")
                 .encode()
                 .expect("module can be translated to a component");
 
