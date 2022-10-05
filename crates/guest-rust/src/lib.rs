@@ -1,12 +1,12 @@
 #![no_std]
 
-extern crate alloc as liballoc;
+extern crate alloc;
 
+use alloc::boxed::Box;
 use core::fmt;
 use core::marker;
 use core::mem;
 use core::ops::Deref;
-use liballoc::boxed::Box;
 
 #[cfg(feature = "macros")]
 pub use wit_bindgen_guest_rust_macro::{export, import};
@@ -14,9 +14,6 @@ pub use wit_bindgen_guest_rust_macro::{export, import};
 // Re-export `bitflags` so that we can reference it from macros.
 #[doc(hidden)]
 pub use bitflags;
-
-// Re-export things from liballoc for convenient use.
-pub use liballoc::{alloc, string, vec};
 
 /// A type for handles to resources that appear in exported functions.
 ///
@@ -131,7 +128,10 @@ pub unsafe trait LocalHandle: HandleType {
 
 #[doc(hidden)]
 pub mod rt {
-    use super::alloc::{self, Layout};
+    use super::alloc::alloc::Layout;
+
+    // Re-export things from liballoc for convenient use.
+    pub use super::alloc::{alloc, string, vec};
 
     #[no_mangle]
     unsafe extern "C" fn cabi_realloc(

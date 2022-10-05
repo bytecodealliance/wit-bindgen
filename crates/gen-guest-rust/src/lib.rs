@@ -177,7 +177,7 @@ impl Generator for RustWasm {
 
         self.src.push_str("#[allow(unused_imports)]");
         self.src
-            .push_str("use wit_bindgen_guest_rust::{alloc, vec::Vec, string::String};");
+            .push_str("use wit_bindgen_guest_rust::rt::{alloc, vec::Vec, string::String};");
 
         self.sizes.fill(iface);
     }
