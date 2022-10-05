@@ -1,21 +1,27 @@
 use std::path::Path;
 use std::process::Command;
 
+#[rustfmt::skip]
 mod exports {
     test_helpers::codegen_js_export!(
-        // ...
         "*.wit"
+
+        // If you want to exclude a specific test you can include it here with
+        // gitignore glob syntax:
+        //
+        // "!wasm.wit"
+        // "!host.wit"
+        //
+        //
+        // Similarly you can also just remove the `*.wit` glob and list tests
+        // individually if you're debugging.
     );
 }
 
+#[rustfmt::skip]
 mod imports {
     test_helpers::codegen_js_import!(
         "*.wit"
-
-        // This uses buffers, which we don't support in imports just yet
-        // TODO: should support this
-        "!wasi-next.wit"
-        "!host.wit"
     );
 }
 

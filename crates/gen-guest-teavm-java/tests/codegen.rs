@@ -1,23 +1,27 @@
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use std::{fs, path::Path, process::Command};
 
+#[rustfmt::skip]
 mod imports {
     test_helpers::codegen_teavm_java_import!(
         "*.wit"
 
-        // TODO: implement async and resource support
-        "!async-functions.wit"
-        "!resource.wit"
+        // If you want to exclude a specific test you can include it here with
+        // gitignore glob syntax:
+        //
+        // "!wasm.wit"
+        // "!host.wit"
+        //
+        //
+        // Similarly you can also just remove the `*.wit` glob and list tests
+        // individually if you're debugging.
     );
 }
 
+#[rustfmt::skip]
 mod exports {
     test_helpers::codegen_teavm_java_export!(
         "*.wit"
-
-        // TODO: implement async and resource support
-        "!async-functions.wit"
-        "!resource.wit"
     );
 }
 
