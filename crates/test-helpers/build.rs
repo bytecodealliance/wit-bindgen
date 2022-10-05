@@ -58,7 +58,10 @@ fn main() {
                 .adapter_file(&wasi_adapter)
                 .expect("adapter failed to get loaded")
                 .encode()
-                .expect("module can be translated to a component");
+                .expect(&format!(
+                    "module {:?} can be translated to a component",
+                    file
+                ));
 
             let dep_file = file.with_extension("d");
             let deps = fs::read_to_string(&dep_file).expect("failed to read dep file");
@@ -163,7 +166,10 @@ fn main() {
                 .adapter_file(&wasi_adapter)
                 .expect("adapter failed to get loaded")
                 .encode()
-                .expect("module can be translated to a component");
+                .expect(&format!(
+                    "module {:?} can be translated to a component",
+                    out_wasm
+                ));
         }
     }
 
