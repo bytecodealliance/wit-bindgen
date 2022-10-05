@@ -39,6 +39,16 @@ pub extern "C" fn fd_write(
 }
 
 #[no_mangle]
+pub extern "C" fn fd_seek(fd: Fd, offset: Filedelta, whence: Whence, filesize: *mut Size) -> Errno {
+    unreachable()
+}
+
+#[no_mangle]
+pub extern "C" fn fd_close(fd: Fd) -> Errno {
+    unreachable()
+}
+
+#[no_mangle]
 pub extern "C" fn proc_exit(rval: Exitcode) -> ! {
     unreachable()
 }
