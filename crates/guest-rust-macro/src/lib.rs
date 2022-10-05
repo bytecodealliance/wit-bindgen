@@ -52,6 +52,7 @@ mod kw {
     syn::custom_keyword!(paths);
     syn::custom_keyword!(unchecked);
     syn::custom_keyword!(multi_module);
+    syn::custom_keyword!(no_std);
 }
 
 impl Parse for Opts {
@@ -69,6 +70,7 @@ impl Parse for Opts {
                     ConfigField::Unchecked => opts.unchecked = true,
                     ConfigField::MultiModule => opts.multi_module = true,
                     ConfigField::Interfaces(v) => interfaces = v,
+                    ConfigField::NoStd => opts.no_std = true,
                 }
             }
             if interfaces.is_empty() {
@@ -104,6 +106,7 @@ enum ConfigField {
     Interfaces(Vec<Interface>),
     Unchecked,
     MultiModule,
+    NoStd,
 }
 
 impl Parse for ConfigField {
@@ -141,6 +144,9 @@ impl Parse for ConfigField {
         } else if l.peek(kw::multi_module) {
             input.parse::<kw::multi_module>()?;
             Ok(ConfigField::MultiModule)
+        } else if l.peek(kw::no_std) {
+            input.parse::<kw::no_std>()?;
+            Ok(ConfigField::NoStd)
         } else {
             Err(l.error())
         }
