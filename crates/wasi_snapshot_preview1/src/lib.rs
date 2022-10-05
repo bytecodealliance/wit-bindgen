@@ -29,6 +29,25 @@ pub extern "C" fn environ_sizes_get(environc: *mut Size, environ_buf_size: *mut 
 }
 
 #[no_mangle]
+pub extern "C" fn args_get(args: *mut *mut u8, args_buf: *mut u8) -> Errno {
+    unreachable()
+}
+
+#[no_mangle]
+pub extern "C" fn args_sizes_get(argc: *mut Size, arg_buf_size: *mut Size) -> Errno {
+    unreachable()
+}
+
+#[no_mangle]
+pub extern "C" fn clock_time_get(
+    clockid: Clockid,
+    precision: Timestamp,
+    out: *mut Timestamp,
+) -> Errno {
+    unreachable()
+}
+
+#[no_mangle]
 pub extern "C" fn fd_write(
     fd: Fd,
     iovs_ptr: *const Ciovec,
