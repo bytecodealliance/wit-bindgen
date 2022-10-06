@@ -268,10 +268,10 @@ fn main() {
             // types into custom sections.
             let module = fs::read(&out_wasm).expect("failed to read wasm file");
             let component = ComponentEncoder::default()
-                .imports(&imports)
-                .interface(&interface)
                 .module(module.as_slice())
                 .expect("pull custom sections from module")
+                .interface(&interface)
+                .imports(&imports)
                 .validate(true)
                 .adapter_file(&wasi_adapter)
                 .expect("adapter failed to get loaded")
