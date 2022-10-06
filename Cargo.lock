@@ -250,7 +250,7 @@ version = "4.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4a307492e1a34939f79d3b6b9650bd2b971513cd775436bf2b78defeb5af00b"
 dependencies = [
- "heck 0.4.0",
+ "heck",
  "proc-macro-error",
  "proc-macro2",
  "quote",
@@ -691,15 +691,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 dependencies = [
  "ahash",
-]
-
-[[package]]
-name = "heck"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d621efb26863f0e9924c6ac577e8275e5e6b77455db64ffa6c65c904e9e132c"
-dependencies = [
- "unicode-segmentation",
 ]
 
 [[package]]
@@ -1360,7 +1351,7 @@ version = "0.2.0"
 dependencies = [
  "backtrace",
  "filetime",
- "heck 0.3.3",
+ "heck",
  "ignore",
  "proc-macro2",
  "quote",
@@ -1889,7 +1880,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e41921e877c2bc1f8c54c3ea43bc7cbc62fbaf52817b3a4f998d7aecf6a614dd"
 dependencies = [
  "anyhow",
- "heck 0.4.0",
+ "heck",
  "proc-macro2",
  "quote",
  "shellexpand",
@@ -2040,7 +2031,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck 0.3.3",
+ "heck",
  "test-helpers",
  "wasm-encoder 0.18.0",
  "wit-bindgen-core",
@@ -2052,7 +2043,7 @@ name = "wit-bindgen-gen-guest-rust"
 version = "0.2.0"
 dependencies = [
  "clap",
- "heck 0.3.3",
+ "heck",
  "test-helpers",
  "wit-bindgen-core",
  "wit-bindgen-gen-rust-lib",
@@ -2065,7 +2056,7 @@ name = "wit-bindgen-gen-guest-teavm-java"
 version = "0.2.0"
 dependencies = [
  "clap",
- "heck 0.4.0",
+ "heck",
  "test-helpers",
  "wit-bindgen-core",
 ]
@@ -2075,7 +2066,7 @@ name = "wit-bindgen-gen-host-js"
 version = "0.2.0"
 dependencies = [
  "clap",
- "heck 0.3.3",
+ "heck",
  "test-helpers",
  "wit-bindgen-core",
 ]
@@ -2085,7 +2076,7 @@ name = "wit-bindgen-gen-host-wasmtime-py"
 version = "0.2.0"
 dependencies = [
  "clap",
- "heck 0.3.3",
+ "heck",
  "test-helpers",
  "wit-bindgen-core",
 ]
@@ -2096,7 +2087,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
- "heck 0.3.3",
+ "heck",
  "test-helpers",
  "wasmtime",
  "wasmtime-wasi",
@@ -2110,7 +2101,7 @@ name = "wit-bindgen-gen-markdown"
 version = "0.2.0"
 dependencies = [
  "clap",
- "heck 0.3.3",
+ "heck",
  "pulldown-cmark",
  "wit-bindgen-core",
 ]
@@ -2119,7 +2110,7 @@ dependencies = [
 name = "wit-bindgen-gen-rust-lib"
 version = "0.2.0"
 dependencies = [
- "heck 0.3.3",
+ "heck",
  "wit-bindgen-core",
 ]
 

@@ -93,7 +93,7 @@ impl RustWasm {
     }
 
     fn ret_area_type_name(iface: &Interface) -> String {
-        format!("__{}RetArea", iface.name.to_camel_case())
+        format!("__{}RetArea", iface.name.to_upper_camel_case())
     }
 
     fn ret_area_name(iface: &Interface) -> String {
@@ -164,7 +164,7 @@ impl Generator for RustWasm {
         let variant = Self::abi_variant(dir);
         self.in_import = variant == AbiVariant::GuestImport;
         self.types.analyze(iface);
-        self.trait_name = iface.name.to_camel_case();
+        self.trait_name = iface.name.to_upper_camel_case();
 
         if !self.opts.standalone {
             self.src.push_str(&format!(
@@ -215,7 +215,7 @@ impl Generator for RustWasm {
         self.rustdoc(docs);
         let repr = RustFlagsRepr::new(flags);
         self.src
-            .push_str(&format!("pub struct {}: {repr} {{\n", name.to_camel_case(),));
+            .push_str(&format!("pub struct {}: {repr} {{\n", name.to_upper_camel_case(),));
         for (i, flag) in flags.flags.iter().enumerate() {
             self.rustdoc(&flag.docs);
             self.src.push_str(&format!(
@@ -229,7 +229,7 @@ impl Generator for RustWasm {
 
         // Add a `from_bits_preserve` method.
         self.src
-            .push_str(&format!("impl {} {{\n", name.to_camel_case()));
+            .push_str(&format!("impl {} {{\n", name.to_upper_camel_case()));
         self.src.push_str(&format!(
             "    /// Convert from a raw integer, preserving any unknown bits. See\n"
         ));
@@ -303,7 +303,7 @@ impl Generator for RustWasm {
     fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.rustdoc(docs);
         self.src
-            .push_str(&format!("pub type {}", name.to_camel_case()));
+            .push_str(&format!("pub type {}", name.to_upper_camel_case()));
         self.src.push_str(" = ");
         self.print_ty(iface, ty, TypeMode::Owned);
         self.src.push_str(";\n");
@@ -460,7 +460,7 @@ impl Generator for RustWasm {
         self.in_trait = false;
         let trait_ = self
             .traits
-            .entry(iface.name.to_camel_case())
+            .entry(iface.name.to_upper_camel_case())
             .or_insert(Trait::default());
         let dst = match &func.kind {
             FunctionKind::Freestanding => &mut trait_.methods,
@@ -856,7 +856,7 @@ impl Bindgen for FunctionBindgen<'_> {
             }
             Instruction::FlagsLift { name, flags, .. } => {
                 let repr = RustFlagsRepr::new(flags);
-                let name = name.to_camel_case();
+                let name = name.to_upper_camel_case();
                 let mut result = format!("{}::empty()", name);
                 for (i, op) in operands.iter().enumerate() {
                     result.push_str(&format!(
@@ -900,7 +900,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str(&format!("match {op0} {{\n"));
                 let name = self.typename_lower(iface, *ty);
                 for (case, block) in variant.cases.iter().zip(blocks) {
-                    let case_name = case.name.to_camel_case();
+                    let case_name = case.name.to_upper_camel_case();
                     self.push_str(&format!("{name}::{case_name}"));
                     if case.ty.is_some() {
                         self.push_str(&format!("(e) => {block},\n"));
@@ -918,7 +918,7 @@ impl Bindgen for FunctionBindgen<'_> {
             {
                 self.blocks.drain(self.blocks.len() - variant.cases.len()..);
                 let mut result = format!("core::mem::transmute::<_, ");
-                result.push_str(&name.to_camel_case());
+                result.push_str(&name.to_upper_camel_case());
                 result.push_str(">(");
                 result.push_str(&operands[0]);
                 result.push_str(" as ");
@@ -946,7 +946,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     } else {
                         String::new()
                     };
-                    let case = case.name.to_camel_case();
+                    let case = case.name.to_upper_camel_case();
                     result.push_str(&format!("{pat} => {name}::{case}{block},\n"));
                 }
                 if !unchecked {
@@ -1084,9 +1084,9 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::EnumLower { enum_, name, .. } => {
                 let mut result = format!("match {} {{\n", operands[0]);
-                let name = name.to_camel_case();
+                let name = name.to_upper_camel_case();
                 for (i, case) in enum_.cases.iter().enumerate() {
-                    let case = case.name.to_camel_case();
+                    let case = case.name.to_upper_camel_case();
                     result.push_str(&format!("{name}::{case} => {i},\n"));
                 }
                 result.push_str("}");
@@ -1097,7 +1097,7 @@ impl Bindgen for FunctionBindgen<'_> {
             // defined the type so we can transmute directly into it.
             Instruction::EnumLift { enum_, name, .. } if unchecked => {
                 let mut result = format!("core::mem::transmute::<_, ");
-                result.push_str(&name.to_camel_case());
+                result.push_str(&name.to_upper_camel_case());
                 result.push_str(">(");
                 result.push_str(&operands[0]);
                 result.push_str(" as ");
@@ -1110,9 +1110,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 let mut result = format!("match ");
                 result.push_str(&operands[0]);
                 result.push_str(" {\n");
-                let name = name.to_camel_case();
+                let name = name.to_upper_camel_case();
                 for (i, case) in enum_.cases.iter().enumerate() {
-                    let case = case.name.to_camel_case();
+                    let case = case.name.to_upper_camel_case();
                     result.push_str(&format!("{i} => {name}::{case},\n"));
                 }
                 result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
@@ -1295,13 +1295,13 @@ impl Bindgen for FunctionBindgen<'_> {
                             self.push_str(&format!(
                                 "<$t as {t}>::{}",
                                 func.name.to_snake_case(),
-                                t = module.to_camel_case(),
+                                t = module.to_upper_camel_case(),
                             ));
                         } else {
                             self.push_str(&format!(
                                 "<super::{m} as {m}>::{}",
                                 func.name.to_snake_case(),
-                                m = module.to_camel_case()
+                                m = module.to_upper_camel_case()
                             ));
                         }
                     }

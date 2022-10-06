@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use heck::SnakeCase;
+use heck::ToSnakeCase;
 use wasm_encoder::{
     CodeSection, CustomSection, Encode, Function, FunctionSection, Module, TypeSection,
 };
