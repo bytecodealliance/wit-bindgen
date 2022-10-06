@@ -17,4 +17,3 @@ wit-bindgen-gen-host-wasmtime-rust = { workspace = true }
 
 [features]
 tracing = []
-async = []

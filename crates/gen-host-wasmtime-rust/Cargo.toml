@@ -19,4 +19,4 @@ anyhow = { workspace = true }
 test-helpers = { path = '../test-helpers', features = ['host-wasmtime-rust'] }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
-wit-bindgen-host-wasmtime-rust = { workspace = true, features = ['tracing', 'async'] }
+wit-bindgen-host-wasmtime-rust = { workspace = true, features = ['tracing'] }
