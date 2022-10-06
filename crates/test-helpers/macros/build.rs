@@ -18,12 +18,16 @@ fn main() {
         .current_dir("../../wasi_snapshot_preview1")
         .arg("--target=wasm32-unknown-unknown")
         .env("CARGO_TARGET_DIR", &out_dir)
-        .env("RUSTFLAGS", "-Clink-args=--import-memory")
+        .env(
+            "RUSTFLAGS",
+            "-Clink-args=--import-memory -Clink-args=-zstack-size=0",
+        )
         .env_remove("CARGO_ENCODED_RUSTFLAGS");
     let status = cmd.status().unwrap();
     assert!(status.success());
     println!("cargo:rerun-if-changed=../../wasi_snapshot_preview1");
     let wasi_adapter = out_dir.join("wasm32-unknown-unknown/release/wasi_snapshot_preview1.wasm");
+    println!("wasi adapter: {:?}", &wasi_adapter);
 
     if cfg!(feature = "guest-rust") {
         let mut cmd = Command::new("cargo");
