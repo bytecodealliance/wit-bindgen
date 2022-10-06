@@ -172,7 +172,7 @@ impl Js {
             Type::Id(id) => {
                 let ty = &iface.types[*id];
                 if let Some(name) = &ty.name {
-                    return self.src.ts(&name.to_camel_case());
+                    return self.src.ts(&name.to_upper_camel_case());
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.print_ty(iface, t),
@@ -255,7 +255,7 @@ impl Js {
     fn ts_func(&mut self, iface: &Interface, func: &Function) {
         self.docs(&func.docs);
 
-        self.src.ts(&func.item_name().to_mixed_case());
+        self.src.ts(&func.item_name().to_lower_camel_case());
         self.src.ts("(");
 
         let param_start = match &func.kind {
@@ -266,7 +266,7 @@ impl Js {
             if i > 0 {
                 self.src.ts(", ");
             }
-            self.src.ts(to_js_ident(&name.to_mixed_case()));
+            self.src.ts(to_js_ident(&name.to_lower_camel_case()));
             self.src.ts(": ");
             self.print_ty(iface, ty);
         }
@@ -357,15 +357,20 @@ impl Generator for Js {
         docs: &Docs,
     ) {
         self.docs(docs);
-        self.src
-            .ts(&format!("export interface {} {{\n", name.to_camel_case()));
+        self.src.ts(&format!(
+            "export interface {} {{\n",
+            name.to_upper_camel_case()
+        ));
         for field in record.fields.iter() {
             self.docs(&field.docs);
             let (option_str, ty) = self
                 .as_nullable(iface, &field.ty)
                 .map_or(("", &field.ty), |ty| ("?", ty));
-            self.src
-                .ts(&format!("{}{}: ", field.name.to_mixed_case(), option_str));
+            self.src.ts(&format!(
+                "{}{}: ",
+                field.name.to_lower_camel_case(),
+                option_str
+            ));
             self.print_ty(iface, ty);
             self.src.ts(",\n");
         }
@@ -382,7 +387,7 @@ impl Generator for Js {
     ) {
         self.docs(docs);
         self.src
-            .ts(&format!("export type {} = ", name.to_camel_case()));
+            .ts(&format!("export type {} = ", name.to_upper_camel_case()));
         self.print_tuple(iface, tuple);
         self.src.ts(";\n");
     }
@@ -396,11 +401,13 @@ impl Generator for Js {
         docs: &Docs,
     ) {
         self.docs(docs);
-        self.src
-            .ts(&format!("export interface {} {{\n", name.to_camel_case()));
+        self.src.ts(&format!(
+            "export interface {} {{\n",
+            name.to_upper_camel_case()
+        ));
         for flag in flags.flags.iter() {
             self.docs(&flag.docs);
-            let name = flag.name.to_mixed_case();
+            let name = flag.name.to_lower_camel_case();
             self.src.ts(&format!("{name}?: boolean,\n"));
         }
         self.src.ts("}\n");
@@ -416,20 +423,20 @@ impl Generator for Js {
     ) {
         self.docs(docs);
         self.src
-            .ts(&format!("export type {} = ", name.to_camel_case()));
+            .ts(&format!("export type {} = ", name.to_upper_camel_case()));
         for (i, case) in variant.cases.iter().enumerate() {
             if i > 0 {
                 self.src.ts(" | ");
             }
             self.src
-                .ts(&format!("{}_{}", name, case.name).to_camel_case());
+                .ts(&format!("{}_{}", name, case.name).to_upper_camel_case());
         }
         self.src.ts(";\n");
         for case in variant.cases.iter() {
             self.docs(&case.docs);
             self.src.ts(&format!(
                 "export interface {} {{\n",
-                format!("{}_{}", name, case.name).to_camel_case()
+                format!("{}_{}", name, case.name).to_upper_camel_case()
             ));
             self.src.ts("tag: \"");
             self.src.ts(&case.name);
@@ -452,7 +459,7 @@ impl Generator for Js {
         docs: &Docs,
     ) {
         self.docs(docs);
-        let name = name.to_camel_case();
+        let name = name.to_upper_camel_case();
         self.src.ts(&format!("export type {name} = "));
         for i in 0..union.cases.len() {
             if i > 0 {
@@ -481,7 +488,7 @@ impl Generator for Js {
         docs: &Docs,
     ) {
         self.docs(docs);
-        let name = name.to_camel_case();
+        let name = name.to_upper_camel_case();
         self.src.ts(&format!("export type {name} = "));
         if self.maybe_null(iface, payload) {
             self.needs_ty_option = true;
@@ -504,7 +511,7 @@ impl Generator for Js {
         docs: &Docs,
     ) {
         self.docs(docs);
-        let name = name.to_camel_case();
+        let name = name.to_upper_camel_case();
         self.needs_ty_result = true;
         self.src.ts(&format!("export type {name} = Result<"));
         self.print_optional_ty(iface, result.ok.as_ref());
@@ -545,7 +552,7 @@ impl Generator for Js {
         self.docs_raw(&complete_docs);
 
         self.src
-            .ts(&format!("export type {} = ", name.to_camel_case()));
+            .ts(&format!("export type {} = ", name.to_upper_camel_case()));
         for (i, case) in enum_.cases.iter().enumerate() {
             if i != 0 {
                 self.src.ts(" | ");
@@ -558,7 +565,7 @@ impl Generator for Js {
     fn type_alias(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.docs(docs);
         self.src
-            .ts(&format!("export type {} = ", name.to_camel_case()));
+            .ts(&format!("export type {} = ", name.to_upper_camel_case()));
         self.print_ty(iface, ty);
         self.src.ts(";\n");
     }
@@ -566,7 +573,7 @@ impl Generator for Js {
     fn type_list(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.docs(docs);
         self.src
-            .ts(&format!("export type {} = ", name.to_camel_case()));
+            .ts(&format!("export type {} = ", name.to_upper_camel_case()));
         self.print_list(iface, ty);
         self.src.ts(";\n");
     }
@@ -648,7 +655,7 @@ impl Generator for Js {
         };
         self.src.js(&format!(
             "{}({}) {{\n",
-            func.item_name().to_mixed_case(),
+            func.item_name().to_lower_camel_case(),
             params.join(", ")
         ));
         self.ts_func(iface, func);
@@ -703,7 +710,7 @@ impl Generator for Js {
             // TODO: `module.exports` vs `export function`
             self.src.js(&format!(
                 "export function add{}ToImports(imports, obj{}) {{\n",
-                module.to_camel_case(),
+                module.to_upper_camel_case(),
                 if self.needs_get_export {
                     ", get_export"
                 } else {
@@ -712,7 +719,7 @@ impl Generator for Js {
             ));
             self.src.ts(&format!(
                 "export function add{}ToImports(imports: any, obj: {0}{}): void;\n",
-                module.to_camel_case(),
+                module.to_upper_camel_case(),
                 if self.needs_get_export {
                     ", get_export: (name: string) => WebAssembly.ExportValue"
                 } else {
@@ -724,8 +731,10 @@ impl Generator for Js {
                 module,
             ));
 
-            self.src
-                .ts(&format!("export interface {} {{\n", module.to_camel_case()));
+            self.src.ts(&format!(
+                "export interface {} {{\n",
+                module.to_upper_camel_case()
+            ));
 
             for (name, src) in funcs.freestanding_funcs.iter() {
                 self.src.js(&format!(
@@ -742,7 +751,7 @@ impl Generator for Js {
         let imports = mem::take(&mut self.src);
 
         for (module, exports) in mem::take(&mut self.guest_exports) {
-            let module = module.to_camel_case();
+            let module = module.to_upper_camel_case();
             self.src.ts(&format!("export class {} {{\n", module));
             self.src.js(&format!("export class {} {{\n", module));
 
@@ -1143,7 +1152,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         expr.push_str(", ");
                     }
                     let name = format!("v{}_{}", tmp, i);
-                    expr.push_str(&field.name.to_mixed_case());
+                    expr.push_str(&field.name.to_lower_camel_case());
                     expr.push_str(": ");
                     expr.push_str(&name);
                     results.push(name);
@@ -1157,7 +1166,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 // literal.
                 let mut result = "{\n".to_string();
                 for (field, op) in record.fields.iter().zip(operands) {
-                    result.push_str(&format!("{}: {},\n", field.name.to_mixed_case(), op));
+                    result.push_str(&format!("{}: {},\n", field.name.to_lower_camel_case(), op));
                 }
                 result.push_str("}");
                 results.push(result);
@@ -1213,7 +1222,7 @@ impl Bindgen for FunctionBindgen<'_> {
                             self.src.js(" | ");
                         }
 
-                        let flag = flag.name.to_mixed_case();
+                        let flag = flag.name.to_lower_camel_case();
                         self.src.js(&format!("Boolean({op0}.{flag}) << {i}"));
                     }
                     self.src.js(";\n");
@@ -1253,7 +1262,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.js(&format!("const flags{tmp} = {{\n"));
 
                 for (i, flag) in flags.flags.iter().enumerate() {
-                    let flag = flag.name.to_mixed_case();
+                    let flag = flag.name.to_lower_camel_case();
                     let op = &operands[i / 32];
                     let mask: u32 = 1 << (i % 32);
                     self.src.js(&format!("{flag}: Boolean({op} & {mask}),\n"));
@@ -1300,7 +1309,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     }
                     self.src.js("break;\n}\n");
                 }
-                let variant_name = name.to_camel_case();
+                let variant_name = name.to_upper_camel_case();
                 self.src.js("default:\n");
                 self.src.js(&format!(
                     "throw new RangeError(\"invalid variant specified for {}\");\n",
@@ -1336,7 +1345,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.js("};\n");
                     self.src.js("break;\n}\n");
                 }
-                let variant_name = name.to_camel_case();
+                let variant_name = name.to_upper_camel_case();
                 self.src.js("default:\n");
                 self.src.js(&format!(
                     "throw new RangeError(\"invalid variant discriminant for {}\");\n",
@@ -1377,7 +1386,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     }
                     self.src.js("break;\n}\n");
                 }
-                let name = name.to_camel_case();
+                let name = name.to_upper_camel_case();
                 self.src.js("default:\n");
                 self.src.js(&format!(
                     "throw new RangeError(\"invalid union specified for {name}\");\n",
@@ -1411,7 +1420,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         }}\n"
                     ));
                 }
-                let name = name.to_camel_case();
+                let name = name.to_upper_camel_case();
                 self.src.js("default:\n");
                 self.src.js(&format!(
                     "throw new RangeError(\"invalid union discriminant for {name}\");\n",
@@ -1672,7 +1681,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         }}
                     }}
                     ",
-                    name = name.to_camel_case()
+                    name = name.to_upper_camel_case()
                 ));
 
                 results.push(format!("enum{tmp}"));
@@ -1834,7 +1843,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     FunctionKind::Freestanding => {
                         me.src.js(&format!(
                             "obj.{}({})",
-                            func.name.to_mixed_case(),
+                            func.name.to_lower_camel_case(),
                             operands.join(", "),
                         ));
                     }

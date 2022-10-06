@@ -188,7 +188,7 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
             Type::Id(id) => {
                 let ty = &self.iface.types[*id];
                 if let Some(name) = &ty.name {
-                    self.push_str(&name.to_camel_case());
+                    self.push_str(&name.to_upper_camel_case());
                     return;
                 }
                 match &ty.kind {
@@ -365,7 +365,7 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
     pub fn print_union_wrapped(&mut self, name: &str, union: &Union, docs: &Docs) {
         self.deps.pyimport("dataclasses", "dataclass");
         let mut cases = Vec::new();
-        let name = name.to_camel_case();
+        let name = name.to_upper_camel_case();
         for (i, case) in union.cases.iter().enumerate() {
             self.source.push_str("@dataclass\n");
             let name = format!("{name}{i}");
@@ -393,7 +393,7 @@ impl<'s, 'd, 'i> SourceBuilder<'s, 'd, 'i> {
         for case in union.cases.iter() {
             self.source.comment(&case.docs);
         }
-        self.source.push_str(&name.to_camel_case());
+        self.source.push_str(&name.to_upper_camel_case());
         self.source.push_str(" = Union[");
         let mut first = true;
         for case in union.cases.iter() {

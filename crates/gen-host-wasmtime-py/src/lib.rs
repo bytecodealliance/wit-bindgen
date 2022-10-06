@@ -138,7 +138,7 @@ impl Generator for WasmtimePy {
         let mut builder = self.src.builder(&mut self.deps, iface);
         builder.pyimport("dataclasses", "dataclass");
         builder.push_str("@dataclass\n");
-        builder.push_str(&format!("class {}:\n", name.to_camel_case()));
+        builder.push_str(&format!("class {}:\n", name.to_upper_camel_case()));
         builder.indent();
         builder.docstring(docs);
         for field in record.fields.iter() {
@@ -165,7 +165,7 @@ impl Generator for WasmtimePy {
     ) {
         let mut builder = self.src.builder(&mut self.deps, iface);
         builder.comment(docs);
-        builder.push_str(&format!("{} = ", name.to_camel_case()));
+        builder.push_str(&format!("{} = ", name.to_upper_camel_case()));
         builder.print_tuple(tuple);
         builder.push_str("\n");
     }
@@ -181,7 +181,7 @@ impl Generator for WasmtimePy {
         let mut builder = self.src.builder(&mut self.deps, iface);
         builder.pyimport("enum", "Flag");
         builder.pyimport("enum", "auto");
-        builder.push_str(&format!("class {}(Flag):\n", name.to_camel_case()));
+        builder.push_str(&format!("class {}(Flag):\n", name.to_upper_camel_case()));
         builder.indent();
         builder.docstring(docs);
         for flag in flags.flags.iter() {
@@ -210,7 +210,11 @@ impl Generator for WasmtimePy {
         for case in variant.cases.iter() {
             builder.docstring(&case.docs);
             builder.push_str("@dataclass\n");
-            let case_name = format!("{}{}", name.to_camel_case(), case.name.to_camel_case());
+            let case_name = format!(
+                "{}{}",
+                name.to_upper_camel_case(),
+                case.name.to_upper_camel_case()
+            );
             builder.push_str(&format!("class {case_name}:\n"));
             builder.indent();
             match &case.ty {
@@ -230,7 +234,7 @@ impl Generator for WasmtimePy {
         builder.comment(docs);
         builder.push_str(&format!(
             "{} = Union[{}]\n",
-            name.to_camel_case(),
+            name.to_upper_camel_case(),
             cases.join(", "),
         ));
         builder.push_str("\n");
@@ -276,7 +280,7 @@ impl Generator for WasmtimePy {
         let mut builder = self.src.builder(&mut self.deps, iface);
         builder.pyimport("typing", "Optional");
         builder.comment(docs);
-        builder.push_str(&name.to_camel_case());
+        builder.push_str(&name.to_upper_camel_case());
         builder.push_str(" = Optional[");
         builder.print_ty(payload, true);
         builder.push_str("]\n\n");
@@ -294,7 +298,7 @@ impl Generator for WasmtimePy {
 
         let mut builder = self.src.builder(&mut self.deps, iface);
         builder.comment(docs);
-        builder.push_str(&format!("{} = Result[", name.to_camel_case()));
+        builder.push_str(&format!("{} = Result[", name.to_upper_camel_case()));
         builder.print_optional_ty(result.ok.as_ref(), true);
         builder.push_str(", ");
         builder.print_optional_ty(result.err.as_ref(), true);
@@ -304,7 +308,7 @@ impl Generator for WasmtimePy {
     fn type_enum(&mut self, iface: &Interface, _id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         let mut builder = self.src.builder(&mut self.deps, iface);
         builder.pyimport("enum", "Enum");
-        builder.push_str(&format!("class {}(Enum):\n", name.to_camel_case()));
+        builder.push_str(&format!("class {}(Enum):\n", name.to_upper_camel_case()));
         builder.indent();
         builder.docstring(docs);
         for (i, case) in enum_.cases.iter().enumerate() {
@@ -328,7 +332,7 @@ impl Generator for WasmtimePy {
     fn type_alias(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let mut builder = self.src.builder(&mut self.deps, iface);
         builder.comment(docs);
-        builder.push_str(&format!("{} = ", name.to_camel_case()));
+        builder.push_str(&format!("{} = ", name.to_upper_camel_case()));
         builder.print_ty(ty, false);
         builder.push_str("\n");
     }
@@ -336,7 +340,7 @@ impl Generator for WasmtimePy {
     fn type_list(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let mut builder = self.src.builder(&mut self.deps, iface);
         builder.comment(docs);
-        builder.push_str(&format!("{} = ", name.to_camel_case()));
+        builder.push_str(&format!("{} = ", name.to_upper_camel_case()));
         builder.print_list(ty);
         builder.push_str("\n");
     }
@@ -572,8 +576,10 @@ impl Generator for WasmtimePy {
         self.src.push_str(&types);
 
         for (module, funcs) in mem::take(&mut self.guest_imports) {
-            self.src
-                .push_str(&format!("class {}(Protocol):\n", module.to_camel_case()));
+            self.src.push_str(&format!(
+                "class {}(Protocol):\n",
+                module.to_upper_camel_case()
+            ));
             self.src.indent();
             for func in funcs.freestanding_funcs.iter() {
                 self.src.push_str("@abstractmethod\n");
@@ -589,7 +595,7 @@ impl Generator for WasmtimePy {
             self.src.push_str(&format!(
                 "def add_{}_to_linker(linker: wasmtime.Linker, store: wasmtime.Store, host: {}) -> None:\n",
                 module.to_snake_case(),
-                module.to_camel_case(),
+                module.to_upper_camel_case(),
             ));
             self.src.indent();
 
@@ -611,14 +617,14 @@ impl Generator for WasmtimePy {
         // modules, this probably won't really get triggered much in practice
         if !self.in_import && self.guest_exports.is_empty() {
             self.src
-                .push_str(&format!("class {}:\n", iface.name.to_camel_case()));
+                .push_str(&format!("class {}:\n", iface.name.to_upper_camel_case()));
             self.src.indent();
             self.src.push_str("pass\n");
             self.src.dedent();
         }
 
         for (module, exports) in mem::take(&mut self.guest_exports) {
-            let module = module.to_camel_case();
+            let module = module.to_upper_camel_case();
             self.src.push_str(&format!("class {}:\n", module));
             self.src.indent();
 
@@ -903,7 +909,11 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::RecordLift { name, .. } => {
-                results.push(format!("{}({})", name.to_camel_case(), operands.join(", ")));
+                results.push(format!(
+                    "{}({})",
+                    name.to_upper_camel_case(),
+                    operands.join(", ")
+                ));
             }
             Instruction::TupleLower { tuple, .. } => {
                 if tuple.types.is_empty() {
@@ -940,7 +950,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         tmp
                     }
                 };
-                results.push(format!("{}({})", name.to_camel_case(), operand));
+                results.push(format!("{}({})", name.to_upper_camel_case(), operand));
             }
             Instruction::FlagsLower { flags, .. } => match flags.repr().count() {
                 1 => results.push(format!("({}).value", operands[0])),
@@ -992,8 +1002,8 @@ impl Bindgen for FunctionBindgen<'_> {
                     builder.push_str(&format!(
                         "isinstance({}, {}{}):\n",
                         operands[0],
-                        name.to_camel_case(),
-                        case.name.to_camel_case()
+                        name.to_upper_camel_case(),
+                        case.name.to_upper_camel_case()
                     ));
                     builder.indent();
                     if case.ty.is_some() {
@@ -1006,7 +1016,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     }
                     builder.dedent();
                 }
-                let variant_name = name.to_camel_case();
+                let variant_name = name.to_upper_camel_case();
                 builder.push_str("else:\n");
                 builder.indent();
                 builder.push_str(&format!(
@@ -1041,8 +1051,8 @@ impl Bindgen for FunctionBindgen<'_> {
                     builder.push_str(&format!(
                         "{} = {}{}(",
                         result,
-                        name.to_camel_case(),
-                        case.name.to_camel_case()
+                        name.to_upper_camel_case(),
+                        case.name.to_upper_camel_case()
                     ));
                     if block_results.len() > 0 {
                         assert!(block_results.len() == 1);
@@ -1053,7 +1063,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
                 builder.push_str("else:\n");
                 builder.indent();
-                let variant_name = name.to_camel_case();
+                let variant_name = name.to_upper_camel_case();
                 builder.push_str(&format!(
                     "raise TypeError(\"invalid variant discriminant for {}\")\n",
                     variant_name
@@ -1087,7 +1097,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     .union_representation
                     .get(&name.to_string())
                     .unwrap();
-                let name = name.to_camel_case();
+                let name = name.to_upper_camel_case();
                 let op0 = &operands[0];
                 for (i, ((case, (block, block_results)), payload)) in
                     union.cases.iter().zip(blocks).zip(payloads).enumerate()
@@ -1146,7 +1156,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     .union_representation
                     .get(&name.to_string())
                     .unwrap();
-                let name = name.to_camel_case();
+                let name = name.to_upper_camel_case();
                 let op0 = &operands[0];
                 for (i, (_case, (block, block_results))) in
                     union.cases.iter().zip(blocks).enumerate()
@@ -1313,7 +1323,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::EnumLower { .. } => results.push(format!("({}).value", operands[0])),
 
             Instruction::EnumLift { name, .. } => {
-                results.push(format!("{}({})", name.to_camel_case(), operands[0]));
+                results.push(format!("{}({})", name.to_upper_camel_case(), operands[0]));
             }
 
             Instruction::ListCanonLower { element, realloc } => {

@@ -66,7 +66,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
         }
 
         let snake = quote::format_ident!("{}", iface.name.to_snake_case());
-        let camel = quote::format_ident!("{}", iface.name.to_camel_case());
+        let camel = quote::format_ident!("{}", iface.name.to_upper_camel_case());
 
         let mut methods = Vec::new();
 
@@ -137,7 +137,7 @@ pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
     ) -> proc_macro2::TokenStream {
         let ty = &iface.types[id];
         if let Some(name) = &ty.name {
-            let name = quote::format_ident!("{}", name.to_camel_case());
+            let name = quote::format_ident!("{}", name.to_upper_camel_case());
             let module = quote::format_ident!("{}", iface.name.to_snake_case());
             return quote::quote! { #module::#name };
         }

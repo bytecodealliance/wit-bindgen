@@ -395,7 +395,7 @@ pub trait RustGenerator {
             Type::Id(id) => {
                 let ty = &iface.types[*id];
                 match &ty.name {
-                    Some(name) => out.push_str(&name.to_camel_case()),
+                    Some(name) => out.push_str(&name.to_upper_camel_case()),
                     None => match &ty.kind {
                         TypeDefKind::Option(ty) => {
                             out.push_str("Optional");
@@ -570,7 +570,7 @@ pub trait RustGenerator {
             variant
                 .cases
                 .iter()
-                .map(|c| (c.name.to_camel_case(), &c.docs, c.ty.as_ref())),
+                .map(|c| (c.name.to_upper_camel_case(), &c.docs, c.ty.as_ref())),
             docs,
         );
     }
@@ -600,7 +600,7 @@ pub trait RustGenerator {
         let info = self.info(id);
 
         for (name, mode) in self.modes_of(iface, id) {
-            let name = name.to_camel_case();
+            let name = name.to_upper_camel_case();
             self.rustdoc(docs);
             let lt = self.lifetime_for(&info, mode);
             if !info.owns_data() {
@@ -717,15 +717,15 @@ pub trait RustGenerator {
         // TODO: should this perhaps be an attribute in the wit file?
         let is_error = name.contains("errno");
 
-        let name = name.to_camel_case();
+        let name = name.to_upper_camel_case();
         self.rustdoc(docs);
         self.push_str("#[repr(");
         self.int_repr(enum_.tag());
         self.push_str(")]\n#[derive(Clone, Copy, PartialEq, Eq)]\n");
-        self.push_str(&format!("pub enum {} {{\n", name.to_camel_case()));
+        self.push_str(&format!("pub enum {} {{\n", name.to_upper_camel_case()));
         for case in enum_.cases.iter() {
             self.rustdoc(&case.docs);
-            self.push_str(&case.name.to_camel_case());
+            self.push_str(&case.name.to_upper_camel_case());
             self.push_str(",\n");
         }
         self.push_str("}\n");
@@ -742,7 +742,7 @@ pub trait RustGenerator {
             for case in enum_.cases.iter() {
                 self.push_str(&name);
                 self.push_str("::");
-                self.push_str(&case.name.to_camel_case());
+                self.push_str(&case.name.to_upper_camel_case());
                 self.push_str(" => \"");
                 self.push_str(case.name.as_str());
                 self.push_str("\",\n");
@@ -755,7 +755,7 @@ pub trait RustGenerator {
             for case in enum_.cases.iter() {
                 self.push_str(&name);
                 self.push_str("::");
-                self.push_str(&case.name.to_camel_case());
+                self.push_str(&case.name.to_upper_camel_case());
                 self.push_str(" => \"");
                 if let Some(contents) = &case.docs.contents {
                     self.push_str(contents.trim());
@@ -801,7 +801,10 @@ pub trait RustGenerator {
                 id,
                 TypeMode::Owned,
                 &name,
-                enum_.cases.iter().map(|c| (c.name.to_camel_case(), None)),
+                enum_
+                    .cases
+                    .iter()
+                    .map(|c| (c.name.to_upper_camel_case(), None)),
             )
         }
     }
@@ -834,7 +837,7 @@ pub trait RustGenerator {
 
     fn param_name(&self, iface: &Interface, ty: TypeId) -> String {
         let info = self.info(ty);
-        let name = iface.types[ty].name.as_ref().unwrap().to_camel_case();
+        let name = iface.types[ty].name.as_ref().unwrap().to_upper_camel_case();
         if self.uses_two_names(&info) {
             format!("{}Param", name)
         } else {
@@ -844,7 +847,7 @@ pub trait RustGenerator {
 
     fn result_name(&self, iface: &Interface, ty: TypeId) -> String {
         let info = self.info(ty);
-        let name = iface.types[ty].name.as_ref().unwrap().to_camel_case();
+        let name = iface.types[ty].name.as_ref().unwrap().to_upper_camel_case();
         if self.uses_two_names(&info) {
             format!("{}Result", name)
         } else {

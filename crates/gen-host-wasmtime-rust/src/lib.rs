@@ -258,7 +258,7 @@ impl Generator for Wasmtime {
         let variant = Self::abi_variant(dir);
         self.types.analyze(iface);
         self.in_import = variant == AbiVariant::GuestImport;
-        self.trait_name = iface.name.to_camel_case();
+        self.trait_name = iface.name.to_upper_camel_case();
         self.src.push_str(&format!(
             "#[allow(clippy::all)]\npub mod {} {{\n",
             iface.name.to_snake_case(),
@@ -287,7 +287,7 @@ impl Generator for Wasmtime {
         {
             self.src
                 .push_str("impl wit_bindgen_host_wasmtime_rust::Endian for ");
-            self.src.push_str(&name.to_camel_case());
+            self.src.push_str(&name.to_upper_camel_case());
             self.src.push_str(" {\n");
 
             self.src.push_str("fn into_le(self) -> Self {\n");
@@ -319,7 +319,7 @@ impl Generator for Wasmtime {
             // predicate).
             self.src
                 .push_str("unsafe impl wit_bindgen_host_wasmtime_rust::AllBytesValid for ");
-            self.src.push_str(&name.to_camel_case());
+            self.src.push_str(&name.to_upper_camel_case());
             self.src.push_str(" {}\n");
         }
     }
@@ -347,8 +347,10 @@ impl Generator for Wasmtime {
             .push_str("wit_bindgen_host_wasmtime_rust::bitflags::bitflags! {\n");
         self.rustdoc(docs);
         let repr = RustFlagsRepr::new(flags);
-        self.src
-            .push_str(&format!("pub struct {}: {repr} {{\n", name.to_camel_case()));
+        self.src.push_str(&format!(
+            "pub struct {}: {repr} {{\n",
+            name.to_upper_camel_case()
+        ));
         for (i, flag) in flags.flags.iter().enumerate() {
             self.rustdoc(&flag.docs);
             self.src.push_str(&format!(
@@ -361,13 +363,13 @@ impl Generator for Wasmtime {
         self.src.push_str("}\n\n");
 
         self.src.push_str("impl core::fmt::Display for ");
-        self.src.push_str(&name.to_camel_case());
+        self.src.push_str(&name.to_upper_camel_case());
         self.src.push_str(
             "{\nfn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {\n",
         );
 
         self.src.push_str("f.write_str(\"");
-        self.src.push_str(&name.to_camel_case());
+        self.src.push_str(&name.to_upper_camel_case());
         self.src.push_str("(\")?;\n");
         self.src.push_str("core::fmt::Debug::fmt(self, f)?;\n");
         self.src.push_str("f.write_str(\" (0x\")?;\n");
@@ -439,7 +441,7 @@ impl Generator for Wasmtime {
     fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.rustdoc(docs);
         self.src
-            .push_str(&format!("pub type {}", name.to_camel_case()));
+            .push_str(&format!("pub type {}", name.to_upper_camel_case()));
         self.src.push_str(" = ");
         self.print_ty(iface, ty, TypeMode::Owned);
         self.src.push_str(";\n");
@@ -726,7 +728,7 @@ impl Generator for Wasmtime {
 
     fn finish_one(&mut self, _iface: &Interface, files: &mut Files) {
         for (module, funcs) in sorted_iter(&self.guest_imports) {
-            let module_camel = module.to_camel_case();
+            let module_camel = module.to_upper_camel_case();
             self.src.push_str("pub trait ");
             self.src.push_str(&module_camel);
             self.src.push_str(": Sized ");
@@ -734,7 +736,7 @@ impl Generator for Wasmtime {
             if self.all_needed_handles.len() > 0 {
                 for handle in self.all_needed_handles.iter() {
                     self.src.push_str("type ");
-                    self.src.push_str(&handle.to_camel_case());
+                    self.src.push_str(&handle.to_upper_camel_case());
                     self.src.push_str(": std::fmt::Debug");
                     self.src.push_str(";\n");
                 }
@@ -750,7 +752,7 @@ impl Generator for Wasmtime {
                     self.src.push_str(&format!(
                         "fn error_to_{}(&mut self, err: Self::Error) -> Result<{}, wasmtime::Trap>;\n",
                         ty.to_snake_case(),
-                        ty.to_camel_case(),
+                        ty.to_upper_camel_case(),
                     ));
                 }
             }
@@ -764,7 +766,7 @@ impl Generator for Wasmtime {
                         drop(state);
                     }}\n",
                     handle.to_snake_case(),
-                    handle.to_camel_case(),
+                    handle.to_upper_camel_case(),
                 ));
             }
             self.src.push_str("}\n");
@@ -780,7 +782,7 @@ impl Generator for Wasmtime {
                     self.src.push_str(&handle.to_snake_case());
                     self.src
                         .push_str("_table: wit_bindgen_host_wasmtime_rust::Table<T::");
-                    self.src.push_str(&handle.to_camel_case());
+                    self.src.push_str(&handle.to_upper_camel_case());
                     self.src.push_str(">,\n");
                 }
                 self.src.push_str("}\n");
@@ -799,7 +801,7 @@ impl Generator for Wasmtime {
         }
 
         for (module, funcs) in mem::take(&mut self.guest_imports) {
-            let module_camel = module.to_camel_case();
+            let module_camel = module.to_upper_camel_case();
             self.push_str("\npub fn add_to_linker<T, U>(linker: &mut wasmtime::Linker<T>");
             self.push_str(", get: impl Fn(&mut T) -> ");
             self.push_str("&mut U");
@@ -824,7 +826,7 @@ impl Generator for Wasmtime {
         }
 
         for (module, exports) in sorted_iter(&mem::take(&mut self.guest_exports)) {
-            let name = module.to_camel_case();
+            let name = module.to_upper_camel_case();
 
             // Generate a struct that is the "state" of this exported module
             // which is required to be included in the host state `T` of the
@@ -1282,7 +1284,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         |bits| {name} {{ bits }}
                     )?",
                     flags,
-                    name = name.to_camel_case(),
+                    name = name.to_upper_camel_case(),
                 ));
             }
 
@@ -1303,7 +1305,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str(&format!("match {op0} {{\n"));
                 let name = self.typename_lower(iface, *ty);
                 for (case, block) in variant.cases.iter().zip(blocks) {
-                    let case_name = case.name.to_camel_case();
+                    let case_name = case.name.to_upper_camel_case();
                     self.push_str(&format!("{name}::{case_name}"));
                     if case.ty.is_none() {
                         self.push_str(&format!(" => {{\n{block}\n}}\n"));
@@ -1328,7 +1330,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     } else {
                         String::new()
                     };
-                    let case = case.name.to_camel_case();
+                    let case = case.name.to_upper_camel_case();
                     result.push_str(&format!("{i} => {name}::{case}{block},\n"));
                 }
                 result.push_str(&format!("_ => return Err(invalid_variant(\"{name}\")),\n"));
@@ -1455,9 +1457,9 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::EnumLift { name, enum_, .. } => {
                 let op0 = &operands[0];
                 let mut result = format!("match {op0} {{\n");
-                let name = name.to_camel_case();
+                let name = name.to_upper_camel_case();
                 for (i, case) in enum_.cases.iter().enumerate() {
-                    let case = case.name.to_camel_case();
+                    let case = case.name.to_upper_camel_case();
                     result.push_str(&format!("{i} => {name}::{case},\n"));
                 }
                 result.push_str(&format!("_ => return Err(invalid_variant(\"{name}\")),\n"));
