@@ -1,7 +1,10 @@
 #![allow(type_alias_bounds)] // TODO: should fix generated code to not fire this
 
 use anyhow::Result;
-use wasmtime::{Config, Engine, Instance, Linker, Module, Store};
+use wasmtime::{
+    component::{Component, Instance, Linker},
+    Config, Engine, Store,
+};
 
 test_helpers::runtime_tests_wasmtime!();
 
@@ -11,6 +14,7 @@ fn default_config() -> Result<Config> {
     let mut config = Config::new();
     config.cache_config_load_default()?;
     config.wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
+    config.wasm_component_model(true);
     Ok(config)
 }
 
@@ -31,16 +35,16 @@ fn instantiate<I: Default, E: Default, T>(
     add_imports: impl FnOnce(&mut Linker<Context<I, E>>) -> Result<()>,
     mk_exports: impl FnOnce(
         &mut Store<Context<I, E>>,
-        &Module,
+        &Component,
         &mut Linker<Context<I, E>>,
     ) -> Result<(T, Instance)>,
 ) -> Result<(T, Store<Context<I, E>>)> {
     let engine = Engine::new(&default_config()?)?;
-    let module = Module::from_file(&engine, wasm)?;
+    let module = Component::from_file(&engine, wasm)?;
 
     let mut linker = Linker::new(&engine);
     add_imports(&mut linker)?;
-    wasmtime_wasi::add_to_linker(&mut linker, |cx| &mut cx.wasi)?;
+    //wasmtime_wasi::add_to_linker(&mut linker, |cx| &mut cx.wasi)?;
 
     let mut store = Store::new(
         &engine,

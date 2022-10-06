@@ -513,7 +513,7 @@ impl Generator for Wasmtime {
         // Generate the closure that's passed to a `Linker`, the final piece of
         // codegen here.
         self.src
-            .push_str("move |mut caller: wasmtime::Caller<'_, T>");
+            .push_str("move |mut caller: wasmtime::StoreContextMut<'_, T>");
         for (i, param) in sig.params.iter().enumerate() {
             let arg = format!("arg{}", i);
             self.src.push_str(",");
@@ -665,7 +665,7 @@ impl Generator for Wasmtime {
             );
             exports.fields.insert(
                 format!("{name}_post_return"),
-                (format!("wasmtime::TypedFunc<{ret}, ()>"), get),
+                (format!("wasmtime::component::TypedFunc<{ret}, ()>"), get),
             );
         }
 
@@ -717,7 +717,7 @@ impl Generator for Wasmtime {
         exports.fields.insert(
             to_rust_ident(&func.name),
             (
-                format!("wasmtime::TypedFunc<{}>", cvt),
+                format!("wasmtime::component::TypedFunc<{}>", cvt),
                 format!(
                     "instance.get_typed_func::<{}, _>(&mut store, \"{}\")?",
                     cvt, func.name,
@@ -802,7 +802,9 @@ impl Generator for Wasmtime {
 
         for (module, funcs) in mem::take(&mut self.guest_imports) {
             let module_camel = module.to_upper_camel_case();
-            self.push_str("\npub fn add_to_linker<T, U>(linker: &mut wasmtime::Linker<T>");
+            self.push_str(
+                "\npub fn add_to_linker<T, U>(linker: &mut wasmtime::component::Linker<T>",
+            );
             self.push_str(", get: impl Fn(&mut T) -> ");
             self.push_str("&mut U");
             self.push_str("+ Send + Sync + Copy + 'static) -> anyhow::Result<()> \n");
@@ -815,11 +817,11 @@ impl Generator for Wasmtime {
             if self.needs_get_func {
                 self.push_str("use wit_bindgen_host_wasmtime_rust::rt::get_func;\n");
             }
+            self.push_str(&format!("let mut inst = linker.instance(\"{}\")?;", module,));
             for f in funcs {
-                let method = String::from("func_wrap");
                 self.push_str(&format!(
-                    "linker.{}(\"{}\", \"{}\", {})?;\n",
-                    method, module, f.name, f.closure,
+                    "inst.func_wrap(\"{}\", {})?;\n",
+                    f.name, f.closure,
                 ));
             }
             self.push_str("Ok(())\n}\n");
@@ -882,12 +884,12 @@ impl Generator for Wasmtime {
                     /// the general store state `T`.
                     pub fn instantiate(
                         mut store: impl wasmtime::AsContextMut<Data = T>,
-                        module: &wasmtime::Module,
-                        linker: &mut wasmtime::Linker<T>,
+                        component: &wasmtime::component::Component,
+                        linker: &mut wasmtime::component::Linker<T>,
                         get_state: impl Fn(&mut T) -> &mut {}Data + Send + Sync + Copy + 'static,
-                    ) -> anyhow::Result<(Self, wasmtime::Instance)> {{
-                        let instance = linker.instantiate{}(&mut store, module){}?;
-                        Ok((Self::new(store, &instance,get_state)?, instance))
+                    ) -> anyhow::Result<(Self, wasmtime::component::Instance)> {{
+                        let instance = linker.instantiate{}(&mut store, component){}?;
+                        Ok((Self::new(store, &instance, get_state)?, instance))
                     }}
                 ",
                 name, instantiate, wait,
@@ -905,7 +907,7 @@ impl Generator for Wasmtime {
                     /// the wasm module.
                     pub fn new(
                         mut store: impl wasmtime::AsContextMut<Data = T>,
-                        instance: &wasmtime::Instance,
+                        instance: &wasmtime::component::Instance,
                         get_state: impl Fn(&mut T) -> &mut {}Data + Send + Sync + Copy + 'static,
                     ) -> anyhow::Result<Self> {{
                 ",
@@ -1836,7 +1838,7 @@ impl NeededFunction {
     }
 
     fn ty(&self) -> String {
-        format!("wasmtime::TypedFunc<{}>", self.cvt())
+        format!("wasmtime::component::TypedFunc<{}>", self.cvt())
     }
 }
 
