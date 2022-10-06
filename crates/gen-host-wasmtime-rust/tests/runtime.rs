@@ -18,27 +18,19 @@ fn default_config() -> Result<Config> {
     Ok(config)
 }
 
-fn default_wasi() -> wasmtime_wasi::WasiCtx {
-    wasmtime_wasi::sync::WasiCtxBuilder::new()
-        .inherit_stdio()
-        .build()
-}
-
-struct Context<I, E> {
-    wasi: wasmtime_wasi::WasiCtx,
+struct Context<I> {
     imports: I,
-    exports: E,
 }
 
-fn instantiate<I: Default, E: Default, T>(
+fn instantiate<I: Default, T>(
     wasm: &str,
-    add_imports: impl FnOnce(&mut Linker<Context<I, E>>) -> Result<()>,
+    add_imports: impl FnOnce(&mut Linker<Context<I>>) -> Result<()>,
     mk_exports: impl FnOnce(
-        &mut Store<Context<I, E>>,
+        &mut Store<Context<I>>,
         &Component,
-        &mut Linker<Context<I, E>>,
+        &mut Linker<Context<I>>,
     ) -> Result<(T, Instance)>,
-) -> Result<(T, Store<Context<I, E>>)> {
+) -> Result<(T, Store<Context<I>>)> {
     let engine = Engine::new(&default_config()?)?;
     let module = Component::from_file(&engine, wasm)?;
 
@@ -49,9 +41,7 @@ fn instantiate<I: Default, E: Default, T>(
     let mut store = Store::new(
         &engine,
         Context {
-            wasi: default_wasi(),
             imports: I::default(),
-            exports: E::default(),
         },
     );
     let (exports, _instance) = mk_exports(&mut store, &module, &mut linker)?;
