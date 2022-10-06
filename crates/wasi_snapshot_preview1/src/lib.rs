@@ -25,6 +25,10 @@ pub extern "C" fn environ_get(environ: *mut *mut u8, environ_buf: *mut u8) -> Er
 
 #[no_mangle]
 pub extern "C" fn environ_sizes_get(environc: *mut Size, environ_buf_size: *mut Size) -> Errno {
+    unsafe {
+        *environc = 0;
+        *environ_buf_size = 0;
+    }
     ERRNO_SUCCESS
 }
 
@@ -35,6 +39,10 @@ pub extern "C" fn args_get(args: *mut *mut u8, args_buf: *mut u8) -> Errno {
 
 #[no_mangle]
 pub extern "C" fn args_sizes_get(argc: *mut Size, arg_buf_size: *mut Size) -> Errno {
+    unsafe {
+        *argc = 0;
+        *arg_buf_size = 0;
+    }
     ERRNO_SUCCESS
 }
 
