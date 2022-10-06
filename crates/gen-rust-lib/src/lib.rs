@@ -801,7 +801,10 @@ pub trait RustGenerator {
                 id,
                 TypeMode::Owned,
                 &name,
-                enum_.cases.iter().map(|c| (c.name.to_upper_camel_case(), None)),
+                enum_
+                    .cases
+                    .iter()
+                    .map(|c| (c.name.to_upper_camel_case(), None)),
             )
         }
     }

@@ -210,7 +210,11 @@ impl Generator for WasmtimePy {
         for case in variant.cases.iter() {
             builder.docstring(&case.docs);
             builder.push_str("@dataclass\n");
-            let case_name = format!("{}{}", name.to_upper_camel_case(), case.name.to_upper_camel_case());
+            let case_name = format!(
+                "{}{}",
+                name.to_upper_camel_case(),
+                case.name.to_upper_camel_case()
+            );
             builder.push_str(&format!("class {case_name}:\n"));
             builder.indent();
             match &case.ty {
@@ -572,8 +576,10 @@ impl Generator for WasmtimePy {
         self.src.push_str(&types);
 
         for (module, funcs) in mem::take(&mut self.guest_imports) {
-            self.src
-                .push_str(&format!("class {}(Protocol):\n", module.to_upper_camel_case()));
+            self.src.push_str(&format!(
+                "class {}(Protocol):\n",
+                module.to_upper_camel_case()
+            ));
             self.src.indent();
             for func in funcs.freestanding_funcs.iter() {
                 self.src.push_str("@abstractmethod\n");
@@ -903,7 +909,11 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::RecordLift { name, .. } => {
-                results.push(format!("{}({})", name.to_upper_camel_case(), operands.join(", ")));
+                results.push(format!(
+                    "{}({})",
+                    name.to_upper_camel_case(),
+                    operands.join(", ")
+                ));
             }
             Instruction::TupleLower { tuple, .. } => {
                 if tuple.types.is_empty() {

@@ -357,15 +357,20 @@ impl Generator for Js {
         docs: &Docs,
     ) {
         self.docs(docs);
-        self.src
-            .ts(&format!("export interface {} {{\n", name.to_upper_camel_case()));
+        self.src.ts(&format!(
+            "export interface {} {{\n",
+            name.to_upper_camel_case()
+        ));
         for field in record.fields.iter() {
             self.docs(&field.docs);
             let (option_str, ty) = self
                 .as_nullable(iface, &field.ty)
                 .map_or(("", &field.ty), |ty| ("?", ty));
-            self.src
-                .ts(&format!("{}{}: ", field.name.to_lower_camel_case(), option_str));
+            self.src.ts(&format!(
+                "{}{}: ",
+                field.name.to_lower_camel_case(),
+                option_str
+            ));
             self.print_ty(iface, ty);
             self.src.ts(",\n");
         }
@@ -396,8 +401,10 @@ impl Generator for Js {
         docs: &Docs,
     ) {
         self.docs(docs);
-        self.src
-            .ts(&format!("export interface {} {{\n", name.to_upper_camel_case()));
+        self.src.ts(&format!(
+            "export interface {} {{\n",
+            name.to_upper_camel_case()
+        ));
         for flag in flags.flags.iter() {
             self.docs(&flag.docs);
             let name = flag.name.to_lower_camel_case();
@@ -724,8 +731,10 @@ impl Generator for Js {
                 module,
             ));
 
-            self.src
-                .ts(&format!("export interface {} {{\n", module.to_upper_camel_case()));
+            self.src.ts(&format!(
+                "export interface {} {{\n",
+                module.to_upper_camel_case()
+            ));
 
             for (name, src) in funcs.freestanding_funcs.iter() {
                 self.src.js(&format!(

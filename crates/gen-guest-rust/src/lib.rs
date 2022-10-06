@@ -214,8 +214,10 @@ impl Generator for RustWasm {
             .push_str("wit_bindgen_guest_rust::bitflags::bitflags! {\n");
         self.rustdoc(docs);
         let repr = RustFlagsRepr::new(flags);
-        self.src
-            .push_str(&format!("pub struct {}: {repr} {{\n", name.to_upper_camel_case(),));
+        self.src.push_str(&format!(
+            "pub struct {}: {repr} {{\n",
+            name.to_upper_camel_case(),
+        ));
         for (i, flag) in flags.flags.iter().enumerate() {
             self.rustdoc(&flag.docs);
             self.src.push_str(&format!(
