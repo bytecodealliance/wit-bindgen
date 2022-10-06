@@ -57,6 +57,13 @@ pub struct Opts {
     /// If true, code generation should avoid any features that depend on `std`.
     #[cfg_attr(feature = "clap", arg(long))]
     pub no_std: bool,
+
+    /// If true, code generation should pass borrowed string arguments as
+    /// `&[u8]` instead of `&str`. Strings are still required to be valid
+    /// UTF-8, but this avoids the need for Rust code to do its own UTF-8
+    /// validation if it doesn't already have a `&str`.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub raw_strings: bool,
 }
 
 #[derive(Default)]
@@ -97,6 +104,10 @@ impl RustWasm {
 impl RustGenerator for RustWasm {
     fn use_std(&self) -> bool {
         !self.opts.no_std
+    }
+
+    fn use_raw_strings(&self) -> bool {
+        self.opts.raw_strings
     }
 
     fn default_param_mode(&self) -> TypeMode {
@@ -140,7 +151,11 @@ impl RustGenerator for RustWasm {
             self.push_str(lifetime);
             self.push_str(" ");
         }
-        self.push_str(" str");
+        if self.opts.raw_strings {
+            self.push_str("[u8]");
+        } else {
+            self.push_str("str");
+        }
     }
 }
 
@@ -1164,7 +1179,9 @@ impl Bindgen for FunctionBindgen<'_> {
                     "Vec::from_raw_parts({} as *mut _, {1}, {1})",
                     operands[0], len
                 );
-                if unchecked {
+                if self.gen.opts.raw_strings {
+                    results.push(result);
+                } else if unchecked {
                     results.push(format!("String::from_utf8_unchecked({})", result));
                 } else {
                     results.push(format!("String::from_utf8({}).unwrap()", result));
