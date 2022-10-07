@@ -11,6 +11,7 @@ test = false
 doctest = false
 
 [dependencies]
+anyhow = { workspace = true }
 wit-bindgen-core = { workspace = true }
 wit-bindgen-gen-guest-rust = { workspace = true }
 wit-bindgen-gen-host-wasmtime-rust = { workspace = true }
@@ -21,3 +22,5 @@ wit-bindgen-gen-guest-teavm-java = { workspace = true }
 wit-bindgen-gen-markdown = { workspace = true }
 wit-bindgen-guest-rust = { workspace = true }
 wasmprinter = { workspace = true }
+wit-component = { workspace = true }
+test-helpers = { path = '../test-helpers', default-features = false }

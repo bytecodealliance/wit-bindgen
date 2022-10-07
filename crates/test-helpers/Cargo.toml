@@ -9,12 +9,15 @@ doctest = false
 test = false
 
 [dependencies]
-test-helpers-macros = { path = 'macros' }
+test-helpers-macros = { path = 'macros', optional = true }
 wit-bindgen-core = { workspace = true }
 wit-parser = { workspace = true }
+wit-component = { workspace = true }
+wat = { workspace = true }
 
 [features]
-default = ['guest-rust', 'guest-c', 'guest-teavm-java']
-guest-rust = ['test-helpers-macros/guest-rust']
-guest-c = ['test-helpers-macros/guest-c']
-guest-teavm-java = ['test-helpers-macros/guest-teavm-java']
+default = ['guest-rust', 'guest-c', 'guest-teavm-java', 'macros']
+macros = ['dep:test-helpers-macros']
+guest-rust = ['test-helpers-macros?/guest-rust']
+guest-c = ['test-helpers-macros?/guest-c']
+guest-teavm-java = ['test-helpers-macros?/guest-teavm-java']

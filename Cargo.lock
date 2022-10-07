@@ -287,7 +287,7 @@ dependencies = [
 [[package]]
 name = "cranelift-bforest"
 version = "0.90.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "cranelift-entity",
 ]
@@ -295,7 +295,7 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen"
 version = "0.90.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "arrayvec",
  "bumpalo",
@@ -315,7 +315,7 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen-meta"
 version = "0.90.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "cranelift-codegen-shared",
 ]
@@ -323,12 +323,12 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen-shared"
 version = "0.90.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 
 [[package]]
 name = "cranelift-egraph"
 version = "0.90.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "cranelift-entity",
  "fxhash",
@@ -341,7 +341,7 @@ dependencies = [
 [[package]]
 name = "cranelift-entity"
 version = "0.90.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "serde",
 ]
@@ -349,7 +349,7 @@ dependencies = [
 [[package]]
 name = "cranelift-frontend"
 version = "0.90.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "cranelift-codegen",
  "log",
@@ -360,7 +360,7 @@ dependencies = [
 [[package]]
 name = "cranelift-isle"
 version = "0.90.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "rayon",
 ]
@@ -368,7 +368,7 @@ dependencies = [
 [[package]]
 name = "cranelift-native"
 version = "0.90.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "cranelift-codegen",
  "libc",
@@ -378,7 +378,7 @@ dependencies = [
 [[package]]
 name = "cranelift-wasm"
 version = "0.90.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "cranelift-codegen",
  "cranelift-entity",
@@ -1405,7 +1405,9 @@ name = "test-helpers"
 version = "0.3.0"
 dependencies = [
  "test-helpers-macros",
+ "wat",
  "wit-bindgen-core",
+ "wit-component",
  "wit-parser",
 ]
 
@@ -1620,7 +1622,7 @@ checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 [[package]]
 name = "wasi-cap-std-sync"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1643,7 +1645,7 @@ dependencies = [
 [[package]]
 name = "wasi-common"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "anyhow",
  "bitflags",
@@ -1696,7 +1698,7 @@ dependencies = [
 [[package]]
 name = "wasmtime"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1729,7 +1731,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-asm-macros"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "cfg-if",
 ]
@@ -1737,7 +1739,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-cache"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "anyhow",
  "base64",
@@ -1756,7 +1758,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-component-macro"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1767,12 +1769,12 @@ dependencies = [
 [[package]]
 name = "wasmtime-component-util"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 
 [[package]]
 name = "wasmtime-cranelift"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -1792,7 +1794,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-environ"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "anyhow",
  "cranelift-entity",
@@ -1813,7 +1815,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-fiber"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "cc",
  "cfg-if",
@@ -1825,7 +1827,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "addr2line",
  "anyhow",
@@ -1850,7 +1852,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit-debug"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "object",
  "once_cell",
@@ -1860,7 +1862,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit-icache-coherence"
 version = "2.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "cfg-if",
  "libc",
@@ -1870,7 +1872,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-runtime"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "anyhow",
  "cc",
@@ -1896,7 +1898,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-types"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "cranelift-entity",
  "serde",
@@ -1907,7 +1909,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-wasi"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "anyhow",
  "wasi-cap-std-sync",
@@ -1949,7 +1951,7 @@ dependencies = [
 [[package]]
 name = "wiggle"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1963,7 +1965,7 @@ dependencies = [
 [[package]]
 name = "wiggle-generate"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "anyhow",
  "heck",
@@ -1977,7 +1979,7 @@ dependencies = [
 [[package]]
 name = "wiggle-macro"
 version = "3.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2076,6 +2078,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
+ "wat",
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
  "wit-bindgen-gen-guest-rust",
@@ -2098,6 +2101,8 @@ dependencies = [
 name = "wit-bindgen-demo"
 version = "0.3.0"
 dependencies = [
+ "anyhow",
+ "test-helpers",
  "wasmprinter",
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
@@ -2108,6 +2113,7 @@ dependencies = [
  "wit-bindgen-gen-host-wasmtime-rust",
  "wit-bindgen-gen-markdown",
  "wit-bindgen-guest-rust",
+ "wit-component",
 ]
 
 [[package]]
@@ -2151,10 +2157,15 @@ dependencies = [
 name = "wit-bindgen-gen-host-js"
 version = "0.3.0"
 dependencies = [
+ "anyhow",
  "clap",
  "heck",
+ "indexmap",
  "test-helpers",
+ "wasmparser",
+ "wasmtime-environ",
  "wit-bindgen-core",
+ "wit-component",
 ]
 
 [[package]]
@@ -2265,6 +2276,7 @@ dependencies = [
  "indexmap",
  "log",
  "pretty_assertions",
+ "test-helpers",
  "wasm-encoder",
  "wasmparser",
  "wasmprinter",
@@ -2289,7 +2301,7 @@ dependencies = [
 [[package]]
 name = "witx"
 version = "0.9.1"
-source = "git+https://github.com/bytecodealliance/wasmtime?branch=main#f96491f3337a8ccb792b2769b016de6c16022ede"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-bindgen-pieces#cac8a7a6425b7e758b57357ce61d5e2a6dbf87c6"
 dependencies = [
  "anyhow",
  "log",

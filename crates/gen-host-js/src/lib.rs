@@ -1,35 +1,35 @@
+use anyhow::{Context, Result};
 use heck::*;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use indexmap::IndexMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::mem;
+use wasmparser::{Validator, WasmFeatures};
+use wasmtime_environ::component::{
+    CanonicalOptions, Component, ComponentTypesBuilder, CoreDef, CoreExport, Export, ExportItem,
+    GlobalInitializer, InstantiateModule, LowerImport, RuntimeInstanceIndex, StaticModuleIndex,
+    StringEncoding, Translator,
+};
+use wasmtime_environ::{EntityIndex, ModuleTranslation, PrimaryMap, ScopeVec, Tunables};
 use wit_bindgen_core::wit_parser::abi::{
     AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
 };
-use wit_bindgen_core::{wit_parser::*, Direction, Files, Generator};
+use wit_bindgen_core::{uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator};
+use wit_component::ComponentInterfaces;
 
 #[derive(Default)]
-pub struct Js {
+struct Js {
+    /// The source code for the "main" file that's going to be created for the
+    /// component we're generating bindings for. This is incrementally added to
+    /// over time and primarily contains the main `instantiate` function as well
+    /// as a type-description of the input/output interfaces.
     src: Source,
-    in_import: bool,
+
+    /// Various options for code generation.
     opts: Opts,
-    guest_imports: HashMap<String, Imports>,
-    guest_exports: HashMap<String, Exports>,
-    sizes: SizeAlign,
-    intrinsics: BTreeMap<Intrinsic, String>,
+
+    /// List of all intrinsics emitted to `src` so far.
     all_intrinsics: BTreeSet<Intrinsic>,
-    needs_get_export: bool,
-    needs_ty_option: bool,
-    needs_ty_result: bool,
-}
-
-#[derive(Default)]
-struct Imports {
-    freestanding_funcs: Vec<(String, Source)>,
-}
-
-#[derive(Default)]
-struct Exports {
-    freestanding_funcs: Vec<Source>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -39,11 +39,107 @@ pub struct Opts {
     pub no_typescript: bool,
 }
 
+/// Use to generate a `*.d.ts` file for each imported and exported interface for
+/// a component.
+///
+/// This generated source does not contain any actual JS runtime code, it's just
+/// typescript definitions.
+struct JsInterface<'a> {
+    src: Source,
+    gen: &'a mut Js,
+    iface: &'a Interface,
+    needs_ty_option: bool,
+    needs_ty_result: bool,
+}
+
 impl Opts {
-    pub fn build(self) -> Js {
-        let mut r = Js::new();
-        r.opts = self;
-        r
+    /// Top-level entrypoint to generating JS bindings for a component.
+    ///
+    /// This function takes a number of parameters:
+    ///
+    /// * `name` - the name of the JS module that will be generated for the
+    ///   bindings in `binary`.
+    /// * `binary` - this is the actual component binary. Bindings will be
+    ///   generated for this component and this component alone.
+    /// * `files` - where to place generated files.
+    ///
+    /// This function will generate JS and TypeScript definitions (optionally)
+    /// for the `binary` specified. The JS will export a single `instantiate`
+    /// function which takes a core-wasm-instantiate method and an import
+    /// object. The return value from `instantiate` is the "export object" of
+    /// the component.
+    ///
+    /// Internally `instantiate` will weave together core wasm files as
+    /// specified in the component `binary` provided here. It will lower
+    /// functions provided in the import object using canonical ABI liftings and
+    /// lowerings. Instantiations are offloaded to the caller by providing a
+    /// wasm module path name and import object. This ideally allows using
+    /// embedding-specific methods like `instantiateStreaming` on the web or
+    /// other node.js-specific things in node.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if `binary` is not a valid component
+    /// or if it is not of a "suitable shape" to infer interfaces from. At this
+    /// time this basically means that the component needs to be generated from
+    /// `wit-component` to have suitable type exports/imports/etc to infer an
+    /// `Interface` from the structure of the component.
+    pub fn generate(self, name: &str, binary: &[u8], files: &mut Files) -> Result<()> {
+        // Use the `wit-component` crate here to parse `binary` and discover
+        // the type-level descriptions and `Interface`s corresponding to the
+        // component binary. This is effectively a step that infers a "world" of
+        // a component. Right now `interfaces` is a world-like thing and this
+        // will likely change as worlds are iterated on in the component model
+        // standard. Regardless though this is the step where types are learned
+        // and `Interface`s are constructed for further code generation below.
+        let interfaces = wit_component::decode_interface_component(binary)
+            .context("failed to extract interface information from component")?;
+
+        // Components are complicated, there's no real way around that. To
+        // handle all the work of parsing a component and figuring out how to
+        // instantiate core wasm modules and such all the work is offloaded to
+        // Wasmtime itself. This crate generator is based on Wasmtime's
+        // low-level `wasmtime-environ` crate which is technically not a public
+        // dependency but the same author who worked on that in Wasmtime wrote
+        // this as well so... "seems fine".
+        //
+        // Note that we're not pulling in the entire Wasmtime engine here,
+        // moreso just the "spine" of validating a component. This enables using
+        // Wasmtime's internal `Component` representation as a much easier to
+        // process version of a component that has decompiled everything
+        // internal to a component to a straight linear list of initializers
+        // that need to be executed to instantiate a component.
+        let scope = ScopeVec::new();
+        let tunables = Tunables::default();
+        let mut types = ComponentTypesBuilder::default();
+        let mut validator = Validator::new_with_features(WasmFeatures {
+            component_model: true,
+            ..WasmFeatures::default()
+        });
+        let (component, modules) = Translator::new(&tunables, &mut validator, &mut types, &scope)
+            .translate(binary)
+            .context("failed to parse the input component")?;
+
+        // Components are largely just a collection of core wasm modules after
+        // all so each core wasm module found within the component is emitted to
+        // the output `files` as a module itself. These modules are then
+        // identified by name when instantiations are requested via the
+        // `instantiateCore` callback provided to the main `instantiate`
+        // function.
+        for (i, module) in modules.iter() {
+            let i = i.as_u32();
+            let name = format!("module{i}.wasm");
+            files.push(&name, module.wasm);
+        }
+
+        // And with all that prep work out of the way it's time to hand
+        // everything over to this crate itself, moving into the world of
+        // `wit-bindgen` to generate bindings for JS.
+        let mut gen = Js::default();
+        gen.opts = self;
+        gen.generate(name, &component, &modules, &interfaces, files);
+
+        Ok(())
     }
 }
 
@@ -78,8 +174,6 @@ enum Intrinsic {
     Utf8Decoder,
     Utf8Encode,
     Utf8EncodedLen,
-    Slab,
-    Promises,
     ThrowInvalidBool,
 }
 
@@ -106,31 +200,370 @@ impl Intrinsic {
             Intrinsic::Utf8Decoder => "UTF8_DECODER",
             Intrinsic::Utf8Encode => "utf8_encode",
             Intrinsic::Utf8EncodedLen => "UTF8_ENCODED_LEN",
-            Intrinsic::Slab => "Slab",
-            Intrinsic::Promises => "PROMISES",
             Intrinsic::ThrowInvalidBool => "throw_invalid_bool",
         }
     }
 }
 
 impl Js {
-    pub fn new() -> Js {
-        Js::default()
+    fn generate(
+        &mut self,
+        name: &str,
+        component: &Component,
+        modules: &PrimaryMap<StaticModuleIndex, ModuleTranslation<'_>>,
+        interfaces: &ComponentInterfaces<'_>,
+        files: &mut Files,
+    ) {
+        // Generate a TypeScript description of all interfaces found within the
+        // component. Each interface gets its own TypeScript file to prevent
+        // name clashes between them.
+        let to_gen = interfaces
+            .imports
+            .iter()
+            .map(|(name, iface)| (true, name, iface))
+            .chain(
+                interfaces
+                    .exports
+                    .iter()
+                    .map(|(name, iface)| (false, name, iface)),
+            );
+        for (is_import, name, iface) in to_gen {
+            let camel = name.to_upper_camel_case();
+            assert_eq!(iface.name, *name);
+            let mut gen = self.js_interface(iface);
+            gen.types();
+            gen.post_types();
+
+            uwriteln!(gen.src.ts, "export interface {camel} {{");
+            for func in iface.functions.iter() {
+                gen.ts_func(func);
+            }
+            uwriteln!(gen.src.ts, "}}");
+
+            assert!(gen.src.js.is_empty());
+            let dir = if is_import { "imports" } else { "exports" };
+            if !gen.gen.opts.no_typescript {
+                files.push(&format!("{dir}/{name}.d.ts"), gen.src.ts.as_bytes());
+            }
+
+            let extra = if is_import { "Imports" } else { "Exports" };
+            uwriteln!(
+                self.src.ts,
+                "import {{ {camel} as {camel}{extra} }} from \"./{dir}/{name}\";"
+            );
+        }
+
+        // Generate the TypeScript definition of the `instantiate` function
+        // which is the main workhorse of the generated bindings.
+        let camel = name.to_upper_camel_case();
+        uwriteln!(
+            self.src.ts,
+            "
+               /**
+                * Instantiates this component with the provided imports and
+                * returns a map of all the exports of the component.
+                *
+                * This function is intended to be similar to the
+                * `WebAssembly.instantiate` function. The second `imports`
+                * argument is the \"import object\" for wasm, except here it
+                * uses component-model-layer types instead of core wasm
+                * integers/numbers/etc.
+                *
+                * The first argument to this function, `instantiateCore`, is
+                * used to instantiate core wasm modules within the component.
+                * Components are composed of core wasm modules and this callback
+                * will be invoked per core wasm instantiation. The caller of
+                * this function is responsible for reading the core wasm module
+                * identified by `path` and instantiating it with the core wasm
+                * import object provided. This would use `instantiateStreaming`
+                * on the web, for example.
+                */
+                export function instantiate(
+                    instantiateCore: (path: string, imports: any) => Promise<WebAssembly.Instance>,
+                    imports: ImportObject,
+                ): Promise<{camel}>;
+            ",
+        );
+
+        // Generate a type definition for the import object to type-check
+        // all imports to the component.
+        //
+        // With the current representation of a "world" this is an import object
+        // per-imported-interface where the type of that field is defined by the
+        // interface itself.
+        uwriteln!(self.src.ts, "export interface ImportObject {{");
+        for (name, _iface) in interfaces.imports.iter() {
+            let camel = name.to_upper_camel_case();
+            uwriteln!(self.src.ts, "{name}: {camel}Imports;");
+        }
+        uwriteln!(self.src.ts, "}}");
+
+        // Generate a type definition for the export object from instantiating
+        // the component. This notably inlines the "default export" into the
+        // exported object here and otherwise has delegations for each exported
+        // interface to their own type descriptions.
+        uwriteln!(self.src.ts, "export interface {camel} {{",);
+        for (name, _iface) in interfaces.exports.iter() {
+            let camel = name.to_upper_camel_case();
+            uwriteln!(self.src.ts, "{name}: {camel}Exports;");
+        }
+        match &interfaces.default {
+            Some(iface) => {
+                let mut gen = self.js_interface(iface);
+                for func in iface.functions.iter() {
+                    gen.ts_func(func);
+                }
+                gen.gen.src.ts(&mem::take(&mut gen.src.ts));
+                uwriteln!(gen.gen.src.ts, "}}");
+
+                // After the default interface has its function definitions
+                // inlined the rest of the types are generated here as well.
+                gen.types();
+                gen.post_types();
+                gen.gen.src.ts(&mem::take(&mut gen.src.ts));
+            }
+            None => {
+                uwriteln!(self.src.ts, "}}");
+            }
+        }
+
+        // Given all that the final piece of the puzzle for the generated
+        // bindings is the actual `instantiate` method itself, created by this
+        // structure.
+        let mut instantiator = Instantiator {
+            src: Source::default(),
+            gen: self,
+            modules,
+            instances: Default::default(),
+            interfaces,
+            component,
+        };
+        instantiator.instantiate();
+        instantiator.gen.src.js(&instantiator.src.js);
+        assert!(instantiator.src.ts.is_empty());
+
+        files.push(&format!("{name}.js"), self.src.js.as_bytes());
+        if !self.opts.no_typescript {
+            files.push(&format!("{name}.d.ts"), self.src.ts.as_bytes());
+        }
     }
 
-    fn abi_variant(dir: Direction) -> AbiVariant {
-        // This generator uses a reversed mapping! In the JS host-side
-        // bindings, we don't use any extra adapter layer between guest wasm
-        // modules and the host. When the guest imports functions using the
-        // `GuestImport` ABI, the host directly implements the `GuestImport`
-        // ABI, even though the host is *exporting* functions. Similarly, when
-        // the guest exports functions using the `GuestExport` ABI, the host
-        // directly imports them with the `GuestExport` ABI, even though the
-        // host is *importing* functions.
-        match dir {
-            Direction::Import => AbiVariant::GuestExport,
-            Direction::Export => AbiVariant::GuestImport,
+    fn js_interface<'a>(&'a mut self, iface: &'a Interface) -> JsInterface<'a> {
+        JsInterface {
+            src: Source::default(),
+            gen: self,
+            iface,
+            needs_ty_option: false,
+            needs_ty_result: false,
         }
+    }
+
+    /// Emits the intrinsic `i` to this file and then returns the name of the
+    /// intrinsic.
+    fn intrinsic(&mut self, i: Intrinsic) -> String {
+        let name = i.name().to_string();
+        if !self.all_intrinsics.insert(i) {
+            return name;
+        }
+
+        if (i == Intrinsic::I32ToF32 && !self.all_intrinsics.contains(&Intrinsic::F32ToI32))
+            || (i == Intrinsic::F32ToI32 && !self.all_intrinsics.contains(&Intrinsic::I32ToF32))
+        {
+            self.src.js("
+                const I32_TO_F32_I = new Int32Array(1);
+                const I32_TO_F32_F = new Float32Array(I32_TO_F32_I.buffer);
+            ");
+        }
+        if (i == Intrinsic::I64ToF64 && !self.all_intrinsics.contains(&Intrinsic::F64ToI64))
+            || (i == Intrinsic::F64ToI64 && !self.all_intrinsics.contains(&Intrinsic::I64ToF64))
+        {
+            self.src.js("
+                const I64_TO_F64_I = new BigInt64Array(1);
+                const I64_TO_F64_F = new Float64Array(I64_TO_F64_I.buffer);
+            ");
+        }
+
+        match i {
+            Intrinsic::ClampGuest => self.src.js("
+                function clamp_guest(i, min, max) {
+                    if (i < min || i > max) \
+                        throw new RangeError(`must be between ${min} and ${max}`);
+                    return i;
+                }
+            "),
+
+            Intrinsic::DataView => self.src.js("
+                let DATA_VIEW = new DataView(new ArrayBuffer());
+
+                function data_view(mem) {
+                    if (DATA_VIEW.buffer !== mem.buffer) \
+                        DATA_VIEW = new DataView(mem.buffer);
+                    return DATA_VIEW;
+                }
+            "),
+
+            Intrinsic::ValidateGuestChar => self.src.js("
+                function validate_guest_char(i) {
+                    if ((i > 0x10ffff) || (i >= 0xd800 && i <= 0xdfff)) \
+                        throw new RangeError(`not a valid char`);
+                    return String.fromCodePoint(i);
+                }
+            "),
+
+            // TODO: this is incorrect. It at least allows strings of length > 0
+            // but it probably doesn't do the right thing for unicode or invalid
+            // utf16 strings either.
+            Intrinsic::ValidateHostChar => self.src.js("
+                function validate_host_char(s) {
+                    if (typeof s !== 'string') \
+                        throw new TypeError(`must be a string`);
+                    return s.codePointAt(0);
+                }
+            "),
+
+
+            Intrinsic::ToInt32 => self.src.js("
+                function to_int32(val) {
+                    return val >> 0;
+                }
+            "),
+            Intrinsic::ToUint32 => self.src.js("
+                function to_uint32(val) {
+                    return val >>> 0;
+                }
+            "),
+
+            Intrinsic::ToInt16 => self.src.js("
+                function to_int16(val) {
+                    val >>>= 0;
+                    val %= 2 ** 16;
+                    if (val >= 2 ** 15) {
+                        val -= 2 ** 16;
+                    }
+                    return val;
+                }
+            "),
+            Intrinsic::ToUint16 => self.src.js("
+                function to_uint16(val) {
+                    val >>>= 0;
+                    val %= 2 ** 16;
+                    return val;
+                }
+            "),
+            Intrinsic::ToInt8 => self.src.js("
+                function to_int8(val) {
+                    val >>>= 0;
+                    val %= 2 ** 8;
+                    if (val >= 2 ** 7) {
+                        val -= 2 ** 8;
+                    }
+                    return val;
+                }
+            "),
+            Intrinsic::ToUint8 => self.src.js("
+                function to_uint8(val) {
+                    val >>>= 0;
+                    val %= 2 ** 8;
+                    return val;
+                }
+            "),
+
+            Intrinsic::ToBigInt64 => self.src.js("
+                function to_int64(val) {
+                    return BigInt.asIntN(64, val);
+                }
+            "),
+            Intrinsic::ToBigUint64 => self.src.js("
+                function to_uint64(val) {
+                    return BigInt.asUintN(64, val);
+                }
+            "),
+
+            Intrinsic::ToString => self.src.js("
+                function to_string(val) {
+                    if (typeof val === 'symbol') {
+                        throw new TypeError('symbols cannot be converted to strings');
+                    } else {
+                        // Calling `String` almost directly calls `ToString`, except that it also allows symbols,
+                        // which is why we have the symbol-rejecting branch above.
+                        //
+                        // Definition of `String`: https://tc39.es/ecma262/#sec-string-constructor-string-value
+                        return String(val);
+                    }
+                }
+            "),
+
+            Intrinsic::I32ToF32 => self.src.js("
+                function i32ToF32(i) {
+                    I32_TO_F32_I[0] = i;
+                    return I32_TO_F32_F[0];
+                }
+            "),
+            Intrinsic::F32ToI32 => self.src.js("
+                function f32ToI32(f) {
+                    I32_TO_F32_F[0] = f;
+                    return I32_TO_F32_I[0];
+                }
+            "),
+            Intrinsic::I64ToF64 => self.src.js("
+                function i64ToF64(i) {
+                    I64_TO_F64_I[0] = i;
+                    return I64_TO_F64_F[0];
+                }
+            "),
+            Intrinsic::F64ToI64 => self.src.js("
+                function f64ToI64(f) {
+                    I64_TO_F64_F[0] = f;
+                    return I64_TO_F64_I[0];
+                }
+            "),
+
+            Intrinsic::Utf8Decoder => self
+                .src
+                .js("const UTF8_DECODER = new TextDecoder('utf-8');\n"),
+
+            Intrinsic::Utf8EncodedLen => self.src.js("let UTF8_ENCODED_LEN = 0;\n"),
+
+            Intrinsic::Utf8Encode => self.src.js("
+                const UTF8_ENCODER = new TextEncoder('utf-8');
+
+                function utf8_encode(s, realloc, memory) {
+                    if (typeof s !== 'string') \
+                        throw new TypeError('expected a string');
+
+                    if (s.length === 0) {
+                        UTF8_ENCODED_LEN = 0;
+                        return 1;
+                    }
+
+                    let alloc_len = 0;
+                    let ptr = 0;
+                    let writtenTotal = 0;
+                    while (s.length > 0) {
+                        ptr = realloc(ptr, alloc_len, 1, alloc_len + s.length);
+                        alloc_len += s.length;
+                        const { read, written } = UTF8_ENCODER.encodeInto(
+                            s,
+                            new Uint8Array(memory.buffer, ptr + writtenTotal, alloc_len - writtenTotal),
+                        );
+                        writtenTotal += written;
+                        s = s.slice(read);
+                    }
+                    if (alloc_len > writtenTotal)
+                        ptr = realloc(ptr, alloc_len, 1, writtenTotal);
+                    UTF8_ENCODED_LEN = writtenTotal;
+                    return ptr;
+                }
+            "),
+
+            Intrinsic::ThrowInvalidBool => self.src.js("
+                function throw_invalid_bool() {
+                    throw new RangeError(\"invalid variant discriminant for bool\");
+                }
+            "),
+        }
+
+        name
     }
 
     fn array_ty(&self, iface: &Interface, ty: &Type) -> Option<&'static str> {
@@ -153,149 +586,6 @@ impl Js {
                 _ => None,
             },
         }
-    }
-
-    fn print_ty(&mut self, iface: &Interface, ty: &Type) {
-        match ty {
-            Type::Bool => self.src.ts("boolean"),
-            Type::U8
-            | Type::S8
-            | Type::U16
-            | Type::S16
-            | Type::U32
-            | Type::S32
-            | Type::Float32
-            | Type::Float64 => self.src.ts("number"),
-            Type::U64 | Type::S64 => self.src.ts("bigint"),
-            Type::Char => self.src.ts("string"),
-            Type::String => self.src.ts("string"),
-            Type::Id(id) => {
-                let ty = &iface.types[*id];
-                if let Some(name) = &ty.name {
-                    return self.src.ts(&name.to_upper_camel_case());
-                }
-                match &ty.kind {
-                    TypeDefKind::Type(t) => self.print_ty(iface, t),
-                    TypeDefKind::Tuple(t) => self.print_tuple(iface, t),
-                    TypeDefKind::Record(_) => panic!("anonymous record"),
-                    TypeDefKind::Flags(_) => panic!("anonymous flags"),
-                    TypeDefKind::Enum(_) => panic!("anonymous enum"),
-                    TypeDefKind::Union(_) => panic!("anonymous union"),
-                    TypeDefKind::Option(t) => {
-                        if self.maybe_null(iface, t) {
-                            self.needs_ty_option = true;
-                            self.src.ts("Option<");
-                            self.print_ty(iface, t);
-                            self.src.ts(">");
-                        } else {
-                            self.print_ty(iface, t);
-                            self.src.ts(" | null");
-                        }
-                    }
-                    TypeDefKind::Result(r) => {
-                        self.needs_ty_result = true;
-                        self.src.ts("Result<");
-                        self.print_optional_ty(iface, r.ok.as_ref());
-                        self.src.ts(", ");
-                        self.print_optional_ty(iface, r.err.as_ref());
-                        self.src.ts(">");
-                    }
-                    TypeDefKind::Variant(_) => panic!("anonymous variant"),
-                    TypeDefKind::List(v) => self.print_list(iface, v),
-                    TypeDefKind::Future(_) => todo!("anonymous future"),
-                    TypeDefKind::Stream(_) => todo!("anonymous stream"),
-                }
-            }
-        }
-    }
-
-    fn print_optional_ty(&mut self, iface: &Interface, ty: Option<&Type>) {
-        match ty {
-            Some(ty) => self.print_ty(iface, ty),
-            None => self.src.ts("void"),
-        }
-    }
-
-    fn print_list(&mut self, iface: &Interface, ty: &Type) {
-        match self.array_ty(iface, ty) {
-            Some(ty) => self.src.ts(ty),
-            None => {
-                self.print_ty(iface, ty);
-                self.src.ts("[]");
-            }
-        }
-    }
-
-    fn print_tuple(&mut self, iface: &Interface, tuple: &Tuple) {
-        self.src.ts("[");
-        for (i, ty) in tuple.types.iter().enumerate() {
-            if i > 0 {
-                self.src.ts(", ");
-            }
-            self.print_ty(iface, ty);
-        }
-        self.src.ts("]");
-    }
-
-    fn docs_raw(&mut self, docs: &str) {
-        self.src.ts("/**\n");
-        for line in docs.lines() {
-            self.src.ts(&format!(" * {}\n", line));
-        }
-        self.src.ts(" */\n");
-    }
-
-    fn docs(&mut self, docs: &Docs) {
-        match &docs.contents {
-            Some(docs) => self.docs_raw(docs),
-            None => return,
-        }
-    }
-
-    fn ts_func(&mut self, iface: &Interface, func: &Function) {
-        self.docs(&func.docs);
-
-        self.src.ts(&func.item_name().to_lower_camel_case());
-        self.src.ts("(");
-
-        let param_start = match &func.kind {
-            FunctionKind::Freestanding => 0,
-        };
-
-        for (i, (name, ty)) in func.params[param_start..].iter().enumerate() {
-            if i > 0 {
-                self.src.ts(", ");
-            }
-            self.src.ts(to_js_ident(&name.to_lower_camel_case()));
-            self.src.ts(": ");
-            self.print_ty(iface, ty);
-        }
-        self.src.ts("): ");
-        match func.results.len() {
-            0 => self.src.ts("void"),
-            1 => self.print_ty(iface, func.results.iter_types().next().unwrap()),
-            _ => {
-                self.src.ts("[");
-                for (i, ty) in func.results.iter_types().enumerate() {
-                    if i != 0 {
-                        self.src.ts(", ");
-                    }
-                    self.print_ty(iface, ty);
-                }
-                self.src.ts("]");
-            }
-        }
-        self.src.ts(";\n");
-    }
-
-    fn intrinsic(&mut self, i: Intrinsic) -> String {
-        if let Some(name) = self.intrinsics.get(&i) {
-            return name.clone();
-        }
-        // TODO: should select a name that automatically doesn't conflict with
-        // anything else being generated.
-        self.intrinsics.insert(i, i.name().to_string());
-        return i.name().to_string();
     }
 
     /// Returns whether `null` is a valid value of type `ty`
@@ -341,21 +631,480 @@ impl Js {
     }
 }
 
-impl Generator for Js {
-    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        let variant = Self::abi_variant(dir);
-        self.sizes.fill(iface);
-        self.in_import = variant == AbiVariant::GuestImport;
+/// Helper structure used to generate the `instantiate` method of a component.
+///
+/// This is the main structure for parsing the output of Wasmtime.
+struct Instantiator<'a> {
+    src: Source,
+    gen: &'a mut Js,
+    modules: &'a PrimaryMap<StaticModuleIndex, ModuleTranslation<'a>>,
+    instances: PrimaryMap<RuntimeInstanceIndex, StaticModuleIndex>,
+    interfaces: &'a ComponentInterfaces<'a>,
+    component: &'a Component,
+}
+
+impl Instantiator<'_> {
+    fn instantiate(&mut self) {
+        uwriteln!(
+            self.src.js,
+            "export async function instantiate(instantiateCore, imports) {{"
+        );
+
+        for init in self.component.initializers.iter() {
+            self.global_initializer(init);
+        }
+
+        self.src.js("return ");
+        self.exports(&self.component.exports, 0, self.interfaces.default.as_ref());
+        self.src.js(";\n");
+
+        uwriteln!(self.src.js, "}}");
     }
 
-    fn type_record(
+    fn global_initializer(&mut self, init: &GlobalInitializer) {
+        match init {
+            GlobalInitializer::InstantiateModule(m) => match m {
+                InstantiateModule::Static(idx, args) => self.instantiate_static_module(*idx, args),
+
+                // This is only needed when instantiating an imported core wasm
+                // module which while easy to implement here is not possible to
+                // test at this time so it's left unimplemented.
+                InstantiateModule::Import(..) => unimplemented!(),
+            },
+
+            GlobalInitializer::LowerImport(i) => self.lower_import(i),
+
+            GlobalInitializer::ExtractMemory(m) => {
+                let def = self.core_export(&m.export);
+                uwriteln!(self.src.js, "const memory{} = {def};", m.index.as_u32());
+            }
+            GlobalInitializer::ExtractRealloc(r) => {
+                let def = self.core_def(&r.def);
+                uwriteln!(self.src.js, "const realloc{} = {def};", r.index.as_u32());
+            }
+            GlobalInitializer::ExtractPostReturn(p) => {
+                let def = self.core_def(&p.def);
+                uwriteln!(self.src.js, "const postReturn{} = {def};", p.index.as_u32());
+            }
+
+            // This is only used for a "degenerate component" which internally
+            // has a function that always traps. While this should be trivial to
+            // implement (generate a JS function that always throws) there's no
+            // way to test this at this time so leave this unimplemented.
+            GlobalInitializer::AlwaysTrap(_) => unimplemented!(),
+
+            // This is only used when the component exports core wasm modules,
+            // but that's not possible to test right now so leave these as
+            // unimplemented.
+            GlobalInitializer::SaveStaticModule(_) => unimplemented!(),
+            GlobalInitializer::SaveModuleImport(_) => unimplemented!(),
+
+            // This is required when strings pass between components within a
+            // component and may change encodings. This is left unimplemented
+            // for now since it can't be tested and additionally JS doesn't
+            // support multi-memory which transcoders rely on anyway.
+            GlobalInitializer::Transcoder(_) => unimplemented!(),
+        }
+    }
+
+    fn instantiate_static_module(&mut self, idx: StaticModuleIndex, args: &[CoreDef]) {
+        let module = &self.modules[idx].module;
+
+        // Build a JS "import object" which represents `args`. The `args` is a
+        // flat representation which needs to be zip'd with the list of names to
+        // correspond to the JS wasm embedding API. This is one of the major
+        // differences between Wasmtime's and JS's embedding API.
+        let mut import_obj = BTreeMap::new();
+        assert_eq!(module.imports().len(), args.len());
+        for ((module, name, _), arg) in module.imports().zip(args) {
+            let def = self.core_def(arg);
+            let dst = import_obj.entry(module).or_insert(BTreeMap::new());
+            let prev = dst.insert(name, def);
+            assert!(prev.is_none());
+        }
+        let mut imports = String::new();
+        if import_obj.is_empty() {
+            imports.push_str("{}");
+        } else {
+            imports.push_str("{\n");
+            for (module, names) in import_obj {
+                uwrite!(imports, "\"{module}\": {{\n");
+                for (name, val) in names {
+                    uwriteln!(imports, "\"{name}\": {val},");
+                }
+                imports.push_str("},\n");
+            }
+            imports.push_str("}");
+        }
+
+        // Delegate most of the work to `instantiateCore` to allow the JS caller
+        // to do `instantiateStreaming` or w/e is appropriate for the embedding
+        // at hand. We've done all the hard work of assembling the import object
+        // so the instantiation should be relatively straightforward.
+        let i = self.instances.push(idx);
+        let name = format!("module{}.wasm", idx.as_u32());
+        uwrite!(self.src.js, "const instance{} = ", i.as_u32());
+        uwriteln!(self.src.js, "await instantiateCore(\"{name}\", {imports});");
+    }
+
+    fn lower_import(&mut self, import: &LowerImport) {
+        // Determine the `Interface` that this import corresponds to. At this
+        // time `wit-component` only supports root-level imports of instances
+        // where instances export functions.
+        let (import_index, path) = &self.component.imports[import.import];
+        let (import_name, _import_ty) = &self.component.import_types[*import_index];
+        assert_eq!(path.len(), 1);
+        let iface = &self.interfaces.imports[import_name.as_str()];
+        let func = iface.functions.iter().find(|f| f.name == path[0]).unwrap();
+
+        let index = import.index.as_u32();
+        let callee = format!("lowering{index}Callee");
+        uwriteln!(
+            self.src.js,
+            "const {callee} = imports.{}.{};",
+            import_name.to_lower_camel_case(),
+            func.name.to_lower_camel_case(),
+        );
+        uwrite!(self.src.js, "function lowering{index}");
+        let nparams = iface
+            .wasm_signature(AbiVariant::GuestImport, func)
+            .params
+            .len();
+        self.bindgen(
+            nparams,
+            callee,
+            &import.options,
+            iface,
+            func,
+            AbiVariant::GuestImport,
+        );
+        uwriteln!(self.src.js, "");
+    }
+
+    fn bindgen(
         &mut self,
+        nparams: usize,
+        callee: String,
+        opts: &CanonicalOptions,
         iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        record: &Record,
-        docs: &Docs,
+        func: &Function,
+        abi: AbiVariant,
     ) {
+        // Technically it wouldn't be the hardest thing in the world to support
+        // other string encodings, but for now the code generator was originally
+        // written to support utf-8 so let's just leave it at that for now. In
+        // the future when it's easier to produce components with non-utf-8 this
+        // can be plumbed through to string lifting/lowering below.
+        assert_eq!(opts.string_encoding, StringEncoding::Utf8);
+
+        let memory = match opts.memory {
+            Some(idx) => Some(format!("memory{}", idx.as_u32())),
+            None => None,
+        };
+        let realloc = match opts.realloc {
+            Some(idx) => Some(format!("realloc{}", idx.as_u32())),
+            None => None,
+        };
+        let post_return = match opts.post_return {
+            Some(idx) => Some(format!("postReturn{}", idx.as_u32())),
+            None => None,
+        };
+
+        self.src.js("(");
+        let mut params = Vec::new();
+        for i in 0..nparams {
+            if i > 0 {
+                self.src.js(", ");
+            }
+            let param = format!("arg{i}");
+            self.src.js(&param);
+            params.push(param);
+        }
+        self.src.js(") {\n");
+
+        let mut sizes = SizeAlign::default();
+        sizes.fill(iface);
+        let mut f = FunctionBindgen {
+            sizes,
+            gen: self.gen,
+            block_storage: Vec::new(),
+            blocks: Vec::new(),
+            callee,
+            memory,
+            realloc,
+            tmp: 0,
+            params,
+            post_return,
+            src: Source::default(),
+        };
+        iface.call(
+            abi,
+            match abi {
+                AbiVariant::GuestImport => LiftLower::LiftArgsLowerResults,
+                AbiVariant::GuestExport => LiftLower::LowerArgsLiftResults,
+            },
+            func,
+            &mut f,
+        );
+        let FunctionBindgen { src, .. } = f;
+
+        self.src.js(&src.js);
+        assert!(src.ts.is_empty());
+        self.src.js("}");
+    }
+
+    fn core_def(&self, def: &CoreDef) -> String {
+        match def {
+            CoreDef::Export(e) => self.core_export(e),
+            CoreDef::Lowered(i) => format!("lowering{}", i.as_u32()),
+            CoreDef::AlwaysTrap(_) => unimplemented!(),
+            CoreDef::InstanceFlags(_) => unimplemented!(),
+            CoreDef::Transcoder(_) => unimplemented!(),
+        }
+    }
+
+    fn core_export<T>(&self, export: &CoreExport<T>) -> String
+    where
+        T: Into<EntityIndex> + Copy,
+    {
+        let name = match &export.item {
+            ExportItem::Index(idx) => {
+                let module = &self.modules[self.instances[export.instance]].module;
+                let idx = (*idx).into();
+                module
+                    .exports
+                    .iter()
+                    .filter_map(|(name, i)| if *i == idx { Some(name) } else { None })
+                    .next()
+                    .unwrap()
+            }
+            ExportItem::Name(s) => s,
+        };
+        let i = export.instance.as_u32() as usize;
+        format!("instance{i}.exports[\"{name}\"]")
+    }
+
+    fn exports(
+        &mut self,
+        exports: &IndexMap<String, Export>,
+        depth: usize,
+        iface: Option<&Interface>,
+    ) {
+        if exports.is_empty() {
+            self.src.js("{}");
+            return;
+        }
+
+        self.src.js("{\n");
+        for (name, export) in exports {
+            let camel = name.to_lower_camel_case();
+            match export {
+                Export::LiftedFunction {
+                    ty: _,
+                    func,
+                    options,
+                } => {
+                    assert!(depth < 2);
+                    uwrite!(self.src.js, "{camel}");
+                    let callee = self.core_def(func);
+                    let iface = iface.unwrap();
+                    let func = iface.functions.iter().find(|f| f.name == *name).unwrap();
+                    self.bindgen(
+                        func.params.len(),
+                        callee,
+                        options,
+                        iface,
+                        func,
+                        AbiVariant::GuestExport,
+                    );
+                    self.src.js(",\n");
+                }
+                Export::Instance(exports) => {
+                    uwrite!(self.src.js, "{camel}: ");
+                    let iface = self.interfaces.exports.get(name.as_str());
+                    self.exports(exports, depth + 1, iface);
+                    self.src.js(",\n");
+                }
+
+                // ignore type exports for now
+                Export::Type(_) => {}
+
+                // This can't be tested at this time so leave it unimplemented
+                Export::Module(_) => unimplemented!(),
+            }
+        }
+        self.src.js("}");
+    }
+}
+
+impl<'a> JsInterface<'a> {
+    fn docs_raw(&mut self, docs: &str) {
+        self.src.ts("/**\n");
+        for line in docs.lines() {
+            self.src.ts(&format!(" * {}\n", line));
+        }
+        self.src.ts(" */\n");
+    }
+
+    fn docs(&mut self, docs: &Docs) {
+        match &docs.contents {
+            Some(docs) => self.docs_raw(docs),
+            None => return,
+        }
+    }
+
+    fn array_ty(&self, ty: &Type) -> Option<&'static str> {
+        self.gen.array_ty(self.iface, ty)
+    }
+
+    fn print_ty(&mut self, ty: &Type) {
+        match ty {
+            Type::Bool => self.src.ts("boolean"),
+            Type::U8
+            | Type::S8
+            | Type::U16
+            | Type::S16
+            | Type::U32
+            | Type::S32
+            | Type::Float32
+            | Type::Float64 => self.src.ts("number"),
+            Type::U64 | Type::S64 => self.src.ts("bigint"),
+            Type::Char => self.src.ts("string"),
+            Type::String => self.src.ts("string"),
+            Type::Id(id) => {
+                let ty = &self.iface.types[*id];
+                if let Some(name) = &ty.name {
+                    return self.src.ts(&name.to_upper_camel_case());
+                }
+                match &ty.kind {
+                    TypeDefKind::Type(t) => self.print_ty(t),
+                    TypeDefKind::Tuple(t) => self.print_tuple(t),
+                    TypeDefKind::Record(_) => panic!("anonymous record"),
+                    TypeDefKind::Flags(_) => panic!("anonymous flags"),
+                    TypeDefKind::Enum(_) => panic!("anonymous enum"),
+                    TypeDefKind::Union(_) => panic!("anonymous union"),
+                    TypeDefKind::Option(t) => {
+                        if self.maybe_null(t) {
+                            self.needs_ty_option = true;
+                            self.src.ts("Option<");
+                            self.print_ty(t);
+                            self.src.ts(">");
+                        } else {
+                            self.print_ty(t);
+                            self.src.ts(" | null");
+                        }
+                    }
+                    TypeDefKind::Result(r) => {
+                        self.needs_ty_result = true;
+                        self.src.ts("Result<");
+                        self.print_optional_ty(r.ok.as_ref());
+                        self.src.ts(", ");
+                        self.print_optional_ty(r.err.as_ref());
+                        self.src.ts(">");
+                    }
+                    TypeDefKind::Variant(_) => panic!("anonymous variant"),
+                    TypeDefKind::List(v) => self.print_list(v),
+                    TypeDefKind::Future(_) => todo!("anonymous future"),
+                    TypeDefKind::Stream(_) => todo!("anonymous stream"),
+                }
+            }
+        }
+    }
+
+    fn print_optional_ty(&mut self, ty: Option<&Type>) {
+        match ty {
+            Some(ty) => self.print_ty(ty),
+            None => self.src.ts("void"),
+        }
+    }
+
+    fn print_list(&mut self, ty: &Type) {
+        match self.array_ty(ty) {
+            Some(ty) => self.src.ts(ty),
+            None => {
+                self.print_ty(ty);
+                self.src.ts("[]");
+            }
+        }
+    }
+
+    fn print_tuple(&mut self, tuple: &Tuple) {
+        self.src.ts("[");
+        for (i, ty) in tuple.types.iter().enumerate() {
+            if i > 0 {
+                self.src.ts(", ");
+            }
+            self.print_ty(ty);
+        }
+        self.src.ts("]");
+    }
+
+    fn ts_func(&mut self, func: &Function) {
+        self.docs(&func.docs);
+
+        self.src.ts(&func.item_name().to_lower_camel_case());
+        self.src.ts("(");
+
+        let param_start = match &func.kind {
+            FunctionKind::Freestanding => 0,
+        };
+
+        for (i, (name, ty)) in func.params[param_start..].iter().enumerate() {
+            if i > 0 {
+                self.src.ts(", ");
+            }
+            self.src.ts(to_js_ident(&name.to_lower_camel_case()));
+            self.src.ts(": ");
+            self.print_ty(ty);
+        }
+        self.src.ts("): ");
+        match func.results.len() {
+            0 => self.src.ts("void"),
+            1 => self.print_ty(func.results.iter_types().next().unwrap()),
+            _ => {
+                self.src.ts("[");
+                for (i, ty) in func.results.iter_types().enumerate() {
+                    if i != 0 {
+                        self.src.ts(", ");
+                    }
+                    self.print_ty(ty);
+                }
+                self.src.ts("]");
+            }
+        }
+        self.src.ts(";\n");
+    }
+
+    fn maybe_null(&self, ty: &Type) -> bool {
+        self.gen.maybe_null(self.iface, ty)
+    }
+
+    fn as_nullable<'b>(&self, ty: &'b Type) -> Option<&'b Type>
+    where
+        'a: 'b,
+    {
+        self.gen.as_nullable(self.iface, ty)
+    }
+
+    fn post_types(&mut self) {
+        if mem::take(&mut self.needs_ty_option) {
+            self.src
+                .ts("export type Option<T> = { tag: \"none\" } | { tag: \"some\", val; T };\n");
+        }
+        if mem::take(&mut self.needs_ty_result) {
+            self.src.ts(
+                "export type Result<T, E> = { tag: \"ok\", val: T } | { tag: \"err\", val: E };\n",
+            );
+        }
+    }
+}
+
+impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
+    fn iface(&self) -> &'a Interface {
+        self.iface
+    }
+
+    fn type_record(&mut self, _id: TypeId, name: &str, record: &Record, docs: &Docs) {
         self.docs(docs);
         self.src.ts(&format!(
             "export interface {} {{\n",
@@ -364,42 +1113,28 @@ impl Generator for Js {
         for field in record.fields.iter() {
             self.docs(&field.docs);
             let (option_str, ty) = self
-                .as_nullable(iface, &field.ty)
+                .as_nullable(&field.ty)
                 .map_or(("", &field.ty), |ty| ("?", ty));
             self.src.ts(&format!(
                 "{}{}: ",
                 field.name.to_lower_camel_case(),
                 option_str
             ));
-            self.print_ty(iface, ty);
+            self.print_ty(ty);
             self.src.ts(",\n");
         }
         self.src.ts("}\n");
     }
 
-    fn type_tuple(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        tuple: &Tuple,
-        docs: &Docs,
-    ) {
+    fn type_tuple(&mut self, _id: TypeId, name: &str, tuple: &Tuple, docs: &Docs) {
         self.docs(docs);
         self.src
             .ts(&format!("export type {} = ", name.to_upper_camel_case()));
-        self.print_tuple(iface, tuple);
+        self.print_tuple(tuple);
         self.src.ts(";\n");
     }
 
-    fn type_flags(
-        &mut self,
-        _iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        flags: &Flags,
-        docs: &Docs,
-    ) {
+    fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
         self.docs(docs);
         self.src.ts(&format!(
             "export interface {} {{\n",
@@ -413,14 +1148,7 @@ impl Generator for Js {
         self.src.ts("}\n");
     }
 
-    fn type_variant(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        variant: &Variant,
-        docs: &Docs,
-    ) {
+    fn type_variant(&mut self, _id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
         self.docs(docs);
         self.src
             .ts(&format!("export type {} = ", name.to_upper_camel_case()));
@@ -443,21 +1171,14 @@ impl Generator for Js {
             self.src.ts("\",\n");
             if let Some(ty) = case.ty {
                 self.src.ts("val: ");
-                self.print_ty(iface, &ty);
+                self.print_ty(&ty);
                 self.src.ts(",\n");
             }
             self.src.ts("}\n");
         }
     }
 
-    fn type_union(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        union: &Union,
-        docs: &Docs,
-    ) {
+    fn type_union(&mut self, _id: TypeId, name: &str, union: &Union, docs: &Docs) {
         self.docs(docs);
         let name = name.to_upper_camel_case();
         self.src.ts(&format!("export type {name} = "));
@@ -473,61 +1194,40 @@ impl Generator for Js {
             self.src.ts(&format!("export interface {name}{i} {{\n"));
             self.src.ts(&format!("tag: {i},\n"));
             self.src.ts("val: ");
-            self.print_ty(iface, &case.ty);
+            self.print_ty(&case.ty);
             self.src.ts(",\n");
             self.src.ts("}\n");
         }
     }
 
-    fn type_option(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        payload: &Type,
-        docs: &Docs,
-    ) {
+    fn type_option(&mut self, _id: TypeId, name: &str, payload: &Type, docs: &Docs) {
         self.docs(docs);
         let name = name.to_upper_camel_case();
         self.src.ts(&format!("export type {name} = "));
-        if self.maybe_null(iface, payload) {
+        if self.maybe_null(payload) {
             self.needs_ty_option = true;
             self.src.ts("Option<");
-            self.print_ty(iface, payload);
+            self.print_ty(payload);
             self.src.ts(">");
         } else {
-            self.print_ty(iface, payload);
+            self.print_ty(payload);
             self.src.ts(" | null");
         }
         self.src.ts(";\n");
     }
 
-    fn type_result(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        result: &Result_,
-        docs: &Docs,
-    ) {
+    fn type_result(&mut self, _id: TypeId, name: &str, result: &Result_, docs: &Docs) {
         self.docs(docs);
         let name = name.to_upper_camel_case();
         self.needs_ty_result = true;
         self.src.ts(&format!("export type {name} = Result<"));
-        self.print_optional_ty(iface, result.ok.as_ref());
+        self.print_optional_ty(result.ok.as_ref());
         self.src.ts(", ");
-        self.print_optional_ty(iface, result.err.as_ref());
+        self.print_optional_ty(result.err.as_ref());
         self.src.ts(">;\n");
     }
 
-    fn type_enum(
-        &mut self,
-        _iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        enum_: &Enum,
-        docs: &Docs,
-    ) {
+    fn type_enum(&mut self, _id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         // The complete documentation for this enum, including documentation for variants.
         let mut complete_docs = String::new();
 
@@ -562,360 +1262,42 @@ impl Generator for Js {
         self.src.ts(";\n");
     }
 
-    fn type_alias(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+    fn type_alias(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.docs(docs);
         self.src
             .ts(&format!("export type {} = ", name.to_upper_camel_case()));
-        self.print_ty(iface, ty);
+        self.print_ty(ty);
         self.src.ts(";\n");
     }
 
-    fn type_list(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+    fn type_list(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.docs(docs);
         self.src
             .ts(&format!("export type {} = ", name.to_upper_camel_case()));
-        self.print_list(iface, ty);
+        self.print_list(ty);
         self.src.ts(";\n");
     }
 
-    fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        drop((iface, _id, name, ty, docs));
-    }
-
-    // As with `abi_variant` above, we're generating host-side bindings here
-    // so a user "export" uses the "guest import" ABI variant on the inside of
-    // this `Generator` implementation.
-    fn export(&mut self, iface: &Interface, func: &Function) {
-        let prev = mem::take(&mut self.src);
-
-        let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
-        let params = (0..sig.params.len())
-            .map(|i| format!("arg{}", i))
-            .collect::<Vec<_>>();
-        self.src
-            .js(&format!("function({}) {{\n", params.join(", ")));
-        self.ts_func(iface, func);
-
-        let mut f = FunctionBindgen::new(self, params);
-        iface.call(
-            AbiVariant::GuestImport,
-            LiftLower::LiftArgsLowerResults,
-            func,
-            &mut f,
-        );
-
-        let FunctionBindgen {
-            src,
-            needs_memory,
-            needs_realloc,
-            ..
-        } = f;
-
-        if needs_memory {
-            self.needs_get_export = true;
-            // TODO: hardcoding "memory"
-            self.src.js("const memory = get_export(\"memory\");\n");
-        }
-
-        if let Some(name) = needs_realloc {
-            self.needs_get_export = true;
-            self.src
-                .js(&format!("const realloc = get_export(\"{}\");\n", name));
-        }
-
-        self.src.js(&src.js);
-
-        self.src.js("}");
-
-        let src = mem::replace(&mut self.src, prev);
-        let imports = self
-            .guest_imports
-            .entry(iface.name.to_string())
-            .or_insert(Imports::default());
-        let dst = match &func.kind {
-            FunctionKind::Freestanding => &mut imports.freestanding_funcs,
-        };
-        dst.push((func.name.to_string(), src));
-    }
-
-    // As with `abi_variant` above, we're generating host-side bindings here
-    // so a user "import" uses the "export" ABI variant on the inside of
-    // this `Generator` implementation.
-    fn import(&mut self, iface: &Interface, func: &Function) {
-        let prev = mem::take(&mut self.src);
-
-        let params = func
-            .params
-            .iter()
-            .enumerate()
-            .map(|(i, _)| format!("arg{}", i))
-            .collect::<Vec<_>>();
-        let src_object = match &func.kind {
-            FunctionKind::Freestanding => "this".to_string(),
-        };
-        println!(
-            "{} {}",
-            func.item_name(),
-            func.item_name().to_lower_camel_case()
-        );
-        self.src.js(&format!(
-            "{}({}) {{\n",
-            func.item_name().to_lower_camel_case(),
-            params.join(", ")
-        ));
-        self.ts_func(iface, func);
-
-        let mut f = FunctionBindgen::new(self, params);
-        f.src_object = src_object;
-        iface.call(
-            AbiVariant::GuestExport,
-            LiftLower::LowerArgsLiftResults,
-            func,
-            &mut f,
-        );
-
-        let FunctionBindgen {
-            src,
-            needs_memory,
-            needs_realloc,
-            src_object,
-            ..
-        } = f;
-        if needs_memory {
-            // TODO: hardcoding "memory"
-            self.src
-                .js(&format!("const memory = {}._exports.memory;\n", src_object));
-        }
-
-        if let Some(name) = needs_realloc {
-            self.src.js(&format!(
-                "const realloc = {}._exports[\"{}\"];\n",
-                src_object, name
-            ));
-        }
-
-        self.src.js(&src.js);
-        self.src.js("}\n");
-
-        let exports = self
-            .guest_exports
-            .entry(iface.name.to_string())
-            .or_insert_with(Exports::default);
-
-        let func_body = mem::replace(&mut self.src, prev);
-        match &func.kind {
-            FunctionKind::Freestanding => {
-                exports.freestanding_funcs.push(func_body);
-            }
-        }
-    }
-
-    fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
-        for (module, funcs) in mem::take(&mut self.guest_imports) {
-            // TODO: `module.exports` vs `export function`
-            self.src.js(&format!(
-                "export function add{}ToImports(imports, obj{}) {{\n",
-                module.to_upper_camel_case(),
-                if self.needs_get_export {
-                    ", get_export"
-                } else {
-                    ""
-                },
-            ));
-            self.src.ts(&format!(
-                "export function add{}ToImports(imports: any, obj: {0}{}): void;\n",
-                module.to_upper_camel_case(),
-                if self.needs_get_export {
-                    ", get_export: (name: string) => WebAssembly.ExportValue"
-                } else {
-                    ""
-                },
-            ));
-            self.src.js(&format!(
-                "if (!(\"{0}\" in imports)) imports[\"{0}\"] = {{}};\n",
-                module,
-            ));
-
-            self.src.ts(&format!(
-                "export interface {} {{\n",
-                module.to_upper_camel_case()
-            ));
-
-            for (name, src) in funcs.freestanding_funcs.iter() {
-                self.src.js(&format!(
-                    "imports[\"{module}\"][\"{name}\"] = {};\n",
-                    src.js.trim()
-                ));
-                self.src.ts(&src.ts);
-            }
-
-            self.src.js("}");
-            self.src.ts("}\n");
-        }
-
-        let imports = mem::take(&mut self.src);
-
-        for (module, exports) in mem::take(&mut self.guest_exports) {
-            let module = module.to_upper_camel_case();
-            self.src.ts(&format!("export class {} {{\n", module));
-            self.src.js(&format!("export class {} {{\n", module));
-
-            self.src.ts("
-               /**
-                * The WebAssembly instance that this class is operating with.
-                * This is only available after the `instantiate` method has
-                * been called.
-                */
-                instance: WebAssembly.Instance;
-            ");
-
-            self.src.ts(&format!(
-                "
-                   /**
-                    * Initializes this object with the provided WebAssembly
-                    * module/instance.
-                    *
-                    * This is intended to be a flexible method of instantiating
-                    * and completion of the initialization of this class. This
-                    * method must be called before interacting with the
-                    * WebAssembly object.
-                    *
-                    * The first argument to this method is where to get the
-                    * wasm from. This can be a whole bunch of different types,
-                    * for example:
-                    *
-                    * * A precompiled `WebAssembly.Module`
-                    * * A typed array buffer containing the wasm bytecode.
-                    * * A `Promise` of a `Response` which is used with
-                    *   `instantiateStreaming`
-                    * * A `Response` itself used with `instantiateStreaming`.
-                    * * An already instantiated `WebAssembly.Instance`
-                    *
-                    * If necessary the module is compiled, and if necessary the
-                    * module is instantiated. Whether or not it's necessary
-                    * depends on the type of argument provided to
-                    * instantiation.
-                    *
-                    * If instantiation is performed then the `imports` object
-                    * passed here is the list of imports used to instantiate
-                    * the instance. This method may add its own intrinsics to
-                    * this `imports` object too.
-                    */
-                    instantiate(
-                        module: WebAssembly.Module | BufferSource | Promise<Response> | Response | WebAssembly.Instance,
-                        imports?: any,
-                    ): Promise<void>;
-                ",
-            ));
-            self.src.js("
-                async instantiate(module, imports) {
-                    imports = imports || {};
-            ");
-
-            // With intrinsics prep'd we can now instantiate the module. JS has
-            // a ... variety of methods of instantiation, so we basically just
-            // try to be flexible here.
-            self.src.js("
-                if (module instanceof WebAssembly.Instance) {
-                    this.instance = module;
-                } else if (module instanceof WebAssembly.Module) {
-                    this.instance = await WebAssembly.instantiate(module, imports);
-                } else if (module instanceof ArrayBuffer || module instanceof Uint8Array) {
-                    const { instance } = await WebAssembly.instantiate(module, imports);
-                    this.instance = instance;
-                } else {
-                    const { instance } = await WebAssembly.instantiateStreaming(module, imports);
-                    this.instance = instance;
-                }
-                this._exports = this.instance.exports;
-            ");
-            self.src.js("}\n");
-
-            for func in exports.freestanding_funcs.iter() {
-                self.src.js(&func.js);
-                self.src.ts(&func.ts);
-            }
-            self.src.ts("}\n");
-            self.src.js("}\n");
-        }
-
-        let exports = mem::take(&mut self.src);
-
-        if mem::take(&mut self.needs_ty_option) {
-            self.src
-                .ts("export type Option<T> = { tag: \"none\" } | { tag: \"some\", val; T };\n");
-        }
-        if mem::take(&mut self.needs_ty_result) {
-            self.src.ts(
-                "export type Result<T, E> = { tag: \"ok\", val: T } | { tag: \"err\", val: E };\n",
-            );
-        }
-
-        if self.intrinsics.len() > 0 {
-            self.src.js("import { ");
-            for (i, (intrinsic, name)) in mem::take(&mut self.intrinsics).into_iter().enumerate() {
-                if i > 0 {
-                    self.src.js(", ");
-                }
-                self.src.js(intrinsic.name());
-                if intrinsic.name() != name {
-                    self.src.js(" as ");
-                    self.src.js(&name);
-                }
-                self.all_intrinsics.insert(intrinsic);
-            }
-            self.src.js(" } from './intrinsics.js';\n");
-        }
-
-        self.src.js(&imports.js);
-        self.src.ts(&imports.ts);
-        self.src.js(&exports.js);
-        self.src.ts(&exports.ts);
-
-        let src = mem::take(&mut self.src);
-        let name = iface.name.to_kebab_case();
-        files.push(&format!("{}.js", name), src.js.as_bytes());
-        if !self.opts.no_typescript {
-            files.push(&format!("{}.d.ts", name), src.ts.as_bytes());
-        }
-    }
-
-    fn finish_all(&mut self, files: &mut Files) {
-        assert!(self.src.ts.is_empty());
-        assert!(self.src.js.is_empty());
-        self.print_intrinsics();
-        assert!(self.src.ts.is_empty());
-        files.push("intrinsics.js", self.src.js.as_bytes());
+    fn type_builtin(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        drop((_id, name, ty, docs));
     }
 }
 
 struct FunctionBindgen<'a> {
     gen: &'a mut Js,
+    sizes: SizeAlign,
     tmp: usize,
     src: Source,
     block_storage: Vec<wit_bindgen_core::Source>,
     blocks: Vec<(String, Vec<String>)>,
-    needs_memory: bool,
-    needs_realloc: Option<String>,
     params: Vec<String>,
-    src_object: String,
+    memory: Option<String>,
+    realloc: Option<String>,
+    post_return: Option<String>,
+    callee: String,
 }
 
 impl FunctionBindgen<'_> {
-    fn new(gen: &mut Js, params: Vec<String>) -> FunctionBindgen<'_> {
-        FunctionBindgen {
-            gen,
-            tmp: 0,
-            src: Source::default(),
-            block_storage: Vec::new(),
-            blocks: Vec::new(),
-            needs_memory: false,
-            needs_realloc: None,
-            params,
-            src_object: "this".to_string(),
-        }
-    }
-
     fn tmp(&mut self) -> usize {
         let ret = self.tmp;
         self.tmp += 1;
@@ -931,21 +1313,23 @@ impl FunctionBindgen<'_> {
     }
 
     fn load(&mut self, method: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
-        self.needs_memory = true;
+        let memory = self.memory.as_ref().unwrap();
         let view = self.gen.intrinsic(Intrinsic::DataView);
         results.push(format!(
-            "{}(memory).{}({} + {}, true)",
-            view, method, operands[0], offset,
+            "{view}({memory}).{method}({} + {offset}, true)",
+            operands[0],
         ));
     }
 
     fn store(&mut self, method: &str, offset: i32, operands: &[String]) {
-        self.needs_memory = true;
+        let memory = self.memory.as_ref().unwrap();
         let view = self.gen.intrinsic(Intrinsic::DataView);
-        self.src.js(&format!(
-            "{}(memory).{}({} + {}, {}, true);\n",
-            view, method, operands[1], offset, operands[0]
-        ));
+        uwriteln!(
+            self.src.js,
+            "{view}({memory}).{method}({} + {offset}, {}, true);",
+            operands[1],
+            operands[0]
+        );
     }
 
     fn bind_results(&mut self, amt: usize, results: &mut Vec<String>) {
@@ -974,7 +1358,7 @@ impl Bindgen for FunctionBindgen<'_> {
     type Operand = String;
 
     fn sizes(&self) -> &SizeAlign {
-        &self.gen.sizes
+        &self.sizes
     }
 
     fn push_block(&mut self) {
@@ -1692,109 +2076,101 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("enum{tmp}"));
             }
 
-            Instruction::ListCanonLower { element, realloc } => {
-                // Lowering only happens when we're passing lists into wasm,
-                // which forces us to always allocate, so this should always be
-                // `Some`.
-                let realloc = realloc.unwrap();
-                self.gen.needs_get_export = true;
-                self.needs_memory = true;
-                self.needs_realloc = Some(realloc.to_string());
+            Instruction::ListCanonLower { element, .. } => {
                 let tmp = self.tmp();
+                let memory = self.memory.as_ref().unwrap();
+                let realloc = self.realloc.as_ref().unwrap();
 
-                let size = self.gen.sizes.size(element);
-                let align = self.gen.sizes.align(element);
-                self.src
-                    .js(&format!("const val{} = {};\n", tmp, operands[0]));
-                self.src.js(&format!("const len{} = val{0}.length;\n", tmp));
-                self.src.js(&format!(
-                    "const ptr{} = realloc(0, 0, {}, len{0} * {});\n",
-                    tmp, align, size,
-                ));
+                let size = self.sizes.size(element);
+                let align = self.sizes.align(element);
+                uwriteln!(self.src.js, "const val{tmp} = {};", operands[0]);
+                uwriteln!(self.src.js, "const len{tmp} = val{tmp}.length;");
+                uwriteln!(
+                    self.src.js,
+                    "const ptr{tmp} = {realloc}(0, 0, {align}, len{tmp} * {size});"
+                );
                 // TODO: this is the wrong endianness
-                self.src.js(&format!(
-                    "(new Uint8Array(memory.buffer, ptr{0}, len{0} * {1})).set(new Uint8Array(val{0}.buffer, val{0}.byteOffset, len{0} * {1}));\n",
-                    tmp, size,
-                ));
+                uwriteln!(
+                    self.src.js,
+                    "const src{tmp} = new Uint8Array(val{tmp}.buffer, val{tmp}.byteOffset, len{tmp} * {size});",
+                );
+                uwriteln!(
+                    self.src.js,
+                    "(new Uint8Array({memory}.buffer, ptr{tmp}, len{tmp} * {size})).set(src{tmp});",
+                );
                 results.push(format!("ptr{}", tmp));
                 results.push(format!("len{}", tmp));
             }
             Instruction::ListCanonLift { element, .. } => {
-                self.needs_memory = true;
                 let tmp = self.tmp();
-                self.src.js(&format!("const ptr{tmp} = {};\n", operands[0]));
-                self.src.js(&format!("const len{tmp} = {};\n", operands[1]));
+                let memory = self.memory.as_ref().unwrap();
+                uwriteln!(self.src.js, "const ptr{tmp} = {};", operands[0]);
+                uwriteln!(self.src.js, "const len{tmp} = {};", operands[1]);
                 // TODO: this is the wrong endianness
                 let array_ty = self.gen.array_ty(iface, element).unwrap();
-                self.src.js(&format!(
-                    "const result{tmp} = new {array_ty}(memory.buffer.slice(ptr{tmp}, ptr{tmp} + len{tmp} * {}));\n",
-                    self.gen.sizes.size(element),
-                ));
+                uwriteln!(
+                    self.src.js,
+                    "const result{tmp} = new {array_ty}({memory}.buffer.slice(ptr{tmp}, ptr{tmp} + len{tmp} * {}));",
+                    self.sizes.size(element),
+                );
                 results.push(format!("result{tmp}"));
             }
-            Instruction::StringLower { realloc } => {
-                // Lowering only happens when we're passing strings into wasm,
-                // which forces us to always allocate, so this should always be
-                // `Some`.
-                let realloc = realloc.unwrap();
-                self.gen.needs_get_export = true;
-                self.needs_memory = true;
-                self.needs_realloc = Some(realloc.to_string());
+            Instruction::StringLower { .. } => {
                 let tmp = self.tmp();
+                let memory = self.memory.as_ref().unwrap();
+                let realloc = self.realloc.as_ref().unwrap();
 
                 let encode = self.gen.intrinsic(Intrinsic::Utf8Encode);
-                self.src.js(&format!(
-                    "const ptr{} = {}({}, realloc, memory);\n",
-                    tmp, encode, operands[0],
-                ));
+                uwriteln!(
+                    self.src.js,
+                    "const ptr{tmp} = {encode}({}, {realloc}, {memory});",
+                    operands[0],
+                );
                 let encoded_len = self.gen.intrinsic(Intrinsic::Utf8EncodedLen);
-                self.src
-                    .js(&format!("const len{} = {};\n", tmp, encoded_len));
+                uwriteln!(self.src.js, "const len{tmp} = {encoded_len};");
                 results.push(format!("ptr{}", tmp));
                 results.push(format!("len{}", tmp));
             }
             Instruction::StringLift => {
-                self.needs_memory = true;
                 let tmp = self.tmp();
-                self.src.js(&format!("const ptr{tmp} = {};\n", operands[0]));
-                self.src.js(&format!("const len{tmp} = {};\n", operands[1]));
+                let memory = self.memory.as_ref().unwrap();
+                uwriteln!(self.src.js, "const ptr{tmp} = {};", operands[0]);
+                uwriteln!(self.src.js, "const len{tmp} = {};", operands[1]);
                 let decoder = self.gen.intrinsic(Intrinsic::Utf8Decoder);
-                self.src.js(&format!(
-                    "const result{tmp} = {decoder}.decode(new Uint8Array(memory.buffer, ptr{tmp}, len{tmp}));\n",
-                ));
+                uwriteln!(
+                    self.src.js,
+                    "const result{tmp} = {decoder}.decode(new Uint8Array({memory}.buffer, ptr{tmp}, len{tmp}));",
+                );
                 results.push(format!("result{tmp}"));
             }
 
-            Instruction::ListLower { element, realloc } => {
-                let realloc = realloc.unwrap();
+            Instruction::ListLower { element, .. } => {
                 let (body, body_results) = self.blocks.pop().unwrap();
                 assert!(body_results.is_empty());
                 let tmp = self.tmp();
                 let vec = format!("vec{}", tmp);
                 let result = format!("result{}", tmp);
                 let len = format!("len{}", tmp);
-                self.needs_realloc = Some(realloc.to_string());
-                let size = self.gen.sizes.size(element);
-                let align = self.gen.sizes.align(element);
+                let size = self.sizes.size(element);
+                let align = self.sizes.align(element);
 
                 // first store our vec-to-lower in a temporary since we'll
                 // reference it multiple times.
-                self.src.js(&format!("const {} = {};\n", vec, operands[0]));
-                self.src.js(&format!("const {} = {}.length;\n", len, vec));
+                uwriteln!(self.src.js, "const {vec} = {};", operands[0]);
+                uwriteln!(self.src.js, "const {len} = {vec}.length;");
 
                 // ... then realloc space for the result in the guest module
-                self.src.js(&format!(
-                    "const {} = realloc(0, 0, {}, {} * {});\n",
-                    result, align, len, size,
-                ));
+                let realloc = self.realloc.as_ref().unwrap();
+                uwriteln!(
+                    self.src.js,
+                    "const {result} = {realloc}(0, 0, {align}, {len} * {size});"
+                );
 
                 // ... then consume the vector and use the block to lower the
                 // result.
-                self.src
-                    .js(&format!("for (let i = 0; i < {}.length; i++) {{\n", vec));
-                self.src.js(&format!("const e = {}[i];\n", vec));
-                self.src
-                    .js(&format!("const base = {} + i * {};\n", result, size));
+                uwriteln!(self.src.js, "for (let i = 0; i < {vec}.length; i++) {{");
+                uwriteln!(self.src.js, "const e = {vec}[i];");
+                uwriteln!(self.src.js, "const base = {result} + i * {size};");
                 self.src.js(&body);
                 self.src.js("}\n");
 
@@ -1805,23 +2181,20 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::ListLift { element, .. } => {
                 let (body, body_results) = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
-                let size = self.gen.sizes.size(element);
-                let len = format!("len{}", tmp);
-                self.src.js(&format!("const {} = {};\n", len, operands[1]));
-                let base = format!("base{}", tmp);
-                self.src.js(&format!("const {} = {};\n", base, operands[0]));
-                let result = format!("result{}", tmp);
-                self.src.js(&format!("const {} = [];\n", result));
+                let size = self.sizes.size(element);
+                let len = format!("len{tmp}");
+                uwriteln!(self.src.js, "const {len} = {};", operands[1]);
+                let base = format!("base{tmp}");
+                uwriteln!(self.src.js, "const {base} = {};", operands[0]);
+                let result = format!("result{tmp}");
+                uwriteln!(self.src.js, "const {result} = [];");
                 results.push(result.clone());
 
-                self.src
-                    .js(&format!("for (let i = 0; i < {}; i++) {{\n", len));
-                self.src
-                    .js(&format!("const base = {} + i * {};\n", base, size));
+                uwriteln!(self.src.js, "for (let i = 0; i < {len}; i++) {{");
+                uwriteln!(self.src.js, "const base = {base} + i * {size};");
                 self.src.js(&body);
                 assert_eq!(body_results.len(), 1);
-                self.src
-                    .js(&format!("{}.push({});\n", result, body_results[0]));
+                uwriteln!(self.src.js, "{result}.push({});", body_results[0]);
                 self.src.js("}\n");
             }
 
@@ -1829,71 +2202,25 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::IterBasePointer => results.push("base".to_string()),
 
-            Instruction::CallWasm {
-                iface: _,
-                name,
-                sig,
-            } => {
+            Instruction::CallWasm { sig, .. } => {
                 self.bind_results(sig.results.len(), results);
-                self.src.js(&self.src_object);
-                self.src.js("._exports['");
-                self.src.js(&name);
-                self.src.js("'](");
-                self.src.js(&operands.join(", "));
-                self.src.js(");\n");
+                uwriteln!(self.src.js, "{}({});", self.callee, operands.join(", "));
             }
 
             Instruction::CallInterface { module: _, func } => {
-                let call = |me: &mut FunctionBindgen<'_>| match &func.kind {
-                    FunctionKind::Freestanding => {
-                        me.src.js(&format!(
-                            "obj.{}({})",
-                            func.name.to_lower_camel_case(),
-                            operands.join(", "),
-                        ));
-                    }
-                };
-                let mut bind_results = |me: &mut FunctionBindgen<'_>| {
-                    let amt = func.results.len();
-                    if amt == 0 {
-                        return;
-                    }
-                    me.src.js("const ");
-                    if amt > 1 {
-                        me.src.js("[");
-                    }
-                    for i in 0..amt {
-                        if i > 0 {
-                            me.src.js(", ");
-                        }
-                        let name = format!("ret{i}");
-                        me.src.js(&name);
-                        results.push(name);
-                    }
-                    if amt > 1 {
-                        me.src.js("]");
-                    }
-                    me.src.js(" = ");
-                };
-
-                bind_results(self);
-                call(self);
-                self.src.js(";\n");
+                self.bind_results(func.results.len(), results);
+                uwriteln!(self.src.js, "{}({});", self.callee, operands.join(", "));
             }
 
-            Instruction::Return { amt, func } => {
-                if !self.gen.in_import && iface.guest_export_needs_post_return(func) {
-                    let name = &func.name;
-                    self.src.js(&format!(
-                        "{}._exports[\"cabi_post_{name}\"](ret);\n",
-                        self.src_object
-                    ));
+            Instruction::Return { amt, .. } => {
+                if let Some(f) = &self.post_return {
+                    uwriteln!(self.src.js, "{f}(ret);");
                 }
 
                 match amt {
                     0 => {}
-                    1 => self.src.js(&format!("return {};\n", operands[0])),
-                    _ => self.src.js(&format!("return [{}];\n", operands.join(", "))),
+                    1 => uwriteln!(self.src.js, "return {};", operands[0]),
+                    _ => uwriteln!(self.src.js, "return [{}];", operands.join(", ")),
                 }
             }
 
@@ -1914,18 +2241,14 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::I32Store8 { offset } => self.store("setInt8", *offset, operands),
             Instruction::I32Store16 { offset } => self.store("setInt16", *offset, operands),
 
-            Instruction::Malloc {
-                realloc,
-                size,
-                align,
-            } => {
-                self.needs_realloc = Some(realloc.to_string());
+            Instruction::Malloc { size, align, .. } => {
                 let tmp = self.tmp();
-                let ptr = format!("ptr{}", tmp);
-                self.src.js(&format!(
-                    "const {} = realloc(0, 0, {}, {});\n",
-                    ptr, align, size
-                ));
+                let realloc = self.realloc.as_ref().unwrap();
+                let ptr = format!("ptr{tmp}");
+                uwriteln!(
+                    self.src.js,
+                    "const {ptr} = {realloc}(0, 0, {align}, {size});",
+                );
                 results.push(ptr);
             }
 
@@ -1934,261 +2257,7 @@ impl Bindgen for FunctionBindgen<'_> {
     }
 }
 
-impl Js {
-    fn print_intrinsics(&mut self) {
-        if self.all_intrinsics.contains(&Intrinsic::I32ToF32)
-            || self.all_intrinsics.contains(&Intrinsic::F32ToI32)
-        {
-            self.src.js("
-                const I32_TO_F32_I = new Int32Array(1);
-                const I32_TO_F32_F = new Float32Array(I32_TO_F32_I.buffer);
-            ");
-        }
-        if self.all_intrinsics.contains(&Intrinsic::I64ToF64)
-            || self.all_intrinsics.contains(&Intrinsic::F64ToI64)
-        {
-            self.src.js("
-                const I64_TO_F64_I = new BigInt64Array(1);
-                const I64_TO_F64_F = new Float64Array(I64_TO_F64_I.buffer);
-            ");
-        }
-
-        if self.all_intrinsics.contains(&Intrinsic::Promises) {
-            self.all_intrinsics.insert(Intrinsic::Slab);
-        }
-
-        for i in mem::take(&mut self.all_intrinsics) {
-            self.print_intrinsic(i);
-        }
-    }
-
-    fn print_intrinsic(&mut self, i: Intrinsic) {
-        match i {
-            Intrinsic::ClampGuest => self.src.js("
-                export function clamp_guest(i, min, max) {
-                    if (i < min || i > max) \
-                        throw new RangeError(`must be between ${min} and ${max}`);
-                    return i;
-                }
-            "),
-
-            Intrinsic::DataView => self.src.js("
-                let DATA_VIEW = new DataView(new ArrayBuffer());
-
-                export function data_view(mem) {
-                    if (DATA_VIEW.buffer !== mem.buffer) \
-                        DATA_VIEW = new DataView(mem.buffer);
-                    return DATA_VIEW;
-                }
-            "),
-
-            Intrinsic::ValidateGuestChar => self.src.js("
-                export function validate_guest_char(i) {
-                    if ((i > 0x10ffff) || (i >= 0xd800 && i <= 0xdfff)) \
-                        throw new RangeError(`not a valid char`);
-                    return String.fromCodePoint(i);
-                }
-            "),
-
-            // TODO: this is incorrect. It at least allows strings of length > 0
-            // but it probably doesn't do the right thing for unicode or invalid
-            // utf16 strings either.
-            Intrinsic::ValidateHostChar => self.src.js("
-                export function validate_host_char(s) {
-                    if (typeof s !== 'string') \
-                        throw new TypeError(`must be a string`);
-                    return s.codePointAt(0);
-                }
-            "),
-
-
-            Intrinsic::ToInt32 => self.src.js("
-                export function to_int32(val) {
-                    return val >> 0;
-                }
-            "),
-            Intrinsic::ToUint32 => self.src.js("
-                export function to_uint32(val) {
-                    return val >>> 0;
-                }
-            "),
-
-            Intrinsic::ToInt16 => self.src.js("
-                export function to_int16(val) {
-                    val >>>= 0;
-                    val %= 2 ** 16;
-                    if (val >= 2 ** 15) {
-                        val -= 2 ** 16;
-                    }
-                    return val;
-                }
-            "),
-            Intrinsic::ToUint16 => self.src.js("
-                export function to_uint16(val) {
-                    val >>>= 0;
-                    val %= 2 ** 16;
-                    return val;
-                }
-            "),
-            Intrinsic::ToInt8 => self.src.js("
-                export function to_int8(val) {
-                    val >>>= 0;
-                    val %= 2 ** 8;
-                    if (val >= 2 ** 7) {
-                        val -= 2 ** 8;
-                    }
-                    return val;
-                }
-            "),
-            Intrinsic::ToUint8 => self.src.js("
-                export function to_uint8(val) {
-                    val >>>= 0;
-                    val %= 2 ** 8;
-                    return val;
-                }
-            "),
-
-            Intrinsic::ToBigInt64 => self.src.js("
-                export function to_int64(val) {
-                    return BigInt.asIntN(64, val);
-                }
-            "),
-            Intrinsic::ToBigUint64 => self.src.js("
-                export function to_uint64(val) {
-                    return BigInt.asUintN(64, val);
-                }
-            "),
-
-            Intrinsic::ToString => self.src.js("
-                export function to_string(val) {
-                    if (typeof val === 'symbol') {
-                        throw new TypeError('symbols cannot be converted to strings');
-                    } else {
-                        // Calling `String` almost directly calls `ToString`, except that it also allows symbols,
-                        // which is why we have the symbol-rejecting branch above.
-                        //
-                        // Definition of `String`: https://tc39.es/ecma262/#sec-string-constructor-string-value
-                        return String(val);
-                    }
-                }
-            "),
-
-            Intrinsic::I32ToF32 => self.src.js("
-                export function i32ToF32(i) {
-                    I32_TO_F32_I[0] = i;
-                    return I32_TO_F32_F[0];
-                }
-            "),
-            Intrinsic::F32ToI32 => self.src.js("
-                export function f32ToI32(f) {
-                    I32_TO_F32_F[0] = f;
-                    return I32_TO_F32_I[0];
-                }
-            "),
-            Intrinsic::I64ToF64 => self.src.js("
-                export function i64ToF64(i) {
-                    I64_TO_F64_I[0] = i;
-                    return I64_TO_F64_F[0];
-                }
-            "),
-            Intrinsic::F64ToI64 => self.src.js("
-                export function f64ToI64(f) {
-                    I64_TO_F64_F[0] = f;
-                    return I64_TO_F64_I[0];
-                }
-            "),
-
-            Intrinsic::Utf8Decoder => self
-                .src
-                .js("export const UTF8_DECODER = new TextDecoder('utf-8');\n"),
-
-            Intrinsic::Utf8EncodedLen => self.src.js("export let UTF8_ENCODED_LEN = 0;\n"),
-
-            Intrinsic::Utf8Encode => self.src.js("
-                const UTF8_ENCODER = new TextEncoder('utf-8');
-
-                export function utf8_encode(s, realloc, memory) {
-                    if (typeof s !== 'string') \
-                        throw new TypeError('expected a string');
-
-                    if (s.length === 0) {
-                        UTF8_ENCODED_LEN = 0;
-                        return 1;
-                    }
-
-                    let alloc_len = 0;
-                    let ptr = 0;
-                    let writtenTotal = 0;
-                    while (s.length > 0) {
-                        ptr = realloc(ptr, alloc_len, 1, alloc_len + s.length);
-                        alloc_len += s.length;
-                        const { read, written } = UTF8_ENCODER.encodeInto(
-                            s,
-                            new Uint8Array(memory.buffer, ptr + writtenTotal, alloc_len - writtenTotal),
-                        );
-                        writtenTotal += written;
-                        s = s.slice(read);
-                    }
-                    if (alloc_len > writtenTotal)
-                        ptr = realloc(ptr, alloc_len, 1, writtenTotal);
-                    UTF8_ENCODED_LEN = writtenTotal;
-                    return ptr;
-                }
-            "),
-
-            Intrinsic::Slab => self.src.js("
-                export class Slab {
-                    constructor() {
-                        this.list = [];
-                        this.head = 0;
-                    }
-
-                    insert(val) {
-                        if (this.head >= this.list.length) {
-                            this.list.push({
-                                next: this.list.length + 1,
-                                val: undefined,
-                            });
-                        }
-                        const ret = this.head;
-                        const slot = this.list[ret];
-                        this.head = slot.next;
-                        slot.next = -1;
-                        slot.val = val;
-                        return ret;
-                    }
-
-                    get(idx) {
-                        if (idx >= this.list.length)
-                            throw new RangeError('handle index not valid');
-                        const slot = this.list[idx];
-                        if (slot.next === -1)
-                            return slot.val;
-                        throw new RangeError('handle index not valid');
-                    }
-
-                    remove(idx) {
-                        const ret = this.get(idx); // validate the slot
-                        const slot = this.list[idx];
-                        slot.val = undefined;
-                        slot.next = this.head;
-                        this.head = idx;
-                        return ret;
-                    }
-                }
-            "),
-
-            Intrinsic::Promises => self.src.js("export const PROMISES = new Slab();\n"),
-            Intrinsic::ThrowInvalidBool => self.src.js("
-                export function throw_invalid_bool() {
-                    throw new RangeError(\"invalid variant discriminant for bool\");
-                }
-            "),
-        }
-    }
-}
-
-pub fn to_js_ident(name: &str) -> &str {
+fn to_js_ident(name: &str) -> &str {
     match name {
         "in" => "in_",
         "import" => "import_",

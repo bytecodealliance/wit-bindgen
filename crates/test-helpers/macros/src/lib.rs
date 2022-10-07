@@ -53,6 +53,17 @@ pub fn codegen_tests(input: TokenStream) -> TokenStream {
 /// all host tests that use the "js" extension.
 #[proc_macro]
 pub fn runtime_tests(input: TokenStream) -> TokenStream {
+    generate_runtime_tests(input, false)
+}
+
+/// Same as `runtime_tests!` but iterates over component wasms instead of core
+/// wasms.
+#[proc_macro]
+pub fn runtime_component_tests(input: TokenStream) -> TokenStream {
+    generate_runtime_tests(input, true)
+}
+
+fn generate_runtime_tests(input: TokenStream, use_components: bool) -> TokenStream {
     let host_extension = input.to_string();
     let host_extension = host_extension.trim_matches('"');
     let host_file = format!("host.{}", host_extension);
@@ -64,27 +75,41 @@ pub fn runtime_tests(input: TokenStream) -> TokenStream {
             continue;
         }
         let name_str = entry.file_name().unwrap().to_str().unwrap();
-        for (lang, name, wasm, _component) in WASMS {
+        for (lang, name, wasm, component) in WASMS {
             if *name != name_str {
                 continue;
             }
-            let name_str = format!("{}_{}", name_str, lang);
-            let name = quote::format_ident!("{}", name_str);
+            let name = quote::format_ident!("{}_{}", name_str, lang);
             let host_file = entry.join(&host_file).to_str().unwrap().to_string();
             let import_wit = entry.join("imports.wit").to_str().unwrap().to_string();
             let export_wit = entry.join("exports.wit").to_str().unwrap().to_string();
-            tests.push(quote::quote! {
-                #[test]
-                fn #name() {
-                    crate::execute(
-                        #name_str,
-                        #wasm.as_ref(),
-                        #host_file.as_ref(),
-                        #import_wit.as_ref(),
-                        #export_wit.as_ref(),
-                    )
-                }
-            });
+            if use_components {
+                tests.push(quote::quote! {
+                    #[test]
+                    fn #name() {
+                        crate::execute(
+                            #name_str,
+                            #lang,
+                            #component.as_ref(),
+                            #host_file.as_ref(),
+                        )
+                    }
+                });
+            } else {
+                let name_str = format!("{}_{}", name_str, lang);
+                tests.push(quote::quote! {
+                    #[test]
+                    fn #name() {
+                        crate::execute(
+                            #name_str,
+                            #wasm.as_ref(),
+                            #host_file.as_ref(),
+                            #import_wit.as_ref(),
+                            #export_wit.as_ref(),
+                        )
+                    }
+                });
+            }
         }
     }
 
