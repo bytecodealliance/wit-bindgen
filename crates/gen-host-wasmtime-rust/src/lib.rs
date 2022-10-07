@@ -323,12 +323,16 @@ impl Generator for Wasmtime {
 
         self.src.push_str("let host = get(caller.data_mut());\n");
 
-        uwrite!(self.src, "host.{}(", func.name.to_snake_case());
+        uwrite!(self.src, "let r = host.{}(", func.name.to_snake_case());
         for (i, _) in func.params.iter().enumerate() {
             uwrite!(self.src, "arg{},", i);
         }
         uwrite!(self.src, ");\n");
-        uwrite!(self.src, "Ok(())\n");
+        if func.params.iter().len() == 1 {
+            uwrite!(self.src, "Ok((r,))\n");
+        } else {
+            uwrite!(self.src, "Ok(r)\n");
+        }
 
         self.src.push_str("}");
         let closure = mem::replace(&mut self.src, prev).into();
