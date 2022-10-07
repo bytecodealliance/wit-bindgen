@@ -36,7 +36,6 @@ fn instantiate<I: Default, T>(
 
     let mut linker = Linker::new(&engine);
     add_imports(&mut linker)?;
-    //wasmtime_wasi::add_to_linker(&mut linker, |cx| &mut cx.wasi)?;
 
     let mut store = Store::new(
         &engine,

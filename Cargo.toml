@@ -25,8 +25,8 @@ pulldown-cmark = { version = "0.8", default-features = false }
 clap = { version = "4.0.9", features = ["derive"] }
 env_logger = "0.9.1"
 
-wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", branch = "main" , features = ["component-model"] }
-wasmtime-wasi = { git = "https://github.com/bytecodealliance/wasmtime", branch = "main" }
+wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", branch = "pch/component_flags_pub" , features = ["component-model"] }
+wasmtime-wasi = { git = "https://github.com/bytecodealliance/wasmtime", branch = "pch/component_flags_pub" }
 wasmprinter = "0.2.41"
 wasmparser = "0.92.0"
 wasm-encoder = "0.18.0"

@@ -8,7 +8,7 @@ use wit_bindgen_core::wit_parser::abi::AbiVariant;
 use wit_bindgen_core::{
     uwrite, wit_parser::*, Direction, Files, Generator, Source, TypeInfo, Types,
 };
-use wit_bindgen_gen_rust_lib::{to_rust_ident, FnSig, RustFlagsRepr, RustGenerator, TypeMode};
+use wit_bindgen_gen_rust_lib::{to_rust_ident, FnSig, RustGenerator, TypeMode};
 
 #[derive(Default)]
 pub struct Wasmtime {
@@ -80,22 +80,6 @@ impl Wasmtime {
         }
     }
 
-    fn print_param_ty(&mut self, iface: &Interface, params: &Params, mode: TypeMode) {
-        match params.len() {
-            0 => self.push_str("()"),
-            1 => self.print_ty(iface, &params[0].1, mode),
-            _ => {
-                self.push_str("(");
-                for (i, (_, ty)) in params.iter().enumerate() {
-                    if i > 0 {
-                        self.push_str(", ")
-                    }
-                    self.print_ty(iface, ty, mode)
-                }
-                self.push_str(")");
-            }
-        }
-    }
     fn print_result_ty(&mut self, iface: &Interface, results: &Results, mode: TypeMode) {
         match results {
             Results::Named(rs) => match rs.len() {
@@ -183,55 +167,14 @@ impl Generator for Wasmtime {
         &mut self,
         iface: &Interface,
         id: TypeId,
-        name: &str,
+        _name: &str,
         record: &Record,
         docs: &Docs,
     ) {
+        self.src
+            .push_str("#[derive(wasmtime::component::ComponentType, wasmtime::component::Lift, wasmtime::component::Lower)]\n");
+        self.src.push_str("#[component(record)]\n");
         self.print_typedef_record(iface, id, record, docs);
-
-        // If this record might be used as a slice type in various places then
-        // we synthesize an `Endian` implementation for it so `&[Le<ThisType>]`
-        // is usable.
-        if self.modes_of(iface, id).len() > 0
-            && record.fields.iter().all(|f| iface.all_bits_valid(&f.ty))
-        {
-            self.src
-                .push_str("impl wit_bindgen_host_wasmtime_rust::Endian for ");
-            self.src.push_str(&name.to_upper_camel_case());
-            self.src.push_str(" {\n");
-
-            self.src.push_str("fn into_le(self) -> Self {\n");
-            self.src.push_str("Self {\n");
-            for field in record.fields.iter() {
-                self.src.push_str(&field.name.to_snake_case());
-                self.src.push_str(": self.");
-                self.src.push_str(&field.name.to_snake_case());
-                self.src.push_str(".into_le(),\n");
-            }
-            self.src.push_str("}\n");
-            self.src.push_str("}\n");
-
-            self.src.push_str("fn from_le(self) -> Self {\n");
-            self.src.push_str("Self {\n");
-            for field in record.fields.iter() {
-                self.src.push_str(&field.name.to_snake_case());
-                self.src.push_str(": self.");
-                self.src.push_str(&field.name.to_snake_case());
-                self.src.push_str(".from_le(),\n");
-            }
-            self.src.push_str("}\n");
-            self.src.push_str("}\n");
-
-            self.src.push_str("}\n");
-
-            // Also add an `AllBytesValid` valid impl since this structure's
-            // byte representations are valid (guarded by the `all_bits_valid`
-            // predicate).
-            self.src
-                .push_str("unsafe impl wit_bindgen_host_wasmtime_rust::AllBytesValid for ");
-            self.src.push_str(&name.to_upper_camel_case());
-            self.src.push_str(" {}\n");
-        }
     }
 
     fn type_tuple(
@@ -253,43 +196,20 @@ impl Generator for Wasmtime {
         flags: &Flags,
         docs: &Docs,
     ) {
-        self.src
-            .push_str("wit_bindgen_host_wasmtime_rust::bitflags::bitflags! {\n");
         self.rustdoc(docs);
-        let repr = RustFlagsRepr::new(flags);
-        self.src.push_str(&format!(
-            "pub struct {}: {repr} {{\n",
-            name.to_upper_camel_case()
-        ));
-        for (i, flag) in flags.flags.iter().enumerate() {
-            self.rustdoc(&flag.docs);
-            self.src.push_str(&format!(
-                "const {} = 1 << {};\n",
-                flag.name.to_shouty_snake_case(),
-                i,
-            ));
+        self.src.push_str("wasmtime::component::flags!(\n");
+        self.src.push_str(&format!("{} {{\n", name.to_camel_case()));
+        for flag in flags.flags.iter() {
+            // TODO wasmtime-component-macro doesnt support docs for flags rn
+            uwrite!(
+                self.src,
+                "#[component(name=\"{}\")] const {};\n",
+                flag.name,
+                flag.name.to_shouty_snake_case()
+            );
         }
         self.src.push_str("}\n");
-        self.src.push_str("}\n\n");
-
-        self.src.push_str("impl core::fmt::Display for ");
-        self.src.push_str(&name.to_upper_camel_case());
-        self.src.push_str(
-            "{\nfn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {\n",
-        );
-
-        self.src.push_str("f.write_str(\"");
-        self.src.push_str(&name.to_upper_camel_case());
-        self.src.push_str("(\")?;\n");
-        self.src.push_str("core::fmt::Debug::fmt(self, f)?;\n");
-        self.src.push_str("f.write_str(\" (0x\")?;\n");
-        self.src
-            .push_str("core::fmt::LowerHex::fmt(&self.bits, f)?;\n");
-        self.src.push_str("f.write_str(\"))\")?;\n");
-        self.src.push_str("Ok(())");
-
-        self.src.push_str("}\n");
-        self.src.push_str("}\n\n");
+        self.src.push_str(");\n\n");
     }
 
     fn type_variant(
@@ -381,10 +301,7 @@ impl Generator for Wasmtime {
         self.src
             .push_str("move |mut caller: wasmtime::StoreContextMut<'_, T>");
         for (i, param) in func.params.iter().enumerate() {
-            let arg = format!("arg{}", i);
-            self.src.push_str(",");
-            self.src.push_str(&arg);
-            self.src.push_str(":");
+            uwrite!(self.src, ", arg{} :", i);
             self.print_ty(iface, &param.1, TypeMode::Owned);
         }
         self.src.push_str("| {\n");
@@ -406,7 +323,7 @@ impl Generator for Wasmtime {
 
         self.src.push_str("let host = get(caller.data_mut());\n");
 
-        uwrite!(self.src, "host.{}(", func.name);
+        uwrite!(self.src, "host.{}(", func.name.to_snake_case());
         for (i, _) in func.params.iter().enumerate() {
             uwrite!(self.src, "arg{},", i);
         }
@@ -434,7 +351,7 @@ impl Generator for Wasmtime {
         uwrite!(
             self.src,
             "pub fn {}(&self, store: impl wasmtime::AsContextMut<Data = T>, ",
-            func.name
+            func.name.to_snake_case(),
         );
         for (i, param) in func.params.iter().enumerate() {
             uwrite!(self.src, "arg{}: ", i);
@@ -445,11 +362,32 @@ impl Generator for Wasmtime {
         self.print_result_ty(iface, &func.results, TypeMode::Owned);
         self.src.push_str("> {\n");
 
-        uwrite!(self.src, "self.{}.call(store, (", func.name);
+        self.src.push_str("let (");
+        for (i, _) in func.results.iter_types().enumerate() {
+            uwrite!(self.src, "ret{},", i);
+        }
+        uwrite!(
+            self.src,
+            ") = self.{}.call(store, (",
+            func.name.to_snake_case()
+        );
         for (i, _) in func.params.iter().enumerate() {
             uwrite!(self.src, "arg{}, ", i);
         }
-        uwrite!(self.src, "))");
+
+        uwrite!(self.src, "))?;");
+
+        self.src.push_str("Ok(");
+        if func.results.iter_types().len() == 1 {
+            self.src.push_str("ret0");
+        } else {
+            self.src.push_str("(");
+            for (i, _) in func.results.iter_types().enumerate() {
+                uwrite!(self.src, "ret{},", i);
+            }
+            self.src.push_str(")");
+        }
+        self.src.push_str(")");
 
         // End function body
         self.src.push_str("}\n");
@@ -457,20 +395,35 @@ impl Generator for Wasmtime {
         let pub_func = mem::replace(&mut self.src, prev).into();
         let prev = mem::take(&mut self.src);
 
-        self.src.push_str("wasmtime::component::TypedFunc<");
-        self.print_param_ty(iface, &func.params, TypeMode::Owned);
-        self.src.push_str(", ");
-        self.print_result_ty(iface, &func.results, TypeMode::Owned);
-        self.src.push_str(">");
+        self.src.push_str("wasmtime::component::TypedFunc<(");
+        // ComponentNamedList means using tuple for all:
+        for (_, ty) in func.params.iter() {
+            self.print_ty(iface, ty, TypeMode::Owned);
+            self.push_str(", ");
+        }
+        self.src.push_str("), (");
+        for ty in func.results.iter_types() {
+            self.print_ty(iface, ty, TypeMode::Owned);
+            self.push_str(", ");
+        }
+        self.src.push_str(")>");
 
         let type_sig: String = mem::replace(&mut self.src, prev).into();
         let prev = mem::take(&mut self.src);
 
-        self.src.push_str("instance.get_typed_func::<");
-        self.print_param_ty(iface, &func.params, TypeMode::Owned);
-        self.src.push_str(", ");
-        self.print_result_ty(iface, &func.results, TypeMode::Owned);
-        self.src.push_str(", _>(&mut store, \"");
+        self.src.push_str("instance.get_typed_func::<(");
+        for (_, ty) in func.params.iter() {
+            self.print_ty(iface, ty, TypeMode::Owned);
+            self.push_str(", ");
+        }
+
+        self.src.push_str("), (");
+        for ty in func.results.iter_types() {
+            self.print_ty(iface, ty, TypeMode::Owned);
+            self.push_str(", ");
+        }
+
+        self.src.push_str("), _>(&mut store, \"");
         self.src.push_str(&func.name);
         self.src.push_str("\")?");
         let getter: String = mem::replace(&mut self.src, prev).into();
