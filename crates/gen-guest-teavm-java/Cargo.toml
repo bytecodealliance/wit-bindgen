@@ -5,7 +5,7 @@ edition.workspace = true
 
 [dependencies]
 wit-bindgen-core = { workspace = true }
-heck = { workspace = true, features = [ "unicode" ] }
+heck = { workspace = true }
 clap = { workspace = true, optional = true }
 
 [dev-dependencies]
