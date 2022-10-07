@@ -1,31 +1,43 @@
-#![allow(dead_code, type_alias_bounds)]
+#![allow(dead_code)]
 
-fn main() {
-    println!("compiled successfully!")
-}
-
-#[rustfmt::skip]
 mod exports {
-    test_helpers::codegen_wasmtime_export!(
-        "*.wit"
+    macro_rules! codegen_test {
+        ($name:ident $test:tt) => {
+            wit_bindgen_host_wasmtime_rust::export!($test);
 
-        // If you want to exclude a specific test you can include it here with
-        // gitignore glob syntax:
-        //
-        // "!wasm.wit"
-        // "!host.wit"
-        //
-        //
-        // Similarly you can also just remove the `*.wit` glob and list tests
-        // individually if you're debugging.
-    );
+            #[test]
+            fn $name() {}
+        };
+    }
+    test_helpers::codegen_tests!("*.wit");
+
+    mod with_options {
+        macro_rules! codegen_test {
+            ($name:ident $test:tt) => {
+                wit_bindgen_host_wasmtime_rust::import!({
+                    paths: [$test],
+                    custom_error: true,
+                    tracing: true,
+                });
+
+                #[test]
+                fn $name() {}
+            };
+        }
+        test_helpers::codegen_tests!("*.wit");
+    }
 }
 
-#[rustfmt::skip]
 mod imports {
-    test_helpers::codegen_wasmtime_import!(
-        "*.wit"
-    );
+    macro_rules! codegen_test {
+        ($name:ident $test:tt) => {
+            wit_bindgen_host_wasmtime_rust::import!($test);
+
+            #[test]
+            fn $name() {}
+        };
+    }
+    test_helpers::codegen_tests!("*.wit");
 }
 
 mod custom_errors {

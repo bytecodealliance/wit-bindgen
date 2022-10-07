@@ -16,8 +16,8 @@ apple-pear: func()
 apple-pear-grape: func()
 garçon: func()
 hühnervögel: func()
-москва: func()
-東-京: func()
+/* москва: func() */
+/* 東-京: func() */
 garçon-hühnervögel-москва-東-京: func()
 a0: func()
 

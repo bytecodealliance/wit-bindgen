@@ -14,4 +14,4 @@ heck = { workspace = true }
 clap = { workspace = true, optional = true }
 
 [dev-dependencies]
-test-helpers = { path = '../test-helpers', features = ['host-js'] }
+test-helpers = { path = '../test-helpers' }

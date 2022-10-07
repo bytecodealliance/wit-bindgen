@@ -1,44 +1,53 @@
 use std::path::Path;
 use std::process::Command;
 
-#[rustfmt::skip]
+macro_rules! gen_test {
+    ($name:ident $test:tt $dir:ident) => {
+        #[test]
+        fn $name() {
+            test_helpers::run_codegen_test(
+                "js",
+                std::path::Path::new($test)
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+                include_str!($test),
+                test_helpers::Direction::$dir,
+                wit_bindgen_gen_host_js::Opts::default().build(),
+                super::verify,
+            )
+        }
+    };
+}
+
 mod exports {
-    test_helpers::codegen_js_export!(
-        "*.wit"
-
-        // If you want to exclude a specific test you can include it here with
-        // gitignore glob syntax:
-        //
-        // "!wasm.wit"
-        // "!host.wit"
-        //
-        //
-        // Similarly you can also just remove the `*.wit` glob and list tests
-        // individually if you're debugging.
-    );
+    macro_rules! codegen_test {
+        ($name:ident $test:tt) => (gen_test!($name $test Export);)
+    }
+    test_helpers::codegen_tests!("*.wit");
 }
 
-#[rustfmt::skip]
 mod imports {
-    test_helpers::codegen_js_import!(
-        "*.wit"
-    );
+    macro_rules! codegen_test {
+        ($name:ident $test:tt) => (gen_test!($name $test Import);)
+    }
+    test_helpers::codegen_tests!("*.wit");
 }
 
-fn verify(dir: &str, name: &str) {
+fn verify(dir: &Path, name: &str) {
     let (cmd, args) = if cfg!(windows) {
         ("cmd.exe", &["/c", "npx.cmd"] as &[&str])
     } else {
         ("npx", &[] as &[&str])
     };
 
-    let status = Command::new(cmd)
-        .args(args)
-        .arg("eslint")
-        .arg("-c")
-        .arg(".eslintrc.js")
-        .arg(Path::new(dir).join(&format!("{}.js", name)))
-        .status()
-        .unwrap();
-    assert!(status.success());
+    test_helpers::run_command(
+        Command::new(cmd)
+            .args(args)
+            .arg("eslint")
+            .arg("-c")
+            .arg(".eslintrc.js")
+            .arg(dir.join(&format!("{}.js", name))),
+    );
 }

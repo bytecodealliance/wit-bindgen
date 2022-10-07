@@ -653,6 +653,11 @@ impl Generator for Js {
         let src_object = match &func.kind {
             FunctionKind::Freestanding => "this".to_string(),
         };
+        println!(
+            "{} {}",
+            func.item_name(),
+            func.item_name().to_lower_camel_case()
+        );
         self.src.js(&format!(
             "{}({}) {{\n",
             func.item_name().to_lower_camel_case(),

@@ -1,509 +1,91 @@
-use ignore::gitignore::GitignoreBuilder;
-use proc_macro::{TokenStream, TokenTree};
-use std::env;
+pub use test_helpers_macros::*;
+
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
-use wit_bindgen_core::{Direction, Generator};
+use std::process::Command;
+use wit_bindgen_core::Generator;
 
-#[proc_macro]
-#[cfg(feature = "guest-rust")]
-pub fn codegen_rust_wasm_import(input: TokenStream) -> TokenStream {
-    gen_rust(
-        input,
-        Direction::Import,
-        &[
-            (
-                "import",
-                || wit_bindgen_gen_guest_rust::Opts::default().build(),
-                |_| quote::quote!(),
-            ),
-            (
-                "import-unchecked",
-                || {
-                    let mut opts = wit_bindgen_gen_guest_rust::Opts::default();
-                    opts.unchecked = true;
-                    opts.build()
-                },
-                |_| quote::quote!(),
-            ),
-        ],
-    )
+pub enum Direction {
+    Import,
+    Export,
 }
 
-#[proc_macro]
-#[cfg(feature = "guest-rust")]
-pub fn codegen_rust_wasm_export(input: TokenStream) -> TokenStream {
-    use heck::*;
-    use wit_parser::{FunctionKind, Type, TypeDefKind};
+/// Executes a "codegen" test by using `gen` to generate bindings for the
+/// `*.wit` file specified by `wit_contents`. This will then use the `verify`
+/// function to verify that the generated language is correct (e.g. compiles,
+/// lints, etc).
+///
+/// For an example of this see the JS host's `codegen.rs` test.
+pub fn run_codegen_test(
+    gen_name: &str,
+    wit_name: &str,
+    wit_contents: &str,
+    dir: Direction,
+    mut gen: impl Generator,
+    verify: fn(&Path, &str),
+) {
+    let mut files = Default::default();
+    let iface = wit_parser::Interface::parse(wit_name, wit_contents).unwrap();
+    let (imports, exports) = match dir {
+        Direction::Import => (vec![iface], vec![]),
+        Direction::Export => (vec![], vec![iface]),
+    };
+    gen.generate_all(&imports, &exports, &mut files);
 
-    return gen_rust(
-        input,
-        Direction::Export,
-        &[
-            (
-                "export",
-                || wit_bindgen_gen_guest_rust::Opts::default().build(),
-                gen_extra,
-            ),
-            (
-                "export-unchecked",
-                || {
-                    let mut opts = wit_bindgen_gen_guest_rust::Opts::default();
-                    opts.unchecked = true;
-                    opts.symbol_namespace = "unchecked".to_string();
-                    opts.build()
-                },
-                gen_extra,
-            ),
-        ],
+    let gen_name = format!(
+        "{gen_name}-{}",
+        match dir {
+            Direction::Import => "import",
+            Direction::Export => "export",
+        }
     );
-
-    fn gen_extra(iface: &wit_parser::Interface) -> proc_macro2::TokenStream {
-        let mut ret = quote::quote!();
-        if iface.functions.len() == 0 {
-            return ret;
-        }
-
-        let snake = quote::format_ident!("{}", iface.name.to_snake_case());
-        let camel = quote::format_ident!("{}", iface.name.to_upper_camel_case());
-
-        let mut methods = Vec::new();
-
-        for f in iface.functions.iter() {
-            let name = quote::format_ident!("{}", f.item_name().to_snake_case());
-            let params = f
-                .params
-                .iter()
-                .map(|(_, t)| quote_ty(true, iface, t))
-                .collect::<Vec<_>>();
-            let rets = f
-                .results
-                .iter_types()
-                .map(|t| quote_ty(false, iface, t))
-                .collect::<Vec<_>>();
-            let ret = match rets.len() {
-                0 => quote::quote!(()),
-                1 => rets[0].clone(),
-                _ => quote::quote!((#(#rets,)*)),
-            };
-            let method = quote::quote! {
-                fn #name(#(_: #params),*) -> #ret {
-                    loop {}
-                }
-            };
-            match &f.kind {
-                FunctionKind::Freestanding => methods.push(method),
-            }
-        }
-        ret.extend(quote::quote! {
-            struct #camel;
-
-            impl #snake::#camel for #camel {
-                #(#methods)*
-            }
-        });
-
-        ret
+    let dir = test_directory("codegen", &gen_name, wit_name);
+    for (file, contents) in files.iter() {
+        std::fs::write(dir.join(file), contents).unwrap();
     }
+    verify(&dir, wit_name);
+}
 
-    fn quote_ty(
-        param: bool,
-        iface: &wit_parser::Interface,
-        ty: &wit_parser::Type,
-    ) -> proc_macro2::TokenStream {
-        match *ty {
-            Type::Bool => quote::quote! { bool },
-            Type::U8 => quote::quote! { u8 },
-            Type::S8 => quote::quote! { i8 },
-            Type::U16 => quote::quote! { u16 },
-            Type::S16 => quote::quote! { i16 },
-            Type::U32 => quote::quote! { u32 },
-            Type::S32 => quote::quote! { i32 },
-            Type::U64 => quote::quote! { u64 },
-            Type::S64 => quote::quote! { i64 },
-            Type::Float32 => quote::quote! { f32 },
-            Type::Float64 => quote::quote! { f64 },
-            Type::Char => quote::quote! { char },
-            Type::String => quote::quote! { String },
-            Type::Id(id) => quote_id(param, iface, id),
-        }
+/// Returns a suitable directory to place output for tests within.
+///
+/// This tries to pick a location in the `target` directory that can be
+/// relatively easily debugged if a test goes wrong.
+pub fn test_directory(suite_name: &str, gen_name: &str, wit_name: &str) -> PathBuf {
+    let mut me = std::env::current_exe().unwrap();
+    me.pop(); // chop off exe name
+    me.pop(); // chop off 'deps'
+    me.pop(); // chop off 'debug' / 'release'
+    me.push(format!("{suite_name}-tests"));
+    me.push(gen_name);
+    me.push(wit_name);
+
+    drop(fs::remove_dir_all(&me));
+    fs::create_dir_all(&me).unwrap();
+    return me;
+}
+
+/// Helper function to execute a process during tests and print informative
+/// information if it fails.
+pub fn run_command(cmd: &mut Command) {
+    println!("running {cmd:?}");
+    let output = cmd
+        .output()
+        .expect("failed to run executable; is it installed");
+
+    if output.status.success() {
+        return;
     }
+    panic!(
+        "
+status: {status}
 
-    fn quote_id(
-        param: bool,
-        iface: &wit_parser::Interface,
-        id: wit_parser::TypeId,
-    ) -> proc_macro2::TokenStream {
-        let ty = &iface.types[id];
-        if let Some(name) = &ty.name {
-            let name = quote::format_ident!("{}", name.to_upper_camel_case());
-            let module = quote::format_ident!("{}", iface.name.to_snake_case());
-            return quote::quote! { #module::#name };
-        }
-        match &ty.kind {
-            TypeDefKind::Type(t) => quote_ty(param, iface, t),
-            TypeDefKind::List(t) => {
-                let t = quote_ty(param, iface, t);
-                quote::quote! { Vec<#t> }
-            }
-            TypeDefKind::Flags(_) => panic!("unknown flags"),
-            TypeDefKind::Enum(_) => panic!("unknown enum"),
-            TypeDefKind::Record(_) => panic!("unknown record"),
-            TypeDefKind::Variant(_) => panic!("unknown variant"),
-            TypeDefKind::Union(_) => panic!("unknown union"),
-            TypeDefKind::Tuple(t) => {
-                let fields = t.types.iter().map(|ty| quote_ty(param, iface, ty));
-                quote::quote! { (#(#fields,)*) }
-            }
-            TypeDefKind::Option(ty) => {
-                let ty = quote_ty(param, iface, ty);
-                quote::quote! { Option<#ty> }
-            }
-            TypeDefKind::Result(r) => {
-                let ok = match &r.ok {
-                    Some(t) => quote_ty(param, iface, t),
-                    None => quote::quote!(()),
-                };
-                let err = match &r.err {
-                    Some(t) => quote_ty(param, iface, t),
-                    None => quote::quote!(()),
-                };
-                quote::quote! { Result<#ok, #err> }
-            }
-            TypeDefKind::Future(_) => todo!("unknown future"),
-            TypeDefKind::Stream(_) => todo!("unknown stream"),
-        }
-    }
-}
+stdout ---
+{stdout}
 
-#[proc_macro]
-#[cfg(feature = "host-wasmtime-rust")]
-pub fn codegen_wasmtime_export(input: TokenStream) -> TokenStream {
-    gen_rust(
-        input,
-        Direction::Export,
-        &[
-            (
-                "export",
-                || wit_bindgen_gen_host_wasmtime_rust::Opts::default().build(),
-                |_| quote::quote!(),
-            ),
-            (
-                "export-tracing-and-custom-error",
-                || {
-                    let mut opts = wit_bindgen_gen_host_wasmtime_rust::Opts::default();
-                    opts.tracing = true;
-                    opts.custom_error = true;
-                    opts.build()
-                },
-                |_| quote::quote!(),
-            ),
-        ],
-    )
-}
-
-#[proc_macro]
-#[cfg(feature = "host-wasmtime-rust")]
-pub fn codegen_wasmtime_import(input: TokenStream) -> TokenStream {
-    gen_rust(
-        input,
-        Direction::Import,
-        &[(
-            "import",
-            || wit_bindgen_gen_host_wasmtime_rust::Opts::default().build(),
-            |_| quote::quote!(),
-        )],
-    )
-}
-
-#[proc_macro]
-#[cfg(feature = "host-js")]
-pub fn codegen_js_export(input: TokenStream) -> TokenStream {
-    gen_verify(input, Direction::Export, "export", || {
-        wit_bindgen_gen_host_js::Opts::default().build()
-    })
-}
-
-#[proc_macro]
-#[cfg(feature = "host-js")]
-pub fn codegen_js_import(input: TokenStream) -> TokenStream {
-    gen_verify(input, Direction::Import, "import", || {
-        wit_bindgen_gen_host_js::Opts::default().build()
-    })
-}
-
-#[proc_macro]
-#[cfg(feature = "guest-c")]
-pub fn codegen_c_import(input: TokenStream) -> TokenStream {
-    gen_verify(input, Direction::Import, "import", || {
-        wit_bindgen_gen_guest_c::Opts::default().build()
-    })
-}
-
-#[proc_macro]
-#[cfg(feature = "guest-c")]
-pub fn codegen_c_export(input: TokenStream) -> TokenStream {
-    gen_verify(input, Direction::Export, "export", || {
-        wit_bindgen_gen_guest_c::Opts::default().build()
-    })
-}
-
-#[proc_macro]
-#[cfg(feature = "guest-teavm-java")]
-pub fn codegen_teavm_java_import(input: TokenStream) -> TokenStream {
-    gen_verify(input, Direction::Import, "import", || {
-        wit_bindgen_gen_guest_teavm_java::Opts::default().build()
-    })
-}
-
-#[proc_macro]
-#[cfg(feature = "guest-teavm-java")]
-pub fn codegen_teavm_java_export(input: TokenStream) -> TokenStream {
-    gen_verify(input, Direction::Export, "export", || {
-        wit_bindgen_gen_guest_teavm_java::Opts {
-            generate_stub: true,
-        }
-        .build()
-    })
-}
-
-#[proc_macro]
-#[cfg(feature = "host-wasmtime-py")]
-pub fn codegen_py_export(input: TokenStream) -> TokenStream {
-    gen_verify(input, Direction::Export, "export", || {
-        wit_bindgen_gen_host_wasmtime_py::Opts::default().build()
-    })
-}
-
-#[proc_macro]
-#[cfg(feature = "host-wasmtime-py")]
-pub fn codegen_py_import(input: TokenStream) -> TokenStream {
-    gen_verify(input, Direction::Import, "import", || {
-        wit_bindgen_gen_host_wasmtime_py::Opts::default().build()
-    })
-}
-
-fn generate_tests<G>(
-    input: TokenStream,
-    dir: &str,
-    mkgen: impl Fn(&Path) -> (G, Direction),
-) -> Vec<(wit_parser::Interface, PathBuf, PathBuf)>
-where
-    G: Generator,
-{
-    static INIT: std::sync::Once = std::sync::Once::new();
-    INIT.call_once(|| {
-        let prev = std::panic::take_hook();
-        std::panic::set_hook(Box::new(move |info| {
-            eprintln!("panic: {:?}", backtrace::Backtrace::new());
-            prev(info);
-        }));
-    });
-
-    let mut builder = GitignoreBuilder::new("tests");
-    for token in input {
-        let lit = match token {
-            TokenTree::Literal(l) => l.to_string(),
-            _ => panic!("invalid input"),
-        };
-        assert!(lit.starts_with("\""));
-        assert!(lit.ends_with("\""));
-        builder.add_line(None, &lit[1..lit.len() - 1]).unwrap();
-    }
-    let ignore = builder.build().unwrap();
-    let tests = ignore::Walk::new("tests/codegen").filter_map(|d| {
-        let d = d.unwrap();
-        let path = d.path();
-        match ignore.matched(path, d.file_type().map(|d| d.is_dir()).unwrap_or(false)) {
-            ignore::Match::None => None,
-            ignore::Match::Ignore(_) => Some(d.into_path()),
-            ignore::Match::Whitelist(_) => None,
-        }
-    });
-    let mut out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR not set"));
-    out_dir.push(dir);
-    let mut sources = Vec::new();
-    let cwd = env::current_dir().unwrap();
-    for test in tests {
-        let (mut gen, dir) = mkgen(&test);
-        let mut files = Default::default();
-        let iface = wit_parser::Interface::parse_file(&test).unwrap();
-        let (mut imports, mut exports) = match dir {
-            Direction::Import => (vec![iface], vec![]),
-            Direction::Export => (vec![], vec![iface]),
-        };
-        gen.generate_all(&imports, &exports, &mut files);
-
-        let dst = out_dir.join(test.file_stem().unwrap());
-        drop(fs::remove_dir_all(&dst));
-        fs::create_dir_all(&dst).unwrap();
-        for (file, contents) in files.iter() {
-            write_old_file(dst.join(file), contents);
-        }
-        sources.push((
-            imports.pop().or(exports.pop()).unwrap(),
-            dst,
-            cwd.join(test),
-        ));
-    }
-    sources
-}
-
-// Files written in this proc-macro are loaded as source code in Rust. This is
-// done to assist with compiler error messages so there's an actual file to go
-// look at, but this causes issues with mtime-tracking in Cargo since it appears
-// to Cargo that a file was modified after the build started, which causes Cargo
-// to rebuild on subsequent builds. All our dependencies are tracked via the
-// inputs to the proc-macro itself, so there's no need for Cargo to track these
-// files, so we specifically set the mtime of the file to something older to
-// prevent triggering rebuilds.
-fn write_old_file(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) {
-    let path = path.as_ref();
-    fs::write(path, contents).unwrap();
-    let now = filetime::FileTime::from_system_time(SystemTime::now() - Duration::from_secs(600));
-    filetime::set_file_mtime(path, now).unwrap();
-}
-
-#[allow(dead_code)]
-fn gen_rust<G: Generator>(
-    // input to the original procedural macro
-    input: TokenStream,
-    // whether we're generating bindings for imports or exports
-    dir: Direction,
-    // a list of tests, tuples of:
-    //  * name of the test (directory to generate code into)
-    //  * method to create the `G` which will generate code
-    //  * method to generate auxiliary tokens to place in the module,
-    //    optionally.
-    tests: &[(
-        &'static str,
-        fn() -> G,
-        fn(&wit_parser::Interface) -> proc_macro2::TokenStream,
-    )],
-) -> TokenStream {
-    let mut ret = proc_macro2::TokenStream::new();
-    for (name, mk, extra) in tests {
-        let tests = generate_tests(input.clone(), name, |_path| (mk(), dir));
-        let mut sources = proc_macro2::TokenStream::new();
-        for (iface, gen_dir, _input_wit) in tests.iter() {
-            let test = gen_dir.join("bindings.rs");
-            let test = test.display().to_string();
-            sources.extend(quote::quote!(include!(#test);));
-            let extra = extra(iface);
-            if extra.is_empty() {
-                continue;
-            }
-            let test = gen_dir.join("extra.rs");
-            let test = test.display().to_string();
-            sources.extend(quote::quote!(include!(#test);));
-            write_old_file(&test, extra.to_string());
-        }
-        let name = quote::format_ident!("{}", name.replace("-", "_"));
-        ret.extend(quote::quote!( mod #name { #sources } ));
-    }
-    ret.into()
-}
-
-#[allow(dead_code)]
-fn gen_verify<G: Generator>(
-    input: TokenStream,
-    dir: Direction,
-    name: &str,
-    mkgen: fn() -> G,
-) -> TokenStream {
-    use heck::*;
-
-    let tests = generate_tests(input, name, |_path| (mkgen(), dir));
-    let tests = tests.iter().map(|(iface, test, wit)| {
-        let test = test.display().to_string();
-        let wit = wit.display().to_string();
-        let name = quote::format_ident!("{}", iface.name.to_snake_case());
-        let iface_name = iface.name.to_kebab_case();
-        quote::quote! {
-            #[test]
-            fn #name() {
-                const _: &str = include_str!(#wit);
-                crate::verify(#test, #iface_name);
-            }
-        }
-    });
-    (quote::quote!(#(#tests)*)).into()
-}
-
-include!(concat!(env!("OUT_DIR"), "/wasms.rs"));
-
-/// Invoked as `runtime_tests!("js")` to run a top-level `execute` function with
-/// all host tests that use the "js" extension.
-#[proc_macro]
-pub fn runtime_tests(input: TokenStream) -> TokenStream {
-    let host_extension = input.to_string();
-    let host_extension = host_extension.trim_matches('"');
-    let host_file = format!("host.{}", host_extension);
-    let mut tests = Vec::new();
-    let cwd = std::env::current_dir().unwrap();
-    for entry in std::fs::read_dir(cwd.join("tests/runtime")).unwrap() {
-        let entry = entry.unwrap().path();
-        if !entry.join(&host_file).exists() {
-            continue;
-        }
-        let name_str = entry.file_name().unwrap().to_str().unwrap();
-        for (lang, name, wasm, _component) in WASMS {
-            if *name != name_str {
-                continue;
-            }
-            let name_str = format!("{}_{}", name_str, lang);
-            let name = quote::format_ident!("{}", name_str);
-            let host_file = entry.join(&host_file).to_str().unwrap().to_string();
-            let import_wit = entry.join("imports.wit").to_str().unwrap().to_string();
-            let export_wit = entry.join("exports.wit").to_str().unwrap().to_string();
-            tests.push(quote::quote! {
-                #[test]
-                fn #name() {
-                    crate::execute(
-                        #name_str,
-                        #wasm.as_ref(),
-                        #host_file.as_ref(),
-                        #import_wit.as_ref(),
-                        #export_wit.as_ref(),
-                    )
-                }
-            });
-        }
-    }
-
-    (quote::quote!(#(#tests)*)).into()
-}
-
-#[proc_macro]
-#[cfg(feature = "host-wasmtime-rust")]
-pub fn runtime_tests_wasmtime(_input: TokenStream) -> TokenStream {
-    let mut tests = Vec::new();
-    let cwd = std::env::current_dir().unwrap();
-    for entry in std::fs::read_dir(cwd.join("tests/runtime")).unwrap() {
-        let entry = entry.unwrap().path();
-        if !entry.join("host.rs").exists() {
-            continue;
-        }
-        let name_str = entry.file_name().unwrap().to_str().unwrap();
-        for (lang, name, wasm, _component) in WASMS {
-            if *name != name_str {
-                continue;
-            }
-            let name = quote::format_ident!("{}_{}", name_str, lang);
-            let host_file = entry.join("host.rs").to_str().unwrap().to_string();
-            tests.push(quote::quote! {
-                mod #name {
-                    include!(#host_file);
-
-                    #[test]
-                    fn test() -> anyhow::Result<()> {
-                        run(#wasm)
-                    }
-                }
-            });
-        }
-    }
-
-    (quote::quote!(#(#tests)*)).into()
+stderr ---
+{stderr}",
+        status = output.status,
+        stdout = String::from_utf8_lossy(&output.stdout).replace("\n", "\n\t"),
+        stderr = String::from_utf8_lossy(&output.stderr).replace("\n", "\n\t"),
+    );
 }

@@ -1,32 +1,46 @@
 use heck::{ToSnakeCase, ToUpperCamelCase};
-use std::{fs, path::Path, process::Command};
+use std::fs;
+use std::path::Path;
+use std::process::Command;
 
-#[rustfmt::skip]
-mod imports {
-    test_helpers::codegen_teavm_java_import!(
-        "*.wit"
-
-        // If you want to exclude a specific test you can include it here with
-        // gitignore glob syntax:
-        //
-        // "!wasm.wit"
-        // "!host.wit"
-        //
-        //
-        // Similarly you can also just remove the `*.wit` glob and list tests
-        // individually if you're debugging.
-    );
+macro_rules! gen_test {
+    ($name:ident $test:tt $dir:ident) => {
+        #[test]
+        fn $name() {
+            test_helpers::run_codegen_test(
+                "guest-teavm-java",
+                std::path::Path::new($test)
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+                include_str!($test),
+                test_helpers::Direction::$dir,
+                wit_bindgen_gen_guest_teavm_java::Opts {
+                    generate_stub: true,
+                }
+                .build(),
+                super::verify,
+            )
+        }
+    };
 }
 
-#[rustfmt::skip]
 mod exports {
-    test_helpers::codegen_teavm_java_export!(
-        "*.wit"
-    );
+    macro_rules! codegen_test {
+        ($name:ident $test:tt) => (gen_test!($name $test Export);)
+    }
+    test_helpers::codegen_tests!("*.wit");
 }
 
-fn verify(dir: &str, name: &str) {
-    let dir = Path::new(dir);
+mod imports {
+    macro_rules! codegen_test {
+        ($name:ident $test:tt) => (gen_test!($name $test Import);)
+    }
+    test_helpers::codegen_tests!("*.wit");
+}
+
+fn verify(dir: &Path, name: &str) {
     let java_dir = &dir.join("src/main/java");
     let package_dir = &java_dir.join(format!("wit_{}", name.to_snake_case()));
 
@@ -57,21 +71,7 @@ fn verify(dir: &str, name: &str) {
     let mut cmd = mvn();
     cmd.arg("prepare-package").current_dir(dir);
 
-    println!("{cmd:?}");
-    let output = match cmd.output() {
-        Ok(output) => output,
-        Err(e) => panic!("failed to run Maven: {e}"),
-    };
-
-    if output.status.success() {
-        return;
-    }
-    println!("status: {}", output.status);
-    println!("stdout: ------------------------------------------");
-    println!("{}", String::from_utf8_lossy(&output.stdout));
-    println!("stderr: ------------------------------------------");
-    println!("{}", String::from_utf8_lossy(&output.stderr));
-    panic!("failed to build");
+    test_helpers::run_command(&mut cmd);
 }
 
 #[cfg(unix)]

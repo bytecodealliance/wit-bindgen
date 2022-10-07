@@ -12,6 +12,10 @@ wit-bindgen-guest-rust = { path = "../guest-rust" }
 [features]
 unchecked = []
 
+[lib]
+test = false
+doctest = false
+
 [[bin]]
 name = "smoke"
 test = false
