@@ -354,7 +354,7 @@ impl Generator for Wasmtime {
         let prev = mem::take(&mut self.src);
         uwrite!(
             self.src,
-            "pub fn {}(&self, store: impl wasmtime::AsContextMut<Data = T>, ",
+            "pub fn {}(&self, mut store: impl wasmtime::AsContextMut<Data = T>, ",
             func.name.to_snake_case(),
         );
         for (i, param) in func.params.iter().enumerate() {
@@ -372,14 +372,20 @@ impl Generator for Wasmtime {
         }
         uwrite!(
             self.src,
-            ") = self.{}.call(store, (",
+            ") = self.{}.call(store.as_context_mut(), (",
             func.name.to_snake_case()
         );
         for (i, _) in func.params.iter().enumerate() {
             uwrite!(self.src, "arg{}, ", i);
         }
 
-        uwrite!(self.src, "))?;");
+        uwrite!(self.src, "))?;\n");
+
+        uwrite!(
+            self.src,
+            "self.{}.post_return(store.as_context_mut())?;\n",
+            func.name.to_snake_case()
+        );
 
         self.src.push_str("Ok(");
         if func.results.iter_types().len() == 1 {
