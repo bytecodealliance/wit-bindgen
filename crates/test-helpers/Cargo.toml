@@ -1,42 +1,20 @@
 [package]
 name = "test-helpers"
-authors = ["Alex Crichton <alex@alexcrichton.com>"]
 version.workspace = true
 edition.workspace = true
 publish = false
 
 [lib]
-proc-macro = true
 doctest = false
 test = false
 
 [dependencies]
-backtrace = "0.3"
-heck = { workspace = true }
-ignore = "0.4"
-proc-macro2 = "1.0.27"
-quote = "1.0.9"
+test-helpers-macros = { path = 'macros' }
 wit-bindgen-core = { workspace = true }
-wit-bindgen-gen-guest-rust = { workspace = true, optional = true }
-wit-bindgen-gen-host-wasmtime-rust = { workspace = true, optional = true }
-wit-bindgen-gen-host-wasmtime-py = { workspace = true, optional = true }
-wit-bindgen-gen-host-js = { workspace = true, optional = true }
-wit-bindgen-gen-guest-c = { workspace = true, optional = true }
-wit-bindgen-gen-guest-teavm-java = { workspace = true, optional = true }
 wit-parser = { workspace = true }
-filetime = "0.2"
-
-[build-dependencies]
-wit-bindgen-gen-guest-c = { workspace = true }
-wit-bindgen-gen-guest-teavm-java = { workspace = true }
-wit-bindgen-core = { workspace = true }
-wit-component = { workspace = true }
 
 [features]
-default = ['guest-rust', 'guest-c', 'guest-teavm-java', 'host-js', 'host-wasmtime-py', 'host-wasmtime-rust']
-guest-rust = ['wit-bindgen-gen-guest-rust']
-guest-c = ['wit-bindgen-gen-guest-c']
-guest-teavm-java = ['wit-bindgen-gen-guest-teavm-java']
-host-js = ['wit-bindgen-gen-host-js']
-host-wasmtime-py = ['wit-bindgen-gen-host-wasmtime-py']
-host-wasmtime-rust = ['wit-bindgen-gen-host-wasmtime-rust']
+default = ['guest-rust', 'guest-c', 'guest-teavm-java']
+guest-rust = ['test-helpers-macros/guest-rust']
+guest-c = ['test-helpers-macros/guest-c']
+guest-teavm-java = ['test-helpers-macros/guest-teavm-java']

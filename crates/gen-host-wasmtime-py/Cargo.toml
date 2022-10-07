@@ -10,4 +10,4 @@ heck = { workspace = true }
 clap = { workspace = true, optional = true }
 
 [dev-dependencies]
-test-helpers = { path = '../test-helpers', features = ['host-wasmtime-py'] }
+test-helpers = { path = '../test-helpers' }

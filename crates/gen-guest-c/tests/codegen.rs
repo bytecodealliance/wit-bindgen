@@ -2,32 +2,41 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-#[rustfmt::skip]
-mod imports {
-    test_helpers::codegen_c_import!(
-        "*.wit"
-
-        // If you want to exclude a specific test you can include it here with
-        // gitignore glob syntax:
-        //
-        // "!wasm.wit"
-        // "!host.wit"
-        //
-        //
-        // Similarly you can also just remove the `*.wit` glob and list tests
-        // individually if you're debugging.
-    );
+macro_rules! gen_test {
+    ($name:ident $test:tt $dir:ident) => {
+        #[test]
+        fn $name() {
+            test_helpers::run_codegen_test(
+                "guest-c",
+                std::path::Path::new($test)
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+                include_str!($test),
+                test_helpers::Direction::$dir,
+                wit_bindgen_gen_guest_c::Opts::default().build(),
+                super::verify,
+            )
+        }
+    };
 }
 
-#[rustfmt::skip]
 mod exports {
-    test_helpers::codegen_c_export!(
-        "*.wit"
-    );
+    macro_rules! codegen_test {
+        ($name:ident $test:tt) => (gen_test!($name $test Export);)
+    }
+    test_helpers::codegen_tests!("*.wit");
 }
 
-fn verify(dir: &str, name: &str) {
-    let dir = Path::new(dir);
+mod imports {
+    macro_rules! codegen_test {
+        ($name:ident $test:tt) => (gen_test!($name $test Import);)
+    }
+    test_helpers::codegen_tests!("*.wit");
+}
+
+fn verify(dir: &Path, name: &str) {
     let path = PathBuf::from(env::var_os("WASI_SDK_PATH").unwrap());
     let mut cmd = Command::new(path.join("bin/clang"));
     cmd.arg("--sysroot").arg(path.join("share/wasi-sysroot"));
@@ -40,19 +49,5 @@ fn verify(dir: &str, name: &str) {
     cmd.arg("-c");
     cmd.arg("-o").arg(dir.join("obj.o"));
 
-    println!("{:?}", cmd);
-    let output = match cmd.output() {
-        Ok(output) => output,
-        Err(e) => panic!("failed to spawn compiler: {}", e),
-    };
-
-    if output.status.success() {
-        return;
-    }
-    println!("status: {}", output.status);
-    println!("stdout: ------------------------------------------");
-    println!("{}", String::from_utf8_lossy(&output.stdout));
-    println!("stderr: ------------------------------------------");
-    println!("{}", String::from_utf8_lossy(&output.stderr));
-    panic!("failed to compile");
+    test_helpers::run_command(&mut cmd);
 }

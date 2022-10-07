@@ -9,4 +9,4 @@ heck = { workspace = true, features = [ "unicode" ] }
 clap = { workspace = true, optional = true }
 
 [dev-dependencies]
-test-helpers = { path = '../test-helpers', default-features = false, features = ['guest-teavm-java'] }
+test-helpers = { path = '../test-helpers', default-features = false }

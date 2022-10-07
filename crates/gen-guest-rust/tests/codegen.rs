@@ -1,30 +1,42 @@
-#![allow(dead_code, type_alias_bounds)]
+mod exports {
+    macro_rules! codegen_test {
+        ($name:ident $test:tt) => {
+            wit_bindgen_guest_rust::export!($test);
 
-#[test]
-fn ok() {}
+            guest_rust_test_macro::gen_dummy_export!($test);
 
-#[rustfmt::skip]
-mod imports {
-    test_helpers::codegen_rust_wasm_import!(
-        "*.wit"
-
-        // If you want to exclude a specific test you can include it here with
-        // gitignore glob syntax:
-        //
-        // "!wasm.wit"
-        // "!host.wit"
-        //
-        //
-        // Similarly you can also just remove the `*.wit` glob and list tests
-        // individually if you're debugging.
-    );
+            #[test]
+            fn $name() {}
+        };
+    }
+    test_helpers::codegen_tests!("*.wit");
 }
 
-#[rustfmt::skip]
-mod exports {
-    test_helpers::codegen_rust_wasm_export!(
-        "*.wit"
-    );
+mod imports {
+    macro_rules! codegen_test {
+        ($name:ident $test:tt) => {
+            wit_bindgen_guest_rust::import!($test);
+
+            #[test]
+            fn $name() {}
+        };
+    }
+    test_helpers::codegen_tests!("*.wit");
+
+    mod unchecked {
+        macro_rules! codegen_test {
+            ($name:ident $test:tt) => {
+                wit_bindgen_guest_rust::import!({
+                    paths: [$test],
+                    unchecked,
+                });
+
+                #[test]
+                fn $name() {}
+            };
+        }
+        test_helpers::codegen_tests!("*.wit");
+    }
 }
 
 mod strings {
@@ -35,6 +47,7 @@ mod strings {
         ",
     });
 
+    #[allow(dead_code)]
     fn test() {
         // Test the argument is `&str`.
         cat::foo("hello");
@@ -54,6 +67,7 @@ mod raw_strings {
         raw_strings,
     });
 
+    #[allow(dead_code)]
     fn test() {
         // Test the argument is `&[u8]`.
         cat::foo(b"hello");

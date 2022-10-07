@@ -1,52 +1,45 @@
 use std::path::Path;
 use std::process::Command;
 
-#[rustfmt::skip]
+macro_rules! gen_test {
+    ($name:ident $test:tt $dir:ident) => {
+        #[test]
+        fn $name() {
+            test_helpers::run_codegen_test(
+                "wasmtime-py",
+                std::path::Path::new($test)
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+                include_str!($test),
+                test_helpers::Direction::$dir,
+                wit_bindgen_gen_host_wasmtime_py::Opts::default().build(),
+                super::verify,
+            )
+        }
+    };
+}
+
 mod exports {
-    test_helpers::codegen_py_export!(
-        "*.wit"
-
-        // If you want to exclude a specific test you can include it here with
-        // gitignore glob syntax:
-        //
-        // "!wasm.wit"
-        // "!host.wit"
-        //
-        //
-        // Similarly you can also just remove the `*.wit` glob and list tests
-        // individually if you're debugging.
-    );
-}
-
-#[rustfmt::skip]
-mod imports {
-    test_helpers::codegen_py_import!(
-        "*.wit"
-    );
-}
-
-fn verify(dir: &str, _name: &str) {
-    let output = Command::new("mypy")
-        .arg(Path::new(dir).join("bindings.py"))
-        .arg("--config-file")
-        .arg("mypy.ini")
-        .output()
-        .expect("failed to run `mypy`; do you have it installed?");
-    if output.status.success() {
-        return;
+    macro_rules! codegen_test {
+        ($name:ident $test:tt) => (gen_test!($name $test Export);)
     }
-    panic!(
-        "mypy failed
+    test_helpers::codegen_tests!("*.wit");
+}
 
-status: {status}
+mod imports {
+    macro_rules! codegen_test {
+        ($name:ident $test:tt) => (gen_test!($name $test Import);)
+    }
+    test_helpers::codegen_tests!("*.wit");
+}
 
-stdout ---
-{stdout}
-
-stderr ---
-{stderr}",
-        status = output.status,
-        stdout = String::from_utf8_lossy(&output.stdout).replace("\n", "\n\t"),
-        stderr = String::from_utf8_lossy(&output.stderr).replace("\n", "\n\t"),
+fn verify(dir: &Path, _name: &str) {
+    test_helpers::run_command(
+        Command::new("mypy")
+            .arg(dir.join("bindings.py"))
+            .arg("--config-file")
+            .arg("mypy.ini"),
     );
 }

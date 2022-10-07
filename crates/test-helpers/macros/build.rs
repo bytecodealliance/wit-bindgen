@@ -15,20 +15,20 @@ fn main() {
     let mut cmd = Command::new("cargo");
     cmd.arg("build")
         .arg("--release")
-        .current_dir("../wasi_snapshot_preview1")
+        .current_dir("../../wasi_snapshot_preview1")
         .arg("--target=wasm32-unknown-unknown")
         .env("CARGO_TARGET_DIR", &out_dir)
         .env("RUSTFLAGS", "-Clink-args=--import-memory")
         .env_remove("CARGO_ENCODED_RUSTFLAGS");
     let status = cmd.status().unwrap();
     assert!(status.success());
-    println!("cargo:rerun-if-changed=../wasi_snapshot_preview1");
+    println!("cargo:rerun-if-changed=../../wasi_snapshot_preview1");
     let wasi_adapter = out_dir.join("wasm32-unknown-unknown/release/wasi_snapshot_preview1.wasm");
 
     if cfg!(feature = "guest-rust") {
         let mut cmd = Command::new("cargo");
         cmd.arg("build")
-            .current_dir("../test-rust-wasm")
+            .current_dir("../../test-rust-wasm")
             .arg("--target=wasm32-wasi")
             .env("CARGO_TARGET_DIR", &out_dir)
             .env("CARGO_PROFILE_DEV_DEBUG", "1")
@@ -78,11 +78,11 @@ fn main() {
                 println!("cargo:rerun-if-changed={}", dep);
             }
         }
-        println!("cargo:rerun-if-changed=../test-rust-wasm/Cargo.toml");
+        println!("cargo:rerun-if-changed=../../test-rust-wasm/Cargo.toml");
     }
 
     if cfg!(feature = "guest-c") {
-        for test_dir in fs::read_dir("../../tests/runtime").unwrap() {
+        for test_dir in fs::read_dir("../../../tests/runtime").unwrap() {
             let test_dir = test_dir.unwrap().path();
             let c_impl = test_dir.join("wasm.c");
             if !c_impl.exists() {
@@ -180,7 +180,7 @@ fn main() {
     }
 
     if cfg!(feature = "guest-teavm-java") {
-        for test_dir in fs::read_dir("../../tests/runtime").unwrap() {
+        for test_dir in fs::read_dir("../../../tests/runtime").unwrap() {
             let test_dir = test_dir.unwrap().path();
             let java_impl = test_dir.join("wasm.java");
             if !java_impl.exists() {
@@ -235,7 +235,7 @@ fn main() {
             fs::write(out_dir.join("pom.xml"), pom_xml(&["wit_exports.Exports"])).unwrap();
             fs::write(
                 java_dir.join("Main.java"),
-                include_bytes!("../gen-guest-teavm-java/tests/Main.java"),
+                include_bytes!("../../gen-guest-teavm-java/tests/Main.java"),
             )
             .unwrap();
 
@@ -310,7 +310,7 @@ fn mvn() -> Command {
 }
 
 fn pom_xml(classes_to_preserve: &[&str]) -> Vec<u8> {
-    let xml = include_str!("../gen-guest-teavm-java/tests/pom.xml");
+    let xml = include_str!("../../gen-guest-teavm-java/tests/pom.xml");
     let position = xml.find("<mainClass>").unwrap();
     let (before, after) = xml.split_at(position);
     let classes_to_preserve = classes_to_preserve

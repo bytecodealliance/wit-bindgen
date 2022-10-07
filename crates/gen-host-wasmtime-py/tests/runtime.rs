@@ -1,16 +1,12 @@
-use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use wit_bindgen_core::Generator;
 
 test_helpers::runtime_tests!("py");
 
 fn execute(name: &str, wasm: &Path, py: &Path, imports: &Path, exports: &Path) {
-    let out_dir = PathBuf::from(env!("OUT_DIR"));
-    let dir = out_dir.join(name);
-    drop(fs::remove_dir_all(&dir));
-    fs::create_dir_all(&dir).unwrap();
+    let dir = test_helpers::test_directory("runtime", "wasmtime-py", name);
     fs::create_dir_all(&dir.join("imports")).unwrap();
     fs::create_dir_all(&dir.join("exports")).unwrap();
 
@@ -45,7 +41,7 @@ fn execute(name: &str, wasm: &Path, py: &Path, imports: &Path, exports: &Path) {
             .env("MYPYPATH", &dir)
             .arg(py)
             .arg("--cache-dir")
-            .arg(out_dir.join("mypycache").join(name)),
+            .arg(dir.parent().unwrap().join("mypycache").join(name)),
     );
 
     exec(

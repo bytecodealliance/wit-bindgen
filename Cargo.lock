@@ -685,6 +685,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "guest-rust-test-macro"
+version = "0.0.0"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "wit-parser",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1349,6 +1359,15 @@ dependencies = [
 name = "test-helpers"
 version = "0.2.0"
 dependencies = [
+ "test-helpers-macros",
+ "wit-bindgen-core",
+ "wit-parser",
+]
+
+[[package]]
+name = "test-helpers-macros"
+version = "0.2.0"
+dependencies = [
  "backtrace",
  "filetime",
  "heck",
@@ -1357,11 +1376,7 @@ dependencies = [
  "quote",
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
- "wit-bindgen-gen-guest-rust",
  "wit-bindgen-gen-guest-teavm-java",
- "wit-bindgen-gen-host-js",
- "wit-bindgen-gen-host-wasmtime-py",
- "wit-bindgen-gen-host-wasmtime-rust",
  "wit-component",
  "wit-parser",
 ]
@@ -2043,6 +2058,7 @@ name = "wit-bindgen-gen-guest-rust"
 version = "0.2.0"
 dependencies = [
  "clap",
+ "guest-rust-test-macro",
  "heck",
  "test-helpers",
  "wit-bindgen-core",

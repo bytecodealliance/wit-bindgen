@@ -16,7 +16,7 @@ clap = { workspace = true, optional = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }
-test-helpers = { path = '../test-helpers', features = ['host-wasmtime-rust'] }
+test-helpers = { path = '../test-helpers' }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 wit-bindgen-host-wasmtime-rust = { workspace = true, features = ['tracing'] }

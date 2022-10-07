@@ -1,16 +1,13 @@
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use wit_bindgen_core::Generator;
 
 test_helpers::runtime_tests!("ts");
 
 fn execute(name: &str, wasm: &Path, ts: &Path, imports: &Path, exports: &Path) {
-    let mut dir = PathBuf::from(env!("OUT_DIR"));
-    dir.push(name);
-    drop(fs::remove_dir_all(&dir));
-    fs::create_dir_all(&dir).unwrap();
+    let dir = test_helpers::test_directory("runtime", "wasmtime-py", name);
 
     println!("OUT_DIR = {:?}", dir);
     println!("Generating bindings...");
