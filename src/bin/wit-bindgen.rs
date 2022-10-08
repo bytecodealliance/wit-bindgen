@@ -1,12 +1,21 @@
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser};
+use lazy_static::lazy_static;
 use std::path::PathBuf;
 use wit_bindgen_core::{wit_parser, Files, Generator};
 use wit_parser::Interface;
 
+lazy_static! {
+    pub static ref VERSION: String = build_info();
+}
+
+/// Helper for passing VERSION to opt.
+fn version() -> &'static str {
+    &VERSION
+}
+
 #[derive(Debug, Parser)]
-#[command(version)]
-/// A utility that generates language bindings for WIT interfaces.
+#[command(version = version())]
 struct Opt {
     #[command(subcommand)]
     category: Category,
@@ -142,4 +151,14 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Returns build information, similar to: 0.1.0 (2be4034 2022-03-31).
+fn build_info() -> String {
+    format!(
+        "{} ({} {})",
+        env!("VERGEN_BUILD_SEMVER"),
+        env!("VERGEN_GIT_SHA"),
+        env!("VERGEN_GIT_COMMIT_DATE")
+    )
 }

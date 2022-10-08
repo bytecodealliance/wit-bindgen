@@ -24,6 +24,7 @@ heck =  { version = "0.4", features = ["unicode"] }
 pulldown-cmark = { version = "0.8", default-features = false }
 clap = { version = "4.0.9", features = ["derive"] }
 env_logger = "0.9.1"
+lazy_static = "1.4.0"
 
 wasmtime = "1.0"
 wasmtime-wasi = "1.0"
@@ -53,6 +54,7 @@ test = false
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
+lazy_static = { workspace = true }
 wit-bindgen-core = { path = 'crates/bindgen-core' }
 wit-bindgen-gen-guest-rust = { path = 'crates/gen-guest-rust', features = ['clap'] }
 wit-bindgen-gen-host-wasmtime-rust = { path = 'crates/gen-host-wasmtime-rust', features = ['clap'] }
@@ -61,3 +63,6 @@ wit-bindgen-gen-host-js = { path = 'crates/gen-host-js', features = ['clap'] }
 wit-bindgen-gen-guest-c = { path = 'crates/gen-guest-c', features = ['clap'] }
 wit-bindgen-gen-markdown = { path = 'crates/gen-markdown', features = ['clap'] }
 wit-bindgen-gen-guest-teavm-java = { path = 'crates/gen-guest-teavm-java', features = ['clap'] }
+
+[build-dependencies]
+vergen = { version = "7", default-features = false, features = [ "build", "git" ] }
