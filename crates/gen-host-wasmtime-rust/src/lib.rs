@@ -328,7 +328,7 @@ impl Generator for Wasmtime {
             uwrite!(self.src, "arg{},", i);
         }
         uwrite!(self.src, ");\n");
-        if func.params.iter().len() == 1 {
+        if func.results.iter_types().len() == 1 {
             uwrite!(self.src, "Ok((r,))\n");
         } else {
             uwrite!(self.src, "Ok(r)\n");
