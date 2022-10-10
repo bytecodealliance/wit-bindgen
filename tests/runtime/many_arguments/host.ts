@@ -32,10 +32,6 @@ async function run() {
       a14,
       a15,
       a16,
-      a17,
-      a18,
-      a19,
-      a20,
     ) {
       assertEq(a1, 1n);
       assertEq(a2, 2n);
@@ -53,10 +49,6 @@ async function run() {
       assertEq(a14, 14n);
       assertEq(a15, 15n);
       assertEq(a16, 16n);
-      assertEq(a17, 17n);
-      assertEq(a18, 18n);
-      assertEq(a19, 19n);
-      assertEq(a20, 20n);
     },
   };
   let instance: WebAssembly.Instance;
@@ -85,10 +77,6 @@ async function run() {
     14n,
     15n,
     16n,
-    17n,
-    18n,
-    19n,
-    20n,
   );
 }
 
