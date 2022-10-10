@@ -157,8 +157,8 @@ fn main() -> Result<()> {
 fn build_info() -> String {
     format!(
         "{} ({} {})",
-        env!("VERGEN_BUILD_SEMVER"),
-        env!("VERGEN_GIT_SHA"),
-        env!("VERGEN_GIT_COMMIT_DATE")
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_COMMIT_SHORT_HASH"),
+        env!("CARGO_COMMIT_DATE")
     )
 }
