@@ -290,7 +290,11 @@ impl Generator for Wasmtime {
         let mut fnsig = FnSig::default();
         fnsig.private = true;
         fnsig.self_arg = Some(self_arg);
-        self.print_docs_and_params(iface, func, TypeMode::LeafBorrowed("'_"), &fnsig);
+
+        // These trait method args used to be TypeMode::LeafBorrowed, but wasmtime
+        // Lift is not impled for borrowed types, so I don't think we can
+        // support that anymore?
+        self.print_docs_and_params(iface, func, TypeMode::Owned, &fnsig);
         self.push_str(" -> ");
         self.print_result_ty(iface, &func.results, TypeMode::Owned);
         self.in_trait = false;
@@ -302,6 +306,8 @@ impl Generator for Wasmtime {
             .push_str("move |mut caller: wasmtime::StoreContextMut<'_, T>");
         for (i, param) in func.params.iter().enumerate() {
             uwrite!(self.src, ", arg{} :", i);
+            // Lift is required to be impled for this type, so we can't use
+            // a borrowed type:
             self.print_ty(iface, &param.1, TypeMode::Owned);
         }
         self.src.push_str("| {\n");
@@ -359,7 +365,7 @@ impl Generator for Wasmtime {
         );
         for (i, param) in func.params.iter().enumerate() {
             uwrite!(self.src, "arg{}: ", i);
-            self.print_ty(iface, &param.1, TypeMode::Owned);
+            self.print_ty(iface, &param.1, TypeMode::AllBorrowed("'_"));
             self.push_str(",");
         }
         self.src.push_str(") -> anyhow::Result<");
@@ -408,7 +414,7 @@ impl Generator for Wasmtime {
         self.src.push_str("wasmtime::component::TypedFunc<(");
         // ComponentNamedList means using tuple for all:
         for (_, ty) in func.params.iter() {
-            self.print_ty(iface, ty, TypeMode::Owned);
+            self.print_ty(iface, ty, TypeMode::AllBorrowed("'a"));
             self.push_str(", ");
         }
         self.src.push_str("), (");
@@ -423,7 +429,7 @@ impl Generator for Wasmtime {
 
         self.src.push_str("instance.get_typed_func::<(");
         for (_, ty) in func.params.iter() {
-            self.print_ty(iface, ty, TypeMode::Owned);
+            self.print_ty(iface, ty, TypeMode::AllBorrowed("'_"));
             self.push_str(", ");
         }
 
@@ -486,8 +492,8 @@ impl Generator for Wasmtime {
         for (module, exports) in sorted_iter(&mem::take(&mut self.guest_exports)) {
             let name = module.to_upper_camel_case();
 
-            uwrite!(self.src, "pub struct {}<T> {{\n", name);
-            self.push_str("_phantom: std::marker::PhantomData<T>,");
+            uwrite!(self.src, "pub struct {}<'a, T> {{\n", name);
+            self.push_str("_phantom: std::marker::PhantomData<&'a T>,");
             for (name, (ty, _)) in exports.fields.iter() {
                 self.push_str(name);
                 self.push_str(": ");
@@ -495,7 +501,7 @@ impl Generator for Wasmtime {
                 self.push_str(",\n");
             }
             self.push_str("}\n");
-            uwrite!(self.src, "impl<T> {}<T> {{\n", name);
+            uwrite!(self.src, "impl<'a, T> {}<'a, T> {{\n", name);
 
             self.push_str(&format!(
                 "
