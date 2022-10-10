@@ -46,20 +46,6 @@ class MyImports:
     def string_roundtrip(self, a: str) -> str:
         return a
 
-    def unaligned_roundtrip1(self, a: List[int], b: List[int], c: List[int], d: List[i.Flag32], e: List[i.Flag64]) -> None:
-        assert(a == [1])
-        assert(b == [2])
-        assert(c == [3])
-        assert(d == [i.Flag32.B8])
-        assert(e == [i.Flag64.B9])
-
-    def unaligned_roundtrip2(self, a: List[i.UnalignedRecord], b: List[float], c: List[float], d: List[str], e: List[bytes]) -> None:
-          assert(a == [i.UnalignedRecord(a=10, b=11)])
-          assert(b == [100.0])
-          assert(c == [101.0])
-          assert(d == ['foo'])
-          assert(e == [b'\x66'])
-
     def list_minmax8(self, a: bytes, b: List[int]) -> Tuple[bytes, List[int]]:
         assert(a == b'\x00\xff')
         assert(b == [-(1 << (8 - 1)), (1 << (8 - 1)) - 1])

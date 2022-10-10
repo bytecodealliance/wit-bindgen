@@ -29,6 +29,38 @@ impl Imports for MyImports {
     fn roundtrip_enum(&mut self, _: imports::E) -> imports::E {
         unreachable!()
     }
+
+    fn unaligned_roundtrip1(
+        &mut self,
+        u16s: Vec<u16>,
+        u32s: Vec<u32>,
+        u64s: Vec<u64>,
+        flag32s: Vec<Flag32>,
+        flag64s: Vec<Flag64>,
+    ) {
+        assert_eq!(u16s, [1]);
+        assert_eq!(u32s, [2]);
+        assert_eq!(u64s, [3]);
+        assert_eq!(flag32s, [Flag32::B8]);
+        assert_eq!(flag64s, [Flag64::B9]);
+    }
+
+    fn unaligned_roundtrip2(
+        &mut self,
+        records: Vec<UnalignedRecord>,
+        f32s: Vec<f32>,
+        f64s: Vec<f64>,
+        strings: Vec<String>,
+        lists: Vec<Vec<u8>>,
+    ) {
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].a, 10);
+        assert_eq!(records[0].b, 11);
+        assert_eq!(f32s, [100.0]);
+        assert_eq!(f64s, [101.0]);
+        assert_eq!(strings, ["foo"]);
+        assert_eq!(lists, [&[102][..]]);
+    }
 }
 
 wit_bindgen_host_wasmtime_rust::import!("../../tests/runtime/invalid/exports.wit");
@@ -74,6 +106,9 @@ fn run(wasm: &str) -> Result<()> {
         exports.invalid_enum(&mut store),
         "invalid discriminant for `E`",
     )?;
+
+    assert_err(exports.test_unaligned(&mut store), "is not aligned")?;
+
     return Ok(());
 
     fn assert_err(result: Result<(), Trap>, err: &str) -> Result<()> {

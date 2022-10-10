@@ -1,10 +1,6 @@
 wit_bindgen_guest_rust::import!("../../tests/runtime/lists/imports.wit");
 wit_bindgen_guest_rust::export!("../../tests/runtime/lists/exports.wit");
 
-use std::alloc::{self, Layout};
-use std::mem;
-use std::ptr;
-
 struct Exports;
 
 impl exports::Exports for Exports {
@@ -34,73 +30,6 @@ impl exports::Exports for Exports {
         assert_eq!(string_roundtrip(""), "");
         assert_eq!(string_roundtrip("hello"), "hello");
         assert_eq!(string_roundtrip("hello ⚑ world"), "hello ⚑ world");
-
-        struct Unaligned<T: Copy> {
-            alloc: *mut u8,
-            _marker: std::marker::PhantomData<T>,
-        }
-
-        impl<T: Copy> Unaligned<T> {
-            fn layout() -> Layout {
-                Layout::from_size_align(2 * mem::size_of::<T>(), 8).unwrap()
-            }
-
-            fn new(data: T) -> Unaligned<T> {
-                unsafe {
-                    let alloc = alloc::alloc(Self::layout());
-                    assert!(!alloc.is_null());
-                    ptr::write_unaligned(alloc.add(1).cast(), data);
-                    Unaligned {
-                        alloc,
-                        _marker: Default::default(),
-                    }
-                }
-            }
-
-            fn as_slice(&self) -> *const [T] {
-                unsafe { ptr::slice_from_raw_parts(self.alloc.add(1).cast(), 1) }
-            }
-        }
-
-        impl<T: Copy> Drop for Unaligned<T> {
-            fn drop(&mut self) {
-                unsafe {
-                    alloc::dealloc(self.alloc, Self::layout());
-                }
-            }
-        }
-
-        unsafe {
-            let u16s = Unaligned::new(1);
-            let u32s = Unaligned::new(2);
-            let u64s = Unaligned::new(3);
-            let flag32s = Unaligned::new(Flag32::B8);
-            let flag64s = Unaligned::new(Flag64::B9);
-            let records = Unaligned::new(UnalignedRecord { a: 10, b: 11 });
-            let f32s = Unaligned::new(100.0);
-            let f64s = Unaligned::new(101.0);
-            let strings = Unaligned::new("foo");
-            let lists = Unaligned::new(&[102][..]);
-            // Technically this is UB because we're creating safe slices from
-            // unaligned pointers, but we're hoping that because we're just passing
-            // off pointers to an import through a safe import we can get away with
-            // this. If this ever becomes a problem we'll just need to call the raw
-            // import with raw integers.
-            unaligned_roundtrip1(
-                &*u16s.as_slice(),
-                &*u32s.as_slice(),
-                &*u64s.as_slice(),
-                &*flag32s.as_slice(),
-                &*flag64s.as_slice(),
-            );
-            unaligned_roundtrip2(
-                &*records.as_slice(),
-                &*f32s.as_slice(),
-                &*f64s.as_slice(),
-                &*strings.as_slice(),
-                &*lists.as_slice(),
-            );
-        }
 
         assert_eq!(
             list_minmax8(&[u8::MIN, u8::MAX], &[i8::MIN, i8::MAX]),
