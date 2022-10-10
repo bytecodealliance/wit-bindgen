@@ -643,8 +643,10 @@ pub trait RustGenerator {
             self.push_str("{\n");
             for (case_name, component_name, docs, payload) in cases.clone() {
                 self.rustdoc(docs);
-                if let Some(n) = component_name {
-                    self.push_str(&format!("#[component(name = \"{}\")] ", n));
+                if derive_component.is_some() {
+                    if let Some(n) = component_name {
+                        self.push_str(&format!("#[component(name = \"{}\")] ", n));
+                    }
                 }
                 self.push_str(&case_name);
                 if let Some(ty) = payload {
