@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 wit_bindgen_host_wasmtime_rust::export!("../../tests/runtime/unions/imports.wit");
 
 use imports::*;
@@ -91,7 +93,7 @@ fn run(wasm: &str) -> Result<()> {
     use exports::*;
 
     let (exports, mut store) = crate::instantiate(
-        wasm,im finding all kin
+        wasm,
         |linker| imports::add_to_linker(linker, |cx| -> &mut MyImports { &mut cx.imports }),
         |store, module, linker| Exports::instantiate(store, module, linker),
     )?;
@@ -292,7 +294,6 @@ fn run(wasm: &str) -> Result<()> {
     assert!(matches!(
         exports.add_one_distinguishable_num(&mut store, DistinguishableNum::I64(0))?,
         DistinguishableNum::I64(1),
-
     ));
     Ok(())
 }
