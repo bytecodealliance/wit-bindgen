@@ -9,7 +9,7 @@ anyhow = { workspace = true }
 bitflags = { workspace = true }
 thiserror = "1.0"
 wasmtime = { workspace = true }
-wit-bindgen-host-wasmtime-rust-macro = { path = "../host-wasmtime-rust-macro", version = "0.2" }
+wit-bindgen-host-wasmtime-rust-macro = { path = "../host-wasmtime-rust-macro", version = "0.3.0" }
 tracing-lib = { version = "0.1.26", optional = true, package = 'tracing' }
 
 [features]

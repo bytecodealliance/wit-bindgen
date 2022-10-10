@@ -1357,7 +1357,7 @@ dependencies = [
 
 [[package]]
 name = "test-helpers"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "test-helpers-macros",
  "wit-bindgen-core",
@@ -1366,7 +1366,7 @@ dependencies = [
 
 [[package]]
 name = "test-helpers-macros"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "backtrace",
  "filetime",
@@ -1383,7 +1383,7 @@ dependencies = [
 
 [[package]]
 name = "test-rust-wasm"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "futures-util",
  "wit-bindgen-guest-rust",
@@ -2002,7 +2002,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2018,7 +2018,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "wit-parser",
@@ -2026,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-demo"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "wasmprinter",
  "wit-bindgen-core",
@@ -2042,7 +2042,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-guest-c"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2055,7 +2055,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-guest-rust"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "guest-rust-test-macro",
@@ -2069,7 +2069,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-guest-teavm-java"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "heck",
@@ -2079,7 +2079,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-host-js"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "heck",
@@ -2089,7 +2089,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-host-wasmtime-py"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "heck",
@@ -2099,7 +2099,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-host-wasmtime-rust"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2114,7 +2114,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-markdown"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "heck",
@@ -2124,7 +2124,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-rust-lib"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "heck",
  "wit-bindgen-core",
@@ -2132,7 +2132,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-guest-rust"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bitflags",
  "wit-bindgen-guest-rust-macro",
@@ -2140,7 +2140,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-guest-rust-macro"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "proc-macro2",
  "syn",
@@ -2150,7 +2150,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-host-wasmtime-rust"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "bitflags",
@@ -2162,7 +2162,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-host-wasmtime-rust-macro"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "proc-macro2",
  "syn",
@@ -2172,7 +2172,7 @@ dependencies = [
 
 [[package]]
 name = "wit-component"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "bitflags",
@@ -2191,7 +2191,7 @@ dependencies = [
 
 [[package]]
 name = "wit-parser"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "id-arena",
