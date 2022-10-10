@@ -5,6 +5,7 @@ use wit_bindgen_core::{wit_parser, Files, Generator};
 use wit_parser::Interface;
 
 #[derive(Debug, Parser)]
+#[command(version)]
 /// A utility that generates language bindings for WIT interfaces.
 struct Opt {
     #[command(subcommand)]
