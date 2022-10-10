@@ -220,7 +220,7 @@ impl Generator for Wasmtime {
         variant: &Variant,
         docs: &Docs,
     ) {
-        self.print_typedef_variant(iface, id, variant, docs);
+        self.print_typedef_variant(iface, id, variant, docs, true);
     }
 
     fn type_union(
@@ -231,7 +231,7 @@ impl Generator for Wasmtime {
         union: &Union,
         docs: &Docs,
     ) {
-        self.print_typedef_union(iface, id, union, docs);
+        self.print_typedef_union(iface, id, union, docs, true);
     }
 
     fn type_option(
@@ -257,7 +257,11 @@ impl Generator for Wasmtime {
     }
 
     fn type_enum(&mut self, _iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
-        self.print_typedef_enum(id, name, enum_, docs);
+        self.print_typedef_enum(id, name, enum_, docs,
+            &["#[derive(wasmtime::component::ComponentType, wasmtime::component::Lift, wasmtime::component::Lower)]".to_owned(),
+            "#[component(enum)]".to_owned()],
+            Box::new(|case| format!("#[component(name = \"{}\")]", case.name))
+        );
     }
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {

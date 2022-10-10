@@ -254,7 +254,7 @@ impl Generator for RustWasm {
         variant: &Variant,
         docs: &Docs,
     ) {
-        self.print_typedef_variant(iface, id, variant, docs);
+        self.print_typedef_variant(iface, id, variant, docs, false);
     }
 
     fn type_union(
@@ -265,7 +265,7 @@ impl Generator for RustWasm {
         union: &Union,
         docs: &Docs,
     ) {
-        self.print_typedef_union(iface, id, union, docs);
+        self.print_typedef_union(iface, id, union, docs, false);
     }
 
     fn type_option(
@@ -291,7 +291,7 @@ impl Generator for RustWasm {
     }
 
     fn type_enum(&mut self, _iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
-        self.print_typedef_enum(id, name, enum_, docs);
+        self.print_typedef_enum(id, name, enum_, docs, &[], Box::new(|_| String::new()));
     }
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
