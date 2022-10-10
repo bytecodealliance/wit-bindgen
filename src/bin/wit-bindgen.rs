@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use clap::{Parser};
+use clap::Parser;
 use lazy_static::lazy_static;
 use std::path::PathBuf;
 use wit_bindgen_core::{wit_parser, Files, Generator};

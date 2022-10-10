@@ -1,4 +1,4 @@
-use vergen::{Config, vergen};
+use vergen::{vergen, Config};
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
