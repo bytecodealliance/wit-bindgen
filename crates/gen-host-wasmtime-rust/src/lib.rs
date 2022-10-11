@@ -104,13 +104,8 @@ impl Wasmtime {
 impl RustGenerator for Wasmtime {
     fn default_param_mode(&self) -> TypeMode {
         if self.in_import {
-            // The default here is that only leaf values can be borrowed because
-            // otherwise lists and such need to be copied into our own memory.
-            TypeMode::LeafBorrowed("'a")
+            TypeMode::Owned
         } else {
-            // When we're calling wasm exports, however, there's no need to take
-            // any ownership of anything from the host so everything is borrowed
-            // in the parameter position.
             TypeMode::AllBorrowed("'a")
         }
     }
@@ -171,10 +166,7 @@ impl Generator for Wasmtime {
         record: &Record,
         docs: &Docs,
     ) {
-        self.src
-            .push_str("#[derive(wasmtime::component::ComponentType, wasmtime::component::Lift, wasmtime::component::Lower)]\n");
-        self.src.push_str("#[component(record)]\n");
-        self.print_typedef_record(iface, id, record, docs);
+        self.print_typedef_record(iface, id, record, docs, true);
     }
 
     fn type_tuple(

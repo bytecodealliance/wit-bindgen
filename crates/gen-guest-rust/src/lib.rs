@@ -188,7 +188,7 @@ impl Generator for RustWasm {
         record: &Record,
         docs: &Docs,
     ) {
-        self.print_typedef_record(iface, id, record, docs);
+        self.print_typedef_record(iface, id, record, docs, false);
     }
 
     fn type_tuple(

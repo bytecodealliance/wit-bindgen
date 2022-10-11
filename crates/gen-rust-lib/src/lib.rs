@@ -492,11 +492,22 @@ pub trait RustGenerator {
         id: TypeId,
         record: &Record,
         docs: &Docs,
+        derive_component: bool,
     ) {
         let info = self.info(id);
         for (name, mode) in self.modes_of(iface, id) {
             let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
+
+            if derive_component {
+                self.push_str("#[derive(wasmtime::component::ComponentType)]\n");
+                if self.lifetime_for(&info, mode).is_none() {
+                    self.push_str("#[derive(wasmtime::component::Lift)]\n");
+                }
+                self.push_str("#[derive(wasmtime::component::Lower)]\n");
+                self.push_str("#[component(record)]\n");
+            }
+
             if !info.owns_data() {
                 self.push_str("#[repr(C)]\n");
                 self.push_str("#[derive(Copy, Clone)]\n");
@@ -508,6 +519,9 @@ pub trait RustGenerator {
             self.push_str(" {\n");
             for field in record.fields.iter() {
                 self.rustdoc(&field.docs);
+                if derive_component {
+                    self.push_str(&format!("#[component(name = \"{}\")]\n", field.name));
+                }
                 self.push_str("pub ");
                 self.push_str(&to_rust_ident(&field.name));
                 self.push_str(": ");
