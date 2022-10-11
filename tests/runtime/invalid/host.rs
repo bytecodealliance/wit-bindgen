@@ -8,58 +8,52 @@ use wasmtime::Trap;
 pub struct MyImports;
 
 impl Imports for MyImports {
-    fn roundtrip_u8(&mut self, _: u8) -> u8 {
-        unreachable!()
+    // The following types are truncated when out-of-bounds
+    fn roundtrip_u8(&mut self, v: u8) -> u8 {
+        v
     }
-    fn roundtrip_s8(&mut self, _: i8) -> i8 {
-        unreachable!()
+    fn roundtrip_s8(&mut self, v: i8) -> i8 {
+        v
     }
-    fn roundtrip_u16(&mut self, _: u16) -> u16 {
-        unreachable!()
+    fn roundtrip_u16(&mut self, v: u16) -> u16 {
+        v
     }
-    fn roundtrip_s16(&mut self, _: i16) -> i16 {
-        unreachable!()
+    fn roundtrip_s16(&mut self, v: i16) -> i16 {
+        v
     }
+    fn roundtrip_bool(&mut self, v: bool) -> bool {
+        v
+    }
+
+    // These values trap when out-of-bounds
     fn roundtrip_char(&mut self, _: char) -> char {
-        unreachable!()
-    }
-    fn roundtrip_bool(&mut self, _: bool) -> bool {
         unreachable!()
     }
     fn roundtrip_enum(&mut self, _: imports::E) -> imports::E {
         unreachable!()
     }
 
+    // These values trap when unaligned
     fn unaligned_roundtrip1(
         &mut self,
-        u16s: Vec<u16>,
-        u32s: Vec<u32>,
-        u64s: Vec<u64>,
-        flag32s: Vec<Flag32>,
-        flag64s: Vec<Flag64>,
+        _u16s: Vec<u16>,
+        _u32s: Vec<u32>,
+        _u64s: Vec<u64>,
+        _flag32s: Vec<Flag32>,
+        _flag64s: Vec<Flag64>,
     ) {
-        assert_eq!(u16s, [1]);
-        assert_eq!(u32s, [2]);
-        assert_eq!(u64s, [3]);
-        assert_eq!(flag32s, [Flag32::B8]);
-        assert_eq!(flag64s, [Flag64::B9]);
+        unreachable!()
     }
 
     fn unaligned_roundtrip2(
         &mut self,
-        records: Vec<UnalignedRecord>,
-        f32s: Vec<f32>,
-        f64s: Vec<f64>,
-        strings: Vec<String>,
-        lists: Vec<Vec<u8>>,
+        _records: Vec<UnalignedRecord>,
+        _f32s: Vec<f32>,
+        _f64s: Vec<f64>,
+        _strings: Vec<String>,
+        _lists: Vec<Vec<u8>>,
     ) {
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].a, 10);
-        assert_eq!(records[0].b, 11);
-        assert_eq!(f32s, [100.0]);
-        assert_eq!(f64s, [101.0]);
-        assert_eq!(strings, ["foo"]);
-        assert_eq!(lists, [&[102][..]]);
+        unreachable!()
     }
 }
 
@@ -76,26 +70,12 @@ fn run(wasm: &str) -> Result<()> {
         |store, module, linker| Exports::instantiate(store, module, linker),
     )?;
 
-    assert_err(
-        exports.invalid_bool(&mut store),
-        "out-of-bounds value for bool",
-    )?;
-    assert_err(
-        exports.invalid_u8(&mut store),
-        "out-of-bounds integer conversion",
-    )?;
-    assert_err(
-        exports.invalid_s8(&mut store),
-        "out-of-bounds integer conversion",
-    )?;
-    assert_err(
-        exports.invalid_u16(&mut store),
-        "out-of-bounds integer conversion",
-    )?;
-    assert_err(
-        exports.invalid_s16(&mut store),
-        "out-of-bounds integer conversion",
-    )?;
+    exports.invalid_bool(&mut store)?;
+    exports.invalid_u8(&mut store)?;
+    exports.invalid_s8(&mut store)?;
+    exports.invalid_u16(&mut store)?;
+    exports.invalid_s16(&mut store)?;
+
     assert_err(
         exports.invalid_char(&mut store),
         "converted integer out of range for `char`",

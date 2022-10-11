@@ -50,39 +50,43 @@ extern "C" {
 struct Exports;
 
 impl exports::Exports for Exports {
+    fn invalid_bool() {
+        unsafe {
+            let b = roundtrip_bool(2);
+            assert_eq!(b, 1);
+        }
+    }
     fn invalid_u8() {
         unsafe {
-            roundtrip_u8(i32::MAX);
+            let u = roundtrip_u8(i32::MAX);
+            assert!(u <= (u8::MAX as i32));
+            assert!(u >= (u8::MIN as i32));
         }
-        unreachable!();
     }
     fn invalid_s8() {
         unsafe {
-            roundtrip_s8(i32::MAX);
+            let s = roundtrip_s8(i32::MAX);
+            assert!(s <= (i8::MAX as i32));
+            assert!(s >= (i8::MIN as i32));
         }
-        unreachable!();
     }
     fn invalid_u16() {
         unsafe {
-            roundtrip_u16(i32::MAX);
+            let u = roundtrip_u16(i32::MAX);
+            assert!(u <= (u16::MAX as i32));
+            assert!(u >= (u16::MIN as i32));
         }
-        unreachable!();
     }
     fn invalid_s16() {
         unsafe {
-            roundtrip_s16(i32::MAX);
+            let s = roundtrip_s16(i32::MAX);
+            assert!(s <= (i16::MAX as i32));
+            assert!(s >= (i16::MIN as i32));
         }
-        unreachable!();
     }
     fn invalid_char() {
         unsafe {
             roundtrip_char(0xd800);
-        }
-        unreachable!();
-    }
-    fn invalid_bool() {
-        unsafe {
-            roundtrip_bool(2);
         }
         unreachable!();
     }
