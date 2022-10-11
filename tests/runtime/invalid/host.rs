@@ -78,7 +78,7 @@ fn run(wasm: &str) -> Result<()> {
 
     assert_err(
         exports.invalid_bool(&mut store),
-        "invalid discriminant for `bool`",
+        "out-of-bounds value for bool",
     )?;
     assert_err(
         exports.invalid_u8(&mut store),
