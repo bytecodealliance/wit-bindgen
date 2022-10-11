@@ -98,11 +98,11 @@ fn run(wasm: &str) -> Result<()> {
     )?;
     assert_err(
         exports.invalid_char(&mut store),
-        "char value out of valid range",
+        "converted integer out of range for `char`",
     )?;
     assert_err(
         exports.invalid_enum(&mut store),
-        "invalid discriminant for `E`",
+        "unexpected discriminant: ",
     )?;
 
     assert_err(exports.test_unaligned(&mut store), "is not aligned")?;
