@@ -4,7 +4,7 @@ use wasm_encoder::{
     CodeSection, CustomSection, Encode, Function, FunctionSection, Module, TypeSection,
 };
 use wit_bindgen_core::{wit_parser::Interface, Direction};
-use wit_component::InterfaceEncoder;
+use wit_component::ComponentEncoder;
 
 pub fn linking_symbol(iface: &Interface, direction: Direction) -> String {
     format!(
@@ -31,6 +31,20 @@ pub fn object(iface: &Interface, direction: Direction) -> Result<Vec<u8>> {
     code.function(&Function::new([]));
     module.section(&code);
 
+    let mut encoder = ComponentEncoder::default();
+    encoder = match direction {
+        Direction::Import => encoder.imports([iface.clone()])?,
+        Direction::Export => encoder.interface(iface.clone())?,
+    };
+    let data = encoder
+        .types_only(true)
+        .encode()
+        .with_context(|| format!("translating interface {} to component type", iface.name))?;
+
+    // The custom section name here must start with "component-type" but
+    // otherwise is attempted to be unique here to ensure that this doesn't get
+    // concatenated to other custom sections by LLD by accident since LLD will
+    // concatenate custom sections of the same name.
     let name = format!(
         "component-type:{}:{}",
         match direction {
@@ -39,9 +53,7 @@ pub fn object(iface: &Interface, direction: Direction) -> Result<Vec<u8>> {
         },
         iface.name
     );
-    let data = InterfaceEncoder::new(iface)
-        .encode()
-        .with_context(|| format!("translating interface {} to component type", iface.name))?;
+
     // Add our custom section
     module.section(&CustomSection {
         name: &name,
