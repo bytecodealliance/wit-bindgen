@@ -190,7 +190,8 @@ impl Generator for Wasmtime {
     ) {
         self.rustdoc(docs);
         self.src.push_str("wasmtime::component::flags!(\n");
-        self.src.push_str(&format!("{} {{\n", name.to_camel_case()));
+        self.src
+            .push_str(&format!("{} {{\n", name.to_upper_camel_case()));
         for flag in flags.flags.iter() {
             // TODO wasmtime-component-macro doesnt support docs for flags rn
             uwrite!(

@@ -784,14 +784,8 @@ pub trait RustGenerator {
         self.push_str(&format!("pub enum {} {{\n", name.to_upper_camel_case()));
         for case in enum_.cases.iter() {
             self.rustdoc(&case.docs);
-<<<<<<< HEAD
-            self.push_str(&case.name.to_upper_camel_case());
-||||||| constructed merge base
-            self.push_str(&case.name.to_camel_case());
-=======
             self.push_str(&case_attr(case));
-            self.push_str(&case.name.to_camel_case());
->>>>>>> correctly adding a Lift derive was pretty invasive
+            self.push_str(&case.name.to_upper_camel_case());
             self.push_str(",\n");
         }
         self.push_str("}\n");
