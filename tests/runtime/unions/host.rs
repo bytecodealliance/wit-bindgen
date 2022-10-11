@@ -28,10 +28,10 @@ impl Imports for MyImports {
             AllFloats::F64(n) => AllFloats::F64(n + 1.0),
         }
     }
-    fn replace_first_char(&mut self, text: AllTextResult, c: char) -> AllTextResult {
+    fn replace_first_char(&mut self, text: AllText, c: char) -> AllText {
         match text {
-            AllTextResult::Char(_) => AllTextResult::Char(c),
-            AllTextResult::String(t) => AllTextResult::String(format!("{}{}", c, &t[1..])),
+            AllText::Char(_) => AllText::Char(c),
+            AllText::String(t) => AllText::String(format!("{}{}", c, &t[1..])),
         }
     }
     fn identify_integer(&mut self, num: AllIntegers) -> u8 {
@@ -53,10 +53,10 @@ impl Imports for MyImports {
             AllFloats::F64 { .. } => 1,
         }
     }
-    fn identify_text(&mut self, text: AllTextResult) -> u8 {
+    fn identify_text(&mut self, text: AllText) -> u8 {
         match text {
-            AllTextResult::Char { .. } => 0,
-            AllTextResult::String { .. } => 1,
+            AllText::Char { .. } => 0,
+            AllText::String { .. } => 1,
         }
     }
     fn identify_duplicated(&mut self, dup: DuplicatedS32) -> u8 {

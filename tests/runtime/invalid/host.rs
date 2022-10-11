@@ -1,6 +1,6 @@
 wit_bindgen_host_wasmtime_rust::export!("../../tests/runtime/invalid/imports.wit");
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use imports::*;
 use wasmtime::Trap;
 
@@ -71,11 +71,9 @@ fn run(wasm: &str) -> Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
         |linker| {
-            imports::add_to_linker(linker, |cx: &mut crate::Context<MyImports, _>| {
-                &mut cx.imports
-            })
+            imports::add_to_linker(linker, |cx: &mut crate::Context<MyImports>| &mut cx.imports)
         },
-        |store, module, linker| Exports::instantiate(store, module, linker, |cx| &mut cx.exports),
+        |store, module, linker| Exports::instantiate(store, module, linker),
     )?;
 
     assert_err(
@@ -111,11 +109,15 @@ fn run(wasm: &str) -> Result<()> {
 
     return Ok(());
 
-    fn assert_err(result: Result<(), Trap>, err: &str) -> Result<()> {
+    fn assert_err(result: Result<(), anyhow::Error>, err: &str) -> Result<()> {
         match result {
             Ok(()) => anyhow::bail!("export didn't trap"),
-            Err(e) if e.to_string().contains(err) => Ok(()),
-            Err(e) => Err(e.into()),
+            Err(e) => match e.downcast_ref::<Trap>() {
+                Some(e) if e.to_string().contains(err) => Ok(()),
+                Some(_) | None => {
+                    Err(e).with_context(|| format!("expected trap containing \"{}\"", err))
+                }
+            },
         }
     }
 }
