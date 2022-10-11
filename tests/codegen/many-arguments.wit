@@ -15,10 +15,6 @@ many-args: func(
   a14: u64,
   a15: u64,
   a16: u64,
-  a17: u64,
-  a18: u64,
-  a19: u64,
-  a20: u64,
 )
 
 record big-struct {
