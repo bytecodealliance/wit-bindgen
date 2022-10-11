@@ -381,9 +381,6 @@ impl Generator for Wasmtime {
         for (i, _) in func.params.iter().enumerate() {
             uwrite!(self.src, "arg{}, ", i);
         }
-
-        // FIXME we need to call post_return before propogating this trap
-        // or should this be something the runtime does for us??
         uwrite!(self.src, "))?;\n");
 
         uwrite!(

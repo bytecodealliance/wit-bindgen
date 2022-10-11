@@ -62,13 +62,17 @@ wit_bindgen_host_wasmtime_rust::import!("../../tests/runtime/invalid/exports.wit
 fn run(wasm: &str) -> Result<()> {
     use exports::*;
 
-    let (exports, mut store) = crate::instantiate(
-        wasm,
-        |linker| {
-            imports::add_to_linker(linker, |cx: &mut crate::Context<MyImports>| &mut cx.imports)
-        },
-        |store, module, linker| Exports::instantiate(store, module, linker),
-    )?;
+    let mkstore = || {
+        crate::instantiate(
+            wasm,
+            |linker| {
+                imports::add_to_linker(linker, |cx: &mut crate::Context<MyImports>| &mut cx.imports)
+            },
+            |store, module, linker| Exports::instantiate(store, module, linker),
+        )
+    };
+
+    let (exports, mut store) = mkstore()?;
 
     exports.invalid_bool(&mut store)?;
     exports.invalid_u8(&mut store)?;
@@ -80,11 +84,15 @@ fn run(wasm: &str) -> Result<()> {
         exports.invalid_char(&mut store),
         "converted integer out of range for `char`",
     )?;
+
+    // After a trap, can't re-enter instance, so create a new one:
+    let (exports, mut store) = mkstore()?;
     assert_err(
         exports.invalid_enum(&mut store),
         "unexpected discriminant: ",
     )?;
 
+    let (exports, mut store) = mkstore()?;
     assert_err(exports.test_unaligned(&mut store), "is not aligned")?;
 
     return Ok(());
