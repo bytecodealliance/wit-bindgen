@@ -52,7 +52,7 @@ async function run() {
     },
   };
   let instance: WebAssembly.Instance;
-  addImportsToImports(importObj, imports, name => instance.exports[name]);
+  addImportsToImports(importObj, imports);
   const wasi = addWasiToImports(importObj);
 
   const wasm = new Exports();
