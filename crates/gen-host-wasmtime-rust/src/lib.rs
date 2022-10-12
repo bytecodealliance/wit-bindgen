@@ -45,11 +45,6 @@ pub struct Opts {
     /// Whether or not to emit `tracing` macro calls on function entry/exit.
     #[cfg_attr(feature = "clap", arg(long))]
     pub tracing: bool,
-
-    /// A flag to indicate that all trait methods in imports should return a
-    /// custom trait-defined error. Applicable for import bindings.
-    #[cfg_attr(feature = "clap", arg(long))]
-    pub custom_error: bool,
 }
 
 impl Opts {
@@ -314,7 +309,7 @@ impl Generator for Wasmtime {
                 "
                     let span = wit_bindgen_host_wasmtime_rust::tracing::span!(
                         wit_bindgen_host_wasmtime_rust::tracing::Level::TRACE,
-                        \"wit-bindgen abi\",
+                        \"wit-bindgen export\",
                         module = \"{}\",
                         function = \"{}\",
                     );
@@ -368,6 +363,21 @@ impl Generator for Wasmtime {
         self.src.push_str(") -> anyhow::Result<");
         self.print_result_ty(iface, &func.results, TypeMode::Owned);
         self.src.push_str("> {\n");
+
+        if self.opts.tracing {
+            self.src.push_str(&format!(
+                "
+                    let span = wit_bindgen_host_wasmtime_rust::tracing::span!(
+                        wit_bindgen_host_wasmtime_rust::tracing::Level::TRACE,
+                        \"wit-bindgen import\",
+                        module = \"{}\",
+                        function = \"{}\",
+                    );
+                    let _enter = span.enter();
+                ",
+                iface.name, func.name,
+            ));
+        }
 
         self.src.push_str("let (");
         for (i, _) in func.results.iter_types().enumerate() {

@@ -81,7 +81,6 @@ impl Parse for Opts {
                 match field.into_value() {
                     ConfigField::Interfaces(v) => interfaces = v,
                     ConfigField::Tracing(v) => opts.tracing = v,
-                    ConfigField::CustomError(v) => opts.custom_error = v,
                 }
             }
             if interfaces.is_empty() {
@@ -115,7 +114,6 @@ impl Parse for Opts {
 
 enum ConfigField {
     Interfaces(Vec<Interface>),
-    CustomError(bool),
     Tracing(bool),
 }
 
@@ -148,12 +146,6 @@ impl Parse for ConfigField {
                 interfaces.push(interface);
             }
             Ok(ConfigField::Interfaces(interfaces))
-        } else if l.peek(kw::custom_error) {
-            input.parse::<kw::custom_error>()?;
-            input.parse::<Token![:]>()?;
-            Ok(ConfigField::CustomError(
-                input.parse::<syn::LitBool>()?.value,
-            ))
         } else if l.peek(kw::tracing) {
             input.parse::<kw::tracing>()?;
             input.parse::<Token![:]>()?;
