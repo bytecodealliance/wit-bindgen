@@ -111,7 +111,7 @@ pub fn runtime_tests_wasmtime(_input: TokenStream) -> TokenStream {
                 mod #name {
                     include!(#host_file);
 
-                    #[test]
+                    #[test_log::test]
                     fn test() -> anyhow::Result<()> {
                         run(#component)
                     }
