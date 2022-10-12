@@ -485,21 +485,29 @@ impl Generator for RustWasm {
             ));
         }
 
-        let component_type = wit_component::InterfaceEncoder::new(iface)
-            .encode()
-            .expect(&format!(
-                "encoding interface {} as a component type",
-                iface.name
-            ));
+        self.src.push_str("#[cfg(target_arch = \"wasm32\")]\n");
+
+        // The custom section name here must start with "component-type" but
+        // otherwise is attempted to be unique here to ensure that this doesn't get
+        // concatenated to other custom sections by LLD by accident since LLD will
+        // concatenate custom sections of the same name.
         let direction = match dir {
             Direction::Import => "import",
             Direction::Export => "export",
         };
         let iface_name = &iface.name;
-
-        self.src.push_str("#[cfg(target_arch = \"wasm32\")]\n");
         self.src.push_str(&format!(
             "#[link_section = \"component-type:{direction}:{iface_name}\"]\n"
+        ));
+
+        let mut encoder = wit_component::ComponentEncoder::default();
+        encoder = match dir {
+            Direction::Import => encoder.imports([iface.clone()]).unwrap(),
+            Direction::Export => encoder.interface(iface.clone()).unwrap(),
+        };
+        let component_type = encoder.types_only(true).encode().expect(&format!(
+            "encoding interface {} as a component type",
+            iface.name
         ));
         self.src.push_str(&format!(
             "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",
