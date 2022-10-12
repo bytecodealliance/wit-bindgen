@@ -501,7 +501,7 @@ pub trait RustGenerator {
 
             if derive_component {
                 self.push_str("#[derive(wasmtime::component::ComponentType)]\n");
-                if self.lifetime_for(&info, mode).is_none() {
+                if lt.is_none() {
                     self.push_str("#[derive(wasmtime::component::Lift)]\n");
                 }
                 self.push_str("#[derive(wasmtime::component::Lower)]\n");
@@ -638,15 +638,15 @@ pub trait RustGenerator {
         for (name, mode) in self.modes_of(iface, id) {
             let name = name.to_upper_camel_case();
             self.rustdoc(docs);
+            let lt = self.lifetime_for(&info, mode);
             if let Some(derive_component) = derive_component {
                 self.push_str("#[derive(wasmtime::component::ComponentType)]\n");
-                if self.lifetime_for(&info, mode).is_none() {
+                if lt.is_none() {
                     self.push_str("#[derive(wasmtime::component::Lift)]\n");
                 }
                 self.push_str("#[derive(wasmtime::component::Lower)]\n");
                 self.push_str(&format!("#[component({})]\n", derive_component));
             }
-            let lt = self.lifetime_for(&info, mode);
             if !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
             } else {
