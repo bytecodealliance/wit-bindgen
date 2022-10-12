@@ -26,7 +26,7 @@ fn commit_info() {
     let mut next = || parts.next().unwrap();
     println!("cargo:rustc-env=CARGO_GIT_HASH={}", next());
     println!(
-        "cargo:rustc-env=CARGO_BUILD_INFO={}",
+        "cargo:rustc-env=CARGO_VERSION_INFO={}",
         format!("{} ({} {})", env!("CARGO_PKG_VERSION"), next(), next())
     );
 }
