@@ -4,9 +4,14 @@ use std::path::PathBuf;
 use wit_bindgen_core::{wit_parser, Files, Generator};
 use wit_parser::Interface;
 
+/// Helper for passing VERSION to opt.
+/// If CARGO_VERSION_INFO is set, use it, otherwise use CARGO_PKG_VERSION.
+fn version() -> &'static str {
+    option_env!("CARGO_VERSION_INFO").unwrap_or(env!("CARGO_PKG_VERSION"))
+}
+
 #[derive(Debug, Parser)]
-#[command(version)]
-/// A utility that generates language bindings for WIT interfaces.
+#[command(version = version())]
 struct Opt {
     #[command(subcommand)]
     category: Category,
