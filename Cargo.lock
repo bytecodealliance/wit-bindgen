@@ -2006,7 +2006,6 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
- "lazy_static",
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
  "wit-bindgen-gen-guest-rust",
