@@ -119,8 +119,8 @@ pub fn decode_interface_component(bytes: &[u8]) -> Result<ComponentInterfaces<'_
 
     for (name, ty) in info.imports.iter() {
         // Imports right now are only supported if they're an import of an
-        // instance and an instance is self-describing in the interface that it
-        // represents.
+        // instance. The instance is expected to export only functions and types
+        // where types are named types used in functions.
         let ty = match *ty {
             ComponentTypeRef::Instance(i) => match info.types.type_at(i, false).unwrap() {
                 types::Type::ComponentInstance(i) => i,
