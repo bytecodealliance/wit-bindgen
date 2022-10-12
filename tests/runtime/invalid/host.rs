@@ -34,6 +34,7 @@ impl Imports for MyImports {
     }
 
     // These values trap when unaligned
+    /*
     fn unaligned_roundtrip1(
         &mut self,
         _u16s: Vec<u16>,
@@ -55,6 +56,7 @@ impl Imports for MyImports {
     ) {
         unreachable!()
     }
+    */
 }
 
 wit_bindgen_host_wasmtime_rust::import!("../../tests/runtime/invalid/exports.wit");
@@ -92,8 +94,10 @@ fn run(wasm: &str) -> Result<()> {
         "unexpected discriminant: ",
     )?;
 
+    /*
     let (exports, mut store) = mkstore()?;
     assert_err(exports.test_unaligned(&mut store), "is not aligned")?;
+    */
 
     return Ok(());
 

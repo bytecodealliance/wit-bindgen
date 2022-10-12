@@ -28,7 +28,6 @@ flags flag64 {
   b56, b57, b58, b59, b60, b61, b62, b63,
 }
 
-unaligned-roundtrip1: func(a: list<u16>, b: list<u32>, c: list<u64>, d: list<flag32>, e: list<flag64>)
-
-record unaligned-record { a: u32, b: u64 }
-unaligned-roundtrip2: func(a: list<unaligned-record>, b: list<float32>, c: list<float64>, d: list<string>, e: list<list<u8>>)
+// unaligned-roundtrip1: func(a: list<u16>, b: list<u32>, c: list<u64>, d: list<flag32>, e: list<flag64>)
+// record unaligned-record { a: u32, b: u64 }
+// unaligned-roundtrip2: func(a: list<unaligned-record>, b: list<float32>, c: list<float64>, d: list<string>, e: list<list<u8>>)

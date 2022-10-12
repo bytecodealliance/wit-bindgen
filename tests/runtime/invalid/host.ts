@@ -14,6 +14,7 @@ async function run() {
     roundtripBool(x) { throw new Error('unreachable'); },
     roundtripChar(x) { throw new Error('unreachable'); },
     roundtripEnum(x) { throw new Error('unreachable'); },
+      /*
     unalignedRoundtrip1(u16, u32, u64, flag32, flag64) {
       assert.deepStrictEqual(Array.from(u16), [1]);
       assert.deepStrictEqual(Array.from(u32), [2]);
@@ -42,6 +43,7 @@ async function run() {
       assert.deepStrictEqual(string, ['foo']);
       assert.deepStrictEqual(list, [new Uint8Array([102])]);
     },
+      */
 
   };
   let instance: WebAssembly.Instance;
@@ -60,7 +62,9 @@ async function run() {
   assert.throws(() => wasm.invalidS16(), /must be between/);
   assert.throws(() => wasm.invalidChar(), /not a valid char/);
   assert.throws(() => wasm.invalidEnum(), /invalid discriminant specified for E/);
-  assert.throws(() => wasm.testImports(), /is not aligned/);
+    /*
+  assert.throws(() => wasm.testUnaligned(), /is not aligned/);
+    */
 }
 
 await run()

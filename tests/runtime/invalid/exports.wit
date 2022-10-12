@@ -6,4 +6,4 @@ invalid-char: func()
 invalid-bool: func()
 invalid-enum: func()
 
-test-unaligned: func()
+// test-unaligned: func()

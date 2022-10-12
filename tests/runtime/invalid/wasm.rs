@@ -17,6 +17,7 @@ extern "C" {
     fn roundtrip_char(a: i32) -> i32;
     #[link_name = "roundtrip-enum"]
     fn roundtrip_enum(a: i32) -> i32;
+    /*
     #[allow(improper_ctypes)]
     #[link_name = "unaligned-roundtrip1"]
     fn unaligned_roundtrip1(
@@ -45,6 +46,7 @@ extern "C" {
         _: *const &[u64],
         _: usize,
     );
+    */
 }
 
 struct Exports;
@@ -97,83 +99,85 @@ impl exports::Exports for Exports {
         unreachable!();
     }
 
-    fn test_unaligned() {
-        use imports::{Flag32, Flag64, UnalignedRecord};
-        use std::alloc::{self, Layout};
-        use std::mem;
-        use std::ptr;
+    /*
+        fn test_unaligned() {
+            use imports::{Flag32, Flag64, UnalignedRecord};
+            use std::alloc::{self, Layout};
+            use std::mem;
+            use std::ptr;
 
-        struct Unaligned<T: Copy> {
-            alloc: *mut u8,
-            _marker: std::marker::PhantomData<T>,
-        }
-
-        impl<T: Copy> Unaligned<T> {
-            fn layout() -> Layout {
-                Layout::from_size_align(2 * mem::size_of::<T>(), 8).unwrap()
+            struct Unaligned<T: Copy> {
+                alloc: *mut u8,
+                _marker: std::marker::PhantomData<T>,
             }
 
-            fn new(data: T) -> Unaligned<T> {
-                unsafe {
-                    let alloc = alloc::alloc(Self::layout());
-                    assert!(!alloc.is_null());
-                    ptr::write_unaligned(alloc.add(1).cast(), data);
-                    Unaligned {
-                        alloc,
-                        _marker: Default::default(),
+            impl<T: Copy> Unaligned<T> {
+                fn layout() -> Layout {
+                    Layout::from_size_align(2 * mem::size_of::<T>(), 8).unwrap()
+                }
+
+                fn new(data: T) -> Unaligned<T> {
+                    unsafe {
+                        let alloc = alloc::alloc(Self::layout());
+                        assert!(!alloc.is_null());
+                        ptr::write_unaligned(alloc.add(1).cast(), data);
+                        Unaligned {
+                            alloc,
+                            _marker: Default::default(),
+                        }
+                    }
+                }
+
+                fn as_abi(&self) -> (*const T, usize) {
+                    unsafe { (self.alloc.add(1).cast(), 1) }
+                }
+            }
+
+            impl<T: Copy> Drop for Unaligned<T> {
+                fn drop(&mut self) {
+                    unsafe {
+                        alloc::dealloc(self.alloc, Self::layout());
                     }
                 }
             }
 
-            fn as_abi(&self) -> (*const T, usize) {
-                unsafe { (self.alloc.add(1).cast(), 1) }
+            unsafe {
+                let u16s = Unaligned::new(1);
+                let u32s = Unaligned::new(2);
+                let u64s = Unaligned::new(3);
+                let flag32s = Unaligned::new(Flag32::B8);
+                let flag64s = Unaligned::new(Flag64::B9);
+                let records = Unaligned::new(UnalignedRecord { a: 10, b: 11 });
+                let f32s = Unaligned::new(100.0);
+                let f64s = Unaligned::new(101.0);
+                let strings = Unaligned::new("foo");
+                let lists = Unaligned::new(&[102][..]);
+
+                unaligned_roundtrip1(
+                    u16s.as_abi().0,
+                    u16s.as_abi().1,
+                    u32s.as_abi().0,
+                    u32s.as_abi().1,
+                    u64s.as_abi().0,
+                    u64s.as_abi().1,
+                    flag32s.as_abi().0,
+                    flag32s.as_abi().1,
+                    flag64s.as_abi().0,
+                    flag64s.as_abi().1,
+                );
+                unaligned_roundtrip2(
+                    records.as_abi().0,
+                    records.as_abi().1,
+                    f32s.as_abi().0,
+                    f32s.as_abi().1,
+                    f64s.as_abi().0,
+                    f64s.as_abi().1,
+                    strings.as_abi().0,
+                    strings.as_abi().1,
+                    lists.as_abi().0,
+                    lists.as_abi().1,
+                );
             }
         }
-
-        impl<T: Copy> Drop for Unaligned<T> {
-            fn drop(&mut self) {
-                unsafe {
-                    alloc::dealloc(self.alloc, Self::layout());
-                }
-            }
-        }
-
-        unsafe {
-            let u16s = Unaligned::new(1);
-            let u32s = Unaligned::new(2);
-            let u64s = Unaligned::new(3);
-            let flag32s = Unaligned::new(Flag32::B8);
-            let flag64s = Unaligned::new(Flag64::B9);
-            let records = Unaligned::new(UnalignedRecord { a: 10, b: 11 });
-            let f32s = Unaligned::new(100.0);
-            let f64s = Unaligned::new(101.0);
-            let strings = Unaligned::new("foo");
-            let lists = Unaligned::new(&[102][..]);
-
-            unaligned_roundtrip1(
-                u16s.as_abi().0,
-                u16s.as_abi().1,
-                u32s.as_abi().0,
-                u32s.as_abi().1,
-                u64s.as_abi().0,
-                u64s.as_abi().1,
-                flag32s.as_abi().0,
-                flag32s.as_abi().1,
-                flag64s.as_abi().0,
-                flag64s.as_abi().1,
-            );
-            unaligned_roundtrip2(
-                records.as_abi().0,
-                records.as_abi().1,
-                f32s.as_abi().0,
-                f32s.as_abi().1,
-                f64s.as_abi().0,
-                f64s.as_abi().1,
-                strings.as_abi().0,
-                strings.as_abi().1,
-                lists.as_abi().0,
-                lists.as_abi().1,
-            );
-        }
-    }
+    */
 }

@@ -27,19 +27,19 @@ class MyImports(Imports):
     def roundtrip_enum(self, x: i.E) -> i.E:
         raise Exception('unreachable')
 
-    def unaligned_roundtrip1(self, a: List[int], b: List[int], c: List[int], d: List[i.Flag32], e: List[i.Flag64]) -> None:
-        assert(a == [1])
-        assert(b == [2])
-        assert(c == [3])
-        assert(d == [i.Flag32.B8])
-        assert(e == [i.Flag64.B9])
+#    def unaligned_roundtrip1(self, a: List[int], b: List[int], c: List[int], d: List[i.Flag32], e: List[i.Flag64]) -> None:
+#        assert(a == [1])
+#        assert(b == [2])
+#        assert(c == [3])
+#        assert(d == [i.Flag32.B8])
+#        assert(e == [i.Flag64.B9])
 
-    def unaligned_roundtrip2(self, a: List[i.UnalignedRecord], b: List[float], c: List[float], d: List[str], e: List[bytes]) -> None:
-          assert(a == [i.UnalignedRecord(a=10, b=11)])
-          assert(b == [100.0])
-          assert(c == [101.0])
-          assert(d == ['foo'])
-          assert(e == [b'\x66'])
+#    def unaligned_roundtrip2(self, a: List[i.UnalignedRecord], b: List[float], c: List[float], d: List[str], e: List[bytes]) -> None:
+#          assert(a == [i.UnalignedRecord(a=10, b=11)])
+#          assert(b == [100.0])
+#          assert(c == [101.0])
+#          assert(d == ['foo'])
+#          assert(e == [b'\x66'])
 
 
 def new_wasm(wasm_file: str) -> Tuple[wasmtime.Store, Exports]:
@@ -89,8 +89,8 @@ def run(wasm_file: str) -> None:
     assert_throws(lambda: wasm.invalid_char(store), 'not a valid char')
     (store, wasm) = new_wasm(wasm_file)
     assert_throws(lambda: wasm.invalid_enum(store), 'not a valid E')
-    (store, wasm) = new_wasm(wasm_file)
-    wasm.test_unaligned(store)
+#    (store, wasm) = new_wasm(wasm_file)
+#    wasm.test_unaligned(store)
 
 if __name__ == '__main__':
     run(sys.argv[1])
