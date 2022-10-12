@@ -61,6 +61,3 @@ wit-bindgen-gen-host-js = { path = 'crates/gen-host-js', features = ['clap'] }
 wit-bindgen-gen-guest-c = { path = 'crates/gen-guest-c', features = ['clap'] }
 wit-bindgen-gen-markdown = { path = 'crates/gen-markdown', features = ['clap'] }
 wit-bindgen-gen-guest-teavm-java = { path = 'crates/gen-guest-teavm-java', features = ['clap'] }
-
-[build-dependencies]
-git2 = "0.15"
