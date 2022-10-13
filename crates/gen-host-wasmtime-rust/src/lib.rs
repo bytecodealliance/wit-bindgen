@@ -507,17 +507,10 @@ impl Generator for Wasmtime {
                     /// Instantiates the provided `module` using the specified
                     /// parameters, wrapping up the result in a structure that
                     /// translates between wasm and the host.
-                    ///
-                    /// The `linker` provided will have intrinsics added to it
-                    /// automatically, so it's not necessary to call
-                    /// `add_to_linker` beforehand. This function will
-                    /// instantiate the `module` otherwise using `linker`, and
-                    /// both an instance of this structure and the underlying
-                    /// `wasmtime::Instance` will be returned.
                     pub fn instantiate<T>(
                         mut store: impl wasmtime::AsContextMut<Data = T>,
                         component: &wasmtime::component::Component,
-                        linker: &mut wasmtime::component::Linker<T>,
+                        linker: &wasmtime::component::Linker<T>,
                     ) -> anyhow::Result<(Self, wasmtime::component::Instance)> {{
                         let instance = linker.instantiate(&mut store, component)?;
                         Ok((Self::new(store, &instance)?, instance))

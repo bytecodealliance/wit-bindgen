@@ -19,6 +19,7 @@ fn default_config() -> Result<Config> {
     Ok(config)
 }
 
+#[derive(Default)]
 struct Context<I> {
     imports: I,
     testwasi: testwasi::TestWasi,
@@ -30,7 +31,7 @@ fn instantiate<I: Default, T>(
     mk_exports: impl FnOnce(
         &mut Store<Context<I>>,
         &Component,
-        &mut Linker<Context<I>>,
+        &Linker<Context<I>>,
     ) -> Result<(T, Instance)>,
 ) -> Result<(T, Store<Context<I>>)> {
     let engine = Engine::new(&default_config()?)?;
@@ -47,6 +48,6 @@ fn instantiate<I: Default, T>(
             testwasi: testwasi::TestWasi::default(),
         },
     );
-    let (exports, _instance) = mk_exports(&mut store, &module, &mut linker)?;
+    let (exports, _instance) = mk_exports(&mut store, &module, &linker)?;
     Ok((exports, store))
 }

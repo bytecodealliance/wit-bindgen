@@ -27,19 +27,35 @@ class MyImports(Imports):
     def roundtrip_enum(self, x: i.E) -> i.E:
         raise Exception('unreachable')
 
-#    def unaligned_roundtrip1(self, a: List[int], b: List[int], c: List[int], d: List[i.Flag32], e: List[i.Flag64]) -> None:
-#        assert(a == [1])
-#        assert(b == [2])
-#        assert(c == [3])
-#        assert(d == [i.Flag32.B8])
-#        assert(e == [i.Flag64.B9])
+    def unaligned1(self, x: List[int]) -> None:
+        raise Exception('unreachable')
 
-#    def unaligned_roundtrip2(self, a: List[i.UnalignedRecord], b: List[float], c: List[float], d: List[str], e: List[bytes]) -> None:
-#          assert(a == [i.UnalignedRecord(a=10, b=11)])
-#          assert(b == [100.0])
-#          assert(c == [101.0])
-#          assert(d == ['foo'])
-#          assert(e == [b'\x66'])
+    def unaligned2(self, x: List[int]) -> None:
+        raise Exception('unreachable')
+
+    def unaligned3(self, x: List[int]) -> None:
+        raise Exception('unreachable')
+
+    def unaligned4(self, x: List[i.Flag32]) -> None:
+        raise Exception('unreachable')
+
+    def unaligned5(self, x: List[i.Flag64]) -> None:
+        raise Exception('unreachable')
+
+    def unaligned6(self, x: List[i.UnalignedRecord]) -> None:
+        raise Exception('unreachable')
+
+    def unaligned7(self, x: List[float]) -> None:
+        raise Exception('unreachable')
+
+    def unaligned8(self, x: List[float]) -> None:
+        raise Exception('unreachable')
+
+    def unaligned9(self, x: List[str]) -> None:
+        raise Exception('unreachable')
+
+    def unaligned10(self, x: List[bytes]) -> None:
+        raise Exception('unreachable')
 
 
 def new_wasm(wasm_file: str) -> Tuple[wasmtime.Store, Exports]:
@@ -76,6 +92,7 @@ def run(wasm_file: str) -> None:
             print(actual)
             assert(msg in actual)
 
+    # FIXME(#376) these should succeed
     assert_throws(lambda: wasm.invalid_bool(store), 'discriminant for bool')
     (store, wasm) = new_wasm(wasm_file)
     assert_throws(lambda: wasm.invalid_u8(store), 'must be between')
@@ -85,12 +102,13 @@ def run(wasm_file: str) -> None:
     assert_throws(lambda: wasm.invalid_u16(store), 'must be between')
     (store, wasm) = new_wasm(wasm_file)
     assert_throws(lambda: wasm.invalid_s16(store), 'must be between')
+
     (store, wasm) = new_wasm(wasm_file)
     assert_throws(lambda: wasm.invalid_char(store), 'not a valid char')
     (store, wasm) = new_wasm(wasm_file)
     assert_throws(lambda: wasm.invalid_enum(store), 'not a valid E')
-#    (store, wasm) = new_wasm(wasm_file)
-#    wasm.test_unaligned(store)
+
+    # FIXME(#370) should call `unalignedN` and expect an error
 
 if __name__ == '__main__':
     run(sys.argv[1])
