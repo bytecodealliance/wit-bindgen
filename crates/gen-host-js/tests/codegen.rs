@@ -5,16 +5,16 @@ macro_rules! gen_test {
     ($name:ident $test:tt $dir:ident) => {
         #[test]
         fn $name() {
-            test_helpers::run_codegen_test(
+            drop(include_str!($test));
+            test_helpers::run_component_codegen_test(
                 "js",
-                std::path::Path::new($test)
-                    .file_stem()
-                    .unwrap()
-                    .to_str()
-                    .unwrap(),
-                include_str!($test),
+                $test.as_ref(),
                 test_helpers::Direction::$dir,
-                wit_bindgen_gen_host_js::Opts::default().build(),
+                |name, component, files| {
+                    wit_bindgen_gen_host_js::Opts::default()
+                        .generate(name, component, files)
+                        .unwrap()
+                },
                 super::verify,
             )
         }

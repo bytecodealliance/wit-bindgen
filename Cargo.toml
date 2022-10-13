@@ -28,6 +28,7 @@ env_logger = "0.9.1"
 
 wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", branch = "main" , features = ["component-model"] }
 wasmtime-wasi = { git = "https://github.com/bytecodealliance/wasmtime", branch = "main" }
+wasmtime-environ = { git = "https://github.com/bytecodealliance/wasmtime", branch = "main" }
 wasmprinter = "0.2.41"
 wasmparser = "0.92.0"
 wasm-encoder = "0.18.0"
@@ -62,3 +63,4 @@ wit-bindgen-gen-host-js = { path = 'crates/gen-host-js', features = ['clap'] }
 wit-bindgen-gen-guest-c = { path = 'crates/gen-guest-c', features = ['clap'] }
 wit-bindgen-gen-markdown = { path = 'crates/gen-markdown', features = ['clap'] }
 wit-bindgen-gen-guest-teavm-java = { path = 'crates/gen-guest-teavm-java', features = ['clap'] }
+wat = { workspace = true }

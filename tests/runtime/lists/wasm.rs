@@ -26,6 +26,10 @@ impl exports::Exports for Exports {
         assert_eq!(list_result2(), "hello!");
         assert_eq!(list_result3(), ["hello,", "world!"]);
 
+        assert_eq!(list_roundtrip(&[]), []);
+        assert_eq!(list_roundtrip(b"x"), b"x");
+        assert_eq!(list_roundtrip(b"hello"), b"hello");
+
         assert_eq!(string_roundtrip("x"), "x");
         assert_eq!(string_roundtrip(""), "");
         assert_eq!(string_roundtrip("hello"), "hello");

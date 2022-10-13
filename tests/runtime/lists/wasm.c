@@ -107,6 +107,30 @@ void exports_test_imports() {
   }
 
   {
+    imports_list_u8_t a, b;
+    a.len = 0;
+    a.ptr = (unsigned char*) "";
+    imports_list_roundtrip(&a, &b);
+    assert(b.len == a.len);
+    assert(memcmp(b.ptr, a.ptr, a.len) == 0);
+    imports_list_u8_free(&b);
+
+    a.len = 1;
+    a.ptr = (unsigned char*) "x";
+    imports_list_roundtrip(&a, &b);
+    assert(b.len == a.len);
+    assert(memcmp(b.ptr, a.ptr, a.len) == 0);
+    imports_list_u8_free(&b);
+
+    a.len = 5;
+    a.ptr = (unsigned char*) "hello";
+    imports_list_roundtrip(&a, &b);
+    assert(b.len == a.len);
+    assert(memcmp(b.ptr, a.ptr, a.len) == 0);
+    imports_list_u8_free(&b);
+  }
+
+  {
     imports_string_t a, b;
     imports_string_set(&a, "x");
     imports_string_roundtrip(&a, &b);

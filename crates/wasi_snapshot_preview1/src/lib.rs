@@ -81,6 +81,9 @@ pub extern "C" fn fd_write(
     mut iovs_len: usize,
     nwritten: *mut Size,
 ) -> Errno {
+    if fd != 1 {
+        unreachable();
+    }
     unsafe {
         // Advance to the first non-empty buffer.
         while iovs_len != 0 && (*iovs_ptr).buf_len == 0 {
@@ -115,4 +118,20 @@ pub extern "C" fn fd_close(fd: Fd) -> Errno {
 #[no_mangle]
 pub extern "C" fn proc_exit(rval: Exitcode) -> ! {
     unreachable()
+}
+
+#[no_mangle]
+pub extern "C" fn fd_fdstat_get(fd: Fd, fdstat: *mut Fdstat) -> Errno {
+    if fd != 1 {
+        unreachable();
+    }
+
+    unsafe {
+        (*fdstat).fs_filetype = FILETYPE_UNKNOWN;
+        (*fdstat).fs_flags = FDFLAGS_APPEND;
+        (*fdstat).fs_rights_base = RIGHTS_FD_WRITE;
+        (*fdstat).fs_rights_inheriting = RIGHTS_FD_WRITE;
+    }
+
+    ERRNO_SUCCESS
 }

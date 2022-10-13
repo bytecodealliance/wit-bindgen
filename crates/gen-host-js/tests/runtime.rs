@@ -2,26 +2,23 @@ use std::env;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use wit_bindgen_core::Generator;
 
-test_helpers::runtime_tests!("ts");
+test_helpers::runtime_component_tests!("ts");
 
-fn execute(name: &str, wasm: &Path, ts: &Path, imports: &Path, exports: &Path) {
-    let dir = test_helpers::test_directory("runtime", "wasmtime-py", name);
+fn execute(name: &str, lang: &str, wasm: &Path, ts: &Path) {
+    let dir = test_helpers::test_directory("runtime", "js", &format!("{name}-{lang}"));
+    let wasm = std::fs::read(wasm).unwrap();
 
     println!("OUT_DIR = {:?}", dir);
     println!("Generating bindings...");
-    // We call `generate_all` with exports from the imports.wit file, and
-    // imports from the exports.wit wit file. It's reversed because we're
-    // implementing the host side of these APIs.
-    let imports = wit_bindgen_core::wit_parser::Interface::parse_file(imports).unwrap();
-    let exports = wit_bindgen_core::wit_parser::Interface::parse_file(exports).unwrap();
     let mut files = Default::default();
     wit_bindgen_gen_host_js::Opts::default()
-        .build()
-        .generate_all(&[exports], &[imports], &mut files);
+        .generate(name, &wasm, &mut files)
+        .unwrap();
     for (file, contents) in files.iter() {
-        fs::write(dir.join(file), contents).unwrap();
+        let dst = dir.join(file);
+        std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
+        std::fs::write(&dst, contents).unwrap();
     }
 
     let (cmd, args) = if cfg!(windows) {
@@ -31,8 +28,7 @@ fn execute(name: &str, wasm: &Path, ts: &Path, imports: &Path, exports: &Path) {
     };
 
     fs::copy(ts, dir.join("host.ts")).unwrap();
-    fs::copy("tests/helpers.d.ts", dir.join("helpers.d.ts")).unwrap();
-    fs::copy("tests/helpers.js", dir.join("helpers.js")).unwrap();
+    fs::copy("tests/helpers.ts", dir.join("helpers.ts")).unwrap();
     let config = dir.join("tsconfig.json");
     fs::write(
         &config,
@@ -55,43 +51,23 @@ fn execute(name: &str, wasm: &Path, ts: &Path, imports: &Path, exports: &Path) {
     )
     .unwrap();
 
-    run(Command::new(cmd)
-        .args(args)
-        .arg("tsc")
-        .arg("--project")
-        .arg(&config));
-
-    // Currently there's mysterious uvwasi errors creating a `WASI` on Windows.
-    // Unsure what's happening so let's ignore these tests for now since there's
-    // not much Windows-specific here anyway.
-    if cfg!(windows) {
-        return;
-    }
+    test_helpers::run_command(
+        Command::new(cmd)
+            .args(args)
+            .arg("tsc")
+            .arg("--project")
+            .arg(&config),
+    );
 
     fs::write(dir.join("package.json"), "{\"type\":\"module\"}").unwrap();
     let mut path = Vec::new();
     path.push(env::current_dir().unwrap());
     path.push(dir.clone());
-    println!("{:?}", std::env::join_paths(&path));
-    run(Command::new("node")
-        .arg("--experimental-wasi-unstable-preview1")
-        .arg("--stack-trace-limit=1000")
-        .arg(dir.join("host.js"))
-        .env("NODE_PATH", std::env::join_paths(&path).unwrap())
-        .arg(wasm));
-}
-
-fn run(cmd: &mut Command) {
-    println!("running {:?}", cmd);
-    let output = cmd.output().expect("failed to executed");
-    println!("status: {}", output.status);
-    println!(
-        "stdout:\n  {}",
-        String::from_utf8_lossy(&output.stdout).replace("\n", "\n  ")
+    test_helpers::run_command(
+        Command::new("node")
+            .arg("--stack-trace-limit=1000")
+            .arg(dir.join("host.js"))
+            .env("NODE_PATH", std::env::join_paths(&path).unwrap())
+            .arg(dir),
     );
-    println!(
-        "stderr:\n  {}",
-        String::from_utf8_lossy(&output.stderr).replace("\n", "\n  ")
-    );
-    assert!(output.status.success());
 }

@@ -397,7 +397,11 @@ impl Source {
                 self.indent += 1;
             }
             if trimmed.starts_with('}') {
-                self.indent -= 1;
+                // Note that a `saturating_sub` is used here to prevent a panic
+                // here in the case of invalid code being generated in debug
+                // mode. It's typically easier to debug those issues through
+                // looking at the source code rather than getting a panic.
+                self.indent = self.indent.saturating_sub(1);
             }
             if i != lines.len() - 1 || src.ends_with("\n") {
                 self.newline();
@@ -524,5 +528,52 @@ mod tests {
     #[test]
     fn generator_is_object_safe() {
         fn _assert(_: &dyn Generator) {}
+    }
+}
+
+/// This is a possible replacement for the `Generator` trait above, currently
+/// only used by the JS bindings for generating bindings for a component.
+///
+/// The current plan is to see how things shake out with worlds and various
+/// other generators to see if everything can be updated to a less
+/// per-`*.wit`-file centric interface in the future. Even this will probably
+/// change for JS though. In any case it's something that was useful for JS and
+/// is suitable to replace otherwise at any time.
+pub trait InterfaceGenerator<'a> {
+    fn iface(&self) -> &'a Interface;
+
+    fn type_record(&mut self, id: TypeId, name: &str, record: &Record, docs: &Docs);
+    fn type_flags(&mut self, id: TypeId, name: &str, flags: &Flags, docs: &Docs);
+    fn type_tuple(&mut self, id: TypeId, name: &str, flags: &Tuple, docs: &Docs);
+    fn type_variant(&mut self, id: TypeId, name: &str, variant: &Variant, docs: &Docs);
+    fn type_option(&mut self, id: TypeId, name: &str, payload: &Type, docs: &Docs);
+    fn type_result(&mut self, id: TypeId, name: &str, result: &Result_, docs: &Docs);
+    fn type_union(&mut self, id: TypeId, name: &str, union: &Union, docs: &Docs);
+    fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs);
+    fn type_alias(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+    fn type_list(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+    fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
+
+    fn types(&mut self) {
+        for (id, ty) in self.iface().types.iter() {
+            let name = match &ty.name {
+                Some(name) => name,
+                None => continue,
+            };
+            match &ty.kind {
+                TypeDefKind::Record(record) => self.type_record(id, name, record, &ty.docs),
+                TypeDefKind::Flags(flags) => self.type_flags(id, name, flags, &ty.docs),
+                TypeDefKind::Tuple(tuple) => self.type_tuple(id, name, tuple, &ty.docs),
+                TypeDefKind::Enum(enum_) => self.type_enum(id, name, enum_, &ty.docs),
+                TypeDefKind::Variant(variant) => self.type_variant(id, name, variant, &ty.docs),
+                TypeDefKind::Option(t) => self.type_option(id, name, t, &ty.docs),
+                TypeDefKind::Result(r) => self.type_result(id, name, r, &ty.docs),
+                TypeDefKind::Union(u) => self.type_union(id, name, u, &ty.docs),
+                TypeDefKind::List(t) => self.type_list(id, name, t, &ty.docs),
+                TypeDefKind::Type(t) => self.type_alias(id, name, t, &ty.docs),
+                TypeDefKind::Future(_) => todo!("generate for future"),
+                TypeDefKind::Stream(_) => todo!("generate for stream"),
+            }
+        }
     }
 }

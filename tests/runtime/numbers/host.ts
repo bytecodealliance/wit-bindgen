@@ -1,6 +1,5 @@
-import { addImportsToImports, Imports } from "./imports.js";
-import { Exports } from "./exports.js";
-import { getWasm, addWasiToImports } from "./helpers.js";
+import { loadWasm, testwasi } from "./helpers.js";
+import { instantiate } from "./numbers.js";
 
 function assertEq(x: any, y: any) {
   if (x !== y)
@@ -13,28 +12,25 @@ function assert(x: boolean) {
 }
 
 async function run() {
-  const importObj = {};
   let scalar = 0;
-  addImportsToImports(importObj, {
-    roundtripU8(x) { return x; },
-    roundtripS8(x) { return x; },
-    roundtripU16(x) { return x; },
-    roundtripS16(x) { return x; },
-    roundtripU32(x) { return x; },
-    roundtripS32(x) { return x; },
-    roundtripU64(x) { return x; },
-    roundtripS64(x) { return x; },
-    roundtripFloat32(x) { return x; },
-    roundtripFloat64(x) { return x; },
-    roundtripChar(x) { return x; },
-    setScalar(x) { scalar = x; },
-    getScalar() { return scalar; },
+  const wasm = await instantiate(loadWasm, {
+    testwasi,
+    imports: {
+      roundtripU8(x) { return x; },
+      roundtripS8(x) { return x; },
+      roundtripU16(x) { return x; },
+      roundtripS16(x) { return x; },
+      roundtripU32(x) { return x; },
+      roundtripS32(x) { return x; },
+      roundtripU64(x) { return x; },
+      roundtripS64(x) { return x; },
+      roundtripFloat32(x) { return x; },
+      roundtripFloat64(x) { return x; },
+      roundtripChar(x) { return x; },
+      setScalar(x) { scalar = x; },
+      getScalar() { return scalar; },
+    },
   });
-  const wasi = addWasiToImports(importObj);
-
-  const wasm = new Exports();
-  await wasm.instantiate(getWasm(), importObj);
-  wasi.start(wasm.instance);
 
   wasm.testImports();
 

@@ -1,45 +1,37 @@
-import { addImportsToImports, Imports, MyErrno } from "./imports.js";
-import { Exports } from "./exports.js";
-import * as exports from "./exports.js";
-import { getWasm, addWasiToImports } from "./helpers.js";
+import { loadWasm, testwasi } from "./helpers.js";
+import { instantiate } from "./variants.js";
 // @ts-ignore
 import * as assert from 'assert';
 
 async function run() {
-  const importObj = {};
-  const imports: Imports = {
-    roundtripOption(x) { return x; },
-    roundtripResult(x) {
-      if (x.tag == 'ok') {
-        return { tag: 'ok', val: x.val };
-      } else {
-        return { tag: 'err', val: Math.round(x.val) };
-      }
+  const wasm = await instantiate(loadWasm, {
+    testwasi,
+    imports: {
+      roundtripOption(x) { return x; },
+      roundtripResult(x) {
+        if (x.tag == 'ok') {
+          return { tag: 'ok', val: x.val };
+        } else {
+          return { tag: 'err', val: Math.round(x.val) };
+        }
+      },
+      roundtripEnum(x) { return x; },
+      invertBool(x) { return !x; },
+      variantCasts(x) { return x; },
+      variantZeros(x) { return x; },
+      variantTypedefs(x, y, z) {},
+      variantEnums(a, b, c) {
+        assert.deepStrictEqual(a, true);
+        assert.deepStrictEqual(b, { tag: 'ok', val: undefined });
+        assert.deepStrictEqual(c, "success");
+        return [
+          false,
+          { tag: 'err', val: undefined },
+          "a",
+        ];
+      },
     },
-    roundtripEnum(x) { return x; },
-    invertBool(x) { return !x; },
-    variantCasts(x) { return x; },
-    variantZeros(x) { return x; },
-    variantTypedefs(x, y, z) {},
-    variantEnums(a, b, c) {
-      assert.deepStrictEqual(a, true);
-      assert.deepStrictEqual(b, { tag: 'ok', val: undefined });
-      assert.deepStrictEqual(c, "success");
-      return [
-        false,
-        { tag: 'err', val: undefined },
-        "a",
-      ];
-    },
-  };
-  let instance: WebAssembly.Instance;
-  addImportsToImports(importObj, imports, name => instance.exports[name]);
-  const wasi = addWasiToImports(importObj);
-
-  const wasm = new Exports();
-  await wasm.instantiate(getWasm(), importObj);
-  wasi.start(wasm.instance);
-  instance = wasm.instance;
+  });
 
   wasm.testImports();
   assert.deepStrictEqual(wasm.roundtripOption(1), 1);

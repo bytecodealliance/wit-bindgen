@@ -1,6 +1,5 @@
-import { addImportsToImports, Imports } from "./imports.js";
-import { Exports } from "./exports.js";
-import { getWasm, addWasiToImports } from "./helpers.js";
+import { loadWasm, testwasi } from "./helpers.js";
+import { instantiate } from "./smoke.js";
 
 function assert(x: boolean, msg: string) {
   if (!x)
@@ -8,18 +7,16 @@ function assert(x: boolean, msg: string) {
 }
 
 async function run() {
-  const importObj = {};
   let hit = false;
-  addImportsToImports(importObj, {
-    thunk() {
-      hit = true;
-    }
-  });
-  const wasi = addWasiToImports(importObj);
 
-  const wasm = new Exports();
-  await wasm.instantiate(getWasm(), importObj);
-  wasi.start(wasm.instance);
+  const wasm = await instantiate(loadWasm, {
+    testwasi,
+    imports: {
+      thunk() {
+        hit = true;
+      },
+    },
+  });
 
   wasm.thunk();
   assert(hit, "import not called");

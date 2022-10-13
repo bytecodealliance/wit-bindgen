@@ -1,5 +1,4 @@
-import { Demo, Options } from './demo.js';
-import * as browser from './browser.js';
+import { Demo, Options, instantiate } from './demo.js';
 
 class Editor {
   input: HTMLTextAreaElement;
@@ -9,7 +8,7 @@ class Editor {
   rustUnchecked: HTMLInputElement;
   wasmtimeTracing: HTMLInputElement;
   generatedFiles: Record<string, string>;
-  demo: Demo;
+  demo?: Demo;
   options: Options;
   rerender: number | null;
   inputEditor: AceAjax.Editor;
@@ -34,7 +33,6 @@ class Editor {
     this.outputEditor.setOption("useWorker", false);
 
     this.generatedFiles = {};
-    this.demo = new Demo();
     this.options = {
       rustUnchecked: false,
       wasmtimeTracing: false,
@@ -44,13 +42,13 @@ class Editor {
   }
 
   async instantiate() {
-    const imports = {};
-    const obj = {
-      log: console.log,
-      error: console.error,
-    };
-    browser.addBrowserToImports(imports, obj, name => this.demo.instance.exports[name]);
-    await this.demo.instantiate(fetch('./demo.wasm'), imports);
+    this.demo = await instantiate(
+      async (name, imports) => {
+        const obj = await WebAssembly.instantiateStreaming(fetch(name), imports)
+        return obj.instance;
+      },
+      { console },
+    );
     this.installListeners();
     this.render();
   }
