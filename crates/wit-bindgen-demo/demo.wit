@@ -14,7 +14,6 @@ enum lang {
 record options {
   rust-unchecked: bool,
   wasmtime-tracing: bool,
-  wasmtime-custom-error: bool,
   import: bool,
 }
 

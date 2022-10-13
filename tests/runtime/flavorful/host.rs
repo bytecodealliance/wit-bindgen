@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-wit_bindgen_host_wasmtime_rust::export!("../../tests/runtime/flavorful/imports.wit");
+wit_bindgen_host_wasmtime_rust::export!({ paths: ["../../tests/runtime/flavorful/imports.wit"], tracing: true });
 
 use imports::*;
 
@@ -8,7 +8,7 @@ use imports::*;
 pub struct MyImports;
 
 impl Imports for MyImports {
-    fn f_list_in_record1(&mut self, ty: ListInRecord1<'_>) {
+    fn f_list_in_record1(&mut self, ty: ListInRecord1) {
         assert_eq!(ty.a, "list_in_record1");
     }
 
@@ -18,25 +18,25 @@ impl Imports for MyImports {
         }
     }
 
-    fn f_list_in_record3(&mut self, a: ListInRecord3Param<'_>) -> ListInRecord3Result {
+    fn f_list_in_record3(&mut self, a: ListInRecord3) -> ListInRecord3 {
         assert_eq!(a.a, "list_in_record3 input");
-        ListInRecord3Result {
+        ListInRecord3 {
             a: "list_in_record3 output".to_string(),
         }
     }
 
-    fn f_list_in_record4(&mut self, a: ListInAliasParam<'_>) -> ListInAliasResult {
+    fn f_list_in_record4(&mut self, a: ListInAlias) -> ListInAlias {
         assert_eq!(a.a, "input4");
-        ListInRecord4Result {
+        ListInRecord4 {
             a: "result4".to_string(),
         }
     }
 
     fn f_list_in_variant1(
         &mut self,
-        a: ListInVariant1V1<'_>,
-        b: ListInVariant1V2<'_>,
-        c: ListInVariant1V3<'_>,
+        a: ListInVariant1V1,
+        b: ListInVariant1V2,
+        c: ListInVariant1V3,
     ) {
         assert_eq!(a.unwrap(), "foo");
         assert_eq!(b.unwrap_err(), "bar");
@@ -50,7 +50,7 @@ impl Imports for MyImports {
         Some("list_in_variant2".to_string())
     }
 
-    fn f_list_in_variant3(&mut self, a: ListInVariant3Param<'_>) -> Option<String> {
+    fn f_list_in_variant3(&mut self, a: ListInVariant3) -> Option<String> {
         assert_eq!(a.unwrap(), "input3");
         Some("output3".to_string())
     }
@@ -63,11 +63,7 @@ impl Imports for MyImports {
         Err(MyErrno::B)
     }
 
-    fn list_typedefs(
-        &mut self,
-        a: ListTypedef<'_>,
-        b: ListTypedef3Param<'_>,
-    ) -> (ListTypedef2, ListTypedef3Result) {
+    fn list_typedefs(&mut self, a: ListTypedef, b: ListTypedef3) -> (ListTypedef2, ListTypedef3) {
         assert_eq!(a, "typedef1");
         assert_eq!(b.len(), 1);
         assert_eq!(b[0], "typedef2");
@@ -91,7 +87,7 @@ impl Imports for MyImports {
     }
 }
 
-wit_bindgen_host_wasmtime_rust::import!("../../tests/runtime/flavorful/exports.wit");
+wit_bindgen_host_wasmtime_rust::import!({ paths: ["../../tests/runtime/flavorful/exports.wit"],  tracing: true });
 
 fn run(wasm: &str) -> Result<()> {
     use exports::*;
@@ -99,7 +95,7 @@ fn run(wasm: &str) -> Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
         |linker| imports::add_to_linker(linker, |cx| -> &mut MyImports { &mut cx.imports }),
-        |store, module, linker| Exports::instantiate(store, module, linker, |cx| &mut cx.exports),
+        |store, module, linker| Exports::instantiate(store, module, linker),
     )?;
 
     exports.test_imports(&mut store)?;

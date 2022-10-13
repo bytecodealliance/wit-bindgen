@@ -8,3 +8,26 @@ enum e { a, b, c }
 roundtrip-enum: func(a: e) -> e
 
 roundtrip-bool: func(a: bool) -> bool
+
+
+flags flag32 {
+  b0, b1, b2, b3, b4, b5, b6, b7,
+  b8, b9, b10, b11, b12, b13, b14, b15,
+  b16, b17, b18, b19, b20, b21, b22, b23,
+  b24, b25, b26, b27, b28, b29, b30, b31,
+}
+
+flags flag64 {
+  b0, b1, b2, b3, b4, b5, b6, b7,
+  b8, b9, b10, b11, b12, b13, b14, b15,
+  b16, b17, b18, b19, b20, b21, b22, b23,
+  b24, b25, b26, b27, b28, b29, b30, b31,
+  b32, b33, b34, b35, b36, b37, b38, b39,
+  b40, b41, b42, b43, b44, b45, b46, b47,
+  b48, b49, b50, b51, b52, b53, b54, b55,
+  b56, b57, b58, b59, b60, b61, b62, b63,
+}
+
+// unaligned-roundtrip1: func(a: list<u16>, b: list<u32>, c: list<u64>, d: list<flag32>, e: list<flag64>)
+// record unaligned-record { a: u32, b: u64 }
+// unaligned-roundtrip2: func(a: list<unaligned-record>, b: list<float32>, c: list<float64>, d: list<string>, e: list<list<u8>>)

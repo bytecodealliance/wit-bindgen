@@ -101,7 +101,7 @@ pub fn runtime_tests_wasmtime(_input: TokenStream) -> TokenStream {
             continue;
         }
         let name_str = entry.file_name().unwrap().to_str().unwrap();
-        for (lang, name, wasm, _component) in WASMS {
+        for (lang, name, _wasm, component) in WASMS {
             if *name != name_str {
                 continue;
             }
@@ -111,9 +111,9 @@ pub fn runtime_tests_wasmtime(_input: TokenStream) -> TokenStream {
                 mod #name {
                     include!(#host_file);
 
-                    #[test]
+                    #[test_log::test]
                     fn test() -> anyhow::Result<()> {
-                        run(#wasm)
+                        run(#component)
                     }
                 }
             });

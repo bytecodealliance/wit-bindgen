@@ -69,7 +69,7 @@ class MyImports:
     def replace_first_char(self, text: i.AllText, letter: str) -> i.AllText:
         if isinstance(text, i.AllText0):
             return i.AllText0(letter)
-        if isinstance(text, i.AllFloats1):
+        if isinstance(text, i.AllText1):
             return i.AllText1(letter + text.value[1:])
         else:
             raise ValueError("Invalid input value!")
@@ -111,7 +111,7 @@ class MyImports:
     def identify_text(self, text: i.AllText) -> int:
         if isinstance(text, i.AllText0):
             return 0
-        if isinstance(text, i.AllFloats1):
+        if isinstance(text, i.AllText1):
             return 1
         else:
             raise ValueError("Invalid input value!")

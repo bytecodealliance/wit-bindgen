@@ -17,7 +17,6 @@ impl Imports for MyImports {
     }
 
     fn roundtrip_flags1(&mut self, a: F1) -> F1 {
-        drop(a.to_string());
         drop(format!("{:?}", a));
         drop(a & F1::all());
         a
@@ -57,7 +56,7 @@ fn run(wasm: &str) -> Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
         |linker| imports::add_to_linker(linker, |cx| -> &mut MyImports { &mut cx.imports }),
-        |store, module, linker| Exports::instantiate(store, module, linker, |cx| &mut cx.exports),
+        |store, module, linker| Exports::instantiate(store, module, linker),
     )?;
 
     exports.test_imports(&mut store)?;

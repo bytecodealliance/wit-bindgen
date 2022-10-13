@@ -32,7 +32,6 @@ impl demo::Demo for Demo {
             demo::Lang::Wasmtime => Box::new({
                 let mut opts = wit_bindgen_gen_host_wasmtime_rust::Opts::default();
                 opts.tracing = options.wasmtime_tracing;
-                opts.custom_error = options.wasmtime_custom_error;
                 opts.build()
             }),
             demo::Lang::WasmtimePy => {

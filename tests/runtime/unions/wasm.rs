@@ -138,7 +138,7 @@ impl exports::Exports for Exports {
 
         assert!(matches!(identify_duplicated(DuplicatedS32::I320(0)), 0));
         assert!(matches!(identify_duplicated(DuplicatedS32::I321(0)), 1));
-        assert!(matches!(identify_duplicated(DuplicatedS32::I321(0)), 2));
+        assert!(matches!(identify_duplicated(DuplicatedS32::I322(0)), 2));
 
         // Distinguishable
         assert!(

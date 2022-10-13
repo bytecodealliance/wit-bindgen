@@ -21,11 +21,7 @@ class MyImports:
             a13: int,
             a14: int,
             a15: int,
-            a16: int,
-            a17: int,
-            a18: int,
-            a19: int,
-            a20: int) -> None:
+            a16: int) -> None:
         assert(a1 == 1)
         assert(a2 == 2)
         assert(a3 == 3)
@@ -42,10 +38,6 @@ class MyImports:
         assert(a14 == 14)
         assert(a15 == 15)
         assert(a16 == 16)
-        assert(a17 == 17)
-        assert(a18 == 18)
-        assert(a19 == 19)
-        assert(a20 == 20)
 
 
 def run(wasm_file: str) -> None:
@@ -62,7 +54,7 @@ def run(wasm_file: str) -> None:
     add_imports_to_linker(linker, store, imports)
     wasm = Exports(store, linker, module)
 
-    wasm.many_arguments(store, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,14, 15, 16, 17, 18, 19, 20)
+    wasm.many_arguments(store, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,14, 15, 16)
 
 if __name__ == '__main__':
     run(sys.argv[1])

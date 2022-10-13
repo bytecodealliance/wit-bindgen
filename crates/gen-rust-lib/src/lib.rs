@@ -492,11 +492,22 @@ pub trait RustGenerator {
         id: TypeId,
         record: &Record,
         docs: &Docs,
+        derive_component: bool,
     ) {
         let info = self.info(id);
         for (name, mode) in self.modes_of(iface, id) {
             let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
+
+            if derive_component {
+                self.push_str("#[derive(wasmtime::component::ComponentType)]\n");
+                if lt.is_none() {
+                    self.push_str("#[derive(wasmtime::component::Lift)]\n");
+                }
+                self.push_str("#[derive(wasmtime::component::Lower)]\n");
+                self.push_str("#[component(record)]\n");
+            }
+
             if !info.owns_data() {
                 self.push_str("#[repr(C)]\n");
                 self.push_str("#[derive(Copy, Clone)]\n");
@@ -508,6 +519,9 @@ pub trait RustGenerator {
             self.push_str(" {\n");
             for field in record.fields.iter() {
                 self.rustdoc(&field.docs);
+                if derive_component {
+                    self.push_str(&format!("#[component(name = \"{}\")]\n", field.name));
+                }
                 self.push_str("pub ");
                 self.push_str(&to_rust_ident(&field.name));
                 self.push_str(": ");
@@ -561,30 +575,51 @@ pub trait RustGenerator {
         id: TypeId,
         variant: &Variant,
         docs: &Docs,
+        derive_component: bool,
     ) where
         Self: Sized,
     {
         self.print_rust_enum(
             iface,
             id,
-            variant
-                .cases
-                .iter()
-                .map(|c| (c.name.to_upper_camel_case(), &c.docs, c.ty.as_ref())),
+            variant.cases.iter().map(|c| {
+                (
+                    c.name.to_upper_camel_case(),
+                    Some(c.name.clone()),
+                    &c.docs,
+                    c.ty.as_ref(),
+                )
+            }),
             docs,
+            if derive_component {
+                Some("variant")
+            } else {
+                None
+            },
         );
     }
 
-    fn print_typedef_union(&mut self, iface: &Interface, id: TypeId, union: &Union, docs: &Docs)
-    where
+    fn print_typedef_union(
+        &mut self,
+        iface: &Interface,
+        id: TypeId,
+        union: &Union,
+        docs: &Docs,
+        derive_component: bool,
+    ) where
         Self: Sized,
     {
         self.print_rust_enum(
             iface,
             id,
             zip(self.union_case_names(iface, union), &union.cases)
-                .map(|(name, case)| (name, &case.docs, Some(&case.ty))),
+                .map(|(name, case)| (name, None, &case.docs, Some(&case.ty))),
             docs,
+            if derive_component {
+                Some("union")
+            } else {
+                None
+            },
         );
     }
 
@@ -592,8 +627,9 @@ pub trait RustGenerator {
         &mut self,
         iface: &Interface,
         id: TypeId,
-        cases: impl IntoIterator<Item = (String, &'a Docs, Option<&'a Type>)> + Clone,
+        cases: impl IntoIterator<Item = (String, Option<String>, &'a Docs, Option<&'a Type>)> + Clone,
         docs: &Docs,
+        derive_component: Option<&str>,
     ) where
         Self: Sized,
     {
@@ -603,6 +639,14 @@ pub trait RustGenerator {
             let name = name.to_upper_camel_case();
             self.rustdoc(docs);
             let lt = self.lifetime_for(&info, mode);
+            if let Some(derive_component) = derive_component {
+                self.push_str("#[derive(wasmtime::component::ComponentType)]\n");
+                if lt.is_none() {
+                    self.push_str("#[derive(wasmtime::component::Lift)]\n");
+                }
+                self.push_str("#[derive(wasmtime::component::Lower)]\n");
+                self.push_str(&format!("#[component({})]\n", derive_component));
+            }
             if !info.owns_data() {
                 self.push_str("#[derive(Clone, Copy)]\n");
             } else {
@@ -611,8 +655,13 @@ pub trait RustGenerator {
             self.push_str(&format!("pub enum {name}"));
             self.print_generics(lt);
             self.push_str("{\n");
-            for (case_name, docs, payload) in cases.clone() {
+            for (case_name, component_name, docs, payload) in cases.clone() {
                 self.rustdoc(docs);
+                if derive_component.is_some() {
+                    if let Some(n) = component_name {
+                        self.push_str(&format!("#[component(name = \"{}\")] ", n));
+                    }
+                }
                 self.push_str(&case_name);
                 if let Some(ty) = payload {
                     self.push_str("(");
@@ -630,7 +679,7 @@ pub trait RustGenerator {
                 cases
                     .clone()
                     .into_iter()
-                    .map(|(name, _docs, ty)| (name, ty)),
+                    .map(|(name, _attr, _docs, ty)| (name, ty)),
             );
         }
     }
@@ -710,8 +759,15 @@ pub trait RustGenerator {
         }
     }
 
-    fn print_typedef_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs)
-    where
+    fn print_typedef_enum(
+        &mut self,
+        id: TypeId,
+        name: &str,
+        enum_: &Enum,
+        docs: &Docs,
+        attrs: &[String],
+        case_attr: Box<dyn Fn(&EnumCase) -> String>,
+    ) where
         Self: Sized,
     {
         // TODO: should this perhaps be an attribute in the wit file?
@@ -719,12 +775,16 @@ pub trait RustGenerator {
 
         let name = name.to_upper_camel_case();
         self.rustdoc(docs);
+        for attr in attrs {
+            self.push_str(&format!("{}\n", attr));
+        }
         self.push_str("#[repr(");
         self.int_repr(enum_.tag());
         self.push_str(")]\n#[derive(Clone, Copy, PartialEq, Eq)]\n");
         self.push_str(&format!("pub enum {} {{\n", name.to_upper_camel_case()));
         for case in enum_.cases.iter() {
             self.rustdoc(&case.docs);
+            self.push_str(&case_attr(case));
             self.push_str(&case.name.to_upper_camel_case());
             self.push_str(",\n");
         }

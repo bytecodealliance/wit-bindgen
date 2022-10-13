@@ -19,10 +19,13 @@ wit_bindgen_host_wasmtime_rust::import!("../../tests/runtime/smoke/exports.wit")
 fn run(wasm: &str) -> Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
-        |linker| imports::add_to_linker(linker, |cx| -> &mut MyImports { &mut cx.imports }),
-        |store, module, linker| {
-            exports::Exports::instantiate(store, module, linker, |cx| &mut cx.exports)
+        |linker| {
+            imports::add_to_linker(
+                linker,
+                |cx: &mut crate::Context<MyImports>| -> &mut MyImports { &mut cx.imports },
+            )
         },
+        |store, module, linker| exports::Exports::instantiate(store, module, linker),
     )?;
 
     exports.thunk(&mut store)?;

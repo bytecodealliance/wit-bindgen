@@ -8,7 +8,6 @@ class Editor {
   files: HTMLSelectElement
   rustUnchecked: HTMLInputElement;
   wasmtimeTracing: HTMLInputElement;
-  wasmtimeCustomError: HTMLInputElement;
   generatedFiles: Record<string, string>;
   demo: Demo;
   options: Options;
@@ -24,7 +23,6 @@ class Editor {
     this.files = document.getElementById('file-select') as HTMLSelectElement;
     this.rustUnchecked = document.getElementById('rust-unchecked') as HTMLInputElement;
     this.wasmtimeTracing = document.getElementById('wasmtime-tracing') as HTMLInputElement;
-    this.wasmtimeCustomError = document.getElementById('wasmtime-custom-error') as HTMLInputElement;
     this.outputHtml = document.getElementById('html-output') as HTMLDivElement;
 
     this.inputEditor = ace.edit("input");
@@ -40,7 +38,6 @@ class Editor {
     this.options = {
       rustUnchecked: false,
       wasmtimeTracing: false,
-      wasmtimeCustomError: false,
       import: false,
     };
     this.rerender = null;
@@ -76,10 +73,6 @@ class Editor {
 
     this.wasmtimeTracing.addEventListener('change', () => {
       this.options.wasmtimeTracing = this.wasmtimeTracing.checked;
-      this.render();
-    });
-    this.wasmtimeCustomError.addEventListener('change', () => {
-      this.options.wasmtimeCustomError = this.wasmtimeCustomError.checked;
       this.render();
     });
     this.files.addEventListener('change', () => this.updateSelectedFile());
