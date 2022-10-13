@@ -28,8 +28,6 @@ fn execute(name: &str, lang: &str, wasm: &Path, ts: &Path) {
     };
 
     fs::copy(ts, dir.join("host.ts")).unwrap();
-    // fs::copy("tests/helpers.d.ts", dir.join("helpers.d.ts")).unwrap();
-    // fs::copy("tests/helpers.js", dir.join("helpers.js")).unwrap();
     fs::copy("tests/helpers.ts", dir.join("helpers.ts")).unwrap();
     let config = dir.join("tsconfig.json");
     fs::write(
@@ -67,7 +65,6 @@ fn execute(name: &str, lang: &str, wasm: &Path, ts: &Path) {
     path.push(dir.clone());
     test_helpers::run_command(
         Command::new("node")
-            .arg("--experimental-wasi-unstable-preview1")
             .arg("--stack-trace-limit=1000")
             .arg(dir.join("host.js"))
             .env("NODE_PATH", std::env::join_paths(&path).unwrap())
