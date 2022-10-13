@@ -26,9 +26,9 @@ pulldown-cmark = { version = "0.8", default-features = false }
 clap = { version = "4.0.9", features = ["derive"] }
 env_logger = "0.9.1"
 
-wasmtime = { git = "https://github.com/alexcrichton/wasmtime", branch = "wit-bindgen-pieces" , features = ["component-model"] }
-wasmtime-wasi = { git = "https://github.com/alexcrichton/wasmtime", branch = "wit-bindgen-pieces" }
-wasmtime-environ = { git = "https://github.com/alexcrichton/wasmtime", branch = "wit-bindgen-pieces" }
+wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", branch = "main" , features = ["component-model"] }
+wasmtime-wasi = { git = "https://github.com/bytecodealliance/wasmtime", branch = "main" }
+wasmtime-environ = { git = "https://github.com/bytecodealliance/wasmtime", branch = "main" }
 wasmprinter = "0.2.41"
 wasmparser = "0.92.0"
 wasm-encoder = "0.18.0"

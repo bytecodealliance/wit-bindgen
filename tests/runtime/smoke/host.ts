@@ -1,4 +1,4 @@
-import { loadWasm } from "./helpers.js";
+import { loadWasm, testwasi } from "./helpers.js";
 import { instantiate } from "./smoke.js";
 
 function assert(x: boolean, msg: string) {
@@ -10,6 +10,7 @@ async function run() {
   let hit = false;
 
   const wasm = await instantiate(loadWasm, {
+    testwasi,
     imports: {
       thunk() {
         hit = true;

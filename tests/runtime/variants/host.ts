@@ -1,10 +1,11 @@
-import { loadWasm } from "./helpers.js";
+import { loadWasm, testwasi } from "./helpers.js";
 import { instantiate } from "./variants.js";
 // @ts-ignore
 import * as assert from 'assert';
 
 async function run() {
   const wasm = await instantiate(loadWasm, {
+    testwasi,
     imports: {
       roundtripOption(x) { return x; },
       roundtripResult(x) {

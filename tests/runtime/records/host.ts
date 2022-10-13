@@ -1,10 +1,11 @@
-import { loadWasm } from "./helpers.js";
+import { loadWasm, testwasi } from "./helpers.js";
 import { instantiate, ImportObject } from "./records.js";
 // @ts-ignore
 import * as assert from 'node:assert';
 
 async function run() {
   const wasm = await instantiate(loadWasm, {
+    testwasi,
     imports: {
       multipleResults() { return [4, 5]; },
       swapTuple([a, b]) { return [b, a]; },

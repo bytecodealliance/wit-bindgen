@@ -1,4 +1,4 @@
-import { loadWasm } from "./helpers.js";
+import { loadWasm, testwasi } from "./helpers.js";
 import { instantiate } from "./flavorful.js";
 
 // @ts-ignore
@@ -6,6 +6,7 @@ import * as assert from 'assert';
 
 async function run() {
   const wasm = await instantiate(loadWasm, {
+    testwasi,
     imports: {
       fListInRecord1(x) {},
       fListInRecord2() { return { a: 'list_in_record2' }; },
