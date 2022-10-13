@@ -24,7 +24,9 @@ wit_bindgen_guest_rust::import!({ paths: ["testwasi.wit"], no_std });
 // Nothing in this wasm module should end up needing cabi_realloc. However, if
 // we don't define this trapping implementation of the export, we'll pull in
 // the one from wit_bindgen_guest_rust, which will pull in the libc allocator
-// and a bunch of panic related machinery from std.
+// and a bunch of panic related machinery from std, which will use vtables
+// and therefore create a Wasm ElementSection, which will make the resulting
+// wasm unusable as an adapter module.
 #[no_mangle]
 unsafe extern "C" fn cabi_realloc(
     old_ptr: *mut u8,
