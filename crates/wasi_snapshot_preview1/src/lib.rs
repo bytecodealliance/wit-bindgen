@@ -13,10 +13,29 @@
 //! imports will be adapted to a custom `wit-bindgen`-specific host `*.wit` file
 //! which is only suitable for `wit-bindgen` tests.
 
+#![no_std]
 #![allow(unused_variables)]
 
-use std::arch::wasm32::unreachable;
+use core::arch::wasm32::unreachable;
 use wasi::*;
+
+wit_bindgen_guest_rust::import!({ paths: ["testwasi.wit"], no_std });
+
+// Nothing in this wasm module should end up needing cabi_realloc. However, if
+// we don't define this trapping implementation of the export, we'll pull in
+// the one from wit_bindgen_guest_rust, which will pull in the libc allocator
+// and a bunch of panic related machinery from std, which will use vtables
+// and therefore create a Wasm ElementSection, which will make the resulting
+// wasm unusable as an adapter module.
+#[no_mangle]
+unsafe extern "C" fn cabi_realloc(
+    old_ptr: *mut u8,
+    old_len: usize,
+    align: usize,
+    new_len: usize,
+) -> *mut u8 {
+    unreachable()
+}
 
 #[no_mangle]
 pub extern "C" fn environ_get(environ: *mut *mut u8, environ_buf: *mut u8) -> Errno {
@@ -58,11 +77,29 @@ pub extern "C" fn clock_time_get(
 #[no_mangle]
 pub extern "C" fn fd_write(
     fd: Fd,
-    iovs_ptr: *const Ciovec,
-    iovs_len: usize,
+    mut iovs_ptr: *const Ciovec,
+    mut iovs_len: usize,
     nwritten: *mut Size,
 ) -> Errno {
-    unreachable()
+    unsafe {
+        // Advance to the first non-empty buffer.
+        while iovs_len != 0 && (*iovs_ptr).buf_len == 0 {
+            iovs_ptr = iovs_ptr.add(1);
+            iovs_len -= 1;
+        }
+        if iovs_len == 0 {
+            *nwritten = 0;
+            return ERRNO_SUCCESS;
+        }
+
+        let ptr = (*iovs_ptr).buf;
+        let len = (*iovs_ptr).buf_len;
+
+        testwasi::log(core::slice::from_raw_parts(ptr, len));
+
+        *nwritten = len;
+    }
+    ERRNO_SUCCESS
 }
 
 #[no_mangle]

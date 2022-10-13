@@ -20,6 +20,7 @@ test-helpers = { path = '../test-helpers' }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 wit-bindgen-host-wasmtime-rust = { workspace = true, features = ['tracing'] }
+wit-bindgen-testwasi-host-wasmtime-rust = { path = "../wasi_snapshot_preview1/host-wasmtime-rust" }
 
 tracing = { version = "0.1.26" }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"]}

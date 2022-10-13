@@ -157,6 +157,8 @@ impl exports::Exports for Exports {
             identify_distinguishable_num(DistinguishableNum::I64(1)),
             1
         ));
+
+        println!("There is power in a union!");
     }
 
     fn add_one_integer(num: AllIntegers) -> AllIntegers {
