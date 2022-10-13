@@ -6,7 +6,7 @@ use std::mem;
 use std::process::{Command, Stdio};
 use wit_bindgen_core::wit_parser::abi::AbiVariant;
 use wit_bindgen_core::{
-    uwrite, wit_parser::*, Direction, Files, Generator, Source, TypeInfo, Types,
+    uwrite, uwriteln, wit_parser::*, Direction, Files, Generator, Source, TypeInfo, Types,
 };
 use wit_bindgen_gen_rust_lib::{to_rust_ident, FnSig, RustGenerator, TypeMode};
 
@@ -352,7 +352,7 @@ impl Generator for Wasmtime {
         let prev = mem::take(&mut self.src);
         uwrite!(
             self.src,
-            "pub fn {}(&self, mut store: impl wasmtime::AsContextMut<Data = T>, ",
+            "pub fn {}(&self, mut store: impl wasmtime::AsContextMut, ",
             func.name.to_snake_case(),
         );
         for (i, param) in func.params.iter().enumerate() {
@@ -379,25 +379,34 @@ impl Generator for Wasmtime {
             ));
         }
 
+        self.src.push_str("let callee = unsafe {\n");
+        self.src.push_str("wasmtime::component::TypedFunc::<(");
+        for (_, ty) in func.params.iter() {
+            self.print_ty(iface, ty, TypeMode::AllBorrowed("'_"));
+            self.push_str(", ");
+        }
+        self.src.push_str("), (");
+        for ty in func.results.iter_types() {
+            self.print_ty(iface, ty, TypeMode::Owned);
+            self.push_str(", ");
+        }
+        uwriteln!(
+            self.src,
+            ")>::new_unchecked(self.{})",
+            func.name.to_snake_case()
+        );
+        self.src.push_str("};\n");
         self.src.push_str("let (");
         for (i, _) in func.results.iter_types().enumerate() {
             uwrite!(self.src, "ret{},", i);
         }
-        uwrite!(
-            self.src,
-            ") = self.{}.call(store.as_context_mut(), (",
-            func.name.to_snake_case()
-        );
+        uwrite!(self.src, ") = callee.call(store.as_context_mut(), (");
         for (i, _) in func.params.iter().enumerate() {
             uwrite!(self.src, "arg{}, ", i);
         }
-        uwrite!(self.src, "))?;\n");
+        uwriteln!(self.src, "))?;");
 
-        uwrite!(
-            self.src,
-            "self.{}.post_return(store.as_context_mut())?;\n",
-            func.name.to_snake_case()
-        );
+        uwriteln!(self.src, "callee.post_return(store.as_context_mut())?;");
 
         self.src.push_str("Ok(");
         if func.results.iter_types().len() == 1 {
@@ -417,23 +426,7 @@ impl Generator for Wasmtime {
         let pub_func = mem::replace(&mut self.src, prev).into();
         let prev = mem::take(&mut self.src);
 
-        self.src.push_str("wasmtime::component::TypedFunc<(");
-        // ComponentNamedList means using tuple for all:
-        for (_, ty) in func.params.iter() {
-            self.print_ty(iface, ty, TypeMode::AllBorrowed("'a"));
-            self.push_str(", ");
-        }
-        self.src.push_str("), (");
-        for ty in func.results.iter_types() {
-            self.print_ty(iface, ty, TypeMode::Owned);
-            self.push_str(", ");
-        }
-        self.src.push_str(")>");
-
-        let type_sig: String = mem::replace(&mut self.src, prev).into();
-        let prev = mem::take(&mut self.src);
-
-        self.src.push_str("instance.get_typed_func::<(");
+        self.src.push_str("*instance.get_typed_func::<(");
         for (_, ty) in func.params.iter() {
             self.print_ty(iface, ty, TypeMode::AllBorrowed("'_"));
             self.push_str(", ");
@@ -447,7 +440,7 @@ impl Generator for Wasmtime {
 
         self.src.push_str("), _>(&mut store, \"");
         self.src.push_str(&func.name);
-        self.src.push_str("\")?");
+        self.src.push_str("\")?.func()");
         let getter: String = mem::replace(&mut self.src, prev).into();
 
         let exports = self
@@ -455,9 +448,10 @@ impl Generator for Wasmtime {
             .entry(iface.name.to_string())
             .or_insert_with(Exports::default);
         exports.funcs.push(pub_func);
-        exports
-            .fields
-            .insert(to_rust_ident(&func.name), (type_sig, getter));
+        exports.fields.insert(
+            to_rust_ident(&func.name),
+            ("wasmtime::component::Func".to_string(), getter),
+        );
     }
 
     fn finish_one(&mut self, _iface: &Interface, files: &mut Files) {
@@ -498,8 +492,7 @@ impl Generator for Wasmtime {
         for (module, exports) in sorted_iter(&mem::take(&mut self.guest_exports)) {
             let name = module.to_upper_camel_case();
 
-            uwrite!(self.src, "pub struct {}<'a, T> {{\n", name);
-            self.push_str("_phantom: std::marker::PhantomData<&'a T>,");
+            uwrite!(self.src, "pub struct {} {{\n", name);
             for (name, (ty, _)) in exports.fields.iter() {
                 self.push_str(name);
                 self.push_str(": ");
@@ -507,7 +500,7 @@ impl Generator for Wasmtime {
                 self.push_str(",\n");
             }
             self.push_str("}\n");
-            uwrite!(self.src, "impl<'a, T> {}<'a, T> {{\n", name);
+            uwrite!(self.src, "impl {} {{\n", name);
 
             self.push_str(&format!(
                 "
@@ -521,7 +514,7 @@ impl Generator for Wasmtime {
                     /// instantiate the `module` otherwise using `linker`, and
                     /// both an instance of this structure and the underlying
                     /// `wasmtime::Instance` will be returned.
-                    pub fn instantiate(
+                    pub fn instantiate<T>(
                         mut store: impl wasmtime::AsContextMut<Data = T>,
                         component: &wasmtime::component::Component,
                         linker: &mut wasmtime::component::Linker<T>,
@@ -543,7 +536,7 @@ impl Generator for Wasmtime {
                     /// returned structure which can be used to interact with
                     /// the wasm module.
                     pub fn new(
-                        mut store: impl wasmtime::AsContextMut<Data = T>,
+                        mut store: impl wasmtime::AsContextMut,
                         instance: &wasmtime::component::Instance,
                     ) -> anyhow::Result<Self> {{
                 ",
@@ -559,7 +552,6 @@ impl Generator for Wasmtime {
             self.push_str("Ok(");
             self.push_str(&name);
             self.push_str("{\n");
-            self.push_str("_phantom: std::marker::PhantomData,");
             for (name, _) in exports.fields.iter() {
                 self.push_str(name);
                 self.push_str(",\n");
