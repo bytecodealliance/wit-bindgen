@@ -1,4 +1,4 @@
-pub use wit_bindgen_host_wasmtime_rust_macro::{export, import};
+pub use wit_bindgen_host_wasmtime_rust_macro::*;
 
 #[cfg(feature = "tracing-lib")]
 pub use tracing_lib as tracing;

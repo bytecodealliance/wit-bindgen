@@ -1,4 +1,6 @@
-wit_bindgen_host_wasmtime_rust::export!("../testwasi.wit");
+wit_bindgen_host_wasmtime_rust::generate!({
+    import: "../testwasi.wit",
+});
 
 pub use testwasi::add_to_linker;
 

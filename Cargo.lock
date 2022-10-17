@@ -2254,6 +2254,7 @@ dependencies = [
  "syn",
  "wit-bindgen-core",
  "wit-bindgen-gen-host-wasmtime-rust",
+ "wit-component",
 ]
 
 [[package]]

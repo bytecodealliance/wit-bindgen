@@ -536,7 +536,7 @@ mod tests {
 }
 
 pub trait WorldGenerator {
-    fn generate(&mut self, name: &str, interfaces: &ComponentInterfaces<'_>, files: &mut Files) {
+    fn generate(&mut self, name: &str, interfaces: &ComponentInterfaces, files: &mut Files) {
         for (name, import) in interfaces.imports.iter() {
             self.import(name, import, files);
         }
