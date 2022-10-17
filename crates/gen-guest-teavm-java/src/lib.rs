@@ -888,7 +888,7 @@ struct Block {
 
 struct Cleanup {
     address: String,
-    size: usize,
+    size: String,
     align: usize,
 }
 
@@ -1429,7 +1429,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     if realloc.is_none() {
                         self.cleanup.push(Cleanup {
                             address: format!("{address}.toInt()"),
-                            size,
+                            size: format!("{size} * ({op}).length"),
                             align: size,
                         });
                     }
@@ -1530,7 +1530,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 if realloc.is_none() {
                     self.cleanup.push(Cleanup {
                         address: address.clone(),
-                        size,
+                        size: format!("({op}).size() * {size}"),
                         align,
                     });
                 }
