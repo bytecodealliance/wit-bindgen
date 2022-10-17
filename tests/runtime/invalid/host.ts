@@ -5,6 +5,7 @@ import * as assert from 'assert';
 
 async function run() {
   const wasm = await instantiate(loadWasm, {
+    testwasi,
     imports: {
       roundtripU8(x) { throw new Error('unreachable'); },
       roundtripS8(x) { throw new Error('unreachable'); },
