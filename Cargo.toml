@@ -46,7 +46,7 @@ wit-bindgen-gen-rust-lib = { path = 'crates/gen-rust-lib', version = '0.3.0' }
 wit-bindgen-guest-rust = { path = 'crates/guest-rust', version = '0.3.0' }
 wit-bindgen-host-wasmtime-rust = { path = 'crates/host-wasmtime-rust', version = '0.3.0' }
 wit-parser = { path = 'crates/wit-parser', version = '0.3.0' }
-wit-component = { path = 'crates/wit-component', version = '0.3.0' }
+wit-component = { path = 'crates/wit-component', version = '0.3.0', default-features = false }
 
 [[bin]]
 name = "wit-bindgen"

@@ -11,9 +11,13 @@ macro_rules! gen_test {
                 $test.as_ref(),
                 test_helpers::Direction::$dir,
                 |name, component, files| {
-                    wit_bindgen_gen_host_js::Opts::default()
-                        .generate(name, component, files)
-                        .unwrap()
+                    wit_bindgen_core::component::generate(
+                        &mut *wit_bindgen_gen_host_js::Opts::default().build(),
+                        name,
+                        component,
+                        files,
+                    )
+                    .unwrap()
                 },
                 super::verify,
             )

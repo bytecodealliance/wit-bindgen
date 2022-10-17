@@ -12,9 +12,13 @@ fn execute(name: &str, lang: &str, wasm: &Path, ts: &Path) {
     println!("OUT_DIR = {:?}", dir);
     println!("Generating bindings...");
     let mut files = Default::default();
-    wit_bindgen_gen_host_js::Opts::default()
-        .generate(name, &wasm, &mut files)
-        .unwrap();
+    wit_bindgen_core::component::generate(
+        &mut *wit_bindgen_gen_host_js::Opts::default().build(),
+        name,
+        &wasm,
+        &mut files,
+    )
+    .unwrap();
     for (file, contents) in files.iter() {
         let dst = dir.join(file);
         std::fs::create_dir_all(dst.parent().unwrap()).unwrap();

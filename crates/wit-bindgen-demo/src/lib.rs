@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::sync::Once;
+use wit_bindgen_core::component::ComponentGenerator;
 use wit_bindgen_core::wit_parser::Interface;
 use wit_bindgen_core::{Files, Generator};
 
@@ -48,7 +49,7 @@ fn init() {
 fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Options) -> Result<()> {
     let iface = Interface::parse("input", &wit)?;
 
-    let mut gen_world = |mut gen: Box<dyn Generator>| {
+    let gen_world = |mut gen: Box<dyn Generator>, files: &mut Files| {
         let (imports, exports) = if options.import {
             (vec![iface.clone()], vec![])
         } else {
@@ -57,27 +58,50 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
         gen.generate_all(&imports, &exports, files);
     };
 
+    let gen_component = |mut gen: Box<dyn ComponentGenerator>, files: &mut Files| {
+        let (imports, interface) = if options.import {
+            (vec![iface.clone()], None)
+        } else {
+            (Vec::new(), Some(iface.clone()))
+        };
+        let dummy = test_helpers::dummy_module(&imports, &[], interface.as_ref());
+        let mut encoder = wit_component::ComponentEncoder::default()
+            .module(&dummy)?
+            .imports(imports)?;
+        if let Some(iface) = interface {
+            encoder = encoder.interface(iface)?;
+        }
+        let wasm = encoder.encode()?;
+        wit_bindgen_core::component::generate(&mut *gen, "input", &wasm, files)
+    };
+
     match lang {
         demo::Lang::Rust => {
             let mut opts = wit_bindgen_gen_guest_rust::Opts::default();
             opts.unchecked = options.rust_unchecked;
-            gen_world(Box::new(opts.build()))
+            gen_world(Box::new(opts.build()), files)
         }
-        demo::Lang::Java => gen_world(Box::new(
-            wit_bindgen_gen_guest_teavm_java::Opts::default().build(),
-        )),
+        demo::Lang::Java => gen_world(
+            Box::new(wit_bindgen_gen_guest_teavm_java::Opts::default().build()),
+            files,
+        ),
         demo::Lang::Wasmtime => {
             let mut opts = wit_bindgen_gen_host_wasmtime_rust::Opts::default();
             opts.tracing = options.wasmtime_tracing;
-            gen_world(Box::new(opts.build()))
+            gen_world(Box::new(opts.build()), files)
         }
-        demo::Lang::WasmtimePy => gen_world(Box::new(
-            wit_bindgen_gen_host_wasmtime_py::Opts::default().build(),
-        )),
-        demo::Lang::C => gen_world(Box::new(wit_bindgen_gen_guest_c::Opts::default().build())),
-        demo::Lang::Markdown => {
-            gen_world(Box::new(wit_bindgen_gen_markdown::Opts::default().build()))
-        }
+        demo::Lang::WasmtimePy => gen_world(
+            Box::new(wit_bindgen_gen_host_wasmtime_py::Opts::default().build()),
+            files,
+        ),
+        demo::Lang::C => gen_world(
+            Box::new(wit_bindgen_gen_guest_c::Opts::default().build()),
+            files,
+        ),
+        demo::Lang::Markdown => gen_world(
+            Box::new(wit_bindgen_gen_markdown::Opts::default().build()),
+            files,
+        ),
 
         // JS is different from other languages at this time where it takes a
         // component as input as opposed to an `Interface`. To work with this
@@ -87,22 +111,7 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
         // synthesize a component from our input interface and dummy module.
         // Finally this component is fed into the host generator which gives us
         // the files we want.
-        demo::Lang::Js => {
-            let (imports, interface) = if options.import {
-                (vec![iface], None)
-            } else {
-                (Vec::new(), Some(iface))
-            };
-            let dummy = test_helpers::dummy_module(&imports, &[], interface.as_ref());
-            let mut encoder = wit_component::ComponentEncoder::default()
-                .module(&dummy)?
-                .imports(imports)?;
-            if let Some(iface) = interface {
-                encoder = encoder.interface(iface)?;
-            }
-            let wasm = encoder.encode()?;
-            wit_bindgen_gen_host_js::Opts::default().generate("input", &wasm, files)?;
-        }
+        demo::Lang::Js => gen_component(wit_bindgen_gen_host_js::Opts::default().build(), files)?,
     }
 
     Ok(())

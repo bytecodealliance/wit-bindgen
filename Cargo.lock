@@ -2094,6 +2094,9 @@ name = "wit-bindgen-core"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "wasmparser",
+ "wasmtime-environ",
+ "wit-component",
  "wit-parser",
 ]
 
@@ -2157,12 +2160,10 @@ dependencies = [
 name = "wit-bindgen-gen-host-js"
 version = "0.3.0"
 dependencies = [
- "anyhow",
  "clap",
  "heck",
  "indexmap",
  "test-helpers",
- "wasmparser",
  "wasmtime-environ",
  "wit-bindgen-core",
  "wit-component",

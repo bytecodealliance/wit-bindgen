@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
+use wit_bindgen_core::component::ComponentGenerator;
 use wit_bindgen_core::{wit_parser, Files, Generator};
 use wit_parser::Interface;
 
@@ -60,13 +61,8 @@ enum HostGenerator {
     Js {
         #[clap(flatten)]
         opts: wit_bindgen_gen_host_js::Opts,
-
-        component: PathBuf,
         #[clap(flatten)]
-        common: Common,
-
-        #[clap(long)]
-        name: Option<String>,
+        component: ComponentOpts,
     },
 }
 
@@ -114,6 +110,20 @@ struct World {
     exports: Vec<PathBuf>,
 }
 
+#[derive(Debug, Parser)]
+struct ComponentOpts {
+    /// Path to the input wasm component to generate bindings for.
+    component: PathBuf,
+
+    /// Optionally rename the generated bindings instead of inferring the name
+    /// from the input `component` path.
+    #[clap(long)]
+    name: Option<String>,
+
+    #[clap(flatten)]
+    common: Common,
+}
+
 #[derive(Debug, Parser, Clone)]
 struct Common {
     /// Where to place output files
@@ -129,8 +139,8 @@ impl Opt {
             | Category::Guest(GuestGenerator::TeavmJava { common, .. })
             | Category::Host(HostGenerator::WasmtimeRust { common, .. })
             | Category::Host(HostGenerator::WasmtimePy { common, .. })
-            | Category::Host(HostGenerator::Js { common, .. })
             | Category::Markdown { common, .. } => common,
+            Category::Host(HostGenerator::Js { component, .. }) => &component.common,
         }
     }
 }
@@ -141,30 +151,17 @@ fn main() -> Result<()> {
 
     let mut files = Files::default();
     match opt.category {
-        Category::Guest(GuestGenerator::Rust { opts, world, .. }) => {
-            gen_world(Box::new(opts.build()), world, &mut files)?;
-        }
         Category::Host(HostGenerator::WasmtimeRust { opts, world, .. }) => {
             gen_world(Box::new(opts.build()), world, &mut files)?;
         }
         Category::Host(HostGenerator::WasmtimePy { opts, world, .. }) => {
             gen_world(Box::new(opts.build()), world, &mut files)?;
         }
-        Category::Host(HostGenerator::Js {
-            opts,
-            component,
-            name,
-            ..
-        }) => {
-            let wasm = wat::parse_file(&component)?;
-            let name = match &name {
-                Some(name) => name.as_str(),
-                None => component
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .ok_or_else(|| anyhow!("filename not valid utf-8"))?,
-            };
-            opts.generate(name, &wasm, &mut files)?;
+        Category::Host(HostGenerator::Js { opts, component }) => {
+            gen_component(opts.build(), component, &mut files)?;
+        }
+        Category::Guest(GuestGenerator::Rust { opts, world, .. }) => {
+            gen_world(Box::new(opts.build()), world, &mut files)?;
         }
         Category::Guest(GuestGenerator::C { opts, world, .. }) => {
             gen_world(Box::new(opts.build()), world, &mut files)?;
@@ -206,5 +203,25 @@ fn gen_world(mut generator: Box<dyn Generator>, world: World, files: &mut Files)
         .collect::<Result<Vec<_>>>()?;
 
     generator.generate_all(&imports, &exports, files);
+    Ok(())
+}
+
+fn gen_component(
+    mut generator: Box<dyn ComponentGenerator>,
+    opts: ComponentOpts,
+    files: &mut Files,
+) -> Result<()> {
+    let wasm = wat::parse_file(&opts.component)?;
+    let name = match &opts.name {
+        Some(name) => name.as_str(),
+        None => opts
+            .component
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| anyhow!("filename not valid utf-8"))?,
+    };
+
+    wit_bindgen_core::component::generate(&mut *generator, name, &wasm, files)?;
+
     Ok(())
 }
