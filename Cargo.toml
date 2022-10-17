@@ -47,6 +47,7 @@ wit-bindgen-guest-rust = { path = 'crates/guest-rust', version = '0.3.0' }
 wit-bindgen-host-wasmtime-rust = { path = 'crates/host-wasmtime-rust', version = '0.3.0' }
 wit-parser = { path = 'crates/wit-parser', version = '0.3.0' }
 wit-component = { path = 'crates/wit-component', version = '0.3.0', default-features = false }
+wit-bindgen-rust-macro-shared = { path = 'crates/rust-macro-shared', version = '0.3.0' }
 
 [[bin]]
 name = "wit-bindgen"
@@ -64,3 +65,4 @@ wit-bindgen-gen-guest-c = { path = 'crates/gen-guest-c', features = ['clap'] }
 wit-bindgen-gen-markdown = { path = 'crates/gen-markdown', features = ['clap'] }
 wit-bindgen-gen-guest-teavm-java = { path = 'crates/gen-guest-teavm-java', features = ['clap'] }
 wat = { workspace = true }
+wit-component = { workspace = true }

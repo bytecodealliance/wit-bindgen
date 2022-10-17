@@ -97,7 +97,7 @@ pub trait ComponentGenerator: WorldGenerator {
         name: &str,
         component: &Component,
         modules: &PrimaryMap<StaticModuleIndex, ModuleTranslation<'_>>,
-        interfaces: &ComponentInterfaces<'_>,
+        interfaces: &ComponentInterfaces,
     );
 
     fn finish_component(&mut self, name: &str, files: &mut Files);

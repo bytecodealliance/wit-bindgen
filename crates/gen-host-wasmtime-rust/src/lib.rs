@@ -93,7 +93,7 @@ impl WorldGenerator for Wasmtime {
         );
     }
 
-    fn export_default(&mut self, iface: &Interface, _files: &mut Files) {
+    fn export_default(&mut self, _name: &str, iface: &Interface, _files: &mut Files) {
         let mut gen = InterfaceGenerator::new(self, iface, TypeMode::AllBorrowed("'a"));
         gen.types();
         for func in iface.functions.iter() {

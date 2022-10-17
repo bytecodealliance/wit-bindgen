@@ -544,14 +544,14 @@ pub trait WorldGenerator {
             self.export(name, export, files);
         }
         if let Some(iface) = &interfaces.default {
-            self.export_default(iface, files);
+            self.export_default(name, iface, files);
         }
         self.finish(name, files);
     }
 
     fn import(&mut self, name: &str, iface: &Interface, files: &mut Files);
     fn export(&mut self, name: &str, iface: &Interface, files: &mut Files);
-    fn export_default(&mut self, iface: &Interface, files: &mut Files);
+    fn export_default(&mut self, name: &str, iface: &Interface, files: &mut Files);
     fn finish(&mut self, name: &str, files: &mut Files);
 }
 

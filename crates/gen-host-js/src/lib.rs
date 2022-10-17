@@ -135,7 +135,7 @@ impl ComponentGenerator for Js {
         name: &str,
         component: &Component,
         modules: &PrimaryMap<StaticModuleIndex, ModuleTranslation<'_>>,
-        interfaces: &ComponentInterfaces<'_>,
+        interfaces: &ComponentInterfaces,
     ) {
         // Generate the TypeScript definition of the `instantiate` function
         // which is the main workhorse of the generated bindings.
@@ -205,7 +205,7 @@ impl WorldGenerator for Js {
         uwriteln!(self.export_object, "{name}: {camel}Exports;");
     }
 
-    fn export_default(&mut self, iface: &Interface, _files: &mut Files) {
+    fn export_default(&mut self, _name: &str, iface: &Interface, _files: &mut Files) {
         let mut gen = self.js_interface(iface);
         for func in iface.functions.iter() {
             gen.ts_func(func);
@@ -562,7 +562,7 @@ struct Instantiator<'a> {
     gen: &'a mut Js,
     modules: &'a PrimaryMap<StaticModuleIndex, ModuleTranslation<'a>>,
     instances: PrimaryMap<RuntimeInstanceIndex, StaticModuleIndex>,
-    interfaces: &'a ComponentInterfaces<'a>,
+    interfaces: &'a ComponentInterfaces,
     component: &'a Component,
 }
 

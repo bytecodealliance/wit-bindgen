@@ -1,8 +1,9 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use wit_bindgen_core::component::ComponentGenerator;
-use wit_bindgen_core::{wit_parser, Files, Generator};
+use wit_bindgen_core::{wit_parser, Files, Generator, WorldGenerator};
+use wit_component::ComponentInterfaces;
 use wit_parser::Interface;
 
 /// Helper for passing VERSION to opt.
@@ -33,7 +34,7 @@ enum Category {
         #[clap(flatten)]
         common: Common,
         #[clap(flatten)]
-        world: World,
+        world: LegacyWorld,
     },
 }
 
@@ -55,7 +56,7 @@ enum HostGenerator {
         #[clap(flatten)]
         common: Common,
         #[clap(flatten)]
-        world: World,
+        world: LegacyWorld,
     },
     /// Generates bindings for JavaScript hosts.
     Js {
@@ -84,7 +85,7 @@ enum GuestGenerator {
         #[clap(flatten)]
         common: Common,
         #[clap(flatten)]
-        world: World,
+        world: LegacyWorld,
     },
     /// Generates bindings for TeaVM-based Java guest modules.
     TeavmJava {
@@ -93,21 +94,68 @@ enum GuestGenerator {
         #[clap(flatten)]
         common: Common,
         #[clap(flatten)]
-        world: World,
+        world: LegacyWorld,
     },
 }
 
 #[derive(Debug, Parser)]
-struct World {
+struct LegacyWorld {
     /// Generate import bindings for the given `*.wit` interface. Can be
     /// specified multiple times.
-    #[clap(long = "import", short)]
+    #[clap(long, short)]
     imports: Vec<PathBuf>,
 
     /// Generate export bindings for the given `*.wit` interface. Can be
     /// specified multiple times.
-    #[clap(long = "export", short)]
+    #[clap(long, short)]
     exports: Vec<PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+struct World {
+    /// Generate bindings for the guest import interfaces specified.
+    #[clap(long = "import", short, value_name = "[NAME=]INTERFACE", value_parser = parse_named_interface)]
+    imports: Vec<Interface>,
+
+    /// Generate bindings for the guest export interfaces specified.
+    #[clap(long = "export", short, value_name = "[NAME=]INTERFACE", value_parser = parse_named_interface)]
+    exports: Vec<Interface>,
+
+    /// Generate bindings for the guest default export interface specified.
+    #[clap(long, short, value_name = "[NAME=]INTERFACE", value_parser = parse_named_interface)]
+    default: Option<Interface>,
+
+    /// The top-level name of the generated bindings, which may be used for
+    /// naming modules/files/etc.
+    #[clap(long, short)]
+    name: String,
+}
+
+fn parse_named_interface(s: &str) -> Result<Interface> {
+    let mut parts = s.splitn(2, '=');
+    let name_or_path = parts.next().unwrap();
+    let (name, path) = match parts.next() {
+        Some(path) => (name_or_path, path),
+        None => {
+            let name = Path::new(name_or_path)
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap();
+            (name, name_or_path)
+        }
+    };
+    let path = Path::new(path);
+    if !path.is_file() {
+        bail!("interface file `{}` does not exist", path.display());
+    }
+
+    let mut interface = Interface::parse_file(&path)
+        .with_context(|| format!("failed to parse interface file `{}`", path.display()))?;
+
+    interface.name = name.to_string();
+
+    Ok(interface)
 }
 
 #[derive(Debug, Parser)]
@@ -152,25 +200,25 @@ fn main() -> Result<()> {
     let mut files = Files::default();
     match opt.category {
         Category::Host(HostGenerator::WasmtimeRust { opts, world, .. }) => {
-            gen_world(Box::new(opts.build()), world, &mut files)?;
+            gen_world(opts.build(), world, &mut files)?;
         }
         Category::Host(HostGenerator::WasmtimePy { opts, world, .. }) => {
-            gen_world(Box::new(opts.build()), world, &mut files)?;
+            gen_legacy_world(Box::new(opts.build()), world, &mut files)?;
         }
         Category::Host(HostGenerator::Js { opts, component }) => {
             gen_component(opts.build(), component, &mut files)?;
         }
         Category::Guest(GuestGenerator::Rust { opts, world, .. }) => {
-            gen_world(Box::new(opts.build()), world, &mut files)?;
+            gen_world(opts.build(), world, &mut files)?;
         }
         Category::Guest(GuestGenerator::C { opts, world, .. }) => {
-            gen_world(Box::new(opts.build()), world, &mut files)?;
+            gen_legacy_world(Box::new(opts.build()), world, &mut files)?;
         }
         Category::Guest(GuestGenerator::TeavmJava { opts, world, .. }) => {
-            gen_world(Box::new(opts.build()), world, &mut files)?;
+            gen_legacy_world(Box::new(opts.build()), world, &mut files)?;
         }
         Category::Markdown { opts, world, .. } => {
-            gen_world(Box::new(opts.build()), world, &mut files)?;
+            gen_legacy_world(Box::new(opts.build()), world, &mut files)?;
         }
     }
 
@@ -190,7 +238,11 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn gen_world(mut generator: Box<dyn Generator>, world: World, files: &mut Files) -> Result<()> {
+fn gen_legacy_world(
+    mut generator: Box<dyn Generator>,
+    world: LegacyWorld,
+    files: &mut Files,
+) -> Result<()> {
     let imports = world
         .imports
         .iter()
@@ -203,6 +255,30 @@ fn gen_world(mut generator: Box<dyn Generator>, world: World, files: &mut Files)
         .collect::<Result<Vec<_>>>()?;
 
     generator.generate_all(&imports, &exports, files);
+    Ok(())
+}
+
+fn gen_world(
+    mut generator: Box<dyn WorldGenerator>,
+    world: World,
+    files: &mut Files,
+) -> Result<()> {
+    let imports = world
+        .imports
+        .into_iter()
+        .map(|i| (i.name.clone(), i))
+        .collect();
+    let exports = world
+        .exports
+        .into_iter()
+        .map(|i| (i.name.clone(), i))
+        .collect();
+    let interfaces = ComponentInterfaces {
+        imports,
+        exports,
+        default: world.default,
+    };
+    generator.generate(&world.name, &interfaces, files);
     Ok(())
 }
 

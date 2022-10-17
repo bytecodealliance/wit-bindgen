@@ -1,9 +1,9 @@
 mod exports {
     macro_rules! codegen_test {
         ($name:ident $test:tt) => {
-            wit_bindgen_guest_rust::export!($test);
-
-            guest_rust_test_macro::gen_dummy_export!($test);
+            mod $name {
+                wit_bindgen_guest_rust::generate!({ export: $test });
+            }
 
             #[test]
             fn $name() {}
@@ -15,7 +15,9 @@ mod exports {
 mod imports {
     macro_rules! codegen_test {
         ($name:ident $test:tt) => {
-            wit_bindgen_guest_rust::import!($test);
+            wit_bindgen_guest_rust::generate!({
+                import: $test,
+            });
 
             #[test]
             fn $name() {}
@@ -26,8 +28,8 @@ mod imports {
     mod unchecked {
         macro_rules! codegen_test {
             ($name:ident $test:tt) => {
-                wit_bindgen_guest_rust::import!({
-                    paths: [$test],
+                wit_bindgen_guest_rust::generate!({
+                    import: $test,
                     unchecked,
                 });
 
@@ -40,8 +42,8 @@ mod imports {
 }
 
 mod strings {
-    wit_bindgen_guest_rust::import!({
-        src["cat"]: "
+    wit_bindgen_guest_rust::generate!({
+        import_str["cat"]: "
             foo: func(x: string)
             bar: func() -> string
         ",
@@ -59,8 +61,8 @@ mod strings {
 
 /// Like `strings` but with raw_strings`.
 mod raw_strings {
-    wit_bindgen_guest_rust::import!({
-        src["cat"]: "
+    wit_bindgen_guest_rust::generate!({
+        import_str["cat"]: "
             foo: func(x: string)
             bar: func() -> string
         ",

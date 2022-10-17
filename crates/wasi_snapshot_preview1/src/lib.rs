@@ -13,13 +13,12 @@
 //! imports will be adapted to a custom `wit-bindgen`-specific host `*.wit` file
 //! which is only suitable for `wit-bindgen` tests.
 
-#![no_std]
 #![allow(unused_variables)]
 
-use core::arch::wasm32::unreachable;
+use std::arch::wasm32::unreachable;
 use wasi::*;
 
-wit_bindgen_guest_rust::import!({ paths: ["testwasi.wit"], no_std });
+wit_bindgen_guest_rust::generate!({ import: "testwasi.wit" });
 
 // Nothing in this wasm module should end up needing cabi_realloc. However, if
 // we don't define this trapping implementation of the export, we'll pull in

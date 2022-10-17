@@ -1,11 +1,14 @@
-wit_bindgen_guest_rust::import!("../../tests/runtime/many_arguments/imports.wit");
-wit_bindgen_guest_rust::export!("../../tests/runtime/many_arguments/exports.wit");
+wit_bindgen_guest_rust::generate!({
+    import: "../../tests/runtime/many_arguments/imports.wit",
+    default: "../../tests/runtime/many_arguments/exports.wit",
+    name: "exports",
+});
 
-use imports::*;
+struct Component;
 
-struct Exports;
+export_exports!(Component);
 
-impl exports::Exports for Exports {
+impl exports::Exports for Component {
     fn many_arguments(
         a1: u64,
         a2: u64,
@@ -40,7 +43,7 @@ impl exports::Exports for Exports {
         assert_eq!(a14, 14);
         assert_eq!(a15, 15);
         assert_eq!(a16, 16);
-        many_arguments(
+        imports::many_arguments(
             a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16,
         );
     }
