@@ -2,12 +2,18 @@ use anyhow::Result;
 use std::sync::Once;
 use wit_bindgen_core::component::ComponentGenerator;
 use wit_bindgen_core::wit_parser::Interface;
-use wit_bindgen_core::{Files, Generator};
+use wit_bindgen_core::{Files, Generator, WorldGenerator};
+use wit_component::ComponentInterfaces;
 
-wit_bindgen_guest_rust::export!("demo.wit");
-wit_bindgen_guest_rust::import!("console.wit");
+wit_bindgen_guest_rust::generate!({
+    import: "console.wit",
+    default: "demo.wit",
+    name: "demo",
+});
 
 struct Demo;
+
+export_demo!(Demo);
 
 impl demo::Demo for Demo {
     fn render(
@@ -49,13 +55,27 @@ fn init() {
 fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Options) -> Result<()> {
     let iface = Interface::parse("input", &wit)?;
 
-    let gen_world = |mut gen: Box<dyn Generator>, files: &mut Files| {
+    let gen_world_legacy = |mut gen: Box<dyn Generator>, files: &mut Files| {
         let (imports, exports) = if options.import {
             (vec![iface.clone()], vec![])
         } else {
             (vec![], vec![iface.clone()])
         };
         gen.generate_all(&imports, &exports, files);
+    };
+
+    let gen_world = |mut gen: Box<dyn WorldGenerator>, files: &mut Files| {
+        let (imports, default) = if options.import {
+            (vec![iface.clone()], None)
+        } else {
+            (vec![], Some(iface.clone()))
+        };
+        let interfaces = ComponentInterfaces {
+            imports: imports.into_iter().map(|i| (i.name.clone(), i)).collect(),
+            exports: Default::default(),
+            default,
+        };
+        gen.generate("demo", &interfaces, files);
     };
 
     let gen_component = |mut gen: Box<dyn ComponentGenerator>, files: &mut Files| {
@@ -79,26 +99,26 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
         demo::Lang::Rust => {
             let mut opts = wit_bindgen_gen_guest_rust::Opts::default();
             opts.unchecked = options.rust_unchecked;
-            gen_world(Box::new(opts.build()), files)
+            gen_world(opts.build(), files)
         }
-        demo::Lang::Java => gen_world(
+        demo::Lang::Java => gen_world_legacy(
             Box::new(wit_bindgen_gen_guest_teavm_java::Opts::default().build()),
             files,
         ),
         demo::Lang::Wasmtime => {
             let mut opts = wit_bindgen_gen_host_wasmtime_rust::Opts::default();
             opts.tracing = options.wasmtime_tracing;
-            gen_world(Box::new(opts.build()), files)
+            gen_world(opts.build(), files)
         }
-        demo::Lang::WasmtimePy => gen_world(
+        demo::Lang::WasmtimePy => gen_world_legacy(
             Box::new(wit_bindgen_gen_host_wasmtime_py::Opts::default().build()),
             files,
         ),
-        demo::Lang::C => gen_world(
+        demo::Lang::C => gen_world_legacy(
             Box::new(wit_bindgen_gen_guest_c::Opts::default().build()),
             files,
         ),
-        demo::Lang::Markdown => gen_world(
+        demo::Lang::Markdown => gen_world_legacy(
             Box::new(wit_bindgen_gen_markdown::Opts::default().build()),
             files,
         ),
