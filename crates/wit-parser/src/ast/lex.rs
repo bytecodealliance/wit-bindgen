@@ -699,6 +699,13 @@ fn test_tokenizer() {
     assert_eq!(collect("%a-a").unwrap(), vec![Token::ExplicitId]);
     assert_eq!(collect("%bool").unwrap(), vec![Token::ExplicitId]);
     assert_eq!(collect("%").unwrap(), vec![Token::ExplicitId]);
+    assert_eq!(collect("APPLE").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("APPLE-PEAR").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("APPLE-PEAR-GRAPE").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("apple-PEAR-grape").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("APPLE-pear-GRAPE").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("ENOENT").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("is-XML").unwrap(), vec![Token::Id]);
 
     assert_eq!(collect("func").unwrap(), vec![Token::Func]);
     assert_eq!(
