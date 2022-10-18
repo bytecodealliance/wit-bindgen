@@ -1166,7 +1166,7 @@ impl Generator for C {
             self.src.c,
             "\
                 #include <stdlib.h>
-                #include <{}.h>
+                #include \"{}.h\"
 
                 // The following symbols are never called, but they are sufficient
                 // to get the custom sections in the component type object linked
