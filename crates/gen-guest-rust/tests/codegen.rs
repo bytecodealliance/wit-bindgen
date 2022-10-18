@@ -1,8 +1,23 @@
+#![allow(unused_macros)]
+
 mod exports {
     macro_rules! codegen_test {
         ($name:ident $test:tt) => {
             mod $name {
-                wit_bindgen_guest_rust::generate!({ export: $test });
+                wit_bindgen_guest_rust::generate!({
+                    export: $test,
+                    name: "not-used-name",
+                });
+
+                mod default {
+                    wit_bindgen_guest_rust::generate!({
+                        default: $test,
+                        name: "the-world-name",
+                    });
+
+                    #[test]
+                    fn $name() {}
+                }
             }
 
             #[test]
@@ -17,6 +32,7 @@ mod imports {
         ($name:ident $test:tt) => {
             wit_bindgen_guest_rust::generate!({
                 import: $test,
+                name: "not-used-name",
             });
 
             #[test]
@@ -31,6 +47,7 @@ mod imports {
                 wit_bindgen_guest_rust::generate!({
                     import: $test,
                     unchecked,
+                    name: "not-used-name",
                 });
 
                 #[test]
@@ -41,12 +58,36 @@ mod imports {
     }
 }
 
+mod altogether {
+    macro_rules! codegen_test {
+        ($name:ident $test:tt) => {
+            mod $name {
+                wit_bindgen_guest_rust::generate!({
+                    // rename the input `*.wit` file for imports/exports to
+                    // avoid having them having the same name which the rust
+                    // generator currently doesn't support.
+                    import["the-import"]: $test,
+                    export["the-export"]: $test,
+                    default: $test,
+                    unchecked,
+                    name: "not-used-name",
+                });
+
+                #[test]
+                fn works() {}
+            }
+        };
+    }
+    test_helpers::codegen_tests!("*.wit");
+}
+
 mod strings {
     wit_bindgen_guest_rust::generate!({
         import_str["cat"]: "
             foo: func(x: string)
             bar: func() -> string
         ",
+        name: "not-used-name",
     });
 
     #[allow(dead_code)]
@@ -67,6 +108,7 @@ mod raw_strings {
             bar: func() -> string
         ",
         raw_strings,
+        name: "not-used-name",
     });
 
     #[allow(dead_code)]

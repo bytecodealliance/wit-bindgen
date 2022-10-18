@@ -2185,7 +2185,7 @@ dependencies = [
  "wit-bindgen-core",
  "wit-bindgen-gen-rust-lib",
  "wit-bindgen-host-wasmtime-rust",
- "wit-bindgen-testwasi-host-wasmtime-rust",
+ "wit-component",
 ]
 
 [[package]]
@@ -2257,15 +2257,6 @@ dependencies = [
  "syn",
  "wit-bindgen-core",
  "wit-component",
-]
-
-[[package]]
-name = "wit-bindgen-testwasi-host-wasmtime-rust"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "wasmtime",
- "wit-bindgen-host-wasmtime-rust",
 ]
 
 [[package]]

@@ -219,7 +219,7 @@ impl WorldGenerator for Js {
         gen.gen.src.ts(&mem::take(&mut gen.src.ts));
     }
 
-    fn finish(&mut self, name: &str, _files: &mut Files) {
+    fn finish(&mut self, name: &str, _interfaces: &ComponentInterfaces, _files: &mut Files) {
         let camel = name.to_upper_camel_case();
 
         // Generate a type definition for the import object to type-check

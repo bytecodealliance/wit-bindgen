@@ -1,4 +1,8 @@
-wit_bindgen_host_wasmtime_rust::export!("../../tests/runtime/invalid/imports.wit");
+wit_bindgen_host_wasmtime_rust::generate!({
+    import: "../../tests/runtime/invalid/imports.wit",
+    default: "../../tests/runtime/invalid/exports.wit",
+    name: "exports",
+});
 
 use anyhow::{Context, Result};
 use imports::*;
@@ -66,11 +70,7 @@ impl Imports for MyImports {
     }
 }
 
-wit_bindgen_host_wasmtime_rust::import!("../../tests/runtime/invalid/exports.wit");
-
 fn run(wasm: &str) -> Result<()> {
-    use exports::*;
-
     let engine = Engine::new(&crate::default_config()?)?;
     let module = Component::from_file(&engine, wasm)?;
 
@@ -78,7 +78,7 @@ fn run(wasm: &str) -> Result<()> {
     imports::add_to_linker(&mut linker, |cx: &mut crate::Context<MyImports>| {
         &mut cx.imports
     })?;
-    wit_bindgen_testwasi_host_wasmtime_rust::add_to_linker(&mut linker, |cx| &mut cx.testwasi)?;
+    crate::testwasi::add_to_linker(&mut linker, |cx| &mut cx.testwasi)?;
 
     let mut store = Store::new(&engine, Default::default());
 

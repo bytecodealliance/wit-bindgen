@@ -1,13 +1,15 @@
+wit_bindgen_host_wasmtime_rust::generate!({
+    import: "../../tests/runtime/records/imports.wit",
+    default: "../../tests/runtime/records/exports.wit",
+    name: "exports",
+});
+
 use anyhow::Result;
-
-wit_bindgen_host_wasmtime_rust::export!("../../tests/runtime/records/imports.wit");
-
-use imports::*;
 
 #[derive(Default)]
 pub struct MyImports;
 
-impl Imports for MyImports {
+impl imports::Imports for MyImports {
     fn multiple_results(&mut self) -> (u8, u16) {
         (4, 5)
     }
@@ -16,27 +18,32 @@ impl Imports for MyImports {
         (a.1, a.0)
     }
 
-    fn roundtrip_flags1(&mut self, a: F1) -> F1 {
+    fn roundtrip_flags1(&mut self, a: imports::F1) -> imports::F1 {
         drop(format!("{:?}", a));
-        drop(a & F1::all());
+        drop(a & imports::F1::all());
         a
     }
 
-    fn roundtrip_flags2(&mut self, a: F2) -> F2 {
+    fn roundtrip_flags2(&mut self, a: imports::F2) -> imports::F2 {
         a
     }
 
     fn roundtrip_flags3(
         &mut self,
-        a: Flag8,
-        b: Flag16,
-        c: Flag32,
-        d: Flag64,
-    ) -> (Flag8, Flag16, Flag32, Flag64) {
+        a: imports::Flag8,
+        b: imports::Flag16,
+        c: imports::Flag32,
+        d: imports::Flag64,
+    ) -> (
+        imports::Flag8,
+        imports::Flag16,
+        imports::Flag32,
+        imports::Flag64,
+    ) {
         (a, b, c, d)
     }
 
-    fn roundtrip_record1(&mut self, a: R1) -> R1 {
+    fn roundtrip_record1(&mut self, a: imports::R1) -> imports::R1 {
         drop(format!("{:?}", a));
         a
     }
@@ -48,11 +55,7 @@ impl Imports for MyImports {
     }
 }
 
-wit_bindgen_host_wasmtime_rust::import!("../../tests/runtime/records/exports.wit");
-
 fn run(wasm: &str) -> Result<()> {
-    use exports::*;
-
     let (exports, mut store) = crate::instantiate(
         wasm,
         |linker| imports::add_to_linker(linker, |cx| -> &mut MyImports { &mut cx.imports }),

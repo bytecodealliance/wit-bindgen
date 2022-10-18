@@ -44,6 +44,8 @@ extern "C" {
 
 struct Exports;
 
+export_exports!(Exports);
+
 impl exports::Exports for Exports {
     fn invalid_bool() {
         unsafe {

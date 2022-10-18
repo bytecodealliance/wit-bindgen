@@ -1,6 +1,10 @@
 use anyhow::Result;
 
-wit_bindgen_host_wasmtime_rust::export!("../../tests/runtime/smoke/imports.wit");
+wit_bindgen_host_wasmtime_rust::generate!({
+    import: "../../tests/runtime/smoke/imports.wit",
+    default: "../../tests/runtime/smoke/exports.wit",
+    name: "exports",
+});
 
 #[derive(Default)]
 pub struct MyImports {
@@ -14,8 +18,6 @@ impl imports::Imports for MyImports {
     }
 }
 
-wit_bindgen_host_wasmtime_rust::import!("../../tests/runtime/smoke/exports.wit");
-
 fn run(wasm: &str) -> Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
@@ -25,7 +27,7 @@ fn run(wasm: &str) -> Result<()> {
                 |cx: &mut crate::Context<MyImports>| -> &mut MyImports { &mut cx.imports },
             )
         },
-        |store, module, linker| exports::Exports::instantiate(store, module, linker),
+        |store, module, linker| Exports::instantiate(store, module, linker),
     )?;
 
     exports.thunk(&mut store)?;

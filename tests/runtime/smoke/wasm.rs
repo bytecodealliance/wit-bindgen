@@ -6,6 +6,8 @@ wit_bindgen_guest_rust::generate!({
 
 struct Exports;
 
+export_exports!(Exports);
+
 impl exports::Exports for Exports {
     fn thunk() {
         imports::thunk();

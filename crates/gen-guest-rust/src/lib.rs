@@ -11,6 +11,7 @@ use wit_bindgen_core::{
 use wit_bindgen_gen_rust_lib::{
     int_repr, wasm_type, FnSig, RustFlagsRepr, RustFunctionGenerator, RustGenerator, TypeMode,
 };
+use wit_component::ComponentInterfaces;
 
 #[derive(Default)]
 struct RustWasm {
@@ -39,6 +40,11 @@ pub struct Opts {
     /// If true, code generation should avoid any features that depend on `std`.
     #[cfg_attr(feature = "clap", arg(long))]
     pub no_std: bool,
+
+    /// If true, adds `#[macro_export]` to the `export_*!` macro generated to
+    /// export it from the Rust crate.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub macro_export: bool,
 
     /// If true, code generation should pass borrowed string arguments as
     /// `&[u8]` instead of `&str`. Strings are still required to be valid
@@ -108,15 +114,20 @@ impl WorldGenerator for RustWasm {
             .generate_exports(name);
     }
 
-    fn finish(&mut self, name: &str, files: &mut Files) {
+    fn finish(&mut self, name: &str, interfaces: &ComponentInterfaces, files: &mut Files) {
         if !self.exports.is_empty() {
             let snake = name.to_snake_case();
+            let macro_export = if self.opts.macro_export {
+                "#[macro_export]"
+            } else {
+                ""
+            };
             uwrite!(
                 self.src,
                 "
                     /// Declares the export of the component's world for the
                     /// given type.
-                    #[macro_export]
+                    {macro_export}
                     macro_rules! export_{snake}(($t:ident) => {{
                         const _: () = {{
 
@@ -133,6 +144,33 @@ impl WorldGenerator for RustWasm {
                 "
             );
         }
+
+        self.src.push_str("#[cfg(target_arch = \"wasm32\")]\n");
+
+        // The custom section name here must start with "component-type" but
+        // otherwise is attempted to be unique here to ensure that this doesn't get
+        // concatenated to other custom sections by LLD by accident since LLD will
+        // concatenate custom sections of the same name.
+        self.src
+            .push_str(&format!("#[link_section = \"component-type:{name}\"]\n"));
+
+        let mut encoder = wit_component::ComponentEncoder::default()
+            .imports(interfaces.imports.values().cloned())
+            .unwrap()
+            .exports(interfaces.exports.values().cloned())
+            .unwrap();
+        if let Some(default) = &interfaces.default {
+            encoder = encoder.interface(default.clone()).unwrap();
+        }
+        let component_type = encoder
+            .types_only(true)
+            .encode()
+            .expect("encoding a component type");
+        self.src.push_str(&format!(
+            "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",
+            component_type.len()
+        ));
+        self.src.push_str(&format!("{:?};\n", component_type));
 
         let mut src = mem::take(&mut self.src);
         if self.opts.rustfmt {
@@ -396,43 +434,6 @@ impl InterfaceGenerator<'_> {
 
         self.gen.exports.push(macro_src);
     }
-
-    //     fn finish_functions(&mut self, iface: &Interface, dir: Direction) {
-
-    //         self.src.push_str("#[cfg(target_arch = \"wasm32\")]\n");
-
-    //         // The custom section name here must start with "component-type" but
-    //         // otherwise is attempted to be unique here to ensure that this doesn't get
-    //         // concatenated to other custom sections by LLD by accident since LLD will
-    //         // concatenate custom sections of the same name.
-    //         let direction = match dir {
-    //             Direction::Import => "import",
-    //             Direction::Export => "export",
-    //         };
-    //         let iface_name = &iface.name;
-    //         self.src.push_str(&format!(
-    //             "#[link_section = \"component-type:{direction}:{iface_name}\"]\n"
-    //         ));
-
-    //         let mut encoder = wit_component::ComponentEncoder::default();
-    //         encoder = match dir {
-    //             Direction::Import => encoder.imports([iface.clone()]).unwrap(),
-    //             Direction::Export => encoder.interface(iface.clone()).unwrap(),
-    //         };
-    //         let component_type = encoder.types_only(true).encode().expect(&format!(
-    //             "encoding interface {} as a component type",
-    //             iface.name
-    //         ));
-    //         self.src.push_str(&format!(
-    //             "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",
-    //             component_type.len()
-    //         ));
-    //         self.src.push_str(&format!("{:?};\n", component_type));
-
-    //         // For standalone generation, close the export! macro
-    //         if self.opts.standalone && dir == Direction::Export {
-    //             self.src.push_str("});\n");
-    //         }
 }
 
 impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {

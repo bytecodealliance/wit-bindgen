@@ -18,7 +18,10 @@
 use std::arch::wasm32::unreachable;
 use wasi::*;
 
-wit_bindgen_guest_rust::generate!({ import: "testwasi.wit" });
+wit_bindgen_guest_rust::generate!({
+    import: "testwasi.wit",
+    name: "testwasi",
+});
 
 // Nothing in this wasm module should end up needing cabi_realloc. However, if
 // we don't define this trapping implementation of the export, we'll pull in

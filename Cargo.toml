@@ -10,7 +10,6 @@ members = [
   "crates/wit-bindgen-demo",
   "crates/wit-component",
   "crates/wasi_snapshot_preview1",
-  "crates/wasi_snapshot_preview1/host-wasmtime-rust",
 ]
 resolver = "2"
 

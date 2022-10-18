@@ -534,7 +534,7 @@ pub trait RustGenerator<'a> {
                     to_rust_ident(&field.name)
                 ));
             }
-            self.push_str(".finish()");
+            self.push_str(".finish()\n");
             self.push_str("}\n");
             self.push_str("}\n");
         }

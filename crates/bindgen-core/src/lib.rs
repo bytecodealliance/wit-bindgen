@@ -546,13 +546,13 @@ pub trait WorldGenerator {
         if let Some(iface) = &interfaces.default {
             self.export_default(name, iface, files);
         }
-        self.finish(name, files);
+        self.finish(name, interfaces, files);
     }
 
     fn import(&mut self, name: &str, iface: &Interface, files: &mut Files);
     fn export(&mut self, name: &str, iface: &Interface, files: &mut Files);
     fn export_default(&mut self, name: &str, iface: &Interface, files: &mut Files);
-    fn finish(&mut self, name: &str, files: &mut Files);
+    fn finish(&mut self, name: &str, interfaces: &ComponentInterfaces, files: &mut Files);
 }
 
 /// This is a possible replacement for the `Generator` trait above, currently

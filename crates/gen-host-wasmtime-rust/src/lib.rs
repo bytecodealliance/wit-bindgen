@@ -8,7 +8,8 @@ use wit_bindgen_core::{
     uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Source, TypeInfo, Types,
     WorldGenerator,
 };
-use wit_bindgen_gen_rust_lib::{to_rust_ident, FnSig, RustGenerator, TypeMode};
+use wit_bindgen_gen_rust_lib::{FnSig, RustGenerator, TypeMode};
+use wit_component::ComponentInterfaces;
 
 #[derive(Default)]
 struct Wasmtime {
@@ -72,9 +73,41 @@ impl WorldGenerator for Wasmtime {
     fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
         let mut gen = InterfaceGenerator::new(self, iface, TypeMode::AllBorrowed("'a"));
         gen.types();
+
+        let camel = name.to_upper_camel_case();
+        uwriteln!(gen.src, "pub struct {camel} {{");
         for func in iface.functions.iter() {
-            gen.append_guest_export(Some(name), func);
+            uwriteln!(
+                gen.src,
+                "{}: wasmtime::component::Func,",
+                func.name.to_snake_case()
+            );
         }
+        uwriteln!(gen.src, "}}");
+
+        uwriteln!(gen.src, "impl {camel} {{");
+        uwrite!(
+            gen.src,
+            "
+                pub fn new(
+                    exports: &mut wasmtime::component::ExportInstance<'_, '_>,
+                ) -> anyhow::Result<{camel}> {{
+            "
+        );
+        let fields = gen.extract_typed_functions();
+        for (name, getter) in fields.iter() {
+            uwriteln!(gen.src, "let {name} = {getter};");
+        }
+        uwriteln!(gen.src, "Ok({camel} {{");
+        for (name, _) in fields.iter() {
+            uwriteln!(gen.src, "{name},");
+        }
+        uwriteln!(gen.src, "}})");
+        uwriteln!(gen.src, "}}");
+        for func in iface.functions.iter() {
+            gen.define_rust_guest_export(Some(name), func);
+        }
+        uwriteln!(gen.src, "}}");
 
         let snake = name.to_snake_case();
         let module = &gen.src[..];
@@ -91,20 +124,54 @@ impl WorldGenerator for Wasmtime {
                 }}
             "
         );
+
+        let getter = format!(
+            "\
+                {snake}::{camel}::new(
+                    &mut exports.instance(\"{name}\")
+                        .ok_or_else(|| anyhow::anyhow!(\"exported instance `{name}` not present\"))?
+                )?\
+            "
+        );
+        let prev = self
+            .exports
+            .fields
+            .insert(snake.clone(), (format!("{snake}::{camel}"), getter));
+        assert!(prev.is_none());
+        self.exports.funcs.push(format!(
+            "
+                pub fn {snake}(&self) -> &{snake}::{camel} {{
+                    &self.{snake}
+                }}
+            "
+        ));
     }
 
     fn export_default(&mut self, _name: &str, iface: &Interface, _files: &mut Files) {
         let mut gen = InterfaceGenerator::new(self, iface, TypeMode::AllBorrowed("'a"));
         gen.types();
+        let fields = gen.extract_typed_functions();
+        for (name, getter) in fields {
+            let prev = gen
+                .gen
+                .exports
+                .fields
+                .insert(name, ("wasmtime::component::Func".to_string(), getter));
+            assert!(prev.is_none());
+        }
+
         for func in iface.functions.iter() {
-            gen.append_guest_export(None, func);
+            let prev = mem::take(&mut gen.src);
+            gen.define_rust_guest_export(None, func);
+            let func = mem::replace(&mut gen.src, prev);
+            gen.gen.exports.funcs.push(func.to_string());
         }
 
         let src = gen.src;
         self.src.push_str(&src);
     }
 
-    fn finish(&mut self, name: &str, files: &mut Files) {
+    fn finish(&mut self, name: &str, _interfaces: &ComponentInterfaces, files: &mut Files) {
         let camel = name.to_upper_camel_case();
         uwriteln!(self.src, "pub struct {camel} {{");
         for (name, (ty, _)) in self.exports.fields.iter() {
@@ -141,6 +208,8 @@ impl WorldGenerator for Wasmtime {
                         instance: &wasmtime::component::Instance,
                     ) -> anyhow::Result<Self> {{
                         let mut store = store.as_context_mut();
+                        let mut exports = instance.exports(&mut store);
+                        let mut exports = exports.root();
             ",
         );
         for (name, (_, get)) in self.exports.fields.iter() {
@@ -250,6 +319,7 @@ impl<'a> InterfaceGenerator<'a> {
             self.print_docs_and_params(func, TypeMode::Owned, &fnsig);
             self.push_str(" -> ");
             self.print_result_ty(&func.results, TypeMode::Owned);
+            self.push_str(";\n");
         }
         uwriteln!(self.src, "}}");
 
@@ -318,8 +388,33 @@ impl<'a> InterfaceGenerator<'a> {
         self.src.push_str("}");
     }
 
-    fn append_guest_export(&mut self, ns: Option<&str>, func: &Function) {
+    fn extract_typed_functions(&mut self) -> Vec<(String, String)> {
         let prev = mem::take(&mut self.src);
+        let mut ret = Vec::new();
+        for func in self.iface.functions.iter() {
+            let snake = func.name.to_snake_case();
+            uwrite!(self.src, "*exports.typed_func::<(");
+            for (_, ty) in func.params.iter() {
+                self.print_ty(ty, TypeMode::AllBorrowed("'_"));
+                self.push_str(", ");
+            }
+            self.src.push_str("), (");
+            for ty in func.results.iter_types() {
+                self.print_ty(ty, TypeMode::Owned);
+                self.push_str(", ");
+            }
+            self.src.push_str(")>(\"");
+            self.src.push_str(&func.name);
+            self.src.push_str("\")?.func()");
+
+            ret.push((snake, mem::take(&mut self.src).to_string()));
+        }
+        self.src = prev;
+        return ret;
+    }
+
+    fn define_rust_guest_export(&mut self, ns: Option<&str>, func: &Function) {
+        self.rustdoc(&func.docs);
         uwrite!(
             self.src,
             "pub fn {}(&self, mut store: impl wasmtime::AsContextMut, ",
@@ -337,14 +432,14 @@ impl<'a> InterfaceGenerator<'a> {
         if self.gen.opts.tracing {
             self.src.push_str(&format!(
                 "
-                       let span = wit_bindgen_host_wasmtime_rust::tracing::span!(
-                           wit_bindgen_host_wasmtime_rust::tracing::Level::TRACE,
-                           \"wit-bindgen guest export\",
-                           module = \"{}\",
-                           function = \"{}\",
-                       );
-                       let _enter = span.enter();
-                   ",
+                   let span = wit_bindgen_host_wasmtime_rust::tracing::span!(
+                       wit_bindgen_host_wasmtime_rust::tracing::Level::TRACE,
+                       \"wit-bindgen guest export\",
+                       module = \"{}\",
+                       function = \"{}\",
+                   );
+                   let _enter = span.enter();
+               ",
                 ns.unwrap_or("default"),
                 func.name,
             ));
@@ -389,37 +484,10 @@ impl<'a> InterfaceGenerator<'a> {
             }
             self.src.push_str(")");
         }
-        self.src.push_str(")");
+        self.src.push_str(")\n");
 
         // End function body
         self.src.push_str("}\n");
-
-        let pub_func = mem::replace(&mut self.src, prev).into();
-        let prev = mem::take(&mut self.src);
-
-        self.src.push_str("*instance.get_typed_func::<(");
-        for (_, ty) in func.params.iter() {
-            self.print_ty(ty, TypeMode::AllBorrowed("'_"));
-            self.push_str(", ");
-        }
-
-        self.src.push_str("), (");
-        for ty in func.results.iter_types() {
-            self.print_ty(ty, TypeMode::Owned);
-            self.push_str(", ");
-        }
-
-        self.src.push_str("), _>(&mut store, \"");
-        self.src.push_str(&func.name);
-        self.src.push_str("\")?.func()");
-        let getter: String = mem::replace(&mut self.src, prev).into();
-
-        self.gen.exports.funcs.push(pub_func);
-        let prev = self.gen.exports.fields.insert(
-            to_rust_ident(&func.name),
-            ("wasmtime::component::Func".to_string(), getter),
-        );
-        assert!(prev.is_none());
     }
 }
 
