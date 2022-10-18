@@ -711,16 +711,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "guest-rust-test-macro"
-version = "0.0.0"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "wit-parser",
-]
-
-[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2087,6 +2077,7 @@ dependencies = [
  "wit-bindgen-gen-host-wasmtime-py",
  "wit-bindgen-gen-host-wasmtime-rust",
  "wit-bindgen-gen-markdown",
+ "wit-component",
 ]
 
 [[package]]
@@ -2094,6 +2085,9 @@ name = "wit-bindgen-core"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "wasmparser",
+ "wasmtime-environ",
+ "wit-component",
  "wit-parser",
 ]
 
@@ -2134,7 +2128,6 @@ name = "wit-bindgen-gen-guest-rust"
 version = "0.3.0"
 dependencies = [
  "clap",
- "guest-rust-test-macro",
  "heck",
  "test-helpers",
  "wit-bindgen-core",
@@ -2157,12 +2150,10 @@ dependencies = [
 name = "wit-bindgen-gen-host-js"
 version = "0.3.0"
 dependencies = [
- "anyhow",
  "clap",
  "heck",
  "indexmap",
  "test-helpers",
- "wasmparser",
  "wasmtime-environ",
  "wit-bindgen-core",
  "wit-component",
@@ -2194,7 +2185,7 @@ dependencies = [
  "wit-bindgen-core",
  "wit-bindgen-gen-rust-lib",
  "wit-bindgen-host-wasmtime-rust",
- "wit-bindgen-testwasi-host-wasmtime-rust",
+ "wit-component",
 ]
 
 [[package]]
@@ -2231,6 +2222,7 @@ dependencies = [
  "syn",
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-rust",
+ "wit-bindgen-rust-macro-shared",
 ]
 
 [[package]]
@@ -2253,15 +2245,18 @@ dependencies = [
  "syn",
  "wit-bindgen-core",
  "wit-bindgen-gen-host-wasmtime-rust",
+ "wit-bindgen-rust-macro-shared",
+ "wit-component",
 ]
 
 [[package]]
-name = "wit-bindgen-testwasi-host-wasmtime-rust"
+name = "wit-bindgen-rust-macro-shared"
 version = "0.3.0"
 dependencies = [
- "anyhow",
- "wasmtime",
- "wit-bindgen-host-wasmtime-rust",
+ "proc-macro2",
+ "syn",
+ "wit-bindgen-core",
+ "wit-component",
 ]
 
 [[package]]

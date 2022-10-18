@@ -1,13 +1,15 @@
 use anyhow::Result;
 
-wit_bindgen_host_wasmtime_rust::export!("../../tests/runtime/variants/imports.wit");
-
-use imports::*;
+wit_bindgen_host_wasmtime_rust::generate!({
+    import: "../../tests/runtime/variants/imports.wit",
+    default: "../../tests/runtime/variants/exports.wit",
+    name: "exports",
+});
 
 #[derive(Default)]
 pub struct MyImports;
 
-impl Imports for MyImports {
+impl imports::Imports for MyImports {
     fn roundtrip_option(&mut self, a: Option<f32>) -> Option<u8> {
         a.map(|x| x as u8)
     }
@@ -19,7 +21,7 @@ impl Imports for MyImports {
         }
     }
 
-    fn roundtrip_enum(&mut self, a: E1) -> E1 {
+    fn roundtrip_enum(&mut self, a: imports::E1) -> imports::E1 {
         assert_eq!(a, a);
         a
     }
@@ -28,11 +30,11 @@ impl Imports for MyImports {
         !a
     }
 
-    fn variant_casts(&mut self, a: Casts) -> Casts {
+    fn variant_casts(&mut self, a: imports::Casts) -> imports::Casts {
         a
     }
 
-    fn variant_zeros(&mut self, a: Zeros) -> Zeros {
+    fn variant_zeros(&mut self, a: imports::Zeros) -> imports::Zeros {
         a
     }
 
@@ -42,20 +44,16 @@ impl Imports for MyImports {
         &mut self,
         a: bool,
         b: Result<(), ()>,
-        c: MyErrno,
-    ) -> (bool, Result<(), ()>, MyErrno) {
+        c: imports::MyErrno,
+    ) -> (bool, Result<(), ()>, imports::MyErrno) {
         assert_eq!(a, true);
         assert_eq!(b, Ok(()));
-        assert_eq!(c, MyErrno::Success);
-        (false, Err(()), MyErrno::A)
+        assert_eq!(c, imports::MyErrno::Success);
+        (false, Err(()), imports::MyErrno::A)
     }
 }
 
-wit_bindgen_host_wasmtime_rust::import!("../../tests/runtime/variants/exports.wit");
-
 fn run(wasm: &str) -> Result<()> {
-    use exports::*;
-
     let (exports, mut store) = crate::instantiate(
         wasm,
         |linker| imports::add_to_linker(linker, |cx| -> &mut MyImports { &mut cx.imports }),

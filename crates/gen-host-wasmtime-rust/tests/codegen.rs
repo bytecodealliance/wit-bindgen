@@ -1,55 +1,52 @@
 #![allow(dead_code)]
 
-mod exports {
-    macro_rules! codegen_test {
-        ($name:ident $test:tt) => {
-            wit_bindgen_host_wasmtime_rust::export!($test);
+macro_rules! codegen_test {
+    ($name:ident $test:tt) => {
+        mod $name {
+            mod export {
+                wit_bindgen_host_wasmtime_rust::generate!({
+                    export: $test,
+                    name: "the-world-name",
 
-            #[test]
-            fn $name() {}
-        };
-    }
-    test_helpers::codegen_tests!("*.wit");
+                });
+                #[test]
+                fn works() {}
+            }
 
-    mod with_options {
-        macro_rules! codegen_test {
-            ($name:ident $test:tt) => {
-                wit_bindgen_host_wasmtime_rust::export!({
-                    paths: [$test],
+            mod import {
+                wit_bindgen_host_wasmtime_rust::generate!({
+                    import: $test,
+                    name: "the-world-name",
+                });
+
+                #[test]
+                fn works() {}
+            }
+
+            mod default {
+                wit_bindgen_host_wasmtime_rust::generate!({
+                    default: $test,
+                    name: "the-world-name",
+                });
+
+                #[test]
+                fn works() {}
+            }
+
+            mod tracing {
+                wit_bindgen_host_wasmtime_rust::generate!({
+                    import: $test,
+                    default: $test,
+                    name: "the-world-name",
                     tracing: true,
                 });
 
                 #[test]
-                fn $name() {}
-            };
+                fn works() {}
+            }
+
         }
-        test_helpers::codegen_tests!("*.wit");
-    }
+    };
 }
 
-mod imports {
-    macro_rules! codegen_test {
-        ($name:ident $test:tt) => {
-            wit_bindgen_host_wasmtime_rust::import!($test);
-
-            #[test]
-            fn $name() {}
-        };
-    }
-    test_helpers::codegen_tests!("*.wit");
-
-    mod with_options {
-        macro_rules! codegen_test {
-            ($name:ident $test:tt) => {
-                wit_bindgen_host_wasmtime_rust::import!({
-                    paths: [$test],
-                    tracing: true,
-                });
-
-                #[test]
-                fn $name() {}
-            };
-        }
-        test_helpers::codegen_tests!("*.wit");
-    }
-}
+test_helpers::codegen_tests!("*.wit");

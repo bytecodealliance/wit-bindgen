@@ -1,20 +1,20 @@
-use anyhow::{Context, Result};
 use heck::*;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::mem;
-use wasmparser::{Validator, WasmFeatures};
 use wasmtime_environ::component::{
-    CanonicalOptions, Component, ComponentTypesBuilder, CoreDef, CoreExport, Export, ExportItem,
-    GlobalInitializer, InstantiateModule, LowerImport, RuntimeInstanceIndex, StaticModuleIndex,
-    StringEncoding, Translator,
+    CanonicalOptions, Component, CoreDef, CoreExport, Export, ExportItem, GlobalInitializer,
+    InstantiateModule, LowerImport, RuntimeInstanceIndex, StaticModuleIndex, StringEncoding,
 };
-use wasmtime_environ::{EntityIndex, ModuleTranslation, PrimaryMap, ScopeVec, Tunables};
+use wasmtime_environ::{EntityIndex, ModuleTranslation, PrimaryMap};
+use wit_bindgen_core::component::ComponentGenerator;
 use wit_bindgen_core::wit_parser::abi::{
     AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
 };
-use wit_bindgen_core::{uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator};
+use wit_bindgen_core::{
+    uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator, WorldGenerator,
+};
 use wit_component::ComponentInterfaces;
 
 #[derive(Default)]
@@ -24,6 +24,11 @@ struct Js {
     /// over time and primarily contains the main `instantiate` function as well
     /// as a type-description of the input/output interfaces.
     src: Source,
+
+    /// Type script definitions which will become the import object
+    import_object: wit_bindgen_core::Source,
+    /// Type script definitions which will become the export object
+    export_object: wit_bindgen_core::Source,
 
     /// Various options for code generation.
     opts: Opts,
@@ -35,111 +40,17 @@ struct Js {
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
+    /// Disables generation of `*.d.ts` files and instead only generates `*.js`
+    /// source files.
     #[cfg_attr(feature = "clap", arg(long = "no-typescript"))]
     pub no_typescript: bool,
 }
 
-/// Use to generate a `*.d.ts` file for each imported and exported interface for
-/// a component.
-///
-/// This generated source does not contain any actual JS runtime code, it's just
-/// typescript definitions.
-struct JsInterface<'a> {
-    src: Source,
-    gen: &'a mut Js,
-    iface: &'a Interface,
-    needs_ty_option: bool,
-    needs_ty_result: bool,
-}
-
 impl Opts {
-    /// Top-level entrypoint to generating JS bindings for a component.
-    ///
-    /// This function takes a number of parameters:
-    ///
-    /// * `name` - the name of the JS module that will be generated for the
-    ///   bindings in `binary`.
-    /// * `binary` - this is the actual component binary. Bindings will be
-    ///   generated for this component and this component alone.
-    /// * `files` - where to place generated files.
-    ///
-    /// This function will generate JS and TypeScript definitions (optionally)
-    /// for the `binary` specified. The JS will export a single `instantiate`
-    /// function which takes a core-wasm-instantiate method and an import
-    /// object. The return value from `instantiate` is the "export object" of
-    /// the component.
-    ///
-    /// Internally `instantiate` will weave together core wasm files as
-    /// specified in the component `binary` provided here. It will lower
-    /// functions provided in the import object using canonical ABI liftings and
-    /// lowerings. Instantiations are offloaded to the caller by providing a
-    /// wasm module path name and import object. This ideally allows using
-    /// embedding-specific methods like `instantiateStreaming` on the web or
-    /// other node.js-specific things in node.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if `binary` is not a valid component
-    /// or if it is not of a "suitable shape" to infer interfaces from. At this
-    /// time this basically means that the component needs to be generated from
-    /// `wit-component` to have suitable type exports/imports/etc to infer an
-    /// `Interface` from the structure of the component.
-    pub fn generate(self, name: &str, binary: &[u8], files: &mut Files) -> Result<()> {
-        // Use the `wit-component` crate here to parse `binary` and discover
-        // the type-level descriptions and `Interface`s corresponding to the
-        // component binary. This is effectively a step that infers a "world" of
-        // a component. Right now `interfaces` is a world-like thing and this
-        // will likely change as worlds are iterated on in the component model
-        // standard. Regardless though this is the step where types are learned
-        // and `Interface`s are constructed for further code generation below.
-        let interfaces = wit_component::decode_interface_component(binary)
-            .context("failed to extract interface information from component")?;
-
-        // Components are complicated, there's no real way around that. To
-        // handle all the work of parsing a component and figuring out how to
-        // instantiate core wasm modules and such all the work is offloaded to
-        // Wasmtime itself. This crate generator is based on Wasmtime's
-        // low-level `wasmtime-environ` crate which is technically not a public
-        // dependency but the same author who worked on that in Wasmtime wrote
-        // this as well so... "seems fine".
-        //
-        // Note that we're not pulling in the entire Wasmtime engine here,
-        // moreso just the "spine" of validating a component. This enables using
-        // Wasmtime's internal `Component` representation as a much easier to
-        // process version of a component that has decompiled everything
-        // internal to a component to a straight linear list of initializers
-        // that need to be executed to instantiate a component.
-        let scope = ScopeVec::new();
-        let tunables = Tunables::default();
-        let mut types = ComponentTypesBuilder::default();
-        let mut validator = Validator::new_with_features(WasmFeatures {
-            component_model: true,
-            ..WasmFeatures::default()
-        });
-        let (component, modules) = Translator::new(&tunables, &mut validator, &mut types, &scope)
-            .translate(binary)
-            .context("failed to parse the input component")?;
-
-        // Components are largely just a collection of core wasm modules after
-        // all so each core wasm module found within the component is emitted to
-        // the output `files` as a module itself. These modules are then
-        // identified by name when instantiations are requested via the
-        // `instantiateCore` callback provided to the main `instantiate`
-        // function.
-        for (i, module) in modules.iter() {
-            let i = i.as_u32();
-            let name = format!("module{i}.wasm");
-            files.push(&name, module.wasm);
-        }
-
-        // And with all that prep work out of the way it's time to hand
-        // everything over to this crate itself, moving into the world of
-        // `wit-bindgen` to generate bindings for JS.
+    pub fn build(self) -> Box<dyn ComponentGenerator> {
         let mut gen = Js::default();
         gen.opts = self;
-        gen.generate(name, &component, &modules, &interfaces, files);
-
-        Ok(())
+        Box::new(gen)
     }
 }
 
@@ -205,54 +116,27 @@ impl Intrinsic {
     }
 }
 
-impl Js {
-    fn generate(
+/// Used to generate a `*.d.ts` file for each imported and exported interface for
+/// a component.
+///
+/// This generated source does not contain any actual JS runtime code, it's just
+/// typescript definitions.
+struct JsInterface<'a> {
+    src: Source,
+    gen: &'a mut Js,
+    iface: &'a Interface,
+    needs_ty_option: bool,
+    needs_ty_result: bool,
+}
+
+impl ComponentGenerator for Js {
+    fn instantiate(
         &mut self,
         name: &str,
         component: &Component,
         modules: &PrimaryMap<StaticModuleIndex, ModuleTranslation<'_>>,
-        interfaces: &ComponentInterfaces<'_>,
-        files: &mut Files,
+        interfaces: &ComponentInterfaces,
     ) {
-        // Generate a TypeScript description of all interfaces found within the
-        // component. Each interface gets its own TypeScript file to prevent
-        // name clashes between them.
-        let to_gen = interfaces
-            .imports
-            .iter()
-            .map(|(name, iface)| (true, name, iface))
-            .chain(
-                interfaces
-                    .exports
-                    .iter()
-                    .map(|(name, iface)| (false, name, iface)),
-            );
-        for (is_import, name, iface) in to_gen {
-            let camel = name.to_upper_camel_case();
-            assert_eq!(iface.name, *name);
-            let mut gen = self.js_interface(iface);
-            gen.types();
-            gen.post_types();
-
-            uwriteln!(gen.src.ts, "export interface {camel} {{");
-            for func in iface.functions.iter() {
-                gen.ts_func(func);
-            }
-            uwriteln!(gen.src.ts, "}}");
-
-            assert!(gen.src.js.is_empty());
-            let dir = if is_import { "imports" } else { "exports" };
-            if !gen.gen.opts.no_typescript {
-                files.push(&format!("{dir}/{name}.d.ts"), gen.src.ts.as_bytes());
-            }
-
-            let extra = if is_import { "Imports" } else { "Exports" };
-            uwriteln!(
-                self.src.ts,
-                "import {{ {camel} as {camel}{extra} }} from \"./{dir}/{name}\";"
-            );
-        }
-
         // Generate the TypeScript definition of the `instantiate` function
         // which is the main workhorse of the generated bindings.
         let camel = name.to_upper_camel_case();
@@ -285,49 +169,6 @@ impl Js {
             ",
         );
 
-        // Generate a type definition for the import object to type-check
-        // all imports to the component.
-        //
-        // With the current representation of a "world" this is an import object
-        // per-imported-interface where the type of that field is defined by the
-        // interface itself.
-        uwriteln!(self.src.ts, "export interface ImportObject {{");
-        for (name, _iface) in interfaces.imports.iter() {
-            let camel = name.to_upper_camel_case();
-            uwriteln!(self.src.ts, "{name}: {camel}Imports;");
-        }
-        uwriteln!(self.src.ts, "}}");
-
-        // Generate a type definition for the export object from instantiating
-        // the component. This notably inlines the "default export" into the
-        // exported object here and otherwise has delegations for each exported
-        // interface to their own type descriptions.
-        uwriteln!(self.src.ts, "export interface {camel} {{",);
-        for (name, _iface) in interfaces.exports.iter() {
-            let camel = name.to_upper_camel_case();
-            uwriteln!(self.src.ts, "{name}: {camel}Exports;");
-        }
-        match &interfaces.default {
-            Some(iface) => {
-                let mut gen = self.js_interface(iface);
-                for func in iface.functions.iter() {
-                    gen.ts_func(func);
-                }
-                gen.gen.src.ts(&mem::take(&mut gen.src.ts));
-                uwriteln!(gen.gen.src.ts, "}}");
-
-                // After the default interface has its function definitions
-                // inlined the rest of the types are generated here as well.
-                gen.types();
-                gen.post_types();
-                gen.gen.src.ts(&mem::take(&mut gen.src.ts));
-            }
-            None => {
-                uwriteln!(self.src.ts, "}}");
-            }
-        }
-
-        // Given all that the final piece of the puzzle for the generated
         // bindings is the actual `instantiate` method itself, created by this
         // structure.
         let mut instantiator = Instantiator {
@@ -341,11 +182,93 @@ impl Js {
         instantiator.instantiate();
         instantiator.gen.src.js(&instantiator.src.js);
         assert!(instantiator.src.ts.is_empty());
+    }
 
+    fn finish_component(&mut self, name: &str, files: &mut Files) {
         files.push(&format!("{name}.js"), self.src.js.as_bytes());
         if !self.opts.no_typescript {
             files.push(&format!("{name}.d.ts"), self.src.ts.as_bytes());
         }
+    }
+}
+
+impl WorldGenerator for Js {
+    fn import(&mut self, name: &str, iface: &Interface, files: &mut Files) {
+        self.generate_interface(name, iface, "imports", "Imports", files);
+        let camel = name.to_upper_camel_case();
+        uwriteln!(self.import_object, "{name}: {camel}Imports;");
+    }
+
+    fn export(&mut self, name: &str, iface: &Interface, files: &mut Files) {
+        self.generate_interface(name, iface, "exports", "Exports", files);
+        let camel = name.to_upper_camel_case();
+        uwriteln!(self.export_object, "{name}: {camel}Exports;");
+    }
+
+    fn export_default(&mut self, _name: &str, iface: &Interface, _files: &mut Files) {
+        let mut gen = self.js_interface(iface);
+        for func in iface.functions.iter() {
+            gen.ts_func(func);
+        }
+        gen.gen.export_object.push_str(&mem::take(&mut gen.src.ts));
+
+        // After the default interface has its function definitions
+        // inlined the rest of the types are generated here as well.
+        gen.types();
+        gen.post_types();
+        gen.gen.src.ts(&mem::take(&mut gen.src.ts));
+    }
+
+    fn finish(&mut self, name: &str, _interfaces: &ComponentInterfaces, _files: &mut Files) {
+        let camel = name.to_upper_camel_case();
+
+        // Generate a type definition for the import object to type-check
+        // all imports to the component.
+        //
+        // With the current representation of a "world" this is an import object
+        // per-imported-interface where the type of that field is defined by the
+        // interface itself.
+        uwriteln!(self.src.ts, "export interface ImportObject {{");
+        self.src.ts(&self.import_object);
+        uwriteln!(self.src.ts, "}}");
+
+        // Generate a type definition for the export object from instantiating
+        // the component.
+        uwriteln!(self.src.ts, "export interface {camel} {{",);
+        self.src.ts(&self.export_object);
+        uwriteln!(self.src.ts, "}}");
+    }
+}
+
+impl Js {
+    fn generate_interface(
+        &mut self,
+        name: &str,
+        iface: &Interface,
+        dir: &str,
+        extra: &str,
+        files: &mut Files,
+    ) {
+        let camel = name.to_upper_camel_case();
+        let mut gen = self.js_interface(iface);
+        gen.types();
+        gen.post_types();
+
+        uwriteln!(gen.src.ts, "export interface {camel} {{");
+        for func in iface.functions.iter() {
+            gen.ts_func(func);
+        }
+        uwriteln!(gen.src.ts, "}}");
+
+        assert!(gen.src.js.is_empty());
+        if !gen.gen.opts.no_typescript {
+            files.push(&format!("{dir}/{name}.d.ts"), gen.src.ts.as_bytes());
+        }
+
+        uwriteln!(
+            self.src.ts,
+            "import {{ {camel} as {camel}{extra} }} from \"./{dir}/{name}\";"
+        );
     }
 
     fn js_interface<'a>(&'a mut self, iface: &'a Interface) -> JsInterface<'a> {
@@ -639,7 +562,7 @@ struct Instantiator<'a> {
     gen: &'a mut Js,
     modules: &'a PrimaryMap<StaticModuleIndex, ModuleTranslation<'a>>,
     instances: PrimaryMap<RuntimeInstanceIndex, StaticModuleIndex>,
-    interfaces: &'a ComponentInterfaces<'a>,
+    interfaces: &'a ComponentInterfaces,
     component: &'a Component,
 }
 

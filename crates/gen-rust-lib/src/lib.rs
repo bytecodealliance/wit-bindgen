@@ -12,7 +12,9 @@ pub enum TypeMode {
     LeafBorrowed(&'static str),
 }
 
-pub trait RustGenerator {
+pub trait RustGenerator<'a> {
+    fn iface(&self) -> &'a Interface;
+
     /// Return true iff the generator can use `std` features in its output.
     fn use_std(&self) -> bool {
         true
@@ -26,13 +28,7 @@ pub trait RustGenerator {
     fn push_str(&mut self, s: &str);
     fn info(&self, ty: TypeId) -> TypeInfo;
     fn types_mut(&mut self) -> &mut Types;
-    fn print_borrowed_slice(
-        &mut self,
-        iface: &Interface,
-        mutbl: bool,
-        ty: &Type,
-        lifetime: &'static str,
-    );
+    fn print_borrowed_slice(&mut self, mutbl: bool, ty: &Type, lifetime: &'static str);
     fn print_borrowed_str(&mut self, lifetime: &'static str);
     fn default_param_mode(&self) -> TypeMode;
 
@@ -86,20 +82,18 @@ pub trait RustGenerator {
 
     fn print_signature(
         &mut self,
-        iface: &Interface,
         func: &Function,
         param_mode: TypeMode,
         sig: &FnSig,
     ) -> Vec<String> {
-        let params = self.print_docs_and_params(iface, func, param_mode, &sig);
+        let params = self.print_docs_and_params(func, param_mode, &sig);
         self.push_str(" -> ");
-        self.print_result_params(iface, &func.results, TypeMode::Owned);
+        self.print_result_params(&func.results, TypeMode::Owned);
         params
     }
 
     fn print_docs_and_params(
         &mut self,
-        iface: &Interface,
         func: &Function,
         param_mode: TypeMode,
         sig: &FnSig,
@@ -143,21 +137,21 @@ pub trait RustGenerator {
             self.push_str(&name);
             params.push(name);
             self.push_str(": ");
-            self.print_ty(iface, param, param_mode);
+            self.print_ty(param, param_mode);
             self.push_str(",");
         }
         self.push_str(")");
         params
     }
 
-    fn print_result_params(&mut self, iface: &Interface, results: &Results, mode: TypeMode) {
+    fn print_result_params(&mut self, results: &Results, mode: TypeMode) {
         match results.len() {
             0 => self.push_str("()"),
-            1 => self.print_ty(iface, results.iter_types().next().unwrap(), mode),
+            1 => self.print_ty(results.iter_types().next().unwrap(), mode),
             _ => {
                 self.push_str("(");
                 for ty in results.iter_types() {
-                    self.print_ty(iface, ty, mode);
+                    self.print_ty(ty, mode);
                     self.push_str(", ")
                 }
                 self.push_str(")")
@@ -165,9 +159,9 @@ pub trait RustGenerator {
         }
     }
 
-    fn print_ty(&mut self, iface: &Interface, ty: &Type, mode: TypeMode) {
+    fn print_ty(&mut self, ty: &Type, mode: TypeMode) {
         match ty {
-            Type::Id(t) => self.print_tyid(iface, *t, mode),
+            Type::Id(t) => self.print_tyid(*t, mode),
             Type::Bool => self.push_str("bool"),
             Type::U8 => self.push_str("u8"),
             Type::U16 => self.push_str("u16"),
@@ -195,29 +189,29 @@ pub trait RustGenerator {
         }
     }
 
-    fn print_optional_ty(&mut self, iface: &Interface, ty: Option<&Type>, mode: TypeMode) {
+    fn print_optional_ty(&mut self, ty: Option<&Type>, mode: TypeMode) {
         match ty {
-            Some(ty) => self.print_ty(iface, ty, mode),
+            Some(ty) => self.print_ty(ty, mode),
             None => self.push_str("()"),
         }
     }
 
-    fn print_tyid(&mut self, iface: &Interface, id: TypeId, mode: TypeMode) {
+    fn print_tyid(&mut self, id: TypeId, mode: TypeMode) {
         let info = self.info(id);
         let lt = self.lifetime_for(&info, mode);
-        let ty = &iface.types[id];
+        let ty = &self.iface().types[id];
         if ty.name.is_some() {
             let name = if lt.is_some() {
-                self.param_name(iface, id)
+                self.param_name(id)
             } else {
-                self.result_name(iface, id)
+                self.result_name(id)
             };
             self.push_str(&name);
 
             // If the type recursively owns data and it's a
             // variant/record/list, then we need to place the
             // lifetime parameter on the type as well.
-            if info.owns_data() && needs_generics(iface, &ty.kind) {
+            if info.owns_data() && needs_generics(self.iface(), &ty.kind) {
                 self.print_generics(lt);
             }
 
@@ -244,19 +238,19 @@ pub trait RustGenerator {
         }
 
         match &ty.kind {
-            TypeDefKind::List(t) => self.print_list(iface, t, mode),
+            TypeDefKind::List(t) => self.print_list(t, mode),
 
             TypeDefKind::Option(t) => {
                 self.push_str("Option<");
-                self.print_ty(iface, t, mode);
+                self.print_ty(t, mode);
                 self.push_str(">");
             }
 
             TypeDefKind::Result(r) => {
                 self.push_str("Result<");
-                self.print_optional_ty(iface, r.ok.as_ref(), mode);
+                self.print_optional_ty(r.ok.as_ref(), mode);
                 self.push_str(",");
-                self.print_optional_ty(iface, r.err.as_ref(), mode);
+                self.print_optional_ty(r.err.as_ref(), mode);
                 self.push_str(">");
             }
 
@@ -268,7 +262,7 @@ pub trait RustGenerator {
             TypeDefKind::Tuple(t) => {
                 self.push_str("(");
                 for ty in t.types.iter() {
-                    self.print_ty(iface, ty, mode);
+                    self.print_ty(ty, mode);
                     self.push_str(",");
                 }
                 self.push_str(")");
@@ -287,50 +281,44 @@ pub trait RustGenerator {
             }
             TypeDefKind::Future(ty) => {
                 self.push_str("Future<");
-                self.print_optional_ty(iface, ty.as_ref(), mode);
+                self.print_optional_ty(ty.as_ref(), mode);
                 self.push_str(">");
             }
             TypeDefKind::Stream(stream) => {
                 self.push_str("Stream<");
-                self.print_optional_ty(iface, stream.element.as_ref(), mode);
+                self.print_optional_ty(stream.element.as_ref(), mode);
                 self.push_str(",");
-                self.print_optional_ty(iface, stream.end.as_ref(), mode);
+                self.print_optional_ty(stream.end.as_ref(), mode);
                 self.push_str(">");
             }
 
-            TypeDefKind::Type(t) => self.print_ty(iface, t, mode),
+            TypeDefKind::Type(t) => self.print_ty(t, mode),
         }
     }
 
-    fn print_list(&mut self, iface: &Interface, ty: &Type, mode: TypeMode) {
+    fn print_list(&mut self, ty: &Type, mode: TypeMode) {
         match mode {
             TypeMode::AllBorrowed(lt) => {
-                self.print_borrowed_slice(iface, false, ty, lt);
+                self.print_borrowed_slice(false, ty, lt);
             }
             TypeMode::LeafBorrowed(lt) => {
-                if iface.all_bits_valid(ty) {
-                    self.print_borrowed_slice(iface, false, ty, lt);
+                if self.iface().all_bits_valid(ty) {
+                    self.print_borrowed_slice(false, ty, lt);
                 } else {
                     self.push_str("Vec<");
-                    self.print_ty(iface, ty, mode);
+                    self.print_ty(ty, mode);
                     self.push_str(">");
                 }
             }
             TypeMode::Owned => {
                 self.push_str("Vec<");
-                self.print_ty(iface, ty, mode);
+                self.print_ty(ty, mode);
                 self.push_str(">");
             }
         }
     }
 
-    fn print_rust_slice(
-        &mut self,
-        iface: &Interface,
-        mutbl: bool,
-        ty: &Type,
-        lifetime: &'static str,
-    ) {
+    fn print_rust_slice(&mut self, mutbl: bool, ty: &Type, lifetime: &'static str) {
         self.push_str("&");
         if lifetime != "'_" {
             self.push_str(lifetime);
@@ -340,7 +328,7 @@ pub trait RustGenerator {
             self.push_str(" mut ");
         }
         self.push_str("[");
-        self.print_ty(iface, ty, TypeMode::AllBorrowed(lifetime));
+        self.print_ty(ty, TypeMode::AllBorrowed(lifetime));
         self.push_str("]");
     }
 
@@ -364,20 +352,20 @@ pub trait RustGenerator {
         self.push_str(wasm_type(ty));
     }
 
-    fn modes_of(&self, iface: &Interface, ty: TypeId) -> Vec<(String, TypeMode)> {
+    fn modes_of(&self, ty: TypeId) -> Vec<(String, TypeMode)> {
         let info = self.info(ty);
         let mut result = Vec::new();
         if info.param {
-            result.push((self.param_name(iface, ty), self.default_param_mode()));
+            result.push((self.param_name(ty), self.default_param_mode()));
         }
         if info.result && (!info.param || self.uses_two_names(&info)) {
-            result.push((self.result_name(iface, ty), TypeMode::Owned));
+            result.push((self.result_name(ty), TypeMode::Owned));
         }
         return result;
     }
 
     /// Writes the camel-cased 'name' of the passed type to `out`, as used to name union variants.
-    fn write_name(&self, iface: &Interface, ty: &Type, out: &mut String) {
+    fn write_name(&self, ty: &Type, out: &mut String) {
         match ty {
             Type::Bool => out.push_str("Bool"),
             Type::U8 => out.push_str("U8"),
@@ -393,31 +381,31 @@ pub trait RustGenerator {
             Type::Char => out.push_str("Char"),
             Type::String => out.push_str("String"),
             Type::Id(id) => {
-                let ty = &iface.types[*id];
+                let ty = &self.iface().types[*id];
                 match &ty.name {
                     Some(name) => out.push_str(&name.to_upper_camel_case()),
                     None => match &ty.kind {
                         TypeDefKind::Option(ty) => {
                             out.push_str("Optional");
-                            self.write_name(iface, ty, out);
+                            self.write_name(ty, out);
                         }
                         TypeDefKind::Result(_) => out.push_str("Result"),
                         TypeDefKind::Tuple(_) => out.push_str("Tuple"),
                         TypeDefKind::List(ty) => {
-                            self.write_name(iface, ty, out);
+                            self.write_name(ty, out);
                             out.push_str("List")
                         }
                         TypeDefKind::Future(ty) => {
-                            self.write_optional_name(iface, ty.as_ref(), out);
+                            self.write_optional_name(ty.as_ref(), out);
                             out.push_str("Future");
                         }
                         TypeDefKind::Stream(s) => {
-                            self.write_optional_name(iface, s.element.as_ref(), out);
-                            self.write_optional_name(iface, s.end.as_ref(), out);
+                            self.write_optional_name(s.element.as_ref(), out);
+                            self.write_optional_name(s.end.as_ref(), out);
                             out.push_str("Stream");
                         }
 
-                        TypeDefKind::Type(ty) => self.write_name(iface, ty, out),
+                        TypeDefKind::Type(ty) => self.write_name(ty, out),
                         TypeDefKind::Record(_) => out.push_str("Record"),
                         TypeDefKind::Flags(_) => out.push_str("Flags"),
                         TypeDefKind::Variant(_) => out.push_str("Variant"),
@@ -429,15 +417,15 @@ pub trait RustGenerator {
         }
     }
 
-    fn write_optional_name(&self, iface: &Interface, ty: Option<&Type>, out: &mut String) {
+    fn write_optional_name(&self, ty: Option<&Type>, out: &mut String) {
         match ty {
-            Some(ty) => self.write_name(iface, ty, out),
+            Some(ty) => self.write_name(ty, out),
             None => out.push_str("()"),
         }
     }
 
     /// Returns the names for the cases of the passed union.
-    fn union_case_names(&self, iface: &Interface, union: &Union) -> Vec<String> {
+    fn union_case_names(&self, union: &Union) -> Vec<String> {
         enum UsedState<'a> {
             /// This name has been used once before.
             ///
@@ -454,7 +442,7 @@ pub trait RustGenerator {
         // A map from case names to their `UsedState`.
         let mut used = HashMap::new();
         for (case, name) in union.cases.iter().zip(case_names.iter_mut()) {
-            self.write_name(iface, &case.ty, name);
+            self.write_name(&case.ty, name);
 
             match used.get_mut(name.as_str()) {
                 None => {
@@ -488,14 +476,13 @@ pub trait RustGenerator {
 
     fn print_typedef_record(
         &mut self,
-        iface: &Interface,
         id: TypeId,
         record: &Record,
         docs: &Docs,
         derive_component: bool,
     ) {
         let info = self.info(id);
-        for (name, mode) in self.modes_of(iface, id) {
+        for (name, mode) in self.modes_of(id) {
             let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
 
@@ -525,7 +512,7 @@ pub trait RustGenerator {
                 self.push_str("pub ");
                 self.push_str(&to_rust_ident(&field.name));
                 self.push_str(": ");
-                self.print_ty(iface, &field.ty, mode);
+                self.print_ty(&field.ty, mode);
                 self.push_str(",\n");
             }
             self.push_str("}\n");
@@ -547,22 +534,22 @@ pub trait RustGenerator {
                     to_rust_ident(&field.name)
                 ));
             }
-            self.push_str(".finish()");
+            self.push_str(".finish()\n");
             self.push_str("}\n");
             self.push_str("}\n");
         }
     }
 
-    fn print_typedef_tuple(&mut self, iface: &Interface, id: TypeId, tuple: &Tuple, docs: &Docs) {
+    fn print_typedef_tuple(&mut self, id: TypeId, tuple: &Tuple, docs: &Docs) {
         let info = self.info(id);
-        for (name, mode) in self.modes_of(iface, id) {
+        for (name, mode) in self.modes_of(id) {
             let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
             self.push_str(&format!("pub type {}", name));
             self.print_generics(lt);
             self.push_str(" = (");
             for ty in tuple.types.iter() {
-                self.print_ty(iface, ty, mode);
+                self.print_ty(ty, mode);
                 self.push_str(",");
             }
             self.push_str(");\n");
@@ -571,7 +558,6 @@ pub trait RustGenerator {
 
     fn print_typedef_variant(
         &mut self,
-        iface: &Interface,
         id: TypeId,
         variant: &Variant,
         docs: &Docs,
@@ -580,7 +566,6 @@ pub trait RustGenerator {
         Self: Sized,
     {
         self.print_rust_enum(
-            iface,
             id,
             variant.cases.iter().map(|c| {
                 (
@@ -601,7 +586,6 @@ pub trait RustGenerator {
 
     fn print_typedef_union(
         &mut self,
-        iface: &Interface,
         id: TypeId,
         union: &Union,
         docs: &Docs,
@@ -610,9 +594,8 @@ pub trait RustGenerator {
         Self: Sized,
     {
         self.print_rust_enum(
-            iface,
             id,
-            zip(self.union_case_names(iface, union), &union.cases)
+            zip(self.union_case_names(union), &union.cases)
                 .map(|(name, case)| (name, None, &case.docs, Some(&case.ty))),
             docs,
             if derive_component {
@@ -623,11 +606,10 @@ pub trait RustGenerator {
         );
     }
 
-    fn print_rust_enum<'a>(
+    fn print_rust_enum<'b>(
         &mut self,
-        iface: &Interface,
         id: TypeId,
-        cases: impl IntoIterator<Item = (String, Option<String>, &'a Docs, Option<&'a Type>)> + Clone,
+        cases: impl IntoIterator<Item = (String, Option<String>, &'b Docs, Option<&'b Type>)> + Clone,
         docs: &Docs,
         derive_component: Option<&str>,
     ) where
@@ -635,7 +617,7 @@ pub trait RustGenerator {
     {
         let info = self.info(id);
 
-        for (name, mode) in self.modes_of(iface, id) {
+        for (name, mode) in self.modes_of(id) {
             let name = name.to_upper_camel_case();
             self.rustdoc(docs);
             let lt = self.lifetime_for(&info, mode);
@@ -665,7 +647,7 @@ pub trait RustGenerator {
                 self.push_str(&case_name);
                 if let Some(ty) = payload {
                     self.push_str("(");
-                    self.print_ty(iface, ty, mode);
+                    self.print_ty(ty, mode);
                     self.push_str(")")
                 }
                 self.push_str(",\n");
@@ -684,12 +666,12 @@ pub trait RustGenerator {
         }
     }
 
-    fn print_rust_enum_debug<'a>(
+    fn print_rust_enum_debug<'b>(
         &mut self,
         id: TypeId,
         mode: TypeMode,
         name: &str,
-        cases: impl IntoIterator<Item = (String, Option<&'a Type>)>,
+        cases: impl IntoIterator<Item = (String, Option<&'b Type>)>,
     ) where
         Self: Sized,
     {
@@ -723,38 +705,32 @@ pub trait RustGenerator {
         self.push_str("}\n");
     }
 
-    fn print_typedef_option(&mut self, iface: &Interface, id: TypeId, payload: &Type, docs: &Docs) {
+    fn print_typedef_option(&mut self, id: TypeId, payload: &Type, docs: &Docs) {
         let info = self.info(id);
 
-        for (name, mode) in self.modes_of(iface, id) {
+        for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
             let lt = self.lifetime_for(&info, mode);
             self.push_str(&format!("pub type {}", name));
             self.print_generics(lt);
             self.push_str("= Option<");
-            self.print_ty(iface, payload, mode);
+            self.print_ty(payload, mode);
             self.push_str(">;\n");
         }
     }
 
-    fn print_typedef_result(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        result: &Result_,
-        docs: &Docs,
-    ) {
+    fn print_typedef_result(&mut self, id: TypeId, result: &Result_, docs: &Docs) {
         let info = self.info(id);
 
-        for (name, mode) in self.modes_of(iface, id) {
+        for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
             let lt = self.lifetime_for(&info, mode);
             self.push_str(&format!("pub type {}", name));
             self.print_generics(lt);
             self.push_str("= Result<");
-            self.print_optional_ty(iface, result.ok.as_ref(), mode);
+            self.print_optional_ty(result.ok.as_ref(), mode);
             self.push_str(",");
-            self.print_optional_ty(iface, result.err.as_ref(), mode);
+            self.print_optional_ty(result.err.as_ref(), mode);
             self.push_str(">;\n");
         }
     }
@@ -869,35 +845,39 @@ pub trait RustGenerator {
         }
     }
 
-    fn print_typedef_alias(&mut self, iface: &Interface, id: TypeId, ty: &Type, docs: &Docs) {
+    fn print_typedef_alias(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
         let info = self.info(id);
-        for (name, mode) in self.modes_of(iface, id) {
+        for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
             self.push_str(&format!("pub type {}", name));
             let lt = self.lifetime_for(&info, mode);
             self.print_generics(lt);
             self.push_str(" = ");
-            self.print_ty(iface, ty, mode);
+            self.print_ty(ty, mode);
             self.push_str(";\n");
         }
     }
 
-    fn print_type_list(&mut self, iface: &Interface, id: TypeId, ty: &Type, docs: &Docs) {
+    fn print_type_list(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
         let info = self.info(id);
-        for (name, mode) in self.modes_of(iface, id) {
+        for (name, mode) in self.modes_of(id) {
             let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
             self.push_str(&format!("pub type {}", name));
             self.print_generics(lt);
             self.push_str(" = ");
-            self.print_list(iface, ty, mode);
+            self.print_list(ty, mode);
             self.push_str(";\n");
         }
     }
 
-    fn param_name(&self, iface: &Interface, ty: TypeId) -> String {
+    fn param_name(&self, ty: TypeId) -> String {
         let info = self.info(ty);
-        let name = iface.types[ty].name.as_ref().unwrap().to_upper_camel_case();
+        let name = self.iface().types[ty]
+            .name
+            .as_ref()
+            .unwrap()
+            .to_upper_camel_case();
         if self.uses_two_names(&info) {
             format!("{}Param", name)
         } else {
@@ -905,9 +885,13 @@ pub trait RustGenerator {
         }
     }
 
-    fn result_name(&self, iface: &Interface, ty: TypeId) -> String {
+    fn result_name(&self, ty: TypeId) -> String {
         let info = self.info(ty);
-        let name = iface.types[ty].name.as_ref().unwrap().to_upper_camel_case();
+        let name = self.iface().types[ty]
+            .name
+            .as_ref()
+            .unwrap()
+            .to_upper_camel_case();
         if self.uses_two_names(&info) {
             format!("{}Result", name)
         } else {
@@ -977,7 +961,6 @@ pub trait RustFunctionGenerator {
 
     fn record_lower(
         &mut self,
-        iface: &Interface,
         id: TypeId,
         record: &Record,
         operand: &str,
@@ -985,7 +968,7 @@ pub trait RustFunctionGenerator {
     ) {
         let tmp = self.tmp();
         self.push_str("let ");
-        let name = self.typename_lower(iface, id);
+        let name = self.typename_lower(id);
         self.push_str(&name);
         self.push_str("{ ");
         for field in record.fields.iter() {
@@ -1004,13 +987,12 @@ pub trait RustFunctionGenerator {
 
     fn record_lift(
         &mut self,
-        iface: &Interface,
         id: TypeId,
         ty: &Record,
         operands: &[String],
         results: &mut Vec<String>,
     ) {
-        let mut result = self.typename_lift(iface, id);
+        let mut result = self.typename_lift(id);
         result.push_str("{");
         for (field, val) in ty.fields.iter().zip(operands) {
             result.push_str(&to_rust_ident(&field.name));
@@ -1044,17 +1026,17 @@ pub trait RustFunctionGenerator {
         }
     }
 
-    fn typename_lower(&self, iface: &Interface, id: TypeId) -> String {
+    fn typename_lower(&self, id: TypeId) -> String {
         match self.lift_lower() {
-            LiftLower::LowerArgsLiftResults => self.rust_gen().param_name(iface, id),
-            LiftLower::LiftArgsLowerResults => self.rust_gen().result_name(iface, id),
+            LiftLower::LowerArgsLiftResults => self.rust_gen().param_name(id),
+            LiftLower::LiftArgsLowerResults => self.rust_gen().result_name(id),
         }
     }
 
-    fn typename_lift(&self, iface: &Interface, id: TypeId) -> String {
+    fn typename_lift(&self, id: TypeId) -> String {
         match self.lift_lower() {
-            LiftLower::LiftArgsLowerResults => self.rust_gen().param_name(iface, id),
-            LiftLower::LowerArgsLiftResults => self.rust_gen().result_name(iface, id),
+            LiftLower::LiftArgsLowerResults => self.rust_gen().param_name(id),
+            LiftLower::LowerArgsLiftResults => self.rust_gen().result_name(id),
         }
     }
 }

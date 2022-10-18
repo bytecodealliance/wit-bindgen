@@ -1,7 +1,12 @@
-wit_bindgen_guest_rust::import!("../../tests/runtime/smoke/imports.wit");
-wit_bindgen_guest_rust::export!("../../tests/runtime/smoke/exports.wit");
+wit_bindgen_guest_rust::generate!({
+    import: "../../tests/runtime/smoke/imports.wit",
+    default: "../../tests/runtime/smoke/exports.wit",
+    name: "exports",
+});
 
 struct Exports;
+
+export_exports!(Exports);
 
 impl exports::Exports for Exports {
     fn thunk() {

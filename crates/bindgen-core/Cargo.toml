@@ -10,3 +10,9 @@ doctest = false
 [dependencies]
 wit-parser = { workspace = true }
 anyhow = { workspace = true }
+wit-component = { workspace = true }
+wasmtime-environ = { workspace = true, features = ['component-model'], optional = true }
+wasmparser = { workspace = true, optional = true }
+
+[features]
+component-generator = ['dep:wasmtime-environ', 'dep:wasmparser']

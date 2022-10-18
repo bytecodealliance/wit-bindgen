@@ -1,11 +1,8 @@
-#![allow(type_alias_bounds)] // TODO: should fix generated code to not fire this
-
 use anyhow::Result;
 use wasmtime::{
     component::{Component, Instance, Linker},
     Config, Engine, Store,
 };
-use wit_bindgen_testwasi_host_wasmtime_rust as testwasi;
 
 test_helpers::runtime_tests_wasmtime!();
 
@@ -22,7 +19,7 @@ fn default_config() -> Result<Config> {
 #[derive(Default)]
 struct Context<I> {
     imports: I,
-    testwasi: testwasi::TestWasi,
+    testwasi: TestWasi,
 }
 
 fn instantiate<I: Default, T>(
@@ -45,9 +42,26 @@ fn instantiate<I: Default, T>(
         &engine,
         Context {
             imports: I::default(),
-            testwasi: testwasi::TestWasi::default(),
+            testwasi: TestWasi::default(),
         },
     );
     let (exports, _instance) = mk_exports(&mut store, &module, &linker)?;
     Ok((exports, store))
+}
+
+wit_bindgen_host_wasmtime_rust::generate!({
+    import: "../wasi_snapshot_preview1/testwasi.wit",
+    name: "testwasi",
+});
+
+#[derive(Default)]
+pub struct TestWasi;
+
+impl testwasi::Testwasi for TestWasi {
+    fn log(&mut self, bytes: Vec<u8>) {
+        match std::str::from_utf8(&bytes) {
+            Ok(s) => print!("{}", s),
+            Err(_) => println!("\nbinary: {:?}", bytes),
+        }
+    }
 }
