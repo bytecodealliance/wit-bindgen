@@ -11,8 +11,7 @@ doctest = false
 wit-parser = { workspace = true }
 anyhow = { workspace = true }
 wit-component = { workspace = true }
-
-wasmtime-environ = { workspace = true, features = ['component-model'], optional = true}
+wasmtime-environ = { workspace = true, features = ['component-model'], optional = true }
 wasmparser = { workspace = true, optional = true }
 
 [features]

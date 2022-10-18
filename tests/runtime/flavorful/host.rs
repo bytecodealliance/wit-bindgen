@@ -7,8 +7,6 @@ wit_bindgen_host_wasmtime_rust::generate!({
     name: "exports",
 });
 
-// use imports::*;
-
 #[derive(Default)]
 pub struct MyImports;
 
