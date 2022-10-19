@@ -15,9 +15,13 @@ apple: func()
 apple-pear: func()
 apple-pear-grape: func()
 a0: func()
-APPLE: func()
-APPLE-pear-GRAPE: func()
-apple-PEAR-grape: func()
+
+// Comment out identifiers that collide when mapped to snake_case, for now; see
+// https://github.com/WebAssembly/component-model/issues/118
+//APPLE: func()
+//APPLE-pear-GRAPE: func()
+//apple-PEAR-grape: func()
+
 is-XML: func()
 
 %explicit: func()
