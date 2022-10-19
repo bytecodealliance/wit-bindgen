@@ -142,6 +142,21 @@ pub fn runtime_tests_wasmtime(_input: TokenStream) -> TokenStream {
                     }
                 }
             });
+
+            if entry.join("host.async.rs").exists() {
+                let host_file = entry.join("host.async.rs").to_str().unwrap().to_string();
+                let name = quote::format_ident!("{}_async", name);
+                tests.push(quote::quote! {
+                mod #name {
+                    include!(#host_file);
+
+                    #[test_log::test(tokio::test)]
+                    async fn test() -> anyhow::Result<()> {
+                        run_async(#component).await
+                    }
+                }
+                });
+            }
         }
     }
 

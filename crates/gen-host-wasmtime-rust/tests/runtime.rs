@@ -49,6 +49,40 @@ fn instantiate<I: Default, T>(
     Ok((exports, store))
 }
 
+async fn instantiate_async<F, I: Default, T: Send>(
+    wasm: &str,
+    add_imports: impl FnOnce(&mut Linker<Context<I>>) -> Result<()>,
+    mk_exports: F,
+) -> Result<(T, Store<Context<I>>)>
+where
+    F: for<'a> FnOnce(
+        &'a mut Store<Context<I>>,
+        &'a Component,
+        &'a Linker<Context<I>>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<(T, Instance)>> + 'a>,
+    >,
+{
+    let mut config = default_config()?;
+    config.async_support(true);
+    let engine = Engine::new(&config)?;
+    let module = Component::from_file(&engine, wasm)?;
+
+    let mut linker = Linker::new(&engine);
+    add_imports(&mut linker)?;
+    testwasi::add_to_linker(&mut linker, |cx| &mut cx.testwasi)?;
+
+    let mut store = Store::new(
+        &engine,
+        Context {
+            imports: I::default(),
+            testwasi: TestWasi::default(),
+        },
+    );
+    let (exports, _instance) = mk_exports(&mut store, &module, &linker).await?;
+    Ok((exports, store))
+}
+
 wit_bindgen_host_wasmtime_rust::generate!({
     import: "../wasi_snapshot_preview1/testwasi.wit",
     name: "testwasi",

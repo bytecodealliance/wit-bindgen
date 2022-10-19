@@ -35,6 +35,10 @@ pub struct Opts {
     /// Whether or not to emit `tracing` macro calls on function entry/exit.
     #[cfg_attr(feature = "clap", arg(long))]
     pub tracing: bool,
+
+    /// Whether or not to use async rust functions and traits.
+    #[cfg_attr(feature = "clap", arg(long = "async"))]
+    pub async_: bool,
 }
 
 impl Opts {
@@ -179,6 +183,12 @@ impl WorldGenerator for Wasmtime {
         }
         self.src.push_str("}\n");
 
+        let (async_, async__, send, await_) = if self.opts.async_ {
+            ("async", "_async", ":Send", ".await")
+        } else {
+            ("", "", "", "")
+        };
+
         uwriteln!(
             self.src,
             "
@@ -186,12 +196,12 @@ impl WorldGenerator for Wasmtime {
                     /// Instantiates the provided `module` using the specified
                     /// parameters, wrapping up the result in a structure that
                     /// translates between wasm and the host.
-                    pub fn instantiate<T>(
+                    pub {async_} fn instantiate{async__}<T {send}>(
                         mut store: impl wasmtime::AsContextMut<Data = T>,
                         component: &wasmtime::component::Component,
                         linker: &wasmtime::component::Linker<T>,
                     ) -> anyhow::Result<(Self, wasmtime::component::Instance)> {{
-                        let instance = linker.instantiate(&mut store, component)?;
+                        let instance = linker.instantiate{async__}(&mut store, component){await_}?;
                         Ok((Self::new(store, &instance)?, instance))
                     }}
 
@@ -305,11 +315,15 @@ impl<'a> InterfaceGenerator<'a> {
     fn generate_add_to_linker(&mut self, name: &str) {
         let camel = name.to_upper_camel_case();
 
+        if self.gen.opts.async_ {
+            uwriteln!(self.src, "#[wit_bindgen_host_wasmtime_rust::async_trait]")
+        }
         // Generate the `pub trait` which represents the host functionality for
         // this import.
         uwriteln!(self.src, "pub trait {camel}: Sized {{");
         for func in self.iface.functions.iter() {
             let mut fnsig = FnSig::default();
+            fnsig.async_ = self.gen.opts.async_;
             fnsig.private = true;
             fnsig.self_arg = Some("&mut self".to_string());
 
@@ -323,6 +337,11 @@ impl<'a> InterfaceGenerator<'a> {
         }
         uwriteln!(self.src, "}}");
 
+        let where_clause = if self.gen.opts.async_ {
+            format!("T: Send, U: {camel} + Send")
+        } else {
+            format!("U: {camel}")
+        };
         uwriteln!(
             self.src,
             "
@@ -330,13 +349,22 @@ impl<'a> InterfaceGenerator<'a> {
                     linker: &mut wasmtime::component::Linker<T>,
                     get: impl Fn(&mut T) -> &mut U + Send + Sync + Copy + 'static,
                 ) -> anyhow::Result<()>
-                    where U: {camel},
+                    where {where_clause},
                 {{
             "
         );
         uwriteln!(self.src, "let mut inst = linker.instance(\"{name}\")?;");
         for func in self.iface.functions.iter() {
-            uwrite!(self.src, "inst.func_wrap(\"{}\", ", func.name);
+            uwrite!(
+                self.src,
+                "inst.{}(\"{}\", ",
+                if self.gen.opts.async_ {
+                    "func_wrap_async"
+                } else {
+                    "func_wrap"
+                },
+                func.name
+            );
             self.generate_guest_import_closure(func);
             uwriteln!(self.src, ")?;")
         }
@@ -348,14 +376,23 @@ impl<'a> InterfaceGenerator<'a> {
         // Generate the closure that's passed to a `Linker`, the final piece of
         // codegen here.
         self.src
-            .push_str("move |mut caller: wasmtime::StoreContextMut<'_, T>");
-        for (i, param) in func.params.iter().enumerate() {
-            uwrite!(self.src, ", arg{} :", i);
+            .push_str("move |mut caller: wasmtime::StoreContextMut<'_, T>, (");
+        for (i, _param) in func.params.iter().enumerate() {
+            uwrite!(self.src, "arg{},", i);
+        }
+        self.src.push_str(") : (");
+        for param in func.params.iter() {
             // Lift is required to be impled for this type, so we can't use
             // a borrowed type:
             self.print_ty(&param.1, TypeMode::Owned);
+            self.src.push_str(", ");
         }
-        self.src.push_str("| {\n");
+        self.src.push_str(") |");
+        if self.gen.opts.async_ {
+            self.src.push_str(" Box::new(async move { \n");
+        } else {
+            self.src.push_str(" { \n");
+        }
 
         if self.gen.opts.tracing {
             self.src.push_str(&format!(
@@ -378,14 +415,23 @@ impl<'a> InterfaceGenerator<'a> {
         for (i, _) in func.params.iter().enumerate() {
             uwrite!(self.src, "arg{},", i);
         }
-        uwrite!(self.src, ");\n");
+        if self.gen.opts.async_ {
+            uwrite!(self.src, ").await;\n");
+        } else {
+            uwrite!(self.src, ");\n");
+        }
         if func.results.iter_types().len() == 1 {
             uwrite!(self.src, "Ok((r,))\n");
         } else {
             uwrite!(self.src, "Ok(r)\n");
         }
 
-        self.src.push_str("}");
+        if self.gen.opts.async_ {
+            // Need to close Box::new and async block
+            self.src.push_str("})");
+        } else {
+            self.src.push_str("}");
+        }
     }
 
     fn extract_typed_functions(&mut self) -> Vec<(String, String)> {
@@ -414,10 +460,16 @@ impl<'a> InterfaceGenerator<'a> {
     }
 
     fn define_rust_guest_export(&mut self, ns: Option<&str>, func: &Function) {
+        let (async_, async__, await_) = if self.gen.opts.async_ {
+            ("async", "_async", ".await")
+        } else {
+            ("", "", "")
+        };
+
         self.rustdoc(&func.docs);
         uwrite!(
             self.src,
-            "pub fn {}(&self, mut store: impl wasmtime::AsContextMut, ",
+            "pub {async_} fn {}<S: wasmtime::AsContextMut>(&self, mut store: S, ",
             func.name.to_snake_case(),
         );
         for (i, param) in func.params.iter().enumerate() {
@@ -427,7 +479,13 @@ impl<'a> InterfaceGenerator<'a> {
         }
         self.src.push_str(") -> anyhow::Result<");
         self.print_result_ty(&func.results, TypeMode::Owned);
-        self.src.push_str("> {\n");
+
+        if self.gen.opts.async_ {
+            self.src
+                .push_str("> where <S as wasmtime::AsContext>::Data: Send {\n");
+        } else {
+            self.src.push_str("> {\n");
+        }
 
         if self.gen.opts.tracing {
             self.src.push_str(&format!(
@@ -466,13 +524,19 @@ impl<'a> InterfaceGenerator<'a> {
         for (i, _) in func.results.iter_types().enumerate() {
             uwrite!(self.src, "ret{},", i);
         }
-        uwrite!(self.src, ") = callee.call(store.as_context_mut(), (");
+        uwrite!(
+            self.src,
+            ") = callee.call{async__}(store.as_context_mut(), ("
+        );
         for (i, _) in func.params.iter().enumerate() {
             uwrite!(self.src, "arg{}, ", i);
         }
-        uwriteln!(self.src, "))?;");
+        uwriteln!(self.src, ")){await_}?;");
 
-        uwriteln!(self.src, "callee.post_return(store.as_context_mut())?;");
+        uwriteln!(
+            self.src,
+            "callee.post_return{async__}(store.as_context_mut()){await_}?;"
+        );
 
         self.src.push_str("Ok(");
         if func.results.iter_types().len() == 1 {
