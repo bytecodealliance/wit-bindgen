@@ -479,6 +479,7 @@ impl<'a> InterfaceGenerator<'a> {
         }
         self.src.push_str(") -> anyhow::Result<");
         self.print_result_ty(&func.results, TypeMode::Owned);
+
         if self.gen.opts.async_ {
             self.src
                 .push_str("> where <S as wasmtime::AsContext>::Data: Send {\n");
