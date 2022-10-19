@@ -33,6 +33,18 @@ macro_rules! codegen_test {
                 fn works() {}
             }
 
+            mod async_ {
+                wit_bindgen_host_wasmtime_rust::generate!({
+                    import: $test,
+                    default: $test,
+                    name: "the-world-name",
+                    async: true,
+                });
+
+                #[test]
+                fn works() {}
+            }
+
             mod tracing {
                 wit_bindgen_host_wasmtime_rust::generate!({
                     import: $test,
