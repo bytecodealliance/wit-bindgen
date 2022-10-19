@@ -137,11 +137,18 @@ fn parse_named_interface(s: &str) -> Result<Interface> {
     let (name, path) = match parts.next() {
         Some(path) => (name_or_path, path),
         None => {
+            // Take only the name *before* the first '.' in the filename.
+            // Unfortunately, file_stem gives the name before the final '.' in
+            // the filename, but we need this to get the correct name out of a
+            // `*.wit.md` file.
+            // TODO: this can be replaced with `Path::file_prefix()` once that
+            // method is stabilized in std.
             let name = Path::new(name_or_path)
-                .file_stem()
+                .file_name()
                 .unwrap()
                 .to_str()
                 .unwrap();
+            let name = name.split('.').next().unwrap();
             (name, name_or_path)
         }
     };
