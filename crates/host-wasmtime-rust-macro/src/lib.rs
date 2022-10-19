@@ -14,6 +14,7 @@ mod kw {
 
 enum Opt {
     Tracing(bool),
+    Async(bool),
 }
 
 impl Parse for Opt {
@@ -24,6 +25,10 @@ impl Parse for Opt {
             input.parse::<kw::tracing>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::Tracing(input.parse::<syn::LitBool>()?.value))
+        } else if l.peek(Token![async]) {
+            input.parse::<Token![async]>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::Async(input.parse::<syn::LitBool>()?.value))
         } else {
             Err(l.error())
         }
@@ -34,6 +39,7 @@ impl wit_bindgen_rust_macro_shared::Configure<Opts> for Opt {
     fn configure(self, opts: &mut Opts) {
         match self {
             Opt::Tracing(val) => opts.tracing = val,
+            Opt::Async(val) => opts.async_ = val,
         }
     }
 }

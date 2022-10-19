@@ -2230,8 +2230,8 @@ name = "wit-bindgen-host-wasmtime-rust"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bitflags",
- "thiserror",
  "tracing",
  "wasmtime",
  "wit-bindgen-host-wasmtime-rust-macro",
