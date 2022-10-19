@@ -4,14 +4,17 @@ use id_arena::{Arena, Id};
 use indexmap::IndexMap;
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options, Parser, Tag};
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
 pub mod abi;
 mod ast;
+mod kebab_namespace;
 mod sizealign;
 pub use sizealign::*;
+
+pub use kebab_namespace::{KebabNamed, KebabNamespace};
 
 /// Checks if the given string is a legal identifier in wit.
 pub fn validate_id(s: &str) -> Result<()> {
@@ -76,7 +79,7 @@ pub struct Interface {
     pub name: String,
     pub docs: Docs,
     pub types: Arena<TypeDef>,
-    pub type_lookup: HashMap<String, TypeId>,
+    pub type_lookup: KebabNamespace<TypeId>,
     pub functions: Vec<Function>,
     pub globals: Vec<Global>,
 }

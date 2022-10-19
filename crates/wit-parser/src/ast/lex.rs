@@ -719,6 +719,7 @@ fn test_tokenizer() {
     assert_eq!(collect("APPLE-pear-GRAPE").unwrap(), vec![Token::Id]);
     assert_eq!(collect("ENOENT").unwrap(), vec![Token::Id]);
     assert_eq!(collect("is-XML").unwrap(), vec![Token::Id]);
+    assert_eq!(collect("XML-http-request").unwrap(), vec![Token::Id]);
 
     assert_eq!(collect("func").unwrap(), vec![Token::Func]);
     assert_eq!(

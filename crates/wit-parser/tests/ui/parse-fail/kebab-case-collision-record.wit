@@ -1,0 +1,8 @@
+// parse-fail
+
+interface foo {
+  record thing {
+      purple: u32,
+      PURPLE: u32,
+  }
+}

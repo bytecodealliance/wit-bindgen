@@ -1,0 +1,6 @@
+// parse-fail
+
+interface foo {
+  type purple = u32
+  type PURPLE = u32
+}

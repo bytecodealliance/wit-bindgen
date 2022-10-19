@@ -1,0 +1,5 @@
+invalid character in identifier 'o'
+     --> tests/ui/parse-fail/kebab-invalid.wit:4:3
+      |
+    4 |   Foo: func() -> u32
+      |   ^

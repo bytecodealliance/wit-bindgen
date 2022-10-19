@@ -1,0 +1,5 @@
+"FOO" conflicts with earlier name "foo"
+     --> tests/ui/parse-fail/kebab-case-collision-func.wit:5:3
+      |
+    5 |   FOO: func() -> u32
+      |   ^--

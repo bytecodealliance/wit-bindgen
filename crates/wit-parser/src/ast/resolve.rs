@@ -6,7 +6,7 @@ use std::mem;
 
 #[derive(Default)]
 pub struct Resolver {
-    type_lookup: HashMap<String, TypeId>,
+    type_lookup: KebabNamespace<TypeId>,
     types: Arena<TypeDef>,
     anon_types: HashMap<Key, TypeId>,
     functions: Vec<Function>,
@@ -185,7 +185,7 @@ impl Resolver {
     }
 
     fn register_names(&mut self, fields: &[InterfaceItem<'_>]) -> Result<()> {
-        let mut values = HashSet::new();
+        let mut values = KebabNamespace::new();
         for field in fields {
             match field {
                 InterfaceItem::TypeDef(t) => {
@@ -201,12 +201,23 @@ impl Resolver {
                     self.define_type(&t.name.name, t.name.span, id)?;
                 }
                 InterfaceItem::Value(f) => {
-                    if !values.insert(&f.name.name) {
-                        return Err(Error {
-                            span: f.name.span,
-                            msg: format!("{:?} defined twice", f.name.name),
+                    if let Some(existing) = values.insert(f.name.name.to_string(), ()) {
+                        if existing.name == f.name.name {
+                            return Err(Error {
+                                span: f.name.span,
+                                msg: format!("{:?} defined twice", f.name.name),
+                            }
+                            .into());
+                        } else {
+                            return Err(Error {
+                                span: f.name.span,
+                                msg: format!(
+                                    "{:?} conflicts with earlier name {:?}",
+                                    f.name.name, existing.name
+                                ),
+                            }
+                            .into());
                         }
-                        .into());
                     }
                 }
             }
@@ -216,12 +227,20 @@ impl Resolver {
     }
 
     fn define_type(&mut self, name: &str, span: Span, id: TypeId) -> Result<()> {
-        if self.type_lookup.insert(name.to_string(), id).is_some() {
-            Err(Error {
-                span,
-                msg: format!("type {:?} defined twice", name),
+        if let Some(existing) = self.type_lookup.insert(name.to_string(), id) {
+            if name == existing.name {
+                Err(Error {
+                    span,
+                    msg: format!("type {:?} defined twice", name),
+                }
+                .into())
+            } else {
+                Err(Error {
+                    span,
+                    msg: format!("{:?} conflicts with earlier name {:?}", name, existing.name),
+                }
+                .into())
             }
-            .into())
         } else {
             Ok(())
         }
@@ -260,13 +279,22 @@ impl Resolver {
                 TypeDefKind::List(ty)
             }
             super::Type::Record(record) => {
+                let mut names = KebabNamespace::new();
                 let fields = record
                     .fields
                     .iter()
                     .map(|field| {
+                        let name = field.name.name.to_string();
+                        if let Some(existing) = names.insert(name.clone(), ()) {
+                            anyhow::bail!(
+                                "{:?} conflicts with earlier name {:?}",
+                                name,
+                                existing.name
+                            );
+                        }
                         Ok(Field {
                             docs: self.docs(&field.docs),
-                            name: field.name.name.to_string(),
+                            name,
                             ty: self.resolve_type(&field.ty)?,
                         })
                     })
@@ -274,14 +302,25 @@ impl Resolver {
                 TypeDefKind::Record(Record { fields })
             }
             super::Type::Flags(flags) => {
+                let mut names = KebabNamespace::new();
                 let flags = flags
                     .flags
                     .iter()
-                    .map(|flag| Flag {
-                        docs: self.docs(&flag.docs),
-                        name: flag.name.name.to_string(),
+                    .map(|flag| {
+                        let name = flag.name.name.to_string();
+                        if let Some(existing) = names.insert(name.clone(), ()) {
+                            anyhow::bail!(
+                                "{:?} conflicts with earlier name {:?}",
+                                name,
+                                existing.name
+                            );
+                        }
+                        Ok(Flag {
+                            docs: self.docs(&flag.docs),
+                            name,
+                        })
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<Result<Vec<_>>>()?;
                 TypeDefKind::Flags(Flags { flags })
             }
             super::Type::Tuple(types) => {
@@ -299,13 +338,22 @@ impl Resolver {
                     }
                     .into());
                 }
+                let mut names = KebabNamespace::new();
                 let cases = variant
                     .cases
                     .iter()
                     .map(|case| {
+                        let name = case.name.name.to_string();
+                        if let Some(existing) = names.insert(name.clone(), ()) {
+                            anyhow::bail!(
+                                "{:?} conflicts with earlier name {:?}",
+                                name,
+                                existing.name
+                            );
+                        }
                         Ok(Case {
                             docs: self.docs(&case.docs),
-                            name: case.name.name.to_string(),
+                            name,
                             ty: self.resolve_optional_type(case.ty.as_ref())?,
                         })
                     })
@@ -320,13 +368,22 @@ impl Resolver {
                     }
                     .into());
                 }
+                let mut names = KebabNamespace::new();
                 let cases = e
                     .cases
                     .iter()
                     .map(|case| {
+                        let name = case.name.name.to_string();
+                        if let Some(existing) = names.insert(name.clone(), ()) {
+                            anyhow::bail!(
+                                "{:?} conflicts with earlier name {:?}",
+                                name,
+                                existing.name
+                            );
+                        }
                         Ok(EnumCase {
                             docs: self.docs(&case.docs),
-                            name: case.name.name.to_string(),
+                            name: name,
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
@@ -481,9 +538,16 @@ impl Resolver {
     }
 
     fn resolve_params(&mut self, params: &ParamList<'_>) -> Result<Params> {
+        let mut names = KebabNamespace::new();
         params
             .iter()
-            .map(|(name, ty)| Ok((name.name.to_string(), self.resolve_type(ty)?)))
+            .map(|(name, ty)| {
+                let name = name.name.to_string();
+                if let Some(existing) = names.insert(name.clone(), ()) {
+                    anyhow::bail!("{:?} conflicts with earlier name {:?}", name, existing.name);
+                }
+                Ok((name, self.resolve_type(ty)?))
+            })
             .collect::<Result<_>>()
     }
 

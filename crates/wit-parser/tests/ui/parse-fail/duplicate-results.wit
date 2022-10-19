@@ -1,0 +1,5 @@
+// parse-fail
+
+interface foo {
+  foo: func() -> (purple: u32, purple: u32)
+}

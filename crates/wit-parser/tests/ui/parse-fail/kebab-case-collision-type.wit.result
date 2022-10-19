@@ -1,0 +1,5 @@
+"PURPLE" conflicts with earlier name "purple"
+     --> tests/ui/parse-fail/kebab-case-collision-type.wit:5:8
+      |
+    5 |   type PURPLE = u32
+      |        ^-----
