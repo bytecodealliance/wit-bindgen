@@ -19,7 +19,6 @@ clap = { workspace = true, optional = true }
 anyhow = { workspace = true }
 test-helpers = { path = '../test-helpers' }
 wasmtime = { workspace = true }
-wasmtime-wasi = { workspace = true }
 wit-bindgen-host-wasmtime-rust = { workspace = true, features = ['tracing'] }
 
 tokio = { version = "1", features = ["full"] }
