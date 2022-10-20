@@ -1,3 +1,4 @@
+use wit_bindgen_host_wasmtime_rust::Result as HostResult;
 wit_bindgen_host_wasmtime_rust::generate!({
     import: "../../tests/runtime/results/imports.wit",
     default: "../../tests/runtime/results/exports.wit",
@@ -16,33 +17,33 @@ impl imports::Imports for MyImports {
         }
     }
 
-    fn enum_error(&mut self, a: f64) -> Result<f64, imports::E> {
+    fn enum_error(&mut self, a: f64) -> HostResult<f64, imports::E> {
         if a == 0.0 {
-            Err(imports::E::A)
+            Err(imports::E::A)?
         } else {
             Ok(a)
         }
     }
 
-    fn record_error(&mut self, a: f64) -> Result<f64, imports::E2> {
+    fn record_error(&mut self, a: f64) -> HostResult<f64, imports::E2> {
         if a == 0.0 {
             Err(imports::E2 {
                 line: 420,
                 column: 0,
-            })
+            })?
         } else {
             Ok(a)
         }
     }
 
-    fn variant_error(&mut self, a: f64) -> Result<f64, imports::E3> {
+    fn variant_error(&mut self, a: f64) -> HostResult<f64, imports::E3> {
         if a == 0.0 {
             Err(imports::E3::E2(imports::E2 {
                 line: 420,
                 column: 0,
-            }))
+            }))?
         } else if a == 1.0 {
-            Err(imports::E3::E1(imports::E::B))
+            Err(imports::E3::E1(imports::E::B))?
         } else {
             Ok(a)
         }
@@ -50,7 +51,7 @@ impl imports::Imports for MyImports {
 
     fn empty_error(&mut self, a: u32) -> Result<u32, ()> {
         if a == 0 {
-            Err(())
+            Err(())?
         } else {
             Ok(a)
         }

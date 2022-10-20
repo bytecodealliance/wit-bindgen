@@ -1,4 +1,5 @@
 use anyhow::Result;
+use wit_bindgen_host_wasmtime_rust::Result as HostResult;
 
 wit_bindgen_host_wasmtime_rust::generate!({
     import: "../../tests/runtime/flavorful/imports.wit",
@@ -58,12 +59,12 @@ impl imports::Imports for MyImports {
         Some("output3".to_string())
     }
 
-    fn errno_result(&mut self) -> Result<(), imports::MyErrno> {
+    fn errno_result(&mut self) -> HostResult<(), imports::MyErrno> {
         imports::MyErrno::A.to_string();
         format!("{:?}", imports::MyErrno::A);
         fn assert_error<T: std::error::Error>() {}
         assert_error::<imports::MyErrno>();
-        Err(imports::MyErrno::B)
+        Err(imports::MyErrno::B)?
     }
 
     fn list_typedefs(

@@ -314,12 +314,18 @@ impl<'a> InterfaceGenerator<'a> {
         }
     }
 
-    fn get_single_result(&self, results: &Results) -> Option<&Result_> {
+    fn special_case_host_error(&self, results: &Results) -> Option<&Result_> {
+        // We only support the wit_bindgen_host_wasmtime_rust::Error case when
+        // a function has just one result, which is itself a `result<a, e>`, and the
+        // `e` is *not* a primitive (i.e. defined in std) type.
         let mut i = results.iter_types();
         if i.len() == 1 {
             match i.next().unwrap() {
                 Type::Id(id) => match &self.iface.types[*id].kind {
-                    TypeDefKind::Result(r) => Some(&r),
+                    TypeDefKind::Result(r) => match r.err {
+                        Some(Type::Id(_)) => Some(&r),
+                        _ => None,
+                    },
                     _ => None,
                 },
                 _ => None,
@@ -344,12 +350,32 @@ impl<'a> InterfaceGenerator<'a> {
             fnsig.private = true;
             fnsig.self_arg = Some("&mut self".to_string());
 
-            // These trait method args used to be TypeMode::LeafBorrowed, but wasmtime
-            // Lift is not impled for borrowed types, so I don't think we can
-            // support that anymore?
             self.print_docs_and_params(func, TypeMode::Owned, &fnsig);
             self.push_str(" -> ");
-            self.print_result_ty(&func.results, TypeMode::Owned);
+
+            if let Some(r) = self.special_case_host_error(&func.results).cloned() {
+                // Functions which have a single result `result<ok,err>` get special
+                // cased to use the host_wasmtime_rust::Error<err>, making it possible
+                // for them to trap or use `?` to propogate their errors
+                self.push_str("wit_bindgen_host_wasmtime_rust::Result<");
+                if let Some(ok) = r.ok {
+                    self.print_ty(&ok, TypeMode::Owned);
+                } else {
+                    self.push_str("()");
+                }
+                self.push_str(",");
+                if let Some(err) = r.err {
+                    self.print_ty(&err, TypeMode::Owned);
+                } else {
+                    self.push_str("()");
+                }
+                self.push_str(">");
+            } else {
+                // TODO wrap this in an `anyhow::Result<>` so that these
+                // methods can trap.
+                self.print_result_ty(&func.results, TypeMode::Owned);
+            }
+
             self.push_str(";\n");
         }
         uwriteln!(self.src, "}}");
@@ -437,9 +463,23 @@ impl<'a> InterfaceGenerator<'a> {
         } else {
             uwrite!(self.src, ");\n");
         }
-        if func.results.iter_types().len() == 1 {
+
+        if self.special_case_host_error(&func.results).is_some() {
+            uwrite!(
+                self.src,
+                "match r {{
+                    Ok(a) => Ok((Ok(a),)),
+                    Err(e) => match e.downcast() {{
+                        Ok(api_error) => Ok((Err(api_error),)),
+                        Err(anyhow_error) => Err(anyhow_error),
+                    }}
+                }}"
+            );
+        } else if func.results.iter_types().len() == 1 {
+            // TODO when we add an anyhow::Result for base case this gets a ? on the r
             uwrite!(self.src, "Ok((r,))\n");
         } else {
+            // TODO when we add an anyhow::Result for base case this gets a ? on the r
             uwrite!(self.src, "Ok(r)\n");
         }
 

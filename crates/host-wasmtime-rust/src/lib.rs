@@ -31,11 +31,8 @@ impl<T: std::error::Error + Send + Sync + 'static> Error<T> {
         self.err.context(context).into()
     }
 
-    pub fn downcast(self) -> std::result::Result<T, Error<T>> {
-        match self.err.downcast::<T>() {
-            Ok(t) => Ok(t),
-            Err(err) => Err(Self { err, ty: self.ty }),
-        }
+    pub fn downcast(self) -> std::result::Result<T, anyhow::Error> {
+        self.err.downcast::<T>()
     }
 
     pub fn downcast_ref(&self) -> Option<&T> {
