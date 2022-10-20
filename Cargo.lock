@@ -1922,7 +1922,6 @@ dependencies = [
  "wit-bindgen-gen-host-js",
  "wit-bindgen-gen-host-wasmtime-py",
  "wit-bindgen-gen-host-wasmtime-rust",
- "wit-bindgen-gen-markdown",
  "wit-component",
 ]
 
@@ -1951,7 +1950,6 @@ dependencies = [
  "wit-bindgen-gen-host-js",
  "wit-bindgen-gen-host-wasmtime-py",
  "wit-bindgen-gen-host-wasmtime-rust",
- "wit-bindgen-gen-markdown",
  "wit-bindgen-guest-rust",
  "wit-component",
 ]
@@ -2032,16 +2030,6 @@ dependencies = [
  "wit-bindgen-gen-rust-lib",
  "wit-bindgen-host-wasmtime-rust",
  "wit-component",
-]
-
-[[package]]
-name = "wit-bindgen-gen-markdown"
-version = "0.3.0"
-dependencies = [
- "clap",
- "heck",
- "pulldown-cmark",
- "wit-bindgen-core",
 ]
 
 [[package]]

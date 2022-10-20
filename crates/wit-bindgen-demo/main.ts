@@ -95,7 +95,6 @@ class Editor {
       case "wasmtime":
       case "wasmtime-py":
       case "c":
-      case "markdown":
         lang = this.language.value;
         break;
       default: return;
@@ -154,8 +153,6 @@ class Editor {
       this.outputEditor.session.setMode("ace/mode/c_cpp");
     else if (this.files.value.endsWith('.h'))
       this.outputEditor.session.setMode("ace/mode/c_cpp");
-    else if (this.files.value.endsWith('.md'))
-      this.outputEditor.session.setMode("ace/mode/markdown");
     else if (this.files.value.endsWith('.py'))
       this.outputEditor.session.setMode("ace/mode/python");
     else if (this.files.value.endsWith('.java'))

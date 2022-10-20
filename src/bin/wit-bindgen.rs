@@ -27,15 +27,6 @@ enum Category {
     /// Generators for writing guest WASM modules/components.
     #[command(subcommand)]
     Guest(GuestGenerator),
-    /// This generator outputs a Markdown file describing an interface.
-    Markdown {
-        #[clap(flatten)]
-        opts: wit_bindgen_gen_markdown::Opts,
-        #[clap(flatten)]
-        common: Common,
-        #[clap(flatten)]
-        world: LegacyWorld,
-    },
 }
 
 #[derive(Debug, Parser)]
@@ -193,8 +184,7 @@ impl Opt {
             | Category::Guest(GuestGenerator::C { common, .. })
             | Category::Guest(GuestGenerator::TeavmJava { common, .. })
             | Category::Host(HostGenerator::WasmtimeRust { common, .. })
-            | Category::Host(HostGenerator::WasmtimePy { common, .. })
-            | Category::Markdown { common, .. } => common,
+            | Category::Host(HostGenerator::WasmtimePy { common, .. }) => common,
             Category::Host(HostGenerator::Js { component, .. }) => &component.common,
         }
     }
@@ -222,9 +212,6 @@ fn main() -> Result<()> {
             gen_legacy_world(Box::new(opts.build()), world, &mut files)?;
         }
         Category::Guest(GuestGenerator::TeavmJava { opts, world, .. }) => {
-            gen_legacy_world(Box::new(opts.build()), world, &mut files)?;
-        }
-        Category::Markdown { opts, world, .. } => {
             gen_legacy_world(Box::new(opts.build()), world, &mut files)?;
         }
     }

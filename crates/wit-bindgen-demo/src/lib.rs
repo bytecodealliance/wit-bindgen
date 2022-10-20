@@ -118,10 +118,6 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
             Box::new(wit_bindgen_gen_guest_c::Opts::default().build()),
             files,
         ),
-        demo::Lang::Markdown => gen_world_legacy(
-            Box::new(wit_bindgen_gen_markdown::Opts::default().build()),
-            files,
-        ),
 
         // JS is different from other languages at this time where it takes a
         // component as input as opposed to an `Interface`. To work with this
