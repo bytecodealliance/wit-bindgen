@@ -53,6 +53,7 @@ impl WorldGenerator for Wasmtime {
     fn import(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
         let mut gen = InterfaceGenerator::new(self, iface, TypeMode::Owned);
         gen.types();
+        gen.generate_from_error_impls();
         gen.generate_add_to_linker(name);
 
         let snake = name.to_snake_case();
@@ -77,6 +78,7 @@ impl WorldGenerator for Wasmtime {
     fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
         let mut gen = InterfaceGenerator::new(self, iface, TypeMode::AllBorrowed("'a"));
         gen.types();
+        gen.generate_from_error_impls();
 
         let camel = name.to_upper_camel_case();
         uwriteln!(gen.src, "pub struct {camel} {{");
@@ -567,6 +569,36 @@ impl<'a> InterfaceGenerator<'a> {
 
         // End function body
         self.src.push_str("}\n");
+    }
+
+    fn generate_from_error_impls(&mut self) {
+        for (id, ty) in self.iface.types.iter() {
+            if ty.name.is_none() {
+                continue;
+            }
+            let info = self.info(id);
+            if info.error {
+                for (name, mode) in self.modes_of(id) {
+                    let name = name.to_upper_camel_case();
+                    if self.lifetime_for(&info, mode).is_some() {
+                        continue;
+                    }
+                    self.push_str("impl From<");
+                    self.push_str(&name);
+                    self.push_str("> for wit_bindgen_host_wasmtime_rust::Error<");
+                    self.push_str(&name);
+                    self.push_str("> {\n");
+                    self.push_str("fn from(e: ");
+                    self.push_str(&name);
+                    self.push_str(") -> wit_bindgen_host_wasmtime_rust::Error::< ");
+                    self.push_str(&name);
+                    self.push_str("> {\n");
+                    self.push_str("wit_bindgen_host_wasmtime_rust::Error::new(e)\n");
+                    self.push_str("}\n");
+                    self.push_str("}\n");
+                }
+            }
+        }
     }
 }
 

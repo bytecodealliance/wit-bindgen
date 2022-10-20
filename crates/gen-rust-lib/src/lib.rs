@@ -551,11 +551,11 @@ pub trait RustGenerator<'a> {
                 self.push_str("write!(f, \"{:?}\", self)\n");
                 self.push_str("}\n");
                 self.push_str("}\n");
-            }
-            if info.error {
-                self.push_str("impl std::error::Error for ");
-                self.push_str(&name);
-                self.push_str("{}\n");
+                if self.use_std() {
+                    self.push_str("impl std::error::Error for ");
+                    self.push_str(&name);
+                    self.push_str("{}\n");
+                }
             }
         }
     }
@@ -639,6 +639,7 @@ pub trait RustGenerator<'a> {
 
         for (name, mode) in self.modes_of(id) {
             let name = name.to_upper_camel_case();
+
             self.rustdoc(docs);
             let lt = self.lifetime_for(&info, mode);
             if let Some(derive_component) = derive_component {
@@ -653,9 +654,6 @@ pub trait RustGenerator<'a> {
                 self.push_str("#[derive(Clone, Copy)]\n");
             } else {
                 self.push_str("#[derive(Clone)]\n");
-            }
-            if info.error {
-                self.push_str("#[derive(std::fmt::Display)]\n");
             }
             self.push_str(&format!("pub enum {name}"));
             self.print_generics(lt);
@@ -688,9 +686,28 @@ pub trait RustGenerator<'a> {
             );
 
             if info.error {
-                self.push_str("impl std::error::Error for ");
+                self.push_str("impl");
+                self.print_generics(lt);
+                self.push_str(" core::fmt::Display for ");
                 self.push_str(&name);
-                self.push_str(" {}\n");
+                self.print_generics(lt);
+                self.push_str(" {\n");
+                self.push_str(
+                    "fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {\n",
+                );
+                self.push_str("write!(f, \"{:?}\", self)");
+                self.push_str("}\n");
+                self.push_str("}\n");
+                self.push_str("\n");
+
+                if self.use_std() {
+                    self.push_str("impl");
+                    self.print_generics(lt);
+                    self.push_str(" std::error::Error for ");
+                    self.push_str(&name);
+                    self.print_generics(lt);
+                    self.push_str(" {}\n");
+                }
             }
         }
     }
@@ -775,8 +792,7 @@ pub trait RustGenerator<'a> {
     ) where
         Self: Sized,
     {
-        // TODO: should this perhaps be an attribute in the wit file?
-        let is_error = name.contains("errno");
+        let info = self.info(id);
 
         let name = name.to_upper_camel_case();
         self.rustdoc(docs);
@@ -797,7 +813,7 @@ pub trait RustGenerator<'a> {
 
         // Auto-synthesize an implementation of the standard `Error` trait for
         // error-looking types based on their name.
-        if is_error {
+        if info.error {
             self.push_str("impl ");
             self.push_str(&name);
             self.push_str("{\n");

@@ -34,6 +34,20 @@ impl imports::Imports for MyImports {
             Ok(a)
         }
     }
+
+    fn variant_error(&mut self, a: f64) -> Result<f64, imports::E3> {
+        if a == 0.0 {
+            Err(imports::E3::E2(imports::E2 {
+                line: 420,
+                column: 0,
+            }))
+        } else if a == 1.0 {
+            Err(imports::E3::E1(imports::E::B))
+        } else {
+            Ok(a)
+        }
+    }
+
     fn empty_error(&mut self, a: u32) -> Result<u32, ()> {
         if a == 0 {
             Err(())
@@ -72,6 +86,18 @@ fn run(wasm: &str) -> anyhow::Result<()> {
         })
     ));
     assert!(exports.record_error(&mut store, 1.0)?.is_ok());
+
+    assert!(matches!(
+        exports.variant_error(&mut store, 0.0)?,
+        Err(E3::E2(E2 {
+            line: 420,
+            column: 0
+        }))
+    ));
+    assert!(matches!(
+        exports.variant_error(&mut store, 1.0)?,
+        Err(E3::E1(E::B))
+    ));
 
     assert_eq!(exports.empty_error(&mut store, 0)?, Err(()));
     assert_eq!(exports.empty_error(&mut store, 1)?, Ok(1));
