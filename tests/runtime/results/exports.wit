@@ -4,4 +4,7 @@ string-error: func(a: float32) -> result<float32, string>
 enum e { a, b, c }
 enum-error: func(a: float64) -> result<float64, e>
 
+record e2 { line: u32, column: u32 }
+record-error: func(a: float64) -> result<float64, e2>
+
 empty-error: func(a: u32) -> result<u32>

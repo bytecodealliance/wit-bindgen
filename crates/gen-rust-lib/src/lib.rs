@@ -537,6 +537,26 @@ pub trait RustGenerator<'a> {
             self.push_str(".finish()\n");
             self.push_str("}\n");
             self.push_str("}\n");
+
+            if info.error {
+                self.push_str("impl");
+                self.print_generics(lt);
+                self.push_str(" core::fmt::Display for ");
+                self.push_str(&name);
+                self.print_generics(lt);
+                self.push_str(" {\n");
+                self.push_str(
+                    "fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {\n",
+                );
+                self.push_str("write!(f, \"{:?}\", self)\n");
+                self.push_str("}\n");
+                self.push_str("}\n");
+            }
+            if info.error {
+                self.push_str("impl std::error::Error for ");
+                self.push_str(&name);
+                self.push_str("{}\n");
+            }
         }
     }
 
@@ -634,6 +654,9 @@ pub trait RustGenerator<'a> {
             } else {
                 self.push_str("#[derive(Clone)]\n");
             }
+            if info.error {
+                self.push_str("#[derive(std::fmt::Display)]\n");
+            }
             self.push_str(&format!("pub enum {name}"));
             self.print_generics(lt);
             self.push_str("{\n");
@@ -663,6 +686,12 @@ pub trait RustGenerator<'a> {
                     .into_iter()
                     .map(|(name, _attr, _docs, ty)| (name, ty)),
             );
+
+            if info.error {
+                self.push_str("impl std::error::Error for ");
+                self.push_str(&name);
+                self.push_str(" {}\n");
+            }
         }
     }
 

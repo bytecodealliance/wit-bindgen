@@ -24,6 +24,16 @@ impl imports::Imports for MyImports {
         }
     }
 
+    fn record_error(&mut self, a: f64) -> Result<f64, imports::E2> {
+        if a == 0.0 {
+            Err(imports::E2 {
+                line: 420,
+                column: 0,
+            })
+        } else {
+            Ok(a)
+        }
+    }
     fn empty_error(&mut self, a: u32) -> Result<u32, ()> {
         if a == 0 {
             Err(())
@@ -52,7 +62,16 @@ fn run(wasm: &str) -> anyhow::Result<()> {
     assert_eq!(exports.string_error(&mut store, 1.0)?, Ok(1.0));
 
     assert_eq!(exports.enum_error(&mut store, 0.0)?, Err(E::A));
-    assert_eq!(exports.enum_error(&mut store, 1.0)?, Ok(1.0));
+    assert_eq!(exports.enum_error(&mut store, 0.0)?, Err(E::A));
+
+    assert!(matches!(
+        exports.record_error(&mut store, 0.0)?,
+        Err(E2 {
+            line: 420,
+            column: 0
+        })
+    ));
+    assert!(exports.record_error(&mut store, 1.0)?.is_ok());
 
     assert_eq!(exports.empty_error(&mut store, 0)?, Err(()));
     assert_eq!(exports.empty_error(&mut store, 1)?, Ok(1));

@@ -312,6 +312,21 @@ impl<'a> InterfaceGenerator<'a> {
         }
     }
 
+    fn get_single_result(&self, results: &Results) -> Option<&Result_> {
+        let mut i = results.iter_types();
+        if i.len() == 1 {
+            match i.next().unwrap() {
+                Type::Id(id) => match &self.iface.types[*id].kind {
+                    TypeDefKind::Result(r) => Some(&r),
+                    _ => None,
+                },
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
     fn generate_add_to_linker(&mut self, name: &str) {
         let camel = name.to_upper_camel_case();
 

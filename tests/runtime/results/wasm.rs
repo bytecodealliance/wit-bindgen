@@ -20,6 +20,12 @@ impl exports::Exports for Exports {
             Err(imports::E::C) => Err(exports::E::C),
         }
     }
+    fn record_error(a: f64) -> Result<f64, exports::E2> {
+        match imports::record_error(a) {
+            Ok(b) => Ok(b),
+            Err(imports::E2 { line, column }) => Err(exports::E2 { line, column }),
+        }
+    }
     fn empty_error(a: u32) -> Result<u32, ()> {
         imports::empty_error(a)
     }
