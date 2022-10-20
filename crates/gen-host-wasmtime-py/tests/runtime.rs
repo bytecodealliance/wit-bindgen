@@ -25,11 +25,11 @@ fn execute(name: &str, lang: &str, wasm: &Path, py: &Path) {
 
     let cwd = std::env::current_dir().unwrap();
     println!("Running mypy...");
-    let pathdir = format!(
-        "{}:{}",
+    let pathdir = std::env::join_paths([
         dir.parent().unwrap().to_str().unwrap(),
         cwd.join("tests").to_str().unwrap(),
-    );
+    ])
+    .unwrap();
     test_helpers::run_command(
         Command::new("mypy")
             .env("MYPYPATH", &pathdir)
