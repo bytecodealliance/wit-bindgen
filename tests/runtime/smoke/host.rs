@@ -12,9 +12,10 @@ pub struct MyImports {
 }
 
 impl imports::Imports for MyImports {
-    fn thunk(&mut self) {
+    fn thunk(&mut self) -> Result<()> {
         self.hit = true;
         println!("in the host");
+        Ok(())
     }
 }
 

@@ -92,10 +92,11 @@ wit_bindgen_host_wasmtime_rust::generate!({
 pub struct TestWasi;
 
 impl testwasi::Testwasi for TestWasi {
-    fn log(&mut self, bytes: Vec<u8>) {
+    fn log(&mut self, bytes: Vec<u8>) -> Result<()> {
         match std::str::from_utf8(&bytes) {
             Ok(s) => print!("{}", s),
             Err(_) => println!("\nbinary: {:?}", bytes),
         }
+        Ok(())
     }
 }

@@ -9,11 +9,11 @@ wit_bindgen_host_wasmtime_rust::generate!({
 pub struct MyImports {}
 
 impl imports::Imports for MyImports {
-    fn string_error(&mut self, a: f32) -> Result<f32, String> {
+    fn string_error(&mut self, a: f32) -> anyhow::Result<Result<f32, String>> {
         if a == 0.0 {
-            Err("zero".to_owned())
+            Ok(Err("zero".to_owned()))
         } else {
-            Ok(a)
+            Ok(Ok(a))
         }
     }
 
@@ -49,11 +49,11 @@ impl imports::Imports for MyImports {
         }
     }
 
-    fn empty_error(&mut self, a: u32) -> Result<u32, ()> {
+    fn empty_error(&mut self, a: u32) -> anyhow::Result<Result<u32, ()>> {
         if a == 0 {
-            Err(())?
+            Ok(Err(()))
         } else {
-            Ok(a)
+            Ok(Ok(a))
         }
     }
 }

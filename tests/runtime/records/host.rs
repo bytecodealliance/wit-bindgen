@@ -10,22 +10,22 @@ use anyhow::Result;
 pub struct MyImports;
 
 impl imports::Imports for MyImports {
-    fn multiple_results(&mut self) -> (u8, u16) {
-        (4, 5)
+    fn multiple_results(&mut self) -> Result<(u8, u16)> {
+        Ok((4, 5))
     }
 
-    fn swap_tuple(&mut self, a: (u8, u32)) -> (u32, u8) {
-        (a.1, a.0)
+    fn swap_tuple(&mut self, a: (u8, u32)) -> Result<(u32, u8)> {
+        Ok((a.1, a.0))
     }
 
-    fn roundtrip_flags1(&mut self, a: imports::F1) -> imports::F1 {
+    fn roundtrip_flags1(&mut self, a: imports::F1) -> Result<imports::F1> {
         drop(format!("{:?}", a));
         drop(a & imports::F1::all());
-        a
+        Ok(a)
     }
 
-    fn roundtrip_flags2(&mut self, a: imports::F2) -> imports::F2 {
-        a
+    fn roundtrip_flags2(&mut self, a: imports::F2) -> Result<imports::F2> {
+        Ok(a)
     }
 
     fn roundtrip_flags3(
@@ -34,24 +34,26 @@ impl imports::Imports for MyImports {
         b: imports::Flag16,
         c: imports::Flag32,
         d: imports::Flag64,
-    ) -> (
+    ) -> Result<(
         imports::Flag8,
         imports::Flag16,
         imports::Flag32,
         imports::Flag64,
-    ) {
-        (a, b, c, d)
+    )> {
+        Ok((a, b, c, d))
     }
 
-    fn roundtrip_record1(&mut self, a: imports::R1) -> imports::R1 {
+    fn roundtrip_record1(&mut self, a: imports::R1) -> Result<imports::R1> {
         drop(format!("{:?}", a));
-        a
+        Ok(a)
     }
 
-    fn tuple0(&mut self, _: ()) {}
+    fn tuple0(&mut self, _: ()) -> Result<()> {
+        Ok(())
+    }
 
-    fn tuple1(&mut self, a: (u8,)) -> (u8,) {
-        (a.0,)
+    fn tuple1(&mut self, a: (u8,)) -> Result<(u8,)> {
+        Ok((a.0,))
     }
 }
 

@@ -371,9 +371,11 @@ impl<'a> InterfaceGenerator<'a> {
                 }
                 self.push_str(">");
             } else {
-                // TODO wrap this in an `anyhow::Result<>` so that these
-                // methods can trap.
+                // All other functions get their return values wrapped in an anyhow::Result.
+                // Returning the anyhow::Error case can be used to trap.
+                self.push_str("anyhow::Result<");
                 self.print_result_ty(&func.results, TypeMode::Owned);
+                self.push_str(">");
             }
 
             self.push_str(";\n");
@@ -476,11 +478,9 @@ impl<'a> InterfaceGenerator<'a> {
                 }}"
             );
         } else if func.results.iter_types().len() == 1 {
-            // TODO when we add an anyhow::Result for base case this gets a ? on the r
-            uwrite!(self.src, "Ok((r,))\n");
+            uwrite!(self.src, "Ok((r?,))\n");
         } else {
-            // TODO when we add an anyhow::Result for base case this gets a ? on the r
-            uwrite!(self.src, "Ok(r)\n");
+            uwrite!(self.src, "r\n");
         }
 
         if self.gen.opts.async_ {

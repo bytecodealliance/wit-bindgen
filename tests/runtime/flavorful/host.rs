@@ -12,28 +12,29 @@ wit_bindgen_host_wasmtime_rust::generate!({
 pub struct MyImports;
 
 impl imports::Imports for MyImports {
-    fn f_list_in_record1(&mut self, ty: imports::ListInRecord1) {
+    fn f_list_in_record1(&mut self, ty: imports::ListInRecord1) -> Result<()> {
         assert_eq!(ty.a, "list_in_record1");
+        Ok(())
     }
 
-    fn f_list_in_record2(&mut self) -> imports::ListInRecord2 {
-        imports::ListInRecord2 {
+    fn f_list_in_record2(&mut self) -> Result<imports::ListInRecord2> {
+        Ok(imports::ListInRecord2 {
             a: "list_in_record2".to_string(),
-        }
+        })
     }
 
-    fn f_list_in_record3(&mut self, a: imports::ListInRecord3) -> imports::ListInRecord3 {
+    fn f_list_in_record3(&mut self, a: imports::ListInRecord3) -> Result<imports::ListInRecord3> {
         assert_eq!(a.a, "list_in_record3 input");
-        imports::ListInRecord3 {
+        Ok(imports::ListInRecord3 {
             a: "list_in_record3 output".to_string(),
-        }
+        })
     }
 
-    fn f_list_in_record4(&mut self, a: imports::ListInAlias) -> imports::ListInAlias {
+    fn f_list_in_record4(&mut self, a: imports::ListInAlias) -> Result<imports::ListInAlias> {
         assert_eq!(a.a, "input4");
-        imports::ListInRecord4 {
+        Ok(imports::ListInRecord4 {
             a: "result4".to_string(),
-        }
+        })
     }
 
     fn f_list_in_variant1(
@@ -41,22 +42,23 @@ impl imports::Imports for MyImports {
         a: imports::ListInVariant1V1,
         b: imports::ListInVariant1V2,
         c: imports::ListInVariant1V3,
-    ) {
+    ) -> Result<()> {
         assert_eq!(a.unwrap(), "foo");
         assert_eq!(b.unwrap_err(), "bar");
         match c {
             imports::ListInVariant1V3::String(s) => assert_eq!(s, "baz"),
             imports::ListInVariant1V3::F32(_) => panic!(),
         }
+        Ok(())
     }
 
-    fn f_list_in_variant2(&mut self) -> Option<String> {
-        Some("list_in_variant2".to_string())
+    fn f_list_in_variant2(&mut self) -> Result<Option<String>> {
+        Ok(Some("list_in_variant2".to_string()))
     }
 
-    fn f_list_in_variant3(&mut self, a: imports::ListInVariant3) -> Option<String> {
+    fn f_list_in_variant3(&mut self, a: imports::ListInVariant3) -> Result<Option<String>> {
         assert_eq!(a.unwrap(), "input3");
-        Some("output3".to_string())
+        Ok(Some("output3".to_string()))
     }
 
     fn errno_result(&mut self) -> HostResult<(), imports::MyErrno> {
@@ -71,11 +73,11 @@ impl imports::Imports for MyImports {
         &mut self,
         a: imports::ListTypedef,
         b: imports::ListTypedef3,
-    ) -> (imports::ListTypedef2, imports::ListTypedef3) {
+    ) -> Result<(imports::ListTypedef2, imports::ListTypedef3)> {
         assert_eq!(a, "typedef1");
         assert_eq!(b.len(), 1);
         assert_eq!(b[0], "typedef2");
-        (b"typedef3".to_vec(), vec!["typedef4".to_string()])
+        Ok((b"typedef3".to_vec(), vec!["typedef4".to_string()]))
     }
 
     fn list_of_variants(
@@ -83,15 +85,15 @@ impl imports::Imports for MyImports {
         bools: Vec<bool>,
         results: Vec<Result<(), ()>>,
         enums: Vec<imports::MyErrno>,
-    ) -> (Vec<bool>, Vec<Result<(), ()>>, Vec<imports::MyErrno>) {
+    ) -> Result<(Vec<bool>, Vec<Result<(), ()>>, Vec<imports::MyErrno>)> {
         assert_eq!(bools, [true, false]);
         assert_eq!(results, [Ok(()), Err(())]);
         assert_eq!(enums, [imports::MyErrno::Success, imports::MyErrno::A]);
-        (
+        Ok((
             vec![false, true],
             vec![Err(()), Ok(())],
             vec![imports::MyErrno::A, imports::MyErrno::B],
-        )
+        ))
     }
 }
 

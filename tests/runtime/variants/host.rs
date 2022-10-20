@@ -1,5 +1,3 @@
-use anyhow::Result;
-
 wit_bindgen_host_wasmtime_rust::generate!({
     import: "../../tests/runtime/variants/imports.wit",
     default: "../../tests/runtime/variants/exports.wit",
@@ -10,50 +8,57 @@ wit_bindgen_host_wasmtime_rust::generate!({
 pub struct MyImports;
 
 impl imports::Imports for MyImports {
-    fn roundtrip_option(&mut self, a: Option<f32>) -> Option<u8> {
-        a.map(|x| x as u8)
+    fn roundtrip_option(&mut self, a: Option<f32>) -> anyhow::Result<Option<u8>> {
+        Ok(a.map(|x| x as u8))
     }
 
-    fn roundtrip_result(&mut self, a: Result<u32, f32>) -> Result<f64, u8> {
-        match a {
+    fn roundtrip_result(&mut self, a: Result<u32, f32>) -> anyhow::Result<Result<f64, u8>> {
+        Ok(match a {
             Ok(a) => Ok(a.into()),
             Err(b) => Err(b as u8),
-        }
+        })
     }
 
-    fn roundtrip_enum(&mut self, a: imports::E1) -> imports::E1 {
+    fn roundtrip_enum(&mut self, a: imports::E1) -> anyhow::Result<imports::E1> {
         assert_eq!(a, a);
-        a
+        Ok(a)
     }
 
-    fn invert_bool(&mut self, a: bool) -> bool {
-        !a
+    fn invert_bool(&mut self, a: bool) -> anyhow::Result<bool> {
+        Ok(!a)
     }
 
-    fn variant_casts(&mut self, a: imports::Casts) -> imports::Casts {
-        a
+    fn variant_casts(&mut self, a: imports::Casts) -> anyhow::Result<imports::Casts> {
+        Ok(a)
     }
 
-    fn variant_zeros(&mut self, a: imports::Zeros) -> imports::Zeros {
-        a
+    fn variant_zeros(&mut self, a: imports::Zeros) -> anyhow::Result<imports::Zeros> {
+        Ok(a)
     }
 
-    fn variant_typedefs(&mut self, _: Option<u32>, _: bool, _: Result<u32, ()>) {}
+    fn variant_typedefs(
+        &mut self,
+        _: Option<u32>,
+        _: bool,
+        _: Result<u32, ()>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     fn variant_enums(
         &mut self,
         a: bool,
         b: Result<(), ()>,
         c: imports::MyErrno,
-    ) -> (bool, Result<(), ()>, imports::MyErrno) {
+    ) -> anyhow::Result<(bool, Result<(), ()>, imports::MyErrno)> {
         assert_eq!(a, true);
         assert_eq!(b, Ok(()));
         assert_eq!(c, imports::MyErrno::Success);
-        (false, Err(()), imports::MyErrno::A)
+        Ok((false, Err(()), imports::MyErrno::A))
     }
 }
 
-fn run(wasm: &str) -> Result<()> {
+fn run(wasm: &str) -> anyhow::Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
         |linker| imports::add_to_linker(linker, |cx| -> &mut MyImports { &mut cx.imports }),
