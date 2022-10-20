@@ -5,16 +5,20 @@ macro_rules! gen_test {
     ($name:ident $test:tt $dir:ident) => {
         #[test]
         fn $name() {
-            test_helpers::run_codegen_test(
+            drop(include_str!($test));
+            test_helpers::run_component_codegen_test(
                 "wasmtime-py",
-                std::path::Path::new($test)
-                    .file_stem()
-                    .unwrap()
-                    .to_str()
-                    .unwrap(),
-                include_str!($test),
+                $test.as_ref(),
                 test_helpers::Direction::$dir,
-                wit_bindgen_gen_host_wasmtime_py::Opts::default().build(),
+                |name, component, files| {
+                    wit_bindgen_core::component::generate(
+                        &mut *wit_bindgen_gen_host_wasmtime_py::Opts::default().build(),
+                        name,
+                        component,
+                        files,
+                    )
+                    .unwrap()
+                },
                 super::verify,
             )
         }
@@ -38,7 +42,7 @@ mod imports {
 fn verify(dir: &Path, _name: &str) {
     test_helpers::run_command(
         Command::new("mypy")
-            .arg(dir.join("bindings.py"))
+            .arg(dir)
             .arg("--config-file")
             .arg("mypy.ini"),
     );

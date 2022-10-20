@@ -1,8 +1,6 @@
-from exports.bindings import Exports
-from imports.bindings import add_imports_to_linker, Imports
 from typing import Tuple, List
-import exports.bindings as e
-import imports.bindings as i
+from helpers import TestWasi
+from lists import Lists, ListsImports
 import sys
 import wasmtime
 
@@ -71,19 +69,9 @@ class MyImports:
         assert(b == [-sys.float_info.max, sys.float_info.max, -float('inf'), float('inf')])
         return (a, b)
 
-def run(wasm_file: str) -> None:
+def run() -> None:
     store = wasmtime.Store()
-    module = wasmtime.Module.from_file(store.engine, wasm_file)
-    linker = wasmtime.Linker(store.engine)
-    linker.define_wasi()
-    wasi = wasmtime.WasiConfig()
-    wasi.inherit_stdout()
-    wasi.inherit_stderr()
-    store.set_wasi(wasi)
-
-    imports = MyImports()
-    add_imports_to_linker(linker, store, imports)
-    wasm = Exports(store, linker, module)
+    wasm = Lists(store, ListsImports(MyImports(), TestWasi()))
 
     allocated_bytes = wasm.allocated_bytes(store)
     wasm.test_imports(store)
@@ -108,4 +96,4 @@ def run(wasm_file: str) -> None:
     assert(allocated_bytes == wasm.allocated_bytes(store))
 
 if __name__ == '__main__':
-    run(sys.argv[1])
+    run()

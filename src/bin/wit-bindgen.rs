@@ -54,9 +54,7 @@ enum HostGenerator {
         #[clap(flatten)]
         opts: wit_bindgen_gen_host_wasmtime_py::Opts,
         #[clap(flatten)]
-        common: Common,
-        #[clap(flatten)]
-        world: LegacyWorld,
+        component: ComponentOpts,
     },
     /// Generates bindings for JavaScript hosts.
     Js {
@@ -186,9 +184,9 @@ impl Opt {
             | Category::Guest(GuestGenerator::C { common, .. })
             | Category::Guest(GuestGenerator::TeavmJava { common, .. })
             | Category::Host(HostGenerator::WasmtimeRust { common, .. })
-            | Category::Host(HostGenerator::WasmtimePy { common, .. })
             | Category::Markdown { common, .. } => common,
-            Category::Host(HostGenerator::Js { component, .. }) => &component.common,
+            Category::Host(HostGenerator::Js { component, .. })
+            | Category::Host(HostGenerator::WasmtimePy { component, .. }) => &component.common,
         }
     }
 }
@@ -202,8 +200,8 @@ fn main() -> Result<()> {
         Category::Host(HostGenerator::WasmtimeRust { opts, world, .. }) => {
             gen_world(opts.build(), world, &mut files)?;
         }
-        Category::Host(HostGenerator::WasmtimePy { opts, world, .. }) => {
-            gen_legacy_world(Box::new(opts.build()), world, &mut files)?;
+        Category::Host(HostGenerator::WasmtimePy { opts, component }) => {
+            gen_component(opts.build(), component, &mut files)?;
         }
         Category::Host(HostGenerator::Js { opts, component }) => {
             gen_component(opts.build(), component, &mut files)?;

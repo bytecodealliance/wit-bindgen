@@ -1,8 +1,7 @@
-from exports.bindings import Exports
-from imports.bindings import add_imports_to_linker, Imports
-import math;
-import sys
+import math
 import wasmtime
+from numbers import Numbers, NumbersImports
+from helpers import TestWasi
 
 class MyImports:
     def roundtrip_u8(self, a: int) -> int:
@@ -44,20 +43,9 @@ class MyImports:
     def get_scalar(self) -> int:
         return self.scalar
 
-
-def run(wasm_file: str) -> None:
+def run() -> None:
     store = wasmtime.Store()
-    module = wasmtime.Module.from_file(store.engine, wasm_file)
-    linker = wasmtime.Linker(store.engine)
-    linker.define_wasi()
-    wasi = wasmtime.WasiConfig()
-    wasi.inherit_stdout()
-    wasi.inherit_stderr()
-    store.set_wasi(wasi)
-
-    imports = MyImports()
-    add_imports_to_linker(linker, store, imports)
-    wasm = Exports(store, linker, module)
+    wasm = Numbers(store, NumbersImports(MyImports(), TestWasi()))
 
     wasm.test_imports(store)
     assert(wasm.roundtrip_u8(store, 1) == 1)
@@ -103,4 +91,4 @@ def run(wasm_file: str) -> None:
     assert(wasm.get_scalar(store) == 4)
 
 if __name__ == '__main__':
-    run(sys.argv[1])
+    run()

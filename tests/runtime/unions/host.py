@@ -1,10 +1,9 @@
-from exports.bindings import Exports
-from imports.bindings import add_imports_to_linker, Imports
 from typing import Union
-import exports.bindings as e
-import imports.bindings as i
-import sys
 import wasmtime
+from helpers import TestWasi
+from unions import Unions, UnionsImports
+import unions as e
+from unions.imports import imports as i
 
 class MyImports:
     # Simple uses of unions whose inner values all have the same Python representation
@@ -151,20 +150,12 @@ class MyImports:
         else:
             raise ValueError("Invalid input value!")
 
-def run(wasm_file: str) -> None:
+def run() -> None:
     store = wasmtime.Store()
-    module = wasmtime.Module.from_file(store.engine, wasm_file)
-    linker = wasmtime.Linker(store.engine)
-    linker.define_wasi()
-    wasi = wasmtime.WasiConfig()
-    wasi.inherit_stdout()
-    wasi.inherit_stderr()
-    store.set_wasi(wasi)
+    wasm = Unions(store, UnionsImports(MyImports(), TestWasi()))
 
-    imports = MyImports()
-    add_imports_to_linker(linker, store, imports)
-    wasm = Exports(store, linker, module)
-
+    # TODO: should get these tests working ideally but requires some
+    # bit-fiddling on the host.
     # wasm.test_imports(store)
 
     # All-Integers
@@ -234,4 +225,4 @@ def run(wasm_file: str) -> None:
     assert wasm.identify_distinguishable_num(store, 1) == 1
 
 if __name__ == '__main__':
-    run(sys.argv[1])
+    run()

@@ -78,6 +78,13 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
         gen.generate("demo", &interfaces, files);
     };
 
+    // This generator takes a component as input as opposed to an `Interface`.
+    // To work with this demo a dummy component is synthesized to generate
+    // bindings for. The dummy core wasm module is created from the
+    // `test_helpers` support this workspace already offsets, and then
+    // `wit-component` is used to synthesize a component from our input
+    // interface and dummy module.  Finally this component is fed into the host
+    // generator which gives us the files we want.
     let gen_component = |mut gen: Box<dyn ComponentGenerator>, files: &mut Files| {
         let (imports, interface) = if options.import {
             (vec![iface.clone()], None)
@@ -110,10 +117,10 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
             opts.tracing = options.wasmtime_tracing;
             gen_world(opts.build(), files)
         }
-        demo::Lang::WasmtimePy => gen_world_legacy(
-            Box::new(wit_bindgen_gen_host_wasmtime_py::Opts::default().build()),
+        demo::Lang::WasmtimePy => gen_component(
+            wit_bindgen_gen_host_wasmtime_py::Opts::default().build(),
             files,
-        ),
+        )?,
         demo::Lang::C => gen_world_legacy(
             Box::new(wit_bindgen_gen_guest_c::Opts::default().build()),
             files,
@@ -122,15 +129,6 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
             Box::new(wit_bindgen_gen_markdown::Opts::default().build()),
             files,
         ),
-
-        // JS is different from other languages at this time where it takes a
-        // component as input as opposed to an `Interface`. To work with this
-        // demo a dummy component is synthesized to generate bindings for. The
-        // dummy core wasm module is created from the `test_helpers` support
-        // this workspace already offsets, and then `wit-component` is used to
-        // synthesize a component from our input interface and dummy module.
-        // Finally this component is fed into the host generator which gives us
-        // the files we want.
         demo::Lang::Js => gen_component(wit_bindgen_gen_host_js::Opts::default().build(), files)?,
     }
 

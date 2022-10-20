@@ -83,7 +83,7 @@ pub extern "C" fn fd_write(
     mut iovs_len: usize,
     nwritten: *mut Size,
 ) -> Errno {
-    if fd != 1 {
+    if fd != 1 && fd != 2 {
         unreachable();
     }
     unsafe {
@@ -100,7 +100,12 @@ pub extern "C" fn fd_write(
         let ptr = (*iovs_ptr).buf;
         let len = (*iovs_ptr).buf_len;
 
-        testwasi::log(core::slice::from_raw_parts(ptr, len));
+        let slice = core::slice::from_raw_parts(ptr, len);
+        if fd == 1 {
+            testwasi::log(slice);
+        } else {
+            testwasi::log_err(slice);
+        }
 
         *nwritten = len;
     }

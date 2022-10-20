@@ -1,7 +1,7 @@
 // @ts-ignore
 import { readFile } from 'node:fs/promises';
 // @ts-ignore
-import { argv, stdout } from 'node:process';
+import { argv, stdout, stderr } from 'node:process';
 
 // This is a helper function used from `host.ts` test in the `tests/runtime/*`
 // directory to pass as the `instantiateCore` argument to the `instantiate`
@@ -19,5 +19,8 @@ export async function loadWasm(path: string, imports: any) {
 export const testwasi = {
   log(bytes: Uint8Array) {
     stdout.write(bytes);
+  },
+  logErr(bytes: Uint8Array) {
+    stderr.write(bytes);
   },
 };

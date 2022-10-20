@@ -1,10 +1,10 @@
-from exports.bindings import Exports
-from imports.bindings import add_imports_to_linker, Imports
 from typing import Optional, Tuple
-import exports.bindings as e
-import imports.bindings as i
-import sys
 import wasmtime
+from helpers import TestWasi
+from variants.imports import imports as i
+from variants import Variants, VariantsImports
+import variants as e
+from variants.types import Result, Ok, Err
 
 class MyImports:
     def roundtrip_option(self, a: Optional[float]) -> Optional[int]:
@@ -12,10 +12,10 @@ class MyImports:
             return int(a)
         return None
 
-    def roundtrip_result(self, a: i.Result[int, float]) -> i.Result[float, int]:
-        if isinstance(a, i.Ok):
-            return i.Ok(float(a.value))
-        return i.Err(int(a.value))
+    def roundtrip_result(self, a: Result[int, float]) -> Result[float, int]:
+        if isinstance(a, Ok):
+            return Ok(float(a.value))
+        return Err(int(a.value))
 
     def roundtrip_enum(self, a: i.E1) -> i.E1:
         return a
@@ -32,34 +32,24 @@ class MyImports:
     def variant_typedefs(self, a: i.OptionTypedef, b: i.BoolTypedef, c: i.ResultTypedef) -> None:
         pass
 
-    def variant_enums(self, a: bool, b: i.Result[None, None], c: i.MyErrno) -> Tuple[bool, i.Result[None, None], i.MyErrno]:
+    def variant_enums(self, a: bool, b: Result[None, None], c: i.MyErrno) -> Tuple[bool, Result[None, None], i.MyErrno]:
         assert(a)
-        assert(isinstance(b, i.Ok))
+        assert(isinstance(b, Ok))
         assert(c == i.MyErrno.SUCCESS)
-        return (False, i.Err(None), i.MyErrno.A)
+        return (False, Err(None), i.MyErrno.A)
 
-def run(wasm_file: str) -> None:
+def run() -> None:
     store = wasmtime.Store()
-    module = wasmtime.Module.from_file(store.engine, wasm_file)
-    linker = wasmtime.Linker(store.engine)
-    linker.define_wasi()
-    wasi = wasmtime.WasiConfig()
-    wasi.inherit_stdout()
-    wasi.inherit_stderr()
-    store.set_wasi(wasi)
-
-    imports = MyImports()
-    add_imports_to_linker(linker, store, imports)
-    wasm = Exports(store, linker, module)
+    wasm = Variants(store, VariantsImports(MyImports(), TestWasi()))
 
     wasm.test_imports(store)
 
     assert(wasm.roundtrip_option(store, 1.) == 1)
     assert(wasm.roundtrip_option(store, None) == None)
     assert(wasm.roundtrip_option(store, 2.) == 2)
-    assert(wasm.roundtrip_result(store, e.Ok(2)) == e.Ok(2))
-    assert(wasm.roundtrip_result(store, e.Ok(4)) == e.Ok(4))
-    assert(wasm.roundtrip_result(store, e.Err(5)) == e.Err(5))
+    assert(wasm.roundtrip_result(store, Ok(2)) == Ok(2))
+    assert(wasm.roundtrip_result(store, Ok(4)) == Ok(4))
+    assert(wasm.roundtrip_result(store, Err(5)) == Err(5))
 
     assert(wasm.roundtrip_enum(store, e.E1.A) == e.E1.A)
     assert(wasm.roundtrip_enum(store, e.E1.B) == e.E1.B)
@@ -108,7 +98,7 @@ def run(wasm_file: str) -> None:
     assert(z3 == e.Z3A(3))
     assert(z4 == e.Z4A(4))
 
-    wasm.variant_typedefs(store, None, False, e.Err(None))
+    wasm.variant_typedefs(store, None, False, Err(None))
 
 if __name__ == '__main__':
-    run(sys.argv[1])
+    run()

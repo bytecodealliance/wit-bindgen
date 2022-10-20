@@ -98,4 +98,11 @@ impl testwasi::Testwasi for TestWasi {
             Err(_) => println!("\nbinary: {:?}", bytes),
         }
     }
+
+    fn log_err(&mut self, bytes: Vec<u8>) {
+        match std::str::from_utf8(&bytes) {
+            Ok(s) => eprint!("{}", s),
+            Err(_) => eprintln!("\nbinary: {:?}", bytes),
+        }
+    }
 }

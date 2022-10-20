@@ -60,7 +60,10 @@ pub fn test_directory(suite_name: &str, gen_name: &str, wit_name: &str) -> PathB
     me.pop(); // chop off 'debug' / 'release'
     me.push(format!("{suite_name}-tests"));
     me.push(gen_name);
-    me.push(wit_name);
+
+    // replace `-` with `_` for Python where the directory needs to be a valid
+    // Python package name.
+    me.push(wit_name.replace("-", "_"));
 
     drop(fs::remove_dir_all(&me));
     fs::create_dir_all(&me).unwrap();

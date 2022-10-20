@@ -1,9 +1,8 @@
-from exports.bindings import Exports
-from imports.bindings import add_imports_to_linker, Imports
+from helpers import TestWasi
+from records import Records, RecordsImports
+from records.imports import imports as i
 from typing import Tuple
-import exports.bindings as e
-import imports.bindings as i
-import sys
+import records as e
 import wasmtime
 
 class MyImports:
@@ -31,19 +30,9 @@ class MyImports:
     def tuple1(self, a: Tuple[int]) -> Tuple[int]:
         return (a[0],)
 
-def run(wasm_file: str) -> None:
+def run() -> None:
     store = wasmtime.Store()
-    module = wasmtime.Module.from_file(store.engine, wasm_file)
-    linker = wasmtime.Linker(store.engine)
-    linker.define_wasi()
-    wasi = wasmtime.WasiConfig()
-    wasi.inherit_stdout()
-    wasi.inherit_stderr()
-    store.set_wasi(wasi)
-
-    imports = MyImports()
-    add_imports_to_linker(linker, store, imports)
-    wasm = Exports(store, linker, module)
+    wasm = Records(store, RecordsImports(MyImports(), TestWasi()))
 
     wasm.test_imports(store)
     assert(wasm.multiple_results(store) == (100, 200))
@@ -69,4 +58,4 @@ def run(wasm_file: str) -> None:
     assert(wasm.tuple1(store, (1,)) == (1,))
 
 if __name__ == '__main__':
-    run(sys.argv[1])
+    run()

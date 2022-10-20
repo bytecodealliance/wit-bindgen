@@ -1,9 +1,9 @@
-from exports.bindings import Exports
-from imports.bindings import add_imports_to_linker, Imports
 from typing import Tuple, List
-import exports.bindings as e
-import imports.bindings as i
-import sys
+from helpers import TestWasi
+from flavorful import Flavorful, FlavorfulImports
+import flavorful as e
+from flavorful.imports import imports as i
+from flavorful.types import Result, Ok, Err
 import wasmtime
 
 class MyImports:
@@ -23,7 +23,7 @@ class MyImports:
 
     def f_list_in_variant1(self, a: i.ListInVariant1V1, b: i.ListInVariant1V2, c: i.ListInVariant1V3) -> None:
         assert(a == 'foo')
-        assert(b == i.Err('bar'))
+        assert(b == Err('bar'))
         assert(c == 'baz')
 
     def f_list_in_variant2(self) -> i.ListInVariant2:
@@ -33,37 +33,27 @@ class MyImports:
         assert(a == 'input3')
         return 'output3'
 
-    def errno_result(self) -> i.Result[None, i.MyErrno]:
-        return i.Err(i.MyErrno.B)
+    def errno_result(self) -> Result[None, i.MyErrno]:
+        return Err(i.MyErrno.B)
 
     def list_typedefs(self, a: i.ListTypedef, c: i.ListTypedef3) -> Tuple[i.ListTypedef2, i.ListTypedef3]:
         assert(a == 'typedef1')
         assert(c == ['typedef2'])
         return (b'typedef3', ['typedef4'])
 
-    def list_of_variants(self, a: List[bool], b: List[i.Result[None, None]], c: List[i.MyErrno]) -> Tuple[List[bool], List[i.Result[None, None]], List[i.MyErrno]]:
+    def list_of_variants(self, a: List[bool], b: List[Result[None, None]], c: List[i.MyErrno]) -> Tuple[List[bool], List[Result[None, None]], List[i.MyErrno]]:
           assert(a == [True, False])
-          assert(b == [i.Ok(None), i.Err(None)])
+          assert(b == [Ok(None), Err(None)])
           assert(c == [i.MyErrno.SUCCESS, i.MyErrno.A])
           return (
                 [False, True],
-                [i.Err(None), i.Ok(None)],
+                [Err(None), Ok(None)],
                 [i.MyErrno.A, i.MyErrno.B],
           )
 
-def run(wasm_file: str) -> None:
+def run() -> None:
     store = wasmtime.Store()
-    module = wasmtime.Module.from_file(store.engine, wasm_file)
-    linker = wasmtime.Linker(store.engine)
-    linker.define_wasi()
-    wasi = wasmtime.WasiConfig()
-    wasi.inherit_stdout()
-    wasi.inherit_stderr()
-    store.set_wasi(wasi)
-
-    imports = MyImports()
-    add_imports_to_linker(linker, store, imports)
-    wasm = Exports(store, linker, module)
+    wasm = Flavorful(store, FlavorfulImports(MyImports(), TestWasi()))
 
     wasm.test_imports(store)
     wasm.f_list_in_record1(store, e.ListInRecord1("list_in_record1"))
@@ -83,4 +73,4 @@ def run(wasm_file: str) -> None:
     assert(r2 == ['typedef4'])
 
 if __name__ == '__main__':
-    run(sys.argv[1])
+    run()
