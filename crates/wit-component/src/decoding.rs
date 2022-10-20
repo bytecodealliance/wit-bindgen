@@ -91,11 +91,11 @@ struct InterfaceDecoder<'a> {
 #[derive(Default)]
 pub struct ComponentInterfaces {
     /// The "default export" which is the interface directly exported from the
-    /// component at the first level.
+    /// component at the top level.
     pub default: Option<Interface>,
-    /// Imported interfaces, keyed by name, to the component.
+    /// Imported interfaces, keyed by name, of the component.
     pub imports: IndexMap<String, Interface>,
-    /// Exported interfaces, keyed by name, to the component.
+    /// Exported interfaces, keyed by name, of the component.
     pub exports: IndexMap<String, Interface>,
 }
 
@@ -224,7 +224,7 @@ impl<'a> InterfaceDecoder<'a> {
         }
 
         // Iterate over all exports an interpret them as defined items within
-        // the interface, either functiosn or types at this time.
+        // the interface, either functions or types at this time.
         for (name, ty) in map {
             match ty {
                 types::ComponentEntityType::Func(ty) => {

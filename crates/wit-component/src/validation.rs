@@ -214,7 +214,7 @@ pub struct ValidatedAdapter<'a> {
     /// This is the module and field name of the memory import, if one is
     /// specified.
     ///
-    /// Due to LLVM codegen this is typically `env::memory` as a totally separte
+    /// Due to LLVM codegen this is typically `env::memory` as a totally separate
     /// import from the `required_import` above.
     pub needs_memory: Option<(String, String)>,
 

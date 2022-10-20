@@ -1,7 +1,5 @@
 //! The WebAssembly component tool command line interface.
 
-#![deny(missing_docs)]
-
 use crate::extract::{extract_module_interfaces, ModuleInterfaces};
 use crate::{
     decode_interface_component, ComponentEncoder, ComponentInterfaces, InterfacePrinter,
@@ -71,7 +69,7 @@ fn parse_adapter(s: &str) -> Result<(String, Vec<u8>, Interface)> {
                         default,
                     },
             } = extract_module_interfaces(&wasm)?;
-            if exports.len() > 0 || default.is_some() {
+            if !exports.is_empty() || default.is_some() {
                 bail!("adapter modules cannot have an exported interface");
             }
             let import = match imports.len() {

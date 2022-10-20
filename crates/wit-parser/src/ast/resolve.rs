@@ -508,7 +508,7 @@ impl Resolver {
                 // comment to avoid breaking on empty block comments, `/**/`.
                 let doc = doc.strip_suffix("*/").unwrap();
 
-                if let Some(doc) = doc.strip_prefix("*") {
+                if let Some(doc) = doc.strip_prefix('*') {
                     let docs = docs.get_or_insert_with(String::new);
                     for line in doc.lines() {
                         docs.push_str(line);
