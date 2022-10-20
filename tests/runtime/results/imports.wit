@@ -1,0 +1,7 @@
+
+string-error: func(a: float32) -> result<float32, string>
+
+enum e { a, b, c }
+enum-error: func(a: float64) -> result<float64, e>
+
+empty-error: func(a: u32) -> result<u32>
