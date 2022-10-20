@@ -1,4 +1,4 @@
-use crate::{decode_interface_component, ComponentInterfaces};
+use crate::{decode_component_interfaces, ComponentInterfaces};
 use anyhow::{bail, Context, Result};
 
 /// Result of extracting interfaces embedded within a core wasm file.
@@ -50,7 +50,7 @@ impl ModuleInterfaces {
             default,
             imports,
             exports,
-        } = decode_interface_component(component)?;
+        } = decode_component_interfaces(component)?;
 
         if let Some(iface) = default {
             if self.interfaces.default.is_some() {

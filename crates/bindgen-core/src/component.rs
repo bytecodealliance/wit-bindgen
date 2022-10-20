@@ -31,7 +31,7 @@ pub fn generate(
     // will likely change as worlds are iterated on in the component model
     // standard. Regardless though this is the step where types are learned
     // and `Interface`s are constructed for further code generation below.
-    let interfaces = wit_component::decode_interface_component(binary)
+    let interfaces = wit_component::decode_component_interfaces(binary)
         .context("failed to extract interface information from component")?;
 
     // Components are complicated, there's no real way around that. To

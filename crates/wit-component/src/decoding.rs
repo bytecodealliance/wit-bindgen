@@ -112,7 +112,7 @@ pub struct ComponentInterfaces {
 ///
 /// This can fail if the input component is invalid or otherwise isn't of the
 /// expected shape. At this time not all component shapes are supported here.
-pub fn decode_interface_component(bytes: &[u8]) -> Result<ComponentInterfaces> {
+pub fn decode_component_interfaces(bytes: &[u8]) -> Result<ComponentInterfaces> {
     let info = ComponentInfo::new(bytes)?;
     let mut imports = IndexMap::new();
     let mut exports = IndexMap::new();
