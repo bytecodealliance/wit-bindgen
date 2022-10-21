@@ -809,6 +809,9 @@ impl Generator for C {
         self.src.h_defs(&name.to_snake_case());
         self.src.h_defs("_t;\n");
 
+        if flags.flags.len() > 0 {
+            self.src.h_defs("\n");
+        }
         for (i, flag) in flags.flags.iter().enumerate() {
             uwriteln!(
                 self.src.h_defs,
@@ -852,6 +855,10 @@ impl Generator for C {
         self.print_namespace(SourceType::HDefs, iface);
         self.src.h_defs(&name.to_snake_case());
         self.src.h_defs("_t;\n");
+
+        if variant.cases.len() > 0 {
+            self.src.h_defs("\n");
+        }
         for (i, case) in variant.cases.iter().enumerate() {
             uwriteln!(
                 self.src.h_defs,
@@ -964,6 +971,10 @@ impl Generator for C {
         self.print_namespace(SourceType::HDefs, iface);
         self.src.h_defs(&name.to_snake_case());
         self.src.h_defs("_t;\n");
+
+        if enum_.cases.len() > 0 {
+            self.src.h_defs("\n");
+        }
         for (i, case) in enum_.cases.iter().enumerate() {
             uwriteln!(
                 self.src.h_defs,
@@ -1308,7 +1319,7 @@ impl Generator for C {
         for id in iface.topological_types() {
             if let Some(ty) = self.types.get(&id) {
                 if private_types.contains(&id) {
-                    self.src.c_fns(ty);
+                    self.src.h_defs(ty);
                 } else {
                     self.src.h_defs(ty);
                     self.print_dtor(iface, id);
