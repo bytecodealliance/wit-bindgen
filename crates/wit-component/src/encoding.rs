@@ -54,10 +54,7 @@
 
 use crate::extract::{extract_module_interfaces, ModuleInterfaces};
 use crate::{
-    validation::{
-        expected_export_name, validate_adapter_module, validate_module, ValidatedAdapter,
-        ValidatedModule,
-    },
+    validation::{validate_adapter_module, validate_module, ValidatedAdapter, ValidatedModule},
     ComponentInterfaces, StringEncoding,
 };
 use anyhow::{anyhow, bail, Context, Result};
@@ -1311,9 +1308,7 @@ impl<'a> EncodingState<'a> {
 
             // Alias the exports from the core module
             for func in &export.functions {
-                let name =
-                    expected_export_name((!is_default).then_some(export.name.as_str()), &func.name);
-
+                let name = export.core_export_name(is_default, func);
                 let core_func_index = self.component.alias_core_item(
                     core_instance_index,
                     ExportKind::Func,

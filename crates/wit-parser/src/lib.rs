@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use id_arena::{Arena, Id};
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options, Parser, Tag};
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -424,6 +425,15 @@ impl Interface {
                 ast::rewrite_error(&mut e, &file, contents);
                 Err(e)
             }
+        }
+    }
+
+    /// Gets the core export name for the given function.
+    pub fn core_export_name<'a>(&self, default_export: bool, func: &'a Function) -> Cow<'a, str> {
+        if default_export || self.name.is_empty() {
+            Cow::Borrowed(&func.name)
+        } else {
+            Cow::Owned(format!("{}#{}", self.name, func.name))
         }
     }
 

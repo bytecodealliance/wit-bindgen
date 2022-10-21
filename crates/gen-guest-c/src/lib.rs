@@ -1098,6 +1098,10 @@ impl Generator for C {
 
         let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
 
+        // Currently the C generator always emits default exports
+        // This needs to change once the generator works from a world
+        let export_name = iface.core_export_name(true, func);
+
         // Print the actual header for this function into the header file, and
         // it's what we'll be calling.
         let c_sig = self.print_sig(iface, func);
@@ -1106,8 +1110,7 @@ impl Generator for C {
         // canonical ABI.
         uwriteln!(
             self.src.c_adapters,
-            "\n__attribute__((export_name(\"{}\")))",
-            func.name
+            "__attribute__((export_name(\"{export_name}\")))"
         );
         let import_name = self.names.tmp(&format!(
             "__wasm_export_{}_{}",
@@ -1151,8 +1154,7 @@ impl Generator for C {
         if iface.guest_export_needs_post_return(func) {
             uwriteln!(
                 self.src.c_fns,
-                "\n__attribute__((weak, export_name(\"cabi_post_{}\")))",
-                func.name
+                "__attribute__((export_name(\"cabi_post_{export_name}\")))"
             );
             uwrite!(self.src.c_fns, "void {import_name}_post_return(");
 

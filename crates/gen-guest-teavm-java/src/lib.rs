@@ -645,6 +645,10 @@ impl Generator for TeaVmJava {
     fn export(&mut self, iface: &Interface, func: &Function) {
         let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
 
+        // Currently the Java generator always emits default exports
+        // This needs to change once the generator works from a world
+        let export_name = iface.core_export_name(true, func);
+
         let mut bindgen = FunctionBindgen::new(
             self,
             &func.name,
@@ -661,7 +665,6 @@ impl Generator for TeaVmJava {
         assert!(!bindgen.needs_cleanup_list);
 
         let src = bindgen.src;
-        let name = &func.name;
 
         let result_type = match &sig.results[..] {
             [] => "void",
@@ -685,7 +688,7 @@ impl Generator for TeaVmJava {
         uwrite!(
             self.src,
             r#"
-            @Export(name = "{name}")
+            @Export(name = "{export_name}")
             private static {result_type} wasmExport{camel_name}({params}) {{
                 {src}
             }}
@@ -693,8 +696,6 @@ impl Generator for TeaVmJava {
         );
 
         if iface.guest_export_needs_post_return(func) {
-            let name = &func.name;
-
             let params = sig
                 .results
                 .iter()
@@ -719,7 +720,7 @@ impl Generator for TeaVmJava {
             uwrite!(
                 self.src,
                 r#"
-                @Export(name = "cabi_post_{name}")
+                @Export(name = "cabi_post_{export_name}")
                 private static void wasmExport{camel_name}PostReturn({params}) {{
                     {src}
                 }}
