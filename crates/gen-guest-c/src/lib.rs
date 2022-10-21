@@ -49,6 +49,7 @@ struct Func {
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
+    /// Skip emitting component allocation helper functions
     #[cfg_attr(feature = "clap", arg(long))]
     no_helpers: bool,
 }
@@ -1328,9 +1329,9 @@ impl Generator for C {
         if c_str.len() > 0 {
             c_str.push_str("\n");
         }
+        c_str.push_str(&self.src.c_fns);
 
         if self.src.h_defs.len() > 0 {
-            h_str.push_str("\n// Component Definitions\n");
             h_str.push_str(&self.src.h_defs);
         }
 
@@ -1346,9 +1347,6 @@ impl Generator for C {
             c_str.push_str("\n// Helper Functions\n");
             c_str.push_str(self.src.c_helpers.as_mut_string());
         }
-
-        c_str.push_str("\n// Internal Exports\n");
-        c_str.push_str(&self.src.c_fns);
 
         c_str.push_str("\n// Component Adapters\n");
         c_str.push_str(&self.src.c_adapters);
@@ -2282,8 +2280,8 @@ enum SourceType {
     HFns,
     HHelpers,
     // CIncludes,
-    // CHelpers,
     // CFns,
+    // CHelpers,
     // CAdapters,
 }
 
@@ -2293,8 +2291,8 @@ struct Source {
     h_fns: wit_bindgen_core::Source,
     h_helpers: wit_bindgen_core::Source,
     c_includes: Vec<String>,
-    c_helpers: wit_bindgen_core::Source,
     c_fns: wit_bindgen_core::Source,
+    c_helpers: wit_bindgen_core::Source,
     c_adapters: wit_bindgen_core::Source,
 }
 
@@ -2305,8 +2303,8 @@ impl Source {
             SourceType::HFns => self.h_fns(s),
             SourceType::HHelpers => self.h_helpers(s),
             // SourceType::CIncludes => self.c_includes(s),
-            // SourceType::CHelpers => self.c_helpers(s),
             // SourceType::CFns => self.c_fns(s),
+            // SourceType::CHelpers => self.c_helpers(s),
             // SourceType::CAdapters => self.c_adapters(s),
         }
     }
@@ -2317,8 +2315,8 @@ impl Source {
         for i in &append_src.c_includes {
             self.c_includes(i.into());
         }
-        self.c_helpers.push_str(&append_src.c_helpers);
         self.c_fns.push_str(&append_src.c_fns);
+        self.c_helpers.push_str(&append_src.c_helpers);
         self.c_adapters.push_str(&append_src.c_adapters);
     }
     fn h_defs(&mut self, s: &str) {
@@ -2335,11 +2333,11 @@ impl Source {
             self.c_includes.push(s);
         }
     }
-    fn c_helpers(&mut self, s: &str) {
-        self.c_helpers.push_str(s);
-    }
     fn c_fns(&mut self, s: &str) {
         self.c_fns.push_str(s);
+    }
+    fn c_helpers(&mut self, s: &str) {
+        self.c_helpers.push_str(s);
     }
     fn c_adapters(&mut self, s: &str) {
         self.c_adapters.push_str(s);
