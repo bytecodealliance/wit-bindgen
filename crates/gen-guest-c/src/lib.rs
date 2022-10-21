@@ -35,6 +35,8 @@ pub struct C {
     // at the end.
     types: HashMap<TypeId, wit_bindgen_core::Source>,
 
+    has_exports: bool,
+    has_imports: bool,
     needs_string: bool,
 
     direction: Direction,
@@ -47,7 +49,9 @@ struct Func {
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
-    // ...
+    /// Skip emitting component allocation helper functions
+    #[cfg_attr(feature = "clap", arg(long))]
+    no_helpers: bool,
 }
 
 impl Opts {
@@ -121,51 +125,59 @@ impl C {
             func.name.to_snake_case()
         );
         self.names.insert(&name).expect("duplicate symbols");
-        let start = self.src.h.len();
+
+        let start = self.src.h_fns.len();
 
         let ret = self.classify_ret(iface, func);
         match &ret.scalar {
-            None | Some(Scalar::Void) => self.src.h("void"),
-            Some(Scalar::OptionBool(_id)) => self.src.h("bool"),
-            Some(Scalar::ResultEnum { err, .. }) => self.print_ty(iface, &Type::Id(*err)),
-            Some(Scalar::Type(ty)) => self.print_ty(iface, ty),
+            None | Some(Scalar::Void) => self.src.h_fns("void"),
+            Some(Scalar::OptionBool(_id)) => self.src.h_fns("bool"),
+            Some(Scalar::ResultEnum { err, .. }) => {
+                self.print_ty(SourceType::HFns, iface, &Type::Id(*err))
+            }
+            Some(Scalar::Type(ty)) => self.print_ty(SourceType::HFns, iface, ty),
         }
-        self.src.h(" ");
-        self.src.h(&name);
-        self.src.h("(");
+        self.src.h_fns(" ");
+        self.src.h_fns(&name);
+        self.src.h_fns("(");
         let mut params = Vec::new();
         for (i, (name, ty)) in func.params.iter().enumerate() {
             if i > 0 {
-                self.src.h(", ");
+                self.src.h_fns(", ");
             }
-            self.print_ty(iface, ty);
-            self.src.h(" ");
+            self.print_ty(SourceType::HFns, iface, ty);
+            self.src.h_fns(" ");
             let pointer = self.is_arg_by_pointer(iface, ty);
             if pointer {
-                self.src.h("*");
+                self.src.h_fns("*");
             }
             let name = name.to_snake_case();
-            self.src.h(&name);
+            self.src.h_fns(&name);
             params.push((pointer, name));
         }
         let mut retptrs = Vec::new();
+        let single_ret = ret.retptrs.len() == 1;
         for (i, ty) in ret.retptrs.iter().enumerate() {
             if i > 0 || func.params.len() > 0 {
-                self.src.h(", ");
+                self.src.h_fns(", ");
             }
-            self.print_ty(iface, ty);
-            self.src.h(" *");
-            let name = format!("ret{}", i);
-            self.src.h(&name);
+            self.print_ty(SourceType::HFns, iface, ty);
+            self.src.h_fns(" *");
+            let name: String = if single_ret {
+                "ret".into()
+            } else {
+                format!("ret{}", i)
+            };
+            self.src.h_fns(&name);
             retptrs.push(name);
         }
         if func.params.len() == 0 && ret.retptrs.len() == 0 {
-            self.src.h("void");
+            self.src.h_fns("void");
         }
-        self.src.h(")");
+        self.src.h_fns(")");
 
-        let sig = self.src.h[start..].to_string();
-        self.src.h(";\n");
+        let sig = self.src.h_fns[start..].to_string();
+        self.src.h_fns(";\n");
 
         CSig {
             sig,
@@ -201,13 +213,13 @@ impl C {
         // want to keep track of new anonymous types that are *only* mentioned
         // in methods like this, so we can place those types in the C file
         // instead of the header interface file.
-        let prev = mem::take(&mut self.src.h);
+        let prev = mem::take(&mut self.src.h_defs);
         let prev_public = mem::take(&mut self.public_anonymous_types);
         let prev_private = mem::take(&mut self.private_anonymous_types);
 
         // Print the type, which will collect into the fields that we replaced
         // above.
-        self.print_ty(iface, ty);
+        self.print_ty(SourceType::HDefs, iface, ty);
 
         // Reset our public/private sets back to what they were beforehand.
         // Note that `print_ty` always adds to the public set, so we're
@@ -225,44 +237,44 @@ impl C {
             }
         }
 
-        mem::replace(&mut self.src.h, prev).into()
+        mem::replace(&mut self.src.h_defs, prev).into()
     }
 
-    fn print_ty(&mut self, iface: &Interface, ty: &Type) {
+    fn print_ty(&mut self, stype: SourceType, iface: &Interface, ty: &Type) {
         match ty {
-            Type::Bool => self.src.h("bool"),
-            Type::Char => self.src.h("uint32_t"), // TODO: better type?
-            Type::U8 => self.src.h("uint8_t"),
-            Type::S8 => self.src.h("int8_t"),
-            Type::U16 => self.src.h("uint16_t"),
-            Type::S16 => self.src.h("int16_t"),
-            Type::U32 => self.src.h("uint32_t"),
-            Type::S32 => self.src.h("int32_t"),
-            Type::U64 => self.src.h("uint64_t"),
-            Type::S64 => self.src.h("int64_t"),
-            Type::Float32 => self.src.h("float"),
-            Type::Float64 => self.src.h("double"),
+            Type::Bool => self.src.print(stype, "bool"),
+            Type::Char => self.src.print(stype, "uint32_t"), // TODO: better type?
+            Type::U8 => self.src.print(stype, "uint8_t"),
+            Type::S8 => self.src.print(stype, "int8_t"),
+            Type::U16 => self.src.print(stype, "uint16_t"),
+            Type::S16 => self.src.print(stype, "int16_t"),
+            Type::U32 => self.src.print(stype, "uint32_t"),
+            Type::S32 => self.src.print(stype, "int32_t"),
+            Type::U64 => self.src.print(stype, "uint64_t"),
+            Type::S64 => self.src.print(stype, "int64_t"),
+            Type::Float32 => self.src.print(stype, "float"),
+            Type::Float64 => self.src.print(stype, "double"),
             Type::String => {
-                self.print_namespace(iface);
-                self.src.h("string_t");
+                self.print_namespace(stype, iface);
+                self.src.print(stype, "string_t");
                 self.needs_string = true;
             }
             Type::Id(id) => {
                 let ty = &iface.types[*id];
                 match &ty.name {
                     Some(name) => {
-                        self.print_namespace(iface);
-                        self.src.h(&name.to_snake_case());
-                        self.src.h("_t");
+                        self.print_namespace(stype, iface);
+                        self.src.print(stype, &name.to_snake_case());
+                        self.src.print(stype, "_t");
                     }
                     None => match &ty.kind {
-                        TypeDefKind::Type(t) => self.print_ty(iface, t),
+                        TypeDefKind::Type(t) => self.print_ty(stype, iface, t),
                         _ => {
                             self.public_anonymous_types.insert(*id);
                             self.private_anonymous_types.remove(id);
-                            self.print_namespace(iface);
-                            self.print_ty_name(iface, &Type::Id(*id));
-                            self.src.h("_t");
+                            self.print_namespace(stype, iface);
+                            self.print_ty_name(stype, iface, &Type::Id(*id));
+                            self.src.print(stype, "_t");
                         }
                     },
                 }
@@ -270,28 +282,28 @@ impl C {
         }
     }
 
-    fn print_ty_name(&mut self, iface: &Interface, ty: &Type) {
+    fn print_ty_name(&mut self, stype: SourceType, iface: &Interface, ty: &Type) {
         match ty {
-            Type::Bool => self.src.h("bool"),
-            Type::Char => self.src.h("char32"),
-            Type::U8 => self.src.h("u8"),
-            Type::S8 => self.src.h("s8"),
-            Type::U16 => self.src.h("u16"),
-            Type::S16 => self.src.h("s16"),
-            Type::U32 => self.src.h("u32"),
-            Type::S32 => self.src.h("s32"),
-            Type::U64 => self.src.h("u64"),
-            Type::S64 => self.src.h("s64"),
-            Type::Float32 => self.src.h("float32"),
-            Type::Float64 => self.src.h("float64"),
-            Type::String => self.src.h("string"),
+            Type::Bool => self.src.print(stype, "bool"),
+            Type::Char => self.src.print(stype, "char32"),
+            Type::U8 => self.src.print(stype, "u8"),
+            Type::S8 => self.src.print(stype, "s8"),
+            Type::U16 => self.src.print(stype, "u16"),
+            Type::S16 => self.src.print(stype, "s16"),
+            Type::U32 => self.src.print(stype, "u32"),
+            Type::S32 => self.src.print(stype, "s32"),
+            Type::U64 => self.src.print(stype, "u64"),
+            Type::S64 => self.src.print(stype, "s64"),
+            Type::Float32 => self.src.print(stype, "float32"),
+            Type::Float64 => self.src.print(stype, "float64"),
+            Type::String => self.src.print(stype, "string"),
             Type::Id(id) => {
                 let ty = &iface.types[*id];
                 if let Some(name) = &ty.name {
-                    return self.src.h(&name.to_snake_case());
+                    return self.src.print(stype, &name.to_snake_case());
                 }
                 match &ty.kind {
-                    TypeDefKind::Type(t) => self.print_ty_name(iface, t),
+                    TypeDefKind::Type(t) => self.print_ty_name(stype, iface, t),
                     TypeDefKind::Record(_)
                     | TypeDefKind::Flags(_)
                     | TypeDefKind::Enum(_)
@@ -300,52 +312,52 @@ impl C {
                         unimplemented!()
                     }
                     TypeDefKind::Tuple(t) => {
-                        self.src.h("tuple");
-                        self.src.h(&t.types.len().to_string());
+                        self.src.print(stype, "tuple");
+                        self.src.print(stype, &t.types.len().to_string());
                         for ty in t.types.iter() {
-                            self.src.h("_");
-                            self.print_ty_name(iface, ty);
+                            self.src.print(stype, "_");
+                            self.print_ty_name(stype, iface, ty);
                         }
                     }
                     TypeDefKind::Option(ty) => {
-                        self.src.h("option_");
-                        self.print_ty_name(iface, ty);
+                        self.src.print(stype, "option_");
+                        self.print_ty_name(stype, iface, ty);
                     }
                     TypeDefKind::Result(r) => {
-                        self.src.h("result_");
-                        self.print_optional_ty_name(iface, r.ok.as_ref());
-                        self.src.h("_");
-                        self.print_optional_ty_name(iface, r.err.as_ref());
+                        self.src.print(stype, "result_");
+                        self.print_optional_ty_name(stype, iface, r.ok.as_ref());
+                        self.src.print(stype, "_");
+                        self.print_optional_ty_name(stype, iface, r.err.as_ref());
                     }
                     TypeDefKind::List(t) => {
-                        self.src.h("list_");
-                        self.print_ty_name(iface, t);
+                        self.src.print(stype, "list_");
+                        self.print_ty_name(stype, iface, t);
                     }
                     TypeDefKind::Future(t) => {
-                        self.src.h("future_");
-                        self.print_optional_ty_name(iface, t.as_ref());
+                        self.src.print(stype, "future_");
+                        self.print_optional_ty_name(stype, iface, t.as_ref());
                     }
                     TypeDefKind::Stream(s) => {
-                        self.src.h("stream_");
-                        self.print_optional_ty_name(iface, s.element.as_ref());
-                        self.src.h("_");
-                        self.print_optional_ty_name(iface, s.end.as_ref());
+                        self.src.print(stype, "stream_");
+                        self.print_optional_ty_name(stype, iface, s.element.as_ref());
+                        self.src.print(stype, "_");
+                        self.print_optional_ty_name(stype, iface, s.end.as_ref());
                     }
                 }
             }
         }
     }
 
-    fn print_optional_ty_name(&mut self, iface: &Interface, ty: Option<&Type>) {
+    fn print_optional_ty_name(&mut self, stype: SourceType, iface: &Interface, ty: Option<&Type>) {
         match ty {
-            Some(ty) => self.print_ty_name(iface, ty),
-            None => self.src.h("void"),
+            Some(ty) => self.print_ty_name(stype, iface, ty),
+            None => self.src.print(stype, "void"),
         }
     }
 
     fn print_anonymous_type(&mut self, iface: &Interface, ty: TypeId) {
-        let prev = mem::take(&mut self.src.h);
-        self.src.h("typedef ");
+        let prev = mem::take(&mut self.src.h_defs);
+        self.src.h_defs("\ntypedef ");
         let kind = &iface.types[ty].kind;
         match kind {
             TypeDefKind::Type(_)
@@ -357,53 +369,56 @@ impl C {
                 unreachable!()
             }
             TypeDefKind::Tuple(t) => {
-                self.src.h("struct {\n");
+                self.src.h_defs("struct {\n");
                 for (i, t) in t.types.iter().enumerate() {
-                    self.print_ty(iface, t);
-                    uwriteln!(self.src.h, " f{i};");
+                    self.print_ty(SourceType::HDefs, iface, t);
+                    uwriteln!(self.src.h_defs, " f{i};");
                 }
-                self.src.h("}");
+                self.src.h_defs("}");
             }
             TypeDefKind::Option(t) => {
-                self.src.h("struct {\n");
-                self.src.h("bool is_some;\n");
+                self.src.h_defs("struct {\n");
+                self.src.h_defs("bool is_some;\n");
                 if !self.is_empty_type(iface, t) {
-                    self.print_ty(iface, t);
-                    self.src.h(" val;\n");
+                    self.print_ty(SourceType::HDefs, iface, t);
+                    self.src.h_defs(" val;\n");
                 }
-                self.src.h("}");
+                self.src.h_defs("}");
             }
             TypeDefKind::Result(r) => {
-                self.src.h("struct {
+                self.src.h_defs(
+                    "struct {
                     bool is_err;
                     union {
-                ");
+                ",
+                );
                 if let Some(ok) = self.get_nonempty_type(iface, r.ok.as_ref()) {
-                    self.print_ty(iface, ok);
-                    self.src.h(" ok;\n");
+                    self.print_ty(SourceType::HDefs, iface, ok);
+                    self.src.h_defs(" ok;\n");
                 }
                 if let Some(err) = self.get_nonempty_type(iface, r.err.as_ref()) {
-                    self.print_ty(iface, err);
-                    self.src.h(" err;\n");
+                    self.print_ty(SourceType::HDefs, iface, err);
+                    self.src.h_defs(" err;\n");
                 }
-                self.src.h("} val;\n");
-                self.src.h("}");
+                self.src.h_defs("} val;\n");
+                self.src.h_defs("}");
             }
             TypeDefKind::List(t) => {
-                self.src.h("struct {\n");
-                self.print_ty(iface, t);
-                self.src.h(" *ptr;\n");
-                self.src.h("size_t len;\n");
-                self.src.h("}");
+                self.src.h_defs("struct {\n");
+                self.print_ty(SourceType::HDefs, iface, t);
+                self.src.h_defs(" *ptr;\n");
+                self.src.h_defs("size_t len;\n");
+                self.src.h_defs("}");
             }
             TypeDefKind::Future(_) => todo!("print_anonymous_type for future"),
             TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
         }
-        self.src.h(" ");
-        self.print_namespace(iface);
-        self.print_ty_name(iface, &Type::Id(ty));
-        self.src.h("_t;\n");
-        self.types.insert(ty, mem::replace(&mut self.src.h, prev));
+        self.src.h_defs(" ");
+        self.print_namespace(SourceType::HDefs, iface);
+        self.print_ty_name(SourceType::HDefs, iface, &Type::Id(ty));
+        self.src.h_defs("_t;\n");
+        let type_source = mem::replace(&mut self.src.h_defs, prev);
+        self.types.insert(ty, type_source);
     }
 
     fn is_empty_type(&self, iface: &Interface, ty: &Type) -> bool {
@@ -435,25 +450,21 @@ impl C {
     fn print_intrinsics(&mut self) {
         // Note that these intrinsics are declared as `weak` so they can be
         // overridden from some other symbol.
-        self.src.c("
+        self.src.c_fns(
+            "
             __attribute__((weak, export_name(\"cabi_realloc\")))
-            void *cabi_realloc(
-                void *ptr,
-                size_t orig_size,
-                size_t org_align,
-                size_t new_size
-            ) {
+            void *cabi_realloc(void *ptr, size_t orig_size, size_t org_align, size_t new_size) {
                 void *ret = realloc(ptr, new_size);
-                if (!ret)
-                    abort();
+                if (!ret) abort();
                 return ret;
             }
-        ");
+        ",
+        );
     }
 
-    fn print_namespace(&mut self, iface: &Interface) {
-        self.src.h(&iface.name.to_snake_case());
-        self.src.h("_");
+    fn print_namespace(&mut self, stype: SourceType, iface: &Interface) {
+        self.src.print(stype, &iface.name.to_snake_case());
+        self.src.print(stype, "_");
     }
 
     fn print_dtor(&mut self, iface: &Interface, id: TypeId) {
@@ -461,18 +472,18 @@ impl C {
         if !self.owns_anything(iface, &ty) {
             return;
         }
-        let pos = self.src.h.len();
-        self.src.h("void ");
-        self.print_namespace(iface);
-        self.print_ty_name(iface, &ty);
-        self.src.h("_free(");
-        self.print_namespace(iface);
-        self.print_ty_name(iface, &ty);
-        self.src.h("_t *ptr)");
+        let pos = self.src.h_helpers.len();
+        self.src.h_helpers("\nvoid ");
+        self.print_namespace(SourceType::HHelpers, iface);
+        self.print_ty_name(SourceType::HHelpers, iface, &ty);
+        self.src.h_helpers("_free(");
+        self.print_namespace(SourceType::HHelpers, iface);
+        self.print_ty_name(SourceType::HHelpers, iface, &ty);
+        self.src.h_helpers("_t *ptr)");
 
-        self.src.c(&self.src.h[pos..].to_string());
-        self.src.h(";\n");
-        self.src.c(" {\n");
+        self.src.c_helpers(&self.src.h_helpers[pos..].to_string());
+        self.src.h_helpers(";");
+        self.src.c_helpers(" {\n");
         match &iface.types[id].kind {
             TypeDefKind::Type(t) => self.free(iface, t, "ptr"),
 
@@ -503,57 +514,58 @@ impl C {
 
             TypeDefKind::List(t) => {
                 if self.owns_anything(iface, t) {
-                    self.src.c("for (size_t i = 0; i < ptr->len; i++) {\n");
+                    self.src
+                        .c_helpers("for (size_t i = 0; i < ptr->len; i++) {\n");
                     self.free(iface, t, "&ptr->ptr[i]");
-                    self.src.c("}\n");
+                    self.src.c_helpers("}\n");
                 }
-                uwriteln!(self.src.c, "if (ptr->len > 0) {{");
-                uwriteln!(self.src.c, "free(ptr->ptr);");
-                uwriteln!(self.src.c, "}}");
+                uwriteln!(self.src.c_helpers, "if (ptr->len > 0) {{");
+                uwriteln!(self.src.c_helpers, "free(ptr->ptr);");
+                uwriteln!(self.src.c_helpers, "}}");
             }
 
             TypeDefKind::Variant(v) => {
-                self.src.c("switch ((int32_t) ptr->tag) {\n");
+                self.src.c_helpers("switch ((int32_t) ptr->tag) {\n");
                 for (i, case) in v.cases.iter().enumerate() {
                     if let Some(ty) = &case.ty {
                         if !self.owns_anything(iface, ty) {
                             continue;
                         }
-                        uwriteln!(self.src.c, "case {}: {{", i);
+                        uwriteln!(self.src.c_helpers, "case {}: {{", i);
                         let expr = format!("&ptr->val.{}", case.name.to_snake_case());
                         if let Some(ty) = &case.ty {
                             self.free(iface, ty, &expr);
                         }
-                        self.src.c("break;\n");
-                        self.src.c("}\n");
+                        self.src.c_helpers("break;\n");
+                        self.src.c_helpers("}\n");
                     }
                 }
-                self.src.c("}\n");
+                self.src.c_helpers("}\n");
             }
 
             TypeDefKind::Union(u) => {
-                self.src.c("switch ((int32_t) ptr->tag) {\n");
+                self.src.c_helpers("switch ((int32_t) ptr->tag) {\n");
                 for (i, case) in u.cases.iter().enumerate() {
                     if !self.owns_anything(iface, &case.ty) {
                         continue;
                     }
-                    uwriteln!(self.src.c, "case {i}: {{");
+                    uwriteln!(self.src.c_helpers, "case {i}: {{");
                     let expr = format!("&ptr->val.f{i}");
                     self.free(iface, &case.ty, &expr);
-                    self.src.c("break;\n");
-                    self.src.c("}\n");
+                    self.src.c_helpers("break;\n");
+                    self.src.c_helpers("}\n");
                 }
-                self.src.c("}\n");
+                self.src.c_helpers("}\n");
             }
 
             TypeDefKind::Option(t) => {
-                self.src.c("if (ptr->is_some) {\n");
+                self.src.c_helpers("if (ptr->is_some) {\n");
                 self.free(iface, t, "&ptr->val");
-                self.src.c("}\n");
+                self.src.c_helpers("}\n");
             }
 
             TypeDefKind::Result(r) => {
-                self.src.c("if (!ptr->is_err) {\n");
+                self.src.c_helpers("if (!ptr->is_err) {\n");
                 if let Some(ok) = &r.ok {
                     if self.owns_anything(iface, ok) {
                         self.free(iface, ok, "&ptr->val.ok");
@@ -561,16 +573,16 @@ impl C {
                 }
                 if let Some(err) = &r.err {
                     if self.owns_anything(iface, err) {
-                        self.src.c("} else {\n");
+                        self.src.c_helpers("} else {\n");
                         self.free(iface, err, "&ptr->val.err");
                     }
                 }
-                self.src.c("}\n");
+                self.src.c_helpers("}\n");
             }
             TypeDefKind::Future(_) => todo!("print_dtor for future"),
             TypeDefKind::Stream(_) => todo!("print_dtor for stream"),
         }
-        self.src.c("}\n");
+        self.src.c_helpers("}\n");
     }
 
     fn owns_anything(&self, iface: &Interface, ty: &Type) -> bool {
@@ -612,15 +624,15 @@ impl C {
     }
 
     fn free(&mut self, iface: &Interface, ty: &Type, expr: &str) {
-        let prev = mem::take(&mut self.src.h);
-        self.print_namespace(iface);
-        self.print_ty_name(iface, ty);
-        let name = mem::replace(&mut self.src.h, prev);
+        let prev = mem::take(&mut self.src.h_helpers);
+        self.print_namespace(SourceType::HHelpers, iface);
+        self.print_ty_name(SourceType::HHelpers, iface, ty);
+        let name = mem::replace(&mut self.src.h_helpers, prev);
 
-        self.src.c(&name);
-        self.src.c("_free(");
-        self.src.c(expr);
-        self.src.c(");\n");
+        self.src.c_helpers(&name);
+        self.src.c_helpers("_free(");
+        self.src.c_helpers(expr);
+        self.src.c_helpers(");\n");
     }
 
     fn docs(&mut self, docs: &Docs) {
@@ -629,9 +641,9 @@ impl C {
             None => return,
         };
         for line in docs.trim().lines() {
-            self.src.h("// ");
-            self.src.h(line);
-            self.src.h("\n");
+            self.src.h_defs("// ");
+            self.src.h_defs(line);
+            self.src.h_defs("\n");
         }
     }
 }
@@ -718,22 +730,23 @@ impl Generator for C {
         record: &Record,
         docs: &Docs,
     ) {
-        let prev = mem::take(&mut self.src.h);
+        let prev = mem::take(&mut self.src.h_defs);
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
-        self.src.h("typedef struct {\n");
+        self.src.h_defs("\ntypedef struct {\n");
         for field in record.fields.iter() {
-            self.print_ty(iface, &field.ty);
-            self.src.h(" ");
-            self.src.h(&field.name.to_snake_case());
-            self.src.h(";\n");
+            self.print_ty(SourceType::HDefs, iface, &field.ty);
+            self.src.h_defs(" ");
+            self.src.h_defs(&field.name.to_snake_case());
+            self.src.h_defs(";\n");
         }
-        self.src.h("} ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
+        self.src.h_defs("} ");
+        self.print_namespace(SourceType::HDefs, iface);
+        self.src.h_defs(&name.to_snake_case());
+        self.src.h_defs("_t;\n");
 
-        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+        self.types
+            .insert(id, mem::replace(&mut self.src.h_defs, prev));
     }
 
     fn type_tuple(
@@ -744,20 +757,21 @@ impl Generator for C {
         tuple: &Tuple,
         docs: &Docs,
     ) {
-        let prev = mem::take(&mut self.src.h);
+        let prev = mem::take(&mut self.src.h_defs);
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
-        self.src.h("typedef struct {\n");
+        self.src.h_defs("\ntypedef struct {\n");
         for (i, ty) in tuple.types.iter().enumerate() {
-            self.print_ty(iface, ty);
-            uwriteln!(self.src.h, " f{i};");
+            self.print_ty(SourceType::HDefs, iface, ty);
+            uwriteln!(self.src.h_defs, " f{i};");
         }
-        self.src.h("} ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
+        self.src.h_defs("} ");
+        self.print_namespace(SourceType::HDefs, iface);
+        self.src.h_defs(&name.to_snake_case());
+        self.src.h_defs("_t;\n");
 
-        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+        self.types
+            .insert(id, mem::replace(&mut self.src.h_defs, prev));
     }
 
     fn type_flags(
@@ -768,20 +782,23 @@ impl Generator for C {
         flags: &Flags,
         docs: &Docs,
     ) {
-        let prev = mem::take(&mut self.src.h);
+        let prev = mem::take(&mut self.src.h_defs);
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
-        self.src.h("typedef ");
+        self.src.h_defs("\ntypedef ");
         let repr = flags_repr(flags);
-        self.src.h(int_repr(repr));
-        self.src.h(" ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
+        self.src.h_defs(int_repr(repr));
+        self.src.h_defs(" ");
+        self.print_namespace(SourceType::HDefs, iface);
+        self.src.h_defs(&name.to_snake_case());
+        self.src.h_defs("_t;\n");
 
+        if flags.flags.len() > 0 {
+            self.src.h_defs("\n");
+        }
         for (i, flag) in flags.flags.iter().enumerate() {
             uwriteln!(
-                self.src.h,
+                self.src.h_defs,
                 "#define {}_{}_{} (1 << {})",
                 iface.name.to_shouty_snake_case(),
                 name.to_shouty_snake_case(),
@@ -790,7 +807,8 @@ impl Generator for C {
             );
         }
 
-        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+        self.types
+            .insert(id, mem::replace(&mut self.src.h_defs, prev));
     }
 
     fn type_variant(
@@ -801,29 +819,33 @@ impl Generator for C {
         variant: &Variant,
         docs: &Docs,
     ) {
-        let prev = mem::take(&mut self.src.h);
+        let prev = mem::take(&mut self.src.h_defs);
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
-        self.src.h("typedef struct {\n");
-        self.src.h(int_repr(variant.tag()));
-        self.src.h(" tag;\n");
-        self.src.h("union {\n");
+        self.src.h_defs("\ntypedef struct {\n");
+        self.src.h_defs(int_repr(variant.tag()));
+        self.src.h_defs(" tag;\n");
+        self.src.h_defs("union {\n");
         for case in variant.cases.iter() {
             if let Some(ty) = self.get_nonempty_type(iface, case.ty.as_ref()) {
-                self.print_ty(iface, ty);
-                self.src.h(" ");
-                self.src.h(&case.name.to_snake_case());
-                self.src.h(";\n");
+                self.print_ty(SourceType::HDefs, iface, ty);
+                self.src.h_defs(" ");
+                self.src.h_defs(&case.name.to_snake_case());
+                self.src.h_defs(";\n");
             }
         }
-        self.src.h("} val;\n");
-        self.src.h("} ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
+        self.src.h_defs("} val;\n");
+        self.src.h_defs("} ");
+        self.print_namespace(SourceType::HDefs, iface);
+        self.src.h_defs(&name.to_snake_case());
+        self.src.h_defs("_t;\n");
+
+        if variant.cases.len() > 0 {
+            self.src.h_defs("\n");
+        }
         for (i, case) in variant.cases.iter().enumerate() {
             uwriteln!(
-                self.src.h,
+                self.src.h_defs,
                 "#define {}_{}_{} {}",
                 iface.name.to_shouty_snake_case(),
                 name.to_shouty_snake_case(),
@@ -832,7 +854,8 @@ impl Generator for C {
             );
         }
 
-        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+        self.types
+            .insert(id, mem::replace(&mut self.src.h_defs, prev));
     }
 
     fn type_union(
@@ -843,24 +866,25 @@ impl Generator for C {
         union: &Union,
         docs: &Docs,
     ) {
-        let prev = mem::take(&mut self.src.h);
+        let prev = mem::take(&mut self.src.h_defs);
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
-        self.src.h("typedef struct {\n");
-        self.src.h(int_repr(union.tag()));
-        self.src.h(" tag;\n");
-        self.src.h("union {\n");
+        self.src.h_defs("\ntypedef struct {\n");
+        self.src.h_defs(int_repr(union.tag()));
+        self.src.h_defs(" tag;\n");
+        self.src.h_defs("union {\n");
         for (i, case) in union.cases.iter().enumerate() {
-            self.print_ty(iface, &case.ty);
-            uwriteln!(self.src.h, " f{i};");
+            self.print_ty(SourceType::HDefs, iface, &case.ty);
+            uwriteln!(self.src.h_defs, " f{i};");
         }
-        self.src.h("} val;\n");
-        self.src.h("} ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
+        self.src.h_defs("} val;\n");
+        self.src.h_defs("} ");
+        self.print_namespace(SourceType::HDefs, iface);
+        self.src.h_defs(&name.to_snake_case());
+        self.src.h_defs("_t;\n");
 
-        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+        self.types
+            .insert(id, mem::replace(&mut self.src.h_defs, prev));
     }
 
     fn type_option(
@@ -871,21 +895,22 @@ impl Generator for C {
         payload: &Type,
         docs: &Docs,
     ) {
-        let prev = mem::take(&mut self.src.h);
+        let prev = mem::take(&mut self.src.h_defs);
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
-        self.src.h("typedef struct {\n");
-        self.src.h("bool is_some;\n");
+        self.src.h_defs("\ntypedef struct {\n");
+        self.src.h_defs("bool is_some;\n");
         if !self.is_empty_type(iface, payload) {
-            self.print_ty(iface, payload);
-            self.src.h(" val;\n");
+            self.print_ty(SourceType::HDefs, iface, payload);
+            self.src.h_defs(" val;\n");
         }
-        self.src.h("} ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
+        self.src.h_defs("} ");
+        self.print_namespace(SourceType::HDefs, iface);
+        self.src.h_defs(&name.to_snake_case());
+        self.src.h_defs("_t;\n");
 
-        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+        self.types
+            .insert(id, mem::replace(&mut self.src.h_defs, prev));
     }
 
     fn type_result(
@@ -896,42 +921,47 @@ impl Generator for C {
         result: &Result_,
         docs: &Docs,
     ) {
-        let prev = mem::take(&mut self.src.h);
+        let prev = mem::take(&mut self.src.h_defs);
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
-        self.src.h("typedef struct {\n");
-        self.src.h("bool is_err;\n");
-        self.src.h("union {\n");
+        self.src.h_defs("\ntypedef struct {\n");
+        self.src.h_defs("bool is_err;\n");
+        self.src.h_defs("union {\n");
         if let Some(ok) = self.get_nonempty_type(iface, result.ok.as_ref()) {
-            self.print_ty(iface, ok);
-            self.src.h(" ok;\n");
+            self.print_ty(SourceType::HDefs, iface, ok);
+            self.src.h_defs(" ok;\n");
         }
         if let Some(err) = self.get_nonempty_type(iface, result.err.as_ref()) {
-            self.print_ty(iface, err);
-            self.src.h(" err;\n");
+            self.print_ty(SourceType::HDefs, iface, err);
+            self.src.h_defs(" err;\n");
         }
-        self.src.h("} val;\n");
-        self.src.h("} ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
+        self.src.h_defs("} val;\n");
+        self.src.h_defs("} ");
+        self.print_namespace(SourceType::HDefs, iface);
+        self.src.h_defs(&name.to_snake_case());
+        self.src.h_defs("_t;\n");
 
-        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+        self.types
+            .insert(id, mem::replace(&mut self.src.h_defs, prev));
     }
 
     fn type_enum(&mut self, iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
-        let prev = mem::take(&mut self.src.h);
+        let prev = mem::take(&mut self.src.h_defs);
         self.docs(docs);
         self.names.insert(&name.to_snake_case()).unwrap();
-        self.src.h("typedef ");
-        self.src.h(int_repr(enum_.tag()));
-        self.src.h(" ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
+        self.src.h_defs("\ntypedef ");
+        self.src.h_defs(int_repr(enum_.tag()));
+        self.src.h_defs(" ");
+        self.print_namespace(SourceType::HDefs, iface);
+        self.src.h_defs(&name.to_snake_case());
+        self.src.h_defs("_t;\n");
+
+        if enum_.cases.len() > 0 {
+            self.src.h_defs("\n");
+        }
         for (i, case) in enum_.cases.iter().enumerate() {
             uwriteln!(
-                self.src.h,
+                self.src.h_defs,
                 "#define {}_{}_{} {}",
                 iface.name.to_shouty_snake_case(),
                 name.to_shouty_snake_case(),
@@ -940,33 +970,36 @@ impl Generator for C {
             );
         }
 
-        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+        self.types
+            .insert(id, mem::replace(&mut self.src.h_defs, prev));
     }
 
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        let prev = mem::take(&mut self.src.h);
+        let prev = mem::take(&mut self.src.h_defs);
         self.docs(docs);
-        self.src.h("typedef ");
-        self.print_ty(iface, ty);
-        self.src.h(" ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
-        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+        self.src.h_defs("\ntypedef ");
+        self.print_ty(SourceType::HDefs, iface, ty);
+        self.src.h_defs(" ");
+        self.print_namespace(SourceType::HDefs, iface);
+        self.src.h_defs(&name.to_snake_case());
+        self.src.h_defs("_t;\n");
+        self.types
+            .insert(id, mem::replace(&mut self.src.h_defs, prev));
     }
 
     fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        let prev = mem::take(&mut self.src.h);
+        let prev = mem::take(&mut self.src.h_defs);
         self.docs(docs);
-        self.src.h("typedef struct {\n");
-        self.print_ty(iface, ty);
-        self.src.h(" *ptr;\n");
-        self.src.h("size_t len;\n");
-        self.src.h("} ");
-        self.print_namespace(iface);
-        self.src.h(&name.to_snake_case());
-        self.src.h("_t;\n");
-        self.types.insert(id, mem::replace(&mut self.src.h, prev));
+        self.src.h_defs("\ntypedef struct {\n");
+        self.print_ty(SourceType::HDefs, iface, ty);
+        self.src.h_defs(" *ptr;\n");
+        self.src.h_defs("size_t len;\n");
+        self.src.h_defs("} ");
+        self.print_namespace(SourceType::HDefs, iface);
+        self.src.h_defs(&name.to_snake_case());
+        self.src.h_defs("_t;\n");
+        self.types
+            .insert(id, mem::replace(&mut self.src.h_defs, prev));
     }
 
     fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
@@ -977,11 +1010,17 @@ impl Generator for C {
         let prev = mem::take(&mut self.src);
         let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
 
+        if !self.has_imports {
+            self.has_imports = true;
+            self.src.h_fns("\n// Imported Functions\n");
+        }
+        self.src.h_fns("\n");
+
         // In the private C file, print a function declaration which is the
         // actual wasm import that we'll be calling, and this has the raw wasm
         // signature.
         uwriteln!(
-            self.src.c,
+            self.src.h_fns,
             "__attribute__((import_module(\"{}\"), import_name(\"{}\")))",
             iface.name,
             func.name
@@ -992,29 +1031,30 @@ impl Generator for C {
             func.name.to_snake_case()
         ));
         match sig.results.len() {
-            0 => self.src.c("void"),
-            1 => self.src.c(wasm_type(sig.results[0])),
+            0 => self.src.h_fns("void"),
+            1 => self.src.h_fns(wasm_type(sig.results[0])),
             _ => unimplemented!("multi-value return not supported"),
         }
-        self.src.c(" ");
-        self.src.c(&import_name);
-        self.src.c("(");
+        self.src.h_fns(" ");
+        self.src.h_fns(&import_name);
+        self.src.h_fns("(");
         for (i, param) in sig.params.iter().enumerate() {
             if i > 0 {
-                self.src.c(", ");
+                self.src.h_fns(", ");
             }
-            self.src.c(wasm_type(*param));
+            self.src.h_fns(wasm_type(*param));
         }
         if sig.params.len() == 0 {
-            self.src.c("void");
+            self.src.h_fns("void");
         }
-        self.src.c(");\n");
+        self.src.h_fns(");\n");
 
         // Print the public facing signature into the header, and since that's
         // what we are defining also print it into the C file.
         let c_sig = self.print_sig(iface, func);
-        self.src.c(&c_sig.sig);
-        self.src.c(" {\n");
+        self.src.c_adapters("\n");
+        self.src.c_adapters(&c_sig.sig);
+        self.src.c_adapters(" {\n");
 
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         for (pointer, param) in f.sig.params.iter() {
@@ -1038,8 +1078,8 @@ impl Generator for C {
 
         let FunctionBindgen { src, .. } = f;
 
-        self.src.c(&String::from(src));
-        self.src.c("}\n");
+        self.src.c_adapters(&String::from(src));
+        self.src.c_adapters("}\n");
 
         let src = mem::replace(&mut self.src, prev);
         self.funcs
@@ -1050,6 +1090,12 @@ impl Generator for C {
 
     fn export(&mut self, iface: &Interface, func: &Function) {
         let prev = mem::take(&mut self.src);
+
+        if !self.has_exports {
+            self.has_exports = true;
+            self.src.h_fns("\n// Exported Functions\n\n");
+        }
+
         let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
 
         // Print the actual header for this function into the header file, and
@@ -1059,8 +1105,8 @@ impl Generator for C {
         // Generate, in the C source file, the raw wasm signature that has the
         // canonical ABI.
         uwriteln!(
-            self.src.c,
-            "__attribute__((export_name(\"{}\")))",
+            self.src.c_adapters,
+            "\n__attribute__((export_name(\"{}\")))",
             func.name
         );
         let import_name = self.names.tmp(&format!(
@@ -1071,25 +1117,25 @@ impl Generator for C {
 
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         match sig.results.len() {
-            0 => f.gen.src.c("void"),
-            1 => f.gen.src.c(wasm_type(sig.results[0])),
+            0 => f.gen.src.c_adapters("void"),
+            1 => f.gen.src.c_adapters(wasm_type(sig.results[0])),
             _ => unimplemented!("multi-value return not supported"),
         }
-        f.gen.src.c(" ");
-        f.gen.src.c(&import_name);
-        f.gen.src.c("(");
+        f.gen.src.c_adapters(" ");
+        f.gen.src.c_adapters(&import_name);
+        f.gen.src.c_adapters("(");
         for (i, param) in sig.params.iter().enumerate() {
             if i > 0 {
-                f.gen.src.c(", ");
+                f.gen.src.c_adapters(", ");
             }
             let name = f.locals.tmp("arg");
-            uwrite!(f.gen.src.c, "{} {}", wasm_type(*param), name);
+            uwrite!(f.gen.src.c_adapters, "{} {}", wasm_type(*param), name);
             f.params.push(name);
         }
         if sig.params.len() == 0 {
-            f.gen.src.c("void");
+            f.gen.src.c_adapters("void");
         }
-        f.gen.src.c(") {\n");
+        f.gen.src.c_adapters(") {\n");
 
         // Perform all lifting/lowering and append it to our src.
         iface.call(
@@ -1099,16 +1145,16 @@ impl Generator for C {
             &mut f,
         );
         let FunctionBindgen { src, .. } = f;
-        self.src.c(&src);
-        self.src.c("}\n");
+        self.src.c_adapters(&src);
+        self.src.c_adapters("}\n");
 
         if iface.guest_export_needs_post_return(func) {
             uwriteln!(
-                self.src.c,
-                "__attribute__((export_name(\"cabi_post_{}\")))",
+                self.src.c_fns,
+                "\n__attribute__((weak, export_name(\"cabi_post_{}\")))",
                 func.name
             );
-            uwrite!(self.src.c, "void {import_name}_post_return(");
+            uwrite!(self.src.c_fns, "void {import_name}_post_return(");
 
             let mut params = Vec::new();
             let mut c_sig = CSig {
@@ -1124,18 +1170,18 @@ impl Generator for C {
             };
             for (i, result) in sig.results.iter().enumerate() {
                 let name = format!("arg{i}");
-                uwrite!(self.src.c, "{} {name}", wasm_type(*result));
+                uwrite!(self.src.c_fns, "{} {name}", wasm_type(*result));
                 c_sig.params.push((false, name.clone()));
                 params.push(name);
             }
-            self.src.c.push_str(") {\n");
+            self.src.c_fns.push_str(") {\n");
 
             let mut f = FunctionBindgen::new(self, c_sig, &import_name);
             f.params = params;
             iface.post_return(func, &mut f);
             let FunctionBindgen { src, .. } = f;
-            self.src.c(&src);
-            self.src.c("}\n");
+            self.src.c_fns(&src);
+            self.src.c_fns("}\n");
         }
 
         let src = mem::replace(&mut self.src, prev);
@@ -1146,37 +1192,18 @@ impl Generator for C {
     }
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
-        uwrite!(
-            self.src.h,
-            "\
-                #ifndef __BINDINGS_{0}_H
-                #define __BINDINGS_{0}_H
-                #ifdef __cplusplus
-                extern \"C\"
-                {{
-                #endif
-
-                #include <stdint.h>
-                #include <stdbool.h>
-            ",
-            iface.name.to_shouty_snake_case(),
-        );
         let linking_symbol = component_type_object::linking_symbol(iface, self.direction);
+        self.src.c_includes("#include <stdlib.h>".into());
+        self.src
+            .c_includes(format!("#include \"{}.h\"", iface.name.to_kebab_case()));
         uwrite!(
-            self.src.c,
-            "\
-                #include <stdlib.h>
-                #include \"{}.h\"
-
-                // The following symbols are never called, but they are sufficient
-                // to get the custom sections in the component type object linked
-                // into the wasm when this compilation unit is linked.
+            self.src.c_adapters,
+            "
                 extern void {linking_symbol}(void);
                 void {linking_symbol}_public_use_in_this_compilation_unit(void) {{
                     {linking_symbol}();
                 }}
             ",
-            iface.name.to_kebab_case(),
         );
 
         self.print_intrinsics();
@@ -1213,22 +1240,26 @@ impl Generator for C {
 
         if self.needs_string {
             uwrite!(
-                self.src.h,
+                self.src.h_defs,
                 "
                     typedef struct {{
                         char *ptr;
                         size_t len;
                     }} {0}_string_t;
-
-                    void {0}_string_set({0}_string_t *ret, const char *s);
-                    void {0}_string_dup({0}_string_t *ret, const char *s);
-                    void {0}_string_free({0}_string_t *ret);
                 ",
                 iface.name.to_snake_case(),
             );
-            self.src.c("#include <string.h>\n");
             uwrite!(
-                self.src.c,
+                self.src.h_helpers,
+                "
+                    void {0}_string_set({0}_string_t *ret, const char *s);
+                    void {0}_string_dup({0}_string_t *ret, const char *s);
+                    void {0}_string_free({0}_string_t *ret);\
+                ",
+                iface.name.to_snake_case(),
+            );
+            uwrite!(
+                self.src.c_helpers,
                 "
                     void {0}_string_set({0}_string_t *ret, const char *s) {{
                         ret->ptr = (char*) s;
@@ -1258,9 +1289,9 @@ impl Generator for C {
         for id in iface.topological_types() {
             if let Some(ty) = self.types.get(&id) {
                 if private_types.contains(&id) {
-                    self.src.c(ty);
+                    self.src.h_defs(ty);
                 } else {
-                    self.src.h(ty);
+                    self.src.h_defs(ty);
                     self.print_dtor(iface, id);
                 }
             }
@@ -1271,7 +1302,7 @@ impl Generator for C {
         // return-area on the stack.
         if !self.in_import && self.return_pointer_area_size > 0 {
             uwrite!(
-                self.src.c,
+                self.src.c_adapters,
                 "
                     __attribute__((aligned({})))
                     static uint8_t RET_AREA[{}];
@@ -1283,25 +1314,52 @@ impl Generator for C {
 
         for (_module, funcs) in mem::take(&mut self.funcs) {
             for func in funcs {
-                self.src.h(&func.src.h);
-                self.src.c(&func.src.c);
+                self.src.append(&func.src);
             }
         }
 
-        self.src.h("\
-        #ifdef __cplusplus
+        let mut h_str = format!("#ifndef __BINDINGS_{}_H\n#define __BINDINGS_{}_H\n#ifdef __cplusplus\nextern \"C\" {{\n#endif",
+                iface.name.to_shouty_snake_case(), iface.name.to_shouty_snake_case());
+        h_str.push_str("\n\n#include <stdint.h>\n#include <stdbool.h>\n");
+        if self.needs_string {
+            h_str.push_str("#include <string.h>\n");
         }
-        #endif
-        ");
-        self.src.h("#endif\n");
+
+        let mut c_str = self.src.c_includes.join("\n");
+        if c_str.len() > 0 {
+            c_str.push_str("\n");
+        }
+        c_str.push_str(&self.src.c_fns);
+
+        if self.src.h_defs.len() > 0 {
+            h_str.push_str(&self.src.h_defs);
+        }
+
+        h_str.push_str(&self.src.h_fns);
+
+        if !self.opts.no_helpers && self.src.h_helpers.len() > 0 {
+            h_str.push_str("\n// Helper Functions\n");
+            h_str.push_str(&self.src.h_helpers);
+            h_str.push_str("\n");
+        }
+
+        if !self.opts.no_helpers && self.src.c_helpers.len() > 0 {
+            c_str.push_str("\n// Helper Functions\n");
+            c_str.push_str(self.src.c_helpers.as_mut_string());
+        }
+
+        c_str.push_str("\n// Component Adapters\n");
+        c_str.push_str(&self.src.c_adapters);
+
+        h_str.push_str("\n#ifdef __cplusplus\n}\n#endif\n#endif\n");
 
         files.push(
             &format!("{}.c", iface.name.to_kebab_case()),
-            self.src.c.as_bytes(),
+            c_str.as_bytes(),
         );
         files.push(
             &format!("{}.h", iface.name.to_kebab_case()),
-            self.src.h.as_bytes(),
+            h_str.as_bytes(),
         );
         files.push(
             &format!("{}_component_type.o", iface.name.to_kebab_case()),
@@ -1309,6 +1367,9 @@ impl Generator for C {
                 .unwrap()
                 .as_slice(),
         );
+
+        // reset sources for next write ops
+        self.src = Default::default();
     }
 }
 
@@ -1407,7 +1468,7 @@ impl Bindgen for FunctionBindgen<'_> {
             // the post-return call.
             uwrite!(
                 self.src,
-                "
+                "\
                     __attribute__((aligned({})))
                     uint8_t ret_area[{}];
                 ",
@@ -1768,22 +1829,21 @@ impl Bindgen for FunctionBindgen<'_> {
                 } else {
                     format!("const {ty} *{some_payload} = &({op0}).val;")
                 };
+
                 uwrite!(
                     self.src,
-                    "
+                    "\
                     if (({op0}).is_some) {{
                         {bind_some}
-                        {some}
-                    }} else {{
-                        {none}
-                    }}
+                        {some}}} else {{
+                        {none}}}
                     "
                 );
             }
 
             Instruction::OptionLift { payload, ty, .. } => {
-                let (some, some_results) = self.blocks.pop().unwrap();
-                let (none, none_results) = self.blocks.pop().unwrap();
+                let (mut some, some_results) = self.blocks.pop().unwrap();
+                let (mut none, none_results) = self.blocks.pop().unwrap();
                 assert!(none_results.len() == 0);
                 assert!(some_results.len() == 1);
                 let some_result = &some_results[0];
@@ -1795,23 +1855,26 @@ impl Bindgen for FunctionBindgen<'_> {
                 let set_some = if self.gen.is_empty_type(iface, payload) {
                     String::new()
                 } else {
-                    format!("{result}.val = {some_result};")
+                    format!("{result}.val = {some_result};\n")
                 };
+                if none.len() > 0 {
+                    none.push('\n');
+                }
+                if some.len() > 0 {
+                    some.push('\n');
+                }
                 uwrite!(
                     self.src,
                     "switch ({op0}) {{
                         case 0: {{
                             {result}.is_some = false;
-                            {none}
-                            break;
+                            {none}break;
                         }}
                         case 1: {{
                             {result}.is_some = true;
-                            {some}
-                            {set_some}
-                            break;
+                            {some}{set_some}break;
                         }}
-                    }}"
+                    }}\n"
                 );
                 results.push(result);
             }
@@ -2210,18 +2273,74 @@ impl Bindgen for FunctionBindgen<'_> {
     }
 }
 
+#[derive(Default, Clone, Copy)]
+enum SourceType {
+    #[default]
+    HDefs,
+    HFns,
+    HHelpers,
+    // CIncludes,
+    // CFns,
+    // CHelpers,
+    // CAdapters,
+}
+
 #[derive(Default)]
 struct Source {
-    h: wit_bindgen_core::Source,
-    c: wit_bindgen_core::Source,
+    h_defs: wit_bindgen_core::Source,
+    h_fns: wit_bindgen_core::Source,
+    h_helpers: wit_bindgen_core::Source,
+    c_includes: Vec<String>,
+    c_fns: wit_bindgen_core::Source,
+    c_helpers: wit_bindgen_core::Source,
+    c_adapters: wit_bindgen_core::Source,
 }
 
 impl Source {
-    fn c(&mut self, s: &str) {
-        self.c.push_str(s);
+    fn print(&mut self, stype: SourceType, s: &str) {
+        match stype {
+            SourceType::HDefs => self.h_defs(s),
+            SourceType::HFns => self.h_fns(s),
+            SourceType::HHelpers => self.h_helpers(s),
+            // SourceType::CIncludes => self.c_includes(s),
+            // SourceType::CFns => self.c_fns(s),
+            // SourceType::CHelpers => self.c_helpers(s),
+            // SourceType::CAdapters => self.c_adapters(s),
+        }
     }
-    fn h(&mut self, s: &str) {
-        self.h.push_str(s);
+    fn append(&mut self, append_src: &Source) {
+        self.h_defs.push_str(&append_src.h_defs);
+        self.h_fns.push_str(&append_src.h_fns);
+        self.h_helpers.push_str(&append_src.h_helpers);
+        for i in &append_src.c_includes {
+            self.c_includes(i.into());
+        }
+        self.c_fns.push_str(&append_src.c_fns);
+        self.c_helpers.push_str(&append_src.c_helpers);
+        self.c_adapters.push_str(&append_src.c_adapters);
+    }
+    fn h_defs(&mut self, s: &str) {
+        self.h_defs.push_str(s);
+    }
+    fn h_fns(&mut self, s: &str) {
+        self.h_fns.push_str(s);
+    }
+    fn h_helpers(&mut self, s: &str) {
+        self.h_helpers.push_str(s);
+    }
+    fn c_includes(&mut self, s: String) {
+        if !self.c_includes.contains(&s) {
+            self.c_includes.push(s);
+        }
+    }
+    fn c_fns(&mut self, s: &str) {
+        self.c_fns.push_str(s);
+    }
+    fn c_helpers(&mut self, s: &str) {
+        self.c_helpers.push_str(s);
+    }
+    fn c_adapters(&mut self, s: &str) {
+        self.c_adapters.push_str(s);
     }
 }
 
