@@ -44,6 +44,8 @@ impl imports::Imports for MyImports {
             }))?
         } else if a == 1.0 {
             Err(imports::E3::E1(imports::E::B))?
+        } else if a == 2.0 {
+            Err(anyhow::Error::msg("a somewhat ergonomic trap"))?
         } else {
             Ok(a)
         }
@@ -52,6 +54,8 @@ impl imports::Imports for MyImports {
     fn empty_error(&mut self, a: u32) -> anyhow::Result<Result<u32, ()>> {
         if a == 0 {
             Ok(Err(()))
+        } else if a == 1 {
+            Err(anyhow::Error::msg("outer result trap"))
         } else {
             Ok(Ok(a))
         }
@@ -59,16 +63,20 @@ impl imports::Imports for MyImports {
 }
 
 fn run(wasm: &str) -> anyhow::Result<()> {
-    let (exports, mut store) = crate::instantiate(
-        wasm,
-        |linker| {
-            imports::add_to_linker(
-                linker,
-                |cx: &mut crate::Context<MyImports>| -> &mut MyImports { &mut cx.imports },
-            )
-        },
-        |store, module, linker| Exports::instantiate(store, module, linker),
-    )?;
+    let create = || {
+        crate::instantiate(
+            wasm,
+            |linker| {
+                imports::add_to_linker(
+                    linker,
+                    |cx: &mut crate::Context<MyImports>| -> &mut MyImports { &mut cx.imports },
+                )
+            },
+            |store, module, linker| Exports::instantiate(store, module, linker),
+        )
+    };
+
+    let (exports, mut store) = create()?;
 
     assert_eq!(
         exports.string_error(&mut store, 0.0)?,
@@ -99,9 +107,27 @@ fn run(wasm: &str) -> anyhow::Result<()> {
         exports.variant_error(&mut store, 1.0)?,
         Err(E3::E1(E::B))
     ));
+    let e = exports.variant_error(&mut store, 2.0);
+    assert!(e.is_err());
+    assert!(e
+        .err()
+        .unwrap()
+        .to_string()
+        .starts_with("a somewhat ergonomic trap"));
 
+    let (exports, mut store) = create()?;
     assert_eq!(exports.empty_error(&mut store, 0)?, Err(()));
-    assert_eq!(exports.empty_error(&mut store, 1)?, Ok(1));
+
+    let e = exports.empty_error(&mut store, 1);
+    assert!(e.is_err());
+    assert!(e
+        .err()
+        .unwrap()
+        .to_string()
+        .starts_with("outer result trap"));
+
+    let (exports, mut store) = create()?;
+    assert_eq!(exports.empty_error(&mut store, 2)?, Ok(2));
 
     Ok(())
 }
