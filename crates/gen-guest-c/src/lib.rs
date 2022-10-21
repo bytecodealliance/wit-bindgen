@@ -1106,7 +1106,8 @@ impl Generator for C {
         // canonical ABI.
         uwriteln!(
             self.src.c_adapters,
-            "\n__attribute__((export_name(\"{}\")))",
+            "\n__attribute__((export_name(\"{}#{}\")))",
+            iface.name.to_kebab_case(),
             func.name
         );
         let import_name = self.names.tmp(&format!(
@@ -1151,7 +1152,8 @@ impl Generator for C {
         if iface.guest_export_needs_post_return(func) {
             uwriteln!(
                 self.src.c_fns,
-                "\n__attribute__((weak, export_name(\"cabi_post_{}\")))",
+                "\n__attribute__((weak, export_name(\"cabi_post_{}#{}\")))",
+                iface.name.to_kebab_case(),
                 func.name
             );
             uwrite!(self.src.c_fns, "void {import_name}_post_return(");
@@ -1868,11 +1870,14 @@ impl Bindgen for FunctionBindgen<'_> {
                     "switch ({op0}) {{
                         case 0: {{
                             {result}.is_some = false;
-                            {none}break;
+                            {none}\
+                            break;
                         }}
                         case 1: {{
                             {result}.is_some = true;
-                            {some}{set_some}break;
+                            {some}\
+                            {set_some}\
+                            break;
                         }}
                     }}\n"
                 );
@@ -1906,26 +1911,26 @@ impl Bindgen for FunctionBindgen<'_> {
                 let bind_ok =
                     if let Some(ok) = self.gen.get_nonempty_type(iface, result.ok.as_ref()) {
                         let ok_ty = self.gen.type_string(iface, ok);
-                        format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;")
+                        format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;\n")
                     } else {
                         String::new()
                     };
                 let bind_err =
                     if let Some(err) = self.gen.get_nonempty_type(iface, result.err.as_ref()) {
                         let err_ty = self.gen.type_string(iface, err);
-                        format!("const {err_ty} *{err_payload} = &({op0}).val.err;")
+                        format!("const {err_ty} *{err_payload} = &({op0}).val.err;\n")
                     } else {
                         String::new()
                     };
                 uwrite!(
                     self.src,
-                    "
+                    "\
                     if (({op0}).is_err) {{
-                        {bind_err}
-                        {err}
+                        {bind_err}\
+                        {err}\
                     }} else {{
-                        {bind_ok}
-                        {ok}
+                        {bind_ok}\
+                        {ok}\
                     }}
                     "
                 );
