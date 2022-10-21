@@ -51,3 +51,7 @@ test = false
 [[bin]]
 name = "many_arguments"
 test = false
+
+[[bin]]
+name = "results"
+test = false
