@@ -53,6 +53,7 @@ impl WorldGenerator for Wasmtime {
     fn import(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
         let mut gen = InterfaceGenerator::new(self, iface, TypeMode::Owned);
         gen.types();
+        gen.generate_from_error_impls();
         gen.generate_add_to_linker(name);
 
         let snake = name.to_snake_case();
@@ -77,6 +78,7 @@ impl WorldGenerator for Wasmtime {
     fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
         let mut gen = InterfaceGenerator::new(self, iface, TypeMode::AllBorrowed("'a"));
         gen.types();
+        gen.generate_from_error_impls();
 
         let camel = name.to_upper_camel_case();
         uwriteln!(gen.src, "pub struct {camel} {{");
@@ -312,6 +314,27 @@ impl<'a> InterfaceGenerator<'a> {
         }
     }
 
+    fn special_case_host_error(&self, results: &Results) -> Option<&Result_> {
+        // We only support the wit_bindgen_host_wasmtime_rust::Error case when
+        // a function has just one result, which is itself a `result<a, e>`, and the
+        // `e` is *not* a primitive (i.e. defined in std) type.
+        let mut i = results.iter_types();
+        if i.len() == 1 {
+            match i.next().unwrap() {
+                Type::Id(id) => match &self.iface.types[*id].kind {
+                    TypeDefKind::Result(r) => match r.err {
+                        Some(Type::Id(_)) => Some(&r),
+                        _ => None,
+                    },
+                    _ => None,
+                },
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
     fn generate_add_to_linker(&mut self, name: &str) {
         let camel = name.to_upper_camel_case();
 
@@ -327,12 +350,34 @@ impl<'a> InterfaceGenerator<'a> {
             fnsig.private = true;
             fnsig.self_arg = Some("&mut self".to_string());
 
-            // These trait method args used to be TypeMode::LeafBorrowed, but wasmtime
-            // Lift is not impled for borrowed types, so I don't think we can
-            // support that anymore?
             self.print_docs_and_params(func, TypeMode::Owned, &fnsig);
             self.push_str(" -> ");
-            self.print_result_ty(&func.results, TypeMode::Owned);
+
+            if let Some(r) = self.special_case_host_error(&func.results).cloned() {
+                // Functions which have a single result `result<ok,err>` get special
+                // cased to use the host_wasmtime_rust::Error<err>, making it possible
+                // for them to trap or use `?` to propogate their errors
+                self.push_str("wit_bindgen_host_wasmtime_rust::Result<");
+                if let Some(ok) = r.ok {
+                    self.print_ty(&ok, TypeMode::Owned);
+                } else {
+                    self.push_str("()");
+                }
+                self.push_str(",");
+                if let Some(err) = r.err {
+                    self.print_ty(&err, TypeMode::Owned);
+                } else {
+                    self.push_str("()");
+                }
+                self.push_str(">");
+            } else {
+                // All other functions get their return values wrapped in an anyhow::Result.
+                // Returning the anyhow::Error case can be used to trap.
+                self.push_str("anyhow::Result<");
+                self.print_result_ty(&func.results, TypeMode::Owned);
+                self.push_str(">");
+            }
+
             self.push_str(";\n");
         }
         uwriteln!(self.src, "}}");
@@ -420,10 +465,22 @@ impl<'a> InterfaceGenerator<'a> {
         } else {
             uwrite!(self.src, ");\n");
         }
-        if func.results.iter_types().len() == 1 {
-            uwrite!(self.src, "Ok((r,))\n");
+
+        if self.special_case_host_error(&func.results).is_some() {
+            uwrite!(
+                self.src,
+                "match r {{
+                    Ok(a) => Ok((Ok(a),)),
+                    Err(e) => match e.downcast() {{
+                        Ok(api_error) => Ok((Err(api_error),)),
+                        Err(anyhow_error) => Err(anyhow_error),
+                    }}
+                }}"
+            );
+        } else if func.results.iter_types().len() == 1 {
+            uwrite!(self.src, "Ok((r?,))\n");
         } else {
-            uwrite!(self.src, "Ok(r)\n");
+            uwrite!(self.src, "r\n");
         }
 
         if self.gen.opts.async_ {
@@ -552,6 +609,36 @@ impl<'a> InterfaceGenerator<'a> {
 
         // End function body
         self.src.push_str("}\n");
+    }
+
+    fn generate_from_error_impls(&mut self) {
+        for (id, ty) in self.iface.types.iter() {
+            if ty.name.is_none() {
+                continue;
+            }
+            let info = self.info(id);
+            if info.error {
+                for (name, mode) in self.modes_of(id) {
+                    let name = name.to_upper_camel_case();
+                    if self.lifetime_for(&info, mode).is_some() {
+                        continue;
+                    }
+                    self.push_str("impl From<");
+                    self.push_str(&name);
+                    self.push_str("> for wit_bindgen_host_wasmtime_rust::Error<");
+                    self.push_str(&name);
+                    self.push_str("> {\n");
+                    self.push_str("fn from(e: ");
+                    self.push_str(&name);
+                    self.push_str(") -> wit_bindgen_host_wasmtime_rust::Error::< ");
+                    self.push_str(&name);
+                    self.push_str("> {\n");
+                    self.push_str("wit_bindgen_host_wasmtime_rust::Error::new(e)\n");
+                    self.push_str("}\n");
+                    self.push_str("}\n");
+                }
+            }
+        }
     }
 }
 

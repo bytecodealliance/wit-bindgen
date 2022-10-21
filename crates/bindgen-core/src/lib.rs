@@ -169,7 +169,7 @@ pub struct Types {
     type_info: HashMap<TypeId, TypeInfo>,
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, Debug)]
 pub struct TypeInfo {
     /// Whether or not this type is ever used (transitively) within the
     /// parameter of a function.
@@ -179,6 +179,10 @@ pub struct TypeInfo {
     /// result of a function.
     pub result: bool,
 
+    /// Whether or not this type is ever used (transitively) within the
+    /// error case in the result of a function.
+    pub error: bool,
+
     /// Whether or not this type (transitively) has a list.
     pub has_list: bool,
 }
@@ -187,6 +191,7 @@ impl std::ops::BitOrAssign for TypeInfo {
     fn bitor_assign(&mut self, rhs: Self) {
         self.param |= rhs.param;
         self.result |= rhs.result;
+        self.error |= rhs.error;
         self.has_list |= rhs.has_list;
     }
 }
@@ -198,10 +203,10 @@ impl Types {
         }
         for f in iface.functions.iter() {
             for (_, ty) in f.params.iter() {
-                self.set_param_result_ty(iface, ty, true, false);
+                self.set_param_result_ty(iface, ty, true, false, false);
             }
             for ty in f.results.iter_types() {
-                self.set_param_result_ty(iface, ty, false, true);
+                self.set_param_result_ty(iface, ty, false, true, false);
             }
         }
     }
@@ -281,56 +286,77 @@ impl Types {
         }
     }
 
-    fn set_param_result_id(&mut self, iface: &Interface, ty: TypeId, param: bool, result: bool) {
+    fn set_param_result_id(
+        &mut self,
+        iface: &Interface,
+        ty: TypeId,
+        param: bool,
+        result: bool,
+        error: bool,
+    ) {
         match &iface.types[ty].kind {
             TypeDefKind::Record(r) => {
                 for field in r.fields.iter() {
-                    self.set_param_result_ty(iface, &field.ty, param, result)
+                    self.set_param_result_ty(iface, &field.ty, param, result, error)
                 }
             }
             TypeDefKind::Tuple(t) => {
                 for ty in t.types.iter() {
-                    self.set_param_result_ty(iface, ty, param, result)
+                    self.set_param_result_ty(iface, ty, param, result, error)
                 }
             }
             TypeDefKind::Flags(_) => {}
             TypeDefKind::Enum(_) => {}
             TypeDefKind::Variant(v) => {
                 for case in v.cases.iter() {
-                    self.set_param_result_optional_ty(iface, case.ty.as_ref(), param, result)
+                    self.set_param_result_optional_ty(iface, case.ty.as_ref(), param, result, error)
                 }
             }
             TypeDefKind::List(ty) | TypeDefKind::Type(ty) | TypeDefKind::Option(ty) => {
-                self.set_param_result_ty(iface, ty, param, result)
+                self.set_param_result_ty(iface, ty, param, result, error)
             }
             TypeDefKind::Result(r) => {
-                self.set_param_result_optional_ty(iface, r.ok.as_ref(), param, result);
-                self.set_param_result_optional_ty(iface, r.err.as_ref(), param, result);
+                self.set_param_result_optional_ty(iface, r.ok.as_ref(), param, result, error);
+                self.set_param_result_optional_ty(iface, r.err.as_ref(), param, result, result);
             }
             TypeDefKind::Union(u) => {
                 for case in u.cases.iter() {
-                    self.set_param_result_ty(iface, &case.ty, param, result)
+                    self.set_param_result_ty(iface, &case.ty, param, result, error)
                 }
             }
             TypeDefKind::Future(ty) => {
-                self.set_param_result_optional_ty(iface, ty.as_ref(), param, result)
+                self.set_param_result_optional_ty(iface, ty.as_ref(), param, result, error)
             }
             TypeDefKind::Stream(stream) => {
-                self.set_param_result_optional_ty(iface, stream.element.as_ref(), param, result);
-                self.set_param_result_optional_ty(iface, stream.end.as_ref(), param, result);
+                self.set_param_result_optional_ty(
+                    iface,
+                    stream.element.as_ref(),
+                    param,
+                    result,
+                    error,
+                );
+                self.set_param_result_optional_ty(iface, stream.end.as_ref(), param, result, error);
             }
         }
     }
 
-    fn set_param_result_ty(&mut self, iface: &Interface, ty: &Type, param: bool, result: bool) {
+    fn set_param_result_ty(
+        &mut self,
+        iface: &Interface,
+        ty: &Type,
+        param: bool,
+        result: bool,
+        error: bool,
+    ) {
         match ty {
             Type::Id(id) => {
                 self.type_id_info(iface, *id);
                 let info = self.type_info.get_mut(id).unwrap();
-                if (param && !info.param) || (result && !info.result) {
+                if (param && !info.param) || (result && !info.result) || (error && !info.error) {
                     info.param = info.param || param;
                     info.result = info.result || result;
-                    self.set_param_result_id(iface, *id, param, result);
+                    info.error = info.error || error;
+                    self.set_param_result_id(iface, *id, param, result, error);
                 }
             }
             _ => {}
@@ -343,9 +369,10 @@ impl Types {
         ty: Option<&Type>,
         param: bool,
         result: bool,
+        error: bool,
     ) {
         match ty {
-            Some(ty) => self.set_param_result_ty(iface, ty, param, result),
+            Some(ty) => self.set_param_result_ty(iface, ty, param, result, error),
             None => (),
         }
     }

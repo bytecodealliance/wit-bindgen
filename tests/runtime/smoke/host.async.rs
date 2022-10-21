@@ -14,9 +14,10 @@ pub struct MyImports {
 
 #[wit_bindgen_host_wasmtime_rust::async_trait]
 impl imports::Imports for MyImports {
-    async fn thunk(&mut self) {
+    async fn thunk(&mut self) -> Result<()> {
         self.hit = true;
         println!("in the host");
+        Ok(())
     }
 }
 

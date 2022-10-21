@@ -10,9 +10,9 @@ wit_bindgen_host_wasmtime_rust::generate!({
 pub struct MyImports;
 
 impl imports::Imports for MyImports {
-    fn add_one_integer(&mut self, num: imports::AllIntegers) -> imports::AllIntegers {
+    fn add_one_integer(&mut self, num: imports::AllIntegers) -> Result<imports::AllIntegers> {
         use imports::AllIntegers;
-        match num {
+        Ok(match num {
             AllIntegers::Bool(false) => AllIntegers::Bool(true),
             AllIntegers::Bool(true) => AllIntegers::Bool(false),
             AllIntegers::U8(n) => AllIntegers::U8(n.wrapping_add(1)),
@@ -23,25 +23,25 @@ impl imports::Imports for MyImports {
             AllIntegers::I16(n) => AllIntegers::I16(n.wrapping_add(1)),
             AllIntegers::I32(n) => AllIntegers::I32(n.wrapping_add(1)),
             AllIntegers::I64(n) => AllIntegers::I64(n.wrapping_add(1)),
-        }
+        })
     }
-    fn add_one_float(&mut self, num: imports::AllFloats) -> imports::AllFloats {
+    fn add_one_float(&mut self, num: imports::AllFloats) -> Result<imports::AllFloats> {
         use imports::AllFloats;
-        match num {
+        Ok(match num {
             AllFloats::F32(n) => AllFloats::F32(n + 1.0),
             AllFloats::F64(n) => AllFloats::F64(n + 1.0),
-        }
+        })
     }
-    fn replace_first_char(&mut self, text: imports::AllText, c: char) -> imports::AllText {
+    fn replace_first_char(&mut self, text: imports::AllText, c: char) -> Result<imports::AllText> {
         use imports::AllText;
-        match text {
+        Ok(match text {
             AllText::Char(_) => AllText::Char(c),
             AllText::String(t) => AllText::String(format!("{}{}", c, &t[1..])),
-        }
+        })
     }
-    fn identify_integer(&mut self, num: imports::AllIntegers) -> u8 {
+    fn identify_integer(&mut self, num: imports::AllIntegers) -> Result<u8> {
         use imports::AllIntegers;
-        match num {
+        Ok(match num {
             AllIntegers::Bool { .. } => 0,
             AllIntegers::U8 { .. } => 1,
             AllIntegers::U16 { .. } => 2,
@@ -51,55 +51,57 @@ impl imports::Imports for MyImports {
             AllIntegers::I16 { .. } => 6,
             AllIntegers::I32 { .. } => 7,
             AllIntegers::I64 { .. } => 8,
-        }
+        })
     }
-    fn identify_float(&mut self, num: imports::AllFloats) -> u8 {
+    fn identify_float(&mut self, num: imports::AllFloats) -> Result<u8> {
         use imports::AllFloats;
-        match num {
+        Ok(match num {
             AllFloats::F32 { .. } => 0,
             AllFloats::F64 { .. } => 1,
-        }
+        })
     }
-    fn identify_text(&mut self, text: imports::AllText) -> u8 {
+    fn identify_text(&mut self, text: imports::AllText) -> Result<u8> {
         use imports::AllText;
-        match text {
+        Ok(match text {
             AllText::Char { .. } => 0,
             AllText::String { .. } => 1,
-        }
+        })
     }
-    fn identify_duplicated(&mut self, dup: imports::DuplicatedS32) -> u8 {
+    fn identify_duplicated(&mut self, dup: imports::DuplicatedS32) -> Result<u8> {
         use imports::DuplicatedS32;
-
-        match dup {
+        Ok(match dup {
             DuplicatedS32::I320 { .. } => 0,
             DuplicatedS32::I321 { .. } => 1,
             DuplicatedS32::I322 { .. } => 2,
-        }
+        })
     }
-    fn add_one_duplicated(&mut self, dup: imports::DuplicatedS32) -> imports::DuplicatedS32 {
+    fn add_one_duplicated(
+        &mut self,
+        dup: imports::DuplicatedS32,
+    ) -> Result<imports::DuplicatedS32> {
         use imports::DuplicatedS32;
-        match dup {
+        Ok(match dup {
             DuplicatedS32::I320(n) => DuplicatedS32::I320(n.wrapping_add(1)),
             DuplicatedS32::I321(n) => DuplicatedS32::I321(n.wrapping_add(1)),
             DuplicatedS32::I322(n) => DuplicatedS32::I322(n.wrapping_add(1)),
-        }
+        })
     }
-    fn identify_distinguishable_num(&mut self, num: imports::DistinguishableNum) -> u8 {
+    fn identify_distinguishable_num(&mut self, num: imports::DistinguishableNum) -> Result<u8> {
         use imports::DistinguishableNum;
-        match num {
+        Ok(match num {
             DistinguishableNum::F64 { .. } => 0,
             DistinguishableNum::I64 { .. } => 1,
-        }
+        })
     }
     fn add_one_distinguishable_num(
         &mut self,
         num: imports::DistinguishableNum,
-    ) -> imports::DistinguishableNum {
+    ) -> Result<imports::DistinguishableNum> {
         use imports::DistinguishableNum;
-        match num {
+        Ok(match num {
             DistinguishableNum::F64(n) => DistinguishableNum::F64(n + 1.0),
             DistinguishableNum::I64(n) => DistinguishableNum::I64(n.wrapping_add(1)),
-        }
+        })
     }
 }
 

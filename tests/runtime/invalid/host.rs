@@ -14,58 +14,58 @@ pub struct MyImports;
 
 impl Imports for MyImports {
     // The following types are truncated when out-of-bounds
-    fn roundtrip_u8(&mut self, v: u8) -> u8 {
-        v
+    fn roundtrip_u8(&mut self, v: u8) -> Result<u8> {
+        Ok(v)
     }
-    fn roundtrip_s8(&mut self, v: i8) -> i8 {
-        v
+    fn roundtrip_s8(&mut self, v: i8) -> Result<i8> {
+        Ok(v)
     }
-    fn roundtrip_u16(&mut self, v: u16) -> u16 {
-        v
+    fn roundtrip_u16(&mut self, v: u16) -> Result<u16> {
+        Ok(v)
     }
-    fn roundtrip_s16(&mut self, v: i16) -> i16 {
-        v
+    fn roundtrip_s16(&mut self, v: i16) -> Result<i16> {
+        Ok(v)
     }
-    fn roundtrip_bool(&mut self, v: bool) -> bool {
-        v
+    fn roundtrip_bool(&mut self, v: bool) -> Result<bool> {
+        Ok(v)
     }
 
     // None of this should be reached and instead validation should prevent them
     // from being called
-    fn roundtrip_char(&mut self, _: char) -> char {
+    fn roundtrip_char(&mut self, _: char) -> Result<char> {
         unreachable!()
     }
-    fn roundtrip_enum(&mut self, _: imports::E) -> imports::E {
+    fn roundtrip_enum(&mut self, _: imports::E) -> Result<imports::E> {
         unreachable!()
     }
-    fn unaligned1(&mut self, _: Vec<u16>) {
+    fn unaligned1(&mut self, _: Vec<u16>) -> Result<()> {
         unreachable!()
     }
-    fn unaligned2(&mut self, _: Vec<u32>) {
+    fn unaligned2(&mut self, _: Vec<u32>) -> Result<()> {
         unreachable!()
     }
-    fn unaligned3(&mut self, _: Vec<u64>) {
+    fn unaligned3(&mut self, _: Vec<u64>) -> Result<()> {
         unreachable!()
     }
-    fn unaligned4(&mut self, _: Vec<imports::Flag32>) {
+    fn unaligned4(&mut self, _: Vec<imports::Flag32>) -> Result<()> {
         unreachable!()
     }
-    fn unaligned5(&mut self, _: Vec<imports::Flag64>) {
+    fn unaligned5(&mut self, _: Vec<imports::Flag64>) -> Result<()> {
         unreachable!()
     }
-    fn unaligned6(&mut self, _: Vec<imports::UnalignedRecord>) {
+    fn unaligned6(&mut self, _: Vec<imports::UnalignedRecord>) -> Result<()> {
         unreachable!()
     }
-    fn unaligned7(&mut self, _: Vec<f32>) {
+    fn unaligned7(&mut self, _: Vec<f32>) -> Result<()> {
         unreachable!()
     }
-    fn unaligned8(&mut self, _: Vec<f64>) {
+    fn unaligned8(&mut self, _: Vec<f64>) -> Result<()> {
         unreachable!()
     }
-    fn unaligned9(&mut self, _: Vec<String>) {
+    fn unaligned9(&mut self, _: Vec<String>) -> Result<()> {
         unreachable!()
     }
-    fn unaligned10(&mut self, _: Vec<Vec<u8>>) {
+    fn unaligned10(&mut self, _: Vec<Vec<u8>>) -> Result<()> {
         unreachable!()
     }
 }
