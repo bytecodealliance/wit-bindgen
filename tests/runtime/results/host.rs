@@ -81,6 +81,11 @@ impl imports::Imports for MyImports {
         }
     }
 
+    // Finally, another case where we can't impl Error on the error type,
+    // so we need a nested result.
+    //
+    // In this function body we show how the outer result does indeed trap
+    // execution.
     fn empty_error(&mut self, a: u32) -> anyhow::Result<Result<u32, ()>> {
         if a == 0 {
             Ok(Err(()))
