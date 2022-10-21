@@ -20,17 +20,6 @@ impl<T: std::error::Error + Send + Sync + 'static> Error<T> {
         }
     }
 
-    pub fn into_inner(self) -> anyhow::Error {
-        self.err
-    }
-
-    pub fn context<C>(self, context: C) -> Error<T>
-    where
-        C: std::fmt::Display + Send + Sync + 'static,
-    {
-        self.err.context(context).into()
-    }
-
     pub fn downcast(self) -> std::result::Result<T, anyhow::Error> {
         self.err.downcast::<T>()
     }
@@ -41,6 +30,26 @@ impl<T: std::error::Error + Send + Sync + 'static> Error<T> {
 
     pub fn downcast_mut(&mut self) -> Option<&mut T> {
         self.err.downcast_mut::<T>()
+    }
+}
+
+impl<T> Error<T> {
+    pub fn trap(err: impl std::error::Error + Send + Sync + 'static) -> Error<T> {
+        Error {
+            err: anyhow::Error::from(err),
+            ty: std::marker::PhantomData,
+        }
+    }
+
+    pub fn into_inner(self) -> anyhow::Error {
+        self.err
+    }
+
+    pub fn context<C>(self, context: C) -> Error<T>
+    where
+        C: std::fmt::Display + Send + Sync + 'static,
+    {
+        self.err.context(context).into()
     }
 }
 
