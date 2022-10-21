@@ -46,28 +46,11 @@ struct Func {
     src: Source,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     no_helpers: bool,
-    #[cfg_attr(feature = "clap", arg(long, short))]
-    self_contained_header: bool,
-    #[cfg_attr(feature = "clap", arg(long))]
-    no_c: bool,
-    #[cfg_attr(feature = "clap", arg(long))]
-    no_boilerplate: bool,
-}
-
-impl Default for Opts {
-    fn default() -> Opts {
-        Opts {
-            no_helpers: false,
-            self_contained_header: false,
-            no_c: false,
-            no_boilerplate: true,
-        }
-    }
 }
 
 impl Opts {
@@ -1068,9 +1051,9 @@ impl Generator for C {
         // Print the public facing signature into the header, and since that's
         // what we are defining also print it into the C file.
         let c_sig = self.print_sig(iface, func);
-        self.src.adapter_fns("\n");
-        self.src.adapter_fns(&c_sig.sig);
-        self.src.adapter_fns(" {\n");
+        self.src.c_adapters("\n");
+        self.src.c_adapters(&c_sig.sig);
+        self.src.c_adapters(" {\n");
 
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         for (pointer, param) in f.sig.params.iter() {
@@ -1094,8 +1077,8 @@ impl Generator for C {
 
         let FunctionBindgen { src, .. } = f;
 
-        self.src.adapter_fns(&String::from(src));
-        self.src.adapter_fns("}\n");
+        self.src.c_adapters(&String::from(src));
+        self.src.c_adapters("}\n");
 
         let src = mem::replace(&mut self.src, prev);
         self.funcs
@@ -1118,24 +1101,10 @@ impl Generator for C {
         // it's what we'll be calling.
         let c_sig = self.print_sig(iface, func);
 
-        // Generate boilerplate C function code
-        if !self.opts.no_boilerplate {
-            self.src.c_fns("\n");
-            self.src.c_fns(&c_sig.sig);
-            self.src.c_fns(" ");
-            self.src.c_fns(
-                "\
-                {
-                    // ...
-                }
-            ",
-            );
-        }
-
         // Generate, in the C source file, the raw wasm signature that has the
         // canonical ABI.
         uwriteln!(
-            self.src.adapter_fns,
+            self.src.c_adapters,
             "\n__attribute__((export_name(\"{}\")))",
             func.name
         );
@@ -1147,25 +1116,25 @@ impl Generator for C {
 
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         match sig.results.len() {
-            0 => f.gen.src.adapter_fns("void"),
-            1 => f.gen.src.adapter_fns(wasm_type(sig.results[0])),
+            0 => f.gen.src.c_adapters("void"),
+            1 => f.gen.src.c_adapters(wasm_type(sig.results[0])),
             _ => unimplemented!("multi-value return not supported"),
         }
-        f.gen.src.adapter_fns(" ");
-        f.gen.src.adapter_fns(&import_name);
-        f.gen.src.adapter_fns("(");
+        f.gen.src.c_adapters(" ");
+        f.gen.src.c_adapters(&import_name);
+        f.gen.src.c_adapters("(");
         for (i, param) in sig.params.iter().enumerate() {
             if i > 0 {
-                f.gen.src.adapter_fns(", ");
+                f.gen.src.c_adapters(", ");
             }
             let name = f.locals.tmp("arg");
-            uwrite!(f.gen.src.adapter_fns, "{} {}", wasm_type(*param), name);
+            uwrite!(f.gen.src.c_adapters, "{} {}", wasm_type(*param), name);
             f.params.push(name);
         }
         if sig.params.len() == 0 {
-            f.gen.src.adapter_fns("void");
+            f.gen.src.c_adapters("void");
         }
-        f.gen.src.adapter_fns(") {\n");
+        f.gen.src.c_adapters(") {\n");
 
         // Perform all lifting/lowering and append it to our src.
         iface.call(
@@ -1175,13 +1144,13 @@ impl Generator for C {
             &mut f,
         );
         let FunctionBindgen { src, .. } = f;
-        self.src.adapter_fns(&src);
-        self.src.adapter_fns("}\n");
+        self.src.c_adapters(&src);
+        self.src.c_adapters("}\n");
 
         if iface.guest_export_needs_post_return(func) {
             uwriteln!(
                 self.src.c_fns,
-                "\n__attribute__((export_name(\"cabi_post_{}\")))",
+                "\n__attribute__((weak, export_name(\"cabi_post_{}\")))",
                 func.name
             );
             uwrite!(self.src.c_fns, "void {import_name}_post_return(");
@@ -1227,7 +1196,7 @@ impl Generator for C {
         self.src
             .c_includes(format!("#include \"{}.h\"", iface.name.to_kebab_case()));
         uwrite!(
-            self.src.adapter_fns,
+            self.src.c_adapters,
             "
                 extern void {linking_symbol}(void);
                 void {linking_symbol}_public_use_in_this_compilation_unit(void) {{
@@ -1332,7 +1301,7 @@ impl Generator for C {
         // return-area on the stack.
         if !self.in_import && self.return_pointer_area_size > 0 {
             uwrite!(
-                self.src.adapter_fns,
+                self.src.c_adapters,
                 "
                     __attribute__((aligned({})))
                     static uint8_t RET_AREA[{}];
@@ -1359,7 +1328,6 @@ impl Generator for C {
         if c_str.len() > 0 {
             c_str.push_str("\n");
         }
-        c_str.push_str(&self.src.c_fns);
 
         if self.src.h_defs.len() > 0 {
             h_str.push_str("\n// Component Definitions\n");
@@ -1379,22 +1347,18 @@ impl Generator for C {
             c_str.push_str(self.src.c_helpers.as_mut_string());
         }
 
-        if self.opts.self_contained_header {
-            h_str.push_str("\n// Component Adapters\n");
-            h_str.push_str(&self.src.adapter_fns);
-        } else {
-            c_str.push_str("\n// Component Adapters\n");
-            c_str.push_str(&self.src.adapter_fns);
-        }
+        c_str.push_str("\n// Internal Exports\n");
+        c_str.push_str(&self.src.c_fns);
+
+        c_str.push_str("\n// Component Adapters\n");
+        c_str.push_str(&self.src.c_adapters);
 
         h_str.push_str("\n#ifdef __cplusplus\n}\n#endif\n#endif\n");
 
-        if !self.opts.no_c {
-            files.push(
-                &format!("{}.c", iface.name.to_kebab_case()),
-                c_str.as_bytes(),
-            );
-        }
+        files.push(
+            &format!("{}.c", iface.name.to_kebab_case()),
+            c_str.as_bytes(),
+        );
         files.push(
             &format!("{}.h", iface.name.to_kebab_case()),
             h_str.as_bytes(),
@@ -2317,10 +2281,10 @@ enum SourceType {
     HDefs,
     HFns,
     HHelpers,
-    // AdapterFns,
-    // CIncludes
+    // CIncludes,
+    // CHelpers,
     // CFns,
-    // CHelpers
+    // CAdapters,
 }
 
 #[derive(Default)]
@@ -2328,10 +2292,10 @@ struct Source {
     h_defs: wit_bindgen_core::Source,
     h_fns: wit_bindgen_core::Source,
     h_helpers: wit_bindgen_core::Source,
-    adapter_fns: wit_bindgen_core::Source,
     c_includes: Vec<String>,
-    c_fns: wit_bindgen_core::Source,
     c_helpers: wit_bindgen_core::Source,
+    c_fns: wit_bindgen_core::Source,
+    c_adapters: wit_bindgen_core::Source,
 }
 
 impl Source {
@@ -2340,22 +2304,22 @@ impl Source {
             SourceType::HDefs => self.h_defs(s),
             SourceType::HFns => self.h_fns(s),
             SourceType::HHelpers => self.h_helpers(s),
-            // SourceType::AdapterFns => self.adapter_fns(s),
             // SourceType::CIncludes => self.c_includes(s),
-            // SourceType::CFns => self.c_fns(s),
             // SourceType::CHelpers => self.c_helpers(s),
+            // SourceType::CFns => self.c_fns(s),
+            // SourceType::CAdapters => self.c_adapters(s),
         }
     }
     fn append(&mut self, append_src: &Source) {
         self.h_defs.push_str(&append_src.h_defs);
         self.h_fns.push_str(&append_src.h_fns);
         self.h_helpers.push_str(&append_src.h_helpers);
-        self.adapter_fns.push_str(&append_src.adapter_fns);
         for i in &append_src.c_includes {
             self.c_includes(i.into());
         }
-        self.c_fns.push_str(&append_src.c_fns);
         self.c_helpers.push_str(&append_src.c_helpers);
+        self.c_fns.push_str(&append_src.c_fns);
+        self.c_adapters.push_str(&append_src.c_adapters);
     }
     fn h_defs(&mut self, s: &str) {
         self.h_defs.push_str(s);
@@ -2366,19 +2330,19 @@ impl Source {
     fn h_helpers(&mut self, s: &str) {
         self.h_helpers.push_str(s);
     }
-    fn adapter_fns(&mut self, s: &str) {
-        self.adapter_fns.push_str(s);
-    }
     fn c_includes(&mut self, s: String) {
         if !self.c_includes.contains(&s) {
             self.c_includes.push(s);
         }
     }
+    fn c_helpers(&mut self, s: &str) {
+        self.c_helpers.push_str(s);
+    }
     fn c_fns(&mut self, s: &str) {
         self.c_fns.push_str(s);
     }
-    fn c_helpers(&mut self, s: &str) {
-        self.c_helpers.push_str(s);
+    fn c_adapters(&mut self, s: &str) {
+        self.c_adapters.push_str(s);
     }
 }
 
