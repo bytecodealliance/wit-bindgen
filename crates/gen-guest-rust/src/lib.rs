@@ -32,11 +32,6 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     pub unchecked: bool,
 
-    /// A prefix to prepend to all exported symbols. Note that this is only
-    /// intended for testing because it breaks the general form of the ABI.
-    #[cfg_attr(feature = "clap", arg(skip))]
-    pub symbol_namespace: String,
-
     /// If true, code generation should avoid any features that depend on `std`.
     #[cfg_attr(feature = "clap", arg(long))]
     pub no_std: bool,
@@ -306,7 +301,7 @@ impl InterfaceGenerator<'_> {
         let trait_bound = module_name.to_upper_camel_case();
         let iface_snake = self.iface.name.to_snake_case();
         let name_snake = func.name.to_snake_case();
-        let name = format!("{}{}", self.gen.opts.symbol_namespace, func.name);
+        let export_name = &func.name;
         let mut macro_src = Source::default();
 
         // Generate, simultaneously, the actual lifting/lowering function within
@@ -327,7 +322,7 @@ impl InterfaceGenerator<'_> {
         uwrite!(
             macro_src,
             "
-                #[export_name = \"{name}\"]
+                #[export_name = \"{export_name}\"]
                 unsafe extern \"C\" fn export_{iface_snake}_{name_snake}(\
             ",
         );
@@ -391,11 +386,9 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 macro_src,
                 "
-                    #[export_name = \"{}cabi_post_{}\"]
+                    #[export_name = \"cabi_post_{export_name}\"]
                     pub unsafe extern \"C\" fn post_return_{iface_snake}_{name_snake}(\
-                ",
-                self.gen.opts.symbol_namespace,
-                func.name,
+                "
             );
             let mut params = Vec::new();
             for (i, result) in sig.results.iter().enumerate() {
