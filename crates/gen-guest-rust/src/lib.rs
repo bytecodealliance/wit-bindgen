@@ -306,13 +306,7 @@ impl InterfaceGenerator<'_> {
         let trait_bound = module_name.to_upper_camel_case();
         let iface_snake = self.iface.name.to_snake_case();
         let name_snake = func.name.to_snake_case();
-        let name = match &self.iface.module {
-            Some(module) => {
-                format!("{module}#{}", func.name)
-            }
-            None => format!("{}{}", self.gen.opts.symbol_namespace, func.name),
-        };
-
+        let name = format!("{}{}", self.gen.opts.symbol_namespace, func.name);
         let mut macro_src = Source::default();
 
         // Generate, simultaneously, the actual lifting/lowering function within
@@ -620,18 +614,16 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         params: &[WasmType],
         results: &[WasmType],
     ) -> String {
-        let module = iface.module.as_deref().unwrap_or(&iface.name);
-
         // Define the actual function we're calling inline
         self.push_str("#[link(wasm_import_module = \"");
-        self.push_str(module);
+        self.push_str(&iface.name);
         self.push_str("\")]\n");
         self.push_str("extern \"C\" {\n");
         self.push_str("#[cfg_attr(target_arch = \"wasm32\", link_name = \"");
         self.push_str(name);
         self.push_str("\")]\n");
         self.push_str("#[cfg_attr(not(target_arch = \"wasm32\"), link_name = \"");
-        self.push_str(module);
+        self.push_str(&iface.name);
         self.push_str("_");
         self.push_str(name);
         self.push_str("\")]\n");
