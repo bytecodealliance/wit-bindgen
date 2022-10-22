@@ -501,7 +501,6 @@ impl Js {
                 }
             "),
 
-
             Intrinsic::ThrowInvalidBool => self.src.js("
                 function throw_invalid_bool() {
                     throw new RangeError(\"invalid variant discriminant for bool\");
