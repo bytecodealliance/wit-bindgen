@@ -93,29 +93,29 @@ enum Intrinsic {
 impl Intrinsic {
     fn name(&self) -> &'static str {
         match self {
-            Intrinsic::ClampGuest => "clamp_guest",
-            Intrinsic::DataView => "data_view",
-            Intrinsic::ValidateGuestChar => "validate_guest_char",
-            Intrinsic::ValidateHostChar => "validate_host_char",
-            Intrinsic::ToInt32 => "to_int32",
-            Intrinsic::ToUint32 => "to_uint32",
-            Intrinsic::ToInt16 => "to_int16",
-            Intrinsic::ToUint16 => "to_uint16",
-            Intrinsic::ToInt8 => "to_int8",
-            Intrinsic::ToUint8 => "to_uint8",
-            Intrinsic::ToBigInt64 => "to_int64",
-            Intrinsic::ToBigUint64 => "to_uint64",
-            Intrinsic::ToString => "to_string",
+            Intrinsic::ClampGuest => "clampGuest",
+            Intrinsic::DataView => "dataView",
+            Intrinsic::ValidateGuestChar => "validateGuestChar",
+            Intrinsic::ValidateHostChar => "validateHostChar",
+            Intrinsic::ToInt32 => "toInt32",
+            Intrinsic::ToUint32 => "toUint32",
+            Intrinsic::ToInt16 => "toInt16",
+            Intrinsic::ToUint16 => "toUint16",
+            Intrinsic::ToInt8 => "toInt8",
+            Intrinsic::ToUint8 => "toUint8",
+            Intrinsic::ToBigInt64 => "toInt64",
+            Intrinsic::ToBigUint64 => "toUint64",
+            Intrinsic::ToString => "toString",
             Intrinsic::F32ToI32 => "f32ToI32",
             Intrinsic::I32ToF32 => "i32ToF32",
             Intrinsic::F64ToI64 => "f64ToI64",
             Intrinsic::I64ToF64 => "i64ToF64",
-            Intrinsic::Utf8Decoder => "utf8_decoder",
-            Intrinsic::Utf16Decoder => "utf16_decoder",
-            Intrinsic::Utf8Encode => "utf8_encode",
-            Intrinsic::Utf16Encode => "utf16_encode",
-            Intrinsic::Utf8EncodedLen => "utf8_encoded_len",
-            Intrinsic::ThrowInvalidBool => "throw_invalid_bool",
+            Intrinsic::Utf8Decoder => "utf8Decoder",
+            Intrinsic::Utf16Decoder => "utf16Decoder",
+            Intrinsic::Utf8Encode => "utf8Encode",
+            Intrinsic::Utf16Encode => "utf16Encode",
+            Intrinsic::Utf8EncodedLen => "utf8EncodedLen",
+            Intrinsic::ThrowInvalidBool => "throwInvalidBool",
         }
     }
 }
@@ -297,22 +297,22 @@ impl Js {
             || (i == Intrinsic::F32ToI32 && !self.all_intrinsics.contains(&Intrinsic::I32ToF32))
         {
             self.src.js("
-                const I32_TO_F32_I = new Int32Array(1);
-                const I32_TO_F32_F = new Float32Array(I32_TO_F32_I.buffer);
+                const i32ToF32I = new Int32Array(1);
+                const i32ToF32F = new Float32Array(i32ToF32I.buffer);
             ");
         }
         if (i == Intrinsic::I64ToF64 && !self.all_intrinsics.contains(&Intrinsic::F64ToI64))
             || (i == Intrinsic::F64ToI64 && !self.all_intrinsics.contains(&Intrinsic::I64ToF64))
         {
             self.src.js("
-                const I64_TO_F64_I = new BigInt64Array(1);
-                const I64_TO_F64_F = new Float64Array(I64_TO_F64_I.buffer);
+                const i64ToF64I = new BigInt64Array(1);
+                const i64ToF64F = new Float64Array(i64ToF64I.buffer);
             ");
         }
 
         match i {
             Intrinsic::ClampGuest => self.src.js("
-                function clamp_guest(i, min, max) {
+                function clampGuest(i, min, max) {
                     if (i < min || i > max) \
                         throw new RangeError(`must be between ${min} and ${max}`);
                     return i;
@@ -321,11 +321,11 @@ impl Js {
 
             Intrinsic::DataView => self.src.js("
                 let dv = new DataView(new ArrayBuffer());
-                const data_view = mem => dv.buffer === mem.buffer ? dv : dv = new DataView(mem.buffer);
+                const dataView = mem => dv.buffer === mem.buffer ? dv : dv = new DataView(mem.buffer);
             "),
 
             Intrinsic::ValidateGuestChar => self.src.js("
-                function validate_guest_char(i) {
+                function validateGuestChar(i) {
                     if ((i > 0x10ffff) || (i >= 0xd800 && i <= 0xdfff)) \
                         throw new RangeError(`not a valid char`);
                     return String.fromCodePoint(i);
@@ -336,7 +336,7 @@ impl Js {
             // but it probably doesn't do the right thing for unicode or invalid
             // utf16 strings either.
             Intrinsic::ValidateHostChar => self.src.js("
-                function validate_host_char(s) {
+                function validateHostChar(s) {
                     if (typeof s !== 'string') \
                         throw new TypeError(`must be a string`);
                     return s.codePointAt(0);
@@ -345,18 +345,18 @@ impl Js {
 
 
             Intrinsic::ToInt32 => self.src.js("
-                function to_int32(val) {
+                function toInt32(val) {
                     return val >> 0;
                 }
             "),
             Intrinsic::ToUint32 => self.src.js("
-                function to_uint32(val) {
+                function toUint32(val) {
                     return val >>> 0;
                 }
             "),
 
             Intrinsic::ToInt16 => self.src.js("
-                function to_int16(val) {
+                function toInt16(val) {
                     val >>>= 0;
                     val %= 2 ** 16;
                     if (val >= 2 ** 15) {
@@ -366,14 +366,14 @@ impl Js {
                 }
             "),
             Intrinsic::ToUint16 => self.src.js("
-                function to_uint16(val) {
+                function toUint16(val) {
                     val >>>= 0;
                     val %= 2 ** 16;
                     return val;
                 }
             "),
             Intrinsic::ToInt8 => self.src.js("
-                function to_int8(val) {
+                function toInt8(val) {
                     val >>>= 0;
                     val %= 2 ** 8;
                     if (val >= 2 ** 7) {
@@ -383,7 +383,7 @@ impl Js {
                 }
             "),
             Intrinsic::ToUint8 => self.src.js("
-                function to_uint8(val) {
+                function toUint8(val) {
                     val >>>= 0;
                     val %= 2 ** 8;
                     return val;
@@ -391,18 +391,18 @@ impl Js {
             "),
 
             Intrinsic::ToBigInt64 => self.src.js("
-                function to_int64(val) {
+                function toInt64(val) {
                     return BigInt.asIntN(64, val);
                 }
             "),
             Intrinsic::ToBigUint64 => self.src.js("
-                function to_uint64(val) {
+                function toUint64(val) {
                     return BigInt.asUintN(64, val);
                 }
             "),
 
             Intrinsic::ToString => self.src.js("
-                function to_string(val) {
+                function toString(val) {
                     if (typeof val === 'symbol') {
                         throw new TypeError('symbols cannot be converted to strings');
                     } else {
@@ -417,67 +417,67 @@ impl Js {
 
             Intrinsic::I32ToF32 => self.src.js("
                 function i32ToF32(i) {
-                    I32_TO_F32_I[0] = i;
-                    return I32_TO_F32_F[0];
+                    i32ToF32I[0] = i;
+                    return i32ToF32F[0];
                 }
             "),
             Intrinsic::F32ToI32 => self.src.js("
                 function f32ToI32(f) {
-                    I32_TO_F32_F[0] = f;
-                    return I32_TO_F32_I[0];
+                    i32ToF32F[0] = f;
+                    return i32ToF32I[0];
                 }
             "),
             Intrinsic::I64ToF64 => self.src.js("
                 function i64ToF64(i) {
-                    I64_TO_F64_I[0] = i;
-                    return I64_TO_F64_F[0];
+                    i64ToF64I[0] = i;
+                    return i64ToF64F[0];
                 }
             "),
             Intrinsic::F64ToI64 => self.src.js("
                 function f64ToI64(f) {
-                    I64_TO_F64_F[0] = f;
-                    return I64_TO_F64_I[0];
+                    i64ToF64F[0] = f;
+                    return i64ToF64I[0];
                 }
             "),
 
             Intrinsic::Utf8Decoder => self
                 .src
-                .js("const utf8_decoder = new TextDecoder('utf-8');\n"),
+                .js("const utf8Decoder = new TextDecoder('utf-8');\n"),
 
             Intrinsic::Utf16Decoder => self
                 .src
-                .js("const utf16_decoder = new TextDecoder('utf-16');\n"),
+                .js("const utf16Decoder = new TextDecoder('utf-16');\n"),
 
-            Intrinsic::Utf8EncodedLen => self.src.js("let utf8_encoded_len = 0;\n"),
+            Intrinsic::Utf8EncodedLen => self.src.js("let utf8EncodedLen = 0;\n"),
 
             Intrinsic::Utf8Encode => self.src.js("
-                const utf8_encoder = new TextEncoder('utf-8');
+                const utf8Encoder = new TextEncoder('utf-8');
 
-                function utf8_encode(s, realloc, memory) {
+                function utf8Encode(s, realloc, memory) {
                     if (typeof s !== 'string') \
                         throw new TypeError('expected a string');
 
                     if (s.length === 0) {
-                        utf8_encoded_len = 0;
+                        utf8EncodedLen = 0;
                         return 1;
                     }
 
-                    let alloc_len = 0;
+                    let allocLen = 0;
                     let ptr = 0;
                     let writtenTotal = 0;
                     while (s.length > 0) {
-                        ptr = realloc(ptr, alloc_len, 1, alloc_len + s.length);
-                        alloc_len += s.length;
-                        const { read, written } = utf8_encoder.encodeInto(
+                        ptr = realloc(ptr, allocLen, 1, allocLen + s.length);
+                        allocLen += s.length;
+                        const { read, written } = utf8Encoder.encodeInto(
                             s,
-                            new Uint8Array(memory.buffer, ptr + writtenTotal, alloc_len - writtenTotal),
+                            new Uint8Array(memory.buffer, ptr + writtenTotal, allocLen - writtenTotal),
                         );
                         writtenTotal += written;
                         s = s.slice(read);
                     }
-                    if (alloc_len > writtenTotal)
-                        ptr = realloc(ptr, alloc_len, 1, writtenTotal);
-                    utf8_encoded_len = writtenTotal;
+                    if (allocLen > writtenTotal)
+                        ptr = realloc(ptr, allocLen, 1, writtenTotal);
+                    utf8EncodedLen = writtenTotal;
                     return ptr;
                 }
             "),
@@ -485,9 +485,8 @@ impl Js {
             Intrinsic::Utf16Encode => self.src.js("
                 const isLE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 
-                function utf16_encode (str, realloc, memory) {
-                    const len = str.length, ptr = realloc(0, 0, 1, len);
-                    const out = new Uint16Array(memory.buffer, ptr, len);
+                function utf16Encode (str, realloc, memory) {
+                    const len = str.length, ptr = realloc(0, 0, 1, len), out = new Uint16Array(memory.buffer, ptr, len);
                     let i = 0;
                     if (isLE) {
                         while (i < len) out[i] = str.charCodeAt(i++);
@@ -502,7 +501,7 @@ impl Js {
             "),
 
             Intrinsic::ThrowInvalidBool => self.src.js("
-                function throw_invalid_bool() {
+                function throwInvalidBool() {
                     throw new RangeError(\"invalid variant discriminant for bool\");
                 }
             "),
