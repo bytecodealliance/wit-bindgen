@@ -83,7 +83,9 @@ enum Intrinsic {
     I64ToF64,
     F64ToI64,
     Utf8Decoder,
+    Utf16Decoder,
     Utf8Encode,
+    Utf16Encode,
     Utf8EncodedLen,
     ThrowInvalidBool,
 }
@@ -108,9 +110,11 @@ impl Intrinsic {
             Intrinsic::I32ToF32 => "i32ToF32",
             Intrinsic::F64ToI64 => "f64ToI64",
             Intrinsic::I64ToF64 => "i64ToF64",
-            Intrinsic::Utf8Decoder => "UTF8_DECODER",
+            Intrinsic::Utf8Decoder => "utf8_decoder",
+            Intrinsic::Utf16Decoder => "utf16_decoder",
             Intrinsic::Utf8Encode => "utf8_encode",
-            Intrinsic::Utf8EncodedLen => "UTF8_ENCODED_LEN",
+            Intrinsic::Utf16Encode => "utf16_encode",
+            Intrinsic::Utf8EncodedLen => "utf8_encoded_len",
             Intrinsic::ThrowInvalidBool => "throw_invalid_bool",
         }
     }
@@ -316,13 +320,8 @@ impl Js {
             "),
 
             Intrinsic::DataView => self.src.js("
-                let DATA_VIEW = new DataView(new ArrayBuffer());
-
-                function data_view(mem) {
-                    if (DATA_VIEW.buffer !== mem.buffer) \
-                        DATA_VIEW = new DataView(mem.buffer);
-                    return DATA_VIEW;
-                }
+                let dv = new DataView(new ArrayBuffer());
+                const data_view = mem => dv.buffer === mem.buffer ? dv : dv = new DataView(mem.buffer);
             "),
 
             Intrinsic::ValidateGuestChar => self.src.js("
@@ -443,19 +442,23 @@ impl Js {
 
             Intrinsic::Utf8Decoder => self
                 .src
-                .js("const UTF8_DECODER = new TextDecoder('utf-8');\n"),
+                .js("const utf8_decoder = new TextDecoder('utf-8');\n"),
 
-            Intrinsic::Utf8EncodedLen => self.src.js("let UTF8_ENCODED_LEN = 0;\n"),
+            Intrinsic::Utf16Decoder => self
+                .src
+                .js("const utf16_decoder = new TextDecoder('utf-16');\n"),
+
+            Intrinsic::Utf8EncodedLen => self.src.js("let utf8_encoded_len = 0;\n"),
 
             Intrinsic::Utf8Encode => self.src.js("
-                const UTF8_ENCODER = new TextEncoder('utf-8');
+                const utf8_encoder = new TextEncoder('utf-8');
 
                 function utf8_encode(s, realloc, memory) {
                     if (typeof s !== 'string') \
                         throw new TypeError('expected a string');
 
                     if (s.length === 0) {
-                        UTF8_ENCODED_LEN = 0;
+                        utf8_encoded_len = 0;
                         return 1;
                     }
 
@@ -465,7 +468,7 @@ impl Js {
                     while (s.length > 0) {
                         ptr = realloc(ptr, alloc_len, 1, alloc_len + s.length);
                         alloc_len += s.length;
-                        const { read, written } = UTF8_ENCODER.encodeInto(
+                        const { read, written } = utf8_encoder.encodeInto(
                             s,
                             new Uint8Array(memory.buffer, ptr + writtenTotal, alloc_len - writtenTotal),
                         );
@@ -474,10 +477,30 @@ impl Js {
                     }
                     if (alloc_len > writtenTotal)
                         ptr = realloc(ptr, alloc_len, 1, writtenTotal);
-                    UTF8_ENCODED_LEN = writtenTotal;
+                    utf8_encoded_len = writtenTotal;
                     return ptr;
                 }
             "),
+
+            Intrinsic::Utf16Encode => self.src.js("
+                const isLE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+
+                function utf16_encode (str, realloc, memory) {
+                    const len = str.length, ptr = realloc(0, 0, 1, len);
+                    const out = new Uint16Array(memory.buffer, ptr, len);
+                    let i = 0;
+                    if (isLE) {
+                        while (i < len) out[i] = str.charCodeAt(i++);
+                    } else {
+                        while (i < len) {
+                            const ch = str.charCodeAt(i);
+                            out[i++] = (ch & 0xff) << 8 | ch >>> 8;
+                        }
+                    }
+                    return ptr;
+                }
+            "),
+
 
             Intrinsic::ThrowInvalidBool => self.src.js("
                 function throw_invalid_bool() {
@@ -713,12 +736,11 @@ impl Instantiator<'_> {
         func: &Function,
         abi: AbiVariant,
     ) {
-        // Technically it wouldn't be the hardest thing in the world to support
-        // other string encodings, but for now the code generator was originally
-        // written to support utf-8 so let's just leave it at that for now. In
-        // the future when it's easier to produce components with non-utf-8 this
-        // can be plumbed through to string lifting/lowering below.
-        assert_eq!(opts.string_encoding, StringEncoding::Utf8);
+        // Only Utf8 and Utf16 supported for now
+        assert!(matches!(
+            opts.string_encoding,
+            StringEncoding::Utf8 | StringEncoding::Utf16
+        ));
 
         let memory = match opts.memory {
             Some(idx) => Some(format!("memory{}", idx.as_u32())),
@@ -758,6 +780,7 @@ impl Instantiator<'_> {
             tmp: 0,
             params,
             post_return,
+            utf16: opts.string_encoding == StringEncoding::Utf16,
             src: Source::default(),
         };
         iface.call(
@@ -1217,6 +1240,7 @@ struct FunctionBindgen<'a> {
     memory: Option<String>,
     realloc: Option<String>,
     post_return: Option<String>,
+    utf16: bool,
     callee: String,
 }
 
@@ -2043,14 +2067,22 @@ impl Bindgen for FunctionBindgen<'_> {
                 let memory = self.memory.as_ref().unwrap();
                 let realloc = self.realloc.as_ref().unwrap();
 
-                let encode = self.gen.intrinsic(Intrinsic::Utf8Encode);
+                let encode = self.gen.intrinsic(if self.utf16 {
+                    Intrinsic::Utf16Encode
+                } else {
+                    Intrinsic::Utf8Encode
+                });
                 uwriteln!(
                     self.src.js,
                     "const ptr{tmp} = {encode}({}, {realloc}, {memory});",
                     operands[0],
                 );
-                let encoded_len = self.gen.intrinsic(Intrinsic::Utf8EncodedLen);
-                uwriteln!(self.src.js, "const len{tmp} = {encoded_len};");
+                if !self.utf16 {
+                    let encoded_len = self.gen.intrinsic(Intrinsic::Utf8EncodedLen);
+                    uwriteln!(self.src.js, "const len{tmp} = {encoded_len};");
+                } else {
+                    uwriteln!(self.src.js, "const len{tmp} = {}.length;", operands[0]);
+                }
                 results.push(format!("ptr{}", tmp));
                 results.push(format!("len{}", tmp));
             }
@@ -2059,10 +2091,15 @@ impl Bindgen for FunctionBindgen<'_> {
                 let memory = self.memory.as_ref().unwrap();
                 uwriteln!(self.src.js, "const ptr{tmp} = {};", operands[0]);
                 uwriteln!(self.src.js, "const len{tmp} = {};", operands[1]);
-                let decoder = self.gen.intrinsic(Intrinsic::Utf8Decoder);
+                let decoder = self.gen.intrinsic(if self.utf16 {
+                    Intrinsic::Utf16Decoder
+                } else {
+                    Intrinsic::Utf8Decoder
+                });
                 uwriteln!(
                     self.src.js,
-                    "const result{tmp} = {decoder}.decode(new Uint8Array({memory}.buffer, ptr{tmp}, len{tmp}));",
+                    "const result{tmp} = {decoder}.decode(new Uint{}Array({memory}.buffer, ptr{tmp}, len{tmp}));",
+                    if self.utf16 { "16" } else { "8" }
                 );
                 results.push(format!("result{tmp}"));
             }
