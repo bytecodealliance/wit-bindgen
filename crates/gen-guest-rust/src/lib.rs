@@ -153,8 +153,19 @@ impl WorldGenerator for RustWasm {
                 self.src,
                 "
                         }};
+
+                        #[used]
+                        #[doc(hidden)]
+                        #[cfg(target_arch = \"wasm32\")]
+                        static __FORCE_SECTION_REF: fn() = __force_section_ref;
+                        #[doc(hidden)]
+                        #[cfg(target_arch = \"wasm32\")]
+                        fn __force_section_ref() {{
+                            {prefix}__link_section()
+                        }}
                     }});
-                "
+                ",
+                prefix = self.opts.macro_call_prefix.as_deref().unwrap_or("")
             );
         }
 
@@ -184,6 +195,15 @@ impl WorldGenerator for RustWasm {
             component_type.len()
         ));
         self.src.push_str(&format!("{:?};\n", component_type));
+
+        self.src.push_str(
+            "
+            #[inline(never)]
+            #[doc(hidden)]
+            #[cfg(target_arch = \"wasm32\")]
+            pub fn __link_section() {}
+        ",
+        );
 
         let mut src = mem::take(&mut self.src);
         if self.opts.rustfmt {
@@ -340,8 +360,9 @@ impl InterfaceGenerator<'_> {
         uwrite!(
             macro_src,
             "
+                #[doc(hidden)]
                 #[export_name = \"{export_name}\"]
-                unsafe extern \"C\" fn export_{iface_snake}_{name_snake}(\
+                unsafe extern \"C\" fn __export_{iface_snake}_{name_snake}(\
             ",
         );
 
@@ -408,8 +429,9 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 macro_src,
                 "
+                    #[doc(hidden)]
                     #[export_name = \"cabi_post_{export_name}\"]
-                    pub unsafe extern \"C\" fn post_return_{iface_snake}_{name_snake}(\
+                    unsafe extern \"C\" fn __post_return_{iface_snake}_{name_snake}(\
                 "
             );
             let mut params = Vec::new();
