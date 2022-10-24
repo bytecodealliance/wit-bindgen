@@ -100,10 +100,11 @@ impl testwasi::Testwasi for TestWasi {
         Ok(())
     }
 
-    fn log_err(&mut self, bytes: Vec<u8>) {
+    fn log_err(&mut self, bytes: Vec<u8>) -> Result<()> {
         match std::str::from_utf8(&bytes) {
             Ok(s) => eprint!("{}", s),
             Err(_) => eprintln!("\nbinary: {:?}", bytes),
         }
+        Ok(())
     }
 }
