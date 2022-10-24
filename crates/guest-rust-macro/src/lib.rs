@@ -1,5 +1,8 @@
 use proc_macro::TokenStream;
-use syn::parse::{Parse, ParseStream, Result};
+use syn::{
+    parse::{Parse, ParseStream, Result},
+    LitStr, Token,
+};
 use wit_bindgen_gen_guest_rust::Opts;
 
 #[proc_macro]
@@ -11,12 +14,14 @@ mod kw {
     syn::custom_keyword!(unchecked);
     syn::custom_keyword!(no_std);
     syn::custom_keyword!(raw_strings);
+    syn::custom_keyword!(macro_call_prefix);
 }
 
 enum Opt {
     Unchecked,
     NoStd,
     RawStrings,
+    MacroCallPrefix(LitStr),
 }
 
 impl Parse for Opt {
@@ -31,6 +36,10 @@ impl Parse for Opt {
         } else if l.peek(kw::raw_strings) {
             input.parse::<kw::raw_strings>()?;
             Ok(Opt::RawStrings)
+        } else if l.peek(kw::macro_call_prefix) {
+            input.parse::<kw::macro_call_prefix>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::MacroCallPrefix(input.parse()?))
         } else {
             Err(l.error())
         }
@@ -43,6 +52,7 @@ impl wit_bindgen_rust_macro_shared::Configure<Opts> for Opt {
             Opt::Unchecked => opts.unchecked = true,
             Opt::NoStd => opts.no_std = true,
             Opt::RawStrings => opts.raw_strings = true,
+            Opt::MacroCallPrefix(prefix) => opts.macro_call_prefix = Some(prefix.value()),
         }
     }
 }

@@ -47,6 +47,14 @@ pub struct Opts {
     /// validation if it doesn't already have a `&str`.
     #[cfg_attr(feature = "clap", arg(long))]
     pub raw_strings: bool,
+
+    /// The prefix to use when calling functions from within the generated
+    /// `export!` macro.
+    ///
+    /// This enables the generated `export!` macro to reference code from
+    /// another mod/crate.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub macro_call_prefix: Option<String>,
 }
 
 impl Opts {
@@ -351,7 +359,11 @@ impl InterfaceGenerator<'_> {
 
         // Finish out the macro-generated export implementation.
         macro_src.push_str(" {\n");
-        uwrite!(macro_src, "{module_name}::call_{name_snake}::<$t>(");
+        uwrite!(
+            macro_src,
+            "{prefix}{module_name}::call_{name_snake}::<$t>(",
+            prefix = self.gen.opts.macro_call_prefix.as_deref().unwrap_or("")
+        );
         for param in params.iter() {
             uwrite!(macro_src, "{param},");
         }
@@ -401,7 +413,11 @@ impl InterfaceGenerator<'_> {
             macro_src.push_str(") {\n");
 
             // Finish out the macro here
-            uwrite!(macro_src, "{module_name}::post_return_{name_snake}::<$t>(");
+            uwrite!(
+                macro_src,
+                "{prefix}{module_name}::post_return_{name_snake}::<$t>(",
+                prefix = self.gen.opts.macro_call_prefix.as_deref().unwrap_or("")
+            );
             for param in params.iter() {
                 uwrite!(macro_src, "{param},");
             }
