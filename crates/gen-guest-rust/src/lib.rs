@@ -47,6 +47,21 @@ pub struct Opts {
     /// validation if it doesn't already have a `&str`.
     #[cfg_attr(feature = "clap", arg(long))]
     pub raw_strings: bool,
+
+    /// The prefix to use when calling functions from within the generated
+    /// `export!` macro.
+    ///
+    /// This enables the generated `export!` macro to reference code from
+    /// another mod/crate.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub macro_call_prefix: Option<String>,
+
+    /// The name of the generated `export!` macro to use.
+    ///
+    /// If `None`, the name is derived from the name of the world in the
+    /// format `export_{world_name}!`.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub export_macro_name: Option<String>,
 }
 
 impl Opts {
@@ -111,7 +126,11 @@ impl WorldGenerator for RustWasm {
 
     fn finish(&mut self, name: &str, interfaces: &ComponentInterfaces, files: &mut Files) {
         if !self.exports.is_empty() {
-            let snake = name.to_snake_case();
+            let macro_name = if let Some(name) = self.opts.export_macro_name.as_ref() {
+                name.to_snake_case()
+            } else {
+                format!("export_{}", name.to_snake_case())
+            };
             let macro_export = if self.opts.macro_export {
                 "#[macro_export]"
             } else {
@@ -123,9 +142,8 @@ impl WorldGenerator for RustWasm {
                     /// Declares the export of the component's world for the
                     /// given type.
                     {macro_export}
-                    macro_rules! export_{snake}(($t:ident) => {{
+                    macro_rules! {macro_name}(($t:ident) => {{
                         const _: () = {{
-
                 "
             );
             for src in self.exports.iter() {
@@ -135,12 +153,23 @@ impl WorldGenerator for RustWasm {
                 self.src,
                 "
                         }};
+
+                        #[used]
+                        #[doc(hidden)]
+                        #[cfg(target_arch = \"wasm32\")]
+                        static __FORCE_SECTION_REF: fn() = __force_section_ref;
+                        #[doc(hidden)]
+                        #[cfg(target_arch = \"wasm32\")]
+                        fn __force_section_ref() {{
+                            {prefix}__link_section()
+                        }}
                     }});
-                "
+                ",
+                prefix = self.opts.macro_call_prefix.as_deref().unwrap_or("")
             );
         }
 
-        self.src.push_str("#[cfg(target_arch = \"wasm32\")]\n");
+        self.src.push_str("\n#[cfg(target_arch = \"wasm32\")]\n");
 
         // The custom section name here must start with "component-type" but
         // otherwise is attempted to be unique here to ensure that this doesn't get
@@ -166,6 +195,15 @@ impl WorldGenerator for RustWasm {
             component_type.len()
         ));
         self.src.push_str(&format!("{:?};\n", component_type));
+
+        self.src.push_str(
+            "
+            #[inline(never)]
+            #[doc(hidden)]
+            #[cfg(target_arch = \"wasm32\")]
+            pub fn __link_section() {}
+        ",
+        );
 
         let mut src = mem::take(&mut self.src);
         if self.opts.rustfmt {
@@ -322,8 +360,9 @@ impl InterfaceGenerator<'_> {
         uwrite!(
             macro_src,
             "
+                #[doc(hidden)]
                 #[export_name = \"{export_name}\"]
-                unsafe extern \"C\" fn export_{iface_snake}_{name_snake}(\
+                unsafe extern \"C\" fn __export_{iface_snake}_{name_snake}(\
             ",
         );
 
@@ -351,7 +390,11 @@ impl InterfaceGenerator<'_> {
 
         // Finish out the macro-generated export implementation.
         macro_src.push_str(" {\n");
-        uwrite!(macro_src, "{module_name}::call_{name_snake}::<$t>(");
+        uwrite!(
+            macro_src,
+            "{prefix}{module_name}::call_{name_snake}::<$t>(",
+            prefix = self.gen.opts.macro_call_prefix.as_deref().unwrap_or("")
+        );
         for param in params.iter() {
             uwrite!(macro_src, "{param},");
         }
@@ -386,8 +429,9 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 macro_src,
                 "
+                    #[doc(hidden)]
                     #[export_name = \"cabi_post_{export_name}\"]
-                    pub unsafe extern \"C\" fn post_return_{iface_snake}_{name_snake}(\
+                    unsafe extern \"C\" fn __post_return_{iface_snake}_{name_snake}(\
                 "
             );
             let mut params = Vec::new();
@@ -401,7 +445,11 @@ impl InterfaceGenerator<'_> {
             macro_src.push_str(") {\n");
 
             // Finish out the macro here
-            uwrite!(macro_src, "{module_name}::post_return_{name_snake}::<$t>(");
+            uwrite!(
+                macro_src,
+                "{prefix}{module_name}::post_return_{name_snake}::<$t>(",
+                prefix = self.gen.opts.macro_call_prefix.as_deref().unwrap_or("")
+            );
             for param in params.iter() {
                 uwrite!(macro_src, "{param},");
             }

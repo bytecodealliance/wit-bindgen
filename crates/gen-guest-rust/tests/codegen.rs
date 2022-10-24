@@ -120,3 +120,57 @@ mod raw_strings {
         let _t: Vec<u8> = cat::bar();
     }
 }
+
+// This is a static compilation test to ensure that
+// export bindings can go inside of another mod/crate
+// and still compile.
+mod prefix {
+    mod bindings {
+        wit_bindgen_guest_rust::generate!({
+            export_str["exports1"]: "
+                foo: func(x: string)
+                bar: func() -> string
+            ",
+            name: "baz",
+            macro_call_prefix: "bindings::"
+        });
+
+        pub(crate) use export_baz;
+    }
+
+    struct Component;
+
+    impl bindings::exports1::Exports1 for Component {
+        fn foo(x: String) {
+            println!("foo: {}", x);
+        }
+
+        fn bar() -> String {
+            "bar".to_string()
+        }
+    }
+
+    bindings::export_baz!(Component);
+}
+
+// This is a static compilation test to check that
+// the export macro name can be overridden.
+mod macro_name {
+    wit_bindgen_guest_rust::generate!({
+        export_str["exports2"]: "
+            foo: func(x: string)
+        ",
+        name: "baz",
+        export_macro_name: "jam"
+    });
+
+    struct Component;
+
+    impl exports2::Exports2 for Component {
+        fn foo(x: String) {
+            println!("foo: {}", x);
+        }
+    }
+
+    jam!(Component);
+}
