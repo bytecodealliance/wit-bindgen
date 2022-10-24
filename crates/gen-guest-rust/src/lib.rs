@@ -32,11 +32,6 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     pub unchecked: bool,
 
-    /// A prefix to prepend to all exported symbols. Note that this is only
-    /// intended for testing because it breaks the general form of the ABI.
-    #[cfg_attr(feature = "clap", arg(skip))]
-    pub symbol_namespace: String,
-
     /// If true, code generation should avoid any features that depend on `std`.
     #[cfg_attr(feature = "clap", arg(long))]
     pub no_std: bool,
@@ -106,12 +101,12 @@ impl WorldGenerator for RustWasm {
 
     fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
         self.interface(iface, TypeMode::Owned, false)
-            .generate_exports(name);
+            .generate_exports(name, false);
     }
 
     fn export_default(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
         self.interface(iface, TypeMode::Owned, false)
-            .generate_exports(name);
+            .generate_exports(name, true);
     }
 
     fn finish(&mut self, name: &str, interfaces: &ComponentInterfaces, files: &mut Files) {
@@ -214,7 +209,7 @@ struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
-    fn generate_exports(mut self, name: &str) {
+    fn generate_exports(mut self, name: &str, default_export: bool) {
         self.types();
 
         let camel = name.to_upper_camel_case();
@@ -228,7 +223,7 @@ impl InterfaceGenerator<'_> {
         uwriteln!(self.src, "}}");
 
         for func in self.iface.functions.iter() {
-            self.generate_guest_export(name, func);
+            self.generate_guest_export(name, func, default_export);
         }
 
         self.append_submodule(name);
@@ -301,18 +296,12 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn generate_guest_export(&mut self, module_name: &str, func: &Function) {
+    fn generate_guest_export(&mut self, module_name: &str, func: &Function, default_export: bool) {
         let module_name = module_name.to_snake_case();
         let trait_bound = module_name.to_upper_camel_case();
         let iface_snake = self.iface.name.to_snake_case();
         let name_snake = func.name.to_snake_case();
-        let name = match &self.iface.module {
-            Some(module) => {
-                format!("{module}#{}", func.name)
-            }
-            None => format!("{}{}", self.gen.opts.symbol_namespace, func.name),
-        };
-
+        let export_name = self.iface.core_export_name(default_export, func);
         let mut macro_src = Source::default();
 
         // Generate, simultaneously, the actual lifting/lowering function within
@@ -333,7 +322,7 @@ impl InterfaceGenerator<'_> {
         uwrite!(
             macro_src,
             "
-                #[export_name = \"{name}\"]
+                #[export_name = \"{export_name}\"]
                 unsafe extern \"C\" fn export_{iface_snake}_{name_snake}(\
             ",
         );
@@ -397,11 +386,9 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 macro_src,
                 "
-                    #[export_name = \"{}cabi_post_{}\"]
+                    #[export_name = \"cabi_post_{export_name}\"]
                     pub unsafe extern \"C\" fn post_return_{iface_snake}_{name_snake}(\
-                ",
-                self.gen.opts.symbol_namespace,
-                func.name,
+                "
             );
             let mut params = Vec::new();
             for (i, result) in sig.results.iter().enumerate() {
@@ -620,18 +607,16 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         params: &[WasmType],
         results: &[WasmType],
     ) -> String {
-        let module = iface.module.as_deref().unwrap_or(&iface.name);
-
         // Define the actual function we're calling inline
         self.push_str("#[link(wasm_import_module = \"");
-        self.push_str(module);
+        self.push_str(&iface.name);
         self.push_str("\")]\n");
         self.push_str("extern \"C\" {\n");
         self.push_str("#[cfg_attr(target_arch = \"wasm32\", link_name = \"");
         self.push_str(name);
         self.push_str("\")]\n");
         self.push_str("#[cfg_attr(not(target_arch = \"wasm32\"), link_name = \"");
-        self.push_str(module);
+        self.push_str(&iface.name);
         self.push_str("_");
         self.push_str(name);
         self.push_str("\")]\n");
