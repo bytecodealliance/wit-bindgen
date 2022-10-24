@@ -152,3 +152,25 @@ mod prefix {
 
     bindings::export_baz!(Component);
 }
+
+// This is a static compilation test to check that
+// the export macro name can be overridden.
+mod macro_name {
+    wit_bindgen_guest_rust::generate!({
+        export_str["exports2"]: "
+            foo: func(x: string)
+        ",
+        name: "baz",
+        export_macro_name: "jam"
+    });
+
+    struct Component;
+
+    impl exports2::Exports2 for Component {
+        fn foo(x: String) {
+            println!("foo: {}", x);
+        }
+    }
+
+    jam!(Component);
+}

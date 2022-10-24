@@ -55,6 +55,13 @@ pub struct Opts {
     /// another mod/crate.
     #[cfg_attr(feature = "clap", arg(long))]
     pub macro_call_prefix: Option<String>,
+
+    /// The name of the generated `export!` macro to use.
+    ///
+    /// If `None`, the name is derived from the name of the world in the
+    /// format `export_{world_name}!`.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub export_macro_name: Option<String>,
 }
 
 impl Opts {
@@ -119,7 +126,11 @@ impl WorldGenerator for RustWasm {
 
     fn finish(&mut self, name: &str, interfaces: &ComponentInterfaces, files: &mut Files) {
         if !self.exports.is_empty() {
-            let snake = name.to_snake_case();
+            let macro_name = if let Some(name) = self.opts.export_macro_name.as_ref() {
+                name.to_snake_case()
+            } else {
+                format!("export_{}", name.to_snake_case())
+            };
             let macro_export = if self.opts.macro_export {
                 "#[macro_export]"
             } else {
@@ -131,9 +142,8 @@ impl WorldGenerator for RustWasm {
                     /// Declares the export of the component's world for the
                     /// given type.
                     {macro_export}
-                    macro_rules! export_{snake}(($t:ident) => {{
+                    macro_rules! {macro_name}(($t:ident) => {{
                         const _: () = {{
-
                 "
             );
             for src in self.exports.iter() {
@@ -148,7 +158,7 @@ impl WorldGenerator for RustWasm {
             );
         }
 
-        self.src.push_str("#[cfg(target_arch = \"wasm32\")]\n");
+        self.src.push_str("\n#[cfg(target_arch = \"wasm32\")]\n");
 
         // The custom section name here must start with "component-type" but
         // otherwise is attempted to be unique here to ensure that this doesn't get

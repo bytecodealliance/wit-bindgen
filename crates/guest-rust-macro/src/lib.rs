@@ -15,6 +15,7 @@ mod kw {
     syn::custom_keyword!(no_std);
     syn::custom_keyword!(raw_strings);
     syn::custom_keyword!(macro_call_prefix);
+    syn::custom_keyword!(export_macro_name);
 }
 
 enum Opt {
@@ -22,6 +23,7 @@ enum Opt {
     NoStd,
     RawStrings,
     MacroCallPrefix(LitStr),
+    ExportMacroName(LitStr),
 }
 
 impl Parse for Opt {
@@ -40,6 +42,10 @@ impl Parse for Opt {
             input.parse::<kw::macro_call_prefix>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::MacroCallPrefix(input.parse()?))
+        } else if l.peek(kw::export_macro_name) {
+            input.parse::<kw::export_macro_name>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::ExportMacroName(input.parse()?))
         } else {
             Err(l.error())
         }
@@ -53,6 +59,7 @@ impl wit_bindgen_rust_macro_shared::Configure<Opts> for Opt {
             Opt::NoStd => opts.no_std = true,
             Opt::RawStrings => opts.raw_strings = true,
             Opt::MacroCallPrefix(prefix) => opts.macro_call_prefix = Some(prefix.value()),
+            Opt::ExportMacroName(name) => opts.export_macro_name = Some(name.value()),
         }
     }
 }
