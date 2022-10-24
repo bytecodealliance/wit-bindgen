@@ -2045,6 +2045,7 @@ dependencies = [
  "heck",
  "pulldown-cmark",
  "wit-bindgen-core",
+ "wit-component",
 ]
 
 [[package]]

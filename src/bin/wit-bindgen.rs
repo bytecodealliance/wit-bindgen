@@ -34,7 +34,7 @@ enum Category {
         #[clap(flatten)]
         common: Common,
         #[clap(flatten)]
-        world: LegacyWorld,
+        world: World,
     },
 }
 
@@ -223,7 +223,7 @@ fn main() -> Result<()> {
             gen_legacy_world(Box::new(opts.build()), world, &mut files)?;
         }
         Category::Markdown { opts, world, .. } => {
-            gen_legacy_world(Box::new(opts.build()), world, &mut files)?;
+            gen_world(opts.build(), world, &mut files)?;
         }
     }
 
