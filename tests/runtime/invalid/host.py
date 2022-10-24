@@ -1,9 +1,8 @@
-from exports.bindings import Exports
-from imports.bindings import add_imports_to_linker, Imports
 from typing import Callable, List, Tuple
-import imports.bindings as i
-import sys
 import wasmtime
+from invalid import Invalid, InvalidImports
+from invalid.imports import Imports, imports as i
+from helpers import TestWasi
 
 class MyImports(Imports):
     def roundtrip_u8(self, x: int) -> int:
@@ -58,23 +57,13 @@ class MyImports(Imports):
         raise Exception('unreachable')
 
 
-def new_wasm(wasm_file: str) -> Tuple[wasmtime.Store, Exports]:
+def new_wasm() -> Tuple[wasmtime.Store, Invalid]:
     store = wasmtime.Store()
-    module = wasmtime.Module.from_file(store.engine, wasm_file)
-    linker = wasmtime.Linker(store.engine)
-    linker.define_wasi()
-    wasi = wasmtime.WasiConfig()
-    wasi.inherit_stdout()
-    wasi.inherit_stderr()
-    store.set_wasi(wasi)
-
-    imports = MyImports()
-    add_imports_to_linker(linker, store, imports)
-    wasm = Exports(store, linker, module)
+    wasm = Invalid(store, InvalidImports(MyImports(), TestWasi()))
     return (store, wasm)
 
-def run(wasm_file: str) -> None:
-    (store, wasm) = new_wasm(wasm_file)
+def run() -> None:
+    (store, wasm) = new_wasm()
 
     def assert_throws(f: Callable, msg: str) -> None:
         try:
@@ -94,21 +83,21 @@ def run(wasm_file: str) -> None:
 
     # FIXME(#376) these should succeed
     assert_throws(lambda: wasm.invalid_bool(store), 'discriminant for bool')
-    (store, wasm) = new_wasm(wasm_file)
+    (store, wasm) = new_wasm()
     assert_throws(lambda: wasm.invalid_u8(store), 'must be between')
-    (store, wasm) = new_wasm(wasm_file)
+    (store, wasm) = new_wasm()
     assert_throws(lambda: wasm.invalid_s8(store), 'must be between')
-    (store, wasm) = new_wasm(wasm_file)
+    (store, wasm) = new_wasm()
     assert_throws(lambda: wasm.invalid_u16(store), 'must be between')
-    (store, wasm) = new_wasm(wasm_file)
+    (store, wasm) = new_wasm()
     assert_throws(lambda: wasm.invalid_s16(store), 'must be between')
 
-    (store, wasm) = new_wasm(wasm_file)
+    (store, wasm) = new_wasm()
     assert_throws(lambda: wasm.invalid_char(store), 'not a valid char')
-    (store, wasm) = new_wasm(wasm_file)
+    (store, wasm) = new_wasm()
     assert_throws(lambda: wasm.invalid_enum(store), 'not a valid E')
 
     # FIXME(#370) should call `unalignedN` and expect an error
 
 if __name__ == '__main__':
-    run(sys.argv[1])
+    run()

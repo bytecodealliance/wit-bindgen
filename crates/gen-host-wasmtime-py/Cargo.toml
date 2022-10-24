@@ -5,9 +5,12 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-wit-bindgen-core = { workspace = true }
+wit-bindgen-core = { workspace = true, features = ['component-generator'] }
 heck = { workspace = true }
 clap = { workspace = true, optional = true }
+wit-component = { workspace = true }
+indexmap = "1.0"
+wasmtime-environ = { workspace = true, features = ['component-model'] }
 
 [dev-dependencies]
 test-helpers = { path = '../test-helpers' }

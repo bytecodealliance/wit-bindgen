@@ -1,71 +1,42 @@
-use std::fs;
 use std::path::Path;
 use std::process::Command;
-use wit_bindgen_core::Generator;
 
-test_helpers::runtime_tests!("py");
+test_helpers::runtime_component_tests!("py");
 
-fn execute(name: &str, wasm: &Path, py: &Path, imports: &Path, exports: &Path) {
-    let dir = test_helpers::test_directory("runtime", "wasmtime-py", name);
-    fs::create_dir_all(&dir.join("imports")).unwrap();
-    fs::create_dir_all(&dir.join("exports")).unwrap();
+fn execute(name: &str, lang: &str, wasm: &Path, py: &Path) {
+    let dir = test_helpers::test_directory("runtime", "wasmtime-py", &format!("{lang}/{name}"));
+    let wasm = std::fs::read(wasm).unwrap();
 
     println!("OUT_DIR = {:?}", dir);
     println!("Generating bindings...");
-    // We call `generate_all` with exports from the imports.wit file, and
-    // imports from the exports.wit wit file. It's reversed because we're
-    // implementing the host side of these APIs.
-    let iface = wit_bindgen_core::wit_parser::Interface::parse_file(imports).unwrap();
     let mut files = Default::default();
-    wit_bindgen_gen_host_wasmtime_py::Opts::default()
-        .build()
-        .generate_all(&[], &[iface], &mut files);
+    wit_bindgen_core::component::generate(
+        &mut *wit_bindgen_gen_host_wasmtime_py::Opts::default().build(),
+        name,
+        &wasm,
+        &mut files,
+    )
+    .unwrap();
     for (file, contents) in files.iter() {
-        fs::write(dir.join("imports").join(file), contents).unwrap();
+        let dst = dir.join(file);
+        std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
+        std::fs::write(&dst, contents).unwrap();
     }
-    fs::write(dir.join("imports").join("__init__.py"), "").unwrap();
 
-    let iface = wit_bindgen_core::wit_parser::Interface::parse_file(exports).unwrap();
-    let mut files = Default::default();
-    wit_bindgen_gen_host_wasmtime_py::Opts::default()
-        .build()
-        .generate_all(&[iface], &[], &mut files);
-    for (file, contents) in files.iter() {
-        fs::write(dir.join("exports").join(file), contents).unwrap();
-    }
-    fs::write(dir.join("exports").join("__init__.py"), "").unwrap();
-
+    let cwd = std::env::current_dir().unwrap();
     println!("Running mypy...");
-    exec(
+    let pathdir = std::env::join_paths([
+        dir.parent().unwrap().to_str().unwrap(),
+        cwd.join("tests").to_str().unwrap(),
+    ])
+    .unwrap();
+    test_helpers::run_command(
         Command::new("mypy")
-            .env("MYPYPATH", &dir)
+            .env("MYPYPATH", &pathdir)
             .arg(py)
             .arg("--cache-dir")
             .arg(dir.parent().unwrap().join("mypycache").join(name)),
     );
 
-    exec(
-        Command::new("python3")
-            .env("PYTHONPATH", &dir)
-            .arg(py)
-            .arg(wasm),
-    );
-}
-
-fn exec(cmd: &mut Command) {
-    println!("{:?}", cmd);
-    let output = cmd.output().unwrap();
-    if output.status.success() {
-        return;
-    }
-    println!("status: {}", output.status);
-    println!(
-        "stdout ---\n  {}",
-        String::from_utf8_lossy(&output.stdout).replace("\n", "\n  ")
-    );
-    println!(
-        "stderr ---\n  {}",
-        String::from_utf8_lossy(&output.stderr).replace("\n", "\n  ")
-    );
-    panic!("no success");
+    test_helpers::run_command(Command::new("python3").env("PYTHONPATH", &pathdir).arg(py));
 }
