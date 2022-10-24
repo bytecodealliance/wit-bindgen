@@ -221,12 +221,7 @@ impl WorldGenerator for C {
         if self.needs_string {
             uwrite!(
                 h_str,
-                "
-                   typedef struct {{
-                       {ty} *ptr;
-                       size_t len;
-                   }} {snake}_string_t;
-               ",
+                "typedef struct {{\n  {ty} *ptr;\n  size_t len;\n}} {snake}_string_t;\n",
                 ty = self.char_type(),
             );
         }
@@ -255,10 +250,7 @@ impl WorldGenerator for C {
         if self.return_pointer_area_size > 0 {
             uwrite!(
                 c_str,
-                "
-                   __attribute__((aligned({})))
-                   static uint8_t RET_AREA[{}];
-               ",
+                "\n__attribute__((aligned({})))\nstatic uint8_t RET_AREA[{}];\n",
                 self.return_pointer_area_align,
                 self.return_pointer_area_size,
             );
@@ -717,7 +709,7 @@ impl InterfaceGenerator<'_> {
         // canonical ABI.
         uwriteln!(
             self.src.c_adapters,
-            "__attribute__((export_name(\"{export_name}\")))"
+            "\n__attribute__((export_name(\"{export_name}\")))"
         );
         let import_name = self.gen.names.tmp(&format!(
             "__wasm_export_{}_{}",

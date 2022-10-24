@@ -275,6 +275,19 @@ impl Results {
         }
     }
 
+    pub fn throws(&self, iface: &Interface) -> bool {
+        if self.len() != 1 {
+            return false;
+        }
+        for result in self.iter_types() {
+            return match result {
+                Type::Id(id) => matches!(iface.types[*id].kind, TypeDefKind::Result(_)),
+                _ => false,
+            };
+        }
+        unreachable!();
+    }
+
     pub fn iter_types(&self) -> ResultsTypeIter {
         match self {
             Results::Named(ps) => ResultsTypeIter::Named(ps.iter()),
