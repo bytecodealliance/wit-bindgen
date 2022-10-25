@@ -6,12 +6,15 @@
 #include <stdio.h>
 
 char16_t BASIC_STRING[] = u"latin utf16";
-char16_t UNICODE_STRING[] = u"🚀🚀🚀 𠈄𓀀";
+// 🚀 = 0xD83D 0xDE80
+// 𠈄 = 0xD840 0xDE04
+// 𓀀 = 0xD80C 0xDC00
+char16_t UNICODE_STRING[] = { 0xD83D, 0xDE80, 0xD83D, 0xDE80, 0xD83D, 0xDE80, ' ', 0xD840, 0xDE04, 0xD80C, 0xDC00 };
 char16_t STR_BUFFER[500];
 
 void assert_str(imports_string_t* str, char16_t* expected, size_t expected_len) {
   assert(str->len == expected_len);
-  assert(memcmp(str->ptr, expected, expected_len * 2) == 0);
+  assert(memcmp(str->ptr, expected, 11) == 0);
 }
 
 void exports_test_imports() {
@@ -23,7 +26,7 @@ void exports_test_imports() {
   imports_f2(&str2);
   memcpy(&STR_BUFFER[0], str2.ptr, str2.len * 2);
   STR_BUFFER[str2.len] = '\0';
-  assert_str(&str1, &UNICODE_STRING[0], 11);
+  assert_str(&str2, &UNICODE_STRING[0], 11);
 }
 
 void exports_f1(exports_string_t *str) {
