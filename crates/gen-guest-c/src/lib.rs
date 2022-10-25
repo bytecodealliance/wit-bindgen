@@ -1,7 +1,6 @@
 mod component_type_object;
 
 use heck::*;
-use wit_component::StringEncoding;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
 use std::mem;
@@ -9,6 +8,7 @@ use wit_bindgen_core::wit_parser::abi::{
     AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
 };
 use wit_bindgen_core::{uwrite, uwriteln, wit_parser::*, Direction, Files, Generator, Ns};
+use wit_component::StringEncoding;
 
 #[derive(Default)]
 pub struct C {
@@ -2050,7 +2050,10 @@ impl Bindgen for FunctionBindgen<'_> {
                 let list_name = self.gen.type_string(iface, &Type::String);
                 results.push(format!(
                     "({}) {{ ({}*)({}), (size_t)({}) }}",
-                    list_name, self.gen.char_type(), operands[0], operands[1]
+                    list_name,
+                    self.gen.char_type(),
+                    operands[0],
+                    operands[1]
                 ));
             }
 

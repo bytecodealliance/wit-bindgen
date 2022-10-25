@@ -203,12 +203,10 @@ fn main() {
             // TODO: should combine this into one
             let mut opts = wit_bindgen_gen_guest_c::Opts::default();
             opts.string_encoding = StringEncoding::UTF16;
-            opts.build()
-                .generate_all(&[import], &[], &mut files);
+            opts.build().generate_all(&[import], &[], &mut files);
             let mut opts = wit_bindgen_gen_guest_c::Opts::default();
             opts.string_encoding = StringEncoding::UTF16;
-            opts.build()
-                .generate_all(&[], &[export], &mut files);
+            opts.build().generate_all(&[], &[export], &mut files);
 
             let out_dir = out_dir.join(format!(
                 "c_utf16-{}",
