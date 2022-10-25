@@ -8,19 +8,18 @@ async function run() {
   const wasm = await instantiate(loadWasm, {
     testwasi,
     imports: {
-      f1 (s: string) {
+      takeBasic(s: string) {
         assert.strictEqual(s, 'latin utf16');
       },
-      f2 () {
+      returnUnicode() {
         return '🚀🚀🚀 𠈄𓀀';
       }
     }
   });
 
   wasm.testImports();
-  assert.strictEqual(wasm.f2(), '🚀🚀🚀 𠈄𓀀');
-  wasm.f1('str');
-  assert.strictEqual(wasm.f2(), 'str');
+  assert.strictEqual(wasm.roundtrip('str'), 'str');
+  assert.strictEqual(wasm.roundtrip('🚀🚀🚀 𠈄𓀀'), '🚀🚀🚀 𠈄𓀀');
 }
 
 await run()

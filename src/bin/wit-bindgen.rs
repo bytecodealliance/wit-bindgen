@@ -83,7 +83,7 @@ enum GuestGenerator {
         #[clap(flatten)]
         common: Common,
         #[clap(flatten)]
-        world: LegacyWorld,
+        world: World,
     },
     /// Generates bindings for TeaVM-based Java guest modules.
     TeavmJava {
@@ -217,7 +217,7 @@ fn main() -> Result<()> {
             gen_world(opts.build(), world, &mut files)?;
         }
         Category::Guest(GuestGenerator::C { opts, world, .. }) => {
-            gen_legacy_world(Box::new(opts.build()), world, &mut files)?;
+            gen_world(opts.build(), world, &mut files)?;
         }
         Category::Guest(GuestGenerator::TeavmJava { opts, world, .. }) => {
             gen_legacy_world(Box::new(opts.build()), world, &mut files)?;

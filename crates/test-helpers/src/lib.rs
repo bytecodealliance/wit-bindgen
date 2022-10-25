@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use wit_bindgen_core::{Files, Generator};
+use wit_component::ComponentInterfaces;
 use wit_parser::abi::{AbiVariant, WasmType};
 use wit_parser::{Function, Interface};
 
@@ -94,6 +95,47 @@ stderr ---
         stdout = String::from_utf8_lossy(&output.stdout).replace("\n", "\n\t"),
         stderr = String::from_utf8_lossy(&output.stderr).replace("\n", "\n\t"),
     );
+}
+
+pub fn run_world_codegen_test(
+    gen_name: &str,
+    wit_path: &Path,
+    dir: Direction,
+    generate: fn(&str, &ComponentInterfaces, &mut Files),
+    verify: fn(&Path, &str),
+) {
+    let iface = Interface::parse_file(wit_path).unwrap();
+    let mut interfaces = ComponentInterfaces::default();
+
+    match dir {
+        Direction::Import => {
+            interfaces.imports.insert(iface.name.clone(), iface);
+        }
+        Direction::Export => {
+            interfaces.default = Some(iface);
+        }
+    }
+
+    let name = wit_path.file_stem().and_then(|s| s.to_str()).unwrap();
+
+    let gen_name = format!(
+        "{gen_name}-{}",
+        match dir {
+            Direction::Import => "import",
+            Direction::Export => "export",
+        }
+    );
+    let dir = test_directory("codegen", &gen_name, name);
+
+    let mut files = Default::default();
+    generate(name, &interfaces, &mut files);
+    for (file, contents) in files.iter() {
+        let dst = dir.join(file);
+        std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
+        std::fs::write(&dst, contents).unwrap();
+    }
+
+    verify(&dir, name);
 }
 
 pub fn run_component_codegen_test(

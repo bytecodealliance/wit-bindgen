@@ -564,6 +564,7 @@ mod tests {
 
 pub trait WorldGenerator {
     fn generate(&mut self, name: &str, interfaces: &ComponentInterfaces, files: &mut Files) {
+        self.preprocess(name);
         for (name, import) in interfaces.imports.iter() {
             self.import(name, import, files);
         }
@@ -574,6 +575,10 @@ pub trait WorldGenerator {
             self.export_default(name, iface, files);
         }
         self.finish(name, interfaces, files);
+    }
+
+    fn preprocess(&mut self, name: &str) {
+        drop(name);
     }
 
     fn import(&mut self, name: &str, iface: &Interface, files: &mut Files);

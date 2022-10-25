@@ -490,7 +490,7 @@ impl Js {
 
             Intrinsic::Utf16Encode => self.src.js("
                 function utf16Encode (str, realloc, memory) {
-                    const len = str.length, ptr = realloc(0, 0, 2, len), out = new Uint16Array(memory.buffer, ptr, len);
+                    const len = str.length, ptr = realloc(0, 0, 2, len * 2), out = new Uint16Array(memory.buffer, ptr, len);
                     let i = 0;
                     if (isLE) {
                         while (i < len) out[i] = str.charCodeAt(i++);

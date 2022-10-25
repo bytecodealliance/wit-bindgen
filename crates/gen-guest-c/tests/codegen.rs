@@ -1,3 +1,4 @@
+use heck::*;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -6,16 +7,15 @@ macro_rules! gen_test {
     ($name:ident $test:tt $dir:ident) => {
         #[test]
         fn $name() {
-            test_helpers::run_codegen_test(
+            test_helpers::run_world_codegen_test(
                 "guest-c",
-                std::path::Path::new($test)
-                    .file_stem()
-                    .unwrap()
-                    .to_str()
-                    .unwrap(),
-                include_str!($test),
+                $test.as_ref(),
                 test_helpers::Direction::$dir,
-                wit_bindgen_gen_guest_c::Opts::default().build(),
+                |name, interfaces, files| {
+                    wit_bindgen_gen_guest_c::Opts::default()
+                        .build()
+                        .generate(name, interfaces, files)
+                },
                 super::verify,
             )
         }
@@ -40,7 +40,7 @@ fn verify(dir: &Path, name: &str) {
     let path = PathBuf::from(env::var_os("WASI_SDK_PATH").unwrap());
     let mut cmd = Command::new(path.join("bin/clang"));
     cmd.arg("--sysroot").arg(path.join("share/wasi-sysroot"));
-    cmd.arg(dir.join(format!("{}.c", name)));
+    cmd.arg(dir.join(format!("{}.c", name.to_snake_case())));
     cmd.arg("-I").arg(dir);
     cmd.arg("-Wall")
         .arg("-Wextra")

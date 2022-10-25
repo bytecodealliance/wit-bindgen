@@ -1,7 +1,6 @@
 #include <assert.h>
-#include <exports.h>
+#include <lists.h>
 #include <float.h>
-#include <imports.h>
 #include <limits.h>
 #include <math.h>
 #include <stdalign.h>
@@ -22,8 +21,8 @@ void exports_test_imports() {
   }
 
   {
-    imports_string_t a;
-    imports_string_set(&a, "");
+    lists_string_t a;
+    lists_string_set(&a, "");
     imports_empty_string_param(&a);
   }
 
@@ -34,7 +33,7 @@ void exports_test_imports() {
   }
 
   {
-    imports_string_t a;
+    lists_string_t a;
     imports_empty_string_result(&a);
     assert(a.len == 0);
   }
@@ -48,16 +47,16 @@ void exports_test_imports() {
   }
 
   {
-    imports_string_t a;
-    imports_string_set(&a, "foo");
+    lists_string_t a;
+    lists_string_set(&a, "foo");
     imports_list_param2(&a);
   }
 
   {
-    imports_string_t list[3];
-    imports_string_set(&list[0], "foo");
-    imports_string_set(&list[1], "bar");
-    imports_string_set(&list[2], "baz");
+    lists_string_t list[3];
+    lists_string_set(&list[0], "foo");
+    lists_string_set(&list[1], "bar");
+    lists_string_set(&list[2], "baz");
     imports_list_string_t a;
     a.ptr = list;
     a.len = 3;
@@ -65,11 +64,11 @@ void exports_test_imports() {
   }
 
   {
-    imports_string_t list1[2];
-    imports_string_t list2[1];
-    imports_string_set(&list1[0], "foo");
-    imports_string_set(&list1[1], "bar");
-    imports_string_set(&list2[0], "baz");
+    lists_string_t list1[2];
+    lists_string_t list2[1];
+    lists_string_set(&list1[0], "foo");
+    lists_string_set(&list1[1], "bar");
+    lists_string_set(&list2[0], "baz");
     imports_list_list_string_t a;
     a.ptr[0].len = 2;
     a.ptr[0].ptr = list1;
@@ -88,11 +87,11 @@ void exports_test_imports() {
   }
 
   {
-    imports_string_t a;
+    lists_string_t a;
     imports_list_result2(&a);
     assert(a.len == 6);
     assert(memcmp(a.ptr, "hello!", 6) == 0);
-    imports_string_free(&a);
+    lists_string_free(&a);
   }
 
   {
@@ -131,29 +130,29 @@ void exports_test_imports() {
   }
 
   {
-    imports_string_t a, b;
-    imports_string_set(&a, "x");
+    lists_string_t a, b;
+    lists_string_set(&a, "x");
     imports_string_roundtrip(&a, &b);
     assert(b.len == a.len);
     assert(memcmp(b.ptr, a.ptr, a.len) == 0);
-    imports_string_free(&b);
+    lists_string_free(&b);
 
-    imports_string_set(&a, "");
+    lists_string_set(&a, "");
     imports_string_roundtrip(&a, &b);
     assert(b.len == a.len);
-    imports_string_free(&b);
+    lists_string_free(&b);
 
-    imports_string_set(&a, "hello");
-    imports_string_roundtrip(&a, &b);
-    assert(b.len == a.len);
-    assert(memcmp(b.ptr, a.ptr, a.len) == 0);
-    imports_string_free(&b);
-
-    imports_string_set(&a, "hello ⚑ world");
+    lists_string_set(&a, "hello");
     imports_string_roundtrip(&a, &b);
     assert(b.len == a.len);
     assert(memcmp(b.ptr, a.ptr, a.len) == 0);
-    imports_string_free(&b);
+    lists_string_free(&b);
+
+    lists_string_set(&a, "hello ⚑ world");
+    imports_string_roundtrip(&a, &b);
+    assert(b.len == a.len);
+    assert(memcmp(b.ptr, a.ptr, a.len) == 0);
+    lists_string_free(&b);
   }
 
   {
@@ -233,7 +232,7 @@ void exports_empty_list_param(exports_list_u8_t *a) {
   assert(a->len == 0);
 }
 
-void exports_empty_string_param(exports_string_t *a) {
+void exports_empty_string_param(lists_string_t *a) {
   assert(a->len == 0);
 }
 
@@ -242,7 +241,7 @@ void exports_empty_list_result(exports_list_u8_t *ret0) {
   ret0->len = 0;
 }
 
-void exports_empty_string_result(exports_string_t *ret0) {
+void exports_empty_string_result(lists_string_t *ret0) {
   ret0->ptr = 0;
   ret0->len = 0;
 }
@@ -256,12 +255,12 @@ void exports_list_param(exports_list_u8_t *a) {
   exports_list_u8_free(a);
 }
 
-void exports_list_param2(exports_string_t *a) {
+void exports_list_param2(lists_string_t *a) {
   assert(a->len == 3);
   assert(a->ptr[0] == 'f');
   assert(a->ptr[1] == 'o');
   assert(a->ptr[2] == 'o');
-  exports_string_free(a);
+  lists_string_free(a);
 }
 
 void exports_list_param3(exports_list_string_t *a) {
@@ -317,22 +316,22 @@ void exports_list_result(exports_list_u8_t *ret0) {
   ret0->ptr[4] = 5;
 }
 
-void exports_list_result2(exports_string_t *ret0) {
-  exports_string_dup(ret0, "hello!");
+void exports_list_result2(lists_string_t *ret0) {
+  lists_string_dup(ret0, "hello!");
 }
 
 void exports_list_result3(exports_list_string_t *ret0) {
   ret0->len = 2;
-  ret0->ptr = malloc(2 * sizeof(exports_string_t));
+  ret0->ptr = malloc(2 * sizeof(lists_string_t));
 
-  exports_string_dup(&ret0->ptr[0], "hello,");
-  exports_string_dup(&ret0->ptr[1], "world!");
+  lists_string_dup(&ret0->ptr[0], "hello,");
+  lists_string_dup(&ret0->ptr[1], "world!");
 }
 
 void exports_list_roundtrip(exports_list_u8_t *a, exports_list_u8_t *ret0) {
   *ret0 = *a;
 }
 
-void exports_string_roundtrip(exports_string_t *a, exports_string_t *ret0) {
+void exports_string_roundtrip(lists_string_t *a, lists_string_t *ret0) {
   *ret0 = *a;
 }

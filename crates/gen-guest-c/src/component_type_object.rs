@@ -3,21 +3,14 @@ use heck::ToSnakeCase;
 use wasm_encoder::{
     CodeSection, CustomSection, Encode, Function, FunctionSection, Module, TypeSection,
 };
-use wit_bindgen_core::{wit_parser::Interface, Direction};
-use wit_component::ComponentEncoder;
+use wit_component::{ComponentEncoder, ComponentInterfaces};
 
-pub fn linking_symbol(iface: &Interface, direction: Direction) -> String {
-    format!(
-        "__component_type_object_force_link_{}_{}",
-        iface.name.to_snake_case(),
-        match direction {
-            Direction::Import => "import",
-            Direction::Export => "export",
-        }
-    )
+pub fn linking_symbol(name: &str) -> String {
+    let snake = name.to_snake_case();
+    format!("__component_type_object_force_link_{snake}")
 }
 
-pub fn object(iface: &Interface, direction: Direction) -> Result<Vec<u8>> {
+pub fn object(name: &str, interfaces: &ComponentInterfaces) -> Result<Vec<u8>> {
     let mut module = Module::new();
 
     // Build a module with one function that's a "dummy function"
@@ -31,32 +24,28 @@ pub fn object(iface: &Interface, direction: Direction) -> Result<Vec<u8>> {
     code.function(&Function::new([]));
     module.section(&code);
 
-    let mut encoder = ComponentEncoder::default();
-    encoder = match direction {
-        Direction::Import => encoder.imports([iface.clone()])?,
-        Direction::Export => encoder.interface(iface.clone())?,
-    };
+    let mut encoder = ComponentEncoder::default()
+        .imports(interfaces.imports.values().cloned())?
+        .exports(interfaces.exports.values().cloned())?;
+
+    if let Some(default) = &interfaces.default {
+        encoder = encoder.interface(default.clone())?;
+    }
+
     let data = encoder
         .types_only(true)
         .encode()
-        .with_context(|| format!("translating interface {} to component type", iface.name))?;
+        .with_context(|| format!("translating {name} to component type"))?;
 
     // The custom section name here must start with "component-type" but
     // otherwise is attempted to be unique here to ensure that this doesn't get
     // concatenated to other custom sections by LLD by accident since LLD will
     // concatenate custom sections of the same name.
-    let name = format!(
-        "component-type:{}:{}",
-        match direction {
-            Direction::Import => "import",
-            Direction::Export => "export",
-        },
-        iface.name
-    );
+    let section_name = format!("component-type:{name}",);
 
     // Add our custom section
     module.section(&CustomSection {
-        name: &name,
+        name: &section_name,
         data: data.as_slice(),
     });
 
@@ -69,7 +58,7 @@ pub fn object(iface: &Interface, direction: Direction) -> Result<Vec<u8>> {
         subsection.push(0x00); // SYMTAB_FUNCTION
         0u32.encode(&mut subsection); // flags
         0u32.encode(&mut subsection); // index
-        linking_symbol(iface, direction).encode(&mut subsection); // name
+        linking_symbol(name).encode(&mut subsection); // name
 
         data.push(0x08); // `WASM_SYMBOL_TABLE`
         subsection.encode(&mut data);
