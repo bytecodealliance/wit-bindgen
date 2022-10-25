@@ -452,7 +452,7 @@ impl Js {
 
             Intrinsic::Utf16Decoder => self
                 .src
-                .js("const utf16Decoder = new TextDecoder(`utf-16${isLE ? '' : 'be'}`);\n"),
+                .js("const utf16Decoder = new TextDecoder('utf-16');\n"),
 
             Intrinsic::Utf8EncodedLen => self.src.js("let utf8EncodedLen = 0;\n"),
 
