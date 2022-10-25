@@ -16,8 +16,9 @@ wit-component = { workspace = true }
 wat = { workspace = true }
 
 [features]
-default = ['guest-rust', 'guest-c', 'guest-teavm-java', 'macros']
+default = ['guest-rust', 'guest-c', 'guest-c-utf16', 'guest-teavm-java', 'macros']
 macros = ['dep:test-helpers-macros']
 guest-rust = ['test-helpers-macros?/guest-rust']
 guest-c = ['test-helpers-macros?/guest-c']
+guest-c-utf16 = ['test-helpers-macros?/guest-c-utf16']
 guest-teavm-java = ['test-helpers-macros?/guest-teavm-java']

@@ -29,4 +29,5 @@ wit-component = { workspace = true }
 [features]
 guest-rust = []
 guest-c = []
+guest-c-utf16 = []
 guest-teavm-java = []

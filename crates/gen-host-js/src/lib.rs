@@ -60,6 +60,7 @@ enum Intrinsic {
     DataView,
     ValidateGuestChar,
     ValidateHostChar,
+    IsLE,
     /// Implementation of https://tc39.es/ecma262/#sec-toint32.
     ToInt32,
     /// Implementation of https://tc39.es/ecma262/#sec-touint32.
@@ -97,6 +98,7 @@ impl Intrinsic {
             Intrinsic::DataView => "dataView",
             Intrinsic::ValidateGuestChar => "validateGuestChar",
             Intrinsic::ValidateHostChar => "validateHostChar",
+            Intrinsic::IsLE => "isLE",
             Intrinsic::ToInt32 => "toInt32",
             Intrinsic::ToUint32 => "toUint32",
             Intrinsic::ToInt16 => "toInt16",
@@ -324,6 +326,10 @@ impl Js {
                 const dataView = mem => dv.buffer === mem.buffer ? dv : dv = new DataView(mem.buffer);
             "),
 
+            Intrinsic::IsLE => self.src.js("
+                const isLE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+            "),
+
             Intrinsic::ValidateGuestChar => self.src.js("
                 function validateGuestChar(i) {
                     if ((i > 0x10ffff) || (i >= 0xd800 && i <= 0xdfff)) \
@@ -446,7 +452,7 @@ impl Js {
 
             Intrinsic::Utf16Decoder => self
                 .src
-                .js("const utf16Decoder = new TextDecoder('utf-16');\n"),
+                .js("const utf16Decoder = new TextDecoder(`utf-16${isLE ? '' : 'be'}`);\n"),
 
             Intrinsic::Utf8EncodedLen => self.src.js("let utf8EncodedLen = 0;\n"),
 
@@ -483,10 +489,8 @@ impl Js {
             "),
 
             Intrinsic::Utf16Encode => self.src.js("
-                const isLE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
-
                 function utf16Encode (str, realloc, memory) {
-                    const len = str.length, ptr = realloc(0, 0, 1, len), out = new Uint16Array(memory.buffer, ptr, len);
+                    const len = str.length, ptr = realloc(0, 0, 2, len), out = new Uint16Array(memory.buffer, ptr, len);
                     let i = 0;
                     if (isLE) {
                         while (i < len) out[i] = str.charCodeAt(i++);
@@ -734,12 +738,6 @@ impl Instantiator<'_> {
         func: &Function,
         abi: AbiVariant,
     ) {
-        // Only Utf8 and Utf16 supported for now
-        assert!(matches!(
-            opts.string_encoding,
-            StringEncoding::Utf8 | StringEncoding::Utf16
-        ));
-
         let memory = match opts.memory {
             Some(idx) => Some(format!("memory{}", idx.as_u32())),
             None => None,
@@ -778,7 +776,7 @@ impl Instantiator<'_> {
             tmp: 0,
             params,
             post_return,
-            utf16: opts.string_encoding == StringEncoding::Utf16,
+            encoding: opts.string_encoding,
             src: Source::default(),
         };
         iface.call(
@@ -1238,7 +1236,7 @@ struct FunctionBindgen<'a> {
     memory: Option<String>,
     realloc: Option<String>,
     post_return: Option<String>,
-    utf16: bool,
+    encoding: StringEncoding,
     callee: String,
 }
 
@@ -2061,21 +2059,28 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("result{tmp}"));
             }
             Instruction::StringLower { .. } => {
+                // Only Utf8 and Utf16 supported for now
+                assert!(matches!(
+                    self.encoding,
+                    StringEncoding::Utf8 | StringEncoding::Utf16
+                ));
                 let tmp = self.tmp();
                 let memory = self.memory.as_ref().unwrap();
                 let realloc = self.realloc.as_ref().unwrap();
 
-                let encode = self.gen.intrinsic(if self.utf16 {
+                let intrinsic = if self.encoding == StringEncoding::Utf16 {
+                    self.gen.intrinsic(Intrinsic::IsLE);
                     Intrinsic::Utf16Encode
                 } else {
                     Intrinsic::Utf8Encode
-                });
+                };
+                let encode = self.gen.intrinsic(intrinsic);
                 uwriteln!(
                     self.src.js,
                     "const ptr{tmp} = {encode}({}, {realloc}, {memory});",
                     operands[0],
                 );
-                if !self.utf16 {
+                if self.encoding == StringEncoding::Utf8 {
                     let encoded_len = self.gen.intrinsic(Intrinsic::Utf8EncodedLen);
                     uwriteln!(self.src.js, "const len{tmp} = {encoded_len};");
                 } else {
@@ -2085,19 +2090,26 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(format!("len{}", tmp));
             }
             Instruction::StringLift => {
+                // Only Utf8 and Utf16 supported for now
+                assert!(matches!(
+                    self.encoding,
+                    StringEncoding::Utf8 | StringEncoding::Utf16
+                ));
                 let tmp = self.tmp();
                 let memory = self.memory.as_ref().unwrap();
                 uwriteln!(self.src.js, "const ptr{tmp} = {};", operands[0]);
                 uwriteln!(self.src.js, "const len{tmp} = {};", operands[1]);
-                let decoder = self.gen.intrinsic(if self.utf16 {
+                let intrinsic = if self.encoding == StringEncoding::Utf16 {
+                    self.gen.intrinsic(Intrinsic::IsLE);
                     Intrinsic::Utf16Decoder
                 } else {
                     Intrinsic::Utf8Decoder
-                });
+                };
+                let decoder = self.gen.intrinsic(intrinsic);
                 uwriteln!(
                     self.src.js,
                     "const result{tmp} = {decoder}.decode(new Uint{}Array({memory}.buffer, ptr{tmp}, len{tmp}));",
-                    if self.utf16 { "16" } else { "8" }
+                    if self.encoding == StringEncoding::Utf16 { "16" } else { "8" }
                 );
                 results.push(format!("result{tmp}"));
             }

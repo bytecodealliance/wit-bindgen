@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use wit_bindgen_core::{wit_parser::Interface, Direction, Generator};
 use wit_component::ComponentEncoder;
+use wit_component::StringEncoding;
 
 fn main() {
     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
@@ -176,6 +177,108 @@ fn main() {
 
             wasms.push((
                 "c",
+                stem,
+                out_wasm.to_str().unwrap().to_string(),
+                component_path.to_str().unwrap().to_string(),
+            ));
+        }
+    }
+
+    if cfg!(feature = "guest-c-utf16") {
+        for test_dir in fs::read_dir("../../../tests/runtime").unwrap() {
+            let test_dir = test_dir.unwrap().path();
+            let c_impl = test_dir.join("wasm_utf16.c");
+            if !c_impl.exists() {
+                continue;
+            }
+            let imports = test_dir.join("imports.wit");
+            let exports = test_dir.join("exports.wit");
+            println!("cargo:rerun-if-changed={}", imports.display());
+            println!("cargo:rerun-if-changed={}", exports.display());
+            println!("cargo:rerun-if-changed={}", c_impl.display());
+
+            let import = Interface::parse_file(&test_dir.join("imports.wit")).unwrap();
+            let export = Interface::parse_file(&test_dir.join("exports.wit")).unwrap();
+            let mut files = Default::default();
+            // TODO: should combine this into one
+            let mut opts = wit_bindgen_gen_guest_c::Opts::default();
+            opts.string_encoding = StringEncoding::UTF16;
+            opts.build()
+                .generate_all(&[import], &[], &mut files);
+            let mut opts = wit_bindgen_gen_guest_c::Opts::default();
+            opts.string_encoding = StringEncoding::UTF16;
+            opts.build()
+                .generate_all(&[], &[export], &mut files);
+
+            let out_dir = out_dir.join(format!(
+                "c_utf16-{}",
+                test_dir.file_name().unwrap().to_str().unwrap()
+            ));
+            drop(fs::remove_dir_all(&out_dir));
+            fs::create_dir(&out_dir).unwrap();
+            for (file, contents) in files.iter() {
+                let dst = out_dir.join(file);
+                fs::write(dst, contents).unwrap();
+            }
+
+            let path = PathBuf::from(env::var_os("WASI_SDK_PATH").expect(
+                "point the `WASI_SDK_PATH` environment variable to the path of your wasi-sdk",
+            ));
+            let mut cmd = Command::new(path.join("bin/clang"));
+            let out_wasm = out_dir.join("c_utf16.wasm");
+            cmd.arg("--sysroot").arg(path.join("share/wasi-sysroot"));
+            cmd.arg(c_impl)
+                .arg(out_dir.join("imports.c"))
+                .arg(out_dir.join("imports_component_type.o"))
+                .arg(out_dir.join("exports.c"))
+                .arg(out_dir.join("exports_component_type.o"))
+                .arg("-I")
+                .arg(&out_dir)
+                .arg("-Wall")
+                .arg("-Wextra")
+                .arg("-Werror")
+                .arg("-Wno-unused-parameter")
+                .arg("-mexec-model=reactor")
+                .arg("-g")
+                .arg("-o")
+                .arg(&out_wasm);
+            println!("{:?}", cmd);
+            let output = match cmd.output() {
+                Ok(output) => output,
+                Err(e) => panic!("failed to spawn compiler: {}", e),
+            };
+
+            if !output.status.success() {
+                println!("status: {}", output.status);
+                println!("stdout: ------------------------------------------");
+                println!("{}", String::from_utf8_lossy(&output.stdout));
+                println!("stderr: ------------------------------------------");
+                println!("{}", String::from_utf8_lossy(&output.stderr));
+                panic!("failed to compile");
+            }
+
+            let stem = test_dir.file_stem().unwrap().to_str().unwrap().to_string();
+
+            // Translate the canonical ABI module into a component.
+            let module = fs::read(&out_wasm).expect("failed to read wasm file");
+            let mut encoder = ComponentEncoder::default();
+            encoder.encoding = StringEncoding::UTF16;
+            let component = encoder
+                .module(module.as_slice())
+                .expect("pull custom sections from module")
+                .validate(true)
+                .adapter_file(&wasi_adapter)
+                .expect("adapter failed to get loaded")
+                .encode()
+                .expect(&format!(
+                    "module {:?} can be translated to a component",
+                    out_wasm
+                ));
+            let component_path = out_dir.join("c_utf16.component.wasm");
+            fs::write(&component_path, component).expect("write component to disk");
+
+            wasms.push((
+                "c_utf16",
                 stem,
                 out_wasm.to_str().unwrap().to_string(),
                 component_path.to_str().unwrap().to_string(),
