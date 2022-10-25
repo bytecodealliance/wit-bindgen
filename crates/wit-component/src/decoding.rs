@@ -82,6 +82,9 @@ struct InterfaceDecoder<'a> {
     // key is the result after `TypeId` lookup.
     type_map: IndexMap<PtrHash<'a, types::Type>, Type>,
     name_map: IndexMap<PtrHash<'a, types::Type>, &'a str>,
+
+    function_names: KebabNamespace<()>,
+    type_names: KebabNamespace<()>,
 }
 
 /// Parsed representation of interfaces found within a component.
@@ -229,6 +232,8 @@ impl<'a> InterfaceDecoder<'a> {
             interface: Interface::default(),
             name_map: IndexMap::new(),
             type_map: IndexMap::new(),
+            function_names: KebabNamespace::new(),
+            type_names: KebabNamespace::new(),
         }
     }
 
@@ -297,6 +302,8 @@ impl<'a> InterfaceDecoder<'a> {
         func_name: &str,
         ps: &[(String, types::ComponentValType)],
     ) -> Result<Params> {
+        let mut names = KebabNamespace::new();
+
         let mut params = Vec::new();
         for (name, ty) in ps.iter() {
             validate_id(name).with_context(|| {
@@ -305,6 +312,13 @@ impl<'a> InterfaceDecoder<'a> {
                     func_name, name
                 )
             })?;
+
+            if let Some(existing) = names.insert(name.to_string(), ()) {
+                anyhow::bail!(
+                    "function `{}` has a parameter `{}` that differs only in case from earlier identifier `{}`",
+                    func_name, name, existing.name
+                    )
+            }
 
             params.push((name.clone(), self.decode_type(ty)?));
         }
@@ -316,6 +330,8 @@ impl<'a> InterfaceDecoder<'a> {
         func_name: &str,
         ps: &[(Option<String>, types::ComponentValType)],
     ) -> Result<Results> {
+        let mut names = KebabNamespace::new();
+
         let mut results = Vec::new();
         for (name, ty) in ps.iter() {
             let name = match name {
@@ -327,6 +343,14 @@ impl<'a> InterfaceDecoder<'a> {
                             func_name, name
                         )
                     })?;
+
+                    if let Some(existing) = names.insert(name.to_string(), ()) {
+                        anyhow::bail!(
+                            "function `{}` has a result `{}` that differs only in case from earlier identifier `{}`",
+                            func_name, name, existing.name
+                            )
+                    }
+
                     Some(name)
                 }
                 None => None,
@@ -371,6 +395,14 @@ impl<'a> InterfaceDecoder<'a> {
         validate_id(func_name)
             .with_context(|| format!("function name `{}` is not a valid identifier", func_name))?;
 
+        if let Some(existing) = self.function_names.insert(func_name.to_string(), ()) {
+            anyhow::bail!(
+                "function name `{}` differs only in case from earlier identifier `{}`",
+                func_name,
+                existing.name
+            )
+        }
+
         let params = self.decode_params(func_name, &ty.params)?;
         let results = self.decode_results(func_name, &ty.results)?;
 
@@ -401,6 +433,13 @@ impl<'a> InterfaceDecoder<'a> {
                     validate_id(name).with_context(|| {
                         format!("type name `{}` is not a valid identifier", name)
                     })?;
+                    if let Some(existing) = self.type_names.insert(name.to_string(), ()) {
+                        anyhow::bail!(
+                            "type name `{}` differs only in case from earlier identifier `{}`",
+                            name,
+                            existing.name
+                        )
+                    }
                 }
 
                 let ty = match ty {
@@ -460,10 +499,20 @@ impl<'a> InterfaceDecoder<'a> {
         name: Option<String>,
         ty: &PrimitiveValType,
     ) -> Result<Type> {
+        let mut names = KebabNamespace::new();
+
         let mut ty = self.decode_primitive(*ty)?;
         if let Some(name) = name {
             validate_id(&name)
                 .with_context(|| format!("type name `{}` is not a valid identifier", name))?;
+
+            if let Some(existing) = names.insert(name.to_string(), ()) {
+                anyhow::bail!(
+                    "promitive name `{}` differs only in case from earlier identifier `{}`",
+                    name,
+                    existing.name
+                )
+            }
 
             ty = Type::Id(self.alloc_type(Some(name), TypeDefKind::Type(ty)));
         }
@@ -494,6 +543,8 @@ impl<'a> InterfaceDecoder<'a> {
         record_name: Option<String>,
         fields: impl ExactSizeIterator<Item = (&'a String, &'a types::ComponentValType)>,
     ) -> Result<Type> {
+        let mut names = KebabNamespace::new();
+
         let record_name =
             record_name.ok_or_else(|| anyhow!("interface has an unnamed record type"))?;
 
@@ -506,6 +557,13 @@ impl<'a> InterfaceDecoder<'a> {
                             record_name, name
                         )
                     })?;
+
+                    if let Some(existing) = names.insert(name.to_string(), ()) {
+                        anyhow::bail!(
+                            "record `{}` has a field `{}` that differs only in case from earlier identifier `{}`",
+                            record_name, name, existing.name
+                            )
+                    }
 
                     Ok(Field {
                         docs: Docs::default(),
@@ -527,6 +585,8 @@ impl<'a> InterfaceDecoder<'a> {
         variant_name: Option<String>,
         cases: impl ExactSizeIterator<Item = (&'a String, &'a types::VariantCase)>,
     ) -> Result<Type> {
+        let mut names = KebabNamespace::new();
+
         let variant_name =
             variant_name.ok_or_else(|| anyhow!("interface has an unnamed variant type"))?;
 
@@ -539,6 +599,13 @@ impl<'a> InterfaceDecoder<'a> {
                             variant_name, name
                         )
                     })?;
+
+                    if let Some(existing) = names.insert(name.to_string(), ()) {
+                        anyhow::bail!(
+                            "variant `{}` has a case `{}` that differs only in case from earlier identifier `{}`",
+                            variant_name, name, existing.name
+                            )
+                    }
 
                     Ok(Case {
                         docs: Docs::default(),
@@ -573,13 +640,15 @@ impl<'a> InterfaceDecoder<'a> {
     fn decode_flags(
         &mut self,
         flags_name: Option<String>,
-        names: impl ExactSizeIterator<Item = &'a String>,
+        flag_names: impl ExactSizeIterator<Item = &'a String>,
     ) -> Result<Type> {
+        let mut names = KebabNamespace::new();
+
         let flags_name =
             flags_name.ok_or_else(|| anyhow!("interface has an unnamed flags type"))?;
 
         let flags = Flags {
-            flags: names
+            flags: flag_names
                 .map(|name| {
                     validate_id(name).with_context(|| {
                         format!(
@@ -587,6 +656,13 @@ impl<'a> InterfaceDecoder<'a> {
                             flags_name, name
                         )
                     })?;
+
+                    if let Some(existing) = names.insert(name.to_string(), ()) {
+                        anyhow::bail!(
+                            "flags `{}` has a flag named `{}` that differs only in case from earlier identifier `{}`",
+                            flags_name, name, existing.name
+                            )
+                    }
 
                     Ok(Flag {
                         docs: Docs::default(),
@@ -604,11 +680,14 @@ impl<'a> InterfaceDecoder<'a> {
     fn decode_enum(
         &mut self,
         enum_name: Option<String>,
-        names: impl ExactSizeIterator<Item = &'a String>,
+        value_names: impl ExactSizeIterator<Item = &'a String>,
     ) -> Result<Type> {
+        let mut names = KebabNamespace::new();
+
         let enum_name = enum_name.ok_or_else(|| anyhow!("interface has an unnamed enum type"))?;
+
         let enum_ = Enum {
-            cases: names
+            cases: value_names
                 .map(|name| {
                     validate_id(name).with_context(|| {
                         format!(
@@ -616,6 +695,13 @@ impl<'a> InterfaceDecoder<'a> {
                             enum_name, name
                         )
                     })?;
+
+                    if let Some(existing) = names.insert(name.to_string(), ()) {
+                        anyhow::bail!(
+                            "enum `{}` has a value `{}` that differs only in case from earlier identifier `{}`",
+                            enum_name, name, existing.name
+                            )
+                    }
 
                     Ok(EnumCase {
                         docs: Docs::default(),
