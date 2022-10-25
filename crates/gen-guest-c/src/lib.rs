@@ -8,12 +8,14 @@ use wit_bindgen_core::wit_parser::abi::{
     AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
 };
 use wit_bindgen_core::{uwrite, uwriteln, wit_parser::*, Direction, Files, Generator, Ns};
+use wit_component::StringEncoding;
 
 #[derive(Default)]
 pub struct C {
     src: Source,
     in_import: bool,
     opts: Opts,
+    includes: Vec<String>,
     funcs: HashMap<String, Vec<Func>>,
     return_pointer_area_size: usize,
     return_pointer_area_align: usize,
@@ -51,7 +53,10 @@ struct Func {
 pub struct Opts {
     /// Skip emitting component allocation helper functions
     #[cfg_attr(feature = "clap", arg(long))]
-    no_helpers: bool,
+    pub no_helpers: bool,
+    /// Set component string encoding
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub string_encoding: StringEncoding,
 }
 
 impl Opts {
@@ -95,6 +100,12 @@ impl C {
         match dir {
             Direction::Export => AbiVariant::GuestExport,
             Direction::Import => AbiVariant::GuestImport,
+        }
+    }
+
+    fn include(&mut self, incl: &str) {
+        if !self.includes.iter().any(|i| i == incl) {
+            self.includes.push(format!("#include {}", incl));
         }
     }
 
@@ -204,6 +215,14 @@ impl C {
             },
             Type::String => true,
             _ => false,
+        }
+    }
+
+    fn char_type(&self) -> String {
+        match self.opts.string_encoding {
+            StringEncoding::UTF8 => String::from("char"),
+            StringEncoding::UTF16 => String::from("char16_t"),
+            StringEncoding::CompactUTF16 => panic!("Compact UTF16 unsupported"),
         }
     }
 
@@ -1195,9 +1214,7 @@ impl Generator for C {
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
         let linking_symbol = component_type_object::linking_symbol(iface, self.direction);
-        self.src.c_includes("#include <stdlib.h>".into());
-        self.src
-            .c_includes(format!("#include \"{}.h\"", iface.name.to_kebab_case()));
+        self.include("<stdlib.h>".into());
         uwrite!(
             self.src.c_adapters,
             "
@@ -1241,36 +1258,70 @@ impl Generator for C {
         }
 
         if self.needs_string {
+            self.include("<string.h>");
+            if self.opts.string_encoding == StringEncoding::UTF16 {
+                self.include("<uchar.h>");
+            }
+            if self.opts.string_encoding == StringEncoding::CompactUTF16 {
+                panic!("Compact UTF16 is unsupported");
+            }
+
             uwrite!(
                 self.src.h_defs,
                 "
                     typedef struct {{
-                        char *ptr;
+                        {0} *ptr;
                         size_t len;
-                    }} {0}_string_t;
+                    }} {1}_string_t;
                 ",
+                self.char_type(),
                 iface.name.to_snake_case(),
             );
+            // Perhaps the string helpers should just take an explicit length?
             uwrite!(
                 self.src.h_helpers,
                 "
-                    void {0}_string_set({0}_string_t *ret, const char *s);
-                    void {0}_string_dup({0}_string_t *ret, const char *s);
+                    void {0}_string_set({0}_string_t *ret, const {1} *s);
+                    void {0}_string_dup({0}_string_t *ret, const {1} *s);
                     void {0}_string_free({0}_string_t *ret);\
                 ",
                 iface.name.to_snake_case(),
+                self.char_type(),
             );
+            let (str_len_s, alignment) = if self.opts.string_encoding == StringEncoding::UTF16 {
+                uwrite!(
+                    self.src.h_helpers,
+                    "
+                        size_t {0}_string_len(const char16_t* s);
+                    ",
+                    iface.name.to_snake_case(),
+                );
+                uwrite!(
+                    self.src.c_helpers,
+                    "
+                        size_t {0}_string_len(const char16_t* s) {{
+                            char16_t* c = (char16_t*)s;
+                            for (; *c; ++c);
+                            return c-s;
+                        }}
+                    ",
+                    iface.name.to_snake_case(),
+                );
+                (format!("{}_string_len(s)", iface.name.to_snake_case()), "2")
+            } else {
+                (String::from("strlen(s)"), "1")
+            };
             uwrite!(
                 self.src.c_helpers,
                 "
-                    void {0}_string_set({0}_string_t *ret, const char *s) {{
-                        ret->ptr = (char*) s;
-                        ret->len = strlen(s);
+                    void {0}_string_set({0}_string_t *ret, const {1} *s) {{
+                        ret->ptr = ({1}*) s;
+                        ret->len = {2};
                     }}
 
-                    void {0}_string_dup({0}_string_t *ret, const char *s) {{
-                        ret->len = strlen(s);
-                        ret->ptr = cabi_realloc(NULL, 0, 1, ret->len);
+                    void {0}_string_dup({0}_string_t *ret, const {1} *s) {{
+                        ret->len = {2};
+                        ret->ptr = cabi_realloc(NULL, 0, {3}, ret->len);
                         memcpy(ret->ptr, s, ret->len);
                     }}
 
@@ -1283,6 +1334,9 @@ impl Generator for C {
                     }}
                 ",
                 iface.name.to_snake_case(),
+                self.char_type(),
+                str_len_s,
+                alignment,
             );
         }
 
@@ -1320,17 +1374,15 @@ impl Generator for C {
             }
         }
 
-        let mut h_str = format!("#ifndef __BINDINGS_{}_H\n#define __BINDINGS_{}_H\n#ifdef __cplusplus\nextern \"C\" {{\n#endif",
-                iface.name.to_shouty_snake_case(), iface.name.to_shouty_snake_case());
-        h_str.push_str("\n\n#include <stdint.h>\n#include <stdbool.h>\n");
-        if self.needs_string {
-            h_str.push_str("#include <string.h>\n");
-        }
+        self.include("<stdint.h>");
+        self.include("<stdbool.h>");
 
-        let mut c_str = self.src.c_includes.join("\n");
-        if c_str.len() > 0 {
-            c_str.push_str("\n");
-        }
+        let mut h_str = format!("#ifndef __BINDINGS_{}_H\n#define __BINDINGS_{}_H\n#ifdef __cplusplus\nextern \"C\" {{\n#endif\n",
+                iface.name.to_shouty_snake_case(), iface.name.to_shouty_snake_case());
+        h_str.push_str(&self.includes.join("\n"));
+        h_str.push_str("\n");
+
+        let mut c_str = format!("#include \"{}.h\"\n", iface.name.to_kebab_case());
         c_str.push_str(&self.src.c_fns);
 
         if self.src.h_defs.len() > 0 {
@@ -1870,11 +1922,14 @@ impl Bindgen for FunctionBindgen<'_> {
                     "switch ({op0}) {{
                         case 0: {{
                             {result}.is_some = false;
-                            {none}break;
+                            {none}\
+                            break;
                         }}
                         case 1: {{
                             {result}.is_some = true;
-                            {some}{set_some}break;
+                            {some}\
+                            {set_some}\
+                            break;
                         }}
                     }}\n"
                 );
@@ -1908,26 +1963,26 @@ impl Bindgen for FunctionBindgen<'_> {
                 let bind_ok =
                     if let Some(ok) = self.gen.get_nonempty_type(iface, result.ok.as_ref()) {
                         let ok_ty = self.gen.type_string(iface, ok);
-                        format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;")
+                        format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;\n")
                     } else {
                         String::new()
                     };
                 let bind_err =
                     if let Some(err) = self.gen.get_nonempty_type(iface, result.err.as_ref()) {
                         let err_ty = self.gen.type_string(iface, err);
-                        format!("const {err_ty} *{err_payload} = &({op0}).val.err;")
+                        format!("const {err_ty} *{err_payload} = &({op0}).val.err;\n")
                     } else {
                         String::new()
                     };
                 uwrite!(
                     self.src,
-                    "
+                    "\
                     if (({op0}).is_err) {{
-                        {bind_err}
-                        {err}
+                        {bind_err}\
+                        {err}\
                     }} else {{
-                        {bind_ok}
-                        {ok}
+                        {bind_ok}\
+                        {ok}\
                     }}
                     "
                 );
@@ -1996,8 +2051,11 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::StringLift { .. } => {
                 let list_name = self.gen.type_string(iface, &Type::String);
                 results.push(format!(
-                    "({}) {{ (char*)({}), (size_t)({}) }}",
-                    list_name, operands[0], operands[1]
+                    "({}) {{ ({}*)({}), (size_t)({}) }}",
+                    list_name,
+                    self.gen.char_type(),
+                    operands[0],
+                    operands[1]
                 ));
             }
 
@@ -2281,7 +2339,6 @@ enum SourceType {
     HDefs,
     HFns,
     HHelpers,
-    // CIncludes,
     // CFns,
     // CHelpers,
     // CAdapters,
@@ -2292,7 +2349,6 @@ struct Source {
     h_defs: wit_bindgen_core::Source,
     h_fns: wit_bindgen_core::Source,
     h_helpers: wit_bindgen_core::Source,
-    c_includes: Vec<String>,
     c_fns: wit_bindgen_core::Source,
     c_helpers: wit_bindgen_core::Source,
     c_adapters: wit_bindgen_core::Source,
@@ -2304,7 +2360,6 @@ impl Source {
             SourceType::HDefs => self.h_defs(s),
             SourceType::HFns => self.h_fns(s),
             SourceType::HHelpers => self.h_helpers(s),
-            // SourceType::CIncludes => self.c_includes(s),
             // SourceType::CFns => self.c_fns(s),
             // SourceType::CHelpers => self.c_helpers(s),
             // SourceType::CAdapters => self.c_adapters(s),
@@ -2314,9 +2369,6 @@ impl Source {
         self.h_defs.push_str(&append_src.h_defs);
         self.h_fns.push_str(&append_src.h_fns);
         self.h_helpers.push_str(&append_src.h_helpers);
-        for i in &append_src.c_includes {
-            self.c_includes(i.into());
-        }
         self.c_fns.push_str(&append_src.c_fns);
         self.c_helpers.push_str(&append_src.c_helpers);
         self.c_adapters.push_str(&append_src.c_adapters);
@@ -2329,11 +2381,6 @@ impl Source {
     }
     fn h_helpers(&mut self, s: &str) {
         self.h_helpers.push_str(s);
-    }
-    fn c_includes(&mut self, s: String) {
-        if !self.c_includes.contains(&s) {
-            self.c_includes.push(s);
-        }
     }
     fn c_fns(&mut self, s: &str) {
         self.c_fns.push_str(s);
