@@ -2093,8 +2093,7 @@ impl<'a> ImportEncoder<'a> {
 #[derive(Default)]
 pub struct ComponentEncoder {
     module: Vec<u8>,
-    /// String encoding
-    pub encoding: StringEncoding,
+    encoding: StringEncoding,
     interface: Option<Interface>,
     imports: IndexMap<String, Interface>,
     exports: IndexMap<String, Interface>,
