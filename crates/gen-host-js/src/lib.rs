@@ -448,7 +448,7 @@ impl Js {
 
             Intrinsic::Utf8Decoder => self
                 .src
-                .js("const utf8Decoder = new TextDecoder('utf-8');\n"),
+                .js("const utf8Decoder = new TextDecoder();\n"),
 
             Intrinsic::Utf16Decoder => self
                 .src
@@ -457,7 +457,7 @@ impl Js {
             Intrinsic::Utf8EncodedLen => self.src.js("let utf8EncodedLen = 0;\n"),
 
             Intrinsic::Utf8Encode => self.src.js("
-                const utf8Encoder = new TextEncoder('utf-8');
+                const utf8Encoder = new TextEncoder();
 
                 function utf8Encode(s, realloc, memory) {
                     if (typeof s !== 'string') \
