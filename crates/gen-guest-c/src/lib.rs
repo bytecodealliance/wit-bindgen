@@ -271,7 +271,7 @@ impl WorldGenerator for C {
         files.push(&format!("{snake}.h"), h_str.as_bytes());
         files.push(
             &format!("{snake}_component_type.o",),
-            component_type_object::object(name, interfaces)
+            component_type_object::object(name, interfaces, self.opts.string_encoding)
                 .unwrap()
                 .as_slice(),
         );

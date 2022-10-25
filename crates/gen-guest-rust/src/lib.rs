@@ -178,18 +178,8 @@ impl WorldGenerator for RustWasm {
         self.src
             .push_str(&format!("#[link_section = \"component-type:{name}\"]\n"));
 
-        let mut encoder = wit_component::ComponentEncoder::default()
-            .imports(interfaces.imports.values().cloned())
-            .unwrap()
-            .exports(interfaces.exports.values().cloned())
-            .unwrap();
-        if let Some(default) = &interfaces.default {
-            encoder = encoder.interface(default.clone()).unwrap();
-        }
-        let component_type = encoder
-            .types_only(true)
-            .encode()
-            .expect("encoding a component type");
+        let component_type =
+            wit_component::metadata::encode(interfaces, wit_component::StringEncoding::UTF8);
         self.src.push_str(&format!(
             "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",
             component_type.len()

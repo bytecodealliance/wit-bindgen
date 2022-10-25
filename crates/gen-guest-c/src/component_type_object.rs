@@ -1,16 +1,20 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use heck::ToSnakeCase;
 use wasm_encoder::{
     CodeSection, CustomSection, Encode, Function, FunctionSection, Module, TypeSection,
 };
-use wit_component::{ComponentEncoder, ComponentInterfaces};
+use wit_component::{ComponentInterfaces, StringEncoding};
 
 pub fn linking_symbol(name: &str) -> String {
     let snake = name.to_snake_case();
     format!("__component_type_object_force_link_{snake}")
 }
 
-pub fn object(name: &str, interfaces: &ComponentInterfaces) -> Result<Vec<u8>> {
+pub fn object(
+    name: &str,
+    interfaces: &ComponentInterfaces,
+    encoding: StringEncoding,
+) -> Result<Vec<u8>> {
     let mut module = Module::new();
 
     // Build a module with one function that's a "dummy function"
@@ -24,18 +28,7 @@ pub fn object(name: &str, interfaces: &ComponentInterfaces) -> Result<Vec<u8>> {
     code.function(&Function::new([]));
     module.section(&code);
 
-    let mut encoder = ComponentEncoder::default()
-        .imports(interfaces.imports.values().cloned())?
-        .exports(interfaces.exports.values().cloned())?;
-
-    if let Some(default) = &interfaces.default {
-        encoder = encoder.interface(default.clone())?;
-    }
-
-    let data = encoder
-        .types_only(true)
-        .encode()
-        .with_context(|| format!("translating {name} to component type"))?;
+    let data = wit_component::metadata::encode(interfaces, encoding);
 
     // The custom section name here must start with "component-type" but
     // otherwise is attempted to be unique here to ensure that this doesn't get
