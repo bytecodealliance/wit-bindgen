@@ -2100,7 +2100,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 uwriteln!(self.src.js, "const ptr{tmp} = {};", operands[0]);
                 uwriteln!(self.src.js, "const len{tmp} = {};", operands[1]);
                 let intrinsic = if self.encoding == StringEncoding::Utf16 {
-                    self.gen.intrinsic(Intrinsic::IsLE);
                     Intrinsic::Utf16Decoder
                 } else {
                     Intrinsic::Utf8Decoder
