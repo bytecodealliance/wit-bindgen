@@ -1,6 +1,5 @@
 #include <assert.h>
-#include <imports.h>
-#include <exports.h>
+#include <records.h>
 
 void exports_test_imports() {
   {

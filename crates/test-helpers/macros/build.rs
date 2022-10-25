@@ -3,8 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use wit_bindgen_core::{wit_parser::Interface, Direction, Generator};
-use wit_component::ComponentEncoder;
-use wit_component::StringEncoding;
+use wit_component::{ComponentEncoder, ComponentInterfaces, StringEncoding};
 
 fn guest_c(
     wasms: &mut Vec<(String, String, String, String)>,
@@ -27,18 +26,19 @@ fn guest_c(
 
         let import = Interface::parse_file(&test_dir.join("imports.wit")).unwrap();
         let export = Interface::parse_file(&test_dir.join("exports.wit")).unwrap();
+        let interfaces = ComponentInterfaces {
+            imports: [(import.name.clone(), import)].into_iter().collect(),
+            exports: Default::default(),
+            default: Some(export),
+        };
+        let name = test_dir.file_name().unwrap().to_str().unwrap();
+        let snake = name.replace("-", "_");
         let mut files = Default::default();
-        // TODO: should combine this into one
         let mut opts = wit_bindgen_gen_guest_c::Opts::default();
         if utf_16 {
             opts.string_encoding = StringEncoding::UTF16;
         }
-        opts.build().generate_all(&[import], &[], &mut files);
-        let mut opts = wit_bindgen_gen_guest_c::Opts::default();
-        if utf_16 {
-            opts.string_encoding = StringEncoding::UTF16;
-        }
-        opts.build().generate_all(&[], &[export], &mut files);
+        opts.build().generate(&name, &interfaces, &mut files);
 
         let out_dir = out_dir.join(format!(
             "c{}-{}",
@@ -60,10 +60,8 @@ fn guest_c(
         let out_wasm = out_dir.join(format!("c{}.wasm", utf16_suffix));
         cmd.arg("--sysroot").arg(path.join("share/wasi-sysroot"));
         cmd.arg(c_impl)
-            .arg(out_dir.join("imports.c"))
-            .arg(out_dir.join("imports_component_type.o"))
-            .arg(out_dir.join("exports.c"))
-            .arg(out_dir.join("exports_component_type.o"))
+            .arg(out_dir.join(format!("{snake}.c")))
+            .arg(out_dir.join(format!("{snake}_component_type.o")))
             .arg("-I")
             .arg(&out_dir)
             .arg("-Wall")
@@ -89,8 +87,6 @@ fn guest_c(
             panic!("failed to compile");
         }
 
-        let stem = test_dir.file_stem().unwrap().to_str().unwrap().to_string();
-
         // Translate the canonical ABI module into a component.
         let module = fs::read(&out_wasm).expect("failed to read wasm file");
         let mut encoder = ComponentEncoder::default();
@@ -113,7 +109,7 @@ fn guest_c(
 
         wasms.push((
             format!("c{}", utf16_suffix),
-            stem,
+            name.to_string(),
             out_wasm.to_str().unwrap().to_string(),
             component_path.to_str().unwrap().to_string(),
         ));

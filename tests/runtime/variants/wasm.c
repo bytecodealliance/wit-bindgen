@@ -1,6 +1,5 @@
 #include <assert.h>
-#include <imports.h>
-#include <exports.h>
+#include <variants.h>
 
 void exports_test_imports() {
   {

@@ -1,13 +1,12 @@
 #include <assert.h>
-#include <imports.h>
-#include <exports.h>
+#include <flavorful.h>
 #include <stdlib.h>
 #include <string.h>
 
 void exports_test_imports() {
   {
     imports_list_in_record1_t a;
-    imports_string_set(&a.a, "list_in_record1");
+    flavorful_string_set(&a.a, "list_in_record1");
     imports_f_list_in_record1(&a);
 
     imports_list_in_record2_t b;
@@ -18,7 +17,7 @@ void exports_test_imports() {
 
   {
     imports_list_in_record3_t a, b;
-    imports_string_set(&a.a, "list_in_record3 input");
+    flavorful_string_set(&a.a, "list_in_record3 input");
     imports_f_list_in_record3(&a, &b);
     assert(memcmp(b.a.ptr, "list_in_record3 output", b.a.len) == 0);
     imports_list_in_record3_free(&b);
@@ -26,7 +25,7 @@ void exports_test_imports() {
 
   {
     imports_list_in_record4_t a, b;
-    imports_string_set(&a.a, "input4");
+    flavorful_string_set(&a.a, "input4");
     imports_f_list_in_record4(&a, &b);
     assert(memcmp(b.a.ptr, "result4", b.a.len) == 0);
     imports_list_in_record4_free(&b);
@@ -37,38 +36,38 @@ void exports_test_imports() {
     imports_list_in_variant1_v2_t b;
     imports_list_in_variant1_v3_t c;
     a.is_some = true;
-    imports_string_set(&a.val, "foo");
+    flavorful_string_set(&a.val, "foo");
     b.is_err = true;
-    imports_string_set(&b.val.err, "bar");
+    flavorful_string_set(&b.val.err, "bar");
     c.tag = 0;
-    imports_string_set(&c.val.f0, "baz");
+    flavorful_string_set(&c.val.f0, "baz");
     imports_f_list_in_variant1(&a, &b, &c);
   }
 
   {
-    imports_string_t a;
+    flavorful_string_t a;
     assert(imports_f_list_in_variant2(&a));
     assert(memcmp(a.ptr, "list_in_variant2", a.len) == 0);
-    imports_string_free(&a);
+    flavorful_string_free(&a);
   }
 
   {
     imports_list_in_variant3_t a;
     a.is_some = true;
-    imports_string_set(&a.val, "input3");
-    imports_string_t b;
+    flavorful_string_set(&a.val, "input3");
+    flavorful_string_t b;
     assert(imports_f_list_in_variant3(&a, &b));
     assert(memcmp(b.ptr, "output3", b.len) == 0);
-    imports_string_free(&b);
+    flavorful_string_free(&b);
   }
 
   assert(imports_errno_result() == IMPORTS_MY_ERRNO_B);
 
   {
-    imports_string_t a;
-    imports_string_set(&a, "typedef1");
-    imports_string_t b_str;
-    imports_string_set(&b_str, "typedef2");
+    flavorful_string_t a;
+    flavorful_string_set(&a, "typedef1");
+    flavorful_string_t b_str;
+    flavorful_string_set(&b_str, "typedef2");
     imports_list_typedef3_t b;
     b.ptr = &b_str;
     b.len = 1;
@@ -133,19 +132,19 @@ void exports_f_list_in_record1(exports_list_in_record1_t *a) {
 }
 
 void exports_f_list_in_record2(exports_list_in_record2_t *ret0) {
-  exports_string_dup(&ret0->a, "list_in_record2");
+  flavorful_string_dup(&ret0->a, "list_in_record2");
 }
 
 void exports_f_list_in_record3(exports_list_in_record3_t *a, exports_list_in_record3_t *ret0) {
   assert(memcmp(a->a.ptr, "list_in_record3 input", a->a.len) == 0);
   exports_list_in_record3_free(a);
-  exports_string_dup(&ret0->a, "list_in_record3 output");
+  flavorful_string_dup(&ret0->a, "list_in_record3 output");
 }
 
 void exports_f_list_in_record4(exports_list_in_alias_t *a, exports_list_in_alias_t *ret0) {
   assert(memcmp(a->a.ptr, "input4", a->a.len) == 0);
   exports_list_in_alias_free(a);
-  exports_string_dup(&ret0->a, "result4");
+  flavorful_string_dup(&ret0->a, "result4");
 }
 
 void exports_f_list_in_variant1(exports_list_in_variant1_v1_t *a, exports_list_in_variant1_v2_t *b, exports_list_in_variant1_v3_t *c) {
@@ -162,16 +161,16 @@ void exports_f_list_in_variant1(exports_list_in_variant1_v1_t *a, exports_list_i
   exports_list_in_variant1_v3_free(c);
 }
 
-bool exports_f_list_in_variant2(exports_string_t *ret0) {
-  exports_string_dup(ret0, "list_in_variant2");
+bool exports_f_list_in_variant2(flavorful_string_t *ret0) {
+  flavorful_string_dup(ret0, "list_in_variant2");
   return true;
 }
 
-bool exports_f_list_in_variant3(exports_list_in_variant3_t *a, exports_string_t *ret0) {
+bool exports_f_list_in_variant3(exports_list_in_variant3_t *a, flavorful_string_t *ret0) {
   assert(a->is_some);
   assert(memcmp(a->val.ptr, "input3", a->val.len) == 0);
   exports_list_in_variant3_free(a);
-  exports_string_dup(ret0, "output3");
+  flavorful_string_dup(ret0, "output3");
   return true;
 }
 
@@ -191,7 +190,7 @@ void exports_list_typedefs(exports_list_typedef_t *a, exports_list_typedef3_t *c
   ret0->len = 8;
   memcpy(ret0->ptr, "typedef3", 8);
 
-  ret1->ptr = malloc(sizeof(exports_string_t));
+  ret1->ptr = malloc(sizeof(flavorful_string_t));
   ret1->len = 1;
-  exports_string_dup(&ret1->ptr[0], "typedef4");
+  flavorful_string_dup(&ret1->ptr[0], "typedef4");
 }

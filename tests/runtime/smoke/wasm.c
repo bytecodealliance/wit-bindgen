@@ -1,5 +1,4 @@
-#include <imports.h>
-#include <exports.h>
+#include <smoke.h>
 #include <stdio.h>
 
 void exports_thunk() {
