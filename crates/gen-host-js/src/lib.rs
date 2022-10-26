@@ -1848,7 +1848,8 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.js(&format!(
                         "\
                         switch (variant{tmp}) {{
-                            case null: {{
+                            case null:
+                            case undefined: {{
                                 {none}\
                                 break;
                             }}
