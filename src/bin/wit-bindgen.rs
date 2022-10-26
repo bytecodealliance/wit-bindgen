@@ -126,7 +126,7 @@ struct World {
     /// The top-level name of the generated bindings, which may be used for
     /// naming modules/files/etc.
     #[clap(long, short)]
-    name: String,
+    name: Option<String>,
 }
 
 fn parse_named_interface(s: &str) -> Result<Interface> {
@@ -283,7 +283,21 @@ fn gen_world(
         exports,
         default: world.default,
     };
-    generator.generate(&world.name, &interfaces, files);
+    let name = match &world.name {
+        Some(name) => name,
+        None => {
+            if let Some(default) = &interfaces.default {
+                &default.name
+            } else if interfaces.exports.len() > 0 {
+                &interfaces.exports.first().unwrap().1.name
+            } else if interfaces.imports.len() > 0 {
+                &interfaces.imports.first().unwrap().1.name
+            } else {
+                return Err(anyhow!("no interfaces provided to generate"));
+            }
+        }
+    };
+    generator.generate(name, &interfaces, files);
     Ok(())
 }
 
