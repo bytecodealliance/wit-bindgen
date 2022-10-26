@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use wit_bindgen_core::{wit_parser::Interface, Direction, Generator};
 use wit_component::{ComponentEncoder, ComponentInterfaces, StringEncoding};
@@ -18,19 +18,8 @@ fn guest_c(
         if !c_impl.exists() {
             continue;
         }
-        let imports = test_dir.join("imports.wit");
-        let exports = test_dir.join("exports.wit");
-        println!("cargo:rerun-if-changed={}", imports.display());
-        println!("cargo:rerun-if-changed={}", exports.display());
         println!("cargo:rerun-if-changed={}", c_impl.display());
-
-        let import = Interface::parse_file(&test_dir.join("imports.wit")).unwrap();
-        let export = Interface::parse_file(&test_dir.join("exports.wit")).unwrap();
-        let interfaces = ComponentInterfaces {
-            imports: [(import.name.clone(), import)].into_iter().collect(),
-            exports: Default::default(),
-            default: Some(export),
-        };
+        let interfaces = read_interfaces(&test_dir);
         let name = test_dir.file_name().unwrap().to_str().unwrap();
         let snake = name.replace("-", "_");
         let mut files = Default::default();
@@ -89,11 +78,7 @@ fn guest_c(
 
         // Translate the canonical ABI module into a component.
         let module = fs::read(&out_wasm).expect("failed to read wasm file");
-        let mut encoder = ComponentEncoder::default();
-        if utf_16 {
-            encoder = encoder.encoding(StringEncoding::UTF16);
-        }
-        let component = encoder
+        let component = ComponentEncoder::default()
             .module(module.as_slice())
             .expect("pull custom sections from module")
             .validate(true)
@@ -218,13 +203,13 @@ fn main() {
             drop(fs::remove_dir_all(&out_dir));
 
             let java_dir = out_dir.join("src/main/java");
+            let interfaces = read_interfaces(&test_dir);
 
             for (wit, direction) in [
                 ("imports.wit", Direction::Import),
                 ("exports.wit", Direction::Export),
             ] {
                 let path = test_dir.join(wit);
-                println!("cargo:rerun-if-changed={}", path.display());
                 let iface = Interface::parse_file(&path).unwrap();
                 let package_dir = java_dir.join(&format!("wit_{}", iface.name));
                 fs::create_dir_all(&package_dir).unwrap();
@@ -281,18 +266,13 @@ fn main() {
 
             let out_wasm = out_dir.join("target/generated/wasm/teavm-wasm/classes.wasm");
 
-            let imports = [Interface::parse_file(test_dir.join("imports.wit")).unwrap()];
-            let interface = Interface::parse_file(test_dir.join("exports.wit")).unwrap();
-
             // Translate the canonical ABI module into a component.
             // The wit interfaces are explicitly passed to ComponentEncoder,
             // because the TeaVM guest doesnt yet support putting component
             // types into custom sections.
             let module = fs::read(&out_wasm).expect("failed to read wasm file");
             let component = ComponentEncoder::default()
-                .imports(imports)
-                .unwrap()
-                .interface(interface)
+                .interfaces(interfaces, StringEncoding::UTF8)
                 .unwrap()
                 .module(module.as_slice())
                 .expect("pull custom sections from module")
@@ -321,16 +301,29 @@ fn main() {
     std::fs::write(out_dir.join("wasms.rs"), src).unwrap();
 }
 
-#[cfg(unix)]
-fn mvn() -> Command {
-    Command::new("mvn")
+fn read_interfaces(dir: &Path) -> ComponentInterfaces {
+    let imports = dir.join("imports.wit");
+    let exports = dir.join("exports.wit");
+    println!("cargo:rerun-if-changed={}", imports.display());
+    println!("cargo:rerun-if-changed={}", exports.display());
+
+    let import = Interface::parse_file(&imports).unwrap();
+    let export = Interface::parse_file(&exports).unwrap();
+    ComponentInterfaces {
+        imports: [(import.name.clone(), import)].into_iter().collect(),
+        exports: Default::default(),
+        default: Some(export),
+    }
 }
 
-#[cfg(windows)]
 fn mvn() -> Command {
-    let mut cmd = Command::new("cmd");
-    cmd.args(&["/c", "mvn"]);
-    cmd
+    if cfg!(windows) {
+        let mut cmd = Command::new("cmd");
+        cmd.args(&["/c", "mvn"]);
+        cmd
+    } else {
+        Command::new("mvn")
+    }
 }
 
 fn pom_xml(classes_to_preserve: &[&str]) -> Vec<u8> {

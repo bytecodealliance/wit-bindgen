@@ -145,24 +145,25 @@ pub fn run_component_codegen_test(
     generate: fn(&str, &[u8], &mut Files),
     verify: fn(&Path, &str),
 ) {
-    let mut encoder = wit_component::ComponentEncoder::default();
     let iface = Interface::parse_file(wit_path).unwrap();
+    let mut interfaces = ComponentInterfaces::default();
 
-    let wasm = match dir {
+    match dir {
         Direction::Import => {
-            encoder = encoder.imports([iface.clone()]).unwrap();
-            dummy_module(&[iface], &[], None)
+            interfaces.imports.insert(iface.name.clone(), iface);
         }
         Direction::Export => {
-            encoder = encoder.interface(iface.clone()).unwrap();
-            dummy_module(&[], &[], Some(&iface))
+            interfaces.default = Some(iface);
         }
-    };
+    }
 
-    let component = encoder
+    let wasm = dummy_module(&interfaces);
+    let component = wit_component::ComponentEncoder::default()
         .module(&wasm)
         .unwrap()
         .validate(true)
+        .interfaces(interfaces, wit_component::StringEncoding::UTF8)
+        .unwrap()
         .encode()
         .unwrap();
 
@@ -189,14 +190,10 @@ pub fn run_component_codegen_test(
     verify(&dir, name);
 }
 
-pub fn dummy_module(
-    imports: &[Interface],
-    exports: &[Interface],
-    default: Option<&Interface>,
-) -> Vec<u8> {
+pub fn dummy_module(interfaces: &ComponentInterfaces) -> Vec<u8> {
     let mut wat = String::new();
     wat.push_str("(module\n");
-    for import in imports {
+    for (_, import) in interfaces.imports.iter() {
         for func in import.functions.iter() {
             let sig = import.wasm_signature(AbiVariant::GuestImport, func);
 
@@ -210,14 +207,14 @@ pub fn dummy_module(
         }
     }
 
-    for export in exports {
+    for (_, export) in interfaces.exports.iter() {
         for func in export.functions.iter() {
             let name = format!("{}#{}", export.name, func.name);
             push_func(&mut wat, &name, export, func);
         }
     }
 
-    if let Some(default) = default {
+    if let Some(default) = &interfaces.default {
         for func in default.functions.iter() {
             push_func(&mut wat, &func.name, default, func);
         }

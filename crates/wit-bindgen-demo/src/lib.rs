@@ -54,6 +54,19 @@ fn init() {
 
 fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Options) -> Result<()> {
     let iface = Interface::parse("input", &wit)?;
+    let interfaces = ComponentInterfaces {
+        imports: if options.import {
+            [(iface.name.clone(), iface.clone())].into_iter().collect()
+        } else {
+            Default::default()
+        },
+        exports: Default::default(),
+        default: if !options.import {
+            Some(iface.clone())
+        } else {
+            None
+        },
+    };
 
     let gen_world_legacy = |mut gen: Box<dyn Generator>, files: &mut Files| {
         let (imports, exports) = if options.import {
@@ -65,16 +78,6 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
     };
 
     let gen_world = |mut gen: Box<dyn WorldGenerator>, files: &mut Files| {
-        let (imports, default) = if options.import {
-            (vec![iface.clone()], None)
-        } else {
-            (vec![], Some(iface.clone()))
-        };
-        let interfaces = ComponentInterfaces {
-            imports: imports.into_iter().map(|i| (i.name.clone(), i)).collect(),
-            exports: Default::default(),
-            default,
-        };
         gen.generate("demo", &interfaces, files);
     };
 
@@ -86,19 +89,11 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
     // interface and dummy module.  Finally this component is fed into the host
     // generator which gives us the files we want.
     let gen_component = |mut gen: Box<dyn ComponentGenerator>, files: &mut Files| {
-        let (imports, interface) = if options.import {
-            (vec![iface.clone()], None)
-        } else {
-            (Vec::new(), Some(iface.clone()))
-        };
-        let dummy = test_helpers::dummy_module(&imports, &[], interface.as_ref());
-        let mut encoder = wit_component::ComponentEncoder::default()
+        let dummy = test_helpers::dummy_module(&interfaces);
+        let wasm = wit_component::ComponentEncoder::default()
             .module(&dummy)?
-            .imports(imports)?;
-        if let Some(iface) = interface {
-            encoder = encoder.interface(iface)?;
-        }
-        let wasm = encoder.encode()?;
+            .interfaces(interfaces.clone(), wit_component::StringEncoding::UTF8)?
+            .encode()?;
         wit_bindgen_core::component::generate(&mut *gen, "input", &wasm, files)
     };
 
