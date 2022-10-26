@@ -1,10 +1,10 @@
-package wit_exports;
+package wit_lists;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.ArrayList;
 
-import wit_imports.Imports;
+import wit_lists.ListsWorld.Tuple2;
 
 public class ExportsImpl {
     public static int allocatedBytes() {
@@ -77,7 +77,7 @@ public class ExportsImpl {
         }
 
         {
-            Imports.Tuple2<byte[], byte[]> result = Imports.listMinmax8
+            Tuple2<byte[], byte[]> result = Imports.listMinmax8
                 (new byte[] { (byte) 0, (byte) 0xFF }, new byte[] { (byte) 0x80, (byte) 0x7F });
 
             expect(result.f0.length == 2 && result.f0[0] == (byte) 0 && result.f0[1] == (byte) 0xFF);
@@ -85,7 +85,7 @@ public class ExportsImpl {
         }
 
         {
-            Imports.Tuple2<short[], short[]> result = Imports.listMinmax16
+            Tuple2<short[], short[]> result = Imports.listMinmax16
                 (new short[] { (short) 0, (short) 0xFFFF }, new short[] { (short) 0x8000, (short) 0x7FFF });
 
             expect(result.f0.length == 2 && result.f0[0] == (short) 0 && result.f0[1] == (short) 0xFFFF);
@@ -93,7 +93,7 @@ public class ExportsImpl {
         }
 
         {
-            Imports.Tuple2<int[], int[]> result = Imports.listMinmax32
+            Tuple2<int[], int[]> result = Imports.listMinmax32
                 (new int[] { 0, 0xFFFFFFFF }, new int[] { 0x80000000, 0x7FFFFFFF });
 
             expect(result.f0.length == 2 && result.f0[0] == 0 && result.f0[1] == 0xFFFFFFFF);
@@ -101,7 +101,7 @@ public class ExportsImpl {
         }
 
         {
-            Imports.Tuple2<long[], long[]> result = Imports.listMinmax64
+            Tuple2<long[], long[]> result = Imports.listMinmax64
                 (new long[] { 0, 0xFFFFFFFFFFFFFFFFL }, new long[] { 0x8000000000000000L, 0x7FFFFFFFFFFFFFFFL });
 
             expect(result.f0.length == 2
@@ -114,7 +114,7 @@ public class ExportsImpl {
         }
 
         {
-            Imports.Tuple2<float[], double[]> result = Imports.listMinmaxFloat
+            Tuple2<float[], double[]> result = Imports.listMinmaxFloat
                 (new float[] {
                     -Float.MAX_VALUE,
                     Float.MAX_VALUE,

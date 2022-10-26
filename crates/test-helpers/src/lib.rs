@@ -4,7 +4,7 @@ pub use test_helpers_macros::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use wit_bindgen_core::{Files, Generator};
+use wit_bindgen_core::Files;
 use wit_component::ComponentInterfaces;
 use wit_parser::abi::{AbiVariant, WasmType};
 use wit_parser::{Function, Interface};
@@ -12,42 +12,6 @@ use wit_parser::{Function, Interface};
 pub enum Direction {
     Import,
     Export,
-}
-
-/// Executes a "codegen" test by using `gen` to generate bindings for the
-/// `*.wit` file specified by `wit_contents`. This will then use the `verify`
-/// function to verify that the generated language is correct (e.g. compiles,
-/// lints, etc).
-///
-/// For an example of this see the JS host's `codegen.rs` test.
-pub fn run_codegen_test(
-    gen_name: &str,
-    wit_name: &str,
-    wit_contents: &str,
-    dir: Direction,
-    mut gen: impl Generator,
-    verify: fn(&Path, &str),
-) {
-    let mut files = Default::default();
-    let iface = Interface::parse(wit_name, wit_contents).unwrap();
-    let (imports, exports) = match dir {
-        Direction::Import => (vec![iface], vec![]),
-        Direction::Export => (vec![], vec![iface]),
-    };
-    gen.generate_all(&imports, &exports, &mut files);
-
-    let gen_name = format!(
-        "{gen_name}-{}",
-        match dir {
-            Direction::Import => "import",
-            Direction::Export => "export",
-        }
-    );
-    let dir = test_directory("codegen", &gen_name, wit_name);
-    for (file, contents) in files.iter() {
-        std::fs::write(dir.join(file), contents).unwrap();
-    }
-    verify(&dir, wit_name);
 }
 
 /// Returns a suitable directory to place output for tests within.

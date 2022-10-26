@@ -1,8 +1,9 @@
+use heck::{ToSnakeCase, ToUpperCamelCase};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use wit_bindgen_core::{wit_parser::Interface, Direction, Generator};
+use wit_bindgen_core::wit_parser::Interface;
 use wit_component::{ComponentEncoder, ComponentInterfaces, StringEncoding};
 
 fn guest_c(
@@ -195,51 +196,43 @@ fn main() {
             }
             println!("cargo:rerun-if-changed={}", java_impl.display());
 
-            let out_dir = out_dir.join(format!(
-                "java-{}",
-                test_dir.file_name().unwrap().to_str().unwrap()
-            ));
+            let name = test_dir.file_name().unwrap().to_str().unwrap();
+
+            let out_dir = out_dir.join(format!("java-{name}",));
 
             drop(fs::remove_dir_all(&out_dir));
 
             let java_dir = out_dir.join("src/main/java");
             let interfaces = read_interfaces(&test_dir);
+            let mut files = Default::default();
 
-            for (wit, direction) in [
-                ("imports.wit", Direction::Import),
-                ("exports.wit", Direction::Export),
-            ] {
-                let path = test_dir.join(wit);
-                let iface = Interface::parse_file(&path).unwrap();
-                let package_dir = java_dir.join(&format!("wit_{}", iface.name));
-                fs::create_dir_all(&package_dir).unwrap();
-                let ifaces = &[iface];
-                let mut files = Default::default();
+            wit_bindgen_gen_guest_teavm_java::Opts::default()
+                .build()
+                .generate(&name, &interfaces, &mut files);
 
-                wit_bindgen_gen_guest_teavm_java::Opts::default()
-                    .build()
-                    .generate_all(
-                        if direction == Direction::Import {
-                            ifaces
-                        } else {
-                            &[]
-                        },
-                        if direction == Direction::Export {
-                            ifaces
-                        } else {
-                            &[]
-                        },
-                        &mut files,
-                    );
-
-                for (file, contents) in files.iter() {
-                    let dst = package_dir.join(file);
-                    fs::write(dst, contents).unwrap();
-                }
+            let package_dir = java_dir.join(&format!("wit_{name}"));
+            fs::create_dir_all(&package_dir).unwrap();
+            for (file, contents) in files.iter() {
+                let dst = package_dir.join(file);
+                fs::write(dst, contents).unwrap();
             }
 
-            fs::copy(&java_impl, java_dir.join("wit_exports/ExportsImpl.java")).unwrap();
-            fs::write(out_dir.join("pom.xml"), pom_xml(&["wit_exports.Exports"])).unwrap();
+            let snake = name.to_snake_case();
+            let upper = name.to_upper_camel_case();
+            fs::copy(
+                &java_impl,
+                java_dir.join(&format!("wit_{snake}/ExportsImpl.java")),
+            )
+            .unwrap();
+            fs::write(
+                out_dir.join("pom.xml"),
+                pom_xml(&[
+                    &format!("wit_{snake}.{upper}"),
+                    &format!("wit_{snake}.{upper}World"),
+                    &format!("wit_{snake}.Imports"),
+                ]),
+            )
+            .unwrap();
             fs::write(
                 java_dir.join("Main.java"),
                 include_bytes!("../../gen-guest-teavm-java/tests/Main.java"),
@@ -249,7 +242,7 @@ fn main() {
             let mut cmd = mvn();
             cmd.arg("prepare-package").current_dir(&out_dir);
 
-            println!("{:?}", cmd);
+            println!("{cmd:?}");
             let output = match cmd.output() {
                 Ok(output) => output,
                 Err(e) => panic!("failed to run Maven: {}", e),
@@ -267,13 +260,8 @@ fn main() {
             let out_wasm = out_dir.join("target/generated/wasm/teavm-wasm/classes.wasm");
 
             // Translate the canonical ABI module into a component.
-            // The wit interfaces are explicitly passed to ComponentEncoder,
-            // because the TeaVM guest doesnt yet support putting component
-            // types into custom sections.
             let module = fs::read(&out_wasm).expect("failed to read wasm file");
             let component = ComponentEncoder::default()
-                .interfaces(interfaces, StringEncoding::UTF8)
-                .unwrap()
                 .module(module.as_slice())
                 .expect("pull custom sections from module")
                 .validate(true)
@@ -281,8 +269,7 @@ fn main() {
                 .expect("adapter failed to get loaded")
                 .encode()
                 .expect(&format!(
-                    "module {:?} can be translated to a component",
-                    out_wasm
+                    "module {out_wasm:?} can be translated to a component",
                 ));
             let component_path =
                 out_dir.join("target/generated/wasm/teavm-wasm/classes.component.wasm");

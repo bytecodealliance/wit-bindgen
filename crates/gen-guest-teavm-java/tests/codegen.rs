@@ -7,19 +7,17 @@ macro_rules! gen_test {
     ($name:ident $test:tt $dir:ident) => {
         #[test]
         fn $name() {
-            test_helpers::run_codegen_test(
+            test_helpers::run_world_codegen_test(
                 "guest-teavm-java",
-                std::path::Path::new($test)
-                    .file_stem()
-                    .unwrap()
-                    .to_str()
-                    .unwrap(),
-                include_str!($test),
+                $test.as_ref(),
                 test_helpers::Direction::$dir,
-                wit_bindgen_gen_guest_teavm_java::Opts {
-                    generate_stub: true,
-                }
-                .build(),
+                |name, interfaces, files| {
+                    wit_bindgen_gen_guest_teavm_java::Opts {
+                        generate_stub: true,
+                    }
+                    .build()
+                    .generate(name, interfaces, files)
+                },
                 super::verify,
             )
         }
@@ -42,13 +40,16 @@ mod imports {
 
 fn verify(dir: &Path, name: &str) {
     let java_dir = &dir.join("src/main/java");
-    let package_dir = &java_dir.join(format!("wit_{}", name.to_snake_case()));
+    let snake = name.to_snake_case();
+    let package_dir = &java_dir.join(format!("wit_{snake}"));
 
     fs::create_dir_all(package_dir).unwrap();
 
+    let upper = name.to_upper_camel_case();
     for file_name in [
-        format!("{}.java", name.to_upper_camel_case()),
-        format!("{}Impl.java", name.to_upper_camel_case()),
+        format!("{upper}World.java"),
+        format!("{upper}.java"),
+        format!("{upper}Impl.java"),
     ] {
         let src = &dir.join(&file_name);
         let dst = &package_dir.join(&file_name);
@@ -59,11 +60,7 @@ fn verify(dir: &Path, name: &str) {
 
     fs::write(
         dir.join("pom.xml"),
-        pom_xml(&[&format!(
-            "wit_{}.{}",
-            name.to_snake_case(),
-            name.to_upper_camel_case()
-        )]),
+        pom_xml(&[&format!("wit_{snake}.{upper}",)]),
     )
     .unwrap();
     fs::write(java_dir.join("Main.java"), include_bytes!("Main.java")).unwrap();

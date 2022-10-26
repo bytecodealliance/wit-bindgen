@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use std::path::{Path, PathBuf};
 use wit_bindgen_core::component::ComponentGenerator;
-use wit_bindgen_core::{wit_parser, Files, Generator, WorldGenerator};
+use wit_bindgen_core::{wit_parser, Files, WorldGenerator};
 use wit_component::ComponentInterfaces;
 use wit_parser::Interface;
 
@@ -92,21 +92,8 @@ enum GuestGenerator {
         #[clap(flatten)]
         common: Common,
         #[clap(flatten)]
-        world: LegacyWorld,
+        world: World,
     },
-}
-
-#[derive(Debug, Parser)]
-struct LegacyWorld {
-    /// Generate import bindings for the given `*.wit` interface. Can be
-    /// specified multiple times.
-    #[clap(long, short)]
-    imports: Vec<PathBuf>,
-
-    /// Generate export bindings for the given `*.wit` interface. Can be
-    /// specified multiple times.
-    #[clap(long, short)]
-    exports: Vec<PathBuf>,
 }
 
 #[derive(Debug, Parser)]
@@ -156,7 +143,11 @@ fn parse_named_interface(s: &str) -> Result<Interface> {
     }
 
     let mut interface = Interface::parse_file(&path)
-        .with_context(|| format!("failed to parse interface file `{}`", path.display()))?;
+        .with_context(|| format!("failed to parse interface file `{}`", path.display()))
+        .map_err(|e| {
+            eprintln!("{e:?}");
+            e
+        })?;
 
     interface.name = name.to_string();
 
@@ -220,7 +211,7 @@ fn main() -> Result<()> {
             gen_world(opts.build(), world, &mut files)?;
         }
         Category::Guest(GuestGenerator::TeavmJava { opts, world, .. }) => {
-            gen_legacy_world(Box::new(opts.build()), world, &mut files)?;
+            gen_world(opts.build(), world, &mut files)?;
         }
         Category::Markdown { opts, world, .. } => {
             gen_world(opts.build(), world, &mut files)?;
@@ -240,26 +231,6 @@ fn main() -> Result<()> {
         std::fs::write(&dst, contents).with_context(|| format!("failed to write {:?}", dst))?;
     }
 
-    Ok(())
-}
-
-fn gen_legacy_world(
-    mut generator: Box<dyn Generator>,
-    world: LegacyWorld,
-    files: &mut Files,
-) -> Result<()> {
-    let imports = world
-        .imports
-        .iter()
-        .map(|wit| Interface::parse_file(wit))
-        .collect::<Result<Vec<_>>>()?;
-    let exports = world
-        .exports
-        .iter()
-        .map(|wit| Interface::parse_file(wit))
-        .collect::<Result<Vec<_>>>()?;
-
-    generator.generate_all(&imports, &exports, files);
     Ok(())
 }
 

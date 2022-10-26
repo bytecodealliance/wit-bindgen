@@ -1,7 +1,7 @@
-package wit_exports;
+package wit_smoke;
 
 public class ExportsImpl {
     public static void thunk() {
-        wit_imports.Imports.thunk();
+        Imports.thunk();
     }
 }
