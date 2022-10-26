@@ -449,8 +449,7 @@ impl Js {
             // Definition of `String`: https://tc39.es/ecma262/#sec-string-constructor-string-value
             Intrinsic::ToString => self.src.js("
                 function toString(val) {
-                    if (typeof val === 'symbol')
-                        throw new TypeError('symbols cannot be converted to strings');
+                    if (typeof val === 'symbol') throw new TypeError('symbols cannot be converted to strings');
                     return String(val);
                 }
             "),
