@@ -9,10 +9,10 @@
 
 use crate::{Files, WorldGenerator};
 use anyhow::{Context, Result};
-use wasmparser::{Validator, WasmFeatures};
 use wasmtime_environ::component::{
     Component, ComponentTypesBuilder, StaticModuleIndex, Translator,
 };
+use wasmtime_environ::wasmparser::{Validator, WasmFeatures};
 use wasmtime_environ::{ModuleTranslation, PrimaryMap, ScopeVec, Tunables};
 use wit_component::ComponentInterfaces;
 
