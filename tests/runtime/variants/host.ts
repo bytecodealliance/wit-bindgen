@@ -36,6 +36,8 @@ async function run() {
   wasm.testImports();
   assert.deepStrictEqual(wasm.roundtripOption(1), 1);
   assert.deepStrictEqual(wasm.roundtripOption(null), null);
+  assert.deepStrictEqual(wasm.roundtripOption(undefined), null);
+  assert.deepStrictEqual(wasm.roundtripOption(), null);
   assert.deepStrictEqual(wasm.roundtripOption(2), 2);
   assert.deepStrictEqual(wasm.roundtripResult({ tag: 'ok', val: 2 }), { tag: 'ok', val: 2 });
   assert.deepStrictEqual(wasm.roundtripResult({ tag: 'ok', val: 4 }), { tag: 'ok', val: 4 });
