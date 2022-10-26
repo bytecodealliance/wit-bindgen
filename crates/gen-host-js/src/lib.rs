@@ -17,19 +17,21 @@ use wit_bindgen_core::{
 };
 use wit_component::ComponentInterfaces;
 
+// https://tc39.es/ecma262/#prod-IdentifierStartChar
+// Unicode ID_Start | "$" | "_"
 fn is_js_identifier_start(code: char) -> bool {
-    return match code as u32 {
-        0..=35 | 37..=64 | 91..=94 | 96..=96 => false,
-        36 | 65..=90 | 95 | 97..=122 => true,
+    return match code {
+        'A'..='Z' | 'a'..='z' | '$' | '_' => true,
         // leaving out non-ascii for now...
         _ => false,
     };
 }
 
+// https://tc39.es/ecma262/#prod-IdentifierPartChar
+// Unicode ID_Continue | "$" | U+200C | U+200D
 fn is_js_identifier_char(code: char) -> bool {
-    return match code as u32 {
-        0..=35 | 37..=47 | 58..=64 | 91..=94 | 96..=96 => false,
-        36 | 48..=57 | 65..=90 | 95 | 97..=122 => true,
+    return match code {
+        '0'..='9' | 'A'..='Z' | 'a'..='z' | '$' | '_' => true,
         // leaving out non-ascii for now...
         _ => false,
     };
@@ -228,7 +230,7 @@ impl ComponentGenerator for Js {
     fn finish_component(&mut self, name: &str, files: &mut Files) {
         let mut bytes = self.src.js.as_bytes();
         // strip leading newline
-        if bytes[0] == '\n' as u8 {
+        if bytes[0] == b'\n' {
             bytes = &bytes[1..];
         }
         files.push(&format!("{name}.js"), bytes);
