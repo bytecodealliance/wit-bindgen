@@ -17,6 +17,43 @@ use wit_bindgen_core::{
 };
 use wit_component::ComponentInterfaces;
 
+// https://tc39.es/ecma262/#prod-IdentifierStartChar
+// Unicode ID_Start | "$" | "_"
+fn is_js_identifier_start(code: char) -> bool {
+    return match code {
+        'A'..='Z' | 'a'..='z' | '$' | '_' => true,
+        // leaving out non-ascii for now...
+        _ => false,
+    };
+}
+
+// https://tc39.es/ecma262/#prod-IdentifierPartChar
+// Unicode ID_Continue | "$" | U+200C | U+200D
+fn is_js_identifier_char(code: char) -> bool {
+    return match code {
+        '0'..='9' | 'A'..='Z' | 'a'..='z' | '$' | '_' => true,
+        // leaving out non-ascii for now...
+        _ => false,
+    };
+}
+
+fn is_js_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    if let Some(char) = chars.next() {
+        if !is_js_identifier_start(char) {
+            return false;
+        }
+    } else {
+        return false;
+    }
+    while let Some(char) = chars.next() {
+        if !is_js_identifier_char(char) {
+            return false;
+        }
+    }
+    return true;
+}
+
 #[derive(Default)]
 struct Js {
     /// The source code for the "main" file that's going to be created for the
@@ -191,7 +228,12 @@ impl ComponentGenerator for Js {
     }
 
     fn finish_component(&mut self, name: &str, files: &mut Files) {
-        files.push(&format!("{name}.js"), self.src.js.as_bytes());
+        let mut bytes = self.src.js.as_bytes();
+        // strip leading newline
+        if bytes[0] == b'\n' {
+            bytes = &bytes[1..];
+        }
+        files.push(&format!("{name}.js"), bytes);
         if !self.opts.no_typescript {
             files.push(&format!("{name}.d.ts"), self.src.ts.as_bytes());
         }
@@ -327,7 +369,7 @@ impl Js {
             "),
 
             Intrinsic::IsLE => self.src.js("
-                const isLE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+             const isLE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
             "),
 
             Intrinsic::ValidateGuestChar => self.src.js("
@@ -397,77 +439,61 @@ impl Js {
             "),
 
             Intrinsic::ToBigInt64 => self.src.js("
-                function toInt64(val) {
-                    return BigInt.asIntN(64, val);
-                }
+                const toInt64 = val => BigInt.asIntN(64, val);
             "),
             Intrinsic::ToBigUint64 => self.src.js("
-                function toUint64(val) {
-                    return BigInt.asUintN(64, val);
-                }
+                const toUint64 = val => BigInt.asUintN(64, val);
             "),
 
+            // Calling `String` almost directly calls `ToString`, except that it also allows symbols,
+            // which is why we have the symbol-rejecting branch above.
+            //
+            // Definition of `String`: https://tc39.es/ecma262/#sec-string-constructor-string-value
             Intrinsic::ToString => self.src.js("
                 function toString(val) {
-                    if (typeof val === 'symbol') {
-                        throw new TypeError('symbols cannot be converted to strings');
-                    } else {
-                        // Calling `String` almost directly calls `ToString`, except that it also allows symbols,
-                        // which is why we have the symbol-rejecting branch above.
-                        //
-                        // Definition of `String`: https://tc39.es/ecma262/#sec-string-constructor-string-value
-                        return String(val);
-                    }
+                    if (typeof val === 'symbol') throw new TypeError('symbols cannot be converted to strings');
+                    return String(val);
                 }
             "),
 
             Intrinsic::I32ToF32 => self.src.js("
-                function i32ToF32(i) {
-                    i32ToF32I[0] = i;
-                    return i32ToF32F[0];
-                }
+                const i32ToF32 = i => (i32ToF32I[0] = i, i32ToF32F[0]);
             "),
             Intrinsic::F32ToI32 => self.src.js("
-                function f32ToI32(f) {
-                    i32ToF32F[0] = f;
-                    return i32ToF32I[0];
-                }
+                const f32ToI32 = f => (i32ToF32F[0] = f, i32ToF32I[0]);
             "),
             Intrinsic::I64ToF64 => self.src.js("
-                function i64ToF64(i) {
-                    i64ToF64I[0] = i;
-                    return i64ToF64F[0];
-                }
+                const i64ToF64 = i => (i64ToF64I[0] = i, i64ToF64F[0]);
             "),
             Intrinsic::F64ToI64 => self.src.js("
-                function f64ToI64(f) {
-                    i64ToF64F[0] = f;
-                    return i64ToF64I[0];
-                }
+                const f64ToI64 = f => (i64ToF64F[0] = f, i64ToF64I[0]);
             "),
 
             Intrinsic::Utf8Decoder => self
                 .src
-                .js("const utf8Decoder = new TextDecoder();\n"),
+                .js("
+                    const utf8Decoder = new TextDecoder();
+                "),
 
             Intrinsic::Utf16Decoder => self
                 .src
-                .js("const utf16Decoder = new TextDecoder('utf-16');\n"),
+                .js("
+                    const utf16Decoder = new TextDecoder('utf-16');
+                "),
 
-            Intrinsic::Utf8EncodedLen => self.src.js("let utf8EncodedLen = 0;\n"),
+            Intrinsic::Utf8EncodedLen => {},
 
             Intrinsic::Utf8Encode => self.src.js("
                 const utf8Encoder = new TextEncoder();
 
+                let utf8EncodedLen = 0;
                 function utf8Encode(s, realloc, memory) {
                     if (typeof s !== 'string') \
                         throw new TypeError('expected a string');
-
                     if (s.length === 0) {
                         utf8EncodedLen = 0;
                         return 1;
                     }
-
                     let allocLen = 0;
                     let ptr = 0;
                     let writtenTotal = 0;
@@ -595,7 +621,9 @@ impl Instantiator<'_> {
     fn instantiate(&mut self) {
         uwriteln!(
             self.src.js,
-            "export async function instantiate(instantiateCore, imports) {{"
+            "
+                export async function instantiate(instantiateCore, imports) {{\
+            "
         );
 
         for init in self.component.initializers.iter() {
@@ -676,9 +704,19 @@ impl Instantiator<'_> {
         } else {
             imports.push_str("{\n");
             for (module, names) in import_obj {
-                uwrite!(imports, "\"{module}\": {{\n");
+                if is_js_identifier(module) {
+                    imports.push_str(module);
+                } else {
+                    uwrite!(imports, "'{module}'");
+                }
+                imports.push_str(": {\n");
                 for (name, val) in names {
-                    uwriteln!(imports, "\"{name}\": {val},");
+                    if is_js_identifier(name) {
+                        imports.push_str(name);
+                    } else {
+                        uwrite!(imports, "'{name}'");
+                    }
+                    uwriteln!(imports, ": {val},");
                 }
                 imports.push_str("},\n");
             }
@@ -823,7 +861,11 @@ impl Instantiator<'_> {
             ExportItem::Name(s) => s,
         };
         let i = export.instance.as_u32() as usize;
-        format!("instance{i}.exports[\"{name}\"]")
+        if is_js_identifier(name) {
+            format!("instance{i}.exports.{name}")
+        } else {
+            format!("instance{i}.exports[\"{name}\"]")
+        }
     }
 
     fn exports(
@@ -1743,7 +1785,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     let block_result = &block_results[0];
                     self.src.js(&format!(
                         "case {i}: {{
-                            {block}
+                            {block}\
                             union{tmp} = {{
                                 tag: {i},
                                 val: {block_result},
@@ -1788,12 +1830,12 @@ impl Bindgen for FunctionBindgen<'_> {
                         "
                         switch (variant{tmp}.tag) {{
                             case \"none\": {{
-                                {none}
+                                {none}\
                                 break;
                             }}
                             case \"some\": {{
                                 const e = variant{tmp}.val;
-                                {some}
+                                {some}\
                                 break;
                             }}
                             default: {{
@@ -1804,15 +1846,15 @@ impl Bindgen for FunctionBindgen<'_> {
                     ));
                 } else {
                     self.src.js(&format!(
-                        "
+                        "\
                         switch (variant{tmp}) {{
                             case null: {{
-                                {none}
+                                {none}\
                                 break;
                             }}
                             default: {{
                                 const e = variant{tmp};
-                                {some}
+                                {some}\
                                 break;
                             }}
                         }}
@@ -1835,14 +1877,14 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 if self.gen.maybe_null(iface, payload) {
                     self.src.js(&format!(
-                        "
+                        "\
                             case 0: {{
-                                {none}
+                                {none}\
                                 variant{tmp} = {{ tag: \"none\" }};
                                 break;
                             }}
                             case 1: {{
-                                {some}
+                                {some}\
                                 variant{tmp} = {{ tag: \"some\", val: {some_result} }};
                                 break;
                             }}
@@ -1850,21 +1892,21 @@ impl Bindgen for FunctionBindgen<'_> {
                     ));
                 } else {
                     self.src.js(&format!(
-                        "
+                        "\
                             case 0: {{
-                                {none}
+                                {none}\
                                 variant{tmp} = null;
                                 break;
                             }}
                             case 1: {{
-                                {some}
+                                {some}\
                                 variant{tmp} = {some_result};
                                 break;
                             }}
                         ",
                     ));
                 }
-                self.src.js("
+                self.src.js("\
                     default:
                         throw new RangeError(\"invalid variant discriminant for option\");
                 ");
@@ -1894,16 +1936,16 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
 
                 self.src.js(&format!(
-                    "
+                    "\
                     switch (variant{tmp}.tag) {{
                         case \"ok\": {{
                             const e = variant{tmp}.val;
-                            {ok}
+                            {ok}\
                             break;
                         }}
                         case \"err\": {{
                             const e = variant{tmp}.val;
-                            {err}
+                            {err}\
                             break;
                         }}
                         default: {{
@@ -1938,12 +1980,12 @@ impl Bindgen for FunctionBindgen<'_> {
                     let variant{tmp};
                     switch ({op0}) {{
                         case 0: {{
-                            {ok}
+                            {ok}\
                             variant{tmp} = {{ tag: \"ok\", val: {ok_result} }};
                             break;
                         }}
                         case 1: {{
-                            {err}
+                            {err}\
                             variant{tmp} = {{ tag: \"err\", val: {err_result} }};
                             break;
                         }}
@@ -2139,7 +2181,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 // result.
                 uwriteln!(self.src.js, "for (let i = 0; i < {vec}.length; i++) {{");
                 uwriteln!(self.src.js, "const e = {vec}[i];");
-                uwriteln!(self.src.js, "const base = {result} + i * {size};");
+                uwrite!(self.src.js, "const base = {result} + i * {size};");
                 self.src.js(&body);
                 self.src.js("}\n");
 
