@@ -480,13 +480,12 @@ impl Js {
                     const utf16Decoder = new TextDecoder('utf-16');
                 "),
 
-            Intrinsic::Utf8EncodedLen => self.src.js("
-                let utf8EncodedLen = 0;
-            "),
+            Intrinsic::Utf8EncodedLen => {},
 
             Intrinsic::Utf8Encode => self.src.js("
                 const utf8Encoder = new TextEncoder();
 
+                let utf8EncodedLen = 0;
                 function utf8Encode(s, realloc, memory) {
                     if (typeof s !== 'string') \
                         throw new TypeError('expected a string');
