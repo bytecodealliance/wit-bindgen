@@ -2202,7 +2202,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(result.clone());
 
                 uwriteln!(self.src.js, "for (let i = 0; i < {len}; i++) {{");
-                uwrite!(self.src.js, "const base = {base} + i * {size};");
+                uwriteln!(self.src.js, "const base = {base} + i * {size};");
                 self.src.js(&body);
                 assert_eq!(body_results.len(), 1);
                 uwriteln!(self.src.js, "{result}.push({});", body_results[0]);
