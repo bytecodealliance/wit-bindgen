@@ -31,7 +31,7 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     pub no_helpers: bool,
     /// Set component string encoding
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = StringEncoding::UTF8))]
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = StringEncoding::default()))]
     pub string_encoding: StringEncoding,
 }
 

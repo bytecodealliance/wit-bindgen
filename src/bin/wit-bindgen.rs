@@ -288,12 +288,10 @@ fn gen_world(
         None => {
             if let Some(default) = &interfaces.default {
                 &default.name
-            } else if interfaces.exports.len() > 0 {
-                &interfaces.exports.first().unwrap().1.name
-            } else if interfaces.imports.len() > 0 {
-                &interfaces.imports.first().unwrap().1.name
             } else {
-                return Err(anyhow!("no interfaces provided to generate"));
+                return Err(anyhow!(
+                    "--name flag is required unless setting the interface via --default"
+                ));
             }
         }
     };
