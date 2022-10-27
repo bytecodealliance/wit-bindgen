@@ -16,11 +16,10 @@ export async function loadWasm(path: string, imports: any) {
   return await WebAssembly.instantiate(m, imports);
 }
 
-export const testwasi = {
-  log(bytes: Uint8Array) {
-    stdout.write(bytes);
-  },
-  logErr(bytes: Uint8Array) {
-    stderr.write(bytes);
-  },
-};
+// Export a WASI interface directly for instance imports
+export function log (bytes: Uint8Array) {
+  stdout.write(bytes);
+}
+export function logErr (bytes: Uint8Array) {
+  stderr.write(bytes);
+}

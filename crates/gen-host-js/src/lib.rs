@@ -1,6 +1,7 @@
+use anyhow::{anyhow, Result};
 use heck::*;
 use indexmap::IndexMap;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write;
 use std::mem;
 use wasmtime_environ::component::{
@@ -17,43 +18,6 @@ use wit_bindgen_core::{
 };
 use wit_component::ComponentInterfaces;
 
-// https://tc39.es/ecma262/#prod-IdentifierStartChar
-// Unicode ID_Start | "$" | "_"
-fn is_js_identifier_start(code: char) -> bool {
-    return match code {
-        'A'..='Z' | 'a'..='z' | '$' | '_' => true,
-        // leaving out non-ascii for now...
-        _ => false,
-    };
-}
-
-// https://tc39.es/ecma262/#prod-IdentifierPartChar
-// Unicode ID_Continue | "$" | U+200C | U+200D
-fn is_js_identifier_char(code: char) -> bool {
-    return match code {
-        '0'..='9' | 'A'..='Z' | 'a'..='z' | '$' | '_' => true,
-        // leaving out non-ascii for now...
-        _ => false,
-    };
-}
-
-fn is_js_identifier(s: &str) -> bool {
-    let mut chars = s.chars();
-    if let Some(char) = chars.next() {
-        if !is_js_identifier_start(char) {
-            return false;
-        }
-    } else {
-        return false;
-    }
-    while let Some(char) = chars.next() {
-        if !is_js_identifier_char(char) {
-            return false;
-        }
-    }
-    return true;
-}
-
 #[derive(Default)]
 struct Js {
     /// The source code for the "main" file that's going to be created for the
@@ -61,6 +25,9 @@ struct Js {
     /// over time and primarily contains the main `instantiate` function as well
     /// as a type-description of the input/output interfaces.
     src: Source,
+
+    /// Import mappings
+    import_maps: HashMap<String, String>,
 
     /// Type script definitions which will become the import object
     import_object: wit_bindgen_core::Source,
@@ -74,20 +41,55 @@ struct Js {
     all_intrinsics: BTreeSet<Intrinsic>,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
     /// Disables generation of `*.d.ts` files and instead only generates `*.js`
     /// source files.
     #[cfg_attr(feature = "clap", arg(long = "no-typescript"))]
     pub no_typescript: bool,
+    /// Provide a custom JS instantiation API for the component instead
+    /// of the direct importable native ESM output.
+    #[cfg_attr(
+        feature = "clap",
+        arg(
+            long = "instantiation",
+            short = 'I',
+            conflicts_with = "compatibility",
+            conflicts_with = "compat"
+        )
+    )]
+    pub instantiation: bool,
+    /// Comma-separated list of "from-specifier=./to-specifier.js" mappings of
+    /// component import specifiers to JS import specifiers.
+    #[cfg_attr(feature = "clap", arg(long = "map", conflicts_with = "instantiation"))]
+    pub map: Option<String>,
+    /// Enables all compat flags: --nodejs-compat.
+    #[cfg_attr(feature = "clap", arg(long = "compat"))]
+    pub compat: bool,
+    /// Enables compatibility in Node.js without a fetch global.
+    #[cfg_attr(
+        feature = "clap",
+        arg(
+            long = "nodejs-compat",
+            group = "compatibility",
+            conflicts_with = "compat"
+        )
+    )]
+    pub nodejs_compat: bool,
 }
 
 impl Opts {
-    pub fn build(self) -> Box<dyn ComponentGenerator> {
+    pub fn build(self) -> Result<Box<dyn ComponentGenerator>> {
         let mut gen = Js::default();
         gen.opts = self;
-        Box::new(gen)
+        if gen.opts.compat {
+            gen.opts.nodejs_compat = true;
+        }
+        if let Some(map) = gen.opts.map.as_ref() {
+            gen.import_maps = maps_str_to_map(&map)?;
+        }
+        Ok(Box::new(gen))
     }
 }
 
@@ -98,6 +100,7 @@ enum Intrinsic {
     ValidateGuestChar,
     ValidateHostChar,
     IsLE,
+    LoadWasm,
     /// Implementation of https://tc39.es/ecma262/#sec-toint32.
     ToInt32,
     /// Implementation of https://tc39.es/ecma262/#sec-touint32.
@@ -136,6 +139,7 @@ impl Intrinsic {
             Intrinsic::ValidateGuestChar => "validateGuestChar",
             Intrinsic::ValidateHostChar => "validateHostChar",
             Intrinsic::IsLE => "isLE",
+            Intrinsic::LoadWasm => "loadWasm",
             Intrinsic::ToInt32 => "toInt32",
             Intrinsic::ToUint32 => "toUint32",
             Intrinsic::ToInt16 => "toInt16",
@@ -182,35 +186,37 @@ impl ComponentGenerator for Js {
     ) {
         // Generate the TypeScript definition of the `instantiate` function
         // which is the main workhorse of the generated bindings.
-        let camel = name.to_upper_camel_case();
-        uwriteln!(
-            self.src.ts,
-            "
-               /**
-                * Instantiates this component with the provided imports and
-                * returns a map of all the exports of the component.
-                *
-                * This function is intended to be similar to the
-                * `WebAssembly.instantiate` function. The second `imports`
-                * argument is the \"import object\" for wasm, except here it
-                * uses component-model-layer types instead of core wasm
-                * integers/numbers/etc.
-                *
-                * The first argument to this function, `instantiateCore`, is
-                * used to instantiate core wasm modules within the component.
-                * Components are composed of core wasm modules and this callback
-                * will be invoked per core wasm instantiation. The caller of
-                * this function is responsible for reading the core wasm module
-                * identified by `path` and instantiating it with the core wasm
-                * import object provided. This would use `instantiateStreaming`
-                * on the web, for example.
-                */
-                export function instantiate(
-                    instantiateCore: (path: string, imports: any) => Promise<WebAssembly.Instance>,
-                    imports: ImportObject,
-                ): Promise<{camel}>;
-            ",
-        );
+        if self.opts.instantiation {
+            let camel = name.to_upper_camel_case();
+            uwriteln!(
+                self.src.ts,
+                "
+                /**
+                    * Instantiates this component with the provided imports and
+                    * returns a map of all the exports of the component.
+                    *
+                    * This function is intended to be similar to the
+                    * `WebAssembly.instantiate` function. The second `imports`
+                    * argument is the \"import object\" for wasm, except here it
+                    * uses component-model-layer types instead of core wasm
+                    * integers/numbers/etc.
+                    *
+                    * The first argument to this function, `instantiateCore`, is
+                    * used to instantiate core wasm modules within the component.
+                    * Components are composed of core wasm modules and this callback
+                    * will be invoked per core wasm instantiation. The caller of
+                    * this function is responsible for reading the core wasm module
+                    * identified by `path` and instantiating it with the core wasm
+                    * import object provided. This would use `instantiateStreaming`
+                    * on the web, for example.
+                    */
+                    export function instantiate(
+                        instantiateCore: (path: string, imports: any) => Promise<WebAssembly.Instance>,
+                        imports: ImportObject,
+                    ): Promise<{camel}>;
+                ",
+            );
+        }
 
         // bindings is the actual `instantiate` method itself, created by this
         // structure.
@@ -250,15 +256,25 @@ impl WorldGenerator for Js {
     fn export(&mut self, name: &str, iface: &Interface, files: &mut Files) {
         self.generate_interface(name, iface, "exports", "Exports", files);
         let camel = name.to_upper_camel_case();
-        uwriteln!(self.export_object, "{name}: {camel}Exports;");
+        if self.opts.instantiation {
+            uwriteln!(self.export_object, "{name}: {camel}Exports;");
+        } else {
+            uwriteln!(self.src.ts, "TODO");
+        }
     }
 
     fn export_default(&mut self, _name: &str, iface: &Interface, _files: &mut Files) {
+        let instantiation = self.opts.instantiation;
         let mut gen = self.js_interface(iface);
         for func in iface.functions.iter() {
+            if !instantiation {
+                gen.src.ts.push_str("export function ");
+            }
             gen.ts_func(func);
         }
-        gen.gen.export_object.push_str(&mem::take(&mut gen.src.ts));
+        if instantiation {
+            gen.gen.export_object.push_str(&mem::take(&mut gen.src.ts));
+        }
 
         // After the default interface has its function definitions
         // inlined the rest of the types are generated here as well.
@@ -276,15 +292,19 @@ impl WorldGenerator for Js {
         // With the current representation of a "world" this is an import object
         // per-imported-interface where the type of that field is defined by the
         // interface itself.
-        uwriteln!(self.src.ts, "export interface ImportObject {{");
-        self.src.ts(&self.import_object);
-        uwriteln!(self.src.ts, "}}");
+        if self.opts.instantiation {
+            uwriteln!(self.src.ts, "export interface ImportObject {{");
+            self.src.ts(&self.import_object);
+            uwriteln!(self.src.ts, "}}");
+        }
 
         // Generate a type definition for the export object from instantiating
         // the component.
-        uwriteln!(self.src.ts, "export interface {camel} {{",);
-        self.src.ts(&self.export_object);
-        uwriteln!(self.src.ts, "}}");
+        if self.opts.instantiation {
+            uwriteln!(self.src.ts, "export interface {camel} {{",);
+            self.src.ts(&self.export_object);
+            uwriteln!(self.src.ts, "}}");
+        }
     }
 }
 
@@ -313,10 +333,20 @@ impl Js {
             files.push(&format!("{dir}/{name}.d.ts"), gen.src.ts.as_bytes());
         }
 
-        uwriteln!(
-            self.src.ts,
-            "import {{ {camel} as {camel}{extra} }} from \"./{dir}/{name}\";"
-        );
+        // TODO: instance mode imports typings
+        if self.opts.instantiation {
+            uwriteln!(
+                self.src.ts,
+                "import {{ {camel} as {camel}{extra} }} from \"./{dir}/{name}\";"
+            );
+        }
+    }
+
+    fn map_import(&self, impt: &str) -> String {
+        match self.import_maps.get(impt) {
+            Some(mapping) => mapping.into(),
+            None => impt.into(),
+        }
     }
 
     fn js_interface<'a>(&'a mut self, iface: &'a Interface) -> JsInterface<'a> {
@@ -368,8 +398,26 @@ impl Js {
                 const dataView = mem => dv.buffer === mem.buffer ? dv : dv = new DataView(mem.buffer);
             "),
 
+            Intrinsic::LoadWasm => if self.opts.nodejs_compat {
+                self.src.js("
+                    const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
+                    let _fs;
+                    async function loadWasm (url) {
+                        if (isNode) {
+                            _fs = _fs || await import('node:fs/promises');
+                            return WebAssembly.compile(await _fs.readFile(url));
+                        }
+                        return fetch(url).then(WebAssembly.compile);
+                    }
+                ")
+            } else {
+                self.src.js("
+                    const loadWasm = url => fetch(url).then(WebAssembly.compileStreaming);
+                ")
+            },
+
             Intrinsic::IsLE => self.src.js("
-             const isLE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+                const isLE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
             "),
 
             Intrinsic::ValidateGuestChar => self.src.js("
@@ -619,25 +667,32 @@ struct Instantiator<'a> {
 
 impl Instantiator<'_> {
     fn instantiate(&mut self) {
-        uwriteln!(
-            self.src.js,
-            "
-                export async function instantiate(instantiateCore, imports) {{\
-            "
-        );
-
-        for init in self.component.initializers.iter() {
-            self.global_initializer(init);
+        if self.gen.opts.instantiation {
+            uwriteln!(
+                self.src.js,
+                "
+                    export async function instantiate(instantiateCore, imports) {{\
+                "
+            );
         }
 
-        self.src.js("return ");
-        self.exports(&self.component.exports, 0, self.interfaces.default.as_ref());
-        self.src.js(";\n");
+        for init in self.component.initializers.iter() {
+            self.instantiation_global_initializer(init);
+        }
 
-        uwriteln!(self.src.js, "}}");
+        if self.gen.opts.instantiation {
+            self.src.js("return ");
+        }
+
+        self.exports(&self.component.exports, 0, self.interfaces.default.as_ref());
+
+        if self.gen.opts.instantiation {
+            self.src.js(";\n");
+            uwriteln!(self.src.js, "}}");
+        }
     }
 
-    fn global_initializer(&mut self, init: &GlobalInitializer) {
+    fn instantiation_global_initializer(&mut self, init: &GlobalInitializer) {
         match init {
             GlobalInitializer::InstantiateModule(m) => match m {
                 InstantiateModule::Static(idx, args) => self.instantiate_static_module(*idx, args),
@@ -729,8 +784,22 @@ impl Instantiator<'_> {
         // so the instantiation should be relatively straightforward.
         let i = self.instances.push(idx);
         let name = format!("module{}.wasm", idx.as_u32());
-        uwrite!(self.src.js, "const instance{} = ", i.as_u32());
-        uwriteln!(self.src.js, "await instantiateCore(\"{name}\", {imports});");
+        let iu32 = i.as_u32();
+        if self.gen.opts.instantiation {
+            uwriteln!(
+                self.src.js,
+                "const instance{iu32} = await instantiateCore(\"{name}\", {imports});"
+            );
+        } else {
+            let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
+            uwriteln!(
+                self.src.js,
+                "
+                const instance{iu32} = await {load_wasm}(new URL('./{name}', import.meta.url))
+                .then(m => WebAssembly.instantiate(m, {imports}));\
+            "
+            );
+        }
     }
 
     fn lower_import(&mut self, import: &LowerImport) {
@@ -745,13 +814,33 @@ impl Instantiator<'_> {
 
         let index = import.index.as_u32();
         let callee = format!("lowering{index}Callee");
-        uwriteln!(
+        let import_specifier = self.gen.map_import(import_name);
+        if self.gen.opts.instantiation {
+            uwriteln!(
+                self.src.js,
+                "const {callee} = imports{}.{};",
+                if is_js_identifier(&import_specifier) {
+                    format!(".{}", import_specifier)
+                } else {
+                    format!("[\"{}\"]", import_specifier)
+                },
+                func.name.to_lower_camel_case(),
+            );
+        } else {
+            uwriteln!(
+                self.src.js,
+                "
+                    import {{ {} as {callee} }} from '{}';\
+                ",
+                func.name.to_lower_camel_case(),
+                self.gen.map_import(import_name),
+            );
+        }
+        uwrite!(
             self.src.js,
-            "const {callee} = imports.{}.{};",
-            import_name.to_lower_camel_case(),
-            func.name.to_lower_camel_case(),
+            "
+            function lowering{index}"
         );
-        uwrite!(self.src.js, "function lowering{index}");
         let nparams = iface
             .wasm_signature(AbiVariant::GuestImport, func)
             .params
@@ -875,11 +964,17 @@ impl Instantiator<'_> {
         iface: Option<&Interface>,
     ) {
         if exports.is_empty() {
-            self.src.js("{}");
+            if self.gen.opts.instantiation {
+                self.src.js("{}");
+            }
             return;
         }
 
-        self.src.js("{\n");
+        if self.gen.opts.instantiation {
+            self.src.js("{\n");
+        } else {
+            self.src.js("\n");
+        }
         for (name, export) in exports {
             let camel = name.to_lower_camel_case();
             match export {
@@ -889,7 +984,11 @@ impl Instantiator<'_> {
                     options,
                 } => {
                     assert!(depth < 2);
-                    uwrite!(self.src.js, "{camel}");
+                    if self.gen.opts.instantiation {
+                        uwrite!(self.src.js, "{camel}");
+                    } else {
+                        uwrite!(self.src.js, "export function {camel}");
+                    }
                     let callee = self.core_def(func);
                     let iface = iface.unwrap();
                     let func = iface.functions.iter().find(|f| f.name == *name).unwrap();
@@ -901,7 +1000,11 @@ impl Instantiator<'_> {
                         func,
                         AbiVariant::GuestExport,
                     );
-                    self.src.js(",\n");
+                    if self.gen.opts.instantiation {
+                        self.src.js(",\n");
+                    } else {
+                        self.src.js("\n");
+                    }
                 }
                 Export::Instance(exports) => {
                     uwrite!(self.src.js, "{camel}: ");
@@ -917,7 +1020,9 @@ impl Instantiator<'_> {
                 Export::Module(_) => unimplemented!(),
             }
         }
-        self.src.js("}");
+        if self.gen.opts.instantiation {
+            self.src.js("}");
+        }
     }
 }
 
@@ -2275,6 +2380,55 @@ fn to_js_ident(name: &str) -> &str {
         "import" => "import_",
         s => s,
     }
+}
+
+fn maps_str_to_map(maps: &str) -> Result<HashMap<String, String>> {
+    let mut map_hash = HashMap::<String, String>::new();
+    for mapping in maps.split(",") {
+        if let Some(eq_idx) = mapping.find('=') {
+            map_hash.insert(mapping[0..eq_idx].into(), mapping[eq_idx + 1..].into());
+        } else {
+            return Err(anyhow!(format!("Invalid mapping entry \"{}\"", &mapping)));
+        }
+    }
+    Ok(map_hash)
+}
+
+// https://tc39.es/ecma262/#prod-IdentifierStartChar
+// Unicode ID_Start | "$" | "_"
+fn is_js_identifier_start(code: char) -> bool {
+    return match code {
+        'A'..='Z' | 'a'..='z' | '$' | '_' => true,
+        // leaving out non-ascii for now...
+        _ => false,
+    };
+}
+
+// https://tc39.es/ecma262/#prod-IdentifierPartChar
+// Unicode ID_Continue | "$" | U+200C | U+200D
+fn is_js_identifier_char(code: char) -> bool {
+    return match code {
+        '0'..='9' | 'A'..='Z' | 'a'..='z' | '$' | '_' => true,
+        // leaving out non-ascii for now...
+        _ => false,
+    };
+}
+
+fn is_js_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    if let Some(char) = chars.next() {
+        if !is_js_identifier_start(char) {
+            return false;
+        }
+    } else {
+        return false;
+    }
+    while let Some(char) = chars.next() {
+        if !is_js_identifier_char(char) {
+            return false;
+        }
+    }
+    return true;
 }
 
 #[derive(Default)]

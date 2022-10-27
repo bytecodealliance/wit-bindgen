@@ -1,4 +1,6 @@
-import { loadWasm, testwasi } from "./helpers.js";
+// Flags: --instantiation
+
+import * as helpers from "./helpers.js";
 import { instantiate } from "./smoke.js";
 
 function assert(x: boolean, msg: string) {
@@ -9,8 +11,8 @@ function assert(x: boolean, msg: string) {
 async function run() {
   let hit = false;
 
-  const wasm = await instantiate(loadWasm, {
-    testwasi,
+  const wasm = await instantiate(helpers.loadWasm, {
+    testwasi: helpers,
     imports: {
       thunk() {
         hit = true;

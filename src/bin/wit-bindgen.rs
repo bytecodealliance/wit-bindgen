@@ -211,7 +211,7 @@ fn main() -> Result<()> {
             gen_component(opts.build(), component, &mut files)?;
         }
         Category::Host(HostGenerator::Js { opts, component }) => {
-            gen_component(opts.build(), component, &mut files)?;
+            gen_component(opts.build()?, component, &mut files)?;
         }
         Category::Guest(GuestGenerator::Rust { opts, world, .. }) => {
             gen_world(opts.build(), world, &mut files)?;
