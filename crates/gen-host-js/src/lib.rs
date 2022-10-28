@@ -705,11 +705,33 @@ impl Instantiator<'_> {
             );
         }
 
-        // First do the core Wasm compilations in parallel
-        self.src.js.push_str("const [");
+        // Setup the compilation promises
         let mut first = true;
         for init in self.component.initializers.iter() {
             if let GlobalInitializer::InstantiateModule(InstantiateModule::Static(idx, _)) = init {
+                // Get the compiled WebAssembly.Module objects in parallel
+                if first {
+                    self.src.js.push_str("\n");
+                    first = false;
+                }
+                let local_name = format!("module{}", idx.as_u32());
+                let name = format!("module{}.wasm", idx.as_u32());
+                if self.gen.opts.instantiation {
+                    uwrite!(self.src.js, "const {local_name} = compileCore(\"{name}\");\n");
+                } else {
+                    let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
+                    uwrite!(self.src.js, "const {local_name} = {load_wasm}(new URL('./{name}', import.meta.url));\n");
+                }
+            }
+        }
+
+        // To avoid uncaught promise rejection errors, we attach an intermediate
+        // Promise.all with a rejection handler.
+        first = true;
+        self.src.js.push_str("Promise.all([");
+        for init in self.component.initializers.iter() {
+            if let GlobalInitializer::InstantiateModule(InstantiateModule::Static(idx, _)) = init {
+                // Get the compiled WebAssembly.Module objects in parallel
                 if first {
                     first = false;
                 } else {
@@ -718,29 +740,7 @@ impl Instantiator<'_> {
                 self.src.js.push_str(&format!("module{}", idx.as_u32()));
             }
         }
-        self.src.js.push_str("] = await Promise.all([");
-        first = true;
-        for init in self.component.initializers.iter() {
-            if let GlobalInitializer::InstantiateModule(InstantiateModule::Static(idx, _)) = init {
-                if first {
-                    first = false;
-                } else {
-                    self.src.js.push_str(", ");
-                }
-                // Get the compiled WebAssembly.Module objects in parallel
-                let name = format!("module{}.wasm", idx.as_u32());
-                if self.gen.opts.instantiation {
-                    uwrite!(self.src.js, "compileCore(\"{name}\")",);
-                } else {
-                    let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
-                    uwrite!(
-                        self.src.js,
-                        "{load_wasm}(new URL('./{name}', import.meta.url))",
-                    );
-                }
-            }
-        }
-        self.src.js.push_str("]);\n");
+        self.src.js.push_str("]).catch(() => {});\n");
 
         for init in self.component.initializers.iter() {
             self.instantiation_global_initializer(init);
@@ -848,7 +848,7 @@ impl Instantiator<'_> {
         uwriteln!(
             self.src.js,
             "
-                const instance{iu32} = await WebAssembly.instantiate(module{}, {imports});\
+                const instance{iu32} = await WebAssembly.instantiate(await module{}, {imports});\
             ",
             idx.as_u32()
         );
