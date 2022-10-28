@@ -711,7 +711,9 @@ impl Instantiator<'_> {
             if let GlobalInitializer::InstantiateModule(InstantiateModule::Static(idx, _)) = init {
                 // Get the compiled WebAssembly.Module objects in parallel
                 if first {
-                    self.src.js.push_str("\n");
+                    if !instantiation {
+                        self.src.js.push_str("\n");
+                    }
                     first = false;
                 }
                 let local_name = format!("module{}", idx.as_u32());
