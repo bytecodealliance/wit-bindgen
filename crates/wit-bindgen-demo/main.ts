@@ -7,6 +7,8 @@ class Editor {
   files: HTMLSelectElement
   rustUnchecked: HTMLInputElement;
   wasmtimeTracing: HTMLInputElement;
+  jsCompat: HTMLInputElement;
+  jsInstantiation: HTMLInputElement;
   generatedFiles: Record<string, string>;
   options: Options;
   rerender: number | null;
@@ -20,6 +22,8 @@ class Editor {
     this.mode = document.getElementById('mode-select') as HTMLSelectElement;
     this.files = document.getElementById('file-select') as HTMLSelectElement;
     this.rustUnchecked = document.getElementById('rust-unchecked') as HTMLInputElement;
+    this.jsCompat = document.getElementById('js-compat') as HTMLInputElement;
+    this.jsInstantiation = document.getElementById('js-instantiation') as HTMLInputElement;
     this.wasmtimeTracing = document.getElementById('wasmtime-tracing') as HTMLInputElement;
     this.outputHtml = document.getElementById('html-output') as HTMLDivElement;
 
@@ -35,6 +39,8 @@ class Editor {
     this.options = {
       rustUnchecked: false,
       wasmtimeTracing: false,
+      jsCompat: false,
+      jsInstantiation: false,
       import: false,
     };
     this.rerender = null;
@@ -58,6 +64,16 @@ class Editor {
 
     this.rustUnchecked.addEventListener('change', () => {
       this.options.rustUnchecked = this.rustUnchecked.checked;
+      this.render();
+    });
+
+    this.jsCompat.addEventListener('change', () => {
+      this.options.jsCompat = this.jsCompat.checked;
+      this.render();
+    });
+
+    this.jsInstantiation.addEventListener('change', () => {
+      this.options.jsInstantiation = this.jsInstantiation.checked;
       this.render();
     });
 
