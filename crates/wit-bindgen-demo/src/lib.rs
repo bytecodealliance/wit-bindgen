@@ -118,7 +118,7 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
         )?,
         demo::Lang::C => gen_world(wit_bindgen_gen_guest_c::Opts::default().build(), files),
         demo::Lang::Markdown => gen_world(wit_bindgen_gen_markdown::Opts::default().build(), files),
-        demo::Lang::Js => gen_component(wit_bindgen_gen_host_js::Opts::default().build(), files)?,
+        demo::Lang::Js => gen_component(wit_bindgen_gen_host_js::Opts::default().build()?, files)?,
     }
 
     Ok(())
