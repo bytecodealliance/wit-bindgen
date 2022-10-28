@@ -717,10 +717,16 @@ impl Instantiator<'_> {
                 let local_name = format!("module{}", idx.as_u32());
                 let name = format!("module{}.wasm", idx.as_u32());
                 if self.gen.opts.instantiation {
-                    uwrite!(self.src.js, "const {local_name} = compileCore(\"{name}\");\n");
+                    uwrite!(
+                        self.src.js,
+                        "const {local_name} = compileCore(\"{name}\");\n"
+                    );
                 } else {
                     let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
-                    uwrite!(self.src.js, "const {local_name} = {load_wasm}(new URL('./{name}', import.meta.url));\n");
+                    uwrite!(
+                        self.src.js,
+                        "const {local_name} = {load_wasm}(new URL('./{name}', import.meta.url));\n"
+                    );
                 }
             }
         }
