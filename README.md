@@ -87,11 +87,16 @@ These generators are for creating guest modules that import/export WIT types.
   for Rust as well. With C the `wit-bindgen` CLI tool will emit a `*.h` and a
   `*.c` file to be compiled into the wasm module.
 
+* `teavm-java` - this is for Java bytecode compiled to WebAssembly using
+  [TeaVM-WASI](https://github.com/fermyon/teavm-wasi).  With this generator,
+  `wit-bindgen` will emit a `*.java` file which may be used with any JVM
+  language, e.g. Java, Kotlin, Clojure, Scala, etc.
+
 ### Hosts
 
 These generators are for hosts interacting with modules that import/export WIT types.
 
-* `wasmtime-rust` - this is for Rust users using the `wasmtime` crate. This generator 
+* `wasmtime-rust` - this is for Rust users using the `wasmtime` crate. This generator
   can also be is used through the `wit-bindgen-host-wasmtime-rust` crate (located at
   `crates/host-wasmtime-rust`) and, like the guest Rust support, has an
   `import!` and an `export!` macro for generating code.

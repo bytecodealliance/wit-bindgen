@@ -1,5 +1,10 @@
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
-use std::{collections::HashSet, fmt::Write, iter, mem, ops::Deref};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Write,
+    iter, mem,
+    ops::Deref,
+};
 use wit_bindgen_core::{
     uwrite, uwriteln,
     wit_parser::{
@@ -7,21 +12,19 @@ use wit_bindgen_core::{
         Case, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Int, Interface, Record,
         Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Union, Variant,
     },
-    Direction, Files, Generator, Ns,
+    Files, InterfaceGenerator as _, Ns, WorldGenerator,
 };
+use wit_component::ComponentInterfaces;
 
-#[derive(Default)]
-pub struct TeaVmJava {
-    opts: Opts,
-    src: String,
-    stub: String,
-    sizes: SizeAlign,
-    tuple_counts: HashSet<usize>,
-    return_area_size: usize,
-    return_area_align: usize,
-    needs_cleanup: bool,
-    needs_result: bool,
-}
+const IMPORTS: &str = "\
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+
+import org.teavm.interop.Memory;
+import org.teavm.interop.Address;
+import org.teavm.interop.Import;
+import org.teavm.interop.Export;\
+";
 
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
@@ -32,25 +35,475 @@ pub struct Opts {
 }
 
 impl Opts {
-    pub fn build(&self) -> TeaVmJava {
-        TeaVmJava {
+    pub fn build(&self) -> Box<dyn WorldGenerator> {
+        Box::new(TeaVmJava {
             opts: self.clone(),
             ..TeaVmJava::default()
+        })
+    }
+}
+
+#[derive(Default)]
+pub struct TeaVmJava {
+    opts: Opts,
+    name: String,
+    return_area_size: usize,
+    return_area_align: usize,
+    tuple_counts: HashSet<usize>,
+    needs_cleanup: bool,
+    needs_result: bool,
+    classes: HashMap<String, String>,
+}
+
+impl TeaVmJava {
+    fn qualifier(&self) -> String {
+        let world = self.name.to_upper_camel_case();
+        format!("{world}World.")
+    }
+
+    fn interface<'a>(&'a mut self, iface: &'a Interface, name: &'a str) -> InterfaceGenerator<'a> {
+        let mut sizes = SizeAlign::default();
+        sizes.fill(iface);
+        InterfaceGenerator {
+            src: String::new(),
+            stub: String::new(),
+            gen: self,
+            iface,
+            sizes,
+            name,
         }
     }
 }
 
-impl TeaVmJava {
-    fn type_name(&mut self, iface: &Interface, ty: &Type) -> String {
-        self.type_name_with_qualifier(iface, ty, None)
+impl WorldGenerator for TeaVmJava {
+    fn preprocess(&mut self, name: &str) {
+        self.name = name.to_string();
     }
 
-    fn type_name_with_qualifier(
-        &mut self,
-        iface: &Interface,
-        ty: &Type,
-        qualifier: Option<&str>,
-    ) -> String {
+    fn import(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
+        let mut gen = self.interface(iface, name);
+        gen.types();
+
+        for func in iface.functions.iter() {
+            gen.import(func);
+        }
+
+        gen.add_class();
+    }
+
+    fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
+        let mut gen = self.interface(iface, name);
+        gen.types();
+
+        for func in iface.functions.iter() {
+            gen.export(func, false);
+        }
+
+        gen.add_class();
+    }
+
+    fn export_default(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
+        let mut gen = self.interface(iface, name);
+        gen.types();
+
+        for func in iface.functions.iter() {
+            gen.export(func, true);
+        }
+
+        gen.add_class();
+    }
+
+    fn finish(&mut self, name: &str, interfaces: &ComponentInterfaces, files: &mut Files) {
+        let package = format!("wit_{}", name.to_snake_case());
+        let name = name.to_upper_camel_case();
+
+        let mut src = String::new();
+
+        uwrite!(
+            src,
+            "package {package};
+
+             {IMPORTS}
+             import org.teavm.interop.CustomSection;
+
+             public final class {name}World {{
+                private {name}World() {{}}
+            "
+        );
+
+        let component_type =
+            wit_component::metadata::encode(interfaces, wit_component::StringEncoding::UTF8)
+                .into_iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<Vec<_>>()
+                .concat();
+
+        uwriteln!(
+            src,
+            r#"
+            @CustomSection(name = "component-type:{name}")
+            private static final String __WIT_BINDGEN_COMPONENT_TYPE = "{component_type}";
+            "#
+        );
+
+        for &count in &self.tuple_counts {
+            let (type_params, instance) = if count == 0 {
+                (
+                    String::new(),
+                    "public static final Tuple0 INSTANCE = new Tuple0();",
+                )
+            } else {
+                (
+                    format!(
+                        "<{}>",
+                        (0..count)
+                            .map(|index| format!("T{index}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                    "",
+                )
+            };
+            let value_params = (0..count)
+                .map(|index| format!("T{index} f{index}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let fields = (0..count)
+                .map(|index| format!("public final T{index} f{index};"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let inits = (0..count)
+                .map(|index| format!("this.f{index} = f{index};"))
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            uwrite!(
+                src,
+                "
+                public static final class Tuple{count}{type_params} {{
+                    {fields}
+
+                    public Tuple{count}({value_params}) {{
+                        {inits}
+                    }}
+
+                    {instance}
+                }}
+                "
+            )
+        }
+
+        if self.needs_result {
+            src.push_str(
+                r#"
+                public static final class Result<Ok, Err> {
+                    public final byte tag;
+                    private final Object value;
+
+                    private Result(byte tag, Object value) {
+                        this.tag = tag;
+                        this.value = value;
+                    }
+
+                    public static <Ok, Err> Result<Ok, Err> ok(Ok ok) {
+                        return new Result<>(OK, ok);
+                    }
+
+                    public static <Ok, Err> Result<Ok, Err> err(Err err) {
+                        return new Result<>(ERR, err);
+                    }
+
+                    public Ok getOk() {
+                        if (this.tag == OK) {
+                            return (Ok) this.value;
+                        } else {
+                            throw new RuntimeException("expected OK, got " + this.tag);
+                        }
+                    }
+
+                    public Err getErr() {
+                        if (this.tag == ERR) {
+                            return (Err) this.value;
+                        } else {
+                            throw new RuntimeException("expected ERR, got " + this.tag);
+                        }
+                    }
+
+                    public static final byte OK = 0;
+                    public static final byte ERR = 1;
+                }
+                "#,
+            )
+        }
+
+        if self.needs_cleanup {
+            src.push_str(
+                "
+                public static final class Cleanup {
+                    public final int address;
+                    public final int size;
+                    public final int align;
+
+                    public Cleanup(int address, int size, int align) {
+                        this.address = address;
+                        this.size = size;
+                        this.align = align;
+                    }
+                }
+                ",
+            );
+        }
+
+        if self.return_area_align > 0 {
+            let size = self.return_area_size;
+            let align = self.return_area_align;
+
+            uwriteln!(
+                src,
+                "public static final int RETURN_AREA = Memory.malloc({size}, {align}).toInt();",
+            );
+        }
+
+        src.push_str("}\n");
+
+        files.push(&format!("{name}World.java"), indent(&src).as_bytes());
+
+        for (name, body) in &self.classes {
+            files.push(&format!("{name}.java"), indent(body).as_bytes());
+        }
+    }
+}
+
+struct InterfaceGenerator<'a> {
+    src: String,
+    stub: String,
+    sizes: SizeAlign,
+    gen: &'a mut TeaVmJava,
+    iface: &'a Interface,
+    name: &'a str,
+}
+
+impl InterfaceGenerator<'_> {
+    fn qualifier(&self, when: bool) -> String {
+        if when {
+            let iface = self.name.to_upper_camel_case();
+            format!("{iface}.")
+        } else {
+            String::new()
+        }
+    }
+
+    fn add_class(self) {
+        let package = format!("wit_{}", self.gen.name.to_snake_case());
+        let name = self.name.to_upper_camel_case();
+        let body = self.src;
+        let body = format!(
+            "package {package};
+
+             {IMPORTS}
+
+             public final class {name} {{
+                 private {name}() {{}}
+
+                 {body}
+             }}
+            "
+        );
+
+        if self.gen.opts.generate_stub {
+            let name = format!("{name}Impl");
+            let body = self.stub;
+            let body = format!(
+                "package {package};
+
+                 {IMPORTS}
+
+                 public class {name} {{
+                     {body}
+                 }}
+                "
+            );
+
+            self.gen.classes.insert(name, body);
+        }
+
+        self.gen.classes.insert(name, body);
+    }
+
+    fn import(&mut self, func: &Function) {
+        if func.kind != FunctionKind::Freestanding {
+            todo!("resources");
+        }
+
+        let mut bindgen = FunctionBindgen::new(
+            self,
+            &func.name,
+            func.params.iter().map(|(name, _)| name.clone()).collect(),
+        );
+
+        bindgen.gen.iface.call(
+            AbiVariant::GuestImport,
+            LiftLower::LowerArgsLiftResults,
+            func,
+            &mut bindgen,
+        );
+
+        let src = bindgen.src;
+
+        let cleanup_list = if bindgen.needs_cleanup_list {
+            self.gen.needs_cleanup = true;
+
+            format!(
+                "ArrayList<{}Cleanup> cleanupList = new ArrayList<>();\n",
+                self.gen.qualifier()
+            )
+        } else {
+            String::new()
+        };
+
+        let module = &self.iface.name;
+        let name = &func.name;
+
+        let sig = self.iface.wasm_signature(AbiVariant::GuestImport, func);
+
+        let result_type = match &sig.results[..] {
+            [] => "void",
+            [result] => wasm_type(*result),
+            _ => unreachable!(),
+        };
+
+        let camel_name = func.name.to_upper_camel_case();
+
+        let params = sig
+            .params
+            .iter()
+            .enumerate()
+            .map(|(i, param)| {
+                let ty = wasm_type(*param);
+                format!("{ty} p{i}")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let sig = self.sig_string(func, false);
+
+        uwrite!(
+            self.src,
+            r#"@Import(name = "{name}", module = "{module}")
+               private static native {result_type} wasmImport{camel_name}({params});
+
+               {sig} {{
+                   {cleanup_list} {src}
+               }}
+            "#
+        );
+    }
+
+    fn export(&mut self, func: &Function, is_default: bool) {
+        let sig = self.iface.wasm_signature(AbiVariant::GuestExport, func);
+
+        // Currently the Java generator always emits default exports
+        // This needs to change once the generator works from a world
+        let export_name = self.iface.core_export_name(is_default, func);
+
+        let mut bindgen = FunctionBindgen::new(
+            self,
+            &func.name,
+            (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
+        );
+
+        bindgen.gen.iface.call(
+            AbiVariant::GuestExport,
+            LiftLower::LiftArgsLowerResults,
+            func,
+            &mut bindgen,
+        );
+
+        assert!(!bindgen.needs_cleanup_list);
+
+        let src = bindgen.src;
+
+        let result_type = match &sig.results[..] {
+            [] => "void",
+            [result] => wasm_type(*result),
+            _ => unreachable!(),
+        };
+
+        let camel_name = func.name.to_upper_camel_case();
+
+        let params = sig
+            .params
+            .iter()
+            .enumerate()
+            .map(|(i, param)| {
+                let ty = wasm_type(*param);
+                format!("{ty} p{i}")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        uwrite!(
+            self.src,
+            r#"
+            @Export(name = "{export_name}")
+            private static {result_type} wasmExport{camel_name}({params}) {{
+                {src}
+            }}
+            "#
+        );
+
+        if self.iface.guest_export_needs_post_return(func) {
+            let params = sig
+                .results
+                .iter()
+                .enumerate()
+                .map(|(i, param)| {
+                    let ty = wasm_type(*param);
+                    format!("{ty} p{i}")
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let mut bindgen = FunctionBindgen::new(
+                self,
+                "INVALID",
+                (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
+            );
+
+            bindgen.gen.iface.post_return(func, &mut bindgen);
+
+            let src = bindgen.src;
+
+            uwrite!(
+                self.src,
+                r#"
+                @Export(name = "cabi_post_{export_name}")
+                private static void wasmExport{camel_name}PostReturn({params}) {{
+                    {src}
+                }}
+                "#
+            );
+        }
+
+        if self.gen.opts.generate_stub {
+            let sig = self.sig_string(func, true);
+
+            uwrite!(
+                self.stub,
+                r#"
+                {sig} {{
+                    throw new RuntimeException("todo");
+                }}
+                "#
+            );
+        }
+    }
+
+    fn type_name(&mut self, ty: &Type) -> String {
+        self.type_name_with_qualifier(ty, false)
+    }
+
+    fn type_name_with_qualifier(&mut self, ty: &Type, qualifier: bool) -> String {
         match ty {
             Type::Bool => "boolean".into(),
             Type::U8 | Type::S8 => "byte".into(),
@@ -61,19 +514,19 @@ impl TeaVmJava {
             Type::Float64 => "double".into(),
             Type::String => "String".into(),
             Type::Id(id) => {
-                let ty = &iface.types[*id];
+                let ty = &self.iface.types[*id];
                 match &ty.kind {
-                    TypeDefKind::Type(ty) => self.type_name_with_qualifier(iface, ty, qualifier),
+                    TypeDefKind::Type(ty) => self.type_name_with_qualifier(ty, qualifier),
                     TypeDefKind::List(ty) => {
                         if is_primitive(ty) {
-                            format!("{}[]", self.type_name(iface, ty))
+                            format!("{}[]", self.type_name(ty))
                         } else {
-                            format!("ArrayList<{}>", self.type_name_boxed(iface, ty, qualifier))
+                            format!("ArrayList<{}>", self.type_name_boxed(ty, qualifier))
                         }
                     }
                     TypeDefKind::Tuple(tuple) => {
                         let count = tuple.types.len();
-                        self.tuple_counts.insert(count);
+                        self.gen.tuple_counts.insert(count);
 
                         let params = if count == 0 {
                             String::new()
@@ -83,34 +536,38 @@ impl TeaVmJava {
                                 tuple
                                     .types
                                     .iter()
-                                    .map(|ty| self.type_name_boxed(iface, ty, qualifier))
+                                    .map(|ty| self.type_name_boxed(ty, qualifier))
                                     .collect::<Vec<_>>()
                                     .join(", ")
                             )
                         };
 
-                        format!("{}Tuple{count}{params}", qualifier.unwrap_or(""))
+                        format!("{}Tuple{count}{params}", self.gen.qualifier())
                     }
-                    TypeDefKind::Option(ty) => self.type_name_boxed(iface, ty, qualifier),
+                    TypeDefKind::Option(ty) => self.type_name_boxed(ty, qualifier),
                     TypeDefKind::Result(result) => {
-                        self.needs_result = true;
+                        self.gen.needs_result = true;
                         let mut name = |ty: &Option<Type>| {
                             ty.as_ref()
-                                .map(|ty| self.type_name_boxed(iface, ty, qualifier))
+                                .map(|ty| self.type_name_boxed(ty, qualifier))
                                 .unwrap_or_else(|| {
-                                    self.tuple_counts.insert(0);
+                                    self.gen.tuple_counts.insert(0);
 
-                                    format!("{}Tuple0", qualifier.unwrap_or(""))
+                                    format!("{}Tuple0", self.gen.qualifier())
                                 })
                         };
                         let ok = name(&result.ok);
                         let err = name(&result.err);
 
-                        format!("{}Result<{ok}, {err}>", qualifier.unwrap_or(""))
+                        format!("{}Result<{ok}, {err}>", self.gen.qualifier())
                     }
                     _ => {
                         if let Some(name) = &ty.name {
-                            format!("{}{}", qualifier.unwrap_or(""), name.to_upper_camel_case())
+                            format!(
+                                "{}{}",
+                                self.qualifier(qualifier),
+                                name.to_upper_camel_case()
+                            )
                         } else {
                             unreachable!()
                         }
@@ -120,7 +577,7 @@ impl TeaVmJava {
         }
     }
 
-    fn type_name_boxed(&mut self, iface: &Interface, ty: &Type, qualifier: Option<&str>) -> String {
+    fn type_name_boxed(&mut self, ty: &Type, qualifier: bool) -> String {
         match ty {
             Type::Bool => "Boolean".into(),
             Type::U8 | Type::S8 => "Byte".into(),
@@ -130,13 +587,13 @@ impl TeaVmJava {
             Type::Float32 => "Float".into(),
             Type::Float64 => "Double".into(),
             Type::Id(id) => {
-                let def = &iface.types[*id];
+                let def = &self.iface.types[*id];
                 match &def.kind {
-                    TypeDefKind::Type(ty) => self.type_name_boxed(iface, ty, qualifier),
-                    _ => self.type_name_with_qualifier(iface, ty, qualifier),
+                    TypeDefKind::Type(ty) => self.type_name_boxed(ty, qualifier),
+                    _ => self.type_name_with_qualifier(ty, qualifier),
                 }
             }
-            _ => self.type_name_with_qualifier(iface, ty, qualifier),
+            _ => self.type_name_with_qualifier(ty, qualifier),
         }
     }
 
@@ -160,14 +617,14 @@ impl TeaVmJava {
         }
     }
 
-    fn non_empty_type<'a>(&self, iface: &'a Interface, ty: Option<&'a Type>) -> Option<&'a Type> {
+    fn non_empty_type<'a>(&self, ty: Option<&'a Type>) -> Option<&'a Type> {
         if let Some(ty) = ty {
             let id = match ty {
                 Type::Id(id) => *id,
                 _ => return Some(ty),
             };
-            match &iface.types[id].kind {
-                TypeDefKind::Type(t) => self.non_empty_type(iface, Some(t)).map(|_| ty),
+            match &self.iface.types[id].kind {
+                TypeDefKind::Type(t) => self.non_empty_type(Some(t)).map(|_| ty),
                 TypeDefKind::Record(r) => (!r.fields.is_empty()).then_some(ty),
                 TypeDefKind::Tuple(t) => (!t.types.is_empty()).then_some(ty),
                 _ => Some(ty),
@@ -177,29 +634,22 @@ impl TeaVmJava {
         }
     }
 
-    fn sig_string(
-        &mut self,
-        iface: &Interface,
-        func: &Function,
-        qualifier: Option<&str>,
-    ) -> String {
+    fn sig_string(&mut self, func: &Function, qualifier: bool) -> String {
         let name = func.name.to_lower_camel_case();
 
         let result_type = match func.results.len() {
             0 => "void".into(),
-            1 => self.type_name_with_qualifier(
-                iface,
-                func.results.iter_types().next().unwrap(),
-                qualifier,
-            ),
+            1 => {
+                self.type_name_with_qualifier(func.results.iter_types().next().unwrap(), qualifier)
+            }
             count => {
-                self.tuple_counts.insert(count);
+                self.gen.tuple_counts.insert(count);
                 format!(
                     "{}Tuple{count}<{}>",
-                    qualifier.unwrap_or(""),
+                    self.gen.qualifier(),
                     func.results
                         .iter_types()
-                        .map(|ty| self.type_name_boxed(iface, ty, qualifier))
+                        .map(|ty| self.type_name_boxed(ty, qualifier))
                         .collect::<Vec<_>>()
                         .join(", ")
                 )
@@ -210,7 +660,7 @@ impl TeaVmJava {
             .params
             .iter()
             .map(|(name, ty)| {
-                let ty = self.type_name_with_qualifier(iface, ty, qualifier);
+                let ty = self.type_name_with_qualifier(ty, qualifier);
                 let name = name.to_lower_camel_case();
                 format!("{ty} {name}")
             })
@@ -221,51 +671,12 @@ impl TeaVmJava {
     }
 }
 
-impl Generator for TeaVmJava {
-    fn preprocess_one(&mut self, iface: &Interface, _dir: Direction) {
-        let package = format!("wit_{}", iface.name.to_snake_case());
-        let name = iface.name.to_upper_camel_case();
-
-        uwrite!(
-            self.src,
-            "package {package};
-
-             import java.nio.charset.StandardCharsets;
-             import java.util.ArrayList;
-
-             import org.teavm.interop.Memory;
-             import org.teavm.interop.Address;
-             import org.teavm.interop.Import;
-             import org.teavm.interop.Export;
-
-             public final class {name} {{
-                private {name}() {{}}
-            "
-        );
-
-        if self.opts.generate_stub {
-            uwrite!(
-                self.stub,
-                "package {package};
-
-                 import java.util.ArrayList;
-
-                 public class {name}Impl {{
-                "
-            );
-        }
-
-        self.sizes.fill(iface);
+impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
+    fn iface(&self) -> &'a Interface {
+        self.iface
     }
 
-    fn type_record(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        record: &Record,
-        docs: &Docs,
-    ) {
+    fn type_record(&mut self, _id: TypeId, name: &str, record: &Record, docs: &Docs) {
         self.print_docs(docs);
 
         let name = name.to_upper_camel_case();
@@ -276,7 +687,7 @@ impl Generator for TeaVmJava {
             .map(|field| {
                 format!(
                     "{} {}",
-                    self.type_name(iface, &field.ty),
+                    self.type_name(&field.ty),
                     field.name.to_lower_camel_case()
                 )
             })
@@ -299,7 +710,7 @@ impl Generator for TeaVmJava {
             .map(|field| {
                 format!(
                     "public final {} {};",
-                    self.type_name(iface, &field.ty),
+                    self.type_name(&field.ty),
                     field.name.to_lower_camel_case()
                 )
             })
@@ -320,14 +731,7 @@ impl Generator for TeaVmJava {
         );
     }
 
-    fn type_flags(
-        &mut self,
-        _iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        flags: &Flags,
-        docs: &Docs,
-    ) {
+    fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
         self.print_docs(docs);
 
         let name = name.to_upper_camel_case();
@@ -374,25 +778,11 @@ impl Generator for TeaVmJava {
         );
     }
 
-    fn type_tuple(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        _tuple: &Tuple,
-        _docs: &Docs,
-    ) {
-        self.type_name(iface, &Type::Id(id));
+    fn type_tuple(&mut self, id: TypeId, _name: &str, _tuple: &Tuple, _docs: &Docs) {
+        self.type_name(&Type::Id(id));
     }
 
-    fn type_variant(
-        &mut self,
-        iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        variant: &Variant,
-        docs: &Docs,
-    ) {
+    fn type_variant(&mut self, _id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
         self.print_docs(docs);
 
         let name = name.to_upper_camel_case();
@@ -404,15 +794,15 @@ impl Generator for TeaVmJava {
             .map(|case| {
                 let case_name = case.name.to_lower_camel_case();
                 let tag = case.name.to_shouty_snake_case();
-                let (parameter, argument) =
-                    if let Some(ty) = self.non_empty_type(iface, case.ty.as_ref()) {
-                        (
-                            format!("{} {case_name}", self.type_name(iface, ty)),
-                            case_name.deref(),
-                        )
-                    } else {
-                        (String::new(), "null")
-                    };
+                let (parameter, argument) = if let Some(ty) = self.non_empty_type(case.ty.as_ref())
+                {
+                    (
+                        format!("{} {case_name}", self.type_name(ty)),
+                        case_name.deref(),
+                    )
+                } else {
+                    (String::new(), "null")
+                };
 
                 format!(
                     "public static {name} {case_name}({parameter}) {{
@@ -428,10 +818,10 @@ impl Generator for TeaVmJava {
             .cases
             .iter()
             .filter_map(|case| {
-                self.non_empty_type(iface, case.ty.as_ref()).map(|ty| {
+                self.non_empty_type(case.ty.as_ref()).map(|ty| {
                     let case_name = case.name.to_upper_camel_case();
                     let tag = case.name.to_shouty_snake_case();
-                    let ty = self.type_name(iface, ty);
+                    let ty = self.type_name(ty);
                     format!(
                         r#"public {ty} get{case_name}() {{
                                if (this.tag == {tag}) {{
@@ -478,38 +868,16 @@ impl Generator for TeaVmJava {
         );
     }
 
-    fn type_option(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        _payload: &Type,
-        _docs: &Docs,
-    ) {
-        self.type_name(iface, &Type::Id(id));
+    fn type_option(&mut self, id: TypeId, _name: &str, _payload: &Type, _docs: &Docs) {
+        self.type_name(&Type::Id(id));
     }
 
-    fn type_result(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        _result: &Result_,
-        _docs: &Docs,
-    ) {
-        self.type_name(iface, &Type::Id(id));
+    fn type_result(&mut self, id: TypeId, _name: &str, _result: &Result_, _docs: &Docs) {
+        self.type_name(&Type::Id(id));
     }
 
-    fn type_union(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        union: &Union,
-        docs: &Docs,
-    ) {
+    fn type_union(&mut self, id: TypeId, name: &str, union: &Union, docs: &Docs) {
         self.type_variant(
-            iface,
             id,
             name,
             &Variant {
@@ -528,14 +896,7 @@ impl Generator for TeaVmJava {
         )
     }
 
-    fn type_enum(
-        &mut self,
-        _iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        enum_: &Enum,
-        docs: &Docs,
-    ) {
+    fn type_enum(&mut self, _id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         self.print_docs(docs);
 
         let name = name.to_upper_camel_case();
@@ -557,326 +918,16 @@ impl Generator for TeaVmJava {
         );
     }
 
-    fn type_alias(&mut self, iface: &Interface, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
-        self.type_name(iface, &Type::Id(id));
+    fn type_alias(&mut self, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
+        self.type_name(&Type::Id(id));
     }
 
-    fn type_list(&mut self, iface: &Interface, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
-        self.type_name(iface, &Type::Id(id));
+    fn type_list(&mut self, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
+        self.type_name(&Type::Id(id));
     }
 
-    fn type_builtin(
-        &mut self,
-        _iface: &Interface,
-        _id: TypeId,
-        _name: &str,
-        _ty: &Type,
-        _docs: &Docs,
-    ) {
+    fn type_builtin(&mut self, _id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
         unimplemented!();
-    }
-
-    fn import(&mut self, iface: &Interface, func: &Function) {
-        if func.kind != FunctionKind::Freestanding {
-            todo!("resources");
-        }
-
-        let mut bindgen = FunctionBindgen::new(
-            self,
-            &func.name,
-            func.params.iter().map(|(name, _)| name.clone()).collect(),
-        );
-
-        iface.call(
-            AbiVariant::GuestImport,
-            LiftLower::LowerArgsLiftResults,
-            func,
-            &mut bindgen,
-        );
-
-        let src = bindgen.src;
-
-        let cleanup_list = if bindgen.needs_cleanup_list {
-            self.needs_cleanup = true;
-
-            "ArrayList<Cleanup> cleanupList = new ArrayList<>();\n"
-        } else {
-            ""
-        };
-
-        let module = &iface.name;
-        let name = &func.name;
-
-        let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
-
-        let result_type = match &sig.results[..] {
-            [] => "void",
-            [result] => wasm_type(*result),
-            _ => unreachable!(),
-        };
-
-        let camel_name = func.name.to_upper_camel_case();
-
-        let params = sig
-            .params
-            .iter()
-            .enumerate()
-            .map(|(i, param)| {
-                let ty = wasm_type(*param);
-                format!("{ty} p{i}")
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        let sig = self.sig_string(iface, func, None);
-
-        uwrite!(
-            self.src,
-            r#"@Import(name = "{name}", module = "{module}")
-               private static native {result_type} wasmImport{camel_name}({params});
-
-               {sig} {{
-                   {cleanup_list} {src}
-               }}
-            "#
-        );
-    }
-
-    fn export(&mut self, iface: &Interface, func: &Function) {
-        let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
-
-        // Currently the Java generator always emits default exports
-        // This needs to change once the generator works from a world
-        let export_name = iface.core_export_name(true, func);
-
-        let mut bindgen = FunctionBindgen::new(
-            self,
-            &func.name,
-            (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
-        );
-
-        iface.call(
-            AbiVariant::GuestExport,
-            LiftLower::LiftArgsLowerResults,
-            func,
-            &mut bindgen,
-        );
-
-        assert!(!bindgen.needs_cleanup_list);
-
-        let src = bindgen.src;
-
-        let result_type = match &sig.results[..] {
-            [] => "void",
-            [result] => wasm_type(*result),
-            _ => unreachable!(),
-        };
-
-        let camel_name = func.name.to_upper_camel_case();
-
-        let params = sig
-            .params
-            .iter()
-            .enumerate()
-            .map(|(i, param)| {
-                let ty = wasm_type(*param);
-                format!("{ty} p{i}")
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        uwrite!(
-            self.src,
-            r#"
-            @Export(name = "{export_name}")
-            private static {result_type} wasmExport{camel_name}({params}) {{
-                {src}
-            }}
-            "#
-        );
-
-        if iface.guest_export_needs_post_return(func) {
-            let params = sig
-                .results
-                .iter()
-                .enumerate()
-                .map(|(i, param)| {
-                    let ty = wasm_type(*param);
-                    format!("{ty} p{i}")
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            let mut bindgen = FunctionBindgen::new(
-                self,
-                "INVALID",
-                (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
-            );
-
-            iface.post_return(func, &mut bindgen);
-
-            let src = bindgen.src;
-
-            uwrite!(
-                self.src,
-                r#"
-                @Export(name = "cabi_post_{export_name}")
-                private static void wasmExport{camel_name}PostReturn({params}) {{
-                    {src}
-                }}
-                "#
-            );
-        }
-
-        if self.opts.generate_stub {
-            let class = iface.name.to_upper_camel_case();
-            let sig = self.sig_string(iface, func, Some(&format!("{class}.")));
-
-            uwrite!(
-                self.stub,
-                r#"
-                {sig} {{
-                    throw new RuntimeException("todo");
-                }}
-                "#
-            );
-        }
-    }
-
-    fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
-        for &count in &self.tuple_counts {
-            let (type_params, instance) = if count == 0 {
-                (
-                    String::new(),
-                    "public static final Tuple0 INSTANCE = new Tuple0();",
-                )
-            } else {
-                (
-                    format!(
-                        "<{}>",
-                        (0..count)
-                            .map(|index| format!("T{index}"))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ),
-                    "",
-                )
-            };
-            let value_params = (0..count)
-                .map(|index| format!("T{index} f{index}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let fields = (0..count)
-                .map(|index| format!("public final T{index} f{index};"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            let inits = (0..count)
-                .map(|index| format!("this.f{index} = f{index};"))
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            uwrite!(
-                self.src,
-                "
-                public static final class Tuple{count}{type_params} {{
-                    {fields}
-
-                    public Tuple{count}({value_params}) {{
-                        {inits}
-                    }}
-
-                    {instance}
-                }}
-                "
-            )
-        }
-
-        if self.needs_result {
-            self.src.push_str(
-                r#"
-                public static final class Result<Ok, Err> {
-                    public final byte tag;
-                    private final Object value;
-
-                    private Result(byte tag, Object value) {
-                        this.tag = tag;
-                        this.value = value;
-                    }
-
-                    public static <Ok, Err> Result<Ok, Err> ok(Ok ok) {
-                        return new Result<>(OK, ok);
-                    }
-
-                    public static <Ok, Err> Result<Ok, Err> err(Err err) {
-                        return new Result<>(ERR, err);
-                    }
-
-                    public Ok getOk() {
-                        if (this.tag == OK) {
-                            return (Ok) this.value;
-                        } else {
-                            throw new RuntimeException("expected OK, got " + this.tag);
-                        }
-                    }
-
-                    public Err getErr() {
-                        if (this.tag == ERR) {
-                            return (Err) this.value;
-                        } else {
-                            throw new RuntimeException("expected ERR, got " + this.tag);
-                        }
-                    }
-
-                    public static final byte OK = 0;
-                    public static final byte ERR = 1;
-                }
-                "#,
-            )
-        }
-
-        if self.needs_cleanup {
-            self.src.push_str(
-                "
-                private static final class Cleanup {
-                    public final int address;
-                    public final int size;
-                    public final int align;
-
-                    public Cleanup(int address, int size, int align) {
-                        this.address = address;
-                        this.size = size;
-                        this.align = align;
-                    }
-                }
-                ",
-            );
-        }
-
-        if self.return_area_align > 0 {
-            let size = self.return_area_size;
-            let align = self.return_area_align;
-
-            uwriteln!(
-                self.src,
-                "private static final int RETURN_AREA = Memory.malloc({size}, {align}).toInt();",
-            );
-        }
-
-        self.src.push_str("}\n");
-
-        files.push(
-            &format!("{}.java", iface.name.to_upper_camel_case()),
-            indent(&self.src).as_bytes(),
-        );
-
-        if self.opts.generate_stub {
-            self.stub.push_str("}\n");
-
-            files.push(
-                &format!("{}Impl.java", iface.name.to_upper_camel_case()),
-                indent(&self.stub).as_bytes(),
-            );
-        }
     }
 }
 
@@ -900,9 +951,9 @@ struct BlockStorage {
     cleanup: Vec<Cleanup>,
 }
 
-struct FunctionBindgen<'a> {
-    gen: &'a mut TeaVmJava,
-    func_name: &'a str,
+struct FunctionBindgen<'a, 'b> {
+    gen: &'b mut InterfaceGenerator<'a>,
+    func_name: &'b str,
     params: Box<[String]>,
     src: String,
     locals: Ns,
@@ -913,12 +964,12 @@ struct FunctionBindgen<'a> {
     needs_cleanup_list: bool,
 }
 
-impl<'a> FunctionBindgen<'a> {
+impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn new(
-        gen: &'a mut TeaVmJava,
-        func_name: &'a str,
+        gen: &'b mut InterfaceGenerator<'a>,
+        func_name: &'b str,
         params: Box<[String]>,
-    ) -> FunctionBindgen<'a> {
+    ) -> FunctionBindgen<'a, 'b> {
         Self {
             gen,
             func_name,
@@ -935,20 +986,19 @@ impl<'a> FunctionBindgen<'a> {
 
     fn lower_variant(
         &mut self,
-        types: &[Option<Type>],
+        cases: &[(&str, Option<Type>)],
         lowered_types: &[WasmType],
-        iface: &Interface,
         op: &str,
         results: &mut Vec<String>,
     ) {
         let blocks = self
             .blocks
-            .drain(self.blocks.len() - types.len()..)
+            .drain(self.blocks.len() - cases.len()..)
             .collect::<Vec<_>>();
 
         let payloads = self
             .payloads
-            .drain(self.payloads.len() - types.len()..)
+            .drain(self.payloads.len() - cases.len()..)
             .collect::<Vec<_>>();
 
         let lowered = lowered_types
@@ -965,36 +1015,39 @@ impl<'a> FunctionBindgen<'a> {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let cases = types
+        let cases = cases
             .iter()
             .zip(blocks)
             .zip(payloads)
             .enumerate()
-            .map(|(i, ((ty, Block { body, results, .. }), payload))| {
-                let payload = if let Some(ty) = self.gen.non_empty_type(iface, ty.as_ref()) {
-                    let ty = self.gen.type_name(iface, ty);
+            .map(
+                |(i, (((name, ty), Block { body, results, .. }), payload))| {
+                    let payload = if let Some(ty) = self.gen.non_empty_type(ty.as_ref()) {
+                        let ty = self.gen.type_name(ty);
+                        let name = name.to_upper_camel_case();
 
-                    format!("{ty} {payload} = ({ty}) ({op}).value;")
-                } else {
-                    String::new()
-                };
+                        format!("{ty} {payload} = ({op}).get{name}();")
+                    } else {
+                        String::new()
+                    };
 
-                let assignments = lowered
-                    .iter()
-                    .zip(&results)
-                    .map(|(lowered, result)| format!("{lowered} = {result};\n"))
-                    .collect::<Vec<_>>()
-                    .concat();
+                    let assignments = lowered
+                        .iter()
+                        .zip(&results)
+                        .map(|(lowered, result)| format!("{lowered} = {result};\n"))
+                        .collect::<Vec<_>>()
+                        .concat();
 
-                format!(
-                    "case {i}: {{
+                    format!(
+                        "case {i}: {{
                          {payload}
                          {body}
                          {assignments}
                          break;
                      }}"
-                )
-            })
+                    )
+                },
+            )
             .collect::<Vec<_>>()
             .join("\n");
 
@@ -1016,7 +1069,6 @@ impl<'a> FunctionBindgen<'a> {
         &mut self,
         ty: &Type,
         cases: &[(&str, Option<Type>)],
-        iface: &Interface,
         op: &str,
         results: &mut Vec<String>,
     ) {
@@ -1025,7 +1077,7 @@ impl<'a> FunctionBindgen<'a> {
             .drain(self.blocks.len() - cases.len()..)
             .collect::<Vec<_>>();
 
-        let ty = self.gen.type_name(iface, ty);
+        let ty = self.gen.type_name(ty);
         let generics_position = ty.find('<');
         let lifted = self.locals.tmp("lifted");
 
@@ -1034,10 +1086,10 @@ impl<'a> FunctionBindgen<'a> {
             .zip(blocks)
             .enumerate()
             .map(|(i, ((case_name, case_ty), Block { body, results, .. }))| {
-                let payload = if self.gen.non_empty_type(iface, case_ty.as_ref()).is_some() {
+                let payload = if self.gen.non_empty_type(case_ty.as_ref()).is_some() {
                     results.into_iter().next().unwrap()
                 } else if generics_position.is_some() {
-                    "Tuple0.INSTANCE".into()
+                    format!("{}Tuple0.INSTANCE", self.gen.gen.qualifier())
                 } else {
                     String::new()
                 };
@@ -1079,12 +1131,12 @@ impl<'a> FunctionBindgen<'a> {
     }
 }
 
-impl Bindgen for FunctionBindgen<'_> {
+impl Bindgen for FunctionBindgen<'_, '_> {
     type Operand = String;
 
     fn emit(
         &mut self,
-        iface: &Interface,
+        _iface: &Interface,
         inst: &Instruction<'_>,
         operands: &mut Vec<String>,
         results: &mut Vec<String>,
@@ -1193,10 +1245,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                results.push(format!(
-                    "new {}({ops})",
-                    self.gen.type_name(iface, &Type::Id(*ty))
-                ));
+                results.push(format!("new {}({ops})", self.gen.type_name(&Type::Id(*ty))));
             }
 
             Instruction::TupleLower { tuple, .. } => {
@@ -1217,9 +1266,12 @@ impl Bindgen for FunctionBindgen<'_> {
                 results: lowered_types,
                 ..
             } => self.lower_variant(
-                &variant.cases.iter().map(|case| case.ty).collect::<Vec<_>>(),
+                &variant
+                    .cases
+                    .iter()
+                    .map(|case| (case.name.deref(), case.ty))
+                    .collect::<Vec<_>>(),
                 lowered_types,
-                iface,
                 &operands[0],
                 results,
             ),
@@ -1231,7 +1283,6 @@ impl Bindgen for FunctionBindgen<'_> {
                     .iter()
                     .map(|case| (case.name.deref(), case.ty))
                     .collect::<Vec<_>>(),
-                iface,
                 &operands[0],
                 results,
             ),
@@ -1240,17 +1291,24 @@ impl Bindgen for FunctionBindgen<'_> {
                 union,
                 results: lowered_types,
                 ..
-            } => self.lower_variant(
-                &union
+            } => {
+                let cases = union
                     .cases
                     .iter()
-                    .map(|case| Some(case.ty))
-                    .collect::<Vec<_>>(),
-                lowered_types,
-                iface,
-                &operands[0],
-                results,
-            ),
+                    .enumerate()
+                    .map(|(i, case)| (format!("f{i}"), case.ty))
+                    .collect::<Vec<_>>();
+
+                self.lower_variant(
+                    &cases
+                        .iter()
+                        .map(|(name, ty)| (name.deref(), Some(*ty)))
+                        .collect::<Vec<_>>(),
+                    lowered_types,
+                    &operands[0],
+                    results,
+                )
+            }
 
             Instruction::UnionLift { union, ty, .. } => {
                 let cases = union
@@ -1266,7 +1324,6 @@ impl Bindgen for FunctionBindgen<'_> {
                         .iter()
                         .map(|(name, ty)| (name.deref(), Some(*ty)))
                         .collect::<Vec<_>>(),
-                    iface,
                     &operands[0],
                     results,
                 )
@@ -1299,8 +1356,8 @@ impl Bindgen for FunctionBindgen<'_> {
                 let op = &operands[0];
 
                 let mut block = |ty: Option<&Type>, Block { body, results, .. }, payload| {
-                    let payload = if let Some(ty) = self.gen.non_empty_type(iface, ty) {
-                        let ty = self.gen.type_name(iface, ty);
+                    let payload = if let Some(ty) = self.gen.non_empty_type(ty) {
+                        let ty = self.gen.type_name(ty);
 
                         format!("{ty} {payload} = ({ty}) ({op});")
                     } else {
@@ -1342,11 +1399,11 @@ impl Bindgen for FunctionBindgen<'_> {
                 let some = self.blocks.pop().unwrap();
                 let _none = self.blocks.pop().unwrap();
 
-                let ty = self.gen.type_name(iface, &Type::Id(*ty));
+                let ty = self.gen.type_name(&Type::Id(*ty));
                 let lifted = self.locals.tmp("lifted");
                 let op = &operands[0];
 
-                let payload = if self.gen.non_empty_type(iface, Some(*payload)).is_some() {
+                let payload = if self.gen.non_empty_type(Some(*payload)).is_some() {
                     some.results.into_iter().next().unwrap()
                 } else {
                     "null".into()
@@ -1384,9 +1441,8 @@ impl Bindgen for FunctionBindgen<'_> {
                 result,
                 ..
             } => self.lower_variant(
-                &[result.ok, result.err],
+                &[("ok", result.ok), ("err", result.err)],
                 lowered_types,
-                iface,
                 &operands[0],
                 results,
             ),
@@ -1394,7 +1450,6 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::ResultLift { result, ty } => self.lift_variant(
                 &Type::Id(*ty),
                 &[("ok", result.ok), ("err", result.err)],
-                iface,
                 &operands[0],
                 results,
             ),
@@ -1513,7 +1568,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let size = self.gen.sizes.size(element);
                 let align = self.gen.sizes.align(element);
                 let address = self.locals.tmp("address");
-                let ty = self.gen.type_name(iface, element);
+                let ty = self.gen.type_name(element);
                 let index = self.locals.tmp("index");
 
                 uwrite!(
@@ -1550,7 +1605,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let address = &operands[0];
                 let length = &operands[1];
                 let array = self.locals.tmp("array");
-                let ty = self.gen.type_name(iface, element);
+                let ty = self.gen.type_name(element);
                 let size = self.gen.sizes.size(element);
                 let align = self.gen.sizes.align(element);
                 let index = self.locals.tmp("index");
@@ -1612,19 +1667,20 @@ impl Bindgen for FunctionBindgen<'_> {
                     1 => {
                         let ty = self
                             .gen
-                            .type_name(iface, func.results.iter_types().next().unwrap());
+                            .type_name(func.results.iter_types().next().unwrap());
                         let result = self.locals.tmp("result");
                         let assignment = format!("{ty} {result} = ");
                         results.push(result);
                         (assignment, String::new())
                     }
                     count => {
-                        self.gen.tuple_counts.insert(count);
+                        self.gen.gen.tuple_counts.insert(count);
                         let ty = format!(
-                            "Tuple{count}<{}>",
+                            "{}Tuple{count}<{}>",
+                            self.gen.gen.qualifier(),
                             func.results
                                 .iter_types()
-                                .map(|ty| self.gen.type_name_boxed(iface, ty, None))
+                                .map(|ty| self.gen.type_name_boxed(ty, false))
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         );
@@ -1637,7 +1693,7 @@ impl Bindgen for FunctionBindgen<'_> {
                             .iter_types()
                             .enumerate()
                             .map(|(index, ty)| {
-                                let ty = self.gen.type_name(iface, ty);
+                                let ty = self.gen.type_name(ty);
                                 let my_result = self.locals.tmp("result");
                                 let assignment = format!("{ty} {my_result} = {result}.f{index};");
                                 results.push(my_result);
@@ -1681,10 +1737,11 @@ impl Bindgen for FunctionBindgen<'_> {
                     uwrite!(
                         self.src,
                         "
-                        for (Cleanup cleanup : cleanupList) {{
+                        for ({}Cleanup cleanup : cleanupList) {{
                             Memory.free(Address.fromInt(cleanup.address), cleanup.size, cleanup.align);
                         }}
-                        "
+                        ",
+                        self.gen.gen.qualifier()
                     );
                 }
 
@@ -1693,7 +1750,11 @@ impl Bindgen for FunctionBindgen<'_> {
                     1 => uwriteln!(self.src, "return {};", operands[0]),
                     count => {
                         let results = operands.join(", ");
-                        uwriteln!(self.src, "return new Tuple{count}<>({results});")
+                        uwriteln!(
+                            self.src,
+                            "return new {}Tuple{count}<>({results});",
+                            self.gen.gen.qualifier()
+                        )
                     }
                 }
             }
@@ -1865,9 +1926,9 @@ impl Bindgen for FunctionBindgen<'_> {
     }
 
     fn return_pointer(&mut self, _iface: &Interface, size: usize, align: usize) -> String {
-        self.gen.return_area_size = self.gen.return_area_size.max(size);
-        self.gen.return_area_align = self.gen.return_area_align.max(align);
-        "RETURN_AREA".into()
+        self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
+        self.gen.gen.return_area_align = self.gen.gen.return_area_align.max(align);
+        format!("{}RETURN_AREA", self.gen.gen.qualifier())
     }
 
     fn push_block(&mut self) {
@@ -1898,7 +1959,8 @@ impl Bindgen for FunctionBindgen<'_> {
             {
                 uwriteln!(
                     self.src,
-                    "cleanupList.add(new Cleanup({address}, {size}, {align}));"
+                    "cleanupList.add(new {}Cleanup({address}, {size}, {align}));",
+                    self.gen.gen.qualifier()
                 );
             }
         }

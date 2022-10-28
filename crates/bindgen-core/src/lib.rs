@@ -14,156 +14,6 @@ pub use ns::Ns;
 #[cfg(feature = "component-generator")]
 pub mod component;
 
-/// This is the direction from the user's perspective. Are we importing
-/// functions to call, or defining functions and exporting them to be called?
-///
-/// This is only used outside of `Generator` implementations. Inside of
-/// `Generator` implementations, the `Direction` is translated to an
-/// `AbiVariant` instead. The ABI variant is usually the same as the
-/// `Direction`, but it's different in the case of the Wasmtime host bindings:
-///
-/// In a wasm-calling-wasm use case, one wasm module would use the `Import`
-/// ABI, the other would use the `Export` ABI, and there would be an adapter
-/// layer between the two that translates from one ABI to the other.
-///
-/// But with wasm-calling-host, we don't go through a separate adapter layer;
-/// the binding code we generate on the host side just does everything itself.
-/// So when the host is conceptually "exporting" a function to wasm, it uses
-/// the `Import` ABI so that wasm can also use the `Import` ABI and import it
-/// directly from the host.
-///
-/// These are all implementation details; from the user perspective, and
-/// from the perspective of everything outside of `Generator` implementations,
-/// `export` means I'm exporting functions to be called, and `import` means I'm
-/// importing functions that I'm going to call, in both wasm modules and host
-/// code. The enum here represents this user perspective.
-#[derive(Copy, Clone, Eq, PartialEq, Default)]
-pub enum Direction {
-    #[default]
-    Import,
-    Export,
-}
-
-pub trait Generator {
-    fn preprocess_all(&mut self, imports: &[Interface], exports: &[Interface]) {
-        drop((imports, exports));
-    }
-
-    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        drop((iface, dir));
-    }
-
-    fn type_record(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        record: &Record,
-        docs: &Docs,
-    );
-    fn type_flags(&mut self, iface: &Interface, id: TypeId, name: &str, flags: &Flags, docs: &Docs);
-    fn type_tuple(&mut self, iface: &Interface, id: TypeId, name: &str, flags: &Tuple, docs: &Docs);
-    fn type_variant(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        variant: &Variant,
-        docs: &Docs,
-    );
-    fn type_option(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        payload: &Type,
-        docs: &Docs,
-    );
-    fn type_result(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        name: &str,
-        result: &Result_,
-        docs: &Docs,
-    );
-    fn type_union(&mut self, iface: &Interface, id: TypeId, name: &str, union: &Union, docs: &Docs);
-    fn type_enum(&mut self, iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs);
-    fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
-    fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
-    fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs);
-
-    fn preprocess_functions(&mut self, iface: &Interface, dir: Direction) {
-        drop((iface, dir));
-    }
-    fn import(&mut self, iface: &Interface, func: &Function);
-    fn export(&mut self, iface: &Interface, func: &Function);
-    fn finish_functions(&mut self, iface: &Interface, dir: Direction) {
-        drop((iface, dir));
-    }
-
-    fn finish_one(&mut self, iface: &Interface, files: &mut Files);
-
-    fn finish_all(&mut self, files: &mut Files) {
-        drop(files);
-    }
-
-    fn generate_one(&mut self, iface: &Interface, dir: Direction, files: &mut Files) {
-        self.preprocess_one(iface, dir);
-
-        for (id, ty) in iface.types.iter() {
-            // assert!(ty.foreign_module.is_none()); // TODO
-            let name = match &ty.name {
-                Some(name) => name,
-                None => continue,
-            };
-            match &ty.kind {
-                TypeDefKind::Record(record) => self.type_record(iface, id, name, record, &ty.docs),
-                TypeDefKind::Flags(flags) => self.type_flags(iface, id, name, flags, &ty.docs),
-                TypeDefKind::Tuple(tuple) => self.type_tuple(iface, id, name, tuple, &ty.docs),
-                TypeDefKind::Enum(enum_) => self.type_enum(iface, id, name, enum_, &ty.docs),
-                TypeDefKind::Variant(variant) => {
-                    self.type_variant(iface, id, name, variant, &ty.docs)
-                }
-                TypeDefKind::Option(t) => self.type_option(iface, id, name, t, &ty.docs),
-                TypeDefKind::Result(r) => self.type_result(iface, id, name, r, &ty.docs),
-                TypeDefKind::Union(u) => self.type_union(iface, id, name, u, &ty.docs),
-                TypeDefKind::List(t) => self.type_list(iface, id, name, t, &ty.docs),
-                TypeDefKind::Type(t) => self.type_alias(iface, id, name, t, &ty.docs),
-                TypeDefKind::Future(_) => todo!("generate for future"),
-                TypeDefKind::Stream(_) => todo!("generate for stream"),
-            }
-        }
-
-        self.preprocess_functions(iface, dir);
-
-        for f in iface.functions.iter() {
-            match dir {
-                Direction::Import => self.import(iface, f),
-                Direction::Export => self.export(iface, f),
-            }
-        }
-
-        self.finish_functions(iface, dir);
-
-        self.finish_one(iface, files)
-    }
-
-    fn generate_all(&mut self, imports: &[Interface], exports: &[Interface], files: &mut Files) {
-        self.preprocess_all(imports, exports);
-
-        for imp in imports {
-            self.generate_one(imp, Direction::Import, files);
-        }
-
-        for exp in exports {
-            self.generate_one(exp, Direction::Export, files);
-        }
-
-        self.finish_all(files);
-    }
-}
-
 #[derive(Default)]
 pub struct Types {
     type_info: HashMap<TypeId, TypeInfo>,
@@ -508,7 +358,7 @@ macro_rules! uwriteln {
 
 #[cfg(test)]
 mod tests {
-    use super::{Generator, Source};
+    use super::Source;
 
     #[test]
     fn simple_append() {
@@ -554,11 +404,6 @@ mod tests {
         }",
         );
         assert_eq!(s.s, "function() {\n  x\n}");
-    }
-
-    #[test]
-    fn generator_is_object_safe() {
-        fn _assert(_: &dyn Generator) {}
     }
 }
 

@@ -21,6 +21,7 @@ wit-parser = { workspace = true }
 filetime = "0.2"
 
 [build-dependencies]
+heck = { workspace = true }
 wit-bindgen-gen-guest-c = { workspace = true }
 wit-bindgen-gen-guest-teavm-java = { workspace = true }
 wit-bindgen-core = { workspace = true }

@@ -1,6 +1,10 @@
-package wit_exports;
+package wit_variants;
 
-import wit_imports.Imports;
+import wit_variants.VariantsWorld.Result;
+import wit_variants.VariantsWorld.Tuple0;
+import wit_variants.VariantsWorld.Tuple3;
+import wit_variants.VariantsWorld.Tuple4;
+import wit_variants.VariantsWorld.Tuple6;
 
 public class ExportsImpl {
     public static void testImports() {
@@ -9,18 +13,18 @@ public class ExportsImpl {
         expect(Imports.roundtripOption(2.0F) == (byte) 2);
 
         {
-            Imports.Result<Double, Byte> result = Imports.roundtripResult(Imports.Result.ok(2));
-            expect(result.tag == Imports.Result.OK && result.getOk() == 2.0D);
+            Result<Double, Byte> result = Imports.roundtripResult(Result.ok(2));
+            expect(result.tag == Result.OK && result.getOk() == 2.0D);
         }
 
         {
-            Imports.Result<Double, Byte> result = Imports.roundtripResult(Imports.Result.ok(4));
-            expect(result.tag == Imports.Result.OK && result.getOk() == 4.0D);
+            Result<Double, Byte> result = Imports.roundtripResult(Result.ok(4));
+            expect(result.tag == Result.OK && result.getOk() == 4.0D);
         }
 
         {
-            Imports.Result<Double, Byte> result = Imports.roundtripResult(Imports.Result.err(5.3F));
-            expect(result.tag == Imports.Result.ERR && result.getErr() == (byte) 5);
+            Result<Double, Byte> result = Imports.roundtripResult(Result.err(5.3F));
+            expect(result.tag == Result.ERR && result.getErr() == (byte) 5);
         }
 
 
@@ -31,8 +35,8 @@ public class ExportsImpl {
         expect(Imports.invertBool(false) == true);
 
         {
-            Imports.Tuple6<Imports.C1, Imports.C2, Imports.C3, Imports.C4, Imports.C5, Imports.C6> result
-                = Imports.variantCasts(new Imports.Tuple6<>(Imports.C1.a(1),
+            Tuple6<Imports.C1, Imports.C2, Imports.C3, Imports.C4, Imports.C5, Imports.C6> result
+                = Imports.variantCasts(new Tuple6<>(Imports.C1.a(1),
                                                             Imports.C2.a(2),
                                                             Imports.C3.a(3),
                                                             Imports.C4.a(4L),
@@ -48,8 +52,8 @@ public class ExportsImpl {
         }
 
         {
-            Imports.Tuple6<Imports.C1, Imports.C2, Imports.C3, Imports.C4, Imports.C5, Imports.C6> result
-                = Imports.variantCasts(new Imports.Tuple6<>(Imports.C1.b(1L),
+            Tuple6<Imports.C1, Imports.C2, Imports.C3, Imports.C4, Imports.C5, Imports.C6> result
+                = Imports.variantCasts(new Tuple6<>(Imports.C1.b(1L),
                                                             Imports.C2.b(2.0F),
                                                             Imports.C3.b(3.0D),
                                                             Imports.C4.b(4.0F),
@@ -65,8 +69,8 @@ public class ExportsImpl {
         }
 
         {
-            Imports.Tuple4<Imports.Z1, Imports.Z2, Imports.Z3, Imports.Z4> result
-                = Imports.variantZeros(new Imports.Tuple4<>(Imports.Z1.a(1),
+            Tuple4<Imports.Z1, Imports.Z2, Imports.Z3, Imports.Z4> result
+                = Imports.variantZeros(new Tuple4<>(Imports.Z1.a(1),
                                                             Imports.Z2.a(2L),
                                                             Imports.Z3.a(3.0F),
                                                             Imports.Z4.a(4.0D)));
@@ -78,8 +82,8 @@ public class ExportsImpl {
         }
 
         {
-            Imports.Tuple4<Imports.Z1, Imports.Z2, Imports.Z3, Imports.Z4> result
-                = Imports.variantZeros(new Imports.Tuple4<>(Imports.Z1.b(),
+            Tuple4<Imports.Z1, Imports.Z2, Imports.Z3, Imports.Z4> result
+                = Imports.variantZeros(new Tuple4<>(Imports.Z1.b(),
                                                             Imports.Z2.b(),
                                                             Imports.Z3.b(),
                                                             Imports.Z4.b()));
@@ -90,14 +94,14 @@ public class ExportsImpl {
             expect(result.f3.tag == Imports.Z4.B);
         }
 
-        Imports.variantTypedefs(null, false, Imports.Result.err(Imports.Tuple0.INSTANCE));
+        Imports.variantTypedefs(null, false, Result.err(Tuple0.INSTANCE));
 
         {
-            Imports.Tuple3<Boolean, Imports.Result<Imports.Tuple0, Imports.Tuple0>, Imports.MyErrno> result
-                = Imports.variantEnums(true, Imports.Result.ok(Imports.Tuple0.INSTANCE), Imports.MyErrno.SUCCESS);
+            Tuple3<Boolean, Result<Tuple0, Tuple0>, Imports.MyErrno> result
+                = Imports.variantEnums(true, Result.ok(Tuple0.INSTANCE), Imports.MyErrno.SUCCESS);
 
             expect(result.f0 == false);
-            expect(result.f1.tag == Imports.Result.ERR);
+            expect(result.f1.tag == Result.ERR);
             expect(result.f2 == Imports.MyErrno.A);
         }
     }
@@ -106,15 +110,15 @@ public class ExportsImpl {
         return a == null ? null : (byte) (float) a;
     }
 
-    public static Exports.Result<Double, Byte> roundtripResult(Exports.Result<Integer, Float> a) {
+    public static Result<Double, Byte> roundtripResult(Result<Integer, Float> a) {
         switch (a.tag) {
-        case Exports.Result.OK: return Exports.Result.ok((double) a.getOk());
-        case Exports.Result.ERR: return Exports.Result.err((byte) (float) a.getErr());
+        case Result.OK: return Result.ok((double) a.getOk());
+        case Result.ERR: return Result.err((byte) (float) a.getErr());
         default: throw new AssertionError();
         }
     }
 
-    public static Exports.E1 roundtripEnum(Exports.E1 a) {
+    public static Variants.E1 roundtripEnum(Variants.E1 a) {
         return a;
     }
 
@@ -122,20 +126,19 @@ public class ExportsImpl {
         return !a;
     }
 
-    public static Exports.Tuple6<Exports.C1, Exports.C2, Exports.C3, Exports.C4, Exports.C5, Exports.C6>
-        variantCasts
-        (Exports.Tuple6<Exports.C1, Exports.C2, Exports.C3, Exports.C4, Exports.C5, Exports.C6> a)
+    public static Tuple6<Variants.C1, Variants.C2, Variants.C3, Variants.C4, Variants.C5, Variants.C6>
+        variantCasts(Tuple6<Variants.C1, Variants.C2, Variants.C3, Variants.C4, Variants.C5, Variants.C6> a)
     {
         return a;
     }
 
-    public static Exports.Tuple4<Exports.Z1, Exports.Z2, Exports.Z3, Exports.Z4> variantZeros
-        (Exports.Tuple4<Exports.Z1, Exports.Z2, Exports.Z3, Exports.Z4> a)
+    public static Tuple4<Variants.Z1, Variants.Z2, Variants.Z3, Variants.Z4>
+        variantZeros(Tuple4<Variants.Z1, Variants.Z2, Variants.Z3, Variants.Z4> a)
     {
         return a;
     }
 
-    public static void variantTypedefs(Integer a, boolean b, Exports.Result<Integer, Exports.Tuple0> c) { }
+    public static void variantTypedefs(Integer a, boolean b, Result<Integer, Tuple0> c) { }
 
     private static void expect(boolean v) {
         if (!v) {

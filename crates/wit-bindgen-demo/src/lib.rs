@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::sync::Once;
 use wit_bindgen_core::component::ComponentGenerator;
 use wit_bindgen_core::wit_parser::Interface;
-use wit_bindgen_core::{Files, Generator, WorldGenerator};
+use wit_bindgen_core::{Files, WorldGenerator};
 use wit_component::ComponentInterfaces;
 
 wit_bindgen_guest_rust::generate!({
@@ -68,15 +68,6 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
         },
     };
 
-    let gen_world_legacy = |mut gen: Box<dyn Generator>, files: &mut Files| {
-        let (imports, exports) = if options.import {
-            (vec![iface.clone()], vec![])
-        } else {
-            (vec![], vec![iface.clone()])
-        };
-        gen.generate_all(&imports, &exports, files);
-    };
-
     let gen_world = |mut gen: Box<dyn WorldGenerator>, files: &mut Files| {
         gen.generate("demo", &interfaces, files);
     };
@@ -103,8 +94,8 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
             opts.unchecked = options.rust_unchecked;
             gen_world(opts.build(), files)
         }
-        demo::Lang::Java => gen_world_legacy(
-            Box::new(wit_bindgen_gen_guest_teavm_java::Opts::default().build()),
+        demo::Lang::Java => gen_world(
+            wit_bindgen_gen_guest_teavm_java::Opts::default().build(),
             files,
         ),
         demo::Lang::Wasmtime => {
