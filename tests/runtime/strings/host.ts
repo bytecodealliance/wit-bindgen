@@ -1,12 +1,14 @@
-import { loadWasm, testwasi } from "./helpers.js";
+// Flags: --instantiation
+
+import * as helpers from "./helpers.js";
 import { instantiate } from "./strings.js";
 
 // @ts-ignore
 import * as assert from 'assert';
 
 async function run() {
-  const wasm = await instantiate(loadWasm, {
-    testwasi,
+  const wasm = await instantiate(helpers.loadWasm, {
+    testwasi: helpers,
     imports: {
       takeBasic(s: string) {
         assert.strictEqual(s, 'latin utf16');

@@ -1,4 +1,4 @@
-import { Demo, Options, instantiate } from './demo.js';
+import { render, Options } from './demo.js';
 
 class Editor {
   input: HTMLTextAreaElement;
@@ -7,8 +7,9 @@ class Editor {
   files: HTMLSelectElement
   rustUnchecked: HTMLInputElement;
   wasmtimeTracing: HTMLInputElement;
+  jsCompat: HTMLInputElement;
+  jsInstantiation: HTMLInputElement;
   generatedFiles: Record<string, string>;
-  demo?: Demo;
   options: Options;
   rerender: number | null;
   inputEditor: AceAjax.Editor;
@@ -21,6 +22,8 @@ class Editor {
     this.mode = document.getElementById('mode-select') as HTMLSelectElement;
     this.files = document.getElementById('file-select') as HTMLSelectElement;
     this.rustUnchecked = document.getElementById('rust-unchecked') as HTMLInputElement;
+    this.jsCompat = document.getElementById('js-compat') as HTMLInputElement;
+    this.jsInstantiation = document.getElementById('js-instantiation') as HTMLInputElement;
     this.wasmtimeTracing = document.getElementById('wasmtime-tracing') as HTMLInputElement;
     this.outputHtml = document.getElementById('html-output') as HTMLDivElement;
 
@@ -36,19 +39,14 @@ class Editor {
     this.options = {
       rustUnchecked: false,
       wasmtimeTracing: false,
+      jsCompat: false,
+      jsInstantiation: false,
       import: false,
     };
     this.rerender = null;
   }
 
-  async instantiate() {
-    this.demo = await instantiate(
-      async (name, imports) => {
-        const obj = await WebAssembly.instantiateStreaming(fetch(name), imports)
-        return obj.instance;
-      },
-      { console },
-    );
+  init() {
     this.installListeners();
     this.render();
   }
@@ -66,6 +64,16 @@ class Editor {
 
     this.rustUnchecked.addEventListener('change', () => {
       this.options.rustUnchecked = this.rustUnchecked.checked;
+      this.render();
+    });
+
+    this.jsCompat.addEventListener('change', () => {
+      this.options.jsCompat = this.jsCompat.checked;
+      this.render();
+    });
+
+    this.jsInstantiation.addEventListener('change', () => {
+      this.options.jsInstantiation = this.jsInstantiation.checked;
       this.render();
     });
 
@@ -101,7 +109,7 @@ class Editor {
       default: return;
     }
     this.options.import = is_import;
-    const result = this.demo.render(lang, wit, this.options);
+    const result = render(lang, wit, this.options);
     if (result.tag === 'err') {
       this.outputEditor.setValue(result.val);
       this.outputEditor.clearSelection();
@@ -166,4 +174,4 @@ class Editor {
 }
 
 
-(new Editor()).instantiate()
+(new Editor()).init()

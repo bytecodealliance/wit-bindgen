@@ -1,5 +1,7 @@
+// Flags: --instantiation
+
 import { instantiate } from "./many_arguments.js";
-import { loadWasm, testwasi } from "./helpers.js";
+import * as helpers from "./helpers.js";
 
 function assertEq(x: any, y: any) {
   if (x !== y)
@@ -12,8 +14,8 @@ function assert(x: boolean) {
 }
 
 async function run() {
-  const wasm = await instantiate(loadWasm, {
-    testwasi,
+  const wasm = await instantiate(helpers.loadWasm, {
+    testwasi: helpers,
     imports: {
       manyArguments(
         a1,

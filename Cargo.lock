@@ -2014,6 +2014,7 @@ dependencies = [
 name = "wit-bindgen-gen-host-js"
 version = "0.3.0"
 dependencies = [
+ "anyhow",
  "clap",
  "heck",
  "indexmap",

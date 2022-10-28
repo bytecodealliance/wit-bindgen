@@ -1,11 +1,13 @@
+// Flags: --instantiation
+
 import { instantiate } from "./invalid.js";
-import { loadWasm, testwasi } from "./helpers.js";
+import * as helpers from "./helpers.js";
 // @ts-ignore
 import * as assert from 'assert';
 
 async function run() {
-  const wasm = await instantiate(loadWasm, {
-    testwasi,
+  const wasm = await instantiate(helpers.loadWasm, {
+    testwasi: helpers,
     imports: {
       roundtripU8(x) { throw new Error('unreachable'); },
       roundtripS8(x) { throw new Error('unreachable'); },

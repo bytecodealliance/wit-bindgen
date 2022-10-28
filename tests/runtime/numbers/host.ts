@@ -1,4 +1,6 @@
-import { loadWasm, testwasi } from "./helpers.js";
+// Flags: --instantiation
+
+import * as helpers from "./helpers.js";
 import { instantiate } from "./numbers.js";
 
 function assertEq(x: any, y: any) {
@@ -13,8 +15,8 @@ function assert(x: boolean) {
 
 async function run() {
   let scalar = 0;
-  const wasm = await instantiate(loadWasm, {
-    testwasi,
+  const wasm = await instantiate(helpers.loadWasm, {
+    testwasi: helpers,
     imports: {
       roundtripU8(x) { return x; },
       roundtripS8(x) { return x; },

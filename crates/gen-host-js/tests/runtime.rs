@@ -1,9 +1,17 @@
+use clap::Parser;
 use std::env;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use wit_bindgen_gen_host_js;
 
 test_helpers::runtime_component_tests!("ts");
+
+#[derive(Debug, Parser)]
+struct Args {
+    #[clap(flatten)]
+    opts: wit_bindgen_gen_host_js::Opts,
+}
 
 fn execute(name: &str, lang: &str, wasm: &Path, ts: &Path) {
     let dir = test_helpers::test_directory("runtime", "js", &format!("{name}-{lang}"));
@@ -12,8 +20,16 @@ fn execute(name: &str, lang: &str, wasm: &Path, ts: &Path) {
     println!("OUT_DIR = {:?}", dir);
     println!("Generating bindings...");
     let mut files = Default::default();
+
+    // Generation flags taken from first line comment
+    // of the test file.
+    let src_str = fs::read_to_string(ts).unwrap();
+    let flags = get_first_line_flag_comment(&src_str);
+    let flag_vec: Vec<&str> = flags.split(" ").collect();
+    let opts = Args::try_parse_from(flag_vec).unwrap();
+
     wit_bindgen_core::component::generate(
-        &mut *wit_bindgen_gen_host_js::Opts::default().build(),
+        &mut *opts.opts.build().unwrap(),
         name,
         &wasm,
         &mut files,
@@ -39,7 +55,7 @@ fn execute(name: &str, lang: &str, wasm: &Path, ts: &Path) {
         format!(
             r#"
                 {{
-                    "files": ["host.ts"],
+                    "files": ["host.ts", "helpers.ts"],
                     "compilerOptions": {{
                         "module": "esnext",
                         "target": "es2020",
@@ -74,4 +90,11 @@ fn execute(name: &str, lang: &str, wasm: &Path, ts: &Path) {
             .env("NODE_PATH", std::env::join_paths(&path).unwrap())
             .arg(dir),
     );
+}
+
+fn get_first_line_flag_comment(src: &str) -> &str {
+    src.lines()
+        .next()
+        .and_then(|s| s.strip_prefix("// Flags:"))
+        .unwrap_or("")
 }

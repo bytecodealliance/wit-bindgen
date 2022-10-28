@@ -12,7 +12,7 @@ macro_rules! gen_test {
                 test_helpers::Direction::$dir,
                 |name, component, files| {
                     wit_bindgen_core::component::generate(
-                        &mut *wit_bindgen_gen_host_js::Opts::default().build(),
+                        &mut *wit_bindgen_gen_host_js::Opts::default().build().unwrap(),
                         name,
                         component,
                         files,

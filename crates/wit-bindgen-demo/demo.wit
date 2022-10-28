@@ -14,6 +14,8 @@ enum lang {
 record options {
   rust-unchecked: bool,
   wasmtime-tracing: bool,
+  js-compat: bool,
+  js-instantiation: bool,
   import: bool,
 }
 
