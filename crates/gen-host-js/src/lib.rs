@@ -62,7 +62,7 @@ pub struct Opts {
     pub instantiation: bool,
     /// Comma-separated list of "from-specifier=./to-specifier.js" mappings of
     /// component import specifiers to JS import specifiers.
-    #[cfg_attr(feature = "clap", arg(long = "map", conflicts_with = "instantiation"))]
+    #[cfg_attr(feature = "clap", arg(long = "map"))]
     pub map: Option<String>,
     /// Enables all compat flags: --nodejs-compat.
     #[cfg_attr(feature = "clap", arg(long = "compat"))]
