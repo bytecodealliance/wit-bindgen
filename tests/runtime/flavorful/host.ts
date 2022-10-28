@@ -42,7 +42,6 @@ export function listOfVariants(bools: any, results: any, enums: any) {
 }
 
 export async function run () {
-  // @ts-ignore
   const wasm = await import('./flavorful.js');
 
   wasm.testImports();

@@ -93,10 +93,8 @@ fn execute(name: &str, lang: &str, wasm: &Path, ts: &Path) {
 }
 
 fn get_first_line_flag_comment(src: &str) -> &str {
-    if src.starts_with("// Flags:") {
-        if let Some(nl_idx) = src.find(|c| c == '\r' || c == '\n') {
-            return &src[9..nl_idx];
-        }
-    }
-    return "";
+    src.lines()
+        .next()
+        .and_then(|s| s.strip_prefix("// Flags:"))
+        .unwrap_or("")
 }

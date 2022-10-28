@@ -1,4 +1,6 @@
-use anyhow::{anyhow, Result};
+#[cfg(feature = "clap")]
+use anyhow::anyhow;
+use anyhow::Result;
 use heck::*;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -25,9 +27,6 @@ struct Js {
     /// over time and primarily contains the main `instantiate` function as well
     /// as a type-description of the input/output interfaces.
     src: Source,
-
-    /// Import mappings
-    import_maps: HashMap<String, String>,
 
     /// Type script definitions which will become the import object
     import_object: wit_bindgen_core::Source,
@@ -62,8 +61,8 @@ pub struct Opts {
     pub instantiation: bool,
     /// Comma-separated list of "from-specifier=./to-specifier.js" mappings of
     /// component import specifiers to JS import specifiers.
-    #[cfg_attr(feature = "clap", arg(long = "map"))]
-    pub map: Option<String>,
+    #[cfg_attr(feature = "clap", arg(long = "map"), clap(value_parser = maps_str_to_map))]
+    pub map: Option<HashMap<String, String>>,
     /// Enables all compat flags: --nodejs-compat.
     #[cfg_attr(feature = "clap", arg(long = "compat"))]
     pub compat: bool,
@@ -85,9 +84,6 @@ impl Opts {
         gen.opts = self;
         if gen.opts.compat {
             gen.opts.nodejs_compat = true;
-        }
-        if let Some(map) = gen.opts.map.as_ref() {
-            gen.import_maps = maps_str_to_map(&map)?;
         }
         Ok(Box::new(gen))
     }
@@ -212,8 +208,8 @@ impl ComponentGenerator for Js {
                     */
                     export function instantiate(
                         instantiateCore: (path: string, imports: any) => Promise<WebAssembly.Instance>,
-                        imports: ImportObject,
-                    ): Promise<{camel}>;
+                        imports: typeof ImportObject,
+                    ): Promise<typeof {camel}>;
                 ",
             );
         }
@@ -250,26 +246,22 @@ impl WorldGenerator for Js {
     fn import(&mut self, name: &str, iface: &Interface, files: &mut Files) {
         self.generate_interface(name, iface, "imports", "Imports", files);
         let camel = name.to_upper_camel_case();
-        uwriteln!(self.import_object, "{name}: {camel}Imports;");
+        uwriteln!(
+            self.import_object,
+            "export const {name}: typeof {camel}Imports;"
+        );
     }
 
     fn export(&mut self, name: &str, iface: &Interface, files: &mut Files) {
         self.generate_interface(name, iface, "exports", "Exports", files);
         let camel = name.to_upper_camel_case();
-        if self.opts.instantiation {
-            uwriteln!(self.export_object, "{name}: {camel}Exports;");
-        } else {
-            uwriteln!(self.src.ts, "TODO");
-        }
+        uwriteln!(self.src.ts, "export const {name}: typeof {camel}Exports;");
     }
 
     fn export_default(&mut self, _name: &str, iface: &Interface, _files: &mut Files) {
         let instantiation = self.opts.instantiation;
         let mut gen = self.js_interface(iface);
         for func in iface.functions.iter() {
-            if !instantiation {
-                gen.src.ts.push_str("export function ");
-            }
             gen.ts_func(func);
         }
         if instantiation {
@@ -293,7 +285,7 @@ impl WorldGenerator for Js {
         // per-imported-interface where the type of that field is defined by the
         // interface itself.
         if self.opts.instantiation {
-            uwriteln!(self.src.ts, "export interface ImportObject {{");
+            uwriteln!(self.src.ts, "export namespace ImportObject {{");
             self.src.ts(&self.import_object);
             uwriteln!(self.src.ts, "}}");
         }
@@ -301,7 +293,7 @@ impl WorldGenerator for Js {
         // Generate a type definition for the export object from instantiating
         // the component.
         if self.opts.instantiation {
-            uwriteln!(self.src.ts, "export interface {camel} {{",);
+            uwriteln!(self.src.ts, "export namespace {camel} {{",);
             self.src.ts(&self.export_object);
             uwriteln!(self.src.ts, "}}");
         }
@@ -322,7 +314,7 @@ impl Js {
         gen.types();
         gen.post_types();
 
-        uwriteln!(gen.src.ts, "export interface {camel} {{");
+        uwriteln!(gen.src.ts, "export namespace {camel} {{");
         for func in iface.functions.iter() {
             gen.ts_func(func);
         }
@@ -333,20 +325,27 @@ impl Js {
             files.push(&format!("{dir}/{name}.d.ts"), gen.src.ts.as_bytes());
         }
 
-        // TODO: instance mode imports typings
-        if self.opts.instantiation {
-            uwriteln!(
-                self.src.ts,
-                "import {{ {camel} as {camel}{extra} }} from \"./{dir}/{name}\";"
-            );
-        }
+        uwriteln!(
+            self.src.ts,
+            "{} {{ {camel} as {camel}{extra} }} from \"./{dir}/{name}\";",
+            // In instance mode, we have no way to assert the imported types
+            // in the ambient declaration file. Instead we just export the
+            // import namespace types for users to use.
+            if self.opts.instantiation {
+                "import"
+            } else {
+                "export"
+            }
+        );
     }
 
     fn map_import(&self, impt: &str) -> String {
-        match self.import_maps.get(impt) {
-            Some(mapping) => mapping.into(),
-            None => impt.into(),
+        if let Some(map) = self.opts.map.as_ref() {
+            if let Some(mapping) = map.get(impt) {
+                return mapping.into();
+            }
         }
+        impt.into()
     }
 
     fn js_interface<'a>(&'a mut self, iface: &'a Interface) -> JsInterface<'a> {
@@ -404,7 +403,7 @@ impl Js {
                     let _fs;
                     async function loadWasm (url) {
                         if (isNode) {
-                            _fs = _fs || await import('node:fs/promises');
+                            _fs = _fs || await import('fs/promises');
                             return WebAssembly.compile(await _fs.readFile(url));
                         }
                         return fetch(url).then(WebAssembly.compile);
@@ -796,7 +795,7 @@ impl Instantiator<'_> {
                 self.src.js,
                 "
                 const instance{iu32} = await {load_wasm}(new URL('./{name}', import.meta.url))
-                .then(m => WebAssembly.instantiate(m, {imports}));\
+                    .then(m => WebAssembly.instantiate(m, {imports}));\
             "
             );
         }
@@ -836,11 +835,7 @@ impl Instantiator<'_> {
                 self.gen.map_import(import_name),
             );
         }
-        uwrite!(
-            self.src.js,
-            "
-            function lowering{index}"
-        );
+        uwrite!(self.src.js, "\nfunction lowering{index}");
         let nparams = iface
             .wasm_signature(AbiVariant::GuestImport, func)
             .params
@@ -1131,6 +1126,7 @@ impl<'a> JsInterface<'a> {
     fn ts_func(&mut self, func: &Function) {
         self.docs(&func.docs);
 
+        self.src.ts("export function ");
         self.src.ts(&func.item_name().to_lower_camel_case());
         self.src.ts("(");
 
@@ -2382,14 +2378,16 @@ fn to_js_ident(name: &str) -> &str {
     }
 }
 
+#[cfg(feature = "clap")]
 fn maps_str_to_map(maps: &str) -> Result<HashMap<String, String>> {
     let mut map_hash = HashMap::<String, String>::new();
     for mapping in maps.split(",") {
-        if let Some(eq_idx) = mapping.find('=') {
-            map_hash.insert(mapping[0..eq_idx].into(), mapping[eq_idx + 1..].into());
-        } else {
-            return Err(anyhow!(format!("Invalid mapping entry \"{}\"", &mapping)));
-        }
+        match mapping.split_once('=') {
+            Some((left, right)) => {
+                map_hash.insert(left.into(), right.into());
+            }
+            None => return Err(anyhow!(format!("Invalid mapping entry \"{}\"", &mapping))),
+        };
     }
     Ok(map_hash)
 }
