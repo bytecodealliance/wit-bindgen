@@ -734,21 +734,25 @@ impl Instantiator<'_> {
         }
 
         // To avoid uncaught promise rejection errors, we attach an intermediate
-        // Promise.all with a rejection handler.
-        first = true;
-        self.src.js.push_str("Promise.all([");
-        for init in self.component.initializers.iter() {
-            if let GlobalInitializer::InstantiateModule(InstantiateModule::Static(idx, _)) = init {
-                // Get the compiled WebAssembly.Module objects in parallel
-                if first {
-                    first = false;
-                } else {
-                    self.src.js.push_str(", ");
+        // Promise.all with a rejection handler, if there are multiple promises.
+        if first == false {
+            first = true;
+            self.src.js.push_str("Promise.all([");
+            for init in self.component.initializers.iter() {
+                if let GlobalInitializer::InstantiateModule(InstantiateModule::Static(idx, _)) =
+                    init
+                {
+                    // Get the compiled WebAssembly.Module objects in parallel
+                    if first {
+                        first = false;
+                    } else {
+                        self.src.js.push_str(", ");
+                    }
+                    self.src.js.push_str(&format!("module{}", idx.as_u32()));
                 }
-                self.src.js.push_str(&format!("module{}", idx.as_u32()));
             }
+            self.src.js.push_str("]).catch(() => {});\n");
         }
-        self.src.js.push_str("]).catch(() => {});\n");
 
         for init in self.component.initializers.iter() {
             self.instantiation_global_initializer(init);
