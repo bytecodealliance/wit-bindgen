@@ -1,4 +1,4 @@
-import { Demo, Options, instantiate } from './demo.js';
+import { render, Options } from './demo.js';
 
 class Editor {
   input: HTMLTextAreaElement;
@@ -8,7 +8,6 @@ class Editor {
   rustUnchecked: HTMLInputElement;
   wasmtimeTracing: HTMLInputElement;
   generatedFiles: Record<string, string>;
-  demo?: Demo;
   options: Options;
   rerender: number | null;
   inputEditor: AceAjax.Editor;
@@ -41,14 +40,7 @@ class Editor {
     this.rerender = null;
   }
 
-  async instantiate() {
-    this.demo = await instantiate(
-      async (name, imports) => {
-        const obj = await WebAssembly.instantiateStreaming(fetch(name), imports)
-        return obj.instance;
-      },
-      { console },
-    );
+  init() {
     this.installListeners();
     this.render();
   }
@@ -101,7 +93,7 @@ class Editor {
       default: return;
     }
     this.options.import = is_import;
-    const result = this.demo.render(lang, wit, this.options);
+    const result = render(lang, wit, this.options);
     if (result.tag === 'err') {
       this.outputEditor.setValue(result.val);
       this.outputEditor.clearSelection();
@@ -166,4 +158,4 @@ class Editor {
 }
 
 
-(new Editor()).instantiate()
+(new Editor()).init()
