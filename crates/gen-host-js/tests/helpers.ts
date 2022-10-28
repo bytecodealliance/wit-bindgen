@@ -10,10 +10,9 @@ import { argv, stdout, stderr } from 'node:process';
 // This function loads the module named by `path` and instantiates it with the
 // `imports` object provided. The `path` is a relative path to a wasm file
 // within the generated directory which for tests is passed as argv 2.
-export async function loadWasm(path: string, imports: any) {
+export async function loadWasm(path: string) {
   const root = argv[2];
-  const m = await WebAssembly.compile(await readFile(root + '/' + path))
-  return await WebAssembly.instantiate(m, imports);
+  return await WebAssembly.compile(await readFile(root + '/' + path))
 }
 
 // Export a WASI interface directly for instance imports

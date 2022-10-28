@@ -28,6 +28,9 @@ struct Js {
     /// as a type-description of the input/output interfaces.
     src: Source,
 
+    /// JS output imports map from imported specifier, to a list of bindings
+    imports: HashMap<String, Vec<(String, String)>>,
+
     /// Type script definitions which will become the import object
     import_object: wit_bindgen_core::Source,
     /// Type script definitions which will become the export object
@@ -197,17 +200,17 @@ impl ComponentGenerator for Js {
                     * uses component-model-layer types instead of core wasm
                     * integers/numbers/etc.
                     *
-                    * The first argument to this function, `instantiateCore`, is
-                    * used to instantiate core wasm modules within the component.
+                    * The first argument to this function, `compileCore`, is
+                    * used to compile core wasm modules within the component.
                     * Components are composed of core wasm modules and this callback
-                    * will be invoked per core wasm instantiation. The caller of
-                    * this function is responsible for reading the core wasm module
-                    * identified by `path` and instantiating it with the core wasm
-                    * import object provided. This would use `instantiateStreaming`
+                    * will be invoked per core wasm module. The caller of this
+                    * function is responsible for reading the core wasm module
+                    * identified by `path` and returning its compiled
+                    * WebAssembly.Module object. This would use `compileStreaming`
                     * on the web, for example.
                     */
                     export function instantiate(
-                        instantiateCore: (path: string, imports: any) => Promise<WebAssembly.Instance>,
+                        compileCore: (path: string, imports: any) => Promise<WebAssembly.Module>,
                         imports: typeof ImportObject,
                     ): Promise<typeof {camel}>;
                 ",
@@ -230,7 +233,32 @@ impl ComponentGenerator for Js {
     }
 
     fn finish_component(&mut self, name: &str, files: &mut Files) {
-        let mut bytes = self.src.js.as_bytes();
+        let mut output = wit_bindgen_core::Source::default();
+
+        // Import statements render first in JS instance mode
+        if !self.opts.instantiation {
+            for (specifier, bindings) in &self.imports {
+                uwrite!(output, "import {{");
+                let mut first = true;
+                for (external, local) in bindings {
+                    if first {
+                        output.push_str(" ");
+                    } else {
+                        output.push_str(", ");
+                    }
+                    uwrite!(output, "{} as {}", external, local);
+                    first = false;
+                }
+                if !first {
+                    output.push_str(" ");
+                }
+                uwrite!(output, "}} from '{}';\n", specifier);
+            }
+        }
+
+        output.push_str(&self.src.js);
+
+        let mut bytes = output.as_bytes();
         // strip leading newline
         if bytes[0] == b'\n' {
             bytes = &bytes[1..];
@@ -666,26 +694,65 @@ struct Instantiator<'a> {
 
 impl Instantiator<'_> {
     fn instantiate(&mut self) {
-        if self.gen.opts.instantiation {
+        let instantiation = self.gen.opts.instantiation;
+
+        if instantiation {
             uwriteln!(
                 self.src.js,
                 "
-                    export async function instantiate(instantiateCore, imports) {{\
+                    export async function instantiate(compileCore, imports) {{\
                 "
             );
         }
+
+        // First do the core Wasm compilations in parallel
+        self.src.js.push_str("const [");
+        let mut first = true;
+        for init in self.component.initializers.iter() {
+            if let GlobalInitializer::InstantiateModule(InstantiateModule::Static(idx, _)) = init {
+                if first {
+                    first = false;
+                } else {
+                    self.src.js.push_str(", ");
+                }
+                self.src.js.push_str(&format!("module{}", idx.as_u32()));
+            }
+        }
+        self.src.js.push_str("] = await Promise.all([");
+        first = true;
+        for init in self.component.initializers.iter() {
+            if let GlobalInitializer::InstantiateModule(InstantiateModule::Static(idx, _)) = init {
+                if first {
+                    first = false;
+                } else {
+                    self.src.js.push_str(", ");
+                }
+                // Get the compiled WebAssembly.Module objects in parallel
+                let name = format!("module{}.wasm", idx.as_u32());
+                if self.gen.opts.instantiation {
+                    uwrite!(self.src.js, "compileCore(\"{name}\")",);
+                } else {
+                    let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
+                    uwrite!(
+                        self.src.js,
+                        "{load_wasm}(new URL('./{name}', import.meta.url))",
+                    );
+                }
+            }
+        }
+        self.src.js.push_str("]);\n");
 
         for init in self.component.initializers.iter() {
             self.instantiation_global_initializer(init);
         }
 
-        if self.gen.opts.instantiation {
+        if instantiation {
             self.src.js("return ");
         }
 
         self.exports(&self.component.exports, 0, self.interfaces.default.as_ref());
 
-        if self.gen.opts.instantiation {
+        if instantiation {
             self.src.js(";\n");
             uwriteln!(self.src.js, "}}");
         }
@@ -695,15 +762,14 @@ impl Instantiator<'_> {
         match init {
             GlobalInitializer::InstantiateModule(m) => match m {
                 InstantiateModule::Static(idx, args) => self.instantiate_static_module(*idx, args),
-
                 // This is only needed when instantiating an imported core wasm
                 // module which while easy to implement here is not possible to
                 // test at this time so it's left unimplemented.
                 InstantiateModule::Import(..) => unimplemented!(),
             },
-
-            GlobalInitializer::LowerImport(i) => self.lower_import(i),
-
+            GlobalInitializer::LowerImport(i) => {
+                self.lower_import(i);
+            }
             GlobalInitializer::ExtractMemory(m) => {
                 let def = self.core_export(&m.export);
                 uwriteln!(self.src.js, "const memory{} = {def};", m.index.as_u32());
@@ -777,28 +843,15 @@ impl Instantiator<'_> {
             imports.push_str("}");
         }
 
-        // Delegate most of the work to `instantiateCore` to allow the JS caller
-        // to do `instantiateStreaming` or w/e is appropriate for the embedding
-        // at hand. We've done all the hard work of assembling the import object
-        // so the instantiation should be relatively straightforward.
         let i = self.instances.push(idx);
-        let name = format!("module{}.wasm", idx.as_u32());
         let iu32 = i.as_u32();
-        if self.gen.opts.instantiation {
-            uwriteln!(
-                self.src.js,
-                "const instance{iu32} = await instantiateCore(\"{name}\", {imports});"
-            );
-        } else {
-            let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
-            uwriteln!(
-                self.src.js,
-                "
-                const instance{iu32} = await {load_wasm}(new URL('./{name}', import.meta.url))
-                    .then(m => WebAssembly.instantiate(m, {imports}));\
+        uwriteln!(
+            self.src.js,
             "
-            );
-        }
+                const instance{iu32} = await WebAssembly.instantiate(module{}, {imports});\
+            ",
+            idx.as_u32()
+        );
     }
 
     fn lower_import(&mut self, import: &LowerImport) {
@@ -813,7 +866,10 @@ impl Instantiator<'_> {
 
         let index = import.index.as_u32();
         let callee = format!("lowering{index}Callee");
+
         let import_specifier = self.gen.map_import(import_name);
+
+        // instance imports are otherwise hoisted
         if self.gen.opts.instantiation {
             uwriteln!(
                 self.src.js,
@@ -823,18 +879,17 @@ impl Instantiator<'_> {
                 } else {
                     format!("[\"{}\"]", import_specifier)
                 },
-                func.name.to_lower_camel_case(),
+                func.name.to_lower_camel_case()
             );
         } else {
-            uwriteln!(
-                self.src.js,
-                "
-                    import {{ {} as {callee} }} from '{}';\
-                ",
-                func.name.to_lower_camel_case(),
-                self.gen.map_import(import_name),
-            );
+            let imports_vec = self
+                .gen
+                .imports
+                .entry(import_specifier)
+                .or_insert(Vec::new());
+            imports_vec.push((func.name.to_lower_camel_case(), callee.clone()));
         }
+
         uwrite!(self.src.js, "\nfunction lowering{index}");
         let nparams = iface
             .wasm_signature(AbiVariant::GuestImport, func)
@@ -967,9 +1022,8 @@ impl Instantiator<'_> {
 
         if self.gen.opts.instantiation {
             self.src.js("{\n");
-        } else {
-            self.src.js("\n");
         }
+
         for (name, export) in exports {
             let camel = name.to_lower_camel_case();
             match export {
@@ -982,7 +1036,7 @@ impl Instantiator<'_> {
                     if self.gen.opts.instantiation {
                         uwrite!(self.src.js, "{camel}");
                     } else {
-                        uwrite!(self.src.js, "export function {camel}");
+                        uwrite!(self.src.js, "\nexport function {camel}");
                     }
                     let callee = self.core_def(func);
                     let iface = iface.unwrap();
