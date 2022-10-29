@@ -452,6 +452,7 @@ impl ComponentGenerator for WasmtimePy {
         );
         self.init.indent();
         let mut i = Instantiator {
+            name,
             gen: self,
             modules,
             component,
@@ -496,6 +497,7 @@ impl ComponentGenerator for WasmtimePy {
 }
 
 struct Instantiator<'a> {
+    name: &'a str,
     gen: &'a mut WasmtimePy,
     modules: &'a PrimaryMap<StaticModuleIndex, ModuleTranslation<'a>>,
     instances: PrimaryMap<RuntimeInstanceIndex, StaticModuleIndex>,
@@ -582,8 +584,13 @@ impl<'a> Instantiator<'a> {
 
         uwriteln!(
             self.gen.init,
-            "path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'module{}.wasm')",
-            idx.as_u32(),
+            "path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '{}.core{}.wasm')",
+            self.name,
+            if idx.as_u32() == 0 {
+                String::from("")
+            } else {
+                idx.as_u32().to_string()
+            },
         );
         uwriteln!(
             self.gen.init,

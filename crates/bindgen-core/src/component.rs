@@ -62,8 +62,12 @@ pub fn generate(
     // Insert all core wasm modules into the generated `Files` which will
     // end up getting used in the `generate_instantiate` method.
     for (i, module) in modules.iter() {
-        let i = i.as_u32();
-        let name = format!("module{i}.wasm");
+        let i_str = if i.as_u32() == 0 {
+            String::from("")
+        } else {
+            i.as_u32().to_string()
+        };
+        let name = format!("{}.core{i_str}.wasm", name);
         files.push(&name, module.wasm);
     }
 

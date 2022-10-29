@@ -220,6 +220,7 @@ impl ComponentGenerator for Js {
         // bindings is the actual `instantiate` method itself, created by this
         // structure.
         let mut instantiator = Instantiator {
+            name: name.into(),
             src: Source::default(),
             gen: self,
             modules,
@@ -434,7 +435,7 @@ impl Js {
                             _fs = _fs || await import('fs/promises');
                             return WebAssembly.compile(await _fs.readFile(url));
                         }
-                        return fetch(url).then(WebAssembly.compile);
+                        return fetch(url).then(WebAssembly.compileStreaming);
                     }
                 ")
             } else {
@@ -684,6 +685,7 @@ impl Js {
 ///
 /// This is the main structure for parsing the output of Wasmtime.
 struct Instantiator<'a> {
+    name: String,
     src: Source,
     gen: &'a mut Js,
     modules: &'a PrimaryMap<StaticModuleIndex, ModuleTranslation<'a>>,
@@ -707,17 +709,27 @@ impl Instantiator<'_> {
 
         // Setup the compilation promises
         let mut first = true;
+        let mut multiple = false;
         for init in self.component.initializers.iter() {
             if let GlobalInitializer::InstantiateModule(InstantiateModule::Static(idx, _)) = init {
+                let idx = idx.as_u32();
                 // Get the compiled WebAssembly.Module objects in parallel
                 if first {
                     if !instantiation {
                         self.src.js.push_str("\n");
                     }
                     first = false;
+                } else {
+                    multiple = true;
                 }
-                let local_name = format!("module{}", idx.as_u32());
-                let name = format!("module{}.wasm", idx.as_u32());
+
+                let local_name = format!("module{}", idx);
+                let idx_str = if idx == 0 {
+                    String::from("")
+                } else {
+                    idx.to_string()
+                };
+                let name = format!("{}.core{}.wasm", self.name, idx_str);
                 if self.gen.opts.instantiation {
                     uwrite!(
                         self.src.js,
@@ -735,7 +747,7 @@ impl Instantiator<'_> {
 
         // To avoid uncaught promise rejection errors, we attach an intermediate
         // Promise.all with a rejection handler, if there are multiple promises.
-        if first == false {
+        if multiple {
             first = true;
             self.src.js.push_str("Promise.all([");
             for init in self.component.initializers.iter() {
