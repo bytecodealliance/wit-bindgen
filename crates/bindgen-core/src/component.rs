@@ -62,13 +62,7 @@ pub fn generate(
     // Insert all core wasm modules into the generated `Files` which will
     // end up getting used in the `generate_instantiate` method.
     for (i, module) in modules.iter() {
-        let i_str = if i.as_u32() == 0 {
-            String::from("")
-        } else {
-            i.as_u32().to_string()
-        };
-        let name = format!("{}.core{i_str}.wasm", name);
-        files.push(&name, module.wasm);
+        files.push(&gen.core_file_name(name, i), module.wasm);
     }
 
     // With all that prep work delegate to `WorldGenerator::generate` here
@@ -103,6 +97,15 @@ pub trait ComponentGenerator: WorldGenerator {
         modules: &PrimaryMap<StaticModuleIndex, ModuleTranslation<'_>>,
         interfaces: &ComponentInterfaces,
     );
+
+    fn core_file_name(&mut self, name: &str, idx: StaticModuleIndex) -> String {
+        let i_str = if idx.as_u32() == 0 {
+            String::from("")
+        } else {
+            (idx.as_u32() + 1).to_string()
+        };
+        format!("{}.core{i_str}.wasm", name)
+    }
 
     fn finish_component(&mut self, name: &str, files: &mut Files);
 }

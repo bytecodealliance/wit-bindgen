@@ -712,7 +712,6 @@ impl Instantiator<'_> {
         let mut multiple = false;
         for init in self.component.initializers.iter() {
             if let GlobalInitializer::InstantiateModule(InstantiateModule::Static(idx, _)) = init {
-                let idx = idx.as_u32();
                 // Get the compiled WebAssembly.Module objects in parallel
                 if first {
                     if !instantiation {
@@ -723,13 +722,8 @@ impl Instantiator<'_> {
                     multiple = true;
                 }
 
-                let local_name = format!("module{}", idx);
-                let idx_str = if idx == 0 {
-                    String::from("")
-                } else {
-                    idx.to_string()
-                };
-                let name = format!("{}.core{}.wasm", self.name, idx_str);
+                let local_name = format!("module{}", idx.as_u32());
+                let name = self.gen.core_file_name(&self.name, *idx);
                 if self.gen.opts.instantiation {
                     uwrite!(
                         self.src.js,
