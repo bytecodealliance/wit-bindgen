@@ -685,7 +685,7 @@ impl Js {
 ///
 /// This is the main structure for parsing the output of Wasmtime.
 struct Instantiator<'a> {
-    name: String,
+    name: &'a str,
     src: Source,
     gen: &'a mut Js,
     modules: &'a PrimaryMap<StaticModuleIndex, ModuleTranslation<'a>>,
