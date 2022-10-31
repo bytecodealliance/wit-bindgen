@@ -220,7 +220,7 @@ impl ComponentGenerator for Js {
         // bindings is the actual `instantiate` method itself, created by this
         // structure.
         let mut instantiator = Instantiator {
-            name: name.into(),
+            name,
             src: Source::default(),
             gen: self,
             modules,
