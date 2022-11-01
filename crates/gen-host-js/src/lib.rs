@@ -466,7 +466,7 @@ impl Js {
             Intrinsic::ComponentError => self.src.js("
                 class ComponentError extends Error {
                     constructor (payload) {
-                        super(String(payload));
+                        super(payload);
                         this.payload = payload;
                     }
                 }
