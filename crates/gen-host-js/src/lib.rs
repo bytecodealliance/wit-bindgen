@@ -2129,7 +2129,10 @@ impl Bindgen for FunctionBindgen<'_> {
                             }}
                             case 1: {{
                                 {some}\
-                                variant{tmp} = {{ tag: 'some', val: {some_result} }};
+                                variant{tmp} = {{
+                                    tag: 'some',
+                                    val: {some_result}
+                                }};
                                 break;
                             }}
                         ",
@@ -2225,12 +2228,18 @@ impl Bindgen for FunctionBindgen<'_> {
                     switch ({op0}) {{
                         case 0: {{
                             {ok}\
-                            variant{tmp} = {{ tag: 'ok', val: {ok_result} }};
+                            variant{tmp} = {{
+                                tag: 'ok',
+                                val: {ok_result}
+                            }};
                             break;
                         }}
                         case 1: {{
                             {err}\
-                            variant{tmp} = {{ tag: 'err', val: {err_result} }};
+                            variant{tmp} = {{
+                                tag: 'err',
+                                val: {err_result}
+                            }};
                             break;
                         }}
                         default: {{
@@ -2475,7 +2484,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         }} catch (e) {{
                             ret = {{
                                 tag: 'err',
-                                val: 'payload' in e ? e.payload : String(e)
+                                val: e && 'payload' in e ? e.payload : String(e)
                             }};
                         }}",
                         self.callee,
@@ -2498,17 +2507,17 @@ impl Bindgen for FunctionBindgen<'_> {
                     let operand = &operands[0];
                     uwriteln!(
                         self.src.js,
-                        "
-                        if ({operand}.tag === 'err') {{
+                        "if ({operand}.tag === 'err') {{
                             throw new {component_err}({operand}.val);
-                        }}"
+                        }}
+                        return {operand}.val;"
                     );
-                }
-
-                match amt {
-                    0 => {}
-                    1 => uwriteln!(self.src.js, "return {};", operands[0]),
-                    _ => uwriteln!(self.src.js, "return [{}];", operands.join(", ")),
+                } else {
+                    match amt {
+                        0 => {}
+                        1 => uwriteln!(self.src.js, "return {};", operands[0]),
+                        _ => uwriteln!(self.src.js, "return [{}];", operands.join(", ")),
+                    }
                 }
             }
 
