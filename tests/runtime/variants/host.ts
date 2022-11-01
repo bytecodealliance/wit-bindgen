@@ -43,8 +43,8 @@ async function run() {
   // @ts-ignore
   assert.deepStrictEqual(wasm.roundtripOption(), null);
   assert.deepStrictEqual(wasm.roundtripOption(2), 2);
-  assert.deepStrictEqual(wasm.roundtripResult({ tag: 'ok', val: 2 }), { tag: 'ok', val: 2 });
-  assert.deepStrictEqual(wasm.roundtripResult({ tag: 'ok', val: 4 }), { tag: 'ok', val: 4 });
+  assert.deepStrictEqual(wasm.roundtripResult({ tag: 'ok', val: 2 }), 2);
+  assert.deepStrictEqual(wasm.roundtripResult({ tag: 'ok', val: 4 }), 4);
   const f = Math.fround(5.2);
 
   try {

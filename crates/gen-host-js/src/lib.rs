@@ -651,21 +651,24 @@ impl Js {
                 }\n
             "),
 
-            Intrinsic::Utf16Encode => self.src.js("
-                function utf16Encode (str, realloc, memory) {
-                    const len = str.length, ptr = realloc(0, 0, 2, len * 2), out = new Uint16Array(memory.buffer, ptr, len);
-                    let i = 0;
-                    if (isLE) {
-                        while (i < len) out[i] = str.charCodeAt(i++);
-                    } else {
-                        while (i < len) {
-                            const ch = str.charCodeAt(i);
-                            out[i++] = (ch & 0xff) << 8 | ch >>> 8;
-                        }
-                    }
-                    return ptr;
-                }
-            "),
+            Intrinsic::Utf16Encode => {
+                let is_le = self.intrinsic(Intrinsic::IsLE);
+                uwrite!(self.src.js, "
+                    function utf16Encode (str, realloc, memory) {{
+                        const len = str.length, ptr = realloc(0, 0, 2, len * 2), out = new Uint16Array(memory.buffer, ptr, len);
+                        let i = 0;
+                        if ({is_le}) {{
+                            while (i < len) out[i] = str.charCodeAt(i++);
+                        }} else {{
+                            while (i < len) {{
+                                const ch = str.charCodeAt(i);
+                                out[i++] = (ch & 0xff) << 8 | ch >>> 8;
+                            }}
+                        }}
+                        return ptr;
+                    }}
+                ");
+            },
 
             Intrinsic::ThrowInvalidBool => self.src.js("
                 function throwInvalidBool() {
@@ -2383,7 +2386,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 let realloc = self.realloc.as_ref().unwrap();
 
                 let intrinsic = if self.encoding == StringEncoding::Utf16 {
-                    self.gen.intrinsic(Intrinsic::IsLE);
                     Intrinsic::Utf16Encode
                 } else {
                     Intrinsic::Utf8Encode
