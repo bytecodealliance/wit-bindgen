@@ -101,6 +101,8 @@ enum Intrinsic {
     DataView,
     F32ToI32,
     F64ToI64,
+    GetErrorPayload,
+    HasOwnProperty,
     I32ToF32,
     IsLE,
     I64ToF64,
@@ -141,6 +143,8 @@ impl Intrinsic {
             Intrinsic::DataView => "dataView",
             Intrinsic::F32ToI32 => "f32ToI32",
             Intrinsic::F64ToI64 => "f64ToI64",
+            Intrinsic::GetErrorPayload => "getErrorPayload",
+            Intrinsic::HasOwnProperty => "hasOwnProperty",
             Intrinsic::I32ToF32 => "i32ToF32",
             Intrinsic::IsLE => "isLE",
             Intrinsic::I64ToF64 => "i64ToF64",
@@ -444,14 +448,29 @@ impl Js {
                 }
             "),
 
-            Intrinsic::ComponentError => self.src.js(&format!("
-                class ComponentError extends Error {{
-                    constructor (payload) {{
+            Intrinsic::HasOwnProperty => self.src.js("
+                const hasOwnProperty = Object.prototype.hasOwnProperty;
+            "),
+
+            Intrinsic::GetErrorPayload => {
+                let hop = self.intrinsic(Intrinsic::HasOwnProperty);
+                uwrite!(self.src.js, "
+                    function getErrorPayload(e) {{
+                        if ({hop}.call(e, 'payload')) return e.payload;
+                        if ({hop}.call(e, 'message')) return String(e.message);
+                        return String(e);
+                    }}
+                ")
+            },
+
+            Intrinsic::ComponentError => self.src.js("
+                class ComponentError extends Error {
+                    constructor (payload) {
                         super(String(payload));
                         this.payload = payload;
-                    }}
-                }}
-            ")),
+                    }
+                }
+            "),
 
             Intrinsic::DataView => self.src.js("
                 let dv = new DataView(new ArrayBuffer());
@@ -2477,18 +2496,13 @@ impl Bindgen for FunctionBindgen<'_> {
                         self.src.js,
                         "let ret;
                         try {{
-                            ret = {{
-                                tag: 'ok',
-                                val: {}({})
-                            }};
+                            ret = {{ tag: 'ok', val: {}({}) }};
                         }} catch (e) {{
-                            ret = {{
-                                tag: 'err',
-                                val: e && 'payload' in e ? e.payload : String(e)
-                            }};
+                            ret = {{ tag: 'err', val: {}(e) }};
                         }}",
                         self.callee,
-                        operands.join(", ")
+                        operands.join(", "),
+                        self.gen.intrinsic(Intrinsic::GetErrorPayload),
                     );
                     results.push("ret".to_string());
                 } else {

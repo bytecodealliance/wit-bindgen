@@ -46,7 +46,7 @@ export function listOfVariants(bools: any, results: any, enums: any) {
 export async function run () {
   const wasm = await import('./flavorful.js');
 
-  // wasm.testImports();
+  wasm.testImports();
   wasm.fListInRecord1({ a: "list_in_record1" });
   assert.deepStrictEqual(wasm.fListInRecord2(), { a: "list_in_record2" });
 
