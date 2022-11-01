@@ -109,26 +109,26 @@ class Editor {
       default: return;
     }
     this.options.import = is_import;
-    const result = render(lang, wit, this.options);
-    if (result.tag === 'err') {
-      this.outputEditor.setValue(result.val);
+    try {
+      const results = render(lang, wit, this.options);
+      this.generatedFiles = {};
+      const selectedFile = this.files.value;
+      this.files.options.length = 0;
+      for (let i = 0; i < results.length; i++) {
+        const name = results[i][0];
+        const contents = results[i][1];
+        this.files.options[i] = new Option(name, name);
+        this.generatedFiles[name] = contents;
+      }
+      if (selectedFile in this.generatedFiles)
+        this.files.value = selectedFile;
+  
+      this.updateSelectedFile();  
+    } catch (e) {
+      this.outputEditor.setValue(e.payload);
       this.outputEditor.clearSelection();
       this.showOutputEditor();
-      return;
     }
-    this.generatedFiles = {};
-    const selectedFile = this.files.value;
-    this.files.options.length = 0;
-    for (let i = 0; i < result.val.length; i++) {
-      const name = result.val[i][0];
-      const contents = result.val[i][1];
-      this.files.options[i] = new Option(name, name);
-      this.generatedFiles[name] = contents;
-    }
-    if (selectedFile in this.generatedFiles)
-      this.files.value = selectedFile;
-
-    this.updateSelectedFile();
   }
 
   showOutputEditor() {
