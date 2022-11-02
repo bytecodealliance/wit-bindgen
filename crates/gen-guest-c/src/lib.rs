@@ -761,7 +761,7 @@ impl InterfaceGenerator<'_> {
         if self.iface.guest_export_needs_post_return(func) {
             uwriteln!(
                 self.src.c_fns,
-                "__attribute__((export_name(\"cabi_post_{export_name}\")))"
+                "__attribute__((weak, export_name(\"cabi_post_{export_name}\")))"
             );
             uwrite!(self.src.c_fns, "void {import_name}_post_return(");
 
