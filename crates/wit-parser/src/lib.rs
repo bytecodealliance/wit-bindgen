@@ -279,13 +279,10 @@ impl Results {
         if self.len() != 1 {
             return false;
         }
-        for result in self.iter_types() {
-            return match result {
-                Type::Id(id) => matches!(iface.types[*id].kind, TypeDefKind::Result(_)),
-                _ => false,
-            };
-        }
-        unreachable!();
+        return match self.iter_types().next().unwrap() {
+            Type::Id(id) => matches!(iface.types[*id].kind, TypeDefKind::Result(_)),
+            _ => false,
+        };
     }
 
     pub fn iter_types(&self) -> ResultsTypeIter {
