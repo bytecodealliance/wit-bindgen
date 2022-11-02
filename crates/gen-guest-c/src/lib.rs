@@ -123,7 +123,6 @@ impl WorldGenerator for C {
         let linking_symbol = component_type_object::linking_symbol(name);
         self.include("<stdlib.h>");
         let snake = name.to_snake_case();
-        self.include(&format!("\"{snake}.h\""));
         uwrite!(
             self.src.c_adapters,
             "
