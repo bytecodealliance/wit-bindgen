@@ -219,6 +219,7 @@ impl WorldGenerator for C {
         c_str.push_str(&self.src.c_fns);
 
         if self.needs_string {
+            // Automatic indentation avoided due to `extern "C" {` declaration
             uwrite!(
                 h_str,
                 "typedef struct {{\n  {ty} *ptr;\n  size_t len;\n}} {snake}_string_t;\n",
@@ -248,6 +249,7 @@ impl WorldGenerator for C {
         // this for export bindings, because import bindings allocate their
         // return-area on the stack.
         if self.return_pointer_area_size > 0 {
+            // Automatic indentation avoided due to `extern "C" {` declaration
             uwrite!(
                 c_str,
                 "\n__attribute__((aligned({})))\nstatic uint8_t RET_AREA[{}];\n",

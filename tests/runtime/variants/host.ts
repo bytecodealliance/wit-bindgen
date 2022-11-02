@@ -49,6 +49,7 @@ async function run() {
 
   try {
     wasm.roundtripResult({ tag: 'err', val: f });
+    assert.fail('Expected an error');
   } catch (e: any) {
     assert.strictEqual(e.constructor.name, 'ComponentError');
     assert.ok(e.message.includes('5'));
