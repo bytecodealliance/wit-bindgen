@@ -303,7 +303,7 @@ fn read_interfaces(dir: &Path) -> ComponentInterfaces {
         imports: if let Some(import) = import {
             [(import.name.clone(), import)].into_iter().collect()
         } else {
-            [].into_iter().collect()
+            [].into()
         },
         exports: Default::default(),
         default: Some(export),
