@@ -648,7 +648,7 @@ impl Js {
                         ptr = realloc(ptr, allocLen, 1, writtenTotal);
                     utf8EncodedLen = writtenTotal;
                     return ptr;
-                }\n
+                }
             "),
 
             Intrinsic::Utf16Encode => {
@@ -799,9 +799,9 @@ impl Instantiator<'_> {
                     );
                 } else {
                     let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
-                    uwrite!(
+                    uwriteln!(
                         self.src.js,
-                        "const {local_name} = {load_wasm}(new URL('./{name}', import.meta.url));\n"
+                        "const {local_name} = {load_wasm}(new URL('./{name}', import.meta.url));"
                     );
                 }
             }
@@ -825,7 +825,7 @@ impl Instantiator<'_> {
                     self.src.js.push_str(&format!("module{}", idx.as_u32()));
                 }
             }
-            self.src.js.push_str("]).catch(() => {});\n");
+            uwriteln!(self.src.js, "]).catch(() => {{}});");
         }
 
         for init in self.component.initializers.iter() {
@@ -839,7 +839,7 @@ impl Instantiator<'_> {
         self.exports(&self.component.exports, 0, self.interfaces.default.as_ref());
 
         if instantiation {
-            self.src.js(";\n");
+            uwriteln!(self.src.js, ";");
             uwriteln!(self.src.js, "}}");
         }
     }
@@ -1026,7 +1026,7 @@ impl Instantiator<'_> {
             self.src.js(&param);
             params.push(param);
         }
-        self.src.js(") {\n");
+        uwriteln!(self.src.js, ") {{");
 
         let mut sizes = SizeAlign::default();
         sizes.fill(iface);
@@ -1117,7 +1117,7 @@ impl Instantiator<'_> {
         }
 
         if self.gen.opts.instantiation {
-            self.src.js("{\n");
+            uwriteln!(self.src.js, "{{");
         }
 
         for (name, export) in exports {
