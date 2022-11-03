@@ -181,7 +181,6 @@ struct JsInterface<'a> {
     iface: &'a Interface,
     needs_ty_option: bool,
     needs_ty_result: bool,
-    throw_ty_result: bool,
 }
 
 impl ComponentGenerator for Js {
@@ -410,7 +409,6 @@ impl Js {
             iface,
             needs_ty_option: false,
             needs_ty_result: false,
-            throw_ty_result: false,
         }
     }
 
@@ -1229,16 +1227,12 @@ impl<'a> JsInterface<'a> {
                         }
                     }
                     TypeDefKind::Result(r) => {
-                        if self.throw_ty_result {
-                            self.print_optional_ty(r.ok.as_ref());
-                        } else {
-                            self.needs_ty_result = true;
-                            self.src.ts("Result<");
-                            self.print_optional_ty(r.ok.as_ref());
-                            self.src.ts(", ");
-                            self.print_optional_ty(r.err.as_ref());
-                            self.src.ts(">");
-                        }
+                        self.needs_ty_result = true;
+                        self.src.ts("Result<");
+                        self.print_optional_ty(r.ok.as_ref());
+                        self.src.ts(", ");
+                        self.print_optional_ty(r.err.as_ref());
+                        self.src.ts(">");
                     }
                     TypeDefKind::Variant(_) => panic!("anonymous variant"),
                     TypeDefKind::List(v) => self.print_list(v),
@@ -1300,9 +1294,16 @@ impl<'a> JsInterface<'a> {
         match func.results.len() {
             0 => self.src.ts("void"),
             1 => {
-                self.throw_ty_result = func.results.throws(self.iface);
-                self.print_ty(func.results.iter_types().next().unwrap());
-                self.throw_ty_result = false;
+                if func.results.throws(self.iface) {
+                    if let Type::Id(id) = func.results.iter_types().next().unwrap() {
+                        let ty = &self.iface.types[*id];
+                        if let TypeDefKind::Result(r) = &ty.kind {
+                            self.print_optional_ty(r.ok.as_ref());
+                        }
+                    }
+                } else {
+                    self.print_ty(func.results.iter_types().next().unwrap());
+                }
             }
             _ => {
                 self.src.ts("[");
