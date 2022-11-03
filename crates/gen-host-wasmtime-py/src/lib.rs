@@ -580,7 +580,7 @@ impl<'a> Instantiator<'a> {
 
     fn instantiate_static_module(&mut self, idx: StaticModuleIndex, args: &[CoreDef]) {
         let i = self.instances.push(idx);
-        let core_file_name = self.gen.core_file_name(&self.name, idx);
+        let core_file_name = self.gen.core_file_name(&self.name, idx.as_u32());
         self.gen.init.pyimport("os", None);
 
         uwriteln!(

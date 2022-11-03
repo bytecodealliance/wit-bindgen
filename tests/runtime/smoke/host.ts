@@ -1,27 +1,21 @@
-// Flags: --instantiation
-
-import * as helpers from "./helpers.js";
-import { instantiate } from "./smoke.js";
-
+// Flags: --base64 --compat --map testwasi=./helpers.js,imports=./host.js
 function assert(x: boolean, msg: string) {
   if (!x)
     throw new Error(msg);
 }
 
-async function run() {
-  let hit = false;
+let hit = false;
 
-  const wasm = await instantiate(helpers.loadWasm, {
-    testwasi: helpers,
-    imports: {
-      thunk() {
-        hit = true;
-      },
-    },
-  });
+export function thunk () {
+  hit = true;
+}
+
+async function run() {
+  const wasm = await import('./smoke.js');
 
   wasm.thunk();
   assert(hit, "import not called");
 }
 
-await run()
+// Async cycle handling
+setTimeout(run);

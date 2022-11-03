@@ -16,6 +16,7 @@ clap = { workspace = true, optional = true }
 wasmtime-environ = { workspace = true, features = ['component-model'] }
 wit-component = { workspace = true }
 indexmap = "1.0"
+base64 = "0.13.1"
 
 [dev-dependencies]
 test-helpers = { path = '../test-helpers' }

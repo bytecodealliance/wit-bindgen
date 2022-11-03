@@ -36,6 +36,9 @@ struct Js {
     /// Type script definitions which will become the export object
     export_object: wit_bindgen_core::Source,
 
+    /// Core module count
+    core_module_cnt: usize,
+
     /// Various options for code generation.
     opts: Opts,
 
@@ -48,35 +51,34 @@ struct Js {
 pub struct Opts {
     /// Disables generation of `*.d.ts` files and instead only generates `*.js`
     /// source files.
-    #[cfg_attr(feature = "clap", arg(long = "no-typescript"))]
+    #[cfg_attr(feature = "clap", arg(long))]
     pub no_typescript: bool,
     /// Provide a custom JS instantiation API for the component instead
     /// of the direct importable native ESM output.
     #[cfg_attr(
         feature = "clap",
         arg(
-            long = "instantiation",
+            long,
             short = 'I',
             conflicts_with = "compatibility",
             conflicts_with = "compat"
         )
     )]
     pub instantiation: bool,
+    /// Inline core WebAssembly modules as base64 strings.
+    #[cfg_attr(feature = "clap", arg(long, conflicts_with = "instantiation"))]
+    pub base64: bool,
     /// Comma-separated list of "from-specifier=./to-specifier.js" mappings of
     /// component import specifiers to JS import specifiers.
-    #[cfg_attr(feature = "clap", arg(long = "map"), clap(value_parser = maps_str_to_map))]
+    #[cfg_attr(feature = "clap", arg(long), clap(value_parser = maps_str_to_map))]
     pub map: Option<HashMap<String, String>>,
     /// Enables all compat flags: --nodejs-compat.
-    #[cfg_attr(feature = "clap", arg(long = "compat"))]
+    #[cfg_attr(feature = "clap", arg(long))]
     pub compat: bool,
     /// Enables compatibility in Node.js without a fetch global.
     #[cfg_attr(
         feature = "clap",
-        arg(
-            long = "nodejs-compat",
-            group = "compatibility",
-            conflicts_with = "compat"
-        )
+        arg(long, group = "compatibility", conflicts_with = "compat")
     )]
     pub nodejs_compat: bool,
 }
@@ -183,6 +185,8 @@ impl ComponentGenerator for Js {
         modules: &PrimaryMap<StaticModuleIndex, ModuleTranslation<'_>>,
         interfaces: &ComponentInterfaces,
     ) {
+        self.core_module_cnt = modules.len();
+
         // Generate the TypeScript definition of the `instantiate` function
         // which is the main workhorse of the generated bindings.
         if self.opts.instantiation {
@@ -255,6 +259,21 @@ impl ComponentGenerator for Js {
                 }
                 uwrite!(output, "}} from '{}';\n", specifier);
             }
+        }
+
+        if self.opts.base64 && self.core_module_cnt > 0 {
+            let mut first = true;
+            output.push_str("const ");
+            for i in 0..self.core_module_cnt {
+                if first {
+                    first = false;
+                } else {
+                    output.push_str(", ");
+                }
+                let data = files.remove(&self.core_file_name(name, i as u32)).unwrap();
+                uwrite!(output, "BINARY{i} = '{}'", base64::encode(&data));
+            }
+            output.push_str(";");
         }
 
         output.push_str(&self.src.js);
@@ -426,7 +445,17 @@ impl Js {
                 const dataView = mem => dv.buffer === mem.buffer ? dv : dv = new DataView(mem.buffer);
             "),
 
-            Intrinsic::LoadWasm => if self.opts.nodejs_compat {
+            Intrinsic::LoadWasm => if self.opts.base64 {
+                if self.opts.nodejs_compat {
+                    self.src.js("
+                        const loadWasm = str => WebAssembly.compile(typeof Buffer !== 'undefined' ? Buffer.from(str, 'base64') : Uint8Array.from(atob(str), b => b.charCodeAt(0)));
+                    ")
+                } else {
+                    self.src.js("
+                        const loadWasm = str => WebAssembly.compile(Uint8Array.from(atob(str), b => b.charCodeAt(0)));
+                    ")
+                }
+            } else if self.opts.nodejs_compat {
                 self.src.js("
                     const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
                     let _fs;
@@ -723,11 +752,18 @@ impl Instantiator<'_> {
                 }
 
                 let local_name = format!("module{}", idx.as_u32());
-                let name = self.gen.core_file_name(&self.name, *idx);
+                let name = self.gen.core_file_name(&self.name, idx.as_u32());
                 if self.gen.opts.instantiation {
                     uwrite!(
                         self.src.js,
                         "const {local_name} = compileCore(\"{name}\");\n"
+                    );
+                } else if self.gen.opts.base64 {
+                    let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
+                    let idx_num = idx.as_u32();
+                    uwrite!(
+                        self.src.js,
+                        "const {local_name} = {load_wasm}(BINARY{idx_num});\n"
                     );
                 } else {
                     let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
