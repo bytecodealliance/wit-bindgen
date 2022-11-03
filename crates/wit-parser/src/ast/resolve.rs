@@ -1,13 +1,15 @@
-use super::{Error, Item, ParamList, ResultList, Span, Value, ValueKind};
+use super::{Error, Func, InterfaceItem, ParamList, ResultList, Span, Value, ValueKind};
 use crate::*;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::mem;
 
 #[derive(Default)]
 pub struct Resolver {
     type_lookup: HashMap<String, TypeId>,
     types: Arena<TypeDef>,
+    #[allow(dead_code)] // TODO
     types_copied: HashMap<(String, TypeId), TypeId>,
     anon_types: HashMap<Key, TypeId>,
     functions: Vec<Function>,
@@ -29,15 +31,151 @@ enum Key {
     Stream(Option<Type>, Option<Type>),
 }
 
+enum Direction {
+    Import,
+    Export,
+}
+
+impl fmt::Display for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Direction::Import => write!(f, "import"),
+            Direction::Export => write!(f, "export"),
+        }
+    }
+}
+
 impl Resolver {
-    pub(super) fn resolve(
+    pub(crate) fn resolve_world(&mut self, document: &ast::Document<'_>) -> Result<World> {
+        let mut interface_map = HashMap::new();
+
+        for interface in document.interfaces() {
+            let name = &interface.name.name;
+            let instance = self.resolve(name, &interface.items, &HashMap::new())?;
+
+            if interface_map.insert(name.to_string(), instance).is_some() {
+                return Err(Error {
+                    span: interface.name.span,
+                    msg: format!("interface {name} defined twice"),
+                }
+                .into());
+            }
+        }
+
+        let mut worlds = document.worlds().into_iter();
+        let world = match worlds.next() {
+            None => bail!("no worlds defined"),
+            Some(world) => {
+                if let Some(other) = worlds.next() {
+                    return Err(Error {
+                        span: other.name.span,
+                        msg: format!("too many worlds defined"),
+                    }
+                    .into());
+                }
+                world
+            }
+        };
+
+        let imports = self.resolve_imports(world.imports(), &interface_map)?;
+        let exports = self.resolve_exports(world.exports(), &interface_map)?;
+        let default = None; // TODO
+
+        Ok(World {
+            name: world.name.name.to_string(),
+            imports,
+            exports,
+            default,
+        })
+    }
+
+    fn resolve_imports(
+        &mut self,
+        imports: Vec<&ast::Import<'_>>,
+        lookup: &HashMap<String, Interface>,
+    ) -> Result<IndexMap<String, Interface>> {
+        imports
+            .into_iter()
+            .try_fold(IndexMap::new(), |mut imports, item| {
+                let ast::Import {
+                    docs: _,
+                    name,
+                    kind,
+                } = item;
+                self.resolve_extern(name, kind, Direction::Import, &mut imports, lookup)?;
+                Ok(imports)
+            })
+    }
+
+    fn resolve_exports(
+        &mut self,
+        exports: Vec<&ast::Export<'_>>,
+        lookup: &HashMap<String, Interface>,
+    ) -> Result<IndexMap<String, Interface>> {
+        exports
+            .into_iter()
+            .try_fold(IndexMap::new(), |mut exports, item| {
+                let ast::Export {
+                    docs: _,
+                    name,
+                    kind,
+                } = item;
+                self.resolve_extern(name, kind, Direction::Export, &mut exports, lookup)?;
+                Ok(exports)
+            })
+    }
+
+    fn resolve_extern(
+        &mut self,
+        id: &ast::Id<'_>,
+        kind: &ast::ExternKind<'_>,
+        direction: Direction,
+        resolved: &mut IndexMap<String, Interface>,
+        lookup: &HashMap<String, Interface>,
+    ) -> Result<()> {
+        let (name, span) = (&id.name, id.span);
+
+        match kind {
+            ast::ExternKind::Interface(items) => {
+                let interface = self.resolve("", &items, &HashMap::new())?;
+
+                if resolved.insert(name.to_string(), interface).is_some() {
+                    return Err(Error {
+                        span: span,
+                        msg: format!("duplicate {direction} {name}"),
+                    }
+                    .into());
+                }
+            }
+            ast::ExternKind::Id(id) => {
+                let interface = match lookup.get(&*id.name) {
+                    Some(interface) => interface.clone(),
+                    None => {
+                        return Err(Error {
+                            span: id.span,
+                            msg: format!("{name} not defined"),
+                        }
+                        .into());
+                    }
+                };
+                if resolved.insert(name.to_string(), interface).is_some() {
+                    return Err(Error {
+                        span: span,
+                        msg: format!("duplicate {direction} {name}"),
+                    }
+                    .into());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn resolve(
         &mut self,
         name: &str,
-        fields: &[Item<'_>],
-        deps: &HashMap<String, Interface>,
+        fields: &[InterfaceItem<'_>],
+        _deps: &HashMap<String, Interface>,
     ) -> Result<Interface> {
-        // First pull in any names from our dependencies
-        self.process_use(fields, deps)?;
         // ... then register our own names
         self.register_names(fields)?;
 
@@ -45,7 +183,7 @@ impl Resolver {
         // types.
         for field in fields {
             let t = match field {
-                Item::TypeDef(t) => t,
+                InterfaceItem::TypeDef(t) => t,
                 _ => continue,
             };
             let id = self.type_lookup[&*t.name.name];
@@ -59,8 +197,8 @@ impl Resolver {
         let mut visiting = HashSet::new();
         for field in fields {
             match field {
-                Item::Value(v) => self.resolve_value(v)?,
-                Item::TypeDef(t) => {
+                InterfaceItem::Value(v) => self.resolve_value(v)?,
+                InterfaceItem::TypeDef(t) => {
                     self.validate_type_not_recursive(
                         t.name.span,
                         self.type_lookup[&*t.name.name],
@@ -76,78 +214,12 @@ impl Resolver {
             name: name.to_string(),
             types: mem::take(&mut self.types),
             type_lookup: mem::take(&mut self.type_lookup),
-            interface_lookup: Default::default(),
-            interfaces: Default::default(),
             functions: mem::take(&mut self.functions),
             globals: mem::take(&mut self.globals),
         })
     }
 
-    fn process_use<'a>(
-        &mut self,
-        fields: &[Item<'a>],
-        deps: &'a HashMap<String, Interface>,
-    ) -> Result<()> {
-        for field in fields {
-            let u = match field {
-                Item::Use(u) => u,
-                _ => continue,
-            };
-            let mut dep = &deps[&*u.from[0].name];
-            let mut prev = &*u.from[0].name;
-            for name in u.from[1..].iter() {
-                dep = match dep.interface_lookup.get(&*name.name) {
-                    Some(i) => &dep.interfaces[*i],
-                    None => {
-                        return Err(Error {
-                            span: name.span,
-                            msg: format!("`{}` not defined in `{}`", name.name, prev),
-                        }
-                        .into())
-                    }
-                };
-                prev = &*name.name;
-            }
-
-            let mod_name = &u.from[0];
-
-            match &u.names {
-                Some(names) => {
-                    for name in names {
-                        let (my_name, span) = match &name.as_ {
-                            Some(id) => (&id.name, id.span),
-                            None => (&name.name.name, name.name.span),
-                        };
-                        let mut found = false;
-
-                        if let Some(id) = dep.type_lookup.get(&*name.name.name) {
-                            let ty = self.copy_type_def(&mod_name.name, dep, *id);
-                            self.define_type(my_name, span, ty)?;
-                            found = true;
-                        }
-
-                        if !found {
-                            return Err(Error {
-                                span: name.name.span,
-                                msg: "name not defined in submodule".to_string(),
-                            }
-                            .into());
-                        }
-                    }
-                }
-                None => {
-                    let mut names = dep.type_lookup.iter().collect::<Vec<_>>();
-                    names.sort(); // produce a stable order by which to add names
-                    for (name, id) in names {
-                        let ty = self.copy_type_def(&mod_name.name, dep, *id);
-                        self.define_type(name, mod_name.span, ty)?;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
+    #[allow(dead_code)] // TODO
     fn copy_type_def(&mut self, dep_name: &str, dep: &Interface, dep_id: TypeId) -> TypeId {
         if let Some(id) = self.types_copied.get(&(dep_name.to_string(), dep_id)) {
             return *id;
@@ -234,6 +306,7 @@ impl Resolver {
         }
     }
 
+    #[allow(dead_code)] // TODO
     fn copy_optional_type(
         &mut self,
         dep_name: &str,
@@ -246,11 +319,11 @@ impl Resolver {
         }
     }
 
-    fn register_names(&mut self, fields: &[Item<'_>]) -> Result<()> {
+    fn register_names(&mut self, fields: &[InterfaceItem<'_>]) -> Result<()> {
         let mut values = HashSet::new();
         for field in fields {
             match field {
-                Item::TypeDef(t) => {
+                InterfaceItem::TypeDef(t) => {
                     let docs = self.docs(&t.docs);
                     let id = self.types.alloc(TypeDef {
                         docs,
@@ -262,7 +335,7 @@ impl Resolver {
                     });
                     self.define_type(&t.name.name, t.name.span, id)?;
                 }
-                Item::Value(f) => {
+                InterfaceItem::Value(f) => {
                     if !values.insert(&f.name.name) {
                         return Err(Error {
                             span: f.name.span,
@@ -271,9 +344,7 @@ impl Resolver {
                         .into());
                     }
                 }
-                Item::Use(_) => {}
-
-                Item::Interface(_) => unimplemented!(),
+                InterfaceItem::Use(_) => {}
             }
         }
 
@@ -291,6 +362,71 @@ impl Resolver {
             Ok(())
         }
     }
+
+    // fn process_use<'a>(
+    //     &mut self,
+    //     fields: &[InterfaceItem<'a>],
+    //     deps: &'a HashMap<String, Interface>,
+    // ) -> Result<()> {
+    //     for field in fields {
+    //         let u = match field {
+    //             InterfaceItem::Use(u) => u,
+    //             _ => continue,
+    //         };
+    //         let mut dep = &deps[&*u.from[0].name];
+    //         let mut prev = &*u.from[0].name;
+    //         for name in u.from[1..].iter() {
+    //             dep = match dep.interface_lookup.get(&*name.name) {
+    //                 Some(i) => &dep.interfaces[*i],
+    //                 None => {
+    //                     return Err(Error {
+    //                         span: name.span,
+    //                         msg: format!("`{}` not defined in `{}`", name.name, prev),
+    //                     }
+    //                     .into())
+    //                 }
+    //             };
+    //             prev = &*name.name;
+    //         }
+
+    //         let mod_name = &u.from[0];
+
+    //         match &u.names {
+    //             Some(names) => {
+    //                 for name in names {
+    //                     let (my_name, span) = match &name.as_ {
+    //                         Some(id) => (&id.name, id.span),
+    //                         None => (&name.name.name, name.name.span),
+    //                     };
+    //                     let mut found = false;
+
+    //                     if let Some(id) = dep.type_lookup.get(&*name.name.name) {
+    //                         let ty = self.copy_type_def(&mod_name.name, dep, *id);
+    //                         self.define_type(my_name, span, ty)?;
+    //                         found = true;
+    //                     }
+
+    //                     if !found {
+    //                         return Err(Error {
+    //                             span: name.name.span,
+    //                             msg: "name not defined in submodule".to_string(),
+    //                         }
+    //                         .into());
+    //                     }
+    //                 }
+    //             }
+    //             None => {
+    //                 let mut names = dep.type_lookup.iter().collect::<Vec<_>>();
+    //                 names.sort(); // produce a stable order by which to add names
+    //                 for (name, id) in names {
+    //                     let ty = self.copy_type_def(&mod_name.name, dep, *id);
+    //                     self.define_type(name, mod_name.span, ty)?;
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     Ok(())
+    // }
 
     fn resolve_type_def(&mut self, ty: &super::Type<'_>) -> Result<TypeDefKind> {
         Ok(match ty {
@@ -522,7 +658,7 @@ impl Resolver {
     fn resolve_value(&mut self, value: &Value<'_>) -> Result<()> {
         let docs = self.docs(&value.docs);
         match &value.kind {
-            ValueKind::Function { params, results } => {
+            ValueKind::Func(Func { params, results }) => {
                 let params = self.resolve_params(params)?;
                 let results = self.resolve_results(results)?;
                 self.functions.push(Function {

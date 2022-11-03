@@ -24,6 +24,7 @@ heck =  { version = "0.4", features = ["unicode"] }
 pulldown-cmark = { version = "0.8", default-features = false }
 clap = { version = "4.0.9", features = ["derive"] }
 env_logger = "0.9.1"
+indexmap = "1.9.1"
 
 wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", features = ["component-model"] }
 wasmtime-environ = { git = "https://github.com/bytecodealliance/wasmtime" }

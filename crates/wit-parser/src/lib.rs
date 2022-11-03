@@ -6,7 +6,10 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use indexmap::IndexMap;
+
 pub mod abi;
+use ast::lex::Tokenizer;
 mod ast;
 mod sizealign;
 pub use sizealign::*;
@@ -18,12 +21,69 @@ pub fn validate_id(s: &str) -> Result<()> {
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
+pub struct World {
+    pub name: String,
+    pub default: Option<Interface>,
+    pub imports: IndexMap<String, Interface>,
+    pub exports: IndexMap<String, Interface>,
+}
+
+impl World {
+    pub fn parse_file(path: impl AsRef<Path>) -> Result<World> {
+        let _base = path
+            .as_ref()
+            .parent()
+            .ok_or(anyhow!("could not get parent directory"))?;
+        let text = fs::read_to_string(&path)
+            .with_context(|| format!("failed to read: {}", path.as_ref().display()))?;
+
+        let file = path
+            .as_ref()
+            .file_name()
+            .context("wit path must end in a file name")?
+            .to_str()
+            .context("wit filename must be valid unicode")?
+            // TODO: replace with `file_prefix` if/when that gets stabilized.
+            .split(".")
+            .next()
+            .unwrap();
+
+        let mut contents = &*text;
+        // If we have a ".md" file, it's a wit file wrapped in a markdown file;
+        // parse the markdown to extract the `wit` code blocks.
+        let md_contents;
+        if path.as_ref().extension().and_then(|s| s.to_str()) == Some("md") {
+            md_contents = unwrap_md(contents);
+            contents = &md_contents[..];
+        }
+
+        let mut lexer = Tokenizer::new(&contents)?;
+
+        // Parse the `contents` into an AST
+        let ast = match ast::Document::parse(&mut lexer) {
+            Ok(ast) => ast,
+            Err(mut e) => {
+                ast::rewrite_error(&mut e, file, &contents);
+                return Err(e);
+            }
+        };
+
+        match ast.resolve() {
+            Ok(component) => Ok(component),
+            Err(mut e) => {
+                let file = path.as_ref().display().to_string();
+                ast::rewrite_error(&mut e, &file, contents);
+                return Err(e);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Interface {
     pub name: String,
     pub types: Arena<TypeDef>,
     pub type_lookup: HashMap<String, TypeId>,
-    pub interfaces: Arena<Interface>,
-    pub interface_lookup: HashMap<String, InterfaceId>,
     pub functions: Vec<Function>,
     pub globals: Vec<Global>,
 }
@@ -387,8 +447,10 @@ impl Interface {
             contents = &md_contents[..];
         }
 
+        let mut lexer = Tokenizer::new(&contents)?;
+
         // Parse the `contents `into an AST
-        let ast = match ast::Ast::parse(contents) {
+        let items = match ast::Interface::parse_items(&mut lexer) {
             Ok(ast) => ast,
             Err(mut e) => {
                 let file = filename.display().to_string();
@@ -401,9 +463,9 @@ impl Interface {
         if !visiting.insert(filename.to_path_buf()) {
             bail!("file `{}` recursively imports itself", filename.display())
         }
-        for item in ast.items.iter() {
+        for item in items.iter() {
             let u = match item {
-                ast::Item::Use(u) => u,
+                ast::InterfaceItem::Use(u) => u,
                 _ => continue,
             };
             if map.contains_key(&*u.from[0].name) {
@@ -418,7 +480,8 @@ impl Interface {
         visiting.remove(filename);
 
         // and finally resolve everything into our final instance
-        match ast.resolve(name, map) {
+        let mut resolver = ast::Resolver::default();
+        match resolver.resolve(name, &items, map) {
             Ok(i) => Ok(i),
             Err(mut e) => {
                 let file = filename.display().to_string();
