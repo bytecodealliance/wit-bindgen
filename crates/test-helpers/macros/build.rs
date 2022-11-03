@@ -294,10 +294,17 @@ fn read_interfaces(dir: &Path) -> ComponentInterfaces {
     println!("cargo:rerun-if-changed={}", imports.display());
     println!("cargo:rerun-if-changed={}", exports.display());
 
-    let import = Interface::parse_file(&imports).unwrap();
+    let import = match Interface::parse_file(&imports) {
+        Ok(import) => Some(import),
+        Err(_) => None,
+    };
     let export = Interface::parse_file(&exports).unwrap();
     ComponentInterfaces {
-        imports: [(import.name.clone(), import)].into_iter().collect(),
+        imports: if let Some(import) = import {
+            [(import.name.clone(), import)].into_iter().collect()
+        } else {
+            [].into_iter().collect()
+        },
         exports: Default::default(),
         default: Some(export),
     }
