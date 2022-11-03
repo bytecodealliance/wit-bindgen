@@ -66,8 +66,7 @@ pub struct Opts {
     )]
     pub instantiation: bool,
     /// Inline core WebAssembly modules as base64 strings.
-    /// Not recommended!
-    #[cfg_attr(feature = "clap", arg(long, hide = true))]
+    #[cfg_attr(feature = "clap", arg(long, conflicts_with = "instantiation"))]
     pub base64: bool,
     /// Comma-separated list of "from-specifier=./to-specifier.js" mappings of
     /// component import specifiers to JS import specifiers.
