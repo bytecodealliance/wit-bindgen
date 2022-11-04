@@ -1031,7 +1031,7 @@ impl Instantiator<'_> {
         let mut f = FunctionBindgen {
             sizes,
             gen: self.gen,
-            err: if func.results.throws(iface) {
+            err: if func.results.throws(iface).is_some() {
                 match abi {
                     AbiVariant::GuestExport => ErrHandling::ThrowResultErr,
                     AbiVariant::GuestImport => ErrHandling::ResultCatchHandler,
@@ -1291,29 +1291,22 @@ impl<'a> JsInterface<'a> {
             self.print_ty(ty);
         }
         self.src.ts("): ");
-        match func.results.len() {
-            0 => self.src.ts("void"),
-            1 => {
-                if func.results.throws(self.iface) {
-                    if let Type::Id(id) = func.results.iter_types().next().unwrap() {
-                        let ty = &self.iface.types[*id];
-                        if let TypeDefKind::Result(r) = &ty.kind {
-                            self.print_optional_ty(r.ok.as_ref());
+        if let Some((_, throw_result)) = func.results.throws(self.iface) {
+            self.print_optional_ty(throw_result);
+        } else {
+            match func.results.len() {
+                0 => self.src.ts("void"),
+                1 => self.print_ty(func.results.iter_types().next().unwrap()),
+                _ => {
+                    self.src.ts("[");
+                    for (i, ty) in func.results.iter_types().enumerate() {
+                        if i != 0 {
+                            self.src.ts(", ");
                         }
+                        self.print_ty(ty);
                     }
-                } else {
-                    self.print_ty(func.results.iter_types().next().unwrap());
+                    self.src.ts("]");
                 }
-            }
-            _ => {
-                self.src.ts("[");
-                for (i, ty) in func.results.iter_types().enumerate() {
-                    if i != 0 {
-                        self.src.ts(", ");
-                    }
-                    self.print_ty(ty);
-                }
-                self.src.ts("]");
             }
         }
         self.src.ts(";\n");

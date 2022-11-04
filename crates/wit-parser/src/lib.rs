@@ -275,14 +275,18 @@ impl Results {
         }
     }
 
-    pub fn throws(&self, iface: &Interface) -> bool {
+    pub fn throws<'a>(&self, iface: &'a Interface) -> Option<(&Type, Option<&'a Type>)> {
         if self.len() != 1 {
-            return false;
+            return None;
         }
-        return match self.iter_types().next().unwrap() {
-            Type::Id(id) => matches!(iface.types[*id].kind, TypeDefKind::Result(_)),
-            _ => false,
-        };
+        let t = self.iter_types().next().unwrap();
+        match t {
+            Type::Id(id) => match &iface.types[*id].kind {
+                TypeDefKind::Result(r) => Some((t, r.ok.as_ref())),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     pub fn iter_types(&self) -> ResultsTypeIter {
