@@ -123,7 +123,6 @@ impl WorldGenerator for C {
         let linking_symbol = component_type_object::linking_symbol(name);
         self.include("<stdlib.h>");
         let snake = name.to_snake_case();
-        self.include(&format!("\"{snake}.h\""));
         uwrite!(
             self.src.c_adapters,
             "
@@ -196,37 +195,43 @@ impl WorldGenerator for C {
             );
         }
 
-        let mut h_str = format!(
-            "#ifndef __BINDINGS_{0}_H\n\
-            #define __BINDINGS_{0}_H\n\
-            #ifdef __cplusplus\n\
-            extern \"C\" {{\n\
-            #endif\n\n",
+        let mut h_str = wit_bindgen_core::Source::default();
+
+        uwrite!(
+            h_str,
+            "#ifndef __BINDINGS_{0}_H
+            #define __BINDINGS_{0}_H
+            #ifdef __cplusplus
+            extern \"C\" {{",
             name.to_shouty_snake_case(),
         );
+
+        // Deindent the extern C { declaration
+        h_str.deindent(1);
+        uwriteln!(h_str, "\n#endif\n");
+
         self.include("<stdint.h>");
         self.include("<stdbool.h>");
 
         for include in self.includes.iter() {
             uwriteln!(h_str, "#include {include}");
         }
-        h_str.push_str("\n");
 
-        let mut c_str = format!("#include \"{snake}.h\"\n");
+        let mut c_str = wit_bindgen_core::Source::default();
+        uwriteln!(c_str, "#include \"{snake}.h\"");
         if c_str.len() > 0 {
             c_str.push_str("\n");
         }
         c_str.push_str(&self.src.c_fns);
 
         if self.needs_string {
-            uwrite!(
+            uwriteln!(
                 h_str,
                 "
-                   typedef struct {{
-                       {ty} *ptr;
-                       size_t len;
-                   }} {snake}_string_t;
-               ",
+                typedef struct {{\n\
+                  {ty} *ptr;\n\
+                  size_t len;\n\
+                }} {snake}_string_t;",
                 ty = self.char_type(),
             );
         }
@@ -237,35 +242,43 @@ impl WorldGenerator for C {
         h_str.push_str(&self.src.h_fns);
 
         if !self.opts.no_helpers && self.src.h_helpers.len() > 0 {
-            h_str.push_str("\n// Helper Functions\n");
+            uwriteln!(h_str, "\n// Helper Functions");
             h_str.push_str(&self.src.h_helpers);
             h_str.push_str("\n");
         }
 
         if !self.opts.no_helpers && self.src.c_helpers.len() > 0 {
-            c_str.push_str("\n// Helper Functions\n");
+            uwriteln!(c_str, "\n// Helper Functions");
             c_str.push_str(self.src.c_helpers.as_mut_string());
         }
 
-        c_str.push_str("\n// Component Adapters\n");
+        uwriteln!(c_str, "\n// Component Adapters");
 
         // Declare a statically-allocated return area, if needed. We only do
         // this for export bindings, because import bindings allocate their
         // return-area on the stack.
         if self.return_pointer_area_size > 0 {
+            // Automatic indentation avoided due to `extern "C" {` declaration
             uwrite!(
                 c_str,
                 "
-                   __attribute__((aligned({})))
-                   static uint8_t RET_AREA[{}];
-               ",
+                __attribute__((aligned({})))
+                static uint8_t RET_AREA[{}];
+                ",
                 self.return_pointer_area_align,
                 self.return_pointer_area_size,
             );
         }
         c_str.push_str(&self.src.c_adapters);
 
-        h_str.push_str("\n#ifdef __cplusplus\n}\n#endif\n#endif\n");
+        uwriteln!(
+            h_str,
+            "
+            #ifdef __cplusplus
+            }}
+            #endif
+            #endif"
+        );
 
         files.push(&format!("{snake}.c"), c_str.as_bytes());
         files.push(&format!("{snake}.h"), h_str.as_bytes());
@@ -717,7 +730,7 @@ impl InterfaceGenerator<'_> {
         // canonical ABI.
         uwriteln!(
             self.src.c_adapters,
-            "__attribute__((export_name(\"{export_name}\")))"
+            "\n__attribute__((export_name(\"{export_name}\")))"
         );
         let import_name = self.gen.names.tmp(&format!(
             "__wasm_export_{}_{}",

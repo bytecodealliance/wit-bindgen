@@ -24,7 +24,9 @@ export function fListInVariant3(x: any) {
   assert.strictEqual(x, 'input3');
   return 'output3';
 }
-export function errnoResult() { return { tag: 'err', val: "b" }; }
+export function errnoResult() {
+  throw new Error('b');
+}
 export function listTypedefs(x: any, y: any) {
   assert.strictEqual(x, 'typedef1');
   assert.deepStrictEqual(y, ['typedef2']);
@@ -63,7 +65,15 @@ export async function run () {
   assert.deepStrictEqual(wasm.fListInVariant2(), "list_in_variant2");
   assert.deepStrictEqual(wasm.fListInVariant3("input3"), "output3");
 
-  assert.deepStrictEqual(wasm.errnoResult().tag, 'err');
+  try {
+    wasm.errnoResult();
+    assert.ok(false);
+  }
+  catch (e: any) {
+    assert.strictEqual(e.constructor.name, 'ComponentError');
+    assert.ok(e.toString().includes('Error: b'));
+    assert.strictEqual(e.payload, 'b');
+  }
 
   const [r1, r2] = wasm.listTypedefs("typedef1", ["typedef2"]);
   assert.deepStrictEqual(r1, (new TextEncoder()).encode('typedef3'));

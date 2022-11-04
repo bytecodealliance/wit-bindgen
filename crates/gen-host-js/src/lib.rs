@@ -97,69 +97,75 @@ impl Opts {
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 enum Intrinsic {
     ClampGuest,
+    ComponentError,
     DataView,
-    ValidateGuestChar,
-    ValidateHostChar,
+    F32ToI32,
+    F64ToI64,
+    GetErrorPayload,
+    HasOwnProperty,
+    I32ToF32,
     IsLE,
+    I64ToF64,
     LoadWasm,
-    /// Implementation of https://tc39.es/ecma262/#sec-toint32.
-    ToInt32,
-    /// Implementation of https://tc39.es/ecma262/#sec-touint32.
-    ToUint32,
-    /// Implementation of https://tc39.es/ecma262/#sec-toint16.
-    ToInt16,
-    /// Implementation of https://tc39.es/ecma262/#sec-touint16.
-    ToUint16,
-    /// Implementation of https://tc39.es/ecma262/#sec-toint8.
-    ToInt8,
-    /// Implementation of https://tc39.es/ecma262/#sec-touint8.
-    ToUint8,
+    ThrowInvalidBool,
     /// Implementation of https://tc39.es/ecma262/#sec-tobigint64.
     ToBigInt64,
     /// Implementation of https://tc39.es/ecma262/#sec-tobiguint64.
     ToBigUint64,
+    /// Implementation of https://tc39.es/ecma262/#sec-toint16.
+    ToInt16,
+    /// Implementation of https://tc39.es/ecma262/#sec-toint32.
+    ToInt32,
+    /// Implementation of https://tc39.es/ecma262/#sec-toint8.
+    ToInt8,
     /// Implementation of https://tc39.es/ecma262/#sec-tostring.
     ToString,
-    I32ToF32,
-    F32ToI32,
-    I64ToF64,
-    F64ToI64,
-    Utf8Decoder,
+    /// Implementation of https://tc39.es/ecma262/#sec-touint16.
+    ToUint16,
+    /// Implementation of https://tc39.es/ecma262/#sec-touint32.
+    ToUint32,
+    /// Implementation of https://tc39.es/ecma262/#sec-touint8.
+    ToUint8,
     Utf16Decoder,
-    Utf8Encode,
     Utf16Encode,
+    Utf8Decoder,
+    Utf8Encode,
     Utf8EncodedLen,
-    ThrowInvalidBool,
+    ValidateGuestChar,
+    ValidateHostChar,
 }
 
 impl Intrinsic {
     fn name(&self) -> &'static str {
         match self {
             Intrinsic::ClampGuest => "clampGuest",
+            Intrinsic::ComponentError => "ComponentError",
             Intrinsic::DataView => "dataView",
-            Intrinsic::ValidateGuestChar => "validateGuestChar",
-            Intrinsic::ValidateHostChar => "validateHostChar",
+            Intrinsic::F32ToI32 => "f32ToI32",
+            Intrinsic::F64ToI64 => "f64ToI64",
+            Intrinsic::GetErrorPayload => "getErrorPayload",
+            Intrinsic::HasOwnProperty => "hasOwnProperty",
+            Intrinsic::I32ToF32 => "i32ToF32",
             Intrinsic::IsLE => "isLE",
+            Intrinsic::I64ToF64 => "i64ToF64",
             Intrinsic::LoadWasm => "loadWasm",
-            Intrinsic::ToInt32 => "toInt32",
-            Intrinsic::ToUint32 => "toUint32",
-            Intrinsic::ToInt16 => "toInt16",
-            Intrinsic::ToUint16 => "toUint16",
-            Intrinsic::ToInt8 => "toInt8",
-            Intrinsic::ToUint8 => "toUint8",
+            Intrinsic::ThrowInvalidBool => "throwInvalidBool",
             Intrinsic::ToBigInt64 => "toInt64",
             Intrinsic::ToBigUint64 => "toUint64",
+            Intrinsic::ToInt16 => "toInt16",
+            Intrinsic::ToInt32 => "toInt32",
+            Intrinsic::ToInt8 => "toInt8",
             Intrinsic::ToString => "toString",
-            Intrinsic::F32ToI32 => "f32ToI32",
-            Intrinsic::I32ToF32 => "i32ToF32",
-            Intrinsic::F64ToI64 => "f64ToI64",
-            Intrinsic::I64ToF64 => "i64ToF64",
-            Intrinsic::Utf8Decoder => "utf8Decoder",
+            Intrinsic::ToUint16 => "toUint16",
+            Intrinsic::ToUint32 => "toUint32",
+            Intrinsic::ToUint8 => "toUint8",
             Intrinsic::Utf16Decoder => "utf16Decoder",
-            Intrinsic::Utf8Encode => "utf8Encode",
             Intrinsic::Utf16Encode => "utf16Encode",
+            Intrinsic::Utf8Decoder => "utf8Decoder",
+            Intrinsic::Utf8Encode => "utf8Encode",
             Intrinsic::Utf8EncodedLen => "utf8EncodedLen",
-            Intrinsic::ThrowInvalidBool => "throwInvalidBool",
+            Intrinsic::ValidateGuestChar => "validateGuestChar",
+            Intrinsic::ValidateHostChar => "validateHostChar",
         }
     }
 }
@@ -375,7 +381,7 @@ impl Js {
 
         uwriteln!(
             self.src.ts,
-            "{} {{ {camel} as {camel}{extra} }} from \"./{dir}/{name}\";",
+            "{} {{ {camel} as {camel}{extra} }} from './{dir}/{name}';",
             // In instance mode, we have no way to assert the imported types
             // in the ambient declaration file. Instead we just export the
             // import namespace types for users to use.
@@ -437,6 +443,30 @@ impl Js {
                     if (i < min || i > max) \
                         throw new RangeError(`must be between ${min} and ${max}`);
                     return i;
+                }
+            "),
+
+            Intrinsic::HasOwnProperty => self.src.js("
+                const hasOwnProperty = Object.prototype.hasOwnProperty;
+            "),
+
+            Intrinsic::GetErrorPayload => {
+                let hop = self.intrinsic(Intrinsic::HasOwnProperty);
+                uwrite!(self.src.js, "
+                    function getErrorPayload(e) {{
+                        if ({hop}.call(e, 'payload')) return e.payload;
+                        if ({hop}.call(e, 'message')) return String(e.message);
+                        return String(e);
+                    }}
+                ")
+            },
+
+            Intrinsic::ComponentError => self.src.js("
+                class ComponentError extends Error {
+                    constructor (payload) {
+                        super(payload);
+                        this.payload = payload;
+                    }
                 }
             "),
 
@@ -619,25 +649,28 @@ impl Js {
                 }
             "),
 
-            Intrinsic::Utf16Encode => self.src.js("
-                function utf16Encode (str, realloc, memory) {
-                    const len = str.length, ptr = realloc(0, 0, 2, len * 2), out = new Uint16Array(memory.buffer, ptr, len);
-                    let i = 0;
-                    if (isLE) {
-                        while (i < len) out[i] = str.charCodeAt(i++);
-                    } else {
-                        while (i < len) {
-                            const ch = str.charCodeAt(i);
-                            out[i++] = (ch & 0xff) << 8 | ch >>> 8;
-                        }
-                    }
-                    return ptr;
-                }
-            "),
+            Intrinsic::Utf16Encode => {
+                let is_le = self.intrinsic(Intrinsic::IsLE);
+                uwrite!(self.src.js, "
+                    function utf16Encode (str, realloc, memory) {{
+                        const len = str.length, ptr = realloc(0, 0, 2, len * 2), out = new Uint16Array(memory.buffer, ptr, len);
+                        let i = 0;
+                        if ({is_le}) {{
+                            while (i < len) out[i] = str.charCodeAt(i++);
+                        }} else {{
+                            while (i < len) {{
+                                const ch = str.charCodeAt(i);
+                                out[i++] = (ch & 0xff) << 8 | ch >>> 8;
+                            }}
+                        }}
+                        return ptr;
+                    }}
+                ");
+            },
 
             Intrinsic::ThrowInvalidBool => self.src.js("
                 function throwInvalidBool() {
-                    throw new RangeError(\"invalid variant discriminant for bool\");
+                    throw new RangeError('invalid variant discriminant for bool');
                 }
             "),
         }
@@ -754,22 +787,19 @@ impl Instantiator<'_> {
                 let local_name = format!("module{}", idx.as_u32());
                 let name = self.gen.core_file_name(&self.name, idx.as_u32());
                 if self.gen.opts.instantiation {
-                    uwrite!(
-                        self.src.js,
-                        "const {local_name} = compileCore(\"{name}\");\n"
-                    );
+                    uwriteln!(self.src.js, "const {local_name} = compileCore('{name}');");
                 } else if self.gen.opts.base64 {
                     let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
                     let idx_num = idx.as_u32();
-                    uwrite!(
+                    uwriteln!(
                         self.src.js,
-                        "const {local_name} = {load_wasm}(BINARY{idx_num});\n"
+                        "const {local_name} = {load_wasm}(BINARY{idx_num});"
                     );
                 } else {
                     let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
-                    uwrite!(
+                    uwriteln!(
                         self.src.js,
-                        "const {local_name} = {load_wasm}(new URL('./{name}', import.meta.url));\n"
+                        "const {local_name} = {load_wasm}(new URL('./{name}', import.meta.url));"
                     );
                 }
             }
@@ -793,7 +823,7 @@ impl Instantiator<'_> {
                     self.src.js.push_str(&format!("module{}", idx.as_u32()));
                 }
             }
-            self.src.js.push_str("]).catch(() => {});\n");
+            uwriteln!(self.src.js, "]).catch(() => {{}});");
         }
 
         for init in self.component.initializers.iter() {
@@ -807,7 +837,7 @@ impl Instantiator<'_> {
         self.exports(&self.component.exports, 0, self.interfaces.default.as_ref());
 
         if instantiation {
-            self.src.js(";\n");
+            uwriteln!(self.src.js, ";");
             uwriteln!(self.src.js, "}}");
         }
     }
@@ -923,6 +953,8 @@ impl Instantiator<'_> {
 
         let import_specifier = self.gen.map_import(import_name);
 
+        let id = func.name.to_lower_camel_case();
+
         // instance imports are otherwise hoisted
         if self.gen.opts.instantiation {
             uwriteln!(
@@ -931,9 +963,9 @@ impl Instantiator<'_> {
                 if is_js_identifier(&import_specifier) {
                     format!(".{}", import_specifier)
                 } else {
-                    format!("[\"{}\"]", import_specifier)
+                    format!("['{}']", import_specifier)
                 },
-                func.name.to_lower_camel_case()
+                id
             );
         } else {
             let imports_vec = self
@@ -941,7 +973,7 @@ impl Instantiator<'_> {
                 .imports
                 .entry(import_specifier)
                 .or_insert(Vec::new());
-            imports_vec.push((func.name.to_lower_camel_case(), callee.clone()));
+            imports_vec.push((id, callee.clone()));
         }
 
         uwrite!(self.src.js, "\nfunction lowering{index}");
@@ -992,13 +1024,21 @@ impl Instantiator<'_> {
             self.src.js(&param);
             params.push(param);
         }
-        self.src.js(") {\n");
+        uwriteln!(self.src.js, ") {{");
 
         let mut sizes = SizeAlign::default();
         sizes.fill(iface);
         let mut f = FunctionBindgen {
             sizes,
             gen: self.gen,
+            err: if func.results.throws(iface).is_some() {
+                match abi {
+                    AbiVariant::GuestExport => ErrHandling::ThrowResultErr,
+                    AbiVariant::GuestImport => ErrHandling::ResultCatchHandler,
+                }
+            } else {
+                ErrHandling::None
+            },
             block_storage: Vec::new(),
             blocks: Vec::new(),
             callee,
@@ -1057,7 +1097,7 @@ impl Instantiator<'_> {
         if is_js_identifier(name) {
             format!("instance{i}.exports.{name}")
         } else {
-            format!("instance{i}.exports[\"{name}\"]")
+            format!("instance{i}.exports['{name}']")
         }
     }
 
@@ -1075,7 +1115,7 @@ impl Instantiator<'_> {
         }
 
         if self.gen.opts.instantiation {
-            self.src.js("{\n");
+            uwriteln!(self.src.js, "{{");
         }
 
         for (name, export) in exports {
@@ -1251,18 +1291,22 @@ impl<'a> JsInterface<'a> {
             self.print_ty(ty);
         }
         self.src.ts("): ");
-        match func.results.len() {
-            0 => self.src.ts("void"),
-            1 => self.print_ty(func.results.iter_types().next().unwrap()),
-            _ => {
-                self.src.ts("[");
-                for (i, ty) in func.results.iter_types().enumerate() {
-                    if i != 0 {
-                        self.src.ts(", ");
+        if let Some((ok_ty, _)) = func.results.throws(self.iface) {
+            self.print_optional_ty(ok_ty);
+        } else {
+            match func.results.len() {
+                0 => self.src.ts("void"),
+                1 => self.print_ty(func.results.iter_types().next().unwrap()),
+                _ => {
+                    self.src.ts("[");
+                    for (i, ty) in func.results.iter_types().enumerate() {
+                        if i != 0 {
+                            self.src.ts(", ");
+                        }
+                        self.print_ty(ty);
                     }
-                    self.print_ty(ty);
+                    self.src.ts("]");
                 }
-                self.src.ts("]");
             }
         }
         self.src.ts(";\n");
@@ -1282,12 +1326,11 @@ impl<'a> JsInterface<'a> {
     fn post_types(&mut self) {
         if mem::take(&mut self.needs_ty_option) {
             self.src
-                .ts("export type Option<T> = { tag: \"none\" } | { tag: \"some\", val; T };\n");
+                .ts("export type Option<T> = { tag: 'none' } | { tag: 'some', val; T };\n");
         }
         if mem::take(&mut self.needs_ty_result) {
-            self.src.ts(
-                "export type Result<T, E> = { tag: \"ok\", val: T } | { tag: \"err\", val: E };\n",
-            );
+            self.src
+                .ts("export type Result<T, E> = { tag: 'ok', val: T } | { tag: 'err', val: E };\n");
         }
     }
 }
@@ -1359,9 +1402,9 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
                 "export interface {} {{\n",
                 format!("{}_{}", name, case.name).to_upper_camel_case()
             ));
-            self.src.ts("tag: \"");
+            self.src.ts("tag: '");
             self.src.ts(&case.name);
-            self.src.ts("\",\n");
+            self.src.ts("',\n");
             if let Some(ty) = case.ty {
                 self.src.ts("val: ");
                 self.print_ty(&ty);
@@ -1450,7 +1493,7 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
             if i != 0 {
                 self.src.ts(" | ");
             }
-            self.src.ts(&format!("\"{}\"", case.name));
+            self.src.ts(&format!("'{}'", case.name));
         }
         self.src.ts(";\n");
     }
@@ -1476,9 +1519,17 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
     }
 }
 
+#[derive(PartialEq)]
+enum ErrHandling {
+    None,
+    ThrowResultErr,
+    ResultCatchHandler,
+}
+
 struct FunctionBindgen<'a> {
     gen: &'a mut Js,
     sizes: SizeAlign,
+    err: ErrHandling,
     tmp: usize,
     src: Source,
     block_storage: Vec<wit_bindgen_core::Source>,
@@ -1793,7 +1844,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
 
                 self.src.js(&format!(
-                    "if (typeof {op0} === \"object\" && {op0} !== null) {{\n"
+                    "if (typeof {op0} === 'object' && {op0} !== null) {{\n"
                 ));
 
                 for (i, chunk) in flags.flags.chunks(32).enumerate() {
@@ -1813,7 +1864,7 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 self.src.js(&format!("\
                     }} else if ({op0} !== null && {op0} !== undefined) {{
-                        throw new TypeError(\"only an object, undefined or null can be converted to flags\");
+                        throw new TypeError('only an object, undefined or null can be converted to flags');
                     }}
                 "));
 
@@ -1879,8 +1930,7 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 self.src.js(&format!("switch ({}) {{\n", expr_to_match));
                 for (case, (block, block_results)) in variant.cases.iter().zip(blocks) {
-                    self.src
-                        .js(&format!("case \"{}\": {{\n", case.name.as_str()));
+                    self.src.js(&format!("case '{}': {{\n", case.name.as_str()));
                     if case.ty.is_some() {
                         self.src.js(&format!("const e = variant{}.val;\n", tmp));
                     }
@@ -1895,7 +1945,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let variant_name = name.to_upper_camel_case();
                 self.src.js("default:\n");
                 self.src.js(&format!(
-                    "throw new RangeError(\"invalid variant specified for {}\");\n",
+                    "throw new RangeError('invalid variant specified for {}');\n",
                     variant_name
                 ));
                 self.src.js("}\n");
@@ -1918,7 +1968,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.js(&block);
 
                     self.src.js(&format!("variant{} = {{\n", tmp));
-                    self.src.js(&format!("tag: \"{}\",\n", case.name.as_str()));
+                    self.src.js(&format!("tag: '{}',\n", case.name.as_str()));
                     if case.ty.is_some() {
                         assert!(block_results.len() == 1);
                         self.src.js(&format!("val: {},\n", block_results[0]));
@@ -1931,7 +1981,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let variant_name = name.to_upper_camel_case();
                 self.src.js("default:\n");
                 self.src.js(&format!(
-                    "throw new RangeError(\"invalid variant discriminant for {}\");\n",
+                    "throw new RangeError('invalid variant discriminant for {}');\n",
                     variant_name
                 ));
                 self.src.js("}\n");
@@ -1972,7 +2022,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let name = name.to_upper_camel_case();
                 self.src.js("default:\n");
                 self.src.js(&format!(
-                    "throw new RangeError(\"invalid union specified for {name}\");\n",
+                    "throw new RangeError('invalid union specified for {name}');\n",
                 ));
                 self.src.js("}\n");
             }
@@ -2006,7 +2056,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let name = name.to_upper_camel_case();
                 self.src.js("default:\n");
                 self.src.js(&format!(
-                    "throw new RangeError(\"invalid union discriminant for {name}\");\n",
+                    "throw new RangeError('invalid union discriminant for {name}');\n",
                 ));
                 self.src.js("}\n");
                 results.push(format!("union{tmp}"));
@@ -2036,19 +2086,19 @@ impl Bindgen for FunctionBindgen<'_> {
 
                 if self.gen.maybe_null(iface, payload) {
                     self.src.js(&format!(
-                        "
+                        "\
                         switch (variant{tmp}.tag) {{
-                            case \"none\": {{
+                            case 'none': {{
                                 {none}\
                                 break;
                             }}
-                            case \"some\": {{
+                            case 'some': {{
                                 const e = variant{tmp}.val;
                                 {some}\
                                 break;
                             }}
                             default: {{
-                                throw new RangeError(\"invalid variant specified for option\");
+                                throw new RangeError('invalid variant specified for option');
                             }}
                         }}
                         "
@@ -2090,12 +2140,15 @@ impl Bindgen for FunctionBindgen<'_> {
                         "\
                             case 0: {{
                                 {none}\
-                                variant{tmp} = {{ tag: \"none\" }};
+                                variant{tmp} = {{ tag: 'none' }};
                                 break;
                             }}
                             case 1: {{
                                 {some}\
-                                variant{tmp} = {{ tag: \"some\", val: {some_result} }};
+                                variant{tmp} = {{
+                                    tag: 'some',
+                                    val: {some_result}
+                                }};
                                 break;
                             }}
                         ",
@@ -2118,7 +2171,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
                 self.src.js("\
                     default:
-                        throw new RangeError(\"invalid variant discriminant for option\");
+                        throw new RangeError('invalid variant discriminant for option');
                 ");
                 self.src.js("}\n");
                 results.push(format!("variant{tmp}"));
@@ -2148,18 +2201,18 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.js(&format!(
                     "\
                     switch (variant{tmp}.tag) {{
-                        case \"ok\": {{
+                        case 'ok': {{
                             const e = variant{tmp}.val;
                             {ok}\
                             break;
                         }}
-                        case \"err\": {{
+                        case 'err': {{
                             const e = variant{tmp}.val;
                             {err}\
                             break;
                         }}
                         default: {{
-                            throw new RangeError(\"invalid variant specified for result\");
+                            throw new RangeError('invalid variant specified for result');
                         }}
                     }}
                     "
@@ -2191,16 +2244,22 @@ impl Bindgen for FunctionBindgen<'_> {
                     switch ({op0}) {{
                         case 0: {{
                             {ok}\
-                            variant{tmp} = {{ tag: \"ok\", val: {ok_result} }};
+                            variant{tmp} = {{
+                                tag: 'ok',
+                                val: {ok_result}
+                            }};
                             break;
                         }}
                         case 1: {{
                             {err}\
-                            variant{tmp} = {{ tag: \"err\", val: {err_result} }};
+                            variant{tmp} = {{
+                                tag: 'err',
+                                val: {err_result}
+                            }};
                             break;
                         }}
                         default: {{
-                            throw new RangeError(\"invalid variant discriminant for expected\");
+                            throw new RangeError('invalid variant discriminant for expected');
                         }}
                     }}
                     ",
@@ -2223,7 +2282,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 for (i, case) in enum_.cases.iter().enumerate() {
                     self.src.js(&format!(
                         "\
-                        case \"{case}\": {{
+                        case '{case}': {{
                             enum{tmp} = {i};
                             break;
                         }}
@@ -2251,7 +2310,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.js(&format!(
                         "\
                         case {i}: {{
-                            enum{tmp} = \"{case}\";
+                            enum{tmp} = '{case}';
                             break;
                         }}
                         ",
@@ -2261,7 +2320,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.js(&format!(
                     "\
                         default: {{
-                            throw new RangeError(\"invalid discriminant specified for {name}\");
+                            throw new RangeError('invalid discriminant specified for {name}');
                         }}
                     }}
                     ",
@@ -2321,7 +2380,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 let realloc = self.realloc.as_ref().unwrap();
 
                 let intrinsic = if self.encoding == StringEncoding::Utf16 {
-                    self.gen.intrinsic(Intrinsic::IsLE);
                     Intrinsic::Utf16Encode
                 } else {
                     Intrinsic::Utf8Encode
@@ -2412,7 +2470,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(result.clone());
 
                 uwriteln!(self.src.js, "for (let i = 0; i < {len}; i++) {{");
-                uwriteln!(self.src.js, "const base = {base} + i * {size};");
+                uwrite!(self.src.js, "const base = {base} + i * {size};");
                 self.src.js(&body);
                 assert_eq!(body_results.len(), 1);
                 uwriteln!(self.src.js, "{result}.push({});", body_results[0]);
@@ -2429,8 +2487,24 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::CallInterface { module: _, func } => {
-                self.bind_results(func.results.len(), results);
-                uwriteln!(self.src.js, "{}({});", self.callee, operands.join(", "));
+                if self.err == ErrHandling::ResultCatchHandler {
+                    uwriteln!(
+                        self.src.js,
+                        "let ret;
+                        try {{
+                            ret = {{ tag: 'ok', val: {}({}) }};
+                        }} catch (e) {{
+                            ret = {{ tag: 'err', val: {}(e) }};
+                        }}",
+                        self.callee,
+                        operands.join(", "),
+                        self.gen.intrinsic(Intrinsic::GetErrorPayload),
+                    );
+                    results.push("ret".to_string());
+                } else {
+                    self.bind_results(func.results.len(), results);
+                    uwriteln!(self.src.js, "{}({});", self.callee, operands.join(", "));
+                }
             }
 
             Instruction::Return { amt, .. } => {
@@ -2438,10 +2512,22 @@ impl Bindgen for FunctionBindgen<'_> {
                     uwriteln!(self.src.js, "{f}(ret);");
                 }
 
-                match amt {
-                    0 => {}
-                    1 => uwriteln!(self.src.js, "return {};", operands[0]),
-                    _ => uwriteln!(self.src.js, "return [{}];", operands.join(", ")),
+                if self.err == ErrHandling::ThrowResultErr {
+                    let component_err = self.gen.intrinsic(Intrinsic::ComponentError);
+                    let operand = &operands[0];
+                    uwriteln!(
+                        self.src.js,
+                        "if ({operand}.tag === 'err') {{
+                            throw new {component_err}({operand}.val);
+                        }}
+                        return {operand}.val;"
+                    );
+                } else {
+                    match amt {
+                        0 => {}
+                        1 => uwriteln!(self.src.js, "return {};", operands[0]),
+                        _ => uwriteln!(self.src.js, "return [{}];", operands.join(", ")),
+                    }
                 }
             }
 
