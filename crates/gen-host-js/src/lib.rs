@@ -1291,8 +1291,8 @@ impl<'a> JsInterface<'a> {
             self.print_ty(ty);
         }
         self.src.ts("): ");
-        if let Some((_, throw_result)) = func.results.throws(self.iface) {
-            self.print_optional_ty(throw_result);
+        if let Some((ok_ty, _)) = func.results.throws(self.iface) {
+            self.print_optional_ty(ok_ty);
         } else {
             match func.results.len() {
                 0 => self.src.ts("void"),
