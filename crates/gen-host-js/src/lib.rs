@@ -82,7 +82,7 @@ pub struct Opts {
     )]
     pub nodejs_compat: bool,
     /// Enables compatibility for JS environments without top-level await support
-    /// via an explicit async init method that must be called first.
+    /// via an async $init promise export to wait for instead.
     #[cfg_attr(feature = "clap", arg(long, group = "compatibility"))]
     pub tla_compat: bool,
 }
@@ -308,8 +308,7 @@ impl ComponentGenerator for Js {
             uwriteln!(
                 self.src.ts,
                 "
-                export const $init() = Promise<void>;
-            "
+                export const $init: Promise<void>;"
             );
             uwrite!(
                 output,
@@ -714,7 +713,7 @@ impl Js {
 
             Intrinsic::ThrowUninitialized => self.src.js_intrinsics("
                 function throwUninitialized() {
-                    throw new TypeError('Wasm uninitialized, first wait on the exported initialization promise via `await $init`');
+                    throw new TypeError('Wasm uninitialized, first wait for the exported initialization promise via `await $init`');
                 }
             "),
         }
@@ -866,6 +865,8 @@ impl Instantiator<'_> {
         }
 
         if instantiation {
+            let js_init = mem::take(&mut self.src.js_init);
+            self.src.js.push_str(&js_init);
             self.src.js("return ");
         }
 
