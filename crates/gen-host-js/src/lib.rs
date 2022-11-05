@@ -2320,10 +2320,10 @@ impl Bindgen for FunctionBindgen<'_> {
                         "let variant{tmp};
                         if ({operand}) {{
                             {some}\
-                            variant{tmp} = {v_some}
+                            variant{tmp} = {v_some};
                         }} else {{
                             {none}\
-                            variant{tmp} = {v_none}
+                            variant{tmp} = {v_none};
                         }}"
                     );
                 }
