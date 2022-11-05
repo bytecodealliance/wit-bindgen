@@ -106,7 +106,6 @@ impl Opts {
 enum Intrinsic {
     ClampGuest,
     ComponentError,
-    DataView,
     F32ToI32,
     F64ToI64,
     GetErrorPayload,
@@ -149,7 +148,6 @@ impl Intrinsic {
         match self {
             Intrinsic::ClampGuest => "clampGuest",
             Intrinsic::ComponentError => "ComponentError",
-            Intrinsic::DataView => "dataView",
             Intrinsic::F32ToI32 => "f32ToI32",
             Intrinsic::F64ToI64 => "f64ToI64",
             Intrinsic::GetErrorPayload => "getErrorPayload",
@@ -485,7 +483,7 @@ impl Js {
 
         match i {
             Intrinsic::ClampGuest => self.src.js_intrinsics("
-                function clampGuest(i, min, max) {
+                const clampGuest = (i, min, max) => {
                     if (i < min || i > max) \
                         throw new TypeError(`must be between ${min} and ${max}`);
                     return i;
@@ -499,7 +497,7 @@ impl Js {
             Intrinsic::GetErrorPayload => {
                 let hop = self.intrinsic(Intrinsic::HasOwnProperty);
                 uwrite!(self.src.js_intrinsics, "
-                    function getErrorPayload(e) {{
+                    const getErrorPayload = e => {{
                         if ({hop}.call(e, 'payload')) return e.payload;
                         if ({hop}.call(e, 'message')) return String(e.message);
                         return String(e);
@@ -516,11 +514,6 @@ impl Js {
                 }
             "),
 
-            Intrinsic::DataView => self.src.js_intrinsics("
-                let dv = new DataView(new ArrayBuffer());
-                const dataView = mem => dv.buffer === mem.buffer ? dv : dv = new DataView(mem.buffer);
-            "),
-
             Intrinsic::LoadWasm => if self.opts.base64 {
                 if self.opts.nodejs_compat {
                     self.src.js_intrinsics("
@@ -535,13 +528,13 @@ impl Js {
                 self.src.js_intrinsics("
                     const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
                     let _fs;
-                    async function loadWasm (url) {
+                    const loadWasm = async url => {
                         if (isNode) {
                             _fs = _fs || await import('fs/promises');
                             return WebAssembly.compile(await _fs.readFile(url));
                         }
                         return fetch(url).then(WebAssembly.compileStreaming);
-                    }
+                    };
                 ")
             } else {
                 self.src.js_intrinsics("
@@ -554,69 +547,64 @@ impl Js {
             "),
 
             Intrinsic::ValidateGuestChar => self.src.js_intrinsics("
-                function validateGuestChar(i) {
+                const validateGuestChar = i => {
                     if ((i > 0x10ffff) || (i >= 0xd800 && i <= 0xdfff)) \
                         throw new TypeError(`not a valid char`);
                     return String.fromCodePoint(i);
-                }
+                };
             "),
 
             // TODO: this is incorrect. It at least allows strings of length > 0
             // but it probably doesn't do the right thing for unicode or invalid
             // utf16 strings either.
             Intrinsic::ValidateHostChar => self.src.js_intrinsics("
-                function validateHostChar(s) {
+                const validateHostChar = s => {
                     if (typeof s !== 'string') \
                         throw new TypeError(`must be a string`);
                     return s.codePointAt(0);
-                }
+                };
             "),
 
 
             Intrinsic::ToInt32 => self.src.js_intrinsics("
-                function toInt32(val) {
-                    return val >> 0;
-                }
+                const toInt32 = val => val >> 0;
             "),
             Intrinsic::ToUint32 => self.src.js_intrinsics("
-                function toUint32(val) {
-                    return val >>> 0;
-                }
+                const toUint32 = val => val >>> 0;
             "),
 
             Intrinsic::ToInt16 => self.src.js_intrinsics("
-                function toInt16(val) {
+                const toInt16 = val => {
                     val >>>= 0;
                     val %= 2 ** 16;
                     if (val >= 2 ** 15) {
                         val -= 2 ** 16;
                     }
                     return val;
-                }
+                };
             "),
             Intrinsic::ToUint16 => self.src.js_intrinsics("
-                function toUint16(val) {
+                const toUint16 = val => {
                     val >>>= 0;
-                    val %= 2 ** 16;
-                    return val;
-                }
+                    return val %= 2 ** 16;
+                };
             "),
             Intrinsic::ToInt8 => self.src.js_intrinsics("
-                function toInt8(val) {
+                const toInt8 = val => {
                     val >>>= 0;
                     val %= 2 ** 8;
                     if (val >= 2 ** 7) {
                         val -= 2 ** 8;
                     }
                     return val;
-                }
+                };
             "),
             Intrinsic::ToUint8 => self.src.js_intrinsics("
-                function toUint8(val) {
+                const toUint8 = val => {
                     val >>>= 0;
                     val %= 2 ** 8;
                     return val;
-                }
+                };
             "),
 
             Intrinsic::ToBigInt64 => self.src.js_intrinsics("
@@ -631,10 +619,10 @@ impl Js {
             //
             // Definition of `String`: https://tc39.es/ecma262/#sec-string-constructor-string-value
             Intrinsic::ToString => self.src.js_intrinsics("
-                function toString(val) {
+                const toString = val => {
                     if (typeof val === 'symbol') throw new TypeError('symbols cannot be converted to strings');
                     return String(val);
-                }
+                };
             "),
 
             Intrinsic::I32ToF32 => self.src.js_intrinsics("
@@ -664,7 +652,7 @@ impl Js {
                 const utf8Encoder = new TextEncoder();
 
                 let utf8EncodedLen = 0;
-                function utf8Encode(s, realloc, memory) {
+                const utf8Encode = (s, realloc, memory) => {
                     if (typeof s !== 'string') \
                         throw new TypeError('expected a string');
                     if (s.length === 0) {
@@ -688,13 +676,13 @@ impl Js {
                         ptr = realloc(ptr, allocLen, 1, writtenTotal);
                     utf8EncodedLen = writtenTotal;
                     return ptr;
-                }
+                };
             "),
 
             Intrinsic::Utf16Encode => {
                 let is_le = self.intrinsic(Intrinsic::IsLE);
                 uwrite!(self.src.js_intrinsics, "
-                    function utf16Encode (str, realloc, memory) {{
+                    const utf16Encode = (str, realloc, memory) => {{
                         const len = str.length, ptr = realloc(0, 0, 2, len * 2), out = new Uint16Array(memory.buffer, ptr, len);
                         let i = 0;
                         if ({is_le}) {{
@@ -706,20 +694,20 @@ impl Js {
                             }}
                         }}
                         return ptr;
-                    }}
+                    }};
                 ");
             },
 
             Intrinsic::ThrowInvalidBool => self.src.js_intrinsics("
-                function throwInvalidBool() {
+                const throwInvalidBool = () => {
                     throw new TypeError('invalid variant discriminant for bool');
-                }
+                };
             "),
 
             Intrinsic::ThrowUninitialized => self.src.js_intrinsics("
-                function throwUninitialized() {
+                const throwUninitialized = () => {
                     throw new TypeError('Wasm uninitialized, first wait for the exported initialization promise via `await $init`');
-                }
+                };
             "),
         }
 
@@ -897,16 +885,18 @@ impl Instantiator<'_> {
             }
             GlobalInitializer::ExtractMemory(m) => {
                 let def = self.core_export(&m.export);
+                let idx = m.index.as_u32();
                 let maybe_const = if self.gen.opts.tla_compat {
-                    uwriteln!(self.src.js, "let memory{};", m.index.as_u32());
+                    uwriteln!(self.src.js, "let memory{idx};");
+                    uwriteln!(self.src.js, "let dataView{idx};");
                     ""
                 } else {
                     "const "
                 };
+                uwriteln!(self.src.js_init, "{maybe_const}memory{idx} = {def};");
                 uwriteln!(
                     self.src.js_init,
-                    "{maybe_const}memory{} = {def};",
-                    m.index.as_u32()
+                    "{maybe_const}dataView{idx} = new DataView(memory{idx}.buffer);"
                 );
             }
             GlobalInitializer::ExtractRealloc(r) => {
@@ -1002,17 +992,13 @@ impl Instantiator<'_> {
             uwriteln!(self.src.js, "let exports{iu32};");
             uwriteln!(
                 self.src.js_init,
-                "
-                    ({{ exports: exports{iu32} }} = await WebAssembly.instantiate(await module{}{imports}));\
-                ",
+                "({{ exports: exports{iu32} }} = await WebAssembly.instantiate(await module{}{imports}));",
                 idx.as_u32()
             );
         } else {
             uwriteln!(
                 self.src.js_init,
-                "
-                    const {{ exports: exports{iu32} }} = await WebAssembly.instantiate(await module{}{imports});\
-                ",
+                "const {{ exports: exports{iu32} }} = await WebAssembly.instantiate(await module{}{imports});",
                 idx.as_u32()
             );
         }
@@ -1091,6 +1077,10 @@ impl Instantiator<'_> {
             Some(idx) => Some(format!("memory{}", idx.as_u32())),
             None => None,
         };
+        let data_view = match opts.memory {
+            Some(idx) => Some(format!("dataView{}", idx.as_u32())),
+            None => None,
+        };
         let realloc = match opts.realloc {
             Some(idx) => Some(format!("realloc{}", idx.as_u32())),
             None => None,
@@ -1142,6 +1132,7 @@ impl Instantiator<'_> {
             blocks: Vec::new(),
             callee,
             memory,
+            data_view,
             realloc,
             tmp: 0,
             params,
@@ -1635,6 +1626,7 @@ struct FunctionBindgen<'a> {
     blocks: Vec<(String, Vec<String>)>,
     params: Vec<String>,
     memory: Option<String>,
+    data_view: Option<String>,
     realloc: Option<String>,
     post_return: Option<String>,
     encoding: StringEncoding,
@@ -1657,20 +1649,18 @@ impl FunctionBindgen<'_> {
     }
 
     fn load(&mut self, method: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
-        let memory = self.memory.as_ref().unwrap();
-        let view = self.gen.intrinsic(Intrinsic::DataView);
+        let data_view = self.data_view.as_ref().unwrap();
         results.push(format!(
-            "{view}({memory}).{method}({} + {offset}, true)",
+            "{data_view}.{method}({} + {offset}, true)",
             operands[0],
         ));
     }
 
     fn store(&mut self, method: &str, offset: i32, operands: &[String]) {
-        let memory = self.memory.as_ref().unwrap();
-        let view = self.gen.intrinsic(Intrinsic::DataView);
+        let data_view = self.data_view.as_ref().unwrap();
         uwriteln!(
             self.src.js,
-            "{view}({memory}).{method}({} + {offset}, {}, true);",
+            "{data_view}.{method}({} + {offset}, {}, true);",
             operands[1],
             operands[0]
         );
