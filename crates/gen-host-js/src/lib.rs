@@ -293,30 +293,24 @@ impl ComponentGenerator for Js {
         output.push_str(&self.src.js_intrinsics);
 
         if self.opts.tla_compat {
+            let init_str: &str = &self.src.js_init;
             uwrite!(
                 output,
                 "
                 let _initialized = false;
                 export const $init = (async() => {{
-            "
-            );
-        }
+                    {init_str}
+                    _initialized = true;
+                }})();
 
-        output.push_str(&self.src.js_init);
-
-        if self.opts.tla_compat {
+            ");
             uwriteln!(
                 self.src.ts,
                 "
                 export const $init: Promise<void>;"
             );
-            uwrite!(
-                output,
-                "\
-                _initialized = true;
-            }})();
-            "
-            );
+        } else {
+            output.push_str(&self.src.js_init);
         }
 
         output.push_str(&self.src.js);
