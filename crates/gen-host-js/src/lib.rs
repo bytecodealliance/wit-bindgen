@@ -85,10 +85,10 @@ pub struct Opts {
     /// via an async $init promise export to wait for instead.
     #[cfg_attr(feature = "clap", arg(long, group = "compatibility"))]
     pub tla_compat: bool,
-    /// Disable verification of component Wasm data structures as a
-    /// production optimization
+    /// Disable verification of component Wasm data structures when
+    /// lifting as a production optimization
     #[cfg_attr(feature = "clap", arg(long))]
-    pub valid_component_optimization: bool,
+    pub valid_lifting_optimization: bool,
 }
 
 impl Opts {
@@ -1834,7 +1834,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let tmp = self.tmp();
                 self.src
                     .js(&format!("const bool{} = {};\n", tmp, operands[0]));
-                if self.gen.opts.valid_component_optimization {
+                if self.gen.opts.valid_lifting_optimization {
                     results.push(format!("!!bool{tmp}"));
                 } else {
                     let throw = self.gen.intrinsic(Intrinsic::ThrowInvalidBool);
@@ -1952,7 +1952,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     // We only need an extraneous bits check if the number of flags isn't a multiple
                     // of 32, because if it is then all the bits are used and there are no
                     // extraneous bits.
-                    if flags.flags.len() % 32 != 0 && !self.gen.opts.valid_component_optimization {
+                    if flags.flags.len() % 32 != 0 && !self.gen.opts.valid_lifting_optimization {
                         let mask: u32 = 0xffffffff << (flags.flags.len() % 32);
                         uwriteln!(
                             self.src.js,
@@ -2065,7 +2065,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     );
                 }
                 let variant_name = name.to_upper_camel_case();
-                if !self.gen.opts.valid_component_optimization {
+                if !self.gen.opts.valid_lifting_optimization {
                     uwriteln!(
                         self.src.js,
                         "default: {{
@@ -2157,7 +2157,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     );
                 }
                 let name = name.to_upper_camel_case();
-                if !self.gen.opts.valid_component_optimization {
+                if !self.gen.opts.valid_lifting_optimization {
                     uwriteln!(
                         self.src.js,
                         "default: {{
@@ -2246,7 +2246,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     ("null", some_result.into())
                 };
 
-                if !self.gen.opts.valid_component_optimization {
+                if !self.gen.opts.valid_lifting_optimization {
                     uwriteln!(
                         self.src.js,
                         "let variant{tmp};
@@ -2344,7 +2344,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let tmp = self.tmp();
                 let op0 = &operands[0];
 
-                if !self.gen.opts.valid_component_optimization {
+                if !self.gen.opts.valid_lifting_optimization {
                     uwriteln!(
                         self.src.js,
                         "let variant{tmp};
@@ -2446,7 +2446,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         case = case.name
                     );
                 }
-                if !self.gen.opts.valid_component_optimization {
+                if !self.gen.opts.valid_lifting_optimization {
                     let name = name.to_upper_camel_case();
                     uwriteln!(
                         self.src.js,

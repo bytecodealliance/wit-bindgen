@@ -1,4 +1,4 @@
-// Flags: --base64 --nodejs-compat --valid-component-optimization
+// Flags: --base64 --nodejs-compat --valid-lifting-optimization
 // @ts-ignore
 import { ok, strictEqual } from 'assert';
 // @ts-ignore
