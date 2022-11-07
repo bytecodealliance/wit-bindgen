@@ -290,31 +290,42 @@ impl ComponentGenerator for Js {
             output.push_str(";");
         }
 
-        output.push_str(&self.src.js_intrinsics);
-
-        if self.opts.tla_compat {
-            let init_str: &str = &self.src.js_init;
-            uwrite!(
-                output,
-                "
-                let _initialized = false;
-                export const $init = (async() => {{
-                    {init_str}
-                    _initialized = true;
-                }})();
-
-            "
-            );
-            uwriteln!(
-                self.src.ts,
-                "
-                export const $init: Promise<void>;"
-            );
+        let (maybe_init_export, maybe_init) = if self.opts.tla_compat {
+            uwriteln!(self.src.js_init, "_initialized = true;");
+            (
+                "\
+                    let _initialized = false;
+                    export ",
+                "",
+            )
         } else {
-            output.push_str(&self.src.js_init);
-        }
+            (
+                "",
+                "
+                    await $init;
+                ",
+            )
+        };
 
-        output.push_str(&self.src.js);
+        uwrite!(
+            output,
+            "\
+                {}
+                {}
+                {maybe_init_export}const $init = (async() => {{
+                    {}\
+                }})();
+                {maybe_init}\
+            ",
+            &self.src.js_intrinsics as &str,
+            &self.src.js as &str,
+            &self.src.js_init as &str,
+        );
+        uwriteln!(
+            self.src.ts,
+            "
+            export const $init: Promise<void>;"
+        );
 
         let mut bytes = output.as_bytes();
         // strip leading newline
@@ -852,7 +863,7 @@ impl Instantiator<'_> {
                         .push_str(&format!("module{}", idx.as_u32()));
                 }
             }
-            self.src.js_init("]).catch(() => {});");
+            uwriteln!(self.src.js_init, "]).catch(() => {{}});");
         }
 
         for init in self.component.initializers.iter() {
@@ -887,45 +898,21 @@ impl Instantiator<'_> {
             }
             GlobalInitializer::ExtractMemory(m) => {
                 let def = self.core_export(&m.export);
-                let maybe_const = if self.gen.opts.tla_compat {
-                    uwriteln!(self.src.js, "let memory{};", m.index.as_u32());
-                    ""
-                } else {
-                    "const "
-                };
-                uwriteln!(
-                    self.src.js_init,
-                    "{maybe_const}memory{} = {def};",
-                    m.index.as_u32()
-                );
+                let idx = m.index.as_u32();
+                uwriteln!(self.src.js, "let memory{idx};");
+                uwriteln!(self.src.js_init, "memory{idx} = {def};");
             }
             GlobalInitializer::ExtractRealloc(r) => {
                 let def = self.core_def(&r.def);
-                let maybe_const = if self.gen.opts.tla_compat {
-                    uwriteln!(self.src.js, "let realloc{};", r.index.as_u32());
-                    ""
-                } else {
-                    "const "
-                };
-                uwriteln!(
-                    self.src.js_init,
-                    "{maybe_const}realloc{} = {def};",
-                    r.index.as_u32()
-                );
+                let idx = r.index.as_u32();
+                uwriteln!(self.src.js, "let realloc{idx};");
+                uwriteln!(self.src.js_init, "realloc{idx} = {def};",);
             }
             GlobalInitializer::ExtractPostReturn(p) => {
                 let def = self.core_def(&p.def);
-                let maybe_const = if self.gen.opts.tla_compat {
-                    uwriteln!(self.src.js, "let postReturn{};", p.index.as_u32());
-                    ""
-                } else {
-                    "const "
-                };
-                uwriteln!(
-                    self.src.js_init,
-                    "{maybe_const}postReturn{} = {def};",
-                    p.index.as_u32()
-                );
+                let idx = p.index.as_u32();
+                uwriteln!(self.src.js, "let postReturn{idx};");
+                uwriteln!(self.src.js_init, "postReturn{idx} = {def};");
             }
 
             // This is only used for a "degenerate component" which internally
@@ -988,24 +975,14 @@ impl Instantiator<'_> {
 
         let i = self.instances.push(idx);
         let iu32 = i.as_u32();
-        if self.gen.opts.tla_compat {
-            uwriteln!(self.src.js, "let exports{iu32};");
-            uwriteln!(
-                self.src.js_init,
-                "
-                    ({{ exports: exports{iu32} }} = await WebAssembly.instantiate(await module{}{imports}));\
-                ",
-                idx.as_u32()
-            );
-        } else {
-            uwriteln!(
-                self.src.js_init,
-                "
-                    const {{ exports: exports{iu32} }} = await WebAssembly.instantiate(await module{}{imports});\
-                ",
-                idx.as_u32()
-            );
-        }
+        uwriteln!(self.src.js, "let exports{iu32};");
+        uwriteln!(
+            self.src.js_init,
+            "
+                ({{ exports: exports{iu32} }} = await WebAssembly.instantiate(await module{}{imports}));\
+            ",
+            idx.as_u32()
+        );
     }
 
     fn lower_import(&mut self, import: &LowerImport) {
