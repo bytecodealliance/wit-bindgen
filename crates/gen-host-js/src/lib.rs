@@ -723,7 +723,7 @@ impl Js {
 
             Intrinsic::ThrowUninitialized => self.src.js_intrinsics("
                 function throwUninitialized() {
-                    throw new TypeError('Wasm uninitialized, first wait for the exported initialization promise via `await $init`');
+                    throw new TypeError('Wasm uninitialized use `await $init` first');
                 }
             "),
         }
@@ -1083,10 +1083,7 @@ impl Instantiator<'_> {
         }
         uwriteln!(self.src.js, ") {{");
 
-        if self.gen.opts.tla_compat
-            && !self.gen.opts.valid_component_optimization
-            && matches!(abi, AbiVariant::GuestExport)
-        {
+        if self.gen.opts.tla_compat && matches!(abi, AbiVariant::GuestExport) {
             let throw_uninitialized = self.gen.intrinsic(Intrinsic::ThrowUninitialized);
             uwrite!(
                 self.src.js,
