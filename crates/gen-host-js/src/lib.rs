@@ -2016,14 +2016,12 @@ impl Bindgen for FunctionBindgen<'_> {
                     );
                 }
                 let variant_name = name.to_upper_camel_case();
-                if !self.gen.opts.valid_component_optimization {
-                    uwriteln!(
-                        self.src.js,
-                        "default: {{
-                            throw new TypeError('invalid variant specified for {variant_name}');
-                        }}"
-                    );
-                }
+                uwriteln!(
+                    self.src.js,
+                    "default: {{
+                        throw new TypeError('invalid variant specified for {variant_name}');
+                    }}"
+                );
                 uwriteln!(self.src.js, "}}");
             }
 
@@ -2118,14 +2116,12 @@ impl Bindgen for FunctionBindgen<'_> {
                     );
                 }
                 let name = name.to_upper_camel_case();
-                if !self.gen.opts.valid_component_optimization {
-                    uwriteln!(
-                        self.src.js,
-                        "default: {{
-                            throw new TypeError('invalid union specified for {name}');
-                        }}"
-                    );
-                }
+                uwriteln!(
+                    self.src.js,
+                    "default: {{
+                        throw new TypeError('invalid union specified for {name}');
+                    }}"
+                );
                 uwriteln!(self.src.js, "}}");
             }
 
@@ -2196,35 +2192,23 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
 
                 if self.gen.maybe_null(iface, payload) {
-                    if !self.gen.opts.valid_component_optimization {
-                        uwriteln!(
-                            self.src.js,
-                            "switch (variant{tmp}.tag) {{
-                                case 'none': {{
-                                    {none}\
-                                    break;
-                                }}
-                                case 'some': {{
-                                    const e = variant{tmp}.val;
-                                    {some}\
-                                    break;
-                                }}
-                                default: {{
-                                    throw new TypeError('invalid variant specified for option');
-                                }}
-                            }}"
-                        );
-                    } else {
-                        uwriteln!(
-                            self.src.js,
-                            "if (variant{tmp}.tag === 'some') {{
+                    uwriteln!(
+                        self.src.js,
+                        "switch (variant{tmp}.tag) {{
+                            case 'none': {{
+                                {none}\
+                                break;
+                            }}
+                            case 'some': {{
                                 const e = variant{tmp}.val;
                                 {some}\
-                            }} else {{
-                                {none}\
-                            }}"
-                        );
-                    }
+                                break;
+                            }}
+                            default: {{
+                                throw new TypeError('invalid variant specified for option');
+                            }}
+                        }}"
+                    );
                 } else {
                     uwriteln!(
                         self.src.js,
@@ -2432,13 +2416,12 @@ impl Bindgen for FunctionBindgen<'_> {
                         case = case.name
                     );
                 }
-                if !self.gen.opts.valid_component_optimization {
-                    uwriteln!(self.src.js,
-                        "default: {{
-                            throw new TypeError(`\"${{val{tmp}}}\" is not one of the cases of {name}`);
-                        }}"
-                    );
-                }
+                uwriteln!(
+                    self.src.js,
+                    "default: {{
+                        throw new TypeError(`\"${{val{tmp}}}\" is not one of the cases of {name}`);
+                    }}"
+                );
                 uwriteln!(self.src.js, "}}");
 
                 results.push(format!("enum{tmp}"));
