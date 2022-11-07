@@ -303,7 +303,8 @@ impl ComponentGenerator for Js {
                     _initialized = true;
                 }})();
 
-            ");
+            "
+            );
             uwriteln!(
                 self.src.ts,
                 "
