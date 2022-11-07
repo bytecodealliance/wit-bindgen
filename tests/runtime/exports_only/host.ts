@@ -13,5 +13,5 @@ strictEqual(result, 'test');
 // Verify the inlined file size does not regress
 const url = new URL('./exports_only.js', import.meta.url);
 const jsSource = await readFile(url);
-const max_size = 6375;
-ok(jsSource.byteLength < max_size, `JS inlined bytelength ${jsSource.byteLength} is greater than ${max_size} bytes, at ${fileURLToPath(url)}`);
+const max_size = 6442;
+ok(jsSource.byteLength <= max_size, `JS inlined bytelength ${jsSource.byteLength} is greater than ${max_size} bytes, at ${fileURLToPath(url)}`);

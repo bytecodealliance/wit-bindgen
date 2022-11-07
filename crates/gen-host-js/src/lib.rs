@@ -72,8 +72,8 @@ pub struct Opts {
     /// component import specifiers to JS import specifiers.
     #[cfg_attr(feature = "clap", arg(long), clap(value_parser = maps_str_to_map))]
     pub map: Option<HashMap<String, String>>,
-    /// Enables all compat flags: --nodejs-compat.
-    #[cfg_attr(feature = "clap", arg(long))]
+    /// Enables all compat flags: --nodejs-compat, --tla-compat.
+    #[cfg_attr(feature = "clap", arg(long, short = 'c'))]
     pub compat: bool,
     /// Enables compatibility in Node.js without a fetch global.
     #[cfg_attr(
@@ -81,6 +81,10 @@ pub struct Opts {
         arg(long, group = "compatibility", conflicts_with = "compat")
     )]
     pub nodejs_compat: bool,
+    /// Enables compatibility for JS environments without top-level await support
+    /// via an async $init promise export to wait for instead.
+    #[cfg_attr(feature = "clap", arg(long, group = "compatibility"))]
+    pub tla_compat: bool,
 }
 
 impl Opts {
@@ -89,6 +93,7 @@ impl Opts {
         gen.opts = self;
         if gen.opts.compat {
             gen.opts.nodejs_compat = true;
+            gen.opts.tla_compat = true;
         }
         Ok(Box::new(gen))
     }
@@ -108,6 +113,7 @@ enum Intrinsic {
     I64ToF64,
     LoadWasm,
     ThrowInvalidBool,
+    ThrowUninitialized,
     /// Implementation of https://tc39.es/ecma262/#sec-tobigint64.
     ToBigInt64,
     /// Implementation of https://tc39.es/ecma262/#sec-tobiguint64.
@@ -150,6 +156,7 @@ impl Intrinsic {
             Intrinsic::I64ToF64 => "i64ToF64",
             Intrinsic::LoadWasm => "loadWasm",
             Intrinsic::ThrowInvalidBool => "throwInvalidBool",
+            Intrinsic::ThrowUninitialized => "throwUninitialized",
             Intrinsic::ToBigInt64 => "toInt64",
             Intrinsic::ToBigUint64 => "toUint64",
             Intrinsic::ToInt16 => "toInt16",
@@ -240,6 +247,7 @@ impl ComponentGenerator for Js {
         };
         instantiator.instantiate();
         instantiator.gen.src.js(&instantiator.src.js);
+        instantiator.gen.src.js_init(&instantiator.src.js_init);
         assert!(instantiator.src.ts.is_empty());
     }
 
@@ -282,7 +290,42 @@ impl ComponentGenerator for Js {
             output.push_str(";");
         }
 
-        output.push_str(&self.src.js);
+        let (maybe_init_export, maybe_init) = if self.opts.tla_compat {
+            uwriteln!(self.src.js_init, "_initialized = true;");
+            (
+                "\
+                    let _initialized = false;
+                    export ",
+                "",
+            )
+        } else {
+            (
+                "",
+                "
+                    await $init;
+                ",
+            )
+        };
+
+        uwrite!(
+            output,
+            "\
+                {}
+                {}
+                {maybe_init_export}const $init = (async() => {{
+                    {}\
+                }})();
+                {maybe_init}\
+            ",
+            &self.src.js_intrinsics as &str,
+            &self.src.js as &str,
+            &self.src.js_init as &str,
+        );
+        uwriteln!(
+            self.src.ts,
+            "
+            export const $init: Promise<void>;"
+        );
 
         let mut bytes = output.as_bytes();
         // strip leading newline
@@ -423,22 +466,26 @@ impl Js {
         if (i == Intrinsic::I32ToF32 && !self.all_intrinsics.contains(&Intrinsic::F32ToI32))
             || (i == Intrinsic::F32ToI32 && !self.all_intrinsics.contains(&Intrinsic::I32ToF32))
         {
-            self.src.js("
+            self.src.js_intrinsics(
+                "
                 const i32ToF32I = new Int32Array(1);
                 const i32ToF32F = new Float32Array(i32ToF32I.buffer);
-            ");
+            ",
+            );
         }
         if (i == Intrinsic::I64ToF64 && !self.all_intrinsics.contains(&Intrinsic::F64ToI64))
             || (i == Intrinsic::F64ToI64 && !self.all_intrinsics.contains(&Intrinsic::I64ToF64))
         {
-            self.src.js("
+            self.src.js_intrinsics(
+                "
                 const i64ToF64I = new BigInt64Array(1);
                 const i64ToF64F = new Float64Array(i64ToF64I.buffer);
-            ");
+            ",
+            );
         }
 
         match i {
-            Intrinsic::ClampGuest => self.src.js("
+            Intrinsic::ClampGuest => self.src.js_intrinsics("
                 function clampGuest(i, min, max) {
                     if (i < min || i > max) \
                         throw new RangeError(`must be between ${min} and ${max}`);
@@ -446,13 +493,13 @@ impl Js {
                 }
             "),
 
-            Intrinsic::HasOwnProperty => self.src.js("
+            Intrinsic::HasOwnProperty => self.src.js_intrinsics("
                 const hasOwnProperty = Object.prototype.hasOwnProperty;
             "),
 
             Intrinsic::GetErrorPayload => {
                 let hop = self.intrinsic(Intrinsic::HasOwnProperty);
-                uwrite!(self.src.js, "
+                uwrite!(self.src.js_intrinsics, "
                     function getErrorPayload(e) {{
                         if ({hop}.call(e, 'payload')) return e.payload;
                         if ({hop}.call(e, 'message')) return String(e.message);
@@ -461,7 +508,7 @@ impl Js {
                 ")
             },
 
-            Intrinsic::ComponentError => self.src.js("
+            Intrinsic::ComponentError => self.src.js_intrinsics("
                 class ComponentError extends Error {
                     constructor (payload) {
                         super(payload);
@@ -470,23 +517,23 @@ impl Js {
                 }
             "),
 
-            Intrinsic::DataView => self.src.js("
+            Intrinsic::DataView => self.src.js_intrinsics("
                 let dv = new DataView(new ArrayBuffer());
                 const dataView = mem => dv.buffer === mem.buffer ? dv : dv = new DataView(mem.buffer);
             "),
 
             Intrinsic::LoadWasm => if self.opts.base64 {
                 if self.opts.nodejs_compat {
-                    self.src.js("
+                    self.src.js_intrinsics("
                         const loadWasm = str => WebAssembly.compile(typeof Buffer !== 'undefined' ? Buffer.from(str, 'base64') : Uint8Array.from(atob(str), b => b.charCodeAt(0)));
                     ")
                 } else {
-                    self.src.js("
+                    self.src.js_intrinsics("
                         const loadWasm = str => WebAssembly.compile(Uint8Array.from(atob(str), b => b.charCodeAt(0)));
                     ")
                 }
             } else if self.opts.nodejs_compat {
-                self.src.js("
+                self.src.js_intrinsics("
                     const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
                     let _fs;
                     async function loadWasm (url) {
@@ -498,16 +545,16 @@ impl Js {
                     }
                 ")
             } else {
-                self.src.js("
+                self.src.js_intrinsics("
                     const loadWasm = url => fetch(url).then(WebAssembly.compileStreaming);
                 ")
             },
 
-            Intrinsic::IsLE => self.src.js("
+            Intrinsic::IsLE => self.src.js_intrinsics("
                 const isLE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
             "),
 
-            Intrinsic::ValidateGuestChar => self.src.js("
+            Intrinsic::ValidateGuestChar => self.src.js_intrinsics("
                 function validateGuestChar(i) {
                     if ((i > 0x10ffff) || (i >= 0xd800 && i <= 0xdfff)) \
                         throw new RangeError(`not a valid char`);
@@ -518,7 +565,7 @@ impl Js {
             // TODO: this is incorrect. It at least allows strings of length > 0
             // but it probably doesn't do the right thing for unicode or invalid
             // utf16 strings either.
-            Intrinsic::ValidateHostChar => self.src.js("
+            Intrinsic::ValidateHostChar => self.src.js_intrinsics("
                 function validateHostChar(s) {
                     if (typeof s !== 'string') \
                         throw new TypeError(`must be a string`);
@@ -527,18 +574,18 @@ impl Js {
             "),
 
 
-            Intrinsic::ToInt32 => self.src.js("
+            Intrinsic::ToInt32 => self.src.js_intrinsics("
                 function toInt32(val) {
                     return val >> 0;
                 }
             "),
-            Intrinsic::ToUint32 => self.src.js("
+            Intrinsic::ToUint32 => self.src.js_intrinsics("
                 function toUint32(val) {
                     return val >>> 0;
                 }
             "),
 
-            Intrinsic::ToInt16 => self.src.js("
+            Intrinsic::ToInt16 => self.src.js_intrinsics("
                 function toInt16(val) {
                     val >>>= 0;
                     val %= 2 ** 16;
@@ -548,14 +595,14 @@ impl Js {
                     return val;
                 }
             "),
-            Intrinsic::ToUint16 => self.src.js("
+            Intrinsic::ToUint16 => self.src.js_intrinsics("
                 function toUint16(val) {
                     val >>>= 0;
                     val %= 2 ** 16;
                     return val;
                 }
             "),
-            Intrinsic::ToInt8 => self.src.js("
+            Intrinsic::ToInt8 => self.src.js_intrinsics("
                 function toInt8(val) {
                     val >>>= 0;
                     val %= 2 ** 8;
@@ -565,7 +612,7 @@ impl Js {
                     return val;
                 }
             "),
-            Intrinsic::ToUint8 => self.src.js("
+            Intrinsic::ToUint8 => self.src.js_intrinsics("
                 function toUint8(val) {
                     val >>>= 0;
                     val %= 2 ** 8;
@@ -573,10 +620,10 @@ impl Js {
                 }
             "),
 
-            Intrinsic::ToBigInt64 => self.src.js("
+            Intrinsic::ToBigInt64 => self.src.js_intrinsics("
                 const toInt64 = val => BigInt.asIntN(64, val);
             "),
-            Intrinsic::ToBigUint64 => self.src.js("
+            Intrinsic::ToBigUint64 => self.src.js_intrinsics("
                 const toUint64 = val => BigInt.asUintN(64, val);
             "),
 
@@ -584,41 +631,37 @@ impl Js {
             // which is why we have the symbol-rejecting branch above.
             //
             // Definition of `String`: https://tc39.es/ecma262/#sec-string-constructor-string-value
-            Intrinsic::ToString => self.src.js("
+            Intrinsic::ToString => self.src.js_intrinsics("
                 function toString(val) {
                     if (typeof val === 'symbol') throw new TypeError('symbols cannot be converted to strings');
                     return String(val);
                 }
             "),
 
-            Intrinsic::I32ToF32 => self.src.js("
+            Intrinsic::I32ToF32 => self.src.js_intrinsics("
                 const i32ToF32 = i => (i32ToF32I[0] = i, i32ToF32F[0]);
             "),
-            Intrinsic::F32ToI32 => self.src.js("
+            Intrinsic::F32ToI32 => self.src.js_intrinsics("
                 const f32ToI32 = f => (i32ToF32F[0] = f, i32ToF32I[0]);
             "),
-            Intrinsic::I64ToF64 => self.src.js("
+            Intrinsic::I64ToF64 => self.src.js_intrinsics("
                 const i64ToF64 = i => (i64ToF64I[0] = i, i64ToF64F[0]);
             "),
-            Intrinsic::F64ToI64 => self.src.js("
+            Intrinsic::F64ToI64 => self.src.js_intrinsics("
                 const f64ToI64 = f => (i64ToF64F[0] = f, i64ToF64I[0]);
             "),
 
-            Intrinsic::Utf8Decoder => self
-                .src
-                .js("
-                    const utf8Decoder = new TextDecoder();
-                "),
+            Intrinsic::Utf8Decoder => self.src.js_intrinsics("
+                const utf8Decoder = new TextDecoder();
+            "),
 
-            Intrinsic::Utf16Decoder => self
-                .src
-                .js("
-                    const utf16Decoder = new TextDecoder('utf-16');
-                "),
+            Intrinsic::Utf16Decoder => self.src.js_intrinsics("
+                const utf16Decoder = new TextDecoder('utf-16');
+            "),
 
             Intrinsic::Utf8EncodedLen => {},
 
-            Intrinsic::Utf8Encode => self.src.js("
+            Intrinsic::Utf8Encode => self.src.js_intrinsics("
                 const utf8Encoder = new TextEncoder();
 
                 let utf8EncodedLen = 0;
@@ -651,7 +694,7 @@ impl Js {
 
             Intrinsic::Utf16Encode => {
                 let is_le = self.intrinsic(Intrinsic::IsLE);
-                uwrite!(self.src.js, "
+                uwrite!(self.src.js_intrinsics, "
                     function utf16Encode (str, realloc, memory) {{
                         const len = str.length, ptr = realloc(0, 0, 2, len * 2), out = new Uint16Array(memory.buffer, ptr, len);
                         let i = 0;
@@ -668,9 +711,15 @@ impl Js {
                 ");
             },
 
-            Intrinsic::ThrowInvalidBool => self.src.js("
+            Intrinsic::ThrowInvalidBool => self.src.js_intrinsics("
                 function throwInvalidBool() {
                     throw new RangeError('invalid variant discriminant for bool');
+                }
+            "),
+
+            Intrinsic::ThrowUninitialized => self.src.js_intrinsics("
+                function throwUninitialized() {
+                    throw new TypeError('Wasm uninitialized, first wait for the exported initialization promise via `await $init`');
                 }
             "),
         }
@@ -770,20 +819,9 @@ impl Instantiator<'_> {
         }
 
         // Setup the compilation promises
-        let mut first = true;
-        let mut multiple = false;
         for init in self.component.initializers.iter() {
             if let GlobalInitializer::InstantiateModule(InstantiateModule::Static(idx, _)) = init {
                 // Get the compiled WebAssembly.Module objects in parallel
-                if first {
-                    if !instantiation {
-                        self.src.js.push_str("\n");
-                    }
-                    first = false;
-                } else {
-                    multiple = true;
-                }
-
                 let local_name = format!("module{}", idx.as_u32());
                 let name = self.gen.core_file_name(&self.name, idx.as_u32());
                 if self.gen.opts.instantiation {
@@ -792,13 +830,13 @@ impl Instantiator<'_> {
                     let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
                     let idx_num = idx.as_u32();
                     uwriteln!(
-                        self.src.js,
+                        self.src.js_init,
                         "const {local_name} = {load_wasm}(BINARY{idx_num});"
                     );
                 } else {
                     let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
                     uwriteln!(
-                        self.src.js,
+                        self.src.js_init,
                         "const {local_name} = {load_wasm}(new URL('./{name}', import.meta.url));"
                     );
                 }
@@ -807,9 +845,9 @@ impl Instantiator<'_> {
 
         // To avoid uncaught promise rejection errors, we attach an intermediate
         // Promise.all with a rejection handler, if there are multiple promises.
-        if multiple {
-            first = true;
-            self.src.js.push_str("Promise.all([");
+        if self.modules.len() > 1 {
+            let mut first = true;
+            self.src.js_init.push_str("Promise.all([");
             for init in self.component.initializers.iter() {
                 if let GlobalInitializer::InstantiateModule(InstantiateModule::Static(idx, _)) =
                     init
@@ -818,12 +856,14 @@ impl Instantiator<'_> {
                     if first {
                         first = false;
                     } else {
-                        self.src.js.push_str(", ");
+                        self.src.js_init.push_str(", ");
                     }
-                    self.src.js.push_str(&format!("module{}", idx.as_u32()));
+                    self.src
+                        .js_init
+                        .push_str(&format!("module{}", idx.as_u32()));
                 }
             }
-            uwriteln!(self.src.js, "]).catch(() => {{}});");
+            uwriteln!(self.src.js_init, "]).catch(() => {{}});");
         }
 
         for init in self.component.initializers.iter() {
@@ -831,6 +871,8 @@ impl Instantiator<'_> {
         }
 
         if instantiation {
+            let js_init = mem::take(&mut self.src.js_init);
+            self.src.js.push_str(&js_init);
             self.src.js("return ");
         }
 
@@ -856,15 +898,21 @@ impl Instantiator<'_> {
             }
             GlobalInitializer::ExtractMemory(m) => {
                 let def = self.core_export(&m.export);
-                uwriteln!(self.src.js, "const memory{} = {def};", m.index.as_u32());
+                let idx = m.index.as_u32();
+                uwriteln!(self.src.js, "let memory{idx};");
+                uwriteln!(self.src.js_init, "memory{idx} = {def};");
             }
             GlobalInitializer::ExtractRealloc(r) => {
                 let def = self.core_def(&r.def);
-                uwriteln!(self.src.js, "const realloc{} = {def};", r.index.as_u32());
+                let idx = r.index.as_u32();
+                uwriteln!(self.src.js, "let realloc{idx};");
+                uwriteln!(self.src.js_init, "realloc{idx} = {def};",);
             }
             GlobalInitializer::ExtractPostReturn(p) => {
                 let def = self.core_def(&p.def);
-                uwriteln!(self.src.js, "const postReturn{} = {def};", p.index.as_u32());
+                let idx = p.index.as_u32();
+                uwriteln!(self.src.js, "let postReturn{idx};");
+                uwriteln!(self.src.js_init, "postReturn{idx} = {def};");
             }
 
             // This is only used for a "degenerate component" which internally
@@ -903,10 +951,8 @@ impl Instantiator<'_> {
             assert!(prev.is_none());
         }
         let mut imports = String::new();
-        if import_obj.is_empty() {
-            imports.push_str("{}");
-        } else {
-            imports.push_str("{\n");
+        if !import_obj.is_empty() {
+            imports.push_str(", {\n");
             for (module, names) in import_obj {
                 if is_js_identifier(module) {
                     imports.push_str(module);
@@ -929,10 +975,11 @@ impl Instantiator<'_> {
 
         let i = self.instances.push(idx);
         let iu32 = i.as_u32();
+        uwriteln!(self.src.js, "let exports{iu32};");
         uwriteln!(
-            self.src.js,
+            self.src.js_init,
             "
-                const instance{iu32} = await WebAssembly.instantiate(await module{}, {imports});\
+                ({{ exports: exports{iu32} }} = await WebAssembly.instantiate(await module{}{imports}));\
             ",
             idx.as_u32()
         );
@@ -976,11 +1023,12 @@ impl Instantiator<'_> {
             imports_vec.push((id, callee.clone()));
         }
 
-        uwrite!(self.src.js, "\nfunction lowering{index}");
+        uwrite!(self.src.js_init, "\nfunction lowering{index}");
         let nparams = iface
             .wasm_signature(AbiVariant::GuestImport, func)
             .params
             .len();
+        let prev = mem::take(&mut self.src);
         self.bindgen(
             nparams,
             callee,
@@ -989,7 +1037,12 @@ impl Instantiator<'_> {
             func,
             AbiVariant::GuestImport,
         );
-        uwriteln!(self.src.js, "");
+        let latest = mem::replace(&mut self.src, prev);
+        assert!(latest.ts.is_empty());
+        assert!(latest.js_init.is_empty());
+        self.src.js_intrinsics(&latest.js_intrinsics);
+        self.src.js_init(&latest.js);
+        uwriteln!(self.src.js_init, "");
     }
 
     fn bindgen(
@@ -1025,6 +1078,16 @@ impl Instantiator<'_> {
             params.push(param);
         }
         uwriteln!(self.src.js, ") {{");
+
+        if self.gen.opts.tla_compat && matches!(abi, AbiVariant::GuestExport) {
+            let throw_uninitialized = self.gen.intrinsic(Intrinsic::ThrowUninitialized);
+            uwrite!(
+                self.src.js,
+                "\
+                if (!_initialized) {throw_uninitialized}();
+            "
+            );
+        }
 
         let mut sizes = SizeAlign::default();
         sizes.fill(iface);
@@ -1095,9 +1158,9 @@ impl Instantiator<'_> {
         };
         let i = export.instance.as_u32() as usize;
         if is_js_identifier(name) {
-            format!("instance{i}.exports.{name}")
+            format!("exports{i}.{name}")
         } else {
-            format!("instance{i}.exports['{name}']")
+            format!("exports{i}['{name}']")
         }
     }
 
@@ -2626,12 +2689,20 @@ fn is_js_identifier(s: &str) -> bool {
 #[derive(Default)]
 struct Source {
     js: wit_bindgen_core::Source,
+    js_intrinsics: wit_bindgen_core::Source,
+    js_init: wit_bindgen_core::Source,
     ts: wit_bindgen_core::Source,
 }
 
 impl Source {
     fn js(&mut self, s: &str) {
         self.js.push_str(s);
+    }
+    fn js_intrinsics(&mut self, s: &str) {
+        self.js_intrinsics.push_str(s);
+    }
+    fn js_init(&mut self, s: &str) {
+        self.js_init.push_str(s);
     }
     fn ts(&mut self, s: &str) {
         self.ts.push_str(s);

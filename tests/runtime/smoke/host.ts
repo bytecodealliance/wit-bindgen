@@ -13,6 +13,8 @@ export function thunk () {
 async function run() {
   const wasm = await import('./smoke.js');
 
+  await wasm.$init;
+
   wasm.thunk();
   assert(hit, "import not called");
 }
