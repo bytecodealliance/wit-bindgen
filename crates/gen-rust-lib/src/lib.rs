@@ -86,7 +86,7 @@ pub trait RustGenerator<'a> {
         param_mode: TypeMode,
         sig: &FnSig,
     ) -> Vec<String> {
-        let params = self.print_docs_and_params(func, param_mode, &sig);
+        let params = self.print_docs_and_params(func, param_mode, sig);
         self.push_str(" -> ");
         self.print_result_params(&func.results, TypeMode::Owned);
         params
@@ -118,7 +118,7 @@ pub trait RustGenerator<'a> {
         } else {
             &func.name
         };
-        self.push_str(&to_rust_ident(&func_name));
+        self.push_str(&to_rust_ident(func_name));
         if let Some(generics) = &sig.generics {
             self.push_str(generics);
         }
@@ -361,7 +361,7 @@ pub trait RustGenerator<'a> {
         if info.result && (!info.param || self.uses_two_names(&info)) {
             result.push((self.result_name(ty), TypeMode::Owned));
         }
-        return result;
+        result
     }
 
     /// Writes the camel-cased 'name' of the passed type to `out`, as used to name union variants.
@@ -1042,7 +1042,7 @@ pub trait RustFunctionGenerator {
         for (field, val) in ty.fields.iter().zip(operands) {
             result.push_str(&to_rust_ident(&field.name));
             result.push_str(":");
-            result.push_str(&val);
+            result.push_str(val);
             result.push_str(", ");
         }
         result.push_str("}");

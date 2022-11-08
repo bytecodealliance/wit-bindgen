@@ -827,7 +827,7 @@ impl Instantiator<'_> {
             if let GlobalInitializer::InstantiateModule(InstantiateModule::Static(idx, _)) = init {
                 // Get the compiled WebAssembly.Module objects in parallel
                 let local_name = format!("module{}", idx.as_u32());
-                let name = self.gen.core_file_name(&self.name, idx.as_u32());
+                let name = self.gen.core_file_name(self.name, idx.as_u32());
                 if self.gen.opts.instantiation {
                     uwriteln!(self.src.js, "const {local_name} = compileCore('{name}');");
                 } else if self.gen.opts.base64 {
@@ -950,7 +950,7 @@ impl Instantiator<'_> {
         assert_eq!(module.imports().len(), args.len());
         for ((module, name, _), arg) in module.imports().zip(args) {
             let def = self.core_def(arg);
-            let dst = import_obj.entry(module).or_insert(BTreeMap::new());
+            let dst = import_obj.entry(module).or_insert_with(BTreeMap::default);
             let prev = dst.insert(name, def);
             assert!(prev.is_none());
         }
@@ -1023,7 +1023,7 @@ impl Instantiator<'_> {
                 .gen
                 .imports
                 .entry(import_specifier)
-                .or_insert(Vec::new());
+                .or_insert_with(Vec::default);
             imports_vec.push((id, callee.clone()));
         }
 
@@ -1058,18 +1058,11 @@ impl Instantiator<'_> {
         func: &Function,
         abi: AbiVariant,
     ) {
-        let memory = match opts.memory {
-            Some(idx) => Some(format!("memory{}", idx.as_u32())),
-            None => None,
-        };
-        let realloc = match opts.realloc {
-            Some(idx) => Some(format!("realloc{}", idx.as_u32())),
-            None => None,
-        };
-        let post_return = match opts.post_return {
-            Some(idx) => Some(format!("postReturn{}", idx.as_u32())),
-            None => None,
-        };
+        let memory = opts.memory.map(|idx| format!("memory{}", idx.as_u32()));
+        let realloc = opts.realloc.map(|idx| format!("realloc{}", idx.as_u32()));
+        let post_return = opts
+            .post_return
+            .map(|idx| format!("postReturn{}", idx.as_u32()));
 
         self.src.js("(");
         let mut params = Vec::new();
@@ -1246,9 +1239,8 @@ impl<'a> JsInterface<'a> {
     }
 
     fn docs(&mut self, docs: &Docs) {
-        match &docs.contents {
-            Some(docs) => self.docs_raw(docs),
-            None => return,
+        if let Some(docs) = &docs.contents {
+            self.docs_raw(docs)
         }
     }
 
@@ -2719,21 +2711,21 @@ fn maps_str_to_map(maps: &str) -> Result<HashMap<String, String>> {
 // https://tc39.es/ecma262/#prod-IdentifierStartChar
 // Unicode ID_Start | "$" | "_"
 fn is_js_identifier_start(code: char) -> bool {
-    return match code {
+    match code {
         'A'..='Z' | 'a'..='z' | '$' | '_' => true,
         // leaving out non-ascii for now...
         _ => false,
-    };
+    }
 }
 
 // https://tc39.es/ecma262/#prod-IdentifierPartChar
 // Unicode ID_Continue | "$" | U+200C | U+200D
 fn is_js_identifier_char(code: char) -> bool {
-    return match code {
+    match code {
         '0'..='9' | 'A'..='Z' | 'a'..='z' | '$' | '_' => true,
         // leaving out non-ascii for now...
         _ => false,
-    };
+    }
 }
 
 fn is_js_identifier(s: &str) -> bool {
@@ -2745,12 +2737,12 @@ fn is_js_identifier(s: &str) -> bool {
     } else {
         return false;
     }
-    while let Some(char) = chars.next() {
+    for char in chars {
         if !is_js_identifier_char(char) {
             return false;
         }
     }
-    return true;
+    true
 }
 
 #[derive(Default)]

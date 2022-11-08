@@ -260,11 +260,7 @@ fn to_json(i: &Interface) -> String {
         .map(|f| Function {
             name: f.name.clone(),
             params: f.params.iter().map(|(_, ty)| translate_type(ty)).collect(),
-            results: f
-                .results
-                .iter_types()
-                .map(|ty| translate_type(ty))
-                .collect(),
+            results: f.results.iter_types().map(translate_type).collect(),
         })
         .collect::<Vec<_>>();
     let globals = i
@@ -294,7 +290,7 @@ fn to_json(i: &Interface) -> String {
                     .collect(),
             },
             TypeDefKind::Tuple(t) => Type::Tuple {
-                types: t.types.iter().map(|ty| translate_type(ty)).collect(),
+                types: t.types.iter().map(translate_type).collect(),
             },
             TypeDefKind::Flags(r) => Type::Flags {
                 flags: r.flags.iter().map(|f| f.name.clone()).collect(),

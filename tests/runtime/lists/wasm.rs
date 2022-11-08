@@ -119,10 +119,10 @@ impl exports::Exports for Component {
     }
 
     fn list_roundtrip(x: Vec<u8>) -> Vec<u8> {
-        x.clone()
+        x
     }
 
     fn string_roundtrip(x: String) -> String {
-        x.clone()
+        x
     }
 }

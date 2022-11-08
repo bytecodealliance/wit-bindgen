@@ -18,7 +18,7 @@ unsafe impl GlobalAlloc for A {
         if !ptr.is_null() {
             ALLOC_AMT.fetch_add(layout.size(), SeqCst);
         }
-        return ptr;
+        ptr
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {

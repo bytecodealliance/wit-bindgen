@@ -16,10 +16,7 @@ impl PyImports {
         let list = self
             .pyimports
             .entry(module.to_string())
-            .or_insert(match name {
-                Some(_) => Some(BTreeSet::new()),
-                None => None,
-            });
+            .or_insert_with(|| name.map(|_| BTreeSet::new()));
         match name {
             Some(name) => {
                 assert!(list.is_some());

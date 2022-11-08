@@ -8,8 +8,8 @@ use wit_component::{ComponentEncoder, ComponentInterfaces, StringEncoding};
 
 fn guest_c(
     wasms: &mut Vec<(String, String, String, String)>,
-    out_dir: &PathBuf,
-    wasi_adapter: &PathBuf,
+    out_dir: &Path,
+    wasi_adapter: &Path,
     utf_16: bool,
 ) {
     let utf16_suffix = if utf_16 { "_utf16" } else { "" };
@@ -28,7 +28,7 @@ fn guest_c(
         if utf_16 {
             opts.string_encoding = StringEncoding::UTF16;
         }
-        opts.build().generate(&name, &interfaces, &mut files);
+        opts.build().generate(name, &interfaces, &mut files);
 
         let out_dir = out_dir.join(format!(
             "c{}-{}",
@@ -83,13 +83,10 @@ fn guest_c(
             .module(module.as_slice())
             .expect("pull custom sections from module")
             .validate(true)
-            .adapter_file(&wasi_adapter)
+            .adapter_file(wasi_adapter)
             .expect("adapter failed to get loaded")
             .encode()
-            .expect(&format!(
-                "module {:?} can be translated to a component",
-                out_wasm
-            ));
+            .unwrap_or_else(|_| panic!("module {:?} can be translated to a component", out_wasm));
         let component_path = out_dir.join(format!("c{}.component.wasm", utf16_suffix));
         fs::write(&component_path, component).expect("write component to disk");
 
@@ -153,10 +150,7 @@ fn main() {
                 .adapter_file(&wasi_adapter)
                 .expect("adapter failed to get loaded")
                 .encode()
-                .expect(&format!(
-                    "module {:?} can be translated to a component",
-                    file
-                ));
+                .unwrap_or_else(|_| panic!("module {:?} can be translated to a component", file));
             let component_path = out_dir.join(format!("{}.component.wasm", stem));
             fs::write(&component_path, component).expect("write component to disk");
 
@@ -208,9 +202,9 @@ fn main() {
 
             wit_bindgen_gen_guest_teavm_java::Opts::default()
                 .build()
-                .generate(&name, &interfaces, &mut files);
+                .generate(name, &interfaces, &mut files);
 
-            let package_dir = java_dir.join(&format!("wit_{name}"));
+            let package_dir = java_dir.join(format!("wit_{name}"));
             fs::create_dir_all(&package_dir).unwrap();
             for (file, contents) in files.iter() {
                 let dst = package_dir.join(file);
@@ -221,7 +215,7 @@ fn main() {
             let upper = name.to_upper_camel_case();
             fs::copy(
                 &java_impl,
-                java_dir.join(&format!("wit_{snake}/ExportsImpl.java")),
+                java_dir.join(format!("wit_{snake}/ExportsImpl.java")),
             )
             .unwrap();
             fs::write(
@@ -268,9 +262,7 @@ fn main() {
                 .adapter_file(&wasi_adapter)
                 .expect("adapter failed to get loaded")
                 .encode()
-                .expect(&format!(
-                    "module {out_wasm:?} can be translated to a component",
-                ));
+                .unwrap_or_else(|_| panic!("module {out_wasm:?} can be translated to a component"));
             let component_path =
                 out_dir.join("target/generated/wasm/teavm-wasm/classes.component.wasm");
             fs::write(&component_path, component).expect("write component to disk");
@@ -309,7 +301,7 @@ fn read_interfaces(dir: &Path) -> ComponentInterfaces {
 fn mvn() -> Command {
     if cfg!(windows) {
         let mut cmd = Command::new("cmd");
-        cmd.args(&["/c", "mvn"]);
+        cmd.args(["/c", "mvn"]);
         cmd
     } else {
         Command::new("mvn")

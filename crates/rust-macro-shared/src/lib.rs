@@ -50,7 +50,7 @@ where
         );
     }
 
-    return contents;
+    contents
 }
 
 pub trait Configure<O> {

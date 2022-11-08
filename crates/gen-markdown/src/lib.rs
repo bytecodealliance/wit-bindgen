@@ -23,9 +23,10 @@ pub struct Opts {
 
 impl Opts {
     pub fn build(&self) -> Box<dyn WorldGenerator> {
-        let mut r = Markdown::default();
-        r.opts = self.clone();
-        Box::new(r)
+        Box::new(Markdown {
+            opts: self.clone(),
+            ..Default::default()
+        })
     }
 }
 
@@ -114,7 +115,7 @@ impl InterfaceGenerator<'_> {
             self.push_str("\n\n");
             self.docs(&func.docs);
 
-            if func.params.len() > 0 {
+            if !func.params.is_empty() {
                 self.push_str("##### Params\n\n");
                 for (name, ty) in func.params.iter() {
                     self.push_str(&format!(
@@ -128,7 +129,7 @@ impl InterfaceGenerator<'_> {
                 }
             }
 
-            if func.results.len() > 0 {
+            if !func.results.is_empty() {
                 self.push_str("##### Results\n\n");
                 for (i, ty) in func.results.iter_types().enumerate() {
                     self.push_str(&format!(

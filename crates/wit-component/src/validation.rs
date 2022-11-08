@@ -165,7 +165,7 @@ pub fn validate_module<'a>(
                 assert!(prev.is_none());
             }
             None if adapters.contains(name) => {
-                let map = ret.adapters_required.entry(name).or_insert(IndexMap::new());
+                let map = ret.adapters_required.entry(name).or_default();
                 for (func, ty) in funcs {
                     let ty = types.func_type_at(*ty).unwrap();
                     map.insert(func, ty.clone());

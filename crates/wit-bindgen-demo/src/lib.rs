@@ -32,7 +32,7 @@ impl demo::Demo for Demo {
                 let contents = if contents.starts_with(b"\0asm") {
                     wasmprinter::print_bytes(contents).unwrap()
                 } else {
-                    String::from_utf8_lossy(&contents).into()
+                    String::from_utf8_lossy(contents).into()
                 };
                 (name.to_string(), contents)
             })
@@ -53,7 +53,7 @@ fn init() {
 }
 
 fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Options) -> Result<()> {
-    let iface = Interface::parse("input", &wit)?;
+    let iface = Interface::parse("input", wit)?;
     let interfaces = ComponentInterfaces {
         imports: if options.import {
             [(iface.name.clone(), iface.clone())].into_iter().collect()
@@ -90,8 +90,10 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
 
     match lang {
         demo::Lang::Rust => {
-            let mut opts = wit_bindgen_gen_guest_rust::Opts::default();
-            opts.unchecked = options.rust_unchecked;
+            let opts = wit_bindgen_gen_guest_rust::Opts {
+                unchecked: options.rust_unchecked,
+                ..Default::default()
+            };
             gen_world(opts.build(), files)
         }
         demo::Lang::Java => gen_world(
@@ -99,8 +101,10 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
             files,
         ),
         demo::Lang::Wasmtime => {
-            let mut opts = wit_bindgen_gen_host_wasmtime_rust::Opts::default();
-            opts.tracing = options.wasmtime_tracing;
+            let opts = wit_bindgen_gen_host_wasmtime_rust::Opts {
+                tracing: options.wasmtime_tracing,
+                ..Default::default()
+            };
             gen_world(opts.build(), files)
         }
         demo::Lang::WasmtimePy => gen_component(
@@ -110,9 +114,11 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
         demo::Lang::C => gen_world(wit_bindgen_gen_guest_c::Opts::default().build(), files),
         demo::Lang::Markdown => gen_world(wit_bindgen_gen_markdown::Opts::default().build(), files),
         demo::Lang::Js => {
-            let mut opts = wit_bindgen_gen_host_js::Opts::default();
-            opts.instantiation = options.js_instantiation;
-            opts.compat = options.js_compat;
+            let opts = wit_bindgen_gen_host_js::Opts {
+                instantiation: options.js_instantiation,
+                compat: options.js_compat,
+                ..Default::default()
+            };
             gen_component(opts.build()?, files)?
         }
     }

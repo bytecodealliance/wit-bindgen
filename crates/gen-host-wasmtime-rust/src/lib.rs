@@ -43,9 +43,10 @@ pub struct Opts {
 
 impl Opts {
     pub fn build(self) -> Box<dyn WorldGenerator> {
-        let mut r = Wasmtime::default();
-        r.opts = self;
-        Box::new(r)
+        Box::new(Wasmtime {
+            opts: self,
+            ..Default::default()
+        })
     }
 }
 
@@ -323,7 +324,7 @@ impl<'a> InterfaceGenerator<'a> {
             match i.next().unwrap() {
                 Type::Id(id) => match &self.iface.types[*id].kind {
                     TypeDefKind::Result(r) => match r.err {
-                        Some(Type::Id(_)) => Some(&r),
+                        Some(Type::Id(_)) => Some(r),
                         _ => None,
                     },
                     _ => None,
@@ -345,10 +346,12 @@ impl<'a> InterfaceGenerator<'a> {
         // this import.
         uwriteln!(self.src, "pub trait {camel}: Sized {{");
         for func in self.iface.functions.iter() {
-            let mut fnsig = FnSig::default();
-            fnsig.async_ = self.gen.opts.async_;
-            fnsig.private = true;
-            fnsig.self_arg = Some("&mut self".to_string());
+            let fnsig = FnSig {
+                async_: self.gen.opts.async_,
+                private: true,
+                self_arg: Some("&mut self".to_string()),
+                ..Default::default()
+            };
 
             self.print_docs_and_params(func, TypeMode::Owned, &fnsig);
             self.push_str(" -> ");
@@ -513,7 +516,7 @@ impl<'a> InterfaceGenerator<'a> {
             ret.push((snake, mem::take(&mut self.src).to_string()));
         }
         self.src = prev;
-        return ret;
+        ret
     }
 
     fn define_rust_guest_export(&mut self, ns: Option<&str>, func: &Function) {

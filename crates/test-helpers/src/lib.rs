@@ -32,7 +32,7 @@ pub fn test_directory(suite_name: &str, gen_name: &str, wit_name: &str) -> PathB
 
     drop(fs::remove_dir_all(&me));
     fs::create_dir_all(&me).unwrap();
-    return me;
+    me
 }
 
 /// Helper function to execute a process during tests and print informative

@@ -198,18 +198,15 @@ impl Types {
         result: bool,
         error: bool,
     ) {
-        match ty {
-            Type::Id(id) => {
-                self.type_id_info(iface, *id);
-                let info = self.type_info.get_mut(id).unwrap();
-                if (param && !info.param) || (result && !info.result) || (error && !info.error) {
-                    info.param = info.param || param;
-                    info.result = info.result || result;
-                    info.error = info.error || error;
-                    self.set_param_result_id(iface, *id, param, result, error);
-                }
+        if let Type::Id(id) = ty {
+            self.type_id_info(iface, *id);
+            let info = self.type_info.get_mut(id).unwrap();
+            if (param && !info.param) || (result && !info.result) || (error && !info.error) {
+                info.param = info.param || param;
+                info.result = info.result || result;
+                info.error = info.error || error;
+                self.set_param_result_id(iface, *id, param, result, error);
             }
-            _ => {}
         }
     }
 
@@ -221,9 +218,8 @@ impl Types {
         result: bool,
         error: bool,
     ) {
-        match ty {
-            Some(ty) => self.set_param_result_ty(iface, ty, param, result, error),
-            None => (),
+        if let Some(ty) = ty {
+            self.set_param_result_ty(iface, ty, param, result, error)
         }
     }
 }
@@ -246,7 +242,7 @@ impl Files {
     }
 
     pub fn remove(&mut self, name: &str) -> Option<Vec<u8>> {
-        return self.files.remove(name);
+        self.files.remove(name)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&'_ str, &'_ [u8])> {

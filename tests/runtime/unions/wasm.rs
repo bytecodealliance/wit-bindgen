@@ -93,10 +93,10 @@ impl Exports for Component {
 
         // All-Floats
         assert!(
-            matches!(add_one_float(AllFloats::F32(0.0)), AllFloats::F32(x) if x - 1.0 < f32::EPSILON)
+            matches!(add_one_float(AllFloats::F32(0.0)), AllFloats::F32(x) if (x - 1.0).abs() < f32::EPSILON)
         );
         assert!(
-            matches!(add_one_float(AllFloats::F64(0.0)), AllFloats::F64(x) if x - 1.0 < f64::EPSILON)
+            matches!(add_one_float(AllFloats::F64(0.0)), AllFloats::F64(x) if (x - 1.0).abs() < f64::EPSILON)
         );
 
         // All-Text

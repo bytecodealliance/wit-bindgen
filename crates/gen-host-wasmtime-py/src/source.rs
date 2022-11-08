@@ -120,7 +120,7 @@ impl Source {
     pub fn finish(&self) -> String {
         let mut ret = self.imports.finish();
         ret.push_str(&self.body.contents);
-        return ret;
+        ret
     }
 
     pub fn is_empty(&self) -> bool {

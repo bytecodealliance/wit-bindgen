@@ -845,15 +845,13 @@ impl Interface {
         // "unification" so we can handle things like `Result<i32,
         // f32>` where that turns into `[i32 i32]` where the second
         // `i32` might be the `f32` bitcasted.
-        for ty in tys {
-            if let Some(ty) = ty {
-                self.push_wasm(variant, ty, &mut temp);
+        for ty in tys.into_iter().flatten() {
+            self.push_wasm(variant, ty, &mut temp);
 
-                for (i, ty) in temp.drain(..).enumerate() {
-                    match result.get_mut(start + i) {
-                        Some(prev) => *prev = join(*prev, ty),
-                        None => result.push(ty),
-                    }
+            for (i, ty) in temp.drain(..).enumerate() {
+                match result.get_mut(start + i) {
+                    Some(prev) => *prev = join(*prev, ty),
+                    None => result.push(ty),
                 }
             }
         }
@@ -1060,7 +1058,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // `self.return_pointer`) so we use that to read
                         // the result of the function from memory.
                         AbiVariant::GuestImport => {
-                            assert!(sig.results.len() == 0);
+                            assert!(sig.results.is_empty());
                             self.return_pointer.take().unwrap()
                         }
 
@@ -1889,7 +1887,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Enum(e) => {
-                    self.stack.push(addr.clone());
+                    self.stack.push(addr);
                     self.load_intrepr(offset, e.tag());
                     self.lift(ty);
                 }

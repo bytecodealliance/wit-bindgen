@@ -37,7 +37,7 @@ pub mod rt {
         if ptr.is_null() {
             alloc::handle_alloc_error(layout);
         }
-        return ptr;
+        ptr
     }
 
     pub unsafe fn dealloc(ptr: i32, size: usize, align: usize) {

@@ -37,9 +37,10 @@ pub struct Opts {
 
 impl Opts {
     pub fn build(&self) -> Box<dyn WorldGenerator> {
-        let mut r = C::default();
-        r.opts = self.clone();
-        Box::new(r)
+        Box::new(C {
+            opts: self.clone(),
+            ..Default::default()
+        })
     }
 }
 
@@ -476,7 +477,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs(" ");
         self.print_typedef_target(name);
 
-        if flags.flags.len() > 0 {
+        if !flags.flags.is_empty() {
             self.src.h_defs("\n");
         }
         for (i, flag) in flags.flags.iter().enumerate() {
@@ -513,7 +514,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs("} ");
         self.print_typedef_target(name);
 
-        if variant.cases.len() > 0 {
+        if !variant.cases.is_empty() {
             self.src.h_defs("\n");
         }
         for (i, case) in variant.cases.iter().enumerate() {
@@ -596,7 +597,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs(" ");
         self.print_typedef_target(name);
 
-        if enum_.cases.len() > 0 {
+        if !enum_.cases.is_empty() {
             self.src.h_defs("\n");
         }
         for (i, case) in enum_.cases.iter().enumerate() {
@@ -677,7 +678,7 @@ impl InterfaceGenerator<'_> {
             }
             self.src.h_fns(wasm_type(*param));
         }
-        if sig.params.len() == 0 {
+        if sig.params.is_empty() {
             self.src.h_fns("void");
         }
         self.src.h_fns(");\n");
@@ -755,7 +756,7 @@ impl InterfaceGenerator<'_> {
             uwrite!(f.gen.src.c_adapters, "{} {}", wasm_type(*param), name);
             f.params.push(name);
         }
-        if sig.params.len() == 0 {
+        if sig.params.is_empty() {
             f.gen.src.c_adapters("void");
         }
         f.gen.src.c_adapters(") {\n");
@@ -890,7 +891,7 @@ impl InterfaceGenerator<'_> {
         let mut retptrs = Vec::new();
         let single_ret = ret.retptrs.len() == 1;
         for (i, ty) in ret.retptrs.iter().enumerate() {
-            if i > 0 || func.params.len() > 0 {
+            if i > 0 || !func.params.is_empty() {
                 self.src.h_fns(", ");
             }
             self.print_ty(SourceType::HFns, ty);
@@ -903,7 +904,7 @@ impl InterfaceGenerator<'_> {
             self.src.h_fns(&name);
             retptrs.push(name);
         }
-        if func.params.len() == 0 && ret.retptrs.len() == 0 {
+        if func.params.is_empty() && ret.retptrs.is_empty() {
             self.src.h_fns("void");
         }
         self.src.h_fns(")");
@@ -937,7 +938,7 @@ impl InterfaceGenerator<'_> {
                 ret.retptrs.extend(func.results.iter_types().cloned());
             }
         }
-        return ret;
+        ret
     }
 
     fn is_arg_by_pointer(&self, ty: &Type) -> bool {
@@ -1748,7 +1749,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src.push_str(&block);
                     assert!(block_results.len() == (case.ty.is_some() as usize));
 
-                    if let Some(_) = self.gen.get_nonempty_type(case.ty.as_ref()) {
+                    if self.gen.get_nonempty_type(case.ty.as_ref()).is_some() {
                         let mut dst = format!("{}.val", result);
                         dst.push_str(".");
                         dst.push_str(&case.name.to_snake_case());
@@ -1874,7 +1875,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::OptionLift { payload, ty, .. } => {
                 let (mut some, some_results) = self.blocks.pop().unwrap();
                 let (mut none, none_results) = self.blocks.pop().unwrap();
-                assert!(none_results.len() == 0);
+                assert!(none_results.is_empty());
                 assert!(some_results.len() == 1);
                 let some_result = &some_results[0];
 
@@ -1887,10 +1888,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 } else {
                     format!("{result}.val = {some_result};\n")
                 };
-                if none.len() > 0 {
+                if !none.is_empty() {
                     none.push('\n');
                 }
-                if some.len() > 0 {
+                if !some.is_empty() {
                     some.push('\n');
                 }
                 uwrite!(
@@ -1969,13 +1970,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 assert!(ok_results.len() == (result.ok.is_some() as usize));
 
                 let result_tmp = self.locals.tmp("result");
-                let set_ok = if let Some(_) = self.gen.get_nonempty_type(result.ok.as_ref()) {
+                let set_ok = if self.gen.get_nonempty_type(result.ok.as_ref()).is_some() {
                     let ok_result = &ok_results[0];
                     format!("{result_tmp}.val.ok = {ok_result};")
                 } else {
                     String::new()
                 };
-                let set_err = if let Some(_) = self.gen.get_nonempty_type(result.err.as_ref()) {
+                let set_err = if self.gen.get_nonempty_type(result.err.as_ref()).is_some() {
                     let err_result = &err_results[0];
                     format!("{result_tmp}.val.err = {err_result};")
                 } else {
@@ -2095,7 +2096,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             let name = self.locals.tmp("ret");
                             let ty = self.gen.type_string(ty);
                             uwriteln!(self.src, "{} {};", ty, name);
-                            if args.len() > 0 {
+                            if !args.is_empty() {
                                 args.push_str(", ");
                             }
                             args.push_str("&");
@@ -2119,7 +2120,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     Some(Scalar::OptionBool(ty)) => {
                         let ret = self.locals.tmp("ret");
                         let val = self.locals.tmp("val");
-                        if args.len() > 0 {
+                        if !args.is_empty() {
                             args.push_str(", ");
                         }
                         args.push_str("&");
@@ -2150,7 +2151,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         let mut ok_names = Vec::new();
                         for ty in self.sig.ret.retptrs.iter() {
                             let val = self.locals.tmp("ok");
-                            if args.len() > 0 {
+                            if !args.is_empty() {
                                 args.push_str(", ");
                             }
                             args.push_str("&");
@@ -2188,7 +2189,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             ret = result_ret,
                             tag = ret,
                             max = max_err,
-                            set_ok = if self.sig.ret.retptrs.len() == 0 {
+                            set_ok = if self.sig.ret.retptrs.is_empty() {
                                 String::new()
                             } else {
                                 let name = ok_names.pop().unwrap();
@@ -2215,13 +2216,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     let variant = &operands[0];
                     self.store_in_retptrs(&[format!("{}.val", variant)]);
                     self.src.push_str("return ");
-                    self.src.push_str(&variant);
+                    self.src.push_str(variant);
                     self.src.push_str(".is_some;\n");
                 }
                 Some(Scalar::ResultEnum { .. }) => {
                     assert_eq!(operands.len(), 1);
                     let variant = &operands[0];
-                    if self.sig.retptrs.len() > 0 {
+                    if !self.sig.retptrs.is_empty() {
                         self.store_in_retptrs(&[format!("{}.val.ok", variant)]);
                     }
                     uwriteln!(self.src, "return {}.is_err ? {0}.val.err : -1;", variant);

@@ -243,8 +243,10 @@ impl InterfaceGenerator<'_> {
         let camel = name.to_upper_camel_case();
         uwriteln!(self.src, "pub trait {camel} {{");
         for func in self.iface.functions.iter() {
-            let mut sig = FnSig::default();
-            sig.private = true;
+            let sig = FnSig {
+                private: true,
+                ..Default::default()
+            };
             self.print_signature(func, TypeMode::Owned, &sig);
             self.src.push_str(";\n");
         }
@@ -709,7 +711,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 
     fn finish_block(&mut self, operands: &mut Vec<String>) {
-        if self.cleanup.len() > 0 {
+        if !self.cleanup.is_empty() {
             self.needs_cleanup_list = true;
             self.push_str("cleanup_list.extend_from_slice(&[");
             for (ptr, layout) in mem::take(&mut self.cleanup) {
@@ -1294,7 +1296,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let func = self.declare_import(iface, name, &sig.params, &sig.results);
 
                 // ... then call the function with all our operands
-                if sig.results.len() > 0 {
+                if !sig.results.is_empty() {
                     self.push_str("let ret = ");
                     results.push("ret".to_string());
                 }

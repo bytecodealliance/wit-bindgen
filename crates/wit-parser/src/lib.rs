@@ -355,7 +355,7 @@ impl Interface {
     pub fn parse_file(path: impl AsRef<Path>) -> Result<Interface> {
         let path = path.as_ref();
         let parent = path.parent().unwrap();
-        let contents = std::fs::read_to_string(&path)
+        let contents = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read: {}", path.display()))?;
         Interface::parse_with(path, &contents, |path| load_fs(parent, path))
     }
@@ -584,6 +584,6 @@ fn load_fs(root: &Path, name: &str) -> Result<(PathBuf, String)> {
             }
         }
 
-        Err(err) => return Err(err.into()),
+        Err(err) => Err(err.into()),
     }
 }

@@ -142,7 +142,7 @@ fn parse_named_interface(s: &str) -> Result<Interface> {
         bail!("interface file `{}` does not exist", path.display());
     }
 
-    let mut interface = Interface::parse_file(&path)
+    let mut interface = Interface::parse_file(path)
         .with_context(|| format!("failed to parse interface file `{}`", path.display()))
         .map_err(|e| {
             eprintln!("{e:?}");

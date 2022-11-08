@@ -499,10 +499,8 @@ pub fn validate_id(start: usize, id: &str) -> Result<(), Error> {
                 if !ch.is_ascii_uppercase() {
                     return Err(Error::InvalidCharInId(start, ch));
                 }
-            } else {
-                if !ch.is_ascii_lowercase() {
-                    return Err(Error::InvalidCharInId(start, ch));
-                }
+            } else if !ch.is_ascii_lowercase() {
+                return Err(Error::InvalidCharInId(start, ch));
             }
         }
     }

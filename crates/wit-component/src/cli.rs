@@ -39,10 +39,10 @@ fn parse_interface(name: Option<String>, path: &Path) -> Result<Interface> {
         bail!("interface file `{}` does not exist", path.display(),);
     }
 
-    let mut interface = Interface::parse_file(&path)
+    let mut interface = Interface::parse_file(path)
         .with_context(|| format!("failed to parse interface file `{}`", path.display()))?;
 
-    interface.name = name.unwrap_or_else(|| "".to_string());
+    interface.name = name.unwrap_or_default();
 
     Ok(interface)
 }

@@ -81,9 +81,10 @@ pub struct Opts {
 
 impl Opts {
     pub fn build(self) -> Box<dyn ComponentGenerator> {
-        let mut r = WasmtimePy::default();
-        r.opts = self;
-        Box::new(r)
+        Box::new(WasmtimePy {
+            opts: self,
+            ..Default::default()
+        })
     }
 }
 
@@ -134,7 +135,7 @@ impl WasmtimePy {
             return name;
         }
         gen(name, &mut self.intrinsics);
-        return name;
+        name
     }
 
     fn print_validate_guest_char(&mut self, src: &mut Source) -> &'static str {
@@ -580,7 +581,7 @@ impl<'a> Instantiator<'a> {
 
     fn instantiate_static_module(&mut self, idx: StaticModuleIndex, args: &[CoreDef]) {
         let i = self.instances.push(idx);
-        let core_file_name = self.gen.core_file_name(&self.name, idx.as_u32());
+        let core_file_name = self.gen.core_file_name(self.name, idx.as_u32());
         self.gen.init.pyimport("os", None);
 
         uwriteln!(
@@ -704,18 +705,15 @@ impl<'a> Instantiator<'a> {
         // can be plumbed through to string lifting/lowering below.
         assert_eq!(opts.string_encoding, StringEncoding::Utf8);
 
-        let memory = match opts.memory {
-            Some(idx) => Some(format!("{this}._core_memory{}", idx.as_u32())),
-            None => None,
-        };
-        let realloc = match opts.realloc {
-            Some(idx) => Some(format!("{this}._realloc{}", idx.as_u32())),
-            None => None,
-        };
-        let post_return = match opts.post_return {
-            Some(idx) => Some(format!("{this}._post_return{}", idx.as_u32())),
-            None => None,
-        };
+        let memory = opts
+            .memory
+            .map(|idx| format!("{this}._core_memory{}", idx.as_u32()));
+        let realloc = opts
+            .realloc
+            .map(|idx| format!("{this}._realloc{}", idx.as_u32()));
+        let post_return = opts
+            .post_return
+            .map(|idx| format!("{this}._post_return{}", idx.as_u32()));
 
         let mut sizes = SizeAlign::default();
         sizes.fill(iface);
@@ -1772,7 +1770,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         name.to_upper_camel_case(),
                         case.name.to_upper_camel_case()
                     );
-                    if block_results.len() > 0 {
+                    if !block_results.is_empty() {
                         assert!(block_results.len() == 1);
                         self.src.push_str(&block_results[0]);
                     }
@@ -1937,7 +1935,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::OptionLift { ty, .. } => {
                 let (some, some_results) = self.blocks.pop().unwrap();
                 let (none, none_results) = self.blocks.pop().unwrap();
-                assert!(none_results.len() == 0);
+                assert!(none_results.is_empty());
                 assert!(some_results.len() == 1);
                 let some_result = &some_results[0];
 
@@ -2002,9 +2000,8 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.src.dedent();
                 self.src.push_str("else:\n");
                 self.src.indent();
-                self.src.push_str(&format!(
-                    "raise TypeError(\"invalid variant specified for expected\")\n",
-                ));
+                self.src
+                    .push_str("raise TypeError(\"invalid variant specified for expected\")\n");
                 self.src.dedent();
             }
 
@@ -2198,7 +2195,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.payloads.push(name);
             }
             Instruction::CallWasm { sig, .. } => {
-                if sig.results.len() > 0 {
+                if !sig.results.is_empty() {
                     for i in 0..sig.results.len() {
                         if i > 0 {
                             self.src.push_str(", ");
@@ -2211,7 +2208,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
                 self.src.push_str(&self.callee);
                 self.src.push_str("(caller");
-                if operands.len() > 0 {
+                if !operands.is_empty() {
                     self.src.push_str(", ");
                 }
                 self.src.push_str(&operands.join(", "));
@@ -2234,7 +2231,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     self.src.push_str(&result);
                     results.push(result);
                 }
-                if func.results.len() > 0 {
+                if !func.results.is_empty() {
                     self.src.push_str(" = ");
                 }
                 match &func.kind {
