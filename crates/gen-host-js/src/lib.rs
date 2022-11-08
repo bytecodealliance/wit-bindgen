@@ -65,9 +65,9 @@ pub struct Opts {
         )
     )]
     pub instantiation: bool,
-    /// Inline core WebAssembly modules as base64 strings.
-    #[cfg_attr(feature = "clap", arg(long, conflicts_with = "instantiation"))]
-    pub base64: bool,
+    /// Specify how generated WebAssembly core modules are loaded
+    #[cfg_attr(feature = "clap", arg(long, conflicts_with = "instantiation", value_enum, default_value_t = Load::Fetch))]
+    pub load: Load,
     /// Comma-separated list of "from-specifier=./to-specifier.js" mappings of
     /// component import specifiers to JS import specifiers.
     #[cfg_attr(feature = "clap", arg(long), clap(value_parser = maps_str_to_map))]
@@ -89,6 +89,18 @@ pub struct Opts {
     /// lifting as a production optimization
     #[cfg_attr(feature = "clap", arg(long))]
     pub valid_lifting_optimization: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum Load {
+    /// Fetch core WebAssembly modules as separate files.
+    #[default]
+    Fetch,
+    /// Inline core WebAssembly modules as base64 strings.
+    Base64,
+    /// Define custom scoped loadWasm & instantiateWasm functions.
+    Custom,
 }
 
 impl Opts {
@@ -113,8 +125,9 @@ enum Intrinsic {
     GetErrorPayload,
     HasOwnProperty,
     I32ToF32,
-    IsLE,
     I64ToF64,
+    InstantiateWasm,
+    IsLE,
     LoadWasm,
     ThrowInvalidBool,
     ThrowUninitialized,
@@ -156,8 +169,9 @@ impl Intrinsic {
             Intrinsic::GetErrorPayload => "getErrorPayload",
             Intrinsic::HasOwnProperty => "hasOwnProperty",
             Intrinsic::I32ToF32 => "i32ToF32",
-            Intrinsic::IsLE => "isLE",
             Intrinsic::I64ToF64 => "i64ToF64",
+            Intrinsic::InstantiateWasm => "instantiateWasm",
+            Intrinsic::IsLE => "isLE",
             Intrinsic::LoadWasm => "loadWasm",
             Intrinsic::ThrowInvalidBool => "throwInvalidBool",
             Intrinsic::ThrowUninitialized => "throwUninitialized",
@@ -279,19 +293,31 @@ impl ComponentGenerator for Js {
             }
         }
 
-        if self.opts.base64 && self.core_module_cnt > 0 {
+        if !self.opts.instantiation
+            && !matches!(self.opts.load, Load::Custom)
+            && self.core_module_cnt > 0
+        {
             let mut first = true;
-            output.push_str("const ");
+            uwrite!(output, "const ");
             for i in 0..self.core_module_cnt {
                 if first {
                     first = false;
                 } else {
-                    output.push_str(", ");
+                    uwriteln!(output, ",");
                 }
-                let data = files.remove(&self.core_file_name(name, i as u32)).unwrap();
-                uwrite!(output, "BINARY{i} = '{}'", base64::encode(&data));
+                let name = self.core_file_name(name, i as u32);
+                match self.opts.load {
+                    Load::Fetch => {
+                        uwrite!(output, "CORE{i} = new URL('./{name}', import.meta.url)")
+                    }
+                    Load::Base64 => {
+                        let data = files.remove(&name).unwrap();
+                        uwrite!(output, "CORE{i} = '{}'", base64::encode(&data));
+                    }
+                    Load::Custom => {}
+                }
             }
-            output.push_str(";");
+            uwriteln!(output, ";");
         }
 
         let (maybe_init_export, maybe_init) = if self.opts.tla_compat {
@@ -526,8 +552,25 @@ impl Js {
                 const dataView = mem => dv.buffer === mem.buffer ? dv : dv = new DataView(mem.buffer);
             "),
 
-            Intrinsic::LoadWasm => if self.opts.base64 {
-                if self.opts.nodejs_compat {
+            Intrinsic::LoadWasm => match self.opts.load {
+                Load::Fetch => if self.opts.nodejs_compat {
+                    self.src.js_intrinsics("
+                        const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
+                        let _fs;
+                        async function loadWasm (url) {
+                            if (isNode) {
+                                _fs = _fs || await import('fs/promises');
+                                return WebAssembly.compile(await _fs.readFile(url));
+                            }
+                            return fetch(url).then(WebAssembly.compileStreaming);
+                        }
+                    ")
+                } else {
+                    self.src.js_intrinsics("
+                        const loadWasm = url => fetch(url).then(WebAssembly.compileStreaming);
+                    ")
+                },
+                Load::Base64 => if self.opts.nodejs_compat {
                     self.src.js_intrinsics("
                         const loadWasm = str => WebAssembly.compile(typeof Buffer !== 'undefined' ? Buffer.from(str, 'base64') : Uint8Array.from(atob(str), b => b.charCodeAt(0)));
                     ")
@@ -535,22 +578,13 @@ impl Js {
                     self.src.js_intrinsics("
                         const loadWasm = str => WebAssembly.compile(Uint8Array.from(atob(str), b => b.charCodeAt(0)));
                     ")
-                }
-            } else if self.opts.nodejs_compat {
+                },
+                Load::Custom => {},
+            },
+
+            Intrinsic::InstantiateWasm => if !matches!(self.opts.load, Load::Custom) {
                 self.src.js_intrinsics("
-                    const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
-                    let _fs;
-                    async function loadWasm (url) {
-                        if (isNode) {
-                            _fs = _fs || await import('fs/promises');
-                            return WebAssembly.compile(await _fs.readFile(url));
-                        }
-                        return fetch(url).then(WebAssembly.compileStreaming);
-                    }
-                ")
-            } else {
-                self.src.js_intrinsics("
-                    const loadWasm = url => fetch(url).then(WebAssembly.compileStreaming);
+                    const instantiateWasm = WebAssembly.instantiate;
                 ")
             },
 
@@ -826,22 +860,16 @@ impl Instantiator<'_> {
         for init in self.component.initializers.iter() {
             if let GlobalInitializer::InstantiateModule(InstantiateModule::Static(idx, _)) = init {
                 // Get the compiled WebAssembly.Module objects in parallel
-                let local_name = format!("module{}", idx.as_u32());
-                let name = self.gen.core_file_name(&self.name, idx.as_u32());
+                let idx_num = idx.as_u32();
+                let local_name = format!("module{}", idx_num);
+                let name = self.gen.core_file_name(&self.name, idx_num);
                 if self.gen.opts.instantiation {
                     uwriteln!(self.src.js, "const {local_name} = compileCore('{name}');");
-                } else if self.gen.opts.base64 {
-                    let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
-                    let idx_num = idx.as_u32();
-                    uwriteln!(
-                        self.src.js_init,
-                        "const {local_name} = {load_wasm}(BINARY{idx_num});"
-                    );
                 } else {
                     let load_wasm = self.gen.intrinsic(Intrinsic::LoadWasm);
                     uwriteln!(
                         self.src.js_init,
-                        "const {local_name} = {load_wasm}(new URL('./{name}', import.meta.url));"
+                        "const {local_name} = {load_wasm}(CORE{idx_num});"
                     );
                 }
             }
@@ -979,11 +1007,12 @@ impl Instantiator<'_> {
 
         let i = self.instances.push(idx);
         let iu32 = i.as_u32();
+        let instantiate = self.gen.intrinsic(Intrinsic::InstantiateWasm);
         uwriteln!(self.src.js, "let exports{iu32};");
         uwriteln!(
             self.src.js_init,
             "
-                ({{ exports: exports{iu32} }} = await WebAssembly.instantiate(await module{}{imports}));\
+                ({{ exports: exports{iu32} }} = await {instantiate}(await module{}{imports}));\
             ",
             idx.as_u32()
         );
