@@ -94,13 +94,13 @@ pub struct Opts {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum Load {
-    /// Define custom scoped loadWasm & instantiateWasm functions.
-    Custom,
-    /// Inline core WebAssembly modules as base64 strings.
-    Base64,
     /// Fetch core WebAssembly modules as separate files.
     #[default]
     Fetch,
+    /// Inline core WebAssembly modules as base64 strings.
+    Base64,
+    /// Define custom scoped loadWasm & instantiateWasm functions.
+    Custom,
 }
 
 impl Opts {
