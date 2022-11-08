@@ -1289,10 +1289,12 @@ impl<'a> EncodingState<'a> {
         exports: impl Iterator<Item = (&'b Interface, bool)>,
         types: &TypeEncoder<'b>,
         metadata: &BindgenMetadata,
-        instance_index: u32,
-        realloc_index: Option<u32>,
+        instance_index: Option<u32>,
+        realloc_index: Option<Option<u32>>,
     ) -> Result<()> {
         for (export, is_default) in exports {
+            let instance_index = instance_index.expect("exports require instantiation");
+            let realloc_index = realloc_index.expect("exports require instantiation");
             let mut interface_exports = Vec::new();
 
             // Make sure all named types are present in the exported instance
@@ -2347,8 +2349,8 @@ impl ComponentEncoder {
                 exports,
                 &types,
                 &self.metadata,
-                state.instance_index.expect("instantiated by now"),
-                state.realloc_index,
+                Some(state.instance_index.expect("instantiated by now")),
+                Some(state.realloc_index),
             )?;
             for (name, (_, metadata)) in self.adapters.iter() {
                 let exports = metadata
@@ -2361,8 +2363,8 @@ impl ComponentEncoder {
                     exports,
                     &types,
                     &metadata,
-                    state.adapter_instances[name.as_str()],
-                    state.adapter_export_reallocs[name.as_str()],
+                    state.adapter_instances.get(name.as_str()).cloned(),
+                    state.adapter_export_reallocs.get(name.as_str()).cloned(),
                 )?;
             }
         }
