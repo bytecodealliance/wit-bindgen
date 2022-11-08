@@ -1152,7 +1152,8 @@ struct EncodingState<'a> {
     adapter_instances: IndexMap<&'a str, u32>,
     /// A map of the index of the aliased realloc function for each adapter
     /// module.
-    adapter_reallocs: IndexMap<&'a str, Option<u32>>,
+    adapter_import_reallocs: IndexMap<&'a str, Option<u32>>,
+    adapter_export_reallocs: IndexMap<&'a str, Option<u32>>,
 }
 
 impl<'a> EncodingState<'a> {
@@ -1288,9 +1289,9 @@ impl<'a> EncodingState<'a> {
         exports: impl Iterator<Item = (&'b Interface, bool)>,
         types: &TypeEncoder<'b>,
         metadata: &BindgenMetadata,
+        instance_index: u32,
+        realloc_index: Option<u32>,
     ) -> Result<()> {
-        let core_instance_index = self.instance_index.expect("must be instantiated");
-
         for (export, is_default) in exports {
             let mut interface_exports = Vec::new();
 
@@ -1313,11 +1314,9 @@ impl<'a> EncodingState<'a> {
             // Alias the exports from the core module
             for func in &export.functions {
                 let name = export.core_export_name(is_default, func);
-                let core_func_index = self.component.alias_core_item(
-                    core_instance_index,
-                    ExportKind::Func,
-                    name.as_ref(),
-                );
+                let core_func_index =
+                    self.component
+                        .alias_core_item(instance_index, ExportKind::Func, name.as_ref());
 
                 let ty = *types
                     .func_type_map
@@ -1331,11 +1330,11 @@ impl<'a> EncodingState<'a> {
 
                 let encoding = metadata.export_encodings[&name[..]];
                 let mut options = options
-                    .into_iter(encoding, self.memory_index, self.realloc_index)?
+                    .into_iter(encoding, self.memory_index, realloc_index)?
                     .collect::<Vec<_>>();
                 if export.guest_export_needs_post_return(func) {
                     let post_return = self.component.alias_core_item(
-                        core_instance_index,
+                        instance_index,
                         ExportKind::Func,
                         &format!("cabi_post_{name}"),
                     );
@@ -1584,7 +1583,7 @@ impl<'a> EncodingState<'a> {
 
                     let realloc = match realloc {
                         CustomModule::Main => self.realloc_index,
-                        CustomModule::Adapter(name) => self.adapter_reallocs[name],
+                        CustomModule::Adapter(name) => self.adapter_import_reallocs[name],
                     };
 
                     self.component.lower_func(
@@ -1661,6 +1660,20 @@ impl<'a> EncodingState<'a> {
             let info = &imports.adapters[name];
             let mut args = Vec::new();
 
+            let mut core_exports = Vec::new();
+            for export_name in info.needs_core_exports.iter() {
+                let index = self.component.alias_core_item(
+                    self.instance_index
+                        .expect("adaptee index set at this point"),
+                    ExportKind::Func,
+                    export_name,
+                );
+                core_exports.push((export_name.as_str(), ExportKind::Func, index));
+            }
+            if !core_exports.is_empty() {
+                let instance = self.component.instantiate_core_exports(core_exports);
+                args.push(("__main_module__", ModuleArg::Instance(instance)));
+            }
             // If the adapter module requires a `memory` import then specify
             // that here. For now assume that the module name of the memory is
             // different from the imported interface. That's true enough for now
@@ -1690,15 +1703,27 @@ impl<'a> EncodingState<'a> {
             }
             let instance = self.component.instantiate(self.adapter_modules[name], args);
             self.adapter_instances.insert(name, instance);
-            let realloc = if info.has_realloc {
-                Some(
-                    self.component
-                        .alias_core_item(instance, ExportKind::Func, "cabi_realloc"),
-                )
+
+            let realloc = if info.has_export_realloc {
+                Some(self.component.alias_core_item(
+                    instance,
+                    ExportKind::Func,
+                    "cabi_export_realloc",
+                ))
             } else {
                 None
             };
-            self.adapter_reallocs.insert(name, realloc);
+            self.adapter_export_reallocs.insert(name, realloc);
+            let realloc = if info.has_import_realloc {
+                Some(self.component.alias_core_item(
+                    instance,
+                    ExportKind::Func,
+                    "cabi_import_realloc",
+                ))
+            } else {
+                None
+            };
+            self.adapter_import_reallocs.insert(name, realloc);
         }
     }
 }
@@ -2171,9 +2196,6 @@ impl ComponentEncoder {
     /// in the core wasm that's being wrapped.
     pub fn adapter(mut self, name: &str, bytes: &[u8]) -> Result<Self> {
         let (wasm, metadata) = metadata::decode(bytes)?;
-        if !metadata.interfaces.exports.is_empty() || metadata.interfaces.default.is_some() {
-            bail!("adapters cannot have any exported interfaces");
-        }
         self.adapters.insert(name.to_string(), (wasm, metadata));
         Ok(self)
     }
@@ -2238,6 +2260,16 @@ impl ComponentEncoder {
             &mut imports,
         )?;
 
+        for (_name, (_, metadata)) in self.adapters.iter() {
+            let exports = metadata
+                .interfaces
+                .default
+                .iter()
+                .map(|i| (i, true))
+                .chain(metadata.interfaces.exports.iter().map(|(_, i)| (i, false)));
+            types.encode_func_types(exports.map(|(i, _)| i))?;
+        }
+
         if self.types_only {
             if !self.module.is_empty() {
                 bail!("a module cannot be specified for a types-only encoding");
@@ -2288,8 +2320,10 @@ impl ComponentEncoder {
             // register its metadata in our data structures.
             for (name, required) in info.adapters_required.iter() {
                 let (wasm, metadata) = &self.adapters[*name];
+                /*
                 let wasm = crate::gc::run(wasm, required)
                     .context("failed to reduce input adapter module to its minimal size")?;
+                */
                 let info = validate_adapter_module(&wasm, metadata, required)
                     .context("failed to validate the imports of the minimized adapter module")?;
                 state.encode_core_adapter_module(name, &wasm);
@@ -2309,7 +2343,28 @@ impl ComponentEncoder {
             state.encode_imports(&imports);
             state.encode_core_module(&self.module);
             state.encode_core_instantiation(&imports, info)?;
-            state.encode_exports(exports, &types, &self.metadata)?;
+            state.encode_exports(
+                exports,
+                &types,
+                &self.metadata,
+                state.instance_index.expect("instantiated by now"),
+                state.realloc_index,
+            )?;
+            for (name, (_, metadata)) in self.adapters.iter() {
+                let exports = metadata
+                    .interfaces
+                    .default
+                    .iter()
+                    .map(|i| (i, true))
+                    .chain(metadata.interfaces.exports.iter().map(|(_, i)| (i, false)));
+                state.encode_exports(
+                    exports,
+                    &types,
+                    &metadata,
+                    state.adapter_instances[name.as_str()],
+                    state.adapter_export_reallocs[name.as_str()],
+                )?;
+            }
         }
 
         let bytes = state.component.finish();

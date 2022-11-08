@@ -117,7 +117,7 @@ pub fn validate_module<'a>(
 
                             assert!(map.insert(import.name, ty).is_none());
                         }
-                        _ => bail!("module is only allowed to import functions"),
+                        _ => bail!("module is only allowed to import functions {:?}", import),
                     }
                 }
             }
@@ -207,8 +207,14 @@ pub struct ValidatedAdapter<'a> {
     /// import from the `required_import` above.
     pub needs_memory: Option<(String, String)>,
 
-    /// Flag for whether a `cabi_realloc` function was found within this module.
-    pub has_realloc: bool,
+    /// TKTK
+    pub needs_core_exports: IndexSet<String>,
+
+    /// FIXME Flag for whether a `cabi_realloc` function was found within this module.
+    pub has_import_realloc: bool,
+
+    /// FIXME Flag for whether a `cabi_realloc` function was found within this module.
+    pub has_export_realloc: bool,
 
     /// Metadata about the original adapter module.
     pub metadata: &'a BindgenMetadata,
@@ -240,7 +246,9 @@ pub fn validate_adapter_module<'a>(
     let mut ret = ValidatedAdapter {
         required_imports: Default::default(),
         needs_memory: None,
-        has_realloc: false,
+        needs_core_exports: Default::default(),
+        has_import_realloc: false,
+        has_export_realloc: false,
         metadata,
     };
 
@@ -295,8 +303,11 @@ pub fn validate_adapter_module<'a>(
                     match export.kind {
                         ExternalKind::Func => {
                             export_funcs.insert(export.name, export.index);
-                            if export.name == "cabi_realloc" {
-                                ret.has_realloc = true;
+                            if export.name == "cabi_export_realloc" {
+                                ret.has_export_realloc = true;
+                            }
+                            if export.name == "cabi_import_realloc" {
+                                ret.has_import_realloc = true;
                             }
                         }
                         _ => continue,
@@ -316,15 +327,20 @@ pub fn validate_adapter_module<'a>(
 
     let types = types.unwrap();
     for (name, funcs) in import_funcs {
-        let interface = metadata
-            .interfaces
-            .imports
-            .get(name)
-            .ok_or_else(|| anyhow!("adapter module imports unknown module `{name}`"))?;
-        let required_funcs = validate_imported_interface(interface, name, &funcs, &types)?;
-        assert_eq!(interface.name, name);
-        ret.required_imports
-            .insert(interface.name.as_str(), required_funcs);
+        if name == "__main_module__" {
+            ret.needs_core_exports
+                .extend(funcs.iter().map(|(name, _ty)| name.to_string()));
+        } else {
+            let interface = metadata
+                .interfaces
+                .imports
+                .get(name)
+                .ok_or_else(|| anyhow!("adapter module imports unknown module `{name}`"))?;
+            let required_funcs = validate_imported_interface(interface, name, &funcs, &types)?;
+            assert_eq!(interface.name, name);
+            ret.required_imports
+                .insert(interface.name.as_str(), required_funcs);
+        }
     }
 
     for (name, ty) in required {
