@@ -30,6 +30,8 @@ fn wasm_sig_to_func_type(signature: WasmSignature) -> FuncType {
     )
 }
 
+pub const MAIN_MODULE_IMPORT_NAME: &str = "__main_module__";
+
 /// Metadata about a validated module and what was found internally.
 ///
 /// All imports to the module are described by the union of `required_imports`
@@ -60,7 +62,7 @@ pub struct ValidatedModule<'a> {
     pub has_memory: bool,
 
     /// Whether or not this module exported a `cabi_realloc` function.
-    pub has_realloc: bool,
+    pub realloc: Option<&'a str>,
 
     /// The original metadata specified for this module.
     pub metadata: &'a BindgenMetadata,
@@ -90,7 +92,7 @@ pub fn validate_module<'a>(
         required_imports: Default::default(),
         adapters_required: Default::default(),
         has_memory: false,
-        has_realloc: false,
+        realloc: None,
         metadata,
     };
 
@@ -117,7 +119,7 @@ pub fn validate_module<'a>(
 
                             assert!(map.insert(import.name, ty).is_none());
                         }
-                        _ => bail!("module is only allowed to import functions {:?}", import),
+                        _ => bail!("module is only allowed to import functions"),
                     }
                 }
             }
@@ -128,9 +130,10 @@ pub fn validate_module<'a>(
                     match export.kind {
                         ExternalKind::Func => {
                             if is_canonical_function(export.name) {
+                                // TODO: validate that the cabi_realloc
+                                // function is [i32, i32, i32, i32] -> [i32]
                                 if export.name == "cabi_realloc" {
-                                    // TODO: validate that the cabi_realloc function is [i32, i32, i32, i32] -> [i32]
-                                    ret.has_realloc = true;
+                                    ret.realloc = Some(export.name);
                                 }
                                 continue;
                             }
@@ -210,11 +213,12 @@ pub struct ValidatedAdapter<'a> {
     /// TKTK
     pub needs_core_exports: IndexSet<String>,
 
-    /// FIXME Flag for whether a `cabi_realloc` function was found within this module.
-    pub has_import_realloc: bool,
+    /// Name of the exported function to use for the realloc canonical option
+    /// for lowering imports.
+    pub import_realloc: Option<String>,
 
-    /// FIXME Flag for whether a `cabi_realloc` function was found within this module.
-    pub has_export_realloc: bool,
+    /// Same as `import_realloc`, but for exported interfaces.
+    pub export_realloc: Option<String>,
 
     /// Metadata about the original adapter module.
     pub metadata: &'a BindgenMetadata,
@@ -236,7 +240,7 @@ pub struct ValidatedAdapter<'a> {
 pub fn validate_adapter_module<'a>(
     bytes: &[u8],
     metadata: &'a BindgenMetadata,
-    required: &IndexMap<&str, FuncType>,
+    required: &IndexMap<String, FuncType>,
 ) -> Result<ValidatedAdapter<'a>> {
     let mut validator = Validator::new();
     let mut import_funcs = IndexMap::new();
@@ -247,8 +251,8 @@ pub fn validate_adapter_module<'a>(
         required_imports: Default::default(),
         needs_memory: None,
         needs_core_exports: Default::default(),
-        has_import_realloc: false,
-        has_export_realloc: false,
+        import_realloc: None,
+        export_realloc: None,
         metadata,
     };
 
@@ -304,10 +308,10 @@ pub fn validate_adapter_module<'a>(
                         ExternalKind::Func => {
                             export_funcs.insert(export.name, export.index);
                             if export.name == "cabi_export_realloc" {
-                                ret.has_export_realloc = true;
+                                ret.export_realloc = Some(export.name.to_string());
                             }
                             if export.name == "cabi_import_realloc" {
-                                ret.has_import_realloc = true;
+                                ret.import_realloc = Some(export.name.to_string());
                             }
                         }
                         _ => continue,
@@ -327,7 +331,7 @@ pub fn validate_adapter_module<'a>(
 
     let types = types.unwrap();
     for (name, funcs) in import_funcs {
-        if name == "__main_module__" {
+        if name == MAIN_MODULE_IMPORT_NAME {
             ret.needs_core_exports
                 .extend(funcs.iter().map(|(name, _ty)| name.to_string()));
         } else {
@@ -344,7 +348,7 @@ pub fn validate_adapter_module<'a>(
     }
 
     for (name, ty) in required {
-        let idx = match export_funcs.get(name) {
+        let idx = match export_funcs.get(name.as_str()) {
             Some(idx) => *idx,
             None => bail!("adapter module did not export `{name}`"),
         };
