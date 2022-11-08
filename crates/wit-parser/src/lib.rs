@@ -275,6 +275,10 @@ impl Results {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn throws<'a>(&self, iface: &'a Interface) -> Option<(Option<&'a Type>, Option<&'a Type>)> {
         if self.len() != 1 {
             return None;
