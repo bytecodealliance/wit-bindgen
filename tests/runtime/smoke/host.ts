@@ -1,4 +1,4 @@
-// Flags: --base64 --compat --map testwasi=./helpers.js,imports=./host.js
+// Flags: --load=base64 --compat --map testwasi=./helpers.js,imports=./host.js
 function assert(x: boolean, msg: string) {
   if (!x)
     throw new Error(msg);
