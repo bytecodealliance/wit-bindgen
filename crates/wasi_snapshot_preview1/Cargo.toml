@@ -10,7 +10,3 @@ wit-bindgen-guest-rust = { workspace = true, default-features = false, features 
 [lib]
 crate-type = ["cdylib"]
 test = false
-
-[features]
-default = []
-command = []
