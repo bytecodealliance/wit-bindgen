@@ -5,8 +5,12 @@ edition.workspace = true
 
 [dependencies]
 wasi = "0.11.0"
-wit-bindgen-guest-rust = { workspace = true }
+wit-bindgen-guest-rust = { workspace = true, default-features = false, features = ["macros"] }
 
 [lib]
 crate-type = ["cdylib"]
 test = false
+
+[features]
+default = []
+command = []

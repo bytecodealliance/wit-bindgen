@@ -18,19 +18,48 @@
 use std::arch::wasm32::unreachable;
 use wasi::*;
 
+#[cfg(not(feature = "command"))]
 wit_bindgen_guest_rust::generate!({
     import: "testwasi.wit",
-    name: "testwasi",
+    name: "test_wasi",
 });
 
-// Nothing in this wasm module should end up needing cabi_realloc. However, if
-// we don't define this trapping implementation of the export, we'll pull in
-// the one from wit_bindgen_guest_rust, which will pull in the libc allocator
-// and a bunch of panic related machinery from std, which will use vtables
-// and therefore create a Wasm ElementSection, which will make the resulting
-// wasm unusable as an adapter module.
+#[cfg(feature = "command")]
+wit_bindgen_guest_rust::generate!({
+    import: "testwasi.wit",
+    default: "testcommand.wit",
+    name: "test_wasi",
+});
+
+struct Export;
+#[cfg(feature = "command")]
+export_test_wasi!(Export);
+
+#[cfg(feature = "command")]
+impl test_wasi::TestWasi for Export {
+    fn command(args: Vec<String>) {
+        std::mem::forget(args);
+        #[link(wasm_import_module = "__main_module__")]
+        extern "C" {
+            fn _start();
+        }
+        unsafe { _start() }
+    }
+}
+
 #[no_mangle]
-unsafe extern "C" fn cabi_realloc(
+unsafe extern "C" fn cabi_import_realloc(
+    old_ptr: *mut u8,
+    old_len: usize,
+    align: usize,
+    new_len: usize,
+) -> *mut u8 {
+    unreachable()
+}
+
+#[cfg(feature = "command")]
+#[no_mangle]
+unsafe extern "C" fn cabi_export_realloc(
     old_ptr: *mut u8,
     old_len: usize,
     align: usize,
