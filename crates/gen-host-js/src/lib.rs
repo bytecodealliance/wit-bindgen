@@ -85,6 +85,10 @@ pub struct Opts {
     /// via an async $init promise export to wait for instead.
     #[cfg_attr(feature = "clap", arg(long, group = "compatibility"))]
     pub tla_compat: bool,
+    /// Disable verification of component Wasm data structures when
+    /// lifting as a production optimization
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub valid_lifting_optimization: bool,
 }
 
 impl Opts {
@@ -488,7 +492,7 @@ impl Js {
             Intrinsic::ClampGuest => self.src.js_intrinsics("
                 function clampGuest(i, min, max) {
                     if (i < min || i > max) \
-                        throw new RangeError(`must be between ${min} and ${max}`);
+                        throw new TypeError(`must be between ${min} and ${max}`);
                     return i;
                 }
             "),
@@ -557,7 +561,7 @@ impl Js {
             Intrinsic::ValidateGuestChar => self.src.js_intrinsics("
                 function validateGuestChar(i) {
                     if ((i > 0x10ffff) || (i >= 0xd800 && i <= 0xdfff)) \
-                        throw new RangeError(`not a valid char`);
+                        throw new TypeError(`not a valid char`);
                     return String.fromCodePoint(i);
                 }
             "),
@@ -713,13 +717,13 @@ impl Js {
 
             Intrinsic::ThrowInvalidBool => self.src.js_intrinsics("
                 function throwInvalidBool() {
-                    throw new RangeError('invalid variant discriminant for bool');
+                    throw new TypeError('invalid variant discriminant for bool');
                 }
             "),
 
             Intrinsic::ThrowUninitialized => self.src.js_intrinsics("
                 function throwUninitialized() {
-                    throw new TypeError('Wasm uninitialized, first wait for the exported initialization promise via `await $init`');
+                    throw new TypeError('Wasm uninitialized use `await $init` first');
                 }
             "),
         }
@@ -1830,10 +1834,14 @@ impl Bindgen for FunctionBindgen<'_> {
                 let tmp = self.tmp();
                 self.src
                     .js(&format!("const bool{} = {};\n", tmp, operands[0]));
-                let throw = self.gen.intrinsic(Intrinsic::ThrowInvalidBool);
-                results.push(format!(
-                    "bool{tmp} == 0 ? false : (bool{tmp} == 1 ? true : {throw}())"
-                ));
+                if self.gen.opts.valid_lifting_optimization {
+                    results.push(format!("!!bool{tmp}"));
+                } else {
+                    let throw = self.gen.intrinsic(Intrinsic::ThrowInvalidBool);
+                    results.push(format!(
+                        "bool{tmp} == 0 ? false : (bool{tmp} == 1 ? true : {throw}())"
+                    ));
+                }
             }
             Instruction::I32FromBool => {
                 results.push(format!("{} ? 1 : 0", operands[0]));
@@ -1944,28 +1952,27 @@ impl Bindgen for FunctionBindgen<'_> {
                     // We only need an extraneous bits check if the number of flags isn't a multiple
                     // of 32, because if it is then all the bits are used and there are no
                     // extraneous bits.
-                    if flags.flags.len() % 32 != 0 {
+                    if flags.flags.len() % 32 != 0 && !self.gen.opts.valid_lifting_optimization {
                         let mask: u32 = 0xffffffff << (flags.flags.len() % 32);
-                        self.src.js(&format!(
-                            "\
-                            if (({op} & {mask}) !== 0) {{
+                        uwriteln!(
+                            self.src.js,
+                            "if (({op} & {mask}) !== 0) {{
                                 throw new TypeError('flags have extraneous bits set');
-                            }}
-                            "
-                        ));
+                            }}"
+                        );
                     }
                 }
 
-                self.src.js(&format!("const flags{tmp} = {{\n"));
+                uwriteln!(self.src.js, "const flags{tmp} = {{");
 
                 for (i, flag) in flags.flags.iter().enumerate() {
                     let flag = flag.name.to_lower_camel_case();
                     let op = &operands[i / 32];
                     let mask: u32 = 1 << (i % 32);
-                    self.src.js(&format!("{flag}: Boolean({op} & {mask}),\n"));
+                    uwriteln!(self.src.js, "{flag}: Boolean({op} & {mask}),");
                 }
 
-                self.src.js("};\n");
+                uwriteln!(self.src.js, "}};");
             }
 
             Instruction::VariantPayloadName => results.push("e".to_string()),
@@ -1981,37 +1988,41 @@ impl Bindgen for FunctionBindgen<'_> {
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
                 let tmp = self.tmp();
-                self.src
-                    .js(&format!("const variant{} = {};\n", tmp, operands[0]));
+                let operand = &operands[0];
+                uwriteln!(self.src.js, "const variant{tmp} = {operand};");
 
                 for i in 0..result_types.len() {
-                    self.src.js(&format!("let variant{}_{};\n", tmp, i));
+                    uwriteln!(self.src.js, "let variant{tmp}_{i};");
                     results.push(format!("variant{}_{}", tmp, i));
                 }
 
                 let expr_to_match = format!("variant{}.tag", tmp);
 
-                self.src.js(&format!("switch ({}) {{\n", expr_to_match));
+                uwriteln!(self.src.js, "switch ({expr_to_match}) {{");
                 for (case, (block, block_results)) in variant.cases.iter().zip(blocks) {
-                    self.src.js(&format!("case '{}': {{\n", case.name.as_str()));
+                    uwriteln!(self.src.js, "case '{}': {{", case.name.as_str());
                     if case.ty.is_some() {
-                        self.src.js(&format!("const e = variant{}.val;\n", tmp));
+                        uwriteln!(self.src.js, "const e = variant{tmp}.val;");
                     }
                     self.src.js(&block);
 
                     for (i, result) in block_results.iter().enumerate() {
-                        self.src
-                            .js(&format!("variant{}_{} = {};\n", tmp, i, result));
+                        uwriteln!(self.src.js, "variant{tmp}_{i} = {result};");
                     }
-                    self.src.js("break;\n}\n");
+                    uwriteln!(
+                        self.src.js,
+                        "break;
+                        }}"
+                    );
                 }
                 let variant_name = name.to_upper_camel_case();
-                self.src.js("default:\n");
-                self.src.js(&format!(
-                    "throw new RangeError('invalid variant specified for {}');\n",
-                    variant_name
-                ));
-                self.src.js("}\n");
+                uwriteln!(
+                    self.src.js,
+                    "default: {{
+                        throw new TypeError('invalid variant specified for {variant_name}');
+                    }}"
+                );
+                uwriteln!(self.src.js, "}}");
             }
 
             Instruction::VariantLift { variant, name, .. } => {
@@ -2021,33 +2032,48 @@ impl Bindgen for FunctionBindgen<'_> {
                     .collect::<Vec<_>>();
 
                 let tmp = self.tmp();
+                let operand = &operands[0];
 
-                self.src.js(&format!("let variant{};\n", tmp));
-                self.src.js(&format!("switch ({}) {{\n", operands[0]));
+                uwriteln!(
+                    self.src.js,
+                    "let variant{tmp};
+                    switch ({operand}) {{"
+                );
+
                 for (i, (case, (block, block_results))) in
                     variant.cases.iter().zip(blocks).enumerate()
                 {
-                    self.src.js(&format!("case {}: {{\n", i));
-                    self.src.js(&block);
-
-                    self.src.js(&format!("variant{} = {{\n", tmp));
-                    self.src.js(&format!("tag: '{}',\n", case.name.as_str()));
+                    let tag = case.name.as_str();
+                    uwriteln!(
+                        self.src.js,
+                        "case {i}: {{
+                            {block}\
+                            variant{tmp} = {{
+                                tag: '{tag}',"
+                    );
                     if case.ty.is_some() {
                         assert!(block_results.len() == 1);
-                        self.src.js(&format!("val: {},\n", block_results[0]));
+                        uwriteln!(self.src.js, "   val: {}", block_results[0]);
                     } else {
                         assert!(block_results.len() == 0);
                     }
-                    self.src.js("};\n");
-                    self.src.js("break;\n}\n");
+                    uwriteln!(
+                        self.src.js,
+                        "   }};
+                        break;
+                        }}"
+                    );
                 }
                 let variant_name = name.to_upper_camel_case();
-                self.src.js("default:\n");
-                self.src.js(&format!(
-                    "throw new RangeError('invalid variant discriminant for {}');\n",
-                    variant_name
-                ));
-                self.src.js("}\n");
+                if !self.gen.opts.valid_lifting_optimization {
+                    uwriteln!(
+                        self.src.js,
+                        "default: {{
+                            throw new TypeError('invalid variant discriminant for {variant_name}');
+                        }}"
+                    );
+                }
+                uwriteln!(self.src.js, "}}");
                 results.push(format!("variant{}", tmp));
             }
 
@@ -2063,31 +2089,40 @@ impl Bindgen for FunctionBindgen<'_> {
                     .collect::<Vec<_>>();
                 let tmp = self.tmp();
                 let op0 = &operands[0];
-                self.src.js(&format!("const union{tmp} = {op0};\n"));
+                uwriteln!(self.src.js, "const union{tmp} = {op0};");
 
                 for i in 0..result_types.len() {
-                    self.src.js(&format!("let union{tmp}_{i};\n"));
+                    uwriteln!(self.src.js, "let union{tmp}_{i};");
                     results.push(format!("union{tmp}_{i}"));
                 }
 
-                self.src.js(&format!("switch (union{tmp}.tag) {{\n"));
+                uwriteln!(self.src.js, "switch (union{tmp}.tag) {{");
                 for (i, (_case, (block, block_results))) in
                     union.cases.iter().zip(blocks).enumerate()
                 {
-                    self.src.js(&format!("case {i}: {{\n"));
-                    self.src.js(&format!("const e = union{tmp}.val;\n"));
-                    self.src.js(&block);
+                    uwriteln!(
+                        self.src.js,
+                        "case {i}: {{
+                            const e = union{tmp}.val;
+                            {block}"
+                    );
                     for (i, result) in block_results.iter().enumerate() {
-                        self.src.js(&format!("union{tmp}_{i} = {result};\n"));
+                        uwriteln!(self.src.js, "union{tmp}_{i} = {result};");
                     }
-                    self.src.js("break;\n}\n");
+                    uwriteln!(
+                        self.src.js,
+                        "break;
+                        }}"
+                    );
                 }
                 let name = name.to_upper_camel_case();
-                self.src.js("default:\n");
-                self.src.js(&format!(
-                    "throw new RangeError('invalid union specified for {name}');\n",
-                ));
-                self.src.js("}\n");
+                uwriteln!(
+                    self.src.js,
+                    "default: {{
+                        throw new TypeError('invalid union specified for {name}');
+                    }}"
+                );
+                uwriteln!(self.src.js, "}}");
             }
 
             Instruction::UnionLift { union, name, .. } => {
@@ -2097,15 +2132,20 @@ impl Bindgen for FunctionBindgen<'_> {
                     .collect::<Vec<_>>();
 
                 let tmp = self.tmp();
+                let operand = &operands[0];
 
-                self.src.js(&format!("let union{tmp};\n"));
-                self.src.js(&format!("switch ({}) {{\n", operands[0]));
+                uwriteln!(
+                    self.src.js,
+                    "let union{tmp};
+                    switch ({operand}) {{"
+                );
                 for (i, (_case, (block, block_results))) in
                     union.cases.iter().zip(blocks).enumerate()
                 {
                     assert!(block_results.len() == 1);
                     let block_result = &block_results[0];
-                    self.src.js(&format!(
+                    uwriteln!(
+                        self.src.js,
                         "case {i}: {{
                             {block}\
                             union{tmp} = {{
@@ -2113,15 +2153,19 @@ impl Bindgen for FunctionBindgen<'_> {
                                 val: {block_result},
                             }};
                             break;
-                        }}\n"
-                    ));
+                        }}"
+                    );
                 }
                 let name = name.to_upper_camel_case();
-                self.src.js("default:\n");
-                self.src.js(&format!(
-                    "throw new RangeError('invalid union discriminant for {name}');\n",
-                ));
-                self.src.js("}\n");
+                if !self.gen.opts.valid_lifting_optimization {
+                    uwriteln!(
+                        self.src.js,
+                        "default: {{
+                            throw new TypeError('invalid union discriminant for {name}');
+                        }}"
+                    );
+                }
+                uwriteln!(self.src.js, "}}");
                 results.push(format!("union{tmp}"));
             }
 
@@ -2134,23 +2178,23 @@ impl Bindgen for FunctionBindgen<'_> {
                 let (mut none, none_results) = self.blocks.pop().unwrap();
 
                 let tmp = self.tmp();
-                self.src
-                    .js(&format!("const variant{tmp} = {};\n", operands[0]));
+                let operand = &operands[0];
+                uwriteln!(self.src.js, "const variant{tmp} = {operand};");
 
                 for i in 0..result_types.len() {
-                    self.src.js(&format!("let variant{tmp}_{i};\n"));
+                    uwriteln!(self.src.js, "let variant{tmp}_{i};");
                     results.push(format!("variant{tmp}_{i}"));
 
                     let some_result = &some_results[i];
                     let none_result = &none_results[i];
-                    some.push_str(&format!("variant{tmp}_{i} = {some_result};\n"));
-                    none.push_str(&format!("variant{tmp}_{i} = {none_result};\n"));
+                    uwriteln!(some, "variant{tmp}_{i} = {some_result};");
+                    uwriteln!(none, "variant{tmp}_{i} = {none_result};");
                 }
 
                 if self.gen.maybe_null(iface, payload) {
-                    self.src.js(&format!(
-                        "\
-                        switch (variant{tmp}.tag) {{
+                    uwriteln!(
+                        self.src.js,
+                        "switch (variant{tmp}.tag) {{
                             case 'none': {{
                                 {none}\
                                 break;
@@ -2161,28 +2205,20 @@ impl Bindgen for FunctionBindgen<'_> {
                                 break;
                             }}
                             default: {{
-                                throw new RangeError('invalid variant specified for option');
+                                throw new TypeError('invalid variant specified for option');
                             }}
-                        }}
-                        "
-                    ));
+                        }}"
+                    );
                 } else {
-                    self.src.js(&format!(
-                        "\
-                        switch (variant{tmp}) {{
-                            case null:
-                            case undefined: {{
-                                {none}\
-                                break;
-                            }}
-                            default: {{
-                                const e = variant{tmp};
-                                {some}\
-                                break;
-                            }}
-                        }}
-                        "
-                    ));
+                    uwriteln!(
+                        self.src.js,
+                        "if (variant{tmp} === null || variant{tmp} === undefined) {{
+                            {none}\
+                        }} else {{
+                            const e = variant{tmp};
+                            {some}\
+                        }}"
+                    );
                 }
             }
 
@@ -2194,49 +2230,56 @@ impl Bindgen for FunctionBindgen<'_> {
                 let some_result = &some_results[0];
 
                 let tmp = self.tmp();
+                let operand = &operands[0];
 
-                self.src.js(&format!("let variant{tmp};\n"));
-                self.src.js(&format!("switch ({}) {{\n", operands[0]));
-
-                if self.gen.maybe_null(iface, payload) {
-                    self.src.js(&format!(
-                        "\
-                            case 0: {{
-                                {none}\
-                                variant{tmp} = {{ tag: 'none' }};
-                                break;
-                            }}
-                            case 1: {{
-                                {some}\
-                                variant{tmp} = {{
-                                    tag: 'some',
-                                    val: {some_result}
-                                }};
-                                break;
-                            }}
-                        ",
-                    ));
+                let (v_none, v_some) = if self.gen.maybe_null(iface, payload) {
+                    (
+                        "{ tag: 'none' }",
+                        format!(
+                            "{{
+                                tag: 'some',
+                                val: {some_result}
+                            }}"
+                        ),
+                    )
                 } else {
-                    self.src.js(&format!(
-                        "\
+                    ("null", some_result.into())
+                };
+
+                if !self.gen.opts.valid_lifting_optimization {
+                    uwriteln!(
+                        self.src.js,
+                        "let variant{tmp};
+                        switch ({operand}) {{
                             case 0: {{
                                 {none}\
-                                variant{tmp} = null;
+                                variant{tmp} = {v_none};
                                 break;
                             }}
                             case 1: {{
                                 {some}\
-                                variant{tmp} = {some_result};
+                                variant{tmp} = {v_some};
                                 break;
                             }}
-                        ",
-                    ));
+                            default: {{
+                                throw new TypeError('invalid variant discriminant for option');
+                            }}
+                        }}"
+                    );
+                } else {
+                    uwriteln!(
+                        self.src.js,
+                        "let variant{tmp};
+                        if ({operand}) {{
+                            {some}\
+                            variant{tmp} = {v_some};
+                        }} else {{
+                            {none}\
+                            variant{tmp} = {v_none};
+                        }}"
+                    );
                 }
-                self.src.js("\
-                    default:
-                        throw new RangeError('invalid variant discriminant for option');
-                ");
-                self.src.js("}\n");
+
                 results.push(format!("variant{tmp}"));
             }
 
@@ -2248,22 +2291,22 @@ impl Bindgen for FunctionBindgen<'_> {
                 let (mut ok, ok_results) = self.blocks.pop().unwrap();
 
                 let tmp = self.tmp();
-                self.src
-                    .js(&format!("const variant{tmp} = {};\n", operands[0]));
+                let operand = &operands[0];
+                uwriteln!(self.src.js, "const variant{tmp} = {operand};");
 
                 for i in 0..result_types.len() {
-                    self.src.js(&format!("let variant{tmp}_{i};\n"));
+                    uwriteln!(self.src.js, "let variant{tmp}_{i};");
                     results.push(format!("variant{tmp}_{i}"));
 
                     let ok_result = &ok_results[i];
                     let err_result = &err_results[i];
-                    ok.push_str(&format!("variant{tmp}_{i} = {ok_result};\n"));
-                    err.push_str(&format!("variant{tmp}_{i} = {err_result};\n"));
+                    uwriteln!(ok, "variant{tmp}_{i} = {ok_result};");
+                    uwriteln!(err, "variant{tmp}_{i} = {err_result};");
                 }
 
-                self.src.js(&format!(
-                    "\
-                    switch (variant{tmp}.tag) {{
+                uwriteln!(
+                    self.src.js,
+                    "switch (variant{tmp}.tag) {{
                         case 'ok': {{
                             const e = variant{tmp}.val;
                             {ok}\
@@ -2275,11 +2318,10 @@ impl Bindgen for FunctionBindgen<'_> {
                             break;
                         }}
                         default: {{
-                            throw new RangeError('invalid variant specified for result');
+                            throw new TypeError('invalid variant specified for result');
                         }}
-                    }}
-                    "
-                ));
+                    }}"
+                );
             }
 
             Instruction::ResultLift { result, .. } => {
@@ -2301,32 +2343,52 @@ impl Bindgen for FunctionBindgen<'_> {
                 };
                 let tmp = self.tmp();
                 let op0 = &operands[0];
-                self.src.js(&format!(
-                    "
-                    let variant{tmp};
-                    switch ({op0}) {{
-                        case 0: {{
-                            {ok}\
-                            variant{tmp} = {{
-                                tag: 'ok',
-                                val: {ok_result}
-                            }};
-                            break;
-                        }}
-                        case 1: {{
+
+                if !self.gen.opts.valid_lifting_optimization {
+                    uwriteln!(
+                        self.src.js,
+                        "let variant{tmp};
+                        switch ({op0}) {{
+                            case 0: {{
+                                {ok}\
+                                variant{tmp} = {{
+                                    tag: 'ok',
+                                    val: {ok_result}
+                                }};
+                                break;
+                            }}
+                            case 1: {{
+                                {err}\
+                                variant{tmp} = {{
+                                    tag: 'err',
+                                    val: {err_result}
+                                }};
+                                break;
+                            }}
+                            default: {{
+                                throw new TypeError('invalid variant discriminant for expected');
+                            }}
+                        }}"
+                    );
+                } else {
+                    uwriteln!(
+                        self.src.js,
+                        "let variant{tmp};
+                        if ({op0}) {{
                             {err}\
                             variant{tmp} = {{
                                 tag: 'err',
                                 val: {err_result}
                             }};
-                            break;
-                        }}
-                        default: {{
-                            throw new RangeError('invalid variant discriminant for expected');
-                        }}
-                    }}
-                    ",
-                ));
+                        }} else {{
+                            {ok}\
+                            variant{tmp} = {{
+                                tag: 'ok',
+                                val: {ok_result}
+                            }};
+                        }}"
+                    );
+                }
                 results.push(format!("variant{tmp}"));
             }
 
@@ -2335,30 +2397,32 @@ impl Bindgen for FunctionBindgen<'_> {
                 let tmp = self.tmp();
 
                 let to_string = self.gen.intrinsic(Intrinsic::ToString);
-                self.src
-                    .js(&format!("const val{tmp} = {to_string}({});\n", operands[0]));
+                let operand = &operands[0];
+                uwriteln!(self.src.js, "const val{tmp} = {to_string}({operand});");
 
                 // Declare a variable to hold the result.
-                self.src.js(&format!("let enum{tmp};\n"));
-
-                self.src.js(&format!("switch (val{tmp}) {{\n"));
+                uwriteln!(
+                    self.src.js,
+                    "let enum{tmp};
+                    switch (val{tmp}) {{"
+                );
                 for (i, case) in enum_.cases.iter().enumerate() {
-                    self.src.js(&format!(
-                        "\
-                        case '{case}': {{
+                    uwriteln!(
+                        self.src.js,
+                        "case '{case}': {{
                             enum{tmp} = {i};
                             break;
-                        }}
-                        ",
+                        }}",
                         case = case.name
-                    ));
+                    );
                 }
-                self.src.js(&format!("\
-                        default: {{
-                            throw new TypeError(`\"${{val{tmp}}}\" is not one of the cases of {name}`);
-                        }}
-                    }}
-                "));
+                uwriteln!(
+                    self.src.js,
+                    "default: {{
+                        throw new TypeError(`\"${{val{tmp}}}\" is not one of the cases of {name}`);
+                    }}"
+                );
+                uwriteln!(self.src.js, "}}");
 
                 results.push(format!("enum{tmp}"));
             }
@@ -2366,29 +2430,32 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::EnumLift { name, enum_, .. } => {
                 let tmp = self.tmp();
 
-                self.src.js(&format!("let enum{tmp};\n"));
-
-                self.src.js(&format!("switch ({}) {{\n", operands[0]));
+                uwriteln!(
+                    self.src.js,
+                    "let enum{tmp};
+                    switch ({}) {{",
+                    operands[0]
+                );
                 for (i, case) in enum_.cases.iter().enumerate() {
-                    self.src.js(&format!(
-                        "\
-                        case {i}: {{
+                    uwriteln!(
+                        self.src.js,
+                        "case {i}: {{
                             enum{tmp} = '{case}';
                             break;
-                        }}
-                        ",
+                        }}",
                         case = case.name
-                    ));
+                    );
                 }
-                self.src.js(&format!(
-                    "\
-                        default: {{
-                            throw new RangeError('invalid discriminant specified for {name}');
-                        }}
-                    }}
-                    ",
-                    name = name.to_upper_camel_case()
-                ));
+                if !self.gen.opts.valid_lifting_optimization {
+                    let name = name.to_upper_camel_case();
+                    uwriteln!(
+                        self.src.js,
+                        "default: {{
+                            throw new TypeError('invalid discriminant specified for {name}');
+                        }}",
+                    );
+                }
+                uwriteln!(self.src.js, "}}");
 
                 results.push(format!("enum{tmp}"));
             }
@@ -2533,7 +2600,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(result.clone());
 
                 uwriteln!(self.src.js, "for (let i = 0; i < {len}; i++) {{");
-                uwrite!(self.src.js, "const base = {base} + i * {size};");
+                uwriteln!(self.src.js, "const base = {base} + i * {size};");
                 self.src.js(&body);
                 assert_eq!(body_results.len(), 1);
                 uwriteln!(self.src.js, "{result}.push({});", body_results[0]);
