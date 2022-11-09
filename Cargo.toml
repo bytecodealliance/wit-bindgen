@@ -27,10 +27,10 @@ env_logger = "0.9.1"
 
 wasmtime = { git = "https://github.com/bytecodealliance/wasmtime", features = ["component-model"] }
 wasmtime-environ = { git = "https://github.com/bytecodealliance/wasmtime" }
-wasmprinter = "0.2.42"
-wasmparser = "0.93.0"
-wasm-encoder = "0.19.0"
-wat = "1.0.50"
+wasmprinter = "0.2.43"
+wasmparser = "0.94.0"
+wasm-encoder = "0.19.1"
+wat = "1.0.51"
 
 wit-bindgen-core = { path = 'crates/bindgen-core', version = '0.3.0' }
 wit-bindgen-gen-guest-c = { path = 'crates/gen-guest-c', version = '0.3.0' }
