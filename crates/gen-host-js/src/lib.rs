@@ -2508,10 +2508,17 @@ impl Bindgen for FunctionBindgen<'_> {
                     "const ptr{tmp} = {realloc}(0, 0, {align}, len{tmp} * {size});"
                 );
                 // TODO: this is the wrong endianness
-                uwriteln!(
-                    self.src.js,
-                    "const src{tmp} = new Uint8Array(val{tmp}, val{tmp}.byteOffset, len{tmp} * {size});",
-                );
+                if matches!(element, Type::U8) {
+                    uwriteln!(
+                        self.src.js,
+                        "const src{tmp} = new Uint8Array(val{tmp}.buffer || val{tmp}, val{tmp}.byteOffset, len{tmp} * {size});",
+                    );
+                } else {
+                    uwriteln!(
+                        self.src.js,
+                        "const src{tmp} = new Uint8Array(val{tmp}.buffer, val{tmp}.byteOffset, len{tmp} * {size});",
+                    );
+                }
                 uwriteln!(
                     self.src.js,
                     "(new Uint8Array({memory}.buffer, ptr{tmp}, len{tmp} * {size})).set(src{tmp});",
