@@ -16,6 +16,7 @@ pub mod rt {
     // Re-export things from liballoc for convenient use.
     pub use super::alloc::{alloc, string, vec};
 
+    #[cfg(feature = "realloc")]
     #[no_mangle]
     unsafe extern "C" fn cabi_realloc(
         old_ptr: *mut u8,

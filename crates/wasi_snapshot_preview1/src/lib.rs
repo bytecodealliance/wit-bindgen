@@ -20,24 +20,8 @@ use wasi::*;
 
 wit_bindgen_guest_rust::generate!({
     import: "testwasi.wit",
-    name: "testwasi",
+    name: "test_wasi",
 });
-
-// Nothing in this wasm module should end up needing cabi_realloc. However, if
-// we don't define this trapping implementation of the export, we'll pull in
-// the one from wit_bindgen_guest_rust, which will pull in the libc allocator
-// and a bunch of panic related machinery from std, which will use vtables
-// and therefore create a Wasm ElementSection, which will make the resulting
-// wasm unusable as an adapter module.
-#[no_mangle]
-unsafe extern "C" fn cabi_realloc(
-    old_ptr: *mut u8,
-    old_len: usize,
-    align: usize,
-    new_len: usize,
-) -> *mut u8 {
-    unreachable()
-}
 
 #[no_mangle]
 pub extern "C" fn environ_get(environ: *mut *mut u8, environ_buf: *mut u8) -> Errno {
