@@ -1348,6 +1348,7 @@ impl<'a> JsInterface<'a> {
 
     fn print_list(&mut self, ty: &Type) {
         match self.array_ty(ty) {
+            Some("Uint8Array") => self.src.ts("Uint8Array | ArrayBuffer"),
             Some(ty) => self.src.ts(ty),
             None => {
                 self.print_ty(ty);
@@ -2497,7 +2498,11 @@ impl Bindgen for FunctionBindgen<'_> {
                 let size = self.sizes.size(element);
                 let align = self.sizes.align(element);
                 uwriteln!(self.src.js, "const val{tmp} = {};", operands[0]);
-                uwriteln!(self.src.js, "const len{tmp} = val{tmp}.length;");
+                if matches!(element, Type::U8) {
+                    uwriteln!(self.src.js, "const len{tmp} = val{tmp}.byteLength;");
+                } else {
+                    uwriteln!(self.src.js, "const len{tmp} = val{tmp}.length;");
+                }
                 uwriteln!(
                     self.src.js,
                     "const ptr{tmp} = {realloc}(0, 0, {align}, len{tmp} * {size});"
@@ -2505,7 +2510,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 // TODO: this is the wrong endianness
                 uwriteln!(
                     self.src.js,
-                    "const src{tmp} = new Uint8Array(val{tmp}.buffer, val{tmp}.byteOffset, len{tmp} * {size});",
+                    "const src{tmp} = new Uint8Array(val{tmp}, val{tmp}.byteOffset, len{tmp} * {size});",
                 );
                 uwriteln!(
                     self.src.js,
