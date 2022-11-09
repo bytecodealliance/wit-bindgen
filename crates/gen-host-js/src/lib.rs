@@ -371,7 +371,14 @@ impl ComponentGenerator for Js {
 
 impl WorldGenerator for Js {
     fn import(&mut self, name: &str, iface: &Interface, files: &mut Files) {
-        self.generate_interface(name, iface, "imports", "Imports", files);
+        self.generate_interface(
+            name,
+            iface,
+            "imports",
+            "Imports",
+            files,
+            AbiVariant::GuestImport,
+        );
         let camel = name.to_upper_camel_case();
         uwriteln!(
             self.import_object,
@@ -380,7 +387,14 @@ impl WorldGenerator for Js {
     }
 
     fn export(&mut self, name: &str, iface: &Interface, files: &mut Files) {
-        self.generate_interface(name, iface, "exports", "Exports", files);
+        self.generate_interface(
+            name,
+            iface,
+            "exports",
+            "Exports",
+            files,
+            AbiVariant::GuestExport,
+        );
         let camel = name.to_upper_camel_case();
         uwriteln!(self.src.ts, "export const {name}: typeof {camel}Exports;");
     }
@@ -389,7 +403,7 @@ impl WorldGenerator for Js {
         let instantiation = self.opts.instantiation;
         let mut gen = self.js_interface(iface);
         for func in iface.functions.iter() {
-            gen.ts_func(func);
+            gen.ts_func(func, AbiVariant::GuestExport);
         }
         if instantiation {
             gen.gen.export_object.push_str(&mem::take(&mut gen.src.ts));
@@ -435,6 +449,7 @@ impl Js {
         dir: &str,
         extra: &str,
         files: &mut Files,
+        abi: AbiVariant,
     ) {
         let camel = name.to_upper_camel_case();
         let mut gen = self.js_interface(iface);
@@ -443,7 +458,7 @@ impl Js {
 
         uwriteln!(gen.src.ts, "export namespace {camel} {{");
         for func in iface.functions.iter() {
-            gen.ts_func(func);
+            gen.ts_func(func, abi);
         }
         uwriteln!(gen.src.ts, "}}");
 
@@ -1265,6 +1280,12 @@ impl Instantiator<'_> {
     }
 }
 
+#[derive(Copy, Clone)]
+enum Mode {
+    Lift,
+    Lower,
+}
+
 impl<'a> JsInterface<'a> {
     fn docs_raw(&mut self, docs: &str) {
         self.src.ts("/**\n");
@@ -1285,7 +1306,7 @@ impl<'a> JsInterface<'a> {
         self.gen.array_ty(self.iface, ty)
     }
 
-    fn print_ty(&mut self, ty: &Type) {
+    fn print_ty(&mut self, ty: &Type, mode: Mode) {
         match ty {
             Type::Bool => self.src.ts("boolean"),
             Type::U8
@@ -1305,8 +1326,8 @@ impl<'a> JsInterface<'a> {
                     return self.src.ts(&name.to_upper_camel_case());
                 }
                 match &ty.kind {
-                    TypeDefKind::Type(t) => self.print_ty(t),
-                    TypeDefKind::Tuple(t) => self.print_tuple(t),
+                    TypeDefKind::Type(t) => self.print_ty(t, mode),
+                    TypeDefKind::Tuple(t) => self.print_tuple(t, mode),
                     TypeDefKind::Record(_) => panic!("anonymous record"),
                     TypeDefKind::Flags(_) => panic!("anonymous flags"),
                     TypeDefKind::Enum(_) => panic!("anonymous enum"),
@@ -1315,23 +1336,23 @@ impl<'a> JsInterface<'a> {
                         if self.maybe_null(t) {
                             self.needs_ty_option = true;
                             self.src.ts("Option<");
-                            self.print_ty(t);
+                            self.print_ty(t, mode);
                             self.src.ts(">");
                         } else {
-                            self.print_ty(t);
+                            self.print_ty(t, mode);
                             self.src.ts(" | null");
                         }
                     }
                     TypeDefKind::Result(r) => {
                         self.needs_ty_result = true;
                         self.src.ts("Result<");
-                        self.print_optional_ty(r.ok.as_ref());
+                        self.print_optional_ty(r.ok.as_ref(), mode);
                         self.src.ts(", ");
-                        self.print_optional_ty(r.err.as_ref());
+                        self.print_optional_ty(r.err.as_ref(), mode);
                         self.src.ts(">");
                     }
                     TypeDefKind::Variant(_) => panic!("anonymous variant"),
-                    TypeDefKind::List(v) => self.print_list(v),
+                    TypeDefKind::List(v) => self.print_list(v, mode),
                     TypeDefKind::Future(_) => todo!("anonymous future"),
                     TypeDefKind::Stream(_) => todo!("anonymous stream"),
                 }
@@ -1339,35 +1360,39 @@ impl<'a> JsInterface<'a> {
         }
     }
 
-    fn print_optional_ty(&mut self, ty: Option<&Type>) {
+    fn print_optional_ty(&mut self, ty: Option<&Type>, mode: Mode) {
         match ty {
-            Some(ty) => self.print_ty(ty),
+            Some(ty) => self.print_ty(ty, mode),
             None => self.src.ts("void"),
         }
     }
 
-    fn print_list(&mut self, ty: &Type) {
+    fn print_list(&mut self, ty: &Type, mode: Mode) {
         match self.array_ty(ty) {
+            Some("Uint8Array") => match mode {
+                Mode::Lift => self.src.ts("Uint8Array"),
+                Mode::Lower => self.src.ts("Uint8Array | ArrayBuffer"),
+            },
             Some(ty) => self.src.ts(ty),
             None => {
-                self.print_ty(ty);
+                self.print_ty(ty, mode);
                 self.src.ts("[]");
             }
         }
     }
 
-    fn print_tuple(&mut self, tuple: &Tuple) {
+    fn print_tuple(&mut self, tuple: &Tuple, mode: Mode) {
         self.src.ts("[");
         for (i, ty) in tuple.types.iter().enumerate() {
             if i > 0 {
                 self.src.ts(", ");
             }
-            self.print_ty(ty);
+            self.print_ty(ty, mode);
         }
         self.src.ts("]");
     }
 
-    fn ts_func(&mut self, func: &Function) {
+    fn ts_func(&mut self, func: &Function, abi: AbiVariant) {
         self.docs(&func.docs);
 
         self.src.ts("export function ");
@@ -1384,22 +1409,32 @@ impl<'a> JsInterface<'a> {
             }
             self.src.ts(to_js_ident(&name.to_lower_camel_case()));
             self.src.ts(": ");
-            self.print_ty(ty);
+            self.print_ty(
+                ty,
+                match abi {
+                    AbiVariant::GuestExport => Mode::Lower,
+                    AbiVariant::GuestImport => Mode::Lift,
+                },
+            );
         }
         self.src.ts("): ");
+        let result_mode = match abi {
+            AbiVariant::GuestExport => Mode::Lift,
+            AbiVariant::GuestImport => Mode::Lower,
+        };
         if let Some((ok_ty, _)) = func.results.throws(self.iface) {
-            self.print_optional_ty(ok_ty);
+            self.print_optional_ty(ok_ty, result_mode);
         } else {
             match func.results.len() {
                 0 => self.src.ts("void"),
-                1 => self.print_ty(func.results.iter_types().next().unwrap()),
+                1 => self.print_ty(func.results.iter_types().next().unwrap(), result_mode),
                 _ => {
                     self.src.ts("[");
                     for (i, ty) in func.results.iter_types().enumerate() {
                         if i != 0 {
                             self.src.ts(", ");
                         }
-                        self.print_ty(ty);
+                        self.print_ty(ty, result_mode);
                     }
                     self.src.ts("]");
                 }
@@ -1452,7 +1487,7 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
                 field.name.to_lower_camel_case(),
                 option_str
             ));
-            self.print_ty(ty);
+            self.print_ty(ty, Mode::Lift);
             self.src.ts(",\n");
         }
         self.src.ts("}\n");
@@ -1462,7 +1497,7 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
         self.docs(docs);
         self.src
             .ts(&format!("export type {} = ", name.to_upper_camel_case()));
-        self.print_tuple(tuple);
+        self.print_tuple(tuple, Mode::Lift);
         self.src.ts(";\n");
     }
 
@@ -1503,7 +1538,7 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
             self.src.ts("',\n");
             if let Some(ty) = case.ty {
                 self.src.ts("val: ");
-                self.print_ty(&ty);
+                self.print_ty(&ty, Mode::Lift);
                 self.src.ts(",\n");
             }
             self.src.ts("}\n");
@@ -1526,7 +1561,7 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
             self.src.ts(&format!("export interface {name}{i} {{\n"));
             self.src.ts(&format!("tag: {i},\n"));
             self.src.ts("val: ");
-            self.print_ty(&case.ty);
+            self.print_ty(&case.ty, Mode::Lift);
             self.src.ts(",\n");
             self.src.ts("}\n");
         }
@@ -1539,10 +1574,10 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
         if self.maybe_null(payload) {
             self.needs_ty_option = true;
             self.src.ts("Option<");
-            self.print_ty(payload);
+            self.print_ty(payload, Mode::Lift);
             self.src.ts(">");
         } else {
-            self.print_ty(payload);
+            self.print_ty(payload, Mode::Lift);
             self.src.ts(" | null");
         }
         self.src.ts(";\n");
@@ -1553,9 +1588,9 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
         let name = name.to_upper_camel_case();
         self.needs_ty_result = true;
         self.src.ts(&format!("export type {name} = Result<"));
-        self.print_optional_ty(result.ok.as_ref());
+        self.print_optional_ty(result.ok.as_ref(), Mode::Lift);
         self.src.ts(", ");
-        self.print_optional_ty(result.err.as_ref());
+        self.print_optional_ty(result.err.as_ref(), Mode::Lift);
         self.src.ts(">;\n");
     }
 
@@ -1598,7 +1633,7 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
         self.docs(docs);
         self.src
             .ts(&format!("export type {} = ", name.to_upper_camel_case()));
-        self.print_ty(ty);
+        self.print_ty(ty, Mode::Lift);
         self.src.ts(";\n");
     }
 
@@ -1606,7 +1641,7 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
         self.docs(docs);
         self.src
             .ts(&format!("export type {} = ", name.to_upper_camel_case()));
-        self.print_list(ty);
+        self.print_list(ty, Mode::Lift);
         self.src.ts(";\n");
     }
 
@@ -2497,16 +2532,27 @@ impl Bindgen for FunctionBindgen<'_> {
                 let size = self.sizes.size(element);
                 let align = self.sizes.align(element);
                 uwriteln!(self.src.js, "const val{tmp} = {};", operands[0]);
-                uwriteln!(self.src.js, "const len{tmp} = val{tmp}.length;");
+                if matches!(element, Type::U8) {
+                    uwriteln!(self.src.js, "const len{tmp} = val{tmp}.byteLength;");
+                } else {
+                    uwriteln!(self.src.js, "const len{tmp} = val{tmp}.length;");
+                }
                 uwriteln!(
                     self.src.js,
                     "const ptr{tmp} = {realloc}(0, 0, {align}, len{tmp} * {size});"
                 );
                 // TODO: this is the wrong endianness
-                uwriteln!(
-                    self.src.js,
-                    "const src{tmp} = new Uint8Array(val{tmp}.buffer, val{tmp}.byteOffset, len{tmp} * {size});",
-                );
+                if matches!(element, Type::U8) {
+                    uwriteln!(
+                        self.src.js,
+                        "const src{tmp} = new Uint8Array(val{tmp}.buffer || val{tmp}, val{tmp}.byteOffset, len{tmp} * {size});",
+                    );
+                } else {
+                    uwriteln!(
+                        self.src.js,
+                        "const src{tmp} = new Uint8Array(val{tmp}.buffer, val{tmp}.byteOffset, len{tmp} * {size});",
+                    );
+                }
                 uwriteln!(
                     self.src.js,
                     "(new Uint8Array({memory}.buffer, ptr{tmp}, len{tmp} * {size})).set(src{tmp});",

@@ -16,9 +16,9 @@ export async function loadWasm(path: string) {
 }
 
 // Export a WASI interface directly for instance imports
-export function log (bytes: Uint8Array) {
+export function log (bytes: Uint8Array | ArrayBuffer) {
   stdout.write(bytes);
 }
-export function logErr (bytes: Uint8Array) {
+export function logErr (bytes: Uint8Array | ArrayBuffer) {
   stderr.write(bytes);
 }

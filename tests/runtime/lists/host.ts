@@ -106,7 +106,7 @@ async function run() {
   wasm.testImports();
   wasm.emptyListParam(new Uint8Array([]));
   wasm.emptyStringParam('');
-  wasm.listParam(new Uint8Array([1, 2, 3, 4]));
+  wasm.listParam(new Uint8Array([1, 2, 3, 4]).buffer);
   wasm.listParam2("foo");
   wasm.listParam3(["foo", "bar", "baz"]);
   wasm.listParam4([["foo", "bar"], ["baz"]]);
