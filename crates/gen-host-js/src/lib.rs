@@ -1282,8 +1282,8 @@ impl Instantiator<'_> {
 
 #[derive(Copy, Clone)]
 enum Mode {
-    Internal,
-    External,
+    Lift,
+    Lower,
 }
 
 impl<'a> JsInterface<'a> {
@@ -1370,8 +1370,8 @@ impl<'a> JsInterface<'a> {
     fn print_list(&mut self, ty: &Type, mode: Mode) {
         match self.array_ty(ty) {
             Some("Uint8Array") => match mode {
-                Mode::Internal => self.src.ts("Uint8Array"),
-                Mode::External => self.src.ts("Uint8Array | ArrayBuffer"),
+                Mode::Lift => self.src.ts("Uint8Array"),
+                Mode::Lower => self.src.ts("Uint8Array | ArrayBuffer"),
             },
             Some(ty) => self.src.ts(ty),
             None => {
@@ -1412,15 +1412,15 @@ impl<'a> JsInterface<'a> {
             self.print_ty(
                 ty,
                 match abi {
-                    AbiVariant::GuestExport => Mode::External,
-                    AbiVariant::GuestImport => Mode::Internal,
+                    AbiVariant::GuestExport => Mode::Lower,
+                    AbiVariant::GuestImport => Mode::Lift,
                 },
             );
         }
         self.src.ts("): ");
         let result_mode = match abi {
-            AbiVariant::GuestExport => Mode::Internal,
-            AbiVariant::GuestImport => Mode::External,
+            AbiVariant::GuestExport => Mode::Lift,
+            AbiVariant::GuestImport => Mode::Lower,
         };
         if let Some((ok_ty, _)) = func.results.throws(self.iface) {
             self.print_optional_ty(ok_ty, result_mode);
@@ -1487,7 +1487,7 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
                 field.name.to_lower_camel_case(),
                 option_str
             ));
-            self.print_ty(ty, Mode::Internal);
+            self.print_ty(ty, Mode::Lift);
             self.src.ts(",\n");
         }
         self.src.ts("}\n");
@@ -1497,7 +1497,7 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
         self.docs(docs);
         self.src
             .ts(&format!("export type {} = ", name.to_upper_camel_case()));
-        self.print_tuple(tuple, Mode::Internal);
+        self.print_tuple(tuple, Mode::Lift);
         self.src.ts(";\n");
     }
 
@@ -1538,7 +1538,7 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
             self.src.ts("',\n");
             if let Some(ty) = case.ty {
                 self.src.ts("val: ");
-                self.print_ty(&ty, Mode::Internal);
+                self.print_ty(&ty, Mode::Lift);
                 self.src.ts(",\n");
             }
             self.src.ts("}\n");
@@ -1561,7 +1561,7 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
             self.src.ts(&format!("export interface {name}{i} {{\n"));
             self.src.ts(&format!("tag: {i},\n"));
             self.src.ts("val: ");
-            self.print_ty(&case.ty, Mode::Internal);
+            self.print_ty(&case.ty, Mode::Lift);
             self.src.ts(",\n");
             self.src.ts("}\n");
         }
@@ -1574,10 +1574,10 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
         if self.maybe_null(payload) {
             self.needs_ty_option = true;
             self.src.ts("Option<");
-            self.print_ty(payload, Mode::Internal);
+            self.print_ty(payload, Mode::Lift);
             self.src.ts(">");
         } else {
-            self.print_ty(payload, Mode::Internal);
+            self.print_ty(payload, Mode::Lift);
             self.src.ts(" | null");
         }
         self.src.ts(";\n");
@@ -1588,9 +1588,9 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
         let name = name.to_upper_camel_case();
         self.needs_ty_result = true;
         self.src.ts(&format!("export type {name} = Result<"));
-        self.print_optional_ty(result.ok.as_ref(), Mode::Internal);
+        self.print_optional_ty(result.ok.as_ref(), Mode::Lift);
         self.src.ts(", ");
-        self.print_optional_ty(result.err.as_ref(), Mode::Internal);
+        self.print_optional_ty(result.err.as_ref(), Mode::Lift);
         self.src.ts(">;\n");
     }
 
@@ -1633,7 +1633,7 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
         self.docs(docs);
         self.src
             .ts(&format!("export type {} = ", name.to_upper_camel_case()));
-        self.print_ty(ty, Mode::Internal);
+        self.print_ty(ty, Mode::Lift);
         self.src.ts(";\n");
     }
 
@@ -1641,7 +1641,7 @@ impl<'a> InterfaceGenerator<'a> for JsInterface<'a> {
         self.docs(docs);
         self.src
             .ts(&format!("export type {} = ", name.to_upper_camel_case()));
-        self.print_list(ty, Mode::Internal);
+        self.print_list(ty, Mode::Lift);
         self.src.ts(";\n");
     }
 
