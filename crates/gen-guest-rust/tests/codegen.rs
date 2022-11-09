@@ -174,3 +174,22 @@ mod macro_name {
 
     jam!(Component);
 }
+
+mod skip {
+    wit_bindgen_guest_rust::generate!({
+        export_str["exports"]: "
+            foo: func()
+            bar: func()
+        ",
+        name: "baz",
+        skip: ["foo"],
+    });
+
+    struct Component;
+
+    impl exports::Exports for Component {
+        fn bar() {}
+    }
+
+    export_baz!(Component);
+}

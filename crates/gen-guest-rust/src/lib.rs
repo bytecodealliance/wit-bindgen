@@ -1,4 +1,5 @@
 use heck::*;
+use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::mem;
@@ -18,6 +19,7 @@ struct RustWasm {
     src: Source,
     opts: Opts,
     exports: Vec<Source>,
+    skip: HashSet<String>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -62,11 +64,16 @@ pub struct Opts {
     /// format `export_{world_name}!`.
     #[cfg_attr(feature = "clap", arg(long))]
     pub export_macro_name: Option<String>,
+
+    /// Names of functions to skip generating bindings for.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub skip: Vec<String>,
 }
 
 impl Opts {
     pub fn build(self) -> Box<dyn WorldGenerator> {
         let mut r = RustWasm::new();
+        r.skip = self.skip.iter().cloned().collect();
         r.opts = self;
         Box::new(r)
     }
@@ -243,6 +250,9 @@ impl InterfaceGenerator<'_> {
         let camel = name.to_upper_camel_case();
         uwriteln!(self.src, "pub trait {camel} {{");
         for func in self.iface.functions.iter() {
+            if self.gen.skip.contains(&func.name) {
+                continue;
+            }
             let mut sig = FnSig::default();
             sig.private = true;
             self.print_signature(func, TypeMode::Owned, &sig);
@@ -289,6 +299,10 @@ impl InterfaceGenerator<'_> {
     }
 
     fn generate_guest_import(&mut self, func: &Function) {
+        if self.gen.skip.contains(&func.name) {
+            return;
+        }
+
         let sig = FnSig::default();
         let param_mode = TypeMode::AllBorrowed("'_");
         match &func.kind {
@@ -325,13 +339,16 @@ impl InterfaceGenerator<'_> {
     }
 
     fn generate_guest_export(&mut self, module_name: &str, func: &Function, default_export: bool) {
+        if self.gen.skip.contains(&func.name) {
+            return;
+        }
+
         let module_name = module_name.to_snake_case();
         let trait_bound = module_name.to_upper_camel_case();
         let iface_snake = self.iface.name.to_snake_case();
         let name_snake = func.name.to_snake_case();
         let export_name = self.iface.core_export_name(default_export, func);
         let mut macro_src = Source::default();
-
         // Generate, simultaneously, the actual lifting/lowering function within
         // the original module (`call_{name_snake}`) as well as the function
         // which will ge exported from the wasm module itself through the export
