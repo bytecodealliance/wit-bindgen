@@ -61,6 +61,7 @@ pub struct Opts {
             long,
             short = 'I',
             conflicts_with = "compatibility",
+            conflicts_with = "no-compatibility",
             conflicts_with = "compat"
         )
     )]
@@ -72,15 +73,12 @@ pub struct Opts {
     /// component import specifiers to JS import specifiers.
     #[cfg_attr(feature = "clap", arg(long), clap(value_parser = maps_str_to_map))]
     pub map: Option<HashMap<String, String>>,
-    /// Enables all compat flags: --nodejs-compat, --tla-compat.
+    /// Enables all compat flags: --tla-compat.
     #[cfg_attr(feature = "clap", arg(long, short = 'c'))]
     pub compat: bool,
-    /// Enables compatibility in Node.js without a fetch global.
-    #[cfg_attr(
-        feature = "clap",
-        arg(long, group = "compatibility", conflicts_with = "compat")
-    )]
-    pub nodejs_compat: bool,
+    /// Disables compatibility in Node.js without a fetch global.
+    #[cfg_attr(feature = "clap", arg(long, group = "no-compatibility"))]
+    pub no_nodejs_compat: bool,
     /// Enables compatibility for JS environments without top-level await support
     /// via an async $init promise export to wait for instead.
     #[cfg_attr(feature = "clap", arg(long, group = "compatibility"))]
@@ -108,7 +106,6 @@ impl Opts {
         let mut gen = Js::default();
         gen.opts = self;
         if gen.opts.compat {
-            gen.opts.nodejs_compat = true;
             gen.opts.tla_compat = true;
         }
         Ok(Box::new(gen))
@@ -569,7 +566,7 @@ impl Js {
             "),
 
             Intrinsic::LoadWasm => match self.opts.load {
-                Load::Fetch => if self.opts.nodejs_compat {
+                Load::Fetch => if !self.opts.no_nodejs_compat {
                     self.src.js_intrinsics("
                         const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
                         let _fs;
@@ -586,7 +583,7 @@ impl Js {
                         const loadWasm = url => fetch(url).then(WebAssembly.compileStreaming);
                     ")
                 },
-                Load::Base64 => if self.opts.nodejs_compat {
+                Load::Base64 => if !self.opts.no_nodejs_compat {
                     self.src.js_intrinsics("
                         const loadWasm = str => WebAssembly.compile(typeof Buffer !== 'undefined' ? Buffer.from(str, 'base64') : Uint8Array.from(atob(str), b => b.charCodeAt(0)));
                     ")

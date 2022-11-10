@@ -1,4 +1,4 @@
-// Flags: --nodejs-compat --valid-lifting-optimization
+// Flags: --valid-lifting-optimization
 // @ts-ignore
 import { ok, strictEqual } from 'assert';
 // @ts-ignore
