@@ -557,7 +557,10 @@ impl Js {
                 class ComponentError extends Error {
                     constructor (payload) {
                         super(payload);
-                        this.payload = payload;
+                        Object.defineProperty(this, 'payload', {
+                            value: payload,
+                            enumerable: typeof payload !== 'string'
+                        });
                     }
                 }
             "),
