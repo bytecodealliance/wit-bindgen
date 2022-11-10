@@ -1,4 +1,4 @@
-// Flags: --nodejs-compat --map testwasi=./helpers.js,imports=./host.js
+// Flags: --map testwasi=./helpers.js,imports=./host.js
 
 // @ts-ignore
 import * as assert from 'assert';
