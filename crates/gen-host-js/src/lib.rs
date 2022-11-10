@@ -555,9 +555,10 @@ impl Js {
 
             Intrinsic::ComponentError => self.src.js_intrinsics("
                 class ComponentError extends Error {
-                    constructor (payload) {
-                        super(payload);
-                        this.payload = payload;
+                    constructor (value) {
+                        const enumerable = typeof payload !== 'string';
+                        super(`${String(value)}${enumerable ? ' (see error.payload)' : ''}`);
+                        Object.defineProperty(this, 'payload', { value, enumerable });
                     }
                 }
             "),
