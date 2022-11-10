@@ -1,4 +1,4 @@
-// Flags: --no-nodejs-compat --load=base64 --compat --map testwasi=./helpers.js,imports=./host.js
+// Flags: --compat --map testwasi=./helpers.js,imports=./host.js --base64-cutoff=2500
 function assert(x: boolean, msg: string) {
   if (!x)
     throw new Error(msg);

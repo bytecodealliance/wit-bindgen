@@ -245,6 +245,13 @@ impl Files {
         }
     }
 
+    pub fn get_size(&mut self, name: &str) -> Option<usize> {
+        match self.files.get(name) {
+            Some(data) => Some(data.len()),
+            None => None,
+        }
+    }
+
     pub fn remove(&mut self, name: &str) -> Option<Vec<u8>> {
         return self.files.remove(name);
     }
