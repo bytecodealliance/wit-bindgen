@@ -575,7 +575,7 @@ impl Js {
                 class ComponentError extends Error {
                     constructor (value) {
                         const enumerable = typeof value !== 'string';
-                        super(`${String(value)}${enumerable ? ' (see error.payload)' : ''}`);
+                        super(enumerable ? `${String(value)} (see error.payload)` : value);
                         Object.defineProperty(this, 'payload', { value, enumerable });
                     }
                 }
