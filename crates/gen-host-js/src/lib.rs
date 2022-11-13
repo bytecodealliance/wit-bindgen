@@ -78,7 +78,7 @@ pub struct Opts {
     pub no_nodejs_compat: bool,
     /// Set the cutoff byte size for base64 inlining core Wasm in instantiation mode
     /// (set to 0 to disable all base64 inlining)
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = 5000))]
+    #[cfg_attr(feature = "clap", arg(long, short = 'b', default_value_t = 5000))]
     pub base64_cutoff: usize,
     /// Enables compatibility for JS environments without top-level await support
     /// via an async $init promise export to wait for instead.
@@ -574,8 +574,8 @@ impl Js {
             Intrinsic::ComponentError => self.src.js_intrinsics("
                 class ComponentError extends Error {
                     constructor (value) {
-                        const enumerable = typeof payload !== 'string';
-                        super(`${String(value)}${enumerable ? ' (see error.payload)' : ''}`);
+                        const enumerable = typeof value !== 'string';
+                        super(enumerable ? `${String(value)} (see error.payload)` : value);
                         Object.defineProperty(this, 'payload', { value, enumerable });
                     }
                 }
