@@ -9,8 +9,6 @@ use std::mem;
 pub struct Resolver {
     type_lookup: HashMap<String, TypeId>,
     types: Arena<TypeDef>,
-    #[allow(dead_code)] // TODO
-    types_copied: HashMap<(String, TypeId), TypeId>,
     anon_types: HashMap<Key, TypeId>,
     functions: Vec<Function>,
     globals: Vec<Global>,
@@ -51,7 +49,7 @@ impl Resolver {
 
         for interface in document.interfaces() {
             let name = &interface.name.name;
-            let instance = self.resolve(name, &interface.items, &HashMap::new())?;
+            let instance = self.resolve(name, &interface.items)?;
 
             if interface_map.insert(name.to_string(), instance).is_some() {
                 return Err(Error {
@@ -137,7 +135,7 @@ impl Resolver {
 
         match kind {
             ast::ExternKind::Interface(items) => {
-                let interface = self.resolve("", &items, &HashMap::new())?;
+                let interface = self.resolve("", &items)?;
 
                 if resolved.insert(name.to_string(), interface).is_some() {
                     return Err(Error {
@@ -174,7 +172,6 @@ impl Resolver {
         &mut self,
         name: &str,
         fields: &[InterfaceItem<'_>],
-        _deps: &HashMap<String, Interface>,
     ) -> Result<Interface> {
         // ... then register our own names
         self.register_names(fields)?;
@@ -206,7 +203,6 @@ impl Resolver {
                         &mut valid_types,
                     )?;
                 }
-                _ => continue,
             }
         }
 
@@ -217,106 +213,6 @@ impl Resolver {
             functions: mem::take(&mut self.functions),
             globals: mem::take(&mut self.globals),
         })
-    }
-
-    #[allow(dead_code)] // TODO
-    fn copy_type_def(&mut self, dep_name: &str, dep: &Interface, dep_id: TypeId) -> TypeId {
-        if let Some(id) = self.types_copied.get(&(dep_name.to_string(), dep_id)) {
-            return *id;
-        }
-        let ty = &dep.types[dep_id];
-
-        let ty = TypeDef {
-            docs: ty.docs.clone(),
-            name: ty.name.clone(),
-            foreign_module: Some(
-                ty.foreign_module
-                    .clone()
-                    .unwrap_or_else(|| dep_name.to_string()),
-            ),
-            kind: match &ty.kind {
-                TypeDefKind::Type(t) => TypeDefKind::Type(self.copy_type(dep_name, dep, *t)),
-                TypeDefKind::Record(r) => TypeDefKind::Record(Record {
-                    fields: r
-                        .fields
-                        .iter()
-                        .map(|field| Field {
-                            docs: field.docs.clone(),
-                            name: field.name.clone(),
-                            ty: self.copy_type(dep_name, dep, field.ty),
-                        })
-                        .collect(),
-                }),
-                TypeDefKind::Flags(f) => TypeDefKind::Flags(f.clone()),
-                TypeDefKind::Tuple(t) => TypeDefKind::Tuple(Tuple {
-                    types: t
-                        .types
-                        .iter()
-                        .map(|ty| self.copy_type(dep_name, dep, *ty))
-                        .collect(),
-                }),
-                TypeDefKind::Variant(v) => TypeDefKind::Variant(Variant {
-                    cases: v
-                        .cases
-                        .iter()
-                        .map(|case| Case {
-                            docs: case.docs.clone(),
-                            name: case.name.clone(),
-                            ty: self.copy_optional_type(dep_name, dep, case.ty),
-                        })
-                        .collect(),
-                }),
-                TypeDefKind::Enum(e) => TypeDefKind::Enum(Enum {
-                    cases: e.cases.clone(),
-                }),
-                TypeDefKind::List(t) => TypeDefKind::List(self.copy_type(dep_name, dep, *t)),
-                TypeDefKind::Option(t) => TypeDefKind::Option(self.copy_type(dep_name, dep, *t)),
-                TypeDefKind::Result(r) => TypeDefKind::Result(Result_ {
-                    ok: self.copy_optional_type(dep_name, dep, r.ok),
-                    err: self.copy_optional_type(dep_name, dep, r.err),
-                }),
-                TypeDefKind::Union(u) => TypeDefKind::Union(Union {
-                    cases: u
-                        .cases
-                        .iter()
-                        .map(|c| UnionCase {
-                            docs: c.docs.clone(),
-                            ty: self.copy_type(dep_name, dep, c.ty),
-                        })
-                        .collect(),
-                }),
-                TypeDefKind::Future(t) => {
-                    TypeDefKind::Future(self.copy_optional_type(dep_name, dep, *t))
-                }
-                TypeDefKind::Stream(e) => TypeDefKind::Stream(Stream {
-                    element: self.copy_optional_type(dep_name, dep, e.element),
-                    end: self.copy_optional_type(dep_name, dep, e.end),
-                }),
-            },
-        };
-        let id = self.types.alloc(ty);
-        self.types_copied.insert((dep_name.to_string(), dep_id), id);
-        id
-    }
-
-    fn copy_type(&mut self, dep_name: &str, dep: &Interface, ty: Type) -> Type {
-        match ty {
-            Type::Id(id) => Type::Id(self.copy_type_def(dep_name, dep, id)),
-            other => other,
-        }
-    }
-
-    #[allow(dead_code)] // TODO
-    fn copy_optional_type(
-        &mut self,
-        dep_name: &str,
-        dep: &Interface,
-        ty: Option<Type>,
-    ) -> Option<Type> {
-        match ty {
-            Some(Type::Id(id)) => Some(Type::Id(self.copy_type_def(dep_name, dep, id))),
-            other => other,
-        }
     }
 
     fn register_names(&mut self, fields: &[InterfaceItem<'_>]) -> Result<()> {
@@ -344,7 +240,6 @@ impl Resolver {
                         .into());
                     }
                 }
-                InterfaceItem::Use(_) => {}
             }
         }
 
@@ -362,71 +257,6 @@ impl Resolver {
             Ok(())
         }
     }
-
-    // fn process_use<'a>(
-    //     &mut self,
-    //     fields: &[InterfaceItem<'a>],
-    //     deps: &'a HashMap<String, Interface>,
-    // ) -> Result<()> {
-    //     for field in fields {
-    //         let u = match field {
-    //             InterfaceItem::Use(u) => u,
-    //             _ => continue,
-    //         };
-    //         let mut dep = &deps[&*u.from[0].name];
-    //         let mut prev = &*u.from[0].name;
-    //         for name in u.from[1..].iter() {
-    //             dep = match dep.interface_lookup.get(&*name.name) {
-    //                 Some(i) => &dep.interfaces[*i],
-    //                 None => {
-    //                     return Err(Error {
-    //                         span: name.span,
-    //                         msg: format!("`{}` not defined in `{}`", name.name, prev),
-    //                     }
-    //                     .into())
-    //                 }
-    //             };
-    //             prev = &*name.name;
-    //         }
-
-    //         let mod_name = &u.from[0];
-
-    //         match &u.names {
-    //             Some(names) => {
-    //                 for name in names {
-    //                     let (my_name, span) = match &name.as_ {
-    //                         Some(id) => (&id.name, id.span),
-    //                         None => (&name.name.name, name.name.span),
-    //                     };
-    //                     let mut found = false;
-
-    //                     if let Some(id) = dep.type_lookup.get(&*name.name.name) {
-    //                         let ty = self.copy_type_def(&mod_name.name, dep, *id);
-    //                         self.define_type(my_name, span, ty)?;
-    //                         found = true;
-    //                     }
-
-    //                     if !found {
-    //                         return Err(Error {
-    //                             span: name.name.span,
-    //                             msg: "name not defined in submodule".to_string(),
-    //                         }
-    //                         .into());
-    //                     }
-    //                 }
-    //             }
-    //             None => {
-    //                 let mut names = dep.type_lookup.iter().collect::<Vec<_>>();
-    //                 names.sort(); // produce a stable order by which to add names
-    //                 for (name, id) in names {
-    //                     let ty = self.copy_type_def(&mod_name.name, dep, *id);
-    //                     self.define_type(name, mod_name.span, ty)?;
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     Ok(())
-    // }
 
     fn resolve_type_def(&mut self, ty: &super::Type<'_>) -> Result<TypeDefKind> {
         Ok(match ty {

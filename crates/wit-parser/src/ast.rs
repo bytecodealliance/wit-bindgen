@@ -228,8 +228,6 @@ impl<'a> Interface<'a> {
 }
 
 pub enum InterfaceItem<'a> {
-    #[allow(dead_code)] // TODO
-    Use(Use<'a>),
     TypeDef(TypeDef<'a>),
     Value(Value<'a>),
 }
@@ -255,18 +253,6 @@ impl<'a> From<String> for Id<'a> {
             span: Span { start: 0, end: 0 },
         }
     }
-}
-
-#[allow(dead_code)] // TODO
-pub struct Use<'a> {
-    pub from: Vec<Id<'a>>,
-    names: Option<Vec<UseName<'a>>>,
-}
-
-#[allow(dead_code)] // TODO
-struct UseName<'a> {
-    name: Id<'a>,
-    as_: Option<Id<'a>>,
 }
 
 #[derive(Default)]
@@ -436,7 +422,6 @@ impl<'a> ValueKind<'a> {
 impl<'a> InterfaceItem<'a> {
     fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<InterfaceItem<'a>> {
         match tokens.clone().next()? {
-            // Some((_span, Token::Use)) => Use::parse(tokens, docs).map(InterfaceItem::Use),
             Some((_span, Token::Type)) => TypeDef::parse(tokens, docs).map(InterfaceItem::TypeDef),
             Some((_span, Token::Flags)) => {
                 TypeDef::parse_flags(tokens, docs).map(InterfaceItem::TypeDef)
@@ -458,45 +443,6 @@ impl<'a> InterfaceItem<'a> {
             }
             other => Err(err_expected(tokens, "`type` or `func`", other).into()),
         }
-    }
-}
-
-impl<'a> Use<'a> {
-    #[allow(dead_code)] // TODO
-    fn parse(tokens: &mut Tokenizer<'a>, _docs: Docs<'a>) -> Result<Self> {
-        tokens.expect(Token::Use)?;
-        let mut names = None;
-        loop {
-            if names.is_none() {
-                if tokens.eat(Token::Star)? {
-                    break;
-                }
-                tokens.expect(Token::LeftBrace)?;
-                names = Some(Vec::new());
-            }
-            let names = names.as_mut().unwrap();
-            let mut name = UseName {
-                name: parse_id(tokens)?,
-                as_: None,
-            };
-            if tokens.eat(Token::As)? {
-                name.as_ = Some(parse_id(tokens)?);
-            }
-            names.push(name);
-            if !tokens.eat(Token::Comma)? {
-                break;
-            }
-        }
-        if names.is_some() {
-            tokens.expect(Token::RightBrace)?;
-        }
-        tokens.expect(Token::From_)?;
-        let mut from = vec![parse_id(tokens)?];
-        while tokens.eat(Token::Colon)? {
-            tokens.expect_raw(Token::Colon)?;
-            from.push(parse_id(tokens)?);
-        }
-        Ok(Use { from, names })
     }
 }
 
