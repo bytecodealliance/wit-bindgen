@@ -12,9 +12,9 @@ async function run() {
       roundtripOption(x) { return x; },
       roundtripResult(x) {
         if (x.tag == 'ok') {
-          return { tag: 'ok', val: x.val };
+          return x.val;
         } else {
-          return { tag: 'err', val: Math.round(x.val) };
+          throw Object.assign(new Error(''), { payload: Math.round(x.val) });
         }
       },
       roundtripEnum(x) { return x; },
@@ -43,10 +43,18 @@ async function run() {
   // @ts-ignore
   assert.deepStrictEqual(wasm.roundtripOption(), null);
   assert.deepStrictEqual(wasm.roundtripOption(2), 2);
-  assert.deepStrictEqual(wasm.roundtripResult({ tag: 'ok', val: 2 }), { tag: 'ok', val: 2 });
-  assert.deepStrictEqual(wasm.roundtripResult({ tag: 'ok', val: 4 }), { tag: 'ok', val: 4 });
+  assert.deepStrictEqual(wasm.roundtripResult({ tag: 'ok', val: 2 }), 2);
+  assert.deepStrictEqual(wasm.roundtripResult({ tag: 'ok', val: 4 }), 4);
   const f = Math.fround(5.2);
-  assert.deepStrictEqual(wasm.roundtripResult({ tag: 'err', val: f }), { tag: 'err', val: 5 });
+
+  try {
+    wasm.roundtripResult({ tag: 'err', val: f });
+    assert.fail('Expected an error');
+  } catch (e: any) {
+    assert.strictEqual(e.constructor.name, 'ComponentError');
+    assert.ok(e.message.includes('5'));
+    assert.strictEqual(e.payload, 5);
+  }
 
   assert.deepStrictEqual(wasm.roundtripEnum("a"), "a");
   assert.deepStrictEqual(wasm.roundtripEnum("b"), "b");

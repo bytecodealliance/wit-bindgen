@@ -1,6 +1,7 @@
 use proc_macro::TokenStream;
 use syn::{
     parse::{Parse, ParseStream, Result},
+    punctuated::Punctuated,
     LitStr, Token,
 };
 use wit_bindgen_gen_guest_rust::Opts;
@@ -16,6 +17,7 @@ mod kw {
     syn::custom_keyword!(raw_strings);
     syn::custom_keyword!(macro_call_prefix);
     syn::custom_keyword!(export_macro_name);
+    syn::custom_keyword!(skip);
 }
 
 enum Opt {
@@ -24,6 +26,7 @@ enum Opt {
     RawStrings,
     MacroCallPrefix(LitStr),
     ExportMacroName(LitStr),
+    Skip(Vec<LitStr>),
 }
 
 impl Parse for Opt {
@@ -46,6 +49,13 @@ impl Parse for Opt {
             input.parse::<kw::export_macro_name>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::ExportMacroName(input.parse()?))
+        } else if l.peek(kw::skip) {
+            input.parse::<kw::skip>()?;
+            input.parse::<Token![:]>()?;
+            let contents;
+            syn::bracketed!(contents in input);
+            let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
+            Ok(Opt::Skip(list.iter().cloned().collect()))
         } else {
             Err(l.error())
         }
@@ -60,6 +70,7 @@ impl wit_bindgen_rust_macro_shared::Configure<Opts> for Opt {
             Opt::RawStrings => opts.raw_strings = true,
             Opt::MacroCallPrefix(prefix) => opts.macro_call_prefix = Some(prefix.value()),
             Opt::ExportMacroName(name) => opts.export_macro_name = Some(name.value()),
+            Opt::Skip(list) => opts.skip.extend(list.iter().map(|i| i.value())),
         }
     }
 }

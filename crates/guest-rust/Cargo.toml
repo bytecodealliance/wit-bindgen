@@ -9,5 +9,6 @@ wit-bindgen-guest-rust-macro = { path = "../guest-rust-macro", optional = true }
 bitflags = { workspace = true }
 
 [features]
-default = ["macros"]
+default = ["macros", "realloc"]
 macros = ["wit-bindgen-guest-rust-macro"]
+realloc = []
