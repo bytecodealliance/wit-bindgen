@@ -1,5 +1,6 @@
 {
   "name": "the-world",
+  "default": {},
   "imports": [
     [
       "foo",

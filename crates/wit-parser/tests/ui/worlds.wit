@@ -12,4 +12,7 @@ world the-world {
   export baz: interface {
     foo: func()
   }
+
+  default export interface {
+  }
 }

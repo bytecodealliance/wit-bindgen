@@ -1,8 +1,7 @@
-use super::{Error, Func, InterfaceItem, ParamList, ResultList, Span, Value, ValueKind};
+use super::{Error, Func, InterfaceItem, ParamList, ResultList, Span, Value, ValueKind, WorldItem};
 use crate::*;
 use anyhow::{bail, Result};
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 use std::mem;
 
 #[derive(Default)]
@@ -27,20 +26,6 @@ enum Key {
     Union(Vec<Type>),
     Future(Option<Type>),
     Stream(Option<Type>, Option<Type>),
-}
-
-enum Direction {
-    Import,
-    Export,
-}
-
-impl fmt::Display for Direction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Direction::Import => write!(f, "import"),
-            Direction::Export => write!(f, "export"),
-        }
-    }
 }
 
 impl Resolver {
@@ -75,90 +60,78 @@ impl Resolver {
             }
         };
 
-        let imports = self.resolve_imports(world.imports(), &interface_map)?;
-        let exports = self.resolve_exports(world.exports(), &interface_map)?;
-        let default = None; // TODO
-
-        Ok(World {
+        let mut ret = World {
             name: world.name.name.to_string(),
             docs: self.docs(&world.docs),
-            imports,
-            exports,
-            default,
-        })
+            imports: Default::default(),
+            exports: Default::default(),
+            default: None,
+        };
+
+        for item in world.items.iter() {
+            match item {
+                WorldItem::Import(import) => {
+                    let ast::Import { name, kind } = import;
+                    self.insert_extern(name, kind, "import", &mut ret.imports, &interface_map)?;
+                }
+                WorldItem::Export(export) => {
+                    let ast::Export { name, kind } = export;
+                    self.insert_extern(name, kind, "export", &mut ret.exports, &interface_map)?;
+                }
+                WorldItem::ExportDefault(iface) => {
+                    if ret.default.is_some() {
+                        return Err(Error {
+                            span: iface.span(),
+                            msg: format!("more than one default"),
+                        }
+                        .into());
+                    }
+
+                    let iface = self.resolve_extern(iface, &interface_map)?;
+                    ret.default = Some(iface);
+                }
+            }
+        }
+
+        Ok(ret)
     }
 
-    fn resolve_imports(
+    fn insert_extern(
         &mut self,
-        imports: Vec<&ast::Import<'_>>,
+        id: &ast::Id<'_>,
+        kind: &ast::ExternKind<'_>,
+        direction: &str,
+        resolved: &mut IndexMap<String, Interface>,
         lookup: &HashMap<String, Interface>,
-    ) -> Result<IndexMap<String, Interface>> {
-        imports
-            .into_iter()
-            .try_fold(IndexMap::new(), |mut imports, item| {
-                let ast::Import { name, kind } = item;
-                self.resolve_extern(name, kind, Direction::Import, &mut imports, lookup)?;
-                Ok(imports)
-            })
-    }
-
-    fn resolve_exports(
-        &mut self,
-        exports: Vec<&ast::Export<'_>>,
-        lookup: &HashMap<String, Interface>,
-    ) -> Result<IndexMap<String, Interface>> {
-        exports
-            .into_iter()
-            .try_fold(IndexMap::new(), |mut exports, item| {
-                let ast::Export { name, kind } = item;
-                self.resolve_extern(name, kind, Direction::Export, &mut exports, lookup)?;
-                Ok(exports)
-            })
+    ) -> Result<()> {
+        let interface = self.resolve_extern(kind, lookup)?;
+        if resolved.insert(id.name.to_string(), interface).is_some() {
+            return Err(Error {
+                span: id.span,
+                msg: format!("duplicate {direction} {}", id.name),
+            }
+            .into());
+        }
+        Ok(())
     }
 
     fn resolve_extern(
         &mut self,
-        id: &ast::Id<'_>,
         kind: &ast::ExternKind<'_>,
-        direction: Direction,
-        resolved: &mut IndexMap<String, Interface>,
         lookup: &HashMap<String, Interface>,
-    ) -> Result<()> {
-        let (name, span) = (&id.name, id.span);
-
+    ) -> Result<Interface> {
         match kind {
-            ast::ExternKind::Interface(items) => {
-                let interface = self.resolve("", &items, &Default::default())?;
-
-                if resolved.insert(name.to_string(), interface).is_some() {
-                    return Err(Error {
-                        span: span,
-                        msg: format!("duplicate {direction} {name}"),
-                    }
-                    .into());
-                }
+            ast::ExternKind::Interface(_span, items) => {
+                self.resolve("", &items, &Default::default())
             }
-            ast::ExternKind::Id(id) => {
-                let interface = match lookup.get(&*id.name) {
-                    Some(interface) => interface.clone(),
-                    None => {
-                        return Err(Error {
-                            span: id.span,
-                            msg: format!("{name} not defined"),
-                        }
-                        .into());
-                    }
-                };
-                if resolved.insert(name.to_string(), interface).is_some() {
-                    return Err(Error {
-                        span: span,
-                        msg: format!("duplicate {direction} {name}"),
-                    }
-                    .into());
+            ast::ExternKind::Id(id) => lookup.get(&*id.name).cloned().ok_or_else(|| {
+                Error {
+                    span: id.span,
+                    msg: format!("{} not defined", id.name),
                 }
-            }
+                .into()
+            }),
         }
-        Ok(())
     }
 
     pub(crate) fn resolve(

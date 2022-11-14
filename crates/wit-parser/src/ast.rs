@@ -94,31 +94,12 @@ impl<'a> World<'a> {
         }
         Ok(items)
     }
-
-    fn imports(&self) -> Vec<&Import<'a>> {
-        self.items
-            .iter()
-            .filter_map(|item| match item {
-                WorldItem::Import(import) => Some(import),
-                _ => None,
-            })
-            .collect()
-    }
-
-    fn exports(&self) -> Vec<&Export<'a>> {
-        self.items
-            .iter()
-            .filter_map(|item| match item {
-                WorldItem::Export(export) => Some(export),
-                _ => None,
-            })
-            .collect()
-    }
 }
 
 pub enum WorldItem<'a> {
     Import(Import<'a>),
     Export(Export<'a>),
+    ExportDefault(ExternKind<'a>),
 }
 
 impl<'a> WorldItem<'a> {
@@ -126,6 +107,11 @@ impl<'a> WorldItem<'a> {
         match tokens.clone().next()? {
             Some((_span, Token::Import)) => Import::parse(tokens).map(WorldItem::Import),
             Some((_span, Token::Export)) => Export::parse(tokens).map(WorldItem::Export),
+            Some((_span, Token::Default)) => {
+                tokens.expect(Token::Default)?;
+                tokens.expect(Token::Export)?;
+                ExternKind::parse(tokens).map(WorldItem::ExportDefault)
+            }
             other => Err(err_expected(tokens, "`import` or `export`", other).into()),
         }
     }
@@ -161,9 +147,8 @@ impl<'a> Export<'a> {
     }
 }
 
-enum ExternKind<'a> {
-    Interface(Vec<InterfaceItem<'a>>),
-    // Func(Func<'a>),
+pub enum ExternKind<'a> {
+    Interface(Span, Vec<InterfaceItem<'a>>),
     Id(Id<'a>),
 }
 
@@ -173,12 +158,19 @@ impl<'a> ExternKind<'a> {
             Some((_span, Token::Id | Token::StrLit | Token::ExplicitId)) => {
                 parse_id(tokens).map(ExternKind::Id)
             }
-            // Some((_span, Token::Func)) => Func::parse(tokens).map(ExternKind::Func),
             Some((_span, Token::Interface)) => {
-                tokens.expect(Token::Interface)?;
-                Interface::parse_items(tokens).map(ExternKind::Interface)
+                let span = tokens.expect(Token::Interface)?;
+                let items = Interface::parse_items(tokens)?;
+                Ok(ExternKind::Interface(span, items))
             }
             other => Err(err_expected(tokens, "path, value, or interface", other).into()),
+        }
+    }
+
+    fn span(&self) -> Span {
+        match self {
+            ExternKind::Interface(span, _) => *span,
+            ExternKind::Id(id) => id.span,
         }
     }
 }
@@ -273,7 +265,7 @@ enum Type<'a> {
     Float64,
     Char,
     String,
-    Name(Id<'a>), // Name(TypeName<'a>)
+    Name(Id<'a>),
     List(Box<Type<'a>>),
     Record(Record<'a>),
     Flags(Flags<'a>),
