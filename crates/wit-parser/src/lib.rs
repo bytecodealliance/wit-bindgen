@@ -30,29 +30,15 @@ pub struct World {
 
 impl World {
     pub fn parse_file(path: impl AsRef<Path>) -> Result<World> {
-        let _base = path
-            .as_ref()
-            .parent()
-            .ok_or(anyhow!("could not get parent directory"))?;
+        let path = path.as_ref();
         let text = fs::read_to_string(&path)
-            .with_context(|| format!("failed to read: {}", path.as_ref().display()))?;
-
-        let file = path
-            .as_ref()
-            .file_name()
-            .context("wit path must end in a file name")?
-            .to_str()
-            .context("wit filename must be valid unicode")?
-            // TODO: replace with `file_prefix` if/when that gets stabilized.
-            .split(".")
-            .next()
-            .unwrap();
+            .with_context(|| format!("failed to read: {}", path.display()))?;
 
         let mut contents = &*text;
         // If we have a ".md" file, it's a wit file wrapped in a markdown file;
         // parse the markdown to extract the `wit` code blocks.
         let md_contents;
-        if path.as_ref().extension().and_then(|s| s.to_str()) == Some("md") {
+        if path.extension().and_then(|s| s.to_str()) == Some("md") {
             md_contents = unwrap_md(contents);
             contents = &md_contents[..];
         }
@@ -63,7 +49,8 @@ impl World {
         let ast = match ast::Document::parse(&mut lexer) {
             Ok(ast) => ast,
             Err(mut e) => {
-                ast::rewrite_error(&mut e, file, &contents);
+                let file = path.display().to_string();
+                ast::rewrite_error(&mut e, &file, &contents);
                 return Err(e);
             }
         };
@@ -71,8 +58,8 @@ impl World {
         match ast.resolve() {
             Ok(component) => Ok(component),
             Err(mut e) => {
-                let file = path.as_ref().display().to_string();
-                ast::rewrite_error(&mut e, &file, contents);
+                let file = path.display().to_string();
+                ast::rewrite_error(&mut e, &file, &contents);
                 return Err(e);
             }
         }
