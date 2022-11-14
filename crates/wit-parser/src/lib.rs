@@ -450,7 +450,7 @@ impl Interface {
         let mut lexer = Tokenizer::new(&contents)?;
 
         // Parse the `contents `into an AST
-        let items = match ast::Interface::parse_items(&mut lexer) {
+        let items = match ast::Interface::parse_legacy_items(&mut lexer) {
             Ok(ast) => ast,
             Err(mut e) => {
                 let file = filename.display().to_string();
