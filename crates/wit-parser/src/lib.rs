@@ -22,6 +22,7 @@ pub fn validate_id(s: &str) -> Result<()> {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct World {
     pub name: String,
+    pub docs: Docs,
     pub default: Option<Interface>,
     pub imports: IndexMap<String, Interface>,
     pub exports: IndexMap<String, Interface>,
@@ -68,6 +69,7 @@ impl World {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Interface {
     pub name: String,
+    pub docs: Docs,
     pub types: Arena<TypeDef>,
     pub type_lookup: HashMap<String, TypeId>,
     pub functions: Vec<Function>,
@@ -428,7 +430,7 @@ impl Interface {
 
         // and finally resolve everything into our final instance
         let mut resolver = ast::Resolver::default();
-        match resolver.resolve(name, &items) {
+        match resolver.resolve(name, &items, &Default::default()) {
             Ok(i) => Ok(i),
             Err(mut e) => {
                 let file = filename.display().to_string();

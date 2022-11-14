@@ -70,7 +70,6 @@ impl<'a> DocumentItem<'a> {
 }
 
 pub struct World<'a> {
-    #[allow(dead_code)] // TODO
     docs: Docs<'a>,
     name: Id<'a>,
     items: Vec<WorldItem<'a>>,
@@ -190,7 +189,6 @@ impl<'a> ExternKind<'a> {
 }
 
 pub struct Interface<'a> {
-    #[allow(dead_code)] // TODO
     docs: Docs<'a>,
     name: Id<'a>,
     items: Vec<InterfaceItem<'a>>,

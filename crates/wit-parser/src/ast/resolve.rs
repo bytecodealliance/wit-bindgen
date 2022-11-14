@@ -49,7 +49,7 @@ impl Resolver {
 
         for interface in document.interfaces() {
             let name = &interface.name.name;
-            let instance = self.resolve(name, &interface.items)?;
+            let instance = self.resolve(name, &interface.items, &interface.docs)?;
 
             if interface_map.insert(name.to_string(), instance).is_some() {
                 return Err(Error {
@@ -81,6 +81,7 @@ impl Resolver {
 
         Ok(World {
             name: world.name.name.to_string(),
+            docs: self.docs(&world.docs),
             imports,
             exports,
             default,
@@ -135,7 +136,7 @@ impl Resolver {
 
         match kind {
             ast::ExternKind::Interface(items) => {
-                let interface = self.resolve("", &items)?;
+                let interface = self.resolve("", &items, &Default::default())?;
 
                 if resolved.insert(name.to_string(), interface).is_some() {
                     return Err(Error {
@@ -172,6 +173,7 @@ impl Resolver {
         &mut self,
         name: &str,
         fields: &[InterfaceItem<'_>],
+        docs: &super::Docs<'_>,
     ) -> Result<Interface> {
         // ... then register our own names
         self.register_names(fields)?;
@@ -208,6 +210,7 @@ impl Resolver {
 
         Ok(Interface {
             name: name.to_string(),
+            docs: self.docs(docs),
             types: mem::take(&mut self.types),
             type_lookup: mem::take(&mut self.type_lookup),
             functions: mem::take(&mut self.functions),
