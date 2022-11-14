@@ -1,0 +1,47 @@
+{
+  "name": "the-world",
+  "imports": [
+    [
+      "foo",
+      {}
+    ],
+    [
+      "bar",
+      {}
+    ],
+    [
+      "baz",
+      {
+        "functions": [
+          {
+            "name": "foo",
+            "params": [],
+            "results": []
+          }
+        ]
+      }
+    ]
+  ],
+  "exports": [
+    [
+      "foo",
+      {}
+    ],
+    [
+      "bar",
+      {}
+    ],
+    [
+      "baz",
+      {
+        "functions": [
+          {
+            "name": "foo",
+            "params": [],
+            "results": []
+          }
+        ]
+      }
+    ]
+  ]
+}
