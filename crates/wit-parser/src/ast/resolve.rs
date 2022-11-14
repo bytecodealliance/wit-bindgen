@@ -96,11 +96,7 @@ impl Resolver {
         imports
             .into_iter()
             .try_fold(IndexMap::new(), |mut imports, item| {
-                let ast::Import {
-                    docs: _,
-                    name,
-                    kind,
-                } = item;
+                let ast::Import { name, kind } = item;
                 self.resolve_extern(name, kind, Direction::Import, &mut imports, lookup)?;
                 Ok(imports)
             })
@@ -114,11 +110,7 @@ impl Resolver {
         exports
             .into_iter()
             .try_fold(IndexMap::new(), |mut exports, item| {
-                let ast::Export {
-                    docs: _,
-                    name,
-                    kind,
-                } = item;
+                let ast::Export { name, kind } = item;
                 self.resolve_extern(name, kind, Direction::Export, &mut exports, lookup)?;
                 Ok(exports)
             })

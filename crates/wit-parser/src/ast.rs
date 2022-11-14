@@ -87,11 +87,10 @@ impl<'a> World<'a> {
         tokens.expect(Token::LeftBrace)?;
         let mut items = Vec::new();
         loop {
-            let docs = parse_docs(tokens)?;
             if tokens.eat(Token::RightBrace)? {
                 break;
             }
-            items.push(WorldItem::parse(tokens, docs)?);
+            items.push(WorldItem::parse(tokens)?);
         }
         Ok(items)
     }
@@ -123,46 +122,42 @@ pub enum WorldItem<'a> {
 }
 
 impl<'a> WorldItem<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<WorldItem<'a>> {
+    fn parse(tokens: &mut Tokenizer<'a>) -> Result<WorldItem<'a>> {
         match tokens.clone().next()? {
-            Some((_span, Token::Import)) => Import::parse(tokens, docs).map(WorldItem::Import),
-            Some((_span, Token::Export)) => Export::parse(tokens, docs).map(WorldItem::Export),
+            Some((_span, Token::Import)) => Import::parse(tokens).map(WorldItem::Import),
+            Some((_span, Token::Export)) => Export::parse(tokens).map(WorldItem::Export),
             other => Err(err_expected(tokens, "`import` or `export`", other).into()),
         }
     }
 }
 
 pub struct Import<'a> {
-    #[allow(dead_code)] // TODO
-    docs: Docs<'a>,
     name: Id<'a>,
     kind: ExternKind<'a>,
 }
 
 impl<'a> Import<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Import<'a>> {
+    fn parse(tokens: &mut Tokenizer<'a>) -> Result<Import<'a>> {
         tokens.expect(Token::Import)?;
         let name = parse_id(tokens)?;
         tokens.expect(Token::Colon)?;
         let kind = ExternKind::parse(tokens)?;
-        Ok(Import { docs, name, kind })
+        Ok(Import { name, kind })
     }
 }
 
 pub struct Export<'a> {
-    #[allow(dead_code)] // TODO
-    docs: Docs<'a>,
-    pub name: Id<'a>,
+    name: Id<'a>,
     kind: ExternKind<'a>,
 }
 
 impl<'a> Export<'a> {
-    fn parse(tokens: &mut Tokenizer<'a>, docs: Docs<'a>) -> Result<Export<'a>> {
+    fn parse(tokens: &mut Tokenizer<'a>) -> Result<Export<'a>> {
         tokens.expect(Token::Export)?;
         let name = parse_id(tokens)?;
         tokens.expect(Token::Colon)?;
         let kind = ExternKind::parse(tokens)?;
-        Ok(Export { docs, name, kind })
+        Ok(Export { name, kind })
     }
 }
 
