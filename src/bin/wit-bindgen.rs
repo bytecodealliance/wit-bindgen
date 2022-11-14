@@ -210,6 +210,7 @@ fn gen_world(
     files: &mut Files,
 ) -> Result<()> {
     let World {
+        docs: _,
         name,
         imports,
         exports,

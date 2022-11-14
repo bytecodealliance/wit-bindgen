@@ -41,7 +41,7 @@ class Editor {
       wasmtimeTracing: false,
       jsCompat: false,
       jsInstantiation: false,
-      import: false,
+      isImport: false,
     };
     this.rerender = null;
   }
@@ -108,7 +108,7 @@ class Editor {
         break;
       default: return;
     }
-    this.options.import = is_import;
+    this.options.isImport = is_import;
     const result = render(lang, wit, this.options);
     if (result.tag === 'err') {
       this.outputEditor.setValue(result.val);

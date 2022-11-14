@@ -55,13 +55,13 @@ fn init() {
 fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Options) -> Result<()> {
     let iface = Interface::parse("input", &wit)?;
     let interfaces = ComponentInterfaces {
-        imports: if options.import {
+        imports: if options.is_import {
             [(iface.name.clone(), iface.clone())].into_iter().collect()
         } else {
             Default::default()
         },
         exports: Default::default(),
-        default: if !options.import {
+        default: if !options.is_import {
             Some(iface.clone())
         } else {
             None
