@@ -35,11 +35,23 @@ body {
         <h1>Input <code>*.wit</code></h1>
         <div class='editor' id='input'></div>
         <textarea id='input-raw' style='display:none'>
-record person {
-  name: string,
-  age: u32,
+interface host-funcs {
+  current-user: func() -&gt; string
 }
-hello: func(who: person) -&gt; string
+
+world demo {
+  import host: host-funcs
+
+  default export interface {
+    record person {
+      name: string,
+      age: u32,
+    }
+
+    // Say hello to either the specified person or the current user
+    hello: func(who: option&lt;person&gt;) -&gt; string
+  }
+}
 </textarea>
       </div>
       <div class='area'>
@@ -49,22 +61,13 @@ hello: func(who: person) -&gt; string
           <label for="language-select">Language:</label>
 
           <select name="language" id="language-select">
-            <option value="js">JavaScript</option>
             <option value="rust">Rust</option>
+            <option value="js">JavaScript</option>
             <option value="java">Java</option>
             <option value="wasmtime">Wasmtime</option>
             <option value="wasmtime-py">Wasmtime (Python)</option>
             <option value="c">C</option>
             <option value="markdown">Markdown</option>
-          </select>
-
-          &middot;
-
-          <label for="mode-select">Mode:</label>
-
-          <select name="mode" id="mode-select">
-            <option value="import">import</option>
-            <option value="export">export</option>
           </select>
 
           &middot;

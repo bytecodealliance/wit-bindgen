@@ -22,7 +22,6 @@ world demo {
       wasmtime-tracing: bool,
       js-compat: bool,
       js-instantiation: bool,
-      is-import: bool,
     }
 
     render: func(lang: lang, wit: string, options: options) -> result<files, string>
