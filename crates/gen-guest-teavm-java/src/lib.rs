@@ -96,7 +96,7 @@ impl WorldGenerator for TeaVmJava {
         gen.types();
 
         for func in iface.functions.iter() {
-            gen.export(func, false);
+            gen.export(func, Some(name));
         }
 
         gen.add_class();
@@ -107,7 +107,7 @@ impl WorldGenerator for TeaVmJava {
         gen.types();
 
         for func in iface.functions.iter() {
-            gen.export(func, true);
+            gen.export(func, None);
         }
 
         gen.add_class();
@@ -399,12 +399,10 @@ impl InterfaceGenerator<'_> {
         );
     }
 
-    fn export(&mut self, func: &Function, is_default: bool) {
+    fn export(&mut self, func: &Function, interface_name: Option<&str>) {
         let sig = self.iface.wasm_signature(AbiVariant::GuestExport, func);
 
-        // Currently the Java generator always emits default exports
-        // This needs to change once the generator works from a world
-        let export_name = self.iface.core_export_name(is_default, func);
+        let export_name = func.core_export_name(interface_name);
 
         let mut bindgen = FunctionBindgen::new(
             self,
