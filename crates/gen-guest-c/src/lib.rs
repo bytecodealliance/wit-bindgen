@@ -95,7 +95,7 @@ impl WorldGenerator for C {
             if i == 0 {
                 uwriteln!(gen.src.h_fns, "\n// Exported Functions from `{name}`");
             }
-            gen.export(func, false);
+            gen.export(func, Some(name));
         }
 
         gen.finish();
@@ -111,7 +111,7 @@ impl WorldGenerator for C {
             if i == 0 {
                 uwriteln!(gen.src.h_fns, "\n// Exported Functions from `{name}`");
             }
-            gen.export(func, true);
+            gen.export(func, None);
         }
 
         gen.finish();
@@ -715,12 +715,10 @@ impl InterfaceGenerator<'_> {
         self.src.c_adapters("}\n");
     }
 
-    fn export(&mut self, func: &Function, is_default: bool) {
+    fn export(&mut self, func: &Function, interface_name: Option<&str>) {
         let sig = self.iface.wasm_signature(AbiVariant::GuestExport, func);
 
-        // Currently the C generator always emits default exports
-        // This needs to change once the generator works from a world
-        let export_name = self.iface.core_export_name(is_default, func);
+        let export_name = func.core_export_name(interface_name);
 
         // Print the actual header for this function into the header file, and
         // it's what we'll be calling.

@@ -209,24 +209,11 @@ fn gen_world(
     opts: WorldOpt,
     files: &mut Files,
 ) -> Result<()> {
-    let World {
-        docs: _,
-        name,
-        imports,
-        exports,
-        default,
-    } = opts.wit;
-
-    let interfaces = ComponentInterfaces {
-        exports,
-        imports,
-        default,
-    };
-
     let name = match opts.name {
         Some(name) => name,
-        None => name,
+        None => opts.wit.name.clone(),
     };
+    let interfaces = ComponentInterfaces::from(opts.wit);
     generator.generate(&name, &interfaces, files);
     Ok(())
 }

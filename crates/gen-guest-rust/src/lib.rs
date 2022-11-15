@@ -123,12 +123,12 @@ impl WorldGenerator for RustWasm {
 
     fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
         self.interface(iface, TypeMode::Owned, false)
-            .generate_exports(name, false);
+            .generate_exports(name, Some(name));
     }
 
     fn export_default(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
         self.interface(iface, TypeMode::Owned, false)
-            .generate_exports(name, true);
+            .generate_exports(name, None);
     }
 
     fn finish(&mut self, name: &str, interfaces: &ComponentInterfaces, files: &mut Files) {
@@ -244,7 +244,7 @@ struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
-    fn generate_exports(mut self, name: &str, default_export: bool) {
+    fn generate_exports(mut self, name: &str, interface_name: Option<&str>) {
         self.types();
 
         let camel = name.to_upper_camel_case();
@@ -261,7 +261,7 @@ impl InterfaceGenerator<'_> {
         uwriteln!(self.src, "}}");
 
         for func in self.iface.functions.iter() {
-            self.generate_guest_export(name, func, default_export);
+            self.generate_guest_export(name, func, interface_name);
         }
 
         self.append_submodule(name);
@@ -338,7 +338,12 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn generate_guest_export(&mut self, module_name: &str, func: &Function, default_export: bool) {
+    fn generate_guest_export(
+        &mut self,
+        module_name: &str,
+        func: &Function,
+        interface_name: Option<&str>,
+    ) {
         if self.gen.skip.contains(&func.name) {
             return;
         }
@@ -347,7 +352,7 @@ impl InterfaceGenerator<'_> {
         let trait_bound = module_name.to_upper_camel_case();
         let iface_snake = self.iface.name.to_snake_case();
         let name_snake = func.name.to_snake_case();
-        let export_name = self.iface.core_export_name(default_export, func);
+        let export_name = func.core_export_name(interface_name);
         let mut macro_src = Source::default();
         // Generate, simultaneously, the actual lifting/lowering function within
         // the original module (`call_{name_snake}`) as well as the function
