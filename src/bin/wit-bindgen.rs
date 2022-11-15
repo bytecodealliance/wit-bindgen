@@ -211,9 +211,9 @@ fn gen_world(
 ) -> Result<()> {
     let name = match opts.name {
         Some(name) => name,
-        None => world.name.clone(),
+        None => opts.wit.name.clone(),
     };
-    let interfaces = ComponentInterfaces::from(world);
+    let interfaces = ComponentInterfaces::from(opts.wit);
     generator.generate(&name, &interfaces, files);
     Ok(())
 }
