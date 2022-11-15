@@ -7,7 +7,7 @@ use std::process::Command;
 use wit_bindgen_core::Files;
 use wit_component::ComponentInterfaces;
 use wit_parser::abi::{AbiVariant, WasmType};
-use wit_parser::{Function, Interface};
+use wit_parser::{Function, Interface, World};
 
 pub enum Direction {
     Import,
@@ -64,42 +64,26 @@ stderr ---
 pub fn run_world_codegen_test(
     gen_name: &str,
     wit_path: &Path,
-    dir: Direction,
     generate: fn(&str, &ComponentInterfaces, &mut Files),
     verify: fn(&Path, &str),
 ) {
-    let iface = Interface::parse_file(wit_path).unwrap();
-    let mut interfaces = ComponentInterfaces::default();
+    let world = World::parse_file(wit_path).unwrap();
+    let name = world.name.clone();
+    let interfaces = ComponentInterfaces::from(world);
 
-    match dir {
-        Direction::Import => {
-            interfaces.imports.insert(iface.name.clone(), iface);
-        }
-        Direction::Export => {
-            interfaces.default = Some(iface);
-        }
-    }
-
-    let name = wit_path.file_stem().and_then(|s| s.to_str()).unwrap();
-
-    let gen_name = format!(
-        "{gen_name}-{}",
-        match dir {
-            Direction::Import => "import",
-            Direction::Export => "export",
-        }
-    );
-    let dir = test_directory("codegen", &gen_name, name);
+    let wit_name = wit_path.file_stem().and_then(|s| s.to_str()).unwrap();
+    let gen_name = format!("{gen_name}-{wit_name}");
+    let dir = test_directory("codegen", &gen_name, &name);
 
     let mut files = Default::default();
-    generate(name, &interfaces, &mut files);
+    generate(&name, &interfaces, &mut files);
     for (file, contents) in files.iter() {
         let dst = dir.join(file);
         std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
         std::fs::write(&dst, contents).unwrap();
     }
 
-    verify(&dir, name);
+    verify(&dir, &name);
 }
 
 pub fn run_component_codegen_test(

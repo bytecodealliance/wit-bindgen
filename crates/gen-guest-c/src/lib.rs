@@ -72,7 +72,7 @@ impl WorldGenerator for C {
     }
 
     fn import(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
-        let mut gen = self.interface(iface, true);
+        let mut gen = self.interface(name, iface, true);
         gen.types();
 
         for (i, func) in iface.functions.iter().enumerate() {
@@ -88,7 +88,7 @@ impl WorldGenerator for C {
     }
 
     fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
-        let mut gen = self.interface(iface, false);
+        let mut gen = self.interface(name, iface, false);
         gen.types();
 
         for (i, func) in iface.functions.iter().enumerate() {
@@ -104,7 +104,7 @@ impl WorldGenerator for C {
     }
 
     fn export_default(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
-        let mut gen = self.interface(iface, false);
+        let mut gen = self.interface(name, iface, false);
         gen.types();
 
         for (i, func) in iface.functions.iter().enumerate() {
@@ -294,12 +294,14 @@ impl WorldGenerator for C {
 impl C {
     fn interface<'a>(
         &'a mut self,
+        name: &'a str,
         iface: &'a Interface,
         in_import: bool,
     ) -> InterfaceGenerator<'a> {
         let mut sizes = SizeAlign::default();
         sizes.fill(iface);
         InterfaceGenerator {
+            name,
             src: Source::default(),
             gen: self,
             iface,
@@ -325,6 +327,7 @@ impl C {
 }
 
 struct InterfaceGenerator<'a> {
+    name: &'a str,
     src: Source,
     in_import: bool,
     gen: &'a mut C,
@@ -483,7 +486,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             uwriteln!(
                 self.src.h_defs,
                 "#define {}_{}_{} (1 << {})",
-                self.iface.name.to_shouty_snake_case(),
+                self.name.to_shouty_snake_case(),
                 name.to_shouty_snake_case(),
                 flag.name.to_shouty_snake_case(),
                 i,
@@ -520,7 +523,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             uwriteln!(
                 self.src.h_defs,
                 "#define {}_{}_{} {}",
-                self.iface.name.to_shouty_snake_case(),
+                self.name.to_shouty_snake_case(),
                 name.to_shouty_snake_case(),
                 case.name.to_shouty_snake_case(),
                 i,
@@ -603,7 +606,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             uwriteln!(
                 self.src.h_defs,
                 "#define {}_{}_{} {}",
-                self.iface.name.to_shouty_snake_case(),
+                self.name.to_shouty_snake_case(),
                 name.to_shouty_snake_case(),
                 case.name.to_shouty_snake_case(),
                 i,
@@ -655,12 +658,12 @@ impl InterfaceGenerator<'_> {
         uwriteln!(
             self.src.h_fns,
             "__attribute__((import_module(\"{}\"), import_name(\"{}\")))",
-            self.iface.name,
+            self.name,
             func.name
         );
         let import_name = self.gen.names.tmp(&format!(
             "__wasm_import_{}_{}",
-            self.iface.name.to_snake_case(),
+            self.name.to_snake_case(),
             func.name.to_snake_case()
         ));
         match sig.results.len() {
@@ -732,7 +735,7 @@ impl InterfaceGenerator<'_> {
         );
         let import_name = self.gen.names.tmp(&format!(
             "__wasm_export_{}_{}",
-            self.iface.name.to_snake_case(),
+            self.name.to_snake_case(),
             func.name.to_snake_case()
         ));
 
@@ -851,7 +854,7 @@ impl InterfaceGenerator<'_> {
     fn print_sig(&mut self, func: &Function) -> CSig {
         let name = format!(
             "{}_{}",
-            self.iface.name.to_snake_case(),
+            self.name.to_snake_case(),
             func.name.to_snake_case()
         );
         self.gen.names.insert(&name).expect("duplicate symbols");
@@ -958,7 +961,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn print_typedef_target(&mut self, name: &str) {
-        let iface_snake = self.iface.name.to_snake_case();
+        let iface_snake = self.name.to_snake_case();
         let snake = name.to_snake_case();
         self.print_namespace(SourceType::HDefs);
         self.src.h_defs(&snake);
@@ -970,7 +973,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn print_namespace(&mut self, stype: SourceType) {
-        self.src.print(stype, &self.iface.name.to_snake_case());
+        self.src.print(stype, &self.name.to_snake_case());
         self.src.print(stype, "_");
     }
 
