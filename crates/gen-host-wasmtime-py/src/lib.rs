@@ -122,282 +122,6 @@ impl WasmtimePy {
             ",
         );
     }
-
-    fn print_intrinsic(
-        &mut self,
-        src: &mut Source,
-        name: &'static str,
-        gen: impl FnOnce(&str, &mut Source),
-    ) -> &'static str {
-        src.pyimport(".intrinsics", name);
-        if !self.all_intrinsics.insert(name) {
-            return name;
-        }
-        gen(name, &mut self.intrinsics);
-        return name;
-    }
-
-    fn print_validate_guest_char(&mut self, src: &mut Source) -> &'static str {
-        self.print_intrinsic(src, "_validate_guest_char", |name, src| {
-            uwriteln!(
-                src,
-                "
-                    def {name}(i: int) -> str:
-                        if i > 0x10ffff or (i >= 0xd800 and i <= 0xdfff):
-                            raise TypeError('not a valid char')
-                        return chr(i)
-                ",
-            );
-        })
-    }
-
-    fn print_i32_to_f32(&mut self, src: &mut Source) -> &'static str {
-        self.print_i32_to_f32_cvts();
-        self.print_intrinsic(src, "_i32_to_f32", |name, src| {
-            uwriteln!(
-                src,
-                "
-                    def {name}(i: int) -> float:
-                        _i32_to_f32_i32[0] = i     # type: ignore
-                        return _i32_to_f32_f32[0]  # type: ignore
-                ",
-            );
-        })
-    }
-
-    fn print_f32_to_i32(&mut self, src: &mut Source) -> &'static str {
-        self.print_i32_to_f32_cvts();
-        self.print_intrinsic(src, "_f32_to_i32", |name, src| {
-            uwriteln!(
-                src,
-                "
-                    def {name}(i: float) -> int:
-                        _i32_to_f32_f32[0] = i    # type: ignore
-                        return _i32_to_f32_i32[0] # type: ignore
-                ",
-            );
-        })
-    }
-
-    fn print_i32_to_f32_cvts(&mut self) {
-        if !self.all_intrinsics.insert("i32_to_f32_cvts") {
-            return;
-        }
-        self.intrinsics.pyimport("ctypes", None);
-        self.intrinsics
-            .push_str("_i32_to_f32_i32 = ctypes.pointer(ctypes.c_int32(0))\n");
-        self.intrinsics.push_str(
-            "_i32_to_f32_f32 = ctypes.cast(_i32_to_f32_i32, ctypes.POINTER(ctypes.c_float))\n",
-        );
-    }
-
-    fn print_i64_to_f64(&mut self, src: &mut Source) -> &'static str {
-        self.print_i64_to_f64_cvts();
-        self.print_intrinsic(src, "_i64_to_f64", |name, src| {
-            uwriteln!(
-                src,
-                "
-                    def {name}(i: int) -> float:
-                        _i64_to_f64_i64[0] = i     # type: ignore
-                        return _i64_to_f64_f64[0]  # type: ignore
-                ",
-            );
-        })
-    }
-
-    fn print_f64_to_i64(&mut self, src: &mut Source) -> &'static str {
-        self.print_i64_to_f64_cvts();
-        self.print_intrinsic(src, "_f64_to_i64", |name, src| {
-            uwriteln!(
-                src,
-                "
-                    def {name}(i: float) -> int:
-                        _i64_to_f64_f64[0] = i    # type: ignore
-                        return _i64_to_f64_i64[0] # type: ignore
-                ",
-            );
-        })
-    }
-
-    fn print_i64_to_f64_cvts(&mut self) {
-        if !self.all_intrinsics.insert("i64_to_f64_cvts") {
-            return;
-        }
-        self.intrinsics.pyimport("ctypes", None);
-        self.intrinsics
-            .push_str("_i64_to_f64_i64 = ctypes.pointer(ctypes.c_int64(0))\n");
-        self.intrinsics.push_str(
-            "_i64_to_f64_f64 = ctypes.cast(_i64_to_f64_i64, ctypes.POINTER(ctypes.c_double))\n",
-        );
-    }
-
-    fn print_clamp(&mut self, src: &mut Source) -> &'static str {
-        self.print_intrinsic(src, "_clamp", |name, src| {
-            uwriteln!(
-                src,
-                "
-                    def {name}(i: int, min: int, max: int) -> int:
-                        if i < min or i > max:
-                            raise OverflowError(f'must be between {{min}} and {{max}}')
-                        return i
-                ",
-            );
-        })
-    }
-
-    fn print_load(&mut self, src: &mut Source) -> &'static str {
-        self.print_intrinsic(src, "_load", |name, src| {
-            src.pyimport("wasmtime", None);
-            src.pyimport("ctypes", None);
-            src.pyimport("typing", "Any");
-            uwriteln!(
-                src,
-                "
-                    def {name}(ty: Any, mem: wasmtime.Memory, store: wasmtime.Storelike, base: int, offset: int) -> Any:
-                        ptr = (base & 0xffffffff) + offset
-                        if ptr + ctypes.sizeof(ty) > mem.data_len(store):
-                            raise IndexError('out-of-bounds store')
-                        raw_base = mem.data_ptr(store)
-                        c_ptr = ctypes.POINTER(ty)(
-                            ty.from_address(ctypes.addressof(raw_base.contents) + ptr)
-                        )
-                        return c_ptr[0]
-                ",
-            );
-        })
-    }
-
-    fn print_store(&mut self, src: &mut Source) -> &'static str {
-        self.print_intrinsic(src, "_store", |name, src| {
-            src.pyimport("wasmtime", None);
-            src.pyimport("ctypes", None);
-            src.pyimport("typing", "Any");
-            uwriteln!(
-                src,
-                "
-                    def {name}(ty: Any, mem: wasmtime.Memory, store: wasmtime.Storelike, base: int, offset: int, val: Any) -> None:
-                        ptr = (base & 0xffffffff) + offset
-                        if ptr + ctypes.sizeof(ty) > mem.data_len(store):
-                            raise IndexError('out-of-bounds store')
-                        raw_base = mem.data_ptr(store)
-                        c_ptr = ctypes.POINTER(ty)(
-                            ty.from_address(ctypes.addressof(raw_base.contents) + ptr)
-                        )
-                        c_ptr[0] = val
-                ",
-            );
-        })
-    }
-
-    fn print_decode_utf8(&mut self, src: &mut Source) -> &'static str {
-        self.print_intrinsic(src, "_decode_utf8", |name, src| {
-            src.pyimport("wasmtime", None);
-            src.pyimport("ctypes", None);
-            src.pyimport("typing", "Tuple");
-            uwriteln!(
-                src,
-                "
-                    def {name}(mem: wasmtime.Memory, store: wasmtime.Storelike, ptr: int, len: int) -> str:
-                        ptr = ptr & 0xffffffff
-                        len = len & 0xffffffff
-                        if ptr + len > mem.data_len(store):
-                            raise IndexError('string out of bounds')
-                        base = mem.data_ptr(store)
-                        base = ctypes.POINTER(ctypes.c_ubyte)(
-                            ctypes.c_ubyte.from_address(ctypes.addressof(base.contents) + ptr)
-                        )
-                        return ctypes.string_at(base, len).decode('utf-8')
-                ",
-            );
-        })
-    }
-
-    fn print_encode_utf8(&mut self, src: &mut Source) -> &'static str {
-        self.print_intrinsic(src, "_encode_utf8", |name, src| {
-            src.pyimport("wasmtime", None);
-            src.pyimport("ctypes", None);
-            src.pyimport("typing", "Tuple");
-            uwriteln!(
-                src,
-                "
-                    def {name}(val: str, realloc: wasmtime.Func, mem: wasmtime.Memory, store: wasmtime.Storelike) -> Tuple[int, int]:
-                        bytes = val.encode('utf8')
-                        ptr = realloc(store, 0, 0, 1, len(bytes))
-                        assert(isinstance(ptr, int))
-                        ptr = ptr & 0xffffffff
-                        if ptr + len(bytes) > mem.data_len(store):
-                            raise IndexError('string out of bounds')
-                        base = mem.data_ptr(store)
-                        base = ctypes.POINTER(ctypes.c_ubyte)(
-                            ctypes.c_ubyte.from_address(ctypes.addressof(base.contents) + ptr)
-                        )
-                        ctypes.memmove(base, bytes, len(bytes))
-                        return (ptr, len(bytes))
-                ",
-            );
-        })
-    }
-
-    fn print_canon_lift(&mut self, src: &mut Source) -> &'static str {
-        self.print_intrinsic(src, "_list_canon_lift", |name, src| {
-            src.pyimport("wasmtime", None);
-            src.pyimport("ctypes", None);
-            src.pyimport("typing", "List");
-            src.pyimport("typing", "Any");
-            // TODO: this is doing a native-endian read, not a little-endian
-            // read
-            uwriteln!(
-                src,
-                "
-                    def {name}(ptr: int, len: int, size: int, ty: Any, mem: wasmtime.Memory ,store: wasmtime.Storelike) -> Any:
-                        ptr = ptr & 0xffffffff
-                        len = len & 0xffffffff
-                        if ptr + len * size > mem.data_len(store):
-                            raise IndexError('list out of bounds')
-                        raw_base = mem.data_ptr(store)
-                        base = ctypes.POINTER(ty)(
-                            ty.from_address(ctypes.addressof(raw_base.contents) + ptr)
-                        )
-                        if ty == ctypes.c_uint8:
-                            return ctypes.string_at(base, len)
-                        return base[:len]
-                ",
-            );
-        })
-    }
-
-    fn print_canon_lower(&mut self, src: &mut Source) -> &'static str {
-        self.print_intrinsic(src, "_list_canon_lower", |name, src| {
-            src.pyimport("wasmtime", None);
-            src.pyimport("ctypes", None);
-            src.pyimport("typing", "Tuple");
-            src.pyimport("typing", "List");
-            src.pyimport("typing", "Any");
-            // TODO: is there a faster way to memcpy other than iterating over
-            // the input list?
-            // TODO: this is doing a native-endian write, not a little-endian
-            // write
-            uwriteln!(
-                src,
-                "
-                    def {name}(list: Any, ty: Any, size: int, align: int, realloc: wasmtime.Func, mem: wasmtime.Memory, store: wasmtime.Storelike) -> Tuple[int, int]:
-                        total_size = size * len(list)
-                        ptr = realloc(store, 0, 0, align, total_size)
-                        assert(isinstance(ptr, int))
-                        ptr = ptr & 0xffffffff
-                        if ptr + total_size > mem.data_len(store):
-                            raise IndexError('list realloc return of bounds')
-                        raw_base = mem.data_ptr(store)
-                        base = ctypes.POINTER(ty)(
-                            ty.from_address(ctypes.addressof(raw_base.contents) + ptr)
-                        )
-                        for i, val in enumerate(list):
-                            base[i] = val
-                        return (ptr, len(list))
-                ",
-            );
-        })
-    }
 }
 
 fn array_ty(iface: &Interface, ty: &Type) -> Option<&'static str> {
@@ -664,6 +388,7 @@ impl<'a> Instantiator<'a> {
             AbiVariant::GuestImport,
             "self",
             self_module_path,
+            true,
         );
         self.gen.init.dedent();
 
@@ -696,6 +421,7 @@ impl<'a> Instantiator<'a> {
         abi: AbiVariant,
         this: &str,
         self_module_path: String,
+        at_root: bool,
     ) {
         // Technically it wouldn't be the hardest thing in the world to support
         // other string encodings, but for now the code generator was originally
@@ -739,6 +465,7 @@ impl<'a> Instantiator<'a> {
             post_return,
             iface,
             self_module_path,
+            at_root,
         };
         iface.call(
             abi,
@@ -863,6 +590,7 @@ impl<'a> Instantiator<'a> {
             let snake = ns.to_snake_case();
             uwriteln!(src, "class {camel}:");
             src.indent();
+            src.pyimport("..", camel_component);
             uwriteln!(src, "component: {camel_component}\n");
             uwriteln!(
                 src,
@@ -874,9 +602,10 @@ impl<'a> Instantiator<'a> {
 
             this.push_str(".component");
 
-            uwriteln!(self.gen.init, "def {snake}(self) -> {camel}:");
+            self.gen.init.pyimport(".exports", snake.as_str());
+            uwriteln!(self.gen.init, "def {snake}(self) -> {snake}.{camel}:");
             self.gen.init.indent();
-            uwriteln!(self.gen.init, "return {camel}(self)");
+            uwriteln!(self.gen.init, "return {snake}.{camel}(self)");
             self.gen.init.dedent();
 
             // Swap the two sources so the generation into `init` will go into
@@ -906,6 +635,7 @@ impl<'a> Instantiator<'a> {
                 AbiVariant::GuestExport,
                 &this,
                 String::new(),
+                ns.is_none(),
             );
             self.gen.init.dedent();
         }
@@ -1115,6 +845,7 @@ impl InterfaceGenerator<'_> {
         if in_import {
             self.src.push_str("(self");
         } else {
+            self.src.pyimport("wasmtime", None);
             self.src.push_str("(self, caller: wasmtime.Store");
         }
         let mut params = Vec::new();
@@ -1386,6 +1117,7 @@ struct FunctionBindgen<'a> {
     post_return: Option<String>,
     callee: String,
     self_module_path: String,
+    at_root: bool,
 }
 
 impl FunctionBindgen<'_> {
@@ -1393,13 +1125,13 @@ impl FunctionBindgen<'_> {
     where
         T: std::fmt::Display,
     {
-        let clamp = self.gen.print_clamp(&mut self.src);
+        let clamp = self.print_clamp();
         results.push(format!("{clamp}({}, {min}, {max})", operands[0]));
     }
 
     fn load(&mut self, ty: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
+        let load = self.print_load();
         let memory = self.memory.as_ref().unwrap();
-        let load = self.gen.print_load(&mut self.src);
         let tmp = self.locals.tmp("load");
         self.src.pyimport("ctypes", None);
         uwriteln!(
@@ -1411,8 +1143,8 @@ impl FunctionBindgen<'_> {
     }
 
     fn store(&mut self, ty: &str, offset: i32, operands: &[String]) {
+        let store = self.print_store();
         let memory = self.memory.as_ref().unwrap();
-        let store = self.gen.print_store(&mut self.src);
         self.src.pyimport("ctypes", None);
         uwriteln!(
             self.src,
@@ -1427,7 +1159,7 @@ impl FunctionBindgen<'_> {
             &mut self.src,
             self.gen,
             self.iface,
-            true,
+            self.at_root,
             &self.self_module_path,
             |gen| gen.print_ty(ty, false),
         )
@@ -1438,10 +1170,292 @@ impl FunctionBindgen<'_> {
             &mut self.src,
             self.gen,
             self.iface,
-            true,
+            self.at_root,
             &self.self_module_path,
             |gen| gen.print_list(element),
         )
+    }
+
+    fn print_intrinsic(
+        &mut self,
+        name: &'static str,
+        gen: impl FnOnce(&str, &mut Source),
+    ) -> &'static str {
+        let path = if self.at_root {
+            ".intrinsics"
+        } else {
+            "..intrinsics"
+        };
+        self.src.pyimport(path, name);
+        if !self.gen.all_intrinsics.insert(name) {
+            return name;
+        }
+        gen(name, &mut self.gen.intrinsics);
+        return name;
+    }
+
+    fn print_validate_guest_char(&mut self) -> &'static str {
+        self.print_intrinsic("_validate_guest_char", |name, src| {
+            uwriteln!(
+                src,
+                "
+                    def {name}(i: int) -> str:
+                        if i > 0x10ffff or (i >= 0xd800 and i <= 0xdfff):
+                            raise TypeError('not a valid char')
+                        return chr(i)
+                ",
+            );
+        })
+    }
+
+    fn print_i32_to_f32(&mut self) -> &'static str {
+        self.print_i32_to_f32_cvts();
+        self.print_intrinsic("_i32_to_f32", |name, src| {
+            uwriteln!(
+                src,
+                "
+                    def {name}(i: int) -> float:
+                        _i32_to_f32_i32[0] = i     # type: ignore
+                        return _i32_to_f32_f32[0]  # type: ignore
+                ",
+            );
+        })
+    }
+
+    fn print_f32_to_i32(&mut self) -> &'static str {
+        self.print_i32_to_f32_cvts();
+        self.print_intrinsic("_f32_to_i32", |name, src| {
+            uwriteln!(
+                src,
+                "
+                    def {name}(i: float) -> int:
+                        _i32_to_f32_f32[0] = i    # type: ignore
+                        return _i32_to_f32_i32[0] # type: ignore
+                ",
+            );
+        })
+    }
+
+    fn print_i32_to_f32_cvts(&mut self) {
+        if !self.gen.all_intrinsics.insert("i32_to_f32_cvts") {
+            return;
+        }
+        self.gen.intrinsics.pyimport("ctypes", None);
+        self.gen
+            .intrinsics
+            .push_str("_i32_to_f32_i32 = ctypes.pointer(ctypes.c_int32(0))\n");
+        self.gen.intrinsics.push_str(
+            "_i32_to_f32_f32 = ctypes.cast(_i32_to_f32_i32, ctypes.POINTER(ctypes.c_float))\n",
+        );
+    }
+
+    fn print_i64_to_f64(&mut self) -> &'static str {
+        self.print_i64_to_f64_cvts();
+        self.print_intrinsic("_i64_to_f64", |name, src| {
+            uwriteln!(
+                src,
+                "
+                    def {name}(i: int) -> float:
+                        _i64_to_f64_i64[0] = i     # type: ignore
+                        return _i64_to_f64_f64[0]  # type: ignore
+                ",
+            );
+        })
+    }
+
+    fn print_f64_to_i64(&mut self) -> &'static str {
+        self.print_i64_to_f64_cvts();
+        self.print_intrinsic("_f64_to_i64", |name, src| {
+            uwriteln!(
+                src,
+                "
+                    def {name}(i: float) -> int:
+                        _i64_to_f64_f64[0] = i    # type: ignore
+                        return _i64_to_f64_i64[0] # type: ignore
+                ",
+            );
+        })
+    }
+
+    fn print_i64_to_f64_cvts(&mut self) {
+        if !self.gen.all_intrinsics.insert("i64_to_f64_cvts") {
+            return;
+        }
+        self.gen.intrinsics.pyimport("ctypes", None);
+        self.gen
+            .intrinsics
+            .push_str("_i64_to_f64_i64 = ctypes.pointer(ctypes.c_int64(0))\n");
+        self.gen.intrinsics.push_str(
+            "_i64_to_f64_f64 = ctypes.cast(_i64_to_f64_i64, ctypes.POINTER(ctypes.c_double))\n",
+        );
+    }
+
+    fn print_clamp(&mut self) -> &'static str {
+        self.print_intrinsic("_clamp", |name, src| {
+            uwriteln!(
+                src,
+                "
+                    def {name}(i: int, min: int, max: int) -> int:
+                        if i < min or i > max:
+                            raise OverflowError(f'must be between {{min}} and {{max}}')
+                        return i
+                ",
+            );
+        })
+    }
+
+    fn print_load(&mut self) -> &'static str {
+        self.print_intrinsic("_load", |name, src| {
+            src.pyimport("wasmtime", None);
+            src.pyimport("ctypes", None);
+            src.pyimport("typing", "Any");
+            uwriteln!(
+                src,
+                "
+                    def {name}(ty: Any, mem: wasmtime.Memory, store: wasmtime.Storelike, base: int, offset: int) -> Any:
+                        ptr = (base & 0xffffffff) + offset
+                        if ptr + ctypes.sizeof(ty) > mem.data_len(store):
+                            raise IndexError('out-of-bounds store')
+                        raw_base = mem.data_ptr(store)
+                        c_ptr = ctypes.POINTER(ty)(
+                            ty.from_address(ctypes.addressof(raw_base.contents) + ptr)
+                        )
+                        return c_ptr[0]
+                ",
+            );
+        })
+    }
+
+    fn print_store(&mut self) -> &'static str {
+        self.print_intrinsic("_store", |name, src| {
+            src.pyimport("wasmtime", None);
+            src.pyimport("ctypes", None);
+            src.pyimport("typing", "Any");
+            uwriteln!(
+                src,
+                "
+                    def {name}(ty: Any, mem: wasmtime.Memory, store: wasmtime.Storelike, base: int, offset: int, val: Any) -> None:
+                        ptr = (base & 0xffffffff) + offset
+                        if ptr + ctypes.sizeof(ty) > mem.data_len(store):
+                            raise IndexError('out-of-bounds store')
+                        raw_base = mem.data_ptr(store)
+                        c_ptr = ctypes.POINTER(ty)(
+                            ty.from_address(ctypes.addressof(raw_base.contents) + ptr)
+                        )
+                        c_ptr[0] = val
+                ",
+            );
+        })
+    }
+
+    fn print_decode_utf8(&mut self) -> &'static str {
+        self.print_intrinsic("_decode_utf8", |name, src| {
+            src.pyimport("wasmtime", None);
+            src.pyimport("ctypes", None);
+            src.pyimport("typing", "Tuple");
+            uwriteln!(
+                src,
+                "
+                    def {name}(mem: wasmtime.Memory, store: wasmtime.Storelike, ptr: int, len: int) -> str:
+                        ptr = ptr & 0xffffffff
+                        len = len & 0xffffffff
+                        if ptr + len > mem.data_len(store):
+                            raise IndexError('string out of bounds')
+                        base = mem.data_ptr(store)
+                        base = ctypes.POINTER(ctypes.c_ubyte)(
+                            ctypes.c_ubyte.from_address(ctypes.addressof(base.contents) + ptr)
+                        )
+                        return ctypes.string_at(base, len).decode('utf-8')
+                ",
+            );
+        })
+    }
+
+    fn print_encode_utf8(&mut self) -> &'static str {
+        self.print_intrinsic("_encode_utf8", |name, src| {
+            src.pyimport("wasmtime", None);
+            src.pyimport("ctypes", None);
+            src.pyimport("typing", "Tuple");
+            uwriteln!(
+                src,
+                "
+                    def {name}(val: str, realloc: wasmtime.Func, mem: wasmtime.Memory, store: wasmtime.Storelike) -> Tuple[int, int]:
+                        bytes = val.encode('utf8')
+                        ptr = realloc(store, 0, 0, 1, len(bytes))
+                        assert(isinstance(ptr, int))
+                        ptr = ptr & 0xffffffff
+                        if ptr + len(bytes) > mem.data_len(store):
+                            raise IndexError('string out of bounds')
+                        base = mem.data_ptr(store)
+                        base = ctypes.POINTER(ctypes.c_ubyte)(
+                            ctypes.c_ubyte.from_address(ctypes.addressof(base.contents) + ptr)
+                        )
+                        ctypes.memmove(base, bytes, len(bytes))
+                        return (ptr, len(bytes))
+                ",
+            );
+        })
+    }
+
+    fn print_canon_lift(&mut self) -> &'static str {
+        self.print_intrinsic("_list_canon_lift", |name, src| {
+            src.pyimport("wasmtime", None);
+            src.pyimport("ctypes", None);
+            src.pyimport("typing", "List");
+            src.pyimport("typing", "Any");
+            // TODO: this is doing a native-endian read, not a little-endian
+            // read
+            uwriteln!(
+                src,
+                "
+                    def {name}(ptr: int, len: int, size: int, ty: Any, mem: wasmtime.Memory ,store: wasmtime.Storelike) -> Any:
+                        ptr = ptr & 0xffffffff
+                        len = len & 0xffffffff
+                        if ptr + len * size > mem.data_len(store):
+                            raise IndexError('list out of bounds')
+                        raw_base = mem.data_ptr(store)
+                        base = ctypes.POINTER(ty)(
+                            ty.from_address(ctypes.addressof(raw_base.contents) + ptr)
+                        )
+                        if ty == ctypes.c_uint8:
+                            return ctypes.string_at(base, len)
+                        return base[:len]
+                ",
+            );
+        })
+    }
+
+    fn print_canon_lower(&mut self) -> &'static str {
+        self.print_intrinsic("_list_canon_lower", |name, src| {
+            src.pyimport("wasmtime", None);
+            src.pyimport("ctypes", None);
+            src.pyimport("typing", "Tuple");
+            src.pyimport("typing", "List");
+            src.pyimport("typing", "Any");
+            // TODO: is there a faster way to memcpy other than iterating over
+            // the input list?
+            // TODO: this is doing a native-endian write, not a little-endian
+            // write
+            uwriteln!(
+                src,
+                "
+                    def {name}(list: Any, ty: Any, size: int, align: int, realloc: wasmtime.Func, mem: wasmtime.Memory, store: wasmtime.Storelike) -> Tuple[int, int]:
+                        total_size = size * len(list)
+                        ptr = realloc(store, 0, 0, align, total_size)
+                        assert(isinstance(ptr, int))
+                        ptr = ptr & 0xffffffff
+                        if ptr + total_size > mem.data_len(store):
+                            raise IndexError('list realloc return of bounds')
+                        raw_base = mem.data_ptr(store)
+                        base = ctypes.POINTER(ty)(
+                            ty.from_address(ctypes.addressof(raw_base.contents) + ptr)
+                        )
+                        for i, val in enumerate(list):
+                            base[i] = val
+                        return (ptr, len(list))
+                ",
+            );
+        })
     }
 }
 
@@ -1537,8 +1551,7 @@ impl Bindgen for FunctionBindgen<'_> {
             // Validate that i32 values coming from wasm are indeed valid code
             // points.
             Instruction::CharFromI32 => {
-                self.src.pyimport(".intrinsics", "_validate_guest_char");
-                let validate = self.gen.print_validate_guest_char(&mut self.src);
+                let validate = self.print_validate_guest_char();
                 results.push(format!("{validate}({})", operands[0]));
             }
 
@@ -1550,27 +1563,27 @@ impl Bindgen for FunctionBindgen<'_> {
                 for (cast, op) in casts.iter().zip(operands) {
                     match cast {
                         Bitcast::I32ToF32 => {
-                            let cvt = self.gen.print_i32_to_f32(&mut self.src);
+                            let cvt = self.print_i32_to_f32();
                             results.push(format!("{cvt}({})", op));
                         }
                         Bitcast::F32ToI32 => {
-                            let cvt = self.gen.print_f32_to_i32(&mut self.src);
+                            let cvt = self.print_f32_to_i32();
                             results.push(format!("{cvt}({})", op));
                         }
                         Bitcast::I64ToF64 => {
-                            let cvt = self.gen.print_i64_to_f64(&mut self.src);
+                            let cvt = self.print_i64_to_f64();
                             results.push(format!("{cvt}({})", op));
                         }
                         Bitcast::F64ToI64 => {
-                            let cvt = self.gen.print_f64_to_i64(&mut self.src);
+                            let cvt = self.print_f64_to_i64();
                             results.push(format!("{cvt}({})", op));
                         }
                         Bitcast::I64ToF32 => {
-                            let cvt = self.gen.print_i32_to_f32(&mut self.src);
+                            let cvt = self.print_i32_to_f32();
                             results.push(format!("{cvt}(({}) & 0xffffffff)", op));
                         }
                         Bitcast::F32ToI64 => {
-                            let cvt = self.gen.print_f32_to_i32(&mut self.src);
+                            let cvt = self.print_f32_to_i32();
                             results.push(format!("{cvt}({})", op));
                         }
                         Bitcast::I32ToI64 | Bitcast::I64ToI32 | Bitcast::None => {
@@ -1975,8 +1988,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 let (ok, ok_results) = self.blocks.pop().unwrap();
                 let err_payload = self.payloads.pop().unwrap();
                 let ok_payload = self.payloads.pop().unwrap();
-                self.src.pyimport(".types", "Ok");
-                self.src.pyimport(".types", "Err");
+                let path = if self.at_root { ".types" } else { "..types" };
+                self.src.pyimport(path, "Ok");
+                self.src.pyimport(path, "Err");
 
                 for _ in 0..result_types.len() {
                     results.push(self.locals.tmp("variant"));
@@ -2015,8 +2029,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 let err_result = err_results.get(0).unwrap_or(&none);
                 let ok_result = ok_results.get(0).unwrap_or(&none);
 
-                self.src.pyimport(".types", "Ok");
-                self.src.pyimport(".types", "Err");
+                let path = if self.at_root { ".types" } else { "..types" };
+                self.src.pyimport(path, "Ok");
+                self.src.pyimport(path, "Err");
 
                 let result = self.locals.tmp("expected");
                 uwrite!(self.src, "{result}: ");
@@ -2056,13 +2071,13 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::ListCanonLower { element, .. } => {
+                let lower = self.print_canon_lower();
                 let realloc = self.realloc.as_ref().unwrap();
                 let memory = self.memory.as_ref().unwrap();
 
                 let ptr = self.locals.tmp("ptr");
                 let len = self.locals.tmp("len");
                 let array_ty = array_ty(iface, element).unwrap();
-                let lower = self.gen.print_canon_lower(&mut self.src);
                 let size = self.sizes.size(element);
                 let align = self.sizes.align(element);
                 uwriteln!(
@@ -2074,13 +2089,13 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(len);
             }
             Instruction::ListCanonLift { element, .. } => {
+                let lift = self.print_canon_lift();
                 let memory = self.memory.as_ref().unwrap();
                 let ptr = self.locals.tmp("ptr");
                 let len = self.locals.tmp("len");
                 uwriteln!(self.src, "{ptr} = {}", operands[0]);
                 uwriteln!(self.src, "{len} = {}", operands[1]);
                 let array_ty = array_ty(iface, element).unwrap();
-                let lift = self.gen.print_canon_lift(&mut self.src);
                 self.src.pyimport("ctypes", None);
                 let lift = format!(
                     "{lift}({ptr}, {len}, {}, ctypes.{array_ty}, {memory}, caller)",
@@ -2094,12 +2109,12 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(list);
             }
             Instruction::StringLower { .. } => {
+                let encode = self.print_encode_utf8();
                 let realloc = self.realloc.as_ref().unwrap();
                 let memory = self.memory.as_ref().unwrap();
 
                 let ptr = self.locals.tmp("ptr");
                 let len = self.locals.tmp("len");
-                let encode = self.gen.print_encode_utf8(&mut self.src);
                 uwriteln!(
                     self.src,
                     "{ptr}, {len} = {encode}({}, {realloc}, {memory}, caller)",
@@ -2109,12 +2124,12 @@ impl Bindgen for FunctionBindgen<'_> {
                 results.push(len);
             }
             Instruction::StringLift => {
+                let decode = self.print_decode_utf8();
                 let memory = self.memory.as_ref().unwrap();
                 let ptr = self.locals.tmp("ptr");
                 let len = self.locals.tmp("len");
                 uwriteln!(self.src, "{ptr} = {}", operands[0]);
                 uwriteln!(self.src, "{len} = {}", operands[1]);
-                let decode = self.gen.print_decode_utf8(&mut self.src);
                 let list = self.locals.tmp("list");
                 uwriteln!(
                     self.src,
@@ -2225,7 +2240,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         .push_str(&format!("assert(isinstance({}, {}))\n", name, ty));
                 }
             }
-            Instruction::CallInterface { module: _, func } => {
+            Instruction::CallInterface { func } => {
                 for i in 0..func.results.len() {
                     if i > 0 {
                         self.src.push_str(", ");

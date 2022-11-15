@@ -899,7 +899,11 @@ impl Instantiator<'_> {
             self.src.js("return ");
         }
 
-        self.exports(&self.component.exports, 0, self.interfaces.default.as_ref());
+        self.exports(
+            &self.component.exports,
+            0,
+            self.interfaces.default.as_ref().map(|i| (None, i)),
+        );
     }
 
     fn instantiation_global_initializer(&mut self, init: &GlobalInitializer) {
@@ -1187,7 +1191,7 @@ impl Instantiator<'_> {
         &mut self,
         exports: &IndexMap<String, Export>,
         depth: usize,
-        iface: Option<&Interface>,
+        iface: Option<(Option<&str>, &Interface)>,
     ) {
         if exports.is_empty() {
             if self.gen.opts.instantiation {
@@ -1201,7 +1205,17 @@ impl Instantiator<'_> {
         }
 
         for (name, export) in exports {
-            let camel = name.to_lower_camel_case();
+            let js_name = if self.gen.opts.instantiation {
+                name.clone()
+            } else {
+                // When generating direct ES-module exports namespace functions
+                // by their exported interface name, if applicable.
+                match iface {
+                    Some((Some(iface_name), _)) => format!("{iface_name}-{name}"),
+                    _ => name.clone(),
+                }
+            };
+            let camel = js_name.to_lower_camel_case();
             match export {
                 Export::LiftedFunction {
                     ty: _,
@@ -1215,7 +1229,7 @@ impl Instantiator<'_> {
                         uwrite!(self.src.js, "\nexport function {camel}");
                     }
                     let callee = self.core_def(func);
-                    let iface = iface.unwrap();
+                    let (_, iface) = iface.unwrap();
                     let func = iface.functions.iter().find(|f| f.name == *name).unwrap();
                     self.bindgen(
                         func.params.len(),
@@ -1232,10 +1246,14 @@ impl Instantiator<'_> {
                     }
                 }
                 Export::Instance(exports) => {
-                    uwrite!(self.src.js, "{camel}: ");
-                    let iface = self.interfaces.exports.get(name.as_str());
-                    self.exports(exports, depth + 1, iface);
-                    self.src.js(",\n");
+                    if self.gen.opts.instantiation {
+                        uwrite!(self.src.js, "{camel}: ");
+                    }
+                    let iface = &self.interfaces.exports[name.as_str()];
+                    self.exports(exports, depth + 1, Some((Some(name.as_str()), iface)));
+                    if self.gen.opts.instantiation {
+                        self.src.js(",\n");
+                    }
                 }
 
                 // ignore type exports for now
@@ -2662,7 +2680,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 uwriteln!(self.src.js, "{}({});", self.callee, operands.join(", "));
             }
 
-            Instruction::CallInterface { module: _, func } => {
+            Instruction::CallInterface { func } => {
                 if self.err == ErrHandling::ResultCatchHandler {
                     uwriteln!(
                         self.src.js,

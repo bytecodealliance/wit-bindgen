@@ -5,7 +5,7 @@ import wit_records.RecordsWorld.Tuple1;
 import wit_records.RecordsWorld.Tuple2;
 import wit_records.RecordsWorld.Tuple4;
 
-public class ExportsImpl {
+public class RecordsImpl {
     public static void testImports() {
         {
             Tuple2<Byte, Short> results = Imports.multipleResults();

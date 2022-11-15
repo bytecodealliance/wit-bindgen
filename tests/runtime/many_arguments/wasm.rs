@@ -1,14 +1,10 @@
-wit_bindgen_guest_rust::generate!({
-    import: "../../tests/runtime/many_arguments/imports.wit",
-    default: "../../tests/runtime/many_arguments/exports.wit",
-    name: "exports",
-});
+wit_bindgen_guest_rust::generate!("../../tests/runtime/many_arguments/world.wit");
 
 struct Component;
 
-export_exports!(Component);
+export_many_arguments!(Component);
 
-impl exports::Exports for Component {
+impl many_arguments::ManyArguments for Component {
     fn many_arguments(
         a1: u64,
         a2: u64,

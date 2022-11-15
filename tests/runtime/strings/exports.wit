@@ -1,3 +1,0 @@
-test-imports: func()
-
-roundtrip: func(s: string) -> string

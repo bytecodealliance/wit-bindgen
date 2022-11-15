@@ -96,7 +96,7 @@ impl WorldGenerator for Wasmtime {
             gen.src,
             "
                 pub fn new(
-                    exports: &mut wasmtime::component::ExportInstance<'_, '_>,
+                    __exports: &mut wasmtime::component::ExportInstance<'_, '_>,
                 ) -> anyhow::Result<{camel}> {{
             "
         );
@@ -134,7 +134,7 @@ impl WorldGenerator for Wasmtime {
         let getter = format!(
             "\
                 {snake}::{camel}::new(
-                    &mut exports.instance(\"{name}\")
+                    &mut __exports.instance(\"{name}\")
                         .ok_or_else(|| anyhow::anyhow!(\"exported instance `{name}` not present\"))?
                 )?\
             "
@@ -221,7 +221,7 @@ impl WorldGenerator for Wasmtime {
                     ) -> anyhow::Result<Self> {{
                         let mut store = store.as_context_mut();
                         let mut exports = instance.exports(&mut store);
-                        let mut exports = exports.root();
+                        let mut __exports = exports.root();
             ",
         );
         for (name, (_, get)) in self.exports.fields.iter() {
@@ -496,7 +496,7 @@ impl<'a> InterfaceGenerator<'a> {
         let mut ret = Vec::new();
         for func in self.iface.functions.iter() {
             let snake = func.name.to_snake_case();
-            uwrite!(self.src, "*exports.typed_func::<(");
+            uwrite!(self.src, "*__exports.typed_func::<(");
             for (_, ty) in func.params.iter() {
                 self.print_ty(ty, TypeMode::AllBorrowed("'_"));
                 self.push_str(", ");

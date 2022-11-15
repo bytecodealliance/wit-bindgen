@@ -3,38 +3,25 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-macro_rules! gen_test {
-    ($name:ident $test:tt $dir:ident) => {
+macro_rules! codegen_test {
+    ($name:ident $test:tt) => {
         #[test]
         fn $name() {
             test_helpers::run_world_codegen_test(
                 "guest-c",
                 $test.as_ref(),
-                test_helpers::Direction::$dir,
                 |name, interfaces, files| {
                     wit_bindgen_gen_guest_c::Opts::default()
                         .build()
                         .generate(name, interfaces, files)
                 },
-                super::verify,
+                verify,
             )
         }
     };
 }
 
-mod exports {
-    macro_rules! codegen_test {
-        ($name:ident $test:tt) => (gen_test!($name $test Export);)
-    }
-    test_helpers::codegen_tests!("*.wit");
-}
-
-mod imports {
-    macro_rules! codegen_test {
-        ($name:ident $test:tt) => (gen_test!($name $test Import);)
-    }
-    test_helpers::codegen_tests!("*.wit");
-}
+test_helpers::codegen_tests!("*.wit");
 
 fn verify(dir: &Path, name: &str) {
     let path = PathBuf::from(env::var_os("WASI_SDK_PATH").unwrap());

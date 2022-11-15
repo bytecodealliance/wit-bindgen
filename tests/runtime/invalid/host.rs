@@ -1,8 +1,4 @@
-wit_bindgen_host_wasmtime_rust::generate!({
-    import: "../../tests/runtime/invalid/imports.wit",
-    default: "../../tests/runtime/invalid/exports.wit",
-    name: "exports",
-});
+wit_bindgen_host_wasmtime_rust::generate!("../../tests/runtime/invalid/world.wit");
 
 use anyhow::{Context, Result};
 use imports::*;
@@ -82,14 +78,14 @@ fn run(wasm: &str) -> Result<()> {
 
     let mut store = Store::new(&engine, Default::default());
 
-    let exports = Exports::instantiate(&mut store, &module, &linker)?.0;
+    let exports = Invalid::instantiate(&mut store, &module, &linker)?.0;
     exports.invalid_bool(&mut store)?;
     exports.invalid_u8(&mut store)?;
     exports.invalid_s8(&mut store)?;
     exports.invalid_u16(&mut store)?;
     exports.invalid_s16(&mut store)?;
 
-    let mk = |store: &mut Store<_>| Exports::instantiate(store, &module, &linker).map(|p| p.0);
+    let mk = |store: &mut Store<_>| Invalid::instantiate(store, &module, &linker).map(|p| p.0);
 
     assert_err(
         mk(&mut store)?.invalid_char(&mut store),

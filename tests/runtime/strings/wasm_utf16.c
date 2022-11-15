@@ -14,7 +14,7 @@ void assert_str(strings_string_t* str, char16_t* expected) {
   assert(memcmp(str->ptr, expected, expected_len * 2) == 0);
 }
 
-void exports_test_imports() {
+void strings_test_imports() {
   strings_string_t str1;
   strings_string_set(&str1, u"latin utf16");
   imports_take_basic(&str1);
@@ -25,7 +25,7 @@ void exports_test_imports() {
   strings_string_free(&str2);
 }
 
-void exports_roundtrip(strings_string_t *str, strings_string_t *ret) {
+void strings_roundtrip(strings_string_t *str, strings_string_t *ret) {
   assert(str->len > 0);
   ret->len = str->len;
   ret->ptr = malloc(ret->len * 2);

@@ -1,6 +1,6 @@
 package wit_smoke;
 
-public class ExportsImpl {
+public class SmokeImpl {
     public static void thunk() {
         Imports.thunk();
     }

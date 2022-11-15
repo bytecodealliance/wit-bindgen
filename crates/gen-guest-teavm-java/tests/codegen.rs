@@ -3,14 +3,13 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-macro_rules! gen_test {
-    ($name:ident $test:tt $dir:ident) => {
+macro_rules! codegen_test {
+    ($name:ident $test:tt) => {
         #[test]
         fn $name() {
             test_helpers::run_world_codegen_test(
                 "guest-teavm-java",
                 $test.as_ref(),
-                test_helpers::Direction::$dir,
                 |name, interfaces, files| {
                     wit_bindgen_gen_guest_teavm_java::Opts {
                         generate_stub: true,
@@ -18,25 +17,12 @@ macro_rules! gen_test {
                     .build()
                     .generate(name, interfaces, files)
                 },
-                super::verify,
+                verify,
             )
         }
     };
 }
-
-mod exports {
-    macro_rules! codegen_test {
-        ($name:ident $test:tt) => (gen_test!($name $test Export);)
-    }
-    test_helpers::codegen_tests!("*.wit");
-}
-
-mod imports {
-    macro_rules! codegen_test {
-        ($name:ident $test:tt) => (gen_test!($name $test Import);)
-    }
-    test_helpers::codegen_tests!("*.wit");
-}
+test_helpers::codegen_tests!("*.wit");
 
 fn verify(dir: &Path, name: &str) {
     let java_dir = &dir.join("src/main/java");

@@ -1,10 +1,6 @@
 use anyhow::Result;
 
-wit_bindgen_host_wasmtime_rust::generate!({
-    import: "../../tests/runtime/many_arguments/imports.wit",
-    default: "../../tests/runtime/many_arguments/exports.wit",
-    name: "exports",
-});
+wit_bindgen_host_wasmtime_rust::generate!("../../tests/runtime/many_arguments/world.wit");
 
 #[derive(Default)]
 pub struct MyImports {}
@@ -53,7 +49,7 @@ fn run(wasm: &str) -> Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
         |linker| imports::add_to_linker(linker, |cx| -> &mut MyImports { &mut cx.imports }),
-        |store, module, linker| Exports::instantiate(store, module, linker),
+        |store, module, linker| ManyArguments::instantiate(store, module, linker),
     )?;
 
     exports.many_arguments(

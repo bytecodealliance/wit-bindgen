@@ -7,11 +7,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-uint32_t exports_allocated_bytes(void) {
+uint32_t lists_allocated_bytes(void) {
   return 0;
 }
 
-void exports_test_imports() {
+void lists_test_imports() {
   {
     uint8_t list[] = {};
     imports_list_u8_t a;
@@ -228,34 +228,34 @@ void exports_test_imports() {
   }
 }
 
-void exports_empty_list_param(exports_list_u8_t *a) {
+void lists_empty_list_param(lists_list_u8_t *a) {
   assert(a->len == 0);
 }
 
-void exports_empty_string_param(lists_string_t *a) {
+void lists_empty_string_param(lists_string_t *a) {
   assert(a->len == 0);
 }
 
-void exports_empty_list_result(exports_list_u8_t *ret0) {
+void lists_empty_list_result(lists_list_u8_t *ret0) {
   ret0->ptr = 0;
   ret0->len = 0;
 }
 
-void exports_empty_string_result(lists_string_t *ret0) {
+void lists_empty_string_result(lists_string_t *ret0) {
   ret0->ptr = 0;
   ret0->len = 0;
 }
 
-void exports_list_param(exports_list_u8_t *a) {
+void lists_list_param(lists_list_u8_t *a) {
   assert(a->len == 4);
   assert(a->ptr[0] == 1);
   assert(a->ptr[1] == 2);
   assert(a->ptr[2] == 3);
   assert(a->ptr[3] == 4);
-  exports_list_u8_free(a);
+  lists_list_u8_free(a);
 }
 
-void exports_list_param2(lists_string_t *a) {
+void lists_list_param2(lists_string_t *a) {
   assert(a->len == 3);
   assert(a->ptr[0] == 'f');
   assert(a->ptr[1] == 'o');
@@ -263,7 +263,7 @@ void exports_list_param2(lists_string_t *a) {
   lists_string_free(a);
 }
 
-void exports_list_param3(exports_list_string_t *a) {
+void lists_list_param3(lists_list_string_t *a) {
   assert(a->len == 3);
   assert(a->ptr[0].len == 3);
   assert(a->ptr[0].ptr[0] == 'f');
@@ -280,10 +280,10 @@ void exports_list_param3(exports_list_string_t *a) {
   assert(a->ptr[2].ptr[1] == 'a');
   assert(a->ptr[2].ptr[2] == 'z');
 
-  exports_list_string_free(a);
+  lists_list_string_free(a);
 }
 
-void exports_list_param4(exports_list_list_string_t *a) {
+void lists_list_param4(lists_list_list_string_t *a) {
   assert(a->len == 2);
   assert(a->ptr[0].len == 2);
   assert(a->ptr[1].len == 1);
@@ -303,10 +303,10 @@ void exports_list_param4(exports_list_list_string_t *a) {
   assert(a->ptr[1].ptr[0].ptr[1] == 'a');
   assert(a->ptr[1].ptr[0].ptr[2] == 'z');
 
-  exports_list_list_string_free(a);
+  lists_list_list_string_free(a);
 }
 
-void exports_list_result(exports_list_u8_t *ret0) {
+void lists_list_result(lists_list_u8_t *ret0) {
   ret0->ptr = malloc(5);
   ret0->len = 5;
   ret0->ptr[0] = 1;
@@ -316,11 +316,11 @@ void exports_list_result(exports_list_u8_t *ret0) {
   ret0->ptr[4] = 5;
 }
 
-void exports_list_result2(lists_string_t *ret0) {
+void lists_list_result2(lists_string_t *ret0) {
   lists_string_dup(ret0, "hello!");
 }
 
-void exports_list_result3(exports_list_string_t *ret0) {
+void lists_list_result3(lists_list_string_t *ret0) {
   ret0->len = 2;
   ret0->ptr = malloc(2 * sizeof(lists_string_t));
 
@@ -328,10 +328,10 @@ void exports_list_result3(exports_list_string_t *ret0) {
   lists_string_dup(&ret0->ptr[1], "world!");
 }
 
-void exports_list_roundtrip(exports_list_u8_t *a, exports_list_u8_t *ret0) {
+void lists_list_roundtrip(lists_list_u8_t *a, lists_list_u8_t *ret0) {
   *ret0 = *a;
 }
 
-void exports_string_roundtrip(lists_string_t *a, lists_string_t *ret0) {
+void lists_string_roundtrip(lists_string_t *a, lists_string_t *ret0) {
   *ret0 = *a;
 }

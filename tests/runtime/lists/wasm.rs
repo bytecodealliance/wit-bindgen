@@ -1,14 +1,10 @@
-wit_bindgen_guest_rust::generate!({
-    import: "../../tests/runtime/lists/imports.wit",
-    default: "../../tests/runtime/lists/exports.wit",
-    name: "exports",
-});
+wit_bindgen_guest_rust::generate!("../../tests/runtime/lists/world.wit");
 
 struct Component;
 
-export_exports!(Component);
+export_lists!(Component);
 
-impl exports::Exports for Component {
+impl lists::Lists for Component {
     fn allocated_bytes() -> u32 {
         test_rust_wasm::get() as u32
     }

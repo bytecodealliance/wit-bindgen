@@ -1,15 +1,11 @@
 use anyhow::Result;
 use std::sync::Once;
 use wit_bindgen_core::component::ComponentGenerator;
-use wit_bindgen_core::wit_parser::Interface;
+use wit_bindgen_core::wit_parser::World;
 use wit_bindgen_core::{Files, WorldGenerator};
 use wit_component::ComponentInterfaces;
 
-wit_bindgen_guest_rust::generate!({
-    import: "console.wit",
-    default: "demo.wit",
-    name: "demo",
-});
+wit_bindgen_guest_rust::generate!("demo.wit");
 
 struct Demo;
 
@@ -53,23 +49,12 @@ fn init() {
 }
 
 fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Options) -> Result<()> {
-    let iface = Interface::parse("input", &wit)?;
-    let interfaces = ComponentInterfaces {
-        imports: if options.is_import {
-            [(iface.name.clone(), iface.clone())].into_iter().collect()
-        } else {
-            Default::default()
-        },
-        exports: Default::default(),
-        default: if !options.is_import {
-            Some(iface.clone())
-        } else {
-            None
-        },
-    };
+    let world = World::parse("input", &wit)?;
+    let name = world.name.clone();
+    let interfaces = ComponentInterfaces::from(world);
 
     let gen_world = |mut gen: Box<dyn WorldGenerator>, files: &mut Files| {
-        gen.generate("demo", &interfaces, files);
+        gen.generate(&name, &interfaces, files);
     };
 
     // This generator takes a component as input as opposed to an `Interface`.

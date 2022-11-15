@@ -1,8 +1,4 @@
-wit_bindgen_guest_rust::generate!({
-    import: "../../tests/runtime/invalid/imports.wit",
-    default: "../../tests/runtime/invalid/exports.wit",
-    name: "exports",
-});
+wit_bindgen_guest_rust::generate!("../../tests/runtime/invalid/world.wit");
 
 #[link(wasm_import_module = "imports")]
 extern "C" {
@@ -44,9 +40,9 @@ extern "C" {
 
 struct Exports;
 
-export_exports!(Exports);
+export_invalid!(Exports);
 
-impl exports::Exports for Exports {
+impl invalid::Invalid for Exports {
     fn invalid_bool() {
         unsafe {
             let b = roundtrip_bool(2);

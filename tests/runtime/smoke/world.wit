@@ -1,0 +1,12 @@
+interface imports {
+  thunk: func()
+}
+
+interface exports {
+  thunk: func()
+}
+
+world smoke {
+  import imports: imports
+  default export exports
+}

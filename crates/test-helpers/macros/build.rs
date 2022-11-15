@@ -3,7 +3,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use wit_bindgen_core::wit_parser::Interface;
+use wit_bindgen_core::wit_parser::World;
 use wit_component::{ComponentEncoder, ComponentInterfaces, StringEncoding};
 
 fn guest_c(
@@ -20,8 +20,7 @@ fn guest_c(
             continue;
         }
         println!("cargo:rerun-if-changed={}", c_impl.display());
-        let interfaces = read_interfaces(&test_dir);
-        let name = test_dir.file_name().unwrap().to_str().unwrap();
+        let (name, interfaces) = read_interfaces(&test_dir);
         let snake = name.replace("-", "_");
         let mut files = Default::default();
         let mut opts = wit_bindgen_gen_guest_c::Opts::default();
@@ -196,14 +195,10 @@ fn main() {
             }
             println!("cargo:rerun-if-changed={}", java_impl.display());
 
-            let name = test_dir.file_name().unwrap().to_str().unwrap();
-
+            let (name, interfaces) = read_interfaces(&test_dir);
             let out_dir = out_dir.join(format!("java-{name}",));
-
             drop(fs::remove_dir_all(&out_dir));
-
             let java_dir = out_dir.join("src/main/java");
-            let interfaces = read_interfaces(&test_dir);
             let mut files = Default::default();
 
             wit_bindgen_gen_guest_teavm_java::Opts::default()
@@ -221,7 +216,7 @@ fn main() {
             let upper = name.to_upper_camel_case();
             fs::copy(
                 &java_impl,
-                java_dir.join(&format!("wit_{snake}/ExportsImpl.java")),
+                java_dir.join(&format!("wit_{snake}/{upper}Impl.java")),
             )
             .unwrap();
             fs::write(
@@ -288,22 +283,13 @@ fn main() {
     std::fs::write(out_dir.join("wasms.rs"), src).unwrap();
 }
 
-fn read_interfaces(dir: &Path) -> ComponentInterfaces {
-    let imports = dir.join("imports.wit");
-    let exports = dir.join("exports.wit");
-    println!("cargo:rerun-if-changed={}", imports.display());
-    println!("cargo:rerun-if-changed={}", exports.display());
+fn read_interfaces(dir: &Path) -> (String, ComponentInterfaces) {
+    let world = dir.join("world.wit");
+    println!("cargo:rerun-if-changed={}", world.display());
 
-    let imports = match Interface::parse_file(&imports) {
-        Ok(import) => [(import.name.clone(), import)].into_iter().collect(),
-        Err(_) => [].into(),
-    };
-    let export = Interface::parse_file(&exports).unwrap();
-    ComponentInterfaces {
-        imports,
-        exports: Default::default(),
-        default: Some(export),
-    }
+    let world = World::parse_file(&world).unwrap();
+    let name = world.name.clone();
+    (name, world.into())
 }
 
 fn mvn() -> Command {

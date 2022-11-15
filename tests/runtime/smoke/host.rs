@@ -1,10 +1,6 @@
 use anyhow::Result;
 
-wit_bindgen_host_wasmtime_rust::generate!({
-    import: "../../tests/runtime/smoke/imports.wit",
-    default: "../../tests/runtime/smoke/exports.wit",
-    name: "exports",
-});
+wit_bindgen_host_wasmtime_rust::generate!("../../tests/runtime/smoke/world.wit");
 
 #[derive(Default)]
 pub struct MyImports {
@@ -28,7 +24,7 @@ fn run(wasm: &str) -> Result<()> {
                 |cx: &mut crate::Context<MyImports>| -> &mut MyImports { &mut cx.imports },
             )
         },
-        |store, module, linker| Exports::instantiate(store, module, linker),
+        |store, module, linker| Smoke::instantiate(store, module, linker),
     )?;
 
     exports.thunk(&mut store)?;

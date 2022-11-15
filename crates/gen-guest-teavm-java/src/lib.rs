@@ -85,7 +85,7 @@ impl WorldGenerator for TeaVmJava {
         gen.types();
 
         for func in iface.functions.iter() {
-            gen.import(func);
+            gen.import(name, func);
         }
 
         gen.add_class();
@@ -330,7 +330,7 @@ impl InterfaceGenerator<'_> {
         self.gen.classes.insert(name, body);
     }
 
-    fn import(&mut self, func: &Function) {
+    fn import(&mut self, module: &str, func: &Function) {
         if func.kind != FunctionKind::Freestanding {
             todo!("resources");
         }
@@ -361,7 +361,6 @@ impl InterfaceGenerator<'_> {
             String::new()
         };
 
-        let module = &self.iface.name;
         let name = &func.name;
 
         let sig = self.iface.wasm_signature(AbiVariant::GuestImport, func);
@@ -1659,7 +1658,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "{assignment} wasmImport{func_name}({operands});");
             }
 
-            Instruction::CallInterface { module, func } => {
+            Instruction::CallInterface { func, .. } => {
                 let (assignment, destructure) = match func.results.len() {
                     0 => (String::new(), String::new()),
                     1 => {
@@ -1704,7 +1703,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 };
 
-                let module = module.to_upper_camel_case();
+                let module = self.gen.name.to_upper_camel_case();
                 let name = func.name.to_lower_camel_case();
 
                 let args = operands.join(", ");

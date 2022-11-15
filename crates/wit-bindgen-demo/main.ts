@@ -3,7 +3,6 @@ import { render, Options } from './demo.js';
 class Editor {
   input: HTMLTextAreaElement;
   language: HTMLSelectElement;
-  mode: HTMLSelectElement;
   files: HTMLSelectElement
   rustUnchecked: HTMLInputElement;
   wasmtimeTracing: HTMLInputElement;
@@ -19,7 +18,6 @@ class Editor {
   constructor() {
     this.input = document.getElementById('input-raw') as HTMLTextAreaElement;
     this.language = document.getElementById('language-select') as HTMLSelectElement;
-    this.mode = document.getElementById('mode-select') as HTMLSelectElement;
     this.files = document.getElementById('file-select') as HTMLSelectElement;
     this.rustUnchecked = document.getElementById('rust-unchecked') as HTMLInputElement;
     this.jsCompat = document.getElementById('js-compat') as HTMLInputElement;
@@ -41,7 +39,6 @@ class Editor {
       wasmtimeTracing: false,
       jsCompat: false,
       jsInstantiation: false,
-      isImport: false,
     };
     this.rerender = null;
   }
@@ -60,7 +57,6 @@ class Editor {
     });
 
     this.language.addEventListener('change', () => this.render());
-    this.mode.addEventListener('change', () => this.render());
 
     this.rustUnchecked.addEventListener('change', () => {
       this.options.rustUnchecked = this.rustUnchecked.checked;
@@ -94,7 +90,6 @@ class Editor {
     config.style.display = 'inline-block';
 
     const wit = this.inputEditor.getValue();
-    const is_import = this.mode.value === 'import';
     let lang;
     switch (this.language.value) {
       case "js":
@@ -108,7 +103,6 @@ class Editor {
         break;
       default: return;
     }
-    this.options.isImport = is_import;
     try {
       const results = render(lang, wit, this.options);
       this.generatedFiles = {};
