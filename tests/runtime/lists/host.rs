@@ -1,10 +1,6 @@
 use anyhow::Result;
 
-wit_bindgen_host_wasmtime_rust::generate!({
-    import: "../../tests/runtime/lists/imports.wit",
-    default: "../../tests/runtime/lists/exports.wit",
-    name: "exports",
-});
+wit_bindgen_host_wasmtime_rust::generate!("../../tests/runtime/lists/world.wit");
 
 use imports::*;
 
@@ -111,7 +107,7 @@ fn run(wasm: &str) -> Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
         |linker| imports::add_to_linker(linker, |cx| -> &mut MyImports { &mut cx.imports }),
-        |store, module, linker| Exports::instantiate(store, module, linker),
+        |store, module, linker| Lists::instantiate(store, module, linker),
     )?;
 
     let bytes = exports.allocated_bytes(&mut store)?;

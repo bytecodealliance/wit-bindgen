@@ -3,31 +3,8 @@
 macro_rules! codegen_test {
     ($name:ident $test:tt) => {
         mod $name {
-            mod export {
-                wit_bindgen_host_wasmtime_rust::generate!({
-                    export: $test,
-                    name: "the-world-name",
-
-                });
-                #[test]
-                fn works() {}
-            }
-
-            mod import {
-                wit_bindgen_host_wasmtime_rust::generate!({
-                    import: $test,
-                    name: "the-world-name",
-                });
-
-                #[test]
-                fn works() {}
-            }
-
             mod default {
-                wit_bindgen_host_wasmtime_rust::generate!({
-                    default: $test,
-                    name: "the-world-name",
-                });
+                wit_bindgen_host_wasmtime_rust::generate!($test);
 
                 #[test]
                 fn works() {}
@@ -35,9 +12,7 @@ macro_rules! codegen_test {
 
             mod async_ {
                 wit_bindgen_host_wasmtime_rust::generate!({
-                    import: $test,
-                    default: $test,
-                    name: "the-world-name",
+                    path: $test,
                     async: true,
                 });
 
@@ -47,9 +22,7 @@ macro_rules! codegen_test {
 
             mod tracing {
                 wit_bindgen_host_wasmtime_rust::generate!({
-                    import: $test,
-                    default: $test,
-                    name: "the-world-name",
+                    path: $test,
                     tracing: true,
                 });
 

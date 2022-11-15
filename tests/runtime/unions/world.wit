@@ -120,7 +120,7 @@ interface exports {
   identify-distinguishable-num: func(num: distinguishable-num) -> u8
 }
 
-world the-world {
+world unions {
   import imports: imports
   default export exports
 }

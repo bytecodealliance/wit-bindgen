@@ -1,12 +1,7 @@
 use anyhow::Result;
 use wit_bindgen_host_wasmtime_rust::Result as HostResult;
 
-wit_bindgen_host_wasmtime_rust::generate!({
-    import: "../../tests/runtime/flavorful/imports.wit",
-    default: "../../tests/runtime/flavorful/exports.wit",
-    tracing: true,
-    name: "exports",
-});
+wit_bindgen_host_wasmtime_rust::generate!("../../tests/runtime/flavorful/world.wit");
 
 #[derive(Default)]
 pub struct MyImports;
@@ -101,7 +96,7 @@ fn run(wasm: &str) -> Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
         |linker| imports::add_to_linker(linker, |cx| -> &mut MyImports { &mut cx.imports }),
-        |store, module, linker| Exports::instantiate(store, module, linker),
+        |store, module, linker| Flavorful::instantiate(store, module, linker),
     )?;
 
     exports.test_imports(&mut store)?;

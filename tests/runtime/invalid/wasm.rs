@@ -40,9 +40,9 @@ extern "C" {
 
 struct Exports;
 
-export_the_world!(Exports);
+export_invalid!(Exports);
 
-impl the_world::TheWorld for Exports {
+impl invalid::Invalid for Exports {
     fn invalid_bool() {
         unsafe {
             let b = roundtrip_bool(2);

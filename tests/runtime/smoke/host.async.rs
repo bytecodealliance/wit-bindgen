@@ -1,9 +1,7 @@
 use anyhow::Result;
 
 wit_bindgen_host_wasmtime_rust::generate!({
-    import: "../../tests/runtime/smoke/imports.wit",
-    default: "../../tests/runtime/smoke/exports.wit",
-    name: "exports",
+    path: "../../tests/runtime/smoke/world.wit",
     async: true,
 });
 
@@ -31,7 +29,7 @@ async fn run_async(wasm: &str) -> Result<()> {
             )
         },
         |store, module, linker| {
-            Box::pin(async { Exports::instantiate_async(store, module, linker).await })
+            Box::pin(async { Smoke::instantiate_async(store, module, linker).await })
         },
     )
     .await?;

@@ -30,7 +30,7 @@ interface exports {
   empty-error: func(a: u32) -> result<u32>
 }
 
-world the-world {
+world results {
   import imports: imports
   default export exports
 }

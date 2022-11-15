@@ -64,7 +64,7 @@ interface exports {
   unaligned10: func()
 }
 
-world the-world {
+world invalid {
   import imports: imports
   default export exports
 }

@@ -1,9 +1,5 @@
 use wit_bindgen_host_wasmtime_rust::Result as HostResult;
-wit_bindgen_host_wasmtime_rust::generate!({
-    import: "../../tests/runtime/results/imports.wit",
-    default: "../../tests/runtime/results/exports.wit",
-    name: "exports",
-});
+wit_bindgen_host_wasmtime_rust::generate!("../../tests/runtime/results/world.wit");
 
 #[derive(Default)]
 pub struct MyImports {}
@@ -107,7 +103,7 @@ fn run(wasm: &str) -> anyhow::Result<()> {
                     |cx: &mut crate::Context<MyImports>| -> &mut MyImports { &mut cx.imports },
                 )
             },
-            |store, module, linker| Exports::instantiate(store, module, linker),
+            |store, module, linker| Results::instantiate(store, module, linker),
         )
     };
 

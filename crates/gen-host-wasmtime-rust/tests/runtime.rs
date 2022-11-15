@@ -83,10 +83,7 @@ where
     Ok((exports, store))
 }
 
-wit_bindgen_host_wasmtime_rust::generate!({
-    import: "../wasi_snapshot_preview1/testwasi.wit",
-    name: "testwasi",
-});
+wit_bindgen_host_wasmtime_rust::generate!("../wasi_snapshot_preview1/testwasi.wit");
 
 #[derive(Default)]
 pub struct TestWasi;
