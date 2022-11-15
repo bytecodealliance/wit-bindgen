@@ -89,22 +89,12 @@ pub fn run_world_codegen_test(
 pub fn run_component_codegen_test(
     gen_name: &str,
     wit_path: &Path,
-    dir: Direction,
     generate: fn(&str, &[u8], &mut Files),
     verify: fn(&Path, &str),
 ) {
-    let iface = Interface::parse_file(wit_path).unwrap();
-    let mut interfaces = ComponentInterfaces::default();
-
-    match dir {
-        Direction::Import => {
-            interfaces.imports.insert(iface.name.clone(), iface);
-        }
-        Direction::Export => {
-            interfaces.default = Some(iface);
-        }
-    }
-
+    let world = World::parse_file(wit_path).unwrap();
+    let name = world.name.clone();
+    let interfaces = ComponentInterfaces::from(world);
     let wasm = dummy_module(&interfaces);
     let component = wit_component::ComponentEncoder::default()
         .module(&wasm)
@@ -115,40 +105,31 @@ pub fn run_component_codegen_test(
         .encode()
         .unwrap();
 
-    let name = wit_path.file_stem().and_then(|s| s.to_str()).unwrap();
+    let wit_name = wit_path.file_stem().and_then(|s| s.to_str()).unwrap();
 
-    let gen_name = format!(
-        "{gen_name}-{}",
-        match dir {
-            Direction::Import => "import",
-            Direction::Export => "export",
-        }
-    );
-    let dir = test_directory("codegen", &gen_name, name);
+    let gen_name = format!("{gen_name}-{wit_name}",);
+    let dir = test_directory("codegen", &gen_name, &name);
     std::fs::write(dir.join("component.wasm"), &component).unwrap();
 
     let mut files = Default::default();
-    generate(name, &component, &mut files);
+    generate(&name, &component, &mut files);
     for (file, contents) in files.iter() {
         let dst = dir.join(file);
         std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
         std::fs::write(&dst, contents).unwrap();
     }
 
-    verify(&dir, name);
+    verify(&dir, &name);
 }
 
 pub fn dummy_module(interfaces: &ComponentInterfaces) -> Vec<u8> {
     let mut wat = String::new();
     wat.push_str("(module\n");
-    for (_, import) in interfaces.imports.iter() {
+    for (name, import) in interfaces.imports.iter() {
         for func in import.functions.iter() {
             let sig = import.wasm_signature(AbiVariant::GuestImport, func);
 
-            wat.push_str(&format!(
-                "(import \"{}\" \"{}\" (func",
-                import.name, func.name
-            ));
+            wat.push_str(&format!("(import \"{name}\" \"{}\" (func", func.name));
             push_tys(&mut wat, "param", &sig.params);
             push_tys(&mut wat, "result", &sig.results);
             wat.push_str("))\n");

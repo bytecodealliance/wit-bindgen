@@ -6,7 +6,7 @@ import wit_variants.VariantsWorld.Tuple3;
 import wit_variants.VariantsWorld.Tuple4;
 import wit_variants.VariantsWorld.Tuple6;
 
-public class ExportsImpl {
+public class VariantsImpl {
     public static void testImports() {
         expect(Imports.roundtripOption(1.0F) == (byte) 1);
         expect(Imports.roundtripOption(null) == null);

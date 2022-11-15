@@ -1,0 +1,15 @@
+interface imports {
+  take-basic: func(s: string)
+  return-unicode: func() -> string
+}
+
+interface exports {
+  test-imports: func()
+
+  roundtrip: func(s: string) -> string
+}
+
+world strings {
+  import imports: imports
+  default export exports
+}

@@ -1,16 +1,12 @@
-wit_bindgen_guest_rust::generate!({
-    import: "../../tests/runtime/flavorful/imports.wit",
-    default: "../../tests/runtime/flavorful/exports.wit",
-    name: "exports",
-});
+wit_bindgen_guest_rust::generate!("../../tests/runtime/flavorful/world.wit");
 
-use exports::*;
+use flavorful::*;
 
 struct Component;
 
-export_exports!(Component);
+export_flavorful!(Component);
 
-impl Exports for Component {
+impl Flavorful for Component {
     fn test_imports() {
         use imports::*;
 

@@ -1,16 +1,12 @@
-wit_bindgen_guest_rust::generate!({
-    import: "../../tests/runtime/variants/imports.wit",
-    default: "../../tests/runtime/variants/exports.wit",
-    name: "exports",
-});
+wit_bindgen_guest_rust::generate!("../../tests/runtime/variants/world.wit");
 
-use exports::*;
+use variants::*;
 
 struct Component;
 
-export_exports!(Component);
+export_variants!(Component);
 
-impl Exports for Component {
+impl Variants for Component {
     fn test_imports() {
         use imports::*;
 

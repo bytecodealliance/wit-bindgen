@@ -1,6 +1,6 @@
 package wit_numbers;
 
-public class ExportsImpl {
+public class NumbersImpl {
     public static byte roundtripU8(byte a) {
         return a;
     }

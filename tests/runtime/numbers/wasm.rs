@@ -1,8 +1,4 @@
-wit_bindgen_guest_rust::generate!({
-    import: "../../tests/runtime/numbers/imports.wit",
-    default: "../../tests/runtime/numbers/exports.wit",
-    name: "bindings",
-});
+wit_bindgen_guest_rust::generate!("../../tests/runtime/numbers/world.wit");
 
 use imports::*;
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
@@ -11,9 +7,9 @@ static SCALAR: AtomicU32 = AtomicU32::new(0);
 
 struct Component;
 
-export_bindings!(Component);
+export_numbers!(Component);
 
-impl bindings::Bindings for Component {
+impl numbers::Numbers for Component {
     fn test_imports() {
         assert_eq!(roundtrip_u8(1), 1);
         assert_eq!(roundtrip_u8(u8::min_value()), u8::min_value());

@@ -1,2 +1,0 @@
-take-basic: func(s: string)
-return-unicode: func() -> string

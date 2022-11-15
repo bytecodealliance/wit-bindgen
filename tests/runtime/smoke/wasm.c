@@ -1,7 +1,7 @@
 #include <smoke.h>
 #include <stdio.h>
 
-void exports_thunk() {
+void smoke_thunk() {
   imports_thunk();
 
   printf("howdy\n");
