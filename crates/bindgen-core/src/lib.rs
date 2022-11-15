@@ -1,8 +1,6 @@
-use anyhow::Result;
 use std::collections::{btree_map::Entry, BTreeMap, HashMap};
 use std::fmt::{self, Write};
 use std::ops::Deref;
-use std::path::Path;
 use wit_component::ComponentInterfaces;
 use wit_parser::*;
 
@@ -259,10 +257,6 @@ impl Files {
     pub fn iter(&self) -> impl Iterator<Item = (&'_ str, &'_ [u8])> {
         self.files.iter().map(|p| (p.0.as_str(), p.1.as_slice()))
     }
-}
-
-pub fn load(path: impl AsRef<Path>) -> Result<Interface> {
-    Interface::parse_file(path)
 }
 
 #[derive(Default)]
