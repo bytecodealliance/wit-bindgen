@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use wit_bindgen_core::component::ComponentGenerator;
 use wit_bindgen_core::{wit_parser, Files, WorldGenerator};
 use wit_component::ComponentInterfaces;
-use wit_parser::Interface;
+use wit_parser::World;
 
 /// Helper for passing VERSION to opt.
 /// If CARGO_VERSION_INFO is set, use it, otherwise use CARGO_PKG_VERSION.
@@ -34,7 +34,7 @@ enum Category {
         #[clap(flatten)]
         common: Common,
         #[clap(flatten)]
-        world: World,
+        world: WorldOpt,
     },
 }
 
@@ -47,7 +47,7 @@ enum HostGenerator {
         #[clap(flatten)]
         common: Common,
         #[clap(flatten)]
-        world: World,
+        world: WorldOpt,
     },
     /// Generates bindings for Python hosts using the Wasmtime engine.
     WasmtimePy {
@@ -74,7 +74,7 @@ enum GuestGenerator {
         #[clap(flatten)]
         common: Common,
         #[clap(flatten)]
-        world: World,
+        world: WorldOpt,
     },
     /// Generates bindings for C/CPP guest modules.
     C {
@@ -83,7 +83,7 @@ enum GuestGenerator {
         #[clap(flatten)]
         common: Common,
         #[clap(flatten)]
-        world: World,
+        world: WorldOpt,
     },
     /// Generates bindings for TeaVM-based Java guest modules.
     TeavmJava {
@@ -92,66 +92,36 @@ enum GuestGenerator {
         #[clap(flatten)]
         common: Common,
         #[clap(flatten)]
-        world: World,
+        world: WorldOpt,
     },
 }
 
 #[derive(Debug, Parser)]
-struct World {
-    /// Generate bindings for the guest import interfaces specified.
-    #[clap(long = "import", short, value_name = "[NAME=]INTERFACE", value_parser = parse_named_interface)]
-    imports: Vec<Interface>,
-
-    /// Generate bindings for the guest export interfaces specified.
-    #[clap(long = "export", short, value_name = "[NAME=]INTERFACE", value_parser = parse_named_interface)]
-    exports: Vec<Interface>,
-
-    /// Generate bindings for the guest default export interface specified.
-    #[clap(long, short, value_name = "[NAME=]INTERFACE", value_parser = parse_named_interface)]
-    default: Option<Interface>,
-
+struct WorldOpt {
     /// The top-level name of the generated bindings, which may be used for
     /// naming modules/files/etc.
     #[clap(long, short)]
     name: Option<String>,
+
+    /// Generate bindings for the WIT document.
+    #[clap(value_name = "DOCUMENT", value_parser = parse_world)]
+    wit: World,
 }
 
-fn parse_named_interface(s: &str) -> Result<Interface> {
-    let mut parts = s.splitn(2, '=');
-    let name_or_path = parts.next().unwrap();
-    let (name, path) = match parts.next() {
-        Some(path) => (name_or_path, path),
-        None => {
-            // Take only the name *before* the first '.' in the filename.
-            // Unfortunately, file_stem gives the name before the final '.' in
-            // the filename, but we need this to get the correct name out of a
-            // `*.wit.md` file.
-            // TODO: this can be replaced with `Path::file_prefix()` once that
-            // method is stabilized in std.
-            let name = Path::new(name_or_path)
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap();
-            let name = name.split('.').next().unwrap();
-            (name, name_or_path)
-        }
-    };
-    let path = Path::new(path);
+fn parse_world(s: &str) -> Result<World> {
+    let path = Path::new(s);
     if !path.is_file() {
-        bail!("interface file `{}` does not exist", path.display());
+        bail!("wit file `{}` does not exist", path.display());
     }
 
-    let mut interface = Interface::parse_file(&path)
-        .with_context(|| format!("failed to parse interface file `{}`", path.display()))
+    let world = World::parse_file(&path)
+        .with_context(|| format!("failed to parse wit file `{}`", path.display()))
         .map_err(|e| {
             eprintln!("{e:?}");
             e
         })?;
 
-    interface.name = name.to_string();
-
-    Ok(interface)
+    Ok(world)
 }
 
 #[derive(Debug, Parser)]
@@ -236,37 +206,28 @@ fn main() -> Result<()> {
 
 fn gen_world(
     mut generator: Box<dyn WorldGenerator>,
-    world: World,
+    opts: WorldOpt,
     files: &mut Files,
 ) -> Result<()> {
-    let imports = world
-        .imports
-        .into_iter()
-        .map(|i| (i.name.clone(), i))
-        .collect();
-    let exports = world
-        .exports
-        .into_iter()
-        .map(|i| (i.name.clone(), i))
-        .collect();
-    let interfaces = ComponentInterfaces {
+    let World {
+        docs: _,
+        name,
         imports,
         exports,
-        default: world.default,
+        default,
+    } = opts.wit;
+
+    let interfaces = ComponentInterfaces {
+        exports,
+        imports,
+        default,
     };
-    let name = match &world.name {
+
+    let name = match opts.name {
         Some(name) => name,
-        None => {
-            if let Some(default) = &interfaces.default {
-                &default.name
-            } else {
-                return Err(anyhow!(
-                    "--name flag is required unless setting the interface via --default"
-                ));
-            }
-        }
+        None => name,
     };
-    generator.generate(name, &interfaces, files);
+    generator.generate(&name, &interfaces, files);
     Ok(())
 }
 

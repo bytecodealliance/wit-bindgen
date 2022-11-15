@@ -41,7 +41,7 @@ class Editor {
       wasmtimeTracing: false,
       jsCompat: false,
       jsInstantiation: false,
-      import: false,
+      isImport: false,
     };
     this.rerender = null;
   }
@@ -108,7 +108,7 @@ class Editor {
         break;
       default: return;
     }
-    this.options.import = is_import;
+    this.options.isImport = is_import;
     try {
       const results = render(lang, wit, this.options);
       this.generatedFiles = {};
@@ -122,8 +122,8 @@ class Editor {
       }
       if (selectedFile in this.generatedFiles)
         this.files.value = selectedFile;
-  
-      this.updateSelectedFile();  
+
+      this.updateSelectedFile();
     } catch (e) {
       this.outputEditor.setValue(e.payload);
       this.outputEditor.clearSelection();

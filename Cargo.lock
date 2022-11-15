@@ -2155,6 +2155,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "id-arena",
+ "indexmap",
  "pulldown-cmark",
  "rayon",
  "serde",
