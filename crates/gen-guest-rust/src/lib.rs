@@ -86,6 +86,7 @@ impl RustWasm {
 
     fn interface<'a>(
         &'a mut self,
+        name: &'a str,
         iface: &'a Interface,
         default_param_mode: TypeMode,
         in_import: bool,
@@ -96,6 +97,7 @@ impl RustWasm {
         types.analyze(iface);
 
         InterfaceGenerator {
+            name,
             src: Source::default(),
             in_import,
             gen: self,
@@ -111,7 +113,7 @@ impl RustWasm {
 
 impl WorldGenerator for RustWasm {
     fn import(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
-        let mut gen = self.interface(iface, TypeMode::AllBorrowed("'a"), true);
+        let mut gen = self.interface(name, iface, TypeMode::AllBorrowed("'a"), true);
         gen.types();
 
         for func in iface.functions.iter() {
@@ -122,12 +124,12 @@ impl WorldGenerator for RustWasm {
     }
 
     fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
-        self.interface(iface, TypeMode::Owned, false)
+        self.interface(name, iface, TypeMode::Owned, false)
             .generate_exports(name, Some(name));
     }
 
     fn export_default(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
-        self.interface(iface, TypeMode::Owned, false)
+        self.interface(name, iface, TypeMode::Owned, false)
             .generate_exports(name, None);
     }
 
@@ -237,6 +239,7 @@ struct InterfaceGenerator<'a> {
     types: Types,
     sizes: SizeAlign,
     gen: &'a mut RustWasm,
+    name: &'a str,
     iface: &'a Interface,
     default_param_mode: TypeMode,
     return_pointer_area_size: usize,
@@ -664,25 +667,22 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
     fn declare_import(
         &mut self,
-        iface: &Interface,
+        module_name: &str,
         name: &str,
         params: &[WasmType],
         results: &[WasmType],
     ) -> String {
         // Define the actual function we're calling inline
-        self.push_str("#[link(wasm_import_module = \"");
-        self.push_str(&iface.name);
-        self.push_str("\")]\n");
-        self.push_str("extern \"C\" {\n");
-        self.push_str("#[cfg_attr(target_arch = \"wasm32\", link_name = \"");
-        self.push_str(name);
-        self.push_str("\")]\n");
-        self.push_str("#[cfg_attr(not(target_arch = \"wasm32\"), link_name = \"");
-        self.push_str(&iface.name);
-        self.push_str("_");
-        self.push_str(name);
-        self.push_str("\")]\n");
-        self.push_str("fn wit_import(");
+        uwriteln!(
+            self.src,
+            "
+                #[link(wasm_import_module = \"{module_name}\")]
+                extern \"C\" {{
+                    #[cfg_attr(target_arch = \"wasm32\", link_name = \"{name}\")]
+                    #[cfg_attr(not(target_arch = \"wasm32\"), link_name = \"{module_name}_{name}\")]
+                    fn wit_import(\
+            "
+        );
         for param in params.iter() {
             self.push_str("_: ");
             self.push_str(wasm_type(*param));
@@ -1314,8 +1314,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::IterBasePointer => results.push("base".to_string()),
 
-            Instruction::CallWasm { iface, name, sig } => {
-                let func = self.declare_import(iface, name, &sig.params, &sig.results);
+            Instruction::CallWasm { name, sig, .. } => {
+                let func = self.declare_import(self.gen.name, name, &sig.params, &sig.results);
 
                 // ... then call the function with all our operands
                 if sig.results.len() > 0 {

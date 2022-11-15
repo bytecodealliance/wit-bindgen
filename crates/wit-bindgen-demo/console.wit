@@ -1,2 +1,0 @@
-log: func(msg: string)
-error: func(msg: string)

@@ -5,11 +5,7 @@ use wit_bindgen_core::wit_parser::Interface;
 use wit_bindgen_core::{Files, WorldGenerator};
 use wit_component::ComponentInterfaces;
 
-wit_bindgen_guest_rust::generate!({
-    import: "console.wit",
-    default: "demo.wit",
-    name: "demo",
-});
+wit_bindgen_guest_rust::generate!("demo.wit");
 
 struct Demo;
 

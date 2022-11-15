@@ -2680,7 +2680,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 uwriteln!(self.src.js, "{}({});", self.callee, operands.join(", "));
             }
 
-            Instruction::CallInterface { module: _, func } => {
+            Instruction::CallInterface { func } => {
                 if self.err == ErrHandling::ResultCatchHandler {
                     uwriteln!(
                         self.src.js,

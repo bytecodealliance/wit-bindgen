@@ -2240,7 +2240,7 @@ impl Bindgen for FunctionBindgen<'_> {
                         .push_str(&format!("assert(isinstance({}, {}))\n", name, ty));
                 }
             }
-            Instruction::CallInterface { module: _, func } => {
+            Instruction::CallInterface { func } => {
                 for i in 0..func.results.len() {
                     if i > 0 {
                         self.src.push_str(", ");
