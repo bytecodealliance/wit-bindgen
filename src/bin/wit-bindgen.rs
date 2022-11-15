@@ -98,11 +98,6 @@ enum GuestGenerator {
 
 #[derive(Debug, Parser)]
 struct WorldOpt {
-    /// The top-level name of the generated bindings, which may be used for
-    /// naming modules/files/etc.
-    #[clap(long, short)]
-    name: Option<String>,
-
     /// Generate bindings for the WIT document.
     #[clap(value_name = "DOCUMENT", value_parser = parse_world)]
     wit: World,
@@ -209,10 +204,7 @@ fn gen_world(
     opts: WorldOpt,
     files: &mut Files,
 ) -> Result<()> {
-    let name = match opts.name {
-        Some(name) => name,
-        None => opts.wit.name.clone(),
-    };
+    let name = opts.wit.name.clone();
     let interfaces = ComponentInterfaces::from(opts.wit);
     generator.generate(&name, &interfaces, files);
     Ok(())
