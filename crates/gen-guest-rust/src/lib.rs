@@ -374,6 +374,7 @@ impl InterfaceGenerator<'_> {
             "
                 #[doc(hidden)]
                 #[export_name = \"{export_name}\"]
+                #[allow(non_snake_case)]
                 unsafe extern \"C\" fn __export_{iface_snake}_{name_snake}(\
             ",
         );
@@ -443,6 +444,7 @@ impl InterfaceGenerator<'_> {
                 "
                     #[doc(hidden)]
                     #[export_name = \"cabi_post_{export_name}\"]
+                    #[allow(non_snake_case)]
                     unsafe extern \"C\" fn __post_return_{iface_snake}_{name_snake}(\
                 "
             );

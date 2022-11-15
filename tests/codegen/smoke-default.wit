@@ -1,5 +1,5 @@
 world the-world {
-  import imports: interface {
+  default export interface {
     y: func()
   }
 }

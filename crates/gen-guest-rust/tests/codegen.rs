@@ -1,81 +1,25 @@
 #![allow(unused_macros)]
 
-mod exports {
+mod codegen_tests {
     macro_rules! codegen_test {
         ($name:ident $test:tt) => {
             mod $name {
-                wit_bindgen_guest_rust::generate!({
-                    export: $test,
-                    name: "not-used-name",
-                });
-
-                mod default {
-                    wit_bindgen_guest_rust::generate!({
-                        default: $test,
-                        name: "the-world-name",
-                    });
-
-                    #[test]
-                    fn $name() {}
-                }
-            }
-
-            #[test]
-            fn $name() {}
-        };
-    }
-    test_helpers::codegen_tests!("*.wit");
-}
-
-mod imports {
-    macro_rules! codegen_test {
-        ($name:ident $test:tt) => {
-            wit_bindgen_guest_rust::generate!({
-                import: $test,
-                name: "not-used-name",
-            });
-
-            #[test]
-            fn $name() {}
-        };
-    }
-    test_helpers::codegen_tests!("*.wit");
-
-    mod unchecked {
-        macro_rules! codegen_test {
-            ($name:ident $test:tt) => {
-                wit_bindgen_guest_rust::generate!({
-                    import: $test,
-                    unchecked,
-                    name: "not-used-name",
-                });
-
-                #[test]
-                fn $name() {}
-            };
-        }
-        test_helpers::codegen_tests!("*.wit");
-    }
-}
-
-mod altogether {
-    macro_rules! codegen_test {
-        ($name:ident $test:tt) => {
-            mod $name {
-                wit_bindgen_guest_rust::generate!({
-                    // rename the input `*.wit` file for imports/exports to
-                    // avoid having them having the same name which the rust
-                    // generator currently doesn't support.
-                    import["the-import"]: $test,
-                    export["the-export"]: $test,
-                    default: $test,
-                    unchecked,
-                    name: "not-used-name",
-                });
+                wit_bindgen_guest_rust::generate!($test);
 
                 #[test]
                 fn works() {}
+
+                mod unchecked {
+                    wit_bindgen_guest_rust::generate!({
+                        path: $test,
+                        unchecked,
+                    });
+
+                    #[test]
+                    fn works() {}
+                }
             }
+
         };
     }
     test_helpers::codegen_tests!("*.wit");
@@ -83,11 +27,14 @@ mod altogether {
 
 mod strings {
     wit_bindgen_guest_rust::generate!({
-        import_str["cat"]: "
-            foo: func(x: string)
-            bar: func() -> string
+        inline: "
+            world not-used-name {
+                import cat: interface {
+                    foo: func(x: string)
+                    bar: func() -> string
+                }
+            }
         ",
-        name: "not-used-name",
     });
 
     #[allow(dead_code)]
@@ -103,12 +50,15 @@ mod strings {
 /// Like `strings` but with raw_strings`.
 mod raw_strings {
     wit_bindgen_guest_rust::generate!({
-        import_str["cat"]: "
-            foo: func(x: string)
-            bar: func() -> string
+        inline: "
+            world not-used-name {
+                import cat: interface {
+                    foo: func(x: string)
+                    bar: func() -> string
+                }
+            }
         ",
         raw_strings,
-        name: "not-used-name",
     });
 
     #[allow(dead_code)]
@@ -127,11 +77,14 @@ mod raw_strings {
 mod prefix {
     mod bindings {
         wit_bindgen_guest_rust::generate!({
-            export_str["exports1"]: "
-                foo: func(x: string)
-                bar: func() -> string
+            inline: "
+                world baz {
+                    export exports1: interface {
+                        foo: func(x: string)
+                        bar: func() -> string
+                    }
+                }
             ",
-            name: "baz",
             macro_call_prefix: "bindings::"
         });
 
@@ -157,10 +110,13 @@ mod prefix {
 // the export macro name can be overridden.
 mod macro_name {
     wit_bindgen_guest_rust::generate!({
-        export_str["exports2"]: "
-            foo: func(x: string)
+        inline: "
+            world baz {
+                export exports2: interface {
+                    foo: func(x: string)
+                }
+            }
         ",
-        name: "baz",
         export_macro_name: "jam"
     });
 
@@ -177,11 +133,14 @@ mod macro_name {
 
 mod skip {
     wit_bindgen_guest_rust::generate!({
-        export_str["exports"]: "
-            foo: func()
-            bar: func()
+        inline: "
+            world baz {
+                export exports: interface {
+                    foo: func()
+                    bar: func()
+                }
+            }
         ",
-        name: "baz",
         skip: ["foo"],
     });
 

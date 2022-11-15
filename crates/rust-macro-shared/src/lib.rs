@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{token, Token};
-use wit_bindgen_core::{wit_parser::Interface, Files, WorldGenerator};
+use wit_bindgen_core::{wit_parser::World, Files, WorldGenerator};
 use wit_component::ComponentInterfaces;
 
 pub fn generate<F, O>(
@@ -21,15 +21,9 @@ where
     let input = syn::parse_macro_input!(input as Opts<F, O>);
     let mut gen = mkgen(input.opts);
     let mut files = Files::default();
-    let name = match &input.name {
-        Some(name) => name,
-        None => {
-            return Error::new(Span::call_site(), "must specify a `name` field")
-                .to_compile_error()
-                .into()
-        }
-    };
-    gen.generate(name, &input.interfaces, &mut files);
+    let name = input.world.name.clone();
+    let interfaces = ComponentInterfaces::from(input.world);
+    gen.generate(&name, &interfaces, &mut files);
 
     let (_, contents) = files.iter().next().unwrap();
 
@@ -59,20 +53,14 @@ pub trait Configure<O> {
 
 struct Opts<F, O> {
     opts: O,
-    interfaces: ComponentInterfaces,
-    name: Option<String>,
+    world: World,
     files: Vec<String>,
     _marker: marker::PhantomData<F>,
 }
 
 mod kw {
-    syn::custom_keyword!(import_str);
-    syn::custom_keyword!(export_str);
-    syn::custom_keyword!(default_str);
-    syn::custom_keyword!(import);
-    syn::custom_keyword!(export);
-    syn::custom_keyword!(default);
-    syn::custom_keyword!(name);
+    syn::custom_keyword!(path);
+    syn::custom_keyword!(inline);
 }
 
 impl<F, O> Parse for Opts<F, O>
@@ -82,11 +70,11 @@ where
 {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let call_site = proc_macro2::Span::call_site();
+        let mut world = None;
         let mut ret = Opts {
             opts: O::default(),
-            interfaces: ComponentInterfaces::default(),
+            world: World::default(),
             files: Vec::new(),
-            name: None,
             _marker: marker::PhantomData,
         };
 
@@ -96,147 +84,70 @@ where
             let fields = Punctuated::<ConfigField<F>, Token![,]>::parse_terminated(&content)?;
             for field in fields.into_pairs() {
                 match field.into_value() {
-                    ConfigField::Import(span, i) => ret.import(span, i)?,
-                    ConfigField::ImportPath(name, path) => {
-                        let span = path.span();
-                        let interface = ret.parse(name, path)?;
-                        ret.import(span, interface)?;
-                    }
-                    ConfigField::Export(span, i) => ret.export(span, i)?,
-                    ConfigField::ExportPath(name, path) => {
-                        let span = path.span();
-                        let interface = ret.parse(name, path)?;
-                        ret.export(span, interface)?;
-                    }
-                    ConfigField::Default(span, i) => ret.interface(span, i)?,
-                    ConfigField::DefaultPath(name, path) => {
-                        let span = path.span();
-                        let interface = ret.parse(name, path)?;
-                        ret.interface(span, interface)?;
-                    }
-                    ConfigField::Name(name) => {
-                        if ret.name.is_some() {
-                            return Err(Error::new(name.span(), "cannot specify `name` twice"));
+                    ConfigField::Path(path) => {
+                        if world.is_some() {
+                            return Err(Error::new(path.span(), "cannot specify second world"));
                         }
-                        ret.name = Some(name.value());
+                        world = Some(ret.parse(path)?);
+                    }
+                    ConfigField::Inline(span, w) => {
+                        if world.is_some() {
+                            return Err(Error::new(span, "cannot specify second world"));
+                        }
+                        world = Some(w);
                     }
                     ConfigField::Other(other) => other.configure(&mut ret.opts),
                 }
             }
         } else {
-            while !input.is_empty() {
-                let s = input.parse::<syn::LitStr>()?;
-                ret.files.push(s.value());
-            }
-            return Err(Error::new(
-                call_site,
-                "string inputs won't be supported until `world` syntax is implemented",
-            ));
+            let s = input.parse::<syn::LitStr>()?;
+            world = Some(ret.parse(s)?);
         }
+        ret.world = world.ok_or_else(|| {
+            Error::new(
+                call_site,
+                "must specify a `*.wit` file to generate bindings for",
+            )
+        })?;
         Ok(ret)
     }
 }
 
 impl<F, O> Opts<F, O> {
-    fn parse(&mut self, name: Option<syn::LitStr>, path: syn::LitStr) -> Result<Interface> {
+    fn parse(&mut self, path: syn::LitStr) -> Result<World> {
         let span = path.span();
         let path = path.value();
         let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
         let path = manifest_dir.join(path);
         self.files.push(path.to_str().unwrap().to_string());
-        let mut file = Interface::parse_file(path).map_err(|e| Error::new(span, e))?;
-        if let Some(name) = name {
-            file.name = name.value();
-        }
-        Ok(file)
-    }
-
-    fn import(&mut self, span: Span, i: Interface) -> Result<()> {
-        match self.interfaces.imports.insert(i.name.clone(), i) {
-            None => Ok(()),
-            Some(_prev) => Err(Error::new(span, "duplicate import specified")),
-        }
-    }
-
-    fn export(&mut self, span: Span, i: Interface) -> Result<()> {
-        match self.interfaces.exports.insert(i.name.clone(), i) {
-            None => Ok(()),
-            Some(_prev) => Err(Error::new(span, "duplicate export specified")),
-        }
-    }
-
-    fn interface(&mut self, span: Span, i: Interface) -> Result<()> {
-        if self.interfaces.default.is_some() {
-            return Err(Error::new(span, "duplicate default specified"));
-        }
-        self.interfaces.default = Some(i);
-        Ok(())
+        World::parse_file(path).map_err(|e| Error::new(span, e))
     }
 }
 
 enum ConfigField<F> {
-    Import(Span, Interface),
-    ImportPath(Option<syn::LitStr>, syn::LitStr),
-    Export(Span, Interface),
-    ExportPath(Option<syn::LitStr>, syn::LitStr),
-    Default(Span, Interface),
-    DefaultPath(Option<syn::LitStr>, syn::LitStr),
-    Name(syn::LitStr),
+    Path(syn::LitStr),
+    Inline(Span, World),
     Other(F),
 }
 
 impl<F: Parse> Parse for ConfigField<F> {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let l = input.lookahead1();
-        if l.peek(kw::import_str) {
-            let span = input.parse::<kw::import_str>()?.span;
-            Ok(ConfigField::Import(span, parse_inline(input)?))
-        } else if l.peek(kw::export_str) {
-            let span = input.parse::<kw::export_str>()?.span;
-            Ok(ConfigField::Export(span, parse_inline(input)?))
-        } else if l.peek(kw::default_str) {
-            let span = input.parse::<kw::default_str>()?.span;
+        if l.peek(kw::path) {
+            input.parse::<kw::path>()?;
             input.parse::<Token![:]>()?;
-            Ok(ConfigField::Default(span, parse_inline(input)?))
-        } else if l.peek(kw::import) {
-            input.parse::<kw::import>()?;
-            let name = parse_opt_name(input)?;
-            input.parse::<Token![:]>()?;
-            Ok(ConfigField::ImportPath(name, input.parse()?))
-        } else if l.peek(kw::export) {
-            input.parse::<kw::export>()?;
-            let name = parse_opt_name(input)?;
-            input.parse::<Token![:]>()?;
-            Ok(ConfigField::ExportPath(name, input.parse()?))
-        } else if l.peek(kw::default) {
-            input.parse::<kw::default>()?;
-            let name = parse_opt_name(input)?;
-            input.parse::<Token![:]>()?;
-            Ok(ConfigField::DefaultPath(name, input.parse()?))
-        } else if l.peek(kw::name) {
-            input.parse::<kw::name>()?;
-            input.parse::<Token![:]>()?;
-            Ok(ConfigField::Name(input.parse()?))
+            Ok(ConfigField::Path(input.parse()?))
+        } else if l.peek(kw::inline) {
+            let span = input.parse::<kw::inline>()?.span;
+            Ok(ConfigField::Inline(span, parse_inline(input)?))
         } else {
             Ok(ConfigField::Other(input.parse()?))
         }
     }
 }
 
-fn parse_inline(input: ParseStream<'_>) -> Result<Interface> {
-    let name;
-    syn::bracketed!(name in input);
-    let name = name.parse::<syn::LitStr>()?;
+fn parse_inline(input: ParseStream<'_>) -> Result<World> {
     input.parse::<Token![:]>()?;
     let s = input.parse::<syn::LitStr>()?;
-    Interface::parse(&name.value(), &s.value()).map_err(|e| Error::new(s.span(), e))
-}
-
-fn parse_opt_name(input: ParseStream<'_>) -> Result<Option<syn::LitStr>> {
-    if !input.peek(token::Bracket) {
-        return Ok(None);
-    }
-    let name;
-    syn::bracketed!(name in input);
-    Ok(Some(name.parse::<syn::LitStr>()?))
+    World::parse("<macro-input>", &s.value()).map_err(|e| Error::new(s.span(), e))
 }

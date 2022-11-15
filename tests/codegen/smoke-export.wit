@@ -1,5 +1,5 @@
 world the-world {
-  import imports: interface {
+  export the-name: interface {
     y: func()
   }
 }
