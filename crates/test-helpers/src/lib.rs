@@ -171,9 +171,9 @@ pub fn dummy_module(interfaces: &ComponentInterfaces) -> Vec<u8> {
         }
     }
 
-    for (_, export) in interfaces.exports.iter() {
+    for (name, export) in interfaces.exports.iter() {
         for func in export.functions.iter() {
-            let name = format!("{}#{}", export.name, func.name);
+            let name = func.core_export_name(Some(name));
             push_func(&mut wat, &name, export, func);
         }
     }

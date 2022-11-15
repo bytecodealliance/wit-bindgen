@@ -1295,7 +1295,7 @@ impl<'a> EncodingState<'a> {
         instance_index: u32,
         realloc_index: Option<u32>,
     ) -> Result<()> {
-        for (export, is_default) in metadata.interfaces.exports() {
+        for (export, export_name) in metadata.interfaces.exports() {
             let mut interface_exports = Vec::new();
 
             // Make sure all named types are present in the exported instance
@@ -1316,7 +1316,7 @@ impl<'a> EncodingState<'a> {
 
             // Alias the exports from the core module
             for func in &export.functions {
-                let name = export.core_export_name(is_default, func);
+                let name = func.core_export_name(export_name);
                 let core_func_index =
                     self.component
                         .alias_core_item(instance_index, ExportKind::Func, name.as_ref());
@@ -1355,18 +1355,24 @@ impl<'a> EncodingState<'a> {
             // The default exported interface has all of its items exported
             // directly but otherwise an instance type is created and then
             // exported.
-            if is_default {
-                for (name, kind, idx) in interface_exports {
-                    self.component.export(name, kind, idx);
-                }
-            } else {
-                if export.name.is_empty() {
-                    bail!("cannot export an unnamed interface");
-                }
+            match export_name {
+                Some(export_name) => {
+                    if export_name.is_empty() {
+                        bail!("cannot export an unnamed interface");
+                    }
 
-                let instance_index = self.component.instantiate_exports(interface_exports);
-                self.component
-                    .export(&export.name, ComponentExportKind::Instance, instance_index);
+                    let instance_index = self.component.instantiate_exports(interface_exports);
+                    self.component.export(
+                        export_name,
+                        ComponentExportKind::Instance,
+                        instance_index,
+                    );
+                }
+                None => {
+                    for (name, kind, idx) in interface_exports {
+                        self.component.export(name, kind, idx);
+                    }
+                }
             }
         }
 
@@ -2249,16 +2255,19 @@ impl ComponentEncoder {
             // itself.
             let mut raw_exports = Vec::new();
             let mut default_exports = Vec::new();
-            for (interface, is_default) in self.metadata.interfaces.exports() {
-                if is_default {
-                    default_exports = types
-                        .encode_interface_as_instance_type_exports(interface, None)?
-                        .unwrap();
-                } else {
-                    let index = types
-                        .encode_interface_as_instance_type(interface, None)?
-                        .unwrap();
-                    raw_exports.push((&interface.name, ComponentExportKind::Type, index));
+            for (interface, name) in self.metadata.interfaces.exports() {
+                match name {
+                    Some(name) => {
+                        let index = types
+                            .encode_interface_as_instance_type(interface, None)?
+                            .unwrap();
+                        raw_exports.push((name, ComponentExportKind::Type, index));
+                    }
+                    None => {
+                        default_exports = types
+                            .encode_interface_as_instance_type_exports(interface, None)?
+                            .unwrap();
+                    }
                 }
             }
             types.finish(&mut state.component);
@@ -2361,9 +2370,9 @@ fn required_adapter_exports(
             required.insert(name.to_string(), ty.clone());
         }
     }
-    for (interface, is_default) in metadata.interfaces.exports() {
+    for (interface, name) in metadata.interfaces.exports() {
         for func in interface.functions.iter() {
-            let name = interface.core_export_name(is_default, func);
+            let name = func.core_export_name(name);
             let ty = interface.wasm_signature(AbiVariant::GuestExport, func);
             let prev = required.insert(
                 name.into_owned(),

@@ -1,10 +1,10 @@
 //! The WebAssembly component tool command line interface.
 
 use crate::{
-    decode_component_interfaces, ComponentEncoder, ComponentInterfaces, InterfacePrinter,
-    StringEncoding,
+    decode_component_interfaces, ComponentEncoder, ComponentInterfaces, StringEncoding,
+    WorldPrinter,
 };
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use std::path::{Path, PathBuf};
 use wit_parser::Interface;
@@ -176,17 +176,9 @@ pub struct WasmToWitApp {
     #[clap(long, short = 'o', value_name = "OUTPUT")]
     pub output: Option<PathBuf>,
 
-    /// Print the "default" interface for a component.
-    #[clap(long, short)]
-    pub interface: bool,
-
-    /// Print the interface of the specified import.
+    /// The name of the world to generate.
     #[clap(long)]
-    pub import: Option<String>,
-
-    /// Print the interface of the specified export.
-    #[clap(long)]
-    pub export: Option<String>,
+    pub name: Option<String>,
 
     /// The path to the WebAssembly component to decode.
     #[clap(index = 1, value_name = "COMPONENT")]
@@ -196,11 +188,12 @@ pub struct WasmToWitApp {
 impl WasmToWitApp {
     /// Executes the application.
     pub fn execute(self) -> Result<()> {
-        let output = self.output.unwrap_or_else(|| {
-            let mut stem: PathBuf = self.component.file_stem().unwrap().into();
-            stem.set_extension("wit");
-            stem
-        });
+        let stem = self.component.file_stem().unwrap().to_str().unwrap();
+        let name = match &self.name {
+            Some(name) => name.as_str(),
+            None => stem,
+        };
+        let output = self.output.unwrap_or_else(|| format!("{name}.wit").into());
 
         if !self.component.is_file() {
             bail!(
@@ -215,32 +208,11 @@ impl WasmToWitApp {
         let interfaces = decode_component_interfaces(&bytes).with_context(|| {
             format!("failed to decode component `{}`", self.component.display())
         })?;
-        let which = match &self.import {
-            Some(s) => interfaces
-                .imports
-                .get(s.as_str())
-                .ok_or_else(|| anyhow!("no import interface named `{s}`"))?,
-            None => match &self.export {
-                Some(s) => interfaces
-                    .exports
-                    .get(s.as_str())
-                    .ok_or_else(|| anyhow!("no export interface named `{s}`"))?,
-                None => {
-                    if self.interface {
-                        interfaces
-                            .default
-                            .as_ref()
-                            .ok_or_else(|| anyhow!("no default interface"))?
-                    } else {
-                        bail!("must specify `-i`, `--import`, or `--export`")
-                    }
-                }
-            },
-        };
+        let world = interfaces.into_world(name);
 
-        let mut printer = InterfacePrinter::default();
+        let mut printer = WorldPrinter::default();
 
-        std::fs::write(&output, printer.print(which)?)
+        std::fs::write(&output, printer.print(&world)?)
             .with_context(|| format!("failed to write output file `{}`", output.display()))?;
 
         println!("decoded interface to `{}`", output.display());
