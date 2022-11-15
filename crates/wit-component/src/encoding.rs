@@ -537,15 +537,15 @@ impl<'a> TypeEncoder<'a> {
         info: Option<&ValidatedModule<'a>>,
         imports: &mut ImportEncoder<'a>,
     ) -> Result<()> {
-        for (_, import) in interfaces {
+        for (name, import) in interfaces {
             let required_funcs = match info {
-                Some(info) => match info.required_imports.get(import.name.as_str()) {
+                Some(info) => match info.required_imports.get(name.as_str()) {
                     Some(required) => Some(required),
                     None => continue,
                 },
                 None => None,
             };
-            self.encode_instance_import(import, required_funcs, imports)?;
+            self.encode_instance_import(name, import, required_funcs, imports)?;
         }
 
         Ok(())
@@ -557,12 +557,18 @@ impl<'a> TypeEncoder<'a> {
     /// The imported instance, if any, is placed within `imports`.
     fn encode_instance_import(
         &mut self,
+        name: &'a str,
         import: &'a Interface,
         required_funcs: Option<&IndexSet<&'a str>>,
         imports: &mut ImportEncoder<'a>,
     ) -> Result<()> {
         if let Some(index) = self.encode_interface_as_instance_type(import, required_funcs)? {
-            imports.import(import, ComponentTypeRef::Instance(index), required_funcs)?;
+            imports.import(
+                name,
+                import,
+                ComponentTypeRef::Instance(index),
+                required_funcs,
+            )?;
         }
 
         Ok(())
@@ -2074,14 +2080,15 @@ struct ImportEncoder<'a> {
 impl<'a> ImportEncoder<'a> {
     fn import(
         &mut self,
+        name: &'a str,
         interface: &'a Interface,
         ty: ComponentTypeRef,
         funcs: Option<&IndexSet<&'a str>>,
     ) -> Result<()> {
-        match self.map.entry(&interface.name) {
+        match self.map.entry(name) {
             indexmap::map::Entry::Occupied(e) => {
                 if e.get().ty != ty {
-                    bail!("duplicate import `{}`", interface.name)
+                    bail!("duplicate import `{name}`")
                 }
             }
             indexmap::map::Entry::Vacant(e) => {
@@ -2308,7 +2315,7 @@ impl ComponentEncoder {
                 state.encode_core_adapter_module(name, &wasm);
                 for (name, required) in info.required_imports.iter() {
                     let interface = &metadata.interfaces.imports[*name];
-                    types.encode_instance_import(interface, Some(required), &mut imports)?;
+                    types.encode_instance_import(name, interface, Some(required), &mut imports)?;
                 }
                 imports.adapters.insert(name, info);
             }
