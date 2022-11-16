@@ -1,5 +1,5 @@
 expected an identifier or string, found keyword `option`
-     --> tests/ui/parse-fail/keyword.wit:4:8
+     --> tests/ui/parse-fail/keyword.wit:6:8
       |
-    4 |   type option = u32
+    6 |   type option = u32
       |        ^-----

@@ -17,6 +17,23 @@ pub struct Document<'a> {
 
 impl<'a> Document<'a> {
     pub fn parse(lexer: &mut Tokenizer<'a>) -> Result<Document<'a>> {
+        match lexer.next()? {
+            Some((_span, Token::WitVersion)) => match lexer.next()? {
+                Some((span, Token::StrLit)) => {
+                    let wit_version = lexer.parse_str(span)?;
+                    if wit_version != "0xa" {
+                        return Err(Error {
+                            span,
+                            msg: format!("wit-version currently must be \"0xa\""),
+                        }
+                        .into());
+                    }
+                }
+                other => return Err(err_expected(lexer, "a string", other).into()),
+            },
+            other => return Err(err_expected(lexer, "`wit-version`", other).into()),
+        }
+
         let mut items = Vec::new();
         while lexer.clone().next()?.is_some() {
             let docs = parse_docs(lexer)?;

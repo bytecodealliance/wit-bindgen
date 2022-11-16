@@ -16,6 +16,8 @@ pub struct WorldPrinter {
 impl WorldPrinter {
     /// Print the given WebAssembly interface to a string.
     pub fn print(&mut self, world: &World) -> Result<String> {
+        writeln!(&mut self.output, "wit-version \"0xa\"\n")?;
+
         for (name, import) in world.imports.iter() {
             writeln!(&mut self.output, "interface {name} {{")?;
             self.print_interface(import)?;

@@ -1,3 +1,4 @@
+wit-version "0xa"
 
 world my-world {
   import foo: interface {

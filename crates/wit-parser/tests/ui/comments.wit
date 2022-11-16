@@ -5,6 +5,8 @@
 /* this too */ /* is a comment */
 /* this /* is /* a */ nested */ comment */
 
+wit-version "0xa"
+
 interface foo {
   type x = u32
 

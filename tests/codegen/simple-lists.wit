@@ -1,3 +1,5 @@
+wit-version "0xa"
+
 interface simple-lists {
   simple-list1: func(l: list<u32>)
   simple-list2: func() -> list<u32>

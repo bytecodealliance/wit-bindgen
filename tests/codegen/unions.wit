@@ -1,3 +1,5 @@
+wit-version "0xa"
+
 interface unions {
   /// A union of all of the integral types
   union all-integers {

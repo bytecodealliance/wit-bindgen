@@ -1,4 +1,7 @@
 // parse-fail
+
+wit-version "0xa"
+
 interface foo {
   type foo = bar
 }

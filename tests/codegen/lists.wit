@@ -1,3 +1,5 @@
+wit-version "0xa"
+
 interface lists {
   list-u8-param: func(x: list<u8>)
   list-u16-param: func(x: list<u16>)

@@ -1,3 +1,5 @@
+wit-version "0xa"
+
 interface imports {
   empty-list-param: func(a: list<u8>)
   empty-string-param: func(a: string)

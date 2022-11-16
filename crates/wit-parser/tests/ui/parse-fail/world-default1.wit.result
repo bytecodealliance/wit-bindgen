@@ -1,5 +1,5 @@
 bar not defined
-     --> tests/ui/parse-fail/world-default1.wit:4:18
+     --> tests/ui/parse-fail/world-default1.wit:6:18
       |
-    4 |   default export bar
+    6 |   default export bar
       |                  ^--

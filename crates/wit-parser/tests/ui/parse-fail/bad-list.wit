@@ -1,5 +1,7 @@
 // parse-fail
 
+wit-version "0xa"
+
 interface foo {
   type x = list<u32
 

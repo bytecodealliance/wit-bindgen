@@ -28,6 +28,8 @@ mod codegen_tests {
 mod strings {
     wit_bindgen_guest_rust::generate!({
         inline: "
+            wit-version \"0xa\"
+
             world not-used-name {
                 import cat: interface {
                     foo: func(x: string)
@@ -51,6 +53,8 @@ mod strings {
 mod raw_strings {
     wit_bindgen_guest_rust::generate!({
         inline: "
+            wit-version \"0xa\"
+
             world not-used-name {
                 import cat: interface {
                     foo: func(x: string)
@@ -78,6 +82,8 @@ mod prefix {
     mod bindings {
         wit_bindgen_guest_rust::generate!({
             inline: "
+                wit-version \"0xa\"
+
                 world baz {
                     export exports1: interface {
                         foo: func(x: string)
@@ -111,6 +117,8 @@ mod prefix {
 mod macro_name {
     wit_bindgen_guest_rust::generate!({
         inline: "
+            wit-version \"0xa\"
+
             world baz {
                 export exports2: interface {
                     foo: func(x: string)
@@ -134,6 +142,8 @@ mod macro_name {
 mod skip {
     wit_bindgen_guest_rust::generate!({
         inline: "
+            wit-version \"0xa\"
+
             world baz {
                 export exports: interface {
                     foo: func()

@@ -1,5 +1,5 @@
 "a" defined twice
-     --> tests/ui/parse-fail/duplicate-value.wit:5:3
+     --> tests/ui/parse-fail/duplicate-value.wit:7:3
       |
-    5 |   a: u32
+    7 |   a: u32
       |   ^

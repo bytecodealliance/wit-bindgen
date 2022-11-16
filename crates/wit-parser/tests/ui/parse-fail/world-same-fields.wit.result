@@ -1,5 +1,5 @@
 duplicate import foo
-     --> tests/ui/parse-fail/world-same-fields.wit:8:10
+     --> tests/ui/parse-fail/world-same-fields.wit:10:10
       |
-    8 |   import foo: bar
+   10 |   import foo: bar
       |          ^--

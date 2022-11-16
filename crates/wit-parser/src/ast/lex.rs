@@ -32,6 +32,8 @@ pub enum Token {
     Whitespace,
     Comment,
 
+    WitVersion,
+
     Equals,
     Comma,
     Colon,
@@ -253,6 +255,7 @@ impl<'a> Tokenizer<'a> {
                 }
                 let end = start + ch.len_utf8() + (remaining - self.chars.chars.as_str().len());
                 match &self.input[start..end] {
+                    "wit-version" => WitVersion,
                     "use" => Use,
                     "type" => Type,
                     "func" => Func,
@@ -524,6 +527,7 @@ impl Token {
         match self {
             Whitespace => "whitespace",
             Comment => "a comment",
+            WitVersion => "keyword `wit-version`",
             Equals => "'='",
             Comma => "','",
             Colon => "':'",

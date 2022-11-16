@@ -1,3 +1,5 @@
+wit-version "0xa"
+
 interface chars {
   /// A function that accepts a character
   take-char: func(x: char)

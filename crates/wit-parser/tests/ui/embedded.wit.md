@@ -3,6 +3,10 @@
 containing stuff, and also some code blocks, wit and other.
 
 ```wit
+wit-version "0xa"
+```
+
+```wit
 interface foo {
 ```
 

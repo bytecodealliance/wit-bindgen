@@ -1,1 +1,3 @@
+wit-version "0xa"
+
 world dummy {} // TODO: should not be necessary

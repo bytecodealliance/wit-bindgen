@@ -1,3 +1,5 @@
+wit-version "0xa"
+
 f1: func(s: string)
 f2: func() -> string
 // TODO: should re-enable when fixed

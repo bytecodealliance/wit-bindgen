@@ -1,6 +1,8 @@
 // This is the interface imported by the `adapt-*.wat` file which is used
 // to implement the `wasi_snapshot_preview1` interface.
 
+wit-version "0xa"
+
 interface my-wasi {
   random-get: func(size: u32) -> list<u8>
   proc-exit: func(code: u32)

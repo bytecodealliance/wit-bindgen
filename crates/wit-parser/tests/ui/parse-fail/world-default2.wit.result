@@ -1,5 +1,5 @@
 more than one default
-     --> tests/ui/parse-fail/world-default2.wit:5:18
+     --> tests/ui/parse-fail/world-default2.wit:7:18
       |
-    5 |   default export interface {}
+    7 |   default export interface {}
       |                  ^--------

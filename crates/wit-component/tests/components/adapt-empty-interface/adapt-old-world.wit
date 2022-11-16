@@ -1,3 +1,5 @@
+wit-version "0xa"
+
 world new {
   import new: interface {
     thunk-that-is-not-called: func()

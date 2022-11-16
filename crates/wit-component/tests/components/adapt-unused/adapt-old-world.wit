@@ -1,3 +1,5 @@
+wit-version "0xa"
+
 world brave-new-world {
   import new: interface {
     log: func(s: string)

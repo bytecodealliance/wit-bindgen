@@ -1,5 +1,5 @@
 no type named `bar`
-     --> tests/ui/parse-fail/alias-no-type.wit:3:14
+     --> tests/ui/parse-fail/alias-no-type.wit:6:14
       |
-    3 |   type foo = bar
+    6 |   type foo = bar
       |              ^--

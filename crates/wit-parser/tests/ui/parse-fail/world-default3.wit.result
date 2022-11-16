@@ -1,5 +1,5 @@
 more than one default
-     --> tests/ui/parse-fail/world-default3.wit:7:18
+     --> tests/ui/parse-fail/world-default3.wit:9:18
       |
-    7 |   default export foo
+    9 |   default export foo
       |                  ^--

@@ -1,3 +1,5 @@
+wit-version "0xa"
+
 interface imports {
   multiple-results: func() -> (a: u8, b: u16)
 
