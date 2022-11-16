@@ -1,6 +1,0 @@
-world default-world {
-  default export interface {
-    foo: func(a: u32)
-
-  }
-}

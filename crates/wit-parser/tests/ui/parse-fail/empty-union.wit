@@ -1,5 +1,0 @@
-// parse-fail
-
-interface foo {
-  union t {}
-}
