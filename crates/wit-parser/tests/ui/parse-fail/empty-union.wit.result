@@ -1,5 +1,0 @@
-empty union
-     --> tests/ui/parse-fail/empty-union.wit:4:9
-      |
-    4 |   union t {}
-      |         ^

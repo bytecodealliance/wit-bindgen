@@ -9,7 +9,7 @@ mkdir static
 cargo build -p wit-bindgen-demo --target wasm32-unknown-unknown --release
 
 # Translate the core wasm binary to a component
-cargo run --release -p wit-component --bin wit-component -- \
+wasm-tools component new \
   target/wasm32-unknown-unknown/release/wit_bindgen_demo.wasm -o target/demo.wasm
 
 # Generate JS host bindings

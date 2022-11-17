@@ -1,6 +1,0 @@
-// parse-fail
-
-interface foo {
-  type foo = bar
-  type bar = foo
-}

@@ -86,6 +86,23 @@ jobs:
     - run: rustup target add wasm32-unknown-unknown
     - run: npm install
       working-directory: crates/wit-bindgen-demo
+
+    # Install the `wasm-tools` binary with the `component` subcommand that is all
+    # that's needed here.
+    - uses: actions/cache@v3
+      with:
+        path: ${{ runner.tool_cache }}/wasm-tools
+        key: wasm-tools-bin-e15e768a346c30738103d372e8ccf442646628c9-${{ runner.os }}
+    - run: echo '${{ runner.tool_cache }}/wasm-tools/bin' >> $GITHUB_PATH
+    - run: |
+        cargo install \
+          wasm-tools \
+          --root '${{ runner.tool_cache }}/wasm-tools' \
+          --git https://github.com/bytecodealliance/wasm-tools \
+          --rev e15e768a346c30738103d372e8ccf442646628c9 \
+          --no-default-features \
+          --features component
+
     - run: ./crates/wit-bindgen-demo/build.sh
     - uses: JamesIves/github-pages-deploy-action@4.1.4
       with:
