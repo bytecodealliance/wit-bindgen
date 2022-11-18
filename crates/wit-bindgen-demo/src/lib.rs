@@ -88,10 +88,6 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
             opts.tracing = options.wasmtime_tracing;
             gen_world(opts.build(), files)
         }
-        demo::Lang::WasmtimePy => gen_component(
-            wit_bindgen_gen_host_wasmtime_py::Opts::default().build(),
-            files,
-        )?,
         demo::Lang::C => gen_world(wit_bindgen_gen_guest_c::Opts::default().build(), files),
         demo::Lang::Markdown => gen_world(wit_bindgen_gen_markdown::Opts::default().build(), files),
         demo::Lang::Js => {
