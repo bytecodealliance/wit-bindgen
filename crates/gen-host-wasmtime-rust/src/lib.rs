@@ -24,6 +24,16 @@ struct Exports {
     funcs: Vec<String>,
 }
 
+#[cfg(feature = "clap")]
+fn parse_errors(s: &str) -> anyhow::Result<(String, String)> {
+    let mut parts = s.splitn(2, '=');
+    let errno_name = parts.next().unwrap();
+    let error_type = parts
+        .next()
+        .ok_or_else(|| anyhow::Error::msg("syntax error: expected ERRNO=ERRORTYPE"))?;
+    Ok((errno_name.to_string(), error_type.to_string()))
+}
+
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
@@ -38,6 +48,10 @@ pub struct Opts {
     /// Whether or not to use async rust functions and traits.
     #[cfg_attr(feature = "clap", arg(long = "async"))]
     pub async_: bool,
+
+    /// Whether or not to use async rust functions and traits.
+    #[cfg_attr(feature = "clap", arg(long = "trappable_error_type"), clap(value_name="ERRNO=ERRORTYPE", value_parser = parse_errors))]
+    pub trappable_error_type: Vec<(String, String)>,
 }
 
 impl Opts {
@@ -52,7 +66,7 @@ impl WorldGenerator for Wasmtime {
     fn import(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
         let mut gen = InterfaceGenerator::new(self, iface, TypeMode::Owned);
         gen.types();
-        gen.generate_from_error_impls();
+        gen.generate_trappable_error_types();
         gen.generate_add_to_linker(name);
 
         let snake = to_rust_ident(name);
@@ -77,7 +91,7 @@ impl WorldGenerator for Wasmtime {
     fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
         let mut gen = InterfaceGenerator::new(self, iface, TypeMode::AllBorrowed("'a"));
         gen.types();
-        gen.generate_from_error_impls();
+        gen.generate_trappable_error_types();
 
         let camel = name.to_upper_camel_case();
         uwriteln!(gen.src, "pub struct {camel} {{");
@@ -313,7 +327,7 @@ impl<'a> InterfaceGenerator<'a> {
         }
     }
 
-    fn special_case_host_error(&self, results: &Results) -> Option<&Result_> {
+    fn special_case_host_error(&self, results: &Results) -> Option<(Result_, String)> {
         // We only support the wit_bindgen_host_wasmtime_rust::Error case when
         // a function has just one result, which is itself a `result<a, e>`, and the
         // `e` is *not* a primitive (i.e. defined in std) type.
@@ -322,7 +336,26 @@ impl<'a> InterfaceGenerator<'a> {
             match i.next().unwrap() {
                 Type::Id(id) => match &self.iface.types[*id].kind {
                     TypeDefKind::Result(r) => match r.err {
-                        Some(Type::Id(_)) => Some(&r),
+                        Some(Type::Id(typeid)) => {
+                            if let Some((typename, _)) = self
+                                .iface
+                                .type_lookup
+                                .iter()
+                                .find(|(_name, id)| **id == typeid)
+                            {
+                                self.gen.opts.trappable_error_type.iter().find_map(
+                                    |(errno, errortype)| {
+                                        if errno == typename {
+                                            Some((r.clone(), errortype.clone()))
+                                        } else {
+                                            None
+                                        }
+                                    },
+                                )
+                            } else {
+                                None
+                            }
+                        }
                         _ => None,
                     },
                     _ => None,
@@ -352,22 +385,18 @@ impl<'a> InterfaceGenerator<'a> {
             self.print_docs_and_params(func, TypeMode::Owned, &fnsig);
             self.push_str(" -> ");
 
-            if let Some(r) = self.special_case_host_error(&func.results).cloned() {
+            if let Some((r, special_typename)) = self.special_case_host_error(&func.results) {
                 // Functions which have a single result `result<ok,err>` get special
                 // cased to use the host_wasmtime_rust::Error<err>, making it possible
                 // for them to trap or use `?` to propogate their errors
-                self.push_str("wit_bindgen_host_wasmtime_rust::Result<");
+                self.push_str("Result<");
                 if let Some(ok) = r.ok {
                     self.print_ty(&ok, TypeMode::Owned);
                 } else {
                     self.push_str("()");
                 }
                 self.push_str(",");
-                if let Some(err) = r.err {
-                    self.print_ty(&err, TypeMode::Owned);
-                } else {
-                    self.push_str("()");
-                }
+                self.push_str(&special_typename);
                 self.push_str(">");
             } else {
                 // All other functions get their return values wrapped in an anyhow::Result.
@@ -610,33 +639,9 @@ impl<'a> InterfaceGenerator<'a> {
         self.src.push_str("}\n");
     }
 
-    fn generate_from_error_impls(&mut self) {
-        for (id, ty) in self.iface.types.iter() {
-            if ty.name.is_none() {
-                continue;
-            }
-            let info = self.info(id);
-            if info.error {
-                for (name, mode) in self.modes_of(id) {
-                    let name = name.to_upper_camel_case();
-                    if self.lifetime_for(&info, mode).is_some() {
-                        continue;
-                    }
-                    self.push_str("impl From<");
-                    self.push_str(&name);
-                    self.push_str("> for wit_bindgen_host_wasmtime_rust::Error<");
-                    self.push_str(&name);
-                    self.push_str("> {\n");
-                    self.push_str("fn from(e: ");
-                    self.push_str(&name);
-                    self.push_str(") -> wit_bindgen_host_wasmtime_rust::Error::< ");
-                    self.push_str(&name);
-                    self.push_str("> {\n");
-                    self.push_str("wit_bindgen_host_wasmtime_rust::Error::new(e)\n");
-                    self.push_str("}\n");
-                    self.push_str("}\n");
-                }
-            }
+    fn generate_trappable_error_types(&mut self) {
+        for (abi_type, trappable_type) in self.gen.opts.trappable_error_type.iter() {
+            self.src.push_str(todo!());
         }
     }
 }

@@ -14,9 +14,9 @@ wit-bindgen-gen-rust-lib = { workspace = true }
 heck = { workspace = true }
 wit-component = { workspace = true }
 clap = { workspace = true, optional = true }
+anyhow = { workspace = true }
 
 [dev-dependencies]
-anyhow = { workspace = true }
 test-helpers = { path = '../test-helpers' }
 wasmtime = { workspace = true }
 wit-bindgen-host-wasmtime-rust = { workspace = true, features = ['tracing'] }
