@@ -96,7 +96,6 @@ class Editor {
       case "rust":
       case "java":
       case "wasmtime":
-      case "wasmtime-py":
       case "c":
       case "markdown":
         lang = this.language.value;

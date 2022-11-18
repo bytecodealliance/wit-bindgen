@@ -1907,7 +1907,6 @@ dependencies = [
  "wit-bindgen-gen-guest-rust",
  "wit-bindgen-gen-guest-teavm-java",
  "wit-bindgen-gen-host-js",
- "wit-bindgen-gen-host-wasmtime-py",
  "wit-bindgen-gen-host-wasmtime-rust",
  "wit-bindgen-gen-markdown",
  "wit-component",
@@ -1935,7 +1934,6 @@ dependencies = [
  "wit-bindgen-gen-guest-rust",
  "wit-bindgen-gen-guest-teavm-java",
  "wit-bindgen-gen-host-js",
- "wit-bindgen-gen-host-wasmtime-py",
  "wit-bindgen-gen-host-wasmtime-rust",
  "wit-bindgen-gen-markdown",
  "wit-bindgen-guest-rust",
@@ -1985,19 +1983,6 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64",
- "clap",
- "heck",
- "indexmap",
- "test-helpers",
- "wasmtime-environ",
- "wit-bindgen-core",
- "wit-component",
-]
-
-[[package]]
-name = "wit-bindgen-gen-host-wasmtime-py"
-version = "0.3.0"
-dependencies = [
  "clap",
  "heck",
  "indexmap",

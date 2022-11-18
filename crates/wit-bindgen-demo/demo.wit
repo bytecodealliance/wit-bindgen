@@ -12,7 +12,6 @@ world demo {
       rust,
       java,
       wasmtime,
-      wasmtime-py,
       c,
       markdown,
     }

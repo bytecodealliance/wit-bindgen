@@ -49,13 +49,6 @@ enum HostGenerator {
         #[clap(flatten)]
         world: WorldOpt,
     },
-    /// Generates bindings for Python hosts using the Wasmtime engine.
-    WasmtimePy {
-        #[clap(flatten)]
-        opts: wit_bindgen_gen_host_wasmtime_py::Opts,
-        #[clap(flatten)]
-        component: ComponentOpts,
-    },
     /// Generates bindings for JavaScript hosts.
     Js {
         #[clap(flatten)]
@@ -148,8 +141,7 @@ impl Opt {
             | Category::Guest(GuestGenerator::TeavmJava { common, .. })
             | Category::Host(HostGenerator::WasmtimeRust { common, .. })
             | Category::Markdown { common, .. } => common,
-            Category::Host(HostGenerator::Js { component, .. })
-            | Category::Host(HostGenerator::WasmtimePy { component, .. }) => &component.common,
+            Category::Host(HostGenerator::Js { component, .. }) => &component.common,
         }
     }
 }
@@ -162,9 +154,6 @@ fn main() -> Result<()> {
     match opt.category {
         Category::Host(HostGenerator::WasmtimeRust { opts, world, .. }) => {
             gen_world(opts.build(), world, &mut files)?;
-        }
-        Category::Host(HostGenerator::WasmtimePy { opts, component }) => {
-            gen_component(opts.build(), component, &mut files)?;
         }
         Category::Host(HostGenerator::Js { opts, component }) => {
             gen_component(opts.build()?, component, &mut files)?;
