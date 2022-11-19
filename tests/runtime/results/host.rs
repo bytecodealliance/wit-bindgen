@@ -1,5 +1,7 @@
-use wit_bindgen_host_wasmtime_rust::Result as HostResult;
-wit_bindgen_host_wasmtime_rust::generate!("../../tests/runtime/results/world.wit");
+wit_bindgen_host_wasmtime_rust::generate!({
+    path: "../../tests/runtime/results/world.wit",
+    trappable_error_type: { E => TrappableE }
+});
 
 #[derive(Default)]
 pub struct MyImports {}
@@ -25,14 +27,11 @@ impl imports::Imports for MyImports {
         }
     }
 
-    // The interface error type is defined (as an enum), therefore
-    // wit-bindgen-host-wasmtime-rust will impl all the traits to make it a
-    // std::error::Error, as well as an `impl From<E> for
-    // wit_bindgen_host_wasmtime_rust::Error<E>`. This means we can use `?` to
-    // covert a Result<_, E> into a HostResult<_, E>.
+    // The interface error type E is defined (as an enum), and it will convert
+    // to a TrappableE using the generated From impl.
     //
     // We expect a lot of wit interfaces to look like this one.
-    fn enum_error(&mut self, a: f64) -> HostResult<f64, imports::E> {
+    fn enum_error(&mut self, a: f64) -> Result<f64, imports::TrappableE> {
         if a == 0.0 {
             Err(imports::E::A)?
         } else {
@@ -43,17 +42,16 @@ impl imports::Imports for MyImports {
     // Same ideas as enum_error, but the interface error is defined as a
     // record.
     //
-    // Shows how you can trap in a HostResult func with an ordinary anyhow::Error.
-    fn record_error(&mut self, a: f64) -> HostResult<f64, imports::E2> {
+    fn record_error(&mut self, a: f64) -> Result<Result<f64, imports::E2>, anyhow::Error> {
         if a == 0.0 {
-            Err(imports::E2 {
+            Ok(Err(imports::E2 {
                 line: 420,
                 column: 0,
-            })?
+            }))
         } else if a == 1.0 {
             Err(anyhow::Error::msg("a somewhat ergonomic trap"))?
         } else {
-            Ok(a)
+            Ok(Ok(a))
         }
     }
 
@@ -62,7 +60,7 @@ impl imports::Imports for MyImports {
     //
     // Shows how you can trap in a HostResult func with anything that impls
     // std::error::Error
-    fn variant_error(&mut self, a: f64) -> HostResult<f64, imports::E3> {
+    fn variant_error(&mut self, a: f64) -> Result<Result<f64, imports::E3>, anyhow::Error> {
         if a == 0.0 {
             Err(imports::E3::E2(imports::E2 {
                 line: 420,
@@ -71,9 +69,9 @@ impl imports::Imports for MyImports {
         } else if a == 1.0 {
             Err(imports::E3::E1(imports::E::B))?
         } else if a == 2.0 {
-            Err(wit_bindgen_host_wasmtime_rust::Error::trap(MyTrap))?
+            Err(anyhow::Error::from(MyTrap))?
         } else {
-            Ok(a)
+            Ok(Ok(a))
         }
     }
 

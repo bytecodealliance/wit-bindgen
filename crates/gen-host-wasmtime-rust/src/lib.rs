@@ -336,25 +336,20 @@ impl<'a> InterfaceGenerator<'a> {
             match i.next().unwrap() {
                 Type::Id(id) => match &self.iface.types[*id].kind {
                     TypeDefKind::Result(r) => match r.err {
-                        Some(Type::Id(typeid)) => {
-                            if let Some((typename, _)) = self
-                                .iface
-                                .type_lookup
-                                .iter()
-                                .find(|(_name, id)| **id == typeid)
-                            {
-                                self.gen.opts.trappable_error_type.iter().find_map(
-                                    |(errno, errortype)| {
-                                        if errno == typename {
-                                            Some((r.clone(), errortype.clone()))
-                                        } else {
-                                            None
-                                        }
-                                    },
-                                )
-                            } else {
-                                None
-                            }
+                        Some(Type::Id(id)) => {
+                            let info = self.info(id);
+                            let ty = &RustGenerator::iface(self).types[id];
+                            let typename = ty.name.as_ref().expect("named type");
+                            self.gen.opts.trappable_error_type.iter().find_map(
+                                |(errno, errortype)| {
+                                    // println!("ty: {ty:?}, errno: {errno}, errortype: {errortype}");
+                                    if *errno == *typename {
+                                        Some((r.clone(), errortype.clone()))
+                                    } else {
+                                        None
+                                    }
+                                },
+                            )
                         }
                         _ => None,
                     },
@@ -641,7 +636,44 @@ impl<'a> InterfaceGenerator<'a> {
 
     fn generate_trappable_error_types(&mut self) {
         for (abi_type, trappable_type) in self.gen.opts.trappable_error_type.iter() {
-            self.src.push_str(todo!());
+            uwriteln!(
+                self.src,
+                "
+                #[derive(Debug)]
+                pub struct {trappable_type} {{
+                    inner: anyhow::Error,
+                }}
+                impl std::fmt::Display for {trappable_type} {{
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{
+                        write!(f, \"{{}}\", self.inner)
+                    }}
+                }}
+                impl std::error::Error for {trappable_type} {{
+                    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {{
+                        self.inner.source()
+                    }}
+                }}
+                impl {trappable_type} {{
+                    pub fn trap(inner: anyhow::Error) -> Self {{
+                        Self {{ inner }}
+                    }}
+                    pub fn downcast(self) -> Result<{abi_type}, anyhow::Error> {{
+                        self.inner.downcast()
+                    }}
+                    pub fn downcast_ref(&self) -> Option<&{abi_type}> {{
+                        self.inner.downcast_ref()
+                    }}
+                    pub fn context(self, s: impl Into<String>) -> Self {{
+                        Self {{ inner: self.inner.context(s.into()) }}
+                    }}
+                }}
+                impl From<{abi_type}> for {trappable_type} {{
+                    fn from(abi: {abi_type}) -> {trappable_type} {{
+                        {trappable_type} {{ inner: anyhow::Error::from(abi) }}
+                    }}
+                }}
+           "
+            );
         }
     }
 }
