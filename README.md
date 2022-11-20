@@ -63,7 +63,7 @@ of what's being generated and what the glue code looks like.
 
 To install the CLI for this tool (which isn't the only way it can be used), run the following cargo command. This will let you generate the bindings for any supported language.
 
-This CLI **IS NOT** stable and may change, do not expect it to be or rely on it being stable. Please rreach out to us on [zulip] if you'd like to depend on it, so we can figure out a better alternative for your use case.
+This CLI **IS NOT** stable and may change, do not expect it to be or rely on it being stable. Please reach out to us on [zulip] if you'd like to depend on it, so we can figure out a better alternative for your use case.
 
 ```
 cargo install --git https://github.com/bytecodealliance/wit-bindgen wit-bindgen-cli
