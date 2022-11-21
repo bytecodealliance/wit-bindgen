@@ -5,7 +5,6 @@ use std::fmt::Write;
 use wit_bindgen_core::{
     uwriteln, wit_parser, Files, InterfaceGenerator as _, Source, WorldGenerator,
 };
-use wit_component::ComponentInterfaces;
 use wit_parser::*;
 
 #[derive(Default)]
@@ -51,7 +50,7 @@ impl WorldGenerator for Markdown {
         gen.funcs();
     }
 
-    fn finish(&mut self, name: &str, _interfaces: &ComponentInterfaces, files: &mut Files) {
+    fn finish(&mut self, world: &World, files: &mut Files) {
         let parser = Parser::new(&self.src);
         let mut events = Vec::new();
         for event in parser {
@@ -69,8 +68,8 @@ impl WorldGenerator for Markdown {
         let mut html_output = String::new();
         html::push_html(&mut html_output, events.into_iter());
 
-        files.push(&format!("{name}.md"), self.src.as_bytes());
-        files.push(&format!("{name}.html"), html_output.as_bytes());
+        files.push(&format!("{}.md", world.name), self.src.as_bytes());
+        files.push(&format!("{}.html", world.name), html_output.as_bytes());
     }
 }
 
