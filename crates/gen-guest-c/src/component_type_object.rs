@@ -3,18 +3,15 @@ use heck::ToSnakeCase;
 use wasm_encoder::{
     CodeSection, CustomSection, Encode, Function, FunctionSection, Module, TypeSection,
 };
-use wit_component::{ComponentInterfaces, StringEncoding};
+use wit_bindgen_core::wit_parser::World;
+use wit_component::StringEncoding;
 
 pub fn linking_symbol(name: &str) -> String {
     let snake = name.to_snake_case();
     format!("__component_type_object_force_link_{snake}")
 }
 
-pub fn object(
-    name: &str,
-    interfaces: &ComponentInterfaces,
-    encoding: StringEncoding,
-) -> Result<Vec<u8>> {
+pub fn object(world: &World, encoding: StringEncoding) -> Result<Vec<u8>> {
     let mut module = Module::new();
 
     // Build a module with one function that's a "dummy function"
@@ -28,13 +25,13 @@ pub fn object(
     code.function(&Function::new([]));
     module.section(&code);
 
-    let data = wit_component::metadata::encode(interfaces, encoding);
+    let data = wit_component::metadata::encode(world, encoding);
 
     // The custom section name here must start with "component-type" but
     // otherwise is attempted to be unique here to ensure that this doesn't get
     // concatenated to other custom sections by LLD by accident since LLD will
     // concatenate custom sections of the same name.
-    let section_name = format!("component-type:{name}",);
+    let section_name = format!("component-type:{}", world.name);
 
     // Add our custom section
     module.section(&CustomSection {
@@ -51,7 +48,7 @@ pub fn object(
         subsection.push(0x00); // SYMTAB_FUNCTION
         0u32.encode(&mut subsection); // flags
         0u32.encode(&mut subsection); // index
-        linking_symbol(name).encode(&mut subsection); // name
+        linking_symbol(&world.name).encode(&mut subsection); // name
 
         data.push(0x08); // `WASM_SYMBOL_TABLE`
         subsection.encode(&mut data);

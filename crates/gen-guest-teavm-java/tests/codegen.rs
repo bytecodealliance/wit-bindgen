@@ -10,12 +10,12 @@ macro_rules! codegen_test {
             test_helpers::run_world_codegen_test(
                 "guest-teavm-java",
                 $test.as_ref(),
-                |name, interfaces, files| {
+                |world, files| {
                     wit_bindgen_gen_guest_teavm_java::Opts {
                         generate_stub: true,
                     }
                     .build()
-                    .generate(name, interfaces, files)
+                    .generate(world, files)
                 },
                 verify,
             )

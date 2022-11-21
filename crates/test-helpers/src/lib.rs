@@ -5,7 +5,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use wit_bindgen_core::Files;
-use wit_component::ComponentInterfaces;
 use wit_parser::abi::{AbiVariant, WasmType};
 use wit_parser::{Function, Interface, World};
 
@@ -64,26 +63,24 @@ stderr ---
 pub fn run_world_codegen_test(
     gen_name: &str,
     wit_path: &Path,
-    generate: fn(&str, &ComponentInterfaces, &mut Files),
+    generate: fn(&World, &mut Files),
     verify: fn(&Path, &str),
 ) {
     let world = World::parse_file(wit_path).unwrap();
-    let name = world.name.clone();
-    let interfaces = ComponentInterfaces::from(world);
 
     let wit_name = wit_path.file_stem().and_then(|s| s.to_str()).unwrap();
     let gen_name = format!("{gen_name}-{wit_name}");
-    let dir = test_directory("codegen", &gen_name, &name);
+    let dir = test_directory("codegen", &gen_name, &world.name);
 
     let mut files = Default::default();
-    generate(&name, &interfaces, &mut files);
+    generate(&world, &mut files);
     for (file, contents) in files.iter() {
         let dst = dir.join(file);
         std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
         std::fs::write(&dst, contents).unwrap();
     }
 
-    verify(&dir, &name);
+    verify(&dir, &world.name);
 }
 
 pub fn run_component_codegen_test(
@@ -93,14 +90,12 @@ pub fn run_component_codegen_test(
     verify: fn(&Path, &str),
 ) {
     let world = World::parse_file(wit_path).unwrap();
-    let name = world.name.clone();
-    let interfaces = ComponentInterfaces::from(world);
-    let wasm = dummy_module(&interfaces);
+    let wasm = dummy_module(&world);
     let component = wit_component::ComponentEncoder::default()
         .module(&wasm)
         .unwrap()
         .validate(true)
-        .interfaces(interfaces, wit_component::StringEncoding::UTF8)
+        .world(world.clone(), wit_component::StringEncoding::UTF8)
         .unwrap()
         .encode()
         .unwrap();
@@ -108,24 +103,24 @@ pub fn run_component_codegen_test(
     let wit_name = wit_path.file_stem().and_then(|s| s.to_str()).unwrap();
 
     let gen_name = format!("{gen_name}-{wit_name}",);
-    let dir = test_directory("codegen", &gen_name, &name);
+    let dir = test_directory("codegen", &gen_name, &world.name);
     std::fs::write(dir.join("component.wasm"), &component).unwrap();
 
     let mut files = Default::default();
-    generate(&name, &component, &mut files);
+    generate(&world.name, &component, &mut files);
     for (file, contents) in files.iter() {
         let dst = dir.join(file);
         std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
         std::fs::write(&dst, contents).unwrap();
     }
 
-    verify(&dir, &name);
+    verify(&dir, &world.name);
 }
 
-pub fn dummy_module(interfaces: &ComponentInterfaces) -> Vec<u8> {
+pub fn dummy_module(world: &World) -> Vec<u8> {
     let mut wat = String::new();
     wat.push_str("(module\n");
-    for (name, import) in interfaces.imports.iter() {
+    for (name, import) in world.imports.iter() {
         for func in import.functions.iter() {
             let sig = import.wasm_signature(AbiVariant::GuestImport, func);
 
@@ -136,14 +131,14 @@ pub fn dummy_module(interfaces: &ComponentInterfaces) -> Vec<u8> {
         }
     }
 
-    for (name, export) in interfaces.exports.iter() {
+    for (name, export) in world.exports.iter() {
         for func in export.functions.iter() {
             let name = func.core_export_name(Some(name));
             push_func(&mut wat, &name, export, func);
         }
     }
 
-    if let Some(default) = &interfaces.default {
+    if let Some(default) = &world.default {
         for func in default.functions.iter() {
             push_func(&mut wat, &func.name, default, func);
         }

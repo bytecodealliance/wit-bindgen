@@ -10,7 +10,7 @@ use wit_bindgen_core::wit_parser::abi::{
 use wit_bindgen_core::{
     uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Ns, WorldGenerator,
 };
-use wit_component::{ComponentInterfaces, StringEncoding};
+use wit_component::StringEncoding;
 
 #[derive(Default)]
 struct C {
@@ -119,10 +119,10 @@ impl WorldGenerator for C {
         gen.gen.src.append(&gen.src);
     }
 
-    fn finish(&mut self, name: &str, interfaces: &ComponentInterfaces, files: &mut Files) {
-        let linking_symbol = component_type_object::linking_symbol(name);
+    fn finish(&mut self, world: &World, files: &mut Files) {
+        let linking_symbol = component_type_object::linking_symbol(&world.name);
         self.include("<stdlib.h>");
-        let snake = name.to_snake_case();
+        let snake = world.name.to_snake_case();
         uwrite!(
             self.src.c_adapters,
             "
@@ -203,7 +203,7 @@ impl WorldGenerator for C {
             #define __BINDINGS_{0}_H
             #ifdef __cplusplus
             extern \"C\" {{",
-            name.to_shouty_snake_case(),
+            world.name.to_shouty_snake_case(),
         );
 
         // Deindent the extern C { declaration
@@ -284,7 +284,7 @@ impl WorldGenerator for C {
         files.push(&format!("{snake}.h"), h_str.as_bytes());
         files.push(
             &format!("{snake}_component_type.o",),
-            component_type_object::object(name, interfaces, self.opts.string_encoding)
+            component_type_object::object(world, self.opts.string_encoding)
                 .unwrap()
                 .as_slice(),
         );

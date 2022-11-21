@@ -10,11 +10,10 @@ use wit_bindgen_core::{
     wit_parser::{
         abi::{AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
         Case, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Int, Interface, Record,
-        Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Union, Variant,
+        Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Union, Variant, World,
     },
     Files, InterfaceGenerator as _, Ns, WorldGenerator,
 };
-use wit_component::ComponentInterfaces;
 
 const IMPORTS: &str = "\
 import java.nio.charset.StandardCharsets;
@@ -113,9 +112,9 @@ impl WorldGenerator for TeaVmJava {
         gen.add_class();
     }
 
-    fn finish(&mut self, name: &str, interfaces: &ComponentInterfaces, files: &mut Files) {
-        let package = format!("wit_{}", name.to_snake_case());
-        let name = name.to_upper_camel_case();
+    fn finish(&mut self, world: &World, files: &mut Files) {
+        let package = format!("wit_{}", world.name.to_snake_case());
+        let name = world.name.to_upper_camel_case();
 
         let mut src = String::new();
 
@@ -132,7 +131,7 @@ impl WorldGenerator for TeaVmJava {
         );
 
         let component_type =
-            wit_component::metadata::encode(interfaces, wit_component::StringEncoding::UTF8)
+            wit_component::metadata::encode(world, wit_component::StringEncoding::UTF8)
                 .into_iter()
                 .map(|byte| format!("{byte:02x}"))
                 .collect::<Vec<_>>()

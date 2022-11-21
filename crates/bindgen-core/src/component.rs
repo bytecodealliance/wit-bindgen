@@ -14,7 +14,7 @@ use wasmtime_environ::component::{
 };
 use wasmtime_environ::wasmparser::{Validator, WasmFeatures};
 use wasmtime_environ::{ModuleTranslation, PrimaryMap, ScopeVec, Tunables};
-use wit_component::ComponentInterfaces;
+use wit_parser::World;
 
 /// Generate bindings to load and instantiate the specific binary component
 /// provided.
@@ -31,7 +31,7 @@ pub fn generate(
     // will likely change as worlds are iterated on in the component model
     // standard. Regardless though this is the step where types are learned
     // and `Interface`s are constructed for further code generation below.
-    let interfaces = wit_component::decode_component_interfaces(binary)
+    let world = wit_component::decode_world(name, binary)
         .context("failed to extract interface information from component")?;
 
     // Components are complicated, there's no real way around that. To
@@ -68,12 +68,12 @@ pub fn generate(
     // With all that prep work delegate to `WorldGenerator::generate` here
     // to generate all the type-level descriptions for this component now
     // that the interfaces in/out are understood.
-    gen.generate(name, &interfaces, files);
+    gen.generate(&world, files);
 
     // And finally generate the code necessary to instantiate the given
     // component to this method using the `Component` that
     // `wasmtime-environ` parsed.
-    gen.instantiate(name, &component, &modules, &interfaces);
+    gen.instantiate(&component, &modules, &world);
 
     gen.finish_component(name, files);
 
@@ -92,10 +92,9 @@ pub fn generate(
 pub trait ComponentGenerator: WorldGenerator {
     fn instantiate(
         &mut self,
-        name: &str,
         component: &Component,
         modules: &PrimaryMap<StaticModuleIndex, ModuleTranslation<'_>>,
-        interfaces: &ComponentInterfaces,
+        world: &World,
     );
 
     fn core_file_name(&mut self, name: &str, idx: u32) -> String {

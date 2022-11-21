@@ -8,7 +8,6 @@ use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{token, Token};
 use wit_bindgen_core::{wit_parser::World, Files, WorldGenerator};
-use wit_component::ComponentInterfaces;
 
 pub fn generate<F, O>(
     input: TokenStream,
@@ -21,9 +20,7 @@ where
     let input = syn::parse_macro_input!(input as Opts<F, O>);
     let mut gen = mkgen(input.opts);
     let mut files = Files::default();
-    let name = input.world.name.clone();
-    let interfaces = ComponentInterfaces::from(input.world);
-    gen.generate(&name, &interfaces, &mut files);
+    gen.generate(&input.world, &mut files);
 
     let (_, contents) = files.iter().next().unwrap();
 

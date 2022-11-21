@@ -10,10 +10,10 @@ macro_rules! codegen_test {
             test_helpers::run_world_codegen_test(
                 "guest-c",
                 $test.as_ref(),
-                |name, interfaces, files| {
+                |world, files| {
                     wit_bindgen_gen_guest_c::Opts::default()
                         .build()
-                        .generate(name, interfaces, files)
+                        .generate(world, files)
                 },
                 verify,
             )

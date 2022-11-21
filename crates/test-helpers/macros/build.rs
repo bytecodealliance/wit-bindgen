@@ -4,12 +4,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use wit_bindgen_core::wit_parser::World;
-use wit_component::{ComponentEncoder, ComponentInterfaces, StringEncoding};
+use wit_component::{ComponentEncoder, StringEncoding};
 
 fn guest_c(
     wasms: &mut Vec<(String, String, String, String)>,
     out_dir: &PathBuf,
-    wasi_adapter: &PathBuf,
+    wasi_adapter: &[u8],
     utf_16: bool,
 ) {
     let utf16_suffix = if utf_16 { "_utf16" } else { "" };
@@ -20,14 +20,14 @@ fn guest_c(
             continue;
         }
         println!("cargo:rerun-if-changed={}", c_impl.display());
-        let (name, interfaces) = read_interfaces(&test_dir);
-        let snake = name.replace("-", "_");
+        let world = read_world(&test_dir);
+        let snake = world.name.replace("-", "_");
         let mut files = Default::default();
         let mut opts = wit_bindgen_gen_guest_c::Opts::default();
         if utf_16 {
             opts.string_encoding = StringEncoding::UTF16;
         }
-        opts.build().generate(&name, &interfaces, &mut files);
+        opts.build().generate(&world, &mut files);
 
         let out_dir = out_dir.join(format!(
             "c{}-{}",
@@ -82,7 +82,7 @@ fn guest_c(
             .module(module.as_slice())
             .expect("pull custom sections from module")
             .validate(true)
-            .adapter_file(&wasi_adapter)
+            .adapter("wasi_snapshot_preview1", &wasi_adapter)
             .expect("adapter failed to get loaded")
             .encode()
             .expect(&format!(
@@ -94,7 +94,7 @@ fn guest_c(
 
         wasms.push((
             format!("c{}", utf16_suffix),
-            name.to_string(),
+            world.name.to_string(),
             out_wasm.to_str().unwrap().to_string(),
             component_path.to_str().unwrap().to_string(),
         ));
@@ -124,6 +124,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../../wasi_snapshot_preview1");
     let wasi_adapter = out_dir.join("wasm32-unknown-unknown/release/wasi_snapshot_preview1.wasm");
     println!("wasi adapter: {:?}", &wasi_adapter);
+    let wasi_adapter = std::fs::read(&wasi_adapter).unwrap();
 
     if cfg!(feature = "guest-rust") {
         let mut cmd = Command::new("cargo");
@@ -149,7 +150,7 @@ fn main() {
                 .module(module.as_slice())
                 .expect("pull custom sections from module")
                 .validate(true)
-                .adapter_file(&wasi_adapter)
+                .adapter("wasi_snapshot_preview1", &wasi_adapter)
                 .expect("adapter failed to get loaded")
                 .encode()
                 .expect(&format!(
@@ -195,25 +196,25 @@ fn main() {
             }
             println!("cargo:rerun-if-changed={}", java_impl.display());
 
-            let (name, interfaces) = read_interfaces(&test_dir);
-            let out_dir = out_dir.join(format!("java-{name}",));
+            let world = read_world(&test_dir);
+            let out_dir = out_dir.join(format!("java-{}", world.name));
             drop(fs::remove_dir_all(&out_dir));
             let java_dir = out_dir.join("src/main/java");
             let mut files = Default::default();
 
             wit_bindgen_gen_guest_teavm_java::Opts::default()
                 .build()
-                .generate(&name, &interfaces, &mut files);
+                .generate(&world, &mut files);
 
-            let package_dir = java_dir.join(&format!("wit_{name}"));
+            let package_dir = java_dir.join(&format!("wit_{}", world.name));
             fs::create_dir_all(&package_dir).unwrap();
             for (file, contents) in files.iter() {
                 let dst = package_dir.join(file);
                 fs::write(dst, contents).unwrap();
             }
 
-            let snake = name.to_snake_case();
-            let upper = name.to_upper_camel_case();
+            let snake = world.name.to_snake_case();
+            let upper = world.name.to_upper_camel_case();
             fs::copy(
                 &java_impl,
                 java_dir.join(&format!("wit_{snake}/{upper}Impl.java")),
@@ -260,7 +261,7 @@ fn main() {
                 .module(module.as_slice())
                 .expect("pull custom sections from module")
                 .validate(true)
-                .adapter_file(&wasi_adapter)
+                .adapter("wasi_snapshot_preview1", &wasi_adapter)
                 .expect("adapter failed to get loaded")
                 .encode()
                 .expect(&format!(
@@ -283,13 +284,11 @@ fn main() {
     std::fs::write(out_dir.join("wasms.rs"), src).unwrap();
 }
 
-fn read_interfaces(dir: &Path) -> (String, ComponentInterfaces) {
+fn read_world(dir: &Path) -> World {
     let world = dir.join("world.wit");
     println!("cargo:rerun-if-changed={}", world.display());
 
-    let world = World::parse_file(&world).unwrap();
-    let name = world.name.clone();
-    (name, world.into())
+    World::parse_file(&world).unwrap()
 }
 
 fn mvn() -> Command {

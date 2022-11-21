@@ -18,7 +18,6 @@ use wit_bindgen_core::wit_parser::abi::{
 use wit_bindgen_core::{
     uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator, WorldGenerator,
 };
-use wit_component::ComponentInterfaces;
 
 #[derive(Default)]
 struct Js {
@@ -199,17 +198,16 @@ struct JsInterface<'a> {
 impl ComponentGenerator for Js {
     fn instantiate(
         &mut self,
-        name: &str,
         component: &Component,
         modules: &PrimaryMap<StaticModuleIndex, ModuleTranslation<'_>>,
-        interfaces: &ComponentInterfaces,
+        world: &World,
     ) {
         self.core_module_cnt = modules.len();
 
         // Generate the TypeScript definition of the `instantiate` function
         // which is the main workhorse of the generated bindings.
         if self.opts.instantiation {
-            let camel = name.to_upper_camel_case();
+            let camel = world.name.to_upper_camel_case();
             uwriteln!(
                 self.src.ts,
                 "
@@ -248,7 +246,7 @@ impl ComponentGenerator for Js {
             gen: self,
             modules,
             instances: Default::default(),
-            interfaces,
+            world,
             component,
         };
         instantiator.instantiate();
@@ -434,8 +432,8 @@ impl WorldGenerator for Js {
         gen.gen.src.ts(&mem::take(&mut gen.src.ts));
     }
 
-    fn finish(&mut self, name: &str, _interfaces: &ComponentInterfaces, _files: &mut Files) {
-        let camel = name.to_upper_camel_case();
+    fn finish(&mut self, world: &World, _files: &mut Files) {
+        let camel = world.name.to_upper_camel_case();
 
         // Generate a type definition for the import object to type-check
         // all imports to the component.
@@ -870,7 +868,7 @@ struct Instantiator<'a> {
     gen: &'a mut Js,
     modules: &'a PrimaryMap<StaticModuleIndex, ModuleTranslation<'a>>,
     instances: PrimaryMap<RuntimeInstanceIndex, StaticModuleIndex>,
-    interfaces: &'a ComponentInterfaces,
+    world: &'a World,
     component: &'a Component,
 }
 
@@ -902,7 +900,7 @@ impl Instantiator<'_> {
         self.exports(
             &self.component.exports,
             0,
-            self.interfaces.default.as_ref().map(|i| (None, i)),
+            self.world.default.as_ref().map(|i| (None, i)),
         );
     }
 
@@ -1015,7 +1013,7 @@ impl Instantiator<'_> {
         let (import_index, path) = &self.component.imports[import.import];
         let (import_name, _import_ty) = &self.component.import_types[*import_index];
         assert_eq!(path.len(), 1);
-        let iface = &self.interfaces.imports[import_name.as_str()];
+        let iface = &self.world.imports[import_name.as_str()];
         let func = iface.functions.iter().find(|f| f.name == path[0]).unwrap();
 
         let index = import.index.as_u32();
@@ -1249,7 +1247,7 @@ impl Instantiator<'_> {
                     if self.gen.opts.instantiation {
                         uwrite!(self.src.js, "{camel}: ");
                     }
-                    let iface = &self.interfaces.exports[name.as_str()];
+                    let iface = &self.world.exports[name.as_str()];
                     self.exports(exports, depth + 1, Some((Some(name.as_str()), iface)));
                     if self.gen.opts.instantiation {
                         self.src.js(",\n");
