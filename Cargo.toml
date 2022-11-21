@@ -25,8 +25,8 @@ clap = { version = "4.0.9", features = ["derive"] }
 env_logger = "0.9.1"
 indexmap = "1.9.1"
 
-wasmtime = { git = 'https://github.com/alexcrichton/wasmtime', branch = 'update-wasm-tools', features = ["component-model"] }
-wasmtime-environ = { git = 'https://github.com/alexcrichton/wasmtime', branch = 'update-wasm-tools' }
+wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime', features = ["component-model"] }
+wasmtime-environ = { git = 'https://github.com/bytecodealliance/wasmtime' }
 wasmprinter = "0.2.44"
 wasmparser = "0.95.0"
 wasm-encoder = "0.20.0"
