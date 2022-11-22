@@ -5,7 +5,6 @@ class Editor {
   language: HTMLSelectElement;
   files: HTMLSelectElement
   rustUnchecked: HTMLInputElement;
-  wasmtimeTracing: HTMLInputElement;
   jsCompat: HTMLInputElement;
   jsInstantiation: HTMLInputElement;
   generatedFiles: Record<string, string>;
@@ -22,7 +21,6 @@ class Editor {
     this.rustUnchecked = document.getElementById('rust-unchecked') as HTMLInputElement;
     this.jsCompat = document.getElementById('js-compat') as HTMLInputElement;
     this.jsInstantiation = document.getElementById('js-instantiation') as HTMLInputElement;
-    this.wasmtimeTracing = document.getElementById('wasmtime-tracing') as HTMLInputElement;
     this.outputHtml = document.getElementById('html-output') as HTMLDivElement;
 
     this.inputEditor = ace.edit("input");
@@ -36,7 +34,6 @@ class Editor {
     this.generatedFiles = {};
     this.options = {
       rustUnchecked: false,
-      wasmtimeTracing: false,
       jsCompat: false,
       jsInstantiation: false,
     };
@@ -73,10 +70,6 @@ class Editor {
       this.render();
     });
 
-    this.wasmtimeTracing.addEventListener('change', () => {
-      this.options.wasmtimeTracing = this.wasmtimeTracing.checked;
-      this.render();
-    });
     this.files.addEventListener('change', () => this.updateSelectedFile());
   }
 
@@ -95,7 +88,6 @@ class Editor {
       case "js":
       case "rust":
       case "java":
-      case "wasmtime":
       case "c":
       case "markdown":
         lang = this.language.value;
