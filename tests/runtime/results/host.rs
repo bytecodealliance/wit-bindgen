@@ -127,11 +127,7 @@ fn run(wasm: &str) -> anyhow::Result<()> {
     ));
     let e = exports.record_error(&mut store, 1.0);
     assert!(e.is_err());
-    assert!(e
-        .err()
-        .unwrap()
-        .to_string()
-        .starts_with("a somewhat ergonomic trap\nwasm backtrace:\n"));
+    assert!(format!("{:?}", e.err().unwrap()).contains("a somewhat ergonomic trap"));
 
     let (exports, mut store) = create()?;
     assert!(exports.record_error(&mut store, 2.0)?.is_ok());
@@ -149,22 +145,14 @@ fn run(wasm: &str) -> anyhow::Result<()> {
     ));
     let e = exports.variant_error(&mut store, 2.0);
     assert!(e.is_err());
-    assert!(e
-        .err()
-        .unwrap()
-        .to_string()
-        .starts_with("my very own trap\nwasm backtrace:\n"));
+    assert!(format!("{:?}", e.err().unwrap()).contains("my very own trap"));
 
     let (exports, mut store) = create()?;
     assert_eq!(exports.empty_error(&mut store, 0)?, Err(()));
 
     let e = exports.empty_error(&mut store, 1);
     assert!(e.is_err());
-    assert!(e
-        .err()
-        .unwrap()
-        .to_string()
-        .starts_with("outer result trap\nwasm backtrace:\n"));
+    assert!(format!("{:?}", e.err().unwrap()).contains("outer result trap"));
 
     let (exports, mut store) = create()?;
     assert_eq!(exports.empty_error(&mut store, 2)?, Ok(2));

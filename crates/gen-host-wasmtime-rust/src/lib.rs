@@ -9,7 +9,6 @@ use wit_bindgen_core::{
     WorldGenerator,
 };
 use wit_bindgen_gen_rust_lib::{FnSig, RustGenerator, TypeMode};
-use wit_component::ComponentInterfaces;
 
 #[derive(Default)]
 struct Wasmtime {
@@ -177,8 +176,8 @@ impl WorldGenerator for Wasmtime {
         self.src.push_str(&src);
     }
 
-    fn finish(&mut self, name: &str, _interfaces: &ComponentInterfaces, files: &mut Files) {
-        let camel = name.to_upper_camel_case();
+    fn finish(&mut self, world: &World, files: &mut Files) {
+        let camel = world.name.to_upper_camel_case();
         uwriteln!(self.src, "pub struct {camel} {{");
         for (name, (ty, _)) in self.exports.fields.iter() {
             uwriteln!(self.src, "{name}: {ty},");
@@ -265,7 +264,7 @@ impl WorldGenerator for Wasmtime {
             assert!(status.success());
         }
 
-        files.push(&format!("{name}.rs"), src.as_bytes());
+        files.push(&format!("{}.rs", world.name), src.as_bytes());
     }
 }
 

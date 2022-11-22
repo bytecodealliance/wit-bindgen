@@ -1,7 +1,6 @@
 use std::collections::{btree_map::Entry, BTreeMap, HashMap};
 use std::fmt::{self, Write};
 use std::ops::Deref;
-use wit_component::ComponentInterfaces;
 use wit_parser::*;
 
 pub use wit_parser;
@@ -413,18 +412,18 @@ mod tests {
 }
 
 pub trait WorldGenerator {
-    fn generate(&mut self, name: &str, interfaces: &ComponentInterfaces, files: &mut Files) {
-        self.preprocess(name);
-        for (name, import) in interfaces.imports.iter() {
+    fn generate(&mut self, world: &World, files: &mut Files) {
+        self.preprocess(&world.name);
+        for (name, import) in world.imports.iter() {
             self.import(name, import, files);
         }
-        for (name, export) in interfaces.exports.iter() {
+        for (name, export) in world.exports.iter() {
             self.export(name, export, files);
         }
-        if let Some(iface) = &interfaces.default {
-            self.export_default(name, iface, files);
+        if let Some(iface) = &world.default {
+            self.export_default(&world.name, iface, files);
         }
-        self.finish(name, interfaces, files);
+        self.finish(world, files);
     }
 
     fn preprocess(&mut self, name: &str) {
@@ -434,7 +433,7 @@ pub trait WorldGenerator {
     fn import(&mut self, name: &str, iface: &Interface, files: &mut Files);
     fn export(&mut self, name: &str, iface: &Interface, files: &mut Files);
     fn export_default(&mut self, name: &str, iface: &Interface, files: &mut Files);
-    fn finish(&mut self, name: &str, interfaces: &ComponentInterfaces, files: &mut Files);
+    fn finish(&mut self, world: &World, files: &mut Files);
 }
 
 /// This is a possible replacement for the `Generator` trait above, currently

@@ -3,7 +3,6 @@ use std::sync::Once;
 use wit_bindgen_core::component::ComponentGenerator;
 use wit_bindgen_core::wit_parser::World;
 use wit_bindgen_core::{Files, WorldGenerator};
-use wit_component::ComponentInterfaces;
 
 wit_bindgen_guest_rust::generate!("demo.wit");
 
@@ -50,11 +49,9 @@ fn init() {
 
 fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Options) -> Result<()> {
     let world = World::parse("input", &wit)?;
-    let name = world.name.clone();
-    let interfaces = ComponentInterfaces::from(world);
 
     let gen_world = |mut gen: Box<dyn WorldGenerator>, files: &mut Files| {
-        gen.generate(&name, &interfaces, files);
+        gen.generate(&world, files);
     };
 
     // This generator takes a component as input as opposed to an `Interface`.
@@ -65,10 +62,10 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
     // interface and dummy module.  Finally this component is fed into the host
     // generator which gives us the files we want.
     let gen_component = |mut gen: Box<dyn ComponentGenerator>, files: &mut Files| {
-        let dummy = test_helpers::dummy_module(&interfaces);
+        let dummy = test_helpers::dummy_module(&world);
         let wasm = wit_component::ComponentEncoder::default()
             .module(&dummy)?
-            .interfaces(interfaces.clone(), wit_component::StringEncoding::UTF8)?
+            .world(world.clone(), wit_component::StringEncoding::UTF8)?
             .encode()?;
         wit_bindgen_core::component::generate(&mut *gen, "input", &wasm, files)
     };

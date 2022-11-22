@@ -3,7 +3,6 @@ use clap::Parser;
 use std::path::{Path, PathBuf};
 use wit_bindgen_core::component::ComponentGenerator;
 use wit_bindgen_core::{wit_parser, Files, WorldGenerator};
-use wit_component::ComponentInterfaces;
 use wit_parser::World;
 
 /// Helper for passing VERSION to opt.
@@ -193,9 +192,7 @@ fn gen_world(
     opts: WorldOpt,
     files: &mut Files,
 ) -> Result<()> {
-    let name = opts.wit.name.clone();
-    let interfaces = ComponentInterfaces::from(opts.wit);
-    generator.generate(&name, &interfaces, files);
+    generator.generate(&opts.wit, files);
     Ok(())
 }
 

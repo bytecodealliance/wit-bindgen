@@ -12,7 +12,6 @@ use wit_bindgen_core::{
 use wit_bindgen_gen_rust_lib::{
     int_repr, wasm_type, FnSig, RustFlagsRepr, RustFunctionGenerator, RustGenerator, TypeMode,
 };
-use wit_component::ComponentInterfaces;
 
 #[derive(Default)]
 struct RustWasm {
@@ -133,12 +132,12 @@ impl WorldGenerator for RustWasm {
             .generate_exports(name, None);
     }
 
-    fn finish(&mut self, name: &str, interfaces: &ComponentInterfaces, files: &mut Files) {
+    fn finish(&mut self, world: &World, files: &mut Files) {
         if !self.exports.is_empty() {
             let macro_name = if let Some(name) = self.opts.export_macro_name.as_ref() {
                 name.to_snake_case()
             } else {
-                format!("export_{}", name.to_snake_case())
+                format!("export_{}", world.name.to_snake_case())
             };
             let macro_export = if self.opts.macro_export {
                 "#[macro_export]"
@@ -184,11 +183,13 @@ impl WorldGenerator for RustWasm {
         // otherwise is attempted to be unique here to ensure that this doesn't get
         // concatenated to other custom sections by LLD by accident since LLD will
         // concatenate custom sections of the same name.
-        self.src
-            .push_str(&format!("#[link_section = \"component-type:{name}\"]\n"));
+        self.src.push_str(&format!(
+            "#[link_section = \"component-type:{}\"]\n",
+            world.name,
+        ));
 
         let component_type =
-            wit_component::metadata::encode(interfaces, wit_component::StringEncoding::UTF8);
+            wit_component::metadata::encode(world, wit_component::StringEncoding::UTF8);
         self.src.push_str(&format!(
             "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",
             component_type.len()
@@ -229,7 +230,7 @@ impl WorldGenerator for RustWasm {
             assert!(status.success());
         }
 
-        files.push(&format!("{name}.rs"), src.as_bytes());
+        files.push(&format!("{}.rs", world.name), src.as_bytes());
     }
 }
 

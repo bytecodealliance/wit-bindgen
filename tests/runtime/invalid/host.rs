@@ -3,7 +3,7 @@ wit_bindgen_host_wasmtime_rust::generate!("../../tests/runtime/invalid/world.wit
 use anyhow::{Context, Result};
 use imports::*;
 use wasmtime::component::{Component, Linker};
-use wasmtime::{Engine, Store, Trap};
+use wasmtime::{Engine, Store};
 
 #[derive(Default)]
 pub struct MyImports;
@@ -108,15 +108,16 @@ fn run(wasm: &str) -> Result<()> {
 
     return Ok(());
 
-    fn assert_err(result: Result<(), anyhow::Error>, err: &str) -> Result<()> {
+    fn assert_err(result: Result<()>, err: &str) -> Result<()> {
         match result {
             Ok(()) => anyhow::bail!("export didn't trap"),
-            Err(e) => match e.downcast_ref::<Trap>() {
-                Some(e) if e.to_string().contains(err) => Ok(()),
-                Some(_) | None => {
+            Err(e) => {
+                if format!("{e:?}").contains(err) {
+                    Ok(())
+                } else {
                     Err(e).with_context(|| format!("expected trap containing \"{}\"", err))
                 }
-            },
+            }
         }
     }
 }
