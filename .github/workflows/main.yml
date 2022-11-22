@@ -88,14 +88,14 @@ jobs:
     - uses: actions/cache@v3
       with:
         path: ${{ runner.tool_cache }}/wasm-tools
-        key: wasm-tools-bin-e15e768a346c30738103d372e8ccf442646628c9-${{ runner.os }}
+        key: wasm-tools-bin-56fc46b3fb6cd62fbcc78553bc1e4b3489877d7e-${{ runner.os }}
     - run: echo '${{ runner.tool_cache }}/wasm-tools/bin' >> $GITHUB_PATH
     - run: |
         cargo install \
           wasm-tools \
           --root '${{ runner.tool_cache }}/wasm-tools' \
           --git https://github.com/bytecodealliance/wasm-tools \
-          --rev e15e768a346c30738103d372e8ccf442646628c9 \
+          --rev 56fc46b3fb6cd62fbcc78553bc1e4b3489877d7e \
           --no-default-features \
           --features component
 
