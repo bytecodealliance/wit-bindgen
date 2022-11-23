@@ -10,7 +10,8 @@ use wit_bindgen_core::{
     WorldGenerator,
 };
 use wit_bindgen_gen_rust_lib::{
-    int_repr, wasm_type, FnSig, RustFlagsRepr, RustFunctionGenerator, RustGenerator, TypeMode,
+    int_repr, to_rust_ident, wasm_type, FnSig, RustFlagsRepr, RustFunctionGenerator, RustGenerator,
+    TypeMode,
 };
 
 #[derive(Default)]
@@ -1333,7 +1334,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.let_results(func.results.len(), results);
                 match &func.kind {
                     FunctionKind::Freestanding => {
-                        self.push_str(&format!("T::{}", func.name.to_snake_case()));
+                        self.push_str(&format!("T::{}", to_rust_ident(&func.name)));
                     }
                 }
                 self.push_str("(");

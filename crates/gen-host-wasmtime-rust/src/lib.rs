@@ -8,7 +8,7 @@ use wit_bindgen_core::{
     uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Source, TypeInfo, Types,
     WorldGenerator,
 };
-use wit_bindgen_gen_rust_lib::{FnSig, RustGenerator, TypeMode};
+use wit_bindgen_gen_rust_lib::{to_rust_ident, FnSig, RustGenerator, TypeMode};
 
 #[derive(Default)]
 struct Wasmtime {
@@ -55,7 +55,7 @@ impl WorldGenerator for Wasmtime {
         gen.generate_from_error_impls();
         gen.generate_add_to_linker(name);
 
-        let snake = name.to_snake_case();
+        let snake = to_rust_ident(name);
         let module = &gen.src[..];
 
         uwriteln!(
@@ -85,7 +85,7 @@ impl WorldGenerator for Wasmtime {
             uwriteln!(
                 gen.src,
                 "{}: wasmtime::component::Func,",
-                func.name.to_snake_case()
+                to_rust_ident(&func.name)
             );
         }
         uwriteln!(gen.src, "}}");
@@ -114,7 +114,7 @@ impl WorldGenerator for Wasmtime {
         }
         uwriteln!(gen.src, "}}");
 
-        let snake = name.to_snake_case();
+        let snake = to_rust_ident(name);
         let module = &gen.src[..];
 
         uwriteln!(
@@ -455,7 +455,7 @@ impl<'a> InterfaceGenerator<'a> {
 
         self.src.push_str("let host = get(caller.data_mut());\n");
 
-        uwrite!(self.src, "let r = host.{}(", func.name.to_snake_case());
+        uwrite!(self.src, "let r = host.{}(", to_rust_ident(&func.name));
         for (i, _) in func.params.iter().enumerate() {
             uwrite!(self.src, "arg{},", i);
         }
@@ -494,7 +494,7 @@ impl<'a> InterfaceGenerator<'a> {
         let prev = mem::take(&mut self.src);
         let mut ret = Vec::new();
         for func in self.iface.functions.iter() {
-            let snake = func.name.to_snake_case();
+            let snake = to_rust_ident(&func.name);
             uwrite!(self.src, "*__exports.typed_func::<(");
             for (_, ty) in func.params.iter() {
                 self.print_ty(ty, TypeMode::AllBorrowed("'_"));
@@ -526,7 +526,7 @@ impl<'a> InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "pub {async_} fn {}<S: wasmtime::AsContextMut>(&self, mut store: S, ",
-            func.name.to_snake_case(),
+            to_rust_ident(&func.name),
         );
         for (i, param) in func.params.iter().enumerate() {
             uwrite!(self.src, "arg{}: ", i);
@@ -573,7 +573,7 @@ impl<'a> InterfaceGenerator<'a> {
         uwriteln!(
             self.src,
             ")>::new_unchecked(self.{})",
-            func.name.to_snake_case()
+            to_rust_ident(&func.name)
         );
         self.src.push_str("};\n");
         self.src.push_str("let (");
