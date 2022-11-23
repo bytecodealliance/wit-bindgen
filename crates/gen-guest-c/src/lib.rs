@@ -21,6 +21,7 @@ struct C {
     return_pointer_area_align: usize,
     names: Ns,
     needs_string: bool,
+    result_enums: bool,
     world: String,
 }
 
@@ -233,6 +234,12 @@ impl WorldGenerator for C {
                   size_t len;\n\
                 }} {snake}_string_t;",
                 ty = self.char_type(),
+            );
+        }
+        if self.result_enums {
+            uwriteln!(h_str, "
+                #define {}_RESULT_OK -1",
+                snake.to_uppercase()
             );
         }
         if self.src.h_defs.len() > 0 {
@@ -1964,21 +1971,28 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::ResultLift { result, ty, .. } => {
-                let (err, err_results) = self.blocks.pop().unwrap();
+                let (mut err, err_results) = self.blocks.pop().unwrap();
                 assert!(err_results.len() == (result.err.is_some() as usize));
-                let (ok, ok_results) = self.blocks.pop().unwrap();
+                let (mut ok, ok_results) = self.blocks.pop().unwrap();
                 assert!(ok_results.len() == (result.ok.is_some() as usize));
+
+                if err.len() > 0 {
+                    err.push_str("\n");
+                }
+                if ok.len() > 0 {
+                    ok.push_str("\n");
+                }
 
                 let result_tmp = self.locals.tmp("result");
                 let set_ok = if let Some(_) = self.gen.get_nonempty_type(result.ok.as_ref()) {
                     let ok_result = &ok_results[0];
-                    format!("{result_tmp}.val.ok = {ok_result};")
+                    format!("{result_tmp}.val.ok = {ok_result};\n")
                 } else {
                     String::new()
                 };
                 let set_err = if let Some(_) = self.gen.get_nonempty_type(result.err.as_ref()) {
                     let err_result = &err_results[0];
-                    format!("{result_tmp}.val.err = {err_result};")
+                    format!("{result_tmp}.val.err = {err_result};\n")
                 } else {
                     String::new()
                 };
@@ -1986,19 +2000,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let ty = self.gen.type_string(&Type::Id(*ty));
                 uwriteln!(self.src, "{ty} {result_tmp};");
                 let op0 = &operands[0];
-                uwrite!(
+                uwriteln!(
                     self.src,
                     "switch ({op0}) {{
                         case 0: {{
                             {result_tmp}.is_err = false;
-                            {ok}
-                            {set_ok}
+                            {ok}\
+                            {set_ok}\
                             break;
                         }}
                         case 1: {{
                             {result_tmp}.is_err = true;
-                            {err}
-                            {set_err}
+                            {err}\
+                            {set_err}\
                             break;
                         }}
                     }}"
@@ -2225,6 +2239,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     if self.sig.retptrs.len() > 0 {
                         self.store_in_retptrs(&[format!("{}.val.ok", variant)]);
                     }
+                    self.gen.gen.result_enums = true;
                     uwriteln!(self.src, "return {}.is_err ? {0}.val.err : -1;", variant);
                 }
             },
