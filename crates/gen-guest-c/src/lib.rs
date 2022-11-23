@@ -237,7 +237,9 @@ impl WorldGenerator for C {
             );
         }
         if self.result_enums {
-            uwriteln!(h_str, "
+            uwriteln!(
+                h_str,
+                "
                 #define {}_RESULT_OK -1",
                 snake.to_uppercase()
             );
