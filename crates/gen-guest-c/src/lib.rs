@@ -21,7 +21,6 @@ struct C {
     return_pointer_area_align: usize,
     names: Ns,
     needs_string: bool,
-    result_enums: bool,
     world: String,
 }
 
@@ -234,14 +233,6 @@ impl WorldGenerator for C {
                   size_t len;\n\
                 }} {snake}_string_t;",
                 ty = self.char_type(),
-            );
-        }
-        if self.result_enums {
-            uwriteln!(
-                h_str,
-                "
-                #define {}_RESULT_OK -1",
-                snake.to_uppercase()
             );
         }
         if self.src.h_defs.len() > 0 {
@@ -603,9 +594,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
         self.docs(docs);
-        self.src.h_defs("\ntypedef ");
-        self.src.h_defs(int_repr(enum_.tag()));
-        self.src.h_defs(" ");
+        let int_t = int_repr(enum_.tag());
+        uwrite!(self.src.h_defs, "\ntypedef {int_t} ");
         self.print_typedef_target(name);
 
         if enum_.cases.len() > 0 {
@@ -621,6 +611,13 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 i,
             );
         }
+        uwriteln!(
+            self.src.h_defs,
+            "#define {}_RESULT_{}_OK {}",
+            self.name.to_shouty_snake_case(),
+            name.to_shouty_snake_case(),
+            int_max_str(enum_.tag())
+        );
 
         self.types
             .insert(id, mem::replace(&mut self.src.h_defs, prev));
@@ -2241,7 +2238,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     if self.sig.retptrs.len() > 0 {
                         self.store_in_retptrs(&[format!("{}.val.ok", variant)]);
                     }
-                    self.gen.gen.result_enums = true;
                     uwriteln!(self.src, "return {}.is_err ? {0}.val.err : -1;", variant);
                 }
             },
@@ -2398,6 +2394,15 @@ fn int_repr(ty: Int) -> &'static str {
         Int::U16 => "uint16_t",
         Int::U32 => "uint32_t",
         Int::U64 => "uint64_t",
+    }
+}
+
+fn int_max_str(ty: Int) -> String {
+    match ty {
+        Int::U8 => u8::MAX.to_string(),
+        Int::U16 => u16::MAX.to_string(),
+        Int::U32 => u32::MAX.to_string(),
+        Int::U64 => u64::MAX.to_string(),
     }
 }
 

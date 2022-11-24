@@ -24,8 +24,12 @@ export function fListInVariant3(x: any) {
   assert.strictEqual(x, 'input3');
   return 'output3';
 }
+let firstErr = true;
 export function errnoResult() {
-  throw new Error('b');
+  if (firstErr) {
+    firstErr = false;
+    throw new Error('b');
+  }
 }
 export function listTypedefs(x: any, y: any) {
   assert.strictEqual(x, 'typedef1');

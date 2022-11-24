@@ -63,6 +63,8 @@ void flavorful_test_imports() {
 
   assert(imports_errno_result() == IMPORTS_MY_ERRNO_B);
 
+  assert(imports_errno_result() == IMPORTS_RESULT_MY_ERRNO_OK);
+
   {
     flavorful_string_t a;
     flavorful_string_set(&a, "typedef1");
