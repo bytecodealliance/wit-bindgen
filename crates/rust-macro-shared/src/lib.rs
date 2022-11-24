@@ -7,7 +7,10 @@ use std::path::{Path, PathBuf};
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{token, Token};
-use wit_bindgen_core::{wit_parser::World, Files, WorldGenerator};
+use wit_bindgen_core::{
+    wit_parser::{Document, World},
+    Files, WorldGenerator,
+};
 
 pub fn generate<F, O>(
     input: TokenStream,
@@ -146,5 +149,7 @@ impl<F: Parse> Parse for ConfigField<F> {
 fn parse_inline(input: ParseStream<'_>) -> Result<World> {
     input.parse::<Token![:]>()?;
     let s = input.parse::<syn::LitStr>()?;
-    World::parse("<macro-input>", &s.value()).map_err(|e| Error::new(s.span(), e))
+    Document::parse(Path::new("<macro-input>"), &s.value())
+        .and_then(Document::into_world)
+        .map_err(|e| Error::new(s.span(), e))
 }
