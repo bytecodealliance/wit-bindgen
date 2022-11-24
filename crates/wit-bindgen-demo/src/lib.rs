@@ -1,7 +1,8 @@
 use anyhow::Result;
+use std::path::Path;
 use std::sync::Once;
 use wit_bindgen_core::component::ComponentGenerator;
-use wit_bindgen_core::wit_parser::World;
+use wit_bindgen_core::wit_parser::{Document, World};
 use wit_bindgen_core::{Files, WorldGenerator};
 
 wit_bindgen_guest_rust::generate!("demo.wit");
@@ -48,7 +49,7 @@ fn init() {
 }
 
 fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Options) -> Result<()> {
-    let world = World::parse("input", &wit)?;
+    let world = Document::parse(Path::new("input"), &wit)?.into_world()?;
 
     let gen_world = |mut gen: Box<dyn WorldGenerator>, files: &mut Files| {
         gen.generate(&world, files);
