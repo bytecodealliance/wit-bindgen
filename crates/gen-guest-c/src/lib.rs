@@ -1405,6 +1405,7 @@ struct FunctionBindgen<'a, 'b> {
     locals: Ns,
     src: wit_bindgen_core::Source,
     sig: CSig,
+    has_ret_area: bool,
     func_to_call: &'a str,
     block_storage: Vec<wit_bindgen_core::Source>,
     blocks: Vec<(String, Vec<String>)>,
@@ -1422,6 +1423,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         FunctionBindgen {
             gen,
             sig,
+            has_ret_area: false,
             locals: Default::default(),
             src: Default::default(),
             func_to_call,
@@ -1494,16 +1496,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             // Declare a stack-allocated return area. We only do this for
             // imports, because exports need their return area to be live until
             // the post-return call.
+            let ret_idx = if self.has_ret_area {
+                format!("_{}", ptr)
+            } else {
+                self.has_ret_area = true;
+                "".to_string()
+            };
             uwrite!(
                 self.src,
                 "\
                     __attribute__((aligned({})))
-                    uint8_t ret_area[{}];
+                    uint8_t ret_area{ret_idx}[{}];
                 ",
                 align,
                 size,
             );
-            uwriteln!(self.src, "int32_t {} = (int32_t) &ret_area;", ptr);
+            uwriteln!(self.src, "int32_t {} = (int32_t) &ret_area{ret_idx};", ptr);
         } else {
             self.gen.gen.return_pointer_area_size = self.gen.gen.return_pointer_area_size.max(size);
             self.gen.gen.return_pointer_area_align =

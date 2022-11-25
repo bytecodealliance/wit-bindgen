@@ -19,9 +19,13 @@ impl Flavorful for Component {
 
         assert_eq!(
             f_list_in_record3(ListInRecord3Param {
-                a: "list_in_record3 input"
-            })
-            .a,
+                a: Some("list_in_record3 input"),
+                b: None,
+                c: None,
+                d: None,
+                e: None,
+                f: None,
+            }).unwrap().a.unwrap(),
             "list_in_record3 output"
         );
 

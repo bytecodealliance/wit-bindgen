@@ -16,11 +16,18 @@ void flavorful_test_imports() {
   }
 
   {
-    imports_list_in_record3_t a, b;
-    flavorful_string_set(&a.a, "list_in_record3 input");
-    imports_f_list_in_record3(&a, &b);
-    assert(memcmp(b.a.ptr, "list_in_record3 output", b.a.len) == 0);
-    imports_list_in_record3_free(&b);
+    imports_list_in_record3_t a;
+    a.a.is_some = true;
+    a.b.is_some = false;
+    a.c.is_some = false;
+    a.d.is_some = false;
+    a.e.is_some = false;
+    a.f.is_some = false;
+    flavorful_string_set(&a.a.val, "list_in_record3 input");
+    imports_result_list_in_record3_u32_t ret;
+    imports_f_list_in_record3(&a, &ret);
+    assert(memcmp(ret.val.ok.a.val.ptr, "list_in_record3 output", ret.val.ok.a.val.len) == 0);
+    imports_list_in_record3_free(&ret.val.ok);
   }
 
   {
