@@ -1394,23 +1394,13 @@ impl InterfaceGenerator<'_> {
 
     fn free(&mut self, ty: &Type, expr: &str) {
         if self.is_string(ty) {
-            self.src.c_helpers("free(");
-            if expr.chars().nth(0).unwrap() == '&' {
-                self.src.c_helpers(&expr[1..]);
-            } else {
-                self.src.c_helpers(expr);
-            }
-            self.src.c_helpers(".ptr");
-            self.src.c_helpers(");\n");
+            uwriteln!(self.src.c_helpers, "free({expr}.ptr);");
         } else {
             let prev = mem::take(&mut self.src.h_helpers);
             self.print_namespace(SourceType::HHelpers);
             self.print_ty_name(SourceType::HHelpers, ty);
-            let name = mem::replace(&mut self.src.h_helpers, prev);
-            self.src.c_helpers(&name);
-            self.src.c_helpers("_free(");
-            self.src.c_helpers(expr);
-            self.src.c_helpers(");\n");
+            let name = mem::replace(&mut self.src.h_helpers, prev).to_string();
+            uwriteln!(self.src.c_helpers, "{name}_free({expr});");
         }
     }
 }
