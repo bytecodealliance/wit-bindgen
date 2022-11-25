@@ -14,7 +14,7 @@ interface imports {
 
   f-list-in-record1: func(a: list-in-record1)
   f-list-in-record2: func() -> list-in-record2
-  f-list-in-record3: func(a: list-in-record3) -> result<_, u32>
+  f-list-in-record3: func(a: list-in-record3) -> result<list-in-record3, u32>
   f-list-in-record4: func(a: list-in-alias) -> list-in-alias
 
   type list-in-variant1-v1 = option<string>
