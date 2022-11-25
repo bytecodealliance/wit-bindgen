@@ -21,9 +21,8 @@ void lists_test_imports() {
   }
 
   {
-    lists_string_t a;
-    lists_string_set(&a, "");
-    imports_empty_string_param(&a);
+    lists_string_t a = lists_string("");
+    imports_empty_string_param(a);
   }
 
   {
@@ -47,16 +46,16 @@ void lists_test_imports() {
   }
 
   {
-    lists_string_t a;
-    lists_string_set(&a, "foo");
-    imports_list_param2(&a);
+    lists_string_t a = lists_string("foo");
+    imports_list_param2(a);
   }
 
   {
-    lists_string_t list[3];
-    lists_string_set(&list[0], "foo");
-    lists_string_set(&list[1], "bar");
-    lists_string_set(&list[2], "baz");
+    lists_string_t list[3] = {
+      lists_string("foo"),
+      lists_string("bar"),
+      lists_string("baz")
+    };
     imports_list_string_t a;
     a.ptr = list;
     a.len = 3;
@@ -64,11 +63,13 @@ void lists_test_imports() {
   }
 
   {
-    lists_string_t list1[2];
-    lists_string_t list2[1];
-    lists_string_set(&list1[0], "foo");
-    lists_string_set(&list1[1], "bar");
-    lists_string_set(&list2[0], "baz");
+    lists_string_t list1[2] = {
+      lists_string("foo"),
+      lists_string("bar")
+    };
+    lists_string_t list2[1] = {
+      lists_string("baz")
+    };
     imports_list_list_string_t a;
     a.ptr[0].len = 2;
     a.ptr[0].ptr = list1;
@@ -91,7 +92,7 @@ void lists_test_imports() {
     imports_list_result2(&a);
     assert(a.len == 6);
     assert(memcmp(a.ptr, "hello!", 6) == 0);
-    lists_string_free(&a);
+    lists_string_free(a);
   }
 
   {
@@ -130,29 +131,29 @@ void lists_test_imports() {
   }
 
   {
-    lists_string_t a, b;
-    lists_string_set(&a, "x");
-    imports_string_roundtrip(&a, &b);
+    lists_string_t a = lists_string("x");
+    lists_string_t b;
+    imports_string_roundtrip(a, &b);
     assert(b.len == a.len);
     assert(memcmp(b.ptr, a.ptr, a.len) == 0);
-    lists_string_free(&b);
+    lists_string_free(b);
 
-    lists_string_set(&a, "");
-    imports_string_roundtrip(&a, &b);
+    a = lists_string("");
+    imports_string_roundtrip(a, &b);
     assert(b.len == a.len);
-    lists_string_free(&b);
+    lists_string_free(b);
 
-    lists_string_set(&a, "hello");
-    imports_string_roundtrip(&a, &b);
-    assert(b.len == a.len);
-    assert(memcmp(b.ptr, a.ptr, a.len) == 0);
-    lists_string_free(&b);
-
-    lists_string_set(&a, "hello ⚑ world");
-    imports_string_roundtrip(&a, &b);
+    a = lists_string("hello");
+    imports_string_roundtrip(a, &b);
     assert(b.len == a.len);
     assert(memcmp(b.ptr, a.ptr, a.len) == 0);
-    lists_string_free(&b);
+    lists_string_free(b);
+
+    a = lists_string("hello ⚑ world");
+    imports_string_roundtrip(a, &b);
+    assert(b.len == a.len);
+    assert(memcmp(b.ptr, a.ptr, a.len) == 0);
+    lists_string_free(b);
   }
 
   {
@@ -232,8 +233,8 @@ void lists_empty_list_param(lists_list_u8_t *a) {
   assert(a->len == 0);
 }
 
-void lists_empty_string_param(lists_string_t *a) {
-  assert(a->len == 0);
+void lists_empty_string_param(lists_string_t a) {
+  assert(a.len == 0);
 }
 
 void lists_empty_list_result(lists_list_u8_t *ret0) {
@@ -255,11 +256,11 @@ void lists_list_param(lists_list_u8_t *a) {
   lists_list_u8_free(a);
 }
 
-void lists_list_param2(lists_string_t *a) {
-  assert(a->len == 3);
-  assert(a->ptr[0] == 'f');
-  assert(a->ptr[1] == 'o');
-  assert(a->ptr[2] == 'o');
+void lists_list_param2(lists_string_t a) {
+  assert(a.len == 3);
+  assert(a.ptr[0] == 'f');
+  assert(a.ptr[1] == 'o');
+  assert(a.ptr[2] == 'o');
   lists_string_free(a);
 }
 
@@ -317,21 +318,21 @@ void lists_list_result(lists_list_u8_t *ret0) {
 }
 
 void lists_list_result2(lists_string_t *ret0) {
-  lists_string_dup(ret0, "hello!");
+  *ret0 = lists_string_dup("hello!");
 }
 
 void lists_list_result3(lists_list_string_t *ret0) {
   ret0->len = 2;
   ret0->ptr = malloc(2 * sizeof(lists_string_t));
 
-  lists_string_dup(&ret0->ptr[0], "hello,");
-  lists_string_dup(&ret0->ptr[1], "world!");
+  ret0->ptr[0] = lists_string_dup("hello,");
+  ret0->ptr[1] = lists_string_dup("world!");
 }
 
 void lists_list_roundtrip(lists_list_u8_t *a, lists_list_u8_t *ret0) {
   *ret0 = *a;
 }
 
-void lists_string_roundtrip(lists_string_t *a, lists_string_t *ret0) {
-  *ret0 = *a;
+void lists_string_roundtrip(lists_string_t a, lists_string_t *ret0) {
+  *ret0 = a;
 }

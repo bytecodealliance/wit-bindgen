@@ -165,32 +165,33 @@ impl WorldGenerator for C {
             uwrite!(
                 self.src.h_helpers,
                 "
-                   void {snake}_string_set({snake}_string_t *ret, const {ty} *s);
-                   void {snake}_string_dup({snake}_string_t *ret, const {ty} *s);
-                   void {snake}_string_free({snake}_string_t *ret);\
-               ",
+                    {snake}_string_t {snake}_string(const {ty} *s);
+                    {snake}_string_t {snake}_string_dup(const {ty} *s);
+                    void {snake}_string_free({snake}_string_t s);",
             );
             uwrite!(
                 self.src.c_helpers,
                 "
-                   void {snake}_string_set({snake}_string_t *ret, const {ty} *s) {{
-                       ret->ptr = ({ty}*) s;
-                       ret->len = {strlen};
+                    {snake}_string_t {snake}_string(const {ty} *s) {{
+                        {snake}_string_t ret;
+                        ret.ptr = ({ty}*) s;
+                        ret.len = {strlen};
+                        return ret;
                    }}
 
-                   void {snake}_string_dup({snake}_string_t *ret, const {ty} *s) {{
-                       ret->len = {strlen};
-                       ret->ptr = cabi_realloc(NULL, 0, {size}, ret->len * {size});
-                       memcpy(ret->ptr, s, ret->len * {size});
-                   }}
+                    {snake}_string_t {snake}_string_dup(const {ty} *s) {{
+                        {snake}_string_t ret;
+                        ret.len = {strlen};
+                        ret.ptr = cabi_realloc(NULL, 0, {size}, ret.len * {size});
+                        memcpy(ret.ptr, s, ret.len * {size});
+                        return ret;
+                    }}
 
-                   void {snake}_string_free({snake}_string_t *ret) {{
-                       if (ret->len > 0) {{
-                           free(ret->ptr);
-                       }}
-                       ret->ptr = NULL;
-                       ret->len = 0;
-                   }}
+                    void {snake}_string_free({snake}_string_t s) {{
+                        if (s.len > 0) {{
+                            free(s.ptr);
+                        }}
+                    }}
                ",
             );
         }
@@ -955,7 +956,7 @@ impl InterfaceGenerator<'_> {
                 TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
                 TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
             },
-            Type::String => true,
+            Type::String => false,
             _ => false,
         }
     }
@@ -1232,7 +1233,7 @@ impl InterfaceGenerator<'_> {
 
     fn print_dtor(&mut self, id: TypeId) {
         let ty = Type::Id(id);
-        if !self.owns_anything(&ty) {
+        if !self.owns_anything(&ty) || self.is_string(&ty) {
             return;
         }
         let pos = self.src.h_helpers.len();
@@ -1242,6 +1243,7 @@ impl InterfaceGenerator<'_> {
         self.src.h_helpers("_free(");
         self.print_namespace(SourceType::HHelpers);
         self.print_ty_name(SourceType::HHelpers, &ty);
+
         self.src.h_helpers("_t *ptr)");
 
         self.src.c_helpers(&self.src.h_helpers[pos..].to_string());
@@ -1372,6 +1374,17 @@ impl InterfaceGenerator<'_> {
         }
     }
 
+    fn is_string(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Id(id) => match &self.iface.types[*id].kind {
+                TypeDefKind::Type(t) => self.is_string(t),
+                _ => false,
+            },
+            Type::String => true,
+            _ => false,
+        }
+    }
+
     fn optional_owns_anything(&self, ty: Option<&Type>) -> bool {
         match ty {
             Some(ty) => self.owns_anything(ty),
@@ -1380,23 +1393,25 @@ impl InterfaceGenerator<'_> {
     }
 
     fn free(&mut self, ty: &Type, expr: &str) {
-        let prev = mem::take(&mut self.src.h_helpers);
-        match ty {
-            Type::String => {
-                self.src.h_helpers(&self.gen.world.to_snake_case());
-                self.src.h_helpers("_");
+        if self.is_string(ty) {
+            self.src.c_helpers("free(");
+            if expr.chars().nth(0).unwrap() == '&' {
+                self.src.c_helpers(&expr[1..]);
+            } else {
+                self.src.c_helpers(expr);
             }
-            _ => {
-                self.print_namespace(SourceType::HHelpers);
-            }
+            self.src.c_helpers(".ptr");
+            self.src.c_helpers(");\n");
+        } else {
+            let prev = mem::take(&mut self.src.h_helpers);
+            self.print_namespace(SourceType::HHelpers);
+            self.print_ty_name(SourceType::HHelpers, ty);
+            let name = mem::replace(&mut self.src.h_helpers, prev);
+            self.src.c_helpers(&name);
+            self.src.c_helpers("_free(");
+            self.src.c_helpers(expr);
+            self.src.c_helpers(");\n");
         }
-        self.print_ty_name(SourceType::HHelpers, ty);
-        let name = mem::replace(&mut self.src.h_helpers, prev);
-
-        self.src.c_helpers(&name);
-        self.src.c_helpers("_free(");
-        self.src.c_helpers(expr);
-        self.src.c_helpers(");\n");
     }
 }
 
