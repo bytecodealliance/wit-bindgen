@@ -594,9 +594,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
         self.docs(docs);
-        self.src.h_defs("\ntypedef ");
-        self.src.h_defs(int_repr(enum_.tag()));
-        self.src.h_defs(" ");
+        let int_t = int_repr(enum_.tag());
+        uwrite!(self.src.h_defs, "\ntypedef {int_t} ");
         self.print_typedef_target(name);
 
         if enum_.cases.len() > 0 {
@@ -612,6 +611,13 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 i,
             );
         }
+        uwriteln!(
+            self.src.h_defs,
+            "#define {}_RESULT_{}_OK {}",
+            self.name.to_shouty_snake_case(),
+            name.to_shouty_snake_case(),
+            int_max_str(enum_.tag())
+        );
 
         self.types
             .insert(id, mem::replace(&mut self.src.h_defs, prev));
@@ -1964,21 +1970,28 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::ResultLift { result, ty, .. } => {
-                let (err, err_results) = self.blocks.pop().unwrap();
+                let (mut err, err_results) = self.blocks.pop().unwrap();
                 assert!(err_results.len() == (result.err.is_some() as usize));
-                let (ok, ok_results) = self.blocks.pop().unwrap();
+                let (mut ok, ok_results) = self.blocks.pop().unwrap();
                 assert!(ok_results.len() == (result.ok.is_some() as usize));
+
+                if err.len() > 0 {
+                    err.push_str("\n");
+                }
+                if ok.len() > 0 {
+                    ok.push_str("\n");
+                }
 
                 let result_tmp = self.locals.tmp("result");
                 let set_ok = if let Some(_) = self.gen.get_nonempty_type(result.ok.as_ref()) {
                     let ok_result = &ok_results[0];
-                    format!("{result_tmp}.val.ok = {ok_result};")
+                    format!("{result_tmp}.val.ok = {ok_result};\n")
                 } else {
                     String::new()
                 };
                 let set_err = if let Some(_) = self.gen.get_nonempty_type(result.err.as_ref()) {
                     let err_result = &err_results[0];
-                    format!("{result_tmp}.val.err = {err_result};")
+                    format!("{result_tmp}.val.err = {err_result};\n")
                 } else {
                     String::new()
                 };
@@ -1986,19 +1999,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let ty = self.gen.type_string(&Type::Id(*ty));
                 uwriteln!(self.src, "{ty} {result_tmp};");
                 let op0 = &operands[0];
-                uwrite!(
+                uwriteln!(
                     self.src,
                     "switch ({op0}) {{
                         case 0: {{
                             {result_tmp}.is_err = false;
-                            {ok}
-                            {set_ok}
+                            {ok}\
+                            {set_ok}\
                             break;
                         }}
                         case 1: {{
                             {result_tmp}.is_err = true;
-                            {err}
-                            {set_err}
+                            {err}\
+                            {set_err}\
                             break;
                         }}
                     }}"
@@ -2381,6 +2394,15 @@ fn int_repr(ty: Int) -> &'static str {
         Int::U16 => "uint16_t",
         Int::U32 => "uint32_t",
         Int::U64 => "uint64_t",
+    }
+}
+
+fn int_max_str(ty: Int) -> String {
+    match ty {
+        Int::U8 => u8::MAX.to_string(),
+        Int::U16 => u16::MAX.to_string(),
+        Int::U32 => u32::MAX.to_string(),
+        Int::U64 => u64::MAX.to_string(),
     }
 }
 

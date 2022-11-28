@@ -4,7 +4,9 @@ use wit_bindgen_host_wasmtime_rust::Result as HostResult;
 wit_bindgen_host_wasmtime_rust::generate!("../../tests/runtime/flavorful/world.wit");
 
 #[derive(Default)]
-pub struct MyImports;
+pub struct MyImports {
+    errored: bool
+}
 
 impl imports::Imports for MyImports {
     fn f_list_in_record1(&mut self, ty: imports::ListInRecord1) -> Result<()> {
@@ -57,10 +59,14 @@ impl imports::Imports for MyImports {
     }
 
     fn errno_result(&mut self) -> HostResult<(), imports::MyErrno> {
+        if self.errored {
+            return Ok(());
+        }
         imports::MyErrno::A.to_string();
         format!("{:?}", imports::MyErrno::A);
         fn assert_error<T: std::error::Error>() {}
         assert_error::<imports::MyErrno>();
+        self.errored = true;
         Err(imports::MyErrno::B)?
     }
 

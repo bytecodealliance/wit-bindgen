@@ -43,6 +43,8 @@ impl Flavorful for Component {
         fn assert_error<T: std::error::Error>() {}
         assert_error::<MyErrno>();
 
+        assert!(errno_result().is_ok());
+
         let (a, b) = list_typedefs("typedef1", &["typedef2"]);
         assert_eq!(a, b"typedef3");
         assert_eq!(b.len(), 1);
