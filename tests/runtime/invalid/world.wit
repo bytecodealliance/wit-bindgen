@@ -1,0 +1,70 @@
+interface imports {
+  roundtrip-u8: func(a: u8) -> u8
+  roundtrip-s8: func(a: s8) -> s8
+  roundtrip-u16: func(a: u16) -> u16
+  roundtrip-s16: func(a: s16) -> s16
+  roundtrip-char: func(a: char) -> char
+
+  enum e { a, b, c }
+  roundtrip-enum: func(a: e) -> e
+
+  roundtrip-bool: func(a: bool) -> bool
+
+
+  flags flag32 {
+    b0, b1, b2, b3, b4, b5, b6, b7,
+    b8, b9, b10, b11, b12, b13, b14, b15,
+    b16, b17, b18, b19, b20, b21, b22, b23,
+    b24, b25, b26, b27, b28, b29, b30, b31,
+  }
+
+  flags flag64 {
+    b0, b1, b2, b3, b4, b5, b6, b7,
+    b8, b9, b10, b11, b12, b13, b14, b15,
+    b16, b17, b18, b19, b20, b21, b22, b23,
+    b24, b25, b26, b27, b28, b29, b30, b31,
+    b32, b33, b34, b35, b36, b37, b38, b39,
+    b40, b41, b42, b43, b44, b45, b46, b47,
+    b48, b49, b50, b51, b52, b53, b54, b55,
+    b56, b57, b58, b59, b60, b61, b62, b63,
+  }
+
+  record unaligned-record { a: u32, b: u64 }
+
+  unaligned1: func(a: list<u16>)
+  unaligned2: func(a: list<u32>)
+  unaligned3: func(a: list<u64>)
+  unaligned4: func(a: list<flag32>)
+  unaligned5: func(a: list<flag64>)
+  unaligned6: func(a: list<unaligned-record>)
+  unaligned7: func(a: list<float32>)
+  unaligned8: func(a: list<float64>)
+  unaligned9: func(a: list<string>)
+  unaligned10: func(a: list<list<u8>>)
+}
+
+interface exports {
+  invalid-u8: func()
+  invalid-s8: func()
+  invalid-u16: func()
+  invalid-s16: func()
+  invalid-char: func()
+  invalid-bool: func()
+  invalid-enum: func()
+
+  unaligned1: func()
+  unaligned2: func()
+  unaligned3: func()
+  unaligned4: func()
+  unaligned5: func()
+  unaligned6: func()
+  unaligned7: func()
+  unaligned8: func()
+  unaligned9: func()
+  unaligned10: func()
+}
+
+world invalid {
+  import imports: imports
+  default export exports
+}

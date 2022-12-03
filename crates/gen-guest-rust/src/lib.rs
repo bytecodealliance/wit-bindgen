@@ -1,711 +1,215 @@
 use heck::*;
-use std::collections::BTreeMap;
+use std::collections::HashSet;
+use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use wit_bindgen_core::wit_parser::abi::{AbiVariant, Bindgen, Instruction, LiftLower, WasmType};
-use wit_bindgen_core::{wit_parser::*, Direction, Files, Generator, Source, TypeInfo, Types};
+use wit_bindgen_core::{
+    uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Source, TypeInfo, Types,
+    WorldGenerator,
+};
 use wit_bindgen_gen_rust_lib::{
-    int_repr, wasm_type, FnSig, RustFlagsRepr, RustFunctionGenerator, RustGenerator, TypeMode,
+    int_repr, to_rust_ident, wasm_type, FnSig, RustFlagsRepr, RustFunctionGenerator, RustGenerator,
+    TypeMode,
 };
 
 #[derive(Default)]
-pub struct RustWasm {
+struct RustWasm {
     src: Source,
     opts: Opts,
-    types: Types,
-    in_import: bool,
-    traits: BTreeMap<String, Trait>,
-    in_trait: bool,
-    trait_name: String,
-    return_pointer_area_size: usize,
-    return_pointer_area_align: usize,
-    sizes: SizeAlign,
+    exports: Vec<Source>,
+    skip: HashSet<String>,
 }
 
 #[derive(Default, Debug, Clone)]
-#[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
     /// Whether or not `rustfmt` is executed to format generated code.
-    #[cfg_attr(feature = "structopt", structopt(long))]
+    #[cfg_attr(feature = "clap", arg(long))]
     pub rustfmt: bool,
-
-    /// Adds the wit module name into import binding names when enabled.
-    #[cfg_attr(feature = "structopt", structopt(long))]
-    pub multi_module: bool,
 
     /// Whether or not the bindings assume interface values are always
     /// well-formed or whether checks are performed.
-    #[cfg_attr(feature = "structopt", structopt(long))]
+    #[cfg_attr(feature = "clap", arg(long))]
     pub unchecked: bool,
 
-    /// A prefix to prepend to all exported symbols. Note that this is only
-    /// intended for testing because it breaks the general form of the ABI.
-    #[cfg_attr(feature = "structopt", structopt(skip))]
-    pub symbol_namespace: String,
+    /// If true, code generation should avoid any features that depend on `std`.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub no_std: bool,
 
-    /// If true, the code generation is intended for standalone crates.
-    ///
-    /// Standalone mode generates bindings without a wrapping module.
-    ///
-    /// For exported interfaces, an `export!` macro is also generated
-    /// that can be used to export an implementation from a different
-    /// crate.
-    #[cfg_attr(feature = "structopt", structopt(skip))]
-    pub standalone: bool,
-}
+    /// If true, adds `#[macro_export]` to the `export_*!` macro generated to
+    /// export it from the Rust crate.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub macro_export: bool,
 
-#[derive(Default)]
-struct Trait {
-    methods: Vec<String>,
-    resource_methods: BTreeMap<ResourceId, Vec<String>>,
+    /// If true, code generation should pass borrowed string arguments as
+    /// `&[u8]` instead of `&str`. Strings are still required to be valid
+    /// UTF-8, but this avoids the need for Rust code to do its own UTF-8
+    /// validation if it doesn't already have a `&str`.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub raw_strings: bool,
+
+    /// The prefix to use when calling functions from within the generated
+    /// `export!` macro.
+    ///
+    /// This enables the generated `export!` macro to reference code from
+    /// another mod/crate.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub macro_call_prefix: Option<String>,
+
+    /// The name of the generated `export!` macro to use.
+    ///
+    /// If `None`, the name is derived from the name of the world in the
+    /// format `export_{world_name}!`.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub export_macro_name: Option<String>,
+
+    /// Names of functions to skip generating bindings for.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub skip: Vec<String>,
 }
 
 impl Opts {
-    pub fn build(self) -> RustWasm {
+    pub fn build(self) -> Box<dyn WorldGenerator> {
         let mut r = RustWasm::new();
+        r.skip = self.skip.iter().cloned().collect();
         r.opts = self;
-        r
+        Box::new(r)
     }
 }
 
 impl RustWasm {
-    pub fn new() -> RustWasm {
+    fn new() -> RustWasm {
         RustWasm::default()
     }
 
-    fn abi_variant(dir: Direction) -> AbiVariant {
-        // This generator uses the obvious direction to ABI variant mapping.
-        match dir {
-            Direction::Export => AbiVariant::GuestExport,
-            Direction::Import => AbiVariant::GuestImport,
+    fn interface<'a>(
+        &'a mut self,
+        name: &'a str,
+        iface: &'a Interface,
+        default_param_mode: TypeMode,
+        in_import: bool,
+    ) -> InterfaceGenerator<'a> {
+        let mut sizes = SizeAlign::default();
+        sizes.fill(iface);
+        let mut types = Types::default();
+        types.analyze(iface);
+
+        InterfaceGenerator {
+            name,
+            src: Source::default(),
+            in_import,
+            gen: self,
+            types,
+            sizes,
+            iface,
+            default_param_mode,
+            return_pointer_area_size: 0,
+            return_pointer_area_align: 0,
         }
-    }
-
-    fn ret_area_type_name(iface: &Interface) -> String {
-        format!("__{}RetArea", iface.name.to_camel_case())
-    }
-
-    fn ret_area_name(iface: &Interface) -> String {
-        format!("__{}_RET_AREA", iface.name.to_shouty_snake_case())
     }
 }
 
-impl RustGenerator for RustWasm {
-    fn default_param_mode(&self) -> TypeMode {
-        if self.in_import {
-            // We default to borrowing as much as possible to maximize the ability
-            // for host to take views into our memory without forcing wasm modules
-            // to allocate anything.
-            TypeMode::AllBorrowed("'a")
-        } else {
-            // In exports everythig is always owned, slices and handles and all.
-            // Nothing is borrowed.
-            TypeMode::Owned
-        }
-    }
+impl WorldGenerator for RustWasm {
+    fn import(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
+        let mut gen = self.interface(name, iface, TypeMode::AllBorrowed("'a"), true);
+        gen.types();
 
-    fn handle_projection(&self) -> Option<(&'static str, String)> {
-        None
-    }
-
-    fn handle_in_super(&self) -> bool {
-        !self.in_import
-    }
-
-    fn handle_wrapper(&self) -> Option<&'static str> {
-        if self.in_import {
-            None
-        } else {
-            Some("wit_bindgen_guest_rust::Handle")
-        }
-    }
-
-    fn push_str(&mut self, s: &str) {
-        self.src.push_str(s);
-    }
-
-    fn info(&self, ty: TypeId) -> TypeInfo {
-        self.types.get(ty)
-    }
-
-    fn types_mut(&mut self) -> &mut Types {
-        &mut self.types
-    }
-
-    fn print_borrowed_slice(
-        &mut self,
-        iface: &Interface,
-        mutbl: bool,
-        ty: &Type,
-        lifetime: &'static str,
-    ) {
-        self.print_rust_slice(iface, mutbl, ty, lifetime);
-    }
-
-    fn print_borrowed_str(&mut self, lifetime: &'static str) {
-        self.push_str("&");
-        if lifetime != "'_" {
-            self.push_str(lifetime);
-            self.push_str(" ");
-        }
-        self.push_str(" str");
-    }
-}
-
-impl Generator for RustWasm {
-    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
-        let variant = Self::abi_variant(dir);
-        self.in_import = variant == AbiVariant::GuestImport;
-        self.types.analyze(iface);
-        self.trait_name = iface.name.to_camel_case();
-
-        if !self.opts.standalone {
-            self.src.push_str(&format!(
-                "#[allow(clippy::all)]\nmod {} {{\n",
-                iface.name.to_snake_case(),
-            ));
+        for func in iface.functions.iter() {
+            gen.generate_guest_import(func);
         }
 
-        self.sizes.fill(iface);
+        gen.append_submodule(name);
     }
 
-    fn type_record(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        record: &Record,
-        docs: &Docs,
-    ) {
-        self.print_typedef_record(iface, id, record, docs);
+    fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
+        self.interface(name, iface, TypeMode::Owned, false)
+            .generate_exports(name, Some(name));
     }
 
-    fn type_tuple(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        tuple: &Tuple,
-        docs: &Docs,
-    ) {
-        self.print_typedef_tuple(iface, id, tuple, docs);
+    fn export_default(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
+        self.interface(name, iface, TypeMode::Owned, false)
+            .generate_exports(name, None);
     }
 
-    fn type_flags(
-        &mut self,
-        _iface: &Interface,
-        _id: TypeId,
-        name: &str,
-        flags: &Flags,
-        docs: &Docs,
-    ) {
-        self.src
-            .push_str("wit_bindgen_guest_rust::bitflags::bitflags! {\n");
-        self.rustdoc(docs);
-        let repr = RustFlagsRepr::new(flags);
-        self.src
-            .push_str(&format!("pub struct {}: {repr} {{\n", name.to_camel_case(),));
-        for (i, flag) in flags.flags.iter().enumerate() {
-            self.rustdoc(&flag.docs);
-            self.src.push_str(&format!(
-                "const {} = 1 << {};\n",
-                flag.name.to_shouty_snake_case(),
-                i,
-            ));
-        }
-        self.src.push_str("}\n");
-        self.src.push_str("}\n");
-
-        // Add a `from_bits_preserve` method.
-        self.src
-            .push_str(&format!("impl {} {{\n", name.to_camel_case()));
-        self.src.push_str(&format!(
-            "    /// Convert from a raw integer, preserving any unknown bits. See\n"
-        ));
-        self.src.push_str(&format!(
-            "    /// <https://github.com/bitflags/bitflags/issues/263#issuecomment-957088321>\n"
-        ));
-        self.src.push_str(&format!(
-            "    pub fn from_bits_preserve(bits: {repr}) -> Self {{\n",
-        ));
-        self.src.push_str(&format!("        Self {{ bits }}\n"));
-        self.src.push_str(&format!("    }}\n"));
-        self.src.push_str(&format!("}}\n"));
-    }
-
-    fn type_variant(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        variant: &Variant,
-        docs: &Docs,
-    ) {
-        self.print_typedef_variant(iface, id, variant, docs);
-    }
-
-    fn type_union(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        union: &Union,
-        docs: &Docs,
-    ) {
-        self.print_typedef_union(iface, id, union, docs);
-    }
-
-    fn type_option(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        payload: &Type,
-        docs: &Docs,
-    ) {
-        self.print_typedef_option(iface, id, payload, docs);
-    }
-
-    fn type_result(
-        &mut self,
-        iface: &Interface,
-        id: TypeId,
-        _name: &str,
-        result: &Result_,
-        docs: &Docs,
-    ) {
-        self.print_typedef_result(iface, id, result, docs);
-    }
-
-    fn type_enum(&mut self, _iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
-        self.print_typedef_enum(id, name, enum_, docs);
-    }
-
-    fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
-        // For exported handles we synthesize some trait implementations
-        // automatically for runtime-required traits.
-        if !self.in_import {
-            let panic = "
-                #[cfg(not(target_arch = \"wasm32\"))]
-                {
-                    panic!(\"handles can only be used on wasm32\");
-                }
-                #[cfg(target_arch = \"wasm32\")]
-            ";
-            self.src.push_str(&format!(
+    fn finish(&mut self, world: &World, files: &mut Files) {
+        if !self.exports.is_empty() {
+            let macro_name = if let Some(name) = self.opts.export_macro_name.as_ref() {
+                name.to_snake_case()
+            } else {
+                format!("export_{}", world.name.to_snake_case())
+            };
+            let macro_export = if self.opts.macro_export {
+                "#[macro_export]"
+            } else {
+                ""
+            };
+            uwrite!(
+                self.src,
                 "
-                    unsafe impl wit_bindgen_guest_rust::HandleType for super::{ty} {{
-                        #[inline]
-                        fn clone(_val: i32) -> i32 {{
-                            {panic_not_wasm}
-                            {{
-                                #[link(wasm_import_module = \"canonical_abi\")]
-                                extern \"C\" {{
-                                    #[link_name = \"resource_clone_{name}\"]
-                                    fn clone(val: i32) -> i32;
-                                }}
-                                unsafe {{ clone(_val) }}
-                            }}
-                        }}
-
-                        #[inline]
-                        fn drop(_val: i32) {{
-                            {panic_not_wasm}
-                            {{
-                                #[link(wasm_import_module = \"canonical_abi\")]
-                                extern \"C\" {{
-                                    #[link_name = \"resource_drop_{name}\"]
-                                    fn drop(val: i32);
-                                }}
-                                unsafe {{ drop(_val) }}
-                            }}
-                        }}
-                    }}
-
-                    unsafe impl wit_bindgen_guest_rust::LocalHandle for super::{ty} {{
-                        #[inline]
-                        fn new(_val: i32) -> i32 {{
-                            {panic_not_wasm}
-                            {{
-                                #[link(wasm_import_module = \"canonical_abi\")]
-                                extern \"C\" {{
-                                    #[link_name = \"resource_new_{name}\"]
-                                    fn new(val: i32) -> i32;
-                                }}
-                                unsafe {{ new(_val) }}
-                            }}
-                        }}
-
-                        #[inline]
-                        fn get(_val: i32) -> i32 {{
-                            {panic_not_wasm}
-                            {{
-                                #[link(wasm_import_module = \"canonical_abi\")]
-                                extern \"C\" {{
-                                    #[link_name = \"resource_get_{name}\"]
-                                    fn get(val: i32) -> i32;
-                                }}
-                                unsafe {{ get(_val) }}
-                            }}
-                        }}
-                    }}
-
-                    const _: () = {{
-                        #[export_name = \"{ns}canonical_abi_drop_{name}\"]
-                        extern \"C\" fn drop(ty: Box<super::{ty}>) {{
-                            <super::{iface} as {iface}>::drop_{name_snake}(*ty)
-                        }}
-                    }};
-                ",
-                ty = iface.resources[ty].name.to_camel_case(),
-                name = iface.resources[ty].name,
-                name_snake = iface.resources[ty].name.to_snake_case(),
-                iface = iface.name.to_camel_case(),
-                ns = self.opts.symbol_namespace,
-                panic_not_wasm = panic,
-            ));
-            let trait_ = self
-                .traits
-                .entry(iface.name.to_camel_case())
-                .or_insert(Trait::default());
-            trait_.methods.push(format!(
+                    /// Declares the export of the component's world for the
+                    /// given type.
+                    {macro_export}
+                    macro_rules! {macro_name}(($t:ident) => {{
+                        const _: () = {{
                 "
-                    /// An optional callback invoked when a handle is finalized
-                    /// and destroyed.
-                    fn drop_{}(val: super::{}) {{
-                        drop(val);
-                    }}
+            );
+            for src in self.exports.iter() {
+                self.src.push_str(src);
+            }
+            uwrite!(
+                self.src,
+                "
+                        }};
+
+                        #[used]
+                        #[doc(hidden)]
+                        #[cfg(target_arch = \"wasm32\")]
+                        static __FORCE_SECTION_REF: fn() = __force_section_ref;
+                        #[doc(hidden)]
+                        #[cfg(target_arch = \"wasm32\")]
+                        fn __force_section_ref() {{
+                            {prefix}__link_section()
+                        }}
+                    }});
                 ",
-                iface.resources[ty].name.to_snake_case(),
-                iface.resources[ty].name.to_camel_case(),
-            ));
-            return;
-        }
-
-        let resource = &iface.resources[ty];
-        let name = &resource.name;
-
-        self.rustdoc(&resource.docs);
-        self.src.push_str("#[derive(Debug)]\n");
-        self.src.push_str("#[repr(transparent)]\n");
-        self.src
-            .push_str(&format!("pub struct {}(i32);\n", name.to_camel_case()));
-        self.src.push_str("impl ");
-        self.src.push_str(&name.to_camel_case());
-        self.src.push_str(
-            " {
-                pub unsafe fn from_raw(raw: i32) -> Self {
-                    Self(raw)
-                }
-
-                pub fn into_raw(self) -> i32 {
-                    let ret = self.0;
-                    core::mem::forget(self);
-                    return ret;
-                }
-
-                pub fn as_raw(&self) -> i32 {
-                    self.0
-                }
-            }\n",
-        );
-
-        self.src.push_str("impl Drop for ");
-        self.src.push_str(&name.to_camel_case());
-        self.src.push_str(&format!(
-            "{{
-                fn drop(&mut self) {{
-                    #[link(wasm_import_module = \"canonical_abi\")]
-                    extern \"C\" {{
-                        #[link_name = \"resource_drop_{}\"]
-                        fn close(fd: i32);
-                    }}
-                    unsafe {{
-                        close(self.0);
-                    }}
-                }}
-            }}\n",
-            name,
-        ));
-
-        self.src.push_str("impl Clone for ");
-        self.src.push_str(&name.to_camel_case());
-        self.src.push_str(&format!(
-            "{{
-                fn clone(&self) -> Self {{
-                    #[link(wasm_import_module = \"canonical_abi\")]
-                    extern \"C\" {{
-                        #[link_name = \"resource_clone_{}\"]
-                        fn clone(val: i32) -> i32;
-                    }}
-                    unsafe {{
-                        Self(clone(self.0))
-                    }}
-                }}
-            }}\n",
-            name,
-        ));
-    }
-
-    fn type_alias(&mut self, iface: &Interface, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
-        self.print_typedef_alias(iface, id, ty, docs);
-    }
-
-    fn type_list(&mut self, iface: &Interface, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
-        self.print_type_list(iface, id, ty, docs);
-    }
-
-    fn type_builtin(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        self.rustdoc(docs);
-        self.src
-            .push_str(&format!("pub type {}", name.to_camel_case()));
-        self.src.push_str(" = ");
-        self.print_ty(iface, ty, TypeMode::Owned);
-        self.src.push_str(";\n");
-    }
-
-    fn preprocess_functions(&mut self, _iface: &Interface, dir: Direction) {
-        if self.opts.standalone && dir == Direction::Export {
-            self.src.push_str(
-                "/// Declares the export of the interface for the given type.\n\
-                 #[macro_export]\n\
-                 macro_rules! export(($t:ident) => {\n",
+                prefix = self.opts.macro_call_prefix.as_deref().unwrap_or("")
             );
         }
-    }
 
-    fn import(&mut self, iface: &Interface, func: &Function) {
-        let mut sig = FnSig::default();
-        let param_mode = TypeMode::AllBorrowed("'_");
-        match &func.kind {
-            FunctionKind::Freestanding => {}
-            FunctionKind::Static { resource, .. } | FunctionKind::Method { resource, .. } => {
-                sig.use_item_name = true;
-                self.src.push_str(&format!(
-                    "impl {} {{\n",
-                    iface.resources[*resource].name.to_camel_case()
-                ));
-            }
-        }
-        if let FunctionKind::Method { .. } = func.kind {
-            sig.self_arg = Some("&self".to_string());
-            sig.self_is_first_param = true;
-        }
-        let params = self.print_signature(iface, func, param_mode, &sig);
-        self.src.push_str("{\n");
-        self.src.push_str("unsafe {\n");
+        self.src.push_str("\n#[cfg(target_arch = \"wasm32\")]\n");
 
-        let mut f = FunctionBindgen::new(self, params);
-        iface.call(
-            AbiVariant::GuestImport,
-            LiftLower::LowerArgsLiftResults,
-            func,
-            &mut f,
+        // The custom section name here must start with "component-type" but
+        // otherwise is attempted to be unique here to ensure that this doesn't get
+        // concatenated to other custom sections by LLD by accident since LLD will
+        // concatenate custom sections of the same name.
+        self.src.push_str(&format!(
+            "#[link_section = \"component-type:{}\"]\n",
+            world.name,
+        ));
+
+        let component_type =
+            wit_component::metadata::encode(world, wit_component::StringEncoding::UTF8);
+        self.src.push_str(&format!(
+            "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",
+            component_type.len()
+        ));
+        self.src.push_str(&format!("{:?};\n", component_type));
+
+        self.src.push_str(
+            "
+            #[inline(never)]
+            #[doc(hidden)]
+            #[cfg(target_arch = \"wasm32\")]
+            pub fn __link_section() {}
+        ",
         );
-        let FunctionBindgen {
-            needs_cleanup_list,
-            src,
-            ..
-        } = f;
 
-        if needs_cleanup_list {
-            self.src.push_str("let mut cleanup_list = Vec::new();\n");
-        }
-        self.src.push_str(&String::from(src));
-
-        self.src.push_str("}\n");
-        self.src.push_str("}\n");
-
-        match &func.kind {
-            FunctionKind::Freestanding => {}
-            FunctionKind::Static { .. } | FunctionKind::Method { .. } => {
-                self.src.push_str("}\n");
-            }
-        }
-    }
-
-    fn export(&mut self, iface: &Interface, func: &Function) {
-        let iface_name = iface.name.to_snake_case();
-
-        let name_mangled = iface.mangle_funcname(func);
-        let name_snake = func.name.to_snake_case();
-        let name = match &iface.module {
-            Some(module) => {
-                format!("{module}#{}", name_mangled)
-            }
-            None => format!("{}{}", self.opts.symbol_namespace, name_mangled),
-        };
-
-        self.src.push_str(&format!("#[export_name = \"{name}\"]\n"));
-        self.src.push_str("unsafe extern \"C\" fn __wit_bindgen_");
-        self.src.push_str(&iface_name);
-        self.src.push_str("_");
-        self.src.push_str(&name_snake);
-        self.src.push_str("(");
-        let sig = iface.wasm_signature(AbiVariant::GuestExport, func);
-        let mut params = Vec::new();
-        for (i, param) in sig.params.iter().enumerate() {
-            let name = format!("arg{}", i);
-            self.src.push_str(&name);
-            self.src.push_str(": ");
-            self.wasm_type(*param);
-            self.src.push_str(", ");
-            params.push(name);
-        }
-        self.src.push_str(")");
-
-        match sig.results.len() {
-            0 => {}
-            1 => {
-                self.src.push_str(" -> ");
-                self.wasm_type(sig.results[0]);
-            }
-            _ => unimplemented!(),
-        }
-
-        self.push_str("{\n");
-
-        if self.opts.standalone {
-            // Force the macro code to reference wit_bindgen_guest_rust for standalone crates.
-            // Also ensure any referenced types are also used from the external crate.
-            self.src
-                .push_str("#[allow(unused_imports)]\nuse wit_bindgen_guest_rust;\nuse ");
-            self.src.push_str(&iface_name);
-            self.src.push_str("::*;\n");
-        }
-
-        let mut f = FunctionBindgen::new(self, params);
-        iface.call(
-            AbiVariant::GuestExport,
-            LiftLower::LiftArgsLowerResults,
-            func,
-            &mut f,
-        );
-        let FunctionBindgen {
-            needs_cleanup_list,
-            src,
-            ..
-        } = f;
-        assert!(!needs_cleanup_list);
-        self.src.push_str(&String::from(src));
-        self.src.push_str("}\n");
-
-        if iface.guest_export_needs_post_return(func) {
-            self.src.push_str(&format!(
-                "#[export_name = \"{}cabi_post_{}\"]\n",
-                self.opts.symbol_namespace, func.name,
-            ));
-            self.src.push_str(&format!(
-                "unsafe extern \"C\" fn __wit_bindgen_{iface_name}_{name_snake}_post_return("
-            ));
-            let mut params = Vec::new();
-            for (i, result) in sig.results.iter().enumerate() {
-                let name = format!("arg{}", i);
-                self.src.push_str(&name);
-                self.src.push_str(": ");
-                self.wasm_type(*result);
-                self.src.push_str(", ");
-                params.push(name);
-            }
-            self.src.push_str(") {\n");
-
-            let mut f = FunctionBindgen::new(self, params);
-            iface.post_return(func, &mut f);
-            let FunctionBindgen {
-                needs_cleanup_list,
-                src,
-                ..
-            } = f;
-            assert!(!needs_cleanup_list);
-            self.src.push_str(&String::from(src));
-            self.src.push_str("}\n");
-        }
-
-        let prev = mem::take(&mut self.src);
-        self.in_trait = true;
-        let mut sig = FnSig::default();
-        sig.private = true;
-        match &func.kind {
-            FunctionKind::Freestanding => {}
-            FunctionKind::Static { .. } => sig.use_item_name = true,
-            FunctionKind::Method { .. } => {
-                sig.use_item_name = true;
-                sig.self_is_first_param = true;
-                sig.self_arg = Some("&self".to_string());
-            }
-        }
-        self.print_signature(iface, func, TypeMode::Owned, &sig);
-        self.src.push_str(";");
-        self.in_trait = false;
-        let trait_ = self
-            .traits
-            .entry(iface.name.to_camel_case())
-            .or_insert(Trait::default());
-        let dst = match &func.kind {
-            FunctionKind::Freestanding => &mut trait_.methods,
-            FunctionKind::Static { resource, .. } | FunctionKind::Method { resource, .. } => trait_
-                .resource_methods
-                .entry(*resource)
-                .or_insert(Vec::new()),
-        };
-        dst.push(mem::replace(&mut self.src, prev).into());
-    }
-
-    fn finish_functions(&mut self, iface: &Interface, dir: Direction) {
-        if self.return_pointer_area_align > 0 {
-            self.src.push_str(&format!(
-                "
-                    #[repr(align({align}))]
-                    struct {ty}([u8; {size}]);
-                    static mut {name}: {ty} = {ty}([0; {size}]);
-                ",
-                ty = Self::ret_area_type_name(iface),
-                name = Self::ret_area_name(iface),
-                align = self.return_pointer_area_align,
-                size = self.return_pointer_area_size,
-            ));
-        }
-
-        // For standalone generation, close the export! macro
-        if self.opts.standalone && dir == Direction::Export {
-            self.src.push_str("});\n");
-        }
-    }
-
-    fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
         let mut src = mem::take(&mut self.src);
-
-        for (name, trait_) in self.traits.iter() {
-            src.push_str("pub trait ");
-            src.push_str(&name);
-            src.push_str(" {\n");
-            for f in trait_.methods.iter() {
-                src.push_str(&f);
-                src.push_str("\n");
-            }
-            src.push_str("}\n");
-
-            for (id, methods) in trait_.resource_methods.iter() {
-                src.push_str(&format!(
-                    "pub trait {} {{\n",
-                    iface.resources[*id].name.to_camel_case()
-                ));
-                for f in methods {
-                    src.push_str(&f);
-                    src.push_str("\n");
-                }
-                src.push_str("}\n");
-            }
-        }
-
-        // Close the opening `mod`.
-        if !self.opts.standalone {
-            src.push_str("}\n");
-        }
-
         if self.opts.rustfmt {
             let mut child = Command::new("rustfmt")
+                .arg("--edition=2018")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .spawn()
@@ -727,12 +231,402 @@ impl Generator for RustWasm {
             assert!(status.success());
         }
 
-        files.push("bindings.rs", src.as_bytes());
+        files.push(&format!("{}.rs", world.name), src.as_bytes());
     }
 }
 
-struct FunctionBindgen<'a> {
+struct InterfaceGenerator<'a> {
+    src: Source,
+    in_import: bool,
+    types: Types,
+    sizes: SizeAlign,
     gen: &'a mut RustWasm,
+    name: &'a str,
+    iface: &'a Interface,
+    default_param_mode: TypeMode,
+    return_pointer_area_size: usize,
+    return_pointer_area_align: usize,
+}
+
+impl InterfaceGenerator<'_> {
+    fn generate_exports(mut self, name: &str, interface_name: Option<&str>) {
+        self.types();
+
+        let camel = name.to_upper_camel_case();
+        uwriteln!(self.src, "pub trait {camel} {{");
+        for func in self.iface.functions.iter() {
+            if self.gen.skip.contains(&func.name) {
+                continue;
+            }
+            let mut sig = FnSig::default();
+            sig.private = true;
+            self.print_signature(func, TypeMode::Owned, &sig);
+            self.src.push_str(";\n");
+        }
+        uwriteln!(self.src, "}}");
+
+        for func in self.iface.functions.iter() {
+            self.generate_guest_export(name, func, interface_name);
+        }
+
+        self.append_submodule(name);
+    }
+
+    fn append_submodule(mut self, name: &str) {
+        if self.return_pointer_area_align > 0 {
+            let camel = name.to_upper_camel_case();
+            uwrite!(
+                self.src,
+                "
+                    #[repr(align({align}))]
+                    struct {camel}RetArea([u8; {size}]);
+                    static mut RET_AREA: {camel}RetArea = {camel}RetArea([0; {size}]);
+                ",
+                align = self.return_pointer_area_align,
+                size = self.return_pointer_area_size,
+            );
+        }
+
+        let snake = name.to_snake_case();
+        let module = &self.src[..];
+        uwriteln!(
+            self.gen.src,
+            "
+                #[allow(clippy::all)]
+                pub mod {snake} {{
+                    #[allow(unused_imports)]
+                    use wit_bindgen_guest_rust::rt::{{alloc, vec::Vec, string::String}};
+
+                    {module}
+                }}
+            "
+        );
+    }
+
+    fn generate_guest_import(&mut self, func: &Function) {
+        if self.gen.skip.contains(&func.name) {
+            return;
+        }
+
+        let sig = FnSig::default();
+        let param_mode = TypeMode::AllBorrowed("'_");
+        match &func.kind {
+            FunctionKind::Freestanding => {}
+        }
+        let params = self.print_signature(func, param_mode, &sig);
+        self.src.push_str("{\n");
+        self.src.push_str("unsafe {\n");
+
+        let mut f = FunctionBindgen::new(self, params);
+        f.gen.iface.call(
+            AbiVariant::GuestImport,
+            LiftLower::LowerArgsLiftResults,
+            func,
+            &mut f,
+        );
+        let FunctionBindgen {
+            needs_cleanup_list,
+            src,
+            ..
+        } = f;
+
+        if needs_cleanup_list {
+            self.src.push_str("let mut cleanup_list = Vec::new();\n");
+        }
+        self.src.push_str(&String::from(src));
+
+        self.src.push_str("}\n");
+        self.src.push_str("}\n");
+
+        match &func.kind {
+            FunctionKind::Freestanding => {}
+        }
+    }
+
+    fn generate_guest_export(
+        &mut self,
+        module_name: &str,
+        func: &Function,
+        interface_name: Option<&str>,
+    ) {
+        if self.gen.skip.contains(&func.name) {
+            return;
+        }
+
+        let module_name = module_name.to_snake_case();
+        let trait_bound = module_name.to_upper_camel_case();
+        let iface_snake = self.iface.name.to_snake_case();
+        let name_snake = func.name.to_snake_case();
+        let export_name = func.core_export_name(interface_name);
+        let mut macro_src = Source::default();
+        // Generate, simultaneously, the actual lifting/lowering function within
+        // the original module (`call_{name_snake}`) as well as the function
+        // which will ge exported from the wasm module itself through the export
+        // macro, `export_...` here.
+        //
+        // Both have the same type signature, but the one in the module is
+        // generic while the one in the macro uses `$t` as the name to delegate
+        // to and substitute as the generic.
+        uwrite!(
+            self.src,
+            "
+                #[doc(hidden)]
+                pub unsafe fn call_{name_snake}<T: {trait_bound}>(\
+            ",
+        );
+        uwrite!(
+            macro_src,
+            "
+                #[doc(hidden)]
+                #[export_name = \"{export_name}\"]
+                #[allow(non_snake_case)]
+                unsafe extern \"C\" fn __export_{iface_snake}_{name_snake}(\
+            ",
+        );
+
+        let sig = self.iface.wasm_signature(AbiVariant::GuestExport, func);
+        let mut params = Vec::new();
+        for (i, param) in sig.params.iter().enumerate() {
+            let name = format!("arg{}", i);
+            uwrite!(self.src, "{name}: {},", wasm_type(*param));
+            uwrite!(macro_src, "{name}: {},", wasm_type(*param));
+            params.push(name);
+        }
+        self.src.push_str(")");
+        macro_src.push_str(")");
+
+        match sig.results.len() {
+            0 => {}
+            1 => {
+                uwrite!(self.src, " -> {}", wasm_type(sig.results[0]));
+                uwrite!(macro_src, " -> {}", wasm_type(sig.results[0]));
+            }
+            _ => unimplemented!(),
+        }
+
+        self.push_str(" {\n");
+
+        // Finish out the macro-generated export implementation.
+        macro_src.push_str(" {\n");
+        uwrite!(
+            macro_src,
+            "{prefix}{module_name}::call_{name_snake}::<$t>(",
+            prefix = self.gen.opts.macro_call_prefix.as_deref().unwrap_or("")
+        );
+        for param in params.iter() {
+            uwrite!(macro_src, "{param},");
+        }
+        uwriteln!(macro_src, ")\n}}");
+
+        let mut f = FunctionBindgen::new(self, params);
+        f.gen.iface.call(
+            AbiVariant::GuestExport,
+            LiftLower::LiftArgsLowerResults,
+            func,
+            &mut f,
+        );
+        let FunctionBindgen {
+            needs_cleanup_list,
+            src,
+            ..
+        } = f;
+        assert!(!needs_cleanup_list);
+        self.src.push_str(&String::from(src));
+        self.src.push_str("}\n");
+
+        if self.iface.guest_export_needs_post_return(func) {
+            // Like above, generate both a generic function in the module itself
+            // as well as something to go in the export macro.
+            uwrite!(
+                self.src,
+                "
+                    #[doc(hidden)]
+                    pub unsafe fn post_return_{name_snake}<T: {trait_bound}>(\
+                "
+            );
+            uwrite!(
+                macro_src,
+                "
+                    #[doc(hidden)]
+                    #[export_name = \"cabi_post_{export_name}\"]
+                    #[allow(non_snake_case)]
+                    unsafe extern \"C\" fn __post_return_{iface_snake}_{name_snake}(\
+                "
+            );
+            let mut params = Vec::new();
+            for (i, result) in sig.results.iter().enumerate() {
+                let name = format!("arg{}", i);
+                uwrite!(self.src, "{name}: {},", wasm_type(*result));
+                uwrite!(macro_src, "{name}: {},", wasm_type(*result));
+                params.push(name);
+            }
+            self.src.push_str(") {\n");
+            macro_src.push_str(") {\n");
+
+            // Finish out the macro here
+            uwrite!(
+                macro_src,
+                "{prefix}{module_name}::post_return_{name_snake}::<$t>(",
+                prefix = self.gen.opts.macro_call_prefix.as_deref().unwrap_or("")
+            );
+            for param in params.iter() {
+                uwrite!(macro_src, "{param},");
+            }
+            uwriteln!(macro_src, ")\n}}");
+
+            let mut f = FunctionBindgen::new(self, params);
+            f.gen.iface.post_return(func, &mut f);
+            let FunctionBindgen {
+                needs_cleanup_list,
+                src,
+                ..
+            } = f;
+            assert!(!needs_cleanup_list);
+            self.src.push_str(&String::from(src));
+            self.src.push_str("}\n");
+        }
+
+        self.gen.exports.push(macro_src);
+    }
+}
+
+impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
+    fn iface(&self) -> &'a Interface {
+        self.iface
+    }
+
+    fn use_std(&self) -> bool {
+        !self.gen.opts.no_std
+    }
+
+    fn use_raw_strings(&self) -> bool {
+        self.gen.opts.raw_strings
+    }
+
+    fn default_param_mode(&self) -> TypeMode {
+        self.default_param_mode
+    }
+
+    fn push_str(&mut self, s: &str) {
+        self.src.push_str(s);
+    }
+
+    fn info(&self, ty: TypeId) -> TypeInfo {
+        self.types.get(ty)
+    }
+
+    fn types_mut(&mut self) -> &mut Types {
+        &mut self.types
+    }
+
+    fn print_borrowed_slice(&mut self, mutbl: bool, ty: &Type, lifetime: &'static str) {
+        self.print_rust_slice(mutbl, ty, lifetime);
+    }
+
+    fn print_borrowed_str(&mut self, lifetime: &'static str) {
+        self.push_str("&");
+        if lifetime != "'_" {
+            self.push_str(lifetime);
+            self.push_str(" ");
+        }
+        if self.gen.opts.raw_strings {
+            self.push_str("[u8]");
+        } else {
+            self.push_str("str");
+        }
+    }
+}
+
+impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
+    fn iface(&self) -> &'a Interface {
+        self.iface
+    }
+
+    fn type_record(&mut self, id: TypeId, _name: &str, record: &Record, docs: &Docs) {
+        self.print_typedef_record(id, record, docs, false);
+    }
+
+    fn type_tuple(&mut self, id: TypeId, _name: &str, tuple: &Tuple, docs: &Docs) {
+        self.print_typedef_tuple(id, tuple, docs);
+    }
+
+    fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
+        self.src
+            .push_str("wit_bindgen_guest_rust::bitflags::bitflags! {\n");
+        self.rustdoc(docs);
+        let repr = RustFlagsRepr::new(flags);
+        self.src.push_str(&format!(
+            "pub struct {}: {repr} {{\n",
+            name.to_upper_camel_case(),
+        ));
+        for (i, flag) in flags.flags.iter().enumerate() {
+            self.rustdoc(&flag.docs);
+            self.src.push_str(&format!(
+                "const {} = 1 << {};\n",
+                flag.name.to_shouty_snake_case(),
+                i,
+            ));
+        }
+        self.src.push_str("}\n");
+        self.src.push_str("}\n");
+
+        // Add a `from_bits_preserve` method.
+        self.src
+            .push_str(&format!("impl {} {{\n", name.to_upper_camel_case()));
+        self.src.push_str(&format!(
+            "    /// Convert from a raw integer, preserving any unknown bits. See\n"
+        ));
+        self.src.push_str(&format!(
+            "    /// <https://github.com/bitflags/bitflags/issues/263#issuecomment-957088321>\n"
+        ));
+        self.src.push_str(&format!(
+            "    pub fn from_bits_preserve(bits: {repr}) -> Self {{\n",
+        ));
+        self.src.push_str(&format!("        Self {{ bits }}\n"));
+        self.src.push_str(&format!("    }}\n"));
+        self.src.push_str(&format!("}}\n"));
+    }
+
+    fn type_variant(&mut self, id: TypeId, _name: &str, variant: &Variant, docs: &Docs) {
+        self.print_typedef_variant(id, variant, docs, false);
+    }
+
+    fn type_union(&mut self, id: TypeId, _name: &str, union: &Union, docs: &Docs) {
+        self.print_typedef_union(id, union, docs, false);
+    }
+
+    fn type_option(&mut self, id: TypeId, _name: &str, payload: &Type, docs: &Docs) {
+        self.print_typedef_option(id, payload, docs);
+    }
+
+    fn type_result(&mut self, id: TypeId, _name: &str, result: &Result_, docs: &Docs) {
+        self.print_typedef_result(id, result, docs);
+    }
+
+    fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
+        self.print_typedef_enum(id, name, enum_, docs, &[], Box::new(|_| String::new()));
+    }
+
+    fn type_alias(&mut self, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
+        self.print_typedef_alias(id, ty, docs);
+    }
+
+    fn type_list(&mut self, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
+        self.print_type_list(id, ty, docs);
+    }
+
+    fn type_builtin(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        self.rustdoc(docs);
+        self.src
+            .push_str(&format!("pub type {}", name.to_upper_camel_case()));
+        self.src.push_str(" = ");
+        self.print_ty(ty, TypeMode::Owned);
+        self.src.push_str(";\n");
+    }
+}
+
+struct FunctionBindgen<'a, 'b> {
+    gen: &'b mut InterfaceGenerator<'a>,
     params: Vec<String>,
     src: Source,
     blocks: Vec<String>,
@@ -742,8 +636,8 @@ struct FunctionBindgen<'a> {
     cleanup: Vec<(String, String)>,
 }
 
-impl FunctionBindgen<'_> {
-    fn new(gen: &mut RustWasm, params: Vec<String>) -> FunctionBindgen<'_> {
+impl<'a, 'b> FunctionBindgen<'a, 'b> {
+    fn new(gen: &'b mut InterfaceGenerator<'a>, params: Vec<String>) -> FunctionBindgen<'a, 'b> {
         FunctionBindgen {
             gen,
             params,
@@ -759,14 +653,14 @@ impl FunctionBindgen<'_> {
     fn emit_cleanup(&mut self) {
         for (ptr, layout) in mem::take(&mut self.cleanup) {
             self.push_str(&format!(
-                "if {layout}.size() != 0 {{\nstd::alloc::dealloc({ptr}, {layout});\n}}\n"
+                "if {layout}.size() != 0 {{\nalloc::dealloc({ptr}, {layout});\n}}\n"
             ));
         }
         if self.needs_cleanup_list {
             self.push_str(
                 "for (ptr, layout) in cleanup_list {\n
                     if layout.size() != 0 {\n
-                        std::alloc::dealloc(ptr, layout);\n
+                        alloc::dealloc(ptr, layout);\n
                     }\n
                 }\n",
             );
@@ -775,27 +669,22 @@ impl FunctionBindgen<'_> {
 
     fn declare_import(
         &mut self,
-        iface: &Interface,
+        module_name: &str,
         name: &str,
         params: &[WasmType],
         results: &[WasmType],
     ) -> String {
-        let module = iface.module.as_deref().unwrap_or(&iface.name);
-
         // Define the actual function we're calling inline
-        self.push_str("#[link(wasm_import_module = \"");
-        self.push_str(module);
-        self.push_str("\")]\n");
-        self.push_str("extern \"C\" {\n");
-        self.push_str("#[cfg_attr(target_arch = \"wasm32\", link_name = \"");
-        self.push_str(name);
-        self.push_str("\")]\n");
-        self.push_str("#[cfg_attr(not(target_arch = \"wasm32\"), link_name = \"");
-        self.push_str(module);
-        self.push_str("_");
-        self.push_str(name);
-        self.push_str("\")]\n");
-        self.push_str("fn wit_import(");
+        uwriteln!(
+            self.src,
+            "
+                #[link(wasm_import_module = \"{module_name}\")]
+                extern \"C\" {{
+                    #[cfg_attr(target_arch = \"wasm32\", link_name = \"{name}\")]
+                    #[cfg_attr(not(target_arch = \"wasm32\"), link_name = \"{module_name}_{name}\")]
+                    fn wit_import(\
+            "
+        );
         for param in params.iter() {
             self.push_str("_: ");
             self.push_str(wasm_type(*param));
@@ -812,7 +701,7 @@ impl FunctionBindgen<'_> {
     }
 }
 
-impl RustFunctionGenerator for FunctionBindgen<'_> {
+impl RustFunctionGenerator for FunctionBindgen<'_, '_> {
     fn push_str(&mut self, s: &str) {
         self.src.push_str(s);
     }
@@ -836,7 +725,7 @@ impl RustFunctionGenerator for FunctionBindgen<'_> {
     }
 }
 
-impl Bindgen for FunctionBindgen<'_> {
+impl Bindgen for FunctionBindgen<'_, '_> {
     type Operand = String;
 
     fn push_block(&mut self) {
@@ -875,16 +764,24 @@ impl Bindgen for FunctionBindgen<'_> {
         }
     }
 
-    fn return_pointer(&mut self, iface: &Interface, size: usize, align: usize) -> String {
-        self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
-        self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
+    fn return_pointer(&mut self, _iface: &Interface, size: usize, align: usize) -> String {
         let tmp = self.tmp();
 
-        self.push_str(&format!(
-            "let ptr{} = {}.0.as_mut_ptr() as i32;\n",
-            tmp,
-            RustWasm::ret_area_name(iface),
-        ));
+        if self.gen.in_import {
+            uwrite!(
+                self.src,
+                "
+                    #[repr(align({align}))]
+                    struct RetArea([u8; {size}]);
+                    let mut ret_area = core::mem::MaybeUninit::<RetArea>::uninit();
+                    let ptr{tmp} = ret_area.as_mut_ptr() as i32;
+                ",
+            );
+        } else {
+            self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
+            self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
+            uwriteln!(self.src, "let ptr{tmp} = RET_AREA.0.as_mut_ptr() as i32;");
+        }
         format!("ptr{}", tmp)
     }
 
@@ -898,12 +795,12 @@ impl Bindgen for FunctionBindgen<'_> {
 
     fn emit(
         &mut self,
-        iface: &Interface,
+        _iface: &Interface,
         inst: &Instruction<'_>,
         operands: &mut Vec<String>,
         results: &mut Vec<String>,
     ) {
-        let unchecked = self.gen.opts.unchecked;
+        let unchecked = self.gen.gen.opts.unchecked;
         let mut top_as = |cvt: &str| {
             let mut s = operands.pop().unwrap();
             s.push_str(" as ");
@@ -999,32 +896,6 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            // handles in exports
-            Instruction::I32FromOwnedHandle { .. } => {
-                results.push(format!(
-                    "wit_bindgen_guest_rust::Handle::into_raw({})",
-                    operands[0]
-                ));
-            }
-            Instruction::HandleBorrowedFromI32 { .. } => {
-                results.push(format!(
-                    "wit_bindgen_guest_rust::Handle::from_raw({})",
-                    operands[0],
-                ));
-            }
-
-            // handles in imports
-            Instruction::I32FromBorrowedHandle { .. } => {
-                results.push(format!("{}.0", operands[0]));
-            }
-            Instruction::HandleOwnedFromI32 { ty } => {
-                results.push(format!(
-                    "{}({})",
-                    iface.resources[*ty].name.to_camel_case(),
-                    operands[0]
-                ));
-            }
-
             Instruction::FlagsLower { flags, .. } => {
                 let tmp = self.tmp();
                 self.push_str(&format!("let flags{} = {};\n", tmp, operands[0]));
@@ -1034,7 +905,7 @@ impl Bindgen for FunctionBindgen<'_> {
             }
             Instruction::FlagsLift { name, flags, .. } => {
                 let repr = RustFlagsRepr::new(flags);
-                let name = name.to_camel_case();
+                let name = name.to_upper_camel_case();
                 let mut result = format!("{}::empty()", name);
                 for (i, op) in operands.iter().enumerate() {
                     result.push_str(&format!(
@@ -1048,10 +919,10 @@ impl Bindgen for FunctionBindgen<'_> {
             }
 
             Instruction::RecordLower { ty, record, .. } => {
-                self.record_lower(iface, *ty, record, &operands[0], results);
+                self.record_lower(*ty, record, &operands[0], results);
             }
             Instruction::RecordLift { ty, record, .. } => {
-                self.record_lift(iface, *ty, record, operands, results);
+                self.record_lift(*ty, record, operands, results);
             }
 
             Instruction::TupleLower { tuple, .. } => {
@@ -1076,9 +947,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.let_results(result_types.len(), results);
                 let op0 = &operands[0];
                 self.push_str(&format!("match {op0} {{\n"));
-                let name = self.typename_lower(iface, *ty);
+                let name = self.typename_lower(*ty);
                 for (case, block) in variant.cases.iter().zip(blocks) {
-                    let case_name = case.name.to_camel_case();
+                    let case_name = case.name.to_upper_camel_case();
                     self.push_str(&format!("{name}::{case_name}"));
                     if case.ty.is_some() {
                         self.push_str(&format!("(e) => {block},\n"));
@@ -1096,7 +967,7 @@ impl Bindgen for FunctionBindgen<'_> {
             {
                 self.blocks.drain(self.blocks.len() - variant.cases.len()..);
                 let mut result = format!("core::mem::transmute::<_, ");
-                result.push_str(&name.to_camel_case());
+                result.push_str(&name.to_upper_camel_case());
                 result.push_str(">(");
                 result.push_str(&operands[0]);
                 result.push_str(" as ");
@@ -1112,7 +983,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     .collect::<Vec<_>>();
                 let op0 = &operands[0];
                 let mut result = format!("match {op0} {{\n");
-                let name = self.typename_lift(iface, *ty);
+                let name = self.typename_lift(*ty);
                 for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
                     let pat = if i == variant.cases.len() - 1 && unchecked {
                         String::from("_")
@@ -1124,7 +995,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     } else {
                         String::new()
                     };
-                    let case = case.name.to_camel_case();
+                    let case = case.name.to_upper_camel_case();
                     result.push_str(&format!("{pat} => {name}::{case}{block},\n"));
                 }
                 if !unchecked {
@@ -1147,13 +1018,8 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.let_results(result_types.len(), results);
                 let op0 = &operands[0];
                 self.push_str(&format!("match {op0} {{\n"));
-                let name = self.typename_lower(iface, *ty);
-                for (case_name, block) in self
-                    .gen
-                    .union_case_names(iface, union)
-                    .into_iter()
-                    .zip(blocks)
-                {
+                let name = self.typename_lower(*ty);
+                for (case_name, block) in self.gen.union_case_names(union).into_iter().zip(blocks) {
                     self.push_str(&format!("{name}::{case_name}(e) => {block},\n"));
                 }
                 self.push_str("};\n");
@@ -1168,7 +1034,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let mut result = format!("match {op0} {{\n");
                 for (i, (case_name, block)) in self
                     .gen
-                    .union_case_names(iface, union)
+                    .union_case_names(union)
                     .into_iter()
                     .zip(blocks)
                     .enumerate()
@@ -1178,7 +1044,7 @@ impl Bindgen for FunctionBindgen<'_> {
                     } else {
                         i.to_string()
                     };
-                    let name = self.typename_lift(iface, *ty);
+                    let name = self.typename_lift(*ty);
                     result.push_str(&format!("{pat} => {name}::{case_name}({block}),\n"));
                 }
                 if !unchecked {
@@ -1210,7 +1076,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 assert_eq!(none, "()");
                 let operand = &operands[0];
                 let invalid = if unchecked {
-                    "std::hint::unreachable_unchecked()"
+                    "core::hint::unreachable_unchecked()"
                 } else {
                     "panic!(\"invalid enum discriminant\")"
                 };
@@ -1247,7 +1113,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 let ok = self.blocks.pop().unwrap();
                 let operand = &operands[0];
                 let invalid = if unchecked {
-                    "std::hint::unreachable_unchecked()"
+                    "core::hint::unreachable_unchecked()"
                 } else {
                     "panic!(\"invalid enum discriminant\")"
                 };
@@ -1262,9 +1128,9 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::EnumLower { enum_, name, .. } => {
                 let mut result = format!("match {} {{\n", operands[0]);
-                let name = name.to_camel_case();
+                let name = name.to_upper_camel_case();
                 for (i, case) in enum_.cases.iter().enumerate() {
-                    let case = case.name.to_camel_case();
+                    let case = case.name.to_upper_camel_case();
                     result.push_str(&format!("{name}::{case} => {i},\n"));
                 }
                 result.push_str("}");
@@ -1275,7 +1141,7 @@ impl Bindgen for FunctionBindgen<'_> {
             // defined the type so we can transmute directly into it.
             Instruction::EnumLift { enum_, name, .. } if unchecked => {
                 let mut result = format!("core::mem::transmute::<_, ");
-                result.push_str(&name.to_camel_case());
+                result.push_str(&name.to_upper_camel_case());
                 result.push_str(">(");
                 result.push_str(&operands[0]);
                 result.push_str(" as ");
@@ -1288,9 +1154,9 @@ impl Bindgen for FunctionBindgen<'_> {
                 let mut result = format!("match ");
                 result.push_str(&operands[0]);
                 result.push_str(" {\n");
-                let name = name.to_camel_case();
+                let name = name.to_upper_camel_case();
                 for (i, case) in enum_.cases.iter().enumerate() {
-                    let case = case.name.to_camel_case();
+                    let case = case.name.to_upper_camel_case();
                     result.push_str(&format!("{i} => {name}::{case},\n"));
                 }
                 result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
@@ -1357,7 +1223,9 @@ impl Bindgen for FunctionBindgen<'_> {
                     "Vec::from_raw_parts({} as *mut _, {1}, {1})",
                     operands[0], len
                 );
-                if unchecked {
+                if self.gen.gen.opts.raw_strings {
+                    results.push(result);
+                } else if unchecked {
                     results.push(format!("String::from_utf8_unchecked({})", result));
                 } else {
                     results.push(format!("String::from_utf8({}).unwrap()", result));
@@ -1379,15 +1247,15 @@ impl Bindgen for FunctionBindgen<'_> {
                 let size = self.gen.sizes.size(element);
                 let align = self.gen.sizes.align(element);
                 self.push_str(&format!(
-                    "let {layout} = core::alloc::Layout::from_size_align_unchecked({vec}.len() * {size}, {align});\n",
+                    "let {layout} = alloc::Layout::from_size_align_unchecked({vec}.len() * {size}, {align});\n",
                 ));
                 self.push_str(&format!(
-                    "let {result} = if {layout}.size() != 0\n{{\nlet ptr = std::alloc::alloc({layout});\n",
+                    "let {result} = if {layout}.size() != 0\n{{\nlet ptr = alloc::alloc({layout});\n",
                 ));
                 self.push_str(&format!(
-                    "if ptr.is_null()\n{{\nstd::alloc::handle_alloc_error({layout});\n}}\nptr\n}}",
+                    "if ptr.is_null()\n{{\nalloc::handle_alloc_error({layout});\n}}\nptr\n}}",
                 ));
-                self.push_str(&format!("else {{\nstd::ptr::null_mut()\n}};\n",));
+                self.push_str(&format!("else {{\ncore::ptr::null_mut()\n}};\n",));
                 self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
                 self.push_str(&format!(
                     "let base = {result} as i32 + (i as i32) * {size};\n",
@@ -1448,13 +1316,8 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::IterBasePointer => results.push("base".to_string()),
 
-            Instruction::CallWasm {
-                iface,
-                base_name: _,
-                mangled_name,
-                sig,
-            } => {
-                let func = self.declare_import(iface, mangled_name, &sig.params, &sig.results);
+            Instruction::CallWasm { name, sig, .. } => {
+                let func = self.declare_import(self.gen.name, name, &sig.params, &sig.results);
 
                 // ... then call the function with all our operands
                 if sig.results.len() > 0 {
@@ -1467,38 +1330,14 @@ impl Bindgen for FunctionBindgen<'_> {
                 self.push_str(");\n");
             }
 
-            Instruction::CallInterface { module, func } => {
+            Instruction::CallInterface { func, .. } => {
                 self.let_results(func.results.len(), results);
                 match &func.kind {
                     FunctionKind::Freestanding => {
-                        if self.gen.opts.standalone {
-                            // For standalone mode, use the macro identifier
-                            self.push_str(&format!(
-                                "<$t as {t}>::{}",
-                                func.name.to_snake_case(),
-                                t = module.to_camel_case(),
-                            ));
-                        } else {
-                            self.push_str(&format!(
-                                "<super::{m} as {m}>::{}",
-                                func.name.to_snake_case(),
-                                m = module.to_camel_case()
-                            ));
-                        }
-                    }
-                    FunctionKind::Static { resource, name }
-                    | FunctionKind::Method { resource, name } => {
-                        self.push_str(&format!(
-                            "<super::{r} as {r}>::{}",
-                            name.to_snake_case(),
-                            r = iface.resources[*resource].name.to_camel_case(),
-                        ));
+                        self.push_str(&format!("T::{}", to_rust_ident(&func.name)));
                     }
                 }
                 self.push_str("(");
-                if let FunctionKind::Method { .. } = func.kind {
-                    self.push_str("&");
-                }
                 self.push_str(&operands.join(", "));
                 self.push_str(")");
                 self.push_str(";\n");

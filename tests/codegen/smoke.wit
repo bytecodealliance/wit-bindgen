@@ -1,1 +1,5 @@
-y: func()
+world the-world {
+  import imports: interface {
+    y: func()
+  }
+}

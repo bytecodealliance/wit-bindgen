@@ -6,7 +6,15 @@ use std::sync::Arc;
 use wit_bindgen_core::wit_parser::abi::{
     AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
 };
-use wit_bindgen_core::{uwrite, uwriteln, wit_parser::*, Direction, Files, Generator, Ns, Source};
+use wit_bindgen_core::{
+    uwrite, uwriteln,
+    wit_parser::{
+        Case, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Int, Interface, Record,
+        Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Union, Variant, World,
+    },
+    Source,
+    Files, InterfaceGenerator as _, Ns, WorldGenerator,
+};
 
 #[derive(Default)]
 pub struct Go {
@@ -43,14 +51,6 @@ impl Go {
         Go::default()
     }
 
-    fn abi_variant(dir: Direction) -> AbiVariant {
-        // This generator uses the obvious direction to ABI variant mapping.
-        match dir {
-            Direction::Export => AbiVariant::GuestExport,
-            Direction::Import => AbiVariant::GuestImport,
-        }
-    }
-
     fn get_ty(ty: &Type) -> &str {
         match ty {
             Type::Bool => "bool",
@@ -66,7 +66,6 @@ impl Go {
             Type::Float64 => "float64",
             Type::Char => "uint32",
             Type::String => "string",
-            Type::Handle(_) => todo!(),
             Type::Id(_) => todo!(),
         }
     }
@@ -90,7 +89,6 @@ impl Go {
             Type::Float64 => "double",
             Type::Char => "uint32_t",
             Type::String => todo!(),
-            Type::Handle(_) => todo!(),
             Type::Id(_) => todo!(),
         }
     }
@@ -140,8 +138,8 @@ impl Go {
     fn get_c_func_signature(&mut self, iface: &Interface, func: &Function) -> String {
         let name = format!(
             "{}{}",
-            iface.name.to_camel_case(),
-            func.name.to_camel_case()
+            iface.name.to_lower_camel_case(),
+            func.name.to_lower_camel_case()
         );
         match func.results.len() {
             0 => format!("func {}({})", name, self.get_c_func_params(iface, func),),
@@ -159,7 +157,7 @@ impl Go {
         let invoke = format!(
             "{}.{}({})",
             &iface.name.to_snake_case(),
-            &func.name.to_camel_case(),
+            &func.name.to_lower_camel_case(),
             func.params
                 .iter()
                 .enumerate()
@@ -182,12 +180,28 @@ impl Go {
     }
 }
 
-impl Generator for Go {
-    fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
+impl WorldGenerator for Go {
+    fn import(&mut self, name: &str, iface: &Interface, files: &mut Files) {
+        todo!()
+    }
+
+    fn export(&mut self, name: &str, iface: &Interface, files: &mut Files) {
+        todo!()
+    }
+
+    fn export_default(&mut self, name: &str, iface: &Interface, files: &mut Files) {
+        todo!()
+    }
+
+    fn finish(&mut self, world: &World, files: &mut Files) {
+        todo!()
+    }
+}
+
+impl Go {
+    fn preprocess_one(&mut self, iface: &Interface) {
         println!("preprocess_one");
-        let variant = Self::abi_variant(dir);
         self.sizes.fill(iface);
-        self.in_import = variant == AbiVariant::GuestImport;
 
         // add package
         self.src.push_str("package ");
@@ -271,10 +285,6 @@ impl Generator for Go {
         todo!()
     }
 
-    fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
-        todo!()
-    }
-
     fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         todo!()
     }
@@ -295,7 +305,7 @@ impl Generator for Go {
         match func.kind {
             FunctionKind::Freestanding => {
                 self.src.push_str("func ");
-                self.src.push_str(&func.name.to_camel_case());
+                self.src.push_str(&func.name.to_lower_camel_case());
                 self.src.push_str("(");
                 let params = self.get_func_params(iface, func);
                 self.src.push_str(&params);
@@ -363,7 +373,7 @@ impl Generator for Go {
             FunctionKind::Freestanding => {
                 let interface_method_decl = format!(
                     "{}({}) {}",
-                    func.name.to_camel_case(),
+                    func.name.to_lower_camel_case(),
                     self.get_func_params(iface, func),
                     self.get_func_results(iface, func)
                 );
@@ -396,7 +406,7 @@ impl Generator for Go {
         println!("finish_one");
         if self.in_import == false {
             let interface_var_name = &iface.name.to_snake_case();
-            let interface_name = &iface.name.to_camel_case();
+            let interface_name = &iface.name.to_lower_camel_case();
 
             self.src.push_str(
                 format!("var {} {} = nil\n", interface_var_name, interface_name).as_str(),

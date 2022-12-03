@@ -1,23 +1,24 @@
-wit_bindgen_guest_rust::import!("../../tests/runtime/flavorful/imports.wit");
-wit_bindgen_guest_rust::export!("../../tests/runtime/flavorful/exports.wit");
+wit_bindgen_guest_rust::generate!("../../tests/runtime/flavorful/world.wit");
 
-use exports::*;
+use flavorful::*;
 
-struct Exports;
+struct Component;
 
-impl exports::Exports for Exports {
+export_flavorful!(Component);
+
+impl Flavorful for Component {
     fn test_imports() {
         use imports::*;
 
         let _guard = test_rust_wasm::guard();
 
-        list_in_record1(ListInRecord1 {
+        f_list_in_record1(ListInRecord1 {
             a: "list_in_record1",
         });
-        assert_eq!(list_in_record2().a, "list_in_record2");
+        assert_eq!(f_list_in_record2().a, "list_in_record2");
 
         assert_eq!(
-            list_in_record3(ListInRecord3Param {
+            f_list_in_record3(ListInRecord3Param {
                 a: "list_in_record3 input"
             })
             .a,
@@ -25,14 +26,14 @@ impl exports::Exports for Exports {
         );
 
         assert_eq!(
-            list_in_record4(ListInAliasParam { a: "input4" }).a,
+            f_list_in_record4(ListInAliasParam { a: "input4" }).a,
             "result4"
         );
 
-        list_in_variant1(Some("foo"), Err("bar"), ListInVariant1V3::String("baz"));
-        assert_eq!(list_in_variant2(), Some("list_in_variant2".to_string()));
+        f_list_in_variant1(Some("foo"), Err("bar"), ListInVariant1V3::String("baz"));
+        assert_eq!(f_list_in_variant2(), Some("list_in_variant2".to_string()));
         assert_eq!(
-            list_in_variant3(Some("input3")),
+            f_list_in_variant3(Some("input3")),
             Some("output3".to_string())
         );
 
@@ -41,6 +42,8 @@ impl exports::Exports for Exports {
         format!("{:?}", MyErrno::A);
         fn assert_error<T: std::error::Error>() {}
         assert_error::<MyErrno>();
+
+        assert!(errno_result().is_ok());
 
         let (a, b) = list_typedefs("typedef1", &["typedef2"]);
         assert_eq!(a, b"typedef3");
@@ -57,31 +60,31 @@ impl exports::Exports for Exports {
         assert_eq!(c, [MyErrno::A, MyErrno::B]);
     }
 
-    fn list_in_record1(ty: ListInRecord1) {
+    fn f_list_in_record1(ty: ListInRecord1) {
         assert_eq!(ty.a, "list_in_record1");
     }
 
-    fn list_in_record2() -> ListInRecord2 {
+    fn f_list_in_record2() -> ListInRecord2 {
         ListInRecord2 {
             a: "list_in_record2".to_string(),
         }
     }
 
-    fn list_in_record3(a: ListInRecord3) -> ListInRecord3 {
+    fn f_list_in_record3(a: ListInRecord3) -> ListInRecord3 {
         assert_eq!(a.a, "list_in_record3 input");
         ListInRecord3 {
             a: "list_in_record3 output".to_string(),
         }
     }
 
-    fn list_in_record4(a: ListInAlias) -> ListInAlias {
+    fn f_list_in_record4(a: ListInAlias) -> ListInAlias {
         assert_eq!(a.a, "input4");
         ListInRecord4 {
             a: "result4".to_string(),
         }
     }
 
-    fn list_in_variant1(a: ListInVariant1V1, b: ListInVariant1V2, c: ListInVariant1V3) {
+    fn f_list_in_variant1(a: ListInVariant1V1, b: ListInVariant1V2, c: ListInVariant1V3) {
         assert_eq!(a.unwrap(), "foo");
         assert_eq!(b.unwrap_err(), "bar");
         match c {
@@ -90,11 +93,11 @@ impl exports::Exports for Exports {
         }
     }
 
-    fn list_in_variant2() -> Option<String> {
+    fn f_list_in_variant2() -> Option<String> {
         Some("list_in_variant2".to_string())
     }
 
-    fn list_in_variant3(a: ListInVariant3) -> Option<String> {
+    fn f_list_in_variant3(a: ListInVariant3) -> Option<String> {
         assert_eq!(a.unwrap(), "input3");
         Some("output3".to_string())
     }

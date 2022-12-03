@@ -1,40 +1,24 @@
 [package]
 name = "test-helpers"
-version = "0.2.0"
-authors = ["Alex Crichton <alex@alexcrichton.com>"]
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 publish = false
 
 [lib]
-proc-macro = true
 doctest = false
 test = false
 
 [dependencies]
-backtrace = "0.3"
-heck = "0.3"
-ignore = "0.4"
-proc-macro2 = "1.0.27"
-quote = "1.0.9"
-wit-bindgen-core = { path = '../bindgen-core' }
-wit-bindgen-gen-guest-rust = { path = '../gen-guest-rust', optional = true }
-wit-bindgen-gen-host-wasmtime-rust = { path = '../gen-host-wasmtime-rust', optional = true }
-wit-bindgen-gen-host-wasmtime-py = { path = '../gen-host-wasmtime-py', optional = true }
-wit-bindgen-gen-host-js = { path = '../gen-host-js', optional = true }
-wit-bindgen-gen-guest-c = { path = '../gen-guest-c', optional = true }
-wit-bindgen-gen-guest-go = { path = '../gen-guest-go', optional = true }
-wit-parser = { path = '../wit-parser' }
-filetime = "0.2"
-
-[build-dependencies]
-wit-bindgen-gen-guest-c = { path = '../gen-guest-c' }
-wit-bindgen-core = { path = '../bindgen-core' }
+test-helpers-macros = { path = 'macros', optional = true }
+wit-bindgen-core = { workspace = true }
+wit-parser = { workspace = true }
+wit-component = { workspace = true }
+wat = { workspace = true }
 
 [features]
-default = ['guest-rust', 'guest-c', 'host-js', 'host-wasmtime-py', 'host-wasmtime-rust']
-guest-rust = ['wit-bindgen-gen-guest-rust']
-guest-c = ['wit-bindgen-gen-guest-c']
-guest-go = ['wit-bindgen-gen-guest-go']
-host-js = ['wit-bindgen-gen-host-js']
-host-wasmtime-py = ['wit-bindgen-gen-host-wasmtime-py']
-host-wasmtime-rust = ['wit-bindgen-gen-host-wasmtime-rust']
+default = ['guest-rust', 'guest-c', 'guest-teavm-java', 'macros']
+macros = ['dep:test-helpers-macros']
+guest-rust = ['test-helpers-macros?/guest-rust']
+guest-c = ['test-helpers-macros?/guest-c']
+guest-teavm-java = ['test-helpers-macros?/guest-teavm-java']
+guest-go = ['test-helpers-macros?/guest-go']

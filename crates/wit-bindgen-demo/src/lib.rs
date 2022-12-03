@@ -1,62 +1,27 @@
-use std::cell::RefCell;
+use anyhow::Result;
+use std::path::Path;
 use std::sync::Once;
-use wit_bindgen_core::wit_parser::Interface;
-use wit_bindgen_core::Generator;
-use wit_bindgen_guest_rust::Handle;
+use wit_bindgen_core::component::ComponentGenerator;
+use wit_bindgen_core::wit_parser::{Document, World};
+use wit_bindgen_core::{Files, WorldGenerator};
 
-wit_bindgen_guest_rust::export!("demo.wit");
-wit_bindgen_guest_rust::import!("browser.wit");
+wit_bindgen_guest_rust::generate!("demo.wit");
 
 struct Demo;
 
-impl demo::Demo for Demo {}
+export_demo!(Demo);
 
-#[derive(Default)]
-pub struct Config {
-    js: RefCell<wit_bindgen_gen_host_js::Opts>,
-    c: RefCell<wit_bindgen_gen_guest_c::Opts>,
-    rust: RefCell<wit_bindgen_gen_guest_rust::Opts>,
-    wasmtime: RefCell<wit_bindgen_gen_host_wasmtime_rust::Opts>,
-    wasmtime_py: RefCell<wit_bindgen_gen_host_wasmtime_py::Opts>,
-    markdown: RefCell<wit_bindgen_gen_markdown::Opts>,
-}
-
-impl demo::Config for Config {
-    fn new() -> Handle<Config> {
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            let prev_hook = std::panic::take_hook();
-            std::panic::set_hook(Box::new(move |info| {
-                browser::error(&info.to_string());
-                prev_hook(info);
-            }));
-        });
-
-        Config::default().into()
-    }
-
+impl demo::Demo for Demo {
     fn render(
-        &self,
         lang: demo::Lang,
         wit: String,
-        import: bool,
+        options: demo::Options,
     ) -> Result<Vec<(String, String)>, String> {
-        let mut gen: Box<dyn Generator> = match lang {
-            demo::Lang::Rust => Box::new(self.rust.borrow().clone().build()),
-            demo::Lang::Wasmtime => Box::new(self.wasmtime.borrow().clone().build()),
-            demo::Lang::WasmtimePy => Box::new(self.wasmtime_py.borrow().clone().build()),
-            demo::Lang::Js => Box::new(self.js.borrow().clone().build()),
-            demo::Lang::C => Box::new(self.c.borrow().clone().build()),
-            demo::Lang::Markdown => Box::new(self.markdown.borrow().clone().build()),
-        };
-        let iface = Interface::parse("input", &wit).map_err(|e| format!("{:?}", e))?;
-        let mut files = Default::default();
-        let (imports, exports) = if import {
-            (vec![iface], vec![])
-        } else {
-            (vec![], vec![iface])
-        };
-        gen.generate_all(&imports, &exports, &mut files);
+        init();
+
+        let mut files = Files::default();
+        render(lang, &wit, &mut files, &options).map_err(|e| format!("{:?}", e))?;
+
         Ok(files
             .iter()
             .map(|(name, contents)| {
@@ -69,16 +34,67 @@ impl demo::Config for Config {
             })
             .collect())
     }
+}
 
-    fn set_rust_unchecked(&self, unchecked: bool) {
-        self.rust.borrow_mut().unchecked = unchecked;
+fn init() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        console::log("installing panic hook");
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            console::error(&info.to_string());
+            prev_hook(info);
+        }));
+    });
+}
+
+fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Options) -> Result<()> {
+    let world = Document::parse(Path::new("input"), &wit)?.into_world()?;
+
+    let gen_world = |mut gen: Box<dyn WorldGenerator>, files: &mut Files| {
+        gen.generate(&world, files);
+    };
+
+    // This generator takes a component as input as opposed to an `Interface`.
+    // To work with this demo a dummy component is synthesized to generate
+    // bindings for. The dummy core wasm module is created from the
+    // `test_helpers` support this workspace already offsets, and then
+    // `wit-component` is used to synthesize a component from our input
+    // interface and dummy module.  Finally this component is fed into the host
+    // generator which gives us the files we want.
+    let gen_component = |mut gen: Box<dyn ComponentGenerator>, files: &mut Files| {
+        let dummy = test_helpers::dummy_module(&world);
+        let wasm = wit_component::ComponentEncoder::default()
+            .module(&dummy)?
+            .world(world.clone(), wit_component::StringEncoding::UTF8)?
+            .encode()?;
+        wit_bindgen_core::component::generate(&mut *gen, "input", &wasm, files)
+    };
+
+    match lang {
+        demo::Lang::Rust => {
+            let mut opts = wit_bindgen_gen_guest_rust::Opts::default();
+            opts.unchecked = options.rust_unchecked;
+            gen_world(opts.build(), files)
+        }
+        demo::Lang::Java => gen_world(
+            wit_bindgen_gen_guest_teavm_java::Opts::default().build(),
+            files,
+        ),
+        demo::Lang::Wasmtime => {
+            let mut opts = wit_bindgen_gen_host_wasmtime_rust::Opts::default();
+            opts.tracing = options.wasmtime_tracing;
+            gen_world(opts.build(), files)
+        }
+        demo::Lang::C => gen_world(wit_bindgen_gen_guest_c::Opts::default().build(), files),
+        demo::Lang::Markdown => gen_world(wit_bindgen_gen_markdown::Opts::default().build(), files),
+        demo::Lang::Js => {
+            let mut opts = wit_bindgen_gen_host_js::Opts::default();
+            opts.instantiation = options.js_instantiation;
+            opts.compat = options.js_compat;
+            gen_component(opts.build()?, files)?
+        }
     }
 
-    fn set_wasmtime_tracing(&self, tracing: bool) {
-        self.wasmtime.borrow_mut().tracing = tracing;
-    }
-    fn set_wasmtime_custom_error(&self, custom_error: bool) {
-        browser::log("custom error");
-        self.wasmtime.borrow_mut().custom_error = custom_error;
-    }
+    Ok(())
 }

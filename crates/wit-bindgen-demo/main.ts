@@ -1,17 +1,15 @@
-import { Demo, Config } from './demo.js';
-import * as browser from './browser.js';
+import { render, Options } from './demo.js';
 
 class Editor {
   input: HTMLTextAreaElement;
   language: HTMLSelectElement;
-  mode: HTMLSelectElement;
   files: HTMLSelectElement
   rustUnchecked: HTMLInputElement;
   wasmtimeTracing: HTMLInputElement;
-  wasmtimeCustomError: HTMLInputElement;
+  jsCompat: HTMLInputElement;
+  jsInstantiation: HTMLInputElement;
   generatedFiles: Record<string, string>;
-  demo: Demo;
-  config: Config | null;
+  options: Options;
   rerender: number | null;
   inputEditor: AceAjax.Editor;
   outputEditor: AceAjax.Editor;
@@ -20,11 +18,11 @@ class Editor {
   constructor() {
     this.input = document.getElementById('input-raw') as HTMLTextAreaElement;
     this.language = document.getElementById('language-select') as HTMLSelectElement;
-    this.mode = document.getElementById('mode-select') as HTMLSelectElement;
     this.files = document.getElementById('file-select') as HTMLSelectElement;
     this.rustUnchecked = document.getElementById('rust-unchecked') as HTMLInputElement;
+    this.jsCompat = document.getElementById('js-compat') as HTMLInputElement;
+    this.jsInstantiation = document.getElementById('js-instantiation') as HTMLInputElement;
     this.wasmtimeTracing = document.getElementById('wasmtime-tracing') as HTMLInputElement;
-    this.wasmtimeCustomError = document.getElementById('wasmtime-custom-error') as HTMLInputElement;
     this.outputHtml = document.getElementById('html-output') as HTMLDivElement;
 
     this.inputEditor = ace.edit("input");
@@ -36,20 +34,16 @@ class Editor {
     this.outputEditor.setOption("useWorker", false);
 
     this.generatedFiles = {};
-    this.demo = new Demo();
-    this.config = null;
+    this.options = {
+      rustUnchecked: false,
+      wasmtimeTracing: false,
+      jsCompat: false,
+      jsInstantiation: false,
+    };
     this.rerender = null;
   }
 
-  async instantiate() {
-    const imports = {};
-    const obj = {
-      log: console.log,
-      error: console.error,
-    };
-    browser.addBrowserToImports(imports, obj, name => this.demo.instance.exports[name]);
-    await this.demo.instantiate(fetch('./demo.wasm'), imports);
-    this.config = Config.new(this.demo);
+  init() {
     this.installListeners();
     this.render();
   }
@@ -63,19 +57,24 @@ class Editor {
     });
 
     this.language.addEventListener('change', () => this.render());
-    this.mode.addEventListener('change', () => this.render());
 
     this.rustUnchecked.addEventListener('change', () => {
-      this.config.setRustUnchecked(this.rustUnchecked.checked);
+      this.options.rustUnchecked = this.rustUnchecked.checked;
+      this.render();
+    });
+
+    this.jsCompat.addEventListener('change', () => {
+      this.options.jsCompat = this.jsCompat.checked;
+      this.render();
+    });
+
+    this.jsInstantiation.addEventListener('change', () => {
+      this.options.jsInstantiation = this.jsInstantiation.checked;
       this.render();
     });
 
     this.wasmtimeTracing.addEventListener('change', () => {
-      this.config.setWasmtimeTracing(this.wasmtimeTracing.checked);
-      this.render();
-    });
-    this.wasmtimeCustomError.addEventListener('change', () => {
-      this.config.setWasmtimeCustomError(this.wasmtimeCustomError.checked);
+      this.options.wasmtimeTracing = this.wasmtimeTracing.checked;
       this.render();
     });
     this.files.addEventListener('change', () => this.updateSelectedFile());
@@ -91,39 +90,38 @@ class Editor {
     config.style.display = 'inline-block';
 
     const wit = this.inputEditor.getValue();
-    const is_import = this.mode.value === 'import';
     let lang;
     switch (this.language.value) {
       case "js":
       case "rust":
+      case "java":
       case "wasmtime":
-      case "wasmtime-py":
       case "c":
       case "markdown":
         lang = this.language.value;
         break;
       default: return;
     }
-    const result = this.config.render(lang, wit, is_import);
-    if (result.tag === 'err') {
-      this.outputEditor.setValue(result.val);
+    try {
+      const results = render(lang, wit, this.options);
+      this.generatedFiles = {};
+      const selectedFile = this.files.value;
+      this.files.options.length = 0;
+      for (let i = 0; i < results.length; i++) {
+        const name = results[i][0];
+        const contents = results[i][1];
+        this.files.options[i] = new Option(name, name);
+        this.generatedFiles[name] = contents;
+      }
+      if (selectedFile in this.generatedFiles)
+        this.files.value = selectedFile;
+
+      this.updateSelectedFile();
+    } catch (e) {
+      this.outputEditor.setValue(e.payload);
       this.outputEditor.clearSelection();
       this.showOutputEditor();
-      return;
     }
-    this.generatedFiles = {};
-    const selectedFile = this.files.value;
-    this.files.options.length = 0;
-    for (let i = 0; i < result.val.length; i++) {
-      const name = result.val[i][0];
-      const contents = result.val[i][1];
-      this.files.options[i] = new Option(name, name);
-      this.generatedFiles[name] = contents;
-    }
-    if (selectedFile in this.generatedFiles)
-      this.files.value = selectedFile;
-
-    this.updateSelectedFile();
   }
 
   showOutputEditor() {
@@ -161,10 +159,12 @@ class Editor {
       this.outputEditor.session.setMode("ace/mode/markdown");
     else if (this.files.value.endsWith('.py'))
       this.outputEditor.session.setMode("ace/mode/python");
+    else if (this.files.value.endsWith('.java'))
+      this.outputEditor.session.setMode("ace/mode/java");
     else
       this.outputEditor.session.setMode(null);
   }
 }
 
 
-(new Editor()).instantiate()
+(new Editor()).init()

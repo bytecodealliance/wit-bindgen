@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-wit_bindgen_host_wasmtime_rust::export!("../../tests/runtime/many_arguments/imports.wit");
+wit_bindgen_host_wasmtime_rust::generate!("../../tests/runtime/many_arguments/world.wit");
 
 #[derive(Default)]
 pub struct MyImports {}
@@ -24,11 +24,7 @@ impl imports::Imports for MyImports {
         a14: u64,
         a15: u64,
         a16: u64,
-        a17: u64,
-        a18: u64,
-        a19: u64,
-        a20: u64,
-    ) {
+    ) -> Result<()> {
         assert_eq!(a1, 1);
         assert_eq!(a2, 2);
         assert_eq!(a3, 3);
@@ -45,26 +41,19 @@ impl imports::Imports for MyImports {
         assert_eq!(a14, 14);
         assert_eq!(a15, 15);
         assert_eq!(a16, 16);
-        assert_eq!(a17, 17);
-        assert_eq!(a18, 18);
-        assert_eq!(a19, 19);
-        assert_eq!(a20, 20);
+        Ok(())
     }
 }
-
-wit_bindgen_host_wasmtime_rust::import!("../../tests/runtime/many_arguments/exports.wit");
 
 fn run(wasm: &str) -> Result<()> {
     let (exports, mut store) = crate::instantiate(
         wasm,
         |linker| imports::add_to_linker(linker, |cx| -> &mut MyImports { &mut cx.imports }),
-        |store, module, linker| {
-            exports::Exports::instantiate(store, module, linker, |cx| &mut cx.exports)
-        },
+        |store, module, linker| ManyArguments::instantiate(store, module, linker),
     )?;
 
     exports.many_arguments(
-        &mut store, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        &mut store, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
     )?;
 
     Ok(())

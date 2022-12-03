@@ -1,67 +1,85 @@
-wit_bindgen_guest_rust::export!("../../tests/runtime/invalid/exports.wit");
+wit_bindgen_guest_rust::generate!("../../tests/runtime/invalid/world.wit");
 
 #[link(wasm_import_module = "imports")]
 extern "C" {
-    #[link_name = "roundtrip-bool: func(a: bool) -> bool"]
+    #[link_name = "roundtrip-bool"]
     fn roundtrip_bool(a: i32) -> i32;
-    #[link_name = "roundtrip-u16: func(a: u16) -> u16"]
+    #[link_name = "roundtrip-u16"]
     fn roundtrip_u16(a: i32) -> i32;
-    #[link_name = "roundtrip-u8: func(a: u8) -> u8"]
+    #[link_name = "roundtrip-u8"]
     fn roundtrip_u8(a: i32) -> i32;
-    #[link_name = "roundtrip-s16: func(a: s16) -> s16"]
+    #[link_name = "roundtrip-s16"]
     fn roundtrip_s16(a: i32) -> i32;
-    #[link_name = "roundtrip-s8: func(a: s8) -> s8"]
+    #[link_name = "roundtrip-s8"]
     fn roundtrip_s8(a: i32) -> i32;
-    #[link_name = "roundtrip-char: func(a: char) -> char"]
+    #[link_name = "roundtrip-char"]
     fn roundtrip_char(a: i32) -> i32;
-    #[link_name = "roundtrip-enum: func(a: enum { a, b, c }) -> enum { a, b, c }"]
+    #[link_name = "roundtrip-enum"]
     fn roundtrip_enum(a: i32) -> i32;
-    #[link_name = "get-internal: func(a: handle<host-state>) -> u32"]
-    fn get_internal(a: i32) -> i32;
-}
-
-#[link(wasm_import_module = "canonical_abi")]
-extern "C" {
-    #[link_name = "resource_drop_host-state"]
-    fn resource_drop_host_state(a: i32);
+    #[link_name = "unaligned1"]
+    fn unaligned1(ptr: i32, len: i32);
+    #[link_name = "unaligned2"]
+    fn unaligned2(ptr: i32, len: i32);
+    #[link_name = "unaligned3"]
+    fn unaligned3(ptr: i32, len: i32);
+    #[link_name = "unaligned4"]
+    fn unaligned4(ptr: i32, len: i32);
+    #[link_name = "unaligned5"]
+    fn unaligned5(ptr: i32, len: i32);
+    #[link_name = "unaligned6"]
+    fn unaligned6(ptr: i32, len: i32);
+    #[link_name = "unaligned7"]
+    fn unaligned7(ptr: i32, len: i32);
+    #[link_name = "unaligned8"]
+    fn unaligned8(ptr: i32, len: i32);
+    #[link_name = "unaligned9"]
+    fn unaligned9(ptr: i32, len: i32);
+    #[link_name = "unaligned10"]
+    fn unaligned10(ptr: i32, len: i32);
 }
 
 struct Exports;
 
-impl exports::Exports for Exports {
+export_invalid!(Exports);
+
+impl invalid::Invalid for Exports {
+    fn invalid_bool() {
+        unsafe {
+            let b = roundtrip_bool(2);
+            assert_eq!(b, 1);
+        }
+    }
     fn invalid_u8() {
         unsafe {
-            roundtrip_u8(i32::MAX);
+            let u = roundtrip_u8(i32::MAX);
+            assert!(u <= (u8::MAX as i32));
+            assert!(u >= (u8::MIN as i32));
         }
-        unreachable!();
     }
     fn invalid_s8() {
         unsafe {
-            roundtrip_s8(i32::MAX);
+            let s = roundtrip_s8(i32::MAX);
+            assert!(s <= (i8::MAX as i32));
+            assert!(s >= (i8::MIN as i32));
         }
-        unreachable!();
     }
     fn invalid_u16() {
         unsafe {
-            roundtrip_u16(i32::MAX);
+            let u = roundtrip_u16(i32::MAX);
+            assert!(u <= (u16::MAX as i32));
+            assert!(u >= (u16::MIN as i32));
         }
-        unreachable!();
     }
     fn invalid_s16() {
         unsafe {
-            roundtrip_s16(i32::MAX);
+            let s = roundtrip_s16(i32::MAX);
+            assert!(s <= (i16::MAX as i32));
+            assert!(s >= (i16::MIN as i32));
         }
-        unreachable!();
     }
     fn invalid_char() {
         unsafe {
             roundtrip_char(0xd800);
-        }
-        unreachable!();
-    }
-    fn invalid_bool() {
-        unsafe {
-            roundtrip_bool(2);
         }
         unreachable!();
     }
@@ -72,17 +90,54 @@ impl exports::Exports for Exports {
         unreachable!();
     }
 
-    fn invalid_handle() {
+    fn unaligned1() {
         unsafe {
-            get_internal(100);
+            unaligned1(1, 1);
         }
-        unreachable!();
     }
-
-    fn invalid_handle_close() {
+    fn unaligned2() {
         unsafe {
-            resource_drop_host_state(100);
+            unaligned2(1, 1);
         }
-        unreachable!();
+    }
+    fn unaligned3() {
+        unsafe {
+            unaligned3(1, 1);
+        }
+    }
+    fn unaligned4() {
+        unsafe {
+            unaligned4(1, 1);
+        }
+    }
+    fn unaligned5() {
+        unsafe {
+            unaligned5(1, 1);
+        }
+    }
+    fn unaligned6() {
+        unsafe {
+            unaligned6(1, 1);
+        }
+    }
+    fn unaligned7() {
+        unsafe {
+            unaligned7(1, 1);
+        }
+    }
+    fn unaligned8() {
+        unsafe {
+            unaligned8(1, 1);
+        }
+    }
+    fn unaligned9() {
+        unsafe {
+            unaligned9(1, 1);
+        }
+    }
+    fn unaligned10() {
+        unsafe {
+            unaligned10(1, 1);
+        }
     }
 }

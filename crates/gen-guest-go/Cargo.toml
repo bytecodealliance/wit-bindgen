@@ -1,15 +1,18 @@
 [package]
 name = "wit-bindgen-gen-guest-go"
-version = "0.1.0"
 authors = ["Jiaxiao Zhou <duibao55328@gmail.com>"]
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [lib]
 doctest = false
 test = false
 
 [dependencies]
-wit-bindgen-core = { path = '../bindgen-core', version = '0.2.0' }
-heck = "0.3"
-structopt = { version = "0.3", default-features = false, optional = true }
-# wit-bindgen-gen-guest-c = { path = '../gen-guest-c', version = '0.2.0' }
+wit-bindgen-core = { workspace = true }
+wit-component = { workspace = true }
+heck = { workspace = true }
+clap = { workspace = true, optional = true }
+
+[dev-dependencies]
+test-helpers = { path = '../test-helpers', default-features = false, features = ['macros'] }

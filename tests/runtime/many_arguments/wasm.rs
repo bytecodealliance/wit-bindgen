@@ -1,11 +1,10 @@
-wit_bindgen_guest_rust::import!("../../tests/runtime/many_arguments/imports.wit");
-wit_bindgen_guest_rust::export!("../../tests/runtime/many_arguments/exports.wit");
+wit_bindgen_guest_rust::generate!("../../tests/runtime/many_arguments/world.wit");
 
-use imports::*;
+struct Component;
 
-struct Exports;
+export_many_arguments!(Component);
 
-impl exports::Exports for Exports {
+impl many_arguments::ManyArguments for Component {
     fn many_arguments(
         a1: u64,
         a2: u64,
@@ -23,10 +22,6 @@ impl exports::Exports for Exports {
         a14: u64,
         a15: u64,
         a16: u64,
-        a17: u64,
-        a18: u64,
-        a19: u64,
-        a20: u64,
     ) {
         assert_eq!(a1, 1);
         assert_eq!(a2, 2);
@@ -44,13 +39,8 @@ impl exports::Exports for Exports {
         assert_eq!(a14, 14);
         assert_eq!(a15, 15);
         assert_eq!(a16, 16);
-        assert_eq!(a17, 17);
-        assert_eq!(a18, 18);
-        assert_eq!(a19, 19);
-        assert_eq!(a20, 20);
-        many_arguments(
-            a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19,
-            a20,
+        imports::many_arguments(
+            a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16,
         );
     }
 }

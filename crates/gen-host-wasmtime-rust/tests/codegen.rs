@@ -1,54 +1,37 @@
-#![allow(dead_code, type_alias_bounds)]
+#![allow(dead_code)]
 
-fn main() {
-    println!("compiled successfully!")
-}
+macro_rules! codegen_test {
+    ($name:ident $test:tt) => {
+        mod $name {
+            mod default {
+                wit_bindgen_host_wasmtime_rust::generate!($test);
 
-#[rustfmt::skip]
-mod exports {
-    test_helpers::codegen_wasmtime_export!(
-        "*.wit"
-
-        // TODO: implement async support
-        "!async-functions.wit"
-
-        // If you want to exclude a specific test you can include it here with
-        // gitignore glob syntax:
-        //
-        // "!wasm.wit"
-        // "!host.wit"
-        //
-        //
-        // Similarly you can also just remove the `*.wit` glob and list tests
-        // individually if you're debugging.
-    );
-}
-
-mod imports {
-    test_helpers::codegen_wasmtime_import!(
-        "*.wit"
-
-        // TODO: implement async support
-        "!async-functions.wit"
-
-        // TODO: these use push/pull buffer which isn't implemented in the test
-        // generator just yet
-        "!wasi-next.wit"
-        "!host.wit"
-    );
-}
-
-mod custom_errors {
-    wit_bindgen_host_wasmtime_rust::export!({
-        src["x"]: "
-            foo: func()
-            bar: func() -> result<_, u32>
-            enum errno {
-                bad1,
-                bad2,
+                #[test]
+                fn works() {}
             }
-            baz: func() -> result<u32, errno>
-        ",
-        custom_error: true,
-    });
+
+            mod async_ {
+                wit_bindgen_host_wasmtime_rust::generate!({
+                    path: $test,
+                    async: true,
+                });
+
+                #[test]
+                fn works() {}
+            }
+
+            mod tracing {
+                wit_bindgen_host_wasmtime_rust::generate!({
+                    path: $test,
+                    tracing: true,
+                });
+
+                #[test]
+                fn works() {}
+            }
+
+        }
+    };
 }
+
+test_helpers::codegen_tests!("*.wit");

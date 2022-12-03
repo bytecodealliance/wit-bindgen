@@ -1,9 +1,10 @@
-wit_bindgen_guest_rust::import!("../../tests/runtime/smoke/imports.wit");
-wit_bindgen_guest_rust::export!("../../tests/runtime/smoke/exports.wit");
+wit_bindgen_guest_rust::generate!("../../tests/runtime/smoke/world.wit");
 
 struct Exports;
 
-impl exports::Exports for Exports {
+export_smoke!(Exports);
+
+impl smoke::Smoke for Exports {
     fn thunk() {
         imports::thunk();
     }

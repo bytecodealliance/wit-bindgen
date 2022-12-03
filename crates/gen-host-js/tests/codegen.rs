@@ -1,38 +1,44 @@
 use std::path::Path;
 use std::process::Command;
 
-mod exports {
-    test_helpers::codegen_js_export!(
-        // ...
-        "*.wit"
-    );
+macro_rules! codegen_test {
+    ($name:ident $test:tt) => {
+        #[test]
+        fn $name() {
+            drop(include_str!($test));
+            test_helpers::run_component_codegen_test(
+                "js",
+                $test.as_ref(),
+                |name, component, files| {
+                    wit_bindgen_core::component::generate(
+                        &mut *wit_bindgen_gen_host_js::Opts::default().build().unwrap(),
+                        name,
+                        component,
+                        files,
+                    )
+                    .unwrap()
+                },
+                verify,
+            )
+        }
+    };
 }
 
-mod imports {
-    test_helpers::codegen_js_import!(
-        "*.wit"
+test_helpers::codegen_tests!("*.wit");
 
-        // This uses buffers, which we don't support in imports just yet
-        // TODO: should support this
-        "!wasi-next.wit"
-        "!host.wit"
-    );
-}
-
-fn verify(dir: &str, name: &str) {
+fn verify(dir: &Path, name: &str) {
     let (cmd, args) = if cfg!(windows) {
         ("cmd.exe", &["/c", "npx.cmd"] as &[&str])
     } else {
         ("npx", &[] as &[&str])
     };
 
-    let status = Command::new(cmd)
-        .args(args)
-        .arg("eslint")
-        .arg("-c")
-        .arg(".eslintrc.js")
-        .arg(Path::new(dir).join(&format!("{}.js", name)))
-        .status()
-        .unwrap();
-    assert!(status.success());
+    test_helpers::run_command(
+        Command::new(cmd)
+            .args(args)
+            .arg("eslint")
+            .arg("-c")
+            .arg(".eslintrc.js")
+            .arg(dir.join(&format!("{}.js", name))),
+    );
 }

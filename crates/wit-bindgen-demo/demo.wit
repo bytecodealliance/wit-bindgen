@@ -1,21 +1,28 @@
-type files = list<tuple<string, string>>
+world demo {
+  import console: interface {
+    log: func(msg: string)
+    error: func(msg: string)
+  }
 
-enum lang {
-  js,
-  rust,
-  wasmtime,
-  wasmtime-py,
-  c,
-  markdown,
-}
+  default export interface {
+    type files = list<tuple<string, string>>
 
+    enum lang {
+      js,
+      rust,
+      java,
+      wasmtime,
+      c,
+      markdown,
+    }
 
-resource config {
-  static new: func() -> config
+    record options {
+      rust-unchecked: bool,
+      wasmtime-tracing: bool,
+      js-compat: bool,
+      js-instantiation: bool,
+    }
 
-  render: func(lang: lang, wit: string, import: bool) -> result<files, string>
-
-  set-rust-unchecked: func(unchecked: bool)
-  set-wasmtime-tracing: func(unchecked: bool)
-  set-wasmtime-custom-error: func(custom: bool)
+    render: func(lang: lang, wit: string, options: options) -> result<files, string>
+  }
 }

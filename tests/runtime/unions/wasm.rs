@@ -1,11 +1,12 @@
-wit_bindgen_guest_rust::import!("../../tests/runtime/unions/imports.wit");
-wit_bindgen_guest_rust::export!("../../tests/runtime/unions/exports.wit");
+wit_bindgen_guest_rust::generate!("../../tests/runtime/unions/world.wit");
 
-use exports::*;
+use unions::*;
 
-struct Exports;
+struct Component;
 
-impl exports::Exports for Exports {
+export_unions!(Component);
+
+impl Unions for Component {
     fn test_imports() {
         use imports::*;
 
@@ -138,7 +139,7 @@ impl exports::Exports for Exports {
 
         assert!(matches!(identify_duplicated(DuplicatedS32::I320(0)), 0));
         assert!(matches!(identify_duplicated(DuplicatedS32::I321(0)), 1));
-        assert!(matches!(identify_duplicated(DuplicatedS32::I321(0)), 2));
+        assert!(matches!(identify_duplicated(DuplicatedS32::I322(0)), 2));
 
         // Distinguishable
         assert!(
@@ -157,6 +158,8 @@ impl exports::Exports for Exports {
             identify_distinguishable_num(DistinguishableNum::I64(1)),
             1
         ));
+
+        println!("There is power in a union!");
     }
 
     fn add_one_integer(num: AllIntegers) -> AllIntegers {

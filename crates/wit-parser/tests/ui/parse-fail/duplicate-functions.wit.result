@@ -1,5 +1,0 @@
-"foo" defined twice
-     --> tests/ui/parse-fail/duplicate-functions.wit:4:1
-      |
-    4 | foo: func()
-      | ^--

@@ -1,8 +1,8 @@
 [package]
 name = "test-rust-wasm"
-version = "0.2.0"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 publish = false
 
 [dependencies]
@@ -11,6 +11,10 @@ wit-bindgen-guest-rust = { path = "../guest-rust" }
 
 [features]
 unchecked = []
+
+[lib]
+test = false
+doctest = false
 
 [[bin]]
 name = "smoke"
@@ -37,10 +41,6 @@ name = "lists"
 test = false
 
 [[bin]]
-name = "handles"
-test = false
-
-[[bin]]
 name = "flavorful"
 test = false
 
@@ -50,4 +50,8 @@ test = false
 
 [[bin]]
 name = "many_arguments"
+test = false
+
+[[bin]]
+name = "results"
 test = false

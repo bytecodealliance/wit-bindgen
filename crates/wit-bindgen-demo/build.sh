@@ -5,15 +5,18 @@ set -ex
 rm -rf static
 mkdir static
 
+# Build the core wasm binary that will become a component
 cargo build -p wit-bindgen-demo --target wasm32-unknown-unknown --release
-cp target/wasm32-unknown-unknown/release/wit_bindgen_demo.wasm static/demo.wasm
 
-cargo run host js \
-  --export crates/wit-bindgen-demo/browser.wit \
-  --import crates/wit-bindgen-demo/demo.wit \
-  --out-dir static
+# Translate the core wasm binary to a component
+wasm-tools component new \
+  target/wasm32-unknown-unknown/release/wit_bindgen_demo.wasm -o target/demo.wasm
 
-cp crates/wit-bindgen-demo/{index.html,main.ts} static/
+# Generate JS host bindings
+cargo run host js target/demo.wasm --map "console=./console.js" --out-dir static
+
+# Build JS from TypeScript and then copy in the ace editor as well.
+cp crates/wit-bindgen-demo/{index.html,main.ts,console.js} static/
 (cd crates/wit-bindgen-demo && npx tsc ../../static/main.ts --target es6)
 
 if [ ! -d ace ]; then

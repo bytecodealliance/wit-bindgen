@@ -1,8 +1,7 @@
 #include <assert.h>
-#include <imports.h>
-#include <exports.h>
+#include <variants.h>
 
-void exports_test_imports() {
+void variants_test_imports() {
   {
     imports_option_float32_t a;
     uint8_t r;
@@ -142,14 +141,14 @@ void exports_test_imports() {
   }
 }
 
-bool exports_roundtrip_option(exports_option_float32_t *a, uint8_t *ret0) {
+bool variants_roundtrip_option(variants_option_float32_t *a, uint8_t *ret0) {
   if (a->is_some) {
     *ret0 = a->val;
   }
   return a->is_some;
 }
 
-void exports_roundtrip_result(exports_result_u32_float32_t *a, exports_result_float64_u8_t *ret0) {
+void variants_roundtrip_result(variants_result_u32_float32_t *a, variants_result_float64_u8_t *ret0) {
   ret0->is_err = a->is_err;
   if (a->is_err) {
     ret0->val.err = a->val.err;
@@ -158,22 +157,22 @@ void exports_roundtrip_result(exports_result_u32_float32_t *a, exports_result_fl
   }
 }
 
-exports_e1_t exports_roundtrip_enum(exports_e1_t a) {
+variants_e1_t variants_roundtrip_enum(variants_e1_t a) {
   return a;
 }
 
-bool exports_invert_bool(bool a) {
+bool variants_invert_bool(bool a) {
   return !a;
 }
 
-void exports_variant_casts(exports_casts_t *a, exports_casts_t *ret) {
+void variants_variant_casts(variants_casts_t *a, variants_casts_t *ret) {
   *ret = *a;
 }
 
-void exports_variant_zeros(exports_zeros_t *a, exports_zeros_t *b) {
+void variants_variant_zeros(variants_zeros_t *a, variants_zeros_t *b) {
   *b = *a;
 }
 
-void exports_variant_typedefs(exports_option_typedef_t *a, exports_bool_typedef_t b, exports_result_typedef_t *c) {
+void variants_variant_typedefs(variants_option_typedef_t *a, variants_bool_typedef_t b, variants_result_typedef_t *c) {
 }
 
