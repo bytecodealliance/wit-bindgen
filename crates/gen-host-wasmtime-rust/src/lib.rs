@@ -635,7 +635,21 @@ impl<'a> InterfaceGenerator<'a> {
     }
 
     fn generate_trappable_error_types(&mut self) {
-        for (abi_type, trappable_type) in self.gen.opts.trappable_error_type.iter() {
+        for (wit_typename, trappable_type) in self.gen.opts.trappable_error_type.iter() {
+            let wit_type = self.iface.type_lookup.get(wit_typename).unwrap_or_else(|| {
+                panic!(
+                    "no type named {:?} in interface {:?}",
+                    wit_typename, self.iface.name
+                )
+            });
+            let info = self.info(*wit_type);
+            if self.lifetime_for(&info, TypeMode::Owned).is_some() {
+                panic!(
+                    "type named {:?} in interface {:?} is not 'static",
+                    wit_typename, self.iface.name
+                )
+            }
+            let abi_type = self.param_name(*wit_type);
             uwriteln!(
                 self.src,
                 "
