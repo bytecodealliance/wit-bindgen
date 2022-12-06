@@ -336,21 +336,25 @@ impl<'a> InterfaceGenerator<'a> {
             match i.next().unwrap() {
                 Type::Id(id) => match &self.iface.types[*id].kind {
                     TypeDefKind::Result(r) => match r.err {
-                        Some(Type::Id(id)) => {
-                            let info = self.info(id);
-                            let ty = &RustGenerator::iface(self).types[id];
-                            let typename = ty.name.as_ref().expect("named type");
-                            self.gen.opts.trappable_error_type.iter().find_map(
-                                |(errno, errortype)| {
-                                    // println!("ty: {ty:?}, errno: {errno}, errortype: {errortype}");
-                                    if *errno == *typename {
-                                        Some((r.clone(), errortype.clone()))
-                                    } else {
-                                        None
-                                    }
-                                },
-                            )
-                        }
+                        Some(Type::Id(error_id)) => self
+                            .gen
+                            .opts
+                            .trappable_error_type
+                            .iter()
+                            .find_map(|(wit_typename, errortype)| {
+                                let wit_type =
+                                    self.iface.type_lookup.get(wit_typename).unwrap_or_else(|| {
+                                        panic!(
+                                            "no type named {:?} in interface {:?}",
+                                            wit_typename, self.iface.name
+                                        )
+                                    });
+                                if error_id == *wit_type {
+                                    Some((r.clone(), errortype.clone()))
+                                } else {
+                                    None
+                                }
+                            }),
                         _ => None,
                     },
                     _ => None,

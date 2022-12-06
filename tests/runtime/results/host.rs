@@ -1,6 +1,10 @@
 wit_bindgen_host_wasmtime_rust::generate!({
     path: "../../tests/runtime/results/world.wit",
-    trappable_error_type: { e => TrappableE }
+    trappable_error_type: {
+        e => TrappableE,
+        e2 => TrappableE2,
+        e3 => TrappableE3,
+    }
 });
 
 #[derive(Default)]
@@ -42,16 +46,18 @@ impl imports::Imports for MyImports {
     // Same ideas as enum_error, but the interface error is defined as a
     // record.
     //
-    fn record_error(&mut self, a: f64) -> Result<Result<f64, imports::E2>, anyhow::Error> {
+    fn record_error(&mut self, a: f64) -> Result<f64, imports::TrappableE2> {
         if a == 0.0 {
-            Ok(Err(imports::E2 {
+            Err(imports::E2 {
                 line: 420,
                 column: 0,
-            }))
+            })?
         } else if a == 1.0 {
-            Err(anyhow::Error::msg("a somewhat ergonomic trap"))?
+            Err(imports::TrappableE2::trap(anyhow::Error::msg(
+                "a somewhat ergonomic trap",
+            )))?
         } else {
-            Ok(Ok(a))
+            Ok(a)
         }
     }
 
@@ -60,18 +66,18 @@ impl imports::Imports for MyImports {
     //
     // Shows how you can trap in a HostResult func with anything that impls
     // std::error::Error
-    fn variant_error(&mut self, a: f64) -> Result<Result<f64, imports::E3>, anyhow::Error> {
+    fn variant_error(&mut self, a: f64) -> Result<f64, imports::TrappableE3> {
         if a == 0.0 {
-            Ok(Err(imports::E3::E2(imports::E2 {
+            Err(imports::E3::E2(imports::E2 {
                 line: 420,
                 column: 0,
-            })))
+            }))?
         } else if a == 1.0 {
-            Ok(Err(imports::E3::E1(imports::E::B)))
+            Err(imports::E3::E1(imports::E::B))?
         } else if a == 2.0 {
-            Err(anyhow::Error::from(MyTrap))
+            Err(imports::TrappableE3::trap(anyhow::Error::from(MyTrap)))
         } else {
-            Ok(Ok(a))
+            Ok(a)
         }
     }
 
