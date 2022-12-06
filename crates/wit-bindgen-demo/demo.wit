@@ -11,14 +11,12 @@ world demo {
       js,
       rust,
       java,
-      wasmtime,
       c,
       markdown,
     }
 
     record options {
       rust-unchecked: bool,
-      wasmtime-tracing: bool,
       js-compat: bool,
       js-instantiation: bool,
     }
