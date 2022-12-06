@@ -19,6 +19,14 @@ impl std::fmt::Display for MyTrap {
 }
 impl std::error::Error for MyTrap {}
 
+// It is possible to write these (very basic) From impls to get nice error handling
+// from your locally defined traps.
+impl From<MyTrap> for imports::TrappableE {
+    fn from(t: MyTrap) -> imports::TrappableE {
+        imports::TrappableE::trap(anyhow::Error::new(t))
+    }
+}
+
 impl imports::Imports for MyImports {
     // The interface error type is a String, which is a primitive, therefore
     // we need to use an outer anyhow::Result for trapping, and an inner
@@ -38,6 +46,10 @@ impl imports::Imports for MyImports {
     fn enum_error(&mut self, a: f64) -> Result<f64, imports::TrappableE> {
         if a == 0.0 {
             Err(imports::E::A)?
+        } else if a == 1.0 {
+            // There is a hand-written From<MyTrap> for TrappableE, so we can trap with this
+            // convenient shorthand:
+            Err(MyTrap)?
         } else {
             Ok(a)
         }
@@ -53,8 +65,8 @@ impl imports::Imports for MyImports {
                 column: 0,
             })?
         } else if a == 1.0 {
-            Err(imports::TrappableE2::trap(anyhow::Error::msg(
-                "a somewhat ergonomic trap",
+            Err(imports::TrappableE2::trap(anyhow::anyhow!(
+                "a somewhat ergonomic trap"
             )))?
         } else {
             Ok(a)
@@ -75,7 +87,8 @@ impl imports::Imports for MyImports {
         } else if a == 1.0 {
             Err(imports::E3::E1(imports::E::B))?
         } else if a == 2.0 {
-            Err(imports::TrappableE3::trap(anyhow::Error::from(MyTrap)))
+            // If you don't write a From impl, you can still do this inline:
+            Err(imports::TrappableE3::trap(anyhow::Error::new(MyTrap)))?
         } else {
             Ok(a)
         }
@@ -120,7 +133,15 @@ fn run(wasm: &str) -> anyhow::Result<()> {
     assert_eq!(exports.string_error(&mut store, 1.0)?, Ok(1.0));
 
     assert_eq!(exports.enum_error(&mut store, 0.0)?, Err(E::A));
-    assert_eq!(exports.enum_error(&mut store, 0.0)?, Err(E::A));
+    exports
+        .enum_error(&mut store, 1.0)
+        .err()
+        .expect("execution traps")
+        .downcast::<MyTrap>()
+        .expect("trap is a MyTrap");
+    let (exports, mut store) = create()?;
+
+    assert_eq!(exports.enum_error(&mut store, 2.0)?, Ok(2.0));
 
     assert!(matches!(
         exports.record_error(&mut store, 0.0)?,
@@ -149,7 +170,9 @@ fn run(wasm: &str) -> anyhow::Result<()> {
     ));
     let e = exports.variant_error(&mut store, 2.0);
     assert!(e.is_err());
-    assert!(format!("{:?}", e.err().unwrap()).contains("my very own trap"));
+    let e = e.err().unwrap();
+    assert!(e.downcast_ref::<MyTrap>().is_some());
+    assert!(format!("{:?}", e).contains("my very own trap"));
 
     let (exports, mut store) = create()?;
     assert_eq!(exports.empty_error(&mut store, 0)?, Err(()));
