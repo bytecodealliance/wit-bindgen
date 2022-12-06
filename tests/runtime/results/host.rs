@@ -1,6 +1,6 @@
 wit_bindgen_host_wasmtime_rust::generate!({
     path: "../../tests/runtime/results/world.wit",
-    trappable_error_type: { E => TrappableE }
+    trappable_error_type: { e => TrappableE }
 });
 
 #[derive(Default)]
@@ -62,14 +62,14 @@ impl imports::Imports for MyImports {
     // std::error::Error
     fn variant_error(&mut self, a: f64) -> Result<Result<f64, imports::E3>, anyhow::Error> {
         if a == 0.0 {
-            Err(imports::E3::E2(imports::E2 {
+            Ok(Err(imports::E3::E2(imports::E2 {
                 line: 420,
                 column: 0,
-            }))?
+            })))
         } else if a == 1.0 {
-            Err(imports::E3::E1(imports::E::B))?
+            Ok(Err(imports::E3::E1(imports::E::B)))
         } else if a == 2.0 {
-            Err(anyhow::Error::from(MyTrap))?
+            Err(anyhow::Error::from(MyTrap))
         } else {
             Ok(Ok(a))
         }
