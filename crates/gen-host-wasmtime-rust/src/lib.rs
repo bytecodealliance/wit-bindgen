@@ -282,6 +282,30 @@ impl WorldGenerator for Wasmtime {
     }
 }
 
+impl Wasmtime {
+    fn trappable_error_types<'a>(
+        &'a self,
+        iface: &'a Interface,
+    ) -> impl Iterator<Item = (&String, &TypeId, &String)> + 'a {
+        self.opts
+            .trappable_error_type
+            .iter()
+            .filter_map(|(wit_typename, errortype)| {
+                let wit_type = iface.type_lookup.get(wit_typename)?;
+                Some((wit_typename, wit_type, errortype))
+            })
+    }
+    fn trappable_error_type_for<'a>(
+        &'a self,
+        iface: &'a Interface,
+        ty: &TypeId,
+    ) -> Option<&String> {
+        self.trappable_error_types(iface)
+            .find(|(_, error_ty, _)| *error_ty == ty)
+            .map(|(_, _, errortype)| errortype)
+    }
+}
+
 struct InterfaceGenerator<'a> {
     src: Source,
     gen: &'a mut Wasmtime,
@@ -338,23 +362,8 @@ impl<'a> InterfaceGenerator<'a> {
                     TypeDefKind::Result(r) => match r.err {
                         Some(Type::Id(error_id)) => self
                             .gen
-                            .opts
-                            .trappable_error_type
-                            .iter()
-                            .find_map(|(wit_typename, errortype)| {
-                                let wit_type =
-                                    self.iface.type_lookup.get(wit_typename).unwrap_or_else(|| {
-                                        panic!(
-                                            "no type named {:?} in interface {:?}",
-                                            wit_typename, self.iface.name
-                                        )
-                                    });
-                                if error_id == *wit_type {
-                                    Some((r.clone(), errortype.clone()))
-                                } else {
-                                    None
-                                }
-                            }),
+                            .trappable_error_type_for(&self.iface, &error_id)
+                            .map(|errortype| (r.clone(), errortype.clone())),
                         _ => None,
                     },
                     _ => None,
@@ -639,17 +648,12 @@ impl<'a> InterfaceGenerator<'a> {
     }
 
     fn generate_trappable_error_types(&mut self) {
-        for (wit_typename, trappable_type) in self.gen.opts.trappable_error_type.iter() {
-            let wit_type = self.iface.type_lookup.get(wit_typename).unwrap_or_else(|| {
-                panic!(
-                    "no type named {:?} in interface {:?}",
-                    wit_typename, self.iface.name
-                )
-            });
+        for (wit_typename, wit_type, trappable_type) in self.gen.trappable_error_types(&self.iface)
+        {
             let info = self.info(*wit_type);
             if self.lifetime_for(&info, TypeMode::Owned).is_some() {
                 panic!(
-                    "type named {:?} in interface {:?} is not 'static",
+                    "type {:?} in interface {:?} is not 'static",
                     wit_typename, self.iface.name
                 )
             }
