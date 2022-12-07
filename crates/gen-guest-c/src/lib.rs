@@ -656,13 +656,13 @@ impl InterfaceGenerator<'_> {
     fn import(&mut self, func: &Function) {
         let sig = self.iface.wasm_signature(AbiVariant::GuestImport, func);
 
-        self.src.h_fns("\n");
+        self.src.c_fns("\n");
 
         // In the private C file, print a function declaration which is the
         // actual wasm import that we'll be calling, and this has the raw wasm
         // signature.
         uwriteln!(
-            self.src.h_fns,
+            self.src.c_fns,
             "__attribute__((import_module(\"{}\"), import_name(\"{}\")))",
             self.name,
             func.name
@@ -673,23 +673,23 @@ impl InterfaceGenerator<'_> {
             func.name.to_snake_case()
         ));
         match sig.results.len() {
-            0 => self.src.h_fns("void"),
-            1 => self.src.h_fns(wasm_type(sig.results[0])),
+            0 => self.src.c_fns("void"),
+            1 => self.src.c_fns(wasm_type(sig.results[0])),
             _ => unimplemented!("multi-value return not supported"),
         }
-        self.src.h_fns(" ");
-        self.src.h_fns(&import_name);
-        self.src.h_fns("(");
+        self.src.c_fns(" ");
+        self.src.c_fns(&import_name);
+        self.src.c_fns("(");
         for (i, param) in sig.params.iter().enumerate() {
             if i > 0 {
-                self.src.h_fns(", ");
+                self.src.c_fns(", ");
             }
-            self.src.h_fns(wasm_type(*param));
+            self.src.c_fns(wasm_type(*param));
         }
         if sig.params.len() == 0 {
-            self.src.h_fns("void");
+            self.src.c_fns("void");
         }
-        self.src.h_fns(");\n");
+        self.src.c_fns(");\n");
 
         // Print the public facing signature into the header, and since that's
         // what we are defining also print it into the C file.
@@ -731,7 +731,7 @@ impl InterfaceGenerator<'_> {
 
         // Print the actual header for this function into the header file, and
         // it's what we'll be calling.
-        let c_sig = self.print_sig(func);
+        let h_sig = self.print_sig(func);
 
         // Generate, in the C source file, the raw wasm signature that has the
         // canonical ABI.
@@ -745,7 +745,7 @@ impl InterfaceGenerator<'_> {
             func.name.to_snake_case()
         ));
 
-        let mut f = FunctionBindgen::new(self, c_sig, &import_name);
+        let mut f = FunctionBindgen::new(self, h_sig, &import_name);
         match sig.results.len() {
             0 => f.gen.src.c_adapters("void"),
             1 => f.gen.src.c_adapters(wasm_type(sig.results[0])),
