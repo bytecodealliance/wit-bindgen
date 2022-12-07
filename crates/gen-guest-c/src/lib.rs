@@ -222,6 +222,7 @@ impl WorldGenerator for C {
         if c_str.len() > 0 {
             c_str.push_str("\n");
         }
+        c_str.push_str(&self.src.c_defs);
         c_str.push_str(&self.src.c_fns);
 
         if self.needs_string {
@@ -848,8 +849,10 @@ impl InterfaceGenerator<'_> {
         for id in self.iface.topological_types() {
             if let Some(ty) = self.types.get(&id) {
                 if private_types.contains(&id) {
-                    self.src.h_defs(ty);
+                    // It's private; print it in the .c file.
+                    self.src.c_defs(ty);
                 } else {
+                    // It's public; print it in the .h file.
                     self.src.h_defs(ty);
                     self.print_dtor(id);
                 }
@@ -2325,6 +2328,7 @@ enum SourceType {
     HDefs,
     HFns,
     HHelpers,
+    // CDefs,
     // CFns,
     // CHelpers,
     // CAdapters,
@@ -2335,6 +2339,7 @@ struct Source {
     h_defs: wit_bindgen_core::Source,
     h_fns: wit_bindgen_core::Source,
     h_helpers: wit_bindgen_core::Source,
+    c_defs: wit_bindgen_core::Source,
     c_fns: wit_bindgen_core::Source,
     c_helpers: wit_bindgen_core::Source,
     c_adapters: wit_bindgen_core::Source,
@@ -2346,6 +2351,7 @@ impl Source {
             SourceType::HDefs => self.h_defs(s),
             SourceType::HFns => self.h_fns(s),
             SourceType::HHelpers => self.h_helpers(s),
+            // SourceType::CDefs => self.c_defs(s),
             // SourceType::CFns => self.c_fns(s),
             // SourceType::CHelpers => self.c_helpers(s),
             // SourceType::CAdapters => self.c_adapters(s),
@@ -2355,6 +2361,7 @@ impl Source {
         self.h_defs.push_str(&append_src.h_defs);
         self.h_fns.push_str(&append_src.h_fns);
         self.h_helpers.push_str(&append_src.h_helpers);
+        self.c_defs.push_str(&append_src.c_defs);
         self.c_fns.push_str(&append_src.c_fns);
         self.c_helpers.push_str(&append_src.c_helpers);
         self.c_adapters.push_str(&append_src.c_adapters);
@@ -2367,6 +2374,9 @@ impl Source {
     }
     fn h_helpers(&mut self, s: &str) {
         self.h_helpers.push_str(s);
+    }
+    fn c_defs(&mut self, s: &str) {
+        self.c_defs.push_str(s);
     }
     fn c_fns(&mut self, s: &str) {
         self.c_fns.push_str(s);
