@@ -858,13 +858,15 @@ impl InterfaceGenerator<'_> {
 
         let start = self.src.h_fns.len();
         let mut result_rets = false;
+        let mut result_rets_has_ok_type = false;
 
         let ret = self.classify_ret(func);
         match &ret.scalar {
             None | Some(Scalar::Void) => self.src.h_fns("void"),
             Some(Scalar::OptionBool(_id)) => self.src.h_fns("bool"),
-            Some(Scalar::Result(_)) => {
+            Some(Scalar::Result(has_ok_type)) => {
                 result_rets = true;
+                result_rets_has_ok_type = *has_ok_type;
                 self.src.h_fns("bool");
             }
             Some(Scalar::Type(ty)) => self.print_ty(SourceType::HFns, ty),
@@ -895,11 +897,15 @@ impl InterfaceGenerator<'_> {
             }
             self.print_ty(SourceType::HFns, ty);
             self.src.h_fns(" *");
-            let name: String = if single_ret || result_rets && i == 0 {
+            let name: String = if single_ret {
                 "ret".into()
             } else if result_rets {
-                assert!(i == 1);
-                "err".into()
+                assert!(i <= 1);
+                if i == 0 && result_rets_has_ok_type {
+                    "ret".into()
+                } else {
+                    "err".into()
+                }
             } else {
                 format!("ret{}", i)
             };
