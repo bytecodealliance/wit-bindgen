@@ -1480,7 +1480,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn check_all_retptrs_written(&self) {
-        // assert!(self.ret_store_cnt == self.sig.retptrs.len());
+        assert!(self.ret_store_cnt == self.sig.retptrs.len());
     }
 }
 
