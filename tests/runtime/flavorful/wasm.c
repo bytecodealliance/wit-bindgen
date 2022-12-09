@@ -61,9 +61,16 @@ void flavorful_test_imports() {
     flavorful_string_free(&b);
   }
 
-  assert(imports_errno_result() == IMPORTS_MY_ERRNO_B);
+  {
+    imports_my_errno_t errno;
+    assert(imports_errno_result(&errno));
+    assert(errno == IMPORTS_MY_ERRNO_B);
+  }
 
-  assert(imports_errno_result() == IMPORTS_RESULT_MY_ERRNO_OK);
+  {
+    imports_my_errno_t errno;
+    assert(imports_errno_result(&errno) == 0);
+  }
 
   {
     flavorful_string_t a;
@@ -176,8 +183,9 @@ bool flavorful_f_list_in_variant3(flavorful_list_in_variant3_t *a, flavorful_str
   return true;
 }
 
-flavorful_my_errno_t flavorful_errno_result(void) {
-  return FLAVORFUL_MY_ERRNO_B;
+bool flavorful_errno_result(flavorful_my_errno_t *err) {
+  *err = FLAVORFUL_MY_ERRNO_B;
+  return true;
 }
 
 void flavorful_list_typedefs(flavorful_list_typedef_t *a, flavorful_list_typedef3_t *c, flavorful_list_typedef2_t *ret0, flavorful_list_typedef3_t *ret1) {
