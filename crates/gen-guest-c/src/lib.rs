@@ -1419,6 +1419,7 @@ struct FunctionBindgen<'a, 'b> {
     payloads: Vec<String>,
     params: Vec<String>,
     wasm_return: Option<String>,
+    ret_store_cnt: usize,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1438,6 +1439,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             payloads: Vec::new(),
             params: Vec::new(),
             wasm_return: None,
+            ret_store_cnt: 0,
         }
     }
 
@@ -1469,11 +1471,16 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         );
     }
 
-    fn store_in_retptrs(&mut self, operands: &[String]) {
-        assert_eq!(operands.len(), self.sig.retptrs.len());
-        for (op, ptr) in operands.iter().zip(self.sig.retptrs.clone()) {
-            self.store_op(op, &format!("*{}", ptr));
-        }
+    fn store_in_retptr(&mut self, operand: &String) {
+        self.store_op(
+            operand,
+            &format!("*{}", self.sig.retptrs[self.ret_store_cnt]),
+        );
+        self.ret_store_cnt = self.ret_store_cnt + 1;
+    }
+
+    fn check_all_retptrs_written(&self) {
+        // assert!(self.ret_store_cnt == self.sig.retptrs.len());
     }
 }
 
@@ -2222,44 +2229,59 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
             }
-            Instruction::Return { .. } if self.gen.in_import => match self.sig.ret.scalar {
-                None => self.store_in_retptrs(operands),
-                Some(Scalar::Void) => {
-                    assert!(operands.is_empty());
-                }
-                Some(Scalar::Type(_)) => {
-                    assert_eq!(operands.len(), 1);
-                    self.src.push_str("return ");
-                    self.src.push_str(&operands[0]);
-                    self.src.push_str(";\n");
-                }
-                Some(Scalar::OptionBool(_)) => {
-                    assert_eq!(operands.len(), 1);
-                    let variant = &operands[0];
-                    self.store_in_retptrs(&[format!("{}.val", variant)]);
-                    self.src.push_str("return ");
-                    self.src.push_str(&variant);
-                    self.src.push_str(".is_some;\n");
-                }
-                Some(Scalar::Result(has_ok_type)) => {
-                    assert_eq!(operands.len(), 1);
-                    let variant = &operands[0];
-                    assert!(self.sig.retptrs.len() <= 2);
-                    if self.sig.retptrs.len() == 2 {
-                        self.store_in_retptrs(&[
-                            format!("{}.val.ok", variant),
-                            format!("{}.val.err", variant),
-                        ]);
-                    } else if self.sig.retptrs.len() == 1 {
-                        if has_ok_type {
-                            self.store_in_retptrs(&[format!("{}.val.ok", variant)]);
-                        } else {
-                            self.store_in_retptrs(&[format!("{}.val.err", variant)]);
+            Instruction::Return { .. } if self.gen.in_import => {
+                match self.sig.ret.scalar {
+                    None => {
+                        for op in operands.iter() {
+                            self.store_in_retptr(op);
                         }
                     }
-                    uwriteln!(self.src, "return {}.is_err ? 1 : 0;", variant);
+                    Some(Scalar::Void) => {
+                        assert!(operands.is_empty());
+                    }
+                    Some(Scalar::Type(_)) => {
+                        assert_eq!(operands.len(), 1);
+                        self.src.push_str("return ");
+                        self.src.push_str(&operands[0]);
+                        self.src.push_str(";\n");
+                    }
+                    Some(Scalar::OptionBool(_)) => {
+                        assert_eq!(operands.len(), 1);
+                        let variant = &operands[0];
+                        self.store_in_retptr(&format!("{}.val", variant));
+                        self.src.push_str("return ");
+                        self.src.push_str(&variant);
+                        self.src.push_str(".is_some;\n");
+                    }
+                    Some(Scalar::Result(has_ok_type)) => {
+                        assert_eq!(operands.len(), 1);
+                        let variant = &operands[0];
+                        assert!(self.sig.retptrs.len() <= 2);
+                        uwriteln!(self.src, "if (!{}.is_err) {{", variant);
+                        if self.sig.retptrs.len() == 2 {
+                            self.store_in_retptr(&format!("{}.val.ok", variant));
+                        } else if self.sig.retptrs.len() == 1 && has_ok_type {
+                            self.store_in_retptr(&format!("{}.val.ok", variant));
+                        }
+                        uwriteln!(
+                            self.src,
+                            "   return 0;
+                            }} else {{"
+                        );
+                        if self.sig.retptrs.len() == 2 {
+                            self.store_in_retptr(&format!("{}.val.err", variant));
+                        } else if self.sig.retptrs.len() == 1 && !has_ok_type {
+                            self.store_in_retptr(&format!("{}.val.err", variant));
+                        }
+                        uwriteln!(
+                            self.src,
+                            "   return 1;
+                            }}"
+                        );
+                    }
                 }
-            },
+                self.check_all_retptrs_written();
+            }
             Instruction::Return { amt, .. } => {
                 assert!(*amt <= 1);
                 if *amt == 1 {
