@@ -62,7 +62,7 @@ struct CSig {
 enum Scalar {
     Void,
     OptionBool(Type),
-    ResultEnum { err: TypeId, max_err: usize },
+    Result(bool),
     Type(Type),
 }
 
@@ -399,24 +399,19 @@ impl Return {
                 return;
             }
 
-            // Unpack `result<T, E>` returns where `E` looks like an enum
-            // so we can return that in the scalar return and have `T` get
-            // returned through the normal returns.
+            // Unpack a result as a boolean return type, with two
+            // return pointers for ok and err values
             TypeDefKind::Result(r) => {
-                if let Some(Type::Id(err)) = r.err {
-                    if let TypeDefKind::Enum(enum_) = &iface.types[err].kind {
-                        self.scalar = Some(Scalar::ResultEnum {
-                            err,
-                            max_err: enum_.cases.len(),
-                        });
-                        if let Some(ok) = r.ok {
-                            self.retptrs.push(ok);
-                        }
-                        return;
-                    }
+                let mut has_ok_type = false;
+                if let Some(ok) = r.ok {
+                    has_ok_type = true;
+                    self.retptrs.push(ok);
                 }
-
-                // fall through to the return pointer case
+                if let Some(err) = r.err {
+                    self.retptrs.push(err);
+                }
+                self.scalar = Some(Scalar::Result(has_ok_type));
+                return;
             }
 
             // These types are always returned indirectly.
@@ -612,13 +607,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 i,
             );
         }
-        uwriteln!(
-            self.src.h_defs,
-            "#define {}_RESULT_{}_OK {}",
-            self.name.to_shouty_snake_case(),
-            name.to_shouty_snake_case(),
-            int_max_str(enum_.tag())
-        );
 
         self.types
             .insert(id, mem::replace(&mut self.src.h_defs, prev));
@@ -869,13 +857,15 @@ impl InterfaceGenerator<'_> {
         self.gen.names.insert(&name).expect("duplicate symbols");
 
         let start = self.src.h_fns.len();
+        let mut result_rets = false;
 
         let ret = self.classify_ret(func);
         match &ret.scalar {
             None | Some(Scalar::Void) => self.src.h_fns("void"),
             Some(Scalar::OptionBool(_id)) => self.src.h_fns("bool"),
-            Some(Scalar::ResultEnum { err, .. }) => {
-                self.print_ty(SourceType::HFns, &Type::Id(*err))
+            Some(Scalar::Result(_)) => {
+                result_rets = true;
+                self.src.h_fns("bool");
             }
             Some(Scalar::Type(ty)) => self.print_ty(SourceType::HFns, ty),
         }
@@ -907,6 +897,9 @@ impl InterfaceGenerator<'_> {
             self.src.h_fns(" *");
             let name: String = if single_ret {
                 "ret".into()
+            } else if result_rets {
+                assert!(i < 2);
+                (if i == 0 { "ok" } else { "err" }).into()
             } else {
                 format!("ret{}", i)
             };
@@ -2162,57 +2155,64 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         );
                         results.push(option_ret);
                     }
-                    Some(Scalar::ResultEnum { err, max_err }) => {
-                        let ret = self.locals.tmp("ret");
-                        let mut ok_names = Vec::new();
-                        for ty in self.sig.ret.retptrs.iter() {
-                            let val = self.locals.tmp("ok");
-                            if args.len() > 0 {
-                                args.push_str(", ");
-                            }
-                            args.push_str("&");
-                            args.push_str(&val);
-                            let ty = self.gen.type_string(ty);
-                            uwriteln!(self.src, "{} {};", ty, val);
-                            ok_names.push(val);
-                        }
-                        let err_ty = self.gen.type_string(&Type::Id(*err));
-                        uwriteln!(
-                            self.src,
-                            "{} {} = {}({});",
-                            err_ty,
-                            ret,
-                            self.sig.name,
-                            args,
-                        );
+                    Some(Scalar::Result(has_ok_type)) => {
                         let result_ty = self
                             .gen
                             .type_string(func.results.iter_types().next().unwrap());
-                        let result_ret = self.locals.tmp("ret");
-                        uwrite!(
-                            self.src,
-                            "
-                                {ty} {ret};
-                                if ({tag} <= {max}) {{
-                                    {ret}.is_err = true;
-                                    {ret}.val.err = {tag};
-                                }} else {{
-                                    {ret}.is_err = false;
-                                    {set_ok}
-                                }}
-                            ",
-                            ty = result_ty,
-                            ret = result_ret,
-                            tag = ret,
-                            max = max_err,
-                            set_ok = if self.sig.ret.retptrs.len() == 0 {
-                                String::new()
+                        let ret = self.locals.tmp("ret");
+                        let mut ret_iter = self.sig.ret.retptrs.iter();
+                        uwriteln!(self.src, "{result_ty} {ret};");
+                        let ok_name = if *has_ok_type {
+                            if let Some(ty) = ret_iter.next() {
+                                let val = self.locals.tmp("ok");
+                                if args.len() > 0 {
+                                    uwrite!(args, ", ");
+                                }
+                                uwrite!(args, "&{val}");
+                                let ty = self.gen.type_string(ty);
+                                uwriteln!(self.src, "{} {};", ty, val);
+                                Some(val)
                             } else {
-                                let name = ok_names.pop().unwrap();
-                                format!("{}.val.ok = {};", result_ret, name)
-                            },
-                        );
-                        results.push(result_ret);
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                        let err_name = if let Some(ty) = ret_iter.next() {
+                            let val = self.locals.tmp("err");
+                            if args.len() > 0 {
+                                uwrite!(args, ", ")
+                            }
+                            uwrite!(args, "&{val}");
+                            let ty = self.gen.type_string(ty);
+                            uwriteln!(self.src, "{} {};", ty, val);
+                            Some(val)
+                        } else {
+                            None
+                        };
+                        assert!(ret_iter.next().is_none());
+                        uwrite!(self.src, "");
+                        uwriteln!(self.src, "{ret}.is_err =  {}({args});", self.sig.name);
+
+                        if let Some(err_name) = err_name {
+                            uwriteln!(
+                                self.src,
+                                "if ({ret}.is_err) {{
+                                    {ret}.val.err = {err_name};
+                                }}",
+                            );
+                        }
+                        if let Some(ok_name) = ok_name {
+                            uwriteln!(
+                                self.src,
+                                "if (!{ret}.is_err) {{
+                                    {ret}.val.ok = {ok_name};
+                                }}"
+                            );
+                        } else {
+                            uwrite!(self.src, "\n");
+                        }
+                        results.push(ret);
                     }
                 }
             }
@@ -2235,13 +2235,23 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src.push_str(&variant);
                     self.src.push_str(".is_some;\n");
                 }
-                Some(Scalar::ResultEnum { .. }) => {
+                Some(Scalar::Result(has_ok_type)) => {
                     assert_eq!(operands.len(), 1);
                     let variant = &operands[0];
-                    if self.sig.retptrs.len() > 0 {
-                        self.store_in_retptrs(&[format!("{}.val.ok", variant)]);
+                    assert!(self.sig.retptrs.len() <= 2);
+                    if self.sig.retptrs.len() == 2 {
+                        self.store_in_retptrs(&[
+                            format!("{}.val.ok", variant),
+                            format!("{}.val.err", variant),
+                        ]);
+                    } else if self.sig.retptrs.len() == 1 {
+                        if has_ok_type {
+                            self.store_in_retptrs(&[format!("{}.val.ok", variant)]);
+                        } else {
+                            self.store_in_retptrs(&[format!("{}.val.err", variant)]);
+                        }
                     }
-                    uwriteln!(self.src, "return {}.is_err ? {0}.val.err : -1;", variant);
+                    uwriteln!(self.src, "return {}.is_err ? 1 : 0;", variant);
                 }
             },
             Instruction::Return { amt, .. } => {
@@ -2404,15 +2414,6 @@ fn int_repr(ty: Int) -> &'static str {
         Int::U16 => "uint16_t",
         Int::U32 => "uint32_t",
         Int::U64 => "uint64_t",
-    }
-}
-
-fn int_max_str(ty: Int) -> String {
-    match ty {
-        Int::U8 => u8::MAX.to_string(),
-        Int::U16 => u16::MAX.to_string(),
-        Int::U32 => u32::MAX.to_string(),
-        Int::U64 => u64::MAX.to_string(),
     }
 }
 
