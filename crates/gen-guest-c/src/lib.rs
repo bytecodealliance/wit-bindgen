@@ -897,15 +897,15 @@ impl InterfaceGenerator<'_> {
             }
             self.print_ty(SourceType::HFns, ty);
             self.src.h_fns(" *");
-            let name: String = if single_ret {
-                "ret".into()
-            } else if result_rets {
+            let name: String = if result_rets {
                 assert!(i <= 1);
                 if i == 0 && result_rets_has_ok_type {
                     "ret".into()
                 } else {
                     "err".into()
                 }
+            } else if single_ret {
+                "ret".into()
             } else {
                 format!("ret{}", i)
             };
