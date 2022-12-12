@@ -687,10 +687,34 @@ impl InterfaceGenerator<'_> {
         self.src.c_adapters(&c_sig.sig);
         self.src.c_adapters(" {\n");
 
+        // construct optional adapters from maybe pointers to real optional
+        // structs internally
+        let mut optional_adapters = String::from("");
+        for (i, (_, param)) in c_sig.params.iter().enumerate() {
+            let ty = &func.params[i].1;
+            if let Type::Id(id) = ty {
+                if let TypeDefKind::Option(option_ty) = &self.iface.types[*id].kind {
+                    let ty = self.type_string(ty);
+                    uwrite!(
+                        optional_adapters,
+                        "{ty} {param};
+                        {param}.is_some = maybe_{param} != NULL;"
+                    );
+                    if !self.is_empty_type(option_ty) {
+                        uwriteln!(
+                            optional_adapters,
+                            "if (maybe_{param}) {{
+                                {param}.val = *maybe_{param};
+                            }}",
+                        );
+                    }
+                }
+            }
+        }
+
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         for (pointer, param) in f.sig.params.iter() {
-            f.locals.insert(param).unwrap();
-
+            f.locals.insert(&param).unwrap();
             if *pointer {
                 f.params.push(format!("*{}", param));
             } else {
@@ -700,6 +724,7 @@ impl InterfaceGenerator<'_> {
         for ptr in f.sig.retptrs.iter() {
             f.locals.insert(ptr).unwrap();
         }
+        f.src.push_str(&optional_adapters);
         f.gen.iface.call(
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
@@ -879,15 +904,29 @@ impl InterfaceGenerator<'_> {
             if i > 0 {
                 self.src.h_fns(", ");
             }
-            self.print_ty(SourceType::HFns, ty);
-            self.src.h_fns(" ");
             let pointer = self.is_arg_by_pointer(ty);
+            // optional param pointer flattening
+            let optional_type = if let Type::Id(id) = ty {
+                if let TypeDefKind::Option(option_ty) = &self.iface.types[*id].kind {
+                    Some(option_ty)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let (print_ty, print_name) = if let Some(option_ty) = optional_type {
+                (option_ty, format!("maybe_{}", name.to_snake_case()))
+            } else {
+                (ty, name.to_snake_case())
+            };
+            self.print_ty(SourceType::HFns, print_ty);
+            self.src.h_fns(" ");
             if pointer {
                 self.src.h_fns("*");
             }
-            let name = name.to_snake_case();
-            self.src.h_fns(&name);
-            params.push((pointer, name));
+            self.src.h_fns(&print_name);
+            params.push((optional_type.is_none() && pointer, name.to_snake_case()));
         }
         let mut retptrs = Vec::new();
         let single_ret = ret.retptrs.len() == 1;
@@ -2101,13 +2140,28 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     if i > 0 {
                         args.push_str(", ");
                     }
+                    let ty = &func.params[i].1;
                     if *byref {
                         let name = self.locals.tmp("arg");
-                        let ty = self.gen.type_string(&func.params[i].1);
+                        let ty = self.gen.type_string(ty);
                         uwriteln!(self.src, "{} {} = {};", ty, name, op);
                         args.push_str("&");
                         args.push_str(&name);
                     } else {
+                        if !self.gen.in_import {
+                            if let Type::Id(id) = ty {
+                                if let TypeDefKind::Option(option_ty) =
+                                    &self.gen.iface.types[*id].kind
+                                {
+                                    if self.gen.is_empty_type(option_ty) {
+                                        uwrite!(args, "{op}.is_some ? (void*)1 : NULL");
+                                    } else {
+                                        uwrite!(args, "{op}.is_some ? &({op}.val) : NULL");
+                                    }
+                                    continue;
+                                }
+                            }
+                        }
                         args.push_str(op);
                     }
                 }
