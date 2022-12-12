@@ -62,7 +62,7 @@ struct CSig {
 enum Scalar {
     Void,
     OptionBool(Type),
-    Result(bool),
+    ResultBool(bool),
     Type(Type),
 }
 
@@ -410,7 +410,7 @@ impl Return {
                 if let Some(err) = r.err {
                     self.retptrs.push(err);
                 }
-                self.scalar = Some(Scalar::Result(has_ok_type));
+                self.scalar = Some(Scalar::ResultBool(has_ok_type));
                 return;
             }
 
@@ -864,7 +864,7 @@ impl InterfaceGenerator<'_> {
         match &ret.scalar {
             None | Some(Scalar::Void) => self.src.h_fns("void"),
             Some(Scalar::OptionBool(_id)) => self.src.h_fns("bool"),
-            Some(Scalar::Result(has_ok_type)) => {
+            Some(Scalar::ResultBool(has_ok_type)) => {
                 result_rets = true;
                 result_rets_has_ok_type = *has_ok_type;
                 self.src.h_fns("bool");
@@ -2168,7 +2168,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         );
                         results.push(option_ret);
                     }
-                    Some(Scalar::Result(has_ok_type)) => {
+                    Some(Scalar::ResultBool(has_ok_type)) => {
                         let result_ty = self
                             .gen
                             .type_string(func.results.iter_types().next().unwrap());
@@ -2205,7 +2205,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         };
                         assert!(ret_iter.next().is_none());
                         uwrite!(self.src, "");
-                        uwriteln!(self.src, "{ret}.is_err =  {}({args});", self.sig.name);
+                        uwriteln!(self.src, "{ret}.is_err = !{}({args});", self.sig.name);
 
                         if let Some(err_name) = err_name {
                             uwriteln!(
@@ -2253,7 +2253,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         self.src.push_str(&variant);
                         self.src.push_str(".is_some;\n");
                     }
-                    Some(Scalar::Result(has_ok_type)) => {
+                    Some(Scalar::ResultBool(has_ok_type)) => {
                         assert_eq!(operands.len(), 1);
                         let variant = &operands[0];
                         assert!(self.sig.retptrs.len() <= 2);
@@ -2265,7 +2265,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }
                         uwriteln!(
                             self.src,
-                            "   return 0;
+                            "   return 1;
                             }} else {{"
                         );
                         if self.sig.retptrs.len() == 2 {
@@ -2275,7 +2275,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }
                         uwriteln!(
                             self.src,
-                            "   return 1;
+                            "   return 0;
                             }}"
                         );
                     }
