@@ -24,19 +24,16 @@ void variants_test_imports() {
 
     a.is_err = false;
     a.val.ok = 2;
-    bool is_err = imports_roundtrip_result(&a, &b_ok, &b_err);
-    assert(!is_err);
+    assert(imports_roundtrip_result(&a, &b_ok, &b_err));
     assert(b_ok == 2.0);
 
     a.val.ok = 4;
-    is_err = imports_roundtrip_result(&a, &b_ok, &b_err);
-    assert(!is_err);
+    assert(imports_roundtrip_result(&a, &b_ok, &b_err));
     assert(b_ok == 4);
 
     a.is_err = true;
     a.val.err = 5.3;
-    is_err = imports_roundtrip_result(&a, &b_ok, &b_err);
-    assert(is_err);
+    assert(!imports_roundtrip_result(&a, &b_ok, &b_err));
     assert(b_err == 5);
   }
 
@@ -152,10 +149,10 @@ bool variants_roundtrip_option(variants_option_float32_t *a, uint8_t *ret0) {
 bool variants_roundtrip_result(variants_result_u32_float32_t *a, double *ok, uint8_t *err) {
   if (a->is_err) {
     *err = a->val.err;
-    return true;
+    return false;
   } else {
     *ok = a->val.ok;
-    return false;
+    return true;
   }
 }
 
