@@ -182,19 +182,19 @@ impl Go {
 
 impl WorldGenerator for Go {
     fn import(&mut self, name: &str, iface: &Interface, files: &mut Files) {
-        todo!()
+
     }
 
     fn export(&mut self, name: &str, iface: &Interface, files: &mut Files) {
-        todo!()
+
     }
 
     fn export_default(&mut self, name: &str, iface: &Interface, files: &mut Files) {
-        todo!()
+
     }
 
     fn finish(&mut self, world: &World, files: &mut Files) {
-        todo!()
+
     }
 }
 
