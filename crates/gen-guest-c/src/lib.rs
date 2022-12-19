@@ -62,7 +62,7 @@ struct CSig {
 enum Scalar {
     Void,
     OptionBool(Type),
-    ResultEnum { err: TypeId, max_err: usize },
+    ResultBool(bool),
     Type(Type),
 }
 
@@ -222,6 +222,7 @@ impl WorldGenerator for C {
         if c_str.len() > 0 {
             c_str.push_str("\n");
         }
+        c_str.push_str(&self.src.c_defs);
         c_str.push_str(&self.src.c_fns);
 
         if self.needs_string {
@@ -398,24 +399,19 @@ impl Return {
                 return;
             }
 
-            // Unpack `result<T, E>` returns where `E` looks like an enum
-            // so we can return that in the scalar return and have `T` get
-            // returned through the normal returns.
+            // Unpack a result as a boolean return type, with two
+            // return pointers for ok and err values
             TypeDefKind::Result(r) => {
-                if let Some(Type::Id(err)) = r.err {
-                    if let TypeDefKind::Enum(enum_) = &iface.types[err].kind {
-                        self.scalar = Some(Scalar::ResultEnum {
-                            err,
-                            max_err: enum_.cases.len(),
-                        });
-                        if let Some(ok) = r.ok {
-                            self.retptrs.push(ok);
-                        }
-                        return;
-                    }
+                let mut has_ok_type = false;
+                if let Some(ok) = r.ok {
+                    has_ok_type = true;
+                    self.retptrs.push(ok);
                 }
-
-                // fall through to the return pointer case
+                if let Some(err) = r.err {
+                    self.retptrs.push(err);
+                }
+                self.scalar = Some(Scalar::ResultBool(has_ok_type));
+                return;
             }
 
             // These types are always returned indirectly.
@@ -611,13 +607,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 i,
             );
         }
-        uwriteln!(
-            self.src.h_defs,
-            "#define {}_RESULT_{}_OK {}",
-            self.name.to_shouty_snake_case(),
-            name.to_shouty_snake_case(),
-            int_max_str(enum_.tag())
-        );
 
         self.types
             .insert(id, mem::replace(&mut self.src.h_defs, prev));
@@ -656,13 +645,13 @@ impl InterfaceGenerator<'_> {
     fn import(&mut self, func: &Function) {
         let sig = self.iface.wasm_signature(AbiVariant::GuestImport, func);
 
-        self.src.h_fns("\n");
+        self.src.c_fns("\n");
 
         // In the private C file, print a function declaration which is the
         // actual wasm import that we'll be calling, and this has the raw wasm
         // signature.
         uwriteln!(
-            self.src.h_fns,
+            self.src.c_fns,
             "__attribute__((import_module(\"{}\"), import_name(\"{}\")))",
             self.name,
             func.name
@@ -673,23 +662,23 @@ impl InterfaceGenerator<'_> {
             func.name.to_snake_case()
         ));
         match sig.results.len() {
-            0 => self.src.h_fns("void"),
-            1 => self.src.h_fns(wasm_type(sig.results[0])),
+            0 => self.src.c_fns("void"),
+            1 => self.src.c_fns(wasm_type(sig.results[0])),
             _ => unimplemented!("multi-value return not supported"),
         }
-        self.src.h_fns(" ");
-        self.src.h_fns(&import_name);
-        self.src.h_fns("(");
+        self.src.c_fns(" ");
+        self.src.c_fns(&import_name);
+        self.src.c_fns("(");
         for (i, param) in sig.params.iter().enumerate() {
             if i > 0 {
-                self.src.h_fns(", ");
+                self.src.c_fns(", ");
             }
-            self.src.h_fns(wasm_type(*param));
+            self.src.c_fns(wasm_type(*param));
         }
         if sig.params.len() == 0 {
-            self.src.h_fns("void");
+            self.src.c_fns("void");
         }
-        self.src.h_fns(");\n");
+        self.src.c_fns(");\n");
 
         // Print the public facing signature into the header, and since that's
         // what we are defining also print it into the C file.
@@ -698,10 +687,34 @@ impl InterfaceGenerator<'_> {
         self.src.c_adapters(&c_sig.sig);
         self.src.c_adapters(" {\n");
 
+        // construct optional adapters from maybe pointers to real optional
+        // structs internally
+        let mut optional_adapters = String::from("");
+        for (i, (_, param)) in c_sig.params.iter().enumerate() {
+            let ty = &func.params[i].1;
+            if let Type::Id(id) = ty {
+                if let TypeDefKind::Option(option_ty) = &self.iface.types[*id].kind {
+                    let ty = self.type_string(ty);
+                    uwrite!(
+                        optional_adapters,
+                        "{ty} {param};
+                        {param}.is_some = maybe_{param} != NULL;"
+                    );
+                    if !self.is_empty_type(option_ty) {
+                        uwriteln!(
+                            optional_adapters,
+                            "if (maybe_{param}) {{
+                                {param}.val = *maybe_{param};
+                            }}",
+                        );
+                    }
+                }
+            }
+        }
+
         let mut f = FunctionBindgen::new(self, c_sig, &import_name);
         for (pointer, param) in f.sig.params.iter() {
-            f.locals.insert(param).unwrap();
-
+            f.locals.insert(&param).unwrap();
             if *pointer {
                 f.params.push(format!("*{}", param));
             } else {
@@ -711,6 +724,7 @@ impl InterfaceGenerator<'_> {
         for ptr in f.sig.retptrs.iter() {
             f.locals.insert(ptr).unwrap();
         }
+        f.src.push_str(&optional_adapters);
         f.gen.iface.call(
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
@@ -731,7 +745,7 @@ impl InterfaceGenerator<'_> {
 
         // Print the actual header for this function into the header file, and
         // it's what we'll be calling.
-        let c_sig = self.print_sig(func);
+        let h_sig = self.print_sig(func);
 
         // Generate, in the C source file, the raw wasm signature that has the
         // canonical ABI.
@@ -745,7 +759,7 @@ impl InterfaceGenerator<'_> {
             func.name.to_snake_case()
         ));
 
-        let mut f = FunctionBindgen::new(self, c_sig, &import_name);
+        let mut f = FunctionBindgen::new(self, h_sig, &import_name);
         match sig.results.len() {
             0 => f.gen.src.c_adapters("void"),
             1 => f.gen.src.c_adapters(wasm_type(sig.results[0])),
@@ -848,8 +862,10 @@ impl InterfaceGenerator<'_> {
         for id in self.iface.topological_types() {
             if let Some(ty) = self.types.get(&id) {
                 if private_types.contains(&id) {
-                    self.src.h_defs(ty);
+                    // It's private; print it in the .c file.
+                    self.src.c_defs(ty);
                 } else {
+                    // It's public; print it in the .h file.
                     self.src.h_defs(ty);
                     self.print_dtor(id);
                 }
@@ -866,13 +882,17 @@ impl InterfaceGenerator<'_> {
         self.gen.names.insert(&name).expect("duplicate symbols");
 
         let start = self.src.h_fns.len();
+        let mut result_rets = false;
+        let mut result_rets_has_ok_type = false;
 
         let ret = self.classify_ret(func);
         match &ret.scalar {
             None | Some(Scalar::Void) => self.src.h_fns("void"),
             Some(Scalar::OptionBool(_id)) => self.src.h_fns("bool"),
-            Some(Scalar::ResultEnum { err, .. }) => {
-                self.print_ty(SourceType::HFns, &Type::Id(*err))
+            Some(Scalar::ResultBool(has_ok_type)) => {
+                result_rets = true;
+                result_rets_has_ok_type = *has_ok_type;
+                self.src.h_fns("bool");
             }
             Some(Scalar::Type(ty)) => self.print_ty(SourceType::HFns, ty),
         }
@@ -884,15 +904,29 @@ impl InterfaceGenerator<'_> {
             if i > 0 {
                 self.src.h_fns(", ");
             }
-            self.print_ty(SourceType::HFns, ty);
-            self.src.h_fns(" ");
             let pointer = self.is_arg_by_pointer(ty);
+            // optional param pointer flattening
+            let optional_type = if let Type::Id(id) = ty {
+                if let TypeDefKind::Option(option_ty) = &self.iface.types[*id].kind {
+                    Some(option_ty)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let (print_ty, print_name) = if let Some(option_ty) = optional_type {
+                (option_ty, format!("maybe_{}", name.to_snake_case()))
+            } else {
+                (ty, name.to_snake_case())
+            };
+            self.print_ty(SourceType::HFns, print_ty);
+            self.src.h_fns(" ");
             if pointer {
                 self.src.h_fns("*");
             }
-            let name = name.to_snake_case();
-            self.src.h_fns(&name);
-            params.push((pointer, name));
+            self.src.h_fns(&print_name);
+            params.push((optional_type.is_none() && pointer, name.to_snake_case()));
         }
         let mut retptrs = Vec::new();
         let single_ret = ret.retptrs.len() == 1;
@@ -902,7 +936,14 @@ impl InterfaceGenerator<'_> {
             }
             self.print_ty(SourceType::HFns, ty);
             self.src.h_fns(" *");
-            let name: String = if single_ret {
+            let name: String = if result_rets {
+                assert!(i <= 1);
+                if i == 0 && result_rets_has_ok_type {
+                    "ret".into()
+                } else {
+                    "err".into()
+                }
+            } else if single_ret {
                 "ret".into()
             } else {
                 format!("ret{}", i)
@@ -1417,6 +1458,7 @@ struct FunctionBindgen<'a, 'b> {
     payloads: Vec<String>,
     params: Vec<String>,
     wasm_return: Option<String>,
+    ret_store_cnt: usize,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1436,6 +1478,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             payloads: Vec::new(),
             params: Vec::new(),
             wasm_return: None,
+            ret_store_cnt: 0,
         }
     }
 
@@ -1467,11 +1510,16 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         );
     }
 
-    fn store_in_retptrs(&mut self, operands: &[String]) {
-        assert_eq!(operands.len(), self.sig.retptrs.len());
-        for (op, ptr) in operands.iter().zip(self.sig.retptrs.clone()) {
-            self.store_op(op, &format!("*{}", ptr));
-        }
+    fn store_in_retptr(&mut self, operand: &String) {
+        self.store_op(
+            operand,
+            &format!("*{}", self.sig.retptrs[self.ret_store_cnt]),
+        );
+        self.ret_store_cnt = self.ret_store_cnt + 1;
+    }
+
+    fn check_all_retptrs_written(&self) {
+        assert!(self.ret_store_cnt == self.sig.retptrs.len());
     }
 }
 
@@ -2092,13 +2140,28 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     if i > 0 {
                         args.push_str(", ");
                     }
+                    let ty = &func.params[i].1;
                     if *byref {
                         let name = self.locals.tmp("arg");
-                        let ty = self.gen.type_string(&func.params[i].1);
+                        let ty = self.gen.type_string(ty);
                         uwriteln!(self.src, "{} {} = {};", ty, name, op);
                         args.push_str("&");
                         args.push_str(&name);
                     } else {
+                        if !self.gen.in_import {
+                            if let Type::Id(id) = ty {
+                                if let TypeDefKind::Option(option_ty) =
+                                    &self.gen.iface.types[*id].kind
+                                {
+                                    if self.gen.is_empty_type(option_ty) {
+                                        uwrite!(args, "{op}.is_some ? (void*)1 : NULL");
+                                    } else {
+                                        uwrite!(args, "{op}.is_some ? &({op}.val) : NULL");
+                                    }
+                                    continue;
+                                }
+                            }
+                        }
                         args.push_str(op);
                     }
                 }
@@ -2159,88 +2222,120 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         );
                         results.push(option_ret);
                     }
-                    Some(Scalar::ResultEnum { err, max_err }) => {
-                        let ret = self.locals.tmp("ret");
-                        let mut ok_names = Vec::new();
-                        for ty in self.sig.ret.retptrs.iter() {
-                            let val = self.locals.tmp("ok");
-                            if args.len() > 0 {
-                                args.push_str(", ");
-                            }
-                            args.push_str("&");
-                            args.push_str(&val);
-                            let ty = self.gen.type_string(ty);
-                            uwriteln!(self.src, "{} {};", ty, val);
-                            ok_names.push(val);
-                        }
-                        let err_ty = self.gen.type_string(&Type::Id(*err));
-                        uwriteln!(
-                            self.src,
-                            "{} {} = {}({});",
-                            err_ty,
-                            ret,
-                            self.sig.name,
-                            args,
-                        );
+                    Some(Scalar::ResultBool(has_ok_type)) => {
                         let result_ty = self
                             .gen
                             .type_string(func.results.iter_types().next().unwrap());
-                        let result_ret = self.locals.tmp("ret");
-                        uwrite!(
-                            self.src,
-                            "
-                                {ty} {ret};
-                                if ({tag} <= {max}) {{
-                                    {ret}.is_err = true;
-                                    {ret}.val.err = {tag};
-                                }} else {{
-                                    {ret}.is_err = false;
-                                    {set_ok}
-                                }}
-                            ",
-                            ty = result_ty,
-                            ret = result_ret,
-                            tag = ret,
-                            max = max_err,
-                            set_ok = if self.sig.ret.retptrs.len() == 0 {
-                                String::new()
+                        let ret = self.locals.tmp("ret");
+                        let mut ret_iter = self.sig.ret.retptrs.iter();
+                        uwriteln!(self.src, "{result_ty} {ret};");
+                        let ok_name = if *has_ok_type {
+                            if let Some(ty) = ret_iter.next() {
+                                let val = self.locals.tmp("ok");
+                                if args.len() > 0 {
+                                    uwrite!(args, ", ");
+                                }
+                                uwrite!(args, "&{val}");
+                                let ty = self.gen.type_string(ty);
+                                uwriteln!(self.src, "{} {};", ty, val);
+                                Some(val)
                             } else {
-                                let name = ok_names.pop().unwrap();
-                                format!("{}.val.ok = {};", result_ret, name)
-                            },
-                        );
-                        results.push(result_ret);
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                        let err_name = if let Some(ty) = ret_iter.next() {
+                            let val = self.locals.tmp("err");
+                            if args.len() > 0 {
+                                uwrite!(args, ", ")
+                            }
+                            uwrite!(args, "&{val}");
+                            let ty = self.gen.type_string(ty);
+                            uwriteln!(self.src, "{} {};", ty, val);
+                            Some(val)
+                        } else {
+                            None
+                        };
+                        assert!(ret_iter.next().is_none());
+                        uwrite!(self.src, "");
+                        uwriteln!(self.src, "{ret}.is_err = !{}({args});", self.sig.name);
+
+                        if let Some(err_name) = err_name {
+                            uwriteln!(
+                                self.src,
+                                "if ({ret}.is_err) {{
+                                    {ret}.val.err = {err_name};
+                                }}",
+                            );
+                        }
+                        if let Some(ok_name) = ok_name {
+                            uwriteln!(
+                                self.src,
+                                "if (!{ret}.is_err) {{
+                                    {ret}.val.ok = {ok_name};
+                                }}"
+                            );
+                        } else {
+                            uwrite!(self.src, "\n");
+                        }
+                        results.push(ret);
                     }
                 }
             }
-            Instruction::Return { .. } if self.gen.in_import => match self.sig.ret.scalar {
-                None => self.store_in_retptrs(operands),
-                Some(Scalar::Void) => {
-                    assert!(operands.is_empty());
-                }
-                Some(Scalar::Type(_)) => {
-                    assert_eq!(operands.len(), 1);
-                    self.src.push_str("return ");
-                    self.src.push_str(&operands[0]);
-                    self.src.push_str(";\n");
-                }
-                Some(Scalar::OptionBool(_)) => {
-                    assert_eq!(operands.len(), 1);
-                    let variant = &operands[0];
-                    self.store_in_retptrs(&[format!("{}.val", variant)]);
-                    self.src.push_str("return ");
-                    self.src.push_str(&variant);
-                    self.src.push_str(".is_some;\n");
-                }
-                Some(Scalar::ResultEnum { .. }) => {
-                    assert_eq!(operands.len(), 1);
-                    let variant = &operands[0];
-                    if self.sig.retptrs.len() > 0 {
-                        self.store_in_retptrs(&[format!("{}.val.ok", variant)]);
+            Instruction::Return { .. } if self.gen.in_import => {
+                match self.sig.ret.scalar {
+                    None => {
+                        for op in operands.iter() {
+                            self.store_in_retptr(op);
+                        }
                     }
-                    uwriteln!(self.src, "return {}.is_err ? {0}.val.err : -1;", variant);
+                    Some(Scalar::Void) => {
+                        assert!(operands.is_empty());
+                    }
+                    Some(Scalar::Type(_)) => {
+                        assert_eq!(operands.len(), 1);
+                        self.src.push_str("return ");
+                        self.src.push_str(&operands[0]);
+                        self.src.push_str(";\n");
+                    }
+                    Some(Scalar::OptionBool(_)) => {
+                        assert_eq!(operands.len(), 1);
+                        let variant = &operands[0];
+                        self.store_in_retptr(&format!("{}.val", variant));
+                        self.src.push_str("return ");
+                        self.src.push_str(&variant);
+                        self.src.push_str(".is_some;\n");
+                    }
+                    Some(Scalar::ResultBool(has_ok_type)) => {
+                        assert_eq!(operands.len(), 1);
+                        let variant = &operands[0];
+                        assert!(self.sig.retptrs.len() <= 2);
+                        uwriteln!(self.src, "if (!{}.is_err) {{", variant);
+                        if self.sig.retptrs.len() == 2 {
+                            self.store_in_retptr(&format!("{}.val.ok", variant));
+                        } else if self.sig.retptrs.len() == 1 && has_ok_type {
+                            self.store_in_retptr(&format!("{}.val.ok", variant));
+                        }
+                        uwriteln!(
+                            self.src,
+                            "   return 1;
+                            }} else {{"
+                        );
+                        if self.sig.retptrs.len() == 2 {
+                            self.store_in_retptr(&format!("{}.val.err", variant));
+                        } else if self.sig.retptrs.len() == 1 && !has_ok_type {
+                            self.store_in_retptr(&format!("{}.val.err", variant));
+                        }
+                        uwriteln!(
+                            self.src,
+                            "   return 0;
+                            }}"
+                        );
+                    }
                 }
-            },
+                self.check_all_retptrs_written();
+            }
             Instruction::Return { amt, .. } => {
                 assert!(*amt <= 1);
                 if *amt == 1 {
@@ -2325,6 +2420,7 @@ enum SourceType {
     HDefs,
     HFns,
     HHelpers,
+    // CDefs,
     // CFns,
     // CHelpers,
     // CAdapters,
@@ -2335,6 +2431,7 @@ struct Source {
     h_defs: wit_bindgen_core::Source,
     h_fns: wit_bindgen_core::Source,
     h_helpers: wit_bindgen_core::Source,
+    c_defs: wit_bindgen_core::Source,
     c_fns: wit_bindgen_core::Source,
     c_helpers: wit_bindgen_core::Source,
     c_adapters: wit_bindgen_core::Source,
@@ -2346,6 +2443,7 @@ impl Source {
             SourceType::HDefs => self.h_defs(s),
             SourceType::HFns => self.h_fns(s),
             SourceType::HHelpers => self.h_helpers(s),
+            // SourceType::CDefs => self.c_defs(s),
             // SourceType::CFns => self.c_fns(s),
             // SourceType::CHelpers => self.c_helpers(s),
             // SourceType::CAdapters => self.c_adapters(s),
@@ -2355,6 +2453,7 @@ impl Source {
         self.h_defs.push_str(&append_src.h_defs);
         self.h_fns.push_str(&append_src.h_fns);
         self.h_helpers.push_str(&append_src.h_helpers);
+        self.c_defs.push_str(&append_src.c_defs);
         self.c_fns.push_str(&append_src.c_fns);
         self.c_helpers.push_str(&append_src.c_helpers);
         self.c_adapters.push_str(&append_src.c_adapters);
@@ -2367,6 +2466,9 @@ impl Source {
     }
     fn h_helpers(&mut self, s: &str) {
         self.h_helpers.push_str(s);
+    }
+    fn c_defs(&mut self, s: &str) {
+        self.c_defs.push_str(s);
     }
     fn c_fns(&mut self, s: &str) {
         self.c_fns.push_str(s);
@@ -2394,15 +2496,6 @@ fn int_repr(ty: Int) -> &'static str {
         Int::U16 => "uint16_t",
         Int::U32 => "uint32_t",
         Int::U64 => "uint64_t",
-    }
-}
-
-fn int_max_str(ty: Int) -> String {
-    match ty {
-        Int::U8 => u8::MAX.to_string(),
-        Int::U16 => u16::MAX.to_string(),
-        Int::U32 => u32::MAX.to_string(),
-        Int::U64 => u64::MAX.to_string(),
     }
 }
 

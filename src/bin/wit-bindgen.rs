@@ -39,15 +39,6 @@ enum Category {
 
 #[derive(Debug, Parser)]
 enum HostGenerator {
-    /// Generates bindings for Rust hosts using the Wasmtime engine.
-    WasmtimeRust {
-        #[clap(flatten)]
-        opts: wit_bindgen_gen_host_wasmtime_rust::Opts,
-        #[clap(flatten)]
-        common: Common,
-        #[clap(flatten)]
-        world: WorldOpt,
-    },
     /// Generates bindings for JavaScript hosts.
     Js {
         #[clap(flatten)]
@@ -148,7 +139,6 @@ impl Opt {
             | Category::Guest(GuestGenerator::C { common, .. })
             | Category::Guest(GuestGenerator::TeavmJava { common, .. })
             | Category::Guest(GuestGenerator::Go { common, .. })
-            | Category::Host(HostGenerator::WasmtimeRust { common, .. })
             | Category::Markdown { common, .. } => common,
             Category::Host(HostGenerator::Js { component, .. }) => &component.common,
         }
@@ -161,9 +151,6 @@ fn main() -> Result<()> {
 
     let mut files = Files::default();
     match opt.category {
-        Category::Host(HostGenerator::WasmtimeRust { opts, world, .. }) => {
-            gen_world(opts.build(), world, &mut files)?;
-        }
         Category::Host(HostGenerator::Js { opts, component }) => {
             gen_component(opts.build()?, component, &mut files)?;
         }

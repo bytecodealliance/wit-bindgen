@@ -3,40 +3,34 @@
 
 void variants_test_imports() {
   {
-    imports_option_float32_t a;
+    float a = 1;
     uint8_t r;
-    a.is_some = true;
-    a.val = 1;
     assert(imports_roundtrip_option(&a, &r) && r == 1);
     assert(r == 1);
-    a.is_some = false;
-    assert(!imports_roundtrip_option(&a, &r));
-    a.is_some = true;
-    a.val = 2;
+    assert(!imports_roundtrip_option(NULL, &r));
+    a = 2;
     assert(imports_roundtrip_option(&a, &r) && r == 2);
   }
 
 
   {
     imports_result_u32_float32_t a;
-    imports_result_float64_u8_t b;
+    double b_ok;
+    uint8_t b_err;
 
     a.is_err = false;
     a.val.ok = 2;
-    imports_roundtrip_result(&a, &b);
-    assert(!b.is_err);
-    assert(b.val.ok == 2.0);
+    assert(imports_roundtrip_result(&a, &b_ok, &b_err));
+    assert(b_ok == 2.0);
 
     a.val.ok = 4;
-    imports_roundtrip_result(&a, &b);
-    assert(!b.is_err);
-    assert(b.val.ok == 4);
+    assert(imports_roundtrip_result(&a, &b_ok, &b_err));
+    assert(b_ok == 4);
 
     a.is_err = true;
     a.val.err = 5.3;
-    imports_roundtrip_result(&a, &b);
-    assert(b.is_err);
-    assert(b.val.err == 5);
+    assert(!imports_roundtrip_result(&a, &b_ok, &b_err));
+    assert(b_err == 5);
   }
 
   assert(imports_roundtrip_enum(IMPORTS_E1_A) == IMPORTS_E1_A);
@@ -122,12 +116,10 @@ void variants_test_imports() {
   }
 
   {
-    imports_option_typedef_t a;
-    a.is_some = false;
     bool b = false;
     imports_result_typedef_t c;
     c.is_err = true;
-    imports_variant_typedefs(&a, b, &c);
+    imports_variant_typedefs(NULL, b, &c);
   }
 
   {
@@ -141,19 +133,20 @@ void variants_test_imports() {
   }
 }
 
-bool variants_roundtrip_option(variants_option_float32_t *a, uint8_t *ret0) {
-  if (a->is_some) {
-    *ret0 = a->val;
+bool variants_roundtrip_option(float *a, uint8_t *ret0) {
+  if (a) {
+    *ret0 = *a;
   }
-  return a->is_some;
+  return a != NULL;
 }
 
-void variants_roundtrip_result(variants_result_u32_float32_t *a, variants_result_float64_u8_t *ret0) {
-  ret0->is_err = a->is_err;
+bool variants_roundtrip_result(variants_result_u32_float32_t *a, double *ok, uint8_t *err) {
   if (a->is_err) {
-    ret0->val.err = a->val.err;
+    *err = a->val.err;
+    return false;
   } else {
-    ret0->val.ok = a->val.ok;
+    *ok = a->val.ok;
+    return true;
   }
 }
 
@@ -173,6 +166,6 @@ void variants_variant_zeros(variants_zeros_t *a, variants_zeros_t *b) {
   *b = *a;
 }
 
-void variants_variant_typedefs(variants_option_typedef_t *a, variants_bool_typedef_t b, variants_result_typedef_t *c) {
+void variants_variant_typedefs(uint32_t *a, variants_bool_typedef_t b, variants_result_typedef_t *c) {
 }
 
