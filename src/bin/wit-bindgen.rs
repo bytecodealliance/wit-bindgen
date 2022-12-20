@@ -77,6 +77,15 @@ enum GuestGenerator {
         #[clap(flatten)]
         world: WorldOpt,
     },
+    /// Generates bindings for TeaVM-based Java guest modules.
+    TinyGo {
+        #[clap(flatten)]
+        opts: wit_bindgen_gen_guest_go::Opts,
+        #[clap(flatten)]
+        common: Common,
+        #[clap(flatten)]
+        world: WorldOpt,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -129,6 +138,7 @@ impl Opt {
             Category::Guest(GuestGenerator::Rust { common, .. })
             | Category::Guest(GuestGenerator::C { common, .. })
             | Category::Guest(GuestGenerator::TeavmJava { common, .. })
+            | Category::Guest(GuestGenerator::TinyGo { common, .. })
             | Category::Markdown { common, .. } => common,
             Category::Host(HostGenerator::Js { component, .. }) => &component.common,
         }
@@ -151,6 +161,9 @@ fn main() -> Result<()> {
             gen_world(opts.build(), world, &mut files)?;
         }
         Category::Guest(GuestGenerator::TeavmJava { opts, world, .. }) => {
+            gen_world(opts.build(), world, &mut files)?;
+        }
+        Category::Guest(GuestGenerator::TinyGo { opts, world, .. }) => {
             gen_world(opts.build(), world, &mut files)?;
         }
         Category::Markdown { opts, world, .. } => {

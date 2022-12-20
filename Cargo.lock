@@ -946,6 +946,7 @@ dependencies = [
  "wat",
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
+ "wit-bindgen-gen-guest-go",
  "wit-bindgen-gen-guest-rust",
  "wit-bindgen-gen-guest-teavm-java",
  "wit-bindgen-gen-host-js",
@@ -989,6 +990,16 @@ dependencies = [
  "heck",
  "test-helpers",
  "wasm-encoder",
+ "wit-bindgen-core",
+ "wit-component",
+]
+
+[[package]]
+name = "wit-bindgen-gen-guest-go"
+version = "0.3.0"
+dependencies = [
+ "clap",
+ "heck",
  "wit-bindgen-core",
  "wit-component",
 ]
