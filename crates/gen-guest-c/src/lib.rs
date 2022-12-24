@@ -1552,12 +1552,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.src,
                 "\
                     __attribute__((aligned({})))
-                    uint8_t ret_area[{}];
+                    uint8_t ret_area_{ptr}[{}];
                 ",
                 align,
                 size,
             );
-            uwriteln!(self.src, "int32_t {} = (int32_t) &ret_area;", ptr);
+            uwriteln!(self.src, "int32_t {} = (int32_t) &ret_area_{ptr};", ptr);
         } else {
             self.gen.gen.return_pointer_area_size = self.gen.gen.return_pointer_area_size.max(size);
             self.gen.gen.return_pointer_area_align =

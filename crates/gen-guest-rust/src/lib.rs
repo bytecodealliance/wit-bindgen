@@ -772,8 +772,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.src,
                 "
                     #[repr(align({align}))]
-                    struct RetArea([u8; {size}]);
-                    let mut ret_area = core::mem::MaybeUninit::<RetArea>::uninit();
+                    struct RetArea{tmp}([u8; {size}]);
+                    let mut ret_area = core::mem::MaybeUninit::<RetArea{tmp}>::uninit();
                     let ptr{tmp} = ret_area.as_mut_ptr() as i32;
                 ",
             );
