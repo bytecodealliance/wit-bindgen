@@ -1,5 +1,5 @@
 use heck::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::mem;
@@ -21,6 +21,7 @@ struct RustWasm {
     opts: Opts,
     exports: Vec<Source>,
     skip: HashSet<String>,
+    interface_names: HashMap<InterfaceId, String>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -122,6 +123,8 @@ impl WorldGenerator for RustWasm {
         id: InterfaceId,
         _files: &mut Files,
     ) {
+        let prev = self.interface_names.insert(id, name.to_snake_case());
+        assert!(prev.is_none());
         let mut gen = self.interface(Some(name), resolve, TypeMode::AllBorrowed("'a"), true);
         gen.current_interface = Some(id);
         gen.types(id);
@@ -157,6 +160,7 @@ impl WorldGenerator for RustWasm {
         id: InterfaceId,
         _files: &mut Files,
     ) {
+        self.interface_names.insert(id, name.to_snake_case());
         let mut gen = self.interface(None, resolve, TypeMode::Owned, false);
         gen.current_interface = Some(id);
         gen.types(id);
@@ -554,11 +558,11 @@ impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
         match self.current_interface {
             Some(id) if id == interface => None,
             _ => {
-                let name = self.resolve.interfaces[interface].name.clone().unwrap();
+                let name = &self.gen.interface_names[&interface];
                 Some(if self.current_interface.is_some() {
                     format!("super::{name}")
                 } else {
-                    name
+                    name.clone()
                 })
             }
         }
