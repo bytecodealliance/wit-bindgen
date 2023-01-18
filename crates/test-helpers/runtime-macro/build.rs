@@ -1,17 +1,18 @@
-use heck::{ToSnakeCase, ToUpperCamelCase};
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use wit_bindgen_core::wit_parser::World;
-use wit_component::{ComponentEncoder, StringEncoding};
+use wit_bindgen_core::wit_parser::{PackageId, Resolve};
+use wit_component::ComponentEncoder;
 
+#[cfg(feature = "guest-c")]
 fn guest_c(
     wasms: &mut Vec<(String, String, String, String)>,
     out_dir: &PathBuf,
     wasi_adapter: &[u8],
     utf_16: bool,
 ) {
+    use heck::{ToSnakeCase, ToUpperCamelCase};
+
     let utf16_suffix = if utf_16 { "_utf16" } else { "" };
     for test_dir in fs::read_dir("../../../tests/runtime").unwrap() {
         let test_dir = test_dir.unwrap().path();
@@ -25,7 +26,7 @@ fn guest_c(
         let mut files = Default::default();
         let mut opts = wit_bindgen_gen_guest_c::Opts::default();
         if utf_16 {
-            opts.string_encoding = StringEncoding::UTF16;
+            opts.string_encoding = wit_component::StringEncoding::UTF16;
         }
         opts.build().generate(&world, &mut files);
 
@@ -42,7 +43,7 @@ fn guest_c(
         }
 
         let path =
-            PathBuf::from(env::var_os("WASI_SDK_PATH").expect(
+            PathBuf::from(std::env::var_os("WASI_SDK_PATH").expect(
                 "point the `WASI_SDK_PATH` environment variable to the path of your wasi-sdk",
             ));
         let mut cmd = Command::new(path.join("bin/clang"));
@@ -182,12 +183,14 @@ fn main() {
         println!("cargo:rerun-if-changed=../../test-rust-wasm/Cargo.toml");
     }
 
-    if cfg!(feature = "guest-c") {
+    #[cfg(feature = "guest-c")]
+    {
         guest_c(&mut wasms, &out_dir, &wasi_adapter, false);
         guest_c(&mut wasms, &out_dir, &wasi_adapter, true);
     }
 
-    if cfg!(feature = "guest-teavm-java") {
+    #[cfg(feature = "guest-teavm-java")]
+    {
         for test_dir in fs::read_dir("../../../tests/runtime").unwrap() {
             let test_dir = test_dir.unwrap().path();
             let java_impl = test_dir.join("wasm.java");
@@ -284,13 +287,16 @@ fn main() {
     std::fs::write(out_dir.join("wasms.rs"), src).unwrap();
 }
 
-fn read_world(dir: &Path) -> World {
-    let world = dir.join("world.wit");
-    println!("cargo:rerun-if-changed={}", world.display());
-
-    World::parse_file(&world).unwrap()
+fn read_world(dir: &Path) -> (Resolve, PackageId) {
+    let mut resolve = Resolve::new();
+    let (pkg, files) = resolve.push_dir(dir).unwrap();
+    for file in files {
+        println!("cargo:rerun-if-changed={}", file.display());
+    }
+    (resolve, pkg)
 }
 
+#[cfg(feature = "guest-teavm-java")]
 fn mvn() -> Command {
     if cfg!(windows) {
         let mut cmd = Command::new("cmd");
@@ -301,6 +307,7 @@ fn mvn() -> Command {
     }
 }
 
+#[cfg(feature = "guest-teavm-java")]
 fn pom_xml(classes_to_preserve: &[&str]) -> Vec<u8> {
     let xml = include_str!("../../gen-guest-teavm-java/tests/pom.xml");
     let position = xml.find("<mainClass>").unwrap();

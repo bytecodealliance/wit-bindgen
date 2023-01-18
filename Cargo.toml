@@ -25,14 +25,13 @@ clap = { version = "4.0.9", features = ["derive"] }
 env_logger = "0.9.1"
 indexmap = "1.9.1"
 
-wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime', features = ["component-model"] }
 wasmtime-environ = { git = 'https://github.com/bytecodealliance/wasmtime' }
-wasmprinter = "0.2.44"
-wasmparser = "0.95.0"
-wasm-encoder = "0.20.0"
-wat = "1.0.52"
-wit-parser = "0.3.1"
-wit-component = "0.3.2"
+wasmprinter = "0.2.46"
+wasmparser = "0.97.0"
+wasm-encoder = "0.21.0"
+wat = "1.0.53"
+wit-parser = "0.4.0"
+wit-component = "0.4.0"
 
 wit-bindgen-core = { path = 'crates/bindgen-core', version = '0.3.0' }
 wit-bindgen-gen-guest-c = { path = 'crates/gen-guest-c', version = '0.3.0' }

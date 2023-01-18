@@ -8,13 +8,14 @@
 //! `generate` function.
 
 use crate::{Files, WorldGenerator};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use wasmtime_environ::component::{
     Component, ComponentTypesBuilder, StaticModuleIndex, Translator,
 };
 use wasmtime_environ::wasmparser::{Validator, WasmFeatures};
 use wasmtime_environ::{ModuleTranslation, PrimaryMap, ScopeVec, Tunables};
-use wit_parser::World;
+use wit_component::DecodedWasm;
+use wit_parser::{Resolve, World, WorldId};
 
 /// Generate bindings to load and instantiate the specific binary component
 /// provided.
@@ -31,8 +32,12 @@ pub fn generate(
     // will likely change as worlds are iterated on in the component model
     // standard. Regardless though this is the step where types are learned
     // and `Interface`s are constructed for further code generation below.
-    let world = wit_component::decode_world(name, binary)
+    let decoded = wit_component::decode(name, binary)
         .context("failed to extract interface information from component")?;
+    let (resolve, world) = match decoded {
+        DecodedWasm::WitPackage(..) => bail!("unexpected wit package as input"),
+        DecodedWasm::Component(resolve, world) => (resolve, world),
+    };
 
     // Components are complicated, there's no real way around that. To
     // handle all the work of parsing a component and figuring out how to
@@ -68,12 +73,12 @@ pub fn generate(
     // With all that prep work delegate to `WorldGenerator::generate` here
     // to generate all the type-level descriptions for this component now
     // that the interfaces in/out are understood.
-    gen.generate(&world, files);
+    gen.generate(&resolve, world, files);
 
     // And finally generate the code necessary to instantiate the given
     // component to this method using the `Component` that
     // `wasmtime-environ` parsed.
-    gen.instantiate(&component, &modules, &world);
+    gen.instantiate(&component, &modules, &resolve, world);
 
     gen.finish_component(name, files);
 
@@ -94,7 +99,8 @@ pub trait ComponentGenerator: WorldGenerator {
         &mut self,
         component: &Component,
         modules: &PrimaryMap<StaticModuleIndex, ModuleTranslation<'_>>,
-        world: &World,
+        resolve: &Resolve,
+        world: WorldId,
     );
 
     fn core_file_name(&mut self, name: &str, idx: u32) -> String {
