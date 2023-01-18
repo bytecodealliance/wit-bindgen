@@ -96,6 +96,7 @@ impl RustWasm {
         sizes.fill(resolve);
 
         InterfaceGenerator {
+            current_interface: None,
             wasm_import_module,
             src: Source::default(),
             in_import,
@@ -122,6 +123,7 @@ impl WorldGenerator for RustWasm {
         _files: &mut Files,
     ) {
         let mut gen = self.interface(Some(name), resolve, TypeMode::AllBorrowed("'a"), true);
+        gen.current_interface = Some(id);
         gen.types(id);
 
         for (_, func) in resolve.interfaces[id].functions.iter() {
@@ -156,6 +158,7 @@ impl WorldGenerator for RustWasm {
         _files: &mut Files,
     ) {
         let mut gen = self.interface(None, resolve, TypeMode::Owned, false);
+        gen.current_interface = Some(id);
         gen.types(id);
         gen.generate_exports(name, Some(name), resolve.interfaces[id].functions.values());
         gen.finish_append_submodule(name);
@@ -279,6 +282,7 @@ impl WorldGenerator for RustWasm {
 
 struct InterfaceGenerator<'a> {
     src: Source,
+    current_interface: Option<InterfaceId>,
     in_import: bool,
     sizes: SizeAlign,
     gen: &'a mut RustWasm,
@@ -544,6 +548,20 @@ impl InterfaceGenerator<'_> {
 impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
     fn resolve(&self) -> &'a Resolve {
         self.resolve
+    }
+
+    fn path_to_interface(&self, interface: InterfaceId) -> Option<String> {
+        match self.current_interface {
+            Some(id) if id == interface => None,
+            _ => {
+                let name = self.resolve.interfaces[interface].name.clone().unwrap();
+                Some(if self.current_interface.is_some() {
+                    format!("super::{name}")
+                } else {
+                    name
+                })
+            }
+        }
     }
 
     fn use_std(&self) -> bool {

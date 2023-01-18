@@ -14,6 +14,7 @@ pub enum TypeMode {
 
 pub trait RustGenerator<'a> {
     fn resolve(&self) -> &'a Resolve;
+    fn path_to_interface(&self, interface: InterfaceId) -> Option<String>;
 
     /// Return true iff the generator can use `std` features in its output.
     fn use_std(&self) -> bool {
@@ -206,6 +207,12 @@ pub trait RustGenerator<'a> {
             } else {
                 self.result_name(id)
             };
+            if let TypeOwner::Interface(id) = ty.owner {
+                if let Some(path) = self.path_to_interface(id) {
+                    self.push_str(&path);
+                    self.push_str("::");
+                }
+            }
             self.push_str(&name);
 
             // If the type recursively owns data and it's a
