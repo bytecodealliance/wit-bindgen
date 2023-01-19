@@ -1,8 +1,0 @@
-interface testwasi {
-  log: func(bytes: list<u8>)
-  log-err: func(bytes: list<u8>)
-}
-
-world testwasi {
-  import testwasi: testwasi
-}
