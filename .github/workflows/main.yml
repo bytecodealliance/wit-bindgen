@@ -22,7 +22,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        mode: [debug, release]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v2
@@ -56,12 +55,8 @@ jobs:
       with:
         java-version: '18'
         distribution: 'adopt'
-    - if: matrix.mode == 'release'
-      name: Test release build
-      run: cargo test --workspace --release
-    - if: matrix.mode != 'release'
-      name: Test debug build
-      run: cargo test --workspace
+    - run: cargo test --workspace
+    - run: cargo test --p wit-bindgen-gen-host-js --test runtime --features runtime-tests
 
   rustfmt:
     name: Rustfmt

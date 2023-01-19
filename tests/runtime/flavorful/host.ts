@@ -51,26 +51,26 @@ export async function run () {
   const wasm = await import('./flavorful.js');
 
   wasm.testImports();
-  wasm.fListInRecord1({ a: "list_in_record1" });
-  assert.deepStrictEqual(wasm.fListInRecord2(), { a: "list_in_record2" });
+  wasm.exports.fListInRecord1({ a: "list_in_record1" });
+  assert.deepStrictEqual(wasm.exports.fListInRecord2(), { a: "list_in_record2" });
 
   assert.deepStrictEqual(
-    wasm.fListInRecord3({ a: "list_in_record3 input" }),
+    wasm.exports.fListInRecord3({ a: "list_in_record3 input" }),
     { a: "list_in_record3 output" },
   );
 
   assert.deepStrictEqual(
-    wasm.fListInRecord4({ a: "input4" }),
+    wasm.exports.fListInRecord4({ a: "input4" }),
     { a: "result4" },
   );
 
-  wasm.fListInVariant1("foo", { tag: 'err', val: 'bar' }, { tag: 0, val: 'baz' });
+  wasm.exports.fListInVariant1("foo", { tag: 'err', val: 'bar' }, { tag: 0, val: 'baz' });
 
-  assert.deepStrictEqual(wasm.fListInVariant2(), "list_in_variant2");
-  assert.deepStrictEqual(wasm.fListInVariant3("input3"), "output3");
+  assert.deepStrictEqual(wasm.exports.fListInVariant2(), "list_in_variant2");
+  assert.deepStrictEqual(wasm.exports.fListInVariant3("input3"), "output3");
 
   try {
-    wasm.errnoResult();
+    wasm.exports.errnoResult();
     assert.ok(false);
   }
   catch (e: any) {
@@ -79,7 +79,7 @@ export async function run () {
     assert.strictEqual(e.payload, 'b');
   }
 
-  const [r1, r2] = wasm.listTypedefs("typedef1", ["typedef2"]);
+  const [r1, r2] = wasm.exports.listTypedefs("typedef1", ["typedef2"]);
   assert.deepStrictEqual(r1, (new TextEncoder()).encode('typedef3'));
   assert.deepStrictEqual(r2, ['typedef4']);
 }

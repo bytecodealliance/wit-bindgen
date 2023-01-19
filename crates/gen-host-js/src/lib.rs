@@ -446,7 +446,10 @@ impl WorldGenerator for Js {
             AbiVariant::GuestExport,
         );
         let camel = name.to_upper_camel_case();
-        uwriteln!(self.src.ts, "export const {name}: typeof {camel}Exports;");
+        uwriteln!(
+            self.export_object,
+            "export const {name}: typeof {camel}Exports;"
+        );
     }
 
     fn export_funcs(
@@ -460,26 +463,9 @@ impl WorldGenerator for Js {
         for (_, func) in funcs {
             gen.ts_func(func, AbiVariant::GuestExport);
         }
-        gen.gen.import_object.push_str(&gen.src.ts);
+        gen.gen.export_object.push_str(&gen.src.ts);
         assert!(gen.src.js.is_empty());
     }
-
-    // fn export_default(&mut self, _name: &str, iface: &Interface, _files: &mut Files) {
-    //     let instantiation = self.opts.instantiation;
-    //     let mut gen = self.js_interface(iface);
-    //     for func in iface.functions.iter() {
-    //         gen.ts_func(func, AbiVariant::GuestExport);
-    //     }
-    //     if instantiation {
-    //         gen.gen.export_object.push_str(&mem::take(&mut gen.src.ts));
-    //     }
-
-    //     // After the default interface has its function definitions
-    //     // inlined the rest of the types are generated here as well.
-    //     gen.types();
-    //     gen.post_types();
-    //     gen.gen.src.ts(&mem::take(&mut gen.src.ts));
-    // }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, _files: &mut Files) {
         let world = &resolve.worlds[id];
@@ -503,6 +489,8 @@ impl WorldGenerator for Js {
             uwriteln!(self.src.ts, "export namespace {camel} {{",);
             self.src.ts(&self.export_object);
             uwriteln!(self.src.ts, "}}");
+        } else {
+            self.src.ts(&self.export_object);
         }
     }
 }
@@ -536,15 +524,7 @@ impl Js {
 
         uwriteln!(
             self.src.ts,
-            "{} {{ {camel} as {camel}{extra} }} from './{dir}/{name}';",
-            // In instance mode, we have no way to assert the imported types
-            // in the ambient declaration file. Instead we just export the
-            // import namespace types for users to use.
-            if self.opts.instantiation {
-                "import"
-            } else {
-                "export"
-            }
+            "import {{ {camel} as {camel}{extra} }} from './{dir}/{name}';",
         );
     }
 
@@ -1249,17 +1229,6 @@ impl Instantiator<'_> {
         }
 
         for (name, export) in exports {
-            // let js_name = if self.gen.opts.instantiation {
-            //     name.clone()
-            // } else {
-            //     // When generating direct ES-module exports namespace functions
-            //     // by their exported interface name, if applicable.
-            //     match iface {
-            //         Some((Some(iface_name), _)) => format!("{iface_name}-{name}"),
-            //         _ => name.clone(),
-            //     }
-            // };
-            // let camel = js_name.to_lower_camel_case();
             let item = &self.resolve.worlds[self.world].exports[name];
             let camel = name.to_lower_camel_case();
             match export {
@@ -1285,7 +1254,9 @@ impl Instantiator<'_> {
                         WorldItem::Function(_) => unreachable!(),
                     };
                     if self.gen.opts.instantiation {
-                        uwrite!(self.src.js, "{camel}: ");
+                        uwriteln!(self.src.js, "{camel}: {{");
+                    } else {
+                        uwriteln!(self.src.js, "export const {camel} = {{");
                     }
                     for (func_name, export) in exports {
                         let (func, options) = match export {
@@ -1301,8 +1272,11 @@ impl Instantiator<'_> {
                             &self.resolve.interfaces[id].functions[func_name],
                         );
                     }
+                    self.src.js("\n}");
                     if self.gen.opts.instantiation {
                         self.src.js(",\n");
+                    } else {
+                        self.src.js(";\n");
                     }
                 }
 
@@ -1326,15 +1300,11 @@ impl Instantiator<'_> {
         options: &CanonicalOptions,
         func: &Function,
     ) {
-        if self.gen.opts.instantiation {
-            uwrite!(self.src.js, "{}", name.to_lower_camel_case());
+        let name = name.to_lower_camel_case();
+        if self.gen.opts.instantiation || instance_name.is_some() {
+            self.src.js.push_str(&name);
         } else {
-            // Namespace with the instance name when using ESM
-            let camel = match instance_name {
-                Some(instance) => format!("{instance}-{name}").to_lower_camel_case(),
-                None => name.to_lower_camel_case(),
-            };
-            uwrite!(self.src.js, "\nexport function {camel}");
+            uwrite!(self.src.js, "\nexport function {name}");
         }
         let callee = self.core_def(def);
         self.bindgen(
@@ -1344,7 +1314,7 @@ impl Instantiator<'_> {
             func,
             AbiVariant::GuestExport,
         );
-        if self.gen.opts.instantiation {
+        if self.gen.opts.instantiation || instance_name.is_some() {
             self.src.js(",\n");
         } else {
             self.src.js("\n");

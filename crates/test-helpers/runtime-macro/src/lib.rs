@@ -1,4 +1,4 @@
-use proc_macro::{TokenStream, TokenTree};
+use proc_macro::TokenStream;
 use std::env;
 
 include!(concat!(env!("OUT_DIR"), "/wasms.rs"));
