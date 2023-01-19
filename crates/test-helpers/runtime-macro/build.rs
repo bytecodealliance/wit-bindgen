@@ -11,8 +11,6 @@ fn guest_c(
     wasi_adapter: &[u8],
     utf_16: bool,
 ) {
-    use heck::{ToSnakeCase, ToUpperCamelCase};
-
     let utf16_suffix = if utf_16 { "_utf16" } else { "" };
     for test_dir in fs::read_dir("../../../tests/runtime").unwrap() {
         let test_dir = test_dir.unwrap().path();
@@ -21,14 +19,20 @@ fn guest_c(
             continue;
         }
         println!("cargo:rerun-if-changed={}", c_impl.display());
-        let world = read_world(&test_dir);
-        let snake = world.name.replace("-", "_");
+        let (resolve, pkg) = read_world(&test_dir);
+        let world = resolve.packages[pkg]
+            .documents
+            .iter()
+            .filter_map(|(_, doc)| resolve.documents[*doc].default_world)
+            .next()
+            .expect("no default world found");
+        let snake = resolve.worlds[world].name.replace("-", "_");
         let mut files = Default::default();
         let mut opts = wit_bindgen_gen_guest_c::Opts::default();
         if utf_16 {
             opts.string_encoding = wit_component::StringEncoding::UTF16;
         }
-        opts.build().generate(&world, &mut files);
+        opts.build().generate(&resolve, world, &mut files);
 
         let out_dir = out_dir.join(format!(
             "c{}-{}",
@@ -95,7 +99,7 @@ fn guest_c(
 
         wasms.push((
             format!("c{}", utf16_suffix),
-            world.name.to_string(),
+            resolve.worlds[world].name.to_string(),
             out_wasm.to_str().unwrap().to_string(),
             component_path.to_str().unwrap().to_string(),
         ));

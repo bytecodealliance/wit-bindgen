@@ -135,47 +135,47 @@ void flavorful_test_imports() {
   }
 }
 
-void flavorful_f_list_in_record1(flavorful_list_in_record1_t *a) {
+void exports_f_list_in_record1(exports_list_in_record1_t *a) {
   assert(memcmp(a->a.ptr, "list_in_record1", a->a.len) == 0);
-  flavorful_list_in_record1_free(a);
+  exports_list_in_record1_free(a);
 }
 
-void flavorful_f_list_in_record2(flavorful_list_in_record2_t *ret0) {
+void exports_f_list_in_record2(exports_list_in_record2_t *ret0) {
   flavorful_string_dup(&ret0->a, "list_in_record2");
 }
 
-void flavorful_f_list_in_record3(flavorful_list_in_record3_t *a, flavorful_list_in_record3_t *ret0) {
+void exports_f_list_in_record3(exports_list_in_record3_t *a, exports_list_in_record3_t *ret0) {
   assert(memcmp(a->a.ptr, "list_in_record3 input", a->a.len) == 0);
-  flavorful_list_in_record3_free(a);
+  exports_list_in_record3_free(a);
   flavorful_string_dup(&ret0->a, "list_in_record3 output");
 }
 
-void flavorful_f_list_in_record4(flavorful_list_in_alias_t *a, flavorful_list_in_alias_t *ret0) {
+void exports_f_list_in_record4(exports_list_in_alias_t *a, exports_list_in_alias_t *ret0) {
   assert(memcmp(a->a.ptr, "input4", a->a.len) == 0);
-  flavorful_list_in_alias_free(a);
+  exports_list_in_alias_free(a);
   flavorful_string_dup(&ret0->a, "result4");
 }
 
-void flavorful_f_list_in_variant1(flavorful_string_t *maybe_a, flavorful_list_in_variant1_v2_t *b, flavorful_list_in_variant1_v3_t *c) {
+void exports_f_list_in_variant1(flavorful_string_t *maybe_a, exports_list_in_variant1_v2_t *b, exports_list_in_variant1_v3_t *c) {
   assert(maybe_a != NULL);
   assert(memcmp(maybe_a->ptr, "foo", maybe_a->len) == 0);
   flavorful_string_free(maybe_a);
 
   assert(b->is_err);
   assert(memcmp(b->val.err.ptr, "bar", b->val.err.len) == 0);
-  flavorful_list_in_variant1_v2_free(b);
+  exports_list_in_variant1_v2_free(b);
 
   assert(c->tag == 0);
   assert(memcmp(c->val.f0.ptr, "baz", c->val.f0.len) == 0);
-  flavorful_list_in_variant1_v3_free(c);
+  exports_list_in_variant1_v3_free(c);
 }
 
-bool flavorful_f_list_in_variant2(flavorful_string_t *ret0) {
+bool exports_f_list_in_variant2(flavorful_string_t *ret0) {
   flavorful_string_dup(ret0, "list_in_variant2");
   return true;
 }
 
-bool flavorful_f_list_in_variant3(flavorful_string_t *maybe_a, flavorful_string_t *ret) {
+bool exports_f_list_in_variant3(flavorful_string_t *maybe_a, flavorful_string_t *ret) {
   assert(maybe_a != NULL);
   assert(memcmp(maybe_a->ptr, "input3", maybe_a->len) == 0);
   flavorful_string_free(maybe_a);
@@ -183,18 +183,18 @@ bool flavorful_f_list_in_variant3(flavorful_string_t *maybe_a, flavorful_string_
   return true;
 }
 
-bool flavorful_errno_result(flavorful_my_errno_t *err) {
-  *err = FLAVORFUL_MY_ERRNO_B;
+bool exports_errno_result(exports_my_errno_t *err) {
+  *err = EXPORTS_MY_ERRNO_B;
   return false;
 }
 
-void flavorful_list_typedefs(flavorful_list_typedef_t *a, flavorful_list_typedef3_t *c, flavorful_list_typedef2_t *ret0, flavorful_list_typedef3_t *ret1) {
+void exports_list_typedefs(exports_list_typedef_t *a, exports_list_typedef3_t *c, exports_list_typedef2_t *ret0, exports_list_typedef3_t *ret1) {
   assert(memcmp(a->ptr, "typedef1", a->len) == 0);
-  flavorful_list_typedef_free(a);
+  exports_list_typedef_free(a);
 
   assert(c->len == 1);
   assert(memcmp(c->ptr[0].ptr, "typedef2", c->ptr[0].len) == 0);
-  flavorful_list_typedef3_free(c);
+  exports_list_typedef3_free(c);
 
   ret0->ptr = malloc(8);
   ret0->len = 8;
@@ -203,4 +203,8 @@ void flavorful_list_typedefs(flavorful_list_typedef_t *a, flavorful_list_typedef
   ret1->ptr = malloc(sizeof(flavorful_string_t));
   ret1->len = 1;
   flavorful_string_dup(&ret1->ptr[0], "typedef4");
+}
+
+void exports_list_of_variants(exports_list_bool_t *a, exports_list_result_void_void_t *b, exports_list_my_errno_t *c, exports_list_bool_t *ret0, exports_list_result_void_void_t *ret1, exports_list_my_errno_t *ret2) {
+  assert(0); // unimplemented
 }
