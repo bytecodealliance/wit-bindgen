@@ -467,11 +467,16 @@ impl InterfaceGenerator<'_> {
 
         // Finish out the macro-generated export implementation.
         macro_src.push_str(" {\n");
-        uwrite!(
-            macro_src,
-            "{prefix}{module_name}::call_{name_snake}::<$t>(",
-            prefix = self.gen.opts.macro_call_prefix.as_deref().unwrap_or("")
+        let prefix = format!(
+            "{}{}",
+            self.gen.opts.macro_call_prefix.as_deref().unwrap_or(""),
+            match interface_name {
+                Some(_) => format!("{module_name}::"),
+                None => String::new(),
+            },
         );
+
+        uwrite!(macro_src, "{prefix}call_{name_snake}::<$t>(",);
         for param in params.iter() {
             uwrite!(macro_src, "{param},");
         }
