@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use wit_bindgen_core::wit_parser::{PackageId, Resolve};
+use wit_bindgen_core::wit_parser::{Resolve, WorldId};
 use wit_component::ComponentEncoder;
 
 #[cfg(feature = "guest-c")]
@@ -19,13 +19,7 @@ fn guest_c(
             continue;
         }
         println!("cargo:rerun-if-changed={}", c_impl.display());
-        let (resolve, pkg) = read_world(&test_dir);
-        let world = resolve.packages[pkg]
-            .documents
-            .iter()
-            .filter_map(|(_, doc)| resolve.documents[*doc].default_world)
-            .next()
-            .expect("no default world found");
+        let (resolve, world) = read_world(&test_dir);
         let snake = resolve.worlds[world].name.replace("-", "_");
         let mut files = Default::default();
         let mut opts = wit_bindgen_gen_guest_c::Opts::default();
@@ -195,6 +189,8 @@ fn main() {
 
     #[cfg(feature = "guest-teavm-java")]
     {
+        use heck::*;
+
         for test_dir in fs::read_dir("../../../tests/runtime").unwrap() {
             let test_dir = test_dir.unwrap().path();
             let java_impl = test_dir.join("wasm.java");
@@ -203,25 +199,26 @@ fn main() {
             }
             println!("cargo:rerun-if-changed={}", java_impl.display());
 
-            let world = read_world(&test_dir);
-            let out_dir = out_dir.join(format!("java-{}", world.name));
+            let (resolve, world) = read_world(&test_dir);
+            let world_name = &resolve.worlds[world].name;
+            let out_dir = out_dir.join(format!("java-{}", world_name));
             drop(fs::remove_dir_all(&out_dir));
             let java_dir = out_dir.join("src/main/java");
             let mut files = Default::default();
 
             wit_bindgen_gen_guest_teavm_java::Opts::default()
                 .build()
-                .generate(&world, &mut files);
+                .generate(&resolve, world, &mut files);
 
-            let package_dir = java_dir.join(&format!("wit_{}", world.name));
+            let package_dir = java_dir.join(&format!("wit_{}", world_name));
             fs::create_dir_all(&package_dir).unwrap();
             for (file, contents) in files.iter() {
                 let dst = package_dir.join(file);
                 fs::write(dst, contents).unwrap();
             }
 
-            let snake = world.name.to_snake_case();
-            let upper = world.name.to_upper_camel_case();
+            let snake = world_name.to_snake_case();
+            let upper = world_name.to_upper_camel_case();
             fs::copy(
                 &java_impl,
                 java_dir.join(&format!("wit_{snake}/{upper}Impl.java")),
@@ -291,13 +288,19 @@ fn main() {
     std::fs::write(out_dir.join("wasms.rs"), src).unwrap();
 }
 
-fn read_world(dir: &Path) -> (Resolve, PackageId) {
+fn read_world(dir: &Path) -> (Resolve, WorldId) {
     let mut resolve = Resolve::new();
     let (pkg, files) = resolve.push_dir(dir).unwrap();
     for file in files {
         println!("cargo:rerun-if-changed={}", file.display());
     }
-    (resolve, pkg)
+    let world = resolve.packages[pkg]
+        .documents
+        .iter()
+        .filter_map(|(_, doc)| resolve.documents[*doc].default_world)
+        .next()
+        .expect("no default world found");
+    (resolve, world)
 }
 
 #[cfg(feature = "guest-teavm-java")]

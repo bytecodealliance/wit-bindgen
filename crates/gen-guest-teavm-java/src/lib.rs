@@ -9,8 +9,8 @@ use wit_bindgen_core::{
     uwrite, uwriteln,
     wit_parser::{
         abi::{AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
-        Case, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Int, Interface, Record,
-        Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Union, Variant, World,
+        Case, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Int, InterfaceId, Record,
+        Resolve, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Union, Variant, WorldId,
     },
     Files, InterfaceGenerator as _, Ns, WorldGenerator,
 };
@@ -52,6 +52,7 @@ pub struct TeaVmJava {
     needs_cleanup: bool,
     needs_result: bool,
     classes: HashMap<String, String>,
+    sizes: SizeAlign,
 }
 
 impl TeaVmJava {
@@ -60,59 +61,93 @@ impl TeaVmJava {
         format!("{world}World.")
     }
 
-    fn interface<'a>(&'a mut self, iface: &'a Interface, name: &'a str) -> InterfaceGenerator<'a> {
-        let mut sizes = SizeAlign::default();
-        sizes.fill(iface);
+    fn interface<'a>(&'a mut self, resolve: &'a Resolve, name: &'a str) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
             src: String::new(),
             stub: String::new(),
             gen: self,
-            iface,
-            sizes,
+            resolve,
             name,
         }
     }
 }
 
 impl WorldGenerator for TeaVmJava {
-    fn preprocess(&mut self, name: &str) {
+    fn preprocess(&mut self, resolve: &Resolve, name: &str) {
         self.name = name.to_string();
+        self.sizes.fill(resolve);
     }
 
-    fn import(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
-        let mut gen = self.interface(iface, name);
-        gen.types();
+    fn import_interface(
+        &mut self,
+        resolve: &Resolve,
+        name: &str,
+        id: InterfaceId,
+        _files: &mut Files,
+    ) {
+        let mut gen = self.interface(resolve, name);
+        gen.types(id);
 
-        for func in iface.functions.iter() {
+        for (_, func) in resolve.interfaces[id].functions.iter() {
             gen.import(name, func);
         }
 
         gen.add_class();
     }
 
-    fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
-        let mut gen = self.interface(iface, name);
-        gen.types();
+    fn import_funcs(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        funcs: &[(&str, &Function)],
+        _files: &mut Files,
+    ) {
+        let name = &resolve.worlds[world].name;
+        let mut gen = self.interface(resolve, name);
 
-        for func in iface.functions.iter() {
+        for (_, func) in funcs {
+            gen.import(name, func);
+        }
+
+        gen.add_class();
+    }
+
+    fn export_interface(
+        &mut self,
+        resolve: &Resolve,
+        name: &str,
+        id: InterfaceId,
+        _files: &mut Files,
+    ) {
+        let mut gen = self.interface(resolve, name);
+        gen.types(id);
+
+        for (_, func) in resolve.interfaces[id].functions.iter() {
             gen.export(func, Some(name));
         }
 
         gen.add_class();
     }
 
-    fn export_default(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
-        let mut gen = self.interface(iface, name);
-        gen.types();
+    fn export_funcs(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        funcs: &[(&str, &Function)],
+        _files: &mut Files,
+    ) {
+        let name = &resolve.worlds[world].name;
+        let mut gen = self.interface(resolve, name);
 
-        for func in iface.functions.iter() {
+        for (_, func) in funcs {
             gen.export(func, None);
         }
 
         gen.add_class();
     }
 
-    fn finish(&mut self, world: &World, files: &mut Files) {
+    fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
+        let world = &resolve.worlds[id];
         let package = format!("wit_{}", world.name.to_snake_case());
         let name = world.name.to_upper_camel_case();
 
@@ -131,7 +166,8 @@ impl WorldGenerator for TeaVmJava {
         );
 
         let component_type =
-            wit_component::metadata::encode(world, wit_component::StringEncoding::UTF8)
+            wit_component::metadata::encode(resolve, id, wit_component::StringEncoding::UTF8)
+                .unwrap()
                 .into_iter()
                 .map(|byte| format!("{byte:02x}"))
                 .collect::<Vec<_>>()
@@ -276,9 +312,8 @@ impl WorldGenerator for TeaVmJava {
 struct InterfaceGenerator<'a> {
     src: String,
     stub: String,
-    sizes: SizeAlign,
     gen: &'a mut TeaVmJava,
-    iface: &'a Interface,
+    resolve: &'a Resolve,
     name: &'a str,
 }
 
@@ -340,7 +375,7 @@ impl InterfaceGenerator<'_> {
             func.params.iter().map(|(name, _)| name.clone()).collect(),
         );
 
-        bindgen.gen.iface.call(
+        bindgen.gen.resolve.call(
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
@@ -362,7 +397,7 @@ impl InterfaceGenerator<'_> {
 
         let name = &func.name;
 
-        let sig = self.iface.wasm_signature(AbiVariant::GuestImport, func);
+        let sig = self.resolve.wasm_signature(AbiVariant::GuestImport, func);
 
         let result_type = match &sig.results[..] {
             [] => "void",
@@ -398,7 +433,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn export(&mut self, func: &Function, interface_name: Option<&str>) {
-        let sig = self.iface.wasm_signature(AbiVariant::GuestExport, func);
+        let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
         let export_name = func.core_export_name(interface_name);
 
@@ -408,7 +443,7 @@ impl InterfaceGenerator<'_> {
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
         );
 
-        bindgen.gen.iface.call(
+        bindgen.gen.resolve.call(
             AbiVariant::GuestExport,
             LiftLower::LiftArgsLowerResults,
             func,
@@ -448,7 +483,7 @@ impl InterfaceGenerator<'_> {
             "#
         );
 
-        if self.iface.guest_export_needs_post_return(func) {
+        if self.resolve.guest_export_needs_post_return(func) {
             let params = sig
                 .results
                 .iter()
@@ -466,7 +501,7 @@ impl InterfaceGenerator<'_> {
                 (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
             );
 
-            bindgen.gen.iface.post_return(func, &mut bindgen);
+            bindgen.gen.resolve.post_return(func, &mut bindgen);
 
             let src = bindgen.src;
 
@@ -510,7 +545,7 @@ impl InterfaceGenerator<'_> {
             Type::Float64 => "double".into(),
             Type::String => "String".into(),
             Type::Id(id) => {
-                let ty = &self.iface.types[*id];
+                let ty = &self.resolve.types[*id];
                 match &ty.kind {
                     TypeDefKind::Type(ty) => self.type_name_with_qualifier(ty, qualifier),
                     TypeDefKind::List(ty) => {
@@ -583,7 +618,7 @@ impl InterfaceGenerator<'_> {
             Type::Float32 => "Float".into(),
             Type::Float64 => "Double".into(),
             Type::Id(id) => {
-                let def = &self.iface.types[*id];
+                let def = &self.resolve.types[*id];
                 match &def.kind {
                     TypeDefKind::Type(ty) => self.type_name_boxed(ty, qualifier),
                     _ => self.type_name_with_qualifier(ty, qualifier),
@@ -619,7 +654,7 @@ impl InterfaceGenerator<'_> {
                 Type::Id(id) => *id,
                 _ => return Some(ty),
             };
-            match &self.iface.types[id].kind {
+            match &self.resolve.types[id].kind {
                 TypeDefKind::Type(t) => self.non_empty_type(Some(t)).map(|_| ty),
                 TypeDefKind::Record(r) => (!r.fields.is_empty()).then_some(ty),
                 TypeDefKind::Tuple(t) => (!t.types.is_empty()).then_some(ty),
@@ -668,8 +703,8 @@ impl InterfaceGenerator<'_> {
 }
 
 impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
-    fn iface(&self) -> &'a Interface {
-        self.iface
+    fn resolve(&self) -> &'a Resolve {
+        self.resolve
     }
 
     fn type_record(&mut self, _id: TypeId, name: &str, record: &Record, docs: &Docs) {
@@ -1132,7 +1167,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
     fn emit(
         &mut self,
-        _iface: &Interface,
+        _resolve: &Resolve,
         inst: &Instruction<'_>,
         operands: &mut Vec<String>,
         results: &mut Vec<String>,
@@ -1561,8 +1596,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 assert!(block_results.is_empty());
 
                 let op = &operands[0];
-                let size = self.gen.sizes.size(element);
-                let align = self.gen.sizes.align(element);
+                let size = self.gen.gen.sizes.size(element);
+                let align = self.gen.gen.sizes.align(element);
                 let address = self.locals.tmp("address");
                 let ty = self.gen.type_name(element);
                 let index = self.locals.tmp("index");
@@ -1602,8 +1637,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let length = &operands[1];
                 let array = self.locals.tmp("array");
                 let ty = self.gen.type_name(element);
-                let size = self.gen.sizes.size(element);
-                let align = self.gen.sizes.align(element);
+                let size = self.gen.gen.sizes.size(element);
+                let align = self.gen.gen.sizes.align(element);
                 let index = self.locals.tmp("index");
 
                 let result = match &block_results[..] {
@@ -1896,8 +1931,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let address = &operands[0];
                 let length = &operands[1];
 
-                let size = self.gen.sizes.size(element);
-                let align = self.gen.sizes.align(element);
+                let size = self.gen.gen.sizes.size(element);
+                let align = self.gen.gen.sizes.align(element);
 
                 if !body.trim().is_empty() {
                     let index = self.locals.tmp("index");
@@ -1921,7 +1956,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         }
     }
 
-    fn return_pointer(&mut self, _iface: &Interface, size: usize, align: usize) -> String {
+    fn return_pointer(&mut self, size: usize, align: usize) -> String {
         self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
         self.gen.gen.return_area_align = self.gen.gen.return_area_align.max(align);
         format!("{}RETURN_AREA", self.gen.gen.qualifier())
@@ -1972,10 +2007,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 
     fn sizes(&self) -> &SizeAlign {
-        &self.gen.sizes
+        &self.gen.gen.sizes
     }
 
-    fn is_list_canonical(&self, _iface: &Interface, element: &Type) -> bool {
+    fn is_list_canonical(&self, _resolve: &Resolve, element: &Type) -> bool {
         is_primitive(element)
     }
 }

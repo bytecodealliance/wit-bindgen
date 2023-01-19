@@ -21,4 +21,4 @@ wasm-encoder = { workspace = true }
 default = ['guest-rust', 'guest-c', 'guest-teavm-java']
 guest-rust = ['runtime-macro?/guest-rust']
 guest-c = ['runtime-macro?/guest-c']
-guest-teavm-java = []#'runtime-macro?/guest-teavm-java']
+guest-teavm-java = ['runtime-macro?/guest-teavm-java']
