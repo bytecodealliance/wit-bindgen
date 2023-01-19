@@ -882,6 +882,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "test-helpers",
+ "wasm-encoder 0.21.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wasmprinter",
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",

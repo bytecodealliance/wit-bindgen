@@ -20,5 +20,6 @@ wit-bindgen-gen-guest-teavm-java = { workspace = true }
 wit-bindgen-gen-markdown = { workspace = true }
 wit-bindgen-guest-rust = { workspace = true, features = ['default'] }
 wasmprinter = { workspace = true }
-wit-component = { workspace = true }
+wit-component = { workspace = true, features = ['dummy-module'] }
 test-helpers = { path = '../test-helpers', default-features = false }
+wasm-encoder = { workspace = true }
