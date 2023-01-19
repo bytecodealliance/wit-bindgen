@@ -60,5 +60,5 @@ wat = { workspace = true }
 wit-component = { workspace = true }
 
 [patch.crates-io]
-wit-component = { path = '../wasm-tools/crates/wit-component' }
-wit-parser = { path = '../wasm-tools/crates/wit-parser' }
+wit-component = { git = 'https://github.com/alexcrichton/wasm-tools', branch = 'fix-wit-component-bugs' }
+wit-parser = { git = 'https://github.com/alexcrichton/wasm-tools', branch = 'fix-wit-component-bugs' }
