@@ -1,6 +1,5 @@
-wit_bindgen_guest_rust::generate!("../../tests/runtime/numbers/world.wit");
+wit_bindgen_guest_rust::generate!("world" in "../../tests/runtime/numbers");
 
-use imports::*;
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
 
 static SCALAR: AtomicU32 = AtomicU32::new(0);
@@ -9,8 +8,9 @@ struct Component;
 
 export_numbers!(Component);
 
-impl numbers::Numbers for Component {
+impl Numbers for Component {
     fn test_imports() {
+        use imports::*;
         assert_eq!(roundtrip_u8(1), 1);
         assert_eq!(roundtrip_u8(u8::min_value()), u8::min_value());
         assert_eq!(roundtrip_u8(u8::max_value()), u8::max_value());
@@ -62,7 +62,9 @@ impl numbers::Numbers for Component {
         set_scalar(4);
         assert_eq!(get_scalar(), 4);
     }
+}
 
+impl exports::Exports for Component {
     fn roundtrip_u8(a: u8) -> u8 {
         a
     }
