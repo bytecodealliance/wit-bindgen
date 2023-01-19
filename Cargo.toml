@@ -58,3 +58,7 @@ wit-bindgen-gen-markdown = { path = 'crates/gen-markdown', features = ['clap'] }
 wit-bindgen-gen-guest-teavm-java = { path = 'crates/gen-guest-teavm-java', features = ['clap'] }
 wat = { workspace = true }
 wit-component = { workspace = true }
+
+[patch.crates-io]
+wit-component = { path = '../wasm-tools/crates/wit-component' }
+wit-parser = { path = '../wasm-tools/crates/wit-parser' }

@@ -2,9 +2,9 @@ use std::path::Path;
 use std::process::Command;
 
 macro_rules! codegen_test {
-    ($name:ident $test:tt) => {
+    ($id:ident $name:tt $test:tt) => {
         #[test]
-        fn $name() {
+        fn $id() {
             drop(include_str!($test));
             test_helpers::run_component_codegen_test(
                 "js",

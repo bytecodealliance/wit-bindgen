@@ -15,7 +15,7 @@ use wasmtime_environ::component::{
 use wasmtime_environ::wasmparser::{Validator, WasmFeatures};
 use wasmtime_environ::{ModuleTranslation, PrimaryMap, ScopeVec, Tunables};
 use wit_component::DecodedWasm;
-use wit_parser::{Resolve, World, WorldId};
+use wit_parser::{Resolve, WorldId};
 
 /// Generate bindings to load and instantiate the specific binary component
 /// provided.
