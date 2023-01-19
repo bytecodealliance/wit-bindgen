@@ -1,4 +1,4 @@
-wit_bindgen_guest_rust::generate!("world" in "../../tests/runtime/unions/world.wit");
+wit_bindgen_guest_rust::generate!("world" in "../../tests/runtime/unions");
 
 use exports::*;
 
