@@ -31,7 +31,7 @@ wasmparser = "0.97.0"
 wasm-encoder = "0.21.0"
 wat = "1.0.53"
 wit-parser = "0.4.0"
-wit-component = "0.4.0"
+wit-component = "0.4.1"
 
 wit-bindgen-core = { path = 'crates/bindgen-core', version = '0.3.0' }
 wit-bindgen-gen-guest-c = { path = 'crates/gen-guest-c', version = '0.3.0' }
@@ -58,7 +58,3 @@ wit-bindgen-gen-markdown = { path = 'crates/gen-markdown', features = ['clap'] }
 wit-bindgen-gen-guest-teavm-java = { path = 'crates/gen-guest-teavm-java', features = ['clap'] }
 wat = { workspace = true }
 wit-component = { workspace = true }
-
-[patch.crates-io]
-wit-component = { git = 'https://github.com/alexcrichton/wasm-tools', branch = 'fix-wit-component-bugs' }
-wit-parser = { git = 'https://github.com/alexcrichton/wasm-tools', branch = 'fix-wit-component-bugs' }
