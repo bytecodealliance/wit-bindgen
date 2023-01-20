@@ -56,7 +56,7 @@ jobs:
         java-version: '18'
         distribution: 'adopt'
     - run: cargo test --workspace
-    - run: cargo test --p wit-bindgen-gen-host-js --test runtime --features runtime-tests
+    - run: cargo test -p wit-bindgen-gen-host-js --test runtime --features runtime-tests
 
   rustfmt:
     name: Rustfmt

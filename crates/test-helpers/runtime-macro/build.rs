@@ -193,11 +193,23 @@ fn main() {
 
         for test_dir in fs::read_dir("../../../tests/runtime").unwrap() {
             let test_dir = test_dir.unwrap().path();
-            let java_impl = test_dir.join("wasm.java");
-            if !java_impl.exists() {
+            let java_impls = fs::read_dir(&test_dir)
+                .unwrap()
+                .filter_map(|entry| {
+                    let path = entry.unwrap().path();
+                    if let Some("java") = path.extension().map(|ext| ext.to_str().unwrap()) {
+                        Some(path)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            if java_impls.is_empty() {
                 continue;
             }
-            println!("cargo:rerun-if-changed={}", java_impl.display());
+            for java_impl in &java_impls {
+                println!("cargo:rerun-if-changed={}", java_impl.display());
+            }
 
             let (resolve, world) = read_world(&test_dir);
             let world_name = &resolve.worlds[world].name;
@@ -219,17 +231,22 @@ fn main() {
 
             let snake = world_name.to_snake_case();
             let upper = world_name.to_upper_camel_case();
-            fs::copy(
-                &java_impl,
-                java_dir.join(&format!("wit_{snake}/{upper}Impl.java")),
-            )
-            .unwrap();
+            for java_impl in &java_impls {
+                fs::copy(
+                    &java_impl,
+                    java_dir
+                        .join(&format!("wit_{snake}"))
+                        .join(java_impl.file_name().unwrap()),
+                )
+                .unwrap();
+            }
             fs::write(
                 out_dir.join("pom.xml"),
                 pom_xml(&[
                     &format!("wit_{snake}.{upper}"),
                     &format!("wit_{snake}.{upper}World"),
                     &format!("wit_{snake}.Imports"),
+                    &format!("wit_{snake}.Exports"),
                 ]),
             )
             .unwrap();
