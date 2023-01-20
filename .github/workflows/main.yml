@@ -83,11 +83,11 @@ jobs:
     - uses: actions/cache@v3
       with:
         path: ${{ runner.tool_cache }}/wasm-tools
-        key: wasm-tools-bin-1.0.15-${{ runner.os }}
+        key: wasm-tools-bin-1.0.17-${{ runner.os }}
     - run: echo '${{ runner.tool_cache }}/wasm-tools/bin' >> $GITHUB_PATH
     - run: |
         cargo install \
-          wasm-tools@1.0.15 \
+          wasm-tools@1.0.17 \
           --root '${{ runner.tool_cache }}/wasm-tools' \
           --locked \
           --no-default-features \
