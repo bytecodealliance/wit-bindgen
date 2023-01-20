@@ -26,12 +26,11 @@ pub fn generate(
     files: &mut Files,
 ) -> Result<()> {
     // Use the `wit-component` crate here to parse `binary` and discover
-    // the type-level descriptions and `Interface`s corresponding to the
-    // component binary. This is effectively a step that infers a "world" of
-    // a component. Right now `interfaces` is a world-like thing and this
-    // will likely change as worlds are iterated on in the component model
-    // standard. Regardless though this is the step where types are learned
-    // and `Interface`s are constructed for further code generation below.
+    // the type-level descriptions and `Resolve` corresponding to the
+    // component binary. This will synthesize a `Resolve` which has a top-level
+    // package which has a single document and `world` within it which describes
+    // the state of the component. This is then further used afterwards for
+    // bindings generation as-if a `*.wit` file was input.
     let decoded = wit_component::decode(name, binary)
         .context("failed to extract interface information from component")?;
     let (resolve, world) = match decoded {
