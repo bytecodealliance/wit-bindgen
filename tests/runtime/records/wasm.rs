@@ -1,6 +1,6 @@
-wit_bindgen_guest_rust::generate!("../../tests/runtime/records/world.wit");
+wit_bindgen_guest_rust::generate!("world" in "../../tests/runtime/records");
 
-use records::*;
+use exports::*;
 
 struct Component;
 
@@ -45,7 +45,9 @@ impl Records for Component {
         assert_eq!(tuple0(()), ());
         assert_eq!(tuple1((1,)), (1,));
     }
+}
 
+impl Exports for Component {
     fn multiple_results() -> (u8, u16) {
         (100, 200)
     }
@@ -62,7 +64,12 @@ impl Records for Component {
         a
     }
 
-    fn roundtrip_flags3(a: F8, b: F16, c: F32, d: F64) -> (F8, F16, F32, F64) {
+    fn roundtrip_flags3(
+        a: Flag8,
+        b: Flag16,
+        c: Flag32,
+        d: Flag64,
+    ) -> (Flag8, Flag16, Flag32, Flag64) {
         (a, b, c, d)
     }
 

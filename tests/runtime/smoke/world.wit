@@ -2,11 +2,8 @@ interface imports {
   thunk: func()
 }
 
-interface exports {
-  thunk: func()
-}
+default world smoke {
+  import imports: self.imports
 
-world smoke {
-  import imports: imports
-  default export exports
+  export thunk: func()
 }

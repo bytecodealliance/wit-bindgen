@@ -43,28 +43,24 @@ interface imports {
   unaligned10: func(a: list<list<u8>>)
 }
 
-interface exports {
-  invalid-u8: func()
-  invalid-s8: func()
-  invalid-u16: func()
-  invalid-s16: func()
-  invalid-char: func()
-  invalid-bool: func()
-  invalid-enum: func()
+default world invalid {
+  import imports: self.imports
 
-  unaligned1: func()
-  unaligned2: func()
-  unaligned3: func()
-  unaligned4: func()
-  unaligned5: func()
-  unaligned6: func()
-  unaligned7: func()
-  unaligned8: func()
-  unaligned9: func()
-  unaligned10: func()
-}
-
-world invalid {
-  import imports: imports
-  default export exports
+  export invalid-u8: func()
+  export invalid-s8: func()
+  export invalid-u16: func()
+  export invalid-s16: func()
+  export invalid-char: func()
+  export invalid-bool: func()
+  export invalid-enum: func()
+  export unaligned1: func()
+  export unaligned2: func()
+  export unaligned3: func()
+  export unaligned4: func()
+  export unaligned5: func()
+  export unaligned6: func()
+  export unaligned7: func()
+  export unaligned8: func()
+  export unaligned9: func()
+  export unaligned10: func()
 }

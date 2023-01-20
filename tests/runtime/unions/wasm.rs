@@ -1,6 +1,6 @@
-wit_bindgen_guest_rust::generate!("../../tests/runtime/unions/world.wit");
+wit_bindgen_guest_rust::generate!("world" in "../../tests/runtime/unions");
 
-use unions::*;
+use exports::*;
 
 struct Component;
 
@@ -161,7 +161,9 @@ impl Unions for Component {
 
         println!("There is power in a union!");
     }
+}
 
+impl exports::Exports for Component {
     fn add_one_integer(num: AllIntegers) -> AllIntegers {
         match num {
             // Boolean

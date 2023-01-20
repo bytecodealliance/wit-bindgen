@@ -44,16 +44,18 @@ impl std::ops::BitOrAssign for TypeInfo {
 }
 
 impl Types {
-    pub fn analyze(&mut self, iface: &Interface) {
-        for (t, _) in iface.types.iter() {
-            self.type_id_info(iface, t);
+    pub fn analyze(&mut self, resolve: &Resolve) {
+        for (t, _) in resolve.types.iter() {
+            self.type_id_info(resolve, t);
         }
-        for f in iface.functions.iter() {
-            for (_, ty) in f.params.iter() {
-                self.set_param_result_ty(iface, ty, true, false, false);
-            }
-            for ty in f.results.iter_types() {
-                self.set_param_result_ty(iface, ty, false, true, false);
+        for (_, iface) in resolve.interfaces.iter() {
+            for (_, f) in iface.functions.iter() {
+                for (_, ty) in f.params.iter() {
+                    self.set_param_result_ty(resolve, ty, true, false, false);
+                }
+                for ty in f.results.iter_types() {
+                    self.set_param_result_ty(resolve, ty, false, true, false);
+                }
             }
         }
     }
@@ -62,134 +64,148 @@ impl Types {
         self.type_info[&id]
     }
 
-    pub fn type_id_info(&mut self, iface: &Interface, ty: TypeId) -> TypeInfo {
+    pub fn type_id_info(&mut self, resolve: &Resolve, ty: TypeId) -> TypeInfo {
         if let Some(info) = self.type_info.get(&ty) {
             return *info;
         }
         let mut info = TypeInfo::default();
-        match &iface.types[ty].kind {
+        match &resolve.types[ty].kind {
             TypeDefKind::Record(r) => {
                 for field in r.fields.iter() {
-                    info |= self.type_info(iface, &field.ty);
+                    info |= self.type_info(resolve, &field.ty);
                 }
             }
             TypeDefKind::Tuple(t) => {
                 for ty in t.types.iter() {
-                    info |= self.type_info(iface, ty);
+                    info |= self.type_info(resolve, ty);
                 }
             }
             TypeDefKind::Flags(_) => {}
             TypeDefKind::Enum(_) => {}
             TypeDefKind::Variant(v) => {
                 for case in v.cases.iter() {
-                    info |= self.optional_type_info(iface, case.ty.as_ref());
+                    info |= self.optional_type_info(resolve, case.ty.as_ref());
                 }
             }
             TypeDefKind::List(ty) => {
-                info = self.type_info(iface, ty);
+                info = self.type_info(resolve, ty);
                 info.has_list = true;
             }
             TypeDefKind::Type(ty) => {
-                info = self.type_info(iface, ty);
+                info = self.type_info(resolve, ty);
             }
             TypeDefKind::Option(ty) => {
-                info = self.type_info(iface, ty);
+                info = self.type_info(resolve, ty);
             }
             TypeDefKind::Result(r) => {
-                info = self.optional_type_info(iface, r.ok.as_ref());
-                info |= self.optional_type_info(iface, r.err.as_ref());
+                info = self.optional_type_info(resolve, r.ok.as_ref());
+                info |= self.optional_type_info(resolve, r.err.as_ref());
             }
             TypeDefKind::Union(u) => {
                 for case in u.cases.iter() {
-                    info |= self.type_info(iface, &case.ty);
+                    info |= self.type_info(resolve, &case.ty);
                 }
             }
             TypeDefKind::Future(ty) => {
-                info = self.optional_type_info(iface, ty.as_ref());
+                info = self.optional_type_info(resolve, ty.as_ref());
             }
             TypeDefKind::Stream(stream) => {
-                info = self.optional_type_info(iface, stream.element.as_ref());
-                info |= self.optional_type_info(iface, stream.end.as_ref());
+                info = self.optional_type_info(resolve, stream.element.as_ref());
+                info |= self.optional_type_info(resolve, stream.end.as_ref());
             }
+            TypeDefKind::Unknown => unreachable!(),
         }
         self.type_info.insert(ty, info);
         info
     }
 
-    pub fn type_info(&mut self, iface: &Interface, ty: &Type) -> TypeInfo {
+    pub fn type_info(&mut self, resolve: &Resolve, ty: &Type) -> TypeInfo {
         let mut info = TypeInfo::default();
         match ty {
             Type::String => info.has_list = true,
-            Type::Id(id) => return self.type_id_info(iface, *id),
+            Type::Id(id) => return self.type_id_info(resolve, *id),
             _ => {}
         }
         info
     }
 
-    fn optional_type_info(&mut self, iface: &Interface, ty: Option<&Type>) -> TypeInfo {
+    fn optional_type_info(&mut self, resolve: &Resolve, ty: Option<&Type>) -> TypeInfo {
         match ty {
-            Some(ty) => self.type_info(iface, ty),
+            Some(ty) => self.type_info(resolve, ty),
             None => TypeInfo::default(),
         }
     }
 
     fn set_param_result_id(
         &mut self,
-        iface: &Interface,
+        resolve: &Resolve,
         ty: TypeId,
         param: bool,
         result: bool,
         error: bool,
     ) {
-        match &iface.types[ty].kind {
+        match &resolve.types[ty].kind {
             TypeDefKind::Record(r) => {
                 for field in r.fields.iter() {
-                    self.set_param_result_ty(iface, &field.ty, param, result, error)
+                    self.set_param_result_ty(resolve, &field.ty, param, result, error)
                 }
             }
             TypeDefKind::Tuple(t) => {
                 for ty in t.types.iter() {
-                    self.set_param_result_ty(iface, ty, param, result, error)
+                    self.set_param_result_ty(resolve, ty, param, result, error)
                 }
             }
             TypeDefKind::Flags(_) => {}
             TypeDefKind::Enum(_) => {}
             TypeDefKind::Variant(v) => {
                 for case in v.cases.iter() {
-                    self.set_param_result_optional_ty(iface, case.ty.as_ref(), param, result, error)
+                    self.set_param_result_optional_ty(
+                        resolve,
+                        case.ty.as_ref(),
+                        param,
+                        result,
+                        error,
+                    )
                 }
             }
             TypeDefKind::List(ty) | TypeDefKind::Type(ty) | TypeDefKind::Option(ty) => {
-                self.set_param_result_ty(iface, ty, param, result, error)
+                self.set_param_result_ty(resolve, ty, param, result, error)
             }
             TypeDefKind::Result(r) => {
-                self.set_param_result_optional_ty(iface, r.ok.as_ref(), param, result, error);
-                self.set_param_result_optional_ty(iface, r.err.as_ref(), param, result, result);
+                self.set_param_result_optional_ty(resolve, r.ok.as_ref(), param, result, error);
+                self.set_param_result_optional_ty(resolve, r.err.as_ref(), param, result, result);
             }
             TypeDefKind::Union(u) => {
                 for case in u.cases.iter() {
-                    self.set_param_result_ty(iface, &case.ty, param, result, error)
+                    self.set_param_result_ty(resolve, &case.ty, param, result, error)
                 }
             }
             TypeDefKind::Future(ty) => {
-                self.set_param_result_optional_ty(iface, ty.as_ref(), param, result, error)
+                self.set_param_result_optional_ty(resolve, ty.as_ref(), param, result, error)
             }
             TypeDefKind::Stream(stream) => {
                 self.set_param_result_optional_ty(
-                    iface,
+                    resolve,
                     stream.element.as_ref(),
                     param,
                     result,
                     error,
                 );
-                self.set_param_result_optional_ty(iface, stream.end.as_ref(), param, result, error);
+                self.set_param_result_optional_ty(
+                    resolve,
+                    stream.end.as_ref(),
+                    param,
+                    result,
+                    error,
+                );
             }
+            TypeDefKind::Unknown => unreachable!(),
         }
     }
 
     fn set_param_result_ty(
         &mut self,
-        iface: &Interface,
+        resolve: &Resolve,
         ty: &Type,
         param: bool,
         result: bool,
@@ -197,13 +213,13 @@ impl Types {
     ) {
         match ty {
             Type::Id(id) => {
-                self.type_id_info(iface, *id);
+                self.type_id_info(resolve, *id);
                 let info = self.type_info.get_mut(id).unwrap();
                 if (param && !info.param) || (result && !info.result) || (error && !info.error) {
                     info.param = info.param || param;
                     info.result = info.result || result;
                     info.error = info.error || error;
-                    self.set_param_result_id(iface, *id, param, result, error);
+                    self.set_param_result_id(resolve, *id, param, result, error);
                 }
             }
             _ => {}
@@ -212,14 +228,14 @@ impl Types {
 
     fn set_param_result_optional_ty(
         &mut self,
-        iface: &Interface,
+        resolve: &Resolve,
         ty: Option<&Type>,
         param: bool,
         result: bool,
         error: bool,
     ) {
         match ty {
-            Some(ty) => self.set_param_result_ty(iface, ty, param, result, error),
+            Some(ty) => self.set_param_result_ty(resolve, ty, param, result, error),
             None => (),
         }
     }
@@ -412,28 +428,67 @@ mod tests {
 }
 
 pub trait WorldGenerator {
-    fn generate(&mut self, world: &World, files: &mut Files) {
-        self.preprocess(&world.name);
+    fn generate(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
+        let world = &resolve.worlds[id];
+        self.preprocess(resolve, &world.name);
+
+        let mut funcs = Vec::new();
         for (name, import) in world.imports.iter() {
-            self.import(name, import, files);
+            match import {
+                WorldItem::Function(f) => funcs.push((name.as_str(), f)),
+                WorldItem::Interface(id) => self.import_interface(resolve, name, *id, files),
+            }
         }
+        if !funcs.is_empty() {
+            self.import_funcs(resolve, id, &funcs, files);
+        }
+        funcs.clear();
         for (name, export) in world.exports.iter() {
-            self.export(name, export, files);
+            match export {
+                WorldItem::Function(f) => funcs.push((name.as_str(), f)),
+                WorldItem::Interface(id) => self.export_interface(resolve, name, *id, files),
+            }
         }
-        if let Some(iface) = &world.default {
-            self.export_default(&world.name, iface, files);
+        if !funcs.is_empty() {
+            self.export_funcs(resolve, id, &funcs, files);
         }
-        self.finish(world, files);
+        self.finish(resolve, id, files);
     }
 
-    fn preprocess(&mut self, name: &str) {
+    fn preprocess(&mut self, resolve: &Resolve, name: &str) {
+        drop(resolve);
         drop(name);
     }
 
-    fn import(&mut self, name: &str, iface: &Interface, files: &mut Files);
-    fn export(&mut self, name: &str, iface: &Interface, files: &mut Files);
-    fn export_default(&mut self, name: &str, iface: &Interface, files: &mut Files);
-    fn finish(&mut self, world: &World, files: &mut Files);
+    fn import_interface(
+        &mut self,
+        resolve: &Resolve,
+        name: &str,
+        iface: InterfaceId,
+        files: &mut Files,
+    );
+    fn export_interface(
+        &mut self,
+        resolve: &Resolve,
+        name: &str,
+        iface: InterfaceId,
+        files: &mut Files,
+    );
+    fn import_funcs(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        funcs: &[(&str, &Function)],
+        files: &mut Files,
+    );
+    fn export_funcs(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        funcs: &[(&str, &Function)],
+        files: &mut Files,
+    );
+    fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files);
 }
 
 /// This is a possible replacement for the `Generator` trait above, currently
@@ -445,7 +500,7 @@ pub trait WorldGenerator {
 /// change for JS though. In any case it's something that was useful for JS and
 /// is suitable to replace otherwise at any time.
 pub trait InterfaceGenerator<'a> {
-    fn iface(&self) -> &'a Interface;
+    fn resolve(&self) -> &'a Resolve;
 
     fn type_record(&mut self, id: TypeId, name: &str, record: &Record, docs: &Docs);
     fn type_flags(&mut self, id: TypeId, name: &str, flags: &Flags, docs: &Docs);
@@ -459,12 +514,11 @@ pub trait InterfaceGenerator<'a> {
     fn type_list(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
 
-    fn types(&mut self) {
-        for (id, ty) in self.iface().types.iter() {
-            let name = match &ty.name {
-                Some(name) => name,
-                None => continue,
-            };
+    fn types(&mut self, iface: InterfaceId) {
+        let iface = &self.resolve().interfaces[iface];
+        for (name, id) in iface.types.iter() {
+            let id = *id;
+            let ty = &self.resolve().types[id];
             match &ty.kind {
                 TypeDefKind::Record(record) => self.type_record(id, name, record, &ty.docs),
                 TypeDefKind::Flags(flags) => self.type_flags(id, name, flags, &ty.docs),
@@ -478,6 +532,7 @@ pub trait InterfaceGenerator<'a> {
                 TypeDefKind::Type(t) => self.type_alias(id, name, t, &ty.docs),
                 TypeDefKind::Future(_) => todo!("generate for future"),
                 TypeDefKind::Stream(_) => todo!("generate for stream"),
+                TypeDefKind::Unknown => unreachable!(),
             }
         }
     }

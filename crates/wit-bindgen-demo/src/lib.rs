@@ -1,11 +1,12 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::path::Path;
 use std::sync::Once;
+use wasm_encoder::{CustomSection, Encode, Section};
 use wit_bindgen_core::component::ComponentGenerator;
-use wit_bindgen_core::wit_parser::{Document, World};
+use wit_bindgen_core::wit_parser::{Resolve, UnresolvedPackage};
 use wit_bindgen_core::{Files, WorldGenerator};
 
-wit_bindgen_guest_rust::generate!("demo.wit");
+wit_bindgen_guest_rust::generate!("demo");
 
 struct Demo;
 
@@ -49,10 +50,19 @@ fn init() {
 }
 
 fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Options) -> Result<()> {
-    let world = Document::parse(Path::new("input"), &wit)?.into_world()?;
+    let mut resolve = Resolve::default();
+    let pkg = resolve.push(
+        UnresolvedPackage::parse(Path::new("input"), &wit)?,
+        &Default::default(),
+    )?;
+    let (_, doc) = resolve.packages[pkg].documents.iter().next().unwrap();
+    let doc = &resolve.documents[*doc];
+    let world = doc
+        .default_world
+        .ok_or_else(|| anyhow!("no `default world` specified in document"))?;
 
     let gen_world = |mut gen: Box<dyn WorldGenerator>, files: &mut Files| {
-        gen.generate(&world, files);
+        gen.generate(&resolve, world, files);
     };
 
     // This generator takes a component as input as opposed to an `Interface`.
@@ -63,10 +73,17 @@ fn render(lang: demo::Lang, wit: &str, files: &mut Files, options: &demo::Option
     // interface and dummy module.  Finally this component is fed into the host
     // generator which gives us the files we want.
     let gen_component = |mut gen: Box<dyn ComponentGenerator>, files: &mut Files| {
-        let dummy = test_helpers::dummy_module(&world);
+        let mut dummy = wit_component::dummy_module(&resolve, world);
+        let metadata =
+            wit_component::metadata::encode(&resolve, world, wit_component::StringEncoding::UTF8)?;
+        let section = CustomSection {
+            name: "component-type",
+            data: &metadata,
+        };
+        dummy.push(section.id());
+        section.encode(&mut dummy);
         let wasm = wit_component::ComponentEncoder::default()
             .module(&dummy)?
-            .world(world.clone(), wit_component::StringEncoding::UTF8)?
             .encode()?;
         wit_bindgen_core::component::generate(&mut *gen, "input", &wasm, files)
     };

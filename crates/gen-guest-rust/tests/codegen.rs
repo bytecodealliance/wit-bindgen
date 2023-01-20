@@ -2,9 +2,9 @@
 
 mod codegen_tests {
     macro_rules! codegen_test {
-        ($name:ident $test:tt) => {
-            mod $name {
-                wit_bindgen_guest_rust::generate!($test);
+        ($id:ident $name:tt $test:tt) => {
+            mod $id {
+                wit_bindgen_guest_rust::generate!($name in $test);
 
                 #[test]
                 fn works() {}
@@ -12,6 +12,7 @@ mod codegen_tests {
                 mod unchecked {
                     wit_bindgen_guest_rust::generate!({
                         path: $test,
+                        world: $name,
                         unchecked,
                     });
 
@@ -28,7 +29,7 @@ mod codegen_tests {
 mod strings {
     wit_bindgen_guest_rust::generate!({
         inline: "
-            world not-used-name {
+            default world not-used-name {
                 import cat: interface {
                     foo: func(x: string)
                     bar: func() -> string
@@ -51,7 +52,7 @@ mod strings {
 mod raw_strings {
     wit_bindgen_guest_rust::generate!({
         inline: "
-            world not-used-name {
+            default world not-used-name {
                 import cat: interface {
                     foo: func(x: string)
                     bar: func() -> string
@@ -78,7 +79,7 @@ mod prefix {
     mod bindings {
         wit_bindgen_guest_rust::generate!({
             inline: "
-                world baz {
+                default world baz {
                     export exports1: interface {
                         foo: func(x: string)
                         bar: func() -> string
@@ -111,7 +112,7 @@ mod prefix {
 mod macro_name {
     wit_bindgen_guest_rust::generate!({
         inline: "
-            world baz {
+            default world baz {
                 export exports2: interface {
                     foo: func(x: string)
                 }
@@ -134,7 +135,7 @@ mod macro_name {
 mod skip {
     wit_bindgen_guest_rust::generate!({
         inline: "
-            world baz {
+            default world baz {
                 export exports: interface {
                     foo: func()
                     bar: func()

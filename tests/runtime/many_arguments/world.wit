@@ -1,5 +1,25 @@
-interface imports {
-  many-arguments: func(
+default world many-arguments {
+  import imports: interface {
+    many-arguments: func(
+      a1: u64,
+      a2: u64,
+      a3: u64,
+      a4: u64,
+      a5: u64,
+      a6: u64,
+      a7: u64,
+      a8: u64,
+      a9: u64,
+      a10: u64,
+      a11: u64,
+      a12: u64,
+      a13: u64,
+      a14: u64,
+      a15: u64,
+      a16: u64,
+    )
+  }
+  export many-arguments: func(
     a1: u64,
     a2: u64,
     a3: u64,
@@ -17,30 +37,4 @@ interface imports {
     a15: u64,
     a16: u64,
   )
-}
-
-interface exports {
-  many-arguments: func(
-    a1: u64,
-    a2: u64,
-    a3: u64,
-    a4: u64,
-    a5: u64,
-    a6: u64,
-    a7: u64,
-    a8: u64,
-    a9: u64,
-    a10: u64,
-    a11: u64,
-    a12: u64,
-    a13: u64,
-    a14: u64,
-    a15: u64,
-    a16: u64,
-  )
-}
-
-world many-arguments {
-  import imports: imports
-  default export exports
 }

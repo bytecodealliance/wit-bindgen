@@ -66,38 +66,38 @@ void records_test_imports() {
   assert(t2.f0 == 1);
 }
 
-void records_multiple_results(uint8_t *ret0, uint16_t *ret1) {
+void exports_multiple_results(uint8_t *ret0, uint16_t *ret1) {
   *ret0 = 100;
   *ret1 = 200;
 }
 
-void records_swap_tuple(records_tuple2_u8_u32_t *a, records_tuple2_u32_u8_t *b) {
+void exports_swap_tuple(exports_tuple2_u8_u32_t *a, exports_tuple2_u32_u8_t *b) {
   b->f0 = a->f1;
   b->f1 = a->f0;
 }
 
-records_f1_t records_roundtrip_flags1(records_f1_t a) {
+exports_f1_t exports_roundtrip_flags1(exports_f1_t a) {
   return a;
 }
 
-records_f2_t records_roundtrip_flags2(records_f2_t a) {
+exports_f2_t exports_roundtrip_flags2(exports_f2_t a) {
   return a;
 }
 
-void records_roundtrip_flags3(records_f8_t a, records_f16_t b, records_f32_t c, records_f64_t d, records_f8_t *ret0, records_f16_t *ret1, records_f32_t *ret2, records_f64_t *ret3) {
+void exports_roundtrip_flags3(exports_flag8_t a, exports_flag16_t b, exports_flag32_t c, exports_flag64_t d, exports_flag8_t *ret0, exports_flag16_t *ret1, exports_flag32_t *ret2, exports_flag64_t *ret3) {
   *ret0 = a;
   *ret1 = b;
   *ret2 = c;
   *ret3 = d;
 }
 
-void records_roundtrip_record1(records_r1_t *a, records_r1_t *ret0) {
+void exports_roundtrip_record1(exports_r1_t *a, exports_r1_t *ret0) {
   *ret0 = *a;
 }
 
-void records_tuple0(records_tuple0_t *a, records_tuple0_t *b) {
+void exports_tuple0(exports_tuple0_t *a, exports_tuple0_t *b) {
 }
 
-void records_tuple1(records_tuple1_u8_t *a, records_tuple1_u8_t *b) {
+void exports_tuple1(exports_tuple1_u8_t *a, exports_tuple1_u8_t *b) {
   b->f0 = a->f0;
 }

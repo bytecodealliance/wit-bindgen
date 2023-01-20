@@ -3,57 +3,57 @@
 #include <math.h>
 #include <numbers.h>
 
-uint8_t numbers_roundtrip_u8(uint8_t a) {
+uint8_t exports_roundtrip_u8(uint8_t a) {
   return a;
 }
 
-int8_t numbers_roundtrip_s8(int8_t a) {
+int8_t exports_roundtrip_s8(int8_t a) {
   return a;
 }
 
-uint16_t numbers_roundtrip_u16(uint16_t a) {
+uint16_t exports_roundtrip_u16(uint16_t a) {
   return a;
 }
 
-int16_t numbers_roundtrip_s16(int16_t a) {
+int16_t exports_roundtrip_s16(int16_t a) {
   return a;
 }
 
-uint32_t numbers_roundtrip_u32(uint32_t a) {
+uint32_t exports_roundtrip_u32(uint32_t a) {
   return a;
 }
 
-int32_t numbers_roundtrip_s32(int32_t a) {
+int32_t exports_roundtrip_s32(int32_t a) {
   return a;
 }
 
-uint64_t numbers_roundtrip_u64(uint64_t a) {
+uint64_t exports_roundtrip_u64(uint64_t a) {
   return a;
 }
 
-int64_t numbers_roundtrip_s64(int64_t a) {
+int64_t exports_roundtrip_s64(int64_t a) {
   return a;
 }
 
-float numbers_roundtrip_float32(float a) {
+float exports_roundtrip_float32(float a) {
   return a;
 }
 
-double numbers_roundtrip_float64(double a) {
+double exports_roundtrip_float64(double a) {
   return a;
 }
 
-uint32_t numbers_roundtrip_char(uint32_t a) {
+uint32_t exports_roundtrip_char(uint32_t a) {
   return a;
 }
 
 static uint32_t SCALAR = 0;
 
-void numbers_set_scalar(uint32_t a) {
+void exports_set_scalar(uint32_t a) {
   SCALAR = a;
 }
 
-uint32_t numbers_get_scalar(void) {
+uint32_t exports_get_scalar(void) {
   return SCALAR;
 }
 

@@ -1,11 +1,10 @@
-use heck::{ToSnakeCase, ToUpperCamelCase};
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use wit_bindgen_core::wit_parser::World;
-use wit_component::{ComponentEncoder, StringEncoding};
+use wit_bindgen_core::wit_parser::{Resolve, WorldId};
+use wit_component::ComponentEncoder;
 
+#[cfg(feature = "guest-c")]
 fn guest_c(
     wasms: &mut Vec<(String, String, String, String)>,
     out_dir: &PathBuf,
@@ -20,14 +19,14 @@ fn guest_c(
             continue;
         }
         println!("cargo:rerun-if-changed={}", c_impl.display());
-        let world = read_world(&test_dir);
-        let snake = world.name.replace("-", "_");
+        let (resolve, world) = read_world(&test_dir);
+        let snake = resolve.worlds[world].name.replace("-", "_");
         let mut files = Default::default();
         let mut opts = wit_bindgen_gen_guest_c::Opts::default();
         if utf_16 {
-            opts.string_encoding = StringEncoding::UTF16;
+            opts.string_encoding = wit_component::StringEncoding::UTF16;
         }
-        opts.build().generate(&world, &mut files);
+        opts.build().generate(&resolve, world, &mut files);
 
         let out_dir = out_dir.join(format!(
             "c{}-{}",
@@ -42,7 +41,7 @@ fn guest_c(
         }
 
         let path =
-            PathBuf::from(env::var_os("WASI_SDK_PATH").expect(
+            PathBuf::from(std::env::var_os("WASI_SDK_PATH").expect(
                 "point the `WASI_SDK_PATH` environment variable to the path of your wasi-sdk",
             ));
         let mut cmd = Command::new(path.join("bin/clang"));
@@ -94,7 +93,7 @@ fn guest_c(
 
         wasms.push((
             format!("c{}", utf16_suffix),
-            world.name.to_string(),
+            resolve.worlds[world].name.to_string(),
             out_wasm.to_str().unwrap().to_string(),
             component_path.to_str().unwrap().to_string(),
         ));
@@ -182,50 +181,72 @@ fn main() {
         println!("cargo:rerun-if-changed=../../test-rust-wasm/Cargo.toml");
     }
 
-    if cfg!(feature = "guest-c") {
+    #[cfg(feature = "guest-c")]
+    {
         guest_c(&mut wasms, &out_dir, &wasi_adapter, false);
         guest_c(&mut wasms, &out_dir, &wasi_adapter, true);
     }
 
-    if cfg!(feature = "guest-teavm-java") {
+    #[cfg(feature = "guest-teavm-java")]
+    {
+        use heck::*;
+
         for test_dir in fs::read_dir("../../../tests/runtime").unwrap() {
             let test_dir = test_dir.unwrap().path();
-            let java_impl = test_dir.join("wasm.java");
-            if !java_impl.exists() {
+            let java_impls = fs::read_dir(&test_dir)
+                .unwrap()
+                .filter_map(|entry| {
+                    let path = entry.unwrap().path();
+                    if let Some("java") = path.extension().map(|ext| ext.to_str().unwrap()) {
+                        Some(path)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            if java_impls.is_empty() {
                 continue;
             }
-            println!("cargo:rerun-if-changed={}", java_impl.display());
+            for java_impl in &java_impls {
+                println!("cargo:rerun-if-changed={}", java_impl.display());
+            }
 
-            let world = read_world(&test_dir);
-            let out_dir = out_dir.join(format!("java-{}", world.name));
+            let (resolve, world) = read_world(&test_dir);
+            let world_name = &resolve.worlds[world].name;
+            let out_dir = out_dir.join(format!("java-{}", world_name));
             drop(fs::remove_dir_all(&out_dir));
             let java_dir = out_dir.join("src/main/java");
             let mut files = Default::default();
 
             wit_bindgen_gen_guest_teavm_java::Opts::default()
                 .build()
-                .generate(&world, &mut files);
+                .generate(&resolve, world, &mut files);
 
-            let package_dir = java_dir.join(&format!("wit_{}", world.name));
+            let package_dir = java_dir.join(&format!("wit_{}", world_name));
             fs::create_dir_all(&package_dir).unwrap();
             for (file, contents) in files.iter() {
                 let dst = package_dir.join(file);
                 fs::write(dst, contents).unwrap();
             }
 
-            let snake = world.name.to_snake_case();
-            let upper = world.name.to_upper_camel_case();
-            fs::copy(
-                &java_impl,
-                java_dir.join(&format!("wit_{snake}/{upper}Impl.java")),
-            )
-            .unwrap();
+            let snake = world_name.to_snake_case();
+            let upper = world_name.to_upper_camel_case();
+            for java_impl in &java_impls {
+                fs::copy(
+                    &java_impl,
+                    java_dir
+                        .join(&format!("wit_{snake}"))
+                        .join(java_impl.file_name().unwrap()),
+                )
+                .unwrap();
+            }
             fs::write(
                 out_dir.join("pom.xml"),
                 pom_xml(&[
                     &format!("wit_{snake}.{upper}"),
                     &format!("wit_{snake}.{upper}World"),
                     &format!("wit_{snake}.Imports"),
+                    &format!("wit_{snake}.Exports"),
                 ]),
             )
             .unwrap();
@@ -284,13 +305,22 @@ fn main() {
     std::fs::write(out_dir.join("wasms.rs"), src).unwrap();
 }
 
-fn read_world(dir: &Path) -> World {
-    let world = dir.join("world.wit");
-    println!("cargo:rerun-if-changed={}", world.display());
-
-    World::parse_file(&world).unwrap()
+fn read_world(dir: &Path) -> (Resolve, WorldId) {
+    let mut resolve = Resolve::new();
+    let (pkg, files) = resolve.push_dir(dir).unwrap();
+    for file in files {
+        println!("cargo:rerun-if-changed={}", file.display());
+    }
+    let world = resolve.packages[pkg]
+        .documents
+        .iter()
+        .filter_map(|(_, doc)| resolve.documents[*doc].default_world)
+        .next()
+        .expect("no default world found");
+    (resolve, world)
 }
 
+#[cfg(feature = "guest-teavm-java")]
 fn mvn() -> Command {
     if cfg!(windows) {
         let mut cmd = Command::new("cmd");
@@ -301,6 +331,7 @@ fn mvn() -> Command {
     }
 }
 
+#[cfg(feature = "guest-teavm-java")]
 fn pom_xml(classes_to_preserve: &[&str]) -> Vec<u8> {
     let xml = include_str!("../../gen-guest-teavm-java/tests/pom.xml");
     let position = xml.find("<mainClass>").unwrap();

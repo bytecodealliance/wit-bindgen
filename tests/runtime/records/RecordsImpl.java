@@ -67,40 +67,6 @@ public class RecordsImpl {
         }
     }
 
-    public static Tuple2<Byte, Short> multipleResults() {
-        return new Tuple2<>((byte) 100, (short) 200);
-    }
-
-    public static Tuple2<Integer, Byte> swapTuple(Tuple2<Byte, Integer> tuple) {
-        return new Tuple2<>(tuple.f1, tuple.f0);
-    }
-
-    public static Records.F1 roundtripFlags1(Records.F1 a) {
-        return a;
-    }
-
-    public static Records.F2 roundtripFlags2(Records.F2 a) {
-        return a;
-    }
-
-    public static Tuple4<Records.F8, Records.F16, Records.F32, Records.F64> roundtripFlags3
-        (Records.F8 a, Records.F16 b, Records.F32 c, Records.F64 d)
-    {
-        return new Tuple4<>(a, b, c, d);
-    }
-
-    public static Records.R1 roundtripRecord1(Records.R1 a) {
-        return a;
-    }
-
-    public static Tuple0 tuple0(Tuple0 a) {
-        return a;
-    }
-
-    public static Tuple1<Byte> tuple1(Tuple1<Byte> a) {
-        return a;
-    }
-
     private static void expect(boolean v) {
         if (!v) {
             throw new AssertionError();

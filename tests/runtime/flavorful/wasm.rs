@@ -1,6 +1,6 @@
-wit_bindgen_guest_rust::generate!("../../tests/runtime/flavorful/world.wit");
+wit_bindgen_guest_rust::generate!("world" in "../../tests/runtime/flavorful");
 
-use flavorful::*;
+use exports::*;
 
 struct Component;
 
@@ -59,7 +59,9 @@ impl Flavorful for Component {
         assert_eq!(b, [Err(()), Ok(())]);
         assert_eq!(c, [MyErrno::A, MyErrno::B]);
     }
+}
 
+impl exports::Exports for Component {
     fn f_list_in_record1(ty: ListInRecord1) {
         assert_eq!(ty.a, "list_in_record1");
     }
@@ -115,5 +117,13 @@ impl Flavorful for Component {
         assert_eq!(b.len(), 1);
         assert_eq!(b[0], "typedef2");
         (b"typedef3".to_vec(), vec!["typedef4".to_string()])
+    }
+
+    fn list_of_variants(
+        a: Vec<bool>,
+        b: Vec<Result<(), ()>>,
+        c: Vec<MyErrno>,
+    ) -> (Vec<bool>, Vec<Result<(), ()>>, Vec<MyErrno>) {
+        (a, b, c)
     }
 }

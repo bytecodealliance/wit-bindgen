@@ -12,6 +12,7 @@ struct Markdown {
     src: Source,
     opts: Opts,
     hrefs: HashMap<String, String>,
+    sizes: SizeAlign,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -29,28 +30,68 @@ impl Opts {
 }
 
 impl WorldGenerator for Markdown {
-    fn import(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
+    fn preprocess(&mut self, resolve: &Resolve, _name: &str) {
+        self.sizes.fill(resolve);
+    }
+
+    fn import_interface(
+        &mut self,
+        resolve: &Resolve,
+        name: &str,
+        id: InterfaceId,
+        _files: &mut Files,
+    ) {
         uwriteln!(self.src, "# Import interface `{name}`\n");
-        let mut gen = self.interface(iface);
-        gen.types();
-        gen.funcs();
+        let mut gen = self.interface(resolve);
+        gen.types(id);
+        gen.funcs(id);
     }
 
-    fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
+    fn import_funcs(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        funcs: &[(&str, &Function)],
+        _files: &mut Files,
+    ) {
+        let name = &resolve.worlds[world].name;
+        uwriteln!(self.src, "# Imported functions to world `{name}`\n");
+        let mut gen = self.interface(resolve);
+        for (_, func) in funcs {
+            gen.func(func);
+        }
+    }
+
+    fn export_interface(
+        &mut self,
+        resolve: &Resolve,
+        name: &str,
+        id: InterfaceId,
+        _files: &mut Files,
+    ) {
         uwriteln!(self.src, "# Export interface `{name}`\n");
-        let mut gen = self.interface(iface);
-        gen.types();
-        gen.funcs();
+        let mut gen = self.interface(resolve);
+        gen.types(id);
+        gen.funcs(id);
     }
 
-    fn export_default(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
-        uwriteln!(self.src, "# Default exported interface of `{name}`\n");
-        let mut gen = self.interface(iface);
-        gen.types();
-        gen.funcs();
+    fn export_funcs(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        funcs: &[(&str, &Function)],
+        _files: &mut Files,
+    ) {
+        let name = &resolve.worlds[world].name;
+        uwriteln!(self.src, "# Exported functions from world `{name}`\n");
+        let mut gen = self.interface(resolve);
+        for (_, func) in funcs {
+            gen.func(func);
+        }
     }
 
-    fn finish(&mut self, world: &World, files: &mut Files) {
+    fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
+        let world = &resolve.worlds[world];
         let parser = Parser::new(&self.src);
         let mut events = Vec::new();
         for event in parser {
@@ -74,13 +115,10 @@ impl WorldGenerator for Markdown {
 }
 
 impl Markdown {
-    fn interface<'a>(&'a mut self, iface: &'a Interface) -> InterfaceGenerator<'_> {
-        let mut sizes = SizeAlign::default();
-        sizes.fill(iface);
+    fn interface<'a>(&'a mut self, resolve: &'a Resolve) -> InterfaceGenerator<'_> {
         InterfaceGenerator {
             gen: self,
-            iface,
-            sizes,
+            resolve,
             types_header_printed: false,
         }
     }
@@ -88,61 +126,65 @@ impl Markdown {
 
 struct InterfaceGenerator<'a> {
     gen: &'a mut Markdown,
-    iface: &'a Interface,
-    sizes: SizeAlign,
+    resolve: &'a Resolve,
     types_header_printed: bool,
 }
 
 impl InterfaceGenerator<'_> {
-    fn funcs(&mut self) {
-        if self.iface.functions.is_empty() {
+    fn funcs(&mut self, id: InterfaceId) {
+        let iface = &self.resolve.interfaces[id];
+        if iface.functions.is_empty() {
             return;
         }
         self.push_str("## Functions\n\n");
-        for func in self.iface.functions.iter() {
-            self.push_str("----\n\n");
-            self.push_str(&format!(
-                "#### <a href=\"#{0}\" name=\"{0}\"></a> `",
-                func.name.to_snake_case()
-            ));
-            self.gen
-                .hrefs
-                .insert(func.name.clone(), format!("#{}", func.name.to_snake_case()));
-            self.push_str(&func.name);
-            self.push_str("` ");
-            self.push_str("\n\n");
-            self.docs(&func.docs);
-
-            if func.params.len() > 0 {
-                self.push_str("##### Params\n\n");
-                for (name, ty) in func.params.iter() {
-                    self.push_str(&format!(
-                        "- <a href=\"#{f}.{p}\" name=\"{f}.{p}\"></a> `{}`: ",
-                        name,
-                        f = func.name.to_snake_case(),
-                        p = name.to_snake_case(),
-                    ));
-                    self.print_ty(ty, false);
-                    self.push_str("\n");
-                }
-            }
-
-            if func.results.len() > 0 {
-                self.push_str("##### Results\n\n");
-                for (i, ty) in func.results.iter_types().enumerate() {
-                    self.push_str(&format!(
-                        "- <a href=\"#{f}.{p}{i}\" name=\"{f}.{p}{i}\"></a> `{}{i}`: ",
-                        "result",
-                        f = func.name.to_snake_case(),
-                        p = "result",
-                    ));
-                    self.print_ty(ty, false);
-                    self.push_str("\n");
-                }
-            }
-
-            self.push_str("\n");
+        for (_name, func) in iface.functions.iter() {
+            self.func(func);
         }
+    }
+
+    fn func(&mut self, func: &Function) {
+        self.push_str("----\n\n");
+        self.push_str(&format!(
+            "#### <a href=\"#{0}\" name=\"{0}\"></a> `",
+            func.name.to_snake_case()
+        ));
+        self.gen
+            .hrefs
+            .insert(func.name.clone(), format!("#{}", func.name.to_snake_case()));
+        self.push_str(&func.name);
+        self.push_str("` ");
+        self.push_str("\n\n");
+        self.docs(&func.docs);
+
+        if func.params.len() > 0 {
+            self.push_str("##### Params\n\n");
+            for (name, ty) in func.params.iter() {
+                self.push_str(&format!(
+                    "- <a href=\"#{f}.{p}\" name=\"{f}.{p}\"></a> `{}`: ",
+                    name,
+                    f = func.name.to_snake_case(),
+                    p = name.to_snake_case(),
+                ));
+                self.print_ty(ty, false);
+                self.push_str("\n");
+            }
+        }
+
+        if func.results.len() > 0 {
+            self.push_str("##### Results\n\n");
+            for (i, ty) in func.results.iter_types().enumerate() {
+                self.push_str(&format!(
+                    "- <a href=\"#{f}.{p}{i}\" name=\"{f}.{p}{i}\"></a> `{}{i}`: ",
+                    "result",
+                    f = func.name.to_snake_case(),
+                    p = "result",
+                ));
+                self.print_ty(ty, false);
+                self.push_str("\n");
+            }
+        }
+
+        self.push_str("\n");
     }
 
     fn push_str(&mut self, s: &str) {
@@ -165,7 +207,7 @@ impl InterfaceGenerator<'_> {
             Type::Char => self.push_str("`char`"),
             Type::String => self.push_str("`string`"),
             Type::Id(id) => {
-                let ty = &self.iface.types[*id];
+                let ty = &self.resolve.types[*id];
                 if !skip_name {
                     if let Some(name) = &ty.name {
                         self.push_str("[`");
@@ -259,6 +301,7 @@ impl InterfaceGenerator<'_> {
                             self.push_str("stream");
                         }
                     },
+                    TypeDefKind::Unknown => unreachable!(),
                 }
             }
         }
@@ -293,14 +336,17 @@ impl InterfaceGenerator<'_> {
     fn print_type_info(&mut self, ty: TypeId, docs: &Docs) {
         self.docs(docs);
         self.push_str("\n");
-        self.push_str(&format!("Size: {}, ", self.sizes.size(&Type::Id(ty))));
-        self.push_str(&format!("Alignment: {}\n", self.sizes.align(&Type::Id(ty))));
+        self.push_str(&format!("Size: {}, ", self.gen.sizes.size(&Type::Id(ty))));
+        self.push_str(&format!(
+            "Alignment: {}\n",
+            self.gen.sizes.align(&Type::Id(ty))
+        ));
     }
 }
 
 impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
-    fn iface(&self) -> &'a Interface {
-        self.iface
+    fn resolve(&self) -> &'a Resolve {
+        self.resolve
     }
 
     fn type_record(&mut self, id: TypeId, name: &str, record: &Record, docs: &Docs) {

@@ -104,27 +104,27 @@ async function run() {
 
   const bytes = wasm.allocatedBytes();
   wasm.testImports();
-  wasm.emptyListParam(new Uint8Array([]));
-  wasm.emptyStringParam('');
-  wasm.listParam(new Uint8Array([1, 2, 3, 4]).buffer);
-  wasm.listParam2("foo");
-  wasm.listParam3(["foo", "bar", "baz"]);
-  wasm.listParam4([["foo", "bar"], ["baz"]]);
-  assert.deepStrictEqual(Array.from(wasm.emptyListResult()), []);
-  assert.deepStrictEqual(wasm.emptyStringResult(), "");
-  assert.deepStrictEqual(Array.from(wasm.listResult()), [1, 2, 3, 4, 5]);
-  assert.deepStrictEqual(wasm.listResult2(), "hello!");
-  assert.deepStrictEqual(wasm.listResult3(), ["hello,", "world!"]);
+  wasm.exports.emptyListParam(new Uint8Array([]));
+  wasm.exports.emptyStringParam('');
+  wasm.exports.listParam(new Uint8Array([1, 2, 3, 4]).buffer);
+  wasm.exports.listParam2("foo");
+  wasm.exports.listParam3(["foo", "bar", "baz"]);
+  wasm.exports.listParam4([["foo", "bar"], ["baz"]]);
+  assert.deepStrictEqual(Array.from(wasm.exports.emptyListResult()), []);
+  assert.deepStrictEqual(wasm.exports.emptyStringResult(), "");
+  assert.deepStrictEqual(Array.from(wasm.exports.listResult()), [1, 2, 3, 4, 5]);
+  assert.deepStrictEqual(wasm.exports.listResult2(), "hello!");
+  assert.deepStrictEqual(wasm.exports.listResult3(), ["hello,", "world!"]);
 
   const buffer = new ArrayBuffer(8);
   (new Uint8Array(buffer)).set(new Uint8Array([1, 2, 3, 4]), 2);
   // Create a view of the four bytes in the middle of the buffer
   const view = new Uint8Array(buffer, 2, 4);
-  assert.deepStrictEqual(Array.from(wasm.listRoundtrip(view)), [1, 2, 3, 4]);
+  assert.deepStrictEqual(Array.from(wasm.exports.listRoundtrip(view)), [1, 2, 3, 4]);
 
-  assert.deepStrictEqual(wasm.stringRoundtrip("x"), "x");
-  assert.deepStrictEqual(wasm.stringRoundtrip(""), "");
-  assert.deepStrictEqual(wasm.stringRoundtrip("hello ⚑ world"), "hello ⚑ world");
+  assert.deepStrictEqual(wasm.exports.stringRoundtrip("x"), "x");
+  assert.deepStrictEqual(wasm.exports.stringRoundtrip(""), "");
+  assert.deepStrictEqual(wasm.exports.stringRoundtrip("hello ⚑ world"), "hello ⚑ world");
 
   // Ensure that we properly called `free` everywhere in all the glue that we
   // needed to.

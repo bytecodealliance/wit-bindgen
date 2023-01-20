@@ -22,7 +22,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        mode: [debug, release]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v2
@@ -56,12 +55,8 @@ jobs:
       with:
         java-version: '18'
         distribution: 'adopt'
-    - if: matrix.mode == 'release'
-      name: Test release build
-      run: cargo test --workspace --release
-    - if: matrix.mode != 'release'
-      name: Test debug build
-      run: cargo test --workspace
+    - run: cargo test --workspace
+    - run: cargo test -p wit-bindgen-gen-host-js --test runtime --features runtime-tests
 
   rustfmt:
     name: Rustfmt
@@ -88,11 +83,11 @@ jobs:
     - uses: actions/cache@v3
       with:
         path: ${{ runner.tool_cache }}/wasm-tools
-        key: wasm-tools-bin-1.0.15-${{ runner.os }}
+        key: wasm-tools-bin-1.0.17-${{ runner.os }}
     - run: echo '${{ runner.tool_cache }}/wasm-tools/bin' >> $GITHUB_PATH
     - run: |
         cargo install \
-          wasm-tools@1.0.15 \
+          wasm-tools@1.0.17 \
           --root '${{ runner.tool_cache }}/wasm-tools' \
           --locked \
           --no-default-features \

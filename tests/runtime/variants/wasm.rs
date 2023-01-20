@@ -1,6 +1,6 @@
-wit_bindgen_guest_rust::generate!("../../tests/runtime/variants/world.wit");
+wit_bindgen_guest_rust::generate!("world" in "../../tests/runtime/variants");
 
-use variants::*;
+use exports::*;
 
 struct Component;
 
@@ -66,7 +66,9 @@ impl Variants for Component {
             (false, Err(()), MyErrno::A)
         );
     }
+}
 
+impl Exports for Component {
     fn roundtrip_option(a: Option<f32>) -> Option<u8> {
         a.map(|x| x as u8)
     }
@@ -96,4 +98,8 @@ impl Variants for Component {
     }
 
     fn variant_typedefs(_: Option<u32>, _: bool, _: Result<u32, ()>) {}
+
+    fn variant_enums(a: bool, b: Result<(), ()>, c: MyErrno) -> (bool, Result<(), ()>, MyErrno) {
+        (a, b, c)
+    }
 }
