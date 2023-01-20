@@ -2,8 +2,8 @@ use std::{mem};
 
 use heck::{ToSnakeCase, ToUpperCamelCase, ToLowerCamelCase, ToKebabCase};
 use wit_bindgen_core::{
-    wit_parser::{Interface, World, SizeAlign, Function, FunctionKind, Type},
-    Files, WorldGenerator, Source, InterfaceGenerator as _,
+    wit_parser::{Interface, World, SizeAlign, Function, Type, TypeId, Record},
+    Files, WorldGenerator, InterfaceGenerator as _, Source,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -35,14 +35,10 @@ impl Opts {
 pub struct TinyGo {
     opts: Opts,
     src: String,
-    exports: Vec<Source>,
     export_funcs: Vec<(String, String)>,
 }
 
 impl TinyGo {
-    fn new() -> Self {
-        Self::default()
-    }
     fn interface<'a>(&'a mut self, iface: &'a Interface, name: &'a str) -> InterfaceGenerator<'a> {
         let mut sizes = SizeAlign::default();
         sizes.fill(iface);
@@ -82,7 +78,6 @@ impl WorldGenerator for TinyGo {
             gen.import(iface, func);
         }
 
-        // gen.add_class();
         let src = mem::take(&mut gen.src);
         self.src.push_str(src.as_str());
 
@@ -97,9 +92,6 @@ impl WorldGenerator for TinyGo {
         for func in iface.functions.iter() {
             gen.export(iface, func);
         }
-
-        self.export_funcs = gen.export_funcs;
-
     }
 
     fn export_default(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
@@ -111,7 +103,6 @@ impl WorldGenerator for TinyGo {
         for func in iface.functions.iter() {
             gen.export(iface, func);
         }
-        self.export_funcs = gen.export_funcs;
     }
 
     fn finish(&mut self, world: &World, files: &mut Files) {
@@ -320,105 +311,166 @@ impl InterfaceGenerator<'_> {
         }
     }
 
+    fn get_func_signature(&mut self, iface: &Interface, func: &Function) -> String {
+        format!(
+            "{}({}) {}",
+            func.name.to_lower_camel_case(),
+            self.get_func_params(iface, func),
+            self.get_func_results(iface, func)
+        )
+    }
+
+    fn print_func_signature(&mut self, iface: &Interface, func: &Function) {
+        let sig = self.get_func_signature(iface, func);
+        self.src.push_str(&format!(
+            "func {sig} {{\n"
+        ));
+    }
+    
+    
+
     fn import(&mut self, iface: &Interface, func: &Function) {
-        match func.kind {
-            FunctionKind::Freestanding => {
-                self.src.push_str("func ");
-                self.src.push_str(&func.name.to_lower_camel_case());
-                self.src.push('(');
-                let params = self.get_func_params(iface, func);
-                self.src.push_str(&params);
-                self.src.push(')');
 
-                //FIXME: assume only one return value for now
-                match func.results.len() {
-                    0 => {}
-                    1 => {
-                        self.src.push(' ');
-                        self.print_ty(iface, func.results.iter_types().next().unwrap());
-                    }
-                    _ => todo!(),
-                }
-
-                self.src.push_str(" {\n    ");
-                if func.results.len() > 0 {
-                    self.src.push_str("res := ");
-                }
-                let c_name = format!(
-                    "{}_{}",
-                    iface.name.to_snake_case(),
-                    func.name.to_snake_case()
-                );
-                self.src.push_str("C.");
-                self.src.push_str(&c_name);
-                self.src.push('(');
-                for (i, (name, param)) in func.params.iter().enumerate() {
-                    if i > 0 {
-                        self.src.push_str(", ");
-                    }
-                    self.src.push_str("C.");
-                    self.print_c_ty(iface, param);
-                    self.src.push('(');
-                    self.src.push_str(name);
-                    self.src.push(')');
-                }
-                self.src.push_str(")\n");
-
-                // return
-                match func.results.len() {
-                    0 => {}
-                    1 => {
-                        self.src.push_str("return ");
-                        let ty = self.get_func_results(iface, func);
-                        self.src.push_str(&ty);
-                        self.src.push_str("(res)\n");
-                    }
-                    _ => todo!(),
-                };
-                self.src.push_str("}\n\n");
+        let mut func_bindgen = FunctionBindgen::new(self, func);
+        // lower params to c
+        func.params.iter().for_each(|(name, ty)| {
+            func_bindgen.lower(name, ty);
+        });
+        // lift results from c
+        match func.results.len() {
+            0 => {}
+            1 => {
+                let ty = func.results.iter_types().next().unwrap();
+                func_bindgen.lift("result", ty);
             }
             _ => {
-                panic!("functions other than freestanding are not supported yet");
+                todo!("does not support multi-results")
             }
+        };
+        let c_args = func_bindgen.c_args;
+        let ret = func_bindgen.args;
+        
+        // // print function signature
+        self.print_func_signature(iface, func);
+
+        // body
+        // prepare args
+        for (_, c_param_decl) in c_args.iter() {
+            self.src.push_str(c_param_decl);
         }
+
+        // invoke
+        let invoke = format!(
+            "C.{}_{}({})",
+            iface.name.to_snake_case(),
+            func.name.to_snake_case(),
+            c_args
+                .iter()
+                .enumerate()
+                .map(|(i, (name, _))| format!(
+                    "{}{}",
+                    name,
+                    if i < func.params.len() - 1 { ", " } else { "" }
+                ))
+                .collect::<String>()
+        );
+
+        // return
+        match func.results.len() {
+            0 => {
+                self.src.push_str(&format!("   {invoke}\n", invoke = invoke));
+            }
+            1 => {
+                self.src.push_str(&format!("   result := {invoke}\n", invoke = invoke));
+                self.src.push_str(&ret[0].1);
+                self.src.push_str(&format!("   return {ret}\n", ret = &ret[0].0));
+            }
+            _ => todo!("does not support multi-results"),
+        };
+
+        self.src.push_str("}\n\n");
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
         println!("export {func:?}");
 
-        // FIXME: for now I only care about the freestanding kind of functions.
-        // I don't care about the static and methods yet.
-        match func.kind {
-            FunctionKind::Freestanding => {
-                let interface_method_decl = format!(
-                    "{}({}) {}",
-                    func.name.to_lower_camel_case(),
-                    self.get_func_params(iface, func),
-                    self.get_func_results(iface, func)
-                );
-                let export_func = {
-                    let mut src = String::new();
-                    src.push_str("//export ");
-                    let name = format!(
-                        "{}_{}",
-                        iface.name.to_snake_case(),
-                        func.name.to_snake_case()
-                    );
-                    src.push_str(&name);
-                    src.push('\n');
-
-                    src.push_str(&self.get_c_func_signature(iface, func));
-                    src.push_str(" {\n");
-                    src.push_str(&self.get_c_func_impl(iface, func));
-                    src.push_str("\n}\n");
-                    src
-                };
-                self.export_funcs.push((interface_method_decl, export_func));
+        let mut func_bindgen = FunctionBindgen::new(self, func);
+        // lift params to go
+        func.params.iter().for_each(|(name, ty)| {
+            func_bindgen.lift(name, ty);
+        });
+        // lower result to c
+        match func.results.len() {
+            0 => {}
+            1 => {
+                let ty = func.results.iter_types().next().unwrap();
+                func_bindgen.lower("result", ty);
             }
             _ => {
-                panic!("functions other than freestanding are not supported yet");
+                todo!("does not support multi-results")
             }
-        }
+        };
+
+        let args = func_bindgen.args;
+        let ret = func_bindgen.c_args;
+
+        let interface_method_decl = self.get_func_signature(iface, func);
+        let export_func = {
+            let mut src = String::new();
+            // header
+            src.push_str("//export ");
+            let name = format!(
+                "{}_{}",
+                iface.name.to_snake_case(),
+                func.name.to_snake_case()
+            );
+            src.push_str(&name);
+            src.push('\n');
+
+            // signature
+            src.push_str(&self.get_c_func_signature(iface, func));
+            src.push_str(" {\n");
+
+            // src.push_str(&self.get_c_func_impl(iface, func));
+            // prepare args
+            for (_, c_param_decl) in args.iter() {
+                src.push_str(c_param_decl);
+            }
+
+            // invoke
+            let invoke = format!(
+                "{}.{}({})",
+                &iface.name.to_snake_case(),
+                &func.name.to_lower_camel_case(),
+                args
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (name, _))| format!(
+                        "{}{}",
+                        name,
+                        if i < func.params.len() - 1 { ", " } else { "" }
+                    ))
+                    .collect::<String>()
+            );
+
+            
+            // prepare ret
+            match func.results.len() {
+                0 => {
+                    src.push_str(&format!("   {invoke}\n", invoke = invoke));
+                }
+                1 => {
+                    src.push_str(&format!("   result := {invoke}\n", invoke = invoke));
+                    src.push_str(&ret[0].1);
+                    src.push_str(&format!("   return {ret}\n", ret = &ret[0].0));
+                }
+                _ => todo!("does not support multi-results"),
+            };
+
+            src.push_str("\n}\n");
+            src
+        };
+        self.gen.export_funcs.push((interface_method_decl, export_func));
     }
 }
 
@@ -502,5 +554,69 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_builtin(&mut self, _id: wit_bindgen_core::wit_parser::TypeId, _name: &str, _ty: &wit_bindgen_core::wit_parser::Type, _docs: &wit_bindgen_core::wit_parser::Docs) {
         todo!()
+    }
+}
+
+struct FunctionBindgen<'a, 'b> {
+    interface: &'a mut InterfaceGenerator<'b>,
+    func: &'a Function,
+    c_args: Vec<(String, String)>,
+    args: Vec<(String, String)>,
+}
+
+impl<'a, 'b> FunctionBindgen<'a, 'b> {
+    fn new(interface: &'a mut InterfaceGenerator<'b>, func: &'a Function) -> Self {
+        Self {
+            interface,
+            func,
+            c_args: Vec::new(),
+            args: Vec::new(),
+        }
+    }
+
+    fn lower(&mut self, name: &str, ty: &Type) {
+        let lower_name = format!("lower_{name}");
+        let value = match ty {
+            Type::Bool => "nil".into(),
+            Type::Char => "nil".into(),
+            Type::String => "nil".into(),
+            Type::Id(_) => "nil".into(),
+            a => {
+                format!(
+                    "C.{c_type_name}({param_name})",
+                    c_type_name = self.interface.get_c_ty(a),
+                    param_name = name,
+                )
+            }
+        };
+        let c_arg_decl = format!(
+            "   {name} := {value}\n",
+            name = lower_name,
+            value = value,
+        );
+        self.c_args.push((lower_name, c_arg_decl));
+    }
+
+    fn lift(&mut self, name: &str, ty: &Type) {
+        let lift_name = format!("lift_{name}");
+        let value = match ty {
+            Type::Bool => "nil".into(),
+            Type::Char => "nil".into(),
+            Type::String => "nil".into(),
+            Type::Id(_) => "nil".into(),
+            a => {
+                format!(
+                    "{type}({param_name})",
+                    type = self.interface.get_ty(a),
+                    param_name = name,
+                )
+            }
+        };
+        let arg_decl = format!(
+            "   {name} := {value}\n",
+            name = lift_name,
+            value = value,
+        );
+        self.args.push((lift_name, arg_decl));
     }
 }
