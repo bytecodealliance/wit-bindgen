@@ -4,9 +4,6 @@ use std::path::Path;
 use std::process::Command;
 
 macro_rules! codegen_test {
-    // TODO: should get this test working
-    (use_across_interfaces $($x:tt)*) => {};
-
     ($id:ident $name:tt $test:tt) => {
         #[test]
         fn $id() {
@@ -35,21 +32,24 @@ fn verify(dir: &Path, name: &str) {
     fs::create_dir_all(package_dir).unwrap();
 
     let upper = name.to_upper_camel_case();
-    for file_name in [
-        format!("{upper}World.java"),
-        format!("{upper}.java"),
-        format!("{upper}Impl.java"),
-    ] {
-        let src = &dir.join(&file_name);
-        let dst = &package_dir.join(&file_name);
-        if src.exists() {
-            fs::rename(src, dst).unwrap();
+
+    let src_files = fs::read_dir(&dir).unwrap().filter_map(|entry| {
+        let path = entry.unwrap().path();
+        if let Some("java") = path.extension().map(|ext| ext.to_str().unwrap()) {
+            Some(path)
+        } else {
+            None
         }
+    });
+
+    for src in src_files {
+        let dst = &package_dir.join(src.file_name().unwrap());
+        fs::rename(src, dst).unwrap();
     }
 
     fs::write(
         dir.join("pom.xml"),
-        pom_xml(&[&format!("wit_{snake}.{upper}",)]),
+        pom_xml(&[&format!("wit_{snake}.{upper}")]),
     )
     .unwrap();
     fs::write(java_dir.join("Main.java"), include_bytes!("Main.java")).unwrap();
