@@ -10,7 +10,8 @@ use wit_bindgen_core::{
     wit_parser::{
         abi::{AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
         Case, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Int, InterfaceId, Record,
-        Resolve, Result_, SizeAlign, Tuple, Type, TypeDefKind, TypeId, Union, Variant, WorldId,
+        Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, Union,
+        Variant, WorldId,
     },
     Files, InterfaceGenerator as _, Ns, WorldGenerator,
 };
@@ -53,6 +54,7 @@ pub struct TeaVmJava {
     needs_result: bool,
     classes: HashMap<String, String>,
     sizes: SizeAlign,
+    interface_names: HashMap<InterfaceId, String>,
 }
 
 impl TeaVmJava {
@@ -85,6 +87,7 @@ impl WorldGenerator for TeaVmJava {
         id: InterfaceId,
         _files: &mut Files,
     ) {
+        self.interface_names.insert(id, name.to_owned());
         let mut gen = self.interface(resolve, name);
         gen.types(id);
 
@@ -119,6 +122,7 @@ impl WorldGenerator for TeaVmJava {
         id: InterfaceId,
         _files: &mut Files,
     ) {
+        self.interface_names.insert(id, name.to_owned());
         let mut gen = self.interface(resolve, name);
         gen.types(id);
 
@@ -318,10 +322,18 @@ struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
-    fn qualifier(&self, when: bool) -> String {
+    fn qualifier(&self, when: bool, ty: &TypeDef) -> String {
+        if let TypeOwner::Interface(id) = &ty.owner {
+            if let Some(name) = self.gen.interface_names.get(id) {
+                if name != self.name {
+                    return format!("{}.", name.to_upper_camel_case());
+                }
+            }
+        }
+
         if when {
-            let iface = self.name.to_upper_camel_case();
-            format!("{iface}.")
+            let name = self.name.to_upper_camel_case();
+            format!("{name}.")
         } else {
             String::new()
         }
@@ -596,7 +608,7 @@ impl InterfaceGenerator<'_> {
                         if let Some(name) = &ty.name {
                             format!(
                                 "{}{}",
-                                self.qualifier(qualifier),
+                                self.qualifier(qualifier, ty),
                                 name.to_upper_camel_case()
                             )
                         } else {
