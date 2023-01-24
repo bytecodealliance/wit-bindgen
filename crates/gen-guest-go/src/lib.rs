@@ -288,21 +288,10 @@ impl InterfaceGenerator<'_> {
                 params.push_str(", ");
             }
             params.push_str(name);
-            match param {
-                Type::Id(id) => {
-                    let ty = &self.iface.types[*id];
-                    match &ty.kind {
-                        TypeDefKind::Record(_r) => {
-                            params.push_str(" *C.");
-                        }
-                        _ => {
-                            params.push_str(" C.");
-                        }
-                    }
-                }
-                _ => {
-                    params.push_str(" C.");
-                }
+            if self.is_arg_by_pointer(param) {
+                params.push_str(" *C.");
+            } else {
+                params.push_str(" C.");
             }
 
             params.push_str(&self.get_c_ty(param));
@@ -331,29 +320,21 @@ impl InterfaceGenerator<'_> {
         match func.results.len() {
             0 => format!("func {}({})", name, self.get_c_func_params(iface, func),),
             1 => {
-                let sig = format!(
-                    "func {}({}) C.{}",
-                    name,
-                    self.get_c_func_params(iface, func),
-                    self.get_c_ty(func.results.iter_types().next().unwrap())
-                );
                 let result = func.results.iter_types().next().unwrap();
-                match result {
-                    Type::Id(id) => {
-                        let ty = &self.iface.types[*id];
-                        match &ty.kind {
-                            TypeDefKind::Record(_r) => {
-                                format!(
-                                    "func {}({}, ret *C.{})",
-                                    name,
-                                    self.get_c_func_params(iface, func),
-                                    self.get_c_ty(func.results.iter_types().next().unwrap())
-                                )
-                            }
-                            _ => sig,
-                        }
-                    }
-                    _ => sig,
+                if self.is_arg_by_pointer(result) {
+                    format!(
+                        "func {}({}, ret *C.{})",
+                        name,
+                        self.get_c_func_params(iface, func),
+                        self.get_c_ty(func.results.iter_types().next().unwrap())
+                    )
+                } else {
+                    format!(
+                        "func {}({}) C.{}",
+                        name,
+                        self.get_c_func_params(iface, func),
+                        self.get_c_ty(func.results.iter_types().next().unwrap())
+                    )
                 }
             }
             _ => todo!(),
@@ -402,6 +383,26 @@ impl InterfaceGenerator<'_> {
 
     fn get_field_name(&mut self, field: &Field) -> String {
         field.name.to_upper_camel_case()
+    }
+
+    fn is_arg_by_pointer(&self, ty: &Type) -> bool {
+        // TODO: can reuse this for other things
+        match ty {
+            Type::Id(id) => match &self.iface.types[*id].kind {
+                TypeDefKind::Type(t) => self.is_arg_by_pointer(t),
+                TypeDefKind::Variant(_) => true,
+                TypeDefKind::Union(_) => true,
+                TypeDefKind::Option(_) => true,
+                TypeDefKind::Result(_) => true,
+                TypeDefKind::Enum(_) => false,
+                TypeDefKind::Flags(_) => false,
+                TypeDefKind::Tuple(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
+                TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
+                TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
+            },
+            Type::String => true,
+            _ => false,
+        }
     }
 
     fn import(&mut self, iface: &Interface, func: &Function) {
@@ -468,42 +469,29 @@ impl InterfaceGenerator<'_> {
             }
             1 => {
                 let result = func.results.iter_types().next().unwrap();
-                match result {
-                    Type::Id(id) => {
-                        let ty = &self.iface.types[*id];
-                        match &ty.kind {
-                            TypeDefKind::Record(_r) => {
-                                let c_ret_type = self.get_c_ty(result);
-                                self.src
-                                    .push_str(&format!("result := C.{c_ret_type}{{}}\n"));
-                                let invoke = format!(
-                                    "C.{}_{}({}, &result)\n",
-                                    iface.name.to_snake_case(),
-                                    func.name.to_snake_case(),
-                                    c_args
-                                        .iter()
-                                        .enumerate()
-                                        .map(|(i, (name, _))| format!(
-                                            "&{}{}",
-                                            name,
-                                            if i < func.params.len() - 1 { ", " } else { "" }
-                                        ))
-                                        .collect::<String>()
-                                );
-                                self.src.push_str(&invoke);
-                                self.src.push_str(&ret[0].1);
-                            }
-                            _ => {
-                                self.src.push_str(&format!("result := {invoke}\n"));
-                                self.src.push_str(&ret[0].1);
-                            }
-                        }
-                    }
-                    _ => {
-                        self.src.push_str(&format!("result := {invoke}\n"));
-                        self.src.push_str(&ret[0].1);
-                    }
+                if self.is_arg_by_pointer(result) {
+                    let c_ret_type = self.get_c_ty(result);
+                    self.src
+                        .push_str(&format!("result := C.{c_ret_type}{{}}\n"));
+                    let invoke = format!(
+                        "C.{}_{}({}, &result)\n",
+                        iface.name.to_snake_case(),
+                        func.name.to_snake_case(),
+                        c_args
+                            .iter()
+                            .enumerate()
+                            .map(|(i, (name, _))| format!(
+                                "&{}{}",
+                                name,
+                                if i < func.params.len() - 1 { ", " } else { "" }
+                            ))
+                            .collect::<String>()
+                    );
+                    self.src.push_str(&invoke);
+                } else {
+                    self.src.push_str(&format!("result := {invoke}\n"));
                 }
+                self.src.push_str(&ret[0].1);
                 self.src
                     .push_str(&format!("return {ret}\n", ret = &ret[0].0));
             }
@@ -581,22 +569,11 @@ impl InterfaceGenerator<'_> {
                     src.push_str(&format!("result := {invoke}\n"));
                     src.push_str(&ret[0].1);
                     let result = func.results.iter_types().next().unwrap();
-                    match result {
-                        Type::Id(id) => {
-                            let ty = &self.iface.types[*id];
-                            match &ty.kind {
-                                TypeDefKind::Record(_r) => {
-                                    src.push_str(&format!("*ret = {ret}\n", ret = &ret[0].0));
-                                }
-                                _ => {
-                                    src.push_str(&format!("return {ret}\n", ret = &ret[0].0));
-                                }
-                            }
-                        }
-                        _ => {
-                            src.push_str(&format!("return {ret}\n", ret = &ret[0].0));
-                        }
-                    };
+                    if self.is_arg_by_pointer(result) {
+                        src.push_str(&format!("*ret = {ret}\n", ret = &ret[0].0));
+                    } else {
+                        src.push_str(&format!("return {ret}\n", ret = &ret[0].0));
+                    }
                 }
                 _ => todo!("does not support multi-results"),
             };
@@ -671,11 +648,21 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_tuple(
         &mut self,
         _id: wit_bindgen_core::wit_parser::TypeId,
-        _name: &str,
-        _flags: &wit_bindgen_core::wit_parser::Tuple,
+        name: &str,
+        tuple: &wit_bindgen_core::wit_parser::Tuple,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!()
+        let name = format!(
+            "{}{}",
+            self.iface().name.to_upper_camel_case(),
+            name.to_upper_camel_case()
+        );
+        self.src.push_str(&format!("type {name} struct {{\n",));
+        for (i, ty) in tuple.types.iter().enumerate() {
+            let ty = self.get_ty(&ty);
+            self.src.push_str(&format!("   F{i} {ty}\n",));
+        }
+        self.src.push_str("}\n\n");
     }
 
     fn type_variant(
