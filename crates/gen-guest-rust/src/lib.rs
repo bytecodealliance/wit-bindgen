@@ -327,6 +327,9 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 self.src,
                 "
+                    #[allow(unused_imports)]
+                    use wit_bindgen_guest_rust::rt::{{alloc, vec::Vec, string::String}};
+
                     #[repr(align({align}))]
                     struct _RetArea([u8; {size}]);
                     static mut _RET_AREA: _RetArea = _RetArea([0; {size}]);
@@ -347,9 +350,6 @@ impl InterfaceGenerator<'_> {
             "
                 #[allow(clippy::all)]
                 pub mod {snake} {{
-                    #[allow(unused_imports)]
-                    use wit_bindgen_guest_rust::rt::{{alloc, vec::Vec, string::String}};
-
                     {module}
                 }}
             "
@@ -528,11 +528,7 @@ impl InterfaceGenerator<'_> {
             macro_src.push_str(") {\n");
 
             // Finish out the macro here
-            uwrite!(
-                macro_src,
-                "{prefix}{module_name}::post_return_{name_snake}::<$t>(",
-                prefix = self.gen.opts.macro_call_prefix.as_deref().unwrap_or("")
-            );
+            uwrite!(macro_src, "{prefix}post_return_{name_snake}::<$t>(");
             for param in params.iter() {
                 uwrite!(macro_src, "{param},");
             }
