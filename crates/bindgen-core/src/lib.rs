@@ -8,9 +8,6 @@ mod ns;
 
 pub use ns::Ns;
 
-#[cfg(feature = "component-generator")]
-pub mod component;
-
 #[derive(Default)]
 pub struct Types {
     type_info: HashMap<TypeId, TypeInfo>,
