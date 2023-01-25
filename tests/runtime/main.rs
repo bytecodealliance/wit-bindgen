@@ -15,6 +15,7 @@ mod numbers;
 mod records;
 mod smoke;
 mod unions;
+mod variants;
 
 wasmtime::component::bindgen!("testwasi" in "crates/wasi_snapshot_preview1/wit");
 
