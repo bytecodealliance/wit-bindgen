@@ -10,6 +10,7 @@ use wit_parser::Resolve;
 
 mod flavorful;
 mod lists;
+mod many_arguments;
 mod numbers;
 
 wasmtime::component::bindgen!("testwasi" in "crates/wasi_snapshot_preview1/wit");
