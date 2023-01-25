@@ -12,6 +12,7 @@ mod flavorful;
 mod lists;
 mod many_arguments;
 mod numbers;
+mod records;
 
 wasmtime::component::bindgen!("testwasi" in "crates/wasi_snapshot_preview1/wit");
 
