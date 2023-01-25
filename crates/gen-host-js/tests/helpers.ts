@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises';
 // @ts-ignore
 import { argv, stdout, stderr } from 'node:process';
+// @ts-ignore
 import { Buffer } from 'node:buffer';
 
 // This is a helper function used from `host.ts` test in the `tests/runtime/*`
