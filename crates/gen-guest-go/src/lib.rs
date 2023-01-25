@@ -1,7 +1,9 @@
+use std::fmt::Write;
 use std::{collections::BTreeSet, mem};
 
 use heck::{ToKebabCase, ToSnakeCase, ToUpperCamelCase};
 use wit_bindgen_core::{
+    uwriteln,
     wit_parser::{
         Field, Flags, FlagsRepr, Function, Int, Interface, SizeAlign, Type, TypeDefKind, TypeId,
         World,
@@ -69,6 +71,7 @@ impl WorldGenerator for TinyGo {
         self.src.push_str(name.to_snake_case().as_str());
         self.src.push_str(".h\"\n");
         self.src.push_str("import \"C\"\n\n");
+        self.src.push_str("import \"unsafe\"\n\n");
     }
 
     fn import(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
@@ -80,7 +83,6 @@ impl WorldGenerator for TinyGo {
         for func in iface.functions.iter() {
             gen.import(iface, func);
         }
-
         gen.finish();
 
         let src = mem::take(&mut gen.src);
@@ -393,8 +395,8 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Result(_r) => {
                         todo!()
                     }
-                    TypeDefKind::List(_t) => {
-                        todo!()
+                    TypeDefKind::List(t) => {
+                        format!("list_{}", self.get_c_ty_name(t))
                     }
                     TypeDefKind::Future(_t) => {
                         todo!()
@@ -526,6 +528,19 @@ impl InterfaceGenerator<'_> {
         }
     }
 
+    fn is_list(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Id(id) => match &self.iface.types[*id].kind {
+                TypeDefKind::Type(t) => self.is_list(t),
+                TypeDefKind::List(_) => true,
+                TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
+                TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     fn print_anonymous_type(&mut self, ty: TypeId) {
         let kind = &self.iface.types[ty].kind;
         match kind {
@@ -556,9 +571,7 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Result(_r) => {
                 todo!()
             }
-            TypeDefKind::List(_l) => {
-                todo!()
-            }
+            TypeDefKind::List(_l) => {}
             TypeDefKind::Future(_) => todo!("print_anonymous_type for future"),
             TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
         }
@@ -909,16 +922,24 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         todo!()
+        // let name = format!(
+        //     "{}{}",
+        //     self.iface().name.to_upper_camel_case(),
+        //     name.to_upper_camel_case()
+        // );
+        // let ty = self.get_ty(ty);
+        // self.src.push_str(&format!("type {name} = {ty}\n"));
     }
 
     fn type_list(
         &mut self,
         _id: wit_bindgen_core::wit_parser::TypeId,
         _name: &str,
-        _ty: &wit_bindgen_core::wit_parser::Type,
+        ty: &wit_bindgen_core::wit_parser::Type,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!()
+        let ty = self.get_ty(ty);
+        self.src.push_str(&ty);
     }
 
     fn type_builtin(
@@ -951,12 +972,19 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
     fn lower(&mut self, name: &str, ty: &Type) {
         let lower_name = format!("lower_{name}");
-
-        let c_arg_decl = format!(
-            "   {name} := {value}\n",
-            name = lower_name,
-            value = self.lower_value(name, ty),
-        );
+        let c_arg_decl = if self.interface.is_list(ty) {
+            format!(
+                "var {name} {value}\n",
+                name = lower_name,
+                value = self.lower_value(name, ty),
+            )
+        } else {
+            format!(
+                "   {name} := {value}\n",
+                name = lower_name,
+                value = self.lower_value(name, ty),
+            )
+        };
         self.c_args.push((lower_name, c_arg_decl));
     }
 
@@ -1016,7 +1044,23 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     // TypeDefKind::Option(_) => todo!(),
                     // TypeDefKind::Result(_) => todo!(),
                     // TypeDefKind::Union(_) => todo!(),
-                    // TypeDefKind::List(_) => todo!(),
+                    TypeDefKind::List(_l) => {
+                        let mut src = Source::default();
+                        let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
+                        src.push_str(&format!("C.{c_typedef_target}\n"));
+                        uwriteln!(
+                            src,
+                            "
+                            if len({param}) == 0 {{
+                                lower_{param}.ptr = nil
+                                lower_{param}.len = 0
+                            }} else {{
+                                lower_{param}.ptr = (*C.uint8_t)(unsafe.Pointer(&{param}[0]))
+                                lower_{param}.len = C.size_t(len({param}))
+                            }}"
+                        );
+                        src.to_string()
+                    }
                     // TypeDefKind::Future(_) => todo!(),
                     // TypeDefKind::Stream(_) => todo!(),
                     // TypeDefKind::Type(_) => todo!(),
@@ -1035,11 +1079,19 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
     fn lift(&mut self, name: &str, ty: &Type) {
         let lift_name = format!("lift_{name}");
-        let arg_decl = format!(
-            "   {name} := {value}\n",
-            name = lift_name,
-            value = self.lift_value(name, ty),
-        );
+        let arg_decl = if self.interface.is_list(ty) {
+            format!(
+                "var {name} {value}\n",
+                name = lift_name,
+                value = self.lift_value(name, ty),
+            )
+        } else {
+            format!(
+                "   {name} := {value}\n",
+                name = lift_name,
+                value = self.lift_value(name, ty),
+            )
+        };
         self.args.push((lift_name, arg_decl));
     }
 
@@ -1099,7 +1151,18 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     // TypeDefKind::Option(_) => todo!(),
                     // TypeDefKind::Result(_) => todo!(),
                     // TypeDefKind::Union(_) => todo!(),
-                    // TypeDefKind::List(_) => todo!(),
+                    TypeDefKind::List(_l) => {
+                        let mut src = Source::default();
+                        let typedef_target = self.interface.get_ty(&Type::Id(*id));
+                        src.push_str(&format!("{typedef_target}\n"));
+                        uwriteln!(src, "
+                            if {param}.len == 0 {{
+                                lift_{param} = nil
+                            }} else {{
+                                lift_{param} = (*[1 << 28]uint8)(unsafe.Pointer({param}.ptr))[:{param}.len:{param}.len]
+                            }}");
+                        src.to_string()
+                    }
                     // TypeDefKind::Future(_) => todo!(),
                     // TypeDefKind::Stream(_) => todo!(),
                     // TypeDefKind::Type(_) => todo!(),
