@@ -13,6 +13,7 @@ mod lists;
 mod many_arguments;
 mod numbers;
 mod records;
+mod smoke;
 
 wasmtime::component::bindgen!("testwasi" in "crates/wasi_snapshot_preview1/wit");
 
