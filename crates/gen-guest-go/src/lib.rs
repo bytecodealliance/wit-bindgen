@@ -1,9 +1,10 @@
-use std::mem;
+use std::{collections::BTreeSet, mem};
 
-use heck::{ToKebabCase, ToLowerCamelCase, ToSnakeCase, ToUpperCamelCase};
+use heck::{ToKebabCase, ToSnakeCase, ToUpperCamelCase};
 use wit_bindgen_core::{
     wit_parser::{
-        Field, Flags, FlagsRepr, Function, Int, Interface, SizeAlign, Type, TypeDefKind, World,
+        Field, Flags, FlagsRepr, Function, Int, Interface, SizeAlign, Type, TypeDefKind, TypeId,
+        World,
     },
     Files, InterfaceGenerator as _, Source, WorldGenerator,
 };
@@ -49,6 +50,8 @@ impl TinyGo {
             iface,
             name,
             export_funcs: Vec::new(),
+            public_anonymous_types: BTreeSet::new(),
+            private_anonymous_types: BTreeSet::new(),
         }
     }
 }
@@ -78,6 +81,8 @@ impl WorldGenerator for TinyGo {
             gen.import(iface, func);
         }
 
+        gen.finish();
+
         let src = mem::take(&mut gen.src);
         self.src.push_str(&src);
     }
@@ -91,6 +96,9 @@ impl WorldGenerator for TinyGo {
         for func in iface.functions.iter() {
             gen.export(iface, func);
         }
+
+        gen.finish();
+
         let src = mem::take(&mut gen.src);
         self.src.push_str(&src);
 
@@ -133,6 +141,9 @@ impl WorldGenerator for TinyGo {
         for func in iface.functions.iter() {
             gen.export(iface, func);
         }
+
+        gen.finish();
+
         let src = mem::take(&mut gen.src);
         self.src.push_str(&src);
 
@@ -177,6 +188,8 @@ struct InterfaceGenerator<'a> {
     iface: &'a Interface,
     name: &'a str,
     export_funcs: Vec<(String, String)>,
+    public_anonymous_types: BTreeSet<TypeId>,
+    private_anonymous_types: BTreeSet<TypeId>,
 }
 
 impl InterfaceGenerator<'_> {
@@ -210,14 +223,19 @@ impl InterfaceGenerator<'_> {
                     wit_bindgen_core::wit_parser::TypeDefKind::List(ty) => {
                         format!("[]{}", self.get_ty(ty))
                     }
-                    wit_bindgen_core::wit_parser::TypeDefKind::Tuple(_) => todo!(),
                     wit_bindgen_core::wit_parser::TypeDefKind::Option(_) => todo!(),
                     wit_bindgen_core::wit_parser::TypeDefKind::Result(_) => todo!(),
                     _ => {
                         if let Some(name) = &ty.name {
                             self.get_typedef_target(name)
                         } else {
-                            unreachable!()
+                            self.public_anonymous_types.insert(*id);
+                            self.private_anonymous_types.remove(id);
+                            format!(
+                                "{namespace}{name}",
+                                namespace = self.name.to_upper_camel_case(),
+                                name = self.get_ty_name(&Type::Id(*id)),
+                            )
                         }
                     }
                 }
@@ -257,15 +275,136 @@ impl InterfaceGenerator<'_> {
                             name = name.to_snake_case(),
                         )
                     }
-                    None => unreachable!(),
+                    None => {
+                        self.public_anonymous_types.insert(*id);
+                        self.private_anonymous_types.remove(id);
+                        format!(
+                            "{namespace}_{name}_t",
+                            namespace = self.name.to_snake_case(),
+                            name = self.get_c_ty_name(&Type::Id(*id)),
+                        )
+                    }
                 }
             }
         }
     }
 
-    fn print_c_ty(&mut self, _iface: &Interface, ty: &Type) {
-        let ty = self.get_c_ty(ty);
-        self.src.push_str(&ty);
+    fn get_ty_name(&mut self, ty: &Type) -> String {
+        match ty {
+            Type::Bool => "Bool".into(),
+            Type::U8 => "U8".into(),
+            Type::U16 => "U16".into(),
+            Type::U32 => "U32".into(),
+            Type::U64 => "U64".into(),
+            Type::S8 => "S8".into(),
+            Type::S16 => "S16".into(),
+            Type::S32 => "S32".into(),
+            Type::S64 => "S64".into(),
+            Type::Float32 => "F32".into(),
+            Type::Float64 => "F64".into(),
+            Type::Char => "Byte".into(),
+            Type::String => "String".into(),
+            Type::Id(id) => {
+                let ty = &self.iface.types[*id];
+                if let Some(name) = &ty.name {
+                    return name.to_upper_camel_case();
+                }
+                match &ty.kind {
+                    TypeDefKind::Type(t) => self.get_ty(t),
+                    TypeDefKind::Record(_)
+                    | TypeDefKind::Flags(_)
+                    | TypeDefKind::Enum(_)
+                    | TypeDefKind::Variant(_)
+                    | TypeDefKind::Union(_) => {
+                        unimplemented!()
+                    }
+                    TypeDefKind::Tuple(t) => {
+                        let mut src = String::new();
+                        src.push_str("Tuple");
+                        src.push_str(&t.types.len().to_string());
+                        for ty in t.types.iter() {
+                            src.push_str(&self.get_ty_name(ty));
+                        }
+                        src.push('T');
+                        src
+                    }
+                    TypeDefKind::Option(_ty) => {
+                        todo!()
+                    }
+                    TypeDefKind::Result(_r) => {
+                        todo!()
+                    }
+                    TypeDefKind::List(_t) => {
+                        todo!()
+                    }
+                    TypeDefKind::Future(_t) => {
+                        todo!()
+                    }
+                    TypeDefKind::Stream(_s) => {
+                        todo!()
+                    }
+                }
+            }
+        }
+    }
+
+    fn get_c_ty_name(&mut self, ty: &Type) -> String {
+        match ty {
+            Type::Bool => "bool".into(),
+            Type::Char => "char32".into(),
+            Type::U8 => "u8".into(),
+            Type::S8 => "s8".into(),
+            Type::U16 => "u16".into(),
+            Type::S16 => "s16".into(),
+            Type::U32 => "u32".into(),
+            Type::S32 => "s32".into(),
+            Type::U64 => "u64".into(),
+            Type::S64 => "s64".into(),
+            Type::Float32 => "float32".into(),
+            Type::Float64 => "float64".into(),
+            Type::String => "string".into(),
+            Type::Id(id) => {
+                let ty = &self.iface.types[*id];
+                if let Some(name) = &ty.name {
+                    return name.to_snake_case();
+                }
+                match &ty.kind {
+                    TypeDefKind::Type(t) => self.get_c_ty(t),
+                    TypeDefKind::Record(_)
+                    | TypeDefKind::Flags(_)
+                    | TypeDefKind::Enum(_)
+                    | TypeDefKind::Variant(_)
+                    | TypeDefKind::Union(_) => {
+                        unimplemented!()
+                    }
+                    TypeDefKind::Tuple(t) => {
+                        let mut src = String::new();
+                        src.push_str("tuple");
+                        src.push_str(&t.types.len().to_string());
+                        for ty in t.types.iter() {
+                            src.push('_');
+                            src.push_str(&self.get_c_ty_name(ty));
+                        }
+                        src
+                    }
+                    TypeDefKind::Option(ty) => {
+                        format!("option_{}", self.get_c_ty_name(ty))
+                    }
+                    TypeDefKind::Result(_r) => {
+                        todo!()
+                    }
+                    TypeDefKind::List(_t) => {
+                        todo!()
+                    }
+                    TypeDefKind::Future(_t) => {
+                        todo!()
+                    }
+                    TypeDefKind::Stream(_s) => {
+                        todo!()
+                    }
+                }
+            }
+        }
     }
 
     fn get_func_params(&mut self, _iface: &Interface, func: &Function) -> String {
@@ -341,33 +480,15 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn get_c_func_impl(&mut self, iface: &Interface, func: &Function) -> String {
-        let invoke = format!(
-            "{}.{}({})",
-            &iface.name.to_snake_case(),
-            &func.name.to_lower_camel_case(),
-            func.params
-                .iter()
-                .enumerate()
-                .map(|(i, (name, _))| format!(
-                    "{}{}",
-                    name,
-                    if i < func.params.len() - 1 { ", " } else { "" }
-                ))
-                .collect::<String>()
-        );
-        match func.results.len() {
-            0 => invoke,
-            1 => format!(
-                "   return C.{}({})",
-                self.get_c_ty(func.results.iter_types().next().unwrap()),
-                invoke,
-            ),
-            _ => todo!(),
-        }
+    fn get_func_signature(&mut self, iface: &Interface, func: &Function) -> String {
+        format!(
+            "{}{}",
+            iface.name.to_upper_camel_case(),
+            self.get_func_signature_no_interface(iface, func)
+        )
     }
 
-    fn get_func_signature(&mut self, iface: &Interface, func: &Function) -> String {
+    fn get_func_signature_no_interface(&mut self, iface: &Interface, func: &Function) -> String {
         format!(
             "{}({}) {}",
             func.name.to_upper_camel_case(),
@@ -401,6 +522,58 @@ impl InterfaceGenerator<'_> {
                 TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
             },
             Type::String => true,
+            _ => false,
+        }
+    }
+
+    fn print_anonymous_type(&mut self, ty: TypeId) {
+        let kind = &self.iface.types[ty].kind;
+        match kind {
+            TypeDefKind::Type(_)
+            | TypeDefKind::Flags(_)
+            | TypeDefKind::Record(_)
+            | TypeDefKind::Enum(_)
+            | TypeDefKind::Variant(_)
+            | TypeDefKind::Union(_) => {
+                unreachable!()
+            }
+            TypeDefKind::Tuple(t) => {
+                let name = format!(
+                    "{}{}",
+                    self.iface().name.to_upper_camel_case(),
+                    self.get_ty_name(&Type::Id(ty))
+                );
+                self.src.push_str(&format!("type {name} struct {{\n",));
+                for (i, ty) in t.types.iter().enumerate() {
+                    let ty = self.get_ty(ty);
+                    self.src.push_str(&format!("   F{i} {ty}\n",));
+                }
+                self.src.push_str("}\n\n");
+            }
+            TypeDefKind::Option(_t) => {
+                todo!()
+            }
+            TypeDefKind::Result(_r) => {
+                todo!()
+            }
+            TypeDefKind::List(_l) => {
+                todo!()
+            }
+            TypeDefKind::Future(_) => todo!("print_anonymous_type for future"),
+            TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
+        }
+    }
+
+    fn is_empty_type(&self, ty: &Type) -> bool {
+        // TODO: reuse from C
+        let id = match ty {
+            Type::Id(id) => *id,
+            _ => return false,
+        };
+        match &self.iface.types[id].kind {
+            TypeDefKind::Type(t) => self.is_empty_type(t),
+            TypeDefKind::Record(r) => r.fields.is_empty(),
+            TypeDefKind::Tuple(t) => t.types.is_empty(),
             _ => false,
         }
     }
@@ -522,7 +695,7 @@ impl InterfaceGenerator<'_> {
         let args = func_bindgen.args;
         let ret = func_bindgen.c_args;
 
-        let interface_method_decl = self.get_func_signature(iface, func);
+        let interface_method_decl = self.get_func_signature_no_interface(iface, func);
         let export_func = {
             let mut src = String::new();
             // header
@@ -566,9 +739,14 @@ impl InterfaceGenerator<'_> {
                     src.push_str(&format!("{invoke}\n"));
                 }
                 1 => {
-                    src.push_str(&format!("result := {invoke}\n"));
-                    src.push_str(&ret[0].1);
                     let result = func.results.iter_types().next().unwrap();
+                    if self.is_empty_type(result) {
+                        src.push_str(&format!("{invoke}\n"));
+                    } else {
+                        src.push_str(&format!("result := {invoke}\n"));
+                    }
+                    src.push_str(&ret[0].1);
+
                     if self.is_arg_by_pointer(result) {
                         src.push_str(&format!("*ret = {ret}\n", ret = &ret[0].0));
                     } else {
@@ -584,6 +762,14 @@ impl InterfaceGenerator<'_> {
         self.gen
             .export_funcs
             .push((interface_method_decl, export_func));
+    }
+
+    fn finish(&mut self) {
+        while !self.public_anonymous_types.is_empty() {
+            for ty in mem::take(&mut self.public_anonymous_types) {
+                self.print_anonymous_type(ty);
+            }
+        }
     }
 }
 
@@ -659,7 +845,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         );
         self.src.push_str(&format!("type {name} struct {{\n",));
         for (i, ty) in tuple.types.iter().enumerate() {
-            let ty = self.get_ty(&ty);
+            let ty = self.get_ty(ty);
             self.src.push_str(&format!("   F{i} {ty}\n",));
         }
         self.src.push_str("}\n\n");
@@ -748,7 +934,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
 struct FunctionBindgen<'a, 'b> {
     interface: &'a mut InterfaceGenerator<'b>,
-    func: &'a Function,
+    _func: &'a Function,
     c_args: Vec<(String, String)>,
     args: Vec<(String, String)>,
 }
@@ -757,7 +943,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn new(interface: &'a mut InterfaceGenerator<'b>, func: &'a Function) -> Self {
         Self {
             interface,
-            func,
+            _func: func,
             c_args: Vec::new(),
             args: Vec::new(),
         }
@@ -808,7 +994,23 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let int_repr = c_int_repr(flags_repr(f));
                         format!("C.{int_repr}({param})")
                     }
-                    // TypeDefKind::Tuple(_) => todo!(),
+                    TypeDefKind::Tuple(t) => {
+                        let mut src = Source::default();
+                        let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id)); // okay to unwrap because a record must have a name
+                        src.push_str(&format!("C.{c_typedef_target} {{\n"));
+                        let f = t
+                            .types
+                            .iter()
+                            .enumerate()
+                            .map(|(i, ty)| {
+                                let field_value = self.lower_value(&format!("{param}.F{i}"), ty);
+                                format!("f{i}: {}{}", field_value, ",\n")
+                            })
+                            .collect::<String>();
+                        src.push_str(&f);
+                        src.push_str("}");
+                        src.to_string()
+                    }
                     // TypeDefKind::Variant(_) => todo!(),
                     // TypeDefKind::Enum(_) => todo!(),
                     // TypeDefKind::Option(_) => todo!(),
@@ -875,7 +1077,23 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let field = self.interface.get_typedef_target(ty.name.as_ref().unwrap());
                         format!("{field}({param})")
                     }
-                    // TypeDefKind::Tuple(_) => todo!(),
+                    TypeDefKind::Tuple(t) => {
+                        let mut src = Source::default();
+                        let typedef_target = self.interface.get_ty(&Type::Id(*id));
+                        src.push_str(&format!("{typedef_target} {{\n"));
+                        let f = t
+                            .types
+                            .iter()
+                            .enumerate()
+                            .map(|(i, t)| {
+                                let field_value = self.lift_value(&format!("{param}.f{i}"), t);
+                                format!("F{i}: {}{}", field_value, ",\n")
+                            })
+                            .collect::<String>();
+                        src.push_str(&f);
+                        src.push_str("}");
+                        src.to_string()
+                    }
                     // TypeDefKind::Variant(_) => todo!(),
                     // TypeDefKind::Enum(_) => todo!(),
                     // TypeDefKind::Option(_) => todo!(),
