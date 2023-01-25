@@ -42,9 +42,9 @@ fn execute(name: &str, lang: &str, wasm: &Path, ts: &Path) {
     }
 
     let (cmd, args) = if cfg!(windows) {
-        ("cmd.exe", &["/c", "npx.cmd"] as &[&str])
+        ("cmd.exe", &["/c", "node_modules/.bin/tsc.cmd"] as &[&str])
     } else {
-        ("npx", &[] as &[&str])
+        ("node_modules/.bin/tsc", &[] as &[&str])
     };
 
     fs::copy(ts, dir.join("host.ts")).unwrap();
@@ -74,7 +74,6 @@ fn execute(name: &str, lang: &str, wasm: &Path, ts: &Path) {
     test_helpers::run_command(
         Command::new(cmd)
             .args(args)
-            .arg("tsc")
             .arg("--project")
             .arg(&config),
     );
