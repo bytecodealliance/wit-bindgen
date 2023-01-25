@@ -40,7 +40,6 @@ wit-bindgen-rust-macro-shared = { path = 'crates/rust-macro-shared', version = '
 
 [[bin]]
 name = "wit-bindgen"
-test = false
 
 [dependencies]
 anyhow = { workspace = true }
