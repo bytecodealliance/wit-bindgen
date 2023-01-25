@@ -8,6 +8,7 @@ use wasmtime::{Config, Engine, Store};
 use wit_component::ComponentEncoder;
 use wit_parser::Resolve;
 
+mod flavorful;
 mod numbers;
 
 wasmtime::component::bindgen!("testwasi" in "crates/wasi_snapshot_preview1/wit");
