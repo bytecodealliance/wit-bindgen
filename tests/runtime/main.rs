@@ -14,6 +14,7 @@ mod many_arguments;
 mod numbers;
 mod records;
 mod smoke;
+mod strings;
 mod unions;
 mod variants;
 
