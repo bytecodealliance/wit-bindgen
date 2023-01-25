@@ -53,6 +53,13 @@ jobs:
         java-version: '18'
         distribution: 'adopt'
     - run: cargo test --workspace
+    - run: cargo build
+    - run: cargo build --no-default-features
+    - run: cargo build --no-default-features --features rust
+    - run: cargo build --no-default-features --features c
+    - run: cargo build --no-default-features --features teavm-java
+    - run: cargo build --no-default-features --features markdown
+
 
   rustfmt:
     name: Rustfmt

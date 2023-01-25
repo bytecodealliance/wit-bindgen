@@ -24,12 +24,16 @@ struct Opt {
 #[derive(Debug, Parser)]
 enum Category {
     /// This generator outputs a Markdown file describing an interface.
+    #[cfg(feature = "markdown")]
     Markdown(wit_bindgen_gen_markdown::Opts),
     /// Generates bindings for Rust guest modules.
+    #[cfg(feature = "rust")]
     Rust(wit_bindgen_gen_guest_rust::Opts),
     /// Generates bindings for C/CPP guest modules.
+    #[cfg(feature = "c")]
     C(wit_bindgen_gen_guest_c::Opts),
     /// Generates bindings for TeaVM-based Java guest modules.
+    #[cfg(feature = "teavm-java")]
     TeavmJava(wit_bindgen_gen_guest_teavm_java::Opts),
 }
 
@@ -73,9 +77,13 @@ fn main() -> Result<()> {
 
     let mut files = Files::default();
     let generator = match opt.category {
+        #[cfg(feature = "rust")]
         Category::Rust(opts) => opts.build(),
+        #[cfg(feature = "c")]
         Category::C(opts) => opts.build(),
+        #[cfg(feature = "teavm-java")]
         Category::TeavmJava(opts) => opts.build(),
+        #[cfg(feature = "markdown")]
         Category::Markdown(opts) => opts.build(),
     };
 

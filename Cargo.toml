@@ -45,9 +45,25 @@ name = "wit-bindgen"
 anyhow = { workspace = true }
 clap = { workspace = true }
 wit-bindgen-core = { workspace = true }
-wit-bindgen-gen-guest-rust = { workspace = true, features = ['clap'] }
-wit-bindgen-gen-guest-c = { workspace = true, features = ['clap'] }
-wit-bindgen-gen-markdown = { workspace = true, features = ['clap'] }
-wit-bindgen-gen-guest-teavm-java = { workspace = true, features = ['clap'] }
+wit-bindgen-gen-guest-rust = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-gen-guest-c = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-gen-markdown = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-gen-guest-teavm-java = { workspace = true, features = ['clap'], optional = true }
 wat = { workspace = true }
 wit-component = { workspace = true }
+
+[features]
+default = ['c', 'rust', 'markdown', 'teavm-java']
+c = ['dep:wit-bindgen-gen-guest-c']
+rust = ['dep:wit-bindgen-gen-guest-rust']
+markdown = ['dep:wit-bindgen-gen-markdown']
+teavm-java = ['dep:wit-bindgen-gen-guest-teavm-java']
+
+[dev-dependencies]
+heck = { workspace = true }
+wasmtime = { version = "6.0.0", features = ['component-model'] }
+test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
+wit-parser = { workspace = true }
+
+[patch.crates-io]
+wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime' }
