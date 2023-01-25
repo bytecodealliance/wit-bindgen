@@ -44,10 +44,6 @@ name = "flavorful"
 test = false
 
 [[bin]]
-name = "invalid"
-test = false
-
-[[bin]]
 name = "many_arguments"
 test = false
 
