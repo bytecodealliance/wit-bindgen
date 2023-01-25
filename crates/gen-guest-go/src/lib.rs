@@ -40,6 +40,7 @@ pub struct TinyGo {
     opts: Opts,
     src: Source,
     export_funcs: Vec<(String, String)>,
+    world: String,
 }
 
 impl TinyGo {
@@ -60,6 +61,7 @@ impl TinyGo {
 
 impl WorldGenerator for TinyGo {
     fn preprocess(&mut self, name: &str) {
+        self.world = name.to_string();
         // add package
         self.src.push_str("package ");
         self.src.push_str(name.to_snake_case().as_str());
@@ -265,7 +267,10 @@ impl InterfaceGenerator<'_> {
             Type::Float64 => "double".into(),
             Type::Char => "uint32_t".into(),
             Type::String => {
-                todo!()
+                format!(
+                    "{namespace}_string_t",
+                    namespace = self.gen.world.to_snake_case()
+                )
             }
             Type::Id(id) => {
                 let ty = &self.iface.types[*id];
@@ -537,6 +542,7 @@ impl InterfaceGenerator<'_> {
                 TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
                 _ => false,
             },
+            Type::String => true,
             _ => false,
         }
     }
@@ -992,7 +998,19 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         match ty {
             Type::Bool => "nil".into(),
             Type::Char => "nil".into(),
-            Type::String => "nil".into(),
+            Type::String => {
+                let mut src = Source::default();
+                let c_typedef_target = self.interface.get_c_ty(ty);
+                src.push_str(&format!("C.{c_typedef_target}\n"));
+                uwriteln!(
+                    src,
+                    "
+                    lower_{param}.ptr = C.CString({param})
+                    lower_{param}.len = C.size_t(len({param}))
+                    "
+                );
+                src.to_string()
+            }
             Type::Id(id) => {
                 let ty = &self.interface.iface.types[*id]; // receive type
 
@@ -1099,7 +1117,16 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         match ty {
             Type::Bool => "nil".into(),
             Type::Char => "nil".into(),
-            Type::String => "nil".into(),
+            Type::String => {
+                let mut src = Source::default();
+                let typedef_target = self.interface.get_ty(ty);
+                src.push_str(&format!("{typedef_target}\n"));
+                uwriteln!(
+                    src,
+                    "lift_{param} = C.GoStringN({param}.ptr, C.int({param}.len))"
+                );
+                src.to_string()
+            }
             Type::Id(id) => {
                 let ty = &self.interface.iface.types[*id]; // receive type
 
