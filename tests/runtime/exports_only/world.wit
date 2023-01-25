@@ -1,3 +1,0 @@
-default world exports-only {
-  export thunk: func() -> string
-}
