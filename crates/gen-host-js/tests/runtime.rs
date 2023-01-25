@@ -71,12 +71,7 @@ fn execute(name: &str, lang: &str, wasm: &Path, ts: &Path) {
     )
     .unwrap();
 
-    test_helpers::run_command(
-        Command::new(cmd)
-            .args(args)
-            .arg("--project")
-            .arg(&config),
-    );
+    test_helpers::run_command(Command::new(cmd).args(args).arg("--project").arg(&config));
 
     fs::write(dir.join("package.json"), "{\"type\":\"module\"}").unwrap();
     let mut path = Vec::new();
