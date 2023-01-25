@@ -42,9 +42,9 @@ fn execute(name: &str, lang: &str, wasm: &Path, ts: &Path) {
     }
 
     let (cmd, args) = if cfg!(windows) {
-        ("cmd.exe", &["/c", "node_modules/.bin/tsc.cmd"] as &[&str])
+        ("cmd.exe", &["/c", "npx.cmd"] as &[&str])
     } else {
-        ("node_modules/.bin/tsc", &[] as &[&str])
+        ("npx", &[] as &[&str])
     };
 
     fs::copy(ts, dir.join("host.ts")).unwrap();
@@ -71,7 +71,13 @@ fn execute(name: &str, lang: &str, wasm: &Path, ts: &Path) {
     )
     .unwrap();
 
-    test_helpers::run_command(Command::new(cmd).args(args).arg("--project").arg(&config));
+    test_helpers::run_command(
+        Command::new(cmd)
+            .args(args)
+            .arg("tsc")
+            .arg("--project")
+            .arg(&config),
+    );
 
     fs::write(dir.join("package.json"), "{\"type\":\"module\"}").unwrap();
     let mut path = Vec::new();
