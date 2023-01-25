@@ -25,13 +25,12 @@ clap = { version = "4.0.9", features = ["derive"] }
 env_logger = "0.9.1"
 indexmap = "1.9.1"
 
-wasmtime-environ = { git = 'https://github.com/bytecodealliance/wasmtime' }
+wasmtime-environ = "6.0.0"
 wasmprinter = "0.2.46"
-wasmparser = "0.97.0"
-wasm-encoder = "0.21.0"
-wat = "1.0.53"
-wit-parser = "0.4.0"
-wit-component = "0.4.1"
+wasm-encoder = "0.22.0"
+wat = "1.0.56"
+wit-parser = "0.4.1"
+wit-component = "0.4.3"
 
 wit-bindgen-core = { path = 'crates/bindgen-core', version = '0.3.0' }
 wit-bindgen-gen-guest-c = { path = 'crates/gen-guest-c', version = '0.3.0' }
@@ -50,11 +49,14 @@ test = false
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
-wit-bindgen-core = { path = 'crates/bindgen-core' }
-wit-bindgen-gen-guest-rust = { path = 'crates/gen-guest-rust', features = ['clap'] }
-wit-bindgen-gen-host-js = { path = 'crates/gen-host-js', features = ['clap'] }
-wit-bindgen-gen-guest-c = { path = 'crates/gen-guest-c', features = ['clap'] }
-wit-bindgen-gen-markdown = { path = 'crates/gen-markdown', features = ['clap'] }
-wit-bindgen-gen-guest-teavm-java = { path = 'crates/gen-guest-teavm-java', features = ['clap'] }
+wit-bindgen-core = { workspace = true }
+wit-bindgen-gen-guest-rust = { workspace = true, features = ['clap'] }
+wit-bindgen-gen-host-js = { workspace = true, features = ['clap'] }
+wit-bindgen-gen-guest-c = { workspace = true, features = ['clap'] }
+wit-bindgen-gen-markdown = { workspace = true, features = ['clap'] }
+wit-bindgen-gen-guest-teavm-java = { workspace = true, features = ['clap'] }
 wat = { workspace = true }
 wit-component = { workspace = true }
+
+[patch.crates-io]
+wasmtime-environ = { git = 'https://github.com/bytecodealliance/wasmtime' }

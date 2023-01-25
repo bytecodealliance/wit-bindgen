@@ -117,7 +117,7 @@ dependencies = [
 [[package]]
 name = "cranelift-entity"
 version = "0.93.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#b58a197d33f044193c3d608010f5e6ec394ac07e"
+source = "git+https://github.com/bytecodealliance/wasmtime#4ad86752de2c5353183364593d6c37ca43ec2a9d"
 dependencies = [
  "serde",
 ]
@@ -596,7 +596,7 @@ version = "0.3.0"
 dependencies = [
  "codegen-macro",
  "runtime-macro",
- "wasm-encoder 0.21.0",
+ "wasm-encoder",
  "wat",
  "wit-bindgen-core",
  "wit-component",
@@ -747,30 +747,11 @@ dependencies = [
 
 [[package]]
 name = "wasm-encoder"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29ab2fe77b325731603297debb4573e002d06ae0aa1f4dc108585c81961e0609"
-dependencies = [
- "leb128",
-]
-
-[[package]]
-name = "wasm-encoder"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef126be0e14bdf355ac1a8b41afc89195289e5c7179f80118e3abddb472f0810"
 dependencies = [
  "leb128",
-]
-
-[[package]]
-name = "wasmparser"
-version = "0.97.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b98123a0d2bacf9286239231b116cbd66c65d9b89793f7c9bba3a3ae7f1b15f3"
-dependencies = [
- "indexmap",
- "url",
 ]
 
 [[package]]
@@ -790,18 +771,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c13dff901f9354fa9a6a877152d9c5642513645985635c9b83bcca99e40ea1"
 dependencies = [
  "anyhow",
- "wasmparser 0.99.0",
+ "wasmparser",
 ]
 
 [[package]]
 name = "wasmtime-component-util"
 version = "6.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#b58a197d33f044193c3d608010f5e6ec394ac07e"
+source = "git+https://github.com/bytecodealliance/wasmtime#4ad86752de2c5353183364593d6c37ca43ec2a9d"
 
 [[package]]
 name = "wasmtime-environ"
 version = "6.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#b58a197d33f044193c3d608010f5e6ec394ac07e"
+source = "git+https://github.com/bytecodealliance/wasmtime#4ad86752de2c5353183364593d6c37ca43ec2a9d"
 dependencies = [
  "anyhow",
  "cranelift-entity",
@@ -812,8 +793,8 @@ dependencies = [
  "serde",
  "target-lexicon",
  "thiserror",
- "wasm-encoder 0.21.0",
- "wasmparser 0.97.0",
+ "wasm-encoder",
+ "wasmparser",
  "wasmprinter",
  "wasmtime-component-util",
  "wasmtime-types",
@@ -822,12 +803,12 @@ dependencies = [
 [[package]]
 name = "wasmtime-types"
 version = "6.0.0"
-source = "git+https://github.com/bytecodealliance/wasmtime#b58a197d33f044193c3d608010f5e6ec394ac07e"
+source = "git+https://github.com/bytecodealliance/wasmtime#4ad86752de2c5353183364593d6c37ca43ec2a9d"
 dependencies = [
  "cranelift-entity",
  "serde",
  "thiserror",
- "wasmparser 0.97.0",
+ "wasmparser",
 ]
 
 [[package]]
@@ -839,7 +820,7 @@ dependencies = [
  "leb128",
  "memchr",
  "unicode-width",
- "wasm-encoder 0.22.0",
+ "wasm-encoder",
 ]
 
 [[package]]
@@ -971,7 +952,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "test-helpers",
- "wasm-encoder 0.21.0",
+ "wasm-encoder",
  "wasmprinter",
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
@@ -991,7 +972,7 @@ dependencies = [
  "clap",
  "heck",
  "test-helpers",
- "wasm-encoder 0.21.0",
+ "wasm-encoder",
  "wit-bindgen-core",
  "wit-component",
 ]
@@ -1085,8 +1066,8 @@ dependencies = [
  "indexmap",
  "log",
  "url",
- "wasm-encoder 0.22.0",
- "wasmparser 0.99.0",
+ "wasm-encoder",
+ "wasmparser",
  "wat",
  "wit-parser",
 ]
