@@ -1,7 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
-use wit_bindgen_core::component::ComponentGenerator;
 use wit_bindgen_core::{wit_parser, Files, WorldGenerator};
 use wit_parser::{Resolve, UnresolvedPackage};
 
@@ -20,9 +19,6 @@ struct Opt {
 
 #[derive(Debug, Parser)]
 enum Category {
-    /// Generators for creating hosts that embed WASM modules/components.
-    #[command(subcommand)]
-    Host(HostGenerator),
     /// Generators for writing guest WASM modules/components.
     #[command(subcommand)]
     Guest(GuestGenerator),
@@ -34,17 +30,6 @@ enum Category {
         common: Common,
         #[clap(flatten)]
         world: WorldOpt,
-    },
-}
-
-#[derive(Debug, Parser)]
-enum HostGenerator {
-    /// Generates bindings for JavaScript hosts.
-    Js {
-        #[clap(flatten)]
-        opts: wit_bindgen_gen_host_js::Opts,
-        #[clap(flatten)]
-        component: ComponentOpts,
     },
 }
 
@@ -121,7 +106,6 @@ impl Opt {
             | Category::Guest(GuestGenerator::C { common, .. })
             | Category::Guest(GuestGenerator::TeavmJava { common, .. })
             | Category::Markdown { common, .. } => common,
-            Category::Host(HostGenerator::Js { component, .. }) => &component.common,
         }
     }
 }
@@ -132,9 +116,6 @@ fn main() -> Result<()> {
 
     let mut files = Files::default();
     match opt.category {
-        Category::Host(HostGenerator::Js { opts, component }) => {
-            gen_component(opts.build()?, component, &mut files)?;
-        }
         Category::Guest(GuestGenerator::Rust { opts, world, .. }) => {
             gen_world(opts.build(), world, &mut files)?;
         }
@@ -212,25 +193,5 @@ fn gen_world(
         }
     };
     generator.generate(&resolve, world, files);
-    Ok(())
-}
-
-fn gen_component(
-    mut generator: Box<dyn ComponentGenerator>,
-    opts: ComponentOpts,
-    files: &mut Files,
-) -> Result<()> {
-    let wasm = wat::parse_file(&opts.component)?;
-    let name = match &opts.name {
-        Some(name) => name.as_str(),
-        None => opts
-            .component
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| anyhow!("filename not valid utf-8"))?,
-    };
-
-    wit_bindgen_core::component::generate(&mut *generator, name, &wasm, files)?;
-
     Ok(())
 }
