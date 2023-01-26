@@ -387,11 +387,23 @@ impl InterfaceGenerator<'_> {
         let FunctionBindgen {
             needs_cleanup_list,
             src,
+            import_return_pointer_area_size,
+            import_return_pointer_area_align,
             ..
         } = f;
 
         if needs_cleanup_list {
             self.src.push_str("let mut cleanup_list = Vec::new();\n");
+        }
+        if import_return_pointer_area_size > 0 {
+            uwrite!(
+                self.src,
+                "
+                    #[repr(align({import_return_pointer_area_align}))]
+                    struct RetArea([u8; {import_return_pointer_area_size}]);
+                    let mut ret_area = core::mem::MaybeUninit::<RetArea>::uninit();
+                ",
+            );
         }
         self.src.push_str(&String::from(src));
 
@@ -708,6 +720,8 @@ struct FunctionBindgen<'a, 'b> {
     tmp: usize,
     needs_cleanup_list: bool,
     cleanup: Vec<(String, String)>,
+    import_return_pointer_area_size: usize,
+    import_return_pointer_area_align: usize,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -721,6 +735,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             tmp: 0,
             needs_cleanup_list: false,
             cleanup: Vec::new(),
+            import_return_pointer_area_size: 0,
+            import_return_pointer_area_align: 0,
         }
     }
 
@@ -841,16 +857,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     fn return_pointer(&mut self, size: usize, align: usize) -> String {
         let tmp = self.tmp();
 
+        // Imports get a per-function return area to facilitate using the
+        // stack whereas exports use a per-module return area to cut down on
+        // stack usage. Note that for imports this also facilitates "adapter
+        // modules" for components to not have data segments.
         if self.gen.in_import {
-            uwrite!(
-                self.src,
-                "
-                    #[repr(align({align}))]
-                    struct RetArea([u8; {size}]);
-                    let mut ret_area = core::mem::MaybeUninit::<RetArea>::uninit();
-                    let ptr{tmp} = ret_area.as_mut_ptr() as i32;
-                ",
-            );
+            self.import_return_pointer_area_size = self.import_return_pointer_area_size.max(size);
+            self.import_return_pointer_area_align =
+                self.import_return_pointer_area_align.max(align);
+            uwrite!(self.src, "let ptr{tmp} = ret_area.as_mut_ptr() as i32;");
         } else {
             self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
             self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);

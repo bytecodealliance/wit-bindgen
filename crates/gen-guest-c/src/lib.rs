@@ -790,7 +790,21 @@ impl InterfaceGenerator<'_> {
             &mut f,
         );
 
-        let FunctionBindgen { src, .. } = f;
+        let FunctionBindgen {
+            src,
+            import_return_pointer_area_size,
+            import_return_pointer_area_align,
+            ..
+        } = f;
+
+        if import_return_pointer_area_size > 0 {
+            self.src.c_adapters(&format!(
+                "\
+                    __attribute__((aligned({import_return_pointer_area_align})))
+                    uint8_t ret_area[{import_return_pointer_area_size}];
+                ",
+            ));
+        }
 
         self.src.c_adapters(&String::from(src));
         self.src.c_adapters("}\n");
@@ -1527,6 +1541,8 @@ struct FunctionBindgen<'a, 'b> {
     params: Vec<String>,
     wasm_return: Option<String>,
     ret_store_cnt: usize,
+    import_return_pointer_area_size: usize,
+    import_return_pointer_area_align: usize,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1547,6 +1563,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             params: Vec::new(),
             wasm_return: None,
             ret_store_cnt: 0,
+            import_return_pointer_area_size: 0,
+            import_return_pointer_area_align: 0,
         }
     }
 
@@ -1612,19 +1630,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     fn return_pointer(&mut self, size: usize, align: usize) -> String {
         let ptr = self.locals.tmp("ptr");
 
+        // Use a stack-based return area for imports, because exports need
+        // their return area to be live until the post-return call.
         if self.gen.in_import {
-            // Declare a stack-allocated return area. We only do this for
-            // imports, because exports need their return area to be live until
-            // the post-return call.
-            uwrite!(
-                self.src,
-                "\
-                    __attribute__((aligned({})))
-                    uint8_t ret_area[{}];
-                ",
-                align,
-                size,
-            );
+            self.import_return_pointer_area_size = self.import_return_pointer_area_size.max(size);
+            self.import_return_pointer_area_align =
+                self.import_return_pointer_area_align.max(align);
             uwriteln!(self.src, "int32_t {} = (int32_t) &ret_area;", ptr);
         } else {
             self.gen.gen.return_pointer_area_size = self.gen.gen.return_pointer_area_size.max(size);
