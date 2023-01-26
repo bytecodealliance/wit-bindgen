@@ -143,7 +143,7 @@ impl WorldGenerator for RustWasm {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(Some(""), resolve, TypeMode::AllBorrowed("'a"), true);
+        let mut gen = self.interface(Some("$root"), resolve, TypeMode::AllBorrowed("'a"), true);
 
         for (_, func) in funcs {
             gen.generate_guest_import(func);

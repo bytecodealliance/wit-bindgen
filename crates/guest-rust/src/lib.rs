@@ -36,7 +36,17 @@ pub mod rt {
             alloc::realloc(old_ptr, layout, new_len)
         };
         if ptr.is_null() {
-            alloc::handle_alloc_error(layout);
+            // Print a nice message in debug mode, but in release mode don't
+            // pull in so many dependencies related to printing so just emit an
+            // `unreachable` instruction.
+            if cfg!(debug_assertions) {
+                alloc::handle_alloc_error(layout);
+            } else {
+                #[cfg(target_arch = "wasm32")]
+                core::arch::wasm32::unreachable();
+                #[cfg(not(target_arch = "wasm32"))]
+                unreachable!();
+            }
         }
         return ptr;
     }
