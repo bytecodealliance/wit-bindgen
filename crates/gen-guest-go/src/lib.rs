@@ -229,9 +229,10 @@ impl WorldGenerator for TinyGo {
                     return o.Val
                 }}
                 
-                func (o *Option[T]) Set(val T) {{
+                func (o *Option[T]) Set(val T) T {{
                     o.Kind = Some
                     o.Val = val
+                    return val
                 }}
                 
                 func (o *Option[T]) Unset() {{
@@ -273,14 +274,16 @@ impl WorldGenerator for TinyGo {
                     return r.Err
                 }}
                 
-                func (r *Result[T, E]) Set(val T) {{
+                func (r *Result[T, E]) Set(val T) T {{
                     r.Kind = Ok
                     r.Val = val
+                    return val
                 }}
                 
-                func (r *Result[T, E]) SetErr(err E) {{
+                func (r *Result[T, E]) SetErr(err E) E {{
                     r.Kind = Err
                     r.Err = err
+                    return err
                 }}"
             );
             files.push(
@@ -1657,7 +1660,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     self.lift_src.push_str(&format!(
                                         "{lift_name}_ptr := (*{err})(unsafe.Pointer(&err))\n"
                                     ));
-                                    self.lift_src.push_str(&format!("if result_bool {{ \n"));
+                                    self.lift_src.push_str(&format!("if !result_bool {{ \n"));
                                 }
                                 self.lift_src
                                     .push_str(&format!("{lift_name}.SetErr(*{lift_name}_ptr)\n"));
@@ -1675,7 +1678,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     self.lift_src.push_str(&format!(
                                         "{lift_name}_ptr := (*{ok})(unsafe.Pointer(&result))\n"
                                     ));
-                                    self.lift_src.push_str(&format!("if result_bool {{ \n"));
+                                    self.lift_src.push_str(&format!("if !result_bool {{ \n"));
                                 }
                                 self.lift_src
                                     .push_str(&format!("{lift_name}.SetErr(struct{{}}{{}})\n"));
@@ -1697,7 +1700,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     self.lift_src.push_str(&format!("}} else {{\n"));
                                     self.lift_src.push_str(&format!("{lift_name}_ptr := (*{ok})(unsafe.Pointer(&{param}.val))\n"));
                                 } else {
-                                    self.lift_src.push_str(&format!("if result_bool {{ \n"));
+                                    self.lift_src.push_str(&format!("if !result_bool {{ \n"));
                                     self.lift_src.push_str(&format!(
                                         "{lift_name}_ptr := (*{err})(unsafe.Pointer(&err))\n"
                                     ));
