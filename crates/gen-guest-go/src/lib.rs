@@ -876,7 +876,6 @@ impl InterfaceGenerator<'_> {
             1 => {
                 let return_ty = func.results.iter_types().next().unwrap();
                 if self.is_arg_by_pointer(return_ty) {
-                    let mut result_bool = "";
                     let result = if !self.is_result_ty(return_ty) {
                         let optional_type = self.extract_option_ty(return_ty);
                         // flatten optional type or use return type #https://github.com/bytecodealliance/wit-bindgen/pull/453
@@ -888,27 +887,38 @@ impl InterfaceGenerator<'_> {
                         self.src.push_str(&format!("var result C.{c_ret_type}\n"));
                         "&result".to_string()
                     } else {
-                        result_bool = "result_bool :=";
                         let mut result = String::new();
                         let (ok, err) = self.extract_result_ty(return_ty);
-                        if let Some(ok) = ok {
-                            let c_ret_type = self.get_c_ty(&ok);
-                            self.src.push_str(&format!("var result C.{c_ret_type}\n"));
-                            result.push_str("&result")
-                        }
-                        if let Some(err) = err {
-                            let c_ret_type = self.get_c_ty(&err);
-                            self.src.push_str(&format!("var err C.{c_ret_type}\n"));
-                            if result.is_empty() {
+                        match (ok, err) {
+                            (None, Some(err)) => {
+                                let c_ret_type = self.get_c_ty(&err);
+                                self.src.push_str(&format!("var err C.{c_ret_type}\n"));
+                                self.src
+                                    .push_str(&format!("var empty_err C.{c_ret_type}\n"));
                                 result.push_str("&err")
-                            } else {
-                                result.push_str(", &err")
                             }
-                        }
+                            (Some(ok), None) => {
+                                let c_ret_type = self.get_c_ty(&ok);
+                                self.src.push_str(&format!("var result C.{c_ret_type}\n"));
+                                self.src
+                                    .push_str(&format!("var empty_result C.{c_ret_type}\n"));
+                                result.push_str("&result")
+                            }
+                            (Some(ok), Some(err)) => {
+                                let c_ret_type = self.get_c_ty(&ok);
+                                let c_err_type = self.get_c_ty(&err);
+                                self.src.push_str(&format!("var result C.{c_ret_type}\n"));
+                                self.src
+                                    .push_str(&format!("var empty_result C.{c_ret_type}\n"));
+                                self.src.push_str(&format!("var err C.{c_err_type}\n"));
+                                result.push_str("&result, &err")
+                            }
+                            _ => unreachable!("result type must be either ok or err"),
+                        };
                         result
                     };
                     let invoke = format!(
-                        "{result_bool} C.{}_{}({}, {})\n",
+                        "C.{}_{}({}, {})\n",
                         iface.name.to_snake_case(),
                         func.name.to_snake_case(),
                         c_args
@@ -1653,14 +1663,15 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         match (r.ok, r.err) {
                             (None, Some(err)) => {
                                 let err = self.interface.get_ty(&err);
-                                if in_export {
+                                if in_export || count > 0 {
                                     self.lift_src.push_str(&format!("{lift_name}_ptr := (*{err})(unsafe.Pointer(&{param}.val))\n"));
                                     self.lift_src.push_str(&format!("if {param}.is_err {{ \n"));
                                 } else {
                                     self.lift_src.push_str(&format!(
                                         "{lift_name}_ptr := (*{err})(unsafe.Pointer(&err))\n"
                                     ));
-                                    self.lift_src.push_str(&format!("if !result_bool {{ \n"));
+                                    self.lift_src
+                                        .push_str(&format!("if {param} == empty_{param} {{ \n"));
                                 }
                                 self.lift_src
                                     .push_str(&format!("{lift_name}.SetErr(*{lift_name}_ptr)\n"));
@@ -1671,14 +1682,15 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             }
                             (Some(ok), None) => {
                                 let ok = self.interface.get_ty(&ok);
-                                if in_export {
+                                if in_export || count > 0 {
                                     self.lift_src.push_str(&format!("{lift_name}_ptr := (*{ok})(unsafe.Pointer(&{param}.val))\n"));
                                     self.lift_src.push_str(&format!("if {param}.is_err {{ \n"));
                                 } else {
                                     self.lift_src.push_str(&format!(
                                         "{lift_name}_ptr := (*{ok})(unsafe.Pointer(&result))\n"
                                     ));
-                                    self.lift_src.push_str(&format!("if !result_bool {{ \n"));
+                                    self.lift_src
+                                        .push_str(&format!("if {param} == empty_{param} {{ \n"));
                                 }
                                 self.lift_src
                                     .push_str(&format!("{lift_name}.SetErr(struct{{}}{{}})\n"));
@@ -1691,7 +1703,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 let ok = self.interface.get_ty(&ok);
                                 let err = self.interface.get_ty(&err);
 
-                                if in_export {
+                                if in_export || count > 0 {
                                     self.lift_src.push_str(&format!("if {param}.is_err {{ \n"));
                                     self.lift_src.push_str(&format!("{lift_name}_ptr := (*{err})(unsafe.Pointer(&{param}.val))\n"));
                                     self.lift_src.push_str(&format!(
@@ -1700,7 +1712,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     self.lift_src.push_str(&format!("}} else {{\n"));
                                     self.lift_src.push_str(&format!("{lift_name}_ptr := (*{ok})(unsafe.Pointer(&{param}.val))\n"));
                                 } else {
-                                    self.lift_src.push_str(&format!("if !result_bool {{ \n"));
+                                    self.lift_src
+                                        .push_str(&format!("if {param} == empty_{param} {{ \n"));
                                     self.lift_src.push_str(&format!(
                                         "{lift_name}_ptr := (*{err})(unsafe.Pointer(&err))\n"
                                     ));
