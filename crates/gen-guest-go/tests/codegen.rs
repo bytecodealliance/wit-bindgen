@@ -1,8 +1,8 @@
 use heck::*;
 use std::env;
+use std::io::{prelude::*, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::io::{prelude::*, BufReader};
 
 macro_rules! codegen_test {
     ($name:ident $test:tt) => {
@@ -29,31 +29,44 @@ test_helpers::codegen_tests!("*.wit");
 
 fn verify(dir: &Path, name: &str) {
     let name = name.to_kebab_case();
-    let dir = dir.join(format!("{name}.go"));
+    let main = dir.join(format!("{name}.go"));
 
     // The generated go package is named after the world's name.
     // But tinygo currently does not support non-main package and requires
     // a `main()` function in the module to compile.
-    // The following code replaces the package name to `package main` and 
+    // The following code replaces the package name to `package main` and
     // adds a `func main() {}` function at the bottom of the file.
 
     // TODO: However, there is still an issue. Since the go module does not
-    // invoke the imported functions, they will be skipped by the compiler. 
+    // invoke the imported functions, they will be skipped by the compiler.
     // This will weaken the test's ability to verify imported functions
     let mut file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open(&dir)
+        .open(&main)
         .expect("failed to open file");
     let mut reader = BufReader::new(file);
     reader.read_until(b'\n', &mut Vec::new()).unwrap();
     let mut buf = Vec::new();
-    buf.append(&mut "package main".as_bytes().to_vec());
+    buf.append(&mut "package main\n".as_bytes().to_vec());
+
+    // check if {name}_types.go exists
+    let types_file = dir.join(format!("{name}_types.go"));
+    if let Ok(_) = std::fs::metadata(types_file) {
+        // create a directory called option and move the type file to option
+        std::fs::create_dir(dir.join("option")).expect("Failed to create directory");
+        std::fs::rename(
+            dir.join(format!("{name}_types.go")),
+            dir.join("option").join(format!("{name}_types.go")),
+        )
+        .expect("Failed to move file");
+        buf.append(&mut "import . \"the-world/option\"\n".as_bytes().to_vec());
+    }
+
     reader.read_to_end(&mut buf);
     buf.append(&mut "func main() {}".as_bytes().to_vec());
-    
-    std::fs::write(&dir, buf).expect("Failed to write to file");
-    
+    std::fs::write(&main, buf).expect("Failed to write to file");
+
     let mut cmd = Command::new("tinygo");
     cmd.arg("build");
     cmd.arg("-wasm-abi=generic");
@@ -62,6 +75,6 @@ fn verify(dir: &Path, name: &str) {
     cmd.arg("-no-debug");
     cmd.arg("-o");
     cmd.arg("go.wasm");
-    cmd.arg(&dir);
+    cmd.arg(&main);
     test_helpers::run_command(&mut cmd);
 }

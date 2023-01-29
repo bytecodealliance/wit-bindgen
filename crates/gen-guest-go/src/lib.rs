@@ -25,7 +25,7 @@ impl Opts {
         // ––––---- debugging purpose ----------
         // if cfg!(debug_assertions) {
         //     println!("process id: {}", std::process::id());
-        //     std::thread::sleep(std::time::Duration::from_secs(8));
+        //     std::thread::sleep(std::time::Duration::from_secs(5));
         // }
         // ––––---------------------------------
 
@@ -582,30 +582,6 @@ impl InterfaceGenerator<'_> {
         params
     }
 
-    fn get_c_func_params(&mut self, _iface: &Interface, func: &Function) -> String {
-        let mut params = String::new();
-        for (i, (name, param)) in func.params.iter().enumerate() {
-            if i > 0 {
-                params.push_str(", ");
-            }
-            params.push_str(name);
-            if self.is_arg_by_pointer(param) {
-                params.push_str(" *C.");
-            } else {
-                params.push_str(" C.");
-            }
-
-            // flatten optional types
-            let s = self
-                .extract_option_ty(param)
-                .as_ref()
-                .map(|o| self.get_c_ty(o))
-                .unwrap_or(self.get_c_ty(param));
-            params.push_str(&s);
-        }
-        params
-    }
-
     fn get_func_results(&mut self, _iface: &Interface, func: &Function) -> String {
         let mut results = String::new();
         match func.results.len() {
@@ -618,61 +594,174 @@ impl InterfaceGenerator<'_> {
         results
     }
 
-    fn get_c_func_signature(&mut self, iface: &Interface, func: &Function) -> String {
-        let name = format!(
-            "{}{}",
-            self.name.to_upper_camel_case(),
-            func.name.to_upper_camel_case()
-        );
+    fn print_c_result(&mut self, src: &mut Source, name: &str, param: &Type, in_import: bool) {
+        let mut prefix = String::new();
+        let mut param_name = String::new();
+        let mut postfix = String::new();
+        if in_import {
+            if self.is_result_ty(param) {
+                // add &err or &ret or both depend on result type
+                match self.extract_result_ty(param) {
+                    (None, None) => unreachable!("Result type must have either Ok or Err"),
+                    (None, Some(_)) => param_name.push_str("&err"),
+                    (Some(_), None) => param_name.push_str("&ret"),
+                    (Some(_), Some(_)) => param_name.push_str("&ret, &err"),
+                };
+                src.push_str(&format!("{prefix}{param_name}{postfix}"));
+                return
+            }
+        } 
+        else {
+            if self.is_result_ty(param) {
+                match self.extract_result_ty(param) {
+                    (None, None) => unreachable!("Result type must have either Ok or Err"),
+                    (None, Some(err)) => {
+                        param_name.push_str("err *C.");
+                        postfix.push_str(&self.get_c_ty(&err));
+                    }
+                    (Some(ok), None) => {
+                        param_name.push_str("ret *C.");
+                        postfix.push_str(&self.get_c_ty(&ok));
+                    }
+                    (Some(ok), Some(err)) => {
+                        param_name.push_str("ret *C.");
+                        postfix.push_str(&self.get_c_ty(&ok));
+                        postfix.push_str(", err *C.");
+                        postfix.push_str(&self.get_c_ty(&err));
+                    }
+                }; 
+                src.push_str(&format!("{prefix}{param_name}{postfix}"));
+                return
+            }
+        }
+        self.print_c_param(src, name, param, in_import);
+    }
+
+    fn print_c_param(&mut self, src: &mut Source, name: &str, param: &Type, in_import: bool) {
+        let pointer_prefix = if in_import { "&" } else { "*" };
+        let mut prefix = String::new();
+        let mut param_name = String::new();
+        let mut postfix = String::new();
+
+        if in_import {
+            if self.is_arg_by_pointer(param) {
+                prefix.push_str(pointer_prefix);   
+            }
+            if name != "err" && name != "ret" {
+                param_name = format!("lower_{name}");
+            } else {
+                param_name.push_str(name);
+            }
+        } 
+        else {
+            postfix.push_str(" ");
+            let maybe_option = self.extract_option_ty(param);
+            param_name.push_str(name);
+            if self.is_arg_by_pointer(param) || maybe_option.is_some() {
+                postfix.push_str(pointer_prefix);
+            }
+            postfix.push_str("C.");
+            let s = maybe_option
+                .as_ref()
+                .map(|o| self.get_c_ty(o))
+                .unwrap_or(self.get_c_ty(param));
+            postfix.push_str(&s); 
+        }
+        src.push_str(&format!("{prefix}{param_name}{postfix}"));
+    }
+
+    fn print_c_func_params(&mut self, params: &mut Source, _iface: &Interface, func: &Function, in_import: bool) {
+        // Append C params to source. 
+        // 
+        // If in_import is true, this function is invoked in `import_invoke` which uses `&` to dereference
+        // argument of pointer type. The & is added as a prefix to the argument name. And there is no
+        // type declaration needed to be added to the argument.
+        //
+        // If in_import is false, this function is invokved in printing export function signature. 
+        // It uses the form of `<param-name> *C.<param-type>` to print each parameter in the function, where
+        // * is only used if the parameter is of pointer type.
+        //
+        // An exceptional case is the optional flattening rule. The rule only applies when
+        // in_import is false. If the parameter is of type Option. It needs to flatten out the outer layer of 
+        // the option type and uses pointer for option's inner type. In this case, even if the inner type of 
+        // an option type is primitive, the * is still needed. 
+
+        for (i, (name, param)) in func.params.iter().enumerate() {
+            if i > 0 {
+                params.push_str(", ");
+            }
+            self.print_c_param(params, name, param, in_import);
+        }
+    }
+
+    fn print_c_func_results(&mut self, src: &mut Source, iface: &Interface, func: &Function, in_import: bool) {
         match func.results.len() {
-            0 => format!("func {}({})", name, self.get_c_func_params(iface, func),),
-            1 => {
+            0 => { // no return
+                src.push_str(")");
+            }
+            1 => { // one return
+                let add_param_seperator = |src: &mut Source| {
+                    if func.params.len() > 0 {
+                        src.push_str(", ");
+                   }
+                };
+                let add_bool_return = |src: &mut Source| {
+                    if !in_import {
+                        src.push_str(" bool");
+                    }
+                };
                 let return_ty = func.results.iter_types().next().unwrap();
                 if self.is_arg_by_pointer(return_ty) {
-                    // flatten result types into two arguments as an optimization in C
-                    // please see this PR for more details https://github.com/bytecodealliance/wit-bindgen/pull/450
-                    // TODO: deduplicate
-                    let ret = match self.extract_result_ty(return_ty) {
-                        (None, None) => {
-                            if let Some(o) = self.extract_option_ty(return_ty) {
-                                format!("ret *C.{}) bool", self.get_c_ty(&o))
-                            } else {
-                                format!("ret *C.{})", self.get_c_ty(return_ty))
-                            }
-                        }
-                        (None, Some(err)) => format!("err *C.{}) bool", self.get_c_ty(&err)),
-                        (Some(ok), None) => format!("ret *C.{}) bool", self.get_c_ty(&ok)),
-                        (Some(ok), Some(err)) => format!(
-                            "ret *C.{}, err *C.{}) bool",
-                            self.get_c_ty(&ok),
-                            self.get_c_ty(&err)
-                        ),
-                    };
-                    if func.params.len() > 0 {
-                        format!(
-                            "func {}({}, {}",
-                            name,
-                            self.get_c_func_params(iface, func),
-                            ret,
-                        )
-                    } else {
-                        format!(
-                            "func {}({}",
-                            name,
-                            ret,
-                        )
-                    }
+                    add_param_seperator(src);
+                    self.print_c_result(src, "ret", return_ty, in_import);
+                    src.push_str(")");
                 } else {
-                    format!(
-                        "func {}({}) C.{}",
-                        name,
-                        self.get_c_func_params(iface, func),
-                        self.get_c_ty(return_ty)
-                    )
+                   src.push_str(")");
+                   if !in_import {
+                      src.push_str(&format!(" C.{ty}", ty = self.get_c_ty(return_ty)));
+                   }
+                }
+                if self.is_result_ty(return_ty) || self.extract_option_ty(return_ty).is_some() {
+                    add_bool_return(src);
                 }
             }
-            _ => todo!(),
+            n => { // multi-return
+                // TODO: implement multi-return
+                todo!("multi-return hasn't been implemented yet")
+            }
         }
+    }
+
+    fn get_c_func_signature_helper(&mut self, iface: &Interface, func: &Function, in_import: bool) -> String {
+        let mut src = Source::default();
+        let name = if in_import {
+            format!(
+                "{}_{}",
+                self.name.to_snake_case(),
+                func.name.to_snake_case()
+            )
+        } else {
+            format!(
+                "{}{}",
+                self.name.to_upper_camel_case(),
+                func.name.to_upper_camel_case()
+            )
+        };
+        
+        if !in_import {
+            src.push_str("func ");
+        } else {
+        
+        src.push_str("C.");}
+        src.push_str(&name);
+        src.push_str("(");
+        
+        // prepare args
+        self.print_c_func_params(&mut src, iface, func, in_import);
+
+        // prepare returns
+        self.print_c_func_results(&mut src, iface, func, in_import);
+        src.to_string()
     }
 
     fn get_func_signature(&mut self, iface: &Interface, func: &Function) -> String {
@@ -838,7 +927,7 @@ impl InterfaceGenerator<'_> {
             0 => {}
             1 => {
                 let ty = func.results.iter_types().next().unwrap();
-                func_bindgen.lift("result", ty, false);
+                func_bindgen.lift("ret", ty, false);
             }
             _ => {
                 todo!("does not support multi-results")
@@ -871,29 +960,16 @@ impl InterfaceGenerator<'_> {
         lift_src: &str,
         ret: Vec<String>,
     ) {
-        // invoke
-        let invoke = format!(
-            "C.{}_{}({})",
-            self.name.to_snake_case(),
-            func.name.to_snake_case(),
-            c_args
-                .iter()
-                .enumerate()
-                .map(|(i, name)| format!(
-                    "{}{}",
-                    name,
-                    if i < func.params.len() - 1 { ", " } else { "" }
-                ))
-                .collect::<String>()
-        );
+        let invoke = self.get_c_func_signature_helper(iface, func, true);
         match func.results.len() {
             0 => {
-                self.src.push_str(&format!("{invoke}\n"));
+                self.src.push_str(&invoke);
+                self.src.push_str("\n");
             }
             1 => {
                 let return_ty = func.results.iter_types().next().unwrap();
                 if self.is_arg_by_pointer(return_ty) {
-                    let result = if !self.is_result_ty(return_ty) {
+                    if !self.is_result_ty(return_ty) {
                         let optional_type = self.extract_option_ty(return_ty);
                         // flatten optional type or use return type #https://github.com/bytecodealliance/wit-bindgen/pull/453
                         // TODO: reuse from C
@@ -901,10 +977,8 @@ impl InterfaceGenerator<'_> {
                             .as_ref()
                             .map(|o| self.get_c_ty(o))
                             .unwrap_or_else(|| self.get_c_ty(return_ty));
-                        self.src.push_str(&format!("var result C.{c_ret_type}\n"));
-                        "&result".to_string()
+                        self.src.push_str(&format!("var ret C.{c_ret_type}\n"));
                     } else {
-                        let mut result = String::new();
                         let (ok, err) = self.extract_result_ty(return_ty);
                         match (ok, err) {
                             (None, Some(err)) => {
@@ -912,50 +986,33 @@ impl InterfaceGenerator<'_> {
                                 self.src.push_str(&format!("var err C.{c_ret_type}\n"));
                                 self.src
                                     .push_str(&format!("var empty_err C.{c_ret_type}\n"));
-                                result.push_str("&err")
                             }
                             (Some(ok), None) => {
                                 let c_ret_type = self.get_c_ty(&ok);
-                                self.src.push_str(&format!("var result C.{c_ret_type}\n"));
+                                self.src.push_str(&format!("var ret C.{c_ret_type}\n"));
                                 self.src
-                                    .push_str(&format!("var empty_result C.{c_ret_type}\n"));
-                                result.push_str("&result")
+                                    .push_str(&format!("var empty_ret C.{c_ret_type}\n"));
                             }
                             (Some(ok), Some(err)) => {
                                 let c_ret_type = self.get_c_ty(&ok);
                                 let c_err_type = self.get_c_ty(&err);
-                                self.src.push_str(&format!("var result C.{c_ret_type}\n"));
+                                self.src.push_str(&format!("var ret C.{c_ret_type}\n"));
                                 self.src
-                                    .push_str(&format!("var empty_result C.{c_ret_type}\n"));
+                                    .push_str(&format!("var empty_ret C.{c_ret_type}\n"));
                                 self.src.push_str(&format!("var err C.{c_err_type}\n"));
-                                result.push_str("&result, &err")
                             }
                             _ => unreachable!("result type must be either ok or err"),
                         };
-                        result
                     };
-                    let invoke = format!(
-                        "C.{}_{}({}{})\n",
-                        self.name.to_snake_case(),
-                        func.name.to_snake_case(),
-                        c_args
-                            .iter()
-                            .enumerate()
-                            .map(|(i, name)| format!(
-                                "&{}, ",
-                                name,
-                            ))
-                            .collect::<String>(),
-                        result
-                    );
                     self.src.push_str(&invoke);
+                    self.src.push_str("\n");
                 } else {
-                    self.src.push_str(&format!("result := {invoke}\n"));
+                    self.src.push_str(&format!("ret := {invoke}\n"));
                 }
                 self.src.push_str(lift_src);
                 self.src.push_str(&format!("return {ret}\n", ret = ret[0]));
             }
-            _ => todo!("does not support multi-results"),
+            _n => todo!("does not support multi-results"),
         }
     }
 
@@ -996,7 +1053,7 @@ impl InterfaceGenerator<'_> {
             src.push('\n');
 
             // signature
-            src.push_str(&self.get_c_func_signature(iface, func));
+            src.push_str(&self.get_c_func_signature_helper(iface, func, false));
             src.push_str(" {\n");
 
             // src.push_str(&self.get_c_func_impl(iface, func));
@@ -1062,14 +1119,18 @@ impl InterfaceGenerator<'_> {
                                     "
                                 )
                             }
-                            (Some(_), Some(_)) => {
+                            (Some(ok), Some(err)) => {
+                                let ok = self.get_ty(&ok);
+                                let err = self.get_ty(&err);
                                 uwriteln!(
                                     src,
                                     "
                                     if {lower_result}.is_err {{
-                                        *err = {lower_result}.val.err
+                                        err_ptr := (*{err})(unsafe.Pointer(&{lower_result}.val))
+                                        *err = *err_ptr
                                     }} else {{
-                                        *ret = {lower_result}.val.ok
+                                        ret_ptr := (*{ok})(unsafe.Pointer(&{lower_result}.val))
+                                        *ret = *ret_ptr
                                     }}
                                     return result.IsOk()
                                     "
@@ -1192,7 +1253,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _variant: &wit_bindgen_core::wit_parser::Variant,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!()
+        todo!("type_variant")
     }
 
     fn type_option(
@@ -1222,7 +1283,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _union: &wit_bindgen_core::wit_parser::Union,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!()
+        todo!("type_union")
     }
 
     fn type_enum(
@@ -1232,7 +1293,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _enum_: &wit_bindgen_core::wit_parser::Enum,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!()
+        todo!("type_enum")
     }
 
     fn type_alias(
@@ -1242,7 +1303,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _ty: &wit_bindgen_core::wit_parser::Type,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!()
+        todo!("type_alias")
         // let name = format!(
         //     "{}{}",
         //     self.name.to_upper_camel_case(),
@@ -1270,7 +1331,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _ty: &wit_bindgen_core::wit_parser::Type,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!()
+        todo!("type_builtin")
     }
 }
 
@@ -1699,7 +1760,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     self.lift_src.push_str(&format!("if {param}.is_err {{ \n"));
                                 } else {
                                     self.lift_src.push_str(&format!(
-                                        "{lift_name}_ptr := (*{ok})(unsafe.Pointer(&result))\n"
+                                        "{lift_name}_ptr := (*{ok})(unsafe.Pointer(&ret))\n"
                                     ));
                                     self.lift_src
                                         .push_str(&format!("if {param} == empty_{param} {{ \n"));
@@ -1734,7 +1795,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     ));
                                     self.lift_src.push_str(&format!("}} else {{\n"));
                                     self.lift_src.push_str(&format!(
-                                        "{lift_name}_ptr := (*{ok})(unsafe.Pointer(&result))\n"
+                                        "{lift_name}_ptr := (*{ok})(unsafe.Pointer(&ret))\n"
                                     ));
                                 }
 
