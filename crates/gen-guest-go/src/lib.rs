@@ -584,12 +584,23 @@ impl InterfaceGenerator<'_> {
 
     fn get_func_results(&mut self, _iface: &Interface, func: &Function) -> String {
         let mut results = String::new();
+        results.push(' ');
         match func.results.len() {
             0 => {}
             1 => {
                 results.push_str(&self.get_ty(func.results.iter_types().next().unwrap()));
+                results.push(' ');
             }
-            _ => todo!(),
+            _ => {
+                results.push('(');
+                for (i, ty) in func.results.iter_types().enumerate() {
+                    if i > 0 {
+                        results.push_str(", ");
+                    }
+                    results.push_str(&self.get_ty(ty));
+                }
+                results.push_str(") ");
+            }
         }
         results
     }
@@ -703,6 +714,11 @@ impl InterfaceGenerator<'_> {
         func: &Function,
         in_import: bool,
     ) {
+        let add_param_seperator = |src: &mut Source| {
+            if !func.params.is_empty() {
+                src.push_str(", ");
+            }
+        };
         match func.results.len() {
             0 => {
                 // no return
@@ -710,11 +726,7 @@ impl InterfaceGenerator<'_> {
             }
             1 => {
                 // one return
-                let add_param_seperator = |src: &mut Source| {
-                    if !func.params.is_empty() {
-                        src.push_str(", ");
-                    }
-                };
+
                 let add_bool_return = |src: &mut Source| {
                     if !in_import {
                         src.push_str(" bool");
@@ -737,8 +749,18 @@ impl InterfaceGenerator<'_> {
             }
             _n => {
                 // multi-return
-                // TODO: implement multi-return
-                todo!("multi-return hasn't been implemented yet")
+                add_param_seperator(src);
+                for (i, ty) in func.results.iter_types().enumerate() {
+                    if i > 0 {
+                        src.push_str(", ");
+                    }
+                    if in_import {
+                        src.push_str(&format!("&ret{i}"));
+                    } else {
+                        src.push_str(&format!("ret{i} *C.{ty}", i = i, ty = self.get_c_ty(ty)));
+                    }
+                }
+                src.push_str(")");
             }
         }
     }
@@ -780,17 +802,9 @@ impl InterfaceGenerator<'_> {
         src.to_string()
     }
 
-    fn get_func_signature(&mut self, iface: &Interface, func: &Function) -> String {
-        format!(
-            "{}{}",
-            self.name.to_upper_camel_case(),
-            self.get_func_signature_no_interface(iface, func)
-        )
-    }
-
     fn get_func_signature_no_interface(&mut self, iface: &Interface, func: &Function) -> String {
         format!(
-            "{}({}) {}",
+            "{}({}){}",
             func.name.to_upper_camel_case(),
             self.get_func_params(iface, func),
             self.get_func_results(iface, func)
@@ -798,8 +812,12 @@ impl InterfaceGenerator<'_> {
     }
 
     fn print_func_signature(&mut self, iface: &Interface, func: &Function) {
-        let sig = self.get_func_signature(iface, func);
-        self.src.push_str(&format!("func {sig} {{\n"));
+        self.src.push_str("func ");
+        let func_name = self.name.to_upper_camel_case();
+        self.src.push_str(&func_name);
+        let func_sig = self.get_func_signature_no_interface(iface, func);
+        self.src.push_str(&func_sig);
+        self.src.push_str("{\n");
     }
 
     fn get_field_name(&mut self, field: &Field) -> String {
@@ -943,10 +961,12 @@ impl InterfaceGenerator<'_> {
             0 => {}
             1 => {
                 let ty = func.results.iter_types().next().unwrap();
-                func_bindgen.lift("ret", ty, false);
+                func_bindgen.lift("ret", ty, false, false);
             }
             _ => {
-                todo!("does not support multi-results")
+                for (i, ty) in func.results.iter_types().enumerate() {
+                    func_bindgen.lift(&format!("ret{i}"), ty, false, true);
+                }
             }
         };
         let c_args = func_bindgen.c_args;
@@ -1028,25 +1048,48 @@ impl InterfaceGenerator<'_> {
                 self.src.push_str(lift_src);
                 self.src.push_str(&format!("return {ret}\n", ret = ret[0]));
             }
-            _n => todo!("does not support multi-results"),
+            _n => {
+                for (i, ty) in func.results.iter_types().enumerate() {
+                    let ty = self.get_c_ty(ty);
+                    self.src.push_str(&format!("var ret{i} C.{ty}\n"));
+                }
+                self.src.push_str(&invoke);
+                self.src.push_str("\n");
+                self.src.push_str(lift_src);
+                self.src.push_str("return ");
+                for (i, _) in func.results.iter_types().enumerate() {
+                    if i > 0 {
+                        self.src.push_str(", ");
+                    }
+                    self.src.push_str(&format!("lift_ret{i}"));
+                }
+                self.src.push_str("\n");
+            }
         }
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
         let mut func_bindgen = FunctionBindgen::new(self, func);
-        // lift params to go
-        func.params.iter().for_each(|(name, ty)| {
-            func_bindgen.lift(name, ty, true);
-        });
-        // lower result to c
         match func.results.len() {
-            0 => {}
+            0 => {
+                func.params.iter().for_each(|(name, ty)| {
+                    func_bindgen.lift(name, ty, true, false);
+                });
+            }
             1 => {
+                func.params.iter().for_each(|(name, ty)| {
+                    func_bindgen.lift(name, ty, true, false);
+                });
                 let ty = func.results.iter_types().next().unwrap();
                 func_bindgen.lower("result", ty);
             }
             _ => {
-                todo!("does not support multi-results")
+                func.params.iter().for_each(|(name, ty)| {
+                    func_bindgen.lift(name, ty, true, true);
+                });
+                for (i, ty) in func.results.iter_types().enumerate() {
+                    func_bindgen.lower(&format!("result{i}"), ty);
+                }
             }
         };
 
@@ -1164,7 +1207,19 @@ impl InterfaceGenerator<'_> {
                         src.push_str(&format!("return {ret}\n", ret = &ret[0]));
                     }
                 }
-                _ => todo!("does not support multi-results"),
+                _ => {
+                    for i in 0..func.results.len() {
+                        if i > 0 {
+                            src.push_str(", ")
+                        }
+                        src.push_str(&format!("result{i}"));
+                    }
+                    src.push_str(&format!(" := {invoke}\n"));
+                    src.push_str(&lower_src);
+                    for (i, lower_result) in ret.iter().enumerate() {
+                        src.push_str(&format!("*ret{i} = {lower_result}\n"));
+                    }
+                }
             };
 
             src.push_str("\n}\n");
@@ -1584,9 +1639,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
     }
 
-    fn lift(&mut self, name: &str, ty: &Type, in_export: bool) {
+    fn lift(&mut self, name: &str, ty: &Type, in_export: bool, multi_return: bool) {
         let lift_name = format!("lift_{name}");
-        if self.interface.extract_option_ty(ty).is_some() {
+        if multi_return {
+            self.lift_value(name, ty, lift_name.as_str(), false, 1, in_export);
+        } else if self.interface.extract_option_ty(ty).is_some() {
             self.lift_value(name, ty, lift_name.as_str(), true, 0, in_export);
         } else {
             self.lift_value(name, ty, lift_name.as_str(), false, 0, in_export);
@@ -1782,10 +1839,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 }
                                 self.lift_src
                                     .push_str(&format!("{lift_name}.SetErr(*{lift_name}_ptr)\n"));
-                                self.lift_src.push_str(&"} else {\n".to_string());
+                                self.lift_src.push_str("} else {\n");
                                 self.lift_src
                                     .push_str(&format!("{lift_name}.Set(struct{{}}{{}})\n"));
-                                self.lift_src.push_str(&"}\n".to_string());
+                                self.lift_src.push_str("}\n");
                             }
                             (Some(ok), None) => {
                                 let ok = self.interface.get_ty(&ok);
@@ -1801,10 +1858,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 }
                                 self.lift_src
                                     .push_str(&format!("{lift_name}.SetErr(struct{{}}{{}})\n"));
-                                self.lift_src.push_str(&"} else {\n".to_string());
+                                self.lift_src.push_str("} else {\n");
                                 self.lift_src
                                     .push_str(&format!("{lift_name}.Set(*{lift_name}_ptr)\n"));
-                                self.lift_src.push_str(&"}\n".to_string());
+                                self.lift_src.push_str("}\n");
                             }
                             (Some(ok), Some(err)) => {
                                 let ok = self.interface.get_ty(&ok);
@@ -1816,7 +1873,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     self.lift_src.push_str(&format!(
                                         "{lift_name}.SetErr(*{lift_name}_ptr)\n"
                                     ));
-                                    self.lift_src.push_str(&"} else {\n".to_string());
+                                    self.lift_src.push_str("} else {\n");
                                     self.lift_src.push_str(&format!("{lift_name}_ptr := (*{ok})(unsafe.Pointer(&{param}.val))\n"));
                                 } else {
                                     self.lift_src
@@ -1827,7 +1884,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     self.lift_src.push_str(&format!(
                                         "{lift_name}.SetErr(*{lift_name}_ptr)\n"
                                     ));
-                                    self.lift_src.push_str(&"} else {\n".to_string());
+                                    self.lift_src.push_str("} else {\n");
                                     self.lift_src.push_str(&format!(
                                         "{lift_name}_ptr := (*{ok})(unsafe.Pointer(&ret))\n"
                                     ));
@@ -1835,7 +1892,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
                                 self.lift_src
                                     .push_str(&format!("{lift_name}.Set(*{lift_name}_ptr)\n"));
-                                self.lift_src.push_str(&"}\n".to_string());
+                                self.lift_src.push_str("}\n");
                             }
                             _ => unreachable!("Result must have at least one type"),
                         }
