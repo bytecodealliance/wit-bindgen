@@ -615,7 +615,6 @@ dependencies = [
  "quote",
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
- "wit-bindgen-gen-guest-go",
  "wit-bindgen-gen-guest-teavm-java",
  "wit-component",
  "wit-parser",

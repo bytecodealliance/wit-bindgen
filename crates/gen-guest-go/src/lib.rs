@@ -172,7 +172,7 @@ impl WorldGenerator for TinyGo {
     }
 
     fn finish(&mut self, world: &World, files: &mut Files) {
-        let world_name = self.world.clone();
+        let _world_name = self.world.clone();
         let mut header = Source::default();
         // add package
         header.push_str("package ");
@@ -595,7 +595,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn print_c_result(&mut self, src: &mut Source, name: &str, param: &Type, in_import: bool) {
-        let mut prefix = String::new();
+        let prefix = String::new();
         let mut param_name = String::new();
         let mut postfix = String::new();
         if in_import {
@@ -608,31 +608,28 @@ impl InterfaceGenerator<'_> {
                     (Some(_), Some(_)) => param_name.push_str("&ret, &err"),
                 };
                 src.push_str(&format!("{prefix}{param_name}{postfix}"));
-                return
+                return;
             }
-        } 
-        else {
-            if self.is_result_ty(param) {
-                match self.extract_result_ty(param) {
-                    (None, None) => unreachable!("Result type must have either Ok or Err"),
-                    (None, Some(err)) => {
-                        param_name.push_str("err *C.");
-                        postfix.push_str(&self.get_c_ty(&err));
-                    }
-                    (Some(ok), None) => {
-                        param_name.push_str("ret *C.");
-                        postfix.push_str(&self.get_c_ty(&ok));
-                    }
-                    (Some(ok), Some(err)) => {
-                        param_name.push_str("ret *C.");
-                        postfix.push_str(&self.get_c_ty(&ok));
-                        postfix.push_str(", err *C.");
-                        postfix.push_str(&self.get_c_ty(&err));
-                    }
-                }; 
-                src.push_str(&format!("{prefix}{param_name}{postfix}"));
-                return
-            }
+        } else if self.is_result_ty(param) {
+            match self.extract_result_ty(param) {
+                (None, None) => unreachable!("Result type must have either Ok or Err"),
+                (None, Some(err)) => {
+                    param_name.push_str("err *C.");
+                    postfix.push_str(&self.get_c_ty(&err));
+                }
+                (Some(ok), None) => {
+                    param_name.push_str("ret *C.");
+                    postfix.push_str(&self.get_c_ty(&ok));
+                }
+                (Some(ok), Some(err)) => {
+                    param_name.push_str("ret *C.");
+                    postfix.push_str(&self.get_c_ty(&ok));
+                    postfix.push_str(", err *C.");
+                    postfix.push_str(&self.get_c_ty(&err));
+                }
+            };
+            src.push_str(&format!("{prefix}{param_name}{postfix}"));
+            return;
         }
         self.print_c_param(src, name, param, in_import);
     }
@@ -645,16 +642,15 @@ impl InterfaceGenerator<'_> {
 
         if in_import {
             if self.is_arg_by_pointer(param) {
-                prefix.push_str(pointer_prefix);   
+                prefix.push_str(pointer_prefix);
             }
             if name != "err" && name != "ret" {
                 param_name = format!("lower_{name}");
             } else {
                 param_name.push_str(name);
             }
-        } 
-        else {
-            postfix.push_str(" ");
+        } else {
+            postfix.push(' ');
             let maybe_option = self.extract_option_ty(param);
             param_name.push_str(name);
             if self.is_arg_by_pointer(param) || maybe_option.is_some() {
@@ -665,26 +661,32 @@ impl InterfaceGenerator<'_> {
                 .as_ref()
                 .map(|o| self.get_c_ty(o))
                 .unwrap_or(self.get_c_ty(param));
-            postfix.push_str(&s); 
+            postfix.push_str(&s);
         }
         src.push_str(&format!("{prefix}{param_name}{postfix}"));
     }
 
-    fn print_c_func_params(&mut self, params: &mut Source, _iface: &Interface, func: &Function, in_import: bool) {
-        // Append C params to source. 
-        // 
+    fn print_c_func_params(
+        &mut self,
+        params: &mut Source,
+        _iface: &Interface,
+        func: &Function,
+        in_import: bool,
+    ) {
+        // Append C params to source.
+        //
         // If in_import is true, this function is invoked in `import_invoke` which uses `&` to dereference
         // argument of pointer type. The & is added as a prefix to the argument name. And there is no
         // type declaration needed to be added to the argument.
         //
-        // If in_import is false, this function is invokved in printing export function signature. 
+        // If in_import is false, this function is invokved in printing export function signature.
         // It uses the form of `<param-name> *C.<param-type>` to print each parameter in the function, where
         // * is only used if the parameter is of pointer type.
         //
         // An exceptional case is the optional flattening rule. The rule only applies when
-        // in_import is false. If the parameter is of type Option. It needs to flatten out the outer layer of 
-        // the option type and uses pointer for option's inner type. In this case, even if the inner type of 
-        // an option type is primitive, the * is still needed. 
+        // in_import is false. If the parameter is of type Option. It needs to flatten out the outer layer of
+        // the option type and uses pointer for option's inner type. In this case, even if the inner type of
+        // an option type is primitive, the * is still needed.
 
         for (i, (name, param)) in func.params.iter().enumerate() {
             if i > 0 {
@@ -694,16 +696,24 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn print_c_func_results(&mut self, src: &mut Source, iface: &Interface, func: &Function, in_import: bool) {
+    fn print_c_func_results(
+        &mut self,
+        src: &mut Source,
+        _iface: &Interface,
+        func: &Function,
+        in_import: bool,
+    ) {
         match func.results.len() {
-            0 => { // no return
+            0 => {
+                // no return
                 src.push_str(")");
             }
-            1 => { // one return
+            1 => {
+                // one return
                 let add_param_seperator = |src: &mut Source| {
-                    if func.params.len() > 0 {
+                    if !func.params.is_empty() {
                         src.push_str(", ");
-                   }
+                    }
                 };
                 let add_bool_return = |src: &mut Source| {
                     if !in_import {
@@ -716,23 +726,29 @@ impl InterfaceGenerator<'_> {
                     self.print_c_result(src, "ret", return_ty, in_import);
                     src.push_str(")");
                 } else {
-                   src.push_str(")");
-                   if !in_import {
-                      src.push_str(&format!(" C.{ty}", ty = self.get_c_ty(return_ty)));
-                   }
+                    src.push_str(")");
+                    if !in_import {
+                        src.push_str(&format!(" C.{ty}", ty = self.get_c_ty(return_ty)));
+                    }
                 }
                 if self.is_result_ty(return_ty) || self.extract_option_ty(return_ty).is_some() {
                     add_bool_return(src);
                 }
             }
-            n => { // multi-return
+            _n => {
+                // multi-return
                 // TODO: implement multi-return
                 todo!("multi-return hasn't been implemented yet")
             }
         }
     }
 
-    fn get_c_func_signature_helper(&mut self, iface: &Interface, func: &Function, in_import: bool) -> String {
+    fn get_c_func_signature_helper(
+        &mut self,
+        iface: &Interface,
+        func: &Function,
+        in_import: bool,
+    ) -> String {
         let mut src = Source::default();
         let name = if in_import {
             format!(
@@ -747,15 +763,15 @@ impl InterfaceGenerator<'_> {
                 func.name.to_upper_camel_case()
             )
         };
-        
+
         if !in_import {
             src.push_str("func ");
         } else {
-        
-        src.push_str("C.");}
+            src.push_str("C.");
+        }
         src.push_str(&name);
         src.push_str("(");
-        
+
         // prepare args
         self.print_c_func_params(&mut src, iface, func, in_import);
 
@@ -956,7 +972,7 @@ impl InterfaceGenerator<'_> {
         &mut self,
         iface: &Interface,
         func: &Function,
-        c_args: Vec<String>,
+        _c_args: Vec<String>,
         lift_src: &str,
         ret: Vec<String>,
     ) {
@@ -1206,7 +1222,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.name.to_upper_camel_case(),
             name.to_upper_camel_case()
         );
-        self.src.push_str(&format!("type {name} uint8\n"));
+        self.src.push_str(&format!("type {name} uint64\n"));
         self.src.push_str("const (\n");
         for (i, flag) in flags.flags.iter().enumerate() {
             if i == 0 {
@@ -1299,18 +1315,17 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_alias(
         &mut self,
         _id: wit_bindgen_core::wit_parser::TypeId,
-        _name: &str,
-        _ty: &wit_bindgen_core::wit_parser::Type,
+        name: &str,
+        ty: &wit_bindgen_core::wit_parser::Type,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!("type_alias")
-        // let name = format!(
-        //     "{}{}",
-        //     self.name.to_upper_camel_case(),
-        //     name.to_upper_camel_case()
-        // );
-        // let ty = self.get_ty(ty);
-        // self.src.push_str(&format!("type {name} = {ty}\n"));
+        let name = format!(
+            "{}{}",
+            self.name.to_upper_camel_case(),
+            name.to_upper_camel_case()
+        );
+        let ty = self.get_ty(ty);
+        self.src.push_str(&format!("type {name} = {ty}\n"));
     }
 
     fn type_list(
@@ -1368,7 +1383,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
     fn lower_value(&mut self, param: &str, ty: &Type, lower_name: &str, flatten: bool) {
         match ty {
-            Type::Bool => self.lower_src.push_str("nil"),
+            Type::Bool => {
+                self.lower_src
+                    .push_str(&format!("{lower_name} := {param}\n",));
+            }
             Type::String => {
                 uwriteln!(
                     self.lower_src,
@@ -1539,7 +1557,20 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     }
                     // TypeDefKind::Future(_) => todo!(),
                     // TypeDefKind::Stream(_) => todo!(),
-                    // TypeDefKind::Type(_) => todo!(),
+                    TypeDefKind::Type(t) => {
+                        uwriteln!(
+                            self.lower_src,
+                            "var {lower_name} C.{value}",
+                            value = self.interface.get_c_ty(t),
+                        );
+                        self.lower_value(param, t, &format!("{lower_name}_val"), flatten);
+                        uwrite!(
+                            self.lower_src,
+                            "
+                            {lower_name} = {lower_name}_val
+                            "
+                        );
+                    }
                     _ => self.lower_src.push_str(""),
                 }
             }
@@ -1573,7 +1604,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         in_export: bool,
     ) {
         match ty {
-            Type::Bool => self.lift_src.push_str("nil"),
+            Type::Bool => {
+                self.lift_src
+                    .push_str(&format!("{lift_name} := {param}\n",));
+            }
             Type::String => {
                 uwriteln!(
                     self.lift_src,
@@ -1748,10 +1782,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 }
                                 self.lift_src
                                     .push_str(&format!("{lift_name}.SetErr(*{lift_name}_ptr)\n"));
-                                self.lift_src.push_str(&format!("}} else {{\n"));
+                                self.lift_src.push_str(&"} else {\n".to_string());
                                 self.lift_src
                                     .push_str(&format!("{lift_name}.Set(struct{{}}{{}})\n"));
-                                self.lift_src.push_str(&format!("}}\n"));
+                                self.lift_src.push_str(&"}\n".to_string());
                             }
                             (Some(ok), None) => {
                                 let ok = self.interface.get_ty(&ok);
@@ -1767,10 +1801,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 }
                                 self.lift_src
                                     .push_str(&format!("{lift_name}.SetErr(struct{{}}{{}})\n"));
-                                self.lift_src.push_str(&format!("}} else {{\n"));
+                                self.lift_src.push_str(&"} else {\n".to_string());
                                 self.lift_src
                                     .push_str(&format!("{lift_name}.Set(*{lift_name}_ptr)\n"));
-                                self.lift_src.push_str(&format!("}}\n"));
+                                self.lift_src.push_str(&"}\n".to_string());
                             }
                             (Some(ok), Some(err)) => {
                                 let ok = self.interface.get_ty(&ok);
@@ -1782,7 +1816,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     self.lift_src.push_str(&format!(
                                         "{lift_name}.SetErr(*{lift_name}_ptr)\n"
                                     ));
-                                    self.lift_src.push_str(&format!("}} else {{\n"));
+                                    self.lift_src.push_str(&"} else {\n".to_string());
                                     self.lift_src.push_str(&format!("{lift_name}_ptr := (*{ok})(unsafe.Pointer(&{param}.val))\n"));
                                 } else {
                                     self.lift_src
@@ -1793,7 +1827,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     self.lift_src.push_str(&format!(
                                         "{lift_name}.SetErr(*{lift_name}_ptr)\n"
                                     ));
-                                    self.lift_src.push_str(&format!("}} else {{\n"));
+                                    self.lift_src.push_str(&"} else {\n".to_string());
                                     self.lift_src.push_str(&format!(
                                         "{lift_name}_ptr := (*{ok})(unsafe.Pointer(&ret))\n"
                                     ));
@@ -1801,7 +1835,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
                                 self.lift_src
                                     .push_str(&format!("{lift_name}.Set(*{lift_name}_ptr)\n"));
-                                self.lift_src.push_str(&format!("}}\n"));
+                                self.lift_src.push_str(&"}\n".to_string());
                             }
                             _ => unreachable!("Result must have at least one type"),
                         }
@@ -1825,7 +1859,25 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     }
                     // TypeDefKind::Future(_) => todo!(),
                     // TypeDefKind::Stream(_) => todo!(),
-                    // TypeDefKind::Type(_) => todo!(),
+                    TypeDefKind::Type(t) => {
+                        uwriteln!(
+                            self.lift_src,
+                            "var {lift_name} {value}
+                            ",
+                            value = self.interface.get_ty(&Type::Id(*id)),
+                        );
+                        // let c_field_name = &self.get_c_field_name(field);
+                        self.lift_value(
+                            param,
+                            t,
+                            &format!("{lift_name}_val"),
+                            flatten,
+                            count + 1,
+                            in_export,
+                        );
+                        self.lift_src
+                            .push_str(&format!("{lift_name} = {lift_name}_val\n"));
+                    }
                     _ => self.lift_src.push_str(""),
                 }
             }
