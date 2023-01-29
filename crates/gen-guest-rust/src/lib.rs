@@ -327,9 +327,6 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 self.src,
                 "
-                    #[allow(unused_imports)]
-                    use wit_bindgen_guest_rust::rt::{{alloc, vec::Vec, string::String}};
-
                     #[repr(align({align}))]
                     struct _RetArea([u8; {size}]);
                     static mut _RET_AREA: _RetArea = _RetArea([0; {size}]);
@@ -350,6 +347,7 @@ impl InterfaceGenerator<'_> {
             "
                 #[allow(clippy::all)]
                 pub mod {snake} {{
+                    use wit_bindgen_guest_rust::rt::{{alloc, vec::Vec, string::String}};
                     {module}
                 }}
             "
