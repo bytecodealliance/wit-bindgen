@@ -615,6 +615,7 @@ dependencies = [
  "quote",
  "wit-bindgen-core",
  "wit-bindgen-gen-guest-c",
+ "wit-bindgen-gen-guest-go",
  "wit-bindgen-gen-guest-teavm-java",
  "wit-component",
  "wit-parser",
@@ -1000,7 +1001,9 @@ version = "0.3.0"
 dependencies = [
  "clap",
  "heck",
+ "test-helpers",
  "wit-bindgen-core",
+ "wit-bindgen-gen-guest-c",
  "wit-component",
 ]
 

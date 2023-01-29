@@ -23,10 +23,10 @@ pub struct Opts {
 impl Opts {
     pub fn build(&self) -> Box<dyn WorldGenerator> {
         // ––––---- debugging purpose ----------
-        if cfg!(debug_assertions) {
-            println!("process id: {}", std::process::id());
-            std::thread::sleep(std::time::Duration::from_secs(8));
-        }
+        // if cfg!(debug_assertions) {
+        //     println!("process id: {}", std::process::id());
+        //     std::thread::sleep(std::time::Duration::from_secs(8));
+        // }
         // ––––---------------------------------
 
         Box::new(TinyGo {
@@ -60,6 +60,10 @@ impl TinyGo {
             private_anonymous_types: BTreeSet::new(),
         }
     }
+
+    fn clean_up_export_funcs(&mut self) {
+        self.export_funcs = vec![];
+    }
 }
 
 impl WorldGenerator for TinyGo {
@@ -85,6 +89,7 @@ impl WorldGenerator for TinyGo {
 
     fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
         self.src.push_str(&format!("// {name}\n"));
+        self.clean_up_export_funcs();
 
         let mut gen = self.interface(iface, name);
         gen.types();
@@ -99,8 +104,8 @@ impl WorldGenerator for TinyGo {
         self.src.push_str(&src);
 
         if !self.export_funcs.is_empty() {
-            let interface_var_name = &iface.name.to_snake_case();
-            let interface_name = &iface.name.to_upper_camel_case();
+            let interface_var_name = &name.to_snake_case();
+            let interface_name = &name.to_upper_camel_case();
 
             self.src
                 .push_str(format!("var {interface_var_name} {interface_name} = nil\n").as_str());
@@ -126,10 +131,7 @@ impl WorldGenerator for TinyGo {
 
     fn export_default(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
         self.src.push_str(&format!("// default {name}\n"));
-
-        let mut iface = iface.clone(); //TODO: remove this clone
-        iface.name = String::from(name);
-        let iface = &iface;
+        self.clean_up_export_funcs();
 
         let mut gen = self.interface(iface, name);
         gen.types();
@@ -144,8 +146,8 @@ impl WorldGenerator for TinyGo {
         self.src.push_str(&src);
 
         if !self.export_funcs.is_empty() {
-            let interface_var_name = &iface.name.to_snake_case();
-            let interface_name = &iface.name.to_upper_camel_case();
+            let interface_var_name = &name.to_snake_case();
+            let interface_name = &name.to_upper_camel_case();
 
             self.src
                 .push_str(format!("var {interface_var_name} {interface_name} = nil\n").as_str());
@@ -200,43 +202,65 @@ impl WorldGenerator for TinyGo {
             let mut result_option_src = Source::default();
             uwriteln!(
                 result_option_src,
-                "package {world_name}
+                "package variants
 
-                type OptionKind int
+                // inspired from https://github.com/moznion/go-optional
+                
+                type optionKind int
                 
                 const (
-                    None OptionKind = iota
-                    Some
+                    none optionKind = iota
+                    some
                 )
                 
                 type Option[T any] struct {{
-                    Kind OptionKind
-                    Val  T
+                    kind optionKind
+                    val  T
                 }}
                 
+                // IsNone returns true if the option is None.
                 func (o Option[T]) IsNone() bool {{
-                    return o.Kind == None
+                    return o.kind == none
                 }}
                 
+                // IsSome returns true if the option is Some.
                 func (o Option[T]) IsSome() bool {{
-                    return o.Kind == Some
+                    return o.kind == some
                 }}
                 
+                // Unwrap returns the value if the option is Some.
                 func (o Option[T]) Unwrap() T {{
-                    if o.Kind != Some {{
+                    if o.kind != some {{
                         panic(\"Option is None\")
                     }}
-                    return o.Val
+                    return o.val
                 }}
                 
+                // Set sets the value and returns it.
                 func (o *Option[T]) Set(val T) T {{
-                    o.Kind = Some
-                    o.Val = val
+                    o.kind = some
+                    o.val = val
                     return val
                 }}
                 
+                // Unset sets the value to None.
                 func (o *Option[T]) Unset() {{
-                    o.Kind = None
+                    o.kind = none
+                }}
+                
+                // Some is a constructor for Option[T] which represents Some.
+                func Some[T any](v T) Option[T] {{
+                    return Option[T]{{
+                        kind: some,
+                        val:  v,
+                    }}
+                }}
+                
+                // None is a constructor for Option[T] which represents None.
+                func None[T any]() Option[T] {{
+                    return Option[T]{{
+                        kind: none,
+                    }}
                 }}
                 
                 type ResultKind int
@@ -284,7 +308,8 @@ impl WorldGenerator for TinyGo {
                     r.Kind = Err
                     r.Err = err
                     return err
-                }}"
+                }}
+                "
             );
             files.push(
                 &format!("{}_types.go", world.name.to_kebab_case()),
@@ -308,7 +333,7 @@ impl InterfaceGenerator<'_> {
     fn get_typedef_target(&mut self, name: &str) -> String {
         format!(
             "{}{}",
-            self.iface.name.to_upper_camel_case(),
+            self.name.to_upper_camel_case(),
             name.to_upper_camel_case()
         )
     }
@@ -326,7 +351,7 @@ impl InterfaceGenerator<'_> {
             Type::S64 => "int64".into(),
             Type::Float32 => "float32".into(),
             Type::Float64 => "float64".into(),
-            Type::Char => "uint32".into(),
+            Type::Char => "rune".into(),
             Type::String => "string".into(),
             Type::Id(id) => {
                 let ty = &self.iface().types[*id];
@@ -596,7 +621,7 @@ impl InterfaceGenerator<'_> {
     fn get_c_func_signature(&mut self, iface: &Interface, func: &Function) -> String {
         let name = format!(
             "{}{}",
-            iface.name.to_upper_camel_case(),
+            self.name.to_upper_camel_case(),
             func.name.to_upper_camel_case()
         );
         match func.results.len() {
@@ -623,12 +648,20 @@ impl InterfaceGenerator<'_> {
                             self.get_c_ty(&err)
                         ),
                     };
-                    format!(
-                        "func {}({}, {}",
-                        name,
-                        self.get_c_func_params(iface, func),
-                        ret,
-                    )
+                    if func.params.len() > 0 {
+                        format!(
+                            "func {}({}, {}",
+                            name,
+                            self.get_c_func_params(iface, func),
+                            ret,
+                        )
+                    } else {
+                        format!(
+                            "func {}({}",
+                            name,
+                            ret,
+                        )
+                    }
                 } else {
                     format!(
                         "func {}({}) C.{}",
@@ -645,7 +678,7 @@ impl InterfaceGenerator<'_> {
     fn get_func_signature(&mut self, iface: &Interface, func: &Function) -> String {
         format!(
             "{}{}",
-            iface.name.to_upper_camel_case(),
+            self.name.to_upper_camel_case(),
             self.get_func_signature_no_interface(iface, func)
         )
     }
@@ -741,22 +774,6 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn no_default_value(&self, ty: &Type) -> bool {
-        match ty {
-            Type::Id(id) => match &self.iface.types[*id].kind {
-                TypeDefKind::Type(t) => self.no_default_value(t),
-                TypeDefKind::List(_) => true,
-                TypeDefKind::Option(_) => true,
-                TypeDefKind::Result(_) => true,
-                TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
-                TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
-                _ => false,
-            },
-            Type::String => true,
-            _ => false,
-        }
-    }
-
     fn get_optional_ty(&mut self, ty: Option<&Type>) -> String {
         match ty {
             Some(ty) => self.get_ty(ty),
@@ -778,7 +795,7 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Tuple(t) => {
                 let name = format!(
                     "{}{}",
-                    self.iface().name.to_upper_camel_case(),
+                    self.name.to_upper_camel_case(),
                     self.get_ty_name(&Type::Id(ty))
                 );
                 self.src.push_str(&format!("type {name} struct {{\n",));
@@ -857,7 +874,7 @@ impl InterfaceGenerator<'_> {
         // invoke
         let invoke = format!(
             "C.{}_{}({})",
-            iface.name.to_snake_case(),
+            self.name.to_snake_case(),
             func.name.to_snake_case(),
             c_args
                 .iter()
@@ -918,16 +935,15 @@ impl InterfaceGenerator<'_> {
                         result
                     };
                     let invoke = format!(
-                        "C.{}_{}({}, {})\n",
-                        iface.name.to_snake_case(),
+                        "C.{}_{}({}{})\n",
+                        self.name.to_snake_case(),
                         func.name.to_snake_case(),
                         c_args
                             .iter()
                             .enumerate()
                             .map(|(i, name)| format!(
-                                "&{}{}",
+                                "&{}, ",
                                 name,
-                                if i < func.params.len() - 1 { ", " } else { "" }
                             ))
                             .collect::<String>(),
                         result
@@ -944,8 +960,6 @@ impl InterfaceGenerator<'_> {
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
-        println!("export {func:?}");
-
         let mut func_bindgen = FunctionBindgen::new(self, func);
         // lift params to go
         func.params.iter().for_each(|(name, ty)| {
@@ -975,7 +989,7 @@ impl InterfaceGenerator<'_> {
             src.push_str("//export ");
             let name = format!(
                 "{}_{}",
-                iface.name.to_snake_case(),
+                self.name.to_snake_case(),
                 func.name.to_snake_case()
             );
             src.push_str(&name);
@@ -993,7 +1007,7 @@ impl InterfaceGenerator<'_> {
             // invoke
             let invoke = format!(
                 "{}.{}({})",
-                &iface.name.to_snake_case(),
+                &self.name.to_snake_case(),
                 &func.name.to_upper_camel_case(),
                 args.iter()
                     .enumerate()
@@ -1107,7 +1121,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     ) {
         let name = format!(
             "{}{}",
-            self.iface().name.to_upper_camel_case(),
+            self.name.to_upper_camel_case(),
             name.to_upper_camel_case()
         );
         self.src.push_str(&format!("type {name} struct {{\n",));
@@ -1128,7 +1142,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     ) {
         let name = format!(
             "{}{}",
-            self.iface().name.to_upper_camel_case(),
+            self.name.to_upper_camel_case(),
             name.to_upper_camel_case()
         );
         self.src.push_str(&format!("type {name} uint8\n"));
@@ -1160,7 +1174,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     ) {
         let name = format!(
             "{}{}",
-            self.iface().name.to_upper_camel_case(),
+            self.name.to_upper_camel_case(),
             name.to_upper_camel_case()
         );
         self.src.push_str(&format!("type {name} struct {{\n",));
@@ -1231,7 +1245,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         todo!()
         // let name = format!(
         //     "{}{}",
-        //     self.iface().name.to_upper_camel_case(),
+        //     self.name.to_upper_camel_case(),
         //     name.to_upper_camel_case()
         // );
         // let ty = self.get_ty(ty);
@@ -1294,7 +1308,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn lower_value(&mut self, param: &str, ty: &Type, lower_name: &str, flatten: bool) {
         match ty {
             Type::Bool => self.lower_src.push_str("nil"),
-            Type::Char => self.lower_src.push_str("nil"),
             Type::String => {
                 uwriteln!(
                     self.lower_src,
@@ -1500,7 +1513,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     ) {
         match ty {
             Type::Bool => self.lift_src.push_str("nil"),
-            Type::Char => self.lift_src.push_str("nil"),
             Type::String => {
                 uwriteln!(
                     self.lift_src,
