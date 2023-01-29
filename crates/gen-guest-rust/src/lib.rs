@@ -347,6 +347,7 @@ impl InterfaceGenerator<'_> {
             "
                 #[allow(clippy::all)]
                 pub mod {snake} {{
+                    #[allow(unused_imports)]
                     use wit_bindgen_guest_rust::rt::{{alloc, vec::Vec, string::String}};
                     {module}
                 }}
