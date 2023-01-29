@@ -368,12 +368,6 @@ impl InterfaceGenerator<'_> {
         self.src.push_str("#[allow(clippy::all)]\n");
         let params = self.print_signature(func, param_mode, &sig);
         self.src.push_str("{\n");
-        self.src.push_str(
-            "
-                #[allow(unused_imports)]
-                use wit_bindgen_guest_rust::rt::{{alloc, vec::Vec, string::String}};
-            ",
-        );
         self.src.push_str("unsafe {\n");
 
         let mut f = FunctionBindgen::new(self, params);
