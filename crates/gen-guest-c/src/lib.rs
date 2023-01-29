@@ -45,9 +45,8 @@ impl Opts {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Return {
-    return_multiple: bool,
     scalar: Option<Scalar>,
     retptrs: Vec<Type>,
 }
@@ -862,11 +861,7 @@ impl InterfaceGenerator<'_> {
                 name: String::from("INVALID"),
                 sig: String::from("INVALID"),
                 params: Vec::new(),
-                ret: Return {
-                    return_multiple: false,
-                    scalar: None,
-                    retptrs: Vec::new(),
-                },
+                ret: Return::default(),
                 retptrs: Vec::new(),
             };
             for (i, result) in sig.results.iter().enumerate() {
@@ -1027,11 +1022,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn classify_ret(&mut self, func: &Function) -> Return {
-        let mut ret = Return {
-            return_multiple: false,
-            scalar: None,
-            retptrs: Vec::new(),
-        };
+        let mut ret = Return::default();
         match func.results.len() {
             0 => ret.scalar = Some(Scalar::Void),
             1 => {
@@ -1039,7 +1030,6 @@ impl InterfaceGenerator<'_> {
                 ret.return_single(self.resolve, ty, ty);
             }
             _ => {
-                ret.return_multiple = true;
                 ret.retptrs.extend(func.results.iter_types().cloned());
             }
         }
