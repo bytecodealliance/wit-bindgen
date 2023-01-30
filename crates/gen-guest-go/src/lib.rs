@@ -1,8 +1,9 @@
 use std::fmt::Write;
 use std::{collections::BTreeSet, mem};
 
-use heck::{ToKebabCase, ToSnakeCase, ToUpperCamelCase};
+use heck::{ToKebabCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use wit_bindgen_core::uwrite;
+use wit_bindgen_core::wit_parser::Case;
 use wit_bindgen_core::{
     uwriteln,
     wit_parser::{
@@ -44,6 +45,7 @@ pub struct TinyGo {
     world: String,
     needs_result_option: bool,
     needs_import_unsafe: bool,
+    needs_fmt_import: bool,
 }
 
 impl TinyGo {
@@ -187,6 +189,9 @@ impl WorldGenerator for TinyGo {
 
         if self.needs_import_unsafe {
             header.push_str("import \"unsafe\"\n\n");
+        }
+        if self.needs_fmt_import {
+            header.push_str("import \"fmt\"\n\n");
         }
         let header = mem::take(&mut header);
         let src = mem::take(&mut self.src);
@@ -478,23 +483,52 @@ impl InterfaceGenerator<'_> {
                         src.push('T');
                         src
                     }
-                    TypeDefKind::Option(_ty) => {
-                        todo!()
+                    TypeDefKind::Option(t) => {
+                        let mut src = String::new();
+                        src.push_str("Option");
+                        src.push_str(&self.get_ty_name(t));
+                        src.push('T');
+                        src
                     }
-                    TypeDefKind::Result(_r) => {
-                        todo!()
+                    TypeDefKind::Result(r) => {
+                        let mut src = String::new();
+                        src.push_str("Result");
+                        src.push_str(&self.get_optional_ty_name(r.ok.as_ref()));
+                        src.push_str(&self.get_optional_ty_name(r.ok.as_ref()));
+                        src.push('T');
+                        src
                     }
-                    TypeDefKind::List(_t) => {
-                        todo!()
+                    TypeDefKind::List(t) => {
+                        let mut src = String::new();
+                        src.push_str("Option");
+                        src.push_str(&self.get_ty_name(t));
+                        src.push('T');
+                        src
                     }
-                    TypeDefKind::Future(_t) => {
-                        todo!()
+                    TypeDefKind::Future(t) => {
+                        let mut src = String::new();
+                        src.push_str("Future");
+                        src.push_str(&self.get_optional_ty_name(t.as_ref()));
+                        src.push('T');
+                        src
                     }
-                    TypeDefKind::Stream(_s) => {
-                        todo!()
+                    TypeDefKind::Stream(t) => {
+                        let mut src = String::new();
+                        src.push_str("Stream");
+                        src.push_str(&self.get_optional_ty_name(t.element.as_ref()));
+                        src.push_str(&self.get_optional_ty_name(t.end.as_ref()));
+                        src.push('T');
+                        src
                     }
                 }
             }
+        }
+    }
+
+    fn get_optional_ty_name(&mut self, ty: Option<&Type>) -> String {
+        match ty {
+            Some(ty) => self.get_ty_name(ty),
+            None => "Empty".into(),
         }
     }
 
@@ -950,6 +984,20 @@ impl InterfaceGenerator<'_> {
         }
     }
 
+    fn get_nonempty_type<'o>(&self, ty: Option<&'o Type>) -> Option<&'o Type> {
+        // TODO: reuse from C
+        match ty {
+            Some(ty) => {
+                if self.is_empty_type(ty) {
+                    None
+                } else {
+                    Some(ty)
+                }
+            }
+            None => None,
+        }
+    }
+
     fn import(&mut self, iface: &Interface, func: &Function) {
         let mut func_bindgen = FunctionBindgen::new(self, func);
         // lower params to c
@@ -1277,6 +1325,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.name.to_upper_camel_case(),
             name.to_upper_camel_case()
         );
+        // TODO: use flags repr to determine how many flags are needed
         self.src.push_str(&format!("type {name} uint64\n"));
         self.src.push_str("const (\n");
         for (i, flag) in flags.flags.iter().enumerate() {
@@ -1320,11 +1369,84 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_variant(
         &mut self,
         _id: wit_bindgen_core::wit_parser::TypeId,
-        _name: &str,
-        _variant: &wit_bindgen_core::wit_parser::Variant,
+        name: &str,
+        variant: &wit_bindgen_core::wit_parser::Variant,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!("type_variant")
+        self.gen.needs_fmt_import = true;
+        let name = format!(
+            "{}{}",
+            self.name.to_upper_camel_case(),
+            name.to_upper_camel_case()
+        );
+        // TODO: use variant's tag to determine how many cases are needed
+        // this will help to optmize the Kind type.
+        self.src.push_str(&format!("type {name}Kind int\n\n"));
+        self.src.push_str(&format!("const (\n"));
+
+        for (i, case) in variant.cases.iter().enumerate() {
+            let case_name = case.name.to_upper_camel_case();
+            if i == 0 {
+                self.src
+                    .push_str(&format!("   {name}Kind{case_name} {name}Kind = iota\n",));
+            } else {
+                self.src.push_str(&format!("   {name}Kind{case_name}\n",));
+            }
+        }
+        self.src.push_str(")\n\n");
+
+        self.src.push_str(&format!("type {name} struct {{\n"));
+        self.src.push_str(&format!("kind {name}Kind\n"));
+        self.src.push_str(&format!("val any\n"));
+        self.src.push_str("}\n\n");
+
+        uwriteln!(
+            self.src,
+            "func (n {name}) Kind() {name}Kind {{
+                return n.kind
+            }}
+            "
+        );
+
+        for case in variant.cases.iter() {
+            let case_name = case.name.to_upper_camel_case();
+            if let Some(ty) = self.get_nonempty_type(case.ty.as_ref()) {
+                let ty = self.get_ty(&ty);
+                uwriteln!(
+                    self.src,
+                    "func {name}{case_name}(v {ty}) {name} {{
+                        return {name}{{kind: {name}Kind{case_name}, val: v}}
+                    }}
+                    ",
+                );
+                uwriteln!(
+                    self.src,
+                    "func (n {name}) Get{case_name}() {ty} {{
+                        if g, w := n.Kind(), {name}Kind{case_name}; g != w {{
+                            panic(fmt.Sprintf(\"Attr kind is %v, not %v\", g, w))
+                        }}
+                        return n.val.({ty})
+                    }}
+                    ",
+                );
+                uwriteln!(
+                    self.src,
+                    "func (n {name}) Set{case_name}(v {ty}) {{
+                        n.val = v
+                        n.kind = {name}Kind{case_name}
+                    }}
+                    ",
+                );
+            } else {
+                uwriteln!(
+                    self.src,
+                    "func {name}{case_name}() {name} {{
+                        return {name}{{kind: {name}Kind{case_name}}}
+                    }}
+                    ",
+                );
+            }
+        }
     }
 
     fn type_option(
@@ -1350,21 +1472,127 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_union(
         &mut self,
         _id: wit_bindgen_core::wit_parser::TypeId,
-        _name: &str,
-        _union: &wit_bindgen_core::wit_parser::Union,
+        name: &str,
+        union: &wit_bindgen_core::wit_parser::Union,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!("type_union")
+        self.gen.needs_fmt_import = true;
+        let name = format!(
+            "{}{}",
+            self.name.to_upper_camel_case(),
+            name.to_upper_camel_case()
+        );
+        // TODO: use variant's tag to determine how many cases are needed
+        // this will help to optmize the Kind type.
+        self.src.push_str(&format!("type {name}Kind int\n\n"));
+        self.src.push_str(&format!("const (\n"));
+
+        for (i, case) in union.cases.iter().enumerate() {
+            let case_name = format!("F{i}");
+            if i == 0 {
+                self.src
+                    .push_str(&format!("   {name}Kind{case_name} {name}Kind = iota\n",));
+            } else {
+                self.src.push_str(&format!("   {name}Kind{case_name}\n",));
+            }
+        }
+        self.src.push_str(")\n\n");
+
+        self.src.push_str(&format!("type {name} struct {{\n"));
+        self.src.push_str(&format!("kind {name}Kind\n"));
+        self.src.push_str(&format!("val any\n"));
+        self.src.push_str("}\n\n");
+
+        uwriteln!(
+            self.src,
+            "func (n {name}) Kind() {name}Kind {{
+                return n.kind
+            }}
+            "
+        );
+
+        for (i, case) in union.cases.iter().enumerate() {
+            let ty = self.get_ty(&case.ty);
+            let case_name = format!("F{i}");
+            uwriteln!(
+                self.src,
+                "func {name}F{i}(v {ty}) {name} {{
+                    return {name}{{kind: {name}Kind{case_name}, val: v}}
+                }}
+                ",
+            );
+            uwriteln!(
+                self.src,
+                "func (n {name}) Get{case_name}() {ty} {{
+                    if g, w := n.Kind(), {name}Kind{case_name}; g != w {{
+                        panic(fmt.Sprintf(\"Attr kind is %v, not %v\", g, w))
+                    }}
+                    return n.val.({ty})
+                }}
+                ",
+            );
+            uwriteln!(
+                self.src,
+                "func (n {name}) Set{case_name}(v {ty}) {{
+                    n.val = v
+                    n.kind = {name}Kind{case_name}
+                }}
+                ",
+            );
+        }
     }
 
     fn type_enum(
         &mut self,
         _id: wit_bindgen_core::wit_parser::TypeId,
-        _name: &str,
-        _enum_: &wit_bindgen_core::wit_parser::Enum,
+        name: &str,
+        enum_: &wit_bindgen_core::wit_parser::Enum,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        todo!("type_enum")
+        self.gen.needs_fmt_import = true;
+        let name = format!(
+            "{}{}",
+            self.name.to_upper_camel_case(),
+            name.to_upper_camel_case()
+        );
+        // TODO: use variant's tag to determine how many cases are needed
+        // this will help to optmize the Kind type.
+        self.src.push_str(&format!("type {name}Kind int\n\n"));
+        self.src.push_str(&format!("const (\n"));
+
+        for (i, case) in enum_.cases.iter().enumerate() {
+            let case_name = case.name.to_upper_camel_case();
+            if i == 0 {
+                self.src
+                    .push_str(&format!("   {name}Kind{case_name} {name}Kind = iota\n",));
+            } else {
+                self.src.push_str(&format!("   {name}Kind{case_name}\n",));
+            }
+        }
+        self.src.push_str(")\n\n");
+
+        self.src.push_str(&format!("type {name} struct {{\n"));
+        self.src.push_str(&format!("kind {name}Kind\n"));
+        self.src.push_str("}\n\n");
+
+        uwriteln!(
+            self.src,
+            "func (n {name}) Kind() {name}Kind {{
+                return n.kind
+            }}
+            "
+        );
+
+        for case in enum_.cases.iter() {
+            let case_name = case.name.to_upper_camel_case();
+            uwriteln!(
+                self.src,
+                "func {name}{case_name}() {name} {{
+                    return {name}{{kind: {name}Kind{case_name}}}
+                }}
+                ",
+            );
+        }
     }
 
     fn type_alias(
@@ -1508,8 +1736,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             );
                         }
                     }
-                    // TypeDefKind::Variant(_) => todo!(),
-                    // TypeDefKind::Enum(_) => todo!(),
                     TypeDefKind::Option(o) => {
                         let c_typedef_target = if flatten {
                             self.interface.get_c_ty(o)
@@ -1587,10 +1813,16 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     "
                                 );
                             }
-                            _ => unreachable!("Result must have at least one type"),
+                            _ => {
+                                uwrite!(
+                                    self.lower_src,
+                                    "
+                                    {lower_name}.is_err = {param}.IsErr()
+                                    "
+                                );
+                            }
                         }
                     }
-                    // TypeDefKind::Union(_) => todo!(),
                     TypeDefKind::List(l) => {
                         self.interface.gen.needs_import_unsafe = true;
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
@@ -1610,8 +1842,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             "
                         );
                     }
-                    // TypeDefKind::Future(_) => todo!(),
-                    // TypeDefKind::Stream(_) => todo!(),
                     TypeDefKind::Type(t) => {
                         uwriteln!(
                             self.lower_src,
@@ -1626,6 +1856,84 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             "
                         );
                     }
+                    TypeDefKind::Variant(v) => {
+                        self.interface.gen.needs_import_unsafe = true;
+                        self.interface.gen.needs_fmt_import = true;
+
+                        let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
+                        let ty = self.interface.get_ty(&Type::Id(*id));
+                        self.lower_src
+                            .push_str(&format!("var {lower_name} C.{c_typedef_target}\n"));
+                        for (i, case) in v.cases.iter().enumerate() {
+                            let case_name = case.name.to_upper_camel_case();
+                            self.lower_src.push_str(&format!(
+                                "if {param}.Kind() == {ty}Kind{case_name} {{\n"
+                            ));
+                            if let Some(ty) = self.interface.get_nonempty_type(case.ty.as_ref()) {
+                                let name = self.interface.get_ty(&ty);
+                                uwriteln!(
+                                    self.lower_src,
+                                    "
+                                    {lower_name}.tag = {i}
+                                    {lower_name}_ptr := (*{name})(unsafe.Pointer(&{lower_name}.val))
+                                    *{lower_name}_ptr = {param}.Get{case_name}()"
+                                );
+                            } else {
+                                uwriteln!(
+                                    self.lower_src,
+                                    "
+                                    {lower_name}.tag = {i}"
+                                );
+                            }
+                            self.lower_src.push_str("}\n");
+                        }
+                    }
+                    TypeDefKind::Enum(e) => {
+                        self.interface.gen.needs_fmt_import = true;
+
+                        let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
+                        let ty = self.interface.get_ty(&Type::Id(*id));
+                        self.lower_src
+                            .push_str(&format!("var {lower_name} C.{c_typedef_target}\n"));
+                        for (i, case) in e.cases.iter().enumerate() {
+                            let case_name = case.name.to_upper_camel_case();
+                            self.lower_src.push_str(&format!(
+                                "if {param}.Kind() == {ty}Kind{case_name} {{\n"
+                            ));
+                            uwriteln!(
+                                self.lower_src,
+                                "
+                                {lower_name}.tag = {i}"
+                            );
+                            self.lower_src.push_str("}\n");
+                        }
+                    }
+                    TypeDefKind::Union(u) => {
+                        self.interface.gen.needs_import_unsafe = true;
+                        self.interface.gen.needs_fmt_import = true;
+
+                        let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
+                        let ty = self.interface.get_ty(&Type::Id(*id));
+                        self.lower_src
+                            .push_str(&format!("var {lower_name} C.{c_typedef_target}\n"));
+                        for (i, case) in u.cases.iter().enumerate() {
+                            let case_name = format!("F{i}");
+                            self.lower_src.push_str(&format!(
+                                "if {param}.Kind() == {ty}Kind{case_name} {{\n"
+                            ));
+                            let name = self.interface.get_ty(&case.ty);
+                            uwriteln!(
+                                self.lower_src,
+                                "
+                                {lower_name}.tag = {i}
+                                {lower_name}_ptr := (*{name})(unsafe.Pointer(&{lower_name}.val))
+                                *{lower_name}_ptr = {param}.Get{case_name}()"
+                            );
+                            self.lower_src.push_str("}\n");
+                        }
+                    }
+                    TypeDefKind::Future(_) => todo!("impl future"),
+                    TypeDefKind::Stream(_) => todo!("impl future"),
                     _ => self.lower_src.push_str(""),
                 }
             }
@@ -1738,8 +2046,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 .push_str(&format!("{lift_name}.F{i} = {lift_name}_F{i}\n"));
                         }
                     }
-                    // TypeDefKind::Variant(_) => todo!(),
-                    // TypeDefKind::Enum(_) => todo!(),
                     TypeDefKind::Option(o) => {
                         let lift_type = self.interface.get_ty(&Type::Id(*id));
                         self.lift_src
@@ -1894,11 +2200,15 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     .push_str(&format!("{lift_name}.Set(*{lift_name}_ptr)\n"));
                                 self.lift_src.push_str("}\n");
                             }
-                            _ => unreachable!("Result must have at least one type"),
+                            _ => {
+                                self.lift_src.push_str(&format!(
+                                    "{lift_name} = Result[struct{{}}, struct{{}}] {{}}\n"
+                                ));
+                            }
                         }
                     }
-                    // TypeDefKind::Union(_) => todo!(),
                     TypeDefKind::List(l) => {
+                        self.interface.gen.needs_import_unsafe = true;
                         let list_ty = self.interface.get_ty(l);
                         uwriteln!(
                             self.lift_src,
@@ -1914,8 +2224,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 {lift_name} = (*[1 << 28]{list_ty})(unsafe.Pointer({param}.ptr))[:{param}.len:{param}.len]
                             }}");
                     }
-                    // TypeDefKind::Future(_) => todo!(),
-                    // TypeDefKind::Stream(_) => todo!(),
                     TypeDefKind::Type(t) => {
                         uwriteln!(
                             self.lift_src,
@@ -1935,6 +2243,70 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         self.lift_src
                             .push_str(&format!("{lift_name} = {lift_name}_val\n"));
                     }
+                    TypeDefKind::Variant(v) => {
+                        self.interface.gen.needs_import_unsafe = true;
+                        self.interface.gen.needs_fmt_import = true;
+                        let name = self.interface.get_ty(&Type::Id(*id));
+                        uwriteln!(self.lift_src, "var {lift_name} {name}");
+                        for (i, case) in v.cases.iter().enumerate() {
+                            let case_name = case.name.to_upper_camel_case();
+                            self.lift_src
+                                .push_str(&format!("if {param}.tag == {i} {{\n"));
+                            if let Some(ty) = self.interface.get_nonempty_type(case.ty.as_ref()) {
+                                let ty = self.interface.get_ty(&ty);
+                                uwriteln!(
+                                    self.lift_src,
+                                    "
+                                    {lift_name}_ptr := (*{ty})(unsafe.Pointer(&{param}.val))
+                                    {name}{case_name}(*{lift_name}_ptr)"
+                                );
+                            } else {
+                                uwriteln!(
+                                    self.lift_src,
+                                    "
+                                    {name}{case_name}()"
+                                );
+                            }
+                            self.lift_src.push_str("}\n");
+                        }
+                    }
+                    TypeDefKind::Enum(e) => {
+                        self.interface.gen.needs_fmt_import = true;
+                        let name = self.interface.get_ty(&Type::Id(*id));
+                        uwriteln!(self.lift_src, "var {lift_name} {name}");
+                        for (i, case) in e.cases.iter().enumerate() {
+                            let case_name = case.name.to_upper_camel_case();
+                            self.lift_src
+                                .push_str(&format!("if {param}.tag == {i} {{\n"));
+                            uwriteln!(
+                                self.lift_src,
+                                "
+                                {name}{case_name}()"
+                            );
+                            self.lift_src.push_str("}\n");
+                        }
+                    }
+                    TypeDefKind::Union(u) => {
+                        self.interface.gen.needs_import_unsafe = true;
+                        self.interface.gen.needs_fmt_import = true;
+                        let name = self.interface.get_ty(&Type::Id(*id));
+                        uwriteln!(self.lift_src, "var {lift_name} {name}");
+                        for (i, case) in u.cases.iter().enumerate() {
+                            self.lift_src
+                                .push_str(&format!("if {param}.tag == {i} {{\n"));
+                            let ty = self.interface.get_ty(&case.ty);
+                            let case_name = format!("F{i}");
+                            uwriteln!(
+                                self.lift_src,
+                                "
+                                {lift_name}_ptr := (*{ty})(unsafe.Pointer(&{param}.val))
+                                {name}{case_name}(*{lift_name}_ptr)"
+                            );
+                            self.lift_src.push_str("}\n");
+                        }
+                    }
+                    TypeDefKind::Future(_) => todo!("impl future"),
+                    TypeDefKind::Stream(_) => todo!("impl stream"),
                     _ => self.lift_src.push_str(""),
                 }
             }

@@ -18,6 +18,7 @@ macro_rules! codegen_test {
                     wit_bindgen_gen_guest_c::Opts::default()
                         .build()
                         .generate(world, files)
+                    
                 },
                 verify,
             )
@@ -60,12 +61,17 @@ fn verify(dir: &Path, name: &str) {
             dir.join("option").join(format!("{name}_types.go")),
         )
         .expect("Failed to move file");
-        buf.append(&mut "import . \"the-world/option\"\n".as_bytes().to_vec());
+        buf.append(&mut format!("import . \"{name}/option\"\n").as_bytes().to_vec());
     }
 
     reader.read_to_end(&mut buf);
     buf.append(&mut "func main() {}".as_bytes().to_vec());
     std::fs::write(&main, buf).expect("Failed to write to file");
+
+    // create go.mod file
+    let mod_file = dir.join("go.mod");
+    let mut file = std::fs::File::create(mod_file).expect("Failed to create file go.mod");
+    file.write_all(format!("module {name}\n\ngo 1.19").as_bytes()).expect("Failed to write to file");
 
     let mut cmd = Command::new("tinygo");
     cmd.arg("build");
