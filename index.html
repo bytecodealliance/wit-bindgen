@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+<style type="text/css" media="screen">
+body {
+  display: flex;
+  min-height: 800px;
+}
+
+.area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+}
+
+.editor{
+  width: 100%;
+  height: 100%;
+}
+
+.options {
+  margin-bottom: 10px;
+}
+
+.lang-configure {
+  display: none;
+}
+
+</style>
+  </head>
+  <body>
+      <div class='area'>
+        <h1>Input <code>*.wit</code></h1>
+        <div class='editor' id='input'></div>
+        <textarea id='input-raw' style='display:none'>
+interface host-funcs {
+  current-user: func() -&gt; string
+}
+
+world demo {
+  import host: host-funcs
+
+  default export interface {
+    record person {
+      name: string,
+      age: u32,
+    }
+
+    // Say hello to either the specified person or the current user
+    hello: func(who: option&lt;person&gt;) -&gt; string
+  }
+}
+</textarea>
+      </div>
+      <div class='area'>
+        <h1>Generated bindings</h1>
+
+        <div class='options'>
+          <label for="language-select">Language:</label>
+
+          <select name="language" id="language-select">
+            <option value="rust">Rust</option>
+            <option value="js">JavaScript</option>
+            <option value="java">Java</option>
+            <option value="c">C</option>
+            <option value="markdown">Markdown</option>
+          </select>
+
+          &middot;
+
+          <label for="file-select">File:</label>
+          <select name="file" id="file-select">
+          </select>
+
+          <div id='configure-js' class='lang-configure'>
+            &middot;
+
+            <input type="checkbox" id="js-compat" name="unchecked">
+            <label for="js-compat">Compat</label>
+            &middot;
+
+            <input type="checkbox" id="js-instantiation" name="unchecked">
+            <label for="js-instantiation">Custom Instantiation</label>
+          </div>
+          <div id='configure-c' class='lang-configure'>
+          </div>
+          <div id='configure-java' class='lang-configure'>
+          </div>
+          <div id='configure-markdown' class='lang-configure'>
+          </div>
+          <div id='configure-rust' class='lang-configure'>
+            &middot;
+
+            <input type="checkbox" id="rust-unchecked" name="unchecked">
+            <label for="rust-unchecked">Unchecked</label>
+          </div>
+        </div>
+
+        <div class='editor' id='output'></div>
+        <div id='html-output'></div>
+      </div>
+  </body>
+  <script src="ace/ace.js"></script>
+  <script src='main.js' type=module></script>
+</html>
