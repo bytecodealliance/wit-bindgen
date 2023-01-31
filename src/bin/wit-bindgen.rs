@@ -1,7 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
-use wit_bindgen_core::component::ComponentGenerator;
 use wit_bindgen_core::{wit_parser, Files, WorldGenerator};
 use wit_parser::{Resolve, UnresolvedPackage};
 
@@ -13,69 +12,39 @@ fn version() -> &'static str {
 
 #[derive(Debug, Parser)]
 #[command(version = version())]
-struct Opt {
-    #[command(subcommand)]
-    category: Category,
-}
-
-#[derive(Debug, Parser)]
-enum Category {
-    /// Generators for creating hosts that embed WASM modules/components.
-    #[command(subcommand)]
-    Host(HostGenerator),
-    /// Generators for writing guest WASM modules/components.
-    #[command(subcommand)]
-    Guest(GuestGenerator),
+enum Opt {
     /// This generator outputs a Markdown file describing an interface.
+    #[cfg(feature = "markdown")]
     Markdown {
         #[clap(flatten)]
         opts: wit_bindgen_gen_markdown::Opts,
         #[clap(flatten)]
-        common: Common,
-        #[clap(flatten)]
-        world: WorldOpt,
+        args: Common,
     },
-}
-
-#[derive(Debug, Parser)]
-enum HostGenerator {
-    /// Generates bindings for JavaScript hosts.
-    Js {
-        #[clap(flatten)]
-        opts: wit_bindgen_gen_host_js::Opts,
-        #[clap(flatten)]
-        component: ComponentOpts,
-    },
-}
-
-#[derive(Debug, Parser)]
-enum GuestGenerator {
     /// Generates bindings for Rust guest modules.
+    #[cfg(feature = "rust")]
     Rust {
         #[clap(flatten)]
         opts: wit_bindgen_gen_guest_rust::Opts,
         #[clap(flatten)]
-        common: Common,
-        #[clap(flatten)]
-        world: WorldOpt,
+        args: Common,
     },
     /// Generates bindings for C/CPP guest modules.
+    #[cfg(feature = "c")]
     C {
         #[clap(flatten)]
         opts: wit_bindgen_gen_guest_c::Opts,
         #[clap(flatten)]
-        common: Common,
-        #[clap(flatten)]
-        world: WorldOpt,
+        args: Common,
     },
+
     /// Generates bindings for TeaVM-based Java guest modules.
+    #[cfg(feature = "teavm-java")]
     TeavmJava {
         #[clap(flatten)]
         opts: wit_bindgen_gen_guest_teavm_java::Opts,
         #[clap(flatten)]
-        common: Common,
-        #[clap(flatten)]
-        world: WorldOpt,
+        args: Common,
     },
     /// Generates bindings for TinyGo-based Go guest modules.
     TinyGo {
@@ -89,9 +58,13 @@ enum GuestGenerator {
 }
 
 #[derive(Debug, Parser)]
-struct WorldOpt {
+struct Common {
+    /// Where to place output files
+    #[clap(long = "out-dir")]
+    out_dir: Option<PathBuf>,
+
     /// WIT document to generate bindings for.
-    #[clap(value_name = "DOCUMENT")]
+    #[clap(value_name = "DOCUMENT", index = 1)]
     wit: PathBuf,
 
     /// World within the WIT document specified to generate bindings for.
@@ -102,148 +75,23 @@ struct WorldOpt {
     world: Option<String>,
 }
 
-#[derive(Debug, Parser)]
-struct ComponentOpts {
-    /// Path to the input wasm component to generate bindings for.
-    component: PathBuf,
-
-    /// Optionally rename the generated bindings instead of inferring the name
-    /// from the input `component` path.
-    #[clap(long)]
-    name: Option<String>,
-
-    #[clap(flatten)]
-    common: Common,
-}
-
-#[derive(Debug, Parser, Clone)]
-struct Common {
-    /// Where to place output files
-    #[clap(long = "out-dir")]
-    out_dir: Option<PathBuf>,
-}
-
-impl Opt {
-    fn common(&self) -> &Common {
-        match &self.category {
-            Category::Guest(GuestGenerator::Rust { common, .. })
-            | Category::Guest(GuestGenerator::C { common, .. })
-            | Category::Guest(GuestGenerator::TeavmJava { common, .. })
-            | Category::Guest(GuestGenerator::TinyGo { common, .. })
-            | Category::Markdown { common, .. } => common,
-            Category::Host(HostGenerator::Js { component, .. }) => &component.common,
-        }
-    }
-}
-
 fn main() -> Result<()> {
-    let opt: Opt = Opt::parse();
-    let common = opt.common().clone();
-
     let mut files = Files::default();
-    match opt.category {
-        Category::Host(HostGenerator::Js { opts, component }) => {
-            gen_component(opts.build()?, component, &mut files)?;
-        }
-        Category::Guest(GuestGenerator::Rust { opts, world, .. }) => {
-            gen_world(opts.build(), world, &mut files)?;
-        }
-        Category::Guest(GuestGenerator::C { opts, world, .. }) => {
-            gen_world(opts.build(), world, &mut files)?;
-        }
-        Category::Guest(GuestGenerator::TeavmJava { opts, world, .. }) => {
-            gen_world(opts.build(), world, &mut files)?;
-        }
-        Category::Guest(GuestGenerator::TinyGo { opts, world, .. }) => {
-            gen_world(opts.build(), world, &mut files)?;
-        }
-        Category::Markdown { opts, world, .. } => {
-            gen_world(opts.build(), world, &mut files)?;
-        }
-    }
+    let (generator, opt) = match Opt::parse() {
+        #[cfg(feature = "markdown")]
+        Opt::Markdown { opts, args } => (opts.build(), args),
+        #[cfg(feature = "c")]
+        Opt::C { opts, args } => (opts.build(), args),
+        #[cfg(feature = "rust")]
+        Opt::Rust { opts, args } => (opts.build(), args),
+        #[cfg(feature = "teavm-java")]
+        Opt::TeavmJava { opts, args } => (opts.build(), args),
+        #[cfg(feature = "go")]
+        Opt::TeavmJava { opts, args } => (opts.build(), args),
+    };
+
+    gen_world(generator, &opt, &mut files)?;
 
     for (name, contents) in files.iter() {
-        let dst = match &common.out_dir {
-            Some(path) => path.join(name),
-            None => name.into(),
-        };
-        println!("Generating {:?}", dst);
-        if let Some(parent) = dst.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create {:?}", parent))?;
-        }
-        std::fs::write(&dst, contents).with_context(|| format!("failed to write {:?}", dst))?;
-    }
-
-    Ok(())
-}
-
-fn gen_world(
-    mut generator: Box<dyn WorldGenerator>,
-    opts: WorldOpt,
-    files: &mut Files,
-) -> Result<()> {
-    let mut resolve = Resolve::default();
-    let pkg = if opts.wit.is_dir() {
-        resolve.push_dir(&opts.wit)?.0
-    } else {
-        resolve.push(
-            UnresolvedPackage::parse_file(&opts.wit)?,
-            &Default::default(),
-        )?
-    };
-    let world = match &opts.world {
-        Some(world) => {
-            let mut parts = world.splitn(2, '.');
-            let doc = parts.next().unwrap();
-            let world = parts.next();
-            let doc = *resolve.packages[pkg]
-                .documents
-                .get(doc)
-                .ok_or_else(|| anyhow!("no document named `{doc}` in package"))?;
-            match world {
-                Some(name) => *resolve.documents[doc]
-                    .worlds
-                    .get(name)
-                    .ok_or_else(|| anyhow!("no world named `{name}` in document"))?,
-                None => resolve.documents[doc]
-                    .default_world
-                    .ok_or_else(|| anyhow!("no default world in document"))?,
-            }
-        }
-        None => {
-            let mut docs = resolve.packages[pkg].documents.iter();
-            let (_, doc) = docs
-                .next()
-                .ok_or_else(|| anyhow!("no documents found in package"))?;
-            if docs.next().is_some() {
-                bail!("multiple documents found in package, specify which to bind with `--world` argument")
-            }
-            resolve.documents[*doc]
-                .default_world
-                .ok_or_else(|| anyhow!("no default world in document"))?
-        }
-    };
-    generator.generate(&resolve, world, files);
-    Ok(())
-}
-
-fn gen_component(
-    mut generator: Box<dyn ComponentGenerator>,
-    opts: ComponentOpts,
-    files: &mut Files,
-) -> Result<()> {
-    let wasm = wat::parse_file(&opts.component)?;
-    let name = match &opts.name {
-        Some(name) => name.as_str(),
-        None => opts
-            .component
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| anyhow!("filename not valid utf-8"))?,
-    };
-
-    wit_bindgen_core::component::generate(&mut *generator, name, &wasm, files)?;
-
-    Ok(())
+    Opt::command().debug_assert()
 }
