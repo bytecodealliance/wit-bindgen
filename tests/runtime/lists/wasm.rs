@@ -1,10 +1,10 @@
-wit_bindgen_guest_rust::generate!("../../tests/runtime/lists/world.wit");
+wit_bindgen_guest_rust::generate!("world" in "../../tests/runtime/lists");
 
 struct Component;
 
 export_lists!(Component);
 
-impl lists::Lists for Component {
+impl Lists for Component {
     fn allocated_bytes() -> u32 {
         test_rust_wasm::get() as u32
     }
@@ -63,7 +63,9 @@ impl lists::Lists for Component {
             ),
         );
     }
+}
 
+impl exports::Exports for Component {
     fn empty_list_param(a: Vec<u8>) {
         assert!(a.is_empty());
     }
@@ -120,5 +122,25 @@ impl lists::Lists for Component {
 
     fn string_roundtrip(x: String) -> String {
         x.clone()
+    }
+
+    fn list_minmax8(a: Vec<u8>, b: Vec<i8>) -> (Vec<u8>, Vec<i8>) {
+        (a, b)
+    }
+
+    fn list_minmax16(a: Vec<u16>, b: Vec<i16>) -> (Vec<u16>, Vec<i16>) {
+        (a, b)
+    }
+
+    fn list_minmax32(a: Vec<u32>, b: Vec<i32>) -> (Vec<u32>, Vec<i32>) {
+        (a, b)
+    }
+
+    fn list_minmax64(a: Vec<u64>, b: Vec<i64>) -> (Vec<u64>, Vec<i64>) {
+        (a, b)
+    }
+
+    fn list_minmax_float(a: Vec<f32>, b: Vec<f64>) -> (Vec<f32>, Vec<f64>) {
+        (a, b)
     }
 }

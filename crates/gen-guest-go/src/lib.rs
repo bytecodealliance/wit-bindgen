@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::{collections::BTreeSet, mem};
 
 use heck::{ToKebabCase, ToSnakeCase, ToUpperCamelCase};
 use wit_bindgen_core::uwrite;
 
+use wit_bindgen_core::wit_parser::{Resolve, InterfaceId, WorldId};
 use wit_bindgen_core::{
     uwriteln,
     wit_parser::{
@@ -86,16 +88,18 @@ pub struct TinyGo {
     needs_result_option: bool,
     needs_import_unsafe: bool,
     needs_fmt_import: bool,
+    sizes: SizeAlign,
+    interface_names: HashMap<InterfaceId, String>,
 }
 
 impl TinyGo {
-    fn interface<'a>(&'a mut self, iface: &'a Interface, name: &'a str) -> InterfaceGenerator<'a> {
+    fn interface<'a>(&'a mut self, resolve: &'a Resolve, name: &'a str) -> InterfaceGenerator<'a> {
         let mut sizes = SizeAlign::default();
-        sizes.fill(iface);
         InterfaceGenerator {
             src: Source::default(),
             gen: self,
-            iface,
+            resolve,
+            interface: None,
             name,
             public_anonymous_types: BTreeSet::new(),
         }
@@ -107,35 +111,61 @@ impl TinyGo {
 }
 
 impl WorldGenerator for TinyGo {
-    fn preprocess(&mut self, name: &str) {
+    fn preprocess(&mut self, resolve: &Resolve, name: &str) {
         self.world = name.to_string();
+        self.sizes.fill(resolve);
     }
 
-    fn import(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
+    fn import_interface(
+        &mut self,
+        resolve: &Resolve,
+        name: &str,
+        id: InterfaceId,
+        _files: &mut Files,
+    ) {
+        self.interface_names.insert(id, name.to_string());
         self.src.push_str(&format!("// {name}\n"));
 
-        let mut gen = self.interface(iface, name);
-        gen.types();
+        let mut gen = self.interface(resolve, name);
+        gen.interface = Some(id);
+        gen.types(id);
 
-        for func in iface.functions.iter() {
-            gen.import(iface, func);
+        for (_name, func) in resolve.interfaces[id].functions.iter() {
+            gen.import(resolve, func);
         }
         gen.finish();
-
+        
         let src = mem::take(&mut gen.src);
-
         self.src.push_str(&src);
     }
 
-    fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
+    fn import_funcs(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        funcs: &[(&str, &Function)],
+        files: &mut Files,
+    ) {
+        todo!("import_funcs")
+    }
+
+    fn export_interface(
+        &mut self,
+        resolve: &Resolve,
+        name: &str,
+        id: InterfaceId,
+        _files: &mut Files,
+    ) {
+        self.interface_names.insert(id, name.to_string());
         self.src.push_str(&format!("// {name}\n"));
         self.clean_up_export_funcs();
 
-        let mut gen = self.interface(iface, name);
-        gen.types();
+        let mut gen = self.interface(resolve, name);
+        gen.interface = Some(id);
+        gen.types(id);
 
-        for func in iface.functions.iter() {
-            gen.export(iface, func);
+        for (_name, func) in resolve.interfaces[id].functions.iter() {
+            gen.export(resolve, func);
         }
 
         gen.finish();
@@ -169,12 +199,18 @@ impl WorldGenerator for TinyGo {
         }
     }
 
-    fn export_default(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
-        self.export(name, iface, _files);
+    fn export_funcs(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        funcs: &[(&str, &Function)],
+        files: &mut Files,
+    ) {
+        todo!("export_funcs")
     }
 
-    fn finish(&mut self, world: &World, files: &mut Files) {
-        let _world_name = self.world.clone();
+    fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
+        let world = &resolve.worlds[id];
         let mut header = Source::default();
         // add package
         header.push_str("package ");
@@ -327,7 +363,8 @@ impl WorldGenerator for TinyGo {
 struct InterfaceGenerator<'a> {
     src: Source,
     gen: &'a mut TinyGo,
-    iface: &'a Interface,
+    resolve: &'a Resolve,
+    interface: Option<InterfaceId>,
     name: &'a str,
     public_anonymous_types: BTreeSet<TypeId>,
 }
@@ -361,7 +398,7 @@ impl InterfaceGenerator<'_> {
             Type::Char => "rune".into(),
             Type::String => "string".into(),
             Type::Id(id) => {
-                let ty = &self.iface().types[*id];
+                let ty = &self.resolve().types[*id];
                 match &ty.kind {
                     wit_bindgen_core::wit_parser::TypeDefKind::Type(ty) => self.get_ty(ty),
                     wit_bindgen_core::wit_parser::TypeDefKind::List(ty) => {
@@ -417,7 +454,7 @@ impl InterfaceGenerator<'_> {
                 )
             }
             Type::Id(id) => {
-                let ty = &self.iface.types[*id];
+                let ty = &self.resolve.types[*id];
                 match &ty.name {
                     Some(name) => {
                         format!(
@@ -464,7 +501,7 @@ impl InterfaceGenerator<'_> {
             Type::Char => "Byte".into(),
             Type::String => "String".into(),
             Type::Id(id) => {
-                let ty = &self.iface.types[*id];
+                let ty = &self.resolve.types[*id];
                 if let Some(name) = &ty.name {
                     return name.to_upper_camel_case();
                 }
@@ -524,6 +561,7 @@ impl InterfaceGenerator<'_> {
                         src.push('T');
                         src
                     }
+                    TypeDefKind::Unknown => unreachable!(),
                 }
             }
         }
@@ -552,7 +590,7 @@ impl InterfaceGenerator<'_> {
             Type::Float64 => "float64".into(),
             Type::String => "string".into(),
             Type::Id(id) => {
-                let ty = &self.iface.types[*id];
+                let ty = &self.resolve.types[*id];
                 if let Some(name) = &ty.name {
                     return name.to_snake_case();
                 }
@@ -599,6 +637,7 @@ impl InterfaceGenerator<'_> {
                             self.get_c_optional_type_name(s.end.as_ref()),
                         )
                     }
+                    TypeDefKind::Unknown => unreachable!(),
                 }
             }
         }
@@ -611,7 +650,7 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn get_func_params(&mut self, _iface: &Interface, func: &Function) -> String {
+    fn get_func_params(&mut self, _resolve: &Resolve, func: &Function) -> String {
         let mut params = String::new();
         for (i, (name, param)) in func.params.iter().enumerate() {
             if i > 0 {
@@ -626,7 +665,7 @@ impl InterfaceGenerator<'_> {
         params
     }
 
-    fn get_func_results(&mut self, _iface: &Interface, func: &Function) -> String {
+    fn get_func_results(&mut self, _resolve: &Resolve, func: &Function) -> String {
         let mut results = String::new();
         results.push(' ');
         match func.results.len() {
@@ -695,7 +734,7 @@ impl InterfaceGenerator<'_> {
         let mut postfix = String::new();
 
         if in_import {
-            if is_arg_by_pointer(self.iface, param) {
+            if is_arg_by_pointer(self.resolve, param) {
                 prefix.push_str(pointer_prefix);
             }
             if name != "err" && name != "ret" {
@@ -707,7 +746,7 @@ impl InterfaceGenerator<'_> {
             postfix.push(' ');
             let maybe_option = self.extract_option_ty(param);
             param_name.push_str(name);
-            if is_arg_by_pointer(self.iface, param) || maybe_option.is_some() {
+            if is_arg_by_pointer(self.resolve, param) || maybe_option.is_some() {
                 postfix.push_str(pointer_prefix);
             }
             let s = maybe_option
@@ -722,7 +761,7 @@ impl InterfaceGenerator<'_> {
     fn print_c_func_params(
         &mut self,
         params: &mut Source,
-        _iface: &Interface,
+        _resolve: &Resolve,
         func: &Function,
         in_import: bool,
     ) {
@@ -752,7 +791,7 @@ impl InterfaceGenerator<'_> {
     fn print_c_func_results(
         &mut self,
         src: &mut Source,
-        _iface: &Interface,
+        _resolve: &Resolve,
         func: &Function,
         in_import: bool,
     ) {
@@ -775,7 +814,7 @@ impl InterfaceGenerator<'_> {
                     }
                 };
                 let return_ty = func.results.iter_types().next().unwrap();
-                if is_arg_by_pointer(self.iface, return_ty) {
+                if is_arg_by_pointer(self.resolve, return_ty) {
                     add_param_seperator(src);
                     self.print_c_result(src, "ret", return_ty, in_import);
                     src.push_str(")");
@@ -809,7 +848,7 @@ impl InterfaceGenerator<'_> {
 
     fn get_c_func_signature(
         &mut self,
-        iface: &Interface,
+        resolve: &Resolve,
         func: &Function,
         in_import: bool,
     ) -> String {
@@ -829,27 +868,27 @@ impl InterfaceGenerator<'_> {
         src.push_str("(");
 
         // prepare args
-        self.print_c_func_params(&mut src, iface, func, in_import);
+        self.print_c_func_params(&mut src, resolve, func, in_import);
 
         // prepare returns
-        self.print_c_func_results(&mut src, iface, func, in_import);
+        self.print_c_func_results(&mut src, resolve, func, in_import);
         src.to_string()
     }
 
-    fn get_func_signature_no_interface(&mut self, iface: &Interface, func: &Function) -> String {
+    fn get_func_signature_no_interface(&mut self, resolve: &Resolve, func: &Function) -> String {
         format!(
             "{}({}){}",
             func.name.to_upper_camel_case(),
-            self.get_func_params(iface, func),
-            self.get_func_results(iface, func)
+            self.get_func_params(resolve, func),
+            self.get_func_results(resolve, func)
         )
     }
 
-    fn print_func_signature(&mut self, iface: &Interface, func: &Function) {
+    fn print_func_signature(&mut self, resolve: &Resolve, func: &Function) {
         self.src.push_str("func ");
         let func_name = self.name.to_upper_camel_case();
         self.src.push_str(&func_name);
-        let func_sig = self.get_func_signature_no_interface(iface, func);
+        let func_sig = self.get_func_signature_no_interface(resolve, func);
         self.src.push_str(&func_sig);
         self.src.push_str("{\n");
     }
@@ -861,7 +900,7 @@ impl InterfaceGenerator<'_> {
     fn extract_option_ty(&self, ty: &Type) -> Option<Type> {
         // optional param pointer flattening
         match ty {
-            Type::Id(id) => match &self.iface.types[*id].kind {
+            Type::Id(id) => match &self.resolve.types[*id].kind {
                 TypeDefKind::Option(o) => Some(o.to_owned()),
                 TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
                 TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
@@ -876,7 +915,7 @@ impl InterfaceGenerator<'_> {
         // optimization on the C size.
         // See https://github.com/bytecodealliance/wit-bindgen/pull/450
         match ty {
-            Type::Id(id) => match &self.iface.types[*id].kind {
+            Type::Id(id) => match &self.resolve.types[*id].kind {
                 TypeDefKind::Result(r) => (r.ok, r.err),
                 TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
                 TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
@@ -888,7 +927,7 @@ impl InterfaceGenerator<'_> {
 
     fn is_result_ty(&self, ty: &Type) -> bool {
         match ty {
-            Type::Id(id) => match &self.iface.types[*id].kind {
+            Type::Id(id) => match &self.resolve.types[*id].kind {
                 TypeDefKind::Result(_) => true,
                 TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
                 TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
@@ -906,7 +945,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn print_anonymous_type(&mut self, ty: TypeId) {
-        let kind = &self.iface.types[ty].kind;
+        let kind = &self.resolve.types[ty].kind;
         match kind {
             TypeDefKind::Type(_)
             | TypeDefKind::Flags(_)
@@ -934,11 +973,12 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::List(_l) => {}
             TypeDefKind::Future(_) => todo!("print_anonymous_type for future"),
             TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
+            TypeDefKind::Unknown => unreachable!(),
         }
     }
 
     fn get_primitive_type_value(&self, ty: &Type) -> String {
-        if is_arg_by_pointer(self.iface, ty) {
+        if is_arg_by_pointer(self.resolve, ty) {
             "nil".into()
         } else {
             match ty {
@@ -1007,7 +1047,7 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn import(&mut self, iface: &Interface, func: &Function) {
+    fn import(&mut self, resolve: &Resolve, func: &Function) {
         let mut func_bindgen = FunctionBindgen::new(self, func);
         // lower params to c
         func.params.iter().for_each(|(name, ty)| {
@@ -1032,13 +1072,13 @@ impl InterfaceGenerator<'_> {
         let lift_src = func_bindgen.lift_src.to_string();
 
         // // print function signature
-        self.print_func_signature(iface, func);
+        self.print_func_signature(resolve, func);
 
         // body
         // prepare args
         self.src.push_str(lower_src.as_str());
 
-        self.import_invoke(iface, func, c_args, &lift_src, ret);
+        self.import_invoke(resolve, func, c_args, &lift_src, ret);
 
         // return
 
@@ -1047,13 +1087,13 @@ impl InterfaceGenerator<'_> {
 
     fn import_invoke(
         &mut self,
-        iface: &Interface,
+        resolve: &Resolve,
         func: &Function,
         _c_args: Vec<String>,
         lift_src: &str,
         ret: Vec<String>,
     ) {
-        let invoke = self.get_c_func_signature(iface, func, true);
+        let invoke = self.get_c_func_signature(resolve, func, true);
         match func.results.len() {
             0 => {
                 self.src.push_str(&invoke);
@@ -1061,7 +1101,7 @@ impl InterfaceGenerator<'_> {
             }
             1 => {
                 let return_ty = func.results.iter_types().next().unwrap();
-                if is_arg_by_pointer(self.iface, return_ty) {
+                if is_arg_by_pointer(self.resolve, return_ty) {
                     if !self.is_result_ty(return_ty) {
                         let optional_type = self.extract_option_ty(return_ty);
                         // flatten optional type or use return type #https://github.com/bytecodealliance/wit-bindgen/pull/453
@@ -1116,7 +1156,7 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn export(&mut self, iface: &Interface, func: &Function) {
+    fn export(&mut self, resolve: &Resolve, func: &Function) {
         let mut func_bindgen = FunctionBindgen::new(self, func);
         match func.results.len() {
             0 => {
@@ -1146,7 +1186,7 @@ impl InterfaceGenerator<'_> {
         let lift_src = func_bindgen.lift_src.to_string();
         let lower_src = func_bindgen.lower_src.to_string();
 
-        let interface_method_decl = self.get_func_signature_no_interface(iface, func);
+        let interface_method_decl = self.get_func_signature_no_interface(resolve, func);
         let export_func = {
             let mut src = String::new();
             // header
@@ -1156,10 +1196,10 @@ impl InterfaceGenerator<'_> {
             src.push('\n');
 
             // signature
-            src.push_str(&self.get_c_func_signature(iface, func, false));
+            src.push_str(&self.get_c_func_signature(resolve, func, false));
             src.push_str(" {\n");
 
-            // src.push_str(&self.get_c_func_impl(iface, func));
+            // src.push_str(&self.get_c_func_impl(resolve, func));
             // prepare args
 
             src.push_str(&lift_src);
@@ -1186,7 +1226,7 @@ impl InterfaceGenerator<'_> {
                 }
                 1 => {
                     let return_ty = func.results.iter_types().next().unwrap();
-                    if is_empty_type(self.iface, return_ty) {
+                    if is_empty_type(self.resolve, return_ty) {
                         src.push_str(&format!("{invoke}\n"));
                     } else {
                         src.push_str(&format!("result := {invoke}\n"));
@@ -1194,7 +1234,7 @@ impl InterfaceGenerator<'_> {
                     src.push_str(&lower_src);
 
                     let lower_result = &ret[0];
-                    if is_arg_by_pointer(self.iface, return_ty) {
+                    if is_arg_by_pointer(self.resolve, return_ty) {
                         // flatten result type
                         if self.is_result_ty(return_ty) {
                         } else if let Some(_o) = self.extract_option_ty(return_ty) {
@@ -1242,8 +1282,8 @@ impl InterfaceGenerator<'_> {
 }
 
 impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
-    fn iface(&self) -> &'a Interface {
-        self.iface
+    fn resolve(&self) -> &'a Resolve {
+        self.resolve
     }
 
     fn type_record(
@@ -1336,7 +1376,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
         for case in variant.cases.iter() {
             let case_name = case.name.to_upper_camel_case();
-            if let Some(ty) = get_nonempty_type(self.iface, case.ty.as_ref()) {
+            if let Some(ty) = get_nonempty_type(self.resolve, case.ty.as_ref()) {
                 self.gen.needs_fmt_import = true;
                 self.print_accessor_methods(&name, &case_name, ty);
             } else {
@@ -1529,7 +1569,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 );
             }
             Type::Id(id) => {
-                let ty = &self.interface.iface.types[*id]; // receive type
+                let ty = &self.interface.resolve.types[*id]; // receive type
 
                 match &ty.kind {
                     TypeDefKind::Record(r) => {
@@ -1594,7 +1634,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             .push_str(&format!("var {lower_name} {c_typedef_target}\n"));
                         self.lower_src
                             .push_str(&format!("if {param}.IsSome() {{\n"));
-                        if !is_empty_type(self.interface.iface, o) {
+                        if !is_empty_type(self.interface.resolve, o) {
                             self.lower_value(
                                 &format!("{param}.Unwrap()"),
                                 o,
@@ -1765,7 +1805,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 "if {param}.Kind() == {ty}Kind{case_name} {{\n"
                             ));
                             if let Some(ty) =
-                                get_nonempty_type(self.interface.iface, case.ty.as_ref())
+                                get_nonempty_type(self.interface.resolve, case.ty.as_ref())
                             {
                                 let name = self.interface.get_ty(ty);
                                 uwriteln!(
@@ -1881,7 +1921,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 );
             }
             Type::Id(id) => {
-                let ty = &self.interface.iface.types[*id]; // receive type
+                let ty = &self.interface.resolve.types[*id]; // receive type
                 match &ty.kind {
                     TypeDefKind::Record(r) => {
                         uwriteln!(
@@ -1955,7 +1995,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             // the `param` will not need a * dereference.
 
                             // TODO: please simplfy this logic
-                            let is_pointer = is_arg_by_pointer(self.interface.iface, o);
+                            let is_pointer = is_arg_by_pointer(self.interface.resolve, o);
                             let val = self.interface.get_primitive_type_value(o);
                             let param = if !in_export {
                                 if is_pointer {
@@ -2146,7 +2186,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             self.lift_src
                                 .push_str(&format!("if {param}.tag == {i} {{\n"));
                             if let Some(ty) =
-                                get_nonempty_type(self.interface.iface, case.ty.as_ref())
+                                get_nonempty_type(self.interface.resolve, case.ty.as_ref())
                             {
                                 let ty = self.interface.get_ty(ty);
                                 uwriteln!(

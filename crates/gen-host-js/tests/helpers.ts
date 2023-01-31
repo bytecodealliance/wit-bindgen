@@ -2,6 +2,8 @@
 import { readFile } from 'node:fs/promises';
 // @ts-ignore
 import { argv, stdout, stderr } from 'node:process';
+// @ts-ignore
+import { Buffer } from 'node:buffer';
 
 // This is a helper function used from `host.ts` test in the `tests/runtime/*`
 // directory to pass as the `instantiateCore` argument to the `instantiate`
@@ -17,8 +19,8 @@ export async function loadWasm(path: string) {
 
 // Export a WASI interface directly for instance imports
 export function log (bytes: Uint8Array | ArrayBuffer) {
-  stdout.write(bytes);
+  stdout.write(Buffer.from(bytes));
 }
 export function logErr (bytes: Uint8Array | ArrayBuffer) {
-  stderr.write(bytes);
+  stderr.write(Buffer.from(bytes));
 }

@@ -2,8 +2,7 @@ interface keywords {
     %type: func(%type: u32) -> (%type: u32, %flags: s32)
 }
 
-world the-world {
-  import imports: keywords
-  export exports: keywords
-  default export keywords
+default world the-world {
+  import imports: self.keywords
+  export exports: self.keywords
 }

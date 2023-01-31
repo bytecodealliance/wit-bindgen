@@ -22,6 +22,8 @@ struct C {
     names: Ns,
     needs_string: bool,
     world: String,
+    sizes: SizeAlign,
+    interface_names: HashMap<InterfaceId, String>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -43,9 +45,8 @@ impl Opts {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Return {
-    return_multiple: bool,
     scalar: Option<Scalar>,
     retptrs: Vec<Type>,
 }
@@ -67,15 +68,25 @@ enum Scalar {
 }
 
 impl WorldGenerator for C {
-    fn preprocess(&mut self, name: &str) {
+    fn preprocess(&mut self, resolve: &Resolve, name: &str) {
         self.world = name.to_string();
+        self.sizes.fill(resolve);
     }
 
-    fn import(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
-        let mut gen = self.interface(name, iface, true);
-        gen.types();
+    fn import_interface(
+        &mut self,
+        resolve: &Resolve,
+        name: &str,
+        id: InterfaceId,
+        _files: &mut Files,
+    ) {
+        let prev = self.interface_names.insert(id, name.to_string());
+        assert!(prev.is_none());
+        let mut gen = self.interface(name, resolve, true);
+        gen.interface = Some(id);
+        gen.types(id);
 
-        for (i, func) in iface.functions.iter().enumerate() {
+        for (i, (_name, func)) in resolve.interfaces[id].functions.iter().enumerate() {
             if i == 0 {
                 uwriteln!(gen.src.h_fns, "\n// Imported Functions from `{name}`");
             }
@@ -87,11 +98,41 @@ impl WorldGenerator for C {
         gen.gen.src.append(&gen.src);
     }
 
-    fn export(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
-        let mut gen = self.interface(name, iface, false);
-        gen.types();
+    fn import_funcs(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        funcs: &[(&str, &Function)],
+        _files: &mut Files,
+    ) {
+        let name = &resolve.worlds[world].name;
+        let mut gen = self.interface(name, resolve, true);
 
-        for (i, func) in iface.functions.iter().enumerate() {
+        for (i, (_name, func)) in funcs.iter().enumerate() {
+            if i == 0 {
+                uwriteln!(gen.src.h_fns, "\n// Imported Functions from `{name}`");
+            }
+            gen.import(func);
+        }
+
+        gen.finish();
+
+        gen.gen.src.append(&gen.src);
+    }
+
+    fn export_interface(
+        &mut self,
+        resolve: &Resolve,
+        name: &str,
+        id: InterfaceId,
+        _files: &mut Files,
+    ) {
+        self.interface_names.insert(id, name.to_string());
+        let mut gen = self.interface(name, resolve, false);
+        gen.interface = Some(id);
+        gen.types(id);
+
+        for (i, (_name, func)) in resolve.interfaces[id].functions.iter().enumerate() {
             if i == 0 {
                 uwriteln!(gen.src.h_fns, "\n// Exported Functions from `{name}`");
             }
@@ -103,11 +144,17 @@ impl WorldGenerator for C {
         gen.gen.src.append(&gen.src);
     }
 
-    fn export_default(&mut self, name: &str, iface: &Interface, _files: &mut Files) {
-        let mut gen = self.interface(name, iface, false);
-        gen.types();
+    fn export_funcs(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        funcs: &[(&str, &Function)],
+        _files: &mut Files,
+    ) {
+        let name = &resolve.worlds[world].name;
+        let mut gen = self.interface(name, resolve, false);
 
-        for (i, func) in iface.functions.iter().enumerate() {
+        for (i, (_name, func)) in funcs.iter().enumerate() {
             if i == 0 {
                 uwriteln!(gen.src.h_fns, "\n// Exported Functions from `{name}`");
             }
@@ -119,7 +166,8 @@ impl WorldGenerator for C {
         gen.gen.src.append(&gen.src);
     }
 
-    fn finish(&mut self, world: &World, files: &mut Files) {
+    fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
+        let world = &resolve.worlds[id];
         let linking_symbol = component_type_object::linking_symbol(&world.name);
         self.include("<stdlib.h>");
         let snake = world.name.to_snake_case();
@@ -285,7 +333,7 @@ impl WorldGenerator for C {
         files.push(&format!("{snake}.h"), h_str.as_bytes());
         files.push(
             &format!("{snake}_component_type.o",),
-            component_type_object::object(world, self.opts.string_encoding)
+            component_type_object::object(resolve, id, self.opts.string_encoding)
                 .unwrap()
                 .as_slice(),
         );
@@ -296,17 +344,15 @@ impl C {
     fn interface<'a>(
         &'a mut self,
         name: &'a str,
-        iface: &'a Interface,
+        resolve: &'a Resolve,
         in_import: bool,
     ) -> InterfaceGenerator<'a> {
-        let mut sizes = SizeAlign::default();
-        sizes.fill(iface);
         InterfaceGenerator {
             name,
             src: Source::default(),
             gen: self,
-            iface,
-            sizes,
+            resolve,
+            interface: None,
             public_anonymous_types: Default::default(),
             private_anonymous_types: Default::default(),
             types: Default::default(),
@@ -332,8 +378,8 @@ struct InterfaceGenerator<'a> {
     src: Source,
     in_import: bool,
     gen: &'a mut C,
-    iface: &'a Interface,
-    sizes: SizeAlign,
+    resolve: &'a Resolve,
+    interface: Option<InterfaceId>,
 
     // The set of types that are considered public (aka need to be in the
     // header file) which are anonymous and we're effectively monomorphizing.
@@ -369,7 +415,7 @@ impl C {
 }
 
 impl Return {
-    fn return_single(&mut self, iface: &Interface, ty: &Type, orig_ty: &Type) {
+    fn return_single(&mut self, resolve: &Resolve, ty: &Type, orig_ty: &Type) {
         let id = match ty {
             Type::Id(id) => *id,
             Type::String => {
@@ -381,8 +427,8 @@ impl Return {
                 return;
             }
         };
-        match &iface.types[id].kind {
-            TypeDefKind::Type(t) => return self.return_single(iface, t, orig_ty),
+        match &resolve.types[id].kind {
+            TypeDefKind::Type(t) => return self.return_single(resolve, t, orig_ty),
 
             // Flags are returned as their bare values, and enums are scalars
             TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => {
@@ -423,6 +469,7 @@ impl Return {
 
             TypeDefKind::Future(_) => todo!("return_single for future"),
             TypeDefKind::Stream(_) => todo!("return_single for stream"),
+            TypeDefKind::Unknown => unreachable!(),
         }
 
         self.retptrs.push(*orig_ty);
@@ -430,14 +477,15 @@ impl Return {
 }
 
 impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
-    fn iface(&self) -> &'a Interface {
-        self.iface
+    fn resolve(&self) -> &'a Resolve {
+        self.resolve
     }
 
     fn type_record(&mut self, id: TypeId, name: &str, record: &Record, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
+        self.src.h_defs("\n");
         self.docs(docs);
-        self.src.h_defs("\ntypedef struct {\n");
+        self.src.h_defs("typedef struct {\n");
         for field in record.fields.iter() {
             self.print_ty(SourceType::HDefs, &field.ty);
             self.src.h_defs(" ");
@@ -453,8 +501,9 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_tuple(&mut self, id: TypeId, name: &str, tuple: &Tuple, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
+        self.src.h_defs("\n");
         self.docs(docs);
-        self.src.h_defs("\ntypedef struct {\n");
+        self.src.h_defs("typedef struct {\n");
         for (i, ty) in tuple.types.iter().enumerate() {
             self.print_ty(SourceType::HDefs, ty);
             uwriteln!(self.src.h_defs, " f{i};");
@@ -468,8 +517,9 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_flags(&mut self, id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
+        self.src.h_defs("\n");
         self.docs(docs);
-        self.src.h_defs("\ntypedef ");
+        self.src.h_defs("typedef ");
         let repr = flags_repr(flags);
         self.src.h_defs(int_repr(repr));
         self.src.h_defs(" ");
@@ -495,13 +545,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_variant(&mut self, id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
+        self.src.h_defs("\n");
         self.docs(docs);
-        self.src.h_defs("\ntypedef struct {\n");
+        self.src.h_defs("typedef struct {\n");
         self.src.h_defs(int_repr(variant.tag()));
         self.src.h_defs(" tag;\n");
         self.src.h_defs("union {\n");
         for case in variant.cases.iter() {
-            if let Some(ty) = get_nonempty_type(self.iface, case.ty.as_ref()) {
+            if let Some(ty) = get_nonempty_type(self.resolve, case.ty.as_ref()) {
                 self.print_ty(SourceType::HDefs, ty);
                 self.src.h_defs(" ");
                 self.src.h_defs(&case.name.to_snake_case());
@@ -532,8 +583,9 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_union(&mut self, id: TypeId, name: &str, union: &Union, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
+        self.src.h_defs("\n");
         self.docs(docs);
-        self.src.h_defs("\ntypedef struct {\n");
+        self.src.h_defs("typedef struct {\n");
         self.src.h_defs(int_repr(union.tag()));
         self.src.h_defs(" tag;\n");
         self.src.h_defs("union {\n");
@@ -551,10 +603,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_option(&mut self, id: TypeId, name: &str, payload: &Type, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
+        self.src.h_defs("\n");
         self.docs(docs);
-        self.src.h_defs("\ntypedef struct {\n");
+        self.src.h_defs("typedef struct {\n");
         self.src.h_defs("bool is_some;\n");
-        if !is_empty_type(self.iface, payload) {
+        if !is_empty_type(self.resolve, payload) {
             self.print_ty(SourceType::HDefs, payload);
             self.src.h_defs(" val;\n");
         }
@@ -567,15 +620,16 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_result(&mut self, id: TypeId, name: &str, result: &Result_, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
+        self.src.h_defs("\n");
         self.docs(docs);
-        self.src.h_defs("\ntypedef struct {\n");
+        self.src.h_defs("typedef struct {\n");
         self.src.h_defs("bool is_err;\n");
         self.src.h_defs("union {\n");
-        if let Some(ok) = get_nonempty_type(self.iface, result.ok.as_ref()) {
+        if let Some(ok) = get_nonempty_type(self.resolve, result.ok.as_ref()) {
             self.print_ty(SourceType::HDefs, ok);
             self.src.h_defs(" ok;\n");
         }
-        if let Some(err) = get_nonempty_type(self.iface, result.err.as_ref()) {
+        if let Some(err) = get_nonempty_type(self.resolve, result.err.as_ref()) {
             self.print_ty(SourceType::HDefs, err);
             self.src.h_defs(" err;\n");
         }
@@ -589,9 +643,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
+        uwrite!(self.src.h_defs, "\n");
         self.docs(docs);
         let int_t = int_repr(enum_.tag());
-        uwrite!(self.src.h_defs, "\ntypedef {int_t} ");
+        uwrite!(self.src.h_defs, "typedef {int_t} ");
         self.print_typedef_target(name);
 
         if enum_.cases.len() > 0 {
@@ -614,8 +669,9 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_alias(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
+        self.src.h_defs("\n");
         self.docs(docs);
-        self.src.h_defs("\ntypedef ");
+        self.src.h_defs("typedef ");
         self.print_ty(SourceType::HDefs, ty);
         self.src.h_defs(" ");
         self.print_typedef_target(name);
@@ -625,8 +681,9 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_list(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
+        self.src.h_defs("\n");
         self.docs(docs);
-        self.src.h_defs("\ntypedef struct {\n");
+        self.src.h_defs("typedef struct {\n");
         self.print_ty(SourceType::HDefs, ty);
         self.src.h_defs(" *ptr;\n");
         self.src.h_defs("size_t len;\n");
@@ -643,7 +700,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
 impl InterfaceGenerator<'_> {
     fn import(&mut self, func: &Function) {
-        let sig = self.iface.wasm_signature(AbiVariant::GuestImport, func);
+        let sig = self.resolve.wasm_signature(AbiVariant::GuestImport, func);
 
         self.src.c_fns("\n");
 
@@ -693,14 +750,14 @@ impl InterfaceGenerator<'_> {
         for (i, (_, param)) in c_sig.params.iter().enumerate() {
             let ty = &func.params[i].1;
             if let Type::Id(id) = ty {
-                if let TypeDefKind::Option(option_ty) = &self.iface.types[*id].kind {
+                if let TypeDefKind::Option(option_ty) = &self.resolve.types[*id].kind {
                     let ty = self.type_string(ty);
                     uwrite!(
                         optional_adapters,
                         "{ty} {param};
                         {param}.is_some = maybe_{param} != NULL;"
                     );
-                    if !is_empty_type(self.iface, option_ty) {
+                    if !is_empty_type(self.resolve, option_ty) {
                         uwriteln!(
                             optional_adapters,
                             "if (maybe_{param}) {{
@@ -725,21 +782,35 @@ impl InterfaceGenerator<'_> {
             f.locals.insert(ptr).unwrap();
         }
         f.src.push_str(&optional_adapters);
-        f.gen.iface.call(
+        f.gen.resolve.call(
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
             &mut f,
         );
 
-        let FunctionBindgen { src, .. } = f;
+        let FunctionBindgen {
+            src,
+            import_return_pointer_area_size,
+            import_return_pointer_area_align,
+            ..
+        } = f;
+
+        if import_return_pointer_area_size > 0 {
+            self.src.c_adapters(&format!(
+                "\
+                    __attribute__((aligned({import_return_pointer_area_align})))
+                    uint8_t ret_area[{import_return_pointer_area_size}];
+                ",
+            ));
+        }
 
         self.src.c_adapters(&String::from(src));
         self.src.c_adapters("}\n");
     }
 
     fn export(&mut self, func: &Function, interface_name: Option<&str>) {
-        let sig = self.iface.wasm_signature(AbiVariant::GuestExport, func);
+        let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
         let export_name = func.core_export_name(interface_name);
 
@@ -782,7 +853,7 @@ impl InterfaceGenerator<'_> {
         f.gen.src.c_adapters(") {\n");
 
         // Perform all lifting/lowering and append it to our src.
-        f.gen.iface.call(
+        f.gen.resolve.call(
             AbiVariant::GuestExport,
             LiftLower::LiftArgsLowerResults,
             func,
@@ -792,7 +863,7 @@ impl InterfaceGenerator<'_> {
         self.src.c_adapters(&src);
         self.src.c_adapters("}\n");
 
-        if self.iface.guest_export_needs_post_return(func) {
+        if self.resolve.guest_export_needs_post_return(func) {
             uwriteln!(
                 self.src.c_fns,
                 "__attribute__((weak, export_name(\"cabi_post_{export_name}\")))"
@@ -804,11 +875,7 @@ impl InterfaceGenerator<'_> {
                 name: String::from("INVALID"),
                 sig: String::from("INVALID"),
                 params: Vec::new(),
-                ret: Return {
-                    return_multiple: false,
-                    scalar: None,
-                    retptrs: Vec::new(),
-                },
+                ret: Return::default(),
                 retptrs: Vec::new(),
             };
             for (i, result) in sig.results.iter().enumerate() {
@@ -821,7 +888,7 @@ impl InterfaceGenerator<'_> {
 
             let mut f = FunctionBindgen::new(self, c_sig, &import_name);
             f.params = params;
-            f.gen.iface.post_return(func, &mut f);
+            f.gen.resolve.post_return(func, &mut f);
             let FunctionBindgen { src, .. } = f;
             self.src.c_fns(&src);
             self.src.c_fns("}\n");
@@ -859,7 +926,7 @@ impl InterfaceGenerator<'_> {
             }
         }
 
-        for id in self.iface.topological_types() {
+        for (id, _) in self.resolve.types.iter() {
             if let Some(ty) = self.types.get(&id) {
                 if private_types.contains(&id) {
                     // It's private; print it in the .c file.
@@ -904,10 +971,10 @@ impl InterfaceGenerator<'_> {
             if i > 0 {
                 self.src.h_fns(", ");
             }
-            let pointer = is_arg_by_pointer(self.iface, ty);
+            let pointer = is_arg_by_pointer(self.resolve, ty);
             // optional param pointer flattening
             let optional_type = if let Type::Id(id) = ty {
-                if let TypeDefKind::Option(option_ty) = &self.iface.types[*id].kind {
+                if let TypeDefKind::Option(option_ty) = &self.resolve.types[*id].kind {
                     Some(option_ty)
                 } else {
                     None
@@ -969,19 +1036,14 @@ impl InterfaceGenerator<'_> {
     }
 
     fn classify_ret(&mut self, func: &Function) -> Return {
-        let mut ret = Return {
-            return_multiple: false,
-            scalar: None,
-            retptrs: Vec::new(),
-        };
+        let mut ret = Return::default();
         match func.results.len() {
             0 => ret.scalar = Some(Scalar::Void),
             1 => {
                 let ty = func.results.iter_types().next().unwrap();
-                ret.return_single(self.iface, ty, ty);
+                ret.return_single(self.resolve, ty, ty);
             }
             _ => {
-                ret.return_multiple = true;
                 ret.retptrs.extend(func.results.iter_types().cloned());
             }
         }
@@ -1028,10 +1090,15 @@ impl InterfaceGenerator<'_> {
                 self.gen.needs_string = true;
             }
             Type::Id(id) => {
-                let ty = &self.iface.types[*id];
+                let ty = &self.resolve.types[*id];
                 match &ty.name {
                     Some(name) => {
-                        self.print_namespace(stype);
+                        if let TypeOwner::Interface(owner) = ty.owner {
+                            self.src
+                                .print(stype, &self.gen.interface_names[&owner].to_snake_case());
+                            self.src.print(stype, "_");
+                        }
+
                         self.src.print(stype, &name.to_snake_case());
                         self.src.print(stype, "_t");
                     }
@@ -1066,7 +1133,7 @@ impl InterfaceGenerator<'_> {
             Type::Float64 => self.src.print(stype, "float64"),
             Type::String => self.src.print(stype, "string"),
             Type::Id(id) => {
-                let ty = &self.iface.types[*id];
+                let ty = &self.resolve.types[*id];
                 if let Some(name) = &ty.name {
                     return self.src.print(stype, &name.to_snake_case());
                 }
@@ -1111,6 +1178,7 @@ impl InterfaceGenerator<'_> {
                         self.src.print(stype, "_");
                         self.print_optional_ty_name(stype, s.end.as_ref());
                     }
+                    TypeDefKind::Unknown => unreachable!(),
                 }
             }
         }
@@ -1171,7 +1239,7 @@ impl InterfaceGenerator<'_> {
     fn print_anonymous_type(&mut self, ty: TypeId) {
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\ntypedef ");
-        let kind = &self.iface.types[ty].kind;
+        let kind = &self.resolve.types[ty].kind;
         match kind {
             TypeDefKind::Type(_)
             | TypeDefKind::Flags(_)
@@ -1192,7 +1260,7 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Option(t) => {
                 self.src.h_defs("struct {\n");
                 self.src.h_defs("bool is_some;\n");
-                if !is_empty_type(self.iface, t) {
+                if !is_empty_type(self.resolve, t) {
                     self.print_ty(SourceType::HDefs, t);
                     self.src.h_defs(" val;\n");
                 }
@@ -1205,11 +1273,11 @@ impl InterfaceGenerator<'_> {
                     union {
                 ",
                 );
-                if let Some(ok) = get_nonempty_type(self.iface, r.ok.as_ref()) {
+                if let Some(ok) = get_nonempty_type(self.resolve, r.ok.as_ref()) {
                     self.print_ty(SourceType::HDefs, ok);
                     self.src.h_defs(" ok;\n");
                 }
-                if let Some(err) = get_nonempty_type(self.iface, r.err.as_ref()) {
+                if let Some(err) = get_nonempty_type(self.resolve, r.err.as_ref()) {
                     self.print_ty(SourceType::HDefs, err);
                     self.src.h_defs(" err;\n");
                 }
@@ -1225,6 +1293,7 @@ impl InterfaceGenerator<'_> {
             }
             TypeDefKind::Future(_) => todo!("print_anonymous_type for future"),
             TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
+            TypeDefKind::Unknown => unreachable!(),
         }
         self.src.h_defs(" ");
         self.print_namespace(SourceType::HDefs);
@@ -1251,7 +1320,7 @@ impl InterfaceGenerator<'_> {
         self.src.c_helpers(&self.src.h_helpers[pos..].to_string());
         self.src.h_helpers(";");
         self.src.c_helpers(" {\n");
-        match &self.iface.types[id].kind {
+        match &self.resolve.types[id].kind {
             TypeDefKind::Type(t) => self.free(t, "ptr"),
 
             TypeDefKind::Flags(_) => {}
@@ -1344,6 +1413,7 @@ impl InterfaceGenerator<'_> {
             }
             TypeDefKind::Future(_) => todo!("print_dtor for future"),
             TypeDefKind::Stream(_) => todo!("print_dtor for stream"),
+            TypeDefKind::Unknown => unreachable!(),
         }
         self.src.c_helpers("}\n");
     }
@@ -1354,7 +1424,7 @@ impl InterfaceGenerator<'_> {
             Type::String => return true,
             _ => return false,
         };
-        match &self.iface.types[id].kind {
+        match &self.resolve.types[id].kind {
             TypeDefKind::Type(t) => self.owns_anything(t),
             TypeDefKind::Record(r) => r.fields.iter().any(|t| self.owns_anything(&t.ty)),
             TypeDefKind::Tuple(t) => t.types.iter().any(|t| self.owns_anything(t)),
@@ -1373,6 +1443,7 @@ impl InterfaceGenerator<'_> {
             }
             TypeDefKind::Future(_) => todo!("owns_anything for future"),
             TypeDefKind::Stream(_) => todo!("owns_anything for stream"),
+            TypeDefKind::Unknown => unreachable!(),
         }
     }
 
@@ -1416,6 +1487,8 @@ struct FunctionBindgen<'a, 'b> {
     params: Vec<String>,
     wasm_return: Option<String>,
     ret_store_cnt: usize,
+    import_return_pointer_area_size: usize,
+    import_return_pointer_area_align: usize,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1436,6 +1509,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             params: Vec::new(),
             wasm_return: None,
             ret_store_cnt: 0,
+            import_return_pointer_area_size: 0,
+            import_return_pointer_area_align: 0,
         }
     }
 
@@ -1484,7 +1559,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     type Operand = String;
 
     fn sizes(&self) -> &SizeAlign {
-        &self.gen.sizes
+        &self.gen.gen.sizes
     }
 
     fn push_block(&mut self) {
@@ -1498,22 +1573,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         self.blocks.push((src.into(), mem::take(operands)));
     }
 
-    fn return_pointer(&mut self, _iface: &Interface, size: usize, align: usize) -> String {
+    fn return_pointer(&mut self, size: usize, align: usize) -> String {
         let ptr = self.locals.tmp("ptr");
 
+        // Use a stack-based return area for imports, because exports need
+        // their return area to be live until the post-return call.
         if self.gen.in_import {
-            // Declare a stack-allocated return area. We only do this for
-            // imports, because exports need their return area to be live until
-            // the post-return call.
-            uwrite!(
-                self.src,
-                "\
-                    __attribute__((aligned({})))
-                    uint8_t ret_area[{}];
-                ",
-                align,
-                size,
-            );
+            self.import_return_pointer_area_size = self.import_return_pointer_area_size.max(size);
+            self.import_return_pointer_area_align =
+                self.import_return_pointer_area_align.max(align);
             uwriteln!(self.src, "int32_t {} = (int32_t) &ret_area;", ptr);
         } else {
             self.gen.gen.return_pointer_area_size = self.gen.gen.return_pointer_area_size.max(size);
@@ -1526,13 +1594,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         ptr
     }
 
-    fn is_list_canonical(&self, iface: &Interface, ty: &Type) -> bool {
-        iface.all_bits_valid(ty)
+    fn is_list_canonical(&self, resolve: &Resolve, ty: &Type) -> bool {
+        resolve.all_bits_valid(ty)
     }
 
     fn emit(
         &mut self,
-        _iface: &Interface,
+        _resolve: &Resolve,
         inst: &Instruction<'_>,
         operands: &mut Vec<String>,
         results: &mut Vec<String>,
@@ -1719,7 +1787,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     variant.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
                     uwriteln!(self.src, "case {}: {{", i);
-                    if let Some(ty) = get_nonempty_type(self.gen.iface, case.ty.as_ref()) {
+                    if let Some(ty) = get_nonempty_type(self.gen.resolve, case.ty.as_ref()) {
                         let ty = self.gen.type_string(ty);
                         uwrite!(
                             self.src,
@@ -1760,7 +1828,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src.push_str(&block);
                     assert!(block_results.len() == (case.ty.is_some() as usize));
 
-                    if let Some(_) = get_nonempty_type(self.gen.iface, case.ty.as_ref()) {
+                    if let Some(_) = get_nonempty_type(self.gen.resolve, case.ty.as_ref()) {
                         let mut dst = format!("{}.val", result);
                         dst.push_str(".");
                         dst.push_str(&case.name.to_snake_case());
@@ -1801,7 +1869,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     union.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
                     uwriteln!(self.src, "case {i}: {{");
-                    if !is_empty_type(self.gen.iface, &case.ty) {
+                    if !is_empty_type(self.gen.resolve, &case.ty) {
                         let ty = self.gen.type_string(&case.ty);
                         uwriteln!(self.src, "const {ty} *{payload} = &({op0}).val.f{i};");
                     }
@@ -1866,7 +1934,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let op0 = &operands[0];
                 let ty = self.gen.type_string(payload);
-                let bind_some = if is_empty_type(self.gen.iface, payload) {
+                let bind_some = if is_empty_type(self.gen.resolve, payload) {
                     String::new()
                 } else {
                     format!("const {ty} *{some_payload} = &({op0}).val;")
@@ -1894,7 +1962,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let result = self.locals.tmp("option");
                 uwriteln!(self.src, "{ty} {result};");
                 let op0 = &operands[0];
-                let set_some = if is_empty_type(self.gen.iface, payload) {
+                let set_some = if is_empty_type(self.gen.resolve, payload) {
                     String::new()
                 } else {
                     format!("{result}.val = {some_result};\n")
@@ -1948,13 +2016,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 let op0 = &operands[0];
-                let bind_ok = if let Some(ok) = get_nonempty_type(self.gen.iface, result.ok.as_ref()) {
+                let bind_ok = if let Some(ok) = get_nonempty_type(self.gen.resolve, result.ok.as_ref()) {
                     let ok_ty = self.gen.type_string(ok);
                     format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;")
                 } else {
                     String::new()
                 };
-                let bind_err = if let Some(err) = get_nonempty_type(self.gen.iface, result.err.as_ref()) {
+                let bind_err = if let Some(err) = get_nonempty_type(self.gen.resolve, result.err.as_ref()) {
                     let err_ty = self.gen.type_string(err);
                     format!("const {err_ty} *{err_payload} = &({op0}).val.err;")
                 } else {
@@ -1988,13 +2056,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 let result_tmp = self.locals.tmp("result");
-                let set_ok = if let Some(_) = get_nonempty_type(self.gen.iface, result.ok.as_ref()) {
+                let set_ok = if let Some(_) = get_nonempty_type(self.gen.resolve, result.ok.as_ref()) {
                     let ok_result = &ok_results[0];
                     format!("{result_tmp}.val.ok = {ok_result};\n")
                 } else {
                     String::new()
                 };
-                let set_err = if let Some(_) = get_nonempty_type(self.gen.iface, result.err.as_ref()) {
+                let set_err = if let Some(_) = get_nonempty_type(self.gen.resolve, result.err.as_ref()) {
                     let err_result = &err_results[0];
                     format!("{result_tmp}.val.err = {err_result};\n")
                 } else {
@@ -2108,9 +2176,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         if !self.gen.in_import {
                             if let Type::Id(id) = ty {
                                 if let TypeDefKind::Option(option_ty) =
-                                    &self.gen.iface.types[*id].kind
+                                    &self.gen.resolve.types[*id].kind
                                 {
-                                    if is_empty_type(self.gen.iface, option_ty) {
+                                    if is_empty_type(self.gen.resolve, option_ty) {
                                         uwrite!(args, "{op}.is_some ? (void*)1 : NULL");
                                     } else {
                                         uwrite!(args, "{op}.is_some ? &({op}.val) : NULL");
@@ -2356,7 +2424,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 uwriteln!(self.src, "int32_t {len} = {};", operands[1]);
                 let i = self.locals.tmp("i");
                 uwriteln!(self.src, "for (int32_t {i} = 0; {i} < {len}; {i}++) {{");
-                let size = self.gen.sizes.size(element);
+                let size = self.gen.gen.sizes.size(element);
                 uwriteln!(self.src, "int32_t base = {ptr} + {i} * {size};");
                 uwriteln!(self.src, "(void) base;");
                 uwrite!(self.src, "{body}");
@@ -2466,10 +2534,10 @@ pub fn flags_repr(f: &Flags) -> Int {
     }
 }
 
-pub fn is_arg_by_pointer(iface: &Interface, ty: &Type) -> bool {
+pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
     match ty {
-        Type::Id(id) => match iface.types[*id].kind {
-            TypeDefKind::Type(t) => is_arg_by_pointer(iface, &t),
+        Type::Id(id) => match resolve.types[*id].kind {
+            TypeDefKind::Type(t) => is_arg_by_pointer(resolve, &t),
             TypeDefKind::Variant(_) => true,
             TypeDefKind::Union(_) => true,
             TypeDefKind::Option(_) => true,
@@ -2479,29 +2547,30 @@ pub fn is_arg_by_pointer(iface: &Interface, ty: &Type) -> bool {
             TypeDefKind::Tuple(_) | TypeDefKind::Record(_) | TypeDefKind::List(_) => true,
             TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
             TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
+            TypeDefKind::Unknown => unreachable!(),
         },
         Type::String => true,
         _ => false,
     }
 }
 
-pub fn is_empty_type(iface: &Interface, ty: &Type) -> bool {
+pub fn is_empty_type(resolve: &Resolve, ty: &Type) -> bool {
     let id = match ty {
         Type::Id(id) => *id,
         _ => return false,
     };
-    match &iface.types[id].kind {
-        TypeDefKind::Type(t) => is_empty_type(iface, t),
+    match &resolve.types[id].kind {
+        TypeDefKind::Type(t) => is_empty_type(resolve, t),
         TypeDefKind::Record(r) => r.fields.is_empty(),
         TypeDefKind::Tuple(t) => t.types.is_empty(),
         _ => false,
     }
 }
 
-pub fn get_nonempty_type<'o>(iface: &Interface, ty: Option<&'o Type>) -> Option<&'o Type> {
+pub fn get_nonempty_type<'o>(resolve: &Resolve, ty: Option<&'o Type>) -> Option<&'o Type> {
     match ty {
         Some(ty) => {
-            if is_empty_type(iface, ty) {
+            if is_empty_type(resolve, ty) {
                 None
             } else {
                 Some(ty)

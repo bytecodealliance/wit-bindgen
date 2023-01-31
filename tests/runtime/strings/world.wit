@@ -3,13 +3,9 @@ interface imports {
   return-unicode: func() -> string
 }
 
-interface exports {
-  test-imports: func()
+default world strings {
+  import imports: self.imports
 
-  roundtrip: func(s: string) -> string
-}
-
-world strings {
-  import imports: imports
-  default export exports
+  export test-imports: func()
+  export roundtrip: func(s: string) -> string
 }

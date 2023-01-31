@@ -106,40 +106,6 @@ public class VariantsImpl {
         }
     }
 
-    public static Byte roundtripOption(Float a) {
-        return a == null ? null : (byte) (float) a;
-    }
-
-    public static Result<Double, Byte> roundtripResult(Result<Integer, Float> a) {
-        switch (a.tag) {
-        case Result.OK: return Result.ok((double) a.getOk());
-        case Result.ERR: return Result.err((byte) (float) a.getErr());
-        default: throw new AssertionError();
-        }
-    }
-
-    public static Variants.E1 roundtripEnum(Variants.E1 a) {
-        return a;
-    }
-
-    public static boolean invertBool(boolean a) {
-        return !a;
-    }
-
-    public static Tuple6<Variants.C1, Variants.C2, Variants.C3, Variants.C4, Variants.C5, Variants.C6>
-        variantCasts(Tuple6<Variants.C1, Variants.C2, Variants.C3, Variants.C4, Variants.C5, Variants.C6> a)
-    {
-        return a;
-    }
-
-    public static Tuple4<Variants.Z1, Variants.Z2, Variants.Z3, Variants.Z4>
-        variantZeros(Tuple4<Variants.Z1, Variants.Z2, Variants.Z3, Variants.Z4> a)
-    {
-        return a;
-    }
-
-    public static void variantTypedefs(Integer a, boolean b, Result<Integer, Tuple0> c) { }
-
     private static void expect(boolean v) {
         if (!v) {
             throw new AssertionError();

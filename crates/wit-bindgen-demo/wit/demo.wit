@@ -1,10 +1,10 @@
-world demo {
+default world demo {
   import console: interface {
     log: func(msg: string)
     error: func(msg: string)
   }
 
-  default export interface {
+  export demo: interface {
     type files = list<tuple<string, string>>
 
     enum lang {

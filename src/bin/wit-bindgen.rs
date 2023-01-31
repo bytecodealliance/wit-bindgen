@@ -1,9 +1,9 @@
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use wit_bindgen_core::component::ComponentGenerator;
 use wit_bindgen_core::{wit_parser, Files, WorldGenerator};
-use wit_parser::World;
+use wit_parser::{Resolve, UnresolvedPackage};
 
 /// Helper for passing VERSION to opt.
 /// If CARGO_VERSION_INFO is set, use it, otherwise use CARGO_PKG_VERSION.
@@ -90,25 +90,16 @@ enum GuestGenerator {
 
 #[derive(Debug, Parser)]
 struct WorldOpt {
-    /// Generate bindings for the WIT document.
-    #[clap(value_name = "DOCUMENT", value_parser = parse_world)]
-    wit: World,
-}
+    /// WIT document to generate bindings for.
+    #[clap(value_name = "DOCUMENT")]
+    wit: PathBuf,
 
-fn parse_world(s: &str) -> Result<World> {
-    let path = Path::new(s);
-    if !path.is_file() {
-        bail!("wit file `{}` does not exist", path.display());
-    }
-
-    let world = World::parse_file(&path)
-        .with_context(|| format!("failed to parse wit file `{}`", path.display()))
-        .map_err(|e| {
-            eprintln!("{e:?}");
-            e
-        })?;
-
-    Ok(world)
+    /// World within the WIT document specified to generate bindings for.
+    ///
+    /// This can either be `foo` which is the default world in document `foo` or
+    /// it's `foo.bar` which is the world named `bar` within document `foo`.
+    #[clap(short, long)]
+    world: Option<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -192,7 +183,48 @@ fn gen_world(
     opts: WorldOpt,
     files: &mut Files,
 ) -> Result<()> {
-    generator.generate(&opts.wit, files);
+    let mut resolve = Resolve::default();
+    let pkg = if opts.wit.is_dir() {
+        resolve.push_dir(&opts.wit)?.0
+    } else {
+        resolve.push(
+            UnresolvedPackage::parse_file(&opts.wit)?,
+            &Default::default(),
+        )?
+    };
+    let world = match &opts.world {
+        Some(world) => {
+            let mut parts = world.splitn(2, '.');
+            let doc = parts.next().unwrap();
+            let world = parts.next();
+            let doc = *resolve.packages[pkg]
+                .documents
+                .get(doc)
+                .ok_or_else(|| anyhow!("no document named `{doc}` in package"))?;
+            match world {
+                Some(name) => *resolve.documents[doc]
+                    .worlds
+                    .get(name)
+                    .ok_or_else(|| anyhow!("no world named `{name}` in document"))?,
+                None => resolve.documents[doc]
+                    .default_world
+                    .ok_or_else(|| anyhow!("no default world in document"))?,
+            }
+        }
+        None => {
+            let mut docs = resolve.packages[pkg].documents.iter();
+            let (_, doc) = docs
+                .next()
+                .ok_or_else(|| anyhow!("no documents found in package"))?;
+            if docs.next().is_some() {
+                bail!("multiple documents found in package, specify which to bind with `--world` argument")
+            }
+            resolve.documents[*doc]
+                .default_world
+                .ok_or_else(|| anyhow!("no default world in document"))?
+        }
+    };
+    generator.generate(&resolve, world, files);
     Ok(())
 }
 

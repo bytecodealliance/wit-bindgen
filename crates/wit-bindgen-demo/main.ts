@@ -1,4 +1,7 @@
-import { render, Options } from './demo.js';
+import { demo } from './demo.js';
+import { Options } from './exports/demo.js';
+
+const { render } = demo;
 
 class Editor {
   input: HTMLTextAreaElement;

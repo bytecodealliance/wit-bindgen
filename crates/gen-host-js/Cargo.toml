@@ -23,4 +23,8 @@ test-helpers = { path = '../test-helpers' }
 
 [[test]]
 name = "runtime"
-required-features = ["clap"]
+required-features = ["runtime-tests"]
+
+[features]
+runtime-tests = ["clap", 'test-helpers/runtime-macro']
+clap = ["dep:clap"]

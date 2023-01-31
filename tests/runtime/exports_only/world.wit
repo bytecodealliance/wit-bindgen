@@ -1,7 +1,3 @@
-interface exports {
-  thunk: func() -> string
-}
-
-world exports-only {
-  default export exports
+default world exports-only {
+  export thunk: func() -> string
 }

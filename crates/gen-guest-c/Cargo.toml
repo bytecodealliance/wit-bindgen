@@ -17,4 +17,4 @@ heck = { workspace = true }
 clap = { workspace = true, optional = true }
 
 [dev-dependencies]
-test-helpers = { path = '../test-helpers', default-features = false, features = ['macros'] }
+test-helpers = { path = '../test-helpers' }

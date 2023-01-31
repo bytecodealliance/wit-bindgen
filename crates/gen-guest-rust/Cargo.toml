@@ -17,4 +17,4 @@ clap = { workspace = true, optional = true }
 
 [dev-dependencies]
 wit-bindgen-guest-rust = { path = '../guest-rust' }
-test-helpers = { path = '../test-helpers', default-features = false, features = ['macros'] }
+test-helpers = { path = '../test-helpers' }

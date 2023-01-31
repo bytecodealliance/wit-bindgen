@@ -133,14 +133,14 @@ void variants_test_imports() {
   }
 }
 
-bool variants_roundtrip_option(float *a, uint8_t *ret0) {
+bool exports_roundtrip_option(float *a, uint8_t *ret0) {
   if (a) {
     *ret0 = *a;
   }
   return a != NULL;
 }
 
-bool variants_roundtrip_result(variants_result_u32_float32_t *a, double *ok, uint8_t *err) {
+bool exports_roundtrip_result(exports_result_u32_float32_t *a, double *ok, uint8_t *err) {
   if (a->is_err) {
     *err = a->val.err;
     return false;
@@ -150,22 +150,26 @@ bool variants_roundtrip_result(variants_result_u32_float32_t *a, double *ok, uin
   }
 }
 
-variants_e1_t variants_roundtrip_enum(variants_e1_t a) {
+exports_e1_t exports_roundtrip_enum(exports_e1_t a) {
   return a;
 }
 
-bool variants_invert_bool(bool a) {
+bool exports_invert_bool(bool a) {
   return !a;
 }
 
-void variants_variant_casts(variants_casts_t *a, variants_casts_t *ret) {
+void exports_variant_casts(exports_casts_t *a, exports_casts_t *ret) {
   *ret = *a;
 }
 
-void variants_variant_zeros(variants_zeros_t *a, variants_zeros_t *b) {
+void exports_variant_zeros(exports_zeros_t *a, exports_zeros_t *b) {
   *b = *a;
 }
 
-void variants_variant_typedefs(uint32_t *a, variants_bool_typedef_t b, variants_result_typedef_t *c) {
+void exports_variant_typedefs(uint32_t *a, exports_bool_typedef_t b, exports_result_typedef_t *c) {
+}
+
+void exports_variant_enums(bool a, exports_result_void_void_t *b, exports_my_errno_t c, exports_tuple3_bool_result_void_void_my_errno_t *ret) {
+  assert(0);
 }
 

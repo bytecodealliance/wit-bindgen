@@ -36,52 +36,52 @@ async function run() {
 
   wasm.testImports();
 
-  assertEq(wasm.roundtripU8(1), 1);
-  assertEq(wasm.roundtripU8((1 << 8) - 1), (1 << 8) - 1);
+  assertEq(wasm.exports.roundtripU8(1), 1);
+  assertEq(wasm.exports.roundtripU8((1 << 8) - 1), (1 << 8) - 1);
 
-  assertEq(wasm.roundtripS8(1), 1);
-  assertEq(wasm.roundtripS8((1 << 7) - 1), (1 << 7) - 1);
-  assertEq(wasm.roundtripS8(-(1 << 7)), -(1 << 7));
+  assertEq(wasm.exports.roundtripS8(1), 1);
+  assertEq(wasm.exports.roundtripS8((1 << 7) - 1), (1 << 7) - 1);
+  assertEq(wasm.exports.roundtripS8(-(1 << 7)), -(1 << 7));
 
-  assertEq(wasm.roundtripU16(1), 1);
-  assertEq(wasm.roundtripU16((1 << 16) - 1), (1 << 16) - 1);
+  assertEq(wasm.exports.roundtripU16(1), 1);
+  assertEq(wasm.exports.roundtripU16((1 << 16) - 1), (1 << 16) - 1);
 
-  assertEq(wasm.roundtripS16(1), 1);
-  assertEq(wasm.roundtripS16((1 << 15) - 1), (1 << 15) - 1);
-  assertEq(wasm.roundtripS16(-(1 << 15)), -(1 << 15));
+  assertEq(wasm.exports.roundtripS16(1), 1);
+  assertEq(wasm.exports.roundtripS16((1 << 15) - 1), (1 << 15) - 1);
+  assertEq(wasm.exports.roundtripS16(-(1 << 15)), -(1 << 15));
 
-  assertEq(wasm.roundtripU32(1), 1);
-  assertEq(wasm.roundtripU32(~0 >>> 0), ~0 >>> 0);
+  assertEq(wasm.exports.roundtripU32(1), 1);
+  assertEq(wasm.exports.roundtripU32(~0 >>> 0), ~0 >>> 0);
 
-  assertEq(wasm.roundtripS32(1), 1);
-  assertEq(wasm.roundtripS32(((1 << 31) - 1) >>> 0), ((1 << 31) - 1) >>> 0);
-  assertEq(wasm.roundtripS32(1 << 31), 1 << 31);
+  assertEq(wasm.exports.roundtripS32(1), 1);
+  assertEq(wasm.exports.roundtripS32(((1 << 31) - 1) >>> 0), ((1 << 31) - 1) >>> 0);
+  assertEq(wasm.exports.roundtripS32(1 << 31), 1 << 31);
 
-  assertEq(wasm.roundtripU64(1n), 1n);
-  assertEq(wasm.roundtripU64((1n << 64n) - 1n), (1n << 64n) - 1n);
+  assertEq(wasm.exports.roundtripU64(1n), 1n);
+  assertEq(wasm.exports.roundtripU64((1n << 64n) - 1n), (1n << 64n) - 1n);
 
-  assertEq(wasm.roundtripS64(1n), 1n);
-  assertEq(wasm.roundtripS64((1n << 63n) - 1n), (1n << 63n) - 1n);
-  assertEq(wasm.roundtripS64(-(1n << 63n)), -(1n << 63n));
+  assertEq(wasm.exports.roundtripS64(1n), 1n);
+  assertEq(wasm.exports.roundtripS64((1n << 63n) - 1n), (1n << 63n) - 1n);
+  assertEq(wasm.exports.roundtripS64(-(1n << 63n)), -(1n << 63n));
 
-  assertEq(wasm.roundtripFloat32(1), 1);
-  assertEq(wasm.roundtripFloat32(Infinity), Infinity);
-  assertEq(wasm.roundtripFloat32(-Infinity), -Infinity);
-  assert(Number.isNaN(wasm.roundtripFloat32(NaN)));
+  assertEq(wasm.exports.roundtripFloat32(1), 1);
+  assertEq(wasm.exports.roundtripFloat32(Infinity), Infinity);
+  assertEq(wasm.exports.roundtripFloat32(-Infinity), -Infinity);
+  assert(Number.isNaN(wasm.exports.roundtripFloat32(NaN)));
 
-  assertEq(wasm.roundtripFloat64(1), 1);
-  assertEq(wasm.roundtripFloat64(Infinity), Infinity);
-  assertEq(wasm.roundtripFloat64(-Infinity), -Infinity);
-  assert(Number.isNaN(wasm.roundtripFloat64(NaN)));
+  assertEq(wasm.exports.roundtripFloat64(1), 1);
+  assertEq(wasm.exports.roundtripFloat64(Infinity), Infinity);
+  assertEq(wasm.exports.roundtripFloat64(-Infinity), -Infinity);
+  assert(Number.isNaN(wasm.exports.roundtripFloat64(NaN)));
 
-  assertEq(wasm.roundtripChar('a'), 'a');
-  assertEq(wasm.roundtripChar(' '), ' ');
-  assertEq(wasm.roundtripChar('🚩'), '🚩');
+  assertEq(wasm.exports.roundtripChar('a'), 'a');
+  assertEq(wasm.exports.roundtripChar(' '), ' ');
+  assertEq(wasm.exports.roundtripChar('🚩'), '🚩');
 
-  wasm.setScalar(2);
-  assertEq(wasm.getScalar(), 2);
-  wasm.setScalar(4);
-  assertEq(wasm.getScalar(), 4);
+  wasm.exports.setScalar(2);
+  assertEq(wasm.exports.getScalar(), 2);
+  wasm.exports.setScalar(4);
+  assertEq(wasm.exports.getScalar(), 4);
 }
 
 await run()

@@ -1,4 +1,4 @@
-interface imports {
+interface test {
   roundtrip-u8: func(a: u8) -> u8
   roundtrip-s8: func(a: s8) -> s8
   roundtrip-u16: func(a: u16) -> u16
@@ -15,26 +15,9 @@ interface imports {
   get-scalar: func() -> u32
 }
 
-interface exports {
-  test-imports: func()
+default world numbers {
+  import imports: self.test
+  export exports: self.test
 
-  roundtrip-u8: func(a: u8) -> u8
-  roundtrip-s8: func(a: s8) -> s8
-  roundtrip-u16: func(a: u16) -> u16
-  roundtrip-s16: func(a: s16) -> s16
-  roundtrip-u32: func(a: u32) -> u32
-  roundtrip-s32: func(a: s32) -> s32
-  roundtrip-u64: func(a: u64) -> u64
-  roundtrip-s64: func(a: s64) -> s64
-  roundtrip-float32: func(a: float32) -> float32
-  roundtrip-float64: func(a: float64) -> float64
-  roundtrip-char: func(a: char) -> char
-
-  set-scalar: func(a: u32)
-  get-scalar: func() -> u32
-}
-
-world numbers {
-  import imports: imports
-  default export exports
+  export test-imports: func()
 }

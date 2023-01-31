@@ -142,75 +142,7 @@ public class ListsImpl {
         }
     }
 
-    public static void emptyListParam(byte[] a) {
-        expect(a.length == 0);
-    }
-
-    public static void emptyStringParam(String a) {
-        expect(a.length() == 0);
-    }
-
-    public static byte[] emptyListResult() {
-        return new byte[0];
-    }
-
-    public static String emptyStringResult() {
-        return "";
-    }
-
-    public static void listParam(byte[] a) {
-        expect(a.length == 4);
-        expect(a[0] == 1);
-        expect(a[1] == 2);
-        expect(a[2] == 3);
-        expect(a[3] == 4);
-    }
-
-    public static void listParam2(String a) {
-        expect(a.equals("foo"));
-    }
-
-    public static void listParam3(ArrayList<String> a) {
-        expect(a.size() == 3);
-        expect(a.get(0).equals("foo"));
-        expect(a.get(1).equals("bar"));
-        expect(a.get(2).equals("baz"));
-    }
-
-    public static void listParam4(ArrayList<ArrayList<String>> a) {
-        expect(a.size() == 2);
-        expect(a.get(0).size() == 2);
-        expect(a.get(1).size() == 1);
-
-        expect(a.get(0).get(0).equals("foo"));
-        expect(a.get(0).get(1).equals("bar"));
-        expect(a.get(1).get(0).equals("baz"));
-    }
-
-    public static byte[] listResult() {
-        return new byte[] { (byte) 1, (byte) 2, (byte) 3, (byte) 4, (byte) 5 };
-    }
-
-    public static String listResult2() {
-        return "hello!";
-    }
-
-    public static ArrayList<String> listResult3() {
-        return new ArrayList<String>() {{
-            add("hello,");
-            add("world!");
-        }};
-    }
-
-    public static byte[] listRoundtrip(byte[] a) {
-        return a;
-    }
-
-    public static String stringRoundtrip(String a) {
-        return a;
-    }
-
-    private static void expect(boolean v) {
+    public static void expect(boolean v) {
         if (!v) {
             throw new AssertionError();
         }

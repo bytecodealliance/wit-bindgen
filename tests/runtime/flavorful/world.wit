@@ -1,4 +1,4 @@
-interface imports {
+interface test {
   record list-in-record1 { a: string }
   record list-in-record2 { a: string }
   record list-in-record3 { a: string }
@@ -33,42 +33,9 @@ interface imports {
     -> (a: list<bool>, b: list<result>, c: list<my-errno>)
 }
 
-interface exports {
-  test-imports: func()
+default world flavorful {
+  import imports: self.test
+  export exports: self.test
 
-  record list-in-record1 { a: string }
-  record list-in-record2 { a: string }
-  record list-in-record3 { a: string }
-  record list-in-record4 { a: string }
-  type list-in-alias = list-in-record4
-
-  f-list-in-record1: func(a: list-in-record1)
-  f-list-in-record2: func() -> list-in-record2
-  f-list-in-record3: func(a: list-in-record3) -> list-in-record3
-  f-list-in-record4: func(a: list-in-alias) -> list-in-alias
-
-  type list-in-variant1-v1 = option<string>
-  type list-in-variant1-v2 = result<_, string>
-  union list-in-variant1-v3 { string, float32 }
-  f-list-in-variant1: func(a: list-in-variant1-v1, b: list-in-variant1-v2, c: list-in-variant1-v3)
-
-  type list-in-variant2 = option<string>
-  f-list-in-variant2: func() -> list-in-variant2
-
-  type list-in-variant3 = option<string>
-  f-list-in-variant3: func(a: list-in-variant3) -> list-in-variant3
-
-  enum my-errno { success, a, b }
-  errno-result: func() -> result<_, my-errno>
-
-  type list-typedef = string
-  type list-typedef2 = list<u8>
-  type list-typedef3 = list<string>
-  list-typedefs: func(a: list-typedef, c: list-typedef3)
-    -> (a: list-typedef2, b: list-typedef3)
-}
-
-world flavorful {
-  import imports: imports
-  default export exports
+  export test-imports: func()
 }

@@ -14,4 +14,5 @@ proc-macro2 = "1.0"
 syn = "1.0"
 wit-bindgen-core = { workspace = true }
 wit-bindgen-gen-guest-rust = { workspace = true }
-wit-bindgen-rust-macro-shared = { workspace = true }
+wit-component = { workspace = true }
+anyhow = { workspace = true }
