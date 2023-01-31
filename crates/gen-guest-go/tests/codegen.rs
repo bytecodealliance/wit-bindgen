@@ -1,7 +1,7 @@
 use heck::*;
-use std::env;
+
 use std::io::{prelude::*, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 use std::process::Command;
 
 macro_rules! codegen_test {
@@ -41,7 +41,7 @@ fn verify(dir: &Path, name: &str) {
     // TODO: However, there is still an issue. Since the go module does not
     // invoke the imported functions, they will be skipped by the compiler.
     // This will weaken the test's ability to verify imported functions
-    let mut file = std::fs::OpenOptions::new()
+    let file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .open(&main)
@@ -53,7 +53,7 @@ fn verify(dir: &Path, name: &str) {
 
     // check if {name}_types.go exists
     let types_file = dir.join(format!("{name}_types.go"));
-    if let Ok(_) = std::fs::metadata(types_file) {
+    if std::fs::metadata(types_file).is_ok() {
         // create a directory called option and move the type file to option
         std::fs::create_dir(dir.join("option")).expect("Failed to create directory");
         std::fs::rename(
@@ -64,7 +64,7 @@ fn verify(dir: &Path, name: &str) {
         buf.append(&mut format!("import . \"{name}/option\"\n").as_bytes().to_vec());
     }
 
-    reader.read_to_end(&mut buf);
+    reader.read_to_end(&mut buf).expect("Failed to read file");
     buf.append(&mut "func main() {}".as_bytes().to_vec());
     std::fs::write(&main, buf).expect("Failed to write to file");
 

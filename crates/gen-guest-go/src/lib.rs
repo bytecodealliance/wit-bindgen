@@ -5,13 +5,10 @@ use std::{collections::BTreeSet, mem};
 use heck::{ToKebabCase, ToSnakeCase, ToUpperCamelCase};
 use wit_bindgen_core::uwrite;
 
-use wit_bindgen_core::wit_parser::{Resolve, InterfaceId, WorldId};
+use wit_bindgen_core::wit_parser::{InterfaceId, Resolve, TypeOwner, WorldId};
 use wit_bindgen_core::{
     uwriteln,
-    wit_parser::{
-        Field, Function, Interface, SizeAlign, Type, TypeDefKind, TypeId,
-        World,
-    },
+    wit_parser::{Field, Function, SizeAlign, Type, TypeDefKind, TypeId},
     Files, InterfaceGenerator as _, Source, WorldGenerator,
 };
 use wit_bindgen_gen_guest_c::{
@@ -65,15 +62,8 @@ pub struct Opts {
 
 impl Opts {
     pub fn build(&self) -> Box<dyn WorldGenerator> {
-        // ––––---- debugging purpose ----------
-        // if cfg!(debug_assertions) {
-        //     println!("process id: {}", std::process::id());
-        //     std::thread::sleep(std::time::Duration::from_secs(5));
-        // }
-        // ––––---------------------------------
-
         Box::new(TinyGo {
-            opts: self.clone(),
+            _opts: self.clone(),
             ..TinyGo::default()
         })
     }
@@ -81,7 +71,7 @@ impl Opts {
 
 #[derive(Default)]
 pub struct TinyGo {
-    opts: Opts,
+    _opts: Opts,
     src: Source,
     export_funcs: Vec<(String, String)>,
     world: String,
@@ -94,7 +84,6 @@ pub struct TinyGo {
 
 impl TinyGo {
     fn interface<'a>(&'a mut self, resolve: &'a Resolve, name: &'a str) -> InterfaceGenerator<'a> {
-        let mut sizes = SizeAlign::default();
         InterfaceGenerator {
             src: Source::default(),
             gen: self,
@@ -134,7 +123,7 @@ impl WorldGenerator for TinyGo {
             gen.import(resolve, func);
         }
         gen.finish();
-        
+
         let src = mem::take(&mut gen.src);
         self.src.push_str(&src);
     }
@@ -144,9 +133,19 @@ impl WorldGenerator for TinyGo {
         resolve: &Resolve,
         world: WorldId,
         funcs: &[(&str, &Function)],
-        files: &mut Files,
+        _files: &mut Files,
     ) {
-        todo!("import_funcs")
+        let name = &resolve.worlds[world].name;
+        self.src.push_str(&format!("// {name}\n"));
+
+        let mut gen = self.interface(resolve, name);
+        for (_name, func) in funcs.iter() {
+            gen.import(resolve, func);
+        }
+        gen.finish();
+
+        let src = mem::take(&mut gen.src);
+        self.src.push_str(&src);
     }
 
     fn export_interface(
@@ -204,9 +203,46 @@ impl WorldGenerator for TinyGo {
         resolve: &Resolve,
         world: WorldId,
         funcs: &[(&str, &Function)],
-        files: &mut Files,
+        _files: &mut Files,
     ) {
-        todo!("export_funcs")
+        let name = &resolve.worlds[world].name;
+        self.src.push_str(&format!("// {name}\n"));
+        self.clean_up_export_funcs();
+
+        let mut gen = self.interface(resolve, name);
+        for (_name, func) in funcs.iter() {
+            gen.export(resolve, func);
+        }
+
+        gen.finish();
+
+        let src = mem::take(&mut gen.src);
+        self.src.push_str(&src);
+
+        if !self.export_funcs.is_empty() {
+            let interface_var_name = &name.to_snake_case();
+            let interface_name = &name.to_upper_camel_case();
+
+            self.src
+                .push_str(format!("var {interface_var_name} {interface_name} = nil\n").as_str());
+            self.src.push_str(
+                format!(
+                    "func Set{interface_name}(i {interface_name}) {{\n    {interface_var_name} = i\n}}\n"
+                )
+                .as_str(),
+            );
+            self.src
+                .push_str(format!("type {interface_name} interface {{\n").as_str());
+            for (interface_func_declaration, _) in &self.export_funcs {
+                self.src
+                    .push_str(format!("{interface_func_declaration}\n").as_str());
+            }
+            self.src.push_str("}\n");
+
+            for (_, export_func) in &self.export_funcs {
+                self.src.push_str(export_func);
+            }
+        }
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
@@ -418,7 +454,12 @@ impl InterfaceGenerator<'_> {
                     }
                     _ => {
                         if let Some(name) = &ty.name {
-                            self.get_typedef_target(name)
+                            let iface = if let TypeOwner::Interface(owner) = ty.owner {
+                                self.gen.interface_names[&owner].to_upper_camel_case()
+                            } else {
+                                self.name.to_upper_camel_case()
+                            };
+                            format!("{iface}{name}", name = name.to_upper_camel_case())
                         } else {
                             self.public_anonymous_types.insert(*id);
                             format!(
@@ -657,7 +698,7 @@ impl InterfaceGenerator<'_> {
                 params.push_str(", ");
             }
 
-            params.push_str(&avoid_keyword(name));
+            params.push_str(&avoid_keyword(&name.to_snake_case()));
 
             params.push(' ');
             params.push_str(&self.get_ty(param));
@@ -784,7 +825,12 @@ impl InterfaceGenerator<'_> {
             if i > 0 {
                 params.push_str(", ");
             }
-            self.print_c_param(params, &avoid_keyword(name), param, in_import);
+            self.print_c_param(
+                params,
+                &avoid_keyword(&name.to_snake_case()),
+                param,
+                in_import,
+            );
         }
     }
 
@@ -1051,7 +1097,7 @@ impl InterfaceGenerator<'_> {
         let mut func_bindgen = FunctionBindgen::new(self, func);
         // lower params to c
         func.params.iter().for_each(|(name, ty)| {
-            func_bindgen.lower(&avoid_keyword(name), ty, false, false);
+            func_bindgen.lower(&avoid_keyword(&name.to_snake_case()), ty, false, false);
         });
         // lift results from c
         match func.results.len() {
@@ -1161,19 +1207,19 @@ impl InterfaceGenerator<'_> {
         match func.results.len() {
             0 => {
                 func.params.iter().for_each(|(name, ty)| {
-                    func_bindgen.lift(&avoid_keyword(name), ty, true, false);
+                    func_bindgen.lift(&avoid_keyword(&name.to_snake_case()), ty, true, false);
                 });
             }
             1 => {
                 func.params.iter().for_each(|(name, ty)| {
-                    func_bindgen.lift(&avoid_keyword(name), ty, true, false);
+                    func_bindgen.lift(&avoid_keyword(&name.to_snake_case()), ty, true, false);
                 });
                 let ty = func.results.iter_types().next().unwrap();
                 func_bindgen.lower("result", ty, true, false);
             }
             _ => {
                 func.params.iter().for_each(|(name, ty)| {
-                    func_bindgen.lift(&avoid_keyword(name), ty, true, true);
+                    func_bindgen.lift(&avoid_keyword(&name.to_snake_case()), ty, true, true);
                 });
                 for (i, ty) in func.results.iter_types().enumerate() {
                     func_bindgen.lower(&format!("result{i}"), ty, true, true);
