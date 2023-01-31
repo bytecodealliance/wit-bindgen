@@ -954,7 +954,7 @@ impl InterfaceGenerator<'_> {
         match &ret.scalar {
             None | Some(Scalar::Void) => self.src.h_fns("void"),
             Some(Scalar::OptionBool(_id)) => self.src.h_fns("bool"),
-            Some(Scalar::ResultBool(ok, err)) => {
+            Some(Scalar::ResultBool(ok, _err)) => {
                 result_rets = true;
                 result_rets_has_ok_type = ok.is_some();
                 self.src.h_fns("bool");
@@ -1590,10 +1590,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             &format!("*{}", self.sig.retptrs[self.ret_store_cnt]),
         );
         self.ret_store_cnt = self.ret_store_cnt + 1;
-    }
-
-    fn check_all_retptrs_written(&self) {
-        assert!(self.ret_store_cnt == self.sig.retptrs.len());
     }
 }
 
@@ -2423,7 +2419,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         );
                     }
                 }
-                // self.check_all_retptrs_written();
             }
             Instruction::Return { amt, .. } => {
                 assert!(*amt <= 1);
