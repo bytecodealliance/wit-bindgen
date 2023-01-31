@@ -1,7 +1,7 @@
 use heck::*;
 
 use std::io::{prelude::*, BufReader};
-use std::path::{Path};
+use std::path::Path;
 use std::process::Command;
 
 macro_rules! codegen_test {
@@ -18,7 +18,6 @@ macro_rules! codegen_test {
                     wit_bindgen_gen_guest_c::Opts::default()
                         .build()
                         .generate(resolve, world, files)
-                    
                 },
                 verify,
             )
@@ -71,7 +70,8 @@ fn verify(dir: &Path, name: &str) {
     // create go.mod file
     let mod_file = dir.join("go.mod");
     let mut file = std::fs::File::create(mod_file).expect("Failed to create file go.mod");
-    file.write_all(format!("module {name}\n\ngo 1.19").as_bytes()).expect("Failed to write to file");
+    file.write_all(format!("module {name}\n\ngo 1.19").as_bytes())
+        .expect("Failed to write to file");
 
     // run tinygo on Dir directory
 

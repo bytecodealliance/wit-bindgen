@@ -1050,8 +1050,6 @@ impl InterfaceGenerator<'_> {
         return ret;
     }
 
-    
-
     fn print_typedef_target(&mut self, name: &str) {
         let iface_snake = self.name.to_snake_case();
         let snake = name.to_snake_case();
@@ -2016,18 +2014,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 let op0 = &operands[0];
-                let bind_ok = if let Some(ok) = get_nonempty_type(self.gen.resolve, result.ok.as_ref()) {
-                    let ok_ty = self.gen.type_string(ok);
-                    format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;")
-                } else {
-                    String::new()
-                };
-                let bind_err = if let Some(err) = get_nonempty_type(self.gen.resolve, result.err.as_ref()) {
-                    let err_ty = self.gen.type_string(err);
-                    format!("const {err_ty} *{err_payload} = &({op0}).val.err;")
-                } else {
-                    String::new()
-                };
+                let bind_ok =
+                    if let Some(ok) = get_nonempty_type(self.gen.resolve, result.ok.as_ref()) {
+                        let ok_ty = self.gen.type_string(ok);
+                        format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;")
+                    } else {
+                        String::new()
+                    };
+                let bind_err =
+                    if let Some(err) = get_nonempty_type(self.gen.resolve, result.err.as_ref()) {
+                        let err_ty = self.gen.type_string(err);
+                        format!("const {err_ty} *{err_payload} = &({op0}).val.err;")
+                    } else {
+                        String::new()
+                    };
                 uwrite!(
                     self.src,
                     "\
@@ -2056,18 +2056,20 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 let result_tmp = self.locals.tmp("result");
-                let set_ok = if let Some(_) = get_nonempty_type(self.gen.resolve, result.ok.as_ref()) {
-                    let ok_result = &ok_results[0];
-                    format!("{result_tmp}.val.ok = {ok_result};\n")
-                } else {
-                    String::new()
-                };
-                let set_err = if let Some(_) = get_nonempty_type(self.gen.resolve, result.err.as_ref()) {
-                    let err_result = &err_results[0];
-                    format!("{result_tmp}.val.err = {err_result};\n")
-                } else {
-                    String::new()
-                };
+                let set_ok =
+                    if let Some(_) = get_nonempty_type(self.gen.resolve, result.ok.as_ref()) {
+                        let ok_result = &ok_results[0];
+                        format!("{result_tmp}.val.ok = {ok_result};\n")
+                    } else {
+                        String::new()
+                    };
+                let set_err =
+                    if let Some(_) = get_nonempty_type(self.gen.resolve, result.err.as_ref()) {
+                        let err_result = &err_results[0];
+                        format!("{result_tmp}.val.err = {err_result};\n")
+                    } else {
+                        String::new()
+                    };
 
                 let ty = self.gen.type_string(&Type::Id(*ty));
                 uwriteln!(self.src, "{ty} {result_tmp};");
