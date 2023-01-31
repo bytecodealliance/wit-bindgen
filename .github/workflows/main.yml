@@ -48,15 +48,18 @@ jobs:
     - uses: actions/setup-node@v2
       with:
         node-version: '16'
-    - name: Install NPM packages
-      run: npm install
-      working-directory: crates/gen-host-js
     - uses: actions/setup-java@v3
       with:
         java-version: '18'
         distribution: 'adopt'
     - run: cargo test --workspace
-    - run: cargo test -p wit-bindgen-gen-host-js --test runtime --features runtime-tests
+    - run: cargo build
+    - run: cargo build --no-default-features
+    - run: cargo build --no-default-features --features rust
+    - run: cargo build --no-default-features --features c
+    - run: cargo build --no-default-features --features teavm-java
+    - run: cargo build --no-default-features --features markdown
+
 
   rustfmt:
     name: Rustfmt
@@ -67,36 +70,3 @@ jobs:
       run: rustup update stable && rustup default stable && rustup component add rustfmt
     - name: Format source code
       run: cargo fmt -- --check
-
-  demo:
-    name: Build wit-bindgen demo
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - run: rustup update stable --no-self-update && rustup default stable
-    - run: rustup target add wasm32-unknown-unknown
-    - run: npm install
-      working-directory: crates/wit-bindgen-demo
-
-    # Install the `wasm-tools` binary with the `component` subcommand that is all
-    # that's needed here.
-    - uses: actions/cache@v3
-      with:
-        path: ${{ runner.tool_cache }}/wasm-tools
-        key: wasm-tools-bin-1.0.17-${{ runner.os }}
-    - run: echo '${{ runner.tool_cache }}/wasm-tools/bin' >> $GITHUB_PATH
-    - run: |
-        cargo install \
-          wasm-tools@1.0.17 \
-          --root '${{ runner.tool_cache }}/wasm-tools' \
-          --locked \
-          --no-default-features \
-          --features component
-
-    - run: ./crates/wit-bindgen-demo/build.sh
-    - uses: JamesIves/github-pages-deploy-action@4.1.4
-      with:
-        branch: gh-pages
-        folder: static
-        single-commit: true
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'

@@ -6,7 +6,6 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-futures-util = { version = "0.3.17", default-features = true }
 wit-bindgen-guest-rust = { path = "../guest-rust" }
 
 [features]
@@ -42,10 +41,6 @@ test = false
 
 [[bin]]
 name = "flavorful"
-test = false
-
-[[bin]]
-name = "invalid"
 test = false
 
 [[bin]]

@@ -18,16 +18,7 @@
 use std::arch::wasm32::unreachable;
 use wasi::*;
 
-wit_bindgen_guest_rust::generate!({
-    inline: "
-        default world testwasi {
-            import testwasi: interface {
-                log: func(bytes: list<u8>)
-                log-err: func(bytes: list<u8>)
-            }
-        }
-    ",
-});
+wit_bindgen_guest_rust::generate!("testwasi");
 
 #[no_mangle]
 pub extern "C" fn environ_get(environ: *mut *mut u8, environ_buf: *mut u8) -> Errno {

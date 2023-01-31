@@ -1,7 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
-use wit_bindgen_core::component::ComponentGenerator;
 use wit_bindgen_core::{wit_parser, Files, WorldGenerator};
 use wit_parser::{Resolve, UnresolvedPackage};
 
@@ -16,67 +15,26 @@ fn version() -> &'static str {
 struct Opt {
     #[command(subcommand)]
     category: Category,
+    #[clap(flatten)]
+    common: Common,
+    #[clap(flatten)]
+    world: WorldOpt,
 }
 
 #[derive(Debug, Parser)]
 enum Category {
-    /// Generators for creating hosts that embed WASM modules/components.
-    #[command(subcommand)]
-    Host(HostGenerator),
-    /// Generators for writing guest WASM modules/components.
-    #[command(subcommand)]
-    Guest(GuestGenerator),
     /// This generator outputs a Markdown file describing an interface.
-    Markdown {
-        #[clap(flatten)]
-        opts: wit_bindgen_gen_markdown::Opts,
-        #[clap(flatten)]
-        common: Common,
-        #[clap(flatten)]
-        world: WorldOpt,
-    },
-}
-
-#[derive(Debug, Parser)]
-enum HostGenerator {
-    /// Generates bindings for JavaScript hosts.
-    Js {
-        #[clap(flatten)]
-        opts: wit_bindgen_gen_host_js::Opts,
-        #[clap(flatten)]
-        component: ComponentOpts,
-    },
-}
-
-#[derive(Debug, Parser)]
-enum GuestGenerator {
+    #[cfg(feature = "markdown")]
+    Markdown(wit_bindgen_gen_markdown::Opts),
     /// Generates bindings for Rust guest modules.
-    Rust {
-        #[clap(flatten)]
-        opts: wit_bindgen_gen_guest_rust::Opts,
-        #[clap(flatten)]
-        common: Common,
-        #[clap(flatten)]
-        world: WorldOpt,
-    },
+    #[cfg(feature = "rust")]
+    Rust(wit_bindgen_gen_guest_rust::Opts),
     /// Generates bindings for C/CPP guest modules.
-    C {
-        #[clap(flatten)]
-        opts: wit_bindgen_gen_guest_c::Opts,
-        #[clap(flatten)]
-        common: Common,
-        #[clap(flatten)]
-        world: WorldOpt,
-    },
+    #[cfg(feature = "c")]
+    C(wit_bindgen_gen_guest_c::Opts),
     /// Generates bindings for TeaVM-based Java guest modules.
-    TeavmJava {
-        #[clap(flatten)]
-        opts: wit_bindgen_gen_guest_teavm_java::Opts,
-        #[clap(flatten)]
-        common: Common,
-        #[clap(flatten)]
-        world: WorldOpt,
-    },
+    #[cfg(feature = "teavm-java")]
+    TeavmJava(wit_bindgen_gen_guest_teavm_java::Opts),
 }
 
 #[derive(Debug, Parser)]
@@ -114,43 +72,25 @@ struct Common {
     out_dir: Option<PathBuf>,
 }
 
-impl Opt {
-    fn common(&self) -> &Common {
-        match &self.category {
-            Category::Guest(GuestGenerator::Rust { common, .. })
-            | Category::Guest(GuestGenerator::C { common, .. })
-            | Category::Guest(GuestGenerator::TeavmJava { common, .. })
-            | Category::Markdown { common, .. } => common,
-            Category::Host(HostGenerator::Js { component, .. }) => &component.common,
-        }
-    }
-}
-
 fn main() -> Result<()> {
     let opt: Opt = Opt::parse();
-    let common = opt.common().clone();
 
     let mut files = Files::default();
-    match opt.category {
-        Category::Host(HostGenerator::Js { opts, component }) => {
-            gen_component(opts.build()?, component, &mut files)?;
-        }
-        Category::Guest(GuestGenerator::Rust { opts, world, .. }) => {
-            gen_world(opts.build(), world, &mut files)?;
-        }
-        Category::Guest(GuestGenerator::C { opts, world, .. }) => {
-            gen_world(opts.build(), world, &mut files)?;
-        }
-        Category::Guest(GuestGenerator::TeavmJava { opts, world, .. }) => {
-            gen_world(opts.build(), world, &mut files)?;
-        }
-        Category::Markdown { opts, world, .. } => {
-            gen_world(opts.build(), world, &mut files)?;
-        }
-    }
+    let generator = match opt.category {
+        #[cfg(feature = "rust")]
+        Category::Rust(opts) => opts.build(),
+        #[cfg(feature = "c")]
+        Category::C(opts) => opts.build(),
+        #[cfg(feature = "teavm-java")]
+        Category::TeavmJava(opts) => opts.build(),
+        #[cfg(feature = "markdown")]
+        Category::Markdown(opts) => opts.build(),
+    };
+
+    gen_world(generator, opt.world, &mut files)?;
 
     for (name, contents) in files.iter() {
-        let dst = match &common.out_dir {
+        let dst = match &opt.common.out_dir {
             Some(path) => path.join(name),
             None => name.into(),
         };
@@ -212,25 +152,5 @@ fn gen_world(
         }
     };
     generator.generate(&resolve, world, files);
-    Ok(())
-}
-
-fn gen_component(
-    mut generator: Box<dyn ComponentGenerator>,
-    opts: ComponentOpts,
-    files: &mut Files,
-) -> Result<()> {
-    let wasm = wat::parse_file(&opts.component)?;
-    let name = match &opts.name {
-        Some(name) => name.as_str(),
-        None => opts
-            .component
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| anyhow!("filename not valid utf-8"))?,
-    };
-
-    wit_bindgen_core::component::generate(&mut *generator, name, &wasm, files)?;
-
     Ok(())
 }
