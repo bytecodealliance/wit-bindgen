@@ -1,4 +1,3 @@
-
 use std::fmt::Write;
 use std::{collections::BTreeSet, mem};
 
@@ -13,6 +12,35 @@ use wit_bindgen_core::{
     },
     Files, InterfaceGenerator as _, Source, WorldGenerator,
 };
+
+// a list of Go keywords
+const GOKEYWORDS: [&str; 25] = [
+    "break",
+    "default",
+    "func",
+    "interface",
+    "select",
+    "case",
+    "defer",
+    "go",
+    "map",
+    "struct",
+    "chan",
+    "else",
+    "goto",
+    "package",
+    "switch",
+    "const",
+    "fallthrough",
+    "if",
+    "range",
+    "type",
+    "continue",
+    "for",
+    "import",
+    "return",
+    "var",
+];
 
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
@@ -605,7 +633,9 @@ impl InterfaceGenerator<'_> {
             if i > 0 {
                 params.push_str(", ");
             }
-            params.push_str(name);
+
+            params.push_str(&avoid_keyword(name));
+
             params.push(' ');
             params.push_str(&self.get_ty(param));
         }
@@ -732,7 +762,7 @@ impl InterfaceGenerator<'_> {
             if i > 0 {
                 params.push_str(", ");
             }
-            self.print_c_param(params, name, param, in_import);
+            self.print_c_param(params, &avoid_keyword(name), param, in_import);
         }
     }
 
@@ -999,7 +1029,7 @@ impl InterfaceGenerator<'_> {
         let mut func_bindgen = FunctionBindgen::new(self, func);
         // lower params to c
         func.params.iter().for_each(|(name, ty)| {
-            func_bindgen.lower(name, ty, false, false);
+            func_bindgen.lower(&avoid_keyword(name), ty, false, false);
         });
         // lift results from c
         match func.results.len() {
@@ -1110,19 +1140,19 @@ impl InterfaceGenerator<'_> {
         match func.results.len() {
             0 => {
                 func.params.iter().for_each(|(name, ty)| {
-                    func_bindgen.lift(name, ty, true, false);
+                    func_bindgen.lift(&avoid_keyword(name), ty, true, false);
                 });
             }
             1 => {
                 func.params.iter().for_each(|(name, ty)| {
-                    func_bindgen.lift(name, ty, true, false);
+                    func_bindgen.lift(&avoid_keyword(name), ty, true, false);
                 });
                 let ty = func.results.iter_types().next().unwrap();
                 func_bindgen.lower("result", ty, true, false);
             }
             _ => {
                 func.params.iter().for_each(|(name, ty)| {
-                    func_bindgen.lift(name, ty, true, true);
+                    func_bindgen.lift(&avoid_keyword(name), ty, true, true);
                 });
                 for (i, ty) in func.results.iter_types().enumerate() {
                     func_bindgen.lower(&format!("result{i}"), ty, true, true);
@@ -1319,7 +1349,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         // TODO: use variant's tag to determine how many cases are needed
         // this will help to optmize the Kind type.
         self.src.push_str(&format!("type {name}Kind int\n\n"));
-        self.src.push_str(&"const (\n".to_string());
+        self.src.push_str("const (\n");
 
         for (i, case) in variant.cases.iter().enumerate() {
             let case_name = case.name.to_upper_camel_case();
@@ -1334,7 +1364,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
         self.src.push_str(&format!("type {name} struct {{\n"));
         self.src.push_str(&format!("kind {name}Kind\n"));
-        self.src.push_str(&"val any\n".to_string());
+        self.src.push_str("val any\n");
         self.src.push_str("}\n\n");
 
         uwriteln!(
@@ -1422,7 +1452,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         // TODO: use variant's tag to determine how many cases are needed
         // this will help to optmize the Kind type.
         self.src.push_str(&format!("type {name}Kind int\n\n"));
-        self.src.push_str(&"const (\n".to_string());
+        self.src.push_str("const (\n");
 
         for (i, _case) in union.cases.iter().enumerate() {
             let case_name = format!("F{i}");
@@ -1437,7 +1467,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
         self.src.push_str(&format!("type {name} struct {{\n"));
         self.src.push_str(&format!("kind {name}Kind\n"));
-        self.src.push_str(&"val any\n".to_string());
+        self.src.push_str("val any\n");
         self.src.push_str("}\n\n");
 
         uwriteln!(
@@ -1495,7 +1525,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         // TODO: use variant's tag to determine how many cases are needed
         // this will help to optmize the Kind type.
         self.src.push_str(&format!("type {name}Kind int\n\n"));
-        self.src.push_str(&"const (\n".to_string());
+        self.src.push_str("const (\n");
 
         for (i, case) in enum_.cases.iter().enumerate() {
             let case_name = case.name.to_upper_camel_case();
@@ -2345,5 +2375,13 @@ fn flags_repr(f: &Flags) -> Int {
         FlagsRepr::U32(1) => Int::U32,
         FlagsRepr::U32(2) => Int::U64,
         repr => panic!("unimplemented flags {repr:?}"),
+    }
+}
+
+fn avoid_keyword(s: &str) -> String {
+    if GOKEYWORDS.contains(&s) {
+        format!("{s}_")
+    } else {
+        s.into()
     }
 }
