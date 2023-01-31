@@ -55,6 +55,9 @@ jobs:
       with:
         java-version: '18'
         distribution: 'adopt'
+    - uses: actions/setup-go@v3
+      with:
+        go-version: 1.19
     - uses: acifani/setup-tinygo@v1
       with:
         tinygo-version: 0.26.0
