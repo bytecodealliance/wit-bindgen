@@ -92,6 +92,11 @@ These generators are for creating guest modules that import/export WIT types.
   `wit-bindgen` will emit a `*.java` file which may be used with any JVM
   language, e.g. Java, Kotlin, Clojure, Scala, etc.
 
+* `go` - this is for Go compiled to WebAssembly using TinyGo. With this generator,
+  `wit-bindgen` will emit `*.go` files and `*.h` and a `*.c` files  to be compiled
+  into the wasm moudle. The generator is a thin layer on top of C file and uses 
+  Cgo for the interop. 
+
 ### Hosts
 
 These generators are for hosts interacting with modules that import/export WIT types.
