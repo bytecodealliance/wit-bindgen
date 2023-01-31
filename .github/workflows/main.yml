@@ -55,6 +55,9 @@ jobs:
       with:
         java-version: '18'
         distribution: 'adopt'
+    - uses: acifani/setup-tinygo@v1
+      with:
+        tinygo-version: 0.26.0
     - run: cargo test --workspace
     - run: cargo test -p wit-bindgen-gen-host-js --test runtime --features runtime-tests
 
