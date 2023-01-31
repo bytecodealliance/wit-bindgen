@@ -393,6 +393,9 @@ impl WorldGenerator for TinyGo {
                 result_option_src.as_bytes(),
             );
         }
+        wit_bindgen_gen_guest_c::Opts::default()
+            .build()
+            .generate(resolve, id, files)
     }
 }
 

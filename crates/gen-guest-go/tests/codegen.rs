@@ -15,9 +15,6 @@ macro_rules! codegen_test {
                     wit_bindgen_gen_guest_go::Opts::default()
                         .build()
                         .generate(resolve, world, files);
-                    wit_bindgen_gen_guest_c::Opts::default()
-                        .build()
-                        .generate(resolve, world, files)
                 },
                 verify,
             )
