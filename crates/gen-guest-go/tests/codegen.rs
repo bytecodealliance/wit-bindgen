@@ -73,6 +73,8 @@ fn verify(dir: &Path, name: &str) {
     let mut file = std::fs::File::create(mod_file).expect("Failed to create file go.mod");
     file.write_all(format!("module {name}\n\ngo 1.19").as_bytes()).expect("Failed to write to file");
 
+    // run tinygo on Dir directory
+
     let mut cmd = Command::new("tinygo");
     cmd.arg("build");
     cmd.arg("-wasm-abi=generic");
@@ -81,6 +83,7 @@ fn verify(dir: &Path, name: &str) {
     cmd.arg("-no-debug");
     cmd.arg("-o");
     cmd.arg("go.wasm");
-    cmd.arg(&main);
+    cmd.arg(format!("{name}.go"));
+    cmd.current_dir(dir);
     test_helpers::run_command(&mut cmd);
 }
