@@ -12,35 +12,50 @@ fn version() -> &'static str {
 
 #[derive(Debug, Parser)]
 #[command(version = version())]
-struct Opt {
-    #[command(subcommand)]
-    category: Category,
-    #[clap(flatten)]
-    common: Common,
-    #[clap(flatten)]
-    world: WorldOpt,
-}
-
-#[derive(Debug, Parser)]
-enum Category {
+enum Opt {
     /// This generator outputs a Markdown file describing an interface.
     #[cfg(feature = "markdown")]
-    Markdown(wit_bindgen_gen_markdown::Opts),
+    Markdown {
+        #[clap(flatten)]
+        opts: wit_bindgen_gen_markdown::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
     /// Generates bindings for Rust guest modules.
     #[cfg(feature = "rust")]
-    Rust(wit_bindgen_gen_guest_rust::Opts),
+    Rust {
+        #[clap(flatten)]
+        opts: wit_bindgen_gen_guest_rust::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
     /// Generates bindings for C/CPP guest modules.
     #[cfg(feature = "c")]
-    C(wit_bindgen_gen_guest_c::Opts),
+    C {
+        #[clap(flatten)]
+        opts: wit_bindgen_gen_guest_c::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
+
     /// Generates bindings for TeaVM-based Java guest modules.
     #[cfg(feature = "teavm-java")]
-    TeavmJava(wit_bindgen_gen_guest_teavm_java::Opts),
+    TeavmJava {
+        #[clap(flatten)]
+        opts: wit_bindgen_gen_guest_teavm_java::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
 }
 
 #[derive(Debug, Parser)]
-struct WorldOpt {
+struct Common {
+    /// Where to place output files
+    #[clap(long = "out-dir")]
+    out_dir: Option<PathBuf>,
+
     /// WIT document to generate bindings for.
-    #[clap(value_name = "DOCUMENT")]
+    #[clap(value_name = "DOCUMENT", index = 1)]
     wit: PathBuf,
 
     /// World within the WIT document specified to generate bindings for.
@@ -51,46 +66,23 @@ struct WorldOpt {
     world: Option<String>,
 }
 
-#[derive(Debug, Parser)]
-struct ComponentOpts {
-    /// Path to the input wasm component to generate bindings for.
-    component: PathBuf,
-
-    /// Optionally rename the generated bindings instead of inferring the name
-    /// from the input `component` path.
-    #[clap(long)]
-    name: Option<String>,
-
-    #[clap(flatten)]
-    common: Common,
-}
-
-#[derive(Debug, Parser, Clone)]
-struct Common {
-    /// Where to place output files
-    #[clap(long = "out-dir")]
-    out_dir: Option<PathBuf>,
-}
-
 fn main() -> Result<()> {
-    let opt: Opt = Opt::parse();
-
     let mut files = Files::default();
-    let generator = match opt.category {
-        #[cfg(feature = "rust")]
-        Category::Rust(opts) => opts.build(),
-        #[cfg(feature = "c")]
-        Category::C(opts) => opts.build(),
-        #[cfg(feature = "teavm-java")]
-        Category::TeavmJava(opts) => opts.build(),
+    let (generator, opt) = match Opt::parse() {
         #[cfg(feature = "markdown")]
-        Category::Markdown(opts) => opts.build(),
+        Opt::Markdown { opts, args } => (opts.build(), args),
+        #[cfg(feature = "c")]
+        Opt::C { opts, args } => (opts.build(), args),
+        #[cfg(feature = "rust")]
+        Opt::Rust { opts, args } => (opts.build(), args),
+        #[cfg(feature = "teavm-java")]
+        Opt::TeavmJava { opts, args } => (opts.build(), args),
     };
 
-    gen_world(generator, opt.world, &mut files)?;
+    gen_world(generator, &opt, &mut files)?;
 
     for (name, contents) in files.iter() {
-        let dst = match &opt.common.out_dir {
+        let dst = match &opt.out_dir {
             Some(path) => path.join(name),
             None => name.into(),
         };
@@ -107,7 +99,7 @@ fn main() -> Result<()> {
 
 fn gen_world(
     mut generator: Box<dyn WorldGenerator>,
-    opts: WorldOpt,
+    opts: &Common,
     files: &mut Files,
 ) -> Result<()> {
     let mut resolve = Resolve::default();
@@ -153,4 +145,10 @@ fn gen_world(
     };
     generator.generate(&resolve, world, files);
     Ok(())
+}
+
+#[test]
+fn verify_cli() {
+    use clap::CommandFactory;
+    Opt::command().debug_assert()
 }
