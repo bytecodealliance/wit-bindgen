@@ -77,7 +77,7 @@ enum GuestGenerator {
         #[clap(flatten)]
         world: WorldOpt,
     },
-    /// Generates bindings for TeaVM-based Java guest modules.
+    /// Generates bindings for TinyGo-based Go guest modules.
     TinyGo {
         #[clap(flatten)]
         opts: wit_bindgen_gen_guest_go::Opts,
