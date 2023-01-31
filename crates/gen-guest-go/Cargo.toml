@@ -12,7 +12,7 @@ wit-bindgen-core = { workspace = true }
 wit-component = { workspace = true }
 heck = { workspace = true }
 clap = { workspace = true, optional = true }
+wit-bindgen-gen-guest-c = {workspace = true}
 
 [dev-dependencies]
 test-helpers = { path = '../test-helpers', default-features = false, features = ['macros'] }
-wit-bindgen-gen-guest-c = { workspace = true }
