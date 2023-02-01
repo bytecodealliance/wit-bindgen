@@ -47,13 +47,12 @@ enum Opt {
         args: Common,
     },
     /// Generates bindings for TinyGo-based Go guest modules.
+    #[cfg(feature = "go")]
     TinyGo {
         #[clap(flatten)]
         opts: wit_bindgen_gen_guest_go::Opts,
         #[clap(flatten)]
-        common: Common,
-        #[clap(flatten)]
-        world: WorldOpt,
+        args: Common,
     },
 }
 
@@ -87,11 +86,79 @@ fn main() -> Result<()> {
         #[cfg(feature = "teavm-java")]
         Opt::TeavmJava { opts, args } => (opts.build(), args),
         #[cfg(feature = "go")]
-        Opt::TeavmJava { opts, args } => (opts.build(), args),
+        Opt::TinyGo { opts, args } => (opts.build(), args),
     };
 
     gen_world(generator, &opt, &mut files)?;
 
     for (name, contents) in files.iter() {
+        let dst = match &opt.out_dir {
+            Some(path) => path.join(name),
+            None => name.into(),
+        };
+        println!("Generating {:?}", dst);
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {:?}", parent))?;
+        }
+        std::fs::write(&dst, contents).with_context(|| format!("failed to write {:?}", dst))?;
+    }
+
+    Ok(())
+}
+
+fn gen_world(
+    mut generator: Box<dyn WorldGenerator>,
+    opts: &Common,
+    files: &mut Files,
+) -> Result<()> {
+    let mut resolve = Resolve::default();
+    let pkg = if opts.wit.is_dir() {
+        resolve.push_dir(&opts.wit)?.0
+    } else {
+        resolve.push(
+            UnresolvedPackage::parse_file(&opts.wit)?,
+            &Default::default(),
+        )?
+    };
+    let world = match &opts.world {
+        Some(world) => {
+            let mut parts = world.splitn(2, '.');
+            let doc = parts.next().unwrap();
+            let world = parts.next();
+            let doc = *resolve.packages[pkg]
+                .documents
+                .get(doc)
+                .ok_or_else(|| anyhow!("no document named `{doc}` in package"))?;
+            match world {
+                Some(name) => *resolve.documents[doc]
+                    .worlds
+                    .get(name)
+                    .ok_or_else(|| anyhow!("no world named `{name}` in document"))?,
+                None => resolve.documents[doc]
+                    .default_world
+                    .ok_or_else(|| anyhow!("no default world in document"))?,
+            }
+        }
+        None => {
+            let mut docs = resolve.packages[pkg].documents.iter();
+            let (_, doc) = docs
+                .next()
+                .ok_or_else(|| anyhow!("no documents found in package"))?;
+            if docs.next().is_some() {
+                bail!("multiple documents found in package, specify which to bind with `--world` argument")
+            }
+            resolve.documents[*doc]
+                .default_world
+                .ok_or_else(|| anyhow!("no default world in document"))?
+        }
+    };
+    generator.generate(&resolve, world, files);
+    Ok(())
+}
+
+#[test]
+fn verify_cli() {
+    use clap::CommandFactory;
     Opt::command().debug_assert()
 }

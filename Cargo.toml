@@ -55,11 +55,12 @@ wat = { workspace = true }
 wit-component = { workspace = true }
 
 [features]
-default = ['c', 'rust', 'markdown', 'teavm-java']
+default = ['c', 'rust', 'markdown', 'teavm-java', 'go']
 c = ['dep:wit-bindgen-gen-guest-c']
 rust = ['dep:wit-bindgen-gen-guest-rust']
 markdown = ['dep:wit-bindgen-gen-markdown']
 teavm-java = ['dep:wit-bindgen-gen-guest-teavm-java']
+go = ['dep:wit-bindgen-gen-guest-go']
 
 [dev-dependencies]
 heck = { workspace = true }
