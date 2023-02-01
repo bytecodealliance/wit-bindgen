@@ -43,7 +43,7 @@ below][hosts].
 
 The `wit-bindgen` project extensively uses [WIT] definitions to describe imports
 and exports. The items supported by [WIT] directly map to the component model
-which allows core WebAssembly binaries produce by native compilers to be
+which allows core WebAssembly binaries produced by native compilers to be
 transformed into a component. All imports into a WebAssembly binary and all
 exports must be described with [WIT]. An example file looks like:
 
@@ -180,13 +180,13 @@ The Rust compiler supports a native `wasm32-wasi` target and can be added to any
 `rustup`-based toolchain with:
 
 ```sh
-$ rustup target add wasm32-wasi
+rustup target add wasm32-wasi
 ```
 
 Projects can then depend on `wit-bindgen` by executing:
 
 ```sh
-$ cargo add --git https://github.com/bytecodealliance/wit-bindgen wit-bindgen-guest-rust
+cargo add --git https://github.com/bytecodealliance/wit-bindgen wit-bindgen-guest-rust
 ```
 
 WIT files are currently added to a `wit/` folder adjacent to your `Cargo.toml`
@@ -219,8 +219,8 @@ doc` you can also explore the generated code.
 This project can then be built with:
 
 ```sh
-$ cargo build ---target wasm32-wasi
-$ wasm-tools component new ./target/wasm32-wasi/debug/my-project.wasm \
+cargo build --target wasm32-wasi
+wasm-tools component new ./target/wasm32-wasi/debug/my-project.wasm \
     -o my-component.wasm --adapt ./wasi_snapshot_preview1.wasm
 ```
 
@@ -229,11 +229,11 @@ component runtime. Using `wasm-tools` you can inspect the binary as well, for
 example inferring the WIT world that is the component:
 
 ```sh
-$ wasm-tools component wit my-component.wasm
-default world my-component {
-  import print: func(msg: string)
-  export run: func()
-}
+wasm-tools component wit my-component.wasm
+# default world my-component {
+#  import print: func(msg: string)
+#  export run: func()
+# }
 ```
 
 which in this case, as expected, is the same as the input world.
@@ -251,10 +251,10 @@ project to use. These files are generated with the [`wit-bindgen` CLI
 command][cli-install] in this repository.
 
 ```sh
-$ wit-bindgen c ./wit
-Generating "host.c"
-Generating "host.h"
-Generating "host_component_type.o"
+wit-bindgen c ./wit
+# Generating "host.c"
+# Generating "host.h"
+# Generating "host_component_type.o"
 ```
 
 Some example code using this would then look like
@@ -276,14 +276,14 @@ This can then be compiled with `clang` from the [WASI SDK] and assembled into a
 component with:
 
 ```sh
-$ clang host.c host_component_type.o my-component.c -o my-core.wasm -mexec-model=reactor
-$ wasm-tools component new ./my-core.wasm -o my-component.wasm
+clang host.c host_component_type.o my-component.c -o my-core.wasm -mexec-model=reactor
+wasm-tools component new ./my-core.wasm -o my-component.wasm
 ```
 
 Like with Rust, you can then inspect the output binary:
 
 ```sh
-$ wasm-tools component wit ./my-component.wasm
+wasm-tools component wit ./my-component.wasm
 ```
 
 
