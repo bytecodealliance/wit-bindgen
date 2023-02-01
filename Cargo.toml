@@ -53,6 +53,7 @@ wit-bindgen-gen-guest-teavm-java = { workspace = true, features = ['clap'], opti
 wit-bindgen-gen-guest-go = { workspace = true, features = ['clap'], optional = true }
 wat = { workspace = true }
 wit-component = { workspace = true }
+wasm-encoder = { workspace = true }
 
 [features]
 default = ['c', 'rust', 'markdown', 'teavm-java', 'go']
