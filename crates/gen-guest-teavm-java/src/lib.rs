@@ -384,7 +384,10 @@ impl InterfaceGenerator<'_> {
         let mut bindgen = FunctionBindgen::new(
             self,
             &func.name,
-            func.params.iter().map(|(name, _)| name.clone()).collect(),
+            func.params
+                .iter()
+                .map(|(name, _)| name.to_lower_camel_case())
+                .collect(),
         );
 
         bindgen.gen.resolve.call(
