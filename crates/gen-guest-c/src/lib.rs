@@ -166,6 +166,22 @@ impl WorldGenerator for C {
         gen.gen.src.append(&gen.src);
     }
 
+    fn export_types(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        types: &[(&str, TypeId)],
+        _files: &mut Files,
+    ) {
+        let name = &resolve.worlds[world].name;
+        let mut gen = self.interface(name, resolve, false);
+        for (name, id) in types {
+            gen.define_type(name, *id);
+        }
+        gen.finish();
+        gen.gen.src.append(&gen.src);
+    }
+
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
         let world = &resolve.worlds[id];
         let linking_symbol = component_type_object::linking_symbol(&world.name);
@@ -1109,10 +1125,20 @@ impl InterfaceGenerator<'_> {
                 let ty = &self.resolve.types[*id];
                 match &ty.name {
                     Some(name) => {
-                        if let TypeOwner::Interface(owner) = ty.owner {
-                            self.src
-                                .print(stype, &self.gen.interface_names[&owner].to_snake_case());
-                            self.src.print(stype, "_");
+                        match ty.owner {
+                            TypeOwner::Interface(owner) => {
+                                self.src.print(
+                                    stype,
+                                    &self.gen.interface_names[&owner].to_snake_case(),
+                                );
+                                self.src.print(stype, "_");
+                            }
+                            TypeOwner::World(owner) => {
+                                self.src
+                                    .print(stype, &self.resolve.worlds[owner].name.to_snake_case());
+                                self.src.print(stype, "_");
+                            }
+                            TypeOwner::None => {}
                         }
 
                         self.src.print(stype, &name.to_snake_case());

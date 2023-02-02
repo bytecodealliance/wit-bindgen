@@ -90,6 +90,21 @@ impl WorldGenerator for Markdown {
         }
     }
 
+    fn export_types(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        types: &[(&str, TypeId)],
+        _files: &mut Files,
+    ) {
+        let name = &resolve.worlds[world].name;
+        uwriteln!(self.src, "# Exported types from world `{name}`\n");
+        let mut gen = self.interface(resolve);
+        for (name, ty) in types {
+            gen.define_type(name, *ty);
+        }
+    }
+
     fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
         let world = &resolve.worlds[world];
         let parser = Parser::new(&self.src);
