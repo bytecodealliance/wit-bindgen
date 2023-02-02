@@ -115,28 +115,31 @@ fn run() -> Result<()> {
 }
 
 fn run_test(lists: Lists, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
-    let bytes = lists.allocated_bytes(&mut *store)?;
-    lists.test_imports(&mut *store)?;
+    let bytes = lists.call_allocated_bytes(&mut *store)?;
+    lists.call_test_imports(&mut *store)?;
     let exports = lists.exports();
-    exports.empty_list_param(&mut *store, &[])?;
-    exports.empty_string_param(&mut *store, "")?;
-    assert_eq!(exports.empty_list_result(&mut *store)?, []);
-    assert_eq!(exports.empty_string_result(&mut *store)?, "");
-    exports.list_param(&mut *store, &[1, 2, 3, 4])?;
-    exports.list_param2(&mut *store, "foo")?;
-    exports.list_param3(&mut *store, &["foo", "bar", "baz"])?;
-    exports.list_param4(&mut *store, &[&["foo", "bar"], &["baz"]])?;
-    assert_eq!(exports.list_result(&mut *store)?, [1, 2, 3, 4, 5]);
-    assert_eq!(exports.list_result2(&mut *store)?, "hello!");
-    assert_eq!(exports.list_result3(&mut *store)?, ["hello,", "world!"]);
-    assert_eq!(exports.string_roundtrip(&mut *store, "x")?, "x");
-    assert_eq!(exports.string_roundtrip(&mut *store, "")?, "");
+    exports.call_empty_list_param(&mut *store, &[])?;
+    exports.call_empty_string_param(&mut *store, "")?;
+    assert_eq!(exports.call_empty_list_result(&mut *store)?, []);
+    assert_eq!(exports.call_empty_string_result(&mut *store)?, "");
+    exports.call_list_param(&mut *store, &[1, 2, 3, 4])?;
+    exports.call_list_param2(&mut *store, "foo")?;
+    exports.call_list_param3(&mut *store, &["foo", "bar", "baz"])?;
+    exports.call_list_param4(&mut *store, &[&["foo", "bar"], &["baz"]])?;
+    assert_eq!(exports.call_list_result(&mut *store)?, [1, 2, 3, 4, 5]);
+    assert_eq!(exports.call_list_result2(&mut *store)?, "hello!");
     assert_eq!(
-        exports.string_roundtrip(&mut *store, "hello ⚑ world")?,
+        exports.call_list_result3(&mut *store)?,
+        ["hello,", "world!"]
+    );
+    assert_eq!(exports.call_string_roundtrip(&mut *store, "x")?, "x");
+    assert_eq!(exports.call_string_roundtrip(&mut *store, "")?, "");
+    assert_eq!(
+        exports.call_string_roundtrip(&mut *store, "hello ⚑ world")?,
         "hello ⚑ world"
     );
     // Ensure that we properly called `free` everywhere in all the glue that we
     // needed to.
-    assert_eq!(bytes, lists.allocated_bytes(&mut *store)?);
+    assert_eq!(bytes, lists.call_allocated_bytes(&mut *store)?);
     Ok(())
 }

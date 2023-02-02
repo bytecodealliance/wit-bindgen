@@ -67,33 +67,36 @@ fn run() -> Result<()> {
 fn run_test(exports: Records, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
     use exports::*;
 
-    exports.test_imports(&mut *store)?;
+    exports.call_test_imports(&mut *store)?;
     let exports = exports.exports();
-    assert_eq!(exports.multiple_results(&mut *store,)?, (100, 200));
-    assert_eq!(exports.swap_tuple(&mut *store, (1u8, 2u32))?, (2u32, 1u8));
-    assert_eq!(exports.roundtrip_flags1(&mut *store, F1::A)?, F1::A);
+    assert_eq!(exports.call_multiple_results(&mut *store,)?, (100, 200));
     assert_eq!(
-        exports.roundtrip_flags1(&mut *store, F1::empty())?,
+        exports.call_swap_tuple(&mut *store, (1u8, 2u32))?,
+        (2u32, 1u8)
+    );
+    assert_eq!(exports.call_roundtrip_flags1(&mut *store, F1::A)?, F1::A);
+    assert_eq!(
+        exports.call_roundtrip_flags1(&mut *store, F1::empty())?,
         F1::empty()
     );
-    assert_eq!(exports.roundtrip_flags1(&mut *store, F1::B)?, F1::B);
+    assert_eq!(exports.call_roundtrip_flags1(&mut *store, F1::B)?, F1::B);
     assert_eq!(
-        exports.roundtrip_flags1(&mut *store, F1::A | F1::B)?,
+        exports.call_roundtrip_flags1(&mut *store, F1::A | F1::B)?,
         F1::A | F1::B
     );
 
-    assert_eq!(exports.roundtrip_flags2(&mut *store, F2::C)?, F2::C);
+    assert_eq!(exports.call_roundtrip_flags2(&mut *store, F2::C)?, F2::C);
     assert_eq!(
-        exports.roundtrip_flags2(&mut *store, F2::empty())?,
+        exports.call_roundtrip_flags2(&mut *store, F2::empty())?,
         F2::empty()
     );
-    assert_eq!(exports.roundtrip_flags2(&mut *store, F2::D)?, F2::D);
+    assert_eq!(exports.call_roundtrip_flags2(&mut *store, F2::D)?, F2::D);
     assert_eq!(
-        exports.roundtrip_flags2(&mut *store, F2::C | F2::E)?,
+        exports.call_roundtrip_flags2(&mut *store, F2::C | F2::E)?,
         F2::C | F2::E
     );
 
-    let r = exports.roundtrip_record1(
+    let r = exports.call_roundtrip_record1(
         &mut *store,
         R1 {
             a: 8,
@@ -103,7 +106,7 @@ fn run_test(exports: Records, store: &mut Store<crate::Wasi<MyImports>>) -> Resu
     assert_eq!(r.a, 8);
     assert_eq!(r.b, F1::empty());
 
-    let r = exports.roundtrip_record1(
+    let r = exports.call_roundtrip_record1(
         &mut *store,
         R1 {
             a: 0,
@@ -113,7 +116,7 @@ fn run_test(exports: Records, store: &mut Store<crate::Wasi<MyImports>>) -> Resu
     assert_eq!(r.a, 0);
     assert_eq!(r.b, F1::A | F1::B);
 
-    assert_eq!(exports.tuple0(&mut *store, ())?, ());
-    assert_eq!(exports.tuple1(&mut *store, (1,))?, (1,));
+    assert_eq!(exports.call_tuple0(&mut *store, ())?, ());
+    assert_eq!(exports.call_tuple1(&mut *store, (1,))?, (1,));
     Ok(())
 }
