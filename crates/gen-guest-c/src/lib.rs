@@ -90,7 +90,7 @@ impl WorldGenerator for C {
             if i == 0 {
                 uwriteln!(gen.src.h_fns, "\n// Imported Functions from `{name}`");
             }
-            gen.import(func);
+            gen.import(name, func);
         }
 
         gen.finish();
@@ -112,7 +112,7 @@ impl WorldGenerator for C {
             if i == 0 {
                 uwriteln!(gen.src.h_fns, "\n// Imported Functions from `{name}`");
             }
-            gen.import(func);
+            gen.import("$root", func);
         }
 
         gen.finish();
@@ -697,7 +697,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
-    fn import(&mut self, func: &Function) {
+    fn import(&mut self, wasm_import_module: &str, func: &Function) {
         let sig = self.resolve.wasm_signature(AbiVariant::GuestImport, func);
 
         self.src.c_fns("\n");
@@ -708,7 +708,7 @@ impl InterfaceGenerator<'_> {
         uwriteln!(
             self.src.c_fns,
             "__attribute__((import_module(\"{}\"), import_name(\"{}\")))",
-            self.name,
+            wasm_import_module,
             func.name
         );
         let import_name = self.gen.names.tmp(&format!(

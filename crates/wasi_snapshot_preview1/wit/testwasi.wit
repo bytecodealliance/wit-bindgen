@@ -1,0 +1,6 @@
+default world testwasi {
+  import testwasi: interface {
+    log: func(bytes: list<u8>)
+    log-err: func(bytes: list<u8>)
+  }
+}

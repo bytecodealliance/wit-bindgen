@@ -384,7 +384,10 @@ impl InterfaceGenerator<'_> {
         let mut bindgen = FunctionBindgen::new(
             self,
             &func.name,
-            func.params.iter().map(|(name, _)| name.clone()).collect(),
+            func.params
+                .iter()
+                .map(|(name, _)| name.to_lower_camel_case())
+                .collect(),
         );
 
         bindgen.gen.resolve.call(
@@ -747,18 +750,22 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let fields = record
-            .fields
-            .iter()
-            .map(|field| {
-                format!(
-                    "public final {} {};",
-                    self.type_name(&field.ty),
-                    field.name.to_lower_camel_case()
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+        let fields = if record.fields.is_empty() {
+            format!("public static final {name} INSTANCE = new {name}();")
+        } else {
+            record
+                .fields
+                .iter()
+                .map(|field| {
+                    format!(
+                        "public final {} {};",
+                        self.type_name(&field.ty),
+                        field.name.to_lower_camel_case()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
 
         uwrite!(
             self.src,
@@ -1132,7 +1139,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 let payload = if self.gen.non_empty_type(case_ty.as_ref()).is_some() {
                     results.into_iter().next().unwrap()
                 } else if generics_position.is_some() {
-                    format!("{}Tuple0.INSTANCE", self.gen.gen.qualifier())
+                    if let Some(ty) = case_ty.as_ref() {
+                        format!("{}.INSTANCE", self.gen.type_name(ty))
+                    } else {
+                        format!("{}Tuple0.INSTANCE", self.gen.gen.qualifier())
+                    }
                 } else {
                     String::new()
                 };
