@@ -2362,64 +2362,62 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
             }
-            Instruction::Return { .. } if self.gen.in_import => {
-                match self.sig.ret.scalar {
-                    None => {
-                        for op in operands.iter() {
-                            self.store_in_retptr(op);
-                        }
-                    }
-                    Some(Scalar::Void) => {
-                        assert!(operands.is_empty());
-                    }
-                    Some(Scalar::Type(_)) => {
-                        assert_eq!(operands.len(), 1);
-                        self.src.push_str("return ");
-                        self.src.push_str(&operands[0]);
-                        self.src.push_str(";\n");
-                    }
-                    Some(Scalar::OptionBool(o)) => {
-                        assert_eq!(operands.len(), 1);
-                        let variant = &operands[0];
-                        if !self.gen.is_empty_type(&o) {
-                            self.store_in_retptr(&format!("{}.val", variant));
-                        }
-                        self.src.push_str("return ");
-                        self.src.push_str(&variant);
-                        self.src.push_str(".is_some;\n");
-                    }
-                    Some(Scalar::ResultBool(ok, err)) => {
-                        assert_eq!(operands.len(), 1);
-                        let variant = &operands[0];
-                        assert!(self.sig.retptrs.len() <= 2);
-                        uwriteln!(self.src, "if (!{}.is_err) {{", variant);
-                        if let Some(_) = self.gen.get_nonempty_type(ok.as_ref()) {
-                            if self.sig.retptrs.len() == 2 {
-                                self.store_in_retptr(&format!("{}.val.ok", variant));
-                            } else if self.sig.retptrs.len() == 1 && ok.is_some() {
-                                self.store_in_retptr(&format!("{}.val.ok", variant));
-                            }
-                        }
-                        uwriteln!(
-                            self.src,
-                            "   return 1;
-                            }} else {{"
-                        );
-                        if let Some(_) = self.gen.get_nonempty_type(err.as_ref()) {
-                            if self.sig.retptrs.len() == 2 {
-                                self.store_in_retptr(&format!("{}.val.err", variant));
-                            } else if self.sig.retptrs.len() == 1 && !ok.is_some() {
-                                self.store_in_retptr(&format!("{}.val.err", variant));
-                            }
-                        }
-                        uwriteln!(
-                            self.src,
-                            "   return 0;
-                            }}"
-                        );
+            Instruction::Return { .. } if self.gen.in_import => match self.sig.ret.scalar {
+                None => {
+                    for op in operands.iter() {
+                        self.store_in_retptr(op);
                     }
                 }
-            }
+                Some(Scalar::Void) => {
+                    assert!(operands.is_empty());
+                }
+                Some(Scalar::Type(_)) => {
+                    assert_eq!(operands.len(), 1);
+                    self.src.push_str("return ");
+                    self.src.push_str(&operands[0]);
+                    self.src.push_str(";\n");
+                }
+                Some(Scalar::OptionBool(o)) => {
+                    assert_eq!(operands.len(), 1);
+                    let variant = &operands[0];
+                    if !self.gen.is_empty_type(&o) {
+                        self.store_in_retptr(&format!("{}.val", variant));
+                    }
+                    self.src.push_str("return ");
+                    self.src.push_str(&variant);
+                    self.src.push_str(".is_some;\n");
+                }
+                Some(Scalar::ResultBool(ok, err)) => {
+                    assert_eq!(operands.len(), 1);
+                    let variant = &operands[0];
+                    assert!(self.sig.retptrs.len() <= 2);
+                    uwriteln!(self.src, "if (!{}.is_err) {{", variant);
+                    if let Some(_) = self.gen.get_nonempty_type(ok.as_ref()) {
+                        if self.sig.retptrs.len() == 2 {
+                            self.store_in_retptr(&format!("{}.val.ok", variant));
+                        } else if self.sig.retptrs.len() == 1 && ok.is_some() {
+                            self.store_in_retptr(&format!("{}.val.ok", variant));
+                        }
+                    }
+                    uwriteln!(
+                        self.src,
+                        "   return 1;
+                            }} else {{"
+                    );
+                    if let Some(_) = self.gen.get_nonempty_type(err.as_ref()) {
+                        if self.sig.retptrs.len() == 2 {
+                            self.store_in_retptr(&format!("{}.val.err", variant));
+                        } else if self.sig.retptrs.len() == 1 && !ok.is_some() {
+                            self.store_in_retptr(&format!("{}.val.err", variant));
+                        }
+                    }
+                    uwriteln!(
+                        self.src,
+                        "   return 0;
+                            }}"
+                    );
+                }
+            },
             Instruction::Return { amt, .. } => {
                 assert!(*amt <= 1);
                 if *amt == 1 {
