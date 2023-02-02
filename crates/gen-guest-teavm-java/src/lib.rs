@@ -150,6 +150,23 @@ impl WorldGenerator for TeaVmJava {
         gen.add_class();
     }
 
+    fn export_types(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        types: &[(&str, TypeId)],
+        _files: &mut Files,
+    ) {
+        let name = &resolve.worlds[world].name;
+        let mut gen = self.interface(resolve, name);
+
+        for (name, ty) in types {
+            gen.define_type(name, *ty);
+        }
+
+        gen.add_class();
+    }
+
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
         let world = &resolve.worlds[id];
         let package = format!("wit_{}", world.name.to_snake_case());

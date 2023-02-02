@@ -47,13 +47,27 @@ impl Types {
         }
         for (_, iface) in resolve.interfaces.iter() {
             for (_, f) in iface.functions.iter() {
-                for (_, ty) in f.params.iter() {
-                    self.set_param_result_ty(resolve, ty, true, false, false);
-                }
-                for ty in f.results.iter_types() {
-                    self.set_param_result_ty(resolve, ty, false, true, false);
+                self.type_info_func(resolve, f);
+            }
+        }
+        for (_, world) in resolve.worlds.iter() {
+            for (_, item) in world.imports.iter().chain(&world.exports) {
+                match item {
+                    WorldItem::Function(f) => {
+                        self.type_info_func(resolve, f);
+                    }
+                    WorldItem::Interface(_) | WorldItem::Type(_) => {}
                 }
             }
+        }
+    }
+
+    fn type_info_func(&mut self, resolve: &Resolve, f: &Function) {
+        for (_, ty) in f.params.iter() {
+            self.set_param_result_ty(resolve, ty, true, false, false);
+        }
+        for ty in f.results.iter_types() {
+            self.set_param_result_ty(resolve, ty, false, true, false);
         }
     }
 
@@ -434,17 +448,24 @@ pub trait WorldGenerator {
             match import {
                 WorldItem::Function(f) => funcs.push((name.as_str(), f)),
                 WorldItem::Interface(id) => self.import_interface(resolve, name, *id, files),
+                WorldItem::Type(_) => unreachable!(),
             }
         }
         if !funcs.is_empty() {
             self.import_funcs(resolve, id, &funcs, files);
         }
         funcs.clear();
+
+        let mut types = Vec::new();
         for (name, export) in world.exports.iter() {
             match export {
                 WorldItem::Function(f) => funcs.push((name.as_str(), f)),
                 WorldItem::Interface(id) => self.export_interface(resolve, name, *id, files),
+                WorldItem::Type(id) => types.push((name.as_str(), *id)),
             }
+        }
+        if !types.is_empty() {
+            self.export_types(resolve, id, &types, files);
         }
         if !funcs.is_empty() {
             self.export_funcs(resolve, id, &funcs, files);
@@ -485,6 +506,13 @@ pub trait WorldGenerator {
         funcs: &[(&str, &Function)],
         files: &mut Files,
     );
+    fn export_types(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        types: &[(&str, TypeId)],
+        files: &mut Files,
+    );
     fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files);
 }
 
@@ -514,23 +542,26 @@ pub trait InterfaceGenerator<'a> {
     fn types(&mut self, iface: InterfaceId) {
         let iface = &self.resolve().interfaces[iface];
         for (name, id) in iface.types.iter() {
-            let id = *id;
-            let ty = &self.resolve().types[id];
-            match &ty.kind {
-                TypeDefKind::Record(record) => self.type_record(id, name, record, &ty.docs),
-                TypeDefKind::Flags(flags) => self.type_flags(id, name, flags, &ty.docs),
-                TypeDefKind::Tuple(tuple) => self.type_tuple(id, name, tuple, &ty.docs),
-                TypeDefKind::Enum(enum_) => self.type_enum(id, name, enum_, &ty.docs),
-                TypeDefKind::Variant(variant) => self.type_variant(id, name, variant, &ty.docs),
-                TypeDefKind::Option(t) => self.type_option(id, name, t, &ty.docs),
-                TypeDefKind::Result(r) => self.type_result(id, name, r, &ty.docs),
-                TypeDefKind::Union(u) => self.type_union(id, name, u, &ty.docs),
-                TypeDefKind::List(t) => self.type_list(id, name, t, &ty.docs),
-                TypeDefKind::Type(t) => self.type_alias(id, name, t, &ty.docs),
-                TypeDefKind::Future(_) => todo!("generate for future"),
-                TypeDefKind::Stream(_) => todo!("generate for stream"),
-                TypeDefKind::Unknown => unreachable!(),
-            }
+            self.define_type(name, *id);
+        }
+    }
+
+    fn define_type(&mut self, name: &str, id: TypeId) {
+        let ty = &self.resolve().types[id];
+        match &ty.kind {
+            TypeDefKind::Record(record) => self.type_record(id, name, record, &ty.docs),
+            TypeDefKind::Flags(flags) => self.type_flags(id, name, flags, &ty.docs),
+            TypeDefKind::Tuple(tuple) => self.type_tuple(id, name, tuple, &ty.docs),
+            TypeDefKind::Enum(enum_) => self.type_enum(id, name, enum_, &ty.docs),
+            TypeDefKind::Variant(variant) => self.type_variant(id, name, variant, &ty.docs),
+            TypeDefKind::Option(t) => self.type_option(id, name, t, &ty.docs),
+            TypeDefKind::Result(r) => self.type_result(id, name, r, &ty.docs),
+            TypeDefKind::Union(u) => self.type_union(id, name, u, &ty.docs),
+            TypeDefKind::List(t) => self.type_list(id, name, t, &ty.docs),
+            TypeDefKind::Type(t) => self.type_alias(id, name, t, &ty.docs),
+            TypeDefKind::Future(_) => todo!("generate for future"),
+            TypeDefKind::Stream(_) => todo!("generate for stream"),
+            TypeDefKind::Unknown => unreachable!(),
         }
     }
 }

@@ -27,7 +27,7 @@ fn run() -> Result<()> {
 }
 
 fn run_test(exports: Smoke, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
-    exports.thunk(&mut *store)?;
+    exports.call_thunk(&mut *store)?;
 
     assert!(store.data().0.hit);
 

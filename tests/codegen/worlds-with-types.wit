@@ -1,0 +1,13 @@
+interface i {
+  type type1 = u32
+}
+
+default world foo {
+  use self.i.{type1}
+
+  type type2 = u32
+
+  record type3 {}
+
+  export foo: func() -> tuple<type1, type2, type3>
+}

@@ -182,6 +182,21 @@ impl WorldGenerator for RustWasm {
         self.src.push_str(&src);
     }
 
+    fn export_types(
+        &mut self,
+        resolve: &Resolve,
+        _world: WorldId,
+        types: &[(&str, TypeId)],
+        _files: &mut Files,
+    ) {
+        let mut gen = self.interface(None, resolve, TypeMode::Owned, false);
+        for (name, ty) in types {
+            gen.define_type(name, *ty);
+        }
+        let src = gen.finish();
+        self.src.push_str(&src);
+    }
+
     fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
         let name = &resolve.worlds[world].name;
         if !self.exports.is_empty() {
