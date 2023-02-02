@@ -13,6 +13,7 @@ use wit_bindgen_core::{
 };
 use wit_bindgen_gen_guest_c::{
     flags_repr, get_nonempty_type, int_repr, is_arg_by_pointer, is_empty_type,
+    optional_owns_anything, owns_anything,
 };
 
 // a list of Go keywords
@@ -924,6 +925,20 @@ impl InterfaceGenerator<'_> {
         src.to_string()
     }
 
+    fn get_free_c_arg(&mut self, ty: &Type, arg: &str) -> String {
+        let mut ty_name = self.get_c_ty(ty);
+        let it: Vec<&str> = ty_name.split('_').collect();
+        ty_name = it[..it.len() - 1].join("_");
+        format!("defer {ty_name}_free({arg})\n")
+    }
+
+    fn get_free_c_option_arg(&mut self, ty: Option<&Type>, arg: &str) -> String {
+        let mut ty_name = self.get_c_optional_type_name(ty);
+        let it: Vec<&str> = ty_name.split('_').collect();
+        ty_name = it[..it.len() - 1].join("_");
+        format!("defer {ty_name}_free({arg})\n")
+    }
+
     fn get_func_signature_no_interface(&mut self, resolve: &Resolve, func: &Function) -> String {
         format!(
             "{}({}){}",
@@ -1160,21 +1175,37 @@ impl InterfaceGenerator<'_> {
                             .map(|o| self.get_c_ty(o))
                             .unwrap_or_else(|| self.get_c_ty(return_ty));
                         self.src.push_str(&format!("var ret {c_ret_type}\n"));
+                        if optional_owns_anything(self.resolve, optional_type.as_ref()) {
+                            let free = self.get_free_c_option_arg(optional_type.as_ref(), "&ret");
+                            self.src.push_str(&free);
+                        }
                     } else {
                         let (ok, err) = self.extract_result_ty(return_ty);
-                        let c_ret_type = match (ok, err) {
-                            (None, Some(err)) => self.get_c_ty(&err),
-                            (Some(ok), None) => self.get_c_ty(&ok),
+                        let (c_ret_type, ty) = match (ok, err) {
+                            (None, Some(err)) => (self.get_c_ty(&err), err),
+                            (Some(ok), None) => (self.get_c_ty(&ok), ok),
                             (Some(ok), Some(err)) => {
                                 let c_err_type = self.get_c_ty(&err);
                                 self.src.push_str(&format!("var err {c_err_type}\n"));
-                                self.get_c_ty(&ok)
+                                if owns_anything(self.resolve, &err) {
+                                    let free = self.get_free_c_arg(&err, "&err");
+                                    self.src.push_str(&free);
+                                }
+                                (self.get_c_ty(&ok), ok)
                             }
-                            _ => "void".to_string(),
+                            _ => ("void".into(), Type::Bool),
                         };
                         if c_ret_type != *"void" {
                             self.src.push_str(&format!("var ret {c_ret_type}\n"));
                             self.src.push_str(&format!("var empty_ret {c_ret_type}\n"));
+                            if owns_anything(self.resolve, &ty) {
+                                let free = self.get_free_c_arg(&ty, "&ret");
+                                self.src.push_str(&free);
+                            }
+                            if owns_anything(self.resolve, &ty) {
+                                let free = self.get_free_c_arg(&ty, "&empty_ret");
+                                self.src.push_str(&free);
+                            }
                         }
                     };
                     self.src.push_str(&invoke);
@@ -1187,8 +1218,13 @@ impl InterfaceGenerator<'_> {
             }
             _n => {
                 for (i, ty) in func.results.iter_types().enumerate() {
-                    let ty = self.get_c_ty(ty);
-                    self.src.push_str(&format!("var ret{i} {ty}\n"));
+                    let ty_name = self.get_c_ty(ty);
+                    let var_name = format!("ret{i}");
+                    self.src.push_str(&format!("var {var_name} {ty_name}\n"));
+                    if owns_anything(self.resolve, ty) {
+                        let free = self.get_free_c_arg(ty, &format!("&{var_name}"));
+                        self.src.push_str(&free);
+                    }
                 }
                 self.src.push_str(&invoke);
                 self.src.push_str("\n");
@@ -1248,7 +1284,14 @@ impl InterfaceGenerator<'_> {
             src.push_str(&self.get_c_func_signature(resolve, func, false));
             src.push_str(" {\n");
 
-            // src.push_str(&self.get_c_func_impl(resolve, func));
+            // free all the parameters
+            for (name, ty) in func.params.iter() {
+                if owns_anything(resolve, ty) {
+                    let free = self.get_free_c_arg(ty, &avoid_keyword(&name.to_snake_case()));
+                    src.push_str(&free);
+                }
+            }
+
             // prepare args
 
             src.push_str(&lift_src);
@@ -1604,6 +1647,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     .push_str(&format!("{lower_name} := {param}\n",));
             }
             Type::String => {
+                self.interface.gen.needs_import_unsafe = true;
                 uwriteln!(
                     self.lower_src,
                     "var {lower_name} {value}",
@@ -1616,6 +1660,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     {lower_name}.len = C.size_t(len({param}))
                     "
                 );
+                // free allocated CString
+                self.lower_src
+                    .push_str(&format!("defer C.free(unsafe.Pointer({lower_name}.ptr))\n"));
+                if owns_anything(self.interface.resolve, ty) {
+                    self.lower_src
+                        .push_str(&self.interface.get_free_c_arg(ty, &format!("&{lower_name}")));
+                }
             }
             Type::Id(id) => {
                 let ty = &self.interface.resolve.types[*id]; // receive type
@@ -1625,6 +1676,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id)); // okay to unwrap because a record must have a name
                         self.lower_src
                             .push_str(&format!("var {lower_name} {c_typedef_target}\n"));
+                        if owns_anything(self.interface.resolve, &Type::Id(*id)) {
+                            self.lower_src.push_str(
+                                &self
+                                    .interface
+                                    .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
+                            );
+                        }
                         for field in r.fields.iter() {
                             let c_field_name = &self.get_c_field_name(field);
                             let field_name = &self.interface.get_field_name(field);
@@ -1655,6 +1713,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id)); // okay to unwrap because a record must have a name
                         self.lower_src
                             .push_str(&format!("var {lower_name} {c_typedef_target}\n"));
+                        if owns_anything(self.interface.resolve, &Type::Id(*id)) {
+                            self.lower_src.push_str(
+                                &self
+                                    .interface
+                                    .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
+                            );
+                        }
                         for (i, ty) in t.types.iter().enumerate() {
                             self.lower_value(
                                 &format!("{param}.F{i}"),
@@ -1681,6 +1746,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         };
                         self.lower_src
                             .push_str(&format!("var {lower_name} {c_typedef_target}\n"));
+                        if owns_anything(self.interface.resolve, &Type::Id(*id)) {
+                            self.lower_src.push_str(
+                                &self
+                                    .interface
+                                    .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
+                            );
+                        }
                         self.lower_src
                             .push_str(&format!("if {param}.IsSome() {{\n"));
                         if !is_empty_type(self.interface.resolve, o) {
@@ -1713,6 +1785,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             // import
                             self.lower_src
                                 .push_str(&format!("var {lower_name} {c_typedef_target}\n"));
+                            if owns_anything(self.interface.resolve, &Type::Id(*id)) {
+                                self.lower_src.push_str(
+                                    &self
+                                        .interface
+                                        .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
+                                );
+                            }
                             self.lower_src
                                 .push_str(&format!("{lower_name}.is_err = {param}.IsErr()\n"));
                             match (r.ok, r.err) {
@@ -1806,6 +1885,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
                         self.lower_src
                             .push_str(&format!("var {lower_name} {c_typedef_target}\n"));
+                        if owns_anything(self.interface.resolve, &Type::Id(*id)) {
+                            let free = self
+                                .interface
+                                .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}"));
+                            self.lower_src.push_str(&free);
+                        }
                         let list_ty = self.interface.get_c_ty(l);
                         uwrite!(
                             self.lower_src,
@@ -1826,6 +1911,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             "var {lower_name} {value}",
                             value = self.interface.get_c_ty(t),
                         );
+                        if owns_anything(self.interface.resolve, t) {
+                            self.lower_src.push_str(
+                                &self.interface.get_free_c_arg(t, &format!("&{lower_name}")),
+                            );
+                        }
                         self.lower_value(
                             param,
                             t,
@@ -1848,6 +1938,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let ty = self.interface.get_ty(&Type::Id(*id));
                         self.lower_src
                             .push_str(&format!("var {lower_name} {c_typedef_target}\n"));
+                        if owns_anything(self.interface.resolve, &Type::Id(*id)) {
+                            self.lower_src.push_str(
+                                &self
+                                    .interface
+                                    .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
+                            );
+                        }
                         for (i, case) in v.cases.iter().enumerate() {
                             let case_name = case.name.to_upper_camel_case();
                             self.lower_src.push_str(&format!(
@@ -1879,6 +1976,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let ty = self.interface.get_ty(&Type::Id(*id));
                         self.lower_src
                             .push_str(&format!("var {lower_name} {c_typedef_target}\n"));
+                        if owns_anything(self.interface.resolve, &Type::Id(*id)) {
+                            self.lower_src.push_str(
+                                &self
+                                    .interface
+                                    .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
+                            );
+                        }
                         for (i, case) in e.cases.iter().enumerate() {
                             let case_name = case.name.to_upper_camel_case();
                             self.lower_src.push_str(&format!(
@@ -1899,6 +2003,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let ty = self.interface.get_ty(&Type::Id(*id));
                         self.lower_src
                             .push_str(&format!("var {lower_name} {c_typedef_target}\n"));
+                        if owns_anything(self.interface.resolve, &Type::Id(*id)) {
+                            self.lower_src.push_str(
+                                &self
+                                    .interface
+                                    .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
+                            );
+                        }
                         for (i, case) in u.cases.iter().enumerate() {
                             let case_name = format!("F{i}");
                             self.lower_src.push_str(&format!(
@@ -1926,6 +2037,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     c_type_name = self.interface.get_c_ty(a),
                     param_name = param,
                 ));
+                if owns_anything(self.interface.resolve, a) {
+                    self.lower_src
+                        .push_str(&self.interface.get_free_c_arg(a, &format!("&{lower_name}")));
+                }
             }
         }
     }
@@ -2051,6 +2166,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     let c_target_name = self.interface.get_c_ty(o);
                                     self.lift_src
                                         .push_str(&format!("var {lift_name}_c {c_target_name}\n"));
+                                    if owns_anything(self.interface.resolve, o) {
+                                        self.lift_src.push_str(
+                                            &self
+                                                .interface
+                                                .get_free_c_arg(o, &format!("&{lift_name}_c")),
+                                        );
+                                    }
                                     self.lift_src
                                         .push_str(&format!("if {param} == {lift_name}_c {{\n"));
                                 } else {

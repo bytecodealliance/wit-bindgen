@@ -1303,7 +1303,7 @@ impl InterfaceGenerator<'_> {
 
     fn print_dtor(&mut self, id: TypeId) {
         let ty = Type::Id(id);
-        if !self.owns_anything(&ty) {
+        if !owns_anything(self.resolve, &ty) {
             return;
         }
         let pos = self.src.h_helpers.len();
@@ -1326,7 +1326,7 @@ impl InterfaceGenerator<'_> {
 
             TypeDefKind::Record(r) => {
                 for field in r.fields.iter() {
-                    if !self.owns_anything(&field.ty) {
+                    if !owns_anything(self.resolve, &field.ty) {
                         continue;
                     }
                     self.free(&field.ty, &format!("&ptr->{}", field.name.to_snake_case()));
@@ -1335,7 +1335,7 @@ impl InterfaceGenerator<'_> {
 
             TypeDefKind::Tuple(t) => {
                 for (i, ty) in t.types.iter().enumerate() {
-                    if !self.owns_anything(ty) {
+                    if !owns_anything(self.resolve, ty) {
                         continue;
                     }
                     self.free(ty, &format!("&ptr->f{i}"));
@@ -1343,7 +1343,7 @@ impl InterfaceGenerator<'_> {
             }
 
             TypeDefKind::List(t) => {
-                if self.owns_anything(t) {
+                if owns_anything(self.resolve, t) {
                     self.src
                         .c_helpers("for (size_t i = 0; i < ptr->len; i++) {\n");
                     self.free(t, "&ptr->ptr[i]");
@@ -1358,7 +1358,7 @@ impl InterfaceGenerator<'_> {
                 self.src.c_helpers("switch ((int32_t) ptr->tag) {\n");
                 for (i, case) in v.cases.iter().enumerate() {
                     if let Some(ty) = &case.ty {
-                        if !self.owns_anything(ty) {
+                        if !owns_anything(self.resolve, ty) {
                             continue;
                         }
                         uwriteln!(self.src.c_helpers, "case {}: {{", i);
@@ -1376,7 +1376,7 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Union(u) => {
                 self.src.c_helpers("switch ((int32_t) ptr->tag) {\n");
                 for (i, case) in u.cases.iter().enumerate() {
-                    if !self.owns_anything(&case.ty) {
+                    if !owns_anything(self.resolve, &case.ty) {
                         continue;
                     }
                     uwriteln!(self.src.c_helpers, "case {i}: {{");
@@ -1397,12 +1397,12 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Result(r) => {
                 self.src.c_helpers("if (!ptr->is_err) {\n");
                 if let Some(ok) = &r.ok {
-                    if self.owns_anything(ok) {
+                    if owns_anything(self.resolve, ok) {
                         self.free(ok, "&ptr->val.ok");
                     }
                 }
                 if let Some(err) = &r.err {
-                    if self.owns_anything(err) {
+                    if owns_anything(self.resolve, err) {
                         self.src.c_helpers("} else {\n");
                         self.free(err, "&ptr->val.err");
                     }
@@ -1414,42 +1414,6 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Unknown => unreachable!(),
         }
         self.src.c_helpers("}\n");
-    }
-
-    fn owns_anything(&self, ty: &Type) -> bool {
-        let id = match ty {
-            Type::Id(id) => *id,
-            Type::String => return true,
-            _ => return false,
-        };
-        match &self.resolve.types[id].kind {
-            TypeDefKind::Type(t) => self.owns_anything(t),
-            TypeDefKind::Record(r) => r.fields.iter().any(|t| self.owns_anything(&t.ty)),
-            TypeDefKind::Tuple(t) => t.types.iter().any(|t| self.owns_anything(t)),
-            TypeDefKind::Flags(_) => false,
-            TypeDefKind::Enum(_) => false,
-            TypeDefKind::List(_) => true,
-            TypeDefKind::Variant(v) => v
-                .cases
-                .iter()
-                .any(|c| self.optional_owns_anything(c.ty.as_ref())),
-            TypeDefKind::Union(v) => v.cases.iter().any(|case| self.owns_anything(&case.ty)),
-            TypeDefKind::Option(t) => self.owns_anything(t),
-            TypeDefKind::Result(r) => {
-                self.optional_owns_anything(r.ok.as_ref())
-                    || self.optional_owns_anything(r.err.as_ref())
-            }
-            TypeDefKind::Future(_) => todo!("owns_anything for future"),
-            TypeDefKind::Stream(_) => todo!("owns_anything for stream"),
-            TypeDefKind::Unknown => unreachable!(),
-        }
-    }
-
-    fn optional_owns_anything(&self, ty: Option<&Type>) -> bool {
-        match ty {
-            Some(ty) => self.owns_anything(ty),
-            None => false,
-        }
     }
 
     fn free(&mut self, ty: &Type, expr: &str) {
@@ -2579,5 +2543,41 @@ pub fn get_nonempty_type<'o>(resolve: &Resolve, ty: Option<&'o Type>) -> Option<
             }
         }
         None => None,
+    }
+}
+
+pub fn owns_anything(resolve: &Resolve, ty: &Type) -> bool {
+    let id = match ty {
+        Type::Id(id) => *id,
+        Type::String => return true,
+        _ => return false,
+    };
+    match &resolve.types[id].kind {
+        TypeDefKind::Type(t) => owns_anything(resolve, t),
+        TypeDefKind::Record(r) => r.fields.iter().any(|t| owns_anything(resolve, &t.ty)),
+        TypeDefKind::Tuple(t) => t.types.iter().any(|t| owns_anything(resolve, t)),
+        TypeDefKind::Flags(_) => false,
+        TypeDefKind::Enum(_) => false,
+        TypeDefKind::List(_) => true,
+        TypeDefKind::Variant(v) => v
+            .cases
+            .iter()
+            .any(|c| optional_owns_anything(resolve, c.ty.as_ref())),
+        TypeDefKind::Union(v) => v.cases.iter().any(|case| owns_anything(resolve, &case.ty)),
+        TypeDefKind::Option(t) => owns_anything(resolve, t),
+        TypeDefKind::Result(r) => {
+            optional_owns_anything(resolve, r.ok.as_ref())
+                || optional_owns_anything(resolve, r.err.as_ref())
+        }
+        TypeDefKind::Future(_) => todo!("owns_anything for future"),
+        TypeDefKind::Stream(_) => todo!("owns_anything for stream"),
+        TypeDefKind::Unknown => unreachable!(),
+    }
+}
+
+pub fn optional_owns_anything(resolve: &Resolve, ty: Option<&Type>) -> bool {
+    match ty {
+        Some(ty) => owns_anything(resolve, ty),
+        None => false,
     }
 }
