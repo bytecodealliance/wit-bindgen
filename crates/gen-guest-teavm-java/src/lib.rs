@@ -43,6 +43,11 @@ impl Opts {
     }
 }
 
+struct InterfaceFragment {
+    src: String,
+    stub: String,
+}
+
 #[derive(Default)]
 pub struct TeaVmJava {
     opts: Opts,
@@ -52,7 +57,8 @@ pub struct TeaVmJava {
     tuple_counts: HashSet<usize>,
     needs_cleanup: bool,
     needs_result: bool,
-    classes: HashMap<String, String>,
+    interface_fragments: HashMap<String, Vec<InterfaceFragment>>,
+    world_fragments: Vec<InterfaceFragment>,
     sizes: SizeAlign,
     interface_names: HashMap<InterfaceId, String>,
 }
@@ -95,7 +101,7 @@ impl WorldGenerator for TeaVmJava {
             gen.import(name, func);
         }
 
-        gen.add_class();
+        gen.add_interface_fragment();
     }
 
     fn import_funcs(
@@ -105,14 +111,14 @@ impl WorldGenerator for TeaVmJava {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) {
-        let name = &resolve.worlds[world].name;
+        let name = &format!("{}-world", resolve.worlds[world].name);
         let mut gen = self.interface(resolve, name);
 
         for (_, func) in funcs {
             gen.import(name, func);
         }
 
-        gen.add_class();
+        gen.add_world_fragment();
     }
 
     fn export_interface(
@@ -130,7 +136,7 @@ impl WorldGenerator for TeaVmJava {
             gen.export(func, Some(name));
         }
 
-        gen.add_class();
+        gen.add_interface_fragment();
     }
 
     fn export_funcs(
@@ -140,14 +146,14 @@ impl WorldGenerator for TeaVmJava {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) {
-        let name = &resolve.worlds[world].name;
+        let name = &format!("{}-world", resolve.worlds[world].name);
         let mut gen = self.interface(resolve, name);
 
         for (_, func) in funcs {
             gen.export(func, None);
         }
 
-        gen.add_class();
+        gen.add_world_fragment();
     }
 
     fn export_types(
@@ -157,14 +163,14 @@ impl WorldGenerator for TeaVmJava {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let name = &resolve.worlds[world].name;
+        let name = &format!("{}-world", resolve.worlds[world].name);
         let mut gen = self.interface(resolve, name);
 
-        for (name, ty) in types {
-            gen.define_type(name, *ty);
+        for (ty_name, ty) in types {
+            gen.define_type(ty_name, *ty);
         }
 
-        gen.add_class();
+        gen.add_world_fragment();
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
@@ -184,6 +190,15 @@ impl WorldGenerator for TeaVmJava {
              public final class {name}World {{
                 private {name}World() {{}}
             "
+        );
+
+        src.push_str(
+            &self
+                .world_fragments
+                .iter()
+                .map(|f| f.src.deref())
+                .collect::<Vec<_>>()
+                .join("\n"),
         );
 
         let component_type =
@@ -324,8 +339,56 @@ impl WorldGenerator for TeaVmJava {
 
         files.push(&format!("{name}World.java"), indent(&src).as_bytes());
 
-        for (name, body) in &self.classes {
-            files.push(&format!("{name}.java"), indent(body).as_bytes());
+        let generate_stub = |name, fragments: &[InterfaceFragment], files: &mut Files| {
+            let body = fragments
+                .iter()
+                .map(|f| f.stub.deref())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            let body = format!(
+                "package {package};
+
+                 {IMPORTS}
+
+                 public class {name} {{
+                     {body}
+                 }}
+                "
+            );
+
+            files.push(&format!("{name}.java"), indent(&body).as_bytes());
+        };
+
+        if self.opts.generate_stub {
+            generate_stub(format!("{name}WorldImpl"), &self.world_fragments, files);
+        }
+
+        for (name, fragments) in &self.interface_fragments {
+            let body = fragments
+                .iter()
+                .map(|f| f.src.deref())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            let body = format!(
+                "package {package};
+
+                 {IMPORTS}
+
+                 public final class {name} {{
+                     private {name}() {{}}
+
+                     {body}
+                 }}
+                "
+            );
+
+            files.push(&format!("{name}.java"), indent(&body).as_bytes());
+
+            if self.opts.generate_stub {
+                generate_stub(format!("{name}Impl"), fragments, files);
+            }
         }
     }
 }
@@ -356,41 +419,22 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn add_class(self) {
-        let package = format!("wit_{}", self.gen.name.to_snake_case());
-        let name = self.name.to_upper_camel_case();
-        let body = self.src;
-        let body = format!(
-            "package {package};
+    fn add_interface_fragment(self) {
+        self.gen
+            .interface_fragments
+            .entry(self.name.to_upper_camel_case())
+            .or_default()
+            .push(InterfaceFragment {
+                src: self.src,
+                stub: self.stub,
+            });
+    }
 
-             {IMPORTS}
-
-             public final class {name} {{
-                 private {name}() {{}}
-
-                 {body}
-             }}
-            "
-        );
-
-        if self.gen.opts.generate_stub {
-            let name = format!("{name}Impl");
-            let body = self.stub;
-            let body = format!(
-                "package {package};
-
-                 {IMPORTS}
-
-                 public class {name} {{
-                     {body}
-                 }}
-                "
-            );
-
-            self.gen.classes.insert(name, body);
-        }
-
-        self.gen.classes.insert(name, body);
+    fn add_world_fragment(self) {
+        self.gen.world_fragments.push(InterfaceFragment {
+            src: self.src,
+            stub: self.stub,
+        });
     }
 
     fn import(&mut self, module: &str, func: &Function) {

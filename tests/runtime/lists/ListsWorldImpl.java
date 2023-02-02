@@ -6,7 +6,7 @@ import java.util.ArrayList;
 
 import wit_lists.ListsWorld.Tuple2;
 
-public class ListsImpl {
+public class ListsWorldImpl {
     public static int allocatedBytes() {
         return 0;
     }
