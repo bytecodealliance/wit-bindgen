@@ -63,7 +63,7 @@ struct CSig {
 enum Scalar {
     Void,
     OptionBool(Type),
-    ResultBool(bool),
+    ResultBool(Option<Type>, Option<Type>),
     Type(Type),
 }
 
@@ -448,15 +448,13 @@ impl Return {
             // Unpack a result as a boolean return type, with two
             // return pointers for ok and err values
             TypeDefKind::Result(r) => {
-                let mut has_ok_type = false;
                 if let Some(ok) = r.ok {
-                    has_ok_type = true;
                     self.retptrs.push(ok);
                 }
                 if let Some(err) = r.err {
                     self.retptrs.push(err);
                 }
-                self.scalar = Some(Scalar::ResultBool(has_ok_type));
+                self.scalar = Some(Scalar::ResultBool(r.ok, r.err));
                 return;
             }
 
@@ -956,9 +954,9 @@ impl InterfaceGenerator<'_> {
         match &ret.scalar {
             None | Some(Scalar::Void) => self.src.h_fns("void"),
             Some(Scalar::OptionBool(_id)) => self.src.h_fns("bool"),
-            Some(Scalar::ResultBool(has_ok_type)) => {
+            Some(Scalar::ResultBool(ok, _err)) => {
                 result_rets = true;
-                result_rets_has_ok_type = *has_ok_type;
+                result_rets_has_ok_type = ok.is_some();
                 self.src.h_fns("bool");
             }
             Some(Scalar::Type(ty)) => self.print_ty(SourceType::HFns, ty),
@@ -1592,10 +1590,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             &format!("*{}", self.sig.retptrs[self.ret_store_cnt]),
         );
         self.ret_store_cnt = self.ret_store_cnt + 1;
-    }
-
-    fn check_all_retptrs_written(&self) {
-        assert!(self.ret_store_cnt == self.sig.retptrs.len());
     }
 }
 
@@ -2277,28 +2271,41 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             .gen
                             .type_string(func.results.iter_types().next().unwrap());
                         let option_ret = self.locals.tmp("ret");
-                        uwrite!(
-                            self.src,
-                            "
-                                {ty} {ret};
-                                {ret}.is_some = {tag};
-                                {ret}.val = {val};
-                            ",
-                            ty = option_ty,
-                            ret = option_ret,
-                            tag = ret,
-                            val = val,
-                        );
+                        if !self.gen.is_empty_type(ty) {
+                            uwrite!(
+                                self.src,
+                                "
+                                    {ty} {ret};
+                                    {ret}.is_some = {tag};
+                                    {ret}.val = {val};
+                                ",
+                                ty = option_ty,
+                                ret = option_ret,
+                                tag = ret,
+                                val = val,
+                            );
+                        } else {
+                            uwrite!(
+                                self.src,
+                                "
+                                    {ty} {ret};
+                                    {ret}.is_some = {tag};
+                                ",
+                                ty = option_ty,
+                                ret = option_ret,
+                                tag = ret,
+                            );
+                        }
                         results.push(option_ret);
                     }
-                    Some(Scalar::ResultBool(has_ok_type)) => {
+                    Some(Scalar::ResultBool(ok, err)) => {
                         let result_ty = self
                             .gen
                             .type_string(func.results.iter_types().next().unwrap());
                         let ret = self.locals.tmp("ret");
                         let mut ret_iter = self.sig.ret.retptrs.iter();
                         uwriteln!(self.src, "{result_ty} {ret};");
-                        let ok_name = if *has_ok_type {
+                        let ok_name = if ok.is_some() {
                             if let Some(ty) = ret_iter.next() {
                                 let val = self.locals.tmp("ok");
                                 if args.len() > 0 {
@@ -2329,82 +2336,88 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         assert!(ret_iter.next().is_none());
                         uwrite!(self.src, "");
                         uwriteln!(self.src, "{ret}.is_err = !{}({args});", self.sig.name);
-
-                        if let Some(err_name) = err_name {
-                            uwriteln!(
-                                self.src,
-                                "if ({ret}.is_err) {{
-                                    {ret}.val.err = {err_name};
-                                }}",
-                            );
+                        if self.gen.get_nonempty_type(err.as_ref()).is_some() {
+                            if let Some(err_name) = err_name {
+                                uwriteln!(
+                                    self.src,
+                                    "if ({ret}.is_err) {{
+                                        {ret}.val.err = {err_name};
+                                    }}",
+                                );
+                            }
                         }
-                        if let Some(ok_name) = ok_name {
-                            uwriteln!(
-                                self.src,
-                                "if (!{ret}.is_err) {{
-                                    {ret}.val.ok = {ok_name};
-                                }}"
-                            );
-                        } else {
-                            uwrite!(self.src, "\n");
+                        if self.gen.get_nonempty_type(ok.as_ref()).is_some() {
+                            if let Some(ok_name) = ok_name {
+                                uwriteln!(
+                                    self.src,
+                                    "if (!{ret}.is_err) {{
+                                        {ret}.val.ok = {ok_name};
+                                    }}"
+                                );
+                            } else {
+                                uwrite!(self.src, "\n");
+                            }
                         }
                         results.push(ret);
                     }
                 }
             }
-            Instruction::Return { .. } if self.gen.in_import => {
-                match self.sig.ret.scalar {
-                    None => {
-                        for op in operands.iter() {
-                            self.store_in_retptr(op);
-                        }
-                    }
-                    Some(Scalar::Void) => {
-                        assert!(operands.is_empty());
-                    }
-                    Some(Scalar::Type(_)) => {
-                        assert_eq!(operands.len(), 1);
-                        self.src.push_str("return ");
-                        self.src.push_str(&operands[0]);
-                        self.src.push_str(";\n");
-                    }
-                    Some(Scalar::OptionBool(_)) => {
-                        assert_eq!(operands.len(), 1);
-                        let variant = &operands[0];
-                        self.store_in_retptr(&format!("{}.val", variant));
-                        self.src.push_str("return ");
-                        self.src.push_str(&variant);
-                        self.src.push_str(".is_some;\n");
-                    }
-                    Some(Scalar::ResultBool(has_ok_type)) => {
-                        assert_eq!(operands.len(), 1);
-                        let variant = &operands[0];
-                        assert!(self.sig.retptrs.len() <= 2);
-                        uwriteln!(self.src, "if (!{}.is_err) {{", variant);
-                        if self.sig.retptrs.len() == 2 {
-                            self.store_in_retptr(&format!("{}.val.ok", variant));
-                        } else if self.sig.retptrs.len() == 1 && has_ok_type {
-                            self.store_in_retptr(&format!("{}.val.ok", variant));
-                        }
-                        uwriteln!(
-                            self.src,
-                            "   return 1;
-                            }} else {{"
-                        );
-                        if self.sig.retptrs.len() == 2 {
-                            self.store_in_retptr(&format!("{}.val.err", variant));
-                        } else if self.sig.retptrs.len() == 1 && !has_ok_type {
-                            self.store_in_retptr(&format!("{}.val.err", variant));
-                        }
-                        uwriteln!(
-                            self.src,
-                            "   return 0;
-                            }}"
-                        );
+            Instruction::Return { .. } if self.gen.in_import => match self.sig.ret.scalar {
+                None => {
+                    for op in operands.iter() {
+                        self.store_in_retptr(op);
                     }
                 }
-                self.check_all_retptrs_written();
-            }
+                Some(Scalar::Void) => {
+                    assert!(operands.is_empty());
+                }
+                Some(Scalar::Type(_)) => {
+                    assert_eq!(operands.len(), 1);
+                    self.src.push_str("return ");
+                    self.src.push_str(&operands[0]);
+                    self.src.push_str(";\n");
+                }
+                Some(Scalar::OptionBool(o)) => {
+                    assert_eq!(operands.len(), 1);
+                    let variant = &operands[0];
+                    if !self.gen.is_empty_type(&o) {
+                        self.store_in_retptr(&format!("{}.val", variant));
+                    }
+                    self.src.push_str("return ");
+                    self.src.push_str(&variant);
+                    self.src.push_str(".is_some;\n");
+                }
+                Some(Scalar::ResultBool(ok, err)) => {
+                    assert_eq!(operands.len(), 1);
+                    let variant = &operands[0];
+                    assert!(self.sig.retptrs.len() <= 2);
+                    uwriteln!(self.src, "if (!{}.is_err) {{", variant);
+                    if let Some(_) = self.gen.get_nonempty_type(ok.as_ref()) {
+                        if self.sig.retptrs.len() == 2 {
+                            self.store_in_retptr(&format!("{}.val.ok", variant));
+                        } else if self.sig.retptrs.len() == 1 && ok.is_some() {
+                            self.store_in_retptr(&format!("{}.val.ok", variant));
+                        }
+                    }
+                    uwriteln!(
+                        self.src,
+                        "   return 1;
+                            }} else {{"
+                    );
+                    if let Some(_) = self.gen.get_nonempty_type(err.as_ref()) {
+                        if self.sig.retptrs.len() == 2 {
+                            self.store_in_retptr(&format!("{}.val.err", variant));
+                        } else if self.sig.retptrs.len() == 1 && !ok.is_some() {
+                            self.store_in_retptr(&format!("{}.val.err", variant));
+                        }
+                    }
+                    uwriteln!(
+                        self.src,
+                        "   return 0;
+                            }}"
+                    );
+                }
+            },
             Instruction::Return { amt, .. } => {
                 assert!(*amt <= 1);
                 if *amt == 1 {
