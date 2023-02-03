@@ -1,8 +1,7 @@
 interface simple-lists {
   simple-list1: func(l: list<u32>)
   simple-list2: func() -> list<u32>
-  // TODO: reenable this when smw implements this
-  // simple-list3: func(a: list<u32>, b: list<u32>) -> tuple<list<u32>, list<u32>>
+  simple-list3: func(a: list<u32>, b: list<u32>) -> tuple<list<u32>, list<u32>>
   simple-list4: func(l: list<list<u32>>) -> list<list<u32>>
 }
 
