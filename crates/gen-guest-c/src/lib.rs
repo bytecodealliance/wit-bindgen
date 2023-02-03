@@ -402,14 +402,15 @@ impl C {
         // Note that these intrinsics are declared as `weak` so they can be
         // overridden from some other symbol.
         self.src.c_fns(
-            "
-                __attribute__((weak, export_name(\"cabi_realloc\")))
-                void *cabi_realloc(void *ptr, size_t orig_size, size_t org_align, size_t new_size) {
+            r#"
+                __attribute__((weak, export_name("cabi_realloc")))
+                void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size) {
+                    if (new_size == 0) return (void*) align;
                     void *ret = realloc(ptr, new_size);
                     if (!ret) abort();
                     return ret;
                 }
-            ",
+            "#,
         );
     }
 }

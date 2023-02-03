@@ -236,8 +236,6 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
         cmd.arg("build");
         cmd.arg("-wasm-abi=generic");
         cmd.arg("-target=wasi");
-        cmd.arg("-gc=leaking");
-        cmd.arg("-no-debug");
         cmd.arg("-o");
         cmd.arg(&out_wasm);
         cmd.arg(format!("{snake}.go"));
