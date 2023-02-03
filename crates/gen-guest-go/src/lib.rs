@@ -246,6 +246,24 @@ impl WorldGenerator for TinyGo {
         }
     }
 
+
+    fn export_types(
+        &mut self,
+        resolve: &Resolve,
+        world: WorldId,
+        types: &[(&str, TypeId)],
+        files: &mut Files,
+    ) {
+        let name = &resolve.worlds[world].name;
+        let mut gen = self.interface(resolve, name);
+        for (name, id) in types {
+            gen.define_type(name, *id);
+        }
+        gen.finish();
+        let src = mem::take(&mut gen.src);
+        self.src.push_str(&src);
+    }
+
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
         let world = &resolve.worlds[id];
         let mut header = Source::default();

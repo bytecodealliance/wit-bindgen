@@ -1,0 +1,76 @@
+interface option-result {
+	record empty {}
+	record o-one {
+		a: option<bool>,
+	}
+
+	record o-nested {
+		a: option<option<o-one>>,
+	}
+	
+	type o1 = option<o-one>
+	type o2 = option<empty>
+	type o3 = option<o-nested>
+	type o4 = option<option<o-nested>>
+
+	type r1 = result
+	type r2 = result<_, empty>
+	type r3 = result<empty>
+	type r4 = result<empty, empty>
+	type r5 = result<option<o-one>, o1>
+	type r6 = result<option<option<o-one>>, o2>
+	type r7 = result<option<option<o-one>>, o4>
+
+
+	type o5 = option<result>
+	type o6 = option<result<option<result>>>
+
+
+	 o1-arg: func(x: o1)
+	 o1-result: func() -> o1
+
+	 o2-arg: func(x: o2)
+	 o2-result: func() -> o2
+
+	 o3-arg: func(x: o3)
+	 o3-result: func() -> o3
+
+	 o4-arg: func(x: o4)
+	 o4-result: func() -> o4
+
+	 o5-arg: func(x: o5)
+	 o5-result: func() -> o5
+
+	 o6-arg: func(x: o6)
+	 o6-result: func() -> o6
+
+	 r1-arg: func(x: r1)
+	 r1-result: func() -> r1
+
+	 r2-arg: func(x: r2)
+	 r2-result: func() -> r2
+
+	 r3-arg: func(x: r3)
+	 r3-result: func() -> r3
+
+	 r4-arg: func(x: r4)
+	 r4-result: func() -> r4
+
+	 r5-arg: func(x: r5)
+	 r5-result: func() -> r5
+
+	 r6-arg: func(x: r6)
+	 r6-result: func() -> r6
+
+	 r7-arg: func(x: r7)
+	 r7-result: func() -> r7
+
+	 multi: func(x: r7, y: r7) -> (a: r7, b:r7, c: r7)
+	 multi-option: func(x: r7, y: r7) -> option<tuple<r7, r7>>
+}
+
+default world my-world {
+	import imports: self.option-result
+	export exports: self.option-result
+}
+  

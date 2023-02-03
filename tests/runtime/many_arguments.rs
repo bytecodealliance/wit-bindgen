@@ -57,7 +57,7 @@ fn run() -> Result<()> {
 }
 
 fn run_test(exports: ManyArguments, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
-    exports.many_arguments(
+    exports.call_many_arguments(
         &mut *store,
         1,
         2,

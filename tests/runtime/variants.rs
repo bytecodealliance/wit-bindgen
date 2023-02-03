@@ -70,23 +70,32 @@ fn run() -> Result<()> {
 fn run_test(exports: Variants, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
     use exports::*;
 
-    exports.test_imports(&mut *store)?;
+    exports.call_test_imports(&mut *store)?;
     let exports = exports.exports();
 
-    assert_eq!(exports.roundtrip_option(&mut *store, Some(1.0))?, Some(1));
-    assert_eq!(exports.roundtrip_option(&mut *store, None)?, None);
-    assert_eq!(exports.roundtrip_option(&mut *store, Some(2.0))?, Some(2));
-    assert_eq!(exports.roundtrip_result(&mut *store, Ok(2))?, Ok(2.0));
-    assert_eq!(exports.roundtrip_result(&mut *store, Ok(4))?, Ok(4.0));
-    assert_eq!(exports.roundtrip_result(&mut *store, Err(5.3))?, Err(5));
+    assert_eq!(
+        exports.call_roundtrip_option(&mut *store, Some(1.0))?,
+        Some(1)
+    );
+    assert_eq!(exports.call_roundtrip_option(&mut *store, None)?, None);
+    assert_eq!(
+        exports.call_roundtrip_option(&mut *store, Some(2.0))?,
+        Some(2)
+    );
+    assert_eq!(exports.call_roundtrip_result(&mut *store, Ok(2))?, Ok(2.0));
+    assert_eq!(exports.call_roundtrip_result(&mut *store, Ok(4))?, Ok(4.0));
+    assert_eq!(
+        exports.call_roundtrip_result(&mut *store, Err(5.3))?,
+        Err(5)
+    );
 
-    assert_eq!(exports.roundtrip_enum(&mut *store, E1::A)?, E1::A);
-    assert_eq!(exports.roundtrip_enum(&mut *store, E1::B)?, E1::B);
+    assert_eq!(exports.call_roundtrip_enum(&mut *store, E1::A)?, E1::A);
+    assert_eq!(exports.call_roundtrip_enum(&mut *store, E1::B)?, E1::B);
 
-    assert_eq!(exports.invert_bool(&mut *store, true)?, false);
-    assert_eq!(exports.invert_bool(&mut *store, false)?, true);
+    assert_eq!(exports.call_invert_bool(&mut *store, true)?, false);
+    assert_eq!(exports.call_invert_bool(&mut *store, false)?, true);
 
-    let (a1, a2, a3, a4, a5, a6) = exports.variant_casts(
+    let (a1, a2, a3, a4, a5, a6) = exports.call_variant_casts(
         &mut *store,
         (C1::A(1), C2::A(2), C3::A(3), C4::A(4), C5::A(5), C6::A(6.0)),
     )?;
@@ -97,7 +106,7 @@ fn run_test(exports: Variants, store: &mut Store<crate::Wasi<MyImports>>) -> Res
     assert!(matches!(a5, C5::A(5)));
     assert!(matches!(a6, C6::A(b) if b == 6.0));
 
-    let (a1, a2, a3, a4, a5, a6) = exports.variant_casts(
+    let (a1, a2, a3, a4, a5, a6) = exports.call_variant_casts(
         &mut *store,
         (
             C1::B(1),
@@ -116,13 +125,13 @@ fn run_test(exports: Variants, store: &mut Store<crate::Wasi<MyImports>>) -> Res
     assert!(matches!(a6, C6::B(b) if b == 6.0));
 
     let (a1, a2, a3, a4) =
-        exports.variant_zeros(&mut *store, (Z1::A(1), Z2::A(2), Z3::A(3.0), Z4::A(4.0)))?;
+        exports.call_variant_zeros(&mut *store, (Z1::A(1), Z2::A(2), Z3::A(3.0), Z4::A(4.0)))?;
     assert!(matches!(a1, Z1::A(1)));
     assert!(matches!(a2, Z2::A(2)));
     assert!(matches!(a3, Z3::A(b) if b == 3.0));
     assert!(matches!(a4, Z4::A(b) if b == 4.0));
 
-    exports.variant_typedefs(&mut *store, None, false, Err(()))?;
+    exports.call_variant_typedefs(&mut *store, None, false, Err(()))?;
 
     Ok(())
 }

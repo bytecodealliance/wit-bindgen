@@ -29,11 +29,15 @@ impl imports::Imports for MyImports {
             AllFloats::F64(n) => AllFloats::F64(n + 1.0),
         })
     }
-    fn replace_first_char(&mut self, text: imports::AllText, c: char) -> Result<imports::AllText> {
-        use imports::AllText;
+    fn replace_first_char(
+        &mut self,
+        text: imports::AllTextResult,
+        c: char,
+    ) -> Result<imports::AllTextResult> {
+        use imports::AllTextResult;
         Ok(match text {
-            AllText::Char(_) => AllText::Char(c),
-            AllText::String(t) => AllText::String(format!("{}{}", c, &t[1..])),
+            AllTextResult::Char(_) => AllTextResult::Char(c),
+            AllTextResult::String(t) => AllTextResult::String(format!("{}{}", c, &t[1..])),
         })
     }
     fn identify_integer(&mut self, num: imports::AllIntegers) -> Result<u8> {
@@ -57,11 +61,11 @@ impl imports::Imports for MyImports {
             AllFloats::F64 { .. } => 1,
         })
     }
-    fn identify_text(&mut self, text: imports::AllText) -> Result<u8> {
-        use imports::AllText;
+    fn identify_text(&mut self, text: imports::AllTextResult) -> Result<u8> {
+        use imports::AllTextResult;
         Ok(match text {
-            AllText::Char { .. } => 0,
-            AllText::String { .. } => 1,
+            AllTextResult::Char { .. } => 0,
+            AllTextResult::String { .. } => 1,
         })
     }
     fn identify_duplicated(&mut self, dup: imports::DuplicatedS32) -> Result<u8> {
@@ -115,208 +119,214 @@ fn run() -> Result<()> {
 fn run_test(exports: Unions, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
     use exports::*;
 
-    exports.test_imports(&mut *store)?;
+    exports.call_test_imports(&mut *store)?;
     let exports = exports.exports();
 
     // Booleans
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::Bool(false))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::Bool(false))?,
         AllIntegers::Bool(true)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::Bool(true))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::Bool(true))?,
         AllIntegers::Bool(false)
     ));
     // Unsigned integers
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::U8(0))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::U8(0))?,
         AllIntegers::U8(1)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::U8(u8::MAX))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::U8(u8::MAX))?,
         AllIntegers::U8(0)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::U16(0))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::U16(0))?,
         AllIntegers::U16(1)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::U16(u16::MAX))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::U16(u16::MAX))?,
         AllIntegers::U16(0)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::U32(0))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::U32(0))?,
         AllIntegers::U32(1)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::U32(u32::MAX))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::U32(u32::MAX))?,
         AllIntegers::U32(0)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::U64(0))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::U64(0))?,
         AllIntegers::U64(1)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::U64(u64::MAX))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::U64(u64::MAX))?,
         AllIntegers::U64(0)
     ));
     // Signed integers
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::I8(0))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::I8(0))?,
         AllIntegers::I8(1)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::I8(i8::MAX))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::I8(i8::MAX))?,
         AllIntegers::I8(i8::MIN)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::I16(0))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::I16(0))?,
         AllIntegers::I16(1)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::I16(i16::MAX))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::I16(i16::MAX))?,
         AllIntegers::I16(i16::MIN)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::I32(0))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::I32(0))?,
         AllIntegers::I32(1)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::I32(i32::MAX))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::I32(i32::MAX))?,
         AllIntegers::I32(i32::MIN)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::I64(0))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::I64(0))?,
         AllIntegers::I64(1)
     ));
     assert!(matches!(
-        exports.add_one_integer(&mut *store, AllIntegers::I64(i64::MAX))?,
+        exports.call_add_one_integer(&mut *store, AllIntegers::I64(i64::MAX))?,
         AllIntegers::I64(i64::MIN)
     ));
 
     // Floats
-    match exports.add_one_float(&mut *store, AllFloats::F32(0.0))? {
+    match exports.call_add_one_float(&mut *store, AllFloats::F32(0.0))? {
         AllFloats::F32(r) => assert_eq!(r, 1.0),
         _ => panic!(),
     }
-    match exports.add_one_float(&mut *store, AllFloats::F32(420.0))? {
+    match exports.call_add_one_float(&mut *store, AllFloats::F32(420.0))? {
         AllFloats::F32(r) => assert_eq!(r, 421.0),
         _ => panic!(),
     }
-    match exports.add_one_float(&mut *store, AllFloats::F64(0.0))? {
+    match exports.call_add_one_float(&mut *store, AllFloats::F64(0.0))? {
         AllFloats::F64(r) => assert_eq!(r, 1.0),
         _ => panic!(),
     }
-    match exports.add_one_float(&mut *store, AllFloats::F64(420.0))? {
+    match exports.call_add_one_float(&mut *store, AllFloats::F64(420.0))? {
         AllFloats::F64(r) => assert_eq!(r, 421.0),
         _ => panic!(),
     }
 
     // Text
     assert!(matches!(
-        exports.replace_first_char(&mut *store, AllTextParam::Char('a'), 'z')?,
+        exports.call_replace_first_char(&mut *store, AllTextParam::Char('a'), 'z')?,
         AllTextResult::Char('z')
     ));
-    match exports.replace_first_char(&mut *store, AllTextParam::String("abc"), 'z')? {
+    match exports.call_replace_first_char(&mut *store, AllTextParam::String("abc"), 'z')? {
         AllTextResult::String(s) => assert_eq!(s, "zbc"),
         _ => panic!(),
     }
 
     // Identify Integers
     assert_eq!(
-        exports.identify_integer(&mut *store, AllIntegers::Bool(false))?,
+        exports.call_identify_integer(&mut *store, AllIntegers::Bool(false))?,
         0
     );
     assert_eq!(
-        exports.identify_integer(&mut *store, AllIntegers::U8(0))?,
+        exports.call_identify_integer(&mut *store, AllIntegers::U8(0))?,
         1
     );
     assert_eq!(
-        exports.identify_integer(&mut *store, AllIntegers::U16(0))?,
+        exports.call_identify_integer(&mut *store, AllIntegers::U16(0))?,
         2
     );
     assert_eq!(
-        exports.identify_integer(&mut *store, AllIntegers::U32(0))?,
+        exports.call_identify_integer(&mut *store, AllIntegers::U32(0))?,
         3
     );
     assert_eq!(
-        exports.identify_integer(&mut *store, AllIntegers::U64(0))?,
+        exports.call_identify_integer(&mut *store, AllIntegers::U64(0))?,
         4
     );
     assert_eq!(
-        exports.identify_integer(&mut *store, AllIntegers::I8(0))?,
+        exports.call_identify_integer(&mut *store, AllIntegers::I8(0))?,
         5
     );
     assert_eq!(
-        exports.identify_integer(&mut *store, AllIntegers::I16(0))?,
+        exports.call_identify_integer(&mut *store, AllIntegers::I16(0))?,
         6
     );
     assert_eq!(
-        exports.identify_integer(&mut *store, AllIntegers::I32(0))?,
+        exports.call_identify_integer(&mut *store, AllIntegers::I32(0))?,
         7
     );
     assert_eq!(
-        exports.identify_integer(&mut *store, AllIntegers::I64(0))?,
+        exports.call_identify_integer(&mut *store, AllIntegers::I64(0))?,
         8
     );
 
     // Identify floats
-    assert_eq!(exports.identify_float(&mut *store, AllFloats::F32(0.0))?, 0);
-    assert_eq!(exports.identify_float(&mut *store, AllFloats::F64(0.0))?, 1);
-
-    // Identify text
     assert_eq!(
-        exports.identify_text(&mut *store, AllTextParam::Char('\0'))?,
+        exports.call_identify_float(&mut *store, AllFloats::F32(0.0))?,
         0
     );
     assert_eq!(
-        exports.identify_text(&mut *store, AllTextParam::String(""))?,
+        exports.call_identify_float(&mut *store, AllFloats::F64(0.0))?,
+        1
+    );
+
+    // Identify text
+    assert_eq!(
+        exports.call_identify_text(&mut *store, AllTextParam::Char('\0'))?,
+        0
+    );
+    assert_eq!(
+        exports.call_identify_text(&mut *store, AllTextParam::String(""))?,
         1
     );
 
     // Identify Duplicated
     assert_eq!(
-        exports.identify_duplicated(&mut *store, DuplicatedS32::I320(0))?,
+        exports.call_identify_duplicated(&mut *store, DuplicatedS32::I320(0))?,
         0
     );
     assert_eq!(
-        exports.identify_duplicated(&mut *store, DuplicatedS32::I321(0))?,
+        exports.call_identify_duplicated(&mut *store, DuplicatedS32::I321(0))?,
         1
     );
     assert_eq!(
-        exports.identify_duplicated(&mut *store, DuplicatedS32::I322(0))?,
+        exports.call_identify_duplicated(&mut *store, DuplicatedS32::I322(0))?,
         2
     );
 
     assert!(matches!(
-        exports.add_one_duplicated(&mut *store, DuplicatedS32::I320(0))?,
+        exports.call_add_one_duplicated(&mut *store, DuplicatedS32::I320(0))?,
         DuplicatedS32::I320(1)
     ));
     assert!(matches!(
-        exports.add_one_duplicated(&mut *store, DuplicatedS32::I321(0))?,
+        exports.call_add_one_duplicated(&mut *store, DuplicatedS32::I321(0))?,
         DuplicatedS32::I321(1)
     ));
     assert!(matches!(
-        exports.add_one_duplicated(&mut *store, DuplicatedS32::I322(0))?,
+        exports.call_add_one_duplicated(&mut *store, DuplicatedS32::I322(0))?,
         DuplicatedS32::I322(1)
     ));
 
     // Identify Distinguishable Num
     assert_eq!(
-        exports.identify_distinguishable_num(&mut *store, DistinguishableNum::F64(0.0))?,
+        exports.call_identify_distinguishable_num(&mut *store, DistinguishableNum::F64(0.0))?,
         0
     );
     assert_eq!(
-        exports.identify_distinguishable_num(&mut *store, DistinguishableNum::I64(0))?,
+        exports.call_identify_distinguishable_num(&mut *store, DistinguishableNum::I64(0))?,
         1
     );
 
-    match exports.add_one_distinguishable_num(&mut *store, DistinguishableNum::F64(0.0))? {
+    match exports.call_add_one_distinguishable_num(&mut *store, DistinguishableNum::F64(0.0))? {
         DistinguishableNum::F64(f) => assert_eq!(f, 1.0),
         _ => panic!(),
     };
     assert!(matches!(
-        exports.add_one_distinguishable_num(&mut *store, DistinguishableNum::I64(0))?,
+        exports.call_add_one_distinguishable_num(&mut *store, DistinguishableNum::I64(0))?,
         DistinguishableNum::I64(1),
     ));
     Ok(())

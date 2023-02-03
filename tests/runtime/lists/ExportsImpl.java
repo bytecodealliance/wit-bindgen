@@ -1,6 +1,6 @@
 package wit_lists;
 
-import static wit_lists.ListsImpl.expect;
+import static wit_lists.ListsWorldImpl.expect;
 
 import java.util.ArrayList;
 

@@ -1,6 +1,6 @@
 package wit_numbers;
 
-public class NumbersImpl {
+public class NumbersWorldImpl {
     private static void expect(boolean v) {
         if (!v) {
             throw new AssertionError();
