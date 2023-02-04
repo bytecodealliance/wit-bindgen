@@ -2248,9 +2248,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             // TODO: please simplfy this logic
                             let is_pointer = is_arg_by_pointer(self.interface.resolve, o);
                             let val = self.interface.get_primitive_type_value(o);
+                            let c_target_name = self.interface.get_c_ty(o);
                             let param = if !in_export {
                                 if is_pointer {
-                                    let c_target_name = self.interface.get_c_ty(o);
                                     self.lift_src
                                         .push_str(&format!("var {lift_name}_c {c_target_name}\n"));
                                     if !in_export
@@ -2270,9 +2270,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 }
                                 param.to_string()
                             } else {
-                                let need_pointer = (count == 0) || count > 0 && is_pointer;
-                                if need_pointer {
+                                if count == 0 {
                                     self.lift_src.push_str(&format!("if {param} == nil {{\n"));
+                                } else if is_pointer {
+                                    self.lift_src.push_str(&format!("var empty_{lift_name} {c_target_name}\n"));
+                                    self.lift_src.push_str(&format!("if {param} == empty_{lift_name} {{\n"));
                                 } else {
                                     self.lift_src.push_str(&format!("if {param} == {val} {{\n"));
                                 }
