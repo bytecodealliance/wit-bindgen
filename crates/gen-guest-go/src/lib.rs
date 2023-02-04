@@ -1999,14 +1999,22 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             if let Some(ty) =
                                 get_nonempty_type(self.interface.resolve, case.ty.as_ref())
                             {
-                                let name = self.interface.get_ty(ty);
+                                let name = self.interface.get_c_ty(ty);
                                 uwriteln!(
                                     self.lower_src,
                                     "
                                     {lower_name}.tag = {i}
-                                    {lower_name}_ptr := (*{name})(unsafe.Pointer(&{lower_name}.val))
-                                    *{lower_name}_ptr = {param}.Get{case_name}()"
+                                    {lower_name}_ptr := (*{name})(unsafe.Pointer(&{lower_name}.val))"
                                 );
+                                self.lower_value(
+                                    &format!("{param}.Get{case_name}()"),
+                                    ty,
+                                    &format!("{lower_name}_val"),
+                                    false,
+                                    count + 1,
+                                    in_export,
+                                );
+                                uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
                             } else {
                                 uwriteln!(self.lower_src, "{lower_name}.tag = {i}");
                             }
@@ -2059,14 +2067,24 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 self.lower_src,
                                 "if {param}.Kind() == {ty}Kind{case_name} {{"
                             );
-                            let name = self.interface.get_ty(&case.ty);
+                            let name = self.interface.get_c_ty(&case.ty);
                             uwriteln!(
                                 self.lower_src,
                                 "
                                 {lower_name}.tag = {i}
-                                {lower_name}_ptr := (*{name})(unsafe.Pointer(&{lower_name}.val))
-                                *{lower_name}_ptr = {param}.Get{case_name}()"
+                                {lower_name}_ptr := (*{name})(unsafe.Pointer(&{lower_name}.val))"
                             );
+
+                            self.lower_value(
+                                &format!("{param}.Get{case_name}()"),
+                                &case.ty,
+                                &format!("{lower_name}_val"),
+                                false,
+                                count + 1,
+                                in_export,
+                            );
+                            uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
+
                             self.lower_src.push_str("}\n");
                         }
                     }
@@ -2393,12 +2411,20 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             if let Some(ty) =
                                 get_nonempty_type(self.interface.resolve, case.ty.as_ref())
                             {
-                                let ty = self.interface.get_ty(ty);
+                                let ty_name = self.interface.get_c_ty(ty);
                                 uwriteln!(
                                     self.lift_src,
-                                    "{lift_name}_ptr := (*{ty})(unsafe.Pointer(&{param}.val))
-                                    {name}{case_name}(*{lift_name}_ptr)"
+                                    "{lift_name}_ptr := *(*{ty_name})(unsafe.Pointer(&{param}.val))"
                                 );
+                                self.lift_value(
+                                    &format!("{lift_name}_ptr"),
+                                    ty,
+                                    &format!("{lift_name}_val"),
+                                    false,
+                                    count + 1,
+                                    in_export,
+                                );
+                                uwriteln!(self.lift_src, "{name}{case_name}({lift_name}_val)")
                             } else {
                                 uwriteln!(self.lift_src, "{name}{case_name}()");
                             }
@@ -2411,7 +2437,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         for (i, case) in e.cases.iter().enumerate() {
                             let case_name = case.name.to_upper_camel_case();
                             uwriteln!(self.lift_src, "if {param} == {i} {{");
-                            uwriteln!(self.lift_src, "{name}{case_name}()");
+                            uwriteln!(self.lift_src, "{lift_name} = {name}{case_name}()");
                             self.lift_src.push_str("}\n");
                         }
                     }
@@ -2422,14 +2448,22 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         for (i, case) in u.cases.iter().enumerate() {
                             self.lift_src
                                 .push_str(&format!("if {param}.tag == {i} {{\n"));
-                            let ty = self.interface.get_ty(&case.ty);
+                            let ty = self.interface.get_c_ty(&case.ty);
                             let case_name = format!("F{i}");
                             uwriteln!(
                                 self.lift_src,
                                 "
-                                {lift_name}_ptr := (*{ty})(unsafe.Pointer(&{param}.val))
-                                {name}{case_name}(*{lift_name}_ptr)"
+                                {lift_name}_ptr := *(*{ty})(unsafe.Pointer(&{param}.val))"
                             );
+                            self.lift_value(
+                                &format!("{lift_name}_ptr"),
+                                &case.ty,
+                                &format!("{lift_name}_val"),
+                                false,
+                                count + 1,
+                                in_export,
+                            );
+                            uwriteln!(self.lift_src, "{name}{case_name}({lift_name}_val)");
                             self.lift_src.push_str("}\n");
                         }
                     }
