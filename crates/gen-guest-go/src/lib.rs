@@ -1731,7 +1731,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             let c_target_name = self.interface.get_c_ty(&ok_inner);
             uwriteln!(
                 self.lower_src,
-                "{lower_name}_ptr := (*{c_target_name})(unsafe.Pointer(&{lower_inner_name1}))"
+                "{lower_name}_ptr := (*{c_target_name})(unsafe.Pointer({lower_inner_name1}))"
             );
             self.lower_value(
                 &format!("{param}.Unwrap()"),
@@ -1748,7 +1748,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             let c_target_name = self.interface.get_c_ty(&err_inner);
             uwriteln!(
                 self.lower_src,
-                "{lower_name}_ptr := (*{c_target_name})(unsafe.Pointer(&{lower_inner_name2}))"
+                "{lower_name}_ptr := (*{c_target_name})(unsafe.Pointer({lower_inner_name2}))"
             );
             self.lower_value(
                 &format!("{param}.UnwrapErr()"),
@@ -1914,7 +1914,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                         .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
                                 );
                             }
-                            let inner_name = format!("{lower_name}.val");
+                            let inner_name = format!("&{lower_name}.val");
                             self.lower_result_value(
                                 param,
                                 &Type::Id(*id),
