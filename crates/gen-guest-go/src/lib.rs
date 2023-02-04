@@ -264,9 +264,10 @@ impl WorldGenerator for TinyGo {
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
         let world = &resolve.worlds[id];
         let mut header = Source::default();
+        let snake = self.world.to_snake_case();
         // add package
         header.push_str("package ");
-        header.push_str(self.world.to_snake_case().as_str());
+        header.push_str(&snake);
         header.push_str("\n\n");
 
         // import C
@@ -295,7 +296,7 @@ impl WorldGenerator for TinyGo {
             let mut result_option_src = Source::default();
             uwriteln!(
                 result_option_src,
-                "package variants
+                "package {snake}
 
                 // inspired from https://github.com/moznion/go-optional
                 
