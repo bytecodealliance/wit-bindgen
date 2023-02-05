@@ -76,8 +76,6 @@ fn verify(dir: &Path, name: &str) {
     cmd.arg("build");
     cmd.arg("-wasm-abi=generic");
     cmd.arg("-target=wasi");
-    cmd.arg("-gc=leaking");
-    cmd.arg("-no-debug");
     cmd.arg("-o");
     cmd.arg("go.wasm");
     cmd.arg(format!("{name}.go"));
