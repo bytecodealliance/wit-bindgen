@@ -1125,7 +1125,7 @@ impl InterfaceGenerator<'_> {
         );
         uwriteln!(
             self.src,
-            "func (n {name}) Set{case_name}(v {ty}) {{
+            "func (n *{name}) Set{case_name}(v {ty}) {{
                 n.val = v
                 n.kind = {name}Kind{case_name}
             }}
@@ -2304,6 +2304,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     in_export,
                                 );
                                 uwriteln!(self.lift_src, "{lift_name}.SetErr({lift_name}_val)")
+                            } else {
+                                uwriteln!(self.lift_src, "{lift_name}.SetErr(struct{{}}{{}})")
                             }
                             uwriteln!(self.lift_src, "}} else {{");
                             if let Some(ok_inner) = ok {
@@ -2424,9 +2426,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     count + 1,
                                     in_export,
                                 );
-                                uwriteln!(self.lift_src, "{name}{case_name}({lift_name}_val)")
+                                uwriteln!(
+                                    self.lift_src,
+                                    "{lift_name} = {name}{case_name}({lift_name}_val)"
+                                )
                             } else {
-                                uwriteln!(self.lift_src, "{name}{case_name}()");
+                                uwriteln!(self.lift_src, "{lift_name} = {name}{case_name}()");
                             }
                             self.lift_src.push_str("}\n");
                         }
@@ -2463,7 +2468,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 count + 1,
                                 in_export,
                             );
-                            uwriteln!(self.lift_src, "{name}{case_name}({lift_name}_val)");
+                            uwriteln!(
+                                self.lift_src,
+                                "{lift_name} = {name}{case_name}({lift_name}_val)"
+                            );
                             self.lift_src.push_str("}\n");
                         }
                     }
