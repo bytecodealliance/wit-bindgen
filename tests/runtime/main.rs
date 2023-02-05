@@ -10,6 +10,7 @@ use wit_component::{ComponentEncoder, StringEncoding};
 use wit_parser::Resolve;
 
 mod flavorful;
+mod http;
 mod lists;
 mod many_arguments;
 mod numbers;
@@ -219,7 +220,6 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
         let gen_dir = out_dir.join("gen");
         fs::create_dir_all(&gen_dir).unwrap();
         for (file, contents) in files.iter() {
-            println!("file dir is {}", file);
             let dst = gen_dir.join(file);
             fs::write(dst, contents).unwrap();
         }

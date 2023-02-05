@@ -53,11 +53,7 @@ fn avoid_keyword(s: &str) -> String {
 
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
-pub struct Opts {
-    /// Whether or not to generate a stub class for exported functions
-    #[cfg_attr(feature = "clap", arg(long))]
-    pub generate_stub: bool,
-}
+pub struct Opts {}
 
 impl Opts {
     pub fn build(&self) -> Box<dyn WorldGenerator> {
@@ -949,13 +945,6 @@ impl InterfaceGenerator<'_> {
         format!("defer {ty_name}_free({arg})\n")
     }
 
-    fn get_free_c_option_arg(&mut self, ty: Option<&Type>, arg: &str) -> String {
-        let mut ty_name = self.get_c_optional_type_name(ty);
-        let it: Vec<&str> = ty_name.split('_').collect();
-        ty_name = it[..it.len() - 1].join("_");
-        format!("defer {ty_name}_free({arg})\n")
-    }
-
     fn get_func_signature_no_interface(&mut self, resolve: &Resolve, func: &Function) -> String {
         format!(
             "{}({}){}",
@@ -1010,18 +999,6 @@ impl InterfaceGenerator<'_> {
         match ty {
             Type::Id(id) => match &self.resolve.types[*id].kind {
                 TypeDefKind::Result(_) => true,
-                TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
-                TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
-                _ => false,
-            },
-            _ => false,
-        }
-    }
-
-    fn is_list_ty(&self, ty: &Type) -> bool {
-        match ty {
-            Type::Id(id) => match &self.resolve.types[*id].kind {
-                TypeDefKind::List(_) => true,
                 TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
                 TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
                 _ => false,
@@ -1218,15 +1195,15 @@ impl InterfaceGenerator<'_> {
                         self.src.push_str(&format!("var ret {c_ret_type}\n"));
                     } else {
                         let (ok, err) = self.extract_result_ty(return_ty);
-                        let (ret_name, c_ret_type, ty) = match (ok, err) {
-                            (None, Some(err)) => ("err", self.get_c_ty(&err), err),
-                            (Some(ok), None) => ("ret", self.get_c_ty(&ok), ok),
+                        let (ret_name, c_ret_type) = match (ok, err) {
+                            (None, Some(err)) => ("err", self.get_c_ty(&err)),
+                            (Some(ok), None) => ("ret", self.get_c_ty(&ok)),
                             (Some(ok), Some(err)) => {
                                 let c_err_type = self.get_c_ty(&err);
                                 self.src.push_str(&format!("var err {c_err_type}\n"));
-                                ("ret", self.get_c_ty(&ok), ok)
+                                ("ret", self.get_c_ty(&ok))
                             }
-                            _ => ("", "void".into(), Type::Bool),
+                            _ => ("", "void".into()),
                         };
                         if c_ret_type != *"void" {
                             self.src.push_str(&format!("var {ret_name} {c_ret_type}\n"));
@@ -1645,15 +1622,26 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
     fn lower(&mut self, name: &str, ty: &Type, in_export: bool, multi_return: bool) {
         let lower_name = format!("lower_{name}");
-        let count = if multi_return { 1 } else { 0 };
+        let flatten_result = !multi_return && in_export;
         self.lower_value(
             name,
             ty,
             lower_name.as_ref(),
             self.interface.extract_option_ty(ty).is_some(),
-            count,
-            in_export,
+            flatten_result,
         );
+
+        // Check whether or not the C variable needs to be freed.
+        // If this variable is in export function, which will be returned to host to use.
+        //    There is no need to free return variables.
+        // If this variable does not own anything, it does not need to be freed.
+        // If this variable is in inner node of the recursive call, no need to be freed.
+        //    This is because the root node's call to free will recursively free the whole tree.
+        // Otherwise, free this variable.
+        if !in_export && owns_anything(self.interface.resolve, ty) {
+            self.lower_src
+                .push_str(&self.interface.get_free_c_arg(ty, &format!("&{lower_name}")));
+        }
         self.c_args.push(lower_name);
     }
 
@@ -1662,9 +1650,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         param: &str,
         l: &Type,
         lower_name: &str,
-        flatten: bool,
-        count: u32,
-        in_export: bool,
+        flatten_option: bool,
+        flatten_result: bool,
     ) {
         let list_ty = self.interface.get_c_ty(l);
         uwriteln!(
@@ -1688,22 +1675,14 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let lower_name = &format!("{lower_name}_ptr");
 
         if let Some(inner) = self.interface.extract_list_ty(l) {
-            self.lower_list_value(
-                param,
-                &inner.clone(),
-                lower_name,
-                flatten,
-                count + 1,
-                in_export,
-            );
+            self.lower_list_value(param, &inner.clone(), lower_name, flatten_option, false);
         } else {
             self.lower_value(
                 param,
                 l,
                 &format!("{lower_name}_value"),
-                flatten,
-                count,
-                in_export,
+                flatten_option,
+                flatten_result,
             );
             uwriteln!(self.lower_src, "*{lower_name} = {lower_name}_value");
         }
@@ -1717,8 +1696,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         param: &str,
         ty: &Type,
         lower_name: &str,
-        count: u32,
-        in_export: bool,
         lower_inner_name1: &str,
         lower_inner_name2: &str,
     ) {
@@ -1738,8 +1715,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 &ok_inner,
                 &format!("{lower_name}_val"),
                 false,
-                count + 1,
-                in_export,
+                false,
             );
             uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
         }
@@ -1755,22 +1731,31 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 &err_inner,
                 &format!("{lower_name}_val"),
                 false,
-                count + 1,
-                in_export,
+                false,
             );
             uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
         }
         self.lower_src.push_str("}\n");
     }
 
+    /// Lower a value to a string representation.
+    ///
+    /// # Parameters
+    ///
+    /// * `param` - The string representation of the parameter of a function
+    /// * `ty` - A reference to a `Type` that specifies the type of the value.
+    /// * `lower_name` - A reference to a string that represents the name to be used for the lower value.
+    /// * `flatten` - A boolean value that indicates if Option type should be flattened.
+    /// * `count` - It represents how deep the recursion is. Used for indicate if Result type should be flattened.
+    /// * `multi_return` - A boolean value that indicates if multiple values should be returned. It indicates if Result type should be flattened.
+    /// * `in_export` - A boolean value that indicates if the value is in a export function.
     fn lower_value(
         &mut self,
         param: &str,
         ty: &Type,
         lower_name: &str,
         flatten: bool,
-        count: u32,
-        in_export: bool,
+        flatten_result: bool,
     ) {
         match ty {
             Type::Bool => {
@@ -1788,18 +1773,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     {lower_name}.ptr = C.CString({param})
                     {lower_name}.len = C.size_t(len({param}))"
                 );
-
-                // Check whether or not the C variable needs to be freed.
-                // If this variable is in export function, which will be returned to host to use.
-                //    There is no need to free return variables.
-                // If this variable does not own anything, it does not need to be freed.
-                // If this variable is in inner node of the recursive call, no need to be freed.
-                //    This is because the root node's call to free will recursively free the whole tree.
-                // Otherwise, free this variable.
-                if !in_export && count == 0 && owns_anything(self.interface.resolve, ty) {
-                    self.lower_src
-                        .push_str(&self.interface.get_free_c_arg(ty, &format!("&{lower_name}")));
-                }
             }
             Type::Id(id) => {
                 let ty = &self.interface.resolve.types[*id]; // receive type
@@ -1808,13 +1781,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     TypeDefKind::Record(r) => {
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id)); // okay to unwrap because a record must have a name
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
-                        if !in_export && owns_anything(self.interface.resolve, &Type::Id(*id)) {
-                            self.lower_src.push_str(
-                                &self
-                                    .interface
-                                    .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
-                            );
-                        }
                         for field in r.fields.iter() {
                             let c_field_name = &self.get_c_field_name(field);
                             let field_name = &self.interface.get_field_name(field);
@@ -1824,8 +1790,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &field.ty,
                                 &format!("{lower_name}_{c_field_name}"),
                                 false,
-                                count + 1,
-                                in_export,
+                                false,
                             );
                             uwriteln!(
                                 self.lower_src,
@@ -1841,24 +1806,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     TypeDefKind::Tuple(t) => {
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id)); // okay to unwrap because a record must have a name
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
-                        if !in_export
-                            && count == 0
-                            && owns_anything(self.interface.resolve, &Type::Id(*id))
-                        {
-                            self.lower_src.push_str(
-                                &self
-                                    .interface
-                                    .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
-                            );
-                        }
                         for (i, ty) in t.types.iter().enumerate() {
                             self.lower_value(
                                 &format!("{param}.F{i}"),
                                 ty,
                                 &format!("{lower_name}_f{i}"),
                                 false,
-                                count + 1,
-                                in_export,
+                                false,
                             );
                             uwriteln!(self.lower_src, "{lower_name}.f{i} = {lower_name}_f{i}");
                         }
@@ -1870,16 +1824,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             self.interface.get_c_ty(&Type::Id(*id))
                         };
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
-                        if !in_export
-                            && count == 0
-                            && owns_anything(self.interface.resolve, &Type::Id(*id))
-                        {
-                            self.lower_src.push_str(
-                                &self
-                                    .interface
-                                    .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
-                            );
-                        }
                         uwriteln!(self.lower_src, "if {param}.IsSome() {{");
                         if !is_empty_type(self.interface.resolve, o) {
                             self.lower_value(
@@ -1887,8 +1831,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 o,
                                 &format!("{lower_name}_val"),
                                 flatten,
-                                count + 1,
-                                in_export,
+                                false,
                             );
                             if self.interface.extract_option_ty(o).is_none() && flatten {
                                 uwriteln!(self.lower_src, "{lower_name} = {lower_name}_val");
@@ -1903,24 +1846,15 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     TypeDefKind::Result(_) => {
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
                         self.interface.gen.needs_import_unsafe = true;
-                        if count > 0 || !in_export {
+                        if !flatten_result {
                             // import
                             uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
                             uwriteln!(self.lower_src, "{lower_name}.is_err = {param}.IsErr()");
-                            if !in_export && owns_anything(self.interface.resolve, &Type::Id(*id)) {
-                                self.lower_src.push_str(
-                                    &self
-                                        .interface
-                                        .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
-                                );
-                            }
                             let inner_name = format!("&{lower_name}.val");
                             self.lower_result_value(
                                 param,
                                 &Type::Id(*id),
                                 lower_name,
-                                count,
-                                in_export,
                                 &inner_name,
                                 &inner_name,
                             );
@@ -1929,8 +1863,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 param,
                                 &Type::Id(*id),
                                 lower_name,
-                                count,
-                                in_export,
                                 "ret",
                                 "err",
                             );
@@ -1942,16 +1874,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
 
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
-                        if !in_export
-                            && count == 0
-                            && owns_anything(self.interface.resolve, &Type::Id(*id))
-                        {
-                            let free = self
-                                .interface
-                                .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}"));
-                            self.lower_src.push_str(&free);
-                        }
-                        self.lower_list_value(param, l, lower_name, false, count + 1, in_export);
+                        self.lower_list_value(param, l, lower_name, false, false);
                     }
                     TypeDefKind::Type(t) => {
                         uwriteln!(
@@ -1959,19 +1882,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             "var {lower_name} {value}",
                             value = self.interface.get_c_ty(t),
                         );
-                        if !in_export && count == 0 && owns_anything(self.interface.resolve, t) {
-                            self.lower_src.push_str(
-                                &self.interface.get_free_c_arg(t, &format!("&{lower_name}")),
-                            );
-                        }
-                        self.lower_value(
-                            param,
-                            t,
-                            &format!("{lower_name}_val"),
-                            flatten,
-                            count + 1,
-                            in_export,
-                        );
+                        self.lower_value(param, t, &format!("{lower_name}_val"), flatten, false);
                         uwriteln!(self.lower_src, "{lower_name} = {lower_name}_val");
                     }
                     TypeDefKind::Variant(v) => {
@@ -1980,16 +1891,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
                         let ty = self.interface.get_ty(&Type::Id(*id));
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
-                        if !in_export
-                            && count == 0
-                            && owns_anything(self.interface.resolve, &Type::Id(*id))
-                        {
-                            self.lower_src.push_str(
-                                &self
-                                    .interface
-                                    .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
-                            );
-                        }
                         for (i, case) in v.cases.iter().enumerate() {
                             let case_name = case.name.to_upper_camel_case();
                             uwriteln!(
@@ -2011,8 +1912,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     ty,
                                     &format!("{lower_name}_val"),
                                     false,
-                                    count + 1,
-                                    in_export,
+                                    false,
                                 );
                                 uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
                             } else {
@@ -2025,16 +1925,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
                         let ty = self.interface.get_ty(&Type::Id(*id));
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
-                        if !in_export
-                            && count == 0
-                            && owns_anything(self.interface.resolve, &Type::Id(*id))
-                        {
-                            self.lower_src.push_str(
-                                &self
-                                    .interface
-                                    .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
-                            );
-                        }
                         for (i, case) in e.cases.iter().enumerate() {
                             let case_name = case.name.to_upper_camel_case();
                             uwriteln!(
@@ -2051,16 +1941,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
                         let ty = self.interface.get_ty(&Type::Id(*id));
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
-                        if !in_export
-                            && count == 0
-                            && owns_anything(self.interface.resolve, &Type::Id(*id))
-                        {
-                            self.lower_src.push_str(
-                                &self
-                                    .interface
-                                    .get_free_c_arg(&Type::Id(*id), &format!("&{lower_name}")),
-                            );
-                        }
                         for (i, case) in u.cases.iter().enumerate() {
                             let case_name = format!("F{i}");
                             uwriteln!(
@@ -2080,8 +1960,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &case.ty,
                                 &format!("{lower_name}_val"),
                                 false,
-                                count + 1,
-                                in_export,
+                                false,
                             );
                             uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
 
@@ -2090,7 +1969,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     }
                     TypeDefKind::Future(_) => todo!("impl future"),
                     TypeDefKind::Stream(_) => todo!("impl future"),
-                    _ => self.lower_src.push_str(""),
+                    TypeDefKind::Unknown => unreachable!(),
                 }
             }
             a => {
@@ -2100,10 +1979,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     c_type_name = self.interface.get_c_ty(a),
                     param_name = param,
                 );
-                if !in_export && count == 0 && owns_anything(self.interface.resolve, a) {
-                    self.lower_src
-                        .push_str(&self.interface.get_free_c_arg(a, &format!("&{lower_name}")));
-                }
             }
         }
     }
@@ -2329,7 +2204,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             uwriteln!(self.lift_src, "if !is_ret_ok {{");
                             if let Some(err_inner) = err {
                                 self.lift_value(
-                                    &format!("err"),
+                                    "err",
                                     &err_inner,
                                     &format!("{lift_name}_val"),
                                     false,
@@ -2341,7 +2216,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             uwriteln!(self.lift_src, "}} else {{");
                             if let Some(ok_inner) = ok {
                                 self.lift_value(
-                                    &format!("ret"),
+                                    "ret",
                                     &ok_inner,
                                     &format!("{lift_name}_val"),
                                     false,
@@ -2477,7 +2352,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     }
                     TypeDefKind::Future(_) => todo!("impl future"),
                     TypeDefKind::Stream(_) => todo!("impl stream"),
-                    _ => self.lift_src.push_str(""),
+                    TypeDefKind::Unknown => unreachable!(),
                 }
             }
             a => {
