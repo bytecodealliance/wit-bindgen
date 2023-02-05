@@ -228,6 +228,10 @@ func (i ListImpl) ListMinmax64(a []uint64, b []int64) ([]uint64, []int64) {
 	return a, b
 }
 
+func (i ListImpl) ListMinmaxFloat(a []float32, b []float64) ([]float32, []float64) {
+	return a, b
+}
+
 func (i ListImpl) ListRoundtrip(a []uint8) []uint8 {
 	return a
 }
