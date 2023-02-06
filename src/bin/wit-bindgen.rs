@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
+use std::str;
 use wit_bindgen_core::{wit_parser, Files, WorldGenerator};
 use wit_parser::{Resolve, UnresolvedPackage};
 
@@ -96,6 +97,22 @@ fn main() -> Result<()> {
         if opt.check {
             let prev = std::fs::read(&dst).with_context(|| format!("failed to read {:?}", dst))?;
             if prev != contents {
+                // The contents differ. If it looks like textual contents, do a
+                // line-by-line comparison so that we can tell users what the
+                // problem is directly.
+                if let (Ok(utf8_prev), Ok(utf8_contents)) =
+                    (str::from_utf8(&prev), str::from_utf8(contents))
+                {
+                    if !utf8_prev
+                        .chars()
+                        .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
+                        && utf8_prev.lines().eq(utf8_contents.lines())
+                    {
+                        bail!("{} differs only in line endings (CRLF vs. LF). If this is a text file, configure git to mark the file as `text eol=lf`.", dst.display());
+                    }
+                }
+                // The contents are binary or there are other differences; just
+                // issue a generic error.
                 bail!("not up to date: {}", dst.display());
             }
             continue;
