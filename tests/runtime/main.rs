@@ -10,7 +10,6 @@ use wit_component::{ComponentEncoder, StringEncoding};
 use wit_parser::Resolve;
 
 mod flavorful;
-mod http;
 mod lists;
 mod many_arguments;
 mod numbers;
@@ -234,7 +233,6 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
 
         let mut cmd = Command::new("tinygo");
         cmd.arg("build");
-        cmd.arg("-wasm-abi=generic");
         cmd.arg("-target=wasi");
         cmd.arg("-o");
         cmd.arg(&out_wasm);
