@@ -94,9 +94,8 @@ fn main() -> Result<()> {
         println!("Generating {:?}", dst);
 
         if opt.check {
-            let prev = std::fs::read_to_string(&dst)
-                .with_context(|| format!("failed to read {:?}", dst))?;
-            if prev.as_bytes() != contents {
+            let prev = std::fs::read(&dst).with_context(|| format!("failed to read {:?}", dst))?;
+            if prev != contents {
                 bail!("not up to date: {}", dst.display());
             }
             continue;
