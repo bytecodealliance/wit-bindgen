@@ -245,12 +245,78 @@ impl InterfaceGenerator<'_> {
                         }
                         self.push_str(")");
                     }
-                    TypeDefKind::Record(_)
-                    | TypeDefKind::Flags(_)
-                    | TypeDefKind::Enum(_)
-                    | TypeDefKind::Variant(_)
-                    | TypeDefKind::Union(_) => {
-                        unreachable!()
+                    TypeDefKind::Record(record) => {
+                        self.push_str("record { ");
+                        let mut first = true;
+                        for field in &record.fields {
+                            if first {
+                                first = false;
+                            } else {
+                                self.push_str(", ");
+                            }
+                            self.push_str(&field.name);
+                            self.push_str(": ");
+                            self.print_ty(&field.ty, false);
+                        }
+                        self.push_str(" }");
+                    }
+                    TypeDefKind::Variant(variant) => {
+                        self.push_str("variant { ");
+                        let mut first = true;
+                        for field in &variant.cases {
+                            if first {
+                                first = false;
+                            } else {
+                                self.push_str(", ");
+                            }
+                            self.push_str(&field.name);
+                            self.push_str(": ");
+                            if let Some(ty) = &field.ty {
+                                self.print_ty(ty, false);
+                            } else {
+                                self.push_str("_");
+                            }
+                        }
+                        self.push_str(" }");
+                    }
+                    TypeDefKind::Union(union) => {
+                        self.push_str("union { ");
+                        let mut first = true;
+                        for case in &union.cases {
+                            if first {
+                                first = false;
+                            } else {
+                                self.push_str(", ");
+                            }
+                            self.print_ty(&case.ty, false);
+                        }
+                        self.push_str(" }");
+                    }
+                    TypeDefKind::Enum(enum_) => {
+                        self.push_str("enum { ");
+                        let mut first = true;
+                        for case in &enum_.cases {
+                            if first {
+                                first = false;
+                            } else {
+                                self.push_str(", ");
+                            }
+                            self.push_str(&case.name);
+                        }
+                        self.push_str(" }");
+                    }
+                    TypeDefKind::Flags(flags) => {
+                        self.push_str("flags { ");
+                        let mut first = true;
+                        for flag in &flags.flags {
+                            if first {
+                                first = false;
+                            } else {
+                                self.push_str(", ");
+                            }
+                            self.push_str(&flag.name);
+                        }
+                        self.push_str(" }");
                     }
                     TypeDefKind::Option(t) => {
                         self.push_str("option<");
