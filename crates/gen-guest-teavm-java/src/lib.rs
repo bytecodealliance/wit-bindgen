@@ -768,7 +768,7 @@ impl InterfaceGenerator<'_> {
             .iter()
             .map(|(name, ty)| {
                 let ty = self.type_name_with_qualifier(ty, qualifier);
-                let name = name.to_lower_camel_case();
+                let name = to_java_ident(name);
                 format!("{ty} {name}")
             })
             .collect::<Vec<_>>()
@@ -805,7 +805,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .fields
             .iter()
             .map(|field| {
-                let name = field.name.to_lower_camel_case();
+                let name = to_java_ident(&field.name);
                 format!("this.{name} = {name};")
             })
             .collect::<Vec<_>>()
@@ -903,7 +903,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .cases
             .iter()
             .map(|case| {
-                let case_name = case.name.to_lower_camel_case();
+                let case_name = to_java_ident(&case.name);
                 let tag = case.name.to_shouty_snake_case();
                 let (parameter, argument) = if let Some(ty) = self.non_empty_type(case.ty.as_ref())
                 {
@@ -2181,4 +2181,62 @@ fn is_primitive(ty: &Type) -> bool {
             | Type::Float32
             | Type::Float64
     )
+}
+
+pub fn to_java_ident(name: &str) -> String {
+    match name {
+        // Escape Java keywords
+        // Source: https://docs.oracle.com/javase/tutorial/java/nutsandbolts/_keywords.html
+        "abstract" => "abstract_".into(),
+        "continue" => "continue_".into(),
+        "for" => "for_".into(),
+        "new" => "new_".into(),
+        "switch" => "switch_".into(),
+        "assert" => "assert_".into(),
+        "default" => "default_".into(),
+        "goto" => "goto_".into(),
+        "package" => "package_".into(),
+        "synchronized" => "synchronized_".into(),
+        "boolean" => "boolean_".into(),
+        "do" => "do_".into(),
+        "if" => "if_".into(),
+        "private" => "private_".into(),
+        "this" => "this_".into(),
+        "break" => "break_".into(),
+        "double" => "double_".into(),
+        "implements" => "implements_".into(),
+        "protected" => "protected_".into(),
+        "throw" => "throw_".into(),
+        "byte" => "byte_".into(),
+        "else" => "else_".into(),
+        "import" => "import_".into(),
+        "public" => "public_".into(),
+        "throws" => "throws_".into(),
+        "case" => "case_".into(),
+        "enum" => "enum_".into(),
+        "instanceof" => "instanceof_".into(),
+        "return" => "return_".into(),
+        "transient" => "transient_".into(),
+        "catch" => "catch_".into(),
+        "extends" => "extends_".into(),
+        "int" => "int_".into(),
+        "short" => "short_".into(),
+        "try" => "try_".into(),
+        "char" => "char_".into(),
+        "final" => "final_".into(),
+        "interface" => "interface_".into(),
+        "static" => "static_".into(),
+        "void" => "void_".into(),
+        "class" => "class_".into(),
+        "finally" => "finally_".into(),
+        "long" => "long_".into(),
+        "strictfp" => "strictfp_".into(),
+        "volatile" => "volatile_".into(),
+        "const" => "const_".into(),
+        "float" => "float_".into(),
+        "native" => "native_".into(),
+        "super" => "super_".into(),
+        "while" => "while_".into(),
+        s => s.to_lower_camel_case(),
+    }
 }
