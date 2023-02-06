@@ -64,6 +64,11 @@ struct Common {
     /// it's `foo.bar` which is the world named `bar` within document `foo`.
     #[clap(short, long)]
     world: Option<String>,
+
+    /// Indicates that no files are written and instead files are checked if
+    /// they're up-to-date with the source files.
+    #[clap(long)]
+    check: bool,
 }
 
 fn main() -> Result<()> {
@@ -87,6 +92,16 @@ fn main() -> Result<()> {
             None => name.into(),
         };
         println!("Generating {:?}", dst);
+
+        if opt.check {
+            let prev = std::fs::read_to_string(&dst)
+                .with_context(|| format!("failed to read {:?}", dst))?;
+            if prev.as_bytes() != contents {
+                bail!("not up to date: {}", dst.display());
+            }
+            continue;
+        }
+
         if let Some(parent) = dst.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("failed to create {:?}", parent))?;
