@@ -1288,8 +1288,13 @@ impl InterfaceGenerator<'_> {
 
             // free all the parameters
             for (name, ty) in func.params.iter() {
-                if owns_anything(resolve, ty) {
-                    let free = self.get_free_c_arg(ty, &avoid_keyword(&name.to_snake_case()));
+                if let Some(o) = self.extract_option_ty(&ty) {
+                    if owns_anything(resolve, &o) {
+                        let free = self.get_free_c_arg(&o, &avoid_keyword(&name.to_snake_case()));
+                        src.push_str(&free);
+                    }
+                } else if owns_anything(resolve, &ty) {
+                    let free = self.get_free_c_arg(&ty, &avoid_keyword(&name.to_snake_case()));
                     src.push_str(&free);
                 }
             }
@@ -1638,7 +1643,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         // If this variable is in inner node of the recursive call, no need to be freed.
         //    This is because the root node's call to free will recursively free the whole tree.
         // Otherwise, free this variable.
-        if !in_export && owns_anything(self.interface.resolve, ty) {
+        if let Some(o) = self.interface.extract_option_ty(ty) {
+            if !in_export && owns_anything(self.interface.resolve, &o) {
+                self.lower_src
+                    .push_str(&self.interface.get_free_c_arg(&o, &format!("&{lower_name}")));
+            }
+        } else if !in_export && owns_anything(self.interface.resolve, ty) {
             self.lower_src
                 .push_str(&self.interface.get_free_c_arg(ty, &format!("&{lower_name}")));
         }
@@ -2266,13 +2276,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             "var {lift_name} {value}",
                             value = self.interface.get_ty(&Type::Id(*id)),
                         );
-                        // let c_field_name = &self.get_c_field_name(field);
                         self.lift_value(
                             param,
                             t,
                             &format!("{lift_name}_val"),
                             flatten,
-                            count + 1,
+                            count + 1, // TODO: figure out if this needs to increment or not
                             in_export,
                         );
                         uwriteln!(self.lift_src, "{lift_name} = {lift_name}_val");
