@@ -19,6 +19,7 @@ test = false
 wit-bindgen-core = { workspace = true }
 wit-component = { workspace = true }
 wasm-encoder = { workspace = true }
+wasm-metadata = { workspace = true }
 anyhow = { workspace = true }
 heck = { workspace = true }
 clap = { workspace = true, optional = true }

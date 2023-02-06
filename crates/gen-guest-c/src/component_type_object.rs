@@ -26,7 +26,13 @@ pub fn object(resolve: &Resolve, world: WorldId, encoding: StringEncoding) -> Re
     code.function(&Function::new([]));
     module.section(&code);
 
-    let data = wit_component::metadata::encode(resolve, world, encoding).unwrap();
+    let mut producers = wasm_metadata::Producers::empty();
+    producers.add(
+        "processed-by",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+    );
+    let data = wit_component::metadata::encode(resolve, world, encoding, Some(&producers)).unwrap();
 
     // The custom section name here must start with "component-type" but
     // otherwise is attempted to be unique here to ensure that this doesn't get
@@ -44,7 +50,7 @@ pub fn object(resolve: &Resolve, world: WorldId, encoding: StringEncoding) -> Re
     // Append the linking section, so that lld knows the custom section's symbol name
     let mut linking = LinkingSection::new();
     let mut symbols = SymbolTable::new();
-    symbols.function(0, 0, Some(&linking_symbol(&world.name)));
+    symbols.function(0, 0, Some(&linking_symbol(&world_name)));
     linking.symbol_table(&symbols);
     module.section(&linking);
 

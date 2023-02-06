@@ -1671,6 +1671,7 @@ dependencies = [
  "heck",
  "test-helpers",
  "wasm-encoder",
+ "wasm-metadata",
  "wit-bindgen-core",
  "wit-component",
 ]
