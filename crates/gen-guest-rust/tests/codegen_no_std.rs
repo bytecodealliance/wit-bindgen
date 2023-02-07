@@ -48,6 +48,7 @@ mod strings {
                 }
             }
         ",
+        no_std,
     });
 
     #[allow(dead_code)]
@@ -74,6 +75,7 @@ mod raw_strings {
             }
         ",
         raw_strings,
+        no_std,
     });
 
     #[allow(dead_code)]
@@ -105,7 +107,8 @@ mod prefix {
                     }
                 }
             ",
-            macro_call_prefix: "bindings::"
+            macro_call_prefix: "bindings::",
+            no_std,
         });
 
         pub(crate) use export_baz;
@@ -139,7 +142,8 @@ mod macro_name {
                 }
             }
         ",
-        export_macro_name: "jam"
+        export_macro_name: "jam",
+        no_std,
     });
 
     struct Component;
@@ -164,6 +168,7 @@ mod skip {
             }
         ",
         skip: ["foo"],
+        no_std,
     });
 
     struct Component;
