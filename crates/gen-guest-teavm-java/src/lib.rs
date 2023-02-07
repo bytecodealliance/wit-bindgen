@@ -447,7 +447,7 @@ impl InterfaceGenerator<'_> {
             &func.name,
             func.params
                 .iter()
-                .map(|(name, _)| name.to_lower_camel_case())
+                .map(|(name, _)| name.to_java_ident())
                 .collect(),
         );
 
@@ -742,7 +742,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn sig_string(&mut self, func: &Function, qualifier: bool) -> String {
-        let name = func.name.to_lower_camel_case();
+        let name = func.name.to_java_ident();
 
         let result_type = match func.results.len() {
             0 => "void".into(),
@@ -768,7 +768,7 @@ impl InterfaceGenerator<'_> {
             .iter()
             .map(|(name, ty)| {
                 let ty = self.type_name_with_qualifier(ty, qualifier);
-                let name = to_java_ident(name);
+                let name = name.to_java_ident();
                 format!("{ty} {name}")
             })
             .collect::<Vec<_>>()
@@ -795,7 +795,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 format!(
                     "{} {}",
                     self.type_name(&field.ty),
-                    field.name.to_lower_camel_case()
+                    field.name.to_java_ident()
                 )
             })
             .collect::<Vec<_>>()
@@ -805,7 +805,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .fields
             .iter()
             .map(|field| {
-                let name = to_java_ident(&field.name);
+                let name = field.name.to_java_ident();
                 format!("this.{name} = {name};")
             })
             .collect::<Vec<_>>()
@@ -821,7 +821,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     format!(
                         "public final {} {};",
                         self.type_name(&field.ty),
-                        field.name.to_lower_camel_case()
+                        field.name.to_java_ident()
                     )
                 })
                 .collect::<Vec<_>>()
@@ -903,7 +903,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .cases
             .iter()
             .map(|case| {
-                let case_name = to_java_ident(&case.name);
+                let case_name = case.name.to_java_ident();
                 let tag = case.name.to_shouty_snake_case();
                 let (parameter, argument) = if let Some(ty) = self.non_empty_type(case.ty.as_ref())
                 {
@@ -1209,7 +1209,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     String::new()
                 };
 
-                let method = case_name.to_lower_camel_case();
+                let method = case_name.to_java_ident();
 
                 let call = if let Some(position) = generics_position {
                     let (ty, generics) = ty.split_at(position);
@@ -1350,7 +1350,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
                 for field in record.fields.iter() {
-                    results.push(format!("({op}).{}", field.name.to_lower_camel_case()));
+                    results.push(format!("({op}).{}", field.name.to_java_ident()));
                 }
             }
             Instruction::RecordLift { ty, .. } | Instruction::TupleLift { ty, .. } => {
@@ -1822,7 +1822,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 };
 
                 let module = self.gen.name.to_upper_camel_case();
-                let name = func.name.to_lower_camel_case();
+                let name = func.name.to_java_ident();
 
                 let args = operands.join(", ");
 
@@ -2183,60 +2183,23 @@ fn is_primitive(ty: &Type) -> bool {
     )
 }
 
-pub fn to_java_ident(name: &str) -> String {
-    match name {
+trait ToJavaIdent: ToOwned {
+    fn to_java_ident(&self) -> Self::Owned;
+}
+
+impl ToJavaIdent for str {
+    fn to_java_ident(&self) -> String {
         // Escape Java keywords
         // Source: https://docs.oracle.com/javase/tutorial/java/nutsandbolts/_keywords.html
-        "abstract" => "abstract_".into(),
-        "continue" => "continue_".into(),
-        "for" => "for_".into(),
-        "new" => "new_".into(),
-        "switch" => "switch_".into(),
-        "assert" => "assert_".into(),
-        "default" => "default_".into(),
-        "goto" => "goto_".into(),
-        "package" => "package_".into(),
-        "synchronized" => "synchronized_".into(),
-        "boolean" => "boolean_".into(),
-        "do" => "do_".into(),
-        "if" => "if_".into(),
-        "private" => "private_".into(),
-        "this" => "this_".into(),
-        "break" => "break_".into(),
-        "double" => "double_".into(),
-        "implements" => "implements_".into(),
-        "protected" => "protected_".into(),
-        "throw" => "throw_".into(),
-        "byte" => "byte_".into(),
-        "else" => "else_".into(),
-        "import" => "import_".into(),
-        "public" => "public_".into(),
-        "throws" => "throws_".into(),
-        "case" => "case_".into(),
-        "enum" => "enum_".into(),
-        "instanceof" => "instanceof_".into(),
-        "return" => "return_".into(),
-        "transient" => "transient_".into(),
-        "catch" => "catch_".into(),
-        "extends" => "extends_".into(),
-        "int" => "int_".into(),
-        "short" => "short_".into(),
-        "try" => "try_".into(),
-        "char" => "char_".into(),
-        "final" => "final_".into(),
-        "interface" => "interface_".into(),
-        "static" => "static_".into(),
-        "void" => "void_".into(),
-        "class" => "class_".into(),
-        "finally" => "finally_".into(),
-        "long" => "long_".into(),
-        "strictfp" => "strictfp_".into(),
-        "volatile" => "volatile_".into(),
-        "const" => "const_".into(),
-        "float" => "float_".into(),
-        "native" => "native_".into(),
-        "super" => "super_".into(),
-        "while" => "while_".into(),
-        s => s.to_lower_camel_case(),
+        match self {
+            "abstract" | "continue" | "for" | "new" | "switch" | "assert" | "default" | "goto"
+            | "package" | "synchronized" | "boolean" | "do" | "if" | "private" | "this"
+            | "break" | "double" | "implements" | "protected" | "throw" | "byte" | "else"
+            | "import" | "public" | "throws" | "case" | "enum" | "instanceof" | "return"
+            | "transient" | "catch" | "extends" | "int" | "short" | "try" | "char" | "final"
+            | "interface" | "static" | "void" | "class" | "finally" | "long" | "strictfp"
+            | "volatile" | "const" | "float" | "native" | "super" | "while" => format!("{self}_"),
+            _ => self.to_lower_camel_case(),
+        }
     }
 }
