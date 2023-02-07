@@ -492,6 +492,14 @@ impl InterfaceGenerator<'_> {
 
         self.push_str(" {\n");
 
+        uwrite!(
+            self.src,
+            "
+                #[allow(unused_imports)]
+                use wit_bindgen_guest_rust::rt::{{alloc, vec::Vec, string::String}};
+            "
+        );
+
         // Finish out the macro-generated export implementation.
         macro_src.push_str(" {\n");
         let prefix = format!(
