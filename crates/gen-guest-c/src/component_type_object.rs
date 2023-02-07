@@ -1,8 +1,8 @@
 use anyhow::Result;
 use heck::ToSnakeCase;
 use wasm_encoder::{
-    CodeSection, CustomSection, Encode, Function, FunctionSection, LinkingSection, Module,
-    SymbolTable, TypeSection,
+    CodeSection, CustomSection, Function, FunctionSection, LinkingSection, Module, SymbolTable,
+    TypeSection,
 };
 use wit_bindgen_core::wit_parser::{Resolve, WorldId};
 use wit_component::StringEncoding;
