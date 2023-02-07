@@ -25,6 +25,10 @@ void strings_test_imports() {
   strings_string_free(&str2);
 }
 
+void strings_return_empty(strings_string_t *ret) {
+  strings_string_dup(ret, u""); // Exercise cabi_realloc new_size = 0
+}
+
 void strings_roundtrip(strings_string_t *str, strings_string_t *ret) {
   assert(str->len > 0);
   ret->len = str->len;

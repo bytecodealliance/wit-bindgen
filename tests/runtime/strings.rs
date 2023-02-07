@@ -29,6 +29,7 @@ fn run() -> Result<()> {
 
 fn run_test(exports: Strings, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
     exports.call_test_imports(&mut *store)?;
+    assert_eq!(exports.call_return_empty(&mut *store)?, "");
     assert_eq!(exports.call_roundtrip(&mut *store, "str")?, "str");
     assert_eq!(
         exports.call_roundtrip(&mut *store, "🚀🚀🚀 𠈄𓀀")?,

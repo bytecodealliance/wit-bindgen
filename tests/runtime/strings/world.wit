@@ -7,5 +7,6 @@ default world strings {
   import imports: self.imports
 
   export test-imports: func()
+  export return-empty: func() -> string
   export roundtrip: func(s: string) -> string
 }

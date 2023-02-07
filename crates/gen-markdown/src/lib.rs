@@ -180,7 +180,7 @@ impl InterfaceGenerator<'_> {
                     f = func.name.to_snake_case(),
                     p = name.to_snake_case(),
                 ));
-                self.print_ty(ty, false);
+                self.print_ty(ty);
                 self.push_str("\n");
             }
         }
@@ -194,7 +194,7 @@ impl InterfaceGenerator<'_> {
                     f = func.name.to_snake_case(),
                     p = "result",
                 ));
-                self.print_ty(ty, false);
+                self.print_ty(ty);
                 self.push_str("\n");
             }
         }
@@ -206,7 +206,7 @@ impl InterfaceGenerator<'_> {
         self.gen.src.push_str(s);
     }
 
-    fn print_ty(&mut self, ty: &Type, skip_name: bool) {
+    fn print_ty(&mut self, ty: &Type) {
         match ty {
             Type::Bool => self.push_str("`bool`"),
             Type::U8 => self.push_str("`u8`"),
@@ -223,25 +223,23 @@ impl InterfaceGenerator<'_> {
             Type::String => self.push_str("`string`"),
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
-                if !skip_name {
-                    if let Some(name) = &ty.name {
-                        self.push_str("[`");
-                        self.push_str(name);
-                        self.push_str("`](#");
-                        self.push_str(&name.to_snake_case());
-                        self.push_str(")");
-                        return;
-                    }
+                if let Some(name) = &ty.name {
+                    self.push_str("[`");
+                    self.push_str(name);
+                    self.push_str("`](#");
+                    self.push_str(&name.to_snake_case());
+                    self.push_str(")");
+                    return;
                 }
                 match &ty.kind {
-                    TypeDefKind::Type(t) => self.print_ty(t, false),
+                    TypeDefKind::Type(t) => self.print_ty(t),
                     TypeDefKind::Tuple(t) => {
                         self.push_str("(");
                         for (i, t) in t.types.iter().enumerate() {
                             if i > 0 {
                                 self.push_str(", ");
                             }
-                            self.print_ty(t, false);
+                            self.print_ty(t);
                         }
                         self.push_str(")");
                     }
@@ -250,29 +248,32 @@ impl InterfaceGenerator<'_> {
                     | TypeDefKind::Enum(_)
                     | TypeDefKind::Variant(_)
                     | TypeDefKind::Union(_) => {
-                        unreachable!()
+                        // These types are always named, so we will have
+                        // printed the name above, so we don't need to print
+                        // the contents.
+                        assert!(ty.name.is_some());
                     }
                     TypeDefKind::Option(t) => {
                         self.push_str("option<");
-                        self.print_ty(t, false);
+                        self.print_ty(t);
                         self.push_str(">");
                     }
                     TypeDefKind::Result(r) => match (r.ok, r.err) {
                         (Some(ok), Some(err)) => {
                             self.push_str("result<");
-                            self.print_ty(&ok, false);
+                            self.print_ty(&ok);
                             self.push_str(", ");
-                            self.print_ty(&err, false);
+                            self.print_ty(&err);
                             self.push_str(">");
                         }
                         (None, Some(err)) => {
                             self.push_str("result<_, ");
-                            self.print_ty(&err, false);
+                            self.print_ty(&err);
                             self.push_str(">");
                         }
                         (Some(ok), None) => {
                             self.push_str("result<");
-                            self.print_ty(&ok, false);
+                            self.print_ty(&ok);
                             self.push_str(">");
                         }
                         (None, None) => {
@@ -281,13 +282,13 @@ impl InterfaceGenerator<'_> {
                     },
                     TypeDefKind::List(t) => {
                         self.push_str("list<");
-                        self.print_ty(t, false);
+                        self.print_ty(t);
                         self.push_str(">");
                     }
                     TypeDefKind::Future(t) => match t {
                         Some(t) => {
                             self.push_str("future<");
-                            self.print_ty(t, false);
+                            self.print_ty(t);
                             self.push_str(">");
                         }
                         None => {
@@ -297,19 +298,19 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Stream(s) => match (s.element, s.end) {
                         (Some(element), Some(end)) => {
                             self.push_str("stream<");
-                            self.print_ty(&element, false);
+                            self.print_ty(&element);
                             self.push_str(", ");
-                            self.print_ty(&end, false);
+                            self.print_ty(&end);
                             self.push_str(">");
                         }
                         (None, Some(end)) => {
                             self.push_str("stream<_, ");
-                            self.print_ty(&end, false);
+                            self.print_ty(&end);
                             self.push_str(">");
                         }
                         (Some(element), None) => {
                             self.push_str("stream<");
-                            self.print_ty(&element, false);
+                            self.print_ty(&element);
                             self.push_str(">");
                         }
                         (None, None) => {
@@ -380,7 +381,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 format!("{}::{}", name, field.name),
                 format!("#{}.{}", name.to_snake_case(), field.name.to_snake_case()),
             );
-            self.print_ty(&field.ty, false);
+            self.print_ty(&field.ty);
             self.gen.src.indent(1);
             self.push_str("\n\n");
             self.docs(&field.docs);
@@ -405,7 +406,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 format!("{}::{}", name, i),
                 format!("#{}.{}", name.to_snake_case(), i),
             );
-            self.print_ty(ty, false);
+            self.print_ty(ty);
             self.push_str("\n");
         }
     }
@@ -453,7 +454,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             );
             if let Some(ty) = &case.ty {
                 self.push_str(": ");
-                self.print_ty(ty, false);
+                self.print_ty(ty);
             }
             self.gen.src.indent(1);
             self.push_str("\n\n");
@@ -477,7 +478,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 .hrefs
                 .insert(format!("{name}::{i}"), format!("#{snake}.{i}"));
             self.push_str(": ");
-            self.print_ty(&case.ty, false);
+            self.print_ty(&case.ty);
             self.gen.src.indent(1);
             self.push_str("\n\n");
             self.docs(&case.docs);
@@ -513,7 +514,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_option(&mut self, id: TypeId, name: &str, payload: &Type, docs: &Docs) {
         self.print_type_header(name);
         self.push_str("option<");
-        self.print_ty(payload, false);
+        self.print_ty(payload);
         self.push_str(">");
         self.print_type_info(id, docs);
     }
@@ -523,19 +524,19 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         match (result.ok, result.err) {
             (Some(ok), Some(err)) => {
                 self.push_str("result<");
-                self.print_ty(&ok, false);
+                self.print_ty(&ok);
                 self.push_str(", ");
-                self.print_ty(&err, false);
+                self.print_ty(&err);
                 self.push_str(">");
             }
             (None, Some(err)) => {
                 self.push_str("result<_, ");
-                self.print_ty(&err, false);
+                self.print_ty(&err);
                 self.push_str(">");
             }
             (Some(ok), None) => {
                 self.push_str("result<");
-                self.print_ty(&ok, false);
+                self.print_ty(&ok);
                 self.push_str(">");
             }
             (None, None) => {
@@ -547,7 +548,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_alias(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.print_type_header(name);
-        self.print_ty(ty, true);
+        self.print_ty(ty);
         self.push_str("\n\n");
         self.print_type_info(id, docs);
         self.push_str("\n");

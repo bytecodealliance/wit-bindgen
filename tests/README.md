@@ -23,11 +23,9 @@ wasm and executed on hosts. The code compiled-to-wasm can be one of:
 
 Existence of these files indicates that the language should be supported for the
 test, and if a file is missing then it's skipped when running other tests. Each
-`wasm.*` file is run inside each of the host files:
+`wasm.*` file is run inside each of the host file under `tests/runtime` directory.
 
-* `host.rs` - executes wasms with Wasmtime
-* `host.js` - executes WebAssembly with node.js
-* `host.py` - executes with `wasmtime`'s PyPI package.
+For example, `tests/runtime/variants.rs` is the host file for `tests/runtime/variants/`
 
 Each of these hosts can also be omitted if the host doesn't implement the test
 or something like that. Otherwise for each host that exists when the host's
@@ -57,10 +55,16 @@ The actual way tests are hooked up looks roughly like:
   and C versions. These are then encoded into the generated `#[test]` functions
   to get executed when testing.
 
-The general layout is then that if you want to run the JS host tests you run:
+The general layout is then that if you want to run the rust guest tests you run:
 
 ```
-$ cargo test -p wit-bindgen-gen-host-js
+$ cargo test -p wit-bindgen-gen-guest-rust
+```
+
+if you want to run the rust guest tests under `tests/runtime/*`, you run:
+
+```
+$ cargo test -p wit-bindgen-cli --no-default-features -F rust
 ```
 
 and if you want to run all tests you can execute:

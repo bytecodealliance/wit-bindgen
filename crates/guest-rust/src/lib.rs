@@ -32,6 +32,7 @@ pub mod rt {
             layout = Layout::from_size_align_unchecked(new_len, align);
             alloc::alloc(layout)
         } else {
+            debug_assert_ne!(new_len, 0, "non-zero old_len requires non-zero new_len!");
             layout = Layout::from_size_align_unchecked(old_len, align);
             alloc::realloc(old_ptr, layout, new_len)
         };
