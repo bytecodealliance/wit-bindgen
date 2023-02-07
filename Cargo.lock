@@ -1684,6 +1684,7 @@ dependencies = [
  "heck",
  "test-helpers",
  "wit-bindgen",
+ "wasm-metadata",
  "wit-bindgen-core",
  "wit-bindgen-gen-rust-lib",
  "wit-component",
