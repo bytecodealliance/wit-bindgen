@@ -604,6 +604,14 @@ impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
         self.gen.opts.raw_strings
     }
 
+    fn vec_name(&self) -> &'static str {
+        "wit_bindgen_guest_rust::rt::vec::Vec"
+    }
+
+    fn string_name(&self) -> &'static str {
+        "wit_bindgen_guest_rust::rt::string::String"
+    }
+
     fn default_param_mode(&self) -> TypeMode {
         self.default_param_mode
     }
