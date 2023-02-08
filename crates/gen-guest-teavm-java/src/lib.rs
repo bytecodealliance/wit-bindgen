@@ -447,7 +447,7 @@ impl InterfaceGenerator<'_> {
             &func.name,
             func.params
                 .iter()
-                .map(|(name, _)| name.to_lower_camel_case())
+                .map(|(name, _)| name.to_java_ident())
                 .collect(),
         );
 
@@ -742,7 +742,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn sig_string(&mut self, func: &Function, qualifier: bool) -> String {
-        let name = func.name.to_lower_camel_case();
+        let name = func.name.to_java_ident();
 
         let result_type = match func.results.len() {
             0 => "void".into(),
@@ -768,7 +768,7 @@ impl InterfaceGenerator<'_> {
             .iter()
             .map(|(name, ty)| {
                 let ty = self.type_name_with_qualifier(ty, qualifier);
-                let name = name.to_lower_camel_case();
+                let name = name.to_java_ident();
                 format!("{ty} {name}")
             })
             .collect::<Vec<_>>()
@@ -795,7 +795,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 format!(
                     "{} {}",
                     self.type_name(&field.ty),
-                    field.name.to_lower_camel_case()
+                    field.name.to_java_ident()
                 )
             })
             .collect::<Vec<_>>()
@@ -805,7 +805,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .fields
             .iter()
             .map(|field| {
-                let name = field.name.to_lower_camel_case();
+                let name = field.name.to_java_ident();
                 format!("this.{name} = {name};")
             })
             .collect::<Vec<_>>()
@@ -821,7 +821,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     format!(
                         "public final {} {};",
                         self.type_name(&field.ty),
-                        field.name.to_lower_camel_case()
+                        field.name.to_java_ident()
                     )
                 })
                 .collect::<Vec<_>>()
@@ -903,7 +903,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .cases
             .iter()
             .map(|case| {
-                let case_name = case.name.to_lower_camel_case();
+                let case_name = case.name.to_java_ident();
                 let tag = case.name.to_shouty_snake_case();
                 let (parameter, argument) = if let Some(ty) = self.non_empty_type(case.ty.as_ref())
                 {
@@ -1209,7 +1209,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     String::new()
                 };
 
-                let method = case_name.to_lower_camel_case();
+                let method = case_name.to_java_ident();
 
                 let call = if let Some(position) = generics_position {
                     let (ty, generics) = ty.split_at(position);
@@ -1350,7 +1350,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
                 for field in record.fields.iter() {
-                    results.push(format!("({op}).{}", field.name.to_lower_camel_case()));
+                    results.push(format!("({op}).{}", field.name.to_java_ident()));
                 }
             }
             Instruction::RecordLift { ty, .. } | Instruction::TupleLift { ty, .. } => {
@@ -1822,7 +1822,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 };
 
                 let module = self.gen.name.to_upper_camel_case();
-                let name = func.name.to_lower_camel_case();
+                let name = func.name.to_java_ident();
 
                 let args = operands.join(", ");
 
@@ -2181,4 +2181,25 @@ fn is_primitive(ty: &Type) -> bool {
             | Type::Float32
             | Type::Float64
     )
+}
+
+trait ToJavaIdent: ToOwned {
+    fn to_java_ident(&self) -> Self::Owned;
+}
+
+impl ToJavaIdent for str {
+    fn to_java_ident(&self) -> String {
+        // Escape Java keywords
+        // Source: https://docs.oracle.com/javase/tutorial/java/nutsandbolts/_keywords.html
+        match self {
+            "abstract" | "continue" | "for" | "new" | "switch" | "assert" | "default" | "goto"
+            | "package" | "synchronized" | "boolean" | "do" | "if" | "private" | "this"
+            | "break" | "double" | "implements" | "protected" | "throw" | "byte" | "else"
+            | "import" | "public" | "throws" | "case" | "enum" | "instanceof" | "return"
+            | "transient" | "catch" | "extends" | "int" | "short" | "try" | "char" | "final"
+            | "interface" | "static" | "void" | "class" | "finally" | "long" | "strictfp"
+            | "volatile" | "const" | "float" | "native" | "super" | "while" => format!("{self}_"),
+            _ => self.to_lower_camel_case(),
+        }
+    }
 }
