@@ -21,6 +21,12 @@ pub trait RustGenerator<'a> {
         true
     }
 
+    /// Return the fully-qualified name for the `Vec` type to use.
+    fn vec_name(&self) -> &'static str;
+
+    /// Return the fully-qualified name for the `String` type to use.
+    fn string_name(&self) -> &'static str;
+
     /// Return true iff the generator should use `&[u8]` instead of `&str` in bindings.
     fn use_raw_strings(&self) -> bool {
         false
@@ -181,9 +187,10 @@ pub trait RustGenerator<'a> {
                 }
                 TypeMode::Owned => {
                     if self.use_raw_strings() {
-                        self.push_str("Vec<u8>")
+                        self.push_str(self.vec_name());
+                        self.push_str("::<u8>");
                     } else {
-                        self.push_str("String")
+                        self.push_str(self.string_name());
                     }
                 }
             },
@@ -317,13 +324,15 @@ pub trait RustGenerator<'a> {
                 if self.resolve().all_bits_valid(ty) {
                     self.print_borrowed_slice(false, ty, lt);
                 } else {
-                    self.push_str("Vec<");
+                    self.push_str(self.vec_name());
+                    self.push_str("::<");
                     self.print_ty(ty, mode);
                     self.push_str(">");
                 }
             }
             TypeMode::Owned => {
-                self.push_str("Vec<");
+                self.push_str(self.vec_name());
+                self.push_str("::<");
                 self.print_ty(ty, mode);
                 self.push_str(">");
             }

@@ -18,6 +18,10 @@ func (s StringsImpl) TestImports() {
 	}
 }
 
+func (s StringsImpl) ReturnEmpty() string {
+	return ""
+}
+
 func (s StringsImpl) Roundtrip(a string) string {
 	return a
 }

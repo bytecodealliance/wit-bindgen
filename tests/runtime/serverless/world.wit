@@ -1,0 +1,58 @@
+interface wasi-http {
+	/// The HTTP status code.
+	type http-status = u16
+
+	/// The HTTP body.
+	type body = list<u8>
+
+	/// The HTTP headers represented as a list of (name, value) pairs.
+	type headers = list<tuple<string, string>>
+
+	/// The HTTP parameter queries, represented as a list of (name, value) pairs.
+	type params = list<tuple<string, string>>
+
+	/// The HTTP URI of the current request.
+	type uri = string
+
+	/// The HTTP method.
+	enum method {
+		get,
+		post,
+		put,
+		delete,
+		patch,
+		head,
+		options,
+	}
+
+	/// An HTTP request.
+	record request {
+		method: method,
+		uri: uri,
+		headers: headers,
+		params: params,
+		body: option<body>,
+	}
+
+	/// An HTTP response.
+	record response {
+		status: http-status,
+		headers: option<headers>,
+		body: option<body>,
+	}
+
+	/// HTTP errors returned by the runtime.
+	variant http-error {
+		invalid-url(string),
+		timeout-error(string),
+		protocol-error(string),
+		status-error(u16),
+		unexpected-error(string)
+	}
+
+	handle-http: func(req: request) -> result<response, http-error>
+}
+
+default world serverless {
+	export handler: self.wasi-http
+}

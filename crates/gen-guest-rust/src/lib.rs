@@ -492,6 +492,14 @@ impl InterfaceGenerator<'_> {
 
         self.push_str(" {\n");
 
+        uwrite!(
+            self.src,
+            "
+                #[allow(unused_imports)]
+                use wit_bindgen_guest_rust::rt::{{alloc, vec::Vec, string::String}};
+            "
+        );
+
         // Finish out the macro-generated export implementation.
         macro_src.push_str(" {\n");
         let prefix = format!(
@@ -602,6 +610,14 @@ impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
 
     fn use_raw_strings(&self) -> bool {
         self.gen.opts.raw_strings
+    }
+
+    fn vec_name(&self) -> &'static str {
+        "wit_bindgen_guest_rust::rt::vec::Vec"
+    }
+
+    fn string_name(&self) -> &'static str {
+        "wit_bindgen_guest_rust::rt::string::String"
     }
 
     fn default_param_mode(&self) -> TypeMode {

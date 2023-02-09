@@ -504,7 +504,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         for field in record.fields.iter() {
             self.print_ty(SourceType::HDefs, &field.ty);
             self.src.h_defs(" ");
-            self.src.h_defs(&field.name.to_snake_case());
+            self.src.h_defs(&to_c_ident(&field.name));
             self.src.h_defs(";\n");
         }
         self.src.h_defs("} ");
@@ -570,7 +570,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             if let Some(ty) = get_nonempty_type(self.resolve, case.ty.as_ref()) {
                 self.print_ty(SourceType::HDefs, ty);
                 self.src.h_defs(" ");
-                self.src.h_defs(&case.name.to_snake_case());
+                self.src.h_defs(&to_c_ident(&case.name));
                 self.src.h_defs(";\n");
             }
         }
@@ -998,9 +998,9 @@ impl InterfaceGenerator<'_> {
                 None
             };
             let (print_ty, print_name) = if let Some(option_ty) = optional_type {
-                (option_ty, format!("maybe_{}", name.to_snake_case()))
+                (option_ty, format!("maybe_{}", to_c_ident(name)))
             } else {
-                (ty, name.to_snake_case())
+                (ty, to_c_ident(name))
             };
             self.print_ty(SourceType::HFns, print_ty);
             self.src.h_fns(" ");
@@ -1008,7 +1008,7 @@ impl InterfaceGenerator<'_> {
                 self.src.h_fns("*");
             }
             self.src.h_fns(&print_name);
-            params.push((optional_type.is_none() && pointer, name.to_snake_case()));
+            params.push((optional_type.is_none() && pointer, to_c_ident(name)));
         }
         let mut retptrs = Vec::new();
         let single_ret = ret.retptrs.len() == 1;
@@ -1354,7 +1354,7 @@ impl InterfaceGenerator<'_> {
                     if !owns_anything(self.resolve, &field.ty) {
                         continue;
                     }
-                    self.free(&field.ty, &format!("&ptr->{}", field.name.to_snake_case()));
+                    self.free(&field.ty, &format!("&ptr->{}", to_c_ident(&field.name)));
                 }
             }
 
@@ -1387,7 +1387,7 @@ impl InterfaceGenerator<'_> {
                             continue;
                         }
                         uwriteln!(self.src.c_helpers, "case {}: {{", i);
-                        let expr = format!("&ptr->val.{}", case.name.to_snake_case());
+                        let expr = format!("&ptr->val.{}", to_c_ident(&case.name));
                         if let Some(ty) = &case.ty {
                             self.free(ty, &expr);
                         }
@@ -1677,7 +1677,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
                 for f in record.fields.iter() {
-                    results.push(format!("({}).{}", op, f.name.to_snake_case()));
+                    results.push(format!("({}).{}", op, to_c_ident(&f.name)));
                 }
             }
             Instruction::RecordLift { ty, .. } => {
@@ -1780,7 +1780,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             operands[0],
                         );
                         self.src.push_str(".");
-                        self.src.push_str(&case.name.to_snake_case());
+                        self.src.push_str(&to_c_ident(&case.name));
                         self.src.push_str(";\n");
                     }
                     self.src.push_str(&block);
@@ -1814,7 +1814,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     if let Some(_) = get_nonempty_type(self.gen.resolve, case.ty.as_ref()) {
                         let mut dst = format!("{}.val", result);
                         dst.push_str(".");
-                        dst.push_str(&case.name.to_snake_case());
+                        dst.push_str(&to_c_ident(&case.name));
                         self.store_op(&block_results[0], &dst);
                     }
                     self.src.push_str("break;\n}\n");
@@ -2619,5 +2619,46 @@ pub fn optional_owns_anything(resolve: &Resolve, ty: Option<&Type>) -> bool {
     match ty {
         Some(ty) => owns_anything(resolve, ty),
         None => false,
+    }
+}
+
+pub fn to_c_ident(name: &str) -> String {
+    match name {
+        // Escape C keywords.
+        // Source: https://en.cppreference.com/w/c/keyword
+        "auto" => "auto_".into(),
+        "else" => "else_".into(),
+        "long" => "long_".into(),
+        "switch" => "switch_".into(),
+        "break" => "break_".into(),
+        "enum" => "enum_".into(),
+        "register" => "register_".into(),
+        "typedef" => "typedef_".into(),
+        "case" => "case_".into(),
+        "extern" => "extern_".into(),
+        "return" => "return_".into(),
+        "union" => "union_".into(),
+        "char" => "char_".into(),
+        "float" => "float_".into(),
+        "short" => "short_".into(),
+        "unsigned" => "unsigned_".into(),
+        "const" => "const_".into(),
+        "for" => "for_".into(),
+        "signed" => "signed_".into(),
+        "void" => "void_".into(),
+        "continue" => "continue_".into(),
+        "goto" => "goto_".into(),
+        "sizeof" => "sizeof_".into(),
+        "volatile" => "volatile_".into(),
+        "default" => "default_".into(),
+        "if" => "if_".into(),
+        "static" => "static_".into(),
+        "while" => "while_".into(),
+        "do" => "do_".into(),
+        "int" => "int_".into(),
+        "struct" => "struct_".into(),
+        "_Packed" => "_Packed_".into(),
+        "double" => "double_".into(),
+        s => s.to_snake_case(),
     }
 }
