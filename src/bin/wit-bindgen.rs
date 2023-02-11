@@ -162,16 +162,22 @@ fn gen_world(
             }
         }
         None => {
-            let mut docs = resolve.packages[pkg].documents.iter();
-            let (_, doc) = docs
-                .next()
-                .ok_or_else(|| anyhow!("no documents found in package"))?;
-            if docs.next().is_some() {
-                bail!("multiple documents found in package, specify which to bind with `--world` argument")
+            if resolve.packages[pkg].documents.is_empty() {
+                bail!("no documents found in package")
             }
-            resolve.documents[*doc]
-                .default_world
-                .ok_or_else(|| anyhow!("no default world in document"))?
+
+            let mut unique_default_world = None;
+            for (_name, doc) in &resolve.documents {
+                if let Some(default_world) = doc.default_world {
+                    if unique_default_world.is_some() {
+                        bail!("multiple default worlds found in package, specify which to bind with `--world` argument")
+                    } else {
+                        unique_default_world = Some(default_world);
+                    }
+                }
+            }
+
+            unique_default_world.ok_or_else(|| anyhow!("no default world in package"))?
         }
     };
     generator.generate(&resolve, world, files);
