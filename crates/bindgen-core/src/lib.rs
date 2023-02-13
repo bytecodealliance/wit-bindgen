@@ -444,28 +444,28 @@ pub trait WorldGenerator {
         self.preprocess(resolve, &world.name);
 
         let mut funcs = Vec::new();
+        let mut types = Vec::new();
         for (name, import) in world.imports.iter() {
             match import {
                 WorldItem::Function(f) => funcs.push((name.as_str(), f)),
                 WorldItem::Interface(id) => self.import_interface(resolve, name, *id, files),
-                WorldItem::Type(_) => unreachable!(),
+                WorldItem::Type(id) => types.push((name.as_str(), *id)),
             }
+        }
+        if !types.is_empty() {
+            self.export_types(resolve, id, &types, files);
         }
         if !funcs.is_empty() {
             self.import_funcs(resolve, id, &funcs, files);
         }
         funcs.clear();
 
-        let mut types = Vec::new();
         for (name, export) in world.exports.iter() {
             match export {
                 WorldItem::Function(f) => funcs.push((name.as_str(), f)),
                 WorldItem::Interface(id) => self.export_interface(resolve, name, *id, files),
-                WorldItem::Type(id) => types.push((name.as_str(), *id)),
+                WorldItem::Type(_) => unreachable!(),
             }
-        }
-        if !types.is_empty() {
-            self.export_types(resolve, id, &types, files);
         }
         if !funcs.is_empty() {
             self.export_funcs(resolve, id, &funcs, files);

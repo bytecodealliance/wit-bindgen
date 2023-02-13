@@ -18,7 +18,13 @@ struct Markdown {
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
-    // ...
+    /// Output a `.md` file containing HTML.
+    ///
+    /// This can be useful when producing files to be displayed on Github,
+    /// as it doesn't render HTML files, but it does render Markdown files,
+    /// which can contain HTML.
+    #[cfg_attr(feature = "clap", arg(long))]
+    html_in_md: bool,
 }
 
 impl Opts {
@@ -124,8 +130,14 @@ impl WorldGenerator for Markdown {
         let mut html_output = String::new();
         html::push_html(&mut html_output, events.into_iter());
 
-        files.push(&format!("{}.md", world.name), self.src.as_bytes());
-        files.push(&format!("{}.html", world.name), html_output.as_bytes());
+        if self.opts.html_in_md {
+            // Write the html output into a .md file.
+            files.push(&format!("{}.md", world.name), html_output.as_bytes());
+        } else {
+            // Write the html output to an html file, and md output to a md file.
+            files.push(&format!("{}.md", world.name), self.src.as_bytes());
+            files.push(&format!("{}.html", world.name), html_output.as_bytes());
+        }
     }
 }
 
