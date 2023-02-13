@@ -1,7 +1,14 @@
 [package]
 name = "wit-bindgen-gen-markdown"
-version.workspace = true
+version = "0.3.0"
 edition.workspace = true
+repository = 'https://github.com/bytecodealliance/wit-bindgen'
+license = "Apache-2.0 WITH LLVM-exception"
+homepage = 'https://github.com/bytecodealliance/wit-bindgen'
+description = """
+Markdown generator for WIT and the component model, typically used
+through the `wit-bindgen-cli` crate.
+"""
 
 [lib]
 doctest = false

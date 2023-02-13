@@ -1,4 +1,5 @@
 target/
+publish
 static
 package-lock.json
 node_modules

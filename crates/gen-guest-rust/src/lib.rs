@@ -343,7 +343,7 @@ impl InterfaceGenerator<'_> {
                 self.src,
                 "
                     #[allow(unused_imports)]
-                    use wit_bindgen_guest_rust::rt::{{alloc, vec::Vec, string::String}};
+                    use wit_bindgen::rt::{{alloc, vec::Vec, string::String}};
 
                     #[repr(align({align}))]
                     struct _RetArea([u8; {size}]);
@@ -387,7 +387,7 @@ impl InterfaceGenerator<'_> {
         self.src.push_str(
             "
                 #[allow(unused_imports)]
-                use wit_bindgen_guest_rust::rt::{{alloc, vec::Vec, string::String}};
+                use wit_bindgen::rt::{{alloc, vec::Vec, string::String}};
             ",
         );
         self.src.push_str("unsafe {\n");
@@ -496,7 +496,7 @@ impl InterfaceGenerator<'_> {
             self.src,
             "
                 #[allow(unused_imports)]
-                use wit_bindgen_guest_rust::rt::{{alloc, vec::Vec, string::String}};
+                use wit_bindgen::rt::{{alloc, vec::Vec, string::String}};
             "
         );
 
@@ -613,11 +613,11 @@ impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn vec_name(&self) -> &'static str {
-        "wit_bindgen_guest_rust::rt::vec::Vec"
+        "wit_bindgen::rt::vec::Vec"
     }
 
     fn string_name(&self) -> &'static str {
-        "wit_bindgen_guest_rust::rt::string::String"
+        "wit_bindgen::rt::string::String"
     }
 
     fn default_param_mode(&self) -> TypeMode {
@@ -668,8 +668,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
-        self.src
-            .push_str("wit_bindgen_guest_rust::bitflags::bitflags! {\n");
+        self.src.push_str("wit_bindgen::bitflags::bitflags! {\n");
         self.rustdoc(docs);
         let repr = RustFlagsRepr::new(flags);
         self.src.push_str(&format!(
@@ -944,7 +943,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::I64FromU64 | Instruction::I64FromS64 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wit_bindgen_guest_rust::rt::as_i64({})", s));
+                results.push(format!("wit_bindgen::rt::as_i64({})", s));
             }
             Instruction::I32FromChar
             | Instruction::I32FromU8
@@ -954,16 +953,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::I32FromU32
             | Instruction::I32FromS32 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wit_bindgen_guest_rust::rt::as_i32({})", s));
+                results.push(format!("wit_bindgen::rt::as_i32({})", s));
             }
 
             Instruction::F32FromFloat32 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wit_bindgen_guest_rust::rt::as_f32({})", s));
+                results.push(format!("wit_bindgen::rt::as_f32({})", s));
             }
             Instruction::F64FromFloat64 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wit_bindgen_guest_rust::rt::as_f64({})", s));
+                results.push(format!("wit_bindgen::rt::as_f64({})", s));
             }
             Instruction::Float32FromF32
             | Instruction::Float64FromF64
@@ -1428,7 +1427,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str("}\n");
                 results.push(result);
                 self.push_str(&format!(
-                    "wit_bindgen_guest_rust::rt::dealloc({base}, ({len} as usize) * {size}, {align});\n",
+                    "wit_bindgen::rt::dealloc({base}, ({len} as usize) * {size}, {align});\n",
                 ));
             }
 
@@ -1561,14 +1560,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::GuestDeallocate { size, align } => {
                 self.push_str(&format!(
-                    "wit_bindgen_guest_rust::rt::dealloc({}, {}, {});\n",
+                    "wit_bindgen::rt::dealloc({}, {}, {});\n",
                     operands[0], size, align
                 ));
             }
 
             Instruction::GuestDeallocateString => {
                 self.push_str(&format!(
-                    "wit_bindgen_guest_rust::rt::dealloc({}, ({}) as usize, 1);\n",
+                    "wit_bindgen::rt::dealloc({}, ({}) as usize, 1);\n",
                     operands[0], operands[1],
                 ));
             }
@@ -1621,7 +1620,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.push_str("\n}\n");
                 }
                 self.push_str(&format!(
-                    "wit_bindgen_guest_rust::rt::dealloc({base}, ({len} as usize) * {size}, {align});\n",
+                    "wit_bindgen::rt::dealloc({base}, ({len} as usize) * {size}, {align});\n",
                 ));
             }
         }

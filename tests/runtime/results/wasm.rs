@@ -1,4 +1,4 @@
-wit_bindgen_guest_rust::generate!("world" in "../../tests/runtime/results");
+wit_bindgen::generate!("world" in "../../tests/runtime/results");
 
 struct Exports;
 

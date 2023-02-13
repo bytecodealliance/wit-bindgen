@@ -1,4 +1,4 @@
-wit_bindgen_guest_rust::generate!("world" in "../../tests/runtime/numbers");
+wit_bindgen::generate!("world" in "../../tests/runtime/numbers");
 
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
 

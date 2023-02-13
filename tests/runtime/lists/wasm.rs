@@ -1,4 +1,4 @@
-wit_bindgen_guest_rust::generate!("world" in "../../tests/runtime/lists");
+wit_bindgen::generate!("world" in "../../tests/runtime/lists");
 
 struct Component;
 

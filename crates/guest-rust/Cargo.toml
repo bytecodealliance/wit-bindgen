@@ -1,11 +1,18 @@
 [package]
-name = "wit-bindgen-guest-rust"
+name = "wit-bindgen"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
-version.workspace = true
+version = "0.3.0"
 edition.workspace = true
+repository = 'https://github.com/bytecodealliance/wit-bindgen'
+license = "Apache-2.0 WITH LLVM-exception"
+homepage = 'https://github.com/bytecodealliance/wit-bindgen'
+description = """
+Rust bindings generator and runtime support for WIT and the component model.
+Used when compiling Rust programs to the component model.
+"""
 
 [dependencies]
-wit-bindgen-guest-rust-macro = { path = "../guest-rust-macro", optional = true }
+wit-bindgen-guest-rust-macro = { path = "../guest-rust-macro", optional = true, version = "0.3.0" }
 bitflags = { workspace = true }
 
 [features]
