@@ -1,7 +1,15 @@
 [package]
 name = "wit-bindgen-gen-guest-go"
-version.workspace = true
+authors = ["Mossaka <duibao55328@gmail.com>"]
+version = "0.1.0"
 edition.workspace = true
+repository = 'https://github.com/bytecodealliance/wit-bindgen'
+license = "Apache-2.0 WITH LLVM-exception"
+homepage = 'https://github.com/bytecodealliance/wit-bindgen'
+description = """
+TinyGo/Go bindings generator for WIT and the component model, typically used
+through the `wit-bindgen-cli` crate.
+"""
 
 [lib]
 test = false
@@ -12,7 +20,7 @@ wit-bindgen-core = { workspace = true }
 wit-component = { workspace = true }
 heck = { workspace = true }
 clap = { workspace = true, optional = true }
-wit-bindgen-gen-guest-c = {workspace = true}
+wit-bindgen-gen-guest-c = { workspace = true }
 
 [dev-dependencies]
 test-helpers = { path = '../test-helpers' }

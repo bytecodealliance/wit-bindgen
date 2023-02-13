@@ -1679,7 +1679,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-guest-go"
-version = "0.3.0"
+version = "0.1.0"
 dependencies = [
  "clap",
  "heck",
