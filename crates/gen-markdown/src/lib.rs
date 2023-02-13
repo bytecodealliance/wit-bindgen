@@ -36,8 +36,76 @@ impl Opts {
 }
 
 impl WorldGenerator for Markdown {
-    fn preprocess(&mut self, resolve: &Resolve, _name: &str) {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
         self.sizes.fill(resolve);
+
+        let world = &resolve.worlds[world];
+        uwriteln!(
+            self.src,
+            "# <a name=\"{}\">World {}</a>\n",
+            world.name.to_snake_case(),
+            world.name
+        );
+        self.hrefs.insert(
+            world.name.to_string(),
+            format!("#{}", world.name.to_snake_case()),
+        );
+
+        let mut gen = self.interface(resolve);
+
+        gen.docs(&world.docs);
+        gen.push_str("\n");
+
+        // Produce a table of contents for the world.
+        let mut first = true;
+        for (name, import) in &world.imports {
+            if first {
+                gen.push_str(" - Imports:\n");
+                first = false;
+            }
+            match import {
+                WorldItem::Interface(_) => {
+                    gen.push_str("    - interface `");
+                    gen.push_str(name);
+                    gen.push_str("`\n");
+                }
+                WorldItem::Function(_) => {
+                    gen.push_str("    - function `");
+                    gen.push_str(name);
+                    gen.push_str("`\n");
+                }
+                WorldItem::Type(_) => {
+                    gen.push_str("    - type `");
+                    gen.push_str(name);
+                    gen.push_str("`\n");
+                }
+            }
+        }
+        let mut first = true;
+        for (name, export) in &world.exports {
+            if first {
+                gen.push_str(" - Exports:\n");
+                first = false;
+            }
+            match export {
+                WorldItem::Interface(_) => {
+                    gen.push_str("    - interface `");
+                    gen.push_str(name);
+                    gen.push_str("`\n");
+                }
+                WorldItem::Function(_) => {
+                    gen.push_str("    - function `");
+                    gen.push_str(name);
+                    gen.push_str("`\n");
+                }
+                WorldItem::Type(_) => {
+                    gen.push_str("    - type `");
+                    gen.push_str(name);
+                    gen.push_str("`\n");
+                }
+            }
+        }
+        gen.push_str("\n");
     }
 
     fn import_interface(
@@ -47,8 +115,16 @@ impl WorldGenerator for Markdown {
         id: InterfaceId,
         _files: &mut Files,
     ) {
-        uwriteln!(self.src, "# Import interface `{name}`\n");
+        uwriteln!(
+            self.src,
+            "## <a name=\"{}\">Import interface {name}</a>\n",
+            name.to_snake_case()
+        );
+        self.hrefs
+            .insert(name.to_string(), format!("#{}", name.to_snake_case()));
         let mut gen = self.interface(resolve);
+        gen.docs(&resolve.interfaces[id].docs);
+        gen.push_str("\n");
         gen.types(id);
         gen.funcs(id);
     }
@@ -61,7 +137,7 @@ impl WorldGenerator for Markdown {
         _files: &mut Files,
     ) {
         let name = &resolve.worlds[world].name;
-        uwriteln!(self.src, "# Imported functions to world `{name}`\n");
+        uwriteln!(self.src, "## Imported functions to world `{name}`\n");
         let mut gen = self.interface(resolve);
         for (_, func) in funcs {
             gen.func(func);
@@ -75,7 +151,13 @@ impl WorldGenerator for Markdown {
         id: InterfaceId,
         _files: &mut Files,
     ) {
-        uwriteln!(self.src, "# Export interface `{name}`\n");
+        uwriteln!(
+            self.src,
+            "## <a name=\"{}\">Export interface {name}</a>\n",
+            name.to_snake_case()
+        );
+        self.hrefs
+            .insert(name.to_string(), format!("#{}", name.to_snake_case()));
         let mut gen = self.interface(resolve);
         gen.types(id);
         gen.funcs(id);
@@ -89,7 +171,7 @@ impl WorldGenerator for Markdown {
         _files: &mut Files,
     ) {
         let name = &resolve.worlds[world].name;
-        uwriteln!(self.src, "# Exported functions from world `{name}`\n");
+        uwriteln!(self.src, "## Exported functions from world `{name}`\n");
         let mut gen = self.interface(resolve);
         for (_, func) in funcs {
             gen.func(func);
@@ -104,7 +186,7 @@ impl WorldGenerator for Markdown {
         _files: &mut Files,
     ) {
         let name = &resolve.worlds[world].name;
-        uwriteln!(self.src, "# Exported types from world `{name}`\n");
+        uwriteln!(self.src, "## Exported types from world `{name}`\n");
         let mut gen = self.interface(resolve);
         for (name, ty) in types {
             gen.define_type(name, *ty);
@@ -163,31 +245,32 @@ impl InterfaceGenerator<'_> {
         if iface.functions.is_empty() {
             return;
         }
-        self.push_str("## Functions\n\n");
+        self.push_str("----\n\n");
+        self.push_str("### Functions\n\n");
         for (_name, func) in iface.functions.iter() {
             self.func(func);
         }
     }
 
     fn func(&mut self, func: &Function) {
-        self.push_str("----\n\n");
         self.push_str(&format!(
-            "#### <a href=\"#{0}\" name=\"{0}\"></a> `",
+            "#### <a name=\"{0}\">`",
             func.name.to_snake_case()
         ));
         self.gen
             .hrefs
             .insert(func.name.clone(), format!("#{}", func.name.to_snake_case()));
         self.push_str(&func.name);
-        self.push_str("` ");
+        self.push_str(": func`</a>");
         self.push_str("\n\n");
         self.docs(&func.docs);
 
         if func.params.len() > 0 {
+            self.push_str("\n");
             self.push_str("##### Params\n\n");
             for (name, ty) in func.params.iter() {
                 self.push_str(&format!(
-                    "- <a href=\"#{f}.{p}\" name=\"{f}.{p}\"></a> `{}`: ",
+                    "- <a name=\"{f}.{p}\">`{}`</a>: ",
                     name,
                     f = func.name.to_snake_case(),
                     p = name.to_snake_case(),
@@ -198,16 +281,28 @@ impl InterfaceGenerator<'_> {
         }
 
         if func.results.len() > 0 {
-            self.push_str("##### Results\n\n");
-            for (i, ty) in func.results.iter_types().enumerate() {
-                self.push_str(&format!(
-                    "- <a href=\"#{f}.{p}{i}\" name=\"{f}.{p}{i}\"></a> `{}{i}`: ",
-                    "result",
-                    f = func.name.to_snake_case(),
-                    p = "result",
-                ));
-                self.print_ty(ty);
-                self.push_str("\n");
+            self.push_str("\n##### Return values\n\n");
+            match &func.results {
+                Results::Named(params) => {
+                    for (name, ty) in params.iter() {
+                        self.push_str(&format!(
+                            "- <a name=\"{f}.{p}\">`{}`</a>: ",
+                            name,
+                            f = func.name.to_snake_case(),
+                            p = name,
+                        ));
+                        self.print_ty(ty);
+                        self.push_str("\n");
+                    }
+                }
+                Results::Anon(ty) => {
+                    self.push_str(&format!(
+                        "- <a name=\"{f}.0\"></a> ",
+                        f = func.name.to_snake_case(),
+                    ));
+                    self.print_ty(ty);
+                    self.push_str("\n");
+                }
             }
         }
 
@@ -346,29 +441,21 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn print_type_header(&mut self, name: &str) {
+    fn print_type_header(&mut self, type_: &str, name: &str) {
         if !self.types_header_printed {
-            self.push_str("## Types\n\n");
+            self.push_str("----\n\n");
+            self.push_str("### Types\n\n");
             self.types_header_printed = true;
         }
         self.push_str(&format!(
-            "## <a href=\"#{}\" name=\"{0}\"></a> `{}`: ",
+            "#### <a name=\"{}\">`{} {}`</a>\n",
             name.to_snake_case(),
+            type_,
             name,
         ));
         self.gen
             .hrefs
             .insert(name.to_string(), format!("#{}", name.to_snake_case()));
-    }
-
-    fn print_type_info(&mut self, ty: TypeId, docs: &Docs) {
-        self.docs(docs);
-        self.push_str("\n");
-        self.push_str(&format!("Size: {}, ", self.gen.sizes.size(&Type::Id(ty))));
-        self.push_str(&format!(
-            "Alignment: {}\n",
-            self.gen.sizes.align(&Type::Id(ty))
-        ));
     }
 }
 
@@ -377,14 +464,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.resolve
     }
 
-    fn type_record(&mut self, id: TypeId, name: &str, record: &Record, docs: &Docs) {
-        self.print_type_header(name);
-        self.push_str("record\n\n");
-        self.print_type_info(id, docs);
-        self.push_str("\n### Record Fields\n\n");
+    fn type_record(&mut self, _id: TypeId, name: &str, record: &Record, docs: &Docs) {
+        self.print_type_header("record", name);
+        self.push_str("\n");
+        self.docs(docs);
+        self.push_str("\n##### Record Fields\n\n");
         for field in record.fields.iter() {
             self.push_str(&format!(
-                "- <a href=\"{r}.{f}\" name=\"{r}.{f}\"></a> [`{name}`](#{r}.{f}): ",
+                "- <a name=\"{r}.{f}\">`{name}`</a>: ",
                 r = name.to_snake_case(),
                 f = field.name.to_snake_case(),
                 name = field.name,
@@ -394,22 +481,24 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 format!("#{}.{}", name.to_snake_case(), field.name.to_snake_case()),
             );
             self.print_ty(&field.ty);
-            self.gen.src.indent(1);
-            self.push_str("\n\n");
-            self.docs(&field.docs);
-            self.gen.src.deindent(1);
+            if field.docs.contents.is_some() {
+                self.gen.src.indent(1);
+                self.push_str("\n<p>");
+                self.docs(&field.docs);
+                self.gen.src.deindent(1);
+            }
             self.push_str("\n");
         }
     }
 
-    fn type_tuple(&mut self, id: TypeId, name: &str, tuple: &Tuple, docs: &Docs) {
-        self.print_type_header(name);
-        self.push_str("tuple\n\n");
-        self.print_type_info(id, docs);
-        self.push_str("\n### Tuple Fields\n\n");
+    fn type_tuple(&mut self, _id: TypeId, name: &str, tuple: &Tuple, docs: &Docs) {
+        self.print_type_header("tuple", name);
+        self.push_str("\n");
+        self.docs(docs);
+        self.push_str("\n##### Tuple Fields\n\n");
         for (i, ty) in tuple.types.iter().enumerate() {
             self.push_str(&format!(
-                "- <a href=\"{r}.{f}\" name=\"{r}.{f}\"></a> [`{name}`](#{r}.{f}): ",
+                "- <a name=\"{r}.{f}\">`{name}`</a>: ",
                 r = name.to_snake_case(),
                 f = i,
                 name = i,
@@ -423,14 +512,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         }
     }
 
-    fn type_flags(&mut self, id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
-        self.print_type_header(name);
-        self.push_str("record\n\n");
-        self.print_type_info(id, docs);
-        self.push_str("\n### Record Fields\n\n");
-        for (i, flag) in flags.flags.iter().enumerate() {
+    fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
+        self.print_type_header("flags", name);
+        self.push_str("\n");
+        self.docs(docs);
+        self.push_str("\n##### Flags members\n\n");
+        for flag in flags.flags.iter() {
             self.push_str(&format!(
-                "- <a href=\"{r}.{f}\" name=\"{r}.{f}\"></a> [`{name}`](#{r}.{f}): ",
+                "- <a name=\"{r}.{f}\">`{name}`</a>: ",
                 r = name.to_snake_case(),
                 f = flag.name.to_snake_case(),
                 name = flag.name,
@@ -439,23 +528,24 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 format!("{}::{}", name, flag.name),
                 format!("#{}.{}", name.to_snake_case(), flag.name.to_snake_case()),
             );
-            self.gen.src.indent(1);
-            self.push_str("\n\n");
-            self.docs(&flag.docs);
-            self.gen.src.deindent(1);
-            self.push_str(&format!("Bit: {}\n", i));
+            if flag.docs.contents.is_some() {
+                self.gen.src.indent(1);
+                self.push_str("\n<p>");
+                self.docs(&flag.docs);
+                self.gen.src.deindent(1);
+            }
             self.push_str("\n");
         }
     }
 
-    fn type_variant(&mut self, id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
-        self.print_type_header(name);
-        self.push_str("variant\n\n");
-        self.print_type_info(id, docs);
-        self.push_str("\n### Variant Cases\n\n");
+    fn type_variant(&mut self, _id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
+        self.print_type_header("variant", name);
+        self.push_str("\n");
+        self.docs(docs);
+        self.push_str("\n##### Variant Cases\n\n");
         for case in variant.cases.iter() {
             self.push_str(&format!(
-                "- <a href=\"{v}.{c}\" name=\"{v}.{c}\"></a> [`{name}`](#{v}.{c})",
+                "- <a name=\"{v}.{c}\">`{name}`</a>",
                 v = name.to_snake_case(),
                 c = case.name.to_snake_case(),
                 name = case.name,
@@ -468,45 +558,47 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 self.push_str(": ");
                 self.print_ty(ty);
             }
-            self.gen.src.indent(1);
-            self.push_str("\n\n");
-            self.docs(&case.docs);
-            self.gen.src.deindent(1);
+            if case.docs.contents.is_some() {
+                self.gen.src.indent(1);
+                self.push_str("\n<p>");
+                self.docs(&case.docs);
+                self.gen.src.deindent(1);
+            }
             self.push_str("\n");
         }
     }
 
-    fn type_union(&mut self, id: TypeId, name: &str, union: &Union, docs: &Docs) {
-        self.print_type_header(name);
-        self.push_str("union\n\n");
-        self.print_type_info(id, docs);
-        self.push_str("\n### Union Cases\n\n");
+    fn type_union(&mut self, _id: TypeId, name: &str, union: &Union, docs: &Docs) {
+        self.print_type_header("union", name);
+        self.push_str("\n");
+        self.docs(docs);
+        self.push_str("\n##### Union Cases\n\n");
         let snake = name.to_snake_case();
         for (i, case) in union.cases.iter().enumerate() {
-            self.push_str(&format!(
-                "- <a href=\"{snake}.{i}\" name=\"{snake}.{i}\"></a> [`{i}`](#{snake}.{i})",
-            ));
+            self.push_str(&format!("- <a name=\"{snake}.{i}\">`{i}`</a>",));
             self.gen
                 .hrefs
                 .insert(format!("{name}::{i}"), format!("#{snake}.{i}"));
             self.push_str(": ");
             self.print_ty(&case.ty);
-            self.gen.src.indent(1);
-            self.push_str("\n\n");
-            self.docs(&case.docs);
-            self.gen.src.deindent(1);
+            if case.docs.contents.is_some() {
+                self.gen.src.indent(1);
+                self.push_str("\n<p>");
+                self.docs(&case.docs);
+                self.gen.src.deindent(1);
+            }
             self.push_str("\n");
         }
     }
 
-    fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
-        self.print_type_header(name);
-        self.push_str("enum\n\n");
-        self.print_type_info(id, docs);
-        self.push_str("\n### Enum Cases\n\n");
+    fn type_enum(&mut self, _id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
+        self.print_type_header("enum", name);
+        self.push_str("\n");
+        self.docs(docs);
+        self.push_str("\n##### Enum Cases\n\n");
         for case in enum_.cases.iter() {
             self.push_str(&format!(
-                "- <a href=\"{v}.{c}\" name=\"{v}.{c}\"></a> [`{name}`](#{v}.{c})",
+                "- <a name=\"{v}.{c}\">`{name}`</a>",
                 v = name.to_snake_case(),
                 c = case.name.to_snake_case(),
                 name = case.name,
@@ -515,24 +607,27 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 format!("{}::{}", name, case.name),
                 format!("#{}.{}", name.to_snake_case(), case.name.to_snake_case()),
             );
-            self.gen.src.indent(1);
-            self.push_str("\n\n");
-            self.docs(&case.docs);
-            self.gen.src.deindent(1);
+            if case.docs.contents.is_some() {
+                self.gen.src.indent(1);
+                self.push_str("\n<p>");
+                self.docs(&case.docs);
+                self.gen.src.deindent(1);
+            }
             self.push_str("\n");
         }
     }
 
-    fn type_option(&mut self, id: TypeId, name: &str, payload: &Type, docs: &Docs) {
-        self.print_type_header(name);
+    fn type_option(&mut self, _id: TypeId, name: &str, payload: &Type, docs: &Docs) {
+        self.print_type_header("type", name);
         self.push_str("option<");
         self.print_ty(payload);
         self.push_str(">");
-        self.print_type_info(id, docs);
+        self.push_str("\n");
+        self.docs(docs);
     }
 
-    fn type_result(&mut self, id: TypeId, name: &str, result: &Result_, docs: &Docs) {
-        self.print_type_header(name);
+    fn type_result(&mut self, _id: TypeId, name: &str, result: &Result_, docs: &Docs) {
+        self.print_type_header("type", name);
         match (result.ok, result.err) {
             (Some(ok), Some(err)) => {
                 self.push_str("result<");
@@ -555,14 +650,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 self.push_str("result");
             }
         }
-        self.print_type_info(id, docs);
+        self.push_str("\n");
+        self.docs(docs);
     }
 
-    fn type_alias(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        self.print_type_header(name);
+    fn type_alias(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        self.print_type_header("type", name);
         self.print_ty(ty);
-        self.push_str("\n\n");
-        self.print_type_info(id, docs);
+        self.push_str("\n<p>");
+        self.docs(docs);
         self.push_str("\n");
     }
 
