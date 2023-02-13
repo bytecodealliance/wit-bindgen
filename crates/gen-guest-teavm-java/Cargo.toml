@@ -2,6 +2,13 @@
 name = "wit-bindgen-gen-guest-teavm-java"
 version = "0.3.0"
 edition.workspace = true
+repository = 'https://github.com/bytecodealliance/wit-bindgen'
+license = "Apache-2.0 WITH LLVM-exception"
+homepage = 'https://github.com/bytecodealliance/wit-bindgen'
+description = """
+TeaVM-Java bindings generator for WIT and the component model, typically used
+through the `wit-bindgen-cli` crate.
+"""
 
 [dependencies]
 wit-bindgen-core = { workspace = true }
