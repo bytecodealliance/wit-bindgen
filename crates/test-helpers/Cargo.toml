@@ -1,6 +1,6 @@
 [package]
 name = "test-helpers"
-version.workspace = true
+version = "0.0.0"
 edition.workspace = true
 publish = false
 

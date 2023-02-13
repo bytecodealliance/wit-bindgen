@@ -4,13 +4,13 @@ mod codegen_tests {
     macro_rules! codegen_test {
         ($id:ident $name:tt $test:tt) => {
             mod $id {
-                wit_bindgen_guest_rust::generate!($name in $test);
+                wit_bindgen::generate!($name in $test);
 
                 #[test]
                 fn works() {}
 
                 mod unchecked {
-                    wit_bindgen_guest_rust::generate!({
+                    wit_bindgen::generate!({
                         path: $test,
                         world: $name,
                         unchecked,
@@ -27,7 +27,7 @@ mod codegen_tests {
 }
 
 mod strings {
-    wit_bindgen_guest_rust::generate!({
+    wit_bindgen::generate!({
         inline: "
             default world not-used-name {
                 import cat: interface {
@@ -50,7 +50,7 @@ mod strings {
 
 /// Like `strings` but with raw_strings`.
 mod raw_strings {
-    wit_bindgen_guest_rust::generate!({
+    wit_bindgen::generate!({
         inline: "
             default world not-used-name {
                 import cat: interface {
@@ -77,7 +77,7 @@ mod raw_strings {
 // and still compile.
 mod prefix {
     mod bindings {
-        wit_bindgen_guest_rust::generate!({
+        wit_bindgen::generate!({
             inline: "
                 default world baz {
                     export exports1: interface {
@@ -110,7 +110,7 @@ mod prefix {
 // This is a static compilation test to check that
 // the export macro name can be overridden.
 mod macro_name {
-    wit_bindgen_guest_rust::generate!({
+    wit_bindgen::generate!({
         inline: "
             default world baz {
                 export exports2: interface {
@@ -133,7 +133,7 @@ mod macro_name {
 }
 
 mod skip {
-    wit_bindgen_guest_rust::generate!({
+    wit_bindgen::generate!({
         inline: "
             default world baz {
                 export exports: interface {
