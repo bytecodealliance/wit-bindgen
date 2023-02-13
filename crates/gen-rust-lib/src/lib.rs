@@ -204,22 +204,26 @@ pub trait RustGenerator<'a> {
         }
     }
 
+    fn type_path(&self, id: TypeId, param: bool) -> String {
+        let name = if param {
+            self.param_name(id)
+        } else {
+            self.result_name(id)
+        };
+        if let TypeOwner::Interface(id) = self.resolve().types[id].owner {
+            if let Some(path) = self.path_to_interface(id) {
+                return format!("{path}::{name}");
+            }
+        }
+        name
+    }
+
     fn print_tyid(&mut self, id: TypeId, mode: TypeMode) {
         let info = self.info(id);
         let lt = self.lifetime_for(&info, mode);
         let ty = &self.resolve().types[id];
         if ty.name.is_some() {
-            let name = if lt.is_some() {
-                self.param_name(id)
-            } else {
-                self.result_name(id)
-            };
-            if let TypeOwner::Interface(id) = ty.owner {
-                if let Some(path) = self.path_to_interface(id) {
-                    self.push_str(&path);
-                    self.push_str("::");
-                }
-            }
+            let name = self.type_path(id, lt.is_some());
             self.push_str(&name);
 
             // If the type recursively owns data and it's a
@@ -1094,17 +1098,19 @@ pub trait RustFunctionGenerator {
     }
 
     fn typename_lower(&self, id: TypeId) -> String {
-        match self.lift_lower() {
-            LiftLower::LowerArgsLiftResults => self.rust_gen().param_name(id),
-            LiftLower::LiftArgsLowerResults => self.rust_gen().result_name(id),
-        }
+        let param = match self.lift_lower() {
+            LiftLower::LowerArgsLiftResults => true,
+            LiftLower::LiftArgsLowerResults => false,
+        };
+        self.rust_gen().type_path(id, param)
     }
 
     fn typename_lift(&self, id: TypeId) -> String {
-        match self.lift_lower() {
-            LiftLower::LiftArgsLowerResults => self.rust_gen().param_name(id),
-            LiftLower::LowerArgsLiftResults => self.rust_gen().result_name(id),
-        }
+        let param = match self.lift_lower() {
+            LiftLower::LiftArgsLowerResults => true,
+            LiftLower::LowerArgsLiftResults => false,
+        };
+        self.rust_gen().type_path(id, param)
     }
 }
 

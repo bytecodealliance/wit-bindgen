@@ -1023,15 +1023,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results.push(format!("(flags{}.bits() >> {}) as i32", tmp, i * 32));
                 }
             }
-            Instruction::FlagsLift { name, flags, .. } => {
+            Instruction::FlagsLift { flags, ty, .. } => {
                 let repr = RustFlagsRepr::new(flags);
-                let name = name.to_upper_camel_case();
-                let mut result = format!("{}::empty()", name);
+                let name = self.gen.type_path(*ty, true);
+                let mut result = format!("{name}::empty()");
                 for (i, op) in operands.iter().enumerate() {
                     result.push_str(&format!(
-                        " | {}::from_bits_preserve((({} as {repr}) << {}) as _)",
-                        name,
-                        op,
+                        " | {name}::from_bits_preserve((({op} as {repr}) << {}) as _)",
                         i * 32
                     ));
                 }
@@ -1246,9 +1244,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 ));
             }
 
-            Instruction::EnumLower { enum_, name, .. } => {
+            Instruction::EnumLower { enum_, ty, .. } => {
                 let mut result = format!("match {} {{\n", operands[0]);
-                let name = name.to_upper_camel_case();
+                let name = self.gen.type_path(*ty, true);
                 for (i, case) in enum_.cases.iter().enumerate() {
                     let case = case.name.to_upper_camel_case();
                     result.push_str(&format!("{name}::{case} => {i},\n"));
@@ -1259,9 +1257,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             // In unchecked mode when this type is a named enum then we know we
             // defined the type so we can transmute directly into it.
-            Instruction::EnumLift { enum_, name, .. } if unchecked => {
+            Instruction::EnumLift { enum_, ty, .. } if unchecked => {
                 let mut result = format!("core::mem::transmute::<_, ");
-                result.push_str(&name.to_upper_camel_case());
+                result.push_str(&self.gen.type_path(*ty, true));
                 result.push_str(">(");
                 result.push_str(&operands[0]);
                 result.push_str(" as ");
@@ -1270,11 +1268,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(result);
             }
 
-            Instruction::EnumLift { enum_, name, .. } => {
+            Instruction::EnumLift { enum_, ty, .. } => {
                 let mut result = format!("match ");
                 result.push_str(&operands[0]);
                 result.push_str(" {\n");
-                let name = name.to_upper_camel_case();
+                let name = self.gen.type_path(*ty, true);
                 for (i, case) in enum_.cases.iter().enumerate() {
                     let case = case.name.to_upper_camel_case();
                     result.push_str(&format!("{i} => {name}::{case},\n"));
