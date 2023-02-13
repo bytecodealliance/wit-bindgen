@@ -3,6 +3,13 @@ name = "wit-bindgen-gen-guest-rust"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 version = "0.3.0"
 edition.workspace = true
+repository = 'https://github.com/bytecodealliance/wit-bindgen'
+license = "Apache-2.0 WITH LLVM-exception"
+homepage = 'https://github.com/bytecodealliance/wit-bindgen'
+description = """
+Rust bindings generator for WIT and the component model, typically used through
+the `wit-bindgen` crate's `generate!` macro.
+"""
 
 [lib]
 test = false
