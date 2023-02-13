@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build:
-    name: Build wasm-tools
+    name: Build wit-bindgen
     runs-on: ${{ matrix.os }}
     if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/wit-bindgen-cli-')
     strategy:
