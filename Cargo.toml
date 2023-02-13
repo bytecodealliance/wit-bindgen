@@ -66,6 +66,6 @@ teavm-java = ['dep:wit-bindgen-gen-guest-teavm-java']
 
 [dev-dependencies]
 heck = { workspace = true }
-wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime', features = ['component-model'] }
+wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime', features = ['component-model'], branch = 'release-6.0.0' }
 test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
