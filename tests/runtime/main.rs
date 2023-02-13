@@ -235,7 +235,7 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
             fs::copy(&go_impl, out_dir.join(format!("{snake}.go"))).unwrap();
         }
 
-        let go_mod = format!("module wit_{snake}_go\n\ngo 1.19");
+        let go_mod = format!("module wit_{snake}_go\n\ngo 1.20");
         fs::write(out_dir.join("go.mod"), go_mod).unwrap();
 
         let out_wasm = out_dir.join("go.wasm");

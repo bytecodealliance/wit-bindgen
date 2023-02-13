@@ -67,7 +67,7 @@ fn verify(dir: &Path, name: &str) {
     // create go.mod file
     let mod_file = dir.join("go.mod");
     let mut file = std::fs::File::create(mod_file).expect("Failed to create file go.mod");
-    file.write_all(format!("module {name}\n\ngo 1.19").as_bytes())
+    file.write_all(format!("module {name}\n\ngo 1.20").as_bytes())
         .expect("Failed to write to file");
 
     // run tinygo on Dir directory
