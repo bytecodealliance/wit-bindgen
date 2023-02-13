@@ -211,6 +211,8 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
 
     #[cfg(feature = "go")]
     if !go.is_empty() {
+        let out_dir = out_dir.join("go");
+        fs::create_dir_all(&out_dir).unwrap();
         let snake = resolve.worlds[world].name.replace("-", "_");
         let mut files = Default::default();
         wit_bindgen_gen_guest_go::Opts::default()
