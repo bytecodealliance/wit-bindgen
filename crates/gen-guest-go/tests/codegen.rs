@@ -74,7 +74,6 @@ fn verify(dir: &Path, name: &str) {
 
     let mut cmd = Command::new("tinygo");
     cmd.arg("build");
-    cmd.arg("-wasm-abi=generic");
     cmd.arg("-target=wasi");
     cmd.arg("-o");
     cmd.arg("go.wasm");
