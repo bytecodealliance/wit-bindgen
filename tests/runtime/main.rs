@@ -137,7 +137,12 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
 
     #[cfg(feature = "c")]
     for path in c.iter() {
-        let snake = resolve.worlds[world].name.replace("-", "_");
+        let world_name = &resolve.worlds[world].name;
+        let out_dir = out_dir.join(format!("c-{}", world_name));
+        drop(fs::remove_dir_all(&out_dir));
+        fs::create_dir_all(&out_dir).unwrap();
+
+        let snake = world_name.replace("-", "_");
         let mut files = Default::default();
         let mut opts = wit_bindgen_gen_guest_c::Opts::default();
         if let Some(path) = path.file_name().and_then(|s| s.to_str()) {
@@ -211,9 +216,11 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
 
     #[cfg(feature = "go")]
     if !go.is_empty() {
-        let out_dir = out_dir.join("go");
-        fs::create_dir_all(&out_dir).unwrap();
-        let snake = resolve.worlds[world].name.replace("-", "_");
+        let world_name = &resolve.worlds[world].name;
+        let out_dir = out_dir.join(format!("go-{}", world_name));
+        drop(fs::remove_dir_all(&out_dir));
+
+        let snake = world_name.replace("-", "_");
         let mut files = Default::default();
         wit_bindgen_gen_guest_go::Opts::default()
             .build()
