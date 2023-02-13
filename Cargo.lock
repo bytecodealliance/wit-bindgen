@@ -1077,7 +1077,7 @@ dependencies = [
 name = "test-rust-wasm"
 version = "0.3.0"
 dependencies = [
- "wit-bindgen-guest-rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -1226,7 +1226,7 @@ name = "wasi_snapshot_preview1"
 version = "0.0.0"
 dependencies = [
  "wasi",
- "wit-bindgen-guest-rust",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -1627,6 +1627,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "447660ad36a13288b1db4d4248e857b510e8c3a225c822ba4fb748c0aafecffd"
 
 [[package]]
+name = "wit-bindgen"
+version = "0.3.0"
+dependencies = [
+ "bitflags",
+ "wit-bindgen-guest-rust-macro",
+]
+
+[[package]]
 name = "wit-bindgen-cli"
 version = "0.3.0"
 dependencies = [
@@ -1674,9 +1682,9 @@ dependencies = [
  "clap",
  "heck",
  "test-helpers",
+ "wit-bindgen",
  "wit-bindgen-core",
  "wit-bindgen-gen-rust-lib",
- "wit-bindgen-guest-rust",
  "wit-component",
 ]
 
@@ -1708,14 +1716,6 @@ version = "0.3.0"
 dependencies = [
  "heck",
  "wit-bindgen-core",
-]
-
-[[package]]
-name = "wit-bindgen-guest-rust"
-version = "0.3.0"
-dependencies = [
- "bitflags",
- "wit-bindgen-guest-rust-macro",
 ]
 
 [[package]]

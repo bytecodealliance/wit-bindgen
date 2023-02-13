@@ -16,5 +16,5 @@ heck = { workspace = true }
 clap = { workspace = true, optional = true }
 
 [dev-dependencies]
-wit-bindgen-guest-rust = { path = '../guest-rust' }
+wit-bindgen = { path = '../guest-rust' }
 test-helpers = { path = '../test-helpers' }

@@ -6,7 +6,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-wit-bindgen-guest-rust = { path = "../guest-rust" }
+wit-bindgen = { path = "../guest-rust" }
 
 [features]
 unchecked = []

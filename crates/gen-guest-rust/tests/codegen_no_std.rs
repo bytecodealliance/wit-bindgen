@@ -9,7 +9,7 @@ mod codegen_tests {
     macro_rules! codegen_test {
         ($id:ident $name:tt $test:tt) => {
             mod $id {
-                wit_bindgen_guest_rust::generate!({
+                wit_bindgen::generate!({
                     path: $test,
                     world: $name,
                     no_std,
@@ -19,7 +19,7 @@ mod codegen_tests {
                 fn works() {}
 
                 mod unchecked {
-                    wit_bindgen_guest_rust::generate!({
+                    wit_bindgen::generate!({
                         path: $test,
                         world: $name,
                         unchecked,
@@ -39,7 +39,7 @@ mod codegen_tests {
 mod strings {
     use alloc::string::String;
 
-    wit_bindgen_guest_rust::generate!({
+    wit_bindgen::generate!({
         inline: "
             default world not-used-name {
                 import cat: interface {
@@ -65,7 +65,7 @@ mod strings {
 mod raw_strings {
     use alloc::vec::Vec;
 
-    wit_bindgen_guest_rust::generate!({
+    wit_bindgen::generate!({
         inline: "
             default world not-used-name {
                 import cat: interface {
@@ -98,7 +98,7 @@ mod prefix {
     };
 
     mod bindings {
-        wit_bindgen_guest_rust::generate!({
+        wit_bindgen::generate!({
             inline: "
                 default world baz {
                     export exports1: interface {
@@ -134,7 +134,7 @@ mod prefix {
 mod macro_name {
     use alloc::{format, string::String};
 
-    wit_bindgen_guest_rust::generate!({
+    wit_bindgen::generate!({
         inline: "
             default world baz {
                 export exports2: interface {
@@ -158,7 +158,7 @@ mod macro_name {
 }
 
 mod skip {
-    wit_bindgen_guest_rust::generate!({
+    wit_bindgen::generate!({
         inline: "
             default world baz {
                 export exports: interface {
