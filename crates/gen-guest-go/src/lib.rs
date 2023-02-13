@@ -95,7 +95,8 @@ impl TinyGo {
 }
 
 impl WorldGenerator for TinyGo {
-    fn preprocess(&mut self, resolve: &Resolve, name: &str) {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
+        let name = &resolve.worlds[world].name;
         self.world = name.to_string();
         self.sizes.fill(resolve);
     }
