@@ -1,5 +1,3 @@
-use heck::{ToSnakeCase, ToUpperCamelCase};
-use std::fs;
 use std::path::Path;
 use std::process::Command;
 
@@ -24,7 +22,22 @@ macro_rules! codegen_test {
 }
 test_helpers::codegen_tests!("*.wit");
 
+// TODO: As of this writing, Maven has started failing to resolve dependencies on Windows in the GitHub action,
+// apparently unrelated to any code changes we've made.  Until we've either resolved the problem or developed a
+// workaround, we're disabling the tests.
+//
+// See https://github.com/bytecodealliance/wit-bindgen/issues/495 for more information.
+#[cfg(windows)]
+fn verify(_dir: &Path, _name: &str) {
+    _ = mvn;
+    _ = pom_xml;
+}
+
+#[cfg(unix)]
 fn verify(dir: &Path, name: &str) {
+    use heck::{ToSnakeCase, ToUpperCamelCase};
+    use std::fs;
+
     let java_dir = &dir.join("src/main/java");
     let snake = name.to_snake_case();
     let package_dir = &java_dir.join(format!("wit_{snake}"));
