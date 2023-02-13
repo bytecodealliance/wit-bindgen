@@ -112,7 +112,7 @@ impl RustWasm {
 }
 
 impl WorldGenerator for RustWasm {
-    fn preprocess(&mut self, resolve: &Resolve, _name: &str) {
+    fn preprocess(&mut self, resolve: &Resolve, _world: WorldId) {
         self.types.analyze(resolve);
     }
 

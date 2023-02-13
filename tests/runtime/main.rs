@@ -282,6 +282,12 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
         result.push(component_path);
     }
 
+    // TODO: As of this writing, Maven has started failing to resolve dependencies on Windows in the GitHub action,
+    // apparently unrelated to any code changes we've made.  Until we've either resolved the problem or developed a
+    // workaround, we're disabling the tests.
+    //
+    // See https://github.com/bytecodealliance/wit-bindgen/issues/495 for more information.
+    #[cfg(unix)]
     #[cfg(feature = "teavm-java")]
     if !java.is_empty() {
         use heck::*;

@@ -441,7 +441,7 @@ mod tests {
 pub trait WorldGenerator {
     fn generate(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
         let world = &resolve.worlds[id];
-        self.preprocess(resolve, &world.name);
+        self.preprocess(resolve, id);
 
         let mut funcs = Vec::new();
         let mut types = Vec::new();
@@ -473,9 +473,9 @@ pub trait WorldGenerator {
         self.finish(resolve, id, files);
     }
 
-    fn preprocess(&mut self, resolve: &Resolve, name: &str) {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
         drop(resolve);
-        drop(name);
+        drop(world);
     }
 
     fn import_interface(
