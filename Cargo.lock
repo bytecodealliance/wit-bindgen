@@ -166,7 +166,7 @@ dependencies = [
 
 [[package]]
 name = "codegen-macro"
-version = "0.3.0"
+version = "0.0.0"
 dependencies = [
  "heck",
  "ignore",
@@ -1063,7 +1063,7 @@ version = "0.1.0"
 
 [[package]]
 name = "test-helpers"
-version = "0.3.0"
+version = "0.0.0"
 dependencies = [
  "codegen-macro",
  "wasm-encoder",
@@ -1075,7 +1075,7 @@ dependencies = [
 
 [[package]]
 name = "test-rust-wasm"
-version = "0.3.0"
+version = "0.0.0"
 dependencies = [
  "wit-bindgen",
 ]

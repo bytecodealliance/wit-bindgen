@@ -1,7 +1,7 @@
 [package]
 name = "wit-bindgen-guest-rust-macro"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
-version.workspace = true
+version = "0.3.0"
 edition.workspace = true
 
 [lib]

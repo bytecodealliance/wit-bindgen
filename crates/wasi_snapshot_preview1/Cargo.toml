@@ -2,6 +2,7 @@
 name = "wasi_snapshot_preview1"
 version = "0.0.0"
 edition.workspace = true
+publish = false
 
 [dependencies]
 wasi = "0.11.0"
