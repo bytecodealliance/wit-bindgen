@@ -33,11 +33,10 @@ impl Parse for Config {
         let mut world = None;
         let mut source = None;
 
-        let document = if input.peek(token::Brace) {
+        if input.peek(token::Brace) {
             let content;
             syn::braced!(content in input);
             let fields = Punctuated::<Opt, Token![,]>::parse_terminated(&content)?;
-            let mut document = None;
             for field in fields.into_pairs() {
                 match field.into_value() {
                     Opt::Path(s) => {
@@ -47,10 +46,10 @@ impl Parse for Config {
                         source = Some(Source::Path(s.value()));
                     }
                     Opt::World(s) => {
-                        if document.is_some() {
-                            return Err(Error::new(s.span(), "cannot specify second document"));
+                        if world.is_some() {
+                            return Err(Error::new(s.span(), "cannot specify second world"));
                         }
-                        document = Some(parse_doc(&s.value(), &mut world));
+                        world = Some(s.value());
                     }
                     Opt::Inline(s) => {
                         if source.is_some() {
@@ -67,43 +66,17 @@ impl Parse for Config {
                     Opt::Skip(list) => opts.skip.extend(list.iter().map(|i| i.value())),
                 }
             }
-            match (document, &source) {
-                (Some(doc), _) => doc,
-                (None, Some(Source::Inline(_))) => "macro-input".to_string(),
-                _ => {
-                    return Err(Error::new(
-                        call_site,
-                        "must specify a `world` to generate bindings for",
-                    ))
-                }
-            }
         } else {
-            let document = input.parse::<syn::LitStr>()?;
+            world = input.parse::<Option<syn::LitStr>>()?.map(|s| s.value());
             if input.parse::<Option<syn::token::In>>()?.is_some() {
                 source = Some(Source::Path(input.parse::<syn::LitStr>()?.value()));
             }
-            parse_doc(&document.value(), &mut world)
-        };
+        }
         let (resolve, pkg, files) =
             parse_source(&source).map_err(|err| Error::new(call_site, format!("{err:?}")))?;
-        let doc = resolve.packages[pkg]
-            .documents
-            .get(&document)
-            .copied()
-            .ok_or_else(|| {
-                Error::new(call_site, format!("no document named `{document}` found"))
-            })?;
-
-        let world = match &world {
-            Some(name) => resolve.documents[doc]
-                .worlds
-                .get(name)
-                .copied()
-                .ok_or_else(|| Error::new(call_site, format!("no world named `{name}` found")))?,
-            None => resolve.documents[doc].default_world.ok_or_else(|| {
-                Error::new(call_site, format!("no default world found in `{document}`"))
-            })?,
-        };
+        let world = resolve
+            .select_world(pkg, world.as_deref())
+            .map_err(|e| Error::new(call_site, format!("{e:?}")))?;
         Ok(Config {
             opts,
             resolve,
@@ -138,16 +111,6 @@ fn parse_source(source: &Option<Source>) -> anyhow::Result<(Resolve, PackageId, 
     };
 
     Ok((resolve, pkg, files))
-}
-
-fn parse_doc(s: &str, world: &mut Option<String>) -> String {
-    match s.find('.') {
-        Some(pos) => {
-            *world = Some(s[pos + 1..].to_string());
-            s[..pos].to_string()
-        }
-        None => s.to_string(),
-    }
 }
 
 impl Config {
