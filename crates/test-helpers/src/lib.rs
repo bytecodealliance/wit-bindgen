@@ -90,7 +90,8 @@ pub fn run_component_codegen_test(
     let (resolve, world) = parse_wit(wit_path);
     let world_name = &resolve.worlds[world].name;
     let mut wasm = wit_component::dummy_module(&resolve, world);
-    let encoded = wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8).unwrap();
+    let encoded =
+        wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None).unwrap();
     let section = wasm_encoder::CustomSection {
         name: "component-type",
         data: &encoded,
@@ -134,11 +135,6 @@ fn parse_wit(path: &Path) -> (Resolve, WorldId) {
             )
             .unwrap()
     };
-    let world = resolve.packages[pkg]
-        .documents
-        .iter()
-        .filter_map(|(_, doc)| resolve.documents[*doc].default_world)
-        .next()
-        .expect("no `default world` found");
+    let world = resolve.select_world(pkg, None).unwrap();
     (resolve, world)
 }

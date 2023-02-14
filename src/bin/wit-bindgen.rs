@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 use std::str;
@@ -152,44 +152,7 @@ fn gen_world(
             &Default::default(),
         )?
     };
-    let world = match &opts.world {
-        Some(world) => {
-            let mut parts = world.splitn(2, '.');
-            let doc = parts.next().unwrap();
-            let world = parts.next();
-            let doc = *resolve.packages[pkg]
-                .documents
-                .get(doc)
-                .ok_or_else(|| anyhow!("no document named `{doc}` in package"))?;
-            match world {
-                Some(name) => *resolve.documents[doc]
-                    .worlds
-                    .get(name)
-                    .ok_or_else(|| anyhow!("no world named `{name}` in document"))?,
-                None => resolve.documents[doc]
-                    .default_world
-                    .ok_or_else(|| anyhow!("no default world in document"))?,
-            }
-        }
-        None => {
-            if resolve.packages[pkg].documents.is_empty() {
-                bail!("no documents found in package")
-            }
-
-            let mut unique_default_world = None;
-            for (_name, doc) in &resolve.documents {
-                if let Some(default_world) = doc.default_world {
-                    if unique_default_world.is_some() {
-                        bail!("multiple default worlds found in package, specify which to bind with `--world` argument")
-                    } else {
-                        unique_default_world = Some(default_world);
-                    }
-                }
-            }
-
-            unique_default_world.ok_or_else(|| anyhow!("no default world in package"))?
-        }
-    };
+    let world = resolve.select_world(pkg, opts.world.as_deref())?;
     generator.generate(&resolve, world, files);
     Ok(())
 }

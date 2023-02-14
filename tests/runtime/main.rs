@@ -77,12 +77,7 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
 
     let mut resolve = Resolve::new();
     let (pkg, _files) = resolve.push_dir(&dir).unwrap();
-    let world = resolve.packages[pkg]
-        .documents
-        .iter()
-        .filter_map(|(_, doc)| resolve.documents[*doc].default_world)
-        .next()
-        .expect("no default world found");
+    let world = resolve.select_world(pkg, None).unwrap();
 
     let mut rust = Vec::new();
     let mut c = Vec::new();
