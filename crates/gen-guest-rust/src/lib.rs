@@ -255,6 +255,7 @@ impl WorldGenerator for RustWasm {
         let component_type =
             wit_component::metadata::encode(resolve, world, wit_component::StringEncoding::UTF8)
                 .unwrap();
+        self.src.push_str("#[doc(hidden)]");
         self.src.push_str(&format!(
             "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",
             component_type.len()
