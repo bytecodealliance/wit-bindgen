@@ -1,7 +1,13 @@
 //! Like `codegen_tests` in codegen.rs, but with no_std.
+//!
+//! We use `std_feature` and don't enable the "std" feature.
 
 #![no_std]
 #![allow(unused_macros)]
+
+// This test expects `"std"` to be absent.
+#[cfg(feature = "std")]
+fn std_enabled() -> CompileError;
 
 extern crate alloc;
 
@@ -12,23 +18,11 @@ mod codegen_tests {
                 wit_bindgen::generate!({
                     path: $test,
                     world: $name,
-                    no_std,
+                    std_feature,
                 });
 
                 #[test]
                 fn works() {}
-
-                mod unchecked {
-                    wit_bindgen::generate!({
-                        path: $test,
-                        world: $name,
-                        unchecked,
-                        no_std,
-                    });
-
-                    #[test]
-                    fn works() {}
-                }
             }
 
         };
@@ -48,7 +42,7 @@ mod strings {
                 }
             }
         ",
-        no_std,
+        std_feature,
     });
 
     #[allow(dead_code)]
@@ -75,7 +69,7 @@ mod raw_strings {
             }
         ",
         raw_strings,
-        no_std,
+        std_feature,
     });
 
     #[allow(dead_code)]
@@ -108,7 +102,7 @@ mod prefix {
                 }
             ",
             macro_call_prefix: "bindings::",
-            no_std,
+            std_feature,
         });
 
         pub(crate) use export_baz;
@@ -143,7 +137,7 @@ mod macro_name {
             }
         ",
         export_macro_name: "jam",
-        no_std,
+        std_feature,
     });
 
     struct Component;
@@ -168,7 +162,7 @@ mod skip {
             }
         ",
         skip: ["foo"],
-        no_std,
+        std_feature,
     });
 
     struct Component;

@@ -8,17 +8,6 @@ mod codegen_tests {
 
                 #[test]
                 fn works() {}
-
-                mod unchecked {
-                    wit_bindgen::generate!({
-                        path: $test,
-                        world: $name,
-                        unchecked,
-                    });
-
-                    #[test]
-                    fn works() {}
-                }
             }
 
         };
