@@ -135,11 +135,6 @@ fn parse_wit(path: &Path) -> (Resolve, WorldId) {
             )
             .unwrap()
     };
-    let world = resolve.packages[pkg]
-        .documents
-        .iter()
-        .filter_map(|(_, doc)| resolve.documents[*doc].default_world)
-        .next()
-        .expect("no `default world` found");
+    let world = resolve.select_world(pkg, None).unwrap();
     (resolve, world)
 }
