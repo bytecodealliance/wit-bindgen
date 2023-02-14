@@ -1,7 +1,8 @@
 use anyhow::Result;
 use heck::ToSnakeCase;
 use wasm_encoder::{
-    CodeSection, CustomSection, Encode, Function, FunctionSection, Module, TypeSection,
+    CodeSection, CustomSection, Function, FunctionSection, LinkingSection, Module, SymbolTable,
+    TypeSection,
 };
 use wit_bindgen_core::wit_parser::{Resolve, WorldId};
 use wit_component::StringEncoding;
@@ -25,7 +26,13 @@ pub fn object(resolve: &Resolve, world: WorldId, encoding: StringEncoding) -> Re
     code.function(&Function::new([]));
     module.section(&code);
 
-    let data = wit_component::metadata::encode(resolve, world, encoding).unwrap();
+    let mut producers = wasm_metadata::Producers::empty();
+    producers.add(
+        "processed-by",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+    );
+    let data = wit_component::metadata::encode(resolve, world, encoding, Some(&producers)).unwrap();
 
     // The custom section name here must start with "component-type" but
     // otherwise is attempted to be unique here to ensure that this doesn't get
@@ -40,24 +47,12 @@ pub fn object(resolve: &Resolve, world: WorldId, encoding: StringEncoding) -> Re
         data: data.as_slice(),
     });
 
-    // Append the `.linking` section
-    let mut data = Vec::new();
-    data.push(0x02); // version 2
-    {
-        let mut subsection = Vec::<u8>::new();
-        subsection.push(0x01); // syminfo count
-        subsection.push(0x00); // SYMTAB_FUNCTION
-        0u32.encode(&mut subsection); // flags
-        0u32.encode(&mut subsection); // index
-        linking_symbol(&world_name).encode(&mut subsection); // name
-
-        data.push(0x08); // `WASM_SYMBOL_TABLE`
-        subsection.encode(&mut data);
-    }
-    module.section(&CustomSection {
-        name: "linking",
-        data: &data,
-    });
+    // Append the linking section, so that lld knows the custom section's symbol name
+    let mut linking = LinkingSection::new();
+    let mut symbols = SymbolTable::new();
+    symbols.function(0, 0, Some(&linking_symbol(&world_name)));
+    linking.symbol_table(&symbols);
+    module.section(&linking);
 
     Ok(module.finish())
 }

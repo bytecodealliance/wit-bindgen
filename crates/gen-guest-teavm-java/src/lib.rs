@@ -202,13 +202,26 @@ impl WorldGenerator for TeaVmJava {
                 .join("\n"),
         );
 
-        let component_type =
-            wit_component::metadata::encode(resolve, id, wit_component::StringEncoding::UTF8)
-                .unwrap()
-                .into_iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<Vec<_>>()
-                .concat();
+        let mut producers = wasm_metadata::Producers::empty();
+        producers.add(
+            "processed-by",
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION"),
+        );
+
+        let component_type = wit_component::metadata::encode(
+            resolve,
+            id,
+            wit_component::StringEncoding::UTF8,
+            Some(&producers),
+        )
+        .unwrap();
+
+        let component_type = component_type
+            .into_iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<Vec<_>>()
+            .concat();
 
         uwriteln!(
             src,

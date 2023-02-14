@@ -252,9 +252,21 @@ impl WorldGenerator for RustWasm {
         self.src
             .push_str(&format!("#[link_section = \"component-type:{}\"]\n", name,));
 
-        let component_type =
-            wit_component::metadata::encode(resolve, world, wit_component::StringEncoding::UTF8)
-                .unwrap();
+        let mut producers = wasm_metadata::Producers::empty();
+        producers.add(
+            "processed-by",
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION"),
+        );
+
+        let component_type = wit_component::metadata::encode(
+            resolve,
+            world,
+            wit_component::StringEncoding::UTF8,
+            Some(&producers),
+        )
+        .unwrap();
+
         self.src.push_str("#[doc(hidden)]");
         self.src.push_str(&format!(
             "pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; {}] = ",

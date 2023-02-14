@@ -90,7 +90,8 @@ pub fn run_component_codegen_test(
     let (resolve, world) = parse_wit(wit_path);
     let world_name = &resolve.worlds[world].name;
     let mut wasm = wit_component::dummy_module(&resolve, world);
-    let encoded = wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8).unwrap();
+    let encoded =
+        wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None).unwrap();
     let section = wasm_encoder::CustomSection {
         name: "component-type",
         data: &encoded,
