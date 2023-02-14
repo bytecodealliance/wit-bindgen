@@ -441,26 +441,14 @@ mod tests {
 pub trait WorldGenerator {
     fn generate(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
         let world = &resolve.worlds[id];
-        self.preprocess(resolve, &world.name);
+        self.preprocess(resolve, id);
 
         let mut funcs = Vec::new();
+        let mut types = Vec::new();
         for (name, import) in world.imports.iter() {
             match import {
                 WorldItem::Function(f) => funcs.push((name.as_str(), f)),
                 WorldItem::Interface(id) => self.import_interface(resolve, name, *id, files),
-                WorldItem::Type(_) => unreachable!(),
-            }
-        }
-        if !funcs.is_empty() {
-            self.import_funcs(resolve, id, &funcs, files);
-        }
-        funcs.clear();
-
-        let mut types = Vec::new();
-        for (name, export) in world.exports.iter() {
-            match export {
-                WorldItem::Function(f) => funcs.push((name.as_str(), f)),
-                WorldItem::Interface(id) => self.export_interface(resolve, name, *id, files),
                 WorldItem::Type(id) => types.push((name.as_str(), *id)),
             }
         }
@@ -468,14 +456,26 @@ pub trait WorldGenerator {
             self.export_types(resolve, id, &types, files);
         }
         if !funcs.is_empty() {
+            self.import_funcs(resolve, id, &funcs, files);
+        }
+        funcs.clear();
+
+        for (name, export) in world.exports.iter() {
+            match export {
+                WorldItem::Function(f) => funcs.push((name.as_str(), f)),
+                WorldItem::Interface(id) => self.export_interface(resolve, name, *id, files),
+                WorldItem::Type(_) => unreachable!(),
+            }
+        }
+        if !funcs.is_empty() {
             self.export_funcs(resolve, id, &funcs, files);
         }
         self.finish(resolve, id, files);
     }
 
-    fn preprocess(&mut self, resolve: &Resolve, name: &str) {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
         drop(resolve);
-        drop(name);
+        drop(world);
     }
 
     fn import_interface(

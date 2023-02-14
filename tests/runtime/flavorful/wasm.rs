@@ -1,4 +1,4 @@
-wit_bindgen_guest_rust::generate!("world" in "../../tests/runtime/flavorful");
+wit_bindgen::generate!("world" in "../../tests/runtime/flavorful");
 
 use exports::*;
 

@@ -1,0 +1,44 @@
+interface a {
+  type t1 = u32
+  record t2 { a: t1 }
+  flags t3 { a, b, c }
+  type t4 = tuple<t1, t2, t3>
+  variant t5 { a, b(t2), c(t3) }
+  enum t6 { a, b, c }
+  type t7 = option<t2>
+  type t8 = result<t2, t3>
+  union t9 { t1, t2, t3, t4, u32 }
+}
+
+interface the-interface {
+  use self.a.{t1 as u1, t2 as u2, t3 as u3, t4 as u4, t5 as u5}
+  use self.a.{t6 as u6, t7 as u7, t8 as %u8, t9 as u9}
+
+  f1: func(a: u1) -> u1
+  f2: func(a: u2) -> u2
+  f3: func(a: u3) -> u3
+  f4: func(a: u4) -> u4
+  f5: func(a: u5) -> u5
+  f6: func(a: u6) -> u6
+  f7: func(a: u7) -> u7
+  f8: func(a: %u8) -> %u8
+  f9: func(a: u9) -> u9
+}
+
+default world foo {
+  use self.a.{t1 as u1, t2 as u2, t3 as u3, t4 as u4, t5 as u5}
+  use self.a.{t6 as u6, t7 as u7, t8 as %u8, t9 as u9}
+
+  export f1: func(a: u1) -> u1
+  export f2: func(a: u2) -> u2
+  export f3: func(a: u3) -> u3
+  export f4: func(a: u4) -> u4
+  export f5: func(a: u5) -> u5
+  export f6: func(a: u6) -> u6
+  export f7: func(a: u7) -> u7
+  export f8: func(a: %u8) -> %u8
+  export f9: func(a: u9) -> u9
+
+  import the-import: self.the-interface
+  export the-export: self.the-interface
+}

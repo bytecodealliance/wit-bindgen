@@ -81,7 +81,8 @@ impl TeaVmJava {
 }
 
 impl WorldGenerator for TeaVmJava {
-    fn preprocess(&mut self, resolve: &Resolve, name: &str) {
+    fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
+        let name = &resolve.worlds[world].name;
         self.name = name.to_string();
         self.sizes.fill(resolve);
     }
