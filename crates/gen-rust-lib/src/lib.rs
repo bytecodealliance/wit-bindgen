@@ -16,8 +16,9 @@ pub trait RustGenerator<'a> {
     fn resolve(&self) -> &'a Resolve;
     fn path_to_interface(&self, interface: InterfaceId) -> Option<String>;
 
-    /// Return true iff the generator can use `std` features in its output.
-    fn use_std(&self) -> bool {
+    /// Return true iff the generator should qualify uses of `std` features with
+    /// `#[cfg(feature = "std")]` in its output.
+    fn std_feature(&self) -> bool {
         true
     }
 
@@ -577,11 +578,12 @@ pub trait RustGenerator<'a> {
                 self.push_str("write!(f, \"{:?}\", self)\n");
                 self.push_str("}\n");
                 self.push_str("}\n");
-                if self.use_std() {
-                    self.push_str("impl std::error::Error for ");
-                    self.push_str(&name);
-                    self.push_str("{}\n");
+                if self.std_feature() {
+                    self.push_str("#[cfg(feature = \"std\")]");
                 }
+                self.push_str("impl std::error::Error for ");
+                self.push_str(&name);
+                self.push_str("{}\n");
             }
         }
     }
@@ -726,14 +728,15 @@ pub trait RustGenerator<'a> {
                 self.push_str("}\n");
                 self.push_str("\n");
 
-                if self.use_std() {
-                    self.push_str("impl");
-                    self.print_generics(lt);
-                    self.push_str(" std::error::Error for ");
-                    self.push_str(&name);
-                    self.print_generics(lt);
-                    self.push_str(" {}\n");
+                if self.std_feature() {
+                    self.push_str("#[cfg(feature = \"std\")]");
                 }
+                self.push_str("impl");
+                self.print_generics(lt);
+                self.push_str(" std::error::Error for ");
+                self.push_str(&name);
+                self.print_generics(lt);
+                self.push_str(" {}\n");
             }
         }
     }
@@ -898,11 +901,12 @@ pub trait RustGenerator<'a> {
             self.push_str("}\n");
             self.push_str("}\n");
             self.push_str("\n");
-            if self.use_std() {
-                self.push_str("impl std::error::Error for ");
-                self.push_str(&name);
-                self.push_str("{}\n");
+            if self.std_feature() {
+                self.push_str("#[cfg(feature = \"std\")]");
             }
+            self.push_str("impl std::error::Error for ");
+            self.push_str(&name);
+            self.push_str("{}\n");
         } else {
             self.print_rust_enum_debug(
                 id,

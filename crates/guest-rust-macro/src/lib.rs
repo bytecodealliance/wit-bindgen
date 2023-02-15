@@ -57,8 +57,7 @@ impl Parse for Config {
                         }
                         source = Some(Source::Inline(s.value()));
                     }
-                    Opt::Unchecked => opts.unchecked = true,
-                    Opt::NoStd => opts.no_std = true,
+                    Opt::UseStdFeature => opts.std_feature = true,
                     Opt::RawStrings => opts.raw_strings = true,
                     Opt::MacroExport => opts.macro_export = true,
                     Opt::MacroCallPrefix(prefix) => opts.macro_call_prefix = Some(prefix.value()),
@@ -138,8 +137,7 @@ impl Config {
 }
 
 mod kw {
-    syn::custom_keyword!(unchecked);
-    syn::custom_keyword!(no_std);
+    syn::custom_keyword!(std_feature);
     syn::custom_keyword!(raw_strings);
     syn::custom_keyword!(macro_export);
     syn::custom_keyword!(macro_call_prefix);
@@ -154,8 +152,7 @@ enum Opt {
     World(syn::LitStr),
     Path(syn::LitStr),
     Inline(syn::LitStr),
-    Unchecked,
-    NoStd,
+    UseStdFeature,
     RawStrings,
     MacroExport,
     MacroCallPrefix(syn::LitStr),
@@ -178,12 +175,9 @@ impl Parse for Opt {
             input.parse::<kw::world>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::World(input.parse()?))
-        } else if l.peek(kw::unchecked) {
-            input.parse::<kw::unchecked>()?;
-            Ok(Opt::Unchecked)
-        } else if l.peek(kw::no_std) {
-            input.parse::<kw::no_std>()?;
-            Ok(Opt::NoStd)
+        } else if l.peek(kw::std_feature) {
+            input.parse::<kw::std_feature>()?;
+            Ok(Opt::UseStdFeature)
         } else if l.peek(kw::raw_strings) {
             input.parse::<kw::raw_strings>()?;
             Ok(Opt::RawStrings)

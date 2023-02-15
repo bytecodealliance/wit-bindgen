@@ -8,9 +8,6 @@ publish = false
 [dependencies]
 wit-bindgen = { path = "../guest-rust" }
 
-[features]
-unchecked = []
-
 [lib]
 test = false
 doctest = false

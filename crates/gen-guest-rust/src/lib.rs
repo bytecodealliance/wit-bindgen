@@ -31,14 +31,10 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     pub rustfmt: bool,
 
-    /// Whether or not the bindings assume interface values are always
-    /// well-formed or whether checks are performed.
+    /// If true, code generation should qualify any features that depend on
+    /// `std` with `cfg(feature = "std")`.
     #[cfg_attr(feature = "clap", arg(long))]
-    pub unchecked: bool,
-
-    /// If true, code generation should avoid any features that depend on `std`.
-    #[cfg_attr(feature = "clap", arg(long))]
-    pub no_std: bool,
+    pub std_feature: bool,
 
     /// If true, adds `#[macro_export]` to the `export_*!` macro generated to
     /// export it from the Rust crate.
@@ -622,8 +618,8 @@ impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
         }
     }
 
-    fn use_std(&self) -> bool {
-        !self.gen.opts.no_std
+    fn std_feature(&self) -> bool {
+        self.gen.opts.std_feature
     }
 
     fn use_raw_strings(&self) -> bool {
@@ -937,7 +933,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         operands: &mut Vec<String>,
         results: &mut Vec<String>,
     ) {
-        let unchecked = self.gen.gen.opts.unchecked;
         let mut top_as = |cvt: &str| {
             let mut s = operands.pop().unwrap();
             s.push_str(" as ");
@@ -995,17 +990,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::U32FromI32 => top_as("u32"),
             Instruction::U64FromI64 => top_as("u64"),
             Instruction::CharFromI32 => {
-                if unchecked {
-                    results.push(format!(
-                        "core::char::from_u32_unchecked({} as u32)",
-                        operands[0]
-                    ));
-                } else {
-                    results.push(format!(
-                        "core::char::from_u32({} as u32).unwrap()",
-                        operands[0]
-                    ));
-                }
+                results.push(format!(
+                    "{{
+                        #[cfg(not(debug_assertions))]
+                        {{ core::char::from_u32_unchecked({} as u32) }}
+                        #[cfg(debug_assertions)]
+                        {{ core::char::from_u32({} as u32).unwrap() }}
+                    }}",
+                    operands[0], operands[0]
+                ));
             }
 
             Instruction::Bitcasts { casts } => {
@@ -1016,21 +1009,21 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("match {} {{ true => 1, false => 0 }}", operands[0]));
             }
             Instruction::BoolFromI32 => {
-                if unchecked {
-                    results.push(format!(
-                        "core::mem::transmute::<u8, bool>({} as u8)",
-                        operands[0],
-                    ));
-                } else {
-                    results.push(format!(
-                        "match {} {{
-                            0 => false,
-                            1 => true,
-                            _ => panic!(\"invalid bool discriminant\"),
-                        }}",
-                        operands[0],
-                    ));
-                }
+                results.push(format!(
+                    "{{
+                        #[cfg(not(debug_assertions))]
+                        {{ core::mem::transmute::<u8, bool>({} as u8) }}
+                        #[cfg(debug_assertions)]
+                        {{
+                            match {} {{
+                                0 => false,
+                                1 => true,
+                                _ => panic!(\"invalid bool discriminant\"),
+                            }}
+                        }}
+                    }}",
+                    operands[0], operands[0],
+                ));
             }
 
             Instruction::FlagsLower { flags, .. } => {
@@ -1095,47 +1088,62 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str("};\n");
             }
 
-            // In unchecked mode when this type is a named enum then we know we
-            // defined the type so we can transmute directly into it.
-            Instruction::VariantLift { name, variant, .. }
-                if variant.cases.iter().all(|c| c.ty.is_none()) && unchecked =>
-            {
-                self.blocks.drain(self.blocks.len() - variant.cases.len()..);
-                let mut result = format!("core::mem::transmute::<_, ");
-                result.push_str(&name.to_upper_camel_case());
-                result.push_str(">(");
-                result.push_str(&operands[0]);
-                result.push_str(" as ");
-                result.push_str(int_repr(variant.tag()));
-                result.push_str(")");
-                results.push(result);
-            }
+            Instruction::VariantLift {
+                name, variant, ty, ..
+            } => {
+                let mut result = String::new();
+                result.push_str("{");
 
-            Instruction::VariantLift { variant, ty, .. } => {
+                let named_enum = variant.cases.iter().all(|c| c.ty.is_none());
                 let blocks = self
                     .blocks
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
                 let op0 = &operands[0];
-                let mut result = format!("match {op0} {{\n");
+
+                if named_enum {
+                    // In unchecked mode when this type is a named enum then we know we
+                    // defined the type so we can transmute directly into it.
+                    result.push_str("#[cfg(not(debug_assertions))]");
+                    result.push_str("{");
+                    result.push_str("core::mem::transmute::<_, ");
+                    result.push_str(&name.to_upper_camel_case());
+                    result.push_str(">(");
+                    result.push_str(op0);
+                    result.push_str(" as ");
+                    result.push_str(int_repr(variant.tag()));
+                    result.push_str(")");
+                    result.push_str("}");
+                }
+
+                if named_enum {
+                    result.push_str("#[cfg(debug_assertions)]");
+                }
+                result.push_str("{");
+                result.push_str(&format!("match {op0} {{\n"));
                 let name = self.typename_lift(*ty);
                 for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
-                    let pat = if i == variant.cases.len() - 1 && unchecked {
-                        String::from("_")
-                    } else {
-                        i.to_string()
-                    };
+                    let pat = i.to_string();
                     let block = if case.ty.is_some() {
                         format!("({block})")
                     } else {
                         String::new()
                     };
                     let case = case.name.to_upper_camel_case();
-                    result.push_str(&format!("{pat} => {name}::{case}{block},\n"));
+                    if i == variant.cases.len() - 1 {
+                        result.push_str("#[cfg(debug_assertions)]");
+                        result.push_str(&format!("{pat} => {name}::{case}{block},\n"));
+                        result.push_str("#[cfg(not(debug_assertions))]");
+                        result.push_str(&format!("_ => {name}::{case}{block},\n"));
+                    } else {
+                        result.push_str(&format!("{pat} => {name}::{case}{block},\n"));
+                    }
                 }
-                if !unchecked {
-                    result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
-                }
+                result.push_str("#[cfg(debug_assertions)]");
+                result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
+                result.push_str("}");
+                result.push_str("}");
+
                 result.push_str("}");
                 results.push(result);
             }
@@ -1174,17 +1182,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .zip(blocks)
                     .enumerate()
                 {
-                    let pat = if i == union.cases.len() - 1 && unchecked {
-                        String::from("_")
-                    } else {
-                        i.to_string()
-                    };
+                    let pat = i.to_string();
                     let name = self.typename_lift(*ty);
-                    result.push_str(&format!("{pat} => {name}::{case_name}({block}),\n"));
+                    if i == union.cases.len() - 1 {
+                        result.push_str("#[cfg(debug_assertions)]");
+                        result.push_str(&format!("{pat} => {name}::{case_name}({block}),\n"));
+                        result.push_str("#[cfg(not(debug_assertions))]");
+                        result.push_str(&format!("_ => {name}::{case_name}({block}),\n"));
+                    } else {
+                        result.push_str(&format!("{pat} => {name}::{case_name}({block}),\n"));
+                    }
                 }
-                if !unchecked {
-                    result.push_str("_ => panic!(\"invalid union discriminant\"),\n");
-                }
+                result.push_str("#[cfg(debug_assertions)]");
+                result.push_str("_ => panic!(\"invalid union discriminant\"),\n");
                 result.push_str("}");
                 results.push(result);
             }
@@ -1210,16 +1220,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let none = self.blocks.pop().unwrap();
                 assert_eq!(none, "()");
                 let operand = &operands[0];
-                let invalid = if unchecked {
-                    "core::hint::unreachable_unchecked()"
-                } else {
-                    "panic!(\"invalid enum discriminant\")"
-                };
                 results.push(format!(
                     "match {operand} {{
                         0 => None,
                         1 => Some({some}),
-                        _ => {invalid},
+                        #[cfg(not(debug_assertions))]
+                        _ => core::hint::unreachable_unchecked(),
+                        #[cfg(debug_assertions)]
+                        _ => panic!(\"invalid enum discriminant\"),
                     }}"
                 ));
             }
@@ -1247,16 +1255,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let err = self.blocks.pop().unwrap();
                 let ok = self.blocks.pop().unwrap();
                 let operand = &operands[0];
-                let invalid = if unchecked {
-                    "core::hint::unreachable_unchecked()"
-                } else {
-                    "panic!(\"invalid enum discriminant\")"
-                };
                 results.push(format!(
                     "match {operand} {{
                         0 => Ok({ok}),
                         1 => Err({err}),
-                        _ => {invalid},
+                        #[cfg(not(debug_assertions))]
+                        _ => core::hint::unreachable_unchecked(),
+                        #[cfg(debug_assertions)]
+                        _ => panic!(\"invalid enum discriminant\"),
                     }}"
                 ));
             }
@@ -1272,21 +1278,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(result);
             }
 
-            // In unchecked mode when this type is a named enum then we know we
-            // defined the type so we can transmute directly into it.
-            Instruction::EnumLift { enum_, ty, .. } if unchecked => {
-                let mut result = format!("core::mem::transmute::<_, ");
-                result.push_str(&self.gen.type_path(*ty, true));
-                result.push_str(">(");
-                result.push_str(&operands[0]);
-                result.push_str(" as ");
-                result.push_str(int_repr(enum_.tag()));
-                result.push_str(")");
-                results.push(result);
-            }
-
             Instruction::EnumLift { enum_, ty, .. } => {
-                let mut result = format!("match ");
+                let mut result = String::new();
+                result.push_str("{");
+
+                // In checked mode do a `match`.
+                result.push_str("#[cfg(debug_assertions)]");
+                result.push_str("{");
+                result.push_str("match ");
                 result.push_str(&operands[0]);
                 result.push_str(" {\n");
                 let name = self.gen.type_path(*ty, true);
@@ -1295,6 +1294,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     result.push_str(&format!("{i} => {name}::{case},\n"));
                 }
                 result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
+                result.push_str("}");
+                result.push_str("}");
+
+                // In unchecked mode when this type is a named enum then we know we
+                // defined the type so we can transmute directly into it.
+                result.push_str("#[cfg(not(debug_assertions))]");
+                result.push_str("{");
+                result.push_str("core::mem::transmute::<_, ");
+                result.push_str(&self.gen.type_path(*ty, true));
+                result.push_str(">(");
+                result.push_str(&operands[0]);
+                result.push_str(" as ");
+                result.push_str(int_repr(enum_.tag()));
+                result.push_str(")");
+                result.push_str("}");
+
                 result.push_str("}");
                 results.push(result);
             }
@@ -1360,10 +1375,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
                 if self.gen.gen.opts.raw_strings {
                     results.push(result);
-                } else if unchecked {
-                    results.push(format!("String::from_utf8_unchecked({})", result));
                 } else {
-                    results.push(format!("String::from_utf8({}).unwrap()", result));
+                    let mut converted = String::new();
+                    converted.push_str("{");
+
+                    converted.push_str("#[cfg(not(debug_assertions))]");
+                    converted.push_str("{");
+                    converted.push_str(&format!("String::from_utf8_unchecked({})", result));
+                    converted.push_str("}");
+
+                    converted.push_str("#[cfg(debug_assertions)]");
+                    converted.push_str("{");
+                    converted.push_str(&format!("String::from_utf8({}).unwrap()", result));
+                    converted.push_str("}");
+
+                    converted.push_str("}");
+                    results.push(converted);
                 }
             }
 
