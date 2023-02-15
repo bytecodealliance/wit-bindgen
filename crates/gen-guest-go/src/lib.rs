@@ -514,28 +514,23 @@ impl InterfaceGenerator<'_> {
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 match &ty.name {
-                    Some(name) => {
-                        match ty.owner {
-                            TypeOwner::Interface(owner) => {
-                                format!(
-                                    "{namespace}_{name}_t",
-                                    namespace = self.gen.interface_names[&owner].to_snake_case(),
-                                    name = name.to_snake_case(),
-                                )
-                            }
-                            TypeOwner::World(owner) => {
-                                    format!(
-                                        "{namespace}_{name}_t",
-                                        namespace = self.resolve.worlds[owner].name.to_snake_case(),
-                                        name = name.to_snake_case(),
-                                    )
-                            }
-                            TypeOwner::None => format!(
-                                "{name}_t",
+                    Some(name) => match ty.owner {
+                        TypeOwner::Interface(owner) => {
+                            format!(
+                                "{namespace}_{name}_t",
+                                namespace = self.gen.interface_names[&owner].to_snake_case(),
                                 name = name.to_snake_case(),
-                            ),
+                            )
                         }
-                    }
+                        TypeOwner::World(owner) => {
+                            format!(
+                                "{namespace}_{name}_t",
+                                namespace = self.resolve.worlds[owner].name.to_snake_case(),
+                                name = name.to_snake_case(),
+                            )
+                        }
+                        TypeOwner::None => format!("{name}_t", name = name.to_snake_case(),),
+                    },
                     None => match &ty.kind {
                         TypeDefKind::Type(t) => self.get_c_ty_without_package(t),
                         _ => format!(
@@ -585,7 +580,11 @@ impl InterfaceGenerator<'_> {
                         }
                         TypeOwner::None => "".into(),
                     };
-                    return format!("{prefix}{name}", prefix = prefix, name = name.to_upper_camel_case());
+                    return format!(
+                        "{prefix}{name}",
+                        prefix = prefix,
+                        name = name.to_upper_camel_case()
+                    );
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.get_ty_name(t),
