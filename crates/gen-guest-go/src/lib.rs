@@ -515,11 +515,26 @@ impl InterfaceGenerator<'_> {
                 let ty = &self.resolve.types[*id];
                 match &ty.name {
                     Some(name) => {
-                        format!(
-                            "{namespace}_{name}_t",
-                            namespace = self.name.to_snake_case(),
-                            name = name.to_snake_case(),
-                        )
+                        match ty.owner {
+                            TypeOwner::Interface(owner) => {
+                                format!(
+                                    "{namespace}_{name}_t",
+                                    namespace = self.gen.interface_names[&owner].to_snake_case(),
+                                    name = name.to_snake_case(),
+                                )
+                            }
+                            TypeOwner::World(owner) => {
+                                    format!(
+                                        "{namespace}_{name}_t",
+                                        namespace = self.resolve.worlds[owner].name.to_snake_case(),
+                                        name = name.to_snake_case(),
+                                    )
+                            }
+                            TypeOwner::None => format!(
+                                "{name}_t",
+                                name = name.to_snake_case(),
+                            ),
+                        }
                     }
                     None => match &ty.kind {
                         TypeDefKind::Type(t) => self.get_c_ty_without_package(t),
@@ -561,7 +576,16 @@ impl InterfaceGenerator<'_> {
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
                 if let Some(name) = &ty.name {
-                    return name.to_upper_camel_case();
+                    let prefix = match ty.owner {
+                        TypeOwner::World(owner) => {
+                            self.resolve.worlds[owner].name.to_upper_camel_case()
+                        }
+                        TypeOwner::Interface(owner) => {
+                            self.gen.interface_names[&owner].to_upper_camel_case()
+                        }
+                        TypeOwner::None => "".into(),
+                    };
+                    return format!("{prefix}{name}", prefix = prefix, name = name.to_upper_camel_case());
                 }
                 match &ty.kind {
                     TypeDefKind::Type(t) => self.get_ty_name(t),
@@ -2056,7 +2080,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         }
                     }
                     TypeDefKind::Flags(_f) => {
-                        let field = self.interface.get_typedef_target(ty.name.as_ref().unwrap());
+                        let field = self.interface.get_ty(&Type::Id(*id));
                         uwriteln!(
                             self.lift_src,
                             "var {name} {value}
