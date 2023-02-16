@@ -47,6 +47,14 @@ enum Opt {
         #[clap(flatten)]
         args: Common,
     },
+    /// Generates bindings for TinyGo-based Go guest modules.
+    #[cfg(feature = "go")]
+    TinyGo {
+        #[clap(flatten)]
+        opts: wit_bindgen_gen_guest_go::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -83,6 +91,8 @@ fn main() -> Result<()> {
         Opt::Rust { opts, args } => (opts.build(), args),
         #[cfg(feature = "teavm-java")]
         Opt::TeavmJava { opts, args } => (opts.build(), args),
+        #[cfg(feature = "go")]
+        Opt::TinyGo { opts, args } => (opts.build(), args),
     };
 
     gen_world(generator, &opt, &mut files)?;

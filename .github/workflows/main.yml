@@ -52,12 +52,19 @@ jobs:
       with:
         java-version: '18'
         distribution: 'adopt'
+    - uses: actions/setup-go@v3
+      with:
+        go-version: '1.20'
+    - uses: acifani/setup-tinygo@v1
+      with:
+        tinygo-version: 0.27.0
     - run: cargo test --workspace
     - run: cargo build
     - run: cargo build --no-default-features
     - run: cargo build --no-default-features --features rust
     - run: cargo build --no-default-features --features c
     - run: cargo build --no-default-features --features teavm-java
+    - run: cargo build --no-default-features --features go
     - run: cargo build --no-default-features --features markdown
 
 
