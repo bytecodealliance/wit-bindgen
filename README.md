@@ -296,11 +296,61 @@ e.g. Java, Kotlin, Clojure, Scala, etc.
 
 ### Guest: TinyGo
 
-The Go language currently can be compiled to standalone out-of-browser
-WebAssembly binaries using the [TinyGo](https://tinygo.org/) toolchain.
-Support does not yet exist in this repository for TinyGo but is being worked on
-[in a PR](https://github.com/bytecodealliance/wit-bindgen/pull/321) and is
-expected to land in this repository at some point in the future.
+Go code can be compiled for the `wasm32-wasi` target using the [TinyGo](https://tinygo.org/) compiler. For example, the following command compiles `main.go` to a wasm modules with WASI support:
+
+`tinygo build -target -target=wasi main.go`
+
+> Note: the current TinyGo bindgen only supports TinyGo version v0.27.0 or later.
+
+To start in Go a `*.go` and `*.h` C header file are generated for your
+project to use. These files are generated with the [`wit-bindgen` CLI
+command][cli-install] in this repository.
+
+```sh
+wit-bindgen tiny-go ./wit
+# Generating "host.go"
+# Generating "host.c"
+# Generating "host.h"
+# Generating "host_component_type.o"
+```
+
+If your Go code uses `result` or `option` type, a second Go file `host_types.go` will be generated. This file contains the Go types that correspond to the `result` and `option` types in the WIT file.
+
+Some example code using this would then look like
+
+```go
+// my-component.go
+package main
+
+import (
+	gen "host/gen"
+)
+
+func init() {
+	a := HostImpl{}
+	gen.SetHost(a)
+}
+
+type HostImpl struct {
+}
+
+func (e HostImpl) Run() {
+  gen.Print("Hello, world!")
+}
+
+//go:generate wit-bindgen tiny-go ../wit --out-dir=gen
+func main() {}
+```
+
+This can then be compiled with `tinygo` and assembled into a component with:
+
+```sh
+go generate # generate bindings for Go
+tinygo build -target=wasi --out main.wasm my-component.go # compile
+wasm-tools component embed --world world ./wit main.wasm > main.embed.wasm # create a component
+wasm-tools component new main.embed.wasm -o main.component.wasm
+wasm-tools validate main.component.wasm --features component-model 
+```
 
 ### Guest: Other Languages
 
