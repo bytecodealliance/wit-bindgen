@@ -95,8 +95,7 @@ pub trait RustGenerator<'a> {
         sig: &FnSig,
     ) -> Vec<String> {
         let params = self.print_docs_and_params(func, param_mode, &sig);
-        self.push_str(" -> ");
-        self.print_result_params(&func.results, TypeMode::Owned);
+        self.print_results(&func.results, TypeMode::Owned);
         params
     }
 
@@ -152,12 +151,15 @@ pub trait RustGenerator<'a> {
         params
     }
 
-    fn print_result_params(&mut self, results: &Results, mode: TypeMode) {
+    fn print_results(&mut self, results: &Results, mode: TypeMode) {
         match results.len() {
-            0 => self.push_str("()"),
-            1 => self.print_ty(results.iter_types().next().unwrap(), mode),
+            0 => {}
+            1 => {
+                self.push_str(" -> ");
+                self.print_ty(results.iter_types().next().unwrap(), mode);
+            }
             _ => {
-                self.push_str("(");
+                self.push_str(" -> (");
                 for ty in results.iter_types() {
                     self.print_ty(ty, mode);
                     self.push_str(", ")
