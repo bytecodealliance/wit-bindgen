@@ -373,7 +373,7 @@ impl InterfaceGenerator<'_> {
 
     fn finish_append_submodule(mut self, name: &str) {
         let module = self.finish();
-        let snake = name.to_snake_case();
+        let snake = to_rust_ident(name);
         uwriteln!(
             self.gen.src,
             "
