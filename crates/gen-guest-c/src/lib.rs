@@ -1115,21 +1115,7 @@ impl InterfaceGenerator<'_> {
                 let ty = &self.resolve.types[*id];
                 match &ty.name {
                     Some(name) => {
-                        match ty.owner {
-                            TypeOwner::Interface(owner) => {
-                                self.src.print(
-                                    stype,
-                                    &self.gen.interface_names[&owner].to_snake_case(),
-                                );
-                                self.src.print(stype, "_");
-                            }
-                            TypeOwner::World(owner) => {
-                                self.src
-                                    .print(stype, &self.resolve.worlds[owner].name.to_snake_case());
-                                self.src.print(stype, "_");
-                            }
-                            TypeOwner::None => {}
-                        }
+                        self.print_owner_namespace(stype, *id);
 
                         self.src.print(stype, &name.to_snake_case());
                         self.src.print(stype, "_t");
@@ -1145,6 +1131,25 @@ impl InterfaceGenerator<'_> {
                         }
                     },
                 }
+            }
+        }
+    }
+
+    fn print_owner_namespace(&mut self, stype: SourceType, id: TypeId) {
+        let ty = &self.resolve.types[id];
+        match ty.owner {
+            TypeOwner::Interface(owner) => {
+                self.src
+                    .print(stype, &self.gen.interface_names[&owner].to_snake_case());
+                self.src.print(stype, "_");
+            }
+            TypeOwner::World(owner) => {
+                self.src
+                    .print(stype, &self.resolve.worlds[owner].name.to_snake_case());
+                self.src.print(stype, "_");
+            }
+            TypeOwner::None => {
+                self.print_namespace(stype);
             }
         }
     }
@@ -1456,6 +1461,9 @@ impl InterfaceGenerator<'_> {
             Type::String => {
                 self.src.h_helpers(&self.gen.world.to_snake_case());
                 self.src.h_helpers("_");
+            }
+            Type::Id(id) => {
+                self.print_owner_namespace(SourceType::HHelpers, *id);
             }
             _ => {
                 self.print_namespace(SourceType::HHelpers);

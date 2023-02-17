@@ -12,7 +12,7 @@ impl Flavorful for Component {
 
         let _guard = test_rust_wasm::guard();
 
-        f_list_in_record1(ListInRecord1 {
+        f_list_in_record1(ListInRecord1Param {
             a: "list_in_record1",
         });
         assert_eq!(f_list_in_record2().a, "list_in_record2");
@@ -30,7 +30,11 @@ impl Flavorful for Component {
             "result4"
         );
 
-        f_list_in_variant1(Some("foo"), Err("bar"), ListInVariant1V3::String("baz"));
+        f_list_in_variant1(
+            Some("foo"),
+            Err("bar"),
+            ListInVariant1V3Param::String("baz"),
+        );
         assert_eq!(f_list_in_variant2(), Some("list_in_variant2".to_string()));
         assert_eq!(
             f_list_in_variant3(Some("input3")),
@@ -62,7 +66,7 @@ impl Flavorful for Component {
 }
 
 impl exports::Exports for Component {
-    fn f_list_in_record1(ty: ListInRecord1) {
+    fn f_list_in_record1(ty: ListInRecord1Result) {
         assert_eq!(ty.a, "list_in_record1");
     }
 
@@ -72,26 +76,30 @@ impl exports::Exports for Component {
         }
     }
 
-    fn f_list_in_record3(a: ListInRecord3) -> ListInRecord3 {
+    fn f_list_in_record3(a: ListInRecord3Result) -> ListInRecord3Result {
         assert_eq!(a.a, "list_in_record3 input");
-        ListInRecord3 {
+        ListInRecord3Result {
             a: "list_in_record3 output".to_string(),
         }
     }
 
-    fn f_list_in_record4(a: ListInAlias) -> ListInAlias {
+    fn f_list_in_record4(a: ListInAliasResult) -> ListInAliasResult {
         assert_eq!(a.a, "input4");
-        ListInRecord4 {
+        ListInRecord4Result {
             a: "result4".to_string(),
         }
     }
 
-    fn f_list_in_variant1(a: ListInVariant1V1, b: ListInVariant1V2, c: ListInVariant1V3) {
+    fn f_list_in_variant1(
+        a: ListInVariant1V1Result,
+        b: ListInVariant1V2Result,
+        c: ListInVariant1V3Result,
+    ) {
         assert_eq!(a.unwrap(), "foo");
         assert_eq!(b.unwrap_err(), "bar");
         match c {
-            ListInVariant1V3::String(s) => assert_eq!(s, "baz"),
-            ListInVariant1V3::F32(_) => panic!(),
+            ListInVariant1V3Result::String(s) => assert_eq!(s, "baz"),
+            ListInVariant1V3Result::F32(_) => panic!(),
         }
     }
 
@@ -99,7 +107,7 @@ impl exports::Exports for Component {
         Some("list_in_variant2".to_string())
     }
 
-    fn f_list_in_variant3(a: ListInVariant3) -> Option<String> {
+    fn f_list_in_variant3(a: ListInVariant3Result) -> Option<String> {
         assert_eq!(a.unwrap(), "input3");
         Some("output3".to_string())
     }
@@ -112,7 +120,10 @@ impl exports::Exports for Component {
         Err(MyErrno::B)
     }
 
-    fn list_typedefs(a: ListTypedef, b: ListTypedef3) -> (ListTypedef2, ListTypedef3) {
+    fn list_typedefs(
+        a: ListTypedefResult,
+        b: ListTypedef3Result,
+    ) -> (ListTypedef2, ListTypedef3Result) {
         assert_eq!(a, "typedef1");
         assert_eq!(b.len(), 1);
         assert_eq!(b[0], "typedef2");
