@@ -186,7 +186,7 @@ rustup target add wasm32-wasi
 Projects can then depend on `wit-bindgen` by executing:
 
 ```sh
-cargo add --git https://github.com/bytecodealliance/wit-bindgen wit-bindgen-guest-rust
+cargo add --git https://github.com/bytecodealliance/wit-bindgen wit-bindgen
 ```
 
 WIT files are currently added to a `wit/` folder adjacent to your `Cargo.toml`
@@ -197,7 +197,7 @@ file. Example code using this then looks like:
 
 // Use a procedural macro to generate bindings for the world we specified in
 // `host.wit`
-wit_bindgen_guest_rust::generate!("host");
+wit_bindgen::generate!("host");
 
 // Define a custom type and implement the generated `Host` trait for it which
 // represents implementing all the necesssary exported interfaces for this
