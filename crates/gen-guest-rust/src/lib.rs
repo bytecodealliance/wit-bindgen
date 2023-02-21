@@ -86,7 +86,6 @@ impl RustWasm {
         &'a mut self,
         wasm_import_module: Option<&'a str>,
         resolve: &'a Resolve,
-        default_param_mode: TypeMode,
         in_import: bool,
     ) -> InterfaceGenerator<'a> {
         let mut sizes = SizeAlign::default();
@@ -100,7 +99,6 @@ impl RustWasm {
             gen: self,
             sizes,
             resolve,
-            default_param_mode,
             return_pointer_area_size: 0,
             return_pointer_area_align: 0,
         }
@@ -126,7 +124,7 @@ impl WorldGenerator for RustWasm {
     ) {
         let prev = self.interface_names.insert(id, name.to_snake_case());
         assert!(prev.is_none());
-        let mut gen = self.interface(Some(name), resolve, TypeMode::AllBorrowed("'a"), true);
+        let mut gen = self.interface(Some(name), resolve, true);
         gen.current_interface = Some(id);
         gen.types(id);
 
@@ -144,7 +142,7 @@ impl WorldGenerator for RustWasm {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(Some("$root"), resolve, TypeMode::AllBorrowed("'a"), true);
+        let mut gen = self.interface(Some("$root"), resolve, true);
 
         for (_, func) in funcs {
             gen.generate_guest_import(func);
@@ -162,7 +160,7 @@ impl WorldGenerator for RustWasm {
         _files: &mut Files,
     ) {
         self.interface_names.insert(id, name.to_snake_case());
-        let mut gen = self.interface(None, resolve, TypeMode::Owned, false);
+        let mut gen = self.interface(None, resolve, false);
         gen.current_interface = Some(id);
         gen.types(id);
         gen.generate_exports(name, Some(name), resolve.interfaces[id].functions.values());
@@ -177,7 +175,7 @@ impl WorldGenerator for RustWasm {
         _files: &mut Files,
     ) {
         let name = &resolve.worlds[world].name;
-        let mut gen = self.interface(None, resolve, TypeMode::Owned, false);
+        let mut gen = self.interface(None, resolve, false);
         gen.generate_exports(name, None, funcs.iter().map(|f| f.1));
         let src = gen.finish();
         self.src.push_str(&src);
@@ -190,7 +188,7 @@ impl WorldGenerator for RustWasm {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(None, resolve, TypeMode::Owned, false);
+        let mut gen = self.interface(None, resolve, false);
         for (name, ty) in types {
             gen.define_type(name, *ty);
         }
@@ -321,7 +319,6 @@ struct InterfaceGenerator<'a> {
     gen: &'a mut RustWasm,
     wasm_import_module: Option<&'a str>,
     resolve: &'a Resolve,
-    default_param_mode: TypeMode,
     return_pointer_area_size: usize,
     return_pointer_area_align: usize,
 }
@@ -632,10 +629,6 @@ impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
 
     fn string_name(&self) -> &'static str {
         "wit_bindgen::rt::string::String"
-    }
-
-    fn default_param_mode(&self) -> TypeMode {
-        self.default_param_mode
     }
 
     fn push_str(&mut self, s: &str) {
