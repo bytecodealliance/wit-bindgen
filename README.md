@@ -136,7 +136,7 @@ that are using `wasi_snapshot_preview1` APIs.
 The `wasm-tools component new` subcommand takes an `--adapt` argument which acts
 as a way to polyfill non-component-model APIs, like `wasi_snapshot_preview1`,
 with component model APIs. The [preview2-prototyping] project is the current
-go-to location to to acquire a polyfill from `wasi_snapshot_preview1` to an
+go-to location to acquire a polyfill from `wasi_snapshot_preview1` to an
 in-development version of "wasi preview2" which is specified with [WIT]
 and the component model.
 
@@ -181,6 +181,13 @@ The Rust compiler supports a native `wasm32-wasi` target and can be added to any
 
 ```sh
 rustup target add wasm32-wasi
+```
+
+In order to compile a wasi dynamic library, the following must be added to the `Cargo.toml` file:
+
+```toml
+[lib]
+crate-type = ["cdylib"]
 ```
 
 Projects can then depend on `wit-bindgen` by executing:
