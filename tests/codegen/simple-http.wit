@@ -1,0 +1,18 @@
+interface http-fetch-imports {
+    record request{
+        method: string,
+        uri: string,
+        body: string
+    }
+
+    record response{
+        status: u16,
+        body: string
+    }
+
+    fetch: func(req: request) -> result<response>
+}
+
+default world http-fetch-simple {
+    import http-fetch-simple: self.http-fetch-imports
+}

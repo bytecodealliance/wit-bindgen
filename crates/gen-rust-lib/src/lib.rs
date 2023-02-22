@@ -382,7 +382,13 @@ pub trait RustGenerator<'a> {
     fn modes_of(&self, ty: TypeId) -> Vec<(String, TypeMode)> {
         let info = self.info(ty);
         let mut result = Vec::new();
-        result.push((self.result_name(ty), TypeMode::Owned));
+        let first_mode = if info.owned || !info.borrowed {
+            TypeMode::Owned
+        } else {
+            assert!(!self.uses_two_names(&info));
+            TypeMode::AllBorrowed("'a")
+        };
+        result.push((self.result_name(ty), first_mode));
         if self.uses_two_names(&info) {
             result.push((self.param_name(ty), TypeMode::AllBorrowed("'a")));
         }
