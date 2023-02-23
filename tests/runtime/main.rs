@@ -286,15 +286,25 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
         result.push(component_path);
     }
 
-    // TODO: As of this writing, Maven has started failing to resolve dependencies on Windows in the GitHub action,
-    // apparently unrelated to any code changes we've made.  Until we've either resolved the problem or developed a
-    // workaround, we're disabling the tests.
-    //
-    // See https://github.com/bytecodealliance/wit-bindgen/issues/495 for more information.
-    #[cfg(unix)]
     #[cfg(feature = "teavm-java")]
     if !java.is_empty() {
         use heck::*;
+
+        const DEPTH_FROM_TARGET_DIR: u32 = 2;
+
+        let base_dir = {
+            let mut dir = out_dir.to_owned();
+            for _ in 0..DEPTH_FROM_TARGET_DIR {
+                dir.pop();
+            }
+            dir
+        };
+
+        let teavm_interop_jar = base_dir.join("teavm-interop-0.2.8.jar");
+        let teavm_cli_jar = base_dir.join("teavm-cli-0.2.8.jar");
+        if !(teavm_interop_jar.is_file() && teavm_cli_jar.is_file()) {
+            panic!("please run ci/download-teavm.sh prior to running the Java tests")
+        }
 
         let world_name = &resolve.worlds[world].name;
         let out_dir = out_dir.join(format!("java-{}", world_name));
@@ -306,7 +316,7 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
             .build()
             .generate(&resolve, world, &mut files);
 
-        let package_dir = java_dir.join(&format!("wit_{}", world_name));
+        let package_dir = java_dir.join(&format!("wit_{world_name}"));
         fs::create_dir_all(&package_dir).unwrap();
         for (file, contents) in files.iter() {
             let dst = package_dir.join(file);
@@ -315,38 +325,84 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
 
         let snake = world_name.to_snake_case();
         let upper = world_name.to_upper_camel_case();
-        for java_impl in &java {
+        for java_impl in java {
             fs::copy(
                 &java_impl,
-                java_dir
-                    .join(&format!("wit_{snake}"))
-                    .join(java_impl.file_name().unwrap()),
+                &package_dir.join(java_impl.file_name().unwrap()),
             )
             .unwrap();
         }
+
         fs::write(
-            out_dir.join("pom.xml"),
-            pom_xml(&[
-                &format!("wit_{snake}.{upper}"),
-                &format!("wit_{snake}.{upper}World"),
-                &format!("wit_{snake}.Imports"),
-                &format!("wit_{snake}.Exports"),
-            ]),
-        )
-        .unwrap();
-        fs::write(
-            java_dir.join("Main.java"),
+            &java_dir.join("Main.java"),
             include_bytes!("../../crates/gen-guest-teavm-java/tests/Main.java"),
         )
         .unwrap();
 
-        let mut cmd = mvn();
-        cmd.arg("prepare-package").current_dir(&out_dir);
+        let dst_files = fs::read_dir(&package_dir).unwrap().filter_map(|entry| {
+            let path = entry.unwrap().path();
+            if let Some("java") = path.extension().map(|ext| ext.to_str().unwrap()) {
+                Some(path)
+            } else {
+                None
+            }
+        });
+
+        let mut cmd = Command::new("javac");
+        cmd.arg("-cp")
+            .arg(&teavm_interop_jar)
+            .arg("-d")
+            .arg(out_dir.join("target/classes"));
+
+        for file in dst_files {
+            cmd.arg(file);
+        }
 
         println!("{cmd:?}");
         let output = match cmd.output() {
             Ok(output) => output,
-            Err(e) => panic!("failed to run Maven: {}", e),
+            Err(e) => panic!("failed to run javac: {}", e),
+        };
+
+        if !output.status.success() {
+            println!("status: {}", output.status);
+            println!("stdout: ------------------------------------------");
+            println!("{}", String::from_utf8_lossy(&output.stdout));
+            println!("stderr: ------------------------------------------");
+            println!("{}", String::from_utf8_lossy(&output.stderr));
+            panic!("failed to build");
+        }
+
+        let preserved = &[
+            &format!("wit_{snake}.{upper}"),
+            &format!("wit_{snake}.{upper}World"),
+            &format!("wit_{snake}.Imports"),
+            &format!("wit_{snake}.Exports"),
+        ];
+
+        let mut cmd = Command::new("java");
+        cmd.arg("-jar")
+            .arg(&teavm_cli_jar)
+            .arg("-p")
+            .arg(out_dir.join("target/classes"))
+            .arg("-d")
+            .arg(out_dir.join("target/generated/wasm/teavm-wasm"))
+            .arg("-t")
+            .arg("wasm")
+            .arg("-g")
+            .arg("-O")
+            .arg("1");
+
+        for preserved in preserved {
+            cmd.arg("--preserve-class").arg(preserved);
+        }
+
+        cmd.arg("Main");
+
+        println!("{cmd:?}");
+        let output = match cmd.output() {
+            Ok(output) => output,
+            Err(e) => panic!("failed to run teavm: {}", e),
         };
 
         if !output.status.success() {
@@ -377,36 +433,6 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
         fs::write(&component_path, component).expect("write component to disk");
 
         result.push(component_path);
-
-        fn mvn() -> Command {
-            if cfg!(windows) {
-                let mut cmd = Command::new("cmd");
-                cmd.args(&["/c", "mvn"]);
-                cmd
-            } else {
-                Command::new("mvn")
-            }
-        }
-
-        fn pom_xml(classes_to_preserve: &[&str]) -> Vec<u8> {
-            let xml = include_str!("../../crates/gen-guest-teavm-java/tests/pom.xml");
-            let position = xml.find("<mainClass>").unwrap();
-            let (before, after) = xml.split_at(position);
-            let classes_to_preserve = classes_to_preserve
-                .iter()
-                .map(|&class| format!("<param>{class}</param>"))
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            format!(
-                "{before}
-         <classesToPreserve>
-            {classes_to_preserve}
-         </classesToPreserve>
-         {after}"
-            )
-            .into_bytes()
-        }
     }
 
     Ok(result)

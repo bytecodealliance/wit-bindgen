@@ -45,6 +45,8 @@ jobs:
         echo "WASI_SDK_PATH=`pwd`/wasi-sdk-16.0" >> $GITHUB_ENV
       if : matrix.os == 'windows-latest'
 
+    - run: ci/download-teavm.sh
+
     - uses: actions/setup-node@v2
       with:
         node-version: '16'

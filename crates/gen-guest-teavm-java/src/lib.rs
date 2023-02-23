@@ -1346,11 +1346,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             },
 
-            Instruction::FlagsLift { name, flags, .. } => match flags_repr(flags) {
+            Instruction::FlagsLift { flags, ty, .. } => match flags_repr(flags) {
                 Int::U8 | Int::U16 | Int::U32 => {
                     results.push(format!(
                         "new {}(({}) {})",
-                        name.to_upper_camel_case(),
+                        self.gen.type_name(&Type::Id(*ty)),
                         int_type(flags_repr(flags)),
                         operands[0]
                     ));
@@ -1358,7 +1358,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 Int::U64 => {
                     results.push(format!(
                         "new {}(((long) ({})) | (((long) ({})) << 32))",
-                        name.to_upper_camel_case(),
+                        self.gen.type_name(&Type::Id(*ty)),
                         operands[0],
                         operands[1]
                     ));
@@ -1589,9 +1589,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::EnumLower { .. } => results.push(format!("{}.ordinal()", operands[0])),
 
-            Instruction::EnumLift { name, .. } => results.push(format!(
+            Instruction::EnumLift { ty, .. } => results.push(format!(
                 "{}.values()[{}]",
-                name.to_upper_camel_case(),
+                self.gen.type_name(&Type::Id(*ty)),
                 operands[0]
             )),
 
