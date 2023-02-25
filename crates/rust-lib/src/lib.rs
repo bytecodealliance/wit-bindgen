@@ -38,7 +38,6 @@ pub trait RustGenerator<'a> {
     fn types_mut(&mut self) -> &mut Types;
     fn print_borrowed_slice(&mut self, mutbl: bool, ty: &Type, lifetime: &'static str);
     fn print_borrowed_str(&mut self, lifetime: &'static str);
-    fn default_param_mode(&self) -> TypeMode;
 
     fn rustdoc(&mut self, docs: &Docs) {
         let docs = match &docs.contents {
@@ -207,11 +206,11 @@ pub trait RustGenerator<'a> {
         }
     }
 
-    fn type_path(&self, id: TypeId, param: bool) -> String {
-        let name = if param {
-            self.param_name(id)
-        } else {
+    fn type_path(&self, id: TypeId, owned: bool) -> String {
+        let name = if owned {
             self.result_name(id)
+        } else {
+            self.param_name(id)
         };
         if let TypeOwner::Interface(id) = self.resolve().types[id].owner {
             if let Some(path) = self.path_to_interface(id) {
@@ -226,13 +225,13 @@ pub trait RustGenerator<'a> {
         let lt = self.lifetime_for(&info, mode);
         let ty = &self.resolve().types[id];
         if ty.name.is_some() {
-            let name = self.type_path(id, lt.is_some());
+            let name = self.type_path(id, lt.is_none());
             self.push_str(&name);
 
             // If the type recursively owns data and it's a
             // variant/record/list, then we need to place the
             // lifetime parameter on the type as well.
-            if info.owns_data() && needs_generics(self.resolve(), &ty.kind) {
+            if info.has_list && needs_generics(self.resolve(), &ty.kind) {
                 self.print_generics(lt);
             }
 
@@ -383,11 +382,15 @@ pub trait RustGenerator<'a> {
     fn modes_of(&self, ty: TypeId) -> Vec<(String, TypeMode)> {
         let info = self.info(ty);
         let mut result = Vec::new();
-        if info.param {
-            result.push((self.param_name(ty), self.default_param_mode()));
-        }
-        if info.result && (!info.param || self.uses_two_names(&info)) {
-            result.push((self.result_name(ty), TypeMode::Owned));
+        let first_mode = if info.owned || !info.borrowed {
+            TypeMode::Owned
+        } else {
+            assert!(!self.uses_two_names(&info));
+            TypeMode::AllBorrowed("'a")
+        };
+        result.push((self.result_name(ty), first_mode));
+        if self.uses_two_names(&info) {
+            result.push((self.param_name(ty), TypeMode::AllBorrowed("'a")));
         }
         return result;
     }
@@ -524,7 +527,7 @@ pub trait RustGenerator<'a> {
                 self.push_str("#[component(record)]\n");
             }
 
-            if !info.owns_data() {
+            if !info.has_list {
                 self.push_str("#[repr(C)]\n");
                 self.push_str("#[derive(Copy, Clone)]\n");
             } else {
@@ -680,7 +683,7 @@ pub trait RustGenerator<'a> {
                 self.push_str("#[derive(wasmtime::component::Lower)]\n");
                 self.push_str(&format!("#[component({})]\n", derive_component));
             }
-            if !info.owns_data() {
+            if !info.has_list {
                 self.push_str("#[derive(Clone, Copy)]\n");
             } else {
                 self.push_str("#[derive(Clone)]\n");
@@ -977,13 +980,7 @@ pub trait RustGenerator<'a> {
     }
 
     fn uses_two_names(&self, info: &TypeInfo) -> bool {
-        info.owns_data()
-            && info.param
-            && info.result
-            && match self.default_param_mode() {
-                TypeMode::AllBorrowed(_) | TypeMode::LeafBorrowed(_) => true,
-                TypeMode::Owned => false,
-            }
+        info.has_list && info.borrowed && info.owned
     }
 
     fn lifetime_for(&self, info: &TypeInfo, mode: TypeMode) -> Option<&'static str> {
@@ -1104,19 +1101,15 @@ pub trait RustFunctionGenerator {
     }
 
     fn typename_lower(&self, id: TypeId) -> String {
-        let param = match self.lift_lower() {
-            LiftLower::LowerArgsLiftResults => true,
-            LiftLower::LiftArgsLowerResults => false,
+        let owned = match self.lift_lower() {
+            LiftLower::LowerArgsLiftResults => false,
+            LiftLower::LiftArgsLowerResults => true,
         };
-        self.rust_gen().type_path(id, param)
+        self.rust_gen().type_path(id, owned)
     }
 
     fn typename_lift(&self, id: TypeId) -> String {
-        let param = match self.lift_lower() {
-            LiftLower::LiftArgsLowerResults => true,
-            LiftLower::LowerArgsLiftResults => false,
-        };
-        self.rust_gen().type_path(id, param)
+        self.rust_gen().type_path(id, true)
     }
 }
 
@@ -1193,16 +1186,6 @@ pub fn int_repr(repr: Int) -> &'static str {
         Int::U16 => "u16",
         Int::U32 => "u32",
         Int::U64 => "u64",
-    }
-}
-
-trait TypeInfoExt {
-    fn owns_data(&self) -> bool;
-}
-
-impl TypeInfoExt for TypeInfo {
-    fn owns_data(&self) -> bool {
-        self.has_list
     }
 }
 

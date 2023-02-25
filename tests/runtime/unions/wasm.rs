@@ -188,10 +188,10 @@ impl exports::Exports for Component {
         }
     }
 
-    fn replace_first_char(text: AllText, letter: char) -> AllText {
+    fn replace_first_char(text: AllTextResult, letter: char) -> AllTextResult {
         match text {
-            AllText::Char(_c) => AllText::Char(letter),
-            AllText::String(s) => AllText::String(format!("{}{}", letter, &s[1..])),
+            AllTextResult::Char(_c) => AllTextResult::Char(letter),
+            AllTextResult::String(s) => AllTextResult::String(format!("{}{}", letter, &s[1..])),
         }
     }
 
@@ -219,10 +219,10 @@ impl exports::Exports for Component {
         }
     }
 
-    fn identify_text(text: AllText) -> u8 {
+    fn identify_text(text: AllTextResult) -> u8 {
         match text {
-            AllText::Char(_c) => 0,
-            AllText::String(_s) => 1,
+            AllTextResult::Char(_c) => 0,
+            AllTextResult::String(_s) => 1,
         }
     }
 

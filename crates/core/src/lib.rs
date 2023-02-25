@@ -16,12 +16,18 @@ pub struct Types {
 #[derive(Default, Clone, Copy, Debug)]
 pub struct TypeInfo {
     /// Whether or not this type is ever used (transitively) within the
-    /// parameter of a function.
-    pub param: bool,
+    /// parameter of an imported function.
+    ///
+    /// This means that it's used in a context where ownership isn't
+    /// relinquished.
+    pub borrowed: bool,
 
     /// Whether or not this type is ever used (transitively) within the
-    /// result of a function.
-    pub result: bool,
+    /// parameter or result of an export, or the result of an import.
+    ///
+    /// This means that it's used in a context where ownership is required and
+    /// memory management is necessary.
+    pub owned: bool,
 
     /// Whether or not this type is ever used (transitively) within the
     /// error case in the result of a function.
@@ -33,8 +39,8 @@ pub struct TypeInfo {
 
 impl std::ops::BitOrAssign for TypeInfo {
     fn bitor_assign(&mut self, rhs: Self) {
-        self.param |= rhs.param;
-        self.result |= rhs.result;
+        self.borrowed |= rhs.borrowed;
+        self.owned |= rhs.owned;
         self.error |= rhs.error;
         self.has_list |= rhs.has_list;
     }
@@ -45,29 +51,63 @@ impl Types {
         for (t, _) in resolve.types.iter() {
             self.type_id_info(resolve, t);
         }
-        for (_, iface) in resolve.interfaces.iter() {
-            for (_, f) in iface.functions.iter() {
-                self.type_info_func(resolve, f);
-            }
-        }
         for (_, world) in resolve.worlds.iter() {
-            for (_, item) in world.imports.iter().chain(&world.exports) {
+            for (import, (_, item)) in world
+                .imports
+                .iter()
+                .map(|i| (true, i))
+                .chain(world.exports.iter().map(|i| (false, i)))
+            {
                 match item {
                     WorldItem::Function(f) => {
-                        self.type_info_func(resolve, f);
+                        self.type_info_func(resolve, f, import);
                     }
-                    WorldItem::Interface(_) | WorldItem::Type(_) => {}
+                    WorldItem::Interface(id) => {
+                        for (_, f) in resolve.interfaces[*id].functions.iter() {
+                            self.type_info_func(resolve, f, import);
+                        }
+                    }
+                    WorldItem::Type(_) => {}
                 }
             }
         }
     }
 
-    fn type_info_func(&mut self, resolve: &Resolve, f: &Function) {
-        for (_, ty) in f.params.iter() {
-            self.set_param_result_ty(resolve, ty, true, false, false);
+    fn type_info_func(&mut self, resolve: &Resolve, func: &Function, import: bool) {
+        let mut live = LiveTypes::default();
+        for (_, ty) in func.params.iter() {
+            self.type_info(resolve, ty);
+            live.add_type(resolve, ty);
         }
-        for ty in f.results.iter_types() {
-            self.set_param_result_ty(resolve, ty, false, true, false);
+        for id in live.iter() {
+            let info = self.type_info.get_mut(&id).unwrap();
+            if import {
+                info.borrowed = true;
+            } else {
+                info.owned = true;
+            }
+        }
+        let mut live = LiveTypes::default();
+        for ty in func.results.iter_types() {
+            self.type_info(resolve, ty);
+            live.add_type(resolve, ty);
+        }
+        for id in live.iter() {
+            self.type_info.get_mut(&id).unwrap().owned = true;
+        }
+
+        for ty in func.results.iter_types() {
+            let id = match ty {
+                Type::Id(id) => *id,
+                _ => continue,
+            };
+            let err = match &resolve.types[id].kind {
+                TypeDefKind::Result(Result_ { err, .. }) => err,
+                _ => continue,
+            };
+            if let Some(Type::Id(id)) = err {
+                self.type_info.get_mut(&id).unwrap().error = true;
+            }
         }
     }
 
@@ -144,110 +184,6 @@ impl Types {
         match ty {
             Some(ty) => self.type_info(resolve, ty),
             None => TypeInfo::default(),
-        }
-    }
-
-    fn set_param_result_id(
-        &mut self,
-        resolve: &Resolve,
-        ty: TypeId,
-        param: bool,
-        result: bool,
-        error: bool,
-    ) {
-        match &resolve.types[ty].kind {
-            TypeDefKind::Record(r) => {
-                for field in r.fields.iter() {
-                    self.set_param_result_ty(resolve, &field.ty, param, result, error)
-                }
-            }
-            TypeDefKind::Tuple(t) => {
-                for ty in t.types.iter() {
-                    self.set_param_result_ty(resolve, ty, param, result, error)
-                }
-            }
-            TypeDefKind::Flags(_) => {}
-            TypeDefKind::Enum(_) => {}
-            TypeDefKind::Variant(v) => {
-                for case in v.cases.iter() {
-                    self.set_param_result_optional_ty(
-                        resolve,
-                        case.ty.as_ref(),
-                        param,
-                        result,
-                        error,
-                    )
-                }
-            }
-            TypeDefKind::List(ty) | TypeDefKind::Type(ty) | TypeDefKind::Option(ty) => {
-                self.set_param_result_ty(resolve, ty, param, result, error)
-            }
-            TypeDefKind::Result(r) => {
-                self.set_param_result_optional_ty(resolve, r.ok.as_ref(), param, result, error);
-                self.set_param_result_optional_ty(resolve, r.err.as_ref(), param, result, result);
-            }
-            TypeDefKind::Union(u) => {
-                for case in u.cases.iter() {
-                    self.set_param_result_ty(resolve, &case.ty, param, result, error)
-                }
-            }
-            TypeDefKind::Future(ty) => {
-                self.set_param_result_optional_ty(resolve, ty.as_ref(), param, result, error)
-            }
-            TypeDefKind::Stream(stream) => {
-                self.set_param_result_optional_ty(
-                    resolve,
-                    stream.element.as_ref(),
-                    param,
-                    result,
-                    error,
-                );
-                self.set_param_result_optional_ty(
-                    resolve,
-                    stream.end.as_ref(),
-                    param,
-                    result,
-                    error,
-                );
-            }
-            TypeDefKind::Unknown => unreachable!(),
-        }
-    }
-
-    fn set_param_result_ty(
-        &mut self,
-        resolve: &Resolve,
-        ty: &Type,
-        param: bool,
-        result: bool,
-        error: bool,
-    ) {
-        match ty {
-            Type::Id(id) => {
-                self.type_id_info(resolve, *id);
-                let info = self.type_info.get_mut(id).unwrap();
-                if (param && !info.param) || (result && !info.result) || (error && !info.error) {
-                    info.param = info.param || param;
-                    info.result = info.result || result;
-                    info.error = info.error || error;
-                    self.set_param_result_id(resolve, *id, param, result, error);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn set_param_result_optional_ty(
-        &mut self,
-        resolve: &Resolve,
-        ty: Option<&Type>,
-        param: bool,
-        result: bool,
-        error: bool,
-    ) {
-        match ty {
-            Some(ty) => self.set_param_result_ty(resolve, ty, param, result, error),
-            None => (),
         }
     }
 }
