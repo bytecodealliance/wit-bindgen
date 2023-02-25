@@ -9,7 +9,7 @@ use wit_bindgen_core::{
     uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Source, TypeInfo, Types,
     WorldGenerator,
 };
-use wit_bindgen_gen_rust_lib::{
+use wit_bindgen_rust_lib::{
     int_repr, to_rust_ident, wasm_type, FnSig, RustFlagsRepr, RustFunctionGenerator, RustGenerator,
     TypeMode,
 };
@@ -1002,7 +1002,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::Bitcasts { casts } => {
-                wit_bindgen_gen_rust_lib::bitcast(casts, operands, results)
+                wit_bindgen_rust_lib::bitcast(casts, operands, results)
             }
 
             Instruction::I32FromBool => {

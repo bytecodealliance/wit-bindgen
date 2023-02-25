@@ -11,7 +11,7 @@ macro_rules! codegen_test {
                 "guest-c",
                 $test.as_ref(),
                 |resolve, world, files| {
-                    wit_bindgen_gen_guest_c::Opts::default()
+                    wit_bindgen_c::Opts::default()
                         .build()
                         .generate(resolve, world, files)
                 },

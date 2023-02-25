@@ -139,7 +139,7 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
 
         let snake = world_name.replace("-", "_");
         let mut files = Default::default();
-        let mut opts = wit_bindgen_gen_guest_c::Opts::default();
+        let mut opts = wit_bindgen_c::Opts::default();
         if let Some(path) = path.file_name().and_then(|s| s.to_str()) {
             if path.contains("utf16") {
                 opts.string_encoding = wit_component::StringEncoding::UTF16;
@@ -217,7 +217,7 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
 
         let snake = world_name.replace("-", "_");
         let mut files = Default::default();
-        wit_bindgen_gen_guest_go::Opts::default()
+        wit_bindgen_go::Opts::default()
             .build()
             .generate(&resolve, world, &mut files);
         let gen_dir = out_dir.join("gen");
@@ -302,7 +302,7 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
         let java_dir = out_dir.join("src/main/java");
         let mut files = Default::default();
 
-        wit_bindgen_gen_guest_teavm_java::Opts::default()
+        wit_bindgen_teavm_java::Opts::default()
             .build()
             .generate(&resolve, world, &mut files);
 

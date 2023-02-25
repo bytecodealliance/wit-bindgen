@@ -26,7 +26,7 @@ enum Opt {
     #[cfg(feature = "rust")]
     Rust {
         #[clap(flatten)]
-        opts: wit_bindgen_gen_guest_rust::Opts,
+        opts: wit_bindgen_rust::Opts,
         #[clap(flatten)]
         args: Common,
     },
@@ -34,7 +34,7 @@ enum Opt {
     #[cfg(feature = "c")]
     C {
         #[clap(flatten)]
-        opts: wit_bindgen_gen_guest_c::Opts,
+        opts: wit_bindgen_c::Opts,
         #[clap(flatten)]
         args: Common,
     },
@@ -43,7 +43,7 @@ enum Opt {
     #[cfg(feature = "teavm-java")]
     TeavmJava {
         #[clap(flatten)]
-        opts: wit_bindgen_gen_guest_teavm_java::Opts,
+        opts: wit_bindgen_teavm_java::Opts,
         #[clap(flatten)]
         args: Common,
     },
@@ -51,7 +51,7 @@ enum Opt {
     #[cfg(feature = "go")]
     TinyGo {
         #[clap(flatten)]
-        opts: wit_bindgen_gen_guest_go::Opts,
+        opts: wit_bindgen_go::Opts,
         #[clap(flatten)]
         args: Common,
     },

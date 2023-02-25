@@ -1,28 +1,26 @@
 [package]
-name = "wit-bindgen-gen-guest-c"
-authors = ["Alex Crichton <alex@alexcrichton.com>"]
-version = "0.3.0"
+name = "wit-bindgen-go"
+authors = ["Mossaka <duibao55328@gmail.com>"]
+version = "0.1.0"
 edition.workspace = true
 repository = 'https://github.com/bytecodealliance/wit-bindgen'
 license = "Apache-2.0 WITH LLVM-exception"
 homepage = 'https://github.com/bytecodealliance/wit-bindgen'
 description = """
-C bindings generator for WIT and the component model, typically used through the
-`wit-bindgen-cli` crate.
+TinyGo/Go bindings generator for WIT and the component model, typically used
+through the `wit-bindgen-cli` crate.
 """
 
 [lib]
-doctest = false
 test = false
+doctest = false
 
 [dependencies]
 wit-bindgen-core = { workspace = true }
 wit-component = { workspace = true }
-wasm-encoder = { workspace = true }
-wasm-metadata = { workspace = true }
-anyhow = { workspace = true }
 heck = { workspace = true }
 clap = { workspace = true, optional = true }
+wit-bindgen-c = { workspace = true }
 
 [dev-dependencies]
 test-helpers = { path = '../test-helpers' }

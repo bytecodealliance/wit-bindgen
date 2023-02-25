@@ -12,7 +12,7 @@ macro_rules! codegen_test {
                 "guest-teavm-java",
                 $test.as_ref(),
                 |resolve, world, files| {
-                    wit_bindgen_gen_guest_teavm_java::Opts {
+                    wit_bindgen_teavm_java::Opts {
                         generate_stub: true,
                     }
                     .build()

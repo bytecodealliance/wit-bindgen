@@ -10,7 +10,7 @@ use wit_bindgen_core::{
     wit_parser::{Field, Function, SizeAlign, Type, TypeDefKind, TypeId},
     Files, InterfaceGenerator as _, Source, WorldGenerator,
 };
-use wit_bindgen_gen_guest_c::{
+use wit_bindgen_c::{
     flags_repr, get_nonempty_type, int_repr, is_arg_by_pointer, is_empty_type, owns_anything,
 };
 
@@ -407,7 +407,7 @@ impl WorldGenerator for TinyGo {
                 result_option_src.as_bytes(),
             );
         }
-        wit_bindgen_gen_guest_c::Opts::default()
+        wit_bindgen_c::Opts::default()
             .build()
             .generate(resolve, id, files)
     }

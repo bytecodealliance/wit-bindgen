@@ -35,13 +35,13 @@ wat = "1.0.59"
 wit-parser = "0.6.1"
 wit-component = "0.7.0"
 
-wit-bindgen-core = { path = 'crates/bindgen-core', version = '0.3.0' }
-wit-bindgen-gen-guest-c = { path = 'crates/gen-guest-c', version = '0.3.0' }
-wit-bindgen-gen-guest-rust = { path = "crates/gen-guest-rust", version = "0.3.0" }
-wit-bindgen-gen-guest-teavm-java = { path = 'crates/gen-guest-teavm-java', version = '0.3.0' }
-wit-bindgen-gen-guest-go = { path = 'crates/gen-guest-go', version = '0.1.0' }
-wit-bindgen-gen-markdown = { path = 'crates/gen-markdown', version = '0.3.0' }
-wit-bindgen-gen-rust-lib = { path = 'crates/gen-rust-lib', version = '0.3.0' }
+wit-bindgen-core = { path = 'crates/core', version = '0.3.0' }
+wit-bindgen-c = { path = 'crates/c', version = '0.3.0' }
+wit-bindgen-rust = { path = "crates/rust", version = "0.3.0" }
+wit-bindgen-teavm-java = { path = 'crates/teavm-java', version = '0.3.0' }
+wit-bindgen-go = { path = 'crates/go', version = '0.1.0' }
+wit-bindgen-gen-markdown = { path = 'crates/markdown', version = '0.3.0' }
+wit-bindgen-rust-lib = { path = 'crates/rust-lib', version = '0.3.0' }
 wit-bindgen = { path = 'crates/guest-rust', version = '0.3.0', default-features = false }
 wit-bindgen-rust-macro-shared = { path = 'crates/rust-macro-shared', version = '0.3.0' }
 
@@ -52,22 +52,22 @@ name = "wit-bindgen"
 anyhow = { workspace = true }
 clap = { workspace = true }
 wit-bindgen-core = { workspace = true }
-wit-bindgen-gen-guest-rust = { workspace = true, features = ['clap'], optional = true }
-wit-bindgen-gen-guest-c = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-rust = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-c = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-gen-markdown = { workspace = true, features = ['clap'], optional = true }
-wit-bindgen-gen-guest-teavm-java = { workspace = true, features = ['clap'], optional = true }
-wit-bindgen-gen-guest-go = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-teavm-java = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-go = { workspace = true, features = ['clap'], optional = true }
 wat = { workspace = true }
 wit-component = { workspace = true }
 wasm-encoder = { workspace = true }
 
 [features]
 default = ['c', 'rust', 'markdown', 'teavm-java', 'go']
-c = ['dep:wit-bindgen-gen-guest-c']
-rust = ['dep:wit-bindgen-gen-guest-rust']
+c = ['dep:wit-bindgen-c']
+rust = ['dep:wit-bindgen-rust']
 markdown = ['dep:wit-bindgen-gen-markdown']
-teavm-java = ['dep:wit-bindgen-gen-guest-teavm-java']
-go = ['dep:wit-bindgen-gen-guest-go']
+teavm-java = ['dep:wit-bindgen-teavm-java']
+go = ['dep:wit-bindgen-go']
 
 [dev-dependencies]
 heck = { workspace = true }
