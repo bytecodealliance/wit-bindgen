@@ -1680,8 +1680,8 @@ dependencies = [
  "wat",
  "wit-bindgen-c",
  "wit-bindgen-core",
- "wit-bindgen-gen-markdown",
  "wit-bindgen-go",
+ "wit-bindgen-markdown",
  "wit-bindgen-rust",
  "wit-bindgen-teavm-java",
  "wit-component",
@@ -1698,17 +1698,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wit-bindgen-gen-markdown"
-version = "0.3.0"
-dependencies = [
- "clap",
- "heck",
- "pulldown-cmark",
- "wit-bindgen-core",
- "wit-component",
-]
-
-[[package]]
 name = "wit-bindgen-go"
 version = "0.1.0"
 dependencies = [
@@ -1716,6 +1705,17 @@ dependencies = [
  "heck",
  "test-helpers",
  "wit-bindgen-c",
+ "wit-bindgen-core",
+ "wit-component",
+]
+
+[[package]]
+name = "wit-bindgen-markdown"
+version = "0.3.0"
+dependencies = [
+ "clap",
+ "heck",
+ "pulldown-cmark",
  "wit-bindgen-core",
  "wit-component",
 ]

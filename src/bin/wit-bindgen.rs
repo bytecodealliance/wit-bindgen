@@ -18,7 +18,7 @@ enum Opt {
     #[cfg(feature = "markdown")]
     Markdown {
         #[clap(flatten)]
-        opts: wit_bindgen_gen_markdown::Opts,
+        opts: wit_bindgen_markdown::Opts,
         #[clap(flatten)]
         args: Common,
     },

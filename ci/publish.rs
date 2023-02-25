@@ -31,7 +31,7 @@ const CRATES_TO_PUBLISH: &[&str] = &[
     "wit-bindgen-c",
     "wit-bindgen-rust",
     "wit-bindgen-teavm-java",
-    "wit-bindgen-gen-markdown",
+    "wit-bindgen-markdown",
     "wit-bindgen-rust-macro",
     "wit-bindgen",
     "wit-bindgen-cli",
