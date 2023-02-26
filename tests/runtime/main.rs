@@ -335,7 +335,7 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
 
         fs::write(
             &java_dir.join("Main.java"),
-            include_bytes!("../../crates/gen-guest-teavm-java/tests/Main.java"),
+            include_bytes!("../../crates/teavm-java/tests/Main.java"),
         )
         .unwrap();
 
