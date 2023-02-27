@@ -27,12 +27,12 @@ use std::time::Duration;
 // Crates we care about publishing sorted topologically.
 const CRATES_TO_PUBLISH: &[&str] = &[
     "wit-bindgen-core",
-    "wit-bindgen-gen-rust-lib",
-    "wit-bindgen-gen-guest-c",
-    "wit-bindgen-gen-guest-rust",
-    "wit-bindgen-gen-guest-teavm-java",
-    "wit-bindgen-gen-markdown",
-    "wit-bindgen-guest-rust-macro",
+    "wit-bindgen-rust-lib",
+    "wit-bindgen-c",
+    "wit-bindgen-rust",
+    "wit-bindgen-teavm-java",
+    "wit-bindgen-markdown",
+    "wit-bindgen-rust-macro",
     "wit-bindgen",
     "wit-bindgen-cli",
 ];

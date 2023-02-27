@@ -3,7 +3,7 @@
 extern crate alloc;
 
 #[cfg(feature = "macros")]
-pub use wit_bindgen_guest_rust_macro::*;
+pub use wit_bindgen_rust_macro::*;
 
 // Re-export `bitflags` so that we can reference it from macros.
 #[doc(hidden)]

@@ -58,7 +58,7 @@ The actual way tests are hooked up looks roughly like:
 The general layout is then that if you want to run the rust guest tests you run:
 
 ```
-$ cargo test -p wit-bindgen-gen-guest-rust
+$ cargo test -p wit-bindgen-rust
 ```
 
 if you want to run the rust guest tests under `tests/runtime/*`, you run:

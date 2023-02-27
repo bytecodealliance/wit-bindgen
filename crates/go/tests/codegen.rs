@@ -15,7 +15,7 @@ macro_rules! codegen_test {
                 "guest-go",
                 $test.as_ref(),
                 |resolve, world, files| {
-                    wit_bindgen_gen_guest_go::Opts::default()
+                    wit_bindgen_go::Opts::default()
                         .build()
                         .generate(resolve, world, files);
                 },

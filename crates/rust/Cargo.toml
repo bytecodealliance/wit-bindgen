@@ -1,5 +1,5 @@
 [package]
-name = "wit-bindgen-gen-guest-rust"
+name = "wit-bindgen-rust"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 version = "0.3.0"
 edition.workspace = true
@@ -17,7 +17,7 @@ doctest = false
 
 [dependencies]
 wit-bindgen-core = { workspace = true }
-wit-bindgen-gen-rust-lib = { workspace = true }
+wit-bindgen-rust-lib = { workspace = true }
 wit-component = { workspace = true }
 wasm-metadata = { workspace = true }
 heck = { workspace = true }

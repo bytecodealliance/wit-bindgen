@@ -1673,7 +1673,21 @@ name = "wit-bindgen"
 version = "0.3.0"
 dependencies = [
  "bitflags",
- "wit-bindgen-guest-rust-macro",
+ "wit-bindgen-rust-macro",
+]
+
+[[package]]
+name = "wit-bindgen-c"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "heck",
+ "test-helpers",
+ "wasm-encoder 0.24.1",
+ "wasm-metadata",
+ "wit-bindgen-core",
+ "wit-component",
 ]
 
 [[package]]
@@ -1687,12 +1701,12 @@ dependencies = [
  "wasm-encoder 0.24.1",
  "wasmtime",
  "wat",
+ "wit-bindgen-c",
  "wit-bindgen-core",
- "wit-bindgen-gen-guest-c",
- "wit-bindgen-gen-guest-go",
- "wit-bindgen-gen-guest-rust",
- "wit-bindgen-gen-guest-teavm-java",
- "wit-bindgen-gen-markdown",
+ "wit-bindgen-go",
+ "wit-bindgen-markdown",
+ "wit-bindgen-rust",
+ "wit-bindgen-teavm-java",
  "wit-component",
  "wit-parser",
 ]
@@ -1707,59 +1721,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "wit-bindgen-gen-guest-c"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "clap",
- "heck",
- "test-helpers",
- "wasm-encoder 0.24.1",
- "wasm-metadata",
- "wit-bindgen-core",
- "wit-component",
-]
-
-[[package]]
-name = "wit-bindgen-gen-guest-go"
+name = "wit-bindgen-go"
 version = "0.1.0"
 dependencies = [
  "clap",
  "heck",
  "test-helpers",
- "wit-bindgen-core",
- "wit-bindgen-gen-guest-c",
- "wit-component",
-]
-
-[[package]]
-name = "wit-bindgen-gen-guest-rust"
-version = "0.3.0"
-dependencies = [
- "clap",
- "heck",
- "test-helpers",
- "wasm-metadata",
- "wit-bindgen",
- "wit-bindgen-core",
- "wit-bindgen-gen-rust-lib",
- "wit-component",
-]
-
-[[package]]
-name = "wit-bindgen-gen-guest-teavm-java"
-version = "0.3.0"
-dependencies = [
- "clap",
- "heck",
- "test-helpers",
- "wasm-metadata",
+ "wit-bindgen-c",
  "wit-bindgen-core",
  "wit-component",
 ]
 
 [[package]]
-name = "wit-bindgen-gen-markdown"
+name = "wit-bindgen-markdown"
 version = "0.3.0"
 dependencies = [
  "clap",
@@ -1770,7 +1744,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "wit-bindgen-gen-rust-lib"
+name = "wit-bindgen-rust"
+version = "0.3.0"
+dependencies = [
+ "clap",
+ "heck",
+ "test-helpers",
+ "wasm-metadata",
+ "wit-bindgen",
+ "wit-bindgen-core",
+ "wit-bindgen-rust-lib",
+ "wit-component",
+]
+
+[[package]]
+name = "wit-bindgen-rust-lib"
 version = "0.3.0"
 dependencies = [
  "heck",
@@ -1778,14 +1766,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "wit-bindgen-guest-rust-macro"
+name = "wit-bindgen-rust-macro"
 version = "0.3.0"
 dependencies = [
  "anyhow",
  "proc-macro2",
  "syn",
  "wit-bindgen-core",
- "wit-bindgen-gen-guest-rust",
+ "wit-bindgen-rust",
+ "wit-component",
+]
+
+[[package]]
+name = "wit-bindgen-teavm-java"
+version = "0.3.0"
+dependencies = [
+ "clap",
+ "heck",
+ "test-helpers",
+ "wasm-metadata",
+ "wit-bindgen-core",
  "wit-component",
 ]
 
