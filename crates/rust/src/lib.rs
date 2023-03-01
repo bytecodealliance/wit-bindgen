@@ -307,7 +307,8 @@ impl WorldGenerator for RustWasm {
             assert!(status.success());
         }
 
-        files.push(&format!("{name}.rs"), src.as_bytes());
+        let module_name = name.to_snake_case();
+        files.push(&format!("{module_name}.rs"), src.as_bytes());
     }
 }
 
