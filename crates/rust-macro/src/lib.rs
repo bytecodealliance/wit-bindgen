@@ -1,9 +1,10 @@
 use proc_macro2::{Span, TokenStream};
+use std::fs;
 use std::path::{Path, PathBuf};
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{token, Token};
-use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackage, WorldId};
+use wit_bindgen_core::wit_parser::{self, PackageId, Resolve, UnresolvedPackage, WorldId};
 use wit_bindgen_rust::Opts;
 
 #[proc_macro]
@@ -32,6 +33,7 @@ impl Parse for Config {
         let mut opts = Opts::default();
         let mut world = None;
         let mut source = None;
+        let mut substitutions = None;
 
         if input.peek(token::Brace) {
             let content;
@@ -57,6 +59,24 @@ impl Parse for Config {
                         }
                         source = Some(Source::Inline(s.value()));
                     }
+                    Opt::SubstitutionsPath(s) => {
+                        if substitutions.is_some() {
+                            return Err(Error::new(
+                                s.span(),
+                                "cannot specify second substitutions",
+                            ));
+                        }
+                        substitutions = Some(Source::Path(s.value()));
+                    }
+                    Opt::SubstitutionsInline(s) => {
+                        if substitutions.is_some() {
+                            return Err(Error::new(
+                                s.span(),
+                                "cannot specify second substitutions",
+                            ));
+                        }
+                        substitutions = Some(Source::Inline(s.value()));
+                    }
                     Opt::UseStdFeature => opts.std_feature = true,
                     Opt::RawStrings => opts.raw_strings = true,
                     Opt::MacroExport => opts.macro_export = true,
@@ -71,8 +91,8 @@ impl Parse for Config {
                 source = Some(Source::Path(input.parse::<syn::LitStr>()?.value()));
             }
         }
-        let (resolve, pkg, files) =
-            parse_source(&source).map_err(|err| Error::new(call_site, format!("{err:?}")))?;
+        let (resolve, pkg, files) = parse_source(&source, &substitutions)
+            .map_err(|err| Error::new(call_site, format!("{err:?}")))?;
         let world = resolve
             .select_world(pkg, world.as_deref())
             .map_err(|e| Error::new(call_site, format!("{e:?}")))?;
@@ -85,7 +105,10 @@ impl Parse for Config {
     }
 }
 
-fn parse_source(source: &Option<Source>) -> anyhow::Result<(Resolve, PackageId, Vec<PathBuf>)> {
+fn parse_source(
+    source: &Option<Source>,
+    substitutions: &Option<Source>,
+) -> anyhow::Result<(Resolve, PackageId, Vec<PathBuf>)> {
     let mut resolve = Resolve::default();
     let mut files = Vec::new();
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -108,7 +131,14 @@ fn parse_source(source: &Option<Source>) -> anyhow::Result<(Resolve, PackageId, 
         Some(Source::Path(s)) => parse(&root.join(&s))?,
         None => parse(&root.join("wit"))?,
     };
-
+    match substitutions {
+        Some(Source::Inline(s)) => wit_parser::expand(&mut resolve, toml::from_str(s)?)?,
+        Some(Source::Path(s)) => wit_parser::expand(
+            &mut resolve,
+            toml::from_str(&fs::read_to_string(&root.join(&s))?)?,
+        )?,
+        None => (),
+    }
     Ok((resolve, pkg, files))
 }
 
@@ -146,12 +176,16 @@ mod kw {
     syn::custom_keyword!(world);
     syn::custom_keyword!(path);
     syn::custom_keyword!(inline);
+    syn::custom_keyword!(substitutions_path);
+    syn::custom_keyword!(substitutions_inline);
 }
 
 enum Opt {
     World(syn::LitStr),
     Path(syn::LitStr),
     Inline(syn::LitStr),
+    SubstitutionsPath(syn::LitStr),
+    SubstitutionsInline(syn::LitStr),
     UseStdFeature,
     RawStrings,
     MacroExport,
@@ -171,6 +205,14 @@ impl Parse for Opt {
             input.parse::<kw::inline>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::Inline(input.parse()?))
+        } else if l.peek(kw::substitutions_path) {
+            input.parse::<kw::substitutions_path>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::SubstitutionsPath(input.parse()?))
+        } else if l.peek(kw::substitutions_inline) {
+            input.parse::<kw::substitutions_inline>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::SubstitutionsInline(input.parse()?))
         } else if l.peek(kw::world) {
             input.parse::<kw::world>()?;
             input.parse::<Token![:]>()?;

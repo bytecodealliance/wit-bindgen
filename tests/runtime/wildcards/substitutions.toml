@@ -1,0 +1,3 @@
+[wildcards]
+imports = ["a", "b", "c"]
+exports = ["x", "y", "z"]

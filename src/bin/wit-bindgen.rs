@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
-use std::str;
+use std::{fs, str};
 use wit_bindgen_core::{wit_parser, Files, WorldGenerator};
 use wit_parser::{Resolve, UnresolvedPackage};
 
@@ -78,6 +78,10 @@ struct Common {
     /// they're up-to-date with the source files.
     #[clap(long)]
     check: bool,
+
+    /// Path to template substitutions for expansion.
+    #[clap(long)]
+    expand: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -143,6 +147,15 @@ fn gen_world(
     opts: &Common,
     files: &mut Files,
 ) -> Result<()> {
+    let substitutions = match &opts.expand {
+        Some(path) => {
+            let input =
+                fs::read_to_string(path).context("failed to read substitutions from file")?;
+            toml::from_str(&input).context("failed to parse substitutions from TOML")?
+        }
+        None => Default::default(),
+    };
+
     let mut resolve = Resolve::default();
     let pkg = if opts.wit.is_dir() {
         resolve.push_dir(&opts.wit)?.0
@@ -152,6 +165,8 @@ fn gen_world(
             &Default::default(),
         )?
     };
+
+    wit_parser::expand(&mut resolve, substitutions)?;
     let world = resolve.select_world(pkg, opts.world.as_deref())?;
     generator.generate(&resolve, world, files);
     Ok(())

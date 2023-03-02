@@ -32,8 +32,8 @@ indexmap = "1.9.1"
 wasm-encoder = "0.25.0"
 wasm-metadata = "0.3.1"
 wat = "1.0.61"
-wit-parser = "0.6.3"
-wit-component = "0.7.2"
+wit-parser = "0.6.4"
+wit-component = "0.7.3"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.4.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.4.0' }
@@ -60,6 +60,7 @@ wit-bindgen-go = { workspace = true, features = ['clap'], optional = true }
 wat = { workspace = true }
 wit-component = { workspace = true }
 wasm-encoder = { workspace = true }
+toml = "0.7.2"
 
 [features]
 default = ['c', 'rust', 'markdown', 'teavm-java', 'go']
@@ -71,6 +72,13 @@ go = ['dep:wit-bindgen-go']
 
 [dev-dependencies]
 heck = { workspace = true }
-wasmtime = { version = "7", features = ['component-model'] }
+wasmtime = { version = "8", features = ['component-model'] }
 test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
+
+[patch.crates-io]
+wit-component = { git = "https://github.com/dicej/wasm-tools", branch = "wit-templates" }
+wit-parser = { git = "https://github.com/dicej/wasm-tools", branch = "wit-templates" }
+wasm-metadata = { git = "https://github.com/dicej/wasm-tools", branch = "wit-templates" }
+wasmtime = { git = "https://github.com/dicej/wasmtime", branch = "wit-templates-minimal" }
+wasmtime-wit-bindgen = { git = "https://github.com/dicej/wasmtime", branch = "wit-templates-minimal" }
