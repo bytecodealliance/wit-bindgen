@@ -166,7 +166,8 @@ impl Types {
             }
             TypeDefKind::Unknown => unreachable!(),
         }
-        self.type_info.insert(ty, info);
+        let prev = self.type_info.insert(ty, info);
+        assert!(prev.is_none());
         info
     }
 
