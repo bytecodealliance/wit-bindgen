@@ -7,6 +7,7 @@ use std::process::Command;
 macro_rules! codegen_test {
     // TODO: should fix this test
     (lift_lower_foreign $name:tt $test:tt) => {};
+    (unused_import $name:tt $test:tt) => {};
 
     ($id:ident $name:tt $test:tt) => {
         #[test]
