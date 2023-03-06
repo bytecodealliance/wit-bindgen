@@ -509,6 +509,20 @@ impl InterfaceGenerator<'_> {
             "
                 #[allow(unused_imports)]
                 use wit_bindgen::rt::{{alloc, vec::Vec, string::String}};
+
+                // Before executing any other code, use this function
+                // (provided by wasm-ld) to run all static constructors. When
+                // wasm-ld sees this explicit invocation of ctors, it will not
+                // generate a wrapper around each exported func which executes
+                // ctors first, and therefore we make sure that cabi_realloc
+                // doesnt invoke ctors when called as an export func.
+                // See
+                // https://github.com/bytecodealliance/preview2-prototyping/issues/99
+                // for more details.
+
+                extern \"C\" {{ fn __wasm_call_ctors(); }}
+                unsafe {{ __wasm_call_ctors() }}
+
             "
         );
 
