@@ -12,11 +12,20 @@ macro_rules! codegen_test {
                 $test.as_ref(),
                 |resolve, world, files| {
                     wit_bindgen_c::Opts::default()
-                        .build()
-                        .generate(resolve, world, files)
+                        .build().generate(resolve, world, files)
                 },
                 verify,
-            )
+            );
+            test_helpers::run_world_codegen_test(
+                "guest-c-no-sig-flattening",
+                $test.as_ref(),
+                |resolve, world, files| {
+                    let mut opts = wit_bindgen_c::Opts::default();
+                    opts.no_sig_flattening = true;
+                    opts.build().generate(resolve, world, files)
+                },
+                verify,
+            );
         }
     };
 }

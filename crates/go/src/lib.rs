@@ -407,9 +407,9 @@ impl WorldGenerator for TinyGo {
                 result_option_src.as_bytes(),
             );
         }
-        wit_bindgen_c::Opts::default()
-            .build()
-            .generate(resolve, id, files)
+        let mut opts = wit_bindgen_c::Opts::default();
+        opts.no_sig_flattening = true;
+        opts.build().generate(resolve, id, files)
     }
 }
 
