@@ -21,6 +21,7 @@ pub mod rt {
     /// permitted by the Component Model when inside realloc.
     ///
     /// We intend to remove this once rust 1.69.0 stabilizes.
+    #[cfg(target_arch = "wasm32")]
     pub fn run_ctors_once() {
         static mut RUN: bool = false;
         unsafe {

@@ -521,7 +521,7 @@ impl InterfaceGenerator<'_> {
                 // See
                 // https://github.com/bytecodealliance/preview2-prototyping/issues/99
                 // for more details.
-
+                #[cfg(target_arch=\"wasm32\")]
                 wit_bindgen::rt::run_ctors_once();
 
             "
