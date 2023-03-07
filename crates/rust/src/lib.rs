@@ -510,21 +510,19 @@ impl InterfaceGenerator<'_> {
                 #[allow(unused_imports)]
                 use wit_bindgen::rt::{{alloc, vec::Vec, string::String}};
 
-                // Before executing any other code, use this function
-                // (provided by wasm-ld) to run all static constructors. When
-                // wasm-ld sees this explicit invocation of ctors, it will not
-                // generate a wrapper around each exported func which executes
-                // ctors first, and therefore we make sure that cabi_realloc
-                // doesnt invoke ctors when called as an export func.
+                // Before executing any other code, use this function to run all static
+                // constructors, if they have not yet been run. This is a hack required
+                // to work around wasi-libc ctors calling import functions to initialize
+                // the environment.
+                //
+                // This functionality will be removed once rust 1.69.0 is stable, at which
+                // point wasi-libc will no longer have this behavior.
+                //
                 // See
                 // https://github.com/bytecodealliance/preview2-prototyping/issues/99
                 // for more details.
 
-                #[cfg(target_arch=\"wasm32\")]
-                {{
-                    extern \"C\" {{ fn __wasm_call_ctors(); }}
-                    unsafe {{ __wasm_call_ctors() }}
-                }}
+                wit_bindgen::rt::run_ctors_once();
 
             "
         );
