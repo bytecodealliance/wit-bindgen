@@ -12,7 +12,8 @@ macro_rules! codegen_test {
                 $test.as_ref(),
                 |resolve, world, files| {
                     wit_bindgen_c::Opts::default()
-                        .build().generate(resolve, world, files)
+                        .build()
+                        .generate(resolve, world, files)
                 },
                 verify,
             );
