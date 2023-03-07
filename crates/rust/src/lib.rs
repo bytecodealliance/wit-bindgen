@@ -520,8 +520,11 @@ impl InterfaceGenerator<'_> {
                 // https://github.com/bytecodealliance/preview2-prototyping/issues/99
                 // for more details.
 
-                extern \"C\" {{ fn __wasm_call_ctors(); }}
-                unsafe {{ __wasm_call_ctors() }}
+                #[cfg(target_arch=\"wasm32\")]
+                {{
+                    extern \"C\" {{ fn __wasm_call_ctors(); }}
+                    unsafe {{ __wasm_call_ctors() }}
+                }}
 
             "
         );
