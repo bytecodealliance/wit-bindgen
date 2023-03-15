@@ -305,7 +305,7 @@ e.g. Java, Kotlin, Clojure, Scala, etc.
 
 Go code can be compiled for the `wasm32-wasi` target using the [TinyGo](https://tinygo.org/) compiler. For example, the following command compiles `main.go` to a wasm modules with WASI support:
 
-`tinygo build -target -target=wasi main.go`
+`tinygo build -target=wasi main.go`
 
 > Note: the current TinyGo bindgen only supports TinyGo version v0.27.0 or later.
 
@@ -353,9 +353,9 @@ This can then be compiled with `tinygo` and assembled into a component with:
 
 ```sh
 go generate # generate bindings for Go
-tinygo build -target=wasi --out main.wasm my-component.go # compile
-wasm-tools component embed --world world ./wit main.wasm > main.embed.wasm # create a component
-wasm-tools component new main.embed.wasm -o main.component.wasm
+tinygo build -target=wasi -o main.wasm my-component.go # compile
+wasm-tools component embed --world host ./wit main.wasm -o main.embed.wasm # create a component
+wasm-tools component new main.embed.wasm --adapt wasi_snapshot_preview1.wasm -o main.component.wasm 
 wasm-tools validate main.component.wasm --features component-model 
 ```
 
