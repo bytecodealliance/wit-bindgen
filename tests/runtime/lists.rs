@@ -8,7 +8,7 @@ use imports::*;
 #[derive(Default)]
 pub struct MyImports;
 
-impl Imports for MyImports {
+impl Host for MyImports {
     fn empty_list_param(&mut self, a: Vec<u8>) -> Result<()> {
         assert_eq!(a, []);
         Ok(())

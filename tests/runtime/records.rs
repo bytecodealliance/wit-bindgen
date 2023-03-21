@@ -6,7 +6,7 @@ wasmtime::component::bindgen!("world" in "tests/runtime/records");
 #[derive(Default)]
 pub struct MyImports;
 
-impl imports::Imports for MyImports {
+impl imports::Host for MyImports {
     fn multiple_results(&mut self) -> Result<(u8, u16)> {
         Ok((4, 5))
     }

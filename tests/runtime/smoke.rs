@@ -8,7 +8,7 @@ pub struct MyImports {
     hit: bool,
 }
 
-impl imports::Imports for MyImports {
+impl imports::Host for MyImports {
     fn thunk(&mut self) -> Result<()> {
         self.hit = true;
         println!("in the host");
