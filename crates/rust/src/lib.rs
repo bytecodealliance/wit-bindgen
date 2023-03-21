@@ -230,12 +230,7 @@ impl WorldGenerator for RustWasm {
                         #[used]
                         #[doc(hidden)]
                         #[cfg(target_arch = \"wasm32\")]
-                        static __FORCE_SECTION_REF: fn() = __force_section_ref;
-                        #[doc(hidden)]
-                        #[cfg(target_arch = \"wasm32\")]
-                        fn __force_section_ref() {{
-                            {prefix}__link_section()
-                        }}
+                        static __FORCE_SECTION_REF: fn() = {prefix}__link_section;
                     }});
                 ",
                 prefix = self.opts.macro_call_prefix.as_deref().unwrap_or("")
@@ -377,9 +372,14 @@ impl InterfaceGenerator<'_> {
             "
                 #[allow(clippy::all)]
                 pub mod {snake} {{
+                    #[used]
+                    #[doc(hidden)]
+                    #[cfg(target_arch = \"wasm32\")]
+                    static __FORCE_SECTION_REF: fn() = super::__link_section;
+
                     {module}
                 }}
-            "
+            ",
         );
     }
 
