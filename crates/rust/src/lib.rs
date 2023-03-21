@@ -375,7 +375,7 @@ impl InterfaceGenerator<'_> {
                     #[used]
                     #[doc(hidden)]
                     #[cfg(target_arch = \"wasm32\")]
-                    static __FORCE_SECTION_REF: fn() = crate::__link_section;
+                    static __FORCE_SECTION_REF: fn() = super::__link_section;
 
                     {module}
                 }}
