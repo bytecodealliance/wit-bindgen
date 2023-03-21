@@ -9,7 +9,7 @@ pub struct MyImports {
     errored: bool,
 }
 
-impl imports::Imports for MyImports {
+impl imports::Host for MyImports {
     fn f_list_in_record1(&mut self, ty: imports::ListInRecord1Result) -> Result<()> {
         assert_eq!(ty.a, "list_in_record1");
         Ok(())

@@ -6,7 +6,7 @@ wasmtime::component::bindgen!("world" in "tests/runtime/variants");
 #[derive(Default)]
 pub struct MyImports;
 
-impl imports::Imports for MyImports {
+impl imports::Host for MyImports {
     fn roundtrip_option(&mut self, a: Option<f32>) -> anyhow::Result<Option<u8>> {
         Ok(a.map(|x| x as u8))
     }

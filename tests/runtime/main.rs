@@ -24,7 +24,7 @@ wasmtime::component::bindgen!("testwasi" in "crates/wasi_snapshot_preview1/wit")
 #[derive(Default)]
 struct Wasi<T>(T);
 
-impl<T> testwasi::Testwasi for Wasi<T> {
+impl<T> testwasi::Host for Wasi<T> {
     fn log(&mut self, bytes: Vec<u8>) -> Result<()> {
         std::io::stdout().write_all(&bytes)?;
         Ok(())

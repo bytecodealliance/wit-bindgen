@@ -6,7 +6,7 @@ wasmtime::component::bindgen!("world" in "tests/runtime/many_arguments");
 #[derive(Default)]
 pub struct MyImports {}
 
-impl imports::Imports for MyImports {
+impl imports::Host for MyImports {
     fn many_arguments(
         &mut self,
         a1: u64,

@@ -6,7 +6,7 @@ wasmtime::component::bindgen!("world" in "tests/runtime/strings");
 #[derive(Default)]
 pub struct MyImports;
 
-impl imports::Imports for MyImports {
+impl imports::Host for MyImports {
     fn take_basic(&mut self, s: String) -> Result<()> {
         assert_eq!(s, "latin utf16");
         Ok(())

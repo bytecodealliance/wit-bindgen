@@ -8,7 +8,7 @@ pub struct MyImports {
     scalar: u32,
 }
 
-impl imports::Imports for MyImports {
+impl imports::Host for MyImports {
     fn roundtrip_u8(&mut self, val: u8) -> Result<u8> {
         Ok(val)
     }
