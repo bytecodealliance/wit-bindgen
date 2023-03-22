@@ -22,3 +22,4 @@ wit-bindgen-core = { workspace = true }
 wit-bindgen-rust = { workspace = true }
 wit-component = { workspace = true }
 anyhow = { workspace = true }
+toml = "0.7.2"

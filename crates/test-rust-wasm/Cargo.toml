@@ -47,3 +47,7 @@ test = false
 [[bin]]
 name = "results"
 test = false
+
+[[bin]]
+name = "wildcards"
+test = false

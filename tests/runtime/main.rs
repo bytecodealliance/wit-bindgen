@@ -18,6 +18,7 @@ mod smoke;
 mod strings;
 mod unions;
 mod variants;
+mod wildcards;
 
 wasmtime::component::bindgen!("testwasi" in "crates/wasi_snapshot_preview1/wit");
 

@@ -1,0 +1,8 @@
+interface foo {
+    *: func() -> u32
+}
+
+default world wildcards {
+    import imports: self.foo
+    export exports: self.foo
+}
