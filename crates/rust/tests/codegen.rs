@@ -8,6 +8,17 @@ mod codegen_tests {
 
                 #[test]
                 fn works() {}
+
+                mod duplicate {
+                    wit_bindgen::generate!({
+                        world: $name,
+                        path: $test,
+                        duplicate_if_necessary,
+                    });
+
+                    #[test]
+                    fn works() {}
+                }
             }
 
         };
