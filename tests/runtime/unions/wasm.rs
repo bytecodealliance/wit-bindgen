@@ -97,11 +97,11 @@ impl Unions for Component {
 
         // All-Text
         assert!(matches!(
-            replace_first_char(AllTextParam::Char('a'), 'z'),
-            AllTextResult::Char('z')
+            replace_first_char(&AllText::Char('a'), 'z'),
+            AllText::Char('z')
         ));
         assert!(
-            matches!(replace_first_char(AllTextParam::String("abc"), 'z'), AllTextResult::String(r) if r == "zbc")
+            matches!(replace_first_char(&AllText::String("abc".to_string()), 'z'), AllText::String(r) if r == "zbc")
         );
 
         // All-Integers
@@ -120,8 +120,11 @@ impl Unions for Component {
         assert!(matches!(identify_float(AllFloats::F64(0.0)), 1));
 
         // All-Text
-        assert!(matches!(identify_text(AllTextParam::Char('a')), 0));
-        assert!(matches!(identify_text(AllTextParam::String("abc")), 1));
+        assert!(matches!(identify_text(&AllText::Char('a')), 0));
+        assert!(matches!(
+            identify_text(&AllText::String("abc".to_string())),
+            1
+        ));
 
         // Duplicated
         assert!(matches!(
@@ -188,10 +191,10 @@ impl exports::Exports for Component {
         }
     }
 
-    fn replace_first_char(text: AllTextResult, letter: char) -> AllTextResult {
+    fn replace_first_char(text: AllText, letter: char) -> AllText {
         match text {
-            AllTextResult::Char(_c) => AllTextResult::Char(letter),
-            AllTextResult::String(s) => AllTextResult::String(format!("{}{}", letter, &s[1..])),
+            AllText::Char(_c) => AllText::Char(letter),
+            AllText::String(s) => AllText::String(format!("{}{}", letter, &s[1..])),
         }
     }
 
@@ -219,10 +222,10 @@ impl exports::Exports for Component {
         }
     }
 
-    fn identify_text(text: AllTextResult) -> u8 {
+    fn identify_text(text: AllText) -> u8 {
         match text {
-            AllTextResult::Char(_c) => 0,
-            AllTextResult::String(_s) => 1,
+            AllText::Char(_c) => 0,
+            AllText::String(_s) => 1,
         }
     }
 

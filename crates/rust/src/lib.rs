@@ -66,6 +66,12 @@ pub struct Opts {
     /// Names of functions to skip generating bindings for.
     #[cfg_attr(feature = "clap", arg(long))]
     pub skip: Vec<String>,
+
+    /// Whether or not to generate "duplicate" type definitions for a single
+    /// WIT type if necessary, for example if it's used as both an import and an
+    /// export.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub duplicate_if_necessary: bool,
 }
 
 impl Opts {
@@ -399,7 +405,7 @@ impl InterfaceGenerator<'_> {
         self.src.push_str(
             "
                 #[allow(unused_imports)]
-                use wit_bindgen::rt::{{alloc, vec::Vec, string::String}};
+                use wit_bindgen::rt::{alloc, vec::Vec, string::String};
             ",
         );
         self.src.push_str("unsafe {\n");
@@ -615,6 +621,10 @@ impl InterfaceGenerator<'_> {
 impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
     fn resolve(&self) -> &'a Resolve {
         self.resolve
+    }
+
+    fn duplicate_if_necessary(&self) -> bool {
+        self.gen.opts.duplicate_if_necessary
     }
 
     fn path_to_interface(&self, interface: InterfaceId) -> Option<String> {
