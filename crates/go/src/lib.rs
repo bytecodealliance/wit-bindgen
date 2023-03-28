@@ -770,42 +770,6 @@ impl InterfaceGenerator<'_> {
     }
 
     fn print_c_result(&mut self, src: &mut Source, name: &str, param: &Type, in_import: bool) {
-        let prefix = String::new();
-        let mut param_name = String::new();
-        let mut postfix = String::new();
-        if in_import {
-            if self.is_result_ty(param) {
-                // add &err or &ret or both depend on result type
-                match self.extract_result_ty(param) {
-                    (None, None) => {}
-                    (Some(_), Some(_)) => param_name.push_str("&ret, &err"),
-                    (None, Some(_)) => param_name.push_str("&err"),
-                    (Some(_), None) => param_name.push_str("&ret"),
-                };
-                src.push_str(&format!("{prefix}{param_name}{postfix}"));
-                return;
-            }
-        } else if self.is_result_ty(param) {
-            match self.extract_result_ty(param) {
-                (None, None) => (),
-                (None, Some(err)) => {
-                    param_name.push_str("err *");
-                    postfix.push_str(&self.get_c_ty(&err));
-                }
-                (Some(ok), None) => {
-                    param_name.push_str("ret *");
-                    postfix.push_str(&self.get_c_ty(&ok));
-                }
-                (Some(ok), Some(err)) => {
-                    param_name.push_str("ret *");
-                    postfix.push_str(&self.get_c_ty(&ok));
-                    postfix.push_str(", err *");
-                    postfix.push_str(&self.get_c_ty(&err));
-                }
-            };
-            src.push_str(&format!("{prefix}{param_name}{postfix}"));
-            return;
-        }
         self.print_c_param(src, name, param, in_import);
     }
 
@@ -894,12 +858,6 @@ impl InterfaceGenerator<'_> {
             }
             1 => {
                 // one return
-
-                let add_bool_return = |src: &mut Source| {
-                    if !in_import {
-                        src.push_str(" bool");
-                    }
-                };
                 let return_ty = func.results.iter_types().next().unwrap();
                 if is_arg_by_pointer(self.resolve, return_ty) {
                     add_param_seperator(src);
@@ -910,9 +868,6 @@ impl InterfaceGenerator<'_> {
                     if !in_import {
                         src.push_str(&format!(" {ty}", ty = self.get_c_ty(return_ty)));
                     }
-                }
-                if self.is_result_ty(return_ty) || self.extract_option_ty(return_ty).is_some() {
-                    add_bool_return(src);
                 }
             }
             _n => {
@@ -1218,27 +1173,10 @@ impl InterfaceGenerator<'_> {
                             .unwrap_or_else(|| self.get_c_ty(return_ty));
                         self.src.push_str(&format!("var ret {c_ret_type}\n"));
                     } else {
-                        let (ok, err) = self.extract_result_ty(return_ty);
-                        let (ret_name, c_ret_type) = match (ok, err) {
-                            (None, Some(err)) => ("err", self.get_c_ty(&err)),
-                            (Some(ok), None) => ("ret", self.get_c_ty(&ok)),
-                            (Some(ok), Some(err)) => {
-                                let c_err_type = self.get_c_ty(&err);
-                                self.src.push_str(&format!("var err {c_err_type}\n"));
-                                ("ret", self.get_c_ty(&ok))
-                            }
-                            _ => ("", "void".into()),
-                        };
-                        if c_ret_type != *"void" {
-                            self.src.push_str(&format!("var {ret_name} {c_ret_type}\n"));
-                        }
-                    };
-                    // if return type is result, it has a boolean return value
-                    if self.is_result_ty(return_ty) {
-                        self.src.push_str(&format!("is_ret_ok := {invoke}\n"));
-                    } else {
-                        self.src.push_str(&invoke);
+                        let c_ret_type = self.get_c_ty(return_ty);
+                        self.src.push_str(&format!("var ret {c_ret_type}\n"));
                     }
+                    self.src.push_str(&invoke);
                     self.src.push_str("\n");
                 } else {
                     self.src.push_str(&format!("ret := {invoke}\n"));
@@ -1880,28 +1818,17 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     TypeDefKind::Result(_) => {
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
                         self.interface.gen.needs_import_unsafe = true;
-                        if !flatten_result {
-                            // import
-                            uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
-                            uwriteln!(self.lower_src, "{lower_name}.is_err = {param}.IsErr()");
-                            let inner_name = format!("&{lower_name}.val");
-                            self.lower_result_value(
-                                param,
-                                &Type::Id(*id),
-                                lower_name,
-                                &inner_name,
-                                &inner_name,
-                            );
-                        } else {
-                            self.lower_result_value(
-                                param,
-                                &Type::Id(*id),
-                                lower_name,
-                                "ret",
-                                "err",
-                            );
-                            self.lower_src.push_str("return result.IsOk()");
-                        }
+
+                        uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
+                        uwriteln!(self.lower_src, "{lower_name}.is_err = {param}.IsErr()");
+                        let inner_name = format!("&{lower_name}.val");
+                        self.lower_result_value(
+                            param,
+                            &Type::Id(*id),
+                            lower_name,
+                            &inner_name,
+                            &inner_name,
+                        );
                     }
                     TypeDefKind::List(l) => {
                         self.interface.gen.needs_import_unsafe = true;
@@ -2196,71 +2123,43 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let ty = self.interface.get_ty(&Type::Id(*id));
                         uwriteln!(self.lift_src, "var {lift_name} {ty}");
                         let (ok, err) = self.interface.extract_result_ty(&Type::Id(*id));
-                        if in_export || count > 0 {
-                            // normal result route
-                            uwriteln!(self.lift_src, "if {param}.is_err {{");
-                            if let Some(err_inner) = err {
-                                let err_inner_name = self.interface.get_c_ty(&err_inner);
-                                if !is_empty_type(self.interface.resolve, &err_inner) {
-                                    uwriteln!(self.lift_src, "{lift_name}_ptr := *(*{err_inner_name})(unsafe.Pointer(&{param}.val))");
-                                }
-                                self.lift_value(
-                                    &format!("{lift_name}_ptr"),
-                                    &err_inner,
-                                    &format!("{lift_name}_val"),
-                                    false,
-                                    count + 1,
-                                    in_export,
-                                );
-                                uwriteln!(self.lift_src, "{lift_name}.SetErr({lift_name}_val)")
-                            } else {
-                                uwriteln!(self.lift_src, "{lift_name}.SetErr(struct{{}}{{}})")
+
+                        // normal result route
+                        uwriteln!(self.lift_src, "if {param}.is_err {{");
+                        if let Some(err_inner) = err {
+                            let err_inner_name = self.interface.get_c_ty(&err_inner);
+                            if !is_empty_type(self.interface.resolve, &err_inner) {
+                                uwriteln!(self.lift_src, "{lift_name}_ptr := *(*{err_inner_name})(unsafe.Pointer(&{param}.val))");
                             }
-                            uwriteln!(self.lift_src, "}} else {{");
-                            if let Some(ok_inner) = ok {
-                                let ok_inner_name = self.interface.get_c_ty(&ok_inner);
-                                if !is_empty_type(self.interface.resolve, &ok_inner) {
-                                    uwriteln!(self.lift_src, "{lift_name}_ptr := *(*{ok_inner_name})(unsafe.Pointer(&{param}.val))");
-                                }
-                                self.lift_value(
-                                    &format!("{lift_name}_ptr"),
-                                    &ok_inner,
-                                    &format!("{lift_name}_val"),
-                                    false,
-                                    count + 1,
-                                    in_export,
-                                );
-                                uwriteln!(self.lift_src, "{lift_name}.Set({lift_name}_val)")
-                            }
-                            uwriteln!(self.lift_src, "}}");
+                            self.lift_value(
+                                &format!("{lift_name}_ptr"),
+                                &err_inner,
+                                &format!("{lift_name}_val"),
+                                false,
+                                count + 1,
+                                in_export,
+                            );
+                            uwriteln!(self.lift_src, "{lift_name}.SetErr({lift_name}_val)")
                         } else {
-                            // flattened result route
-                            uwriteln!(self.lift_src, "if !is_ret_ok {{");
-                            if let Some(err_inner) = err {
-                                self.lift_value(
-                                    "err",
-                                    &err_inner,
-                                    &format!("{lift_name}_val"),
-                                    false,
-                                    count + 1,
-                                    in_export,
-                                );
-                                uwriteln!(self.lift_src, "{lift_name}.SetErr({lift_name}_val)")
-                            }
-                            uwriteln!(self.lift_src, "}} else {{");
-                            if let Some(ok_inner) = ok {
-                                self.lift_value(
-                                    "ret",
-                                    &ok_inner,
-                                    &format!("{lift_name}_val"),
-                                    false,
-                                    count + 1,
-                                    in_export,
-                                );
-                                uwriteln!(self.lift_src, "{lift_name}.Set({lift_name}_val)")
-                            }
-                            uwriteln!(self.lift_src, "}}");
+                            uwriteln!(self.lift_src, "{lift_name}.SetErr(struct{{}}{{}})")
                         }
+                        uwriteln!(self.lift_src, "}} else {{");
+                        if let Some(ok_inner) = ok {
+                            let ok_inner_name = self.interface.get_c_ty(&ok_inner);
+                            if !is_empty_type(self.interface.resolve, &ok_inner) {
+                                uwriteln!(self.lift_src, "{lift_name}_ptr := *(*{ok_inner_name})(unsafe.Pointer(&{param}.val))");
+                            }
+                            self.lift_value(
+                                &format!("{lift_name}_ptr"),
+                                &ok_inner,
+                                &format!("{lift_name}_val"),
+                                false,
+                                count + 1,
+                                in_export,
+                            );
+                            uwriteln!(self.lift_src, "{lift_name}.Set({lift_name}_val)")
+                        }
+                        uwriteln!(self.lift_src, "}}");
                     }
                     TypeDefKind::List(l) => {
                         self.interface.gen.needs_import_unsafe = true;
