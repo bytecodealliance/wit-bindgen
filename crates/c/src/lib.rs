@@ -784,23 +784,25 @@ impl InterfaceGenerator<'_> {
         // construct optional adapters from maybe pointers to real optional
         // structs internally
         let mut optional_adapters = String::from("");
-        for (i, (_, param)) in c_sig.params.iter().enumerate() {
-            let ty = &func.params[i].1;
-            if let Type::Id(id) = ty {
-                if let TypeDefKind::Option(option_ty) = &self.resolve.types[*id].kind {
-                    let ty = self.type_string(ty);
-                    uwrite!(
-                        optional_adapters,
-                        "{ty} {param};
-                        {param}.is_some = maybe_{param} != NULL;"
-                    );
-                    if !is_empty_type(self.resolve, option_ty) {
-                        uwriteln!(
+        if self.gen.opts.no_sig_flattening {
+            for (i, (_, param)) in c_sig.params.iter().enumerate() {
+                let ty = &func.params[i].1;
+                if let Type::Id(id) = ty {
+                    if let TypeDefKind::Option(option_ty) = &self.resolve.types[*id].kind {
+                        let ty = self.type_string(ty);
+                        uwrite!(
                             optional_adapters,
-                            "if (maybe_{param}) {{
-                                {param}.val = *maybe_{param};
-                            }}",
+                            "{ty} {param};
+                            {param}.is_some = maybe_{param} != NULL;"
                         );
+                        if !is_empty_type(self.resolve, option_ty) {
+                            uwriteln!(
+                                optional_adapters,
+                                "if (maybe_{param}) {{
+                                    {param}.val = *maybe_{param};
+                                }}",
+                            );
+                        }
                     }
                 }
             }
@@ -1012,7 +1014,11 @@ impl InterfaceGenerator<'_> {
             // optional param pointer sig_flattening
             let optional_type = if let Type::Id(id) = ty {
                 if let TypeDefKind::Option(option_ty) = &self.resolve.types[*id].kind {
-                    Some(option_ty)
+                    if sig_flattening {
+                        Some(option_ty)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
