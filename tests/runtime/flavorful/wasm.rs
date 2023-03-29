@@ -12,32 +12,35 @@ impl Flavorful for Component {
 
         let _guard = test_rust_wasm::guard();
 
-        f_list_in_record1(ListInRecord1Param {
-            a: "list_in_record1",
+        f_list_in_record1(&ListInRecord1 {
+            a: "list_in_record1".to_string(),
         });
         assert_eq!(f_list_in_record2().a, "list_in_record2");
 
         assert_eq!(
-            f_list_in_record3(ListInRecord3Param {
-                a: "list_in_record3 input"
+            f_list_in_record3(&ListInRecord3 {
+                a: "list_in_record3 input".to_string()
             })
             .a,
             "list_in_record3 output"
         );
 
         assert_eq!(
-            f_list_in_record4(ListInAliasParam { a: "input4" }).a,
+            f_list_in_record4(&ListInAlias {
+                a: "input4".to_string()
+            })
+            .a,
             "result4"
         );
 
         f_list_in_variant1(
-            Some("foo"),
-            Err("bar"),
-            ListInVariant1V3Param::String("baz"),
+            &Some("foo".to_string()),
+            &Err("bar".to_string()),
+            &ListInVariant1V3::String("baz".to_string()),
         );
         assert_eq!(f_list_in_variant2(), Some("list_in_variant2".to_string()));
         assert_eq!(
-            f_list_in_variant3(Some("input3")),
+            f_list_in_variant3(&Some("input3".to_string())),
             Some("output3".to_string())
         );
 
@@ -49,7 +52,7 @@ impl Flavorful for Component {
 
         assert!(errno_result().is_ok());
 
-        let (a, b) = list_typedefs("typedef1", &["typedef2"]);
+        let (a, b) = list_typedefs(&"typedef1".to_string(), &vec!["typedef2".to_string()]);
         assert_eq!(a, b"typedef3");
         assert_eq!(b.len(), 1);
         assert_eq!(b[0], "typedef4");
@@ -66,7 +69,7 @@ impl Flavorful for Component {
 }
 
 impl exports::Exports for Component {
-    fn f_list_in_record1(ty: ListInRecord1Result) {
+    fn f_list_in_record1(ty: ListInRecord1) {
         assert_eq!(ty.a, "list_in_record1");
     }
 
@@ -76,30 +79,26 @@ impl exports::Exports for Component {
         }
     }
 
-    fn f_list_in_record3(a: ListInRecord3Result) -> ListInRecord3Result {
+    fn f_list_in_record3(a: ListInRecord3) -> ListInRecord3 {
         assert_eq!(a.a, "list_in_record3 input");
-        ListInRecord3Result {
+        ListInRecord3 {
             a: "list_in_record3 output".to_string(),
         }
     }
 
-    fn f_list_in_record4(a: ListInAliasResult) -> ListInAliasResult {
+    fn f_list_in_record4(a: ListInAlias) -> ListInAlias {
         assert_eq!(a.a, "input4");
-        ListInRecord4Result {
+        ListInRecord4 {
             a: "result4".to_string(),
         }
     }
 
-    fn f_list_in_variant1(
-        a: ListInVariant1V1Result,
-        b: ListInVariant1V2Result,
-        c: ListInVariant1V3Result,
-    ) {
+    fn f_list_in_variant1(a: ListInVariant1V1, b: ListInVariant1V2, c: ListInVariant1V3) {
         assert_eq!(a.unwrap(), "foo");
         assert_eq!(b.unwrap_err(), "bar");
         match c {
-            ListInVariant1V3Result::String(s) => assert_eq!(s, "baz"),
-            ListInVariant1V3Result::F32(_) => panic!(),
+            ListInVariant1V3::String(s) => assert_eq!(s, "baz"),
+            ListInVariant1V3::F32(_) => panic!(),
         }
     }
 
@@ -107,7 +106,7 @@ impl exports::Exports for Component {
         Some("list_in_variant2".to_string())
     }
 
-    fn f_list_in_variant3(a: ListInVariant3Result) -> Option<String> {
+    fn f_list_in_variant3(a: ListInVariant3) -> Option<String> {
         assert_eq!(a.unwrap(), "input3");
         Some("output3".to_string())
     }
@@ -120,10 +119,7 @@ impl exports::Exports for Component {
         Err(MyErrno::B)
     }
 
-    fn list_typedefs(
-        a: ListTypedefResult,
-        b: ListTypedef3Result,
-    ) -> (ListTypedef2, ListTypedef3Result) {
+    fn list_typedefs(a: ListTypedef, b: ListTypedef3) -> (ListTypedef2, ListTypedef3) {
         assert_eq!(a, "typedef1");
         assert_eq!(b.len(), 1);
         assert_eq!(b[0], "typedef2");

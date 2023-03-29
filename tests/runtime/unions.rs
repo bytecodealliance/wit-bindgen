@@ -6,7 +6,7 @@ wasmtime::component::bindgen!("world" in "tests/runtime/unions");
 #[derive(Default)]
 pub struct MyImports;
 
-impl imports::Imports for MyImports {
+impl imports::Host for MyImports {
     fn add_one_integer(&mut self, num: imports::AllIntegers) -> Result<imports::AllIntegers> {
         use imports::AllIntegers;
         Ok(match num {

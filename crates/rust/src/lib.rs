@@ -66,6 +66,12 @@ pub struct Opts {
     /// Names of functions to skip generating bindings for.
     #[cfg_attr(feature = "clap", arg(long))]
     pub skip: Vec<String>,
+
+    /// Whether or not to generate "duplicate" type definitions for a single
+    /// WIT type if necessary, for example if it's used as both an import and an
+    /// export.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub duplicate_if_necessary: bool,
 }
 
 impl Opts {
@@ -230,12 +236,7 @@ impl WorldGenerator for RustWasm {
                         #[used]
                         #[doc(hidden)]
                         #[cfg(target_arch = \"wasm32\")]
-                        static __FORCE_SECTION_REF: fn() = __force_section_ref;
-                        #[doc(hidden)]
-                        #[cfg(target_arch = \"wasm32\")]
-                        fn __force_section_ref() {{
-                            {prefix}__link_section()
-                        }}
+                        static __FORCE_SECTION_REF: fn() = {prefix}__link_section;
                     }});
                 ",
                 prefix = self.opts.macro_call_prefix.as_deref().unwrap_or("")
@@ -377,9 +378,14 @@ impl InterfaceGenerator<'_> {
             "
                 #[allow(clippy::all)]
                 pub mod {snake} {{
+                    #[used]
+                    #[doc(hidden)]
+                    #[cfg(target_arch = \"wasm32\")]
+                    static __FORCE_SECTION_REF: fn() = super::__link_section;
+
                     {module}
                 }}
-            "
+            ",
         );
     }
 
@@ -399,7 +405,7 @@ impl InterfaceGenerator<'_> {
         self.src.push_str(
             "
                 #[allow(unused_imports)]
-                use wit_bindgen::rt::{{alloc, vec::Vec, string::String}};
+                use wit_bindgen::rt::{alloc, vec::Vec, string::String};
             ",
         );
         self.src.push_str("unsafe {\n");
@@ -509,6 +515,21 @@ impl InterfaceGenerator<'_> {
             "
                 #[allow(unused_imports)]
                 use wit_bindgen::rt::{{alloc, vec::Vec, string::String}};
+
+                // Before executing any other code, use this function to run all static
+                // constructors, if they have not yet been run. This is a hack required
+                // to work around wasi-libc ctors calling import functions to initialize
+                // the environment.
+                //
+                // This functionality will be removed once rust 1.69.0 is stable, at which
+                // point wasi-libc will no longer have this behavior.
+                //
+                // See
+                // https://github.com/bytecodealliance/preview2-prototyping/issues/99
+                // for more details.
+                #[cfg(target_arch=\"wasm32\")]
+                wit_bindgen::rt::run_ctors_once();
+
             "
         );
 
@@ -600,6 +621,10 @@ impl InterfaceGenerator<'_> {
 impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
     fn resolve(&self) -> &'a Resolve {
         self.resolve
+    }
+
+    fn duplicate_if_necessary(&self) -> bool {
+        self.gen.opts.duplicate_if_necessary
     }
 
     fn path_to_interface(&self, interface: InterfaceId) -> Option<String> {

@@ -1,0 +1,18 @@
+// ./wit/issue.wit
+default world issue {
+    union union-list-u8 {
+        list<u8>,
+    }
+
+    record record-tuple-u8 {
+        field: tuple<u8>,
+    }
+
+    variant variant-list-tuple-bool {
+        field(list<tuple<bool>>),
+    }
+
+    import func-using-list-u8-in-args: func(body: list<u8>) -> ()
+    export func-using-tuple-u8-in-return: func() -> tuple<u8>
+    export func-using-list-tuple-bool-in-return: func() -> list<tuple<bool>>
+}

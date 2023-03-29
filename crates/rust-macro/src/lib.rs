@@ -60,6 +60,7 @@ impl Parse for Config {
                     Opt::UseStdFeature => opts.std_feature = true,
                     Opt::RawStrings => opts.raw_strings = true,
                     Opt::MacroExport => opts.macro_export = true,
+                    Opt::DuplicateIfNecessary => opts.duplicate_if_necessary = true,
                     Opt::MacroCallPrefix(prefix) => opts.macro_call_prefix = Some(prefix.value()),
                     Opt::ExportMacroName(name) => opts.export_macro_name = Some(name.value()),
                     Opt::Skip(list) => opts.skip.extend(list.iter().map(|i| i.value())),
@@ -146,6 +147,7 @@ mod kw {
     syn::custom_keyword!(world);
     syn::custom_keyword!(path);
     syn::custom_keyword!(inline);
+    syn::custom_keyword!(duplicate_if_necessary);
 }
 
 enum Opt {
@@ -158,6 +160,7 @@ enum Opt {
     MacroCallPrefix(syn::LitStr),
     ExportMacroName(syn::LitStr),
     Skip(Vec<syn::LitStr>),
+    DuplicateIfNecessary,
 }
 
 impl Parse for Opt {
@@ -184,6 +187,9 @@ impl Parse for Opt {
         } else if l.peek(kw::macro_export) {
             input.parse::<kw::macro_export>()?;
             Ok(Opt::MacroExport)
+        } else if l.peek(kw::duplicate_if_necessary) {
+            input.parse::<kw::duplicate_if_necessary>()?;
+            Ok(Opt::DuplicateIfNecessary)
         } else if l.peek(kw::macro_call_prefix) {
             input.parse::<kw::macro_call_prefix>()?;
             input.parse::<Token![:]>()?;

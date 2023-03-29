@@ -23,7 +23,36 @@ struct C {
     needs_string: bool,
     world: String,
     sizes: SizeAlign,
+
+    // Known names for interfaces as they're seen in imports and exports.
+    //
+    // This is subsequently used to generate a namespace for each type that's
+    // used, but only in the case that the interface itself doesn't already have
+    // an original name.
     interface_names: HashMap<InterfaceId, String>,
+
+    // Interfaces who have had their types printed.
+    //
+    // This is used to guard against printing the types for an interface twice.
+    // The same interface can be both imported and exported in which case only
+    // one set of types is generated and all bindings for both imports and
+    // exports use that set of types.
+    interfaces_with_types_printed: HashSet<InterfaceId>,
+
+    // Type definitions for the given `TypeId`. This is printed topologically
+    // at the end.
+    types: HashMap<TypeId, wit_bindgen_core::Source>,
+
+    // The set of types that are considered public (aka need to be in the
+    // header file) which are anonymous and we're effectively monomorphizing.
+    // This is discovered lazily when printing type names.
+    public_anonymous_types: BTreeSet<TypeId>,
+
+    // This is similar to `public_anonymous_types` where it's discovered
+    // lazily, but the set here are for private types only used in the
+    // implementation of functions. These types go in the implementation file,
+    // not the header file.
+    private_anonymous_types: BTreeSet<TypeId>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -86,18 +115,18 @@ impl WorldGenerator for C {
     ) {
         let prev = self.interface_names.insert(id, name.to_string());
         assert!(prev.is_none());
-        let mut gen = self.interface(name, resolve, true);
+        let mut gen = self.interface(resolve, true);
         gen.interface = Some(id);
-        gen.types(id);
+        if gen.gen.interfaces_with_types_printed.insert(id) {
+            gen.types(id);
+        }
 
         for (i, (_name, func)) in resolve.interfaces[id].functions.iter().enumerate() {
             if i == 0 {
                 uwriteln!(gen.src.h_fns, "\n// Imported Functions from `{name}`");
             }
-            gen.import(name, func);
+            gen.import(Some(name), func);
         }
-
-        gen.finish();
 
         gen.gen.src.append(&gen.src);
     }
@@ -110,16 +139,14 @@ impl WorldGenerator for C {
         _files: &mut Files,
     ) {
         let name = &resolve.worlds[world].name;
-        let mut gen = self.interface(name, resolve, true);
+        let mut gen = self.interface(resolve, true);
 
         for (i, (_name, func)) in funcs.iter().enumerate() {
             if i == 0 {
                 uwriteln!(gen.src.h_fns, "\n// Imported Functions from `{name}`");
             }
-            gen.import("$root", func);
+            gen.import(None, func);
         }
-
-        gen.finish();
 
         gen.gen.src.append(&gen.src);
     }
@@ -132,9 +159,11 @@ impl WorldGenerator for C {
         _files: &mut Files,
     ) {
         self.interface_names.insert(id, name.to_string());
-        let mut gen = self.interface(name, resolve, false);
+        let mut gen = self.interface(resolve, false);
         gen.interface = Some(id);
-        gen.types(id);
+        if gen.gen.interfaces_with_types_printed.insert(id) {
+            gen.types(id);
+        }
 
         for (i, (_name, func)) in resolve.interfaces[id].functions.iter().enumerate() {
             if i == 0 {
@@ -142,8 +171,6 @@ impl WorldGenerator for C {
             }
             gen.export(func, Some(name));
         }
-
-        gen.finish();
 
         gen.gen.src.append(&gen.src);
     }
@@ -156,7 +183,7 @@ impl WorldGenerator for C {
         _files: &mut Files,
     ) {
         let name = &resolve.worlds[world].name;
-        let mut gen = self.interface(name, resolve, false);
+        let mut gen = self.interface(resolve, false);
 
         for (i, (_name, func)) in funcs.iter().enumerate() {
             if i == 0 {
@@ -165,28 +192,25 @@ impl WorldGenerator for C {
             gen.export(func, None);
         }
 
-        gen.finish();
-
         gen.gen.src.append(&gen.src);
     }
 
     fn export_types(
         &mut self,
         resolve: &Resolve,
-        world: WorldId,
+        _world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let name = &resolve.worlds[world].name;
-        let mut gen = self.interface(name, resolve, false);
+        let mut gen = self.interface(resolve, false);
         for (name, id) in types {
             gen.define_type(name, *id);
         }
-        gen.finish();
         gen.gen.src.append(&gen.src);
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
+        self.finish_types(resolve);
         let world = &resolve.worlds[id];
         let linking_symbol = component_type_object::linking_symbol(&world.name);
         self.include("<stdlib.h>");
@@ -371,19 +395,14 @@ impl WorldGenerator for C {
 impl C {
     fn interface<'a>(
         &'a mut self,
-        name: &'a str,
         resolve: &'a Resolve,
         in_import: bool,
     ) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
-            name,
             src: Source::default(),
             gen: self,
             resolve,
             interface: None,
-            public_anonymous_types: Default::default(),
-            private_anonymous_types: Default::default(),
-            types: Default::default(),
             in_import,
         }
     }
@@ -399,30 +418,345 @@ impl C {
             StringEncoding::CompactUTF16 => panic!("Compact UTF16 unsupported"),
         }
     }
+
+    fn finish_types(&mut self, resolve: &Resolve) {
+        // Continuously generate anonymous types while we continue to find more
+        //
+        // First we take care of the public set of anonymous types. This will
+        // iteratively print them and also remove any references from the
+        // private set if we happen to also reference them.
+        while !self.public_anonymous_types.is_empty() {
+            for ty in mem::take(&mut self.public_anonymous_types) {
+                self.print_anonymous_type(resolve, ty);
+            }
+        }
+
+        // Next we take care of private types. To do this we have basically the
+        // same loop as above, after we switch the sets. We record, however,
+        // all private types in a local set here to later determine if the type
+        // needs to be in the C file or the H file.
+        //
+        // Note though that we don't re-print a type (and consider it private)
+        // if we already printed it above as part of the public set.
+        let mut private_types = HashSet::new();
+        self.public_anonymous_types = mem::take(&mut self.private_anonymous_types);
+        while !self.public_anonymous_types.is_empty() {
+            for ty in mem::take(&mut self.public_anonymous_types) {
+                if self.types.contains_key(&ty) {
+                    continue;
+                }
+                private_types.insert(ty);
+                self.print_anonymous_type(resolve, ty);
+            }
+        }
+
+        for (id, _) in resolve.types.iter() {
+            if let Some(ty) = self.types.get(&id) {
+                if private_types.contains(&id) {
+                    // It's private; print it in the .c file.
+                    self.src.c_defs(ty);
+                } else {
+                    // It's public; print it in the .h file.
+                    self.src.h_defs(ty);
+                    self.print_dtor(resolve, id);
+                }
+            }
+        }
+    }
+
+    fn print_anonymous_type(&mut self, resolve: &Resolve, ty: TypeId) {
+        let prev = mem::take(&mut self.src.h_defs);
+        self.src.h_defs("\ntypedef ");
+        let kind = &resolve.types[ty].kind;
+        match kind {
+            TypeDefKind::Type(_)
+            | TypeDefKind::Flags(_)
+            | TypeDefKind::Record(_)
+            | TypeDefKind::Enum(_)
+            | TypeDefKind::Variant(_)
+            | TypeDefKind::Union(_) => {
+                unreachable!()
+            }
+            TypeDefKind::Tuple(t) => {
+                self.src.h_defs("struct {\n");
+                for (i, t) in t.types.iter().enumerate() {
+                    let ty = self.type_name(resolve, t);
+                    uwriteln!(self.src.h_defs, "{ty} f{i};");
+                }
+                self.src.h_defs("}");
+            }
+            TypeDefKind::Option(t) => {
+                self.src.h_defs("struct {\n");
+                self.src.h_defs("bool is_some;\n");
+                if !is_empty_type(resolve, t) {
+                    let ty = self.type_name(resolve, t);
+                    uwriteln!(self.src.h_defs, "{ty} val;");
+                }
+                self.src.h_defs("}");
+            }
+            TypeDefKind::Result(r) => {
+                self.src.h_defs(
+                    "struct {
+                    bool is_err;
+                    union {
+                ",
+                );
+                if let Some(ok) = get_nonempty_type(resolve, r.ok.as_ref()) {
+                    let ty = self.type_name(resolve, ok);
+                    uwriteln!(self.src.h_defs, "{ty} ok;");
+                }
+                if let Some(err) = get_nonempty_type(resolve, r.err.as_ref()) {
+                    let ty = self.type_name(resolve, err);
+                    uwriteln!(self.src.h_defs, "{ty} err;");
+                }
+                self.src.h_defs("} val;\n");
+                self.src.h_defs("}");
+            }
+            TypeDefKind::List(t) => {
+                self.src.h_defs("struct {\n");
+                let ty = self.type_name(resolve, t);
+                uwriteln!(self.src.h_defs, "{ty} *ptr;");
+                self.src.h_defs("size_t len;\n");
+                self.src.h_defs("}");
+            }
+            TypeDefKind::Future(_) => todo!("print_anonymous_type for future"),
+            TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
+            TypeDefKind::Unknown => unreachable!(),
+        }
+        self.src.h_defs(" ");
+        let ns = self.owner_namespace(resolve, ty);
+        self.src.h_defs(&ns);
+        self.src.h_defs("_");
+        self.src.h_defs.print_ty_name(resolve, &Type::Id(ty));
+        self.src.h_defs("_t;\n");
+        let type_source = mem::replace(&mut self.src.h_defs, prev);
+        self.types.insert(ty, type_source);
+    }
+
+    fn print_dtor(&mut self, resolve: &Resolve, id: TypeId) {
+        let ty = Type::Id(id);
+        if !owns_anything(resolve, &ty) {
+            return;
+        }
+        let pos = self.src.h_helpers.len();
+        self.src.h_helpers("\nvoid ");
+        let ns = self.owner_namespace(resolve, id);
+        self.src.h_helpers(&ns);
+        self.src.h_helpers("_");
+        self.src.h_helpers.print_ty_name(resolve, &ty);
+        self.src.h_helpers("_free(");
+        self.src.h_helpers(&ns);
+        self.src.h_helpers("_");
+        self.src.h_helpers.print_ty_name(resolve, &ty);
+        self.src.h_helpers("_t *ptr)");
+
+        self.src.c_helpers(&self.src.h_helpers[pos..].to_string());
+        self.src.h_helpers(";");
+        self.src.c_helpers(" {\n");
+        match &resolve.types[id].kind {
+            TypeDefKind::Type(t) => self.free(resolve, t, "ptr"),
+
+            TypeDefKind::Flags(_) => {}
+            TypeDefKind::Enum(_) => {}
+
+            TypeDefKind::Record(r) => {
+                for field in r.fields.iter() {
+                    if !owns_anything(resolve, &field.ty) {
+                        continue;
+                    }
+                    self.free(
+                        resolve,
+                        &field.ty,
+                        &format!("&ptr->{}", to_c_ident(&field.name)),
+                    );
+                }
+            }
+
+            TypeDefKind::Tuple(t) => {
+                for (i, ty) in t.types.iter().enumerate() {
+                    if !owns_anything(resolve, ty) {
+                        continue;
+                    }
+                    self.free(resolve, ty, &format!("&ptr->f{i}"));
+                }
+            }
+
+            TypeDefKind::List(t) => {
+                if owns_anything(resolve, t) {
+                    self.src
+                        .c_helpers("for (size_t i = 0; i < ptr->len; i++) {\n");
+                    self.free(resolve, t, "&ptr->ptr[i]");
+                    self.src.c_helpers("}\n");
+                }
+                uwriteln!(self.src.c_helpers, "if (ptr->len > 0) {{");
+                uwriteln!(self.src.c_helpers, "free(ptr->ptr);");
+                uwriteln!(self.src.c_helpers, "}}");
+            }
+
+            TypeDefKind::Variant(v) => {
+                self.src.c_helpers("switch ((int32_t) ptr->tag) {\n");
+                for (i, case) in v.cases.iter().enumerate() {
+                    if let Some(ty) = &case.ty {
+                        if !owns_anything(resolve, ty) {
+                            continue;
+                        }
+                        uwriteln!(self.src.c_helpers, "case {}: {{", i);
+                        let expr = format!("&ptr->val.{}", to_c_ident(&case.name));
+                        if let Some(ty) = &case.ty {
+                            self.free(resolve, ty, &expr);
+                        }
+                        self.src.c_helpers("break;\n");
+                        self.src.c_helpers("}\n");
+                    }
+                }
+                self.src.c_helpers("}\n");
+            }
+
+            TypeDefKind::Union(u) => {
+                self.src.c_helpers("switch ((int32_t) ptr->tag) {\n");
+                for (i, case) in u.cases.iter().enumerate() {
+                    if !owns_anything(resolve, &case.ty) {
+                        continue;
+                    }
+                    uwriteln!(self.src.c_helpers, "case {i}: {{");
+                    let expr = format!("&ptr->val.f{i}");
+                    self.free(resolve, &case.ty, &expr);
+                    self.src.c_helpers("break;\n");
+                    self.src.c_helpers("}\n");
+                }
+                self.src.c_helpers("}\n");
+            }
+
+            TypeDefKind::Option(t) => {
+                self.src.c_helpers("if (ptr->is_some) {\n");
+                self.free(resolve, t, "&ptr->val");
+                self.src.c_helpers("}\n");
+            }
+
+            TypeDefKind::Result(r) => {
+                self.src.c_helpers("if (!ptr->is_err) {\n");
+                if let Some(ok) = &r.ok {
+                    if owns_anything(resolve, ok) {
+                        self.free(resolve, ok, "&ptr->val.ok");
+                    }
+                }
+                if let Some(err) = &r.err {
+                    if owns_anything(resolve, err) {
+                        self.src.c_helpers("} else {\n");
+                        self.free(resolve, err, "&ptr->val.err");
+                    }
+                }
+                self.src.c_helpers("}\n");
+            }
+            TypeDefKind::Future(_) => todo!("print_dtor for future"),
+            TypeDefKind::Stream(_) => todo!("print_dtor for stream"),
+            TypeDefKind::Unknown => unreachable!(),
+        }
+        self.src.c_helpers("}\n");
+    }
+
+    fn free(&mut self, resolve: &Resolve, ty: &Type, expr: &str) {
+        let prev = mem::take(&mut self.src.h_helpers);
+        match ty {
+            Type::Id(id) => {
+                let ns = self.owner_namespace(resolve, *id);
+                self.src.h_helpers(&ns);
+            }
+            _ => {
+                self.src.h_helpers(&self.world.to_snake_case());
+            }
+        }
+        self.src.h_helpers("_");
+        self.src.h_helpers.print_ty_name(resolve, ty);
+        let name = mem::replace(&mut self.src.h_helpers, prev);
+
+        self.src.c_helpers(&name);
+        self.src.c_helpers("_free(");
+        self.src.c_helpers(expr);
+        self.src.c_helpers(");\n");
+    }
+
+    fn owner_namespace(&mut self, resolve: &Resolve, id: TypeId) -> String {
+        let ty = &resolve.types[id];
+        match ty.owner {
+            // If this type belongs to an interface, then use that interface's
+            // original name if it's listed in the source. Otherwise if it's an
+            // "anonymous" interface as part of a world use the name of the
+            // import/export in the world which would have been stored in
+            // `interface_names`.
+            TypeOwner::Interface(owner) => resolve.interfaces[owner]
+                .name
+                .as_ref()
+                .map(|s| s.to_snake_case())
+                .unwrap_or_else(|| self.interface_names[&owner].to_snake_case()),
+
+            TypeOwner::World(owner) => resolve.worlds[owner].name.to_snake_case(),
+
+            // Namespace everything else under the "default" world being
+            // generated to avoid putting too much into the root namespace in C.
+            TypeOwner::None => self.world.to_snake_case(),
+        }
+    }
+
+    fn type_name(&mut self, resolve: &Resolve, ty: &Type) -> String {
+        let mut name = String::new();
+        self.push_type_name(resolve, ty, &mut name);
+        name
+    }
+
+    fn push_type_name(&mut self, resolve: &Resolve, ty: &Type, dst: &mut String) {
+        match ty {
+            Type::Bool => dst.push_str("bool"),
+            Type::Char => dst.push_str("uint32_t"), // TODO: better type?
+            Type::U8 => dst.push_str("uint8_t"),
+            Type::S8 => dst.push_str("int8_t"),
+            Type::U16 => dst.push_str("uint16_t"),
+            Type::S16 => dst.push_str("int16_t"),
+            Type::U32 => dst.push_str("uint32_t"),
+            Type::S32 => dst.push_str("int32_t"),
+            Type::U64 => dst.push_str("uint64_t"),
+            Type::S64 => dst.push_str("int64_t"),
+            Type::Float32 => dst.push_str("float"),
+            Type::Float64 => dst.push_str("double"),
+            Type::String => {
+                dst.push_str(&self.world.to_snake_case());
+                dst.push_str("_");
+                dst.push_str("string_t");
+                self.needs_string = true;
+            }
+            Type::Id(id) => {
+                let ty = &resolve.types[*id];
+                let ns = self.owner_namespace(resolve, *id);
+                match &ty.name {
+                    Some(name) => {
+                        dst.push_str(&ns);
+                        dst.push_str("_");
+                        dst.push_str(&name.to_snake_case());
+                        dst.push_str("_t");
+                    }
+                    None => match &ty.kind {
+                        TypeDefKind::Type(t) => self.push_type_name(resolve, t, dst),
+                        _ => {
+                            self.public_anonymous_types.insert(*id);
+                            self.private_anonymous_types.remove(id);
+                            dst.push_str(&ns);
+                            dst.push_str("_");
+                            push_ty_name(resolve, &Type::Id(*id), dst);
+                            dst.push_str("_t");
+                        }
+                    },
+                }
+            }
+        }
+    }
 }
 
 struct InterfaceGenerator<'a> {
-    name: &'a str,
     src: Source,
     in_import: bool,
     gen: &'a mut C,
     resolve: &'a Resolve,
     interface: Option<InterfaceId>,
-
-    // The set of types that are considered public (aka need to be in the
-    // header file) which are anonymous and we're effectively monomorphizing.
-    // This is discovered lazily when printing type names.
-    public_anonymous_types: BTreeSet<TypeId>,
-
-    // This is similar to `public_anonymous_types` where it's discovered
-    // lazily, but the set here are for private types only used in the
-    // implementation of functions. These types go in the implementation file,
-    // not the header file.
-    private_anonymous_types: BTreeSet<TypeId>,
-
-    // Type definitions for the given `TypeId`. This is printed topologically
-    // at the end.
-    types: HashMap<TypeId, wit_bindgen_core::Source>,
 }
 
 impl C {
@@ -530,10 +864,9 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.src.h_defs(";\n");
         }
         self.src.h_defs("} ");
-        self.print_typedef_target(name);
+        self.print_typedef_target(id, name);
 
-        self.types
-            .insert(id, mem::replace(&mut self.src.h_defs, prev));
+        self.finish_ty(id, prev);
     }
 
     fn type_tuple(&mut self, id: TypeId, name: &str, tuple: &Tuple, docs: &Docs) {
@@ -546,10 +879,9 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             uwriteln!(self.src.h_defs, " f{i};");
         }
         self.src.h_defs("} ");
-        self.print_typedef_target(name);
+        self.print_typedef_target(id, name);
 
-        self.types
-            .insert(id, mem::replace(&mut self.src.h_defs, prev));
+        self.finish_ty(id, prev);
     }
 
     fn type_flags(&mut self, id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
@@ -560,24 +892,25 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         let repr = flags_repr(flags);
         self.src.h_defs(int_repr(repr));
         self.src.h_defs(" ");
-        self.print_typedef_target(name);
+        self.print_typedef_target(id, name);
 
         if flags.flags.len() > 0 {
             self.src.h_defs("\n");
         }
+        let ns = self
+            .gen
+            .owner_namespace(self.resolve, id)
+            .to_shouty_snake_case();
         for (i, flag) in flags.flags.iter().enumerate() {
             uwriteln!(
                 self.src.h_defs,
-                "#define {}_{}_{} (1 << {})",
-                self.name.to_shouty_snake_case(),
+                "#define {ns}_{}_{} (1 << {i})",
                 name.to_shouty_snake_case(),
                 flag.name.to_shouty_snake_case(),
-                i,
             );
         }
 
-        self.types
-            .insert(id, mem::replace(&mut self.src.h_defs, prev));
+        self.finish_ty(id, prev);
     }
 
     fn type_variant(&mut self, id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
@@ -598,24 +931,25 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         }
         self.src.h_defs("} val;\n");
         self.src.h_defs("} ");
-        self.print_typedef_target(name);
+        self.print_typedef_target(id, name);
 
         if variant.cases.len() > 0 {
             self.src.h_defs("\n");
         }
+        let ns = self
+            .gen
+            .owner_namespace(self.resolve, id)
+            .to_shouty_snake_case();
         for (i, case) in variant.cases.iter().enumerate() {
             uwriteln!(
                 self.src.h_defs,
-                "#define {}_{}_{} {}",
-                self.name.to_shouty_snake_case(),
+                "#define {ns}_{}_{} {i}",
                 name.to_shouty_snake_case(),
                 case.name.to_shouty_snake_case(),
-                i,
             );
         }
 
-        self.types
-            .insert(id, mem::replace(&mut self.src.h_defs, prev));
+        self.finish_ty(id, prev);
     }
 
     fn type_union(&mut self, id: TypeId, name: &str, union: &Union, docs: &Docs) {
@@ -632,10 +966,9 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         }
         self.src.h_defs("} val;\n");
         self.src.h_defs("} ");
-        self.print_typedef_target(name);
+        self.print_typedef_target(id, name);
 
-        self.types
-            .insert(id, mem::replace(&mut self.src.h_defs, prev));
+        self.finish_ty(id, prev);
     }
 
     fn type_option(&mut self, id: TypeId, name: &str, payload: &Type, docs: &Docs) {
@@ -649,10 +982,9 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.src.h_defs(" val;\n");
         }
         self.src.h_defs("} ");
-        self.print_typedef_target(name);
+        self.print_typedef_target(id, name);
 
-        self.types
-            .insert(id, mem::replace(&mut self.src.h_defs, prev));
+        self.finish_ty(id, prev);
     }
 
     fn type_result(&mut self, id: TypeId, name: &str, result: &Result_, docs: &Docs) {
@@ -672,10 +1004,9 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         }
         self.src.h_defs("} val;\n");
         self.src.h_defs("} ");
-        self.print_typedef_target(name);
+        self.print_typedef_target(id, name);
 
-        self.types
-            .insert(id, mem::replace(&mut self.src.h_defs, prev));
+        self.finish_ty(id, prev);
     }
 
     fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
@@ -684,24 +1015,25 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.docs(docs);
         let int_t = int_repr(enum_.tag());
         uwrite!(self.src.h_defs, "typedef {int_t} ");
-        self.print_typedef_target(name);
+        self.print_typedef_target(id, name);
 
         if enum_.cases.len() > 0 {
             self.src.h_defs("\n");
         }
+        let ns = self
+            .gen
+            .owner_namespace(self.resolve, id)
+            .to_shouty_snake_case();
         for (i, case) in enum_.cases.iter().enumerate() {
             uwriteln!(
                 self.src.h_defs,
-                "#define {}_{}_{} {}",
-                self.name.to_shouty_snake_case(),
+                "#define {ns}_{}_{} {i}",
                 name.to_shouty_snake_case(),
                 case.name.to_shouty_snake_case(),
-                i,
             );
         }
 
-        self.types
-            .insert(id, mem::replace(&mut self.src.h_defs, prev));
+        self.finish_ty(id, prev);
     }
 
     fn type_alias(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
@@ -711,9 +1043,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs("typedef ");
         self.print_ty(SourceType::HDefs, ty);
         self.src.h_defs(" ");
-        self.print_typedef_target(name);
-        self.types
-            .insert(id, mem::replace(&mut self.src.h_defs, prev));
+        self.print_typedef_target(id, name);
+        self.finish_ty(id, prev);
     }
 
     fn type_list(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
@@ -725,9 +1056,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs(" *ptr;\n");
         self.src.h_defs("size_t len;\n");
         self.src.h_defs("} ");
-        self.print_typedef_target(name);
-        self.types
-            .insert(id, mem::replace(&mut self.src.h_defs, prev));
+        self.print_typedef_target(id, name);
+        self.finish_ty(id, prev);
     }
 
     fn type_builtin(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
@@ -736,7 +1066,12 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
-    fn import(&mut self, wasm_import_module: &str, func: &Function) {
+    fn c_func_name(&self, interface_name: Option<&str>, func: &Function) -> String {
+        let ns = interface_name.unwrap_or(&self.gen.world);
+        format!("{}_{}", ns.to_snake_case(), func.name.to_snake_case())
+    }
+
+    fn import(&mut self, interface_name: Option<&str>, func: &Function) {
         let sig = self.resolve.wasm_signature(AbiVariant::GuestImport, func);
 
         self.src.c_fns("\n");
@@ -747,14 +1082,11 @@ impl InterfaceGenerator<'_> {
         uwriteln!(
             self.src.c_fns,
             "__attribute__((import_module(\"{}\"), import_name(\"{}\")))",
-            wasm_import_module,
+            interface_name.unwrap_or("$root"),
             func.name
         );
-        let import_name = self.gen.names.tmp(&format!(
-            "__wasm_import_{}_{}",
-            self.name.to_snake_case(),
-            func.name.to_snake_case()
-        ));
+        let name = self.c_func_name(interface_name, func);
+        let import_name = self.gen.names.tmp(&format!("__wasm_import_{name}",));
         match sig.results.len() {
             0 => self.src.c_fns("void"),
             1 => self.src.c_fns(wasm_type(sig.results[0])),
@@ -776,7 +1108,7 @@ impl InterfaceGenerator<'_> {
 
         // Print the public facing signature into the header, and since that's
         // what we are defining also print it into the C file.
-        let c_sig = self.print_sig(func, !self.gen.opts.no_sig_flattening);
+        let c_sig = self.print_sig(interface_name, func, !self.gen.opts.no_sig_flattening);
         self.src.c_adapters("\n");
         self.src.c_adapters(&c_sig.sig);
         self.src.c_adapters(" {\n");
@@ -855,7 +1187,7 @@ impl InterfaceGenerator<'_> {
 
         // Print the actual header for this function into the header file, and
         // it's what we'll be calling.
-        let h_sig = self.print_sig(func, !self.gen.opts.no_sig_flattening);
+        let h_sig = self.print_sig(interface_name, func, !self.gen.opts.no_sig_flattening);
 
         // Generate, in the C source file, the raw wasm signature that has the
         // canonical ABI.
@@ -863,11 +1195,8 @@ impl InterfaceGenerator<'_> {
             self.src.c_adapters,
             "\n__attribute__((export_name(\"{export_name}\")))"
         );
-        let import_name = self.gen.names.tmp(&format!(
-            "__wasm_export_{}_{}",
-            self.name.to_snake_case(),
-            func.name.to_snake_case()
-        ));
+        let name = self.c_func_name(interface_name, func);
+        let import_name = self.gen.names.tmp(&format!("__wasm_export_{name}"));
 
         let mut f = FunctionBindgen::new(self, h_sig, &import_name);
         match sig.results.len() {
@@ -934,57 +1263,8 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn finish(&mut self) {
-        // Continuously generate anonymous types while we continue to find more
-        //
-        // First we take care of the public set of anonymous types. This will
-        // iteratively print them and also remove any references from the
-        // private set if we happen to also reference them.
-        while !self.public_anonymous_types.is_empty() {
-            for ty in mem::take(&mut self.public_anonymous_types) {
-                self.print_anonymous_type(ty);
-            }
-        }
-
-        // Next we take care of private types. To do this we have basically the
-        // same loop as above, after we switch the sets. We record, however,
-        // all private types in a local set here to later determine if the type
-        // needs to be in the C file or the H file.
-        //
-        // Note though that we don't re-print a type (and consider it private)
-        // if we already printed it above as part of the public set.
-        let mut private_types = HashSet::new();
-        self.public_anonymous_types = mem::take(&mut self.private_anonymous_types);
-        while !self.public_anonymous_types.is_empty() {
-            for ty in mem::take(&mut self.public_anonymous_types) {
-                if self.types.contains_key(&ty) {
-                    continue;
-                }
-                private_types.insert(ty);
-                self.print_anonymous_type(ty);
-            }
-        }
-
-        for (id, _) in self.resolve.types.iter() {
-            if let Some(ty) = self.types.get(&id) {
-                if private_types.contains(&id) {
-                    // It's private; print it in the .c file.
-                    self.src.c_defs(ty);
-                } else {
-                    // It's public; print it in the .h file.
-                    self.src.h_defs(ty);
-                    self.print_dtor(id);
-                }
-            }
-        }
-    }
-
-    fn print_sig(&mut self, func: &Function, sig_flattening: bool) -> CSig {
-        let name = format!(
-            "{}_{}",
-            self.name.to_snake_case(),
-            func.name.to_snake_case()
-        );
+    fn print_sig(&mut self, interface_name: Option<&str>, func: &Function, sig_flattening: bool) -> CSig {
+        let name = self.c_func_name(interface_name, func);
         self.gen.names.insert(&name).expect("duplicate symbols");
 
         let start = self.src.h_fns.len();
@@ -1097,158 +1377,19 @@ impl InterfaceGenerator<'_> {
         return ret;
     }
 
-    fn print_typedef_target(&mut self, name: &str) {
-        let iface_snake = self.name.to_snake_case();
+    fn print_typedef_target(&mut self, id: TypeId, name: &str) {
+        let ns = self.gen.owner_namespace(self.resolve, id).to_snake_case();
         let snake = name.to_snake_case();
-        self.print_namespace(SourceType::HDefs);
+        self.src.h_defs(&ns);
+        self.src.h_defs("_");
         self.src.h_defs(&snake);
         self.src.h_defs("_t;\n");
-        self.gen
-            .names
-            .insert(&format!("{iface_snake}_{snake}_t"))
-            .unwrap();
-    }
-
-    fn print_namespace(&mut self, stype: SourceType) {
-        self.src.print(stype, &self.name.to_snake_case());
-        self.src.print(stype, "_");
+        self.gen.names.insert(&format!("{ns}_{snake}_t")).unwrap();
     }
 
     fn print_ty(&mut self, stype: SourceType, ty: &Type) {
-        match ty {
-            Type::Bool => self.src.print(stype, "bool"),
-            Type::Char => self.src.print(stype, "uint32_t"), // TODO: better type?
-            Type::U8 => self.src.print(stype, "uint8_t"),
-            Type::S8 => self.src.print(stype, "int8_t"),
-            Type::U16 => self.src.print(stype, "uint16_t"),
-            Type::S16 => self.src.print(stype, "int16_t"),
-            Type::U32 => self.src.print(stype, "uint32_t"),
-            Type::S32 => self.src.print(stype, "int32_t"),
-            Type::U64 => self.src.print(stype, "uint64_t"),
-            Type::S64 => self.src.print(stype, "int64_t"),
-            Type::Float32 => self.src.print(stype, "float"),
-            Type::Float64 => self.src.print(stype, "double"),
-            Type::String => {
-                self.src.print(stype, &self.gen.world.to_snake_case());
-                self.src.print(stype, "_");
-                self.src.print(stype, "string_t");
-                self.gen.needs_string = true;
-            }
-            Type::Id(id) => {
-                let ty = &self.resolve.types[*id];
-                match &ty.name {
-                    Some(name) => {
-                        self.print_owner_namespace(stype, *id);
-
-                        self.src.print(stype, &name.to_snake_case());
-                        self.src.print(stype, "_t");
-                    }
-                    None => match &ty.kind {
-                        TypeDefKind::Type(t) => self.print_ty(stype, t),
-                        _ => {
-                            self.public_anonymous_types.insert(*id);
-                            self.private_anonymous_types.remove(id);
-                            self.print_namespace(stype);
-                            self.print_ty_name(stype, &Type::Id(*id));
-                            self.src.print(stype, "_t");
-                        }
-                    },
-                }
-            }
-        }
-    }
-
-    fn print_owner_namespace(&mut self, stype: SourceType, id: TypeId) {
-        let ty = &self.resolve.types[id];
-        match ty.owner {
-            TypeOwner::Interface(owner) => {
-                self.src
-                    .print(stype, &self.gen.interface_names[&owner].to_snake_case());
-                self.src.print(stype, "_");
-            }
-            TypeOwner::World(owner) => {
-                self.src
-                    .print(stype, &self.resolve.worlds[owner].name.to_snake_case());
-                self.src.print(stype, "_");
-            }
-            TypeOwner::None => {
-                self.print_namespace(stype);
-            }
-        }
-    }
-
-    fn print_ty_name(&mut self, stype: SourceType, ty: &Type) {
-        match ty {
-            Type::Bool => self.src.print(stype, "bool"),
-            Type::Char => self.src.print(stype, "char32"),
-            Type::U8 => self.src.print(stype, "u8"),
-            Type::S8 => self.src.print(stype, "s8"),
-            Type::U16 => self.src.print(stype, "u16"),
-            Type::S16 => self.src.print(stype, "s16"),
-            Type::U32 => self.src.print(stype, "u32"),
-            Type::S32 => self.src.print(stype, "s32"),
-            Type::U64 => self.src.print(stype, "u64"),
-            Type::S64 => self.src.print(stype, "s64"),
-            Type::Float32 => self.src.print(stype, "float32"),
-            Type::Float64 => self.src.print(stype, "float64"),
-            Type::String => self.src.print(stype, "string"),
-            Type::Id(id) => {
-                let ty = &self.resolve.types[*id];
-                if let Some(name) = &ty.name {
-                    return self.src.print(stype, &name.to_snake_case());
-                }
-                match &ty.kind {
-                    TypeDefKind::Type(t) => self.print_ty_name(stype, t),
-                    TypeDefKind::Record(_)
-                    | TypeDefKind::Flags(_)
-                    | TypeDefKind::Enum(_)
-                    | TypeDefKind::Variant(_)
-                    | TypeDefKind::Union(_) => {
-                        unimplemented!()
-                    }
-                    TypeDefKind::Tuple(t) => {
-                        self.src.print(stype, "tuple");
-                        self.src.print(stype, &t.types.len().to_string());
-                        for ty in t.types.iter() {
-                            self.src.print(stype, "_");
-                            self.print_ty_name(stype, ty);
-                        }
-                    }
-                    TypeDefKind::Option(ty) => {
-                        self.src.print(stype, "option_");
-                        self.print_ty_name(stype, ty);
-                    }
-                    TypeDefKind::Result(r) => {
-                        self.src.print(stype, "result_");
-                        self.print_optional_ty_name(stype, r.ok.as_ref());
-                        self.src.print(stype, "_");
-                        self.print_optional_ty_name(stype, r.err.as_ref());
-                    }
-                    TypeDefKind::List(t) => {
-                        self.src.print(stype, "list_");
-                        self.print_ty_name(stype, t);
-                    }
-                    TypeDefKind::Future(t) => {
-                        self.src.print(stype, "future_");
-                        self.print_optional_ty_name(stype, t.as_ref());
-                    }
-                    TypeDefKind::Stream(s) => {
-                        self.src.print(stype, "stream_");
-                        self.print_optional_ty_name(stype, s.element.as_ref());
-                        self.src.print(stype, "_");
-                        self.print_optional_ty_name(stype, s.end.as_ref());
-                    }
-                    TypeDefKind::Unknown => unreachable!(),
-                }
-            }
-        }
-    }
-
-    fn print_optional_ty_name(&mut self, stype: SourceType, ty: Option<&Type>) {
-        match ty {
-            Some(ty) => self.print_ty_name(stype, ty),
-            None => self.src.print(stype, "void"),
-        }
+        self.gen
+            .push_type_name(self.resolve, ty, self.src.src(stype).as_mut_string());
     }
 
     fn docs(&mut self, docs: &Docs) {
@@ -1270,8 +1411,8 @@ impl InterfaceGenerator<'_> {
         // in methods like this, so we can place those types in the C file
         // instead of the header interface file.
         let prev = mem::take(&mut self.src.h_defs);
-        let prev_public = mem::take(&mut self.public_anonymous_types);
-        let prev_private = mem::take(&mut self.private_anonymous_types);
+        let prev_public = mem::take(&mut self.gen.public_anonymous_types);
+        let prev_private = mem::take(&mut self.gen.private_anonymous_types);
 
         // Print the type, which will collect into the fields that we replaced
         // above.
@@ -1281,224 +1422,27 @@ impl InterfaceGenerator<'_> {
         // Note that `print_ty` always adds to the public set, so we're
         // inverting the meaning here by interpreting those as new private
         // types.
-        let new_private = mem::replace(&mut self.public_anonymous_types, prev_public);
-        assert!(self.private_anonymous_types.is_empty());
-        self.private_anonymous_types = prev_private;
+        let new_private = mem::replace(&mut self.gen.public_anonymous_types, prev_public);
+        assert!(self.gen.private_anonymous_types.is_empty());
+        self.gen.private_anonymous_types = prev_private;
 
         // For all new private types found while we printed this type, if the
         // type isn't already public then it's a new private type.
         for id in new_private {
-            if !self.public_anonymous_types.contains(&id) {
-                self.private_anonymous_types.insert(id);
+            if !self.gen.public_anonymous_types.contains(&id) {
+                self.gen.private_anonymous_types.insert(id);
             }
         }
 
         mem::replace(&mut self.src.h_defs, prev).into()
     }
 
-    fn print_anonymous_type(&mut self, ty: TypeId) {
-        let prev = mem::take(&mut self.src.h_defs);
-        self.src.h_defs("\ntypedef ");
-        let kind = &self.resolve.types[ty].kind;
-        match kind {
-            TypeDefKind::Type(_)
-            | TypeDefKind::Flags(_)
-            | TypeDefKind::Record(_)
-            | TypeDefKind::Enum(_)
-            | TypeDefKind::Variant(_)
-            | TypeDefKind::Union(_) => {
-                unreachable!()
-            }
-            TypeDefKind::Tuple(t) => {
-                self.src.h_defs("struct {\n");
-                for (i, t) in t.types.iter().enumerate() {
-                    self.print_ty(SourceType::HDefs, t);
-                    uwriteln!(self.src.h_defs, " f{i};");
-                }
-                self.src.h_defs("}");
-            }
-            TypeDefKind::Option(t) => {
-                self.src.h_defs("struct {\n");
-                self.src.h_defs("bool is_some;\n");
-                if !is_empty_type(self.resolve, t) {
-                    self.print_ty(SourceType::HDefs, t);
-                    self.src.h_defs(" val;\n");
-                }
-                self.src.h_defs("}");
-            }
-            TypeDefKind::Result(r) => {
-                self.src.h_defs(
-                    "struct {
-                    bool is_err;
-                    union {
-                ",
-                );
-                if let Some(ok) = get_nonempty_type(self.resolve, r.ok.as_ref()) {
-                    self.print_ty(SourceType::HDefs, ok);
-                    self.src.h_defs(" ok;\n");
-                }
-                if let Some(err) = get_nonempty_type(self.resolve, r.err.as_ref()) {
-                    self.print_ty(SourceType::HDefs, err);
-                    self.src.h_defs(" err;\n");
-                }
-                self.src.h_defs("} val;\n");
-                self.src.h_defs("}");
-            }
-            TypeDefKind::List(t) => {
-                self.src.h_defs("struct {\n");
-                self.print_ty(SourceType::HDefs, t);
-                self.src.h_defs(" *ptr;\n");
-                self.src.h_defs("size_t len;\n");
-                self.src.h_defs("}");
-            }
-            TypeDefKind::Future(_) => todo!("print_anonymous_type for future"),
-            TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
-            TypeDefKind::Unknown => unreachable!(),
-        }
-        self.src.h_defs(" ");
-        self.print_namespace(SourceType::HDefs);
-        self.print_ty_name(SourceType::HDefs, &Type::Id(ty));
-        self.src.h_defs("_t;\n");
-        let type_source = mem::replace(&mut self.src.h_defs, prev);
-        self.types.insert(ty, type_source);
-    }
-
-    fn print_dtor(&mut self, id: TypeId) {
-        let ty = Type::Id(id);
-        if !owns_anything(self.resolve, &ty) {
-            return;
-        }
-        let pos = self.src.h_helpers.len();
-        self.src.h_helpers("\nvoid ");
-        self.print_namespace(SourceType::HHelpers);
-        self.print_ty_name(SourceType::HHelpers, &ty);
-        self.src.h_helpers("_free(");
-        self.print_namespace(SourceType::HHelpers);
-        self.print_ty_name(SourceType::HHelpers, &ty);
-        self.src.h_helpers("_t *ptr)");
-
-        self.src.c_helpers(&self.src.h_helpers[pos..].to_string());
-        self.src.h_helpers(";");
-        self.src.c_helpers(" {\n");
-        match &self.resolve.types[id].kind {
-            TypeDefKind::Type(t) => self.free(t, "ptr"),
-
-            TypeDefKind::Flags(_) => {}
-            TypeDefKind::Enum(_) => {}
-
-            TypeDefKind::Record(r) => {
-                for field in r.fields.iter() {
-                    if !owns_anything(self.resolve, &field.ty) {
-                        continue;
-                    }
-                    self.free(&field.ty, &format!("&ptr->{}", to_c_ident(&field.name)));
-                }
-            }
-
-            TypeDefKind::Tuple(t) => {
-                for (i, ty) in t.types.iter().enumerate() {
-                    if !owns_anything(self.resolve, ty) {
-                        continue;
-                    }
-                    self.free(ty, &format!("&ptr->f{i}"));
-                }
-            }
-
-            TypeDefKind::List(t) => {
-                if owns_anything(self.resolve, t) {
-                    self.src
-                        .c_helpers("for (size_t i = 0; i < ptr->len; i++) {\n");
-                    self.free(t, "&ptr->ptr[i]");
-                    self.src.c_helpers("}\n");
-                }
-                uwriteln!(self.src.c_helpers, "if (ptr->len > 0) {{");
-                uwriteln!(self.src.c_helpers, "free(ptr->ptr);");
-                uwriteln!(self.src.c_helpers, "}}");
-            }
-
-            TypeDefKind::Variant(v) => {
-                self.src.c_helpers("switch ((int32_t) ptr->tag) {\n");
-                for (i, case) in v.cases.iter().enumerate() {
-                    if let Some(ty) = &case.ty {
-                        if !owns_anything(self.resolve, ty) {
-                            continue;
-                        }
-                        uwriteln!(self.src.c_helpers, "case {}: {{", i);
-                        let expr = format!("&ptr->val.{}", to_c_ident(&case.name));
-                        if let Some(ty) = &case.ty {
-                            self.free(ty, &expr);
-                        }
-                        self.src.c_helpers("break;\n");
-                        self.src.c_helpers("}\n");
-                    }
-                }
-                self.src.c_helpers("}\n");
-            }
-
-            TypeDefKind::Union(u) => {
-                self.src.c_helpers("switch ((int32_t) ptr->tag) {\n");
-                for (i, case) in u.cases.iter().enumerate() {
-                    if !owns_anything(self.resolve, &case.ty) {
-                        continue;
-                    }
-                    uwriteln!(self.src.c_helpers, "case {i}: {{");
-                    let expr = format!("&ptr->val.f{i}");
-                    self.free(&case.ty, &expr);
-                    self.src.c_helpers("break;\n");
-                    self.src.c_helpers("}\n");
-                }
-                self.src.c_helpers("}\n");
-            }
-
-            TypeDefKind::Option(t) => {
-                self.src.c_helpers("if (ptr->is_some) {\n");
-                self.free(t, "&ptr->val");
-                self.src.c_helpers("}\n");
-            }
-
-            TypeDefKind::Result(r) => {
-                self.src.c_helpers("if (!ptr->is_err) {\n");
-                if let Some(ok) = &r.ok {
-                    if owns_anything(self.resolve, ok) {
-                        self.free(ok, "&ptr->val.ok");
-                    }
-                }
-                if let Some(err) = &r.err {
-                    if owns_anything(self.resolve, err) {
-                        self.src.c_helpers("} else {\n");
-                        self.free(err, "&ptr->val.err");
-                    }
-                }
-                self.src.c_helpers("}\n");
-            }
-            TypeDefKind::Future(_) => todo!("print_dtor for future"),
-            TypeDefKind::Stream(_) => todo!("print_dtor for stream"),
-            TypeDefKind::Unknown => unreachable!(),
-        }
-        self.src.c_helpers("}\n");
-    }
-
-    fn free(&mut self, ty: &Type, expr: &str) {
-        let prev = mem::take(&mut self.src.h_helpers);
-        match ty {
-            Type::String => {
-                self.src.h_helpers(&self.gen.world.to_snake_case());
-                self.src.h_helpers("_");
-            }
-            Type::Id(id) => {
-                self.print_owner_namespace(SourceType::HHelpers, *id);
-            }
-            _ => {
-                self.print_namespace(SourceType::HHelpers);
-            }
-        }
-        self.print_ty_name(SourceType::HHelpers, ty);
-        let name = mem::replace(&mut self.src.h_helpers, prev);
-
-        self.src.c_helpers(&name);
-        self.src.c_helpers("_free(");
-        self.src.c_helpers(expr);
-        self.src.c_helpers(");\n");
+    fn finish_ty(&mut self, id: TypeId, orig_h_defs: wit_bindgen_core::Source) {
+        let prev = self
+            .gen
+            .types
+            .insert(id, mem::replace(&mut self.src.h_defs, orig_h_defs));
+        assert!(prev.is_none());
     }
 }
 
@@ -2490,7 +2434,7 @@ enum SourceType {
     #[default]
     HDefs,
     HFns,
-    HHelpers,
+    // HHelpers,
     // CDefs,
     // CFns,
     // CHelpers,
@@ -2509,15 +2453,10 @@ struct Source {
 }
 
 impl Source {
-    fn print(&mut self, stype: SourceType, s: &str) {
+    fn src(&mut self, stype: SourceType) -> &mut wit_bindgen_core::Source {
         match stype {
-            SourceType::HDefs => self.h_defs(s),
-            SourceType::HFns => self.h_fns(s),
-            SourceType::HHelpers => self.h_helpers(s),
-            // SourceType::CDefs => self.c_defs(s),
-            // SourceType::CFns => self.c_fns(s),
-            // SourceType::CHelpers => self.c_helpers(s),
-            // SourceType::CAdapters => self.c_adapters(s),
+            SourceType::HDefs => &mut self.h_defs,
+            SourceType::HFns => &mut self.h_fns,
         }
     }
     fn append(&mut self, append_src: &Source) {
@@ -2549,6 +2488,94 @@ impl Source {
     }
     fn c_adapters(&mut self, s: &str) {
         self.c_adapters.push_str(s);
+    }
+}
+
+trait SourceExt {
+    fn as_source(&mut self) -> &mut wit_bindgen_core::Source;
+
+    fn print_ty_name(&mut self, resolve: &Resolve, ty: &Type) {
+        push_ty_name(resolve, ty, self.as_source().as_mut_string());
+    }
+}
+
+impl SourceExt for wit_bindgen_core::Source {
+    fn as_source(&mut self) -> &mut wit_bindgen_core::Source {
+        self
+    }
+}
+
+fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
+    match ty {
+        Type::Bool => src.push_str("bool"),
+        Type::Char => src.push_str("char32"),
+        Type::U8 => src.push_str("u8"),
+        Type::S8 => src.push_str("s8"),
+        Type::U16 => src.push_str("u16"),
+        Type::S16 => src.push_str("s16"),
+        Type::U32 => src.push_str("u32"),
+        Type::S32 => src.push_str("s32"),
+        Type::U64 => src.push_str("u64"),
+        Type::S64 => src.push_str("s64"),
+        Type::Float32 => src.push_str("float32"),
+        Type::Float64 => src.push_str("float64"),
+        Type::String => src.push_str("string"),
+        Type::Id(id) => {
+            let ty = &resolve.types[*id];
+            if let Some(name) = &ty.name {
+                return src.push_str(&name.to_snake_case());
+            }
+            match &ty.kind {
+                TypeDefKind::Type(t) => push_ty_name(resolve, t, src),
+                TypeDefKind::Record(_)
+                | TypeDefKind::Flags(_)
+                | TypeDefKind::Enum(_)
+                | TypeDefKind::Variant(_)
+                | TypeDefKind::Union(_) => {
+                    unimplemented!()
+                }
+                TypeDefKind::Tuple(t) => {
+                    src.push_str("tuple");
+                    src.push_str(&t.types.len().to_string());
+                    for ty in t.types.iter() {
+                        src.push_str("_");
+                        push_ty_name(resolve, ty, src);
+                    }
+                }
+                TypeDefKind::Option(ty) => {
+                    src.push_str("option_");
+                    push_ty_name(resolve, ty, src);
+                }
+                TypeDefKind::Result(r) => {
+                    src.push_str("result_");
+                    push_optional_ty_name(resolve, r.ok.as_ref(), src);
+                    src.push_str("_");
+                    push_optional_ty_name(resolve, r.err.as_ref(), src);
+                }
+                TypeDefKind::List(t) => {
+                    src.push_str("list_");
+                    push_ty_name(resolve, t, src);
+                }
+                TypeDefKind::Future(t) => {
+                    src.push_str("future_");
+                    push_optional_ty_name(resolve, t.as_ref(), src);
+                }
+                TypeDefKind::Stream(s) => {
+                    src.push_str("stream_");
+                    push_optional_ty_name(resolve, s.element.as_ref(), src);
+                    src.push_str("_");
+                    push_optional_ty_name(resolve, s.end.as_ref(), src);
+                }
+                TypeDefKind::Unknown => unreachable!(),
+            }
+        }
+    }
+
+    fn push_optional_ty_name(resolve: &Resolve, ty: Option<&Type>, dst: &mut String) {
+        match ty {
+            Some(ty) => push_ty_name(resolve, ty, dst),
+            None => dst.push_str("void"),
+        }
     }
 }
 
