@@ -790,16 +790,11 @@ impl InterfaceGenerator<'_> {
             }
         } else {
             postfix.push(' ');
-            let maybe_option = self.extract_option_ty(param);
             param_name.push_str(name);
-            if is_arg_by_pointer(self.resolve, param) || maybe_option.is_some() {
+            if is_arg_by_pointer(self.resolve, param) {
                 postfix.push_str(pointer_prefix);
             }
-            let s = maybe_option
-                .as_ref()
-                .map(|o| self.get_c_ty(o))
-                .unwrap_or(self.get_c_ty(param));
-            postfix.push_str(&s);
+            postfix.push_str(&self.get_c_ty(param));
         }
         src.push_str(&format!("{prefix}{param_name}{postfix}"));
     }
@@ -820,12 +815,6 @@ impl InterfaceGenerator<'_> {
         // If in_import is false, this function is invokved in printing export function signature.
         // It uses the form of `<param-name> *C.<param-type>` to print each parameter in the function, where
         // * is only used if the parameter is of pointer type.
-        //
-        // An exceptional case is the optional flattening rule. The rule only applies when
-        // in_import is false. If the parameter is of type Option. It needs to flatten out the outer layer of
-        // the option type and uses pointer for option's inner type. In this case, even if the inner type of
-        // an option type is primitive, the * is still needed.
-
         for (i, (name, param)) in func.params.iter().enumerate() {
             if i > 0 {
                 params.push_str(", ");
@@ -947,7 +936,6 @@ impl InterfaceGenerator<'_> {
     }
 
     fn extract_option_ty(&self, ty: &Type) -> Option<Type> {
-        // optional param pointer flattening
         match ty {
             Type::Id(id) => match &self.resolve.types[*id].kind {
                 TypeDefKind::Option(o) => Some(o.to_owned()),
@@ -971,18 +959,6 @@ impl InterfaceGenerator<'_> {
                 _ => (None, None),
             },
             _ => (None, None),
-        }
-    }
-
-    fn is_result_ty(&self, ty: &Type) -> bool {
-        match ty {
-            Type::Id(id) => match &self.resolve.types[*id].kind {
-                TypeDefKind::Result(_) => true,
-                TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
-                TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
-                _ => false,
-            },
-            _ => false,
         }
     }
 
@@ -1112,18 +1088,18 @@ impl InterfaceGenerator<'_> {
         let mut func_bindgen = FunctionBindgen::new(self, func);
         // lower params to c
         func.params.iter().for_each(|(name, ty)| {
-            func_bindgen.lower(&avoid_keyword(&name.to_snake_case()), ty, false, false);
+            func_bindgen.lower(&avoid_keyword(&name.to_snake_case()), ty, false);
         });
         // lift results from c
         match func.results.len() {
             0 => {}
             1 => {
                 let ty = func.results.iter_types().next().unwrap();
-                func_bindgen.lift("ret", ty, false, false);
+                func_bindgen.lift("ret", ty);
             }
             _ => {
                 for (i, ty) in func.results.iter_types().enumerate() {
-                    func_bindgen.lift(&format!("ret{i}"), ty, false, true);
+                    func_bindgen.lift(&format!("ret{i}"), ty);
                 }
             }
         };
@@ -1163,19 +1139,8 @@ impl InterfaceGenerator<'_> {
             1 => {
                 let return_ty = func.results.iter_types().next().unwrap();
                 if is_arg_by_pointer(self.resolve, return_ty) {
-                    if !self.is_result_ty(return_ty) {
-                        let optional_type = self.extract_option_ty(return_ty);
-                        // flatten optional type or use return type #https://github.com/bytecodealliance/wit-bindgen/pull/453
-                        // TODO: reuse from C
-                        let c_ret_type = optional_type
-                            .as_ref()
-                            .map(|o| self.get_c_ty(o))
-                            .unwrap_or_else(|| self.get_c_ty(return_ty));
-                        self.src.push_str(&format!("var ret {c_ret_type}\n"));
-                    } else {
-                        let c_ret_type = self.get_c_ty(return_ty);
-                        self.src.push_str(&format!("var ret {c_ret_type}\n"));
-                    }
+                    let c_ret_type = self.get_c_ty(return_ty);
+                    self.src.push_str(&format!("var ret {c_ret_type}\n"));
                     self.src.push_str(&invoke);
                     self.src.push_str("\n");
                 } else {
@@ -1210,22 +1175,22 @@ impl InterfaceGenerator<'_> {
         match func.results.len() {
             0 => {
                 func.params.iter().for_each(|(name, ty)| {
-                    func_bindgen.lift(&avoid_keyword(&name.to_snake_case()), ty, true, false);
+                    func_bindgen.lift(&avoid_keyword(&name.to_snake_case()), ty);
                 });
             }
             1 => {
                 func.params.iter().for_each(|(name, ty)| {
-                    func_bindgen.lift(&avoid_keyword(&name.to_snake_case()), ty, true, false);
+                    func_bindgen.lift(&avoid_keyword(&name.to_snake_case()), ty);
                 });
                 let ty = func.results.iter_types().next().unwrap();
-                func_bindgen.lower("result", ty, true, false);
+                func_bindgen.lower("result", ty, true);
             }
             _ => {
                 func.params.iter().for_each(|(name, ty)| {
-                    func_bindgen.lift(&avoid_keyword(&name.to_snake_case()), ty, true, true);
+                    func_bindgen.lift(&avoid_keyword(&name.to_snake_case()), ty);
                 });
                 for (i, ty) in func.results.iter_types().enumerate() {
-                    func_bindgen.lower(&format!("result{i}"), ty, true, true);
+                    func_bindgen.lower(&format!("result{i}"), ty, true);
                 }
             }
         };
@@ -1250,12 +1215,7 @@ impl InterfaceGenerator<'_> {
 
             // free all the parameters
             for (name, ty) in func.params.iter() {
-                if let Some(o) = self.extract_option_ty(&ty) {
-                    if owns_anything(resolve, &o) {
-                        let free = self.get_free_c_arg(&o, &avoid_keyword(&name.to_snake_case()));
-                        src.push_str(&free);
-                    }
-                } else if owns_anything(resolve, &ty) {
+                if owns_anything(resolve, &ty) {
                     let free = self.get_free_c_arg(&ty, &avoid_keyword(&name.to_snake_case()));
                     src.push_str(&free);
                 }
@@ -1296,18 +1256,7 @@ impl InterfaceGenerator<'_> {
 
                     let lower_result = &ret[0];
                     if is_arg_by_pointer(self.resolve, return_ty) {
-                        // flatten result type
-                        if self.is_result_ty(return_ty) {
-                        } else if let Some(_o) = self.extract_option_ty(return_ty) {
-                            uwriteln!(
-                                src,
-                                "
-                                *ret = {lower_result}
-                                return result.IsSome()"
-                            )
-                        } else {
-                            src.push_str(&format!("*ret = {lower_result}\n"));
-                        }
+                        src.push_str(&format!("*ret = {lower_result}\n"));
                     } else {
                         src.push_str(&format!("return {ret}\n", ret = &ret[0]));
                     }
@@ -1587,16 +1536,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
     }
 
-    fn lower(&mut self, name: &str, ty: &Type, in_export: bool, multi_return: bool) {
+    fn lower(&mut self, name: &str, ty: &Type, in_export: bool) {
         let lower_name = format!("lower_{name}");
-        let flatten_result = !multi_return && in_export;
-        self.lower_value(
-            name,
-            ty,
-            lower_name.as_ref(),
-            self.interface.extract_option_ty(ty).is_some(),
-            flatten_result,
-        );
+        self.lower_value(name, ty, lower_name.as_ref());
 
         // Check whether or not the C variable needs to be freed.
         // If this variable is in export function, which will be returned to host to use.
@@ -1605,26 +1547,14 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         // If this variable is in inner node of the recursive call, no need to be freed.
         //    This is because the root node's call to free will recursively free the whole tree.
         // Otherwise, free this variable.
-        if let Some(o) = self.interface.extract_option_ty(ty) {
-            if !in_export && owns_anything(self.interface.resolve, &o) {
-                self.lower_src
-                    .push_str(&self.interface.get_free_c_arg(&o, &format!("&{lower_name}")));
-            }
-        } else if !in_export && owns_anything(self.interface.resolve, ty) {
+        if !in_export && owns_anything(self.interface.resolve, ty) {
             self.lower_src
                 .push_str(&self.interface.get_free_c_arg(ty, &format!("&{lower_name}")));
         }
         self.c_args.push(lower_name);
     }
 
-    fn lower_list_value(
-        &mut self,
-        param: &str,
-        l: &Type,
-        lower_name: &str,
-        flatten_option: bool,
-        flatten_result: bool,
-    ) {
+    fn lower_list_value(&mut self, param: &str, l: &Type, lower_name: &str) {
         let list_ty = self.interface.get_c_ty(l);
         uwriteln!(
             self.lower_src,
@@ -1647,15 +1577,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let lower_name = &format!("{lower_name}_ptr");
 
         if let Some(inner) = self.interface.extract_list_ty(l) {
-            self.lower_list_value(param, &inner.clone(), lower_name, flatten_option, false);
+            self.lower_list_value(param, &inner.clone(), lower_name);
         } else {
-            self.lower_value(
-                param,
-                l,
-                &format!("{lower_name}_value"),
-                flatten_option,
-                flatten_result,
-            );
+            self.lower_value(param, l, &format!("{lower_name}_value"));
             uwriteln!(self.lower_src, "*{lower_name} = {lower_name}_value");
         }
 
@@ -1671,41 +1595,43 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         lower_inner_name1: &str,
         lower_inner_name2: &str,
     ) {
-        // lower_inner_name could be {lower_name}.val if it's used in import or count > 0
+        // lower_inner_name could be {lower_name}.val if it's used in import
         // else, it could be either ret or err
 
         let (ok, err) = self.interface.extract_result_ty(ty);
         uwriteln!(self.lower_src, "if {param}.IsOk() {{");
         if let Some(ok_inner) = ok {
-            let c_target_name = self.interface.get_c_ty(&ok_inner);
-            uwriteln!(
-                self.lower_src,
-                "{lower_name}_ptr := (*{c_target_name})(unsafe.Pointer({lower_inner_name1}))"
-            );
-            self.lower_value(
-                &format!("{param}.Unwrap()"),
-                &ok_inner,
-                &format!("{lower_name}_val"),
-                false,
-                false,
-            );
-            uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
+            if !is_empty_type(self.interface.resolve, &ok_inner) {
+                self.interface.gen.needs_import_unsafe = true;
+                let c_target_name = self.interface.get_c_ty(&ok_inner);
+                uwriteln!(
+                    self.lower_src,
+                    "{lower_name}_ptr := (*{c_target_name})(unsafe.Pointer({lower_inner_name1}))"
+                );
+                self.lower_value(
+                    &format!("{param}.Unwrap()"),
+                    &ok_inner,
+                    &format!("{lower_name}_val"),
+                );
+                uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
+            }
         }
         self.lower_src.push_str("} else {\n");
         if let Some(err_inner) = err {
-            let c_target_name = self.interface.get_c_ty(&err_inner);
-            uwriteln!(
-                self.lower_src,
-                "{lower_name}_ptr := (*{c_target_name})(unsafe.Pointer({lower_inner_name2}))"
-            );
-            self.lower_value(
-                &format!("{param}.UnwrapErr()"),
-                &err_inner,
-                &format!("{lower_name}_val"),
-                false,
-                false,
-            );
-            uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
+            if !is_empty_type(self.interface.resolve, &err_inner) {
+                self.interface.gen.needs_import_unsafe = true;
+                let c_target_name = self.interface.get_c_ty(&err_inner);
+                uwriteln!(
+                    self.lower_src,
+                    "{lower_name}_ptr := (*{c_target_name})(unsafe.Pointer({lower_inner_name2}))"
+                );
+                self.lower_value(
+                    &format!("{param}.UnwrapErr()"),
+                    &err_inner,
+                    &format!("{lower_name}_val"),
+                );
+                uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
+            }
         }
         self.lower_src.push_str("}\n");
     }
@@ -1717,18 +1643,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     /// * `param` - The string representation of the parameter of a function
     /// * `ty` - A reference to a `Type` that specifies the type of the value.
     /// * `lower_name` - A reference to a string that represents the name to be used for the lower value.
-    /// * `flatten` - A boolean value that indicates if Option type should be flattened.
-    /// * `count` - It represents how deep the recursion is. Used for indicate if Result type should be flattened.
-    /// * `multi_return` - A boolean value that indicates if multiple values should be returned. It indicates if Result type should be flattened.
-    /// * `in_export` - A boolean value that indicates if the value is in a export function.
-    fn lower_value(
-        &mut self,
-        param: &str,
-        ty: &Type,
-        lower_name: &str,
-        flatten: bool,
-        flatten_result: bool,
-    ) {
+    fn lower_value(&mut self, param: &str, ty: &Type, lower_name: &str) {
         match ty {
             Type::Bool => {
                 uwriteln!(self.lower_src, "{lower_name} := {param}",);
@@ -1761,8 +1676,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &format!("{param}.{field_name}"),
                                 &field.ty,
                                 &format!("{lower_name}_{c_field_name}"),
-                                false,
-                                false,
                             );
                             uwriteln!(
                                 self.lower_src,
@@ -1783,18 +1696,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &format!("{param}.F{i}"),
                                 ty,
                                 &format!("{lower_name}_f{i}"),
-                                false,
-                                false,
                             );
                             uwriteln!(self.lower_src, "{lower_name}.f{i} = {lower_name}_f{i}");
                         }
                     }
                     TypeDefKind::Option(o) => {
-                        let c_typedef_target = if flatten {
-                            self.interface.get_c_ty(o)
-                        } else {
-                            self.interface.get_c_ty(&Type::Id(*id))
-                        };
+                        let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
                         uwriteln!(self.lower_src, "if {param}.IsSome() {{");
                         if !is_empty_type(self.interface.resolve, o) {
@@ -1802,22 +1709,14 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &format!("{param}.Unwrap()"),
                                 o,
                                 &format!("{lower_name}_val"),
-                                flatten,
-                                false,
                             );
-                            if self.interface.extract_option_ty(o).is_none() && flatten {
-                                uwriteln!(self.lower_src, "{lower_name} = {lower_name}_val");
-                            } else {
-                                // not all C option has val and is_some fields.
-                                uwriteln!(self.lower_src, "{lower_name}.val = {lower_name}_val");
-                                uwriteln!(self.lower_src, "{lower_name}.is_some = true");
-                            }
+                            uwriteln!(self.lower_src, "{lower_name}.val = {lower_name}_val");
+                            uwriteln!(self.lower_src, "{lower_name}.is_some = true");
                         }
                         self.lower_src.push_str("}\n");
                     }
                     TypeDefKind::Result(_) => {
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
-                        self.interface.gen.needs_import_unsafe = true;
 
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
                         uwriteln!(self.lower_src, "{lower_name}.is_err = {param}.IsErr()");
@@ -1835,7 +1734,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
 
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
-                        self.lower_list_value(param, l, lower_name, false, false);
+                        self.lower_list_value(param, l, lower_name);
                     }
                     TypeDefKind::Type(t) => {
                         uwriteln!(
@@ -1843,7 +1742,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             "var {lower_name} {value}",
                             value = self.interface.get_c_ty(t),
                         );
-                        self.lower_value(param, t, &format!("{lower_name}_val"), flatten, false);
+                        self.lower_value(param, t, &format!("{lower_name}_val"));
                         uwriteln!(self.lower_src, "{lower_name} = {lower_name}_val");
                     }
                     TypeDefKind::Variant(v) => {
@@ -1872,8 +1771,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     &format!("{param}.Get{case_name}()"),
                                     ty,
                                     &format!("{lower_name}_val"),
-                                    false,
-                                    false,
                                 );
                                 uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
                             } else {
@@ -1920,8 +1817,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &format!("{param}.Get{case_name}()"),
                                 &case.ty,
                                 &format!("{lower_name}_val"),
-                                false,
-                                false,
                             );
                             uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
 
@@ -1944,27 +1839,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
     }
 
-    fn lift(&mut self, name: &str, ty: &Type, in_export: bool, multi_return: bool) {
+    fn lift(&mut self, name: &str, ty: &Type) {
         let lift_name = format!("lift_{name}");
-        if multi_return {
-            self.lift_value(name, ty, lift_name.as_str(), false, 1, in_export);
-        } else if self.interface.extract_option_ty(ty).is_some() {
-            self.lift_value(name, ty, lift_name.as_str(), true, 0, in_export);
-        } else {
-            self.lift_value(name, ty, lift_name.as_str(), false, 0, in_export);
-        }
+        self.lift_value(name, ty, lift_name.as_str());
         self.args.push(lift_name);
     }
 
-    fn lift_value(
-        &mut self,
-        param: &str,
-        ty: &Type,
-        lift_name: &str,
-        flatten: bool,
-        count: u32,
-        in_export: bool,
-    ) {
+    fn lift_value(&mut self, param: &str, ty: &Type, lift_name: &str) {
         match ty {
             Type::Bool => {
                 uwriteln!(self.lift_src, "{lift_name} := {param}");
@@ -1995,9 +1876,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &format!("{param}.{c_field_name}"),
                                 &field.ty,
                                 &format!("{lift_name}_{field_name}"),
-                                false,
-                                count + 1,
-                                in_export,
                             );
                             uwriteln!(
                                 self.lift_src,
@@ -2027,9 +1905,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &format!("{param}.f{i}"),
                                 t,
                                 &format!("{lift_name}_F{i}"),
-                                false,
-                                count + 1,
-                                in_export,
                             );
                             uwriteln!(self.lift_src, "{lift_name}.F{i} = {lift_name}_F{i}");
                         }
@@ -2037,86 +1912,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     TypeDefKind::Option(o) => {
                         let lift_type = self.interface.get_ty(&Type::Id(*id));
                         uwriteln!(self.lift_src, "var {lift_name} {lift_type}");
-                        // `flatten` will be true if the top level type is an option and hasn't
-                        // been flattened yet.
-                        if self.interface.extract_option_ty(o).is_none() && flatten {
-                            // if the type is Option[T] where T is primitive, this is a special
-                            // case where the primitive is a pointer type. Hence the `param` needs
-                            // to be dereferenced.
+                        uwriteln!(self.lift_src, "if {param}.is_some {{");
+                        self.lift_value(&format!("{param}.val"), o, &format!("{lift_name}_val"));
 
-                            // It only happens the type has just one level of option. It has more levels,
-                            // the `param` will not need a * dereference.
-
-                            // TODO: please simplfy this logic
-                            let is_pointer = is_arg_by_pointer(self.interface.resolve, o);
-                            let val = self.interface.get_primitive_type_value(o);
-                            let c_target_name = self.interface.get_c_ty(o);
-                            let param = if !in_export {
-                                if is_pointer {
-                                    uwriteln!(self.lift_src, "var {lift_name}_c {c_target_name}");
-                                    if !in_export
-                                        && count == 0
-                                        && owns_anything(self.interface.resolve, o)
-                                    {
-                                        self.lift_src.push_str(
-                                            &self
-                                                .interface
-                                                .get_free_c_arg(o, &format!("&{lift_name}_c")),
-                                        );
-                                    }
-                                    uwriteln!(self.lift_src, "if {param} == {lift_name}_c {{");
-                                } else {
-                                    uwriteln!(self.lift_src, "if {param} == {val} {{");
-                                }
-                                param.to_string()
-                            } else {
-                                if count == 0 {
-                                    uwriteln!(self.lift_src, "if {param} == nil {{");
-                                } else if is_pointer {
-                                    uwriteln!(
-                                        self.lift_src,
-                                        "var empty_{lift_name} {c_target_name}
-                                        if {param} == empty_{lift_name} {{"
-                                    );
-                                } else {
-                                    uwriteln!(self.lift_src, "if {param} == {val} {{");
-                                }
-                                let need_pointer_in_param = count == 0 && !is_pointer;
-                                if need_pointer_in_param {
-                                    format!("*{param}")
-                                } else {
-                                    param.to_string()
-                                }
-                            };
-                            uwriteln!(self.lift_src, "{lift_name}.Unset()");
-                            self.lift_src.push_str("} else {\n");
-                            self.lift_value(
-                                &param,
-                                o,
-                                &format!("{lift_name}_val"),
-                                false,
-                                count + 1,
-                                in_export,
-                            );
-                            uwriteln!(self.lift_src, "{lift_name}.Set({lift_name}_val)");
-                            self.lift_src.push_str("}\n");
-                        } else {
-                            uwriteln!(self.lift_src, "if {param}.is_some {{");
-
-                            self.lift_value(
-                                &format!("{param}.val"),
-                                o,
-                                &format!("{lift_name}_val"),
-                                flatten,
-                                count + 1,
-                                in_export,
-                            );
-
-                            uwriteln!(self.lift_src, "{lift_name}.Set({lift_name}_val)");
-                            self.lift_src.push_str("} else {\n");
-                            uwriteln!(self.lift_src, "{lift_name}.Unset()");
-                            self.lift_src.push_str("}\n");
-                        }
+                        uwriteln!(self.lift_src, "{lift_name}.Set({lift_name}_val)");
+                        self.lift_src.push_str("} else {\n");
+                        uwriteln!(self.lift_src, "{lift_name}.Unset()");
+                        self.lift_src.push_str("}\n");
                     }
                     TypeDefKind::Result(_) => {
                         self.interface.gen.needs_result_option = true;
@@ -2129,15 +1931,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         if let Some(err_inner) = err {
                             let err_inner_name = self.interface.get_c_ty(&err_inner);
                             if !is_empty_type(self.interface.resolve, &err_inner) {
+                                self.interface.gen.needs_import_unsafe = true;
                                 uwriteln!(self.lift_src, "{lift_name}_ptr := *(*{err_inner_name})(unsafe.Pointer(&{param}.val))");
                             }
                             self.lift_value(
                                 &format!("{lift_name}_ptr"),
                                 &err_inner,
                                 &format!("{lift_name}_val"),
-                                false,
-                                count + 1,
-                                in_export,
                             );
                             uwriteln!(self.lift_src, "{lift_name}.SetErr({lift_name}_val)")
                         } else {
@@ -2147,15 +1947,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         if let Some(ok_inner) = ok {
                             let ok_inner_name = self.interface.get_c_ty(&ok_inner);
                             if !is_empty_type(self.interface.resolve, &ok_inner) {
+                                self.interface.gen.needs_import_unsafe = true;
                                 uwriteln!(self.lift_src, "{lift_name}_ptr := *(*{ok_inner_name})(unsafe.Pointer(&{param}.val))");
                             }
                             self.lift_value(
                                 &format!("{lift_name}_ptr"),
                                 &ok_inner,
                                 &format!("{lift_name}_val"),
-                                false,
-                                count + 1,
-                                in_export,
                             );
                             uwriteln!(self.lift_src, "{lift_name}.Set({lift_name}_val)")
                         }
@@ -2180,9 +1978,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             &format!("{lift_name}_ptr"),
                             l,
                             &format!("list_{lift_name}"),
-                            false,
-                            count + 1,
-                            in_export,
                         );
 
                         uwriteln!(
@@ -2199,14 +1994,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             "var {lift_name} {value}",
                             value = self.interface.get_ty(&Type::Id(*id)),
                         );
-                        self.lift_value(
-                            param,
-                            t,
-                            &format!("{lift_name}_val"),
-                            flatten,
-                            count + 1, // TODO: figure out if this needs to increment or not
-                            in_export,
-                        );
+                        self.lift_value(param, t, &format!("{lift_name}_val"));
                         uwriteln!(self.lift_src, "{lift_name} = {lift_name}_val");
                     }
                     TypeDefKind::Variant(v) => {
@@ -2229,9 +2017,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     &format!("{lift_name}_ptr"),
                                     ty,
                                     &format!("{lift_name}_val"),
-                                    false,
-                                    count + 1,
-                                    in_export,
                                 );
                                 uwriteln!(
                                     self.lift_src,
@@ -2271,9 +2056,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &format!("{lift_name}_ptr"),
                                 &case.ty,
                                 &format!("{lift_name}_val"),
-                                false,
-                                count + 1,
-                                in_export,
                             );
                             uwriteln!(
                                 self.lift_src,
