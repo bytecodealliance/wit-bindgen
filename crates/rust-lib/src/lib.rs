@@ -242,8 +242,11 @@ pub trait RustGenerator<'a> {
             // the API level, ownership isn't required.
             if info.has_list && lt.is_none() {
                 if let TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) = mode {
-                    assert_eq!(lt, "'_");
                     self.push_str("&");
+                    if lt != "'_" {
+                        self.push_str(lt);
+                        self.push_str(" ");
+                    }
                 }
             }
             let name = self.type_path(id, lt.is_none());
