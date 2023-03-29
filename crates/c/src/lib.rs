@@ -784,7 +784,7 @@ impl InterfaceGenerator<'_> {
         // construct optional adapters from maybe pointers to real optional
         // structs internally
         let mut optional_adapters = String::from("");
-        if self.gen.opts.no_sig_flattening {
+        if !self.gen.opts.no_sig_flattening {
             for (i, (_, param)) in c_sig.params.iter().enumerate() {
                 let ty = &func.params[i].1;
                 if let Type::Id(id) = ty {
@@ -1025,8 +1025,12 @@ impl InterfaceGenerator<'_> {
             } else {
                 None
             };
-            let (print_ty, print_name) = if let Some(option_ty) = optional_type {
-                (option_ty, format!("maybe_{}", to_c_ident(name)))
+            let (print_ty, print_name) = if sig_flattening {
+                if let Some(option_ty) = optional_type {
+                    (option_ty, format!("maybe_{}", to_c_ident(name)))
+                } else {
+                    (ty, to_c_ident(name))
+                }
             } else {
                 (ty, to_c_ident(name))
             };
