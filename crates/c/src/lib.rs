@@ -1263,7 +1263,12 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn print_sig(&mut self, interface_name: Option<&str>, func: &Function, sig_flattening: bool) -> CSig {
+    fn print_sig(
+        &mut self,
+        interface_name: Option<&str>,
+        func: &Function,
+        sig_flattening: bool,
+    ) -> CSig {
         let name = self.c_func_name(interface_name, func);
         self.gen.names.insert(&name).expect("duplicate symbols");
 
