@@ -12,11 +12,6 @@ macro_rules! codegen_test {
     ($id:ident $name:tt $test:tt) => {
         #[test]
         fn $id() {
-            // FIXME: needs fixing after #545
-            if true {
-                return;
-            }
-
             test_helpers::run_world_codegen_test(
                 "guest-go",
                 $test.as_ref(),
