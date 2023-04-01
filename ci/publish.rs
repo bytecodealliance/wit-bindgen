@@ -30,6 +30,7 @@ const CRATES_TO_PUBLISH: &[&str] = &[
     "wit-bindgen-rust-lib",
     "wit-bindgen-c",
     "wit-bindgen-rust",
+    "wit-bindgen-go",
     "wit-bindgen-teavm-java",
     "wit-bindgen-markdown",
     "wit-bindgen-rust-macro",

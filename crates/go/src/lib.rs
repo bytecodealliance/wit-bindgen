@@ -518,7 +518,9 @@ impl InterfaceGenerator<'_> {
                         TypeOwner::Interface(owner) => {
                             format!(
                                 "{namespace}_{name}_t",
-                                namespace = self.gen.interface_names[&owner].to_snake_case(),
+                                namespace = self.resolve.interfaces[owner].name.as_ref()
+                                    .map(|s| s.to_snake_case())
+                                    .unwrap_or_else(|| self.gen.interface_names[&owner].to_snake_case()),
                                 name = name.to_snake_case(),
                             )
                         }
@@ -529,13 +531,13 @@ impl InterfaceGenerator<'_> {
                                 name = name.to_snake_case(),
                             )
                         }
-                        TypeOwner::None => format!("{name}_t", name = name.to_snake_case(),),
+                        TypeOwner::None => format!("{name}_t", name = self.gen.world.to_snake_case(),),
                     },
                     None => match &ty.kind {
                         TypeDefKind::Type(t) => self.get_c_ty_without_package(t),
                         _ => format!(
                             "{namespace}_{name}_t",
-                            namespace = self.name.to_snake_case(),
+                            namespace = self.gen.world.to_snake_case(),
                             name = self.get_c_ty_name(&Type::Id(*id)),
                         ),
                     },
@@ -935,18 +937,6 @@ impl InterfaceGenerator<'_> {
         field.name.to_upper_camel_case()
     }
 
-    fn extract_option_ty(&self, ty: &Type) -> Option<Type> {
-        match ty {
-            Type::Id(id) => match &self.resolve.types[*id].kind {
-                TypeDefKind::Option(o) => Some(o.to_owned()),
-                TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
-                TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
     fn extract_result_ty(&self, ty: &Type) -> (Option<Type>, Option<Type>) {
         //TODO: don't copy from the C code
         // optimization on the C size.
@@ -1011,17 +1001,6 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Future(_) => todo!("print_anonymous_type for future"),
             TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
             TypeDefKind::Unknown => unreachable!(),
-        }
-    }
-
-    fn get_primitive_type_value(&self, ty: &Type) -> String {
-        if is_arg_by_pointer(self.resolve, ty) {
-            "nil".into()
-        } else {
-            match ty {
-                Type::Bool => "false".into(),
-                _ => "0".into(),
-            }
         }
     }
 
