@@ -518,9 +518,13 @@ impl InterfaceGenerator<'_> {
                         TypeOwner::Interface(owner) => {
                             format!(
                                 "{namespace}_{name}_t",
-                                namespace = self.resolve.interfaces[owner].name.as_ref()
+                                namespace = self.resolve.interfaces[owner]
+                                    .name
+                                    .as_ref()
                                     .map(|s| s.to_snake_case())
-                                    .unwrap_or_else(|| self.gen.interface_names[&owner].to_snake_case()),
+                                    .unwrap_or_else(
+                                        || self.gen.interface_names[&owner].to_snake_case()
+                                    ),
                                 name = name.to_snake_case(),
                             )
                         }
@@ -531,7 +535,9 @@ impl InterfaceGenerator<'_> {
                                 name = name.to_snake_case(),
                             )
                         }
-                        TypeOwner::None => format!("{name}_t", name = self.gen.world.to_snake_case(),),
+                        TypeOwner::None => {
+                            format!("{name}_t", name = self.gen.world.to_snake_case(),)
+                        }
                     },
                     None => match &ty.kind {
                         TypeDefKind::Type(t) => self.get_c_ty_without_package(t),
