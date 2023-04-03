@@ -64,6 +64,9 @@ pub struct Opts {
     /// Set component string encoding
     #[cfg_attr(feature = "clap", arg(long, default_value_t = StringEncoding::default()))]
     pub string_encoding: StringEncoding,
+    // Skip optional null pointer and boolean result argument signature flattening
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub no_sig_flattening: bool,
 }
 
 impl Opts {
@@ -775,7 +778,13 @@ impl C {
 }
 
 impl Return {
-    fn return_single(&mut self, resolve: &Resolve, ty: &Type, orig_ty: &Type) {
+    fn return_single(
+        &mut self,
+        resolve: &Resolve,
+        ty: &Type,
+        orig_ty: &Type,
+        sig_flattening: bool,
+    ) {
         let id = match ty {
             Type::Id(id) => *id,
             Type::String => {
@@ -788,7 +797,7 @@ impl Return {
             }
         };
         match &resolve.types[id].kind {
-            TypeDefKind::Type(t) => return self.return_single(resolve, t, orig_ty),
+            TypeDefKind::Type(t) => return self.return_single(resolve, t, orig_ty, sig_flattening),
 
             // Flags are returned as their bare values, and enums are scalars
             TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => {
@@ -800,22 +809,26 @@ impl Return {
             // returned and then the actual type returned is returned
             // through a return pointer.
             TypeDefKind::Option(ty) => {
-                self.scalar = Some(Scalar::OptionBool(*ty));
-                self.retptrs.push(*ty);
-                return;
+                if sig_flattening {
+                    self.scalar = Some(Scalar::OptionBool(*ty));
+                    self.retptrs.push(*ty);
+                    return;
+                }
             }
 
             // Unpack a result as a boolean return type, with two
             // return pointers for ok and err values
             TypeDefKind::Result(r) => {
-                if let Some(ok) = r.ok {
-                    self.retptrs.push(ok);
+                if sig_flattening {
+                    if let Some(ok) = r.ok {
+                        self.retptrs.push(ok);
+                    }
+                    if let Some(err) = r.err {
+                        self.retptrs.push(err);
+                    }
+                    self.scalar = Some(Scalar::ResultBool(r.ok, r.err));
+                    return;
                 }
-                if let Some(err) = r.err {
-                    self.retptrs.push(err);
-                }
-                self.scalar = Some(Scalar::ResultBool(r.ok, r.err));
-                return;
             }
 
             // These types are always returned indirectly.
@@ -1095,7 +1108,7 @@ impl InterfaceGenerator<'_> {
 
         // Print the public facing signature into the header, and since that's
         // what we are defining also print it into the C file.
-        let c_sig = self.print_sig(interface_name, func);
+        let c_sig = self.print_sig(interface_name, func, !self.gen.opts.no_sig_flattening);
         self.src.c_adapters("\n");
         self.src.c_adapters(&c_sig.sig);
         self.src.c_adapters(" {\n");
@@ -1103,23 +1116,25 @@ impl InterfaceGenerator<'_> {
         // construct optional adapters from maybe pointers to real optional
         // structs internally
         let mut optional_adapters = String::from("");
-        for (i, (_, param)) in c_sig.params.iter().enumerate() {
-            let ty = &func.params[i].1;
-            if let Type::Id(id) = ty {
-                if let TypeDefKind::Option(option_ty) = &self.resolve.types[*id].kind {
-                    let ty = self.type_string(ty);
-                    uwrite!(
-                        optional_adapters,
-                        "{ty} {param};
-                        {param}.is_some = maybe_{param} != NULL;"
-                    );
-                    if !is_empty_type(self.resolve, option_ty) {
-                        uwriteln!(
+        if !self.gen.opts.no_sig_flattening {
+            for (i, (_, param)) in c_sig.params.iter().enumerate() {
+                let ty = &func.params[i].1;
+                if let Type::Id(id) = ty {
+                    if let TypeDefKind::Option(option_ty) = &self.resolve.types[*id].kind {
+                        let ty = self.type_string(ty);
+                        uwrite!(
                             optional_adapters,
-                            "if (maybe_{param}) {{
-                                {param}.val = *maybe_{param};
-                            }}",
+                            "{ty} {param};
+                            {param}.is_some = maybe_{param} != NULL;"
                         );
+                        if !is_empty_type(self.resolve, option_ty) {
+                            uwriteln!(
+                                optional_adapters,
+                                "if (maybe_{param}) {{
+                                    {param}.val = *maybe_{param};
+                                }}",
+                            );
+                        }
                     }
                 }
             }
@@ -1172,7 +1187,7 @@ impl InterfaceGenerator<'_> {
 
         // Print the actual header for this function into the header file, and
         // it's what we'll be calling.
-        let h_sig = self.print_sig(interface_name, func);
+        let h_sig = self.print_sig(interface_name, func, !self.gen.opts.no_sig_flattening);
 
         // Generate, in the C source file, the raw wasm signature that has the
         // canonical ABI.
@@ -1248,7 +1263,12 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn print_sig(&mut self, interface_name: Option<&str>, func: &Function) -> CSig {
+    fn print_sig(
+        &mut self,
+        interface_name: Option<&str>,
+        func: &Function,
+        sig_flattening: bool,
+    ) -> CSig {
         let name = self.c_func_name(interface_name, func);
         self.gen.names.insert(&name).expect("duplicate symbols");
 
@@ -1256,7 +1276,7 @@ impl InterfaceGenerator<'_> {
         let mut result_rets = false;
         let mut result_rets_has_ok_type = false;
 
-        let ret = self.classify_ret(func);
+        let ret = self.classify_ret(func, sig_flattening);
         match &ret.scalar {
             None | Some(Scalar::Void) => self.src.h_fns("void"),
             Some(Scalar::OptionBool(_id)) => self.src.h_fns("bool"),
@@ -1276,18 +1296,26 @@ impl InterfaceGenerator<'_> {
                 self.src.h_fns(", ");
             }
             let pointer = is_arg_by_pointer(self.resolve, ty);
-            // optional param pointer flattening
+            // optional param pointer sig_flattening
             let optional_type = if let Type::Id(id) = ty {
                 if let TypeDefKind::Option(option_ty) = &self.resolve.types[*id].kind {
-                    Some(option_ty)
+                    if sig_flattening {
+                        Some(option_ty)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
             } else {
                 None
             };
-            let (print_ty, print_name) = if let Some(option_ty) = optional_type {
-                (option_ty, format!("maybe_{}", to_c_ident(name)))
+            let (print_ty, print_name) = if sig_flattening {
+                if let Some(option_ty) = optional_type {
+                    (option_ty, format!("maybe_{}", to_c_ident(name)))
+                } else {
+                    (ty, to_c_ident(name))
+                }
             } else {
                 (ty, to_c_ident(name))
             };
@@ -1339,13 +1367,13 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn classify_ret(&mut self, func: &Function) -> Return {
+    fn classify_ret(&mut self, func: &Function, sig_flattening: bool) -> Return {
         let mut ret = Return::default();
         match func.results.len() {
             0 => ret.scalar = Some(Scalar::Void),
             1 => {
                 let ty = func.results.iter_types().next().unwrap();
-                ret.return_single(self.resolve, ty, ty);
+                ret.return_single(self.resolve, ty, ty, sig_flattening);
             }
             _ => {
                 ret.retptrs.extend(func.results.iter_types().cloned());
