@@ -13,4 +13,4 @@ test = false
 [dependencies]
 heck = { workspace = true }
 ignore = "0.4"
-quote = "1.0.9"
+quote = "1.0.26"
