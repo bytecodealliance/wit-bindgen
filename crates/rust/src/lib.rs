@@ -705,7 +705,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.rustdoc(docs);
         let repr = RustFlagsRepr::new(flags);
         self.src.push_str(&format!(
-            "pub struct {}: {repr} {{\n",
+            "#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]\npub struct {}: {repr} {{\n",
             name.to_upper_camel_case(),
         ));
         for (i, flag) in flags.flags.iter().enumerate() {
@@ -718,22 +718,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         }
         self.src.push_str("}\n");
         self.src.push_str("}\n");
-
-        // Add a `from_bits_preserve` method.
-        self.src
-            .push_str(&format!("impl {} {{\n", name.to_upper_camel_case()));
-        self.src.push_str(&format!(
-            "    /// Convert from a raw integer, preserving any unknown bits. See\n"
-        ));
-        self.src.push_str(&format!(
-            "    /// <https://github.com/bitflags/bitflags/issues/263#issuecomment-957088321>\n"
-        ));
-        self.src.push_str(&format!(
-            "    pub fn from_bits_preserve(bits: {repr}) -> Self {{\n",
-        ));
-        self.src.push_str(&format!("        Self {{ bits }}\n"));
-        self.src.push_str(&format!("    }}\n"));
-        self.src.push_str(&format!("}}\n"));
     }
 
     fn type_variant(&mut self, id: TypeId, _name: &str, variant: &Variant, docs: &Docs) {
@@ -1058,7 +1042,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let mut result = format!("{name}::empty()");
                 for (i, op) in operands.iter().enumerate() {
                     result.push_str(&format!(
-                        " | {name}::from_bits_preserve((({op} as {repr}) << {}) as _)",
+                        " | {name}::from_bits_retain((({op} as {repr}) << {}) as _)",
                         i * 32
                     ));
                 }
