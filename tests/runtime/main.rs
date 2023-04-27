@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::borrow::Cow;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -266,8 +267,8 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
         let encoded = wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None)?;
 
         let section = wasm_encoder::CustomSection {
-            name: "component-type",
-            data: &encoded,
+            name: Cow::Borrowed("component-type"),
+            data: Cow::Borrowed(&encoded),
         };
         module.push(section.id());
         section.encode(&mut module);
