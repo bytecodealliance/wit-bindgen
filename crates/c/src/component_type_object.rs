@@ -43,8 +43,8 @@ pub fn object(resolve: &Resolve, world: WorldId, encoding: StringEncoding) -> Re
 
     // Add our custom section
     module.section(&CustomSection {
-        name: &section_name,
-        data: data.as_slice(),
+        name: std::borrow::Cow::Borrowed(&section_name),
+        data: std::borrow::Cow::Borrowed(data.as_slice()),
     });
 
     // Append the linking section, so that lld knows the custom section's symbol name
