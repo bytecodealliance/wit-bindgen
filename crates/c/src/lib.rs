@@ -855,9 +855,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_record(&mut self, id: TypeId, name: &str, record: &Record, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\n");
-        self.docs(docs);
+        self.docs(docs, SourceType::HDefs);
         self.src.h_defs("typedef struct {\n");
         for field in record.fields.iter() {
+            self.docs(&field.docs, SourceType::HDefs);
             self.print_ty(SourceType::HDefs, &field.ty);
             self.src.h_defs(" ");
             self.src.h_defs(&to_c_ident(&field.name));
@@ -872,7 +873,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_tuple(&mut self, id: TypeId, name: &str, tuple: &Tuple, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\n");
-        self.docs(docs);
+        self.docs(docs, SourceType::HDefs);
         self.src.h_defs("typedef struct {\n");
         for (i, ty) in tuple.types.iter().enumerate() {
             self.print_ty(SourceType::HDefs, ty);
@@ -887,7 +888,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_flags(&mut self, id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\n");
-        self.docs(docs);
+        self.docs(docs, SourceType::HDefs);
         self.src.h_defs("typedef ");
         let repr = flags_repr(flags);
         self.src.h_defs(int_repr(repr));
@@ -902,6 +903,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .owner_namespace(self.resolve, id)
             .to_shouty_snake_case();
         for (i, flag) in flags.flags.iter().enumerate() {
+            self.docs(&flag.docs, SourceType::HDefs);
             uwriteln!(
                 self.src.h_defs,
                 "#define {ns}_{}_{} (1 << {i})",
@@ -916,7 +918,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_variant(&mut self, id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\n");
-        self.docs(docs);
+        self.docs(docs, SourceType::HDefs);
         self.src.h_defs("typedef struct {\n");
         self.src.h_defs(int_repr(variant.tag()));
         self.src.h_defs(" tag;\n");
@@ -941,6 +943,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .owner_namespace(self.resolve, id)
             .to_shouty_snake_case();
         for (i, case) in variant.cases.iter().enumerate() {
+            self.docs(&case.docs, SourceType::HDefs);
             uwriteln!(
                 self.src.h_defs,
                 "#define {ns}_{}_{} {i}",
@@ -955,12 +958,13 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_union(&mut self, id: TypeId, name: &str, union: &Union, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\n");
-        self.docs(docs);
+        self.docs(docs, SourceType::HDefs);
         self.src.h_defs("typedef struct {\n");
         self.src.h_defs(int_repr(union.tag()));
         self.src.h_defs(" tag;\n");
         self.src.h_defs("union {\n");
         for (i, case) in union.cases.iter().enumerate() {
+            self.docs(&case.docs, SourceType::HDefs);
             self.print_ty(SourceType::HDefs, &case.ty);
             uwriteln!(self.src.h_defs, " f{i};");
         }
@@ -974,7 +978,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_option(&mut self, id: TypeId, name: &str, payload: &Type, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\n");
-        self.docs(docs);
+        self.docs(docs, SourceType::HDefs);
         self.src.h_defs("typedef struct {\n");
         self.src.h_defs("bool is_some;\n");
         if !is_empty_type(self.resolve, payload) {
@@ -990,7 +994,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_result(&mut self, id: TypeId, name: &str, result: &Result_, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\n");
-        self.docs(docs);
+        self.docs(docs, SourceType::HDefs);
         self.src.h_defs("typedef struct {\n");
         self.src.h_defs("bool is_err;\n");
         self.src.h_defs("union {\n");
@@ -1012,7 +1016,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
         uwrite!(self.src.h_defs, "\n");
-        self.docs(docs);
+        self.docs(docs, SourceType::HDefs);
         let int_t = int_repr(enum_.tag());
         uwrite!(self.src.h_defs, "typedef {int_t} ");
         self.print_typedef_target(id, name);
@@ -1025,6 +1029,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .owner_namespace(self.resolve, id)
             .to_shouty_snake_case();
         for (i, case) in enum_.cases.iter().enumerate() {
+            self.docs(&case.docs, SourceType::HDefs);
             uwriteln!(
                 self.src.h_defs,
                 "#define {ns}_{}_{} {i}",
@@ -1039,7 +1044,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_alias(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\n");
-        self.docs(docs);
+        self.docs(docs, SourceType::HDefs);
         self.src.h_defs("typedef ");
         self.print_ty(SourceType::HDefs, ty);
         self.src.h_defs(" ");
@@ -1050,7 +1055,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_list(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\n");
-        self.docs(docs);
+        self.docs(docs, SourceType::HDefs);
         self.src.h_defs("typedef struct {\n");
         self.print_ty(SourceType::HDefs, ty);
         self.src.h_defs(" *ptr;\n");
@@ -1072,6 +1077,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn import(&mut self, interface_name: Option<&str>, func: &Function) {
+        self.docs(&func.docs, SourceType::HFns);
         let sig = self.resolve.wasm_signature(AbiVariant::GuestImport, func);
 
         self.src.c_fns("\n");
@@ -1397,15 +1403,16 @@ impl InterfaceGenerator<'_> {
             .push_type_name(self.resolve, ty, self.src.src(stype).as_mut_string());
     }
 
-    fn docs(&mut self, docs: &Docs) {
+    fn docs(&mut self, docs: &Docs, stype: SourceType) {
         let docs = match &docs.contents {
             Some(docs) => docs,
             None => return,
         };
+        let src = self.src.src(stype);
         for line in docs.trim().lines() {
-            self.src.h_defs("// ");
-            self.src.h_defs(line);
-            self.src.h_defs("\n");
+            src.push_str("// ");
+            src.push_str(line);
+            src.push_str("\n");
         }
     }
 
