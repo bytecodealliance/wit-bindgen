@@ -1362,7 +1362,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, val));
                 self.push_str(&format!("let {} = {}.len() as i32;\n", len, val));
                 if realloc.is_some() {
-                    self.push_str(&format!("core::mem::forget({});\n", val));
+                    self.push_str(&format!("::core::mem::forget({});\n", val));
                 }
                 results.push(ptr);
                 results.push(len);
