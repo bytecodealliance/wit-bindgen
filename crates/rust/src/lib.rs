@@ -434,7 +434,7 @@ impl InterfaceGenerator<'_> {
                 "
                     #[repr(align({import_return_pointer_area_align}))]
                     struct RetArea([u8; {import_return_pointer_area_size}]);
-                    let mut ret_area = core::mem::MaybeUninit::<RetArea>::uninit();
+                    let mut ret_area = ::core::mem::MaybeUninit::<RetArea>::uninit();
                 ",
             );
         }
@@ -996,9 +996,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!(
                     "{{
                         #[cfg(not(debug_assertions))]
-                        {{ core::char::from_u32_unchecked({} as u32) }}
+                        {{ ::core::char::from_u32_unchecked({} as u32) }}
                         #[cfg(debug_assertions)]
-                        {{ core::char::from_u32({} as u32).unwrap() }}
+                        {{ ::core::char::from_u32({} as u32).unwrap() }}
                     }}",
                     operands[0], operands[0]
                 ));
@@ -1015,7 +1015,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!(
                     "{{
                         #[cfg(not(debug_assertions))]
-                        {{ core::mem::transmute::<u8, bool>({} as u8) }}
+                        {{ ::core::mem::transmute::<u8, bool>({} as u8) }}
                         #[cfg(debug_assertions)]
                         {{
                             match {} {{
@@ -1109,7 +1109,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     // defined the type so we can transmute directly into it.
                     result.push_str("#[cfg(not(debug_assertions))]");
                     result.push_str("{");
-                    result.push_str("core::mem::transmute::<_, ");
+                    result.push_str("::core::mem::transmute::<_, ");
                     result.push_str(&name.to_upper_camel_case());
                     result.push_str(">(");
                     result.push_str(op0);
@@ -1228,7 +1228,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         0 => None,
                         1 => Some({some}),
                         #[cfg(not(debug_assertions))]
-                        _ => core::hint::unreachable_unchecked(),
+                        _ => ::core::hint::unreachable_unchecked(),
                         #[cfg(debug_assertions)]
                         _ => panic!(\"invalid enum discriminant\"),
                     }}"
@@ -1263,7 +1263,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         0 => Ok({ok}),
                         1 => Err({err}),
                         #[cfg(not(debug_assertions))]
-                        _ => core::hint::unreachable_unchecked(),
+                        _ => ::core::hint::unreachable_unchecked(),
                         #[cfg(debug_assertions)]
                         _ => panic!(\"invalid enum discriminant\"),
                     }}"
@@ -1304,7 +1304,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 // defined the type so we can transmute directly into it.
                 result.push_str("#[cfg(not(debug_assertions))]");
                 result.push_str("{");
-                result.push_str("core::mem::transmute::<_, ");
+                result.push_str("::core::mem::transmute::<_, ");
                 result.push_str(&self.gen.type_path(*ty, true));
                 result.push_str(">(");
                 result.push_str(&operands[0]);
@@ -1331,7 +1331,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!("let {} = {}.as_ptr() as i32;\n", ptr, val));
                 self.push_str(&format!("let {} = {}.len() as i32;\n", len, val));
                 if realloc.is_some() {
-                    self.push_str(&format!("core::mem::forget({});\n", val));
+                    self.push_str(&format!("::core::mem::forget({});\n", val));
                 }
                 results.push(ptr);
                 results.push(len);
@@ -1420,7 +1420,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "if ptr.is_null()\n{{\nalloc::handle_alloc_error({layout});\n}}\nptr\n}}",
                 ));
-                self.push_str(&format!("else {{\ncore::ptr::null_mut()\n}};\n",));
+                self.push_str(&format!("else {{\n::core::ptr::null_mut()\n}};\n",));
                 self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
                 self.push_str(&format!(
                     "let base = {result} as i32 + (i as i32) * {size};\n",
