@@ -363,7 +363,7 @@ impl WorldGenerator for C {
             uwrite!(
                 c_str,
                 "
-                __attribute__((aligned({})))
+                __attribute__((__aligned__({})))
                 static uint8_t RET_AREA[{}];
                 ",
                 self.return_pointer_area_align,
@@ -765,7 +765,7 @@ impl C {
         // overridden from some other symbol.
         self.src.c_fns(
             r#"
-                __attribute__((weak, export_name("cabi_realloc")))
+                __attribute__((__weak__, __export_name__("cabi_realloc")))
                 void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size) {
                     if (new_size == 0) return (void*) align;
                     void *ret = realloc(ptr, new_size);
@@ -1087,7 +1087,7 @@ impl InterfaceGenerator<'_> {
         // signature.
         uwriteln!(
             self.src.c_fns,
-            "__attribute__((import_module(\"{}\"), import_name(\"{}\")))",
+            "__attribute__((__import_module__(\"{}\"), __import_name__(\"{}\")))",
             interface_name.unwrap_or("$root"),
             func.name
         );
@@ -1176,7 +1176,7 @@ impl InterfaceGenerator<'_> {
         if import_return_pointer_area_size > 0 {
             self.src.c_adapters(&format!(
                 "\
-                    __attribute__((aligned({import_return_pointer_area_align})))
+                    __attribute__((__aligned__({import_return_pointer_area_align})))
                     uint8_t ret_area[{import_return_pointer_area_size}];
                 ",
             ));
@@ -1199,7 +1199,7 @@ impl InterfaceGenerator<'_> {
         // canonical ABI.
         uwriteln!(
             self.src.c_adapters,
-            "\n__attribute__((export_name(\"{export_name}\")))"
+            "\n__attribute__((__export_name__(\"{export_name}\")))"
         );
         let name = self.c_func_name(interface_name, func);
         let import_name = self.gen.names.tmp(&format!("__wasm_export_{name}"));
@@ -1240,7 +1240,7 @@ impl InterfaceGenerator<'_> {
         if self.resolve.guest_export_needs_post_return(func) {
             uwriteln!(
                 self.src.c_fns,
-                "__attribute__((weak, export_name(\"cabi_post_{export_name}\")))"
+                "__attribute__((__weak__, __export_name__(\"cabi_post_{export_name}\")))"
             );
             uwrite!(self.src.c_fns, "void {import_name}_post_return(");
 
