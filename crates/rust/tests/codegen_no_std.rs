@@ -27,7 +27,7 @@ mod codegen_tests {
 
         };
     }
-    test_helpers::codegen_tests!("*.wit");
+    test_helpers::codegen_tests!();
 }
 
 mod strings {
