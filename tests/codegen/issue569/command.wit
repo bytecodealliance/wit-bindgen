@@ -1,0 +1,3 @@
+default world command {
+  use io.streams.{input-stream}
+}

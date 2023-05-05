@@ -1,0 +1,7 @@
+default interface streams {
+    use poll.poll.{pollable}
+
+    type input-stream = u32
+
+    read: func() -> list<u8>
+}
