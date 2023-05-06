@@ -374,6 +374,17 @@ wasm-tools component new main.embed.wasm --adapt wasi_snapshot_preview1.wasm -o 
 wasm-tools validate main.component.wasm --features component-model
 ```
 
+### Guest: C++-17+
+
+This fork contains code to generate C++ code which uses the std types 
+optional, string, string_view, vector, expected to represent generic
+WIT types.
+
+This relies on wasi-SDK for guest compilation.
+
+A separate subcommand (cpp-host) will generate C++ host code for 
+WebAssembly micro runtime.
+
 ### Guest: Other Languages
 
 Other languages such as JS, Ruby, Python, etc, are hoped to be supported one day
@@ -432,6 +443,8 @@ components:
   that works similar to the JS integration. Given a concrete component this will
   generate Python source code to interact with the component using an embedding
   of Wasmtime for its core WebAssembly support.
+
+- C++-17+: see above chapter for WAMR host code generation.
 
 - Tooling: the [`wasm-tools`] project can be used to inspect and modify
   low-level details of components. For example as previously mentioned you can

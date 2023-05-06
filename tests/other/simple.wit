@@ -1,0 +1,13 @@
+package test:example
+
+interface my-interface {
+    resource my-object {
+        constructor(a: u32)
+        set: func(v: u32)
+        get: func() -> u32
+    }
+}
+
+world my-world {
+    import my-interface
+}

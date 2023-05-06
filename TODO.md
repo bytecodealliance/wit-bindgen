@@ -58,3 +58,11 @@
 
 * Imported handle types show up as `any` in TS, unsure how to plumb through
   actual types to get that actually typed.
+
+# Cpp
+
+* Use Resolve::wasm_signature ?
+
+* Reuse code between host and guest (RustFunctionGenerator like?)
+
+* Evaluate emit/call for host side code generation

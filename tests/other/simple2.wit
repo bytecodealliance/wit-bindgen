@@ -1,0 +1,25 @@
+package test:example
+
+interface my-interface {
+    resource pollable
+
+    resource my-object {
+        constructor(a: u32)
+        set: func(v: u32)
+        get: func() -> u32
+        //static consume: func(obj: own<my-object>)
+    }
+
+    resource stream-u16 {
+        subscribe: func() -> pollable
+        value: func() -> option<u16>
+    }
+
+    resource container {
+        create: func() -> result<stream-u16>
+    }
+}
+
+world my-world2 {
+    import my-interface
+}

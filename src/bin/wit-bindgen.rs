@@ -38,6 +38,14 @@ enum Opt {
         #[clap(flatten)]
         args: Common,
     },
+    /// Generates bindings for C/CPP host modules.
+    #[cfg(feature = "cpp")]
+    Cpp {
+        #[clap(flatten)]
+        opts: wit_bindgen_cpp::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
 
     /// Generates bindings for TeaVM-based Java guest modules.
     #[cfg(feature = "teavm-java")]
@@ -96,6 +104,12 @@ fn main() -> Result<()> {
         Opt::Markdown { opts, args } => (opts.build(), args),
         #[cfg(feature = "c")]
         Opt::C { opts, args } => (opts.build(), args),
+        #[cfg(feature = "c-host")]
+        Opt::CHost { opts, args } => (opts.build(), args),
+        #[cfg(feature = "cpp")]
+        Opt::Cpp { opts, args } => (opts.build(), args),
+        #[cfg(feature = "cpp-host")]
+        Opt::CppHost { opts, args } => (opts.build(), args),
         #[cfg(feature = "rust")]
         Opt::Rust { opts, args } => (opts.build(), args),
         #[cfg(feature = "teavm-java")]
