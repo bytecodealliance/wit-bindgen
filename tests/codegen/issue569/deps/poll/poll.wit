@@ -1,0 +1,5 @@
+default interface poll {
+    type pollable = u32
+
+    poll-oneoff: func() -> list<u8>
+}

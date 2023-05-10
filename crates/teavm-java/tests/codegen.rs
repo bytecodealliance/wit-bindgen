@@ -20,7 +20,7 @@ macro_rules! codegen_test {
         }
     };
 }
-test_helpers::codegen_tests!("*.wit");
+test_helpers::codegen_tests!();
 
 fn verify(dir: &Path, name: &str) {
     use heck::ToSnakeCase;

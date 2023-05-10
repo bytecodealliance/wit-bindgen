@@ -465,6 +465,17 @@ impl C {
     }
 
     fn print_anonymous_type(&mut self, resolve: &Resolve, ty: TypeId) {
+        // If this anonymous type is already defined then it was referred to
+        // twice from multiple various locations, so skip the second set of
+        // bindings as they'll be the same as the first.
+        let mut name = self.owner_namespace(resolve, ty);
+        name.push_str("_");
+        push_ty_name(resolve, &Type::Id(ty), &mut name);
+        name.push_str("_t");
+        if self.names.insert(&name).is_err() {
+            return;
+        }
+
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\ntypedef ");
         let kind = &resolve.types[ty].kind;
@@ -524,11 +535,8 @@ impl C {
             TypeDefKind::Unknown => unreachable!(),
         }
         self.src.h_defs(" ");
-        let ns = self.owner_namespace(resolve, ty);
-        self.src.h_defs(&ns);
-        self.src.h_defs("_");
-        self.src.h_defs.print_ty_name(resolve, &Type::Id(ty));
-        self.src.h_defs("_t;\n");
+        self.src.h_defs(&name);
+        self.src.h_defs(";\n");
         let type_source = mem::replace(&mut self.src.h_defs, prev);
         self.types.insert(ty, type_source);
     }
