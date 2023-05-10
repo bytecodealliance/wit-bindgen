@@ -397,15 +397,25 @@ pub trait WorldGenerator {
         }
         funcs.clear();
 
+        // First generate bindings for any freestanding functions, if any. If
+        // these refer to types defined in the world they need to refer to the
+        // imported types generated above.
+        //
+        // Interfaces are then generated afterwards so if the same interface is
+        // both imported and exported the right types are all used everywhere.
+        let mut interfaces = Vec::new();
         for (name, export) in world.exports.iter() {
             match export {
                 WorldItem::Function(f) => funcs.push((name.as_str(), f)),
-                WorldItem::Interface(id) => self.export_interface(resolve, name, *id, files),
+                WorldItem::Interface(id) => interfaces.push((name, id)),
                 WorldItem::Type(_) => unreachable!(),
             }
         }
         if !funcs.is_empty() {
             self.export_funcs(resolve, id, &funcs, files);
+        }
+        for (name, id) in interfaces {
+            self.export_interface(resolve, name, *id, files);
         }
         self.finish(resolve, id, files);
     }
