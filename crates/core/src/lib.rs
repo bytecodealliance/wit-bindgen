@@ -106,6 +106,18 @@ impl Types {
                 _ => continue,
             };
             if let Some(Type::Id(id)) = err {
+                // When an interface `use`s a type from another interface, it creates a new typeid
+                // referring to the definition typeid. Chase any chain of references down to the
+                // typeid of the definition.
+                fn resolve_type_definition_id(resolve: &Resolve, mut id: TypeId) -> TypeId {
+                    loop {
+                        match resolve.types[id].kind {
+                            TypeDefKind::Type(Type::Id(def_id)) => id = def_id,
+                            _ => return id,
+                        }
+                    }
+                }
+                let id = resolve_type_definition_id(resolve, *id);
                 self.type_info.get_mut(&id).unwrap().error = true;
             }
         }
