@@ -29,7 +29,7 @@ struct C {
     // This is subsequently used to generate a namespace for each type that's
     // used, but only in the case that the interface itself doesn't already have
     // an original name.
-    interface_names: HashMap<InterfaceId, String>,
+    interface_names: HashMap<InterfaceId, WorldKey>,
 
     // Interfaces who have had their types printed.
     //
@@ -109,11 +109,11 @@ impl WorldGenerator for C {
     fn import_interface(
         &mut self,
         resolve: &Resolve,
-        name: &str,
+        name: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
     ) {
-        let prev = self.interface_names.insert(id, name.to_string());
+        let prev = self.interface_names.insert(id, name.clone());
         assert!(prev.is_none());
         let mut gen = self.interface(resolve, true);
         gen.interface = Some(id);
@@ -123,6 +123,7 @@ impl WorldGenerator for C {
 
         for (i, (_name, func)) in resolve.interfaces[id].functions.iter().enumerate() {
             if i == 0 {
+                let name = resolve.name_world_key(name);
                 uwriteln!(gen.src.h_fns, "\n// Imported Functions from `{name}`");
             }
             gen.import(Some(name), func);
@@ -154,11 +155,11 @@ impl WorldGenerator for C {
     fn export_interface(
         &mut self,
         resolve: &Resolve,
-        name: &str,
+        name: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
     ) {
-        self.interface_names.insert(id, name.to_string());
+        self.interface_names.insert(id, name.clone());
         let mut gen = self.interface(resolve, false);
         gen.interface = Some(id);
         if gen.gen.interfaces_with_types_printed.insert(id) {
@@ -167,6 +168,7 @@ impl WorldGenerator for C {
 
         for (i, (_name, func)) in resolve.interfaces[id].functions.iter().enumerate() {
             if i == 0 {
+                let name = resolve.name_world_key(name);
                 uwriteln!(gen.src.h_fns, "\n// Exported Functions from `{name}`");
             }
             gen.export(func, Some(name));
@@ -687,16 +689,23 @@ impl C {
     fn owner_namespace(&mut self, resolve: &Resolve, id: TypeId) -> String {
         let ty = &resolve.types[id];
         match ty.owner {
-            // If this type belongs to an interface, then use that interface's
-            // original name if it's listed in the source. Otherwise if it's an
-            // "anonymous" interface as part of a world use the name of the
-            // import/export in the world which would have been stored in
-            // `interface_names`.
-            TypeOwner::Interface(owner) => resolve.interfaces[owner]
-                .name
-                .as_ref()
-                .map(|s| s.to_snake_case())
-                .unwrap_or_else(|| self.interface_names[&owner].to_snake_case()),
+            TypeOwner::Interface(owner) => {
+                let key = &self.interface_names[&owner];
+                match key {
+                    WorldKey::Name(name) => name.to_snake_case(),
+                    WorldKey::Interface(id) => {
+                        let mut ns = String::new();
+                        let iface = &resolve.interfaces[*id];
+                        let pkg = &resolve.packages[iface.package.unwrap()];
+                        ns.push_str(&pkg.name.namespace.to_snake_case());
+                        ns.push_str("_");
+                        ns.push_str(&pkg.name.name.to_snake_case());
+                        ns.push_str("_");
+                        ns.push_str(&iface.name.as_ref().unwrap().to_snake_case());
+                        ns
+                    }
+                }
+            }
 
             TypeOwner::World(owner) => resolve.worlds[owner].name.to_snake_case(),
 
@@ -1079,12 +1088,30 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
-    fn c_func_name(&self, interface_name: Option<&str>, func: &Function) -> String {
-        let ns = interface_name.unwrap_or(&self.gen.world);
-        format!("{}_{}", ns.to_snake_case(), func.name.to_snake_case())
+    fn c_func_name(&self, interface_name: Option<&WorldKey>, func: &Function) -> String {
+        let mut name = String::new();
+        match interface_name {
+            Some(WorldKey::Name(k)) => name.push_str(&k.to_snake_case()),
+            Some(WorldKey::Interface(id)) => {
+                if !self.in_import {
+                    name.push_str("exports_");
+                }
+                let iface = &self.resolve.interfaces[*id];
+                let pkg = &self.resolve.packages[iface.package.unwrap()];
+                name.push_str(&pkg.name.namespace.to_snake_case());
+                name.push_str("_");
+                name.push_str(&pkg.name.name.to_snake_case());
+                name.push_str("_");
+                name.push_str(&iface.name.as_ref().unwrap().to_snake_case());
+            }
+            None => name.push_str(&self.gen.world.to_snake_case()),
+        }
+        name.push_str("_");
+        name.push_str(&func.name.to_snake_case());
+        name
     }
 
-    fn import(&mut self, interface_name: Option<&str>, func: &Function) {
+    fn import(&mut self, interface_name: Option<&WorldKey>, func: &Function) {
         self.docs(&func.docs, SourceType::HFns);
         let sig = self.resolve.wasm_signature(AbiVariant::GuestImport, func);
 
@@ -1096,7 +1123,10 @@ impl InterfaceGenerator<'_> {
         uwriteln!(
             self.src.c_fns,
             "__attribute__((__import_module__(\"{}\"), __import_name__(\"{}\")))",
-            interface_name.unwrap_or("$root"),
+            match interface_name {
+                Some(name) => self.resolve.name_world_key(name),
+                None => "$root".to_string(),
+            },
             func.name
         );
         let name = self.c_func_name(interface_name, func);
@@ -1194,10 +1224,11 @@ impl InterfaceGenerator<'_> {
         self.src.c_adapters("}\n");
     }
 
-    fn export(&mut self, func: &Function, interface_name: Option<&str>) {
+    fn export(&mut self, func: &Function, interface_name: Option<&WorldKey>) {
         let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
-        let export_name = func.core_export_name(interface_name);
+        let core_module_name = interface_name.map(|s| self.resolve.name_world_key(s));
+        let export_name = func.core_export_name(core_module_name.as_deref());
 
         // Print the actual header for this function into the header file, and
         // it's what we'll be calling.
@@ -1279,7 +1310,7 @@ impl InterfaceGenerator<'_> {
 
     fn print_sig(
         &mut self,
-        interface_name: Option<&str>,
+        interface_name: Option<&WorldKey>,
         func: &Function,
         sig_flattening: bool,
     ) -> CSig {

@@ -1,4 +1,4 @@
-package foo:fo
+package foo:foo
 
 interface lists {
   list-u8-param: func(x: list<u8>)
