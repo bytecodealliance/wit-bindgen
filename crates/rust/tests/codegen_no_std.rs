@@ -17,7 +17,6 @@ mod codegen_tests {
             mod $id {
                 wit_bindgen::generate!({
                     path: $test,
-                    world: $name,
                     std_feature,
                 });
 
@@ -35,7 +34,8 @@ mod strings {
 
     wit_bindgen::generate!({
         inline: "
-            default world not-used-name {
+            package my:strings
+            world not-used-name {
                 import cat: interface {
                     foo: func(x: string)
                     bar: func() -> string
@@ -61,7 +61,8 @@ mod raw_strings {
 
     wit_bindgen::generate!({
         inline: "
-            default world not-used-name {
+            package raw:strings
+            world not-used-name {
                 import cat: interface {
                     foo: func(x: string)
                     bar: func() -> string
@@ -94,7 +95,8 @@ mod prefix {
     mod bindings {
         wit_bindgen::generate!({
             inline: "
-                default world baz {
+                package foo:foo
+                world baz {
                     export exports1: interface {
                         foo: func(x: string)
                         bar: func() -> string
@@ -110,7 +112,7 @@ mod prefix {
 
     struct Component;
 
-    impl bindings::exports1::Exports1 for Component {
+    impl bindings::exports::exports1::Exports1 for Component {
         fn foo(x: String) {
             let _ = format!("foo: {}", x);
         }
@@ -130,7 +132,8 @@ mod macro_name {
 
     wit_bindgen::generate!({
         inline: "
-            default world baz {
+            package foo:foo
+            world baz {
                 export exports2: interface {
                     foo: func(x: string)
                 }
@@ -142,7 +145,7 @@ mod macro_name {
 
     struct Component;
 
-    impl exports2::Exports2 for Component {
+    impl exports::exports2::Exports2 for Component {
         fn foo(x: String) {
             let _ = format!("foo: {}", x);
         }
@@ -154,7 +157,8 @@ mod macro_name {
 mod skip {
     wit_bindgen::generate!({
         inline: "
-            default world baz {
+            package foo:foo
+            world baz {
                 export exports: interface {
                     foo: func()
                     bar: func()
@@ -167,7 +171,7 @@ mod skip {
 
     struct Component;
 
-    impl exports::Exports for Component {
+    impl exports::exports::Exports for Component {
         fn bar() {}
     }
 
