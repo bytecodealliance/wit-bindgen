@@ -392,13 +392,20 @@ pub trait WorldGenerator {
         let world = &resolve.worlds[id];
         self.preprocess(resolve, id);
 
+        fn unwrap_name(key: &WorldKey) -> &str {
+            match key {
+                WorldKey::Name(name) => name,
+                WorldKey::Interface(_) => panic!("unexpected interface key"),
+            }
+        }
+
         let mut funcs = Vec::new();
         let mut types = Vec::new();
         for (name, import) in world.imports.iter() {
             match import {
-                WorldItem::Function(f) => funcs.push((name.as_str(), f)),
+                WorldItem::Function(f) => funcs.push((unwrap_name(name), f)),
                 WorldItem::Interface(id) => self.import_interface(resolve, name, *id, files),
-                WorldItem::Type(id) => types.push((name.as_str(), *id)),
+                WorldItem::Type(id) => types.push((unwrap_name(name), *id)),
             }
         }
         if !types.is_empty() {
@@ -418,7 +425,7 @@ pub trait WorldGenerator {
         let mut interfaces = Vec::new();
         for (name, export) in world.exports.iter() {
             match export {
-                WorldItem::Function(f) => funcs.push((name.as_str(), f)),
+                WorldItem::Function(f) => funcs.push((unwrap_name(name), f)),
                 WorldItem::Interface(id) => interfaces.push((name, id)),
                 WorldItem::Type(_) => unreachable!(),
             }
@@ -440,14 +447,14 @@ pub trait WorldGenerator {
     fn import_interface(
         &mut self,
         resolve: &Resolve,
-        name: &str,
+        name: &WorldKey,
         iface: InterfaceId,
         files: &mut Files,
     );
     fn export_interface(
         &mut self,
         resolve: &Resolve,
-        name: &str,
+        name: &WorldKey,
         iface: InterfaceId,
         files: &mut Files,
     );

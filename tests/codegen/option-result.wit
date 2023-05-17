@@ -1,3 +1,5 @@
+package foo:foo
+
 interface option-result {
 	record empty {}
 	record o-one {
@@ -7,7 +9,7 @@ interface option-result {
 	record o-nested {
 		a: option<option<o-one>>,
 	}
-	
+
 	type o1 = option<o-one>
 	type o2 = option<empty>
 	type o3 = option<o-nested>
@@ -69,8 +71,8 @@ interface option-result {
 	 multi-option: func(x: r7, y: r7) -> option<tuple<r7, r7>>
 }
 
-default world my-world {
-	import imports: self.option-result
-	export exports: self.option-result
+world my-world {
+	import option-result
+	export option-result
 }
-  
+

@@ -1,3 +1,5 @@
+package foo:foo
+
 interface http-fetch-imports {
     record request{
         method: string,
@@ -13,6 +15,6 @@ interface http-fetch-imports {
     fetch: func(req: request) -> result<response>
 }
 
-default world http-fetch-simple {
-    import http-fetch-simple: self.http-fetch-imports
+world http-fetch-simple {
+    import http-fetch-imports
 }

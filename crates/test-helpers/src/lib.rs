@@ -129,10 +129,7 @@ fn parse_wit(path: &Path) -> (Resolve, WorldId) {
         resolve.push_dir(path).unwrap().0
     } else {
         resolve
-            .push(
-                UnresolvedPackage::parse_file(path).unwrap(),
-                &Default::default(),
-            )
+            .push(UnresolvedPackage::parse_file(path).unwrap())
             .unwrap()
     };
     let world = resolve.select_world(pkg, None).unwrap();

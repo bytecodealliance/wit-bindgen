@@ -74,3 +74,11 @@ heck = { workspace = true }
 wasmtime = { version = "9", features = ['component-model'] }
 test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
+
+[patch.crates-io]
+wasm-encoder = { path = '../wasm-tools/crates/wasm-encoder' }
+wasm-metadata = { path = '../wasm-tools/crates/wasm-metadata' }
+wit-parser = { path = '../wasm-tools/crates/wit-parser' }
+wit-component = { path = '../wasm-tools/crates/wit-component' }
+wat = { path = '../wasm-tools/crates/wat' }
+wasmparser = { path = '../wasm-tools/crates/wasmparser' }

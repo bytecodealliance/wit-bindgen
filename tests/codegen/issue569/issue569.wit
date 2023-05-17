@@ -1,3 +1,5 @@
-default world command {
-  use io.streams.{input-stream}
+package foo:foo
+
+world command {
+  use wasi:io/streams.{input-stream}
 }

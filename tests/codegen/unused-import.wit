@@ -1,17 +1,19 @@
+package unused:%import
+
 interface types {
     record r {
         a: list<u8>,
     }
 }
 
-default world the-world {
+world the-world {
     import foo: interface {
-      use self.types.{r}
+      use types.{r}
 
       foo: func(data: r)
     }
 
     export bar: interface {
-      use self.types.{r}
+      use types.{r}
     }
 }

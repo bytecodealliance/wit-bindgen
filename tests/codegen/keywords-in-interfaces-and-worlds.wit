@@ -1,4 +1,6 @@
-default world trait {
+package foo:foo
+
+world trait {
   import continue: interface {
     break: func()
   }

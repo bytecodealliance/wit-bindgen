@@ -1,5 +1,7 @@
-default world bindings {
-    import component: self.component
+package foo:foo
+
+world bindings {
+    import component
 }
 
 interface component {

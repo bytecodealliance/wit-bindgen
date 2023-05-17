@@ -1,13 +1,15 @@
+package foo:foo
+
 interface keywords {
     record for {
-      return: u32,  
+      return: u32,
     }
     %type: func(%type: u32) -> (%type: u32, %flags: s32)
     %variant: func(%enum: s32) -> ()
     %interface: func(%interface: s32) -> ()
     throw: func(throw: s32) -> ()
     new: func(new: s32) -> ()
-    package: func(package: s32) -> ()
+    %package: func(%package: s32) -> ()
     final: func(final: s32) -> ()
     auto: func(auto: s32) -> ()
     else: func(for: s32) -> ()
@@ -30,7 +32,7 @@ interface keywords {
     goto: func(goto: s32) -> ()
     sizeof: func(sizeof: s32) -> ()
     volatile: func(volatile: s32) -> ()
-    %default: func(%default: s32) -> ()
+    default: func(default: s32) -> ()
     if: func(if: s32) -> ()
     %static: func(%static: s32) -> ()
     while: func(while: s32) -> ()
@@ -39,7 +41,7 @@ interface keywords {
     %struct: func(%struct: s32) -> ()
 }
 
-default world the-world {
-  import imports: self.keywords
-  export exports: self.keywords
+world the-world {
+  import keywords
+  export keywords
 }

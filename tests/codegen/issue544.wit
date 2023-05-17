@@ -1,5 +1,7 @@
 // ./wit/issue.wit
-default world issue {
+package foo:foo
+
+world issue {
     union union-list-u8 {
         list<u8>,
     }

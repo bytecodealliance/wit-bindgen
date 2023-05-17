@@ -1,5 +1,7 @@
-default interface streams {
-    use poll.poll.{pollable}
+package wasi:io
+
+interface streams {
+    use wasi:poll/poll.{pollable}
 
     type input-stream = u32
 
