@@ -29,11 +29,11 @@ clap = { version = "4.2.2", features = ["derive"] }
 env_logger = "0.10.0"
 indexmap = "1.9.3"
 
-wasm-encoder = "0.26.0"
-wasm-metadata = "0.5.0"
-wat = "1.0.63"
+wasm-encoder = "0.27.0"
+wasm-metadata = "0.6.0"
+wat = "1.0.64"
 wit-parser = "0.7.1"
-wit-component = "0.8.2"
+wit-component = "0.9.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.6.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.6.0' }
