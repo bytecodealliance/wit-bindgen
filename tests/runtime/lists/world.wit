@@ -1,3 +1,5 @@
+package test:lists
+
 interface test {
   empty-list-param: func(a: list<u8>)
   empty-string-param: func(a: string)
@@ -24,9 +26,9 @@ interface test {
   string-roundtrip: func(a: string) -> string
 }
 
-default world lists {
-  import imports: self.test
-  export exports: self.test
+world lists {
+  import test
+  export test
 
   export test-imports: func()
   export allocated-bytes: func() -> u32

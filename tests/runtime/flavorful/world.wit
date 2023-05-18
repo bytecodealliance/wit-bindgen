@@ -1,3 +1,5 @@
+package test:flavorful
+
 interface test {
   record list-in-record1 { a: string }
   record list-in-record2 { a: string }
@@ -33,9 +35,9 @@ interface test {
     -> (a: list<bool>, b: list<result>, c: list<my-errno>)
 }
 
-default world flavorful {
-  import imports: self.test
-  export exports: self.test
+world flavorful {
+  import test
+  export test
 
   export test-imports: func()
 }

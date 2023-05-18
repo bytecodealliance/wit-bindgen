@@ -1,3 +1,5 @@
+package test:numbers
+
 interface test {
   roundtrip-u8: func(a: u8) -> u8
   roundtrip-s8: func(a: s8) -> s8
@@ -15,9 +17,9 @@ interface test {
   get-scalar: func() -> u32
 }
 
-default world numbers {
-  import imports: self.test
-  export exports: self.test
+world numbers {
+  import test
+  export test
 
   export test-imports: func()
 }

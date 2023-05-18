@@ -147,10 +147,7 @@ fn gen_world(
     let pkg = if opts.wit.is_dir() {
         resolve.push_dir(&opts.wit)?.0
     } else {
-        resolve.push(
-            UnresolvedPackage::parse_file(&opts.wit)?,
-            &Default::default(),
-        )?
+        resolve.push(UnresolvedPackage::parse_file(&opts.wit)?)?
     };
     let world = resolve.select_world(pkg, opts.world.as_deref())?;
     generator.generate(&resolve, world, files);

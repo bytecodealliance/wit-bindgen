@@ -1,6 +1,6 @@
-wit_bindgen::generate!("world" in "../../tests/runtime/unions");
+wit_bindgen::generate!(in "../../tests/runtime/unions");
 
-use exports::*;
+use exports::test::unions::test::*;
 
 struct Component;
 
@@ -8,7 +8,7 @@ export_unions!(Component);
 
 impl Unions for Component {
     fn test_imports() {
-        use imports::*;
+        use test::unions::test::*;
 
         // All-Integers
         // Booleans
@@ -166,7 +166,7 @@ impl Unions for Component {
     }
 }
 
-impl exports::Exports for Component {
+impl Test for Component {
     fn add_one_integer(num: AllIntegers) -> AllIntegers {
         match num {
             // Boolean

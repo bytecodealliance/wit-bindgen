@@ -1,3 +1,5 @@
+package test:records
+
 interface test {
   multiple-results: func() -> (a: u8, b: u16)
 
@@ -46,9 +48,9 @@ interface test {
   tuple1: func(a: tuple<u8>) -> tuple<u8>
 }
 
-default world records {
-  import imports: self.test
-  export exports: self.test
+world records {
+  import test
+  export test
 
   export test-imports: func()
 }

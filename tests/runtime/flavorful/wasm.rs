@@ -1,6 +1,6 @@
-wit_bindgen::generate!("world" in "../../tests/runtime/flavorful");
+wit_bindgen::generate!(in "../../tests/runtime/flavorful");
 
-use exports::*;
+use exports::test::flavorful::test::*;
 
 struct Component;
 
@@ -8,7 +8,7 @@ export_flavorful!(Component);
 
 impl Flavorful for Component {
     fn test_imports() {
-        use imports::*;
+        use test::flavorful::test::*;
 
         let _guard = test_rust_wasm::guard();
 
@@ -68,7 +68,7 @@ impl Flavorful for Component {
     }
 }
 
-impl exports::Exports for Component {
+impl Test for Component {
     fn f_list_in_record1(ty: ListInRecord1) {
         assert_eq!(ty.a, "list_in_record1");
     }

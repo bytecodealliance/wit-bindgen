@@ -1,4 +1,4 @@
-wit_bindgen::generate!("world" in "../../tests/runtime/numbers");
+wit_bindgen::generate!(in "../../tests/runtime/numbers");
 
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
 
@@ -10,7 +10,7 @@ export_numbers!(Component);
 
 impl Numbers for Component {
     fn test_imports() {
-        use imports::*;
+        use test::numbers::test::*;
         assert_eq!(roundtrip_u8(1), 1);
         assert_eq!(roundtrip_u8(u8::min_value()), u8::min_value());
         assert_eq!(roundtrip_u8(u8::max_value()), u8::max_value());
@@ -64,7 +64,7 @@ impl Numbers for Component {
     }
 }
 
-impl exports::Exports for Component {
+impl exports::test::numbers::test::Test for Component {
     fn roundtrip_u8(a: u8) -> u8 {
         a
     }

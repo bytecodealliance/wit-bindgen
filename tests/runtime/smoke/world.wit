@@ -1,9 +1,11 @@
+package test:smoke
+
 interface imports {
   thunk: func()
 }
 
-default world smoke {
-  import imports: self.imports
+world smoke {
+  import imports
 
   export thunk: func()
 }

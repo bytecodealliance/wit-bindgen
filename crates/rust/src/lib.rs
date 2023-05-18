@@ -429,19 +429,7 @@ impl InterfaceGenerator<'_> {
                 to_rust_ident(self.resolve.interfaces[*id].name.as_ref().unwrap())
             }
         };
-        let module = format!(
-            "
-                #[allow(clippy::all)]
-                pub mod {snake} {{
-                    #[used]
-                    #[doc(hidden)]
-                    #[cfg(target_arch = \"wasm32\")]
-                    static __FORCE_SECTION_REF: fn() = super::__link_section;
-
-                    {module}
-                }}
-            ",
-        );
+        let mut path_to_root = String::from("super::");
         let pkg = match name {
             WorldKey::Name(_) => None,
             WorldKey::Interface(id) => {
@@ -453,6 +441,7 @@ impl InterfaceGenerator<'_> {
             let mut path = String::new();
             if !self.in_import {
                 path.push_str("exports::");
+                path_to_root.push_str("super::");
             }
             if let Some(name) = &pkg {
                 path.push_str(&format!(
@@ -460,10 +449,24 @@ impl InterfaceGenerator<'_> {
                     name.namespace.to_snake_case(),
                     name.name.to_snake_case()
                 ));
+                path_to_root.push_str("super::super::");
             }
             path.push_str(&snake);
             self.gen.interface_names.insert(id, path);
         }
+        let module = format!(
+            "
+                #[allow(clippy::all)]
+                pub mod {snake} {{
+                    #[used]
+                    #[doc(hidden)]
+                    #[cfg(target_arch = \"wasm32\")]
+                    static __FORCE_SECTION_REF: fn() = {path_to_root}__link_section;
+
+                    {module}
+                }}
+            ",
+        );
         let map = if self.in_import {
             &mut self.gen.import_modules
         } else {
