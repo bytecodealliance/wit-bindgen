@@ -1,14 +1,14 @@
 use anyhow::Result;
 use wasmtime::Store;
 
-wasmtime::component::bindgen!("world" in "tests/runtime/smoke");
+wasmtime::component::bindgen!(in "tests/runtime/smoke");
 
 #[derive(Default)]
 pub struct MyImports {
     hit: bool,
 }
 
-impl imports::Host for MyImports {
+impl test::smoke::imports::Host for MyImports {
     fn thunk(&mut self) -> Result<()> {
         self.hit = true;
         println!("in the host");

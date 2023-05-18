@@ -1,7 +1,7 @@
 use anyhow::Result;
 use wasmtime::Store;
 
-wasmtime::component::bindgen!("world" in "tests/runtime/many_arguments");
+wasmtime::component::bindgen!(in "tests/runtime/many_arguments");
 
 #[derive(Default)]
 pub struct MyImports {}

@@ -1,10 +1,12 @@
+package test:strings
+
 interface imports {
   take-basic: func(s: string)
   return-unicode: func() -> string
 }
 
-default world strings {
-  import imports: self.imports
+world strings {
+  import imports
 
   export test-imports: func()
   export return-empty: func() -> string

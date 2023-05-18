@@ -1,14 +1,12 @@
 use anyhow::Result;
 use wasmtime::Store;
 
-wasmtime::component::bindgen!("world" in "tests/runtime/lists");
-
-use imports::*;
+wasmtime::component::bindgen!(in "tests/runtime/lists");
 
 #[derive(Default)]
 pub struct MyImports;
 
-impl Host for MyImports {
+impl test::lists::test::Host for MyImports {
     fn empty_list_param(&mut self, a: Vec<u8>) -> Result<()> {
         assert!(a.is_empty());
         Ok(())
@@ -117,7 +115,7 @@ fn run() -> Result<()> {
 fn run_test(lists: Lists, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
     let bytes = lists.call_allocated_bytes(&mut *store)?;
     lists.call_test_imports(&mut *store)?;
-    let exports = lists.exports();
+    let exports = lists.test_lists_test();
     exports.call_empty_list_param(&mut *store, &[])?;
     exports.call_empty_string_param(&mut *store, "")?;
     assert!(exports.call_empty_list_result(&mut *store)?.is_empty());

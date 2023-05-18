@@ -1,12 +1,14 @@
 use anyhow::Result;
 use wasmtime::Store;
 
-wasmtime::component::bindgen!("world" in "tests/runtime/variants");
+wasmtime::component::bindgen!(in "tests/runtime/variants");
+
+use test::variants::test as test_imports;
 
 #[derive(Default)]
 pub struct MyImports;
 
-impl imports::Host for MyImports {
+impl test_imports::Host for MyImports {
     fn roundtrip_option(&mut self, a: Option<f32>) -> anyhow::Result<Option<u8>> {
         Ok(a.map(|x| x as u8))
     }
@@ -18,7 +20,7 @@ impl imports::Host for MyImports {
         })
     }
 
-    fn roundtrip_enum(&mut self, a: imports::E1) -> anyhow::Result<imports::E1> {
+    fn roundtrip_enum(&mut self, a: test_imports::E1) -> anyhow::Result<test_imports::E1> {
         assert_eq!(a, a);
         Ok(a)
     }
@@ -27,11 +29,11 @@ impl imports::Host for MyImports {
         Ok(!a)
     }
 
-    fn variant_casts(&mut self, a: imports::Casts) -> anyhow::Result<imports::Casts> {
+    fn variant_casts(&mut self, a: test_imports::Casts) -> anyhow::Result<test_imports::Casts> {
         Ok(a)
     }
 
-    fn variant_zeros(&mut self, a: imports::Zeros) -> anyhow::Result<imports::Zeros> {
+    fn variant_zeros(&mut self, a: test_imports::Zeros) -> anyhow::Result<test_imports::Zeros> {
         Ok(a)
     }
 
@@ -48,12 +50,12 @@ impl imports::Host for MyImports {
         &mut self,
         a: bool,
         b: Result<(), ()>,
-        c: imports::MyErrno,
-    ) -> anyhow::Result<(bool, Result<(), ()>, imports::MyErrno)> {
+        c: test_imports::MyErrno,
+    ) -> anyhow::Result<(bool, Result<(), ()>, test_imports::MyErrno)> {
         assert_eq!(a, true);
         assert_eq!(b, Ok(()));
-        assert_eq!(c, imports::MyErrno::Success);
-        Ok((false, Err(()), imports::MyErrno::A))
+        assert_eq!(c, test_imports::MyErrno::Success);
+        Ok((false, Err(()), test_imports::MyErrno::A))
     }
 }
 
@@ -68,10 +70,10 @@ fn run() -> Result<()> {
 }
 
 fn run_test(exports: Variants, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
-    use exports::*;
+    use exports::test::variants::test::*;
 
     exports.call_test_imports(&mut *store)?;
-    let exports = exports.exports();
+    let exports = exports.test_variants_test();
 
     assert_eq!(
         exports.call_roundtrip_option(&mut *store, Some(1.0))?,
