@@ -5,11 +5,11 @@ void variants_test_imports() {
   {
     float a = 1;
     uint8_t r;
-    assert(imports_roundtrip_option(&a, &r) && r == 1);
+    assert(test_variants_test_roundtrip_option(&a, &r) && r == 1);
     assert(r == 1);
-    assert(!imports_roundtrip_option(NULL, &r));
+    assert(!test_variants_test_roundtrip_option(NULL, &r));
     a = 2;
-    assert(imports_roundtrip_option(&a, &r) && r == 2);
+    assert(test_variants_test_roundtrip_option(&a, &r) && r == 2);
   }
 
 
@@ -20,127 +20,127 @@ void variants_test_imports() {
 
     a.is_err = false;
     a.val.ok = 2;
-    assert(imports_roundtrip_result(&a, &b_ok, &b_err));
+    assert(test_variants_test_roundtrip_result(&a, &b_ok, &b_err));
     assert(b_ok == 2.0);
 
     a.val.ok = 4;
-    assert(imports_roundtrip_result(&a, &b_ok, &b_err));
+    assert(test_variants_test_roundtrip_result(&a, &b_ok, &b_err));
     assert(b_ok == 4);
 
     a.is_err = true;
     a.val.err = 5.3;
-    assert(!imports_roundtrip_result(&a, &b_ok, &b_err));
+    assert(!test_variants_test_roundtrip_result(&a, &b_ok, &b_err));
     assert(b_err == 5);
   }
 
-  assert(imports_roundtrip_enum(TEST_E1_A) == TEST_E1_A);
-  assert(imports_roundtrip_enum(TEST_E1_B) == TEST_E1_B);
+  assert(test_variants_test_roundtrip_enum(TEST_VARIANTS_TEST_E1_A) == TEST_VARIANTS_TEST_E1_A);
+  assert(test_variants_test_roundtrip_enum(TEST_VARIANTS_TEST_E1_B) == TEST_VARIANTS_TEST_E1_B);
 
-  assert(imports_invert_bool(true) == false);
-  assert(imports_invert_bool(false) == true);
+  assert(test_variants_test_invert_bool(true) == false);
+  assert(test_variants_test_invert_bool(false) == true);
 
   {
-    test_casts_t c, ret;
-    c.f0.tag = TEST_C1_A;
+    test_variants_test_casts_t c, ret;
+    c.f0.tag = TEST_VARIANTS_TEST_C1_A;
     c.f0.val.a = 1;
-    c.f1.tag = TEST_C2_A;
+    c.f1.tag = TEST_VARIANTS_TEST_C2_A;
     c.f1.val.a = 2;
-    c.f2.tag = TEST_C3_A;
+    c.f2.tag = TEST_VARIANTS_TEST_C3_A;
     c.f2.val.a = 3;
-    c.f3.tag = TEST_C4_A;
+    c.f3.tag = TEST_VARIANTS_TEST_C4_A;
     c.f3.val.a = 4;
-    c.f4.tag = TEST_C5_A;
+    c.f4.tag = TEST_VARIANTS_TEST_C5_A;
     c.f4.val.a = 5;
-    c.f5.tag = TEST_C6_A;
+    c.f5.tag = TEST_VARIANTS_TEST_C6_A;
     c.f5.val.a = 6;
-    imports_variant_casts(&c, &ret);
-    assert(ret.f0.tag == TEST_C1_A && ret.f0.val.a == 1);
-    assert(ret.f1.tag == TEST_C2_A && ret.f1.val.a == 2);
-    assert(ret.f2.tag == TEST_C3_A && ret.f2.val.a == 3);
-    assert(ret.f3.tag == TEST_C4_A && ret.f3.val.a == 4);
-    assert(ret.f4.tag == TEST_C5_A && ret.f4.val.a == 5);
-    assert(ret.f5.tag == TEST_C6_A && ret.f5.val.a == 6);
+    test_variants_test_variant_casts(&c, &ret);
+    assert(ret.f0.tag == TEST_VARIANTS_TEST_C1_A && ret.f0.val.a == 1);
+    assert(ret.f1.tag == TEST_VARIANTS_TEST_C2_A && ret.f1.val.a == 2);
+    assert(ret.f2.tag == TEST_VARIANTS_TEST_C3_A && ret.f2.val.a == 3);
+    assert(ret.f3.tag == TEST_VARIANTS_TEST_C4_A && ret.f3.val.a == 4);
+    assert(ret.f4.tag == TEST_VARIANTS_TEST_C5_A && ret.f4.val.a == 5);
+    assert(ret.f5.tag == TEST_VARIANTS_TEST_C6_A && ret.f5.val.a == 6);
   }
 
   {
-    test_casts_t c, ret;
-    c.f0.tag = TEST_C1_B;
+    test_variants_test_casts_t c, ret;
+    c.f0.tag = TEST_VARIANTS_TEST_C1_B;
     c.f0.val.b = 1;
-    c.f1.tag = TEST_C2_B;
+    c.f1.tag = TEST_VARIANTS_TEST_C2_B;
     c.f1.val.b = 2;
-    c.f2.tag = TEST_C3_B;
+    c.f2.tag = TEST_VARIANTS_TEST_C3_B;
     c.f2.val.b = 3;
-    c.f3.tag = TEST_C4_B;
+    c.f3.tag = TEST_VARIANTS_TEST_C4_B;
     c.f3.val.b = 4;
-    c.f4.tag = TEST_C5_B;
+    c.f4.tag = TEST_VARIANTS_TEST_C5_B;
     c.f4.val.b = 5;
-    c.f5.tag = TEST_C6_B;
+    c.f5.tag = TEST_VARIANTS_TEST_C6_B;
     c.f5.val.b = 6;
-    imports_variant_casts(&c, &ret);
-    assert(ret.f0.tag == TEST_C1_B && ret.f0.val.b == 1);
-    assert(ret.f1.tag == TEST_C2_B && ret.f1.val.b == 2);
-    assert(ret.f2.tag == TEST_C3_B && ret.f2.val.b == 3);
-    assert(ret.f3.tag == TEST_C4_B && ret.f3.val.b == 4);
-    assert(ret.f4.tag == TEST_C5_B && ret.f4.val.b == 5);
-    assert(ret.f5.tag == TEST_C6_B && ret.f5.val.b == 6);
+    test_variants_test_variant_casts(&c, &ret);
+    assert(ret.f0.tag == TEST_VARIANTS_TEST_C1_B && ret.f0.val.b == 1);
+    assert(ret.f1.tag == TEST_VARIANTS_TEST_C2_B && ret.f1.val.b == 2);
+    assert(ret.f2.tag == TEST_VARIANTS_TEST_C3_B && ret.f2.val.b == 3);
+    assert(ret.f3.tag == TEST_VARIANTS_TEST_C4_B && ret.f3.val.b == 4);
+    assert(ret.f4.tag == TEST_VARIANTS_TEST_C5_B && ret.f4.val.b == 5);
+    assert(ret.f5.tag == TEST_VARIANTS_TEST_C6_B && ret.f5.val.b == 6);
   }
 
   {
-    test_zeros_t c, ret;
-    c.f0.tag = TEST_Z1_A;
+    test_variants_test_zeros_t c, ret;
+    c.f0.tag = TEST_VARIANTS_TEST_Z1_A;
     c.f0.val.a = 1;
-    c.f1.tag = TEST_Z2_A;
+    c.f1.tag = TEST_VARIANTS_TEST_Z2_A;
     c.f1.val.a = 2;
-    c.f2.tag = TEST_Z3_A;
+    c.f2.tag = TEST_VARIANTS_TEST_Z3_A;
     c.f2.val.a = 3;
-    c.f3.tag = TEST_Z4_A;
+    c.f3.tag = TEST_VARIANTS_TEST_Z4_A;
     c.f3.val.a = 4;
-    imports_variant_zeros(&c, &ret);
-    assert(ret.f0.tag == TEST_Z1_A && ret.f0.val.a == 1);
-    assert(ret.f1.tag == TEST_Z2_A && ret.f1.val.a == 2);
-    assert(ret.f2.tag == TEST_Z3_A && ret.f2.val.a == 3);
-    assert(ret.f3.tag == TEST_Z4_A && ret.f3.val.a == 4);
+    test_variants_test_variant_zeros(&c, &ret);
+    assert(ret.f0.tag == TEST_VARIANTS_TEST_Z1_A && ret.f0.val.a == 1);
+    assert(ret.f1.tag == TEST_VARIANTS_TEST_Z2_A && ret.f1.val.a == 2);
+    assert(ret.f2.tag == TEST_VARIANTS_TEST_Z3_A && ret.f2.val.a == 3);
+    assert(ret.f3.tag == TEST_VARIANTS_TEST_Z4_A && ret.f3.val.a == 4);
   }
 
   {
-    test_zeros_t c, ret;
-    c.f0.tag = TEST_Z1_B;
-    c.f1.tag = TEST_Z2_B;
-    c.f2.tag = TEST_Z3_B;
-    c.f3.tag = TEST_Z4_B;
-    imports_variant_zeros(&c, &ret);
-    assert(ret.f0.tag == TEST_Z1_B);
-    assert(ret.f1.tag == TEST_Z2_B);
-    assert(ret.f2.tag == TEST_Z3_B);
-    assert(ret.f3.tag == TEST_Z4_B);
+    test_variants_test_zeros_t c, ret;
+    c.f0.tag = TEST_VARIANTS_TEST_Z1_B;
+    c.f1.tag = TEST_VARIANTS_TEST_Z2_B;
+    c.f2.tag = TEST_VARIANTS_TEST_Z3_B;
+    c.f3.tag = TEST_VARIANTS_TEST_Z4_B;
+    test_variants_test_variant_zeros(&c, &ret);
+    assert(ret.f0.tag == TEST_VARIANTS_TEST_Z1_B);
+    assert(ret.f1.tag == TEST_VARIANTS_TEST_Z2_B);
+    assert(ret.f2.tag == TEST_VARIANTS_TEST_Z3_B);
+    assert(ret.f3.tag == TEST_VARIANTS_TEST_Z4_B);
   }
 
   {
     bool b = false;
-    test_result_typedef_t c;
+    test_variants_test_result_typedef_t c;
     c.is_err = true;
-    imports_variant_typedefs(NULL, b, &c);
+    test_variants_test_variant_typedefs(NULL, b, &c);
   }
 
   {
     variants_tuple3_bool_result_void_void_my_errno_t ret;
     variants_result_void_void_t b;
     b.is_err = false;
-    imports_variant_enums(true, &b, TEST_MY_ERRNO_SUCCESS, &ret);
+    test_variants_test_variant_enums(true, &b, TEST_VARIANTS_TEST_MY_ERRNO_SUCCESS, &ret);
     assert(ret.f0 == false);
     assert(ret.f1.is_err);
-    assert(ret.f2 == TEST_MY_ERRNO_A);
+    assert(ret.f2 == TEST_VARIANTS_TEST_MY_ERRNO_A);
   }
 }
 
-bool exports_roundtrip_option(float *a, uint8_t *ret0) {
+bool exports_test_variants_test_roundtrip_option(float *a, uint8_t *ret0) {
   if (a) {
     *ret0 = *a;
   }
   return a != NULL;
 }
 
-bool exports_roundtrip_result(variants_result_u32_float32_t *a, double *ok, uint8_t *err) {
+bool exports_test_variants_test_roundtrip_result(variants_result_u32_float32_t *a, double *ok, uint8_t *err) {
   if (a->is_err) {
     *err = a->val.err;
     return false;
@@ -150,26 +150,30 @@ bool exports_roundtrip_result(variants_result_u32_float32_t *a, double *ok, uint
   }
 }
 
-test_e1_t exports_roundtrip_enum(test_e1_t a) {
+test_variants_test_e1_t exports_test_variants_test_roundtrip_enum(test_variants_test_e1_t a) {
   return a;
 }
 
-bool exports_invert_bool(bool a) {
+bool exports_test_variants_test_invert_bool(bool a) {
   return !a;
 }
 
-void exports_variant_casts(test_casts_t *a, test_casts_t *ret) {
+void exports_test_variants_test_variant_casts(test_variants_test_casts_t *a, test_variants_test_casts_t *ret) {
   *ret = *a;
 }
 
-void exports_variant_zeros(test_zeros_t *a, test_zeros_t *b) {
+void exports_test_variants_test_variant_zeros(test_variants_test_zeros_t *a, test_variants_test_zeros_t *b) {
   *b = *a;
 }
 
-void exports_variant_typedefs(uint32_t *a, test_bool_typedef_t b, test_result_typedef_t *c) {
+void exports_test_variants_test_variant_typedefs(uint32_t *a, test_variants_test_bool_typedef_t b, test_variants_test_result_typedef_t *c) {
 }
 
-void exports_variant_enums(bool a, variants_result_void_void_t *b, test_my_errno_t c, variants_tuple3_bool_result_void_void_my_errno_t *ret) {
+void exports_test_variants_test_variant_enums(
+      bool a,
+      variants_result_void_void_t *b,
+      test_variants_test_my_errno_t c,
+      variants_tuple3_bool_result_void_void_my_errno_t *ret) {
   assert(0);
 }
 
