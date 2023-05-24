@@ -29,15 +29,11 @@ impl imports::Host for MyImports {
             AllFloats::F64(n) => AllFloats::F64(n + 1.0),
         })
     }
-    fn replace_first_char(
-        &mut self,
-        text: imports::AllTextResult,
-        c: char,
-    ) -> Result<imports::AllTextResult> {
-        use imports::AllTextResult;
+    fn replace_first_char(&mut self, text: imports::AllText, c: char) -> Result<imports::AllText> {
+        use imports::AllText;
         Ok(match text {
-            AllTextResult::Char(_) => AllTextResult::Char(c),
-            AllTextResult::String(t) => AllTextResult::String(format!("{}{}", c, &t[1..])),
+            AllText::Char(_) => AllText::Char(c),
+            AllText::String(t) => AllText::String(format!("{}{}", c, &t[1..])),
         })
     }
     fn identify_integer(&mut self, num: imports::AllIntegers) -> Result<u8> {
@@ -61,11 +57,11 @@ impl imports::Host for MyImports {
             AllFloats::F64 { .. } => 1,
         })
     }
-    fn identify_text(&mut self, text: imports::AllTextResult) -> Result<u8> {
-        use imports::AllTextResult;
+    fn identify_text(&mut self, text: imports::AllText) -> Result<u8> {
+        use imports::AllText;
         Ok(match text {
-            AllTextResult::Char { .. } => 0,
-            AllTextResult::String { .. } => 1,
+            AllText::Char { .. } => 0,
+            AllText::String { .. } => 1,
         })
     }
     fn identify_duplicated(&mut self, dup: imports::DuplicatedS32) -> Result<u8> {
@@ -218,11 +214,11 @@ fn run_test(exports: Unions, store: &mut Store<crate::Wasi<MyImports>>) -> Resul
 
     // Text
     assert!(matches!(
-        exports.call_replace_first_char(&mut *store, AllTextParam::Char('a'), 'z')?,
-        AllTextResult::Char('z')
+        exports.call_replace_first_char(&mut *store, &AllText::Char('a'), 'z')?,
+        AllText::Char('z')
     ));
-    match exports.call_replace_first_char(&mut *store, AllTextParam::String("abc"), 'z')? {
-        AllTextResult::String(s) => assert_eq!(s, "zbc"),
+    match exports.call_replace_first_char(&mut *store, &AllText::String("abc".to_string()), 'z')? {
+        AllText::String(s) => assert_eq!(s, "zbc"),
         _ => panic!(),
     }
 
@@ -276,11 +272,11 @@ fn run_test(exports: Unions, store: &mut Store<crate::Wasi<MyImports>>) -> Resul
 
     // Identify text
     assert_eq!(
-        exports.call_identify_text(&mut *store, AllTextParam::Char('\0'))?,
+        exports.call_identify_text(&mut *store, &AllText::Char('\0'))?,
         0
     );
     assert_eq!(
-        exports.call_identify_text(&mut *store, AllTextParam::String(""))?,
+        exports.call_identify_text(&mut *store, &AllText::String(String::new()))?,
         1
     );
 

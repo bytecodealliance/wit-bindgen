@@ -10,7 +10,7 @@ pub struct MyImports;
 
 impl Host for MyImports {
     fn empty_list_param(&mut self, a: Vec<u8>) -> Result<()> {
-        assert_eq!(a, []);
+        assert!(a.is_empty());
         Ok(())
     }
 
@@ -120,7 +120,7 @@ fn run_test(lists: Lists, store: &mut Store<crate::Wasi<MyImports>>) -> Result<(
     let exports = lists.exports();
     exports.call_empty_list_param(&mut *store, &[])?;
     exports.call_empty_string_param(&mut *store, "")?;
-    assert_eq!(exports.call_empty_list_result(&mut *store)?, []);
+    assert!(exports.call_empty_list_result(&mut *store)?.is_empty());
     assert_eq!(exports.call_empty_string_result(&mut *store)?, "");
     exports.call_list_param(&mut *store, &[1, 2, 3, 4])?;
     exports.call_list_param2(&mut *store, "foo")?;
