@@ -29,11 +29,11 @@ clap = { version = "4.2.2", features = ["derive"] }
 env_logger = "0.10.0"
 indexmap = "1.9.3"
 
-wasm-encoder = "0.28.0"
-wasm-metadata = "0.7.0"
-wat = "1.0.65"
-wit-parser = "0.7.1"
-wit-component = "0.10.0"
+wasm-encoder = "0.29.0"
+wasm-metadata = "0.8.0"
+wat = "1.0.66"
+wit-parser = "0.8.0"
+wit-component = "0.11.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.6.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.6.0' }
@@ -83,11 +83,12 @@ test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
 
 [patch.crates-io]
-wasm-encoder = { path = '../wasm-tools/crates/wasm-encoder' }
-wasmprinter = { path = '../wasm-tools/crates/wasmprinter' }
-wasm-metadata = { path = '../wasm-tools/crates/wasm-metadata' }
-wit-parser = { path = '../wasm-tools/crates/wit-parser' }
-wit-component = { path = '../wasm-tools/crates/wit-component' }
-wat = { path = '../wasm-tools/crates/wat' }
-wasmparser = { path = '../wasm-tools/crates/wasmparser' }
-wasmtime = { git = 'https://github.com/alexcrichton/wasmtime', branch = 'wit-changes' }
+wasm-encoder = { git = 'https://github.com/alexcrichton/wasm-tools', branch = 'bump' }
+wasmprinter = { git = 'https://github.com/alexcrichton/wasm-tools', branch = 'bump' }
+wasm-metadata = { git = 'https://github.com/alexcrichton/wasm-tools', branch = 'bump' }
+wit-parser = { git = 'https://github.com/alexcrichton/wasm-tools', branch = 'bump' }
+wit-component = { git = 'https://github.com/alexcrichton/wasm-tools', branch = 'bump' }
+wat = { git = 'https://github.com/alexcrichton/wasm-tools', branch = 'bump' }
+wasmparser = { git = 'https://github.com/alexcrichton/wasm-tools', branch = 'bump' }
+# wasmtime = { git = 'https://github.com/alexcrichton/wasmtime', branch = 'wit-changes' }
+wasmtime = { path = "../wasmtime/crates/wasmtime" }
