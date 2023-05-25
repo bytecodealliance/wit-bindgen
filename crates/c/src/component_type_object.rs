@@ -23,7 +23,9 @@ pub fn object(resolve: &Resolve, world: WorldId, encoding: StringEncoding) -> Re
     funcs.function(0);
     module.section(&funcs);
     let mut code = CodeSection::new();
-    code.function(&Function::new([]));
+    let mut func = Function::new([]);
+    func.instruction(&wasm_encoder::Instruction::End);
+    code.function(&func);
     module.section(&code);
 
     let mut producers = wasm_metadata::Producers::empty();
