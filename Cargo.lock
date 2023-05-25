@@ -1698,7 +1698,7 @@ checksum = "1a515f5799fe4961cb532f983ce2b23082366b898e52ffbce459c86f67c8378a"
 
 [[package]]
 name = "wit-bindgen"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "bitflags 2.1.0",
  "wit-bindgen-rust-macro",
@@ -1706,7 +1706,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-c"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1720,7 +1720,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-cli"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1741,7 +1741,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "wit-component",
@@ -1750,7 +1750,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-go"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "clap",
  "heck",
@@ -1762,7 +1762,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-markdown"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "clap",
  "heck",
@@ -1773,7 +1773,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "clap",
  "heck",
@@ -1787,7 +1787,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-lib"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "heck",
  "wit-bindgen-core",
@@ -1795,7 +1795,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-macro"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -1807,7 +1807,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-teavm-java"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "clap",
  "heck",
