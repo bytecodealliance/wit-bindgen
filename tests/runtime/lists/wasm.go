@@ -8,123 +8,123 @@ import (
 func init() {
 	a := ListImpl{}
 	SetLists(a)
-	SetExports(a)
+	SetExportsTestListsTest(a)
 }
 
 type ListImpl struct {
 }
 
 func (i ListImpl) TestImports() {
-	ImportsEmptyListParam([]uint8{})
-	ImportsEmptyStringParam("")
-	res := ImportsEmptyListResult()
+	TestListsTestEmptyListParam([]uint8{})
+	TestListsTestEmptyStringParam("")
+	res := TestListsTestEmptyListResult()
 	if len(res) != 0 {
-		panic("ImportsEmptyListResult")
+		panic("TestListsTestEmptyListResult")
 	}
-	res2 := ImportsEmptyStringResult()
+	res2 := TestListsTestEmptyStringResult()
 	if res2 != "" {
-		panic("ImportsEmptyStringResult")
+		panic("TestListsTestEmptyStringResult")
 	}
-	ImportsListParam([]uint8{1, 2, 3, 4})
-	ImportsListParam2("foo")
-	ImportsListParam3([]string{"foo", "bar", "baz"})
-	ImportsListParam4([][]string{{"foo", "bar"}, {"baz"}})
-	res3 := ImportsListResult()
+	TestListsTestListParam([]uint8{1, 2, 3, 4})
+	TestListsTestListParam2("foo")
+	TestListsTestListParam3([]string{"foo", "bar", "baz"})
+	TestListsTestListParam4([][]string{{"foo", "bar"}, {"baz"}})
+	res3 := TestListsTestListResult()
 	if len(res3) != 5 {
-		panic("ImportsListResult")
+		panic("TestListsTestListResult")
 	}
 	for i := range res3 {
 		if res3[i] != uint8(i+1) {
-			panic("ImportsListResult")
+			panic("TestListsTestListResult")
 		}
 	}
-	res4 := ImportsListResult2()
+	res4 := TestListsTestListResult2()
 	if res4 != "hello!" {
-		panic("ImportsListResult2")
+		panic("TestListsTestListResult2")
 	}
-	res5 := ImportsListResult3()
+	res5 := TestListsTestListResult3()
 	if len(res5) != 2 {
-		panic("ImportsListResult3")
+		panic("TestListsTestListResult3")
 	}
 	if res5[0] != "hello," {
-		panic("ImportsListResult3")
+		panic("TestListsTestListResult3")
 	}
 	if res5[1] != "world!" {
-		panic("ImportsListResult3")
+		panic("TestListsTestListResult3")
 	}
 
-	res6 := ImportsListRoundtrip([]uint8{})
+	res6 := TestListsTestListRoundtrip([]uint8{})
 	if len(res6) != 0 {
-		panic("ImportsListRoundtrip")
+		panic("TestListsTestListRoundtrip")
 	}
-	res7 := ImportsListRoundtrip([]uint8{1, 2, 3, 4, 5})
+	res7 := TestListsTestListRoundtrip([]uint8{1, 2, 3, 4, 5})
 	if len(res7) != 5 {
-		panic("ImportsListRoundtrip")
+		panic("TestListsTestListRoundtrip")
 	}
 
-	res8 := ImportsStringRoundtrip("")
+	res8 := TestListsTestStringRoundtrip("")
 	if res8 != "" {
-		panic("ImportsStringRoundtrip")
+		panic("TestListsTestStringRoundtrip")
 	}
-	res9 := ImportsStringRoundtrip("hello ⚑ world")
+	res9 := TestListsTestStringRoundtrip("hello ⚑ world")
 	if res9 != "hello ⚑ world" {
-		panic("ImportsStringRoundtrip")
+		panic("TestListsTestStringRoundtrip")
 	}
 
-	u8, i8 := ImportsListMinmax8([]uint8{0, math.MaxUint8}, []int8{math.MinInt8, math.MaxInt8})
+	u8, i8 := TestListsTestListMinmax8([]uint8{0, math.MaxUint8}, []int8{math.MinInt8, math.MaxInt8})
 	if u8[0] != uint8(0) {
-		panic("ImportsListMinmax8")
+		panic("TestListsTestListMinmax8")
 	}
 	if u8[1] != math.MaxUint8 {
-		panic("ImportsListMinmax8")
+		panic("TestListsTestListMinmax8")
 	}
 	if i8[0] != math.MinInt8 {
-		panic("ImportsListMinmax8")
+		panic("TestListsTestListMinmax8")
 	}
 	if i8[1] != math.MaxInt8 {
-		panic("ImportsListMinmax8")
+		panic("TestListsTestListMinmax8")
 	}
 
-	u16, i16 := ImportsListMinmax16([]uint16{0, math.MaxUint16}, []int16{math.MinInt16, math.MaxInt16})
+	u16, i16 := TestListsTestListMinmax16([]uint16{0, math.MaxUint16}, []int16{math.MinInt16, math.MaxInt16})
 	if u16[0] != uint16(0) {
-		panic("ImportsListMinmax16")
+		panic("TestListsTestListMinmax16")
 	}
 	if u16[1] != math.MaxUint16 {
-		panic("ImportsListMinmax16")
+		panic("TestListsTestListMinmax16")
 	}
 	if i16[0] != math.MinInt16 {
-		panic("ImportsListMinmax16")
+		panic("TestListsTestListMinmax16")
 	}
 	if i16[1] != math.MaxInt16 {
-		panic("ImportsListMinmax16")
+		panic("TestListsTestListMinmax16")
 	}
 
-	u32, i32 := ImportsListMinmax32([]uint32{0, math.MaxUint32}, []int32{math.MinInt32, math.MaxInt32})
+	u32, i32 := TestListsTestListMinmax32([]uint32{0, math.MaxUint32}, []int32{math.MinInt32, math.MaxInt32})
 	if u32[0] != uint32(0) {
-		panic("ImportsListMinmax32")
+		panic("TestListsTestListMinmax32")
 	}
 	if u32[1] != math.MaxUint32 {
-		panic("ImportsListMinmax32")
+		panic("TestListsTestListMinmax32")
 	}
 	if i32[0] != math.MinInt32 {
-		panic("ImportsListMinmax32")
+		panic("TestListsTestListMinmax32")
 	}
 	if i32[1] != math.MaxInt32 {
-		panic("ImportsListMinmax32")
+		panic("TestListsTestListMinmax32")
 	}
 
-	u64, i64 := ImportsListMinmax64([]uint64{0, math.MaxUint64}, []int64{math.MinInt64, math.MaxInt64})
+	u64, i64 := TestListsTestListMinmax64([]uint64{0, math.MaxUint64}, []int64{math.MinInt64, math.MaxInt64})
 	if u64[0] != uint64(0) {
-		panic("ImportsListMinmax64")
+		panic("TestListsTestListMinmax64")
 	}
 	if u64[1] != math.MaxUint64 {
-		panic("ImportsListMinmax64")
+		panic("TestListsTestListMinmax64")
 	}
 	if i64[0] != math.MinInt64 {
-		panic("ImportsListMinmax64")
+		panic("TestListsTestListMinmax64")
 	}
 	if i64[1] != math.MaxInt64 {
-		panic("ImportsListMinmax64")
+		panic("TestListsTestListMinmax64")
 	}
 
 }
