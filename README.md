@@ -298,7 +298,7 @@ wasm-tools component wit ./my-component.wasm
 
 Java bytecode can be compiled to WebAssembly using
 [TeaVM-WASI](https://github.com/fermyon/teavm-wasi). With this generator,
-`wit-bindgen` will emit a `*.java` file which may be used with any JVM language,
+`wit-bindgen` will emit `*.java` files which may be used with any JVM language,
 e.g. Java, Kotlin, Clojure, Scala, etc.
 
 ### Guest: TinyGo
@@ -330,12 +330,12 @@ Some example code using this would then look like
 package main
 
 import (
-	gen "host/gen"
+    gen "host/gen"
 )
 
 func init() {
-	a := HostImpl{}
-	gen.SetHost(a)
+    a := HostImpl{}
+    gen.SetHost(a)
 }
 
 type HostImpl struct {
@@ -355,8 +355,8 @@ This can then be compiled with `tinygo` and assembled into a component with:
 go generate # generate bindings for Go
 tinygo build -target=wasi -o main.wasm my-component.go # compile
 wasm-tools component embed --world host ./wit main.wasm -o main.embed.wasm # create a component
-wasm-tools component new main.embed.wasm --adapt wasi_snapshot_preview1.wasm -o main.component.wasm 
-wasm-tools validate main.component.wasm --features component-model 
+wasm-tools component new main.embed.wasm --adapt wasi_snapshot_preview1.wasm -o main.component.wasm
+wasm-tools validate main.component.wasm --features component-model
 ```
 
 ### Guest: Other Languages

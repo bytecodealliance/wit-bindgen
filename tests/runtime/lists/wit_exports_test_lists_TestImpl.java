@@ -1,12 +1,12 @@
-package wit_lists;
+package wit.exports.test.lists;
 
-import static wit_lists.ListsWorldImpl.expect;
+import static wit.worlds.ListsImpl.expect;
 
 import java.util.ArrayList;
 
-import wit_lists.ListsWorld.Tuple2;
+import wit.worlds.Lists.Tuple2;
 
-public class ExportsImpl {
+public class TestImpl {
     public static void emptyListParam(byte[] a) {
         expect(a.length == 0);
     }

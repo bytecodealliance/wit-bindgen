@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::borrow::Cow;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use wasm_encoder::{Encode, Section};
 use wasmtime::component::{Component, Instance, Linker};
@@ -320,37 +320,39 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
             .build()
             .generate(&resolve, world, &mut files);
 
-        let package_dir = java_dir.join(&format!("wit_{world_name}"));
-        fs::create_dir_all(&package_dir).unwrap();
+        let mut dst_files = Vec::new();
+
+        fs::create_dir_all(&java_dir).unwrap();
         for (file, contents) in files.iter() {
-            let dst = package_dir.join(file);
-            fs::write(dst, contents).unwrap();
+            let dst = java_dir.join(file);
+            fs::create_dir_all(dst.parent().unwrap()).unwrap();
+            fs::write(&dst, contents).unwrap();
+            dst_files.push(dst);
         }
 
-        let snake = world_name.to_snake_case();
         let upper = world_name.to_upper_camel_case();
         for java_impl in java {
-            fs::copy(
-                &java_impl,
-                &package_dir.join(java_impl.file_name().unwrap()),
-            )
-            .unwrap();
+            let dst = java_dir.join(
+                java_impl
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .replace('_', "/"),
+            );
+            fs::copy(&java_impl, &dst).unwrap();
+            dst_files.push(dst);
         }
 
+        let main = java_dir.join("Main.java");
+
         fs::write(
-            &java_dir.join("Main.java"),
+            &main,
             include_bytes!("../../crates/teavm-java/tests/Main.java"),
         )
         .unwrap();
 
-        let dst_files = fs::read_dir(&package_dir).unwrap().filter_map(|entry| {
-            let path = entry.unwrap().path();
-            if let Some("java") = path.extension().map(|ext| ext.to_str().unwrap()) {
-                Some(path)
-            } else {
-                None
-            }
-        });
+        dst_files.push(main);
 
         let mut cmd = Command::new("javac");
         cmd.arg("-cp")
@@ -358,7 +360,7 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
             .arg("-d")
             .arg(out_dir.join("target/classes"));
 
-        for file in dst_files {
+        for file in &dst_files {
             cmd.arg(file);
         }
 
@@ -377,13 +379,6 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
             panic!("failed to build");
         }
 
-        let preserved = &[
-            &format!("wit_{snake}.{upper}"),
-            &format!("wit_{snake}.{upper}World"),
-            &format!("wit_{snake}.Imports"),
-            &format!("wit_{snake}.Exports"),
-        ];
-
         let mut cmd = Command::new("java");
         cmd.arg("-jar")
             .arg(&teavm_cli_jar)
@@ -397,8 +392,16 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
             .arg("-O")
             .arg("1");
 
-        for preserved in preserved {
-            cmd.arg("--preserve-class").arg(preserved);
+        for file in dst_files {
+            cmd.arg("--preserve-class").arg(
+                file.strip_prefix(&java_dir)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .strip_suffix(".java")
+                    .unwrap()
+                    .replace('/', "."),
+            );
         }
 
         cmd.arg("Main");
