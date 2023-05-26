@@ -1,3 +1,5 @@
+package test:results
+
 interface test {
   string-error: func(a: float32) -> result<float32, string>
 
@@ -14,7 +16,7 @@ interface test {
   empty-error: func(a: u32) -> result<u32>
 }
 
-default world results {
-  import imports: self.test
-  export exports: self.test
+world results {
+  import test
+  export test
 }

@@ -63,6 +63,7 @@ impl WorldGenerator for Markdown {
                 gen.push_str(" - Imports:\n");
                 first = false;
             }
+            let name = &resolve.name_world_key(name);
             match import {
                 WorldItem::Interface(_) => {
                     gen.push_str("    - interface `");
@@ -87,6 +88,7 @@ impl WorldGenerator for Markdown {
                 gen.push_str(" - Exports:\n");
                 first = false;
             }
+            let name = &resolve.name_world_key(name);
             match export {
                 WorldItem::Interface(_) => {
                     gen.push_str("    - interface `");
@@ -111,10 +113,11 @@ impl WorldGenerator for Markdown {
     fn import_interface(
         &mut self,
         resolve: &Resolve,
-        name: &str,
+        name: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
     ) {
+        let name = resolve.name_world_key(name);
         uwriteln!(
             self.src,
             "## <a name=\"{}\">Import interface {name}</a>\n",
@@ -147,10 +150,11 @@ impl WorldGenerator for Markdown {
     fn export_interface(
         &mut self,
         resolve: &Resolve,
-        name: &str,
+        name: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
     ) {
+        let name = resolve.name_world_key(name);
         uwriteln!(
             self.src,
             "## <a name=\"{}\">Export interface {name}</a>\n",

@@ -1,4 +1,6 @@
-default interface poll {
+package wasi:poll
+
+interface poll {
     type pollable = u32
 
     poll-oneoff: func() -> list<u8>

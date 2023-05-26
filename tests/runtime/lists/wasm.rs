@@ -1,4 +1,4 @@
-wit_bindgen::generate!("world" in "../../tests/runtime/lists");
+wit_bindgen::generate!(in "../../tests/runtime/lists");
 
 struct Component;
 
@@ -10,7 +10,7 @@ impl Lists for Component {
     }
 
     fn test_imports() {
-        use imports::*;
+        use test::lists::test::*;
 
         let _guard = test_rust_wasm::guard();
 
@@ -65,7 +65,7 @@ impl Lists for Component {
     }
 }
 
-impl exports::Exports for Component {
+impl exports::test::lists::test::Test for Component {
     fn empty_list_param(a: Vec<u8>) {
         assert!(a.is_empty());
     }

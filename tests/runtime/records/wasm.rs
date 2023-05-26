@@ -1,6 +1,6 @@
-wit_bindgen::generate!("world" in "../../tests/runtime/records");
+wit_bindgen::generate!(in "../../tests/runtime/records");
 
-use exports::*;
+use exports::test::records::test::*;
 
 struct Component;
 
@@ -8,7 +8,7 @@ export_records!(Component);
 
 impl Records for Component {
     fn test_imports() {
-        use imports::*;
+        use test::records::test::*;
 
         assert_eq!(multiple_results(), (4, 5));
 
@@ -47,7 +47,7 @@ impl Records for Component {
     }
 }
 
-impl Exports for Component {
+impl Test for Component {
     fn multiple_results() -> (u8, u16) {
         (100, 200)
     }

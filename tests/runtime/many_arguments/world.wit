@@ -1,4 +1,6 @@
-default world many-arguments {
+package test:many-arguments
+
+world many-arguments {
   import imports: interface {
     many-arguments: func(
       a1: u64,

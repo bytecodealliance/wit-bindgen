@@ -1,12 +1,14 @@
 use anyhow::Result;
 use wasmtime::Store;
 
-wasmtime::component::bindgen!("world" in "tests/runtime/records");
+wasmtime::component::bindgen!(in "tests/runtime/records");
+
+use test::records::test as test_imports;
 
 #[derive(Default)]
 pub struct MyImports;
 
-impl imports::Host for MyImports {
+impl test_imports::Host for MyImports {
     fn multiple_results(&mut self) -> Result<(u8, u16)> {
         Ok((4, 5))
     }
@@ -15,32 +17,32 @@ impl imports::Host for MyImports {
         Ok((a.1, a.0))
     }
 
-    fn roundtrip_flags1(&mut self, a: imports::F1) -> Result<imports::F1> {
+    fn roundtrip_flags1(&mut self, a: test_imports::F1) -> Result<test_imports::F1> {
         drop(format!("{:?}", a));
-        drop(a & imports::F1::all());
+        drop(a & test_imports::F1::all());
         Ok(a)
     }
 
-    fn roundtrip_flags2(&mut self, a: imports::F2) -> Result<imports::F2> {
+    fn roundtrip_flags2(&mut self, a: test_imports::F2) -> Result<test_imports::F2> {
         Ok(a)
     }
 
     fn roundtrip_flags3(
         &mut self,
-        a: imports::Flag8,
-        b: imports::Flag16,
-        c: imports::Flag32,
-        d: imports::Flag64,
+        a: test_imports::Flag8,
+        b: test_imports::Flag16,
+        c: test_imports::Flag32,
+        d: test_imports::Flag64,
     ) -> Result<(
-        imports::Flag8,
-        imports::Flag16,
-        imports::Flag32,
-        imports::Flag64,
+        test_imports::Flag8,
+        test_imports::Flag16,
+        test_imports::Flag32,
+        test_imports::Flag64,
     )> {
         Ok((a, b, c, d))
     }
 
-    fn roundtrip_record1(&mut self, a: imports::R1) -> Result<imports::R1> {
+    fn roundtrip_record1(&mut self, a: test_imports::R1) -> Result<test_imports::R1> {
         drop(format!("{:?}", a));
         Ok(a)
     }
@@ -65,10 +67,10 @@ fn run() -> Result<()> {
 }
 
 fn run_test(exports: Records, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
-    use exports::*;
+    use exports::test::records::test::*;
 
     exports.call_test_imports(&mut *store)?;
-    let exports = exports.exports();
+    let exports = exports.test_records_test();
     assert_eq!(exports.call_multiple_results(&mut *store,)?, (100, 200));
     assert_eq!(
         exports.call_swap_tuple(&mut *store, (1u8, 2u32))?,

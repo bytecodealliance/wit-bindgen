@@ -20,7 +20,7 @@ mod strings;
 mod unions;
 mod variants;
 
-wasmtime::component::bindgen!("testwasi" in "crates/wasi_snapshot_preview1/wit");
+wasmtime::component::bindgen!(in "crates/wasi_snapshot_preview1/wit");
 
 #[derive(Default)]
 struct Wasi<T>(T);

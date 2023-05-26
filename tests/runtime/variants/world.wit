@@ -1,3 +1,5 @@
+package test:variants
+
 interface test {
   roundtrip-option: func(a: option<float32>) -> option<u8>
   roundtrip-result: func(a: result<u32, float32>) -> result<float64, u8>
@@ -32,9 +34,9 @@ interface test {
   variant-enums: func(a: bool, b: result, c: my-errno) -> tuple<bool, result, my-errno>
 }
 
-default world variants {
-  import imports: self.test
-  export exports: self.test
+world variants {
+  import test
+  export test
 
   export test-imports: func()
 }

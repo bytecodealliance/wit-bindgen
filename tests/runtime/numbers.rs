@@ -1,14 +1,14 @@
 use anyhow::Result;
 use wasmtime::Store;
 
-wasmtime::component::bindgen!("world" in "tests/runtime/numbers");
+wasmtime::component::bindgen!(in "tests/runtime/numbers");
 
 #[derive(Default)]
 pub struct MyImports {
     scalar: u32,
 }
 
-impl imports::Host for MyImports {
+impl test::numbers::test::Host for MyImports {
     fn roundtrip_u8(&mut self, val: u8) -> Result<u8> {
         Ok(val)
     }
@@ -75,7 +75,7 @@ fn run() -> Result<()> {
 
 fn run_test(exports: Numbers, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {
     exports.call_test_imports(&mut *store)?;
-    let exports = exports.exports();
+    let exports = exports.test_numbers_test();
     assert_eq!(exports.call_roundtrip_u8(&mut *store, 1)?, 1);
     assert_eq!(
         exports.call_roundtrip_u8(&mut *store, u8::min_value())?,

@@ -1,5 +1,7 @@
 // This test generates multiple `RetArea` structs.
 
+package foo:foo
+
 interface tcp {
   type ipv6-socket-address = tuple<u16, u16, u16, u16, u16, u16, u16, u16, u16, u16>
 
@@ -9,6 +11,6 @@ interface tcp {
   ) -> tuple<u32, u32>
 }
 
-default world wasi {
-  import tcp: self.tcp
+world wasi {
+  import tcp
 }

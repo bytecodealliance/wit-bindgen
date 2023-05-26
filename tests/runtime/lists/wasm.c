@@ -17,24 +17,24 @@ void lists_test_imports() {
     lists_list_u8_t a;
     a.ptr = list;
     a.len = 0;
-    imports_empty_list_param(&a);
+    test_lists_test_empty_list_param(&a);
   }
 
   {
     lists_string_t a;
     lists_string_set(&a, "");
-    imports_empty_string_param(&a);
+    test_lists_test_empty_string_param(&a);
   }
 
   {
     lists_list_u8_t a;
-    imports_empty_list_result(&a);
+    test_lists_test_empty_list_result(&a);
     assert(a.len == 0);
   }
 
   {
     lists_string_t a;
-    imports_empty_string_result(&a);
+    test_lists_test_empty_string_result(&a);
     assert(a.len == 0);
   }
 
@@ -43,13 +43,13 @@ void lists_test_imports() {
     lists_list_u8_t a;
     a.ptr = list;
     a.len = 4;
-    imports_list_param(&a);
+    test_lists_test_list_param(&a);
   }
 
   {
     lists_string_t a;
     lists_string_set(&a, "foo");
-    imports_list_param2(&a);
+    test_lists_test_list_param2(&a);
   }
 
   {
@@ -60,7 +60,7 @@ void lists_test_imports() {
     lists_list_string_t a;
     a.ptr = list;
     a.len = 3;
-    imports_list_param3(&a);
+    test_lists_test_list_param3(&a);
   }
 
   {
@@ -75,12 +75,12 @@ void lists_test_imports() {
     a.ptr[1].len = 1;
     a.ptr[1].ptr = list2;
     a.len = 2;
-    imports_list_param4(&a);
+    test_lists_test_list_param4(&a);
   }
 
   {
     lists_list_u8_t a;
-    imports_list_result(&a);
+    test_lists_test_list_result(&a);
     assert(a.len == 5);
     assert(memcmp(a.ptr, "\x01\x02\x03\x04\x05", 5) == 0);
     lists_list_u8_free(&a);
@@ -88,7 +88,7 @@ void lists_test_imports() {
 
   {
     lists_string_t a;
-    imports_list_result2(&a);
+    test_lists_test_list_result2(&a);
     assert(a.len == 6);
     assert(memcmp(a.ptr, "hello!", 6) == 0);
     lists_string_free(&a);
@@ -96,7 +96,7 @@ void lists_test_imports() {
 
   {
     lists_list_string_t a;
-    imports_list_result3(&a);
+    test_lists_test_list_result3(&a);
     assert(a.len == 2);
     assert(a.ptr[0].len == 6);
     assert(a.ptr[1].len == 6);
@@ -109,21 +109,21 @@ void lists_test_imports() {
     lists_list_u8_t a, b;
     a.len = 0;
     a.ptr = (unsigned char*) "";
-    imports_list_roundtrip(&a, &b);
+    test_lists_test_list_roundtrip(&a, &b);
     assert(b.len == a.len);
     assert(memcmp(b.ptr, a.ptr, a.len) == 0);
     lists_list_u8_free(&b);
 
     a.len = 1;
     a.ptr = (unsigned char*) "x";
-    imports_list_roundtrip(&a, &b);
+    test_lists_test_list_roundtrip(&a, &b);
     assert(b.len == a.len);
     assert(memcmp(b.ptr, a.ptr, a.len) == 0);
     lists_list_u8_free(&b);
 
     a.len = 5;
     a.ptr = (unsigned char*) "hello";
-    imports_list_roundtrip(&a, &b);
+    test_lists_test_list_roundtrip(&a, &b);
     assert(b.len == a.len);
     assert(memcmp(b.ptr, a.ptr, a.len) == 0);
     lists_list_u8_free(&b);
@@ -132,24 +132,24 @@ void lists_test_imports() {
   {
     lists_string_t a, b;
     lists_string_set(&a, "x");
-    imports_string_roundtrip(&a, &b);
+    test_lists_test_string_roundtrip(&a, &b);
     assert(b.len == a.len);
     assert(memcmp(b.ptr, a.ptr, a.len) == 0);
     lists_string_free(&b);
 
     lists_string_set(&a, "");
-    imports_string_roundtrip(&a, &b);
+    test_lists_test_string_roundtrip(&a, &b);
     assert(b.len == a.len);
     lists_string_free(&b);
 
     lists_string_set(&a, "hello");
-    imports_string_roundtrip(&a, &b);
+    test_lists_test_string_roundtrip(&a, &b);
     assert(b.len == a.len);
     assert(memcmp(b.ptr, a.ptr, a.len) == 0);
     lists_string_free(&b);
 
     lists_string_set(&a, "hello ⚑ world");
-    imports_string_roundtrip(&a, &b);
+    test_lists_test_string_roundtrip(&a, &b);
     assert(b.len == a.len);
     assert(memcmp(b.ptr, a.ptr, a.len) == 0);
     lists_string_free(&b);
@@ -162,7 +162,7 @@ void lists_test_imports() {
     lists_list_s8_t list_s8 = { s8, 2 };
     lists_list_u8_t list_u8_out;
     lists_list_s8_t list_s8_out;
-    imports_list_minmax8(&list_u8, &list_s8, &list_u8_out, &list_s8_out);
+    test_lists_test_list_minmax8(&list_u8, &list_s8, &list_u8_out, &list_s8_out);
     assert(list_u8_out.len == 2 && list_u8_out.ptr[0] == 0 && list_u8_out.ptr[1] == UCHAR_MAX);
     assert(list_s8_out.len == 2 && list_s8_out.ptr[0] == SCHAR_MIN && list_s8_out.ptr[1] == SCHAR_MAX);
     lists_list_u8_free(&list_u8_out);
@@ -176,7 +176,7 @@ void lists_test_imports() {
     lists_list_s16_t list_s16 = { s16, 2 };
     lists_list_u16_t list_u16_out;
     lists_list_s16_t list_s16_out;
-    imports_list_minmax16(&list_u16, &list_s16, &list_u16_out, &list_s16_out);
+    test_lists_test_list_minmax16(&list_u16, &list_s16, &list_u16_out, &list_s16_out);
     assert(list_u16_out.len == 2 && list_u16_out.ptr[0] == 0 && list_u16_out.ptr[1] == USHRT_MAX);
     assert(list_s16_out.len == 2 && list_s16_out.ptr[0] == SHRT_MIN && list_s16_out.ptr[1] == SHRT_MAX);
     lists_list_u16_free(&list_u16_out);
@@ -190,7 +190,7 @@ void lists_test_imports() {
     lists_list_s32_t list_s32 = { s32, 2 };
     lists_list_u32_t list_u32_out;
     lists_list_s32_t list_s32_out;
-    imports_list_minmax32(&list_u32, &list_s32, &list_u32_out, &list_s32_out);
+    test_lists_test_list_minmax32(&list_u32, &list_s32, &list_u32_out, &list_s32_out);
     assert(list_u32_out.len == 2 && list_u32_out.ptr[0] == 0 && list_u32_out.ptr[1] == UINT_MAX);
     assert(list_s32_out.len == 2 && list_s32_out.ptr[0] == INT_MIN && list_s32_out.ptr[1] == INT_MAX);
     lists_list_u32_free(&list_u32_out);
@@ -204,7 +204,7 @@ void lists_test_imports() {
     lists_list_s64_t list_s64 = { s64, 2 };
     lists_list_u64_t list_u64_out;
     lists_list_s64_t list_s64_out;
-    imports_list_minmax64(&list_u64, &list_s64, &list_u64_out, &list_s64_out);
+    test_lists_test_list_minmax64(&list_u64, &list_s64, &list_u64_out, &list_s64_out);
     assert(list_u64_out.len == 2 && list_u64_out.ptr[0] == 0 && list_u64_out.ptr[1] == ULLONG_MAX);
     assert(list_s64_out.len == 2 && list_s64_out.ptr[0] == LLONG_MIN && list_s64_out.ptr[1] == LLONG_MAX);
     lists_list_u64_free(&list_u64_out);
@@ -218,7 +218,7 @@ void lists_test_imports() {
     lists_list_float64_t list_float64 = { f64, 4 };
     lists_list_float32_t list_float32_out;
     lists_list_float64_t list_float64_out;
-    imports_list_minmax_float(&list_float32, &list_float64, &list_float32_out, &list_float64_out);
+    test_lists_test_list_minmax_float(&list_float32, &list_float64, &list_float32_out, &list_float64_out);
     assert(list_float32_out.len == 4 && list_float32_out.ptr[0] == -FLT_MAX && list_float32_out.ptr[1] == FLT_MAX);
     assert(list_float32_out.ptr[2] == -INFINITY && list_float32_out.ptr[3] == INFINITY);
     assert(list_float64_out.len == 4 && list_float64_out.ptr[0] == -DBL_MAX && list_float64_out.ptr[1] == DBL_MAX);
@@ -228,25 +228,25 @@ void lists_test_imports() {
   }
 }
 
-void exports_empty_list_param(lists_list_u8_t *a) {
+void exports_test_lists_test_empty_list_param(lists_list_u8_t *a) {
   assert(a->len == 0);
 }
 
-void exports_empty_string_param(lists_string_t *a) {
+void exports_test_lists_test_empty_string_param(lists_string_t *a) {
   assert(a->len == 0);
 }
 
-void exports_empty_list_result(lists_list_u8_t *ret0) {
+void exports_test_lists_test_empty_list_result(lists_list_u8_t *ret0) {
   ret0->ptr = 0;
   ret0->len = 0;
 }
 
-void exports_empty_string_result(lists_string_t *ret0) {
+void exports_test_lists_test_empty_string_result(lists_string_t *ret0) {
   ret0->ptr = 0;
   ret0->len = 0;
 }
 
-void exports_list_param(lists_list_u8_t *a) {
+void exports_test_lists_test_list_param(lists_list_u8_t *a) {
   assert(a->len == 4);
   assert(a->ptr[0] == 1);
   assert(a->ptr[1] == 2);
@@ -255,7 +255,7 @@ void exports_list_param(lists_list_u8_t *a) {
   lists_list_u8_free(a);
 }
 
-void exports_list_param2(lists_string_t *a) {
+void exports_test_lists_test_list_param2(lists_string_t *a) {
   assert(a->len == 3);
   assert(a->ptr[0] == 'f');
   assert(a->ptr[1] == 'o');
@@ -263,7 +263,7 @@ void exports_list_param2(lists_string_t *a) {
   lists_string_free(a);
 }
 
-void exports_list_param3(lists_list_string_t *a) {
+void exports_test_lists_test_list_param3(lists_list_string_t *a) {
   assert(a->len == 3);
   assert(a->ptr[0].len == 3);
   assert(a->ptr[0].ptr[0] == 'f');
@@ -283,7 +283,7 @@ void exports_list_param3(lists_list_string_t *a) {
   lists_list_string_free(a);
 }
 
-void exports_list_param4(lists_list_list_string_t *a) {
+void exports_test_lists_test_list_param4(lists_list_list_string_t *a) {
   assert(a->len == 2);
   assert(a->ptr[0].len == 2);
   assert(a->ptr[1].len == 1);
@@ -306,7 +306,7 @@ void exports_list_param4(lists_list_list_string_t *a) {
   lists_list_list_string_free(a);
 }
 
-void exports_list_result(lists_list_u8_t *ret0) {
+void exports_test_lists_test_list_result(lists_list_u8_t *ret0) {
   ret0->ptr = malloc(5);
   ret0->len = 5;
   ret0->ptr[0] = 1;
@@ -316,11 +316,11 @@ void exports_list_result(lists_list_u8_t *ret0) {
   ret0->ptr[4] = 5;
 }
 
-void exports_list_result2(lists_string_t *ret0) {
+void exports_test_lists_test_list_result2(lists_string_t *ret0) {
   lists_string_dup(ret0, "hello!");
 }
 
-void exports_list_result3(lists_list_string_t *ret0) {
+void exports_test_lists_test_list_result3(lists_list_string_t *ret0) {
   ret0->len = 2;
   ret0->ptr = malloc(2 * sizeof(lists_string_t));
 
@@ -328,30 +328,30 @@ void exports_list_result3(lists_list_string_t *ret0) {
   lists_string_dup(&ret0->ptr[1], "world!");
 }
 
-void exports_list_roundtrip(lists_list_u8_t *a, lists_list_u8_t *ret0) {
+void exports_test_lists_test_list_roundtrip(lists_list_u8_t *a, lists_list_u8_t *ret0) {
   *ret0 = *a;
 }
 
-void exports_string_roundtrip(lists_string_t *a, lists_string_t *ret0) {
+void exports_test_lists_test_string_roundtrip(lists_string_t *a, lists_string_t *ret0) {
   *ret0 = *a;
 }
 
-void exports_list_minmax8(lists_list_u8_t *a, lists_list_s8_t *b, lists_list_u8_t *ret0, lists_list_s8_t *ret1) {
+void exports_test_lists_test_list_minmax8(lists_list_u8_t *a, lists_list_s8_t *b, lists_list_u8_t *ret0, lists_list_s8_t *ret1) {
   assert(0); // unimplemented
 }
 
-void exports_list_minmax16(lists_list_u16_t *a, lists_list_s16_t *b, lists_list_u16_t *ret0, lists_list_s16_t *ret1) {
+void exports_test_lists_test_list_minmax16(lists_list_u16_t *a, lists_list_s16_t *b, lists_list_u16_t *ret0, lists_list_s16_t *ret1) {
   assert(0); // unimplemented
 }
 
-void exports_list_minmax32(lists_list_u32_t *a, lists_list_s32_t *b, lists_list_u32_t *ret0, lists_list_s32_t *ret1) {
+void exports_test_lists_test_list_minmax32(lists_list_u32_t *a, lists_list_s32_t *b, lists_list_u32_t *ret0, lists_list_s32_t *ret1) {
   assert(0); // unimplemented
 }
 
-void exports_list_minmax64(lists_list_u64_t *a, lists_list_s64_t *b, lists_list_u64_t *ret0, lists_list_s64_t *ret1) {
+void exports_test_lists_test_list_minmax64(lists_list_u64_t *a, lists_list_s64_t *b, lists_list_u64_t *ret0, lists_list_s64_t *ret1) {
   assert(0); // unimplemented
 }
 
-void exports_list_minmax_float(lists_list_float32_t *a, lists_list_float64_t *b, lists_list_float32_t *ret0, lists_list_float64_t *ret1) {
+void exports_test_lists_test_list_minmax_float(lists_list_float32_t *a, lists_list_float64_t *b, lists_list_float32_t *ret0, lists_list_float64_t *ret1) {
   assert(0); // unimplemented
 }

@@ -1,4 +1,6 @@
-default interface types-interface {
+package foo:foo
+
+interface types-interface {
   /// "package of named fields"
   record r {
     a: u32,
@@ -54,7 +56,7 @@ default interface types-interface {
 
 /// Comment for import interface
 interface api-imports {
-  use self.types-interface.{t7}
+  use types-interface.{t7}
 
   /// Same name as the type in `types-interface`, but this is a different type
   variant human {
@@ -85,10 +87,10 @@ interface api {
   continue: func(abstract: option<result<_, errno>>, extends: tuple<>) -> (%implements: option<tuple<>>)
 }
 
-default world types-example {
-    use self.types-interface.{t2 as t2-renamed, t10, permissions}
+world types-example {
+    use types-interface.{t2 as t2-renamed, t10, permissions}
 
-    import imports: self.api-imports
+    import api-imports
     import print: func(message: string, level: log-level)
     /// Comment for import inline
     import inline: interface {
@@ -96,8 +98,8 @@ default world types-example {
       inline-imp: func(args: list<option<char>>) -> result<_, char>
     }
 
-    export types-export: self.types-interface
-    export api: self.api
+    export types-interface
+    export api
 
     enum log-level {
       /// lowest level

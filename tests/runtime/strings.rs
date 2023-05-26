@@ -1,12 +1,12 @@
 use anyhow::Result;
 use wasmtime::Store;
 
-wasmtime::component::bindgen!("world" in "tests/runtime/strings");
+wasmtime::component::bindgen!(in "tests/runtime/strings");
 
 #[derive(Default)]
 pub struct MyImports;
 
-impl imports::Host for MyImports {
+impl test::strings::imports::Host for MyImports {
     fn take_basic(&mut self, s: String) -> Result<()> {
         assert_eq!(s, "latin utf16");
         Ok(())

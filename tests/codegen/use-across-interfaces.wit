@@ -1,18 +1,20 @@
+package foo:foo
+
 interface foo {
   record a {}
   x: func() -> a
 }
 
 interface bar {
-  use self.foo.{a}
+  use foo.{a}
   x: func() -> a
 }
 
-default world baz {
-  import foo: self.foo
-  import bar: self.bar
+world baz {
+  import foo
+  import bar
   import baz: interface {
-    use self.foo.{a}
+    use foo.{a}
     x: func() -> a
   }
 }

@@ -11,7 +11,7 @@ use wit_bindgen_core::{
         abi::{AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
         Case, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Int, InterfaceId, Record,
         Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, Union,
-        Variant, WorldId,
+        Variant, WorldId, WorldKey,
     },
     Files, InterfaceGenerator as _, Ns, WorldGenerator,
 };
@@ -90,10 +90,12 @@ impl WorldGenerator for TeaVmJava {
     fn import_interface(
         &mut self,
         resolve: &Resolve,
-        name: &str,
+        name: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
     ) {
+        // TODO: this is not a correct way to use `name`
+        let name = &resolve.name_world_key(name);
         self.interface_names.insert(id, name.to_owned());
         let mut gen = self.interface(resolve, name);
         gen.types(id);
@@ -125,10 +127,12 @@ impl WorldGenerator for TeaVmJava {
     fn export_interface(
         &mut self,
         resolve: &Resolve,
-        name: &str,
+        name: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
     ) {
+        // TODO: this is not a correct way to use `name`
+        let name = &resolve.name_world_key(name);
         self.interface_names.insert(id, name.to_owned());
         let mut gen = self.interface(resolve, name);
         gen.types(id);

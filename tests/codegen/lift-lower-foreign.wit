@@ -1,3 +1,5 @@
+package my:lift-lower-foreign
+
 interface a {
   type t1 = u32
   record t2 { a: t1 }
@@ -13,9 +15,9 @@ interface a {
 }
 
 interface the-interface {
-  use self.a.{t1 as u1, t2 as u2, t3 as u3, t4 as u4, t5 as u5}
-  use self.a.{t6 as u6, t7 as u7, t8 as %u8, t9 as u9}
-  use self.a.{t10 as u10, t11 as u11}
+  use a.{t1 as u1, t2 as u2, t3 as u3, t4 as u4, t5 as u5}
+  use a.{t6 as u6, t7 as u7, t8 as %u8, t9 as u9}
+  use a.{t10 as u10, t11 as u11}
 
   f1: func(a: u1) -> u1
   f2: func(a: u2) -> u2
@@ -30,10 +32,10 @@ interface the-interface {
   f11: func(a: u11) -> u11
 }
 
-default world foo {
-  use self.a.{t1 as u1, t2 as u2, t3 as u3, t4 as u4, t5 as u5}
-  use self.a.{t6 as u6, t7 as u7, t8 as %u8, t9 as u9}
-  use self.a.{t10 as u10, t11 as u11}
+world foo {
+  use a.{t1 as u1, t2 as u2, t3 as u3, t4 as u4, t5 as u5}
+  use a.{t6 as u6, t7 as u7, t8 as %u8, t9 as u9}
+  use a.{t10 as u10, t11 as u11}
 
   export f1: func(a: u1) -> u1
   export f2: func(a: u2) -> u2
@@ -47,6 +49,6 @@ default world foo {
   export f10: func(a: u10) -> u10
   export f11: func(a: u11) -> u11
 
-  import the-import: self.the-interface
-  export the-export: self.the-interface
+  import the-interface
+  export the-interface
 }

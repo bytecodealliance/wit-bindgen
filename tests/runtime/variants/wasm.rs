@@ -1,6 +1,6 @@
-wit_bindgen::generate!("world" in "../../tests/runtime/variants");
+wit_bindgen::generate!(in "../../tests/runtime/variants");
 
-use exports::*;
+use exports::test::variants::test::*;
 
 struct Component;
 
@@ -8,7 +8,7 @@ export_variants!(Component);
 
 impl Variants for Component {
     fn test_imports() {
-        use imports::*;
+        use test::variants::test::*;
 
         assert_eq!(roundtrip_option(Some(1.0)), Some(1));
         assert_eq!(roundtrip_option(None), None);
@@ -68,7 +68,7 @@ impl Variants for Component {
     }
 }
 
-impl Exports for Component {
+impl Test for Component {
     fn roundtrip_option(a: Option<f32>) -> Option<u8> {
         a.map(|x| x as u8)
     }

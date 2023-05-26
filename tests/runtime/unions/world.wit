@@ -1,3 +1,5 @@
+package test:unions
+
 interface test {
   /// A union of all of the integral types
   union all-integers {
@@ -58,9 +60,9 @@ interface test {
   identify-distinguishable-num: func(num: distinguishable-num) -> u8
 }
 
-default world unions {
-  import imports: self.test
-  export exports: self.test
+world unions {
+  import test
+  export test
 
   export test-imports: func()
 }

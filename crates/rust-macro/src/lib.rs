@@ -98,14 +98,13 @@ fn parse_source(source: &Option<Source>) -> anyhow::Result<(Resolve, PackageId, 
         } else {
             let pkg = UnresolvedPackage::parse_file(path)?;
             files.extend(pkg.source_files().map(|s| s.to_owned()));
-            resolve.push(pkg, &Default::default())
+            resolve.push(pkg)
         }
     };
     let pkg = match source {
-        Some(Source::Inline(s)) => resolve.push(
-            UnresolvedPackage::parse("macro-input".as_ref(), &s)?,
-            &Default::default(),
-        )?,
+        Some(Source::Inline(s)) => {
+            resolve.push(UnresolvedPackage::parse("macro-input".as_ref(), &s)?)?
+        }
         Some(Source::Path(s)) => parse(&root.join(&s))?,
         None => parse(&root.join("wit"))?,
     };
