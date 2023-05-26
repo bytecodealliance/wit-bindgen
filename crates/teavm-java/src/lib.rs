@@ -1,4 +1,4 @@
-use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
+use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToUpperCamelCase};
 use std::{
     collections::{HashMap, HashSet},
     fmt::Write,
@@ -43,6 +43,11 @@ impl Opts {
     }
 }
 
+enum Direction {
+    Import,
+    Export,
+}
+
 struct InterfaceFragment {
     src: String,
     stub: String,
@@ -65,8 +70,7 @@ pub struct TeaVmJava {
 
 impl TeaVmJava {
     fn qualifier(&self) -> String {
-        let world = self.name.to_upper_camel_case();
-        format!("{world}World.")
+        format!("{}.", self.name)
     }
 
     fn interface<'a>(&'a mut self, resolve: &'a Resolve, name: &'a str) -> InterfaceGenerator<'a> {
@@ -82,26 +86,24 @@ impl TeaVmJava {
 
 impl WorldGenerator for TeaVmJava {
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
-        let name = &resolve.worlds[world].name;
-        self.name = name.to_string();
+        self.name = world_name(resolve, world);
         self.sizes.fill(resolve);
     }
 
     fn import_interface(
         &mut self,
         resolve: &Resolve,
-        name: &WorldKey,
+        key: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
     ) {
-        // TODO: this is not a correct way to use `name`
-        let name = &resolve.name_world_key(name);
-        self.interface_names.insert(id, name.to_owned());
-        let mut gen = self.interface(resolve, name);
+        let name = interface_name(resolve, key, Direction::Import);
+        self.interface_names.insert(id, name.clone());
+        let mut gen = self.interface(resolve, &name);
         gen.types(id);
 
         for (_, func) in resolve.interfaces[id].functions.iter() {
-            gen.import(name, func);
+            gen.import(&resolve.name_world_key(key), func);
         }
 
         gen.add_interface_fragment();
@@ -114,11 +116,11 @@ impl WorldGenerator for TeaVmJava {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) {
-        let name = &format!("{}-world", resolve.worlds[world].name);
-        let mut gen = self.interface(resolve, name);
+        let name = world_name(resolve, world);
+        let mut gen = self.interface(resolve, &name);
 
         for (_, func) in funcs {
-            gen.import(name, func);
+            gen.import("$root", func);
         }
 
         gen.add_world_fragment();
@@ -127,18 +129,17 @@ impl WorldGenerator for TeaVmJava {
     fn export_interface(
         &mut self,
         resolve: &Resolve,
-        name: &WorldKey,
+        key: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
     ) {
-        // TODO: this is not a correct way to use `name`
-        let name = &resolve.name_world_key(name);
-        self.interface_names.insert(id, name.to_owned());
-        let mut gen = self.interface(resolve, name);
+        let name = interface_name(resolve, key, Direction::Export);
+        self.interface_names.insert(id, name.clone());
+        let mut gen = self.interface(resolve, &name);
         gen.types(id);
 
         for (_, func) in resolve.interfaces[id].functions.iter() {
-            gen.export(func, Some(name));
+            gen.export(Some(&resolve.name_world_key(key)), func);
         }
 
         gen.add_interface_fragment();
@@ -151,11 +152,11 @@ impl WorldGenerator for TeaVmJava {
         funcs: &[(&str, &Function)],
         _files: &mut Files,
     ) {
-        let name = &format!("{}-world", resolve.worlds[world].name);
-        let mut gen = self.interface(resolve, name);
+        let name = world_name(resolve, world);
+        let mut gen = self.interface(resolve, &name);
 
         for (_, func) in funcs {
-            gen.export(func, None);
+            gen.export(None, func);
         }
 
         gen.add_world_fragment();
@@ -168,8 +169,8 @@ impl WorldGenerator for TeaVmJava {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let name = &format!("{}-world", resolve.worlds[world].name);
-        let mut gen = self.interface(resolve, name);
+        let name = world_name(resolve, world);
+        let mut gen = self.interface(resolve, &name);
 
         for (ty_name, ty) in types {
             gen.define_type(ty_name, *ty);
@@ -179,9 +180,8 @@ impl WorldGenerator for TeaVmJava {
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
-        let world = &resolve.worlds[id];
-        let package = format!("wit_{}", world.name.to_snake_case());
-        let name = world.name.to_upper_camel_case();
+        let name = world_name(resolve, id);
+        let (package, name) = split_qualified_name(&name);
 
         let version = env!("CARGO_PKG_VERSION");
         let mut src = String::new();
@@ -194,8 +194,8 @@ impl WorldGenerator for TeaVmJava {
              {IMPORTS}
              import org.teavm.interop.CustomSection;
 
-             public final class {name}World {{
-                private {name}World() {{}}
+             public final class {name} {{
+                private {name}() {{}}
             "
         );
 
@@ -357,17 +357,19 @@ impl WorldGenerator for TeaVmJava {
 
         src.push_str("}\n");
 
-        files.push(&format!("{name}World.java"), indent(&src).as_bytes());
+        let directory = package.replace('.', "/");
+        files.push(&format!("{directory}/{name}.java"), indent(&src).as_bytes());
 
-        let generate_stub = |name, fragments: &[InterfaceFragment], files: &mut Files| {
-            let body = fragments
-                .iter()
-                .map(|f| f.stub.deref())
-                .collect::<Vec<_>>()
-                .join("\n");
+        let generate_stub =
+            |package: &str, name, fragments: &[InterfaceFragment], files: &mut Files| {
+                let body = fragments
+                    .iter()
+                    .map(|f| f.stub.deref())
+                    .collect::<Vec<_>>()
+                    .join("\n");
 
-            let body = format!(
-                "// Generated by `wit-bindgen` {version}. DO NOT EDIT!
+                let body = format!(
+                    "// Generated by `wit-bindgen` {version}. DO NOT EDIT!
                  package {package};
 
                  {IMPORTS}
@@ -376,16 +378,27 @@ impl WorldGenerator for TeaVmJava {
                      {body}
                  }}
                 "
-            );
+                );
 
-            files.push(&format!("{name}.java"), indent(&body).as_bytes());
-        };
+                let directory = package.replace('.', "/");
+                files.push(
+                    &format!("{directory}/{name}.java"),
+                    indent(&body).as_bytes(),
+                );
+            };
 
         if self.opts.generate_stub {
-            generate_stub(format!("{name}WorldImpl"), &self.world_fragments, files);
+            generate_stub(
+                &package,
+                format!("{name}Impl"),
+                &self.world_fragments,
+                files,
+            );
         }
 
         for (name, fragments) in &self.interface_fragments {
+            let (package, name) = split_qualified_name(name);
+
             let body = fragments
                 .iter()
                 .map(|f| f.src.deref())
@@ -406,10 +419,14 @@ impl WorldGenerator for TeaVmJava {
                 "
             );
 
-            files.push(&format!("{name}.java"), indent(&body).as_bytes());
+            let directory = package.replace('.', "/");
+            files.push(
+                &format!("{directory}/{name}.java"),
+                indent(&body).as_bytes(),
+            );
 
             if self.opts.generate_stub {
-                generate_stub(format!("{name}Impl"), fragments, files);
+                generate_stub(&package, format!("{name}Impl"), fragments, files);
             }
         }
     }
@@ -428,14 +445,13 @@ impl InterfaceGenerator<'_> {
         if let TypeOwner::Interface(id) = &ty.owner {
             if let Some(name) = self.gen.interface_names.get(id) {
                 if name != self.name {
-                    return format!("{}.", name.to_upper_camel_case());
+                    return format!("{name}.");
                 }
             }
         }
 
         if when {
-            let name = self.name.to_upper_camel_case();
-            format!("{name}.")
+            format!("{}.", self.name)
         } else {
             String::new()
         }
@@ -444,7 +460,7 @@ impl InterfaceGenerator<'_> {
     fn add_interface_fragment(self) {
         self.gen
             .interface_fragments
-            .entry(self.name.to_upper_camel_case())
+            .entry(self.name.to_owned())
             .or_default()
             .push(InterfaceFragment {
                 src: self.src,
@@ -530,7 +546,7 @@ impl InterfaceGenerator<'_> {
         );
     }
 
-    fn export(&mut self, func: &Function, interface_name: Option<&str>) {
+    fn export(&mut self, interface_name: Option<&str>, func: &Function) {
         let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
 
         let export_name = func.core_export_name(interface_name);
@@ -1843,7 +1859,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 };
 
-                let module = self.gen.name.to_upper_camel_case();
+                let module = self.gen.name;
                 let name = func.name.to_java_ident();
 
                 let args = operands.join(", ");
@@ -2203,6 +2219,61 @@ fn is_primitive(ty: &Type) -> bool {
             | Type::Float32
             | Type::Float64
     )
+}
+
+fn world_name(resolve: &Resolve, world: WorldId) -> String {
+    format!(
+        "wit.worlds.{}",
+        resolve.worlds[world].name.to_upper_camel_case()
+    )
+}
+
+fn interface_name(resolve: &Resolve, name: &WorldKey, direction: Direction) -> String {
+    let pkg = match name {
+        WorldKey::Name(_) => None,
+        WorldKey::Interface(id) => {
+            let pkg = resolve.interfaces[*id].package.unwrap();
+            Some(resolve.packages[pkg].name.clone())
+        }
+    };
+
+    let name = match name {
+        WorldKey::Name(name) => name,
+        WorldKey::Interface(id) => resolve.interfaces[*id].name.as_ref().unwrap(),
+    }
+    .to_upper_camel_case();
+
+    format!(
+        "wit.{}.{}{name}",
+        match direction {
+            Direction::Import => "imports",
+            Direction::Export => "exports",
+        },
+        if let Some(name) = &pkg {
+            format!(
+                "{}.{}.",
+                name.namespace.to_java_ident(),
+                name.name.to_java_ident()
+            )
+        } else {
+            String::new()
+        }
+    )
+}
+
+fn split_qualified_name(name: &str) -> (String, &str) {
+    let tokens = name.split('.').collect::<Vec<_>>();
+
+    let package = tokens
+        .iter()
+        .copied()
+        .take(tokens.len() - 1)
+        .collect::<Vec<_>>()
+        .join(".");
+
+    let name = tokens.last().unwrap();
+
+    (package, name)
 }
 
 trait ToJavaIdent: ToOwned {

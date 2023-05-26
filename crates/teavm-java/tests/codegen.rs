@@ -1,10 +1,8 @@
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 macro_rules! codegen_test {
-    // TODO: should fix handling of new `WorldKey` in teavm-java generator
-    ($id:ident $name:tt $test:tt) => {};
-
     ($id:ident $name:tt $test:tt) => {
         #[test]
         fn $id() {
@@ -25,10 +23,7 @@ macro_rules! codegen_test {
 }
 test_helpers::codegen_tests!();
 
-fn verify(dir: &Path, name: &str) {
-    use heck::ToSnakeCase;
-    use std::fs;
-
+fn verify(dir: &Path, _name: &str) {
     // Derived from `test_helpers::test_directory`
     const DEPTH_FROM_TARGET_DIR: u32 = 3;
 
@@ -46,26 +41,9 @@ fn verify(dir: &Path, name: &str) {
         panic!("please run ci/download-teavm.sh prior to running the Java tests")
     }
 
-    let java_dir = &dir.join("src/main/java");
-    let snake = name.to_snake_case();
-    let package_dir = &java_dir.join(format!("wit_{snake}"));
-
-    fs::create_dir_all(package_dir).unwrap();
-
-    let src_files = fs::read_dir(&dir).unwrap().filter_map(|entry| {
-        let path = entry.unwrap().path();
-        if let Some("java") = path.extension().map(|ext| ext.to_str().unwrap()) {
-            Some(path)
-        } else {
-            None
-        }
-    });
-
-    let dst_files = src_files.map(|src| {
-        let dst = package_dir.join(src.file_name().unwrap());
-        fs::rename(src, &dst).unwrap();
-        dst
-    });
+    let mut files = Vec::new();
+    move_java_files(&dir.join("wit"), &dir.join("src/main/java/wit"), &mut files);
+    fs::remove_dir_all(&dir.join("wit")).unwrap();
 
     let mut cmd = Command::new("javac");
     cmd.arg("-cp")
@@ -73,9 +51,22 @@ fn verify(dir: &Path, name: &str) {
         .arg("-d")
         .arg("target/classes");
 
-    for file in dst_files {
+    for file in files {
         cmd.arg(file);
     }
 
     test_helpers::run_command(&mut cmd);
+}
+
+fn move_java_files(src: &Path, dst: &Path, files: &mut Vec<PathBuf>) {
+    if src.is_dir() {
+        for entry in fs::read_dir(src).unwrap() {
+            let path = entry.unwrap().path();
+            move_java_files(&path, &dst.join(path.strip_prefix(src).unwrap()), files);
+        }
+    } else if let Some("java") = src.extension().map(|ext| ext.to_str().unwrap()) {
+        fs::create_dir_all(dst.parent().unwrap()).unwrap();
+        fs::rename(src, dst).unwrap();
+        files.push(dst.to_owned());
+    }
 }

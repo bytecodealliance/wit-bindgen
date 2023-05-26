@@ -1,42 +1,43 @@
-package wit_lists;
+package wit.worlds;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.ArrayList;
 
-import wit_lists.ListsWorld.Tuple2;
+import wit.imports.test.lists.Test;
+import wit.worlds.Lists.Tuple2;
 
-public class ListsWorldImpl {
+public class ListsImpl {
     public static int allocatedBytes() {
         return 0;
     }
 
     public static void testImports() {
-        Imports.emptyListParam(new byte[0]);
+        Test.emptyListParam(new byte[0]);
 
-        Imports.emptyStringParam("");
+        Test.emptyStringParam("");
 
         {
-            byte[] result = Imports.emptyListResult();
+            byte[] result = Test.emptyListResult();
             expect(result.length == 0);
         }
 
         {
-            String result = Imports.emptyStringResult();
+            String result = Test.emptyStringResult();
             expect(result.length() == 0);
         }
 
-        Imports.listParam(new byte[] { (byte) 1, (byte) 2, (byte) 3, (byte) 4 });
+        Test.listParam(new byte[] { (byte) 1, (byte) 2, (byte) 3, (byte) 4 });
 
-        Imports.listParam2("foo");
+        Test.listParam2("foo");
 
-        Imports.listParam3(new ArrayList<String>() {{
+        Test.listParam3(new ArrayList<String>() {{
             add("foo");
             add("bar");
             add("baz");
         }});
 
-        Imports.listParam4(new ArrayList<ArrayList<String>>() {{
+        Test.listParam4(new ArrayList<ArrayList<String>>() {{
             add(new ArrayList<String>() {{
                 add("foo");
                 add("bar");
@@ -47,7 +48,7 @@ public class ListsWorldImpl {
         }});
 
         {
-            byte[] result = Imports.listResult();
+            byte[] result = Test.listResult();
             expect(result.length == 5);
             expect(result[0] == (byte) 1);
             expect(result[1] == (byte) 2);
@@ -57,27 +58,27 @@ public class ListsWorldImpl {
         }
 
         {
-            String result = Imports.listResult2();
+            String result = Test.listResult2();
             expect(result.equals("hello!"));
         }
 
         {
-            ArrayList<String> result = Imports.listResult3();
+            ArrayList<String> result = Test.listResult3();
             expect(result.size() == 2);
             expect(result.get(0).equals("hello,"));
             expect(result.get(1).equals("world!"));
         }
 
         for (String s : new String[] { "x", "", "hello", "hello ⚑ world" }) {
-            String result = Imports.stringRoundtrip(s);
+            String result = Test.stringRoundtrip(s);
             expect(result.equals(s));
 
             byte[] bytes = s.getBytes(StandardCharsets.UTF_8);
-            expect(Arrays.equals(bytes, Imports.listRoundtrip(bytes)));
+            expect(Arrays.equals(bytes, Test.listRoundtrip(bytes)));
         }
 
         {
-            Tuple2<byte[], byte[]> result = Imports.listMinmax8
+            Tuple2<byte[], byte[]> result = Test.listMinmax8
                 (new byte[] { (byte) 0, (byte) 0xFF }, new byte[] { (byte) 0x80, (byte) 0x7F });
 
             expect(result.f0.length == 2 && result.f0[0] == (byte) 0 && result.f0[1] == (byte) 0xFF);
@@ -85,7 +86,7 @@ public class ListsWorldImpl {
         }
 
         {
-            Tuple2<short[], short[]> result = Imports.listMinmax16
+            Tuple2<short[], short[]> result = Test.listMinmax16
                 (new short[] { (short) 0, (short) 0xFFFF }, new short[] { (short) 0x8000, (short) 0x7FFF });
 
             expect(result.f0.length == 2 && result.f0[0] == (short) 0 && result.f0[1] == (short) 0xFFFF);
@@ -93,7 +94,7 @@ public class ListsWorldImpl {
         }
 
         {
-            Tuple2<int[], int[]> result = Imports.listMinmax32
+            Tuple2<int[], int[]> result = Test.listMinmax32
                 (new int[] { 0, 0xFFFFFFFF }, new int[] { 0x80000000, 0x7FFFFFFF });
 
             expect(result.f0.length == 2 && result.f0[0] == 0 && result.f0[1] == 0xFFFFFFFF);
@@ -101,7 +102,7 @@ public class ListsWorldImpl {
         }
 
         {
-            Tuple2<long[], long[]> result = Imports.listMinmax64
+            Tuple2<long[], long[]> result = Test.listMinmax64
                 (new long[] { 0, 0xFFFFFFFFFFFFFFFFL }, new long[] { 0x8000000000000000L, 0x7FFFFFFFFFFFFFFFL });
 
             expect(result.f0.length == 2
@@ -114,7 +115,7 @@ public class ListsWorldImpl {
         }
 
         {
-            Tuple2<float[], double[]> result = Imports.listMinmaxFloat
+            Tuple2<float[], double[]> result = Test.listMinmaxFloat
                 (new float[] {
                     -Float.MAX_VALUE,
                     Float.MAX_VALUE,
