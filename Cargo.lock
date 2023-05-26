@@ -249,6 +249,7 @@ dependencies = [
 [[package]]
 name = "cranelift-bforest"
 version = "0.97.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "cranelift-entity",
 ]
@@ -256,6 +257,7 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen"
 version = "0.97.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "bumpalo",
  "cranelift-bforest",
@@ -275,6 +277,7 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen-meta"
 version = "0.97.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "cranelift-codegen-shared",
 ]
@@ -282,10 +285,12 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen-shared"
 version = "0.97.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 
 [[package]]
 name = "cranelift-control"
 version = "0.97.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "arbitrary",
 ]
@@ -293,6 +298,7 @@ dependencies = [
 [[package]]
 name = "cranelift-entity"
 version = "0.97.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "serde",
 ]
@@ -300,6 +306,7 @@ dependencies = [
 [[package]]
 name = "cranelift-frontend"
 version = "0.97.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "cranelift-codegen",
  "log",
@@ -310,10 +317,12 @@ dependencies = [
 [[package]]
 name = "cranelift-isle"
 version = "0.97.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 
 [[package]]
 name = "cranelift-native"
 version = "0.97.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "cranelift-codegen",
  "libc",
@@ -323,6 +332,7 @@ dependencies = [
 [[package]]
 name = "cranelift-wasm"
 version = "0.97.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "cranelift-codegen",
  "cranelift-entity",
@@ -1286,7 +1296,8 @@ dependencies = [
 [[package]]
 name = "wasm-encoder"
 version = "0.29.0"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=bump#dd15b259925b111a9b7f1d4b3d0191e8acbdb356"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18c41dbd92eaebf3612a39be316540b8377c871cb9bde6b064af962984912881"
 dependencies = [
  "leb128",
 ]
@@ -1294,7 +1305,8 @@ dependencies = [
 [[package]]
 name = "wasm-metadata"
 version = "0.8.0"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=bump#dd15b259925b111a9b7f1d4b3d0191e8acbdb356"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36e5156581ff4a302405c44ca7c85347563ca431d15f1a773f12c9c7b9a6cdc9"
 dependencies = [
  "anyhow",
  "indexmap",
@@ -1306,7 +1318,8 @@ dependencies = [
 [[package]]
 name = "wasmparser"
 version = "0.107.0"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=bump#dd15b259925b111a9b7f1d4b3d0191e8acbdb356"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29e3ac9b780c7dda0cac7a52a5d6d2d6707cc6e3451c9db209b6c758f40d7acb"
 dependencies = [
  "indexmap",
  "semver",
@@ -1315,7 +1328,8 @@ dependencies = [
 [[package]]
 name = "wasmprinter"
 version = "0.2.59"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=bump#dd15b259925b111a9b7f1d4b3d0191e8acbdb356"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc960b30b84abca377768f3c62cff3a1c74db8c0f6759ed581827da0bd3a3fed"
 dependencies = [
  "anyhow",
  "wasmparser",
@@ -1324,6 +1338,7 @@ dependencies = [
 [[package]]
 name = "wasmtime"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1360,6 +1375,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-asm-macros"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "cfg-if",
 ]
@@ -1367,6 +1383,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-cache"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "anyhow",
  "base64",
@@ -1385,6 +1402,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-component-macro"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -1398,10 +1416,12 @@ dependencies = [
 [[package]]
 name = "wasmtime-component-util"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 
 [[package]]
 name = "wasmtime-cranelift"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -1423,6 +1443,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-cranelift-shared"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -1437,6 +1458,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-environ"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "anyhow",
  "cranelift-entity",
@@ -1457,6 +1479,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-fiber"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "cc",
  "cfg-if",
@@ -1468,6 +1491,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "addr2line",
  "anyhow",
@@ -1492,6 +1516,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit-debug"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "object",
  "once_cell",
@@ -1501,6 +1526,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit-icache-coherence"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "cfg-if",
  "libc",
@@ -1510,6 +1536,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-runtime"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "anyhow",
  "cc",
@@ -1535,6 +1562,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-types"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "cranelift-entity",
  "serde",
@@ -1545,6 +1573,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-winch"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -1560,6 +1589,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-wit-bindgen"
 version = "10.0.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "anyhow",
  "heck",
@@ -1569,7 +1599,8 @@ dependencies = [
 [[package]]
 name = "wast"
 version = "60.0.0"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=bump#dd15b259925b111a9b7f1d4b3d0191e8acbdb356"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd06cc744b536e30387e72a48fdd492105b9c938bb4f415c39c616a7a0a697ad"
 dependencies = [
  "leb128",
  "memchr",
@@ -1580,7 +1611,8 @@ dependencies = [
 [[package]]
 name = "wat"
 version = "1.0.66"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=bump#dd15b259925b111a9b7f1d4b3d0191e8acbdb356"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5abe520f0ab205366e9ac7d3e6b2fc71de44e32a2b58f2ec871b6b575bdcea3b"
 dependencies = [
  "wast",
 ]
@@ -1619,6 +1651,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "winch-codegen"
 version = "0.8.0"
+source = "git+https://github.com/alexcrichton/wasmtime?branch=wit-changes#ae625d1b1e29fbbc615816af9124ec4c00ef661a"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -1820,7 +1853,8 @@ dependencies = [
 [[package]]
 name = "wit-component"
 version = "0.11.0"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=bump#dd15b259925b111a9b7f1d4b3d0191e8acbdb356"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cbd4c7f8f400327c482c88571f373844b7889e61460650d650fc5881bb3575c"
 dependencies = [
  "anyhow",
  "bitflags 1.3.2",
@@ -1836,7 +1870,8 @@ dependencies = [
 [[package]]
 name = "wit-parser"
 version = "0.8.0"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=bump#dd15b259925b111a9b7f1d4b3d0191e8acbdb356"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6daec9f093dbaea0e94043eeb92ece327bbbe70c86b1f41aca9bbfefd7f050f0"
 dependencies = [
  "anyhow",
  "id-arena",
