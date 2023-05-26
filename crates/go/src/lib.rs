@@ -68,17 +68,21 @@ impl Opts {
 pub struct TinyGo {
     _opts: Opts,
     src: Source,
-    export_funcs: Vec<(String, String)>,
     world: String,
     needs_result_option: bool,
     needs_import_unsafe: bool,
     needs_fmt_import: bool,
     sizes: SizeAlign,
-    interface_names: HashMap<InterfaceId, String>,
+    interface_names: HashMap<InterfaceId, WorldKey>,
 }
 
 impl TinyGo {
-    fn interface<'a>(&'a mut self, resolve: &'a Resolve, name: &'a str) -> InterfaceGenerator<'a> {
+    fn interface<'a>(
+        &'a mut self,
+        resolve: &'a Resolve,
+        name: &'a Option<&'a WorldKey>,
+        in_import: bool,
+    ) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
             src: Source::default(),
             gen: self,
@@ -86,11 +90,9 @@ impl TinyGo {
             interface: None,
             name,
             public_anonymous_types: BTreeSet::new(),
+            in_import,
+            export_funcs: Vec::new(),
         }
-    }
-
-    fn clean_up_export_funcs(&mut self) {
-        self.export_funcs = vec![];
     }
 }
 
@@ -108,12 +110,13 @@ impl WorldGenerator for TinyGo {
         id: InterfaceId,
         _files: &mut Files,
     ) {
-        // TODO: this is not a correct way to use `name`
-        let name = &resolve.name_world_key(name);
-        self.interface_names.insert(id, name.to_string());
-        self.src.push_str(&format!("// {name}\n"));
+        let name_raw = &resolve.name_world_key(name);
+        self.src
+            .push_str(&format!("// Import functions from {name_raw}\n"));
+        self.interface_names.insert(id, name.clone());
 
-        let mut gen = self.interface(resolve, name);
+        let binding = Some(name);
+        let mut gen = self.interface(resolve, &binding, true);
         gen.interface = Some(id);
         gen.types(id);
 
@@ -134,9 +137,10 @@ impl WorldGenerator for TinyGo {
         _files: &mut Files,
     ) {
         let name = &resolve.worlds[world].name;
-        self.src.push_str(&format!("// {name}\n"));
+        self.src
+            .push_str(&format!("// Import functions from {name}\n"));
 
-        let mut gen = self.interface(resolve, name);
+        let mut gen = self.interface(resolve, &None, true);
         for (_name, func) in funcs.iter() {
             gen.import(resolve, func);
         }
@@ -153,13 +157,13 @@ impl WorldGenerator for TinyGo {
         id: InterfaceId,
         _files: &mut Files,
     ) {
-        // TODO: this is not a correct way to use `name`
-        let name = &resolve.name_world_key(name);
-        self.interface_names.insert(id, name.to_string());
-        self.src.push_str(&format!("// {name}\n"));
-        self.clean_up_export_funcs();
+        self.interface_names.insert(id, name.clone());
+        let name_raw = &resolve.name_world_key(name);
+        self.src
+            .push_str(&format!("// Export functions from {name_raw}\n"));
 
-        let mut gen = self.interface(resolve, name);
+        let binding = Some(name);
+        let mut gen = self.interface(resolve, &binding, false);
         gen.interface = Some(id);
         gen.types(id);
 
@@ -171,31 +175,6 @@ impl WorldGenerator for TinyGo {
 
         let src = mem::take(&mut gen.src);
         self.src.push_str(&src);
-
-        if !self.export_funcs.is_empty() {
-            let interface_var_name = &name.to_snake_case();
-            let interface_name = &name.to_upper_camel_case();
-
-            self.src
-                .push_str(format!("var {interface_var_name} {interface_name} = nil\n").as_str());
-            self.src.push_str(
-                format!(
-                    "func Set{interface_name}(i {interface_name}) {{\n    {interface_var_name} = i\n}}\n"
-                )
-                .as_str(),
-            );
-            self.src
-                .push_str(format!("type {interface_name} interface {{\n").as_str());
-            for (interface_func_declaration, _) in &self.export_funcs {
-                self.src
-                    .push_str(format!("{interface_func_declaration}\n").as_str());
-            }
-            self.src.push_str("}\n");
-
-            for (_, export_func) in &self.export_funcs {
-                self.src.push_str(export_func);
-            }
-        }
     }
 
     fn export_funcs(
@@ -206,10 +185,10 @@ impl WorldGenerator for TinyGo {
         _files: &mut Files,
     ) {
         let name = &resolve.worlds[world].name;
-        self.src.push_str(&format!("// {name}\n"));
-        self.clean_up_export_funcs();
+        self.src
+            .push_str(&format!("// Export functions from {name}\n"));
 
-        let mut gen = self.interface(resolve, name);
+        let mut gen = self.interface(resolve, &None, false);
         for (_name, func) in funcs.iter() {
             gen.export(resolve, func);
         }
@@ -218,42 +197,16 @@ impl WorldGenerator for TinyGo {
 
         let src = mem::take(&mut gen.src);
         self.src.push_str(&src);
-
-        if !self.export_funcs.is_empty() {
-            let interface_var_name = &name.to_snake_case();
-            let interface_name = &name.to_upper_camel_case();
-
-            self.src
-                .push_str(format!("var {interface_var_name} {interface_name} = nil\n").as_str());
-            self.src.push_str(
-                format!(
-                    "func Set{interface_name}(i {interface_name}) {{\n    {interface_var_name} = i\n}}\n"
-                )
-                .as_str(),
-            );
-            self.src
-                .push_str(format!("type {interface_name} interface {{\n").as_str());
-            for (interface_func_declaration, _) in &self.export_funcs {
-                self.src
-                    .push_str(format!("{interface_func_declaration}\n").as_str());
-            }
-            self.src.push_str("}\n");
-
-            for (_, export_func) in &self.export_funcs {
-                self.src.push_str(export_func);
-            }
-        }
     }
 
     fn export_types(
         &mut self,
         resolve: &Resolve,
-        world: WorldId,
+        _world: WorldId,
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let name = &resolve.worlds[world].name;
-        let mut gen = self.interface(resolve, name);
+        let mut gen = self.interface(resolve, &None, false);
         for (name, id) in types {
             gen.define_type(name, *id);
         }
@@ -422,21 +375,81 @@ struct InterfaceGenerator<'a> {
     gen: &'a mut TinyGo,
     resolve: &'a Resolve,
     interface: Option<InterfaceId>,
-    name: &'a str,
+    name: &'a Option<&'a WorldKey>,
     public_anonymous_types: BTreeSet<TypeId>,
+    in_import: bool,
+    export_funcs: Vec<(String, String)>,
 }
 
 impl InterfaceGenerator<'_> {
-    fn get_typedef_target(&self, name: &str) -> String {
-        format!(
-            "{}{}",
-            self.name.to_upper_camel_case(),
-            name.to_upper_camel_case()
-        )
+    fn get_func_or_type_name(&self, name: &str) -> String {
+        format!("{}{}", self.get_package_name(), name.to_upper_camel_case())
     }
 
-    fn get_c_typedef_target(&self, name: &str) -> String {
-        format!("{}_{}", self.name.to_snake_case(), name.to_snake_case())
+    fn get_c_func_name(&self, func_name: &str) -> String {
+        let mut name = String::new();
+        match self.name {
+            Some(WorldKey::Name(k)) => name.push_str(&k.to_snake_case()),
+            Some(WorldKey::Interface(id)) => {
+                if !self.in_import {
+                    name.push_str("exports_");
+                }
+                let iface = &self.resolve.interfaces[*id];
+                let pkg = &self.resolve.packages[iface.package.unwrap()];
+                name.push_str(&pkg.name.namespace.to_snake_case());
+                name.push('_');
+                name.push_str(&pkg.name.name.to_snake_case());
+                name.push('_');
+                name.push_str(&iface.name.as_ref().unwrap().to_snake_case());
+            }
+            None => name.push_str(&self.gen.world.to_snake_case()),
+        }
+        name.push('_');
+        name.push_str(&func_name.to_snake_case());
+        name
+    }
+
+    fn get_package_name(&self) -> String {
+        match self.name {
+            Some(key) => self.get_package_name_with(key),
+            None => self.gen.world.to_upper_camel_case(),
+        }
+    }
+
+    fn get_package_name_with(&self, key: &WorldKey) -> String {
+        let mut name = String::new();
+        match key {
+            WorldKey::Name(k) => name.push_str(&k.to_upper_camel_case()),
+            WorldKey::Interface(id) => {
+                if !self.in_import {
+                    name.push_str("Exports");
+                }
+                let iface = &self.resolve.interfaces[*id];
+                let pkg = &self.resolve.packages[iface.package.unwrap()];
+                name.push_str(&pkg.name.namespace.to_upper_camel_case());
+                name.push_str(&pkg.name.name.to_upper_camel_case());
+                name.push_str(&iface.name.as_ref().unwrap().to_upper_camel_case());
+            }
+        }
+        name
+    }
+
+    fn get_interface_var_name(&self) -> String {
+        let mut name = String::new();
+        match self.name {
+            Some(WorldKey::Name(k)) => name.push_str(&k.to_snake_case()),
+            Some(WorldKey::Interface(id)) => {
+                let iface = &self.resolve.interfaces[*id];
+                let pkg = &self.resolve.packages[iface.package.unwrap()];
+                name.push_str(&pkg.name.namespace.to_snake_case());
+                name.push('_');
+                name.push_str(&pkg.name.name.to_snake_case());
+                name.push('_');
+                name.push_str(&iface.name.as_ref().unwrap().to_snake_case());
+            }
+            None => name.push_str(&self.gen.world.to_snake_case()),
+        }
+        name
     }
 
     fn get_ty(&mut self, ty: &Type) -> String {
@@ -476,16 +489,17 @@ impl InterfaceGenerator<'_> {
                     _ => {
                         if let Some(name) = &ty.name {
                             let iface = if let TypeOwner::Interface(owner) = ty.owner {
-                                self.gen.interface_names[&owner].to_upper_camel_case()
+                                let key = &self.gen.interface_names[&owner];
+                                self.get_package_name_with(key)
                             } else {
-                                self.name.to_upper_camel_case()
+                                self.get_package_name()
                             };
                             format!("{iface}{name}", name = name.to_upper_camel_case())
                         } else {
                             self.public_anonymous_types.insert(*id);
                             format!(
                                 "{namespace}{name}",
-                                namespace = self.name.to_upper_camel_case(),
+                                namespace = self.get_package_name(),
                                 name = self.get_ty_name(&Type::Id(*id)),
                             )
                         }
@@ -520,17 +534,25 @@ impl InterfaceGenerator<'_> {
                 match &ty.name {
                     Some(name) => match ty.owner {
                         TypeOwner::Interface(owner) => {
-                            format!(
-                                "{namespace}_{name}_t",
-                                namespace = self.resolve.interfaces[owner]
-                                    .name
-                                    .as_ref()
-                                    .map(|s| s.to_snake_case())
-                                    .unwrap_or_else(
-                                        || self.gen.interface_names[&owner].to_snake_case()
-                                    ),
-                                name = name.to_snake_case(),
-                            )
+                            let key = &self.gen.interface_names[&owner];
+                            let mut ns = match &key {
+                                WorldKey::Name(name) => name.to_snake_case(),
+                                WorldKey::Interface(id) => {
+                                    let mut ns = String::new();
+                                    let iface = &self.resolve.interfaces[*id];
+                                    let pkg = &self.resolve.packages[iface.package.unwrap()];
+                                    ns.push_str(&pkg.name.namespace.to_snake_case());
+                                    ns.push('_');
+                                    ns.push_str(&pkg.name.name.to_snake_case());
+                                    ns.push('_');
+                                    ns.push_str(&iface.name.as_ref().unwrap().to_snake_case());
+                                    ns
+                                }
+                            };
+                            ns.push('_');
+                            ns.push_str(name.to_snake_case().as_str());
+                            ns.push_str("_t");
+                            ns
                         }
                         TypeOwner::World(owner) => {
                             format!(
@@ -588,7 +610,8 @@ impl InterfaceGenerator<'_> {
                             self.resolve.worlds[owner].name.to_upper_camel_case()
                         }
                         TypeOwner::Interface(owner) => {
-                            self.gen.interface_names[&owner].to_upper_camel_case()
+                            let key = &self.gen.interface_names[&owner];
+                            self.get_package_name_with(key)
                         }
                         TypeOwner::None => "".into(),
                     };
@@ -896,10 +919,10 @@ impl InterfaceGenerator<'_> {
         in_import: bool,
     ) -> String {
         let mut src = Source::default();
-        let name = if in_import {
-            self.get_c_typedef_target(&func.name)
+        let func_name = if in_import {
+            self.get_c_func_name(&func.name)
         } else {
-            self.get_typedef_target(&func.name)
+            self.get_func_or_type_name(&func.name)
         };
 
         if !in_import {
@@ -907,7 +930,7 @@ impl InterfaceGenerator<'_> {
         } else {
             src.push_str("C.");
         }
-        src.push_str(&name);
+        src.push_str(&func_name);
         src.push_str("(");
 
         // prepare args
@@ -936,7 +959,7 @@ impl InterfaceGenerator<'_> {
 
     fn print_func_signature(&mut self, resolve: &Resolve, func: &Function) {
         self.src.push_str("func ");
-        let func_name = self.name.to_upper_camel_case();
+        let func_name = self.get_package_name();
         self.src.push_str(&func_name);
         let func_sig = self.get_func_signature_no_interface(resolve, func);
         self.src.push_str(&func_sig);
@@ -995,7 +1018,7 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Tuple(t) => {
                 let name = format!(
                     "{}{}",
-                    self.name.to_upper_camel_case(),
+                    self.get_package_name(),
                     self.get_ty_name(&Type::Id(ty))
                 );
                 self.src.push_str(&format!("type {name} struct {{\n",));
@@ -1194,7 +1217,7 @@ impl InterfaceGenerator<'_> {
             let mut src = String::new();
             // header
             src.push_str("//export ");
-            let name = self.get_c_typedef_target(&func.name);
+            let name = self.get_c_func_name(&func.name);
             src.push_str(&name);
             src.push('\n');
 
@@ -1204,8 +1227,8 @@ impl InterfaceGenerator<'_> {
 
             // free all the parameters
             for (name, ty) in func.params.iter() {
-                if owns_anything(resolve, &ty) {
-                    let free = self.get_free_c_arg(&ty, &avoid_keyword(&name.to_snake_case()));
+                if owns_anything(resolve, ty) {
+                    let free = self.get_free_c_arg(ty, &avoid_keyword(&name.to_snake_case()));
                     src.push_str(&free);
                 }
             }
@@ -1217,7 +1240,7 @@ impl InterfaceGenerator<'_> {
             // invoke
             let invoke = format!(
                 "{}.{}({})",
-                &self.name.to_snake_case(),
+                &self.get_interface_var_name(),
                 &func.name.to_upper_camel_case(),
                 args.iter()
                     .enumerate()
@@ -1268,14 +1291,37 @@ impl InterfaceGenerator<'_> {
             src.push_str("\n}\n");
             src
         };
-        self.gen
-            .export_funcs
-            .push((interface_method_decl, export_func));
+        self.export_funcs.push((interface_method_decl, export_func));
     }
 
     fn finish(&mut self) {
         while let Some(ty) = self.public_anonymous_types.pop_last() {
             self.print_anonymous_type(ty);
+        }
+
+        if !self.in_import && !self.export_funcs.is_empty() {
+            let interface_var_name = &self.get_interface_var_name();
+            let interface_name = &self.get_package_name();
+
+            self.src
+                .push_str(format!("var {interface_var_name} {interface_name} = nil\n").as_str());
+            self.src.push_str(
+                format!(
+                    "func Set{interface_name}(i {interface_name}) {{\n    {interface_var_name} = i\n}}\n"
+                )
+                .as_str(),
+            );
+            self.src
+                .push_str(format!("type {interface_name} interface {{\n").as_str());
+            for (interface_func_declaration, _) in &self.export_funcs {
+                self.src
+                    .push_str(format!("{interface_func_declaration}\n").as_str());
+            }
+            self.src.push_str("}\n");
+
+            for (_, export_func) in &self.export_funcs {
+                self.src.push_str(export_func);
+            }
         }
     }
 }
@@ -1292,7 +1338,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         record: &wit_bindgen_core::wit_parser::Record,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        let name = self.get_typedef_target(name);
+        let name = self.get_func_or_type_name(name);
         self.src.push_str(&format!("type {name} struct {{\n",));
         for field in record.fields.iter() {
             let ty = self.get_ty(&field.ty);
@@ -1309,7 +1355,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         flags: &wit_bindgen_core::wit_parser::Flags,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        let name = self.get_typedef_target(name);
+        let name = self.get_func_or_type_name(name);
         // TODO: use flags repr to determine how many flags are needed
         self.src.push_str(&format!("type {name} uint64\n"));
         self.src.push_str("const (\n");
@@ -1338,7 +1384,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         tuple: &wit_bindgen_core::wit_parser::Tuple,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        let name = self.get_typedef_target(name);
+        let name = self.get_func_or_type_name(name);
         self.src.push_str(&format!("type {name} struct {{\n",));
         for (i, case) in tuple.types.iter().enumerate() {
             let ty = self.get_ty(case);
@@ -1354,7 +1400,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         variant: &wit_bindgen_core::wit_parser::Variant,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        let name = self.get_typedef_target(name);
+        let name = self.get_func_or_type_name(name);
         // TODO: use variant's tag to determine how many cases are needed
         // this will help to optmize the Kind type.
         self.src.push_str(&format!("type {name}Kind int\n\n"));
@@ -1411,7 +1457,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         union: &wit_bindgen_core::wit_parser::Union,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        let name = self.get_typedef_target(name);
+        let name = self.get_func_or_type_name(name);
         // TODO: use variant's tag to determine how many cases are needed
         // this will help to optmize the Kind type.
         self.src.push_str(&format!("type {name}Kind int\n\n"));
@@ -1445,7 +1491,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         enum_: &wit_bindgen_core::wit_parser::Enum,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        let name = self.get_typedef_target(name);
+        let name = self.get_func_or_type_name(name);
         // TODO: use variant's tag to determine how many cases are needed
         // this will help to optmize the Kind type.
         self.src.push_str(&format!("type {name}Kind int\n\n"));
@@ -1476,7 +1522,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         ty: &wit_bindgen_core::wit_parser::Type,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        let name = self.get_typedef_target(name);
+        let name = self.get_func_or_type_name(name);
         let ty = self.get_ty(ty);
         self.src.push_str(&format!("type {name} = {ty}\n"));
     }
@@ -1488,7 +1534,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         ty: &wit_bindgen_core::wit_parser::Type,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        let name = self.get_typedef_target(name);
+        let name = self.get_func_or_type_name(name);
         let ty = self.get_ty(ty);
         self.src.push_str(&format!("type {name} = {ty}\n"));
     }
