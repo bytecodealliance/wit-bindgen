@@ -83,4 +83,4 @@ test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
 
 [patch.crates-io]
-wasmtime = { git = 'https://github.com/alexcrichton/wasmtime', branch = 'wit-changes' }
+wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime' }
