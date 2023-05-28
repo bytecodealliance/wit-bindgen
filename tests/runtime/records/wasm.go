@@ -67,31 +67,31 @@ func (r *RecordImpl) MultipleResults() (uint8, uint16) {
 	return 100, 200
 }
 
-func (r *RecordImpl) SwapTuple(a ExportsTestRecordsTestTuple2U8U32T) ExportsTestRecordsTestTuple2U32U8T {
-	return ExportsTestRecordsTestTuple2U32U8T{a.F1, a.F0}
+func (r *RecordImpl) SwapTuple(a TestRecordsTestTuple2U8U32T) TestRecordsTestTuple2U32U8T {
+	return TestRecordsTestTuple2U32U8T{a.F1, a.F0}
 }
 
-func (r *RecordImpl) RoundtripFlags1(a ExportsTestRecordsTestF1) ExportsTestRecordsTestF1 {
+func (r *RecordImpl) RoundtripFlags1(a TestRecordsTestF1) TestRecordsTestF1 {
 	return a
 }
 
-func (r *RecordImpl) RoundtripFlags2(a ExportsTestRecordsTestF2) ExportsTestRecordsTestF2 {
+func (r *RecordImpl) RoundtripFlags2(a TestRecordsTestF2) TestRecordsTestF2 {
 	return a
 }
 
-func (r *RecordImpl) RoundtripFlags3(a ExportsTestRecordsTestFlag8, b ExportsTestRecordsTestFlag16, c ExportsTestRecordsTestFlag32, d ExportsTestRecordsTestFlag64) (ExportsTestRecordsTestFlag8, ExportsTestRecordsTestFlag16, ExportsTestRecordsTestFlag32, ExportsTestRecordsTestFlag64) {
+func (r *RecordImpl) RoundtripFlags3(a TestRecordsTestFlag8, b TestRecordsTestFlag16, c TestRecordsTestFlag32, d TestRecordsTestFlag64) (TestRecordsTestFlag8, TestRecordsTestFlag16, TestRecordsTestFlag32, TestRecordsTestFlag64) {
 	return a, b, c, d
 }
 
-func (r *RecordImpl) RoundtripRecord1(a ExportsTestRecordsTestR1) ExportsTestRecordsTestR1 {
+func (r *RecordImpl) RoundtripRecord1(a TestRecordsTestR1) TestRecordsTestR1 {
 	return a
 }
 
-func (r *RecordImpl) Tuple0(a ExportsTestRecordsTestTuple0T) ExportsTestRecordsTestTuple0T {
+func (r *RecordImpl) Tuple0(a TestRecordsTestTuple0T) TestRecordsTestTuple0T {
 	return a
 }
 
-func (r *RecordImpl) Tuple1(a ExportsTestRecordsTestTuple1U8T) ExportsTestRecordsTestTuple1U8T {
+func (r *RecordImpl) Tuple1(a TestRecordsTestTuple1U8T) TestRecordsTestTuple1U8T {
 	return a
 }
 
