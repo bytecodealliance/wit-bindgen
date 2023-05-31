@@ -12,7 +12,7 @@ func init() {
 type SmokeImpl struct{}
 
 func (s SmokeImpl) Thunk() {
-	ImportsThunk()
+	TestSmokeImportsThunk()
 }
 
 func main() {}

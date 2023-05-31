@@ -7,52 +7,52 @@ import (
 func init() {
 	n := &FlavorfulImpl{}
 	SetFlavorful(n)
-	SetExports(n)
+	SetExportsTestFlavorfulTest(n)
 }
 
 type FlavorfulImpl struct{}
 
 func (f FlavorfulImpl) TestImports() {
 
-	ImportsFListInRecord1(ImportsListInRecord1{"list_in_record1"})
-	if ImportsFListInRecord2().A != "list_in_record2" {
-		panic("ImportsFListInRecord2")
+	TestFlavorfulTestFListInRecord1(TestFlavorfulTestListInRecord1{"list_in_record1"})
+	if TestFlavorfulTestFListInRecord2().A != "list_in_record2" {
+		panic("TestFlavorfulTestFListInRecord2")
 	}
-	if ImportsFListInRecord3(ImportsListInRecord3{"list_in_record3 input"}).A != "list_in_record3 output" {
-		panic("ImportsFListInRecord3")
+	if TestFlavorfulTestFListInRecord3(TestFlavorfulTestListInRecord3{"list_in_record3 input"}).A != "list_in_record3 output" {
+		panic("TestFlavorfulTestFListInRecord3")
 	}
-	if ImportsFListInRecord4(ImportsListInAlias{"input4"}).A != "result4" {
-		panic("ImportsFListInRecord4")
+	if TestFlavorfulTestFListInRecord4(TestFlavorfulTestListInAlias{"input4"}).A != "result4" {
+		panic("TestFlavorfulTestFListInRecord4")
 	}
 
 	var b Result[struct{}, string]
 	b.SetErr("bar")
-	ImportsFListInVariant1(Some[string]("foo"), b, ImportsListInVariant1V3F0("baz"))
-	if ImportsFListInVariant2().Unwrap() != "list_in_variant2" {
-		panic("ImportsFListInVariant2")
+	TestFlavorfulTestFListInVariant1(Some[string]("foo"), b, TestFlavorfulTestListInVariant1V3F0("baz"))
+	if TestFlavorfulTestFListInVariant2().Unwrap() != "list_in_variant2" {
+		panic("TestFlavorfulTestFListInVariant2")
 	}
-	if ImportsFListInVariant3(Some[string]("input3")).Unwrap() != "output3" {
-		panic("ImportsFListInVariant3")
+	if TestFlavorfulTestFListInVariant3(Some[string]("input3")).Unwrap() != "output3" {
+		panic("TestFlavorfulTestFListInVariant3")
 	}
-	if !ImportsErrnoResult().IsErr() {
-		panic("ImportsErrnoResult")
+	if !TestFlavorfulTestErrnoResult().IsErr() {
+		panic("TestFlavorfulTestErrnoResult")
 	}
-	ImportsMyErrnoA()
+	TestFlavorfulTestMyErrnoA()
 	// TODO: be able to print my_error_a
 
-	if !ImportsErrnoResult().IsOk() {
-		panic("ImportsErrnoResult")
+	if !TestFlavorfulTestErrnoResult().IsOk() {
+		panic("TestFlavorfulTestErrnoResult")
 	}
 
-	t1, t2 := ImportsListTypedefs("typedef1", []string{"typedef2"})
+	t1, t2 := TestFlavorfulTestListTypedefs("typedef1", []string{"typedef2"})
 	if len(t1) != 8 {
-		panic("ImportsListTypedefs")
+		panic("TestFlavorfulTestListTypedefs")
 	}
 	if len(t2) != 1 {
-		panic("ImportsListTypedefs")
+		panic("TestFlavorfulTestListTypedefs")
 	}
 	if t2[0] != "typedef4" {
-		panic("ImportsListTypedefs")
+		panic("TestFlavorfulTestListTypedefs")
 	}
 
 	var v2_ok Result[struct{}, struct{}]
@@ -60,57 +60,57 @@ func (f FlavorfulImpl) TestImports() {
 	var v2_err Result[struct{}, struct{}]
 	v2_err.SetErr(struct{}{})
 
-	v1, v2, v3 := ImportsListOfVariants(
+	v1, v2, v3 := TestFlavorfulTestListOfVariants(
 		[]bool{true, false},
 		[]Result[struct{}, struct{}]{v2_ok, v2_err},
-		[]ImportsMyErrno{ImportsMyErrnoSuccess(), ImportsMyErrnoA()},
+		[]TestFlavorfulTestMyErrno{TestFlavorfulTestMyErrnoSuccess(), TestFlavorfulTestMyErrnoA()},
 	)
 	if v1[0] != false {
-		panic("ImportsListOfVariants")
+		panic("TestFlavorfulTestListOfVariants")
 	}
 	if v1[1] != true {
-		panic("ImportsListOfVariants")
+		panic("TestFlavorfulTestListOfVariants")
 	}
 	if v2[0].IsOk() {
-		panic("ImportsListOfVariants")
+		panic("TestFlavorfulTestListOfVariants")
 	}
 	if v2[1].IsErr() {
-		panic("ImportsListOfVariants")
+		panic("TestFlavorfulTestListOfVariants")
 	}
-	if v3[0].Kind() != ImportsMyErrnoKindA {
-		panic("ImportsListOfVariants")
+	if v3[0].Kind() != TestFlavorfulTestMyErrnoKindA {
+		panic("TestFlavorfulTestListOfVariants")
 	}
-	if v3[1].Kind() != ImportsMyErrnoKindB {
-		panic("ImportsListOfVariants")
+	if v3[1].Kind() != TestFlavorfulTestMyErrnoKindB {
+		panic("TestFlavorfulTestListOfVariants")
 	}
 
 }
 
-func (f FlavorfulImpl) FListInRecord1(a ExportsListInRecord1) {
+func (f FlavorfulImpl) FListInRecord1(a TestFlavorfulTestListInRecord1) {
 	if a.A != "list_in_record1" {
 		panic("FListInRecord1")
 	}
 }
 
-func (f FlavorfulImpl) FListInRecord2() ExportsListInRecord2 {
-	return ExportsListInRecord2{"list_in_record2"}
+func (f FlavorfulImpl) FListInRecord2() TestFlavorfulTestListInRecord2 {
+	return TestFlavorfulTestListInRecord2{"list_in_record2"}
 }
 
-func (f FlavorfulImpl) FListInRecord3(a ExportsListInRecord3) ExportsListInRecord3 {
+func (f FlavorfulImpl) FListInRecord3(a TestFlavorfulTestListInRecord3) TestFlavorfulTestListInRecord3 {
 	if a.A != "list_in_record3 input" {
 		panic("FListInRecord3")
 	}
-	return ExportsListInRecord3{"list_in_record3 output"}
+	return TestFlavorfulTestListInRecord3{"list_in_record3 output"}
 }
 
-func (f FlavorfulImpl) FListInRecord4(a ExportsListInRecord4) ExportsListInRecord4 {
+func (f FlavorfulImpl) FListInRecord4(a TestFlavorfulTestListInRecord4) TestFlavorfulTestListInRecord4 {
 	if a.A != "input4" {
 		panic("FListInRecord4")
 	}
-	return ExportsListInRecord4{"result4"}
+	return TestFlavorfulTestListInRecord4{"result4"}
 }
 
-func (f FlavorfulImpl) FListInVariant1(a Option[string], b Result[struct{}, string], c ExportsListInVariant1V3) {
+func (f FlavorfulImpl) FListInVariant1(a Option[string], b Result[struct{}, string], c TestFlavorfulTestListInVariant1V3) {
 	if a.Unwrap() != "foo" {
 		panic("FListInVariant1")
 	}
@@ -118,11 +118,11 @@ func (f FlavorfulImpl) FListInVariant1(a Option[string], b Result[struct{}, stri
 		panic("FListInVariant1")
 	}
 	switch c.Kind() {
-	case ExportsListInVariant1V3KindF0:
+	case TestFlavorfulTestListInVariant1V3KindF0:
 		if c.GetF0() != "baz" {
 			panic("FListInVariant1")
 		}
-	case ExportsListInVariant1V3KindF1:
+	case TestFlavorfulTestListInVariant1V3KindF1:
 		panic("FListInVariant1")
 	}
 }
@@ -138,9 +138,9 @@ func (f FlavorfulImpl) FListInVariant3(a Option[string]) Option[string] {
 	return Some[string]("output3")
 }
 
-func (f FlavorfulImpl) ErrnoResult() Result[struct{}, ExportsMyErrno] {
-	var res Result[struct{}, ExportsMyErrno]
-	res.SetErr(ExportsMyErrnoB())
+func (f FlavorfulImpl) ErrnoResult() Result[struct{}, TestFlavorfulTestMyErrno] {
+	var res Result[struct{}, TestFlavorfulTestMyErrno]
+	res.SetErr(TestFlavorfulTestMyErrnoB())
 	return res
 }
 
@@ -157,7 +157,7 @@ func (f FlavorfulImpl) ListTypedefs(a string, c []string) ([]uint8, []string) {
 	return []uint8("typedef3"), []string{"typedef4"}
 }
 
-func (f FlavorfulImpl) ListOfVariants(a []bool, b []Result[struct{}, struct{}], c []ExportsMyErrno) ([]bool, []Result[struct{}, struct{}], []ExportsMyErrno) {
+func (f FlavorfulImpl) ListOfVariants(a []bool, b []Result[struct{}, struct{}], c []TestFlavorfulTestMyErrno) ([]bool, []Result[struct{}, struct{}], []TestFlavorfulTestMyErrno) {
 	return a, b, c
 }
 

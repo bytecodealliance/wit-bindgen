@@ -8,346 +8,346 @@ import (
 func init() {
 	n := UnionsImpl{}
 	SetUnions(n)
-	SetExports(n)
+	SetExportsTestUnionsTest(n)
 }
 
 type UnionsImpl struct{}
 
 func (s UnionsImpl) TestImports() {
-	res1 := ImportsAddOneInteger(ImportsAllIntegersF0(false))
+	res1 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF0(false))
 	if res1.GetF0() != true {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res2 := ImportsAddOneInteger(ImportsAllIntegersF0(true))
+	res2 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF0(true))
 	if res2.GetF0() != false {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res3 := ImportsAddOneInteger(ImportsAllIntegersF1(0))
+	res3 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF1(0))
 	if res3.GetF1() != 1 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res4 := ImportsAddOneInteger(ImportsAllIntegersF1(math.MaxUint8))
+	res4 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF1(math.MaxUint8))
 	if res4.GetF1() != 0 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res5 := ImportsAddOneInteger(ImportsAllIntegersF2(0))
+	res5 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF2(0))
 	if res5.GetF2() != 1 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res6 := ImportsAddOneInteger(ImportsAllIntegersF2(math.MaxUint16))
+	res6 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF2(math.MaxUint16))
 	if res6.GetF2() != 0 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res7 := ImportsAddOneInteger(ImportsAllIntegersF3(0))
+	res7 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF3(0))
 	if res7.GetF3() != 1 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res8 := ImportsAddOneInteger(ImportsAllIntegersF3(math.MaxUint32))
+	res8 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF3(math.MaxUint32))
 	if res8.GetF3() != 0 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res9 := ImportsAddOneInteger(ImportsAllIntegersF4(0))
+	res9 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF4(0))
 	if res9.GetF4() != 1 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res10 := ImportsAddOneInteger(ImportsAllIntegersF4(math.MaxUint64))
+	res10 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF4(math.MaxUint64))
 	if res10.GetF4() != 0 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res11 := ImportsAddOneInteger(ImportsAllIntegersF5(0))
+	res11 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF5(0))
 	if res11.GetF5() != 1 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res12 := ImportsAddOneInteger(ImportsAllIntegersF5(math.MaxInt8))
+	res12 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF5(math.MaxInt8))
 	if res12.GetF5() != math.MinInt8 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res13 := ImportsAddOneInteger(ImportsAllIntegersF6(0))
+	res13 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF6(0))
 	if res13.GetF6() != 1 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res14 := ImportsAddOneInteger(ImportsAllIntegersF6(math.MaxInt16))
+	res14 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF6(math.MaxInt16))
 	if res14.GetF6() != math.MinInt16 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res15 := ImportsAddOneInteger(ImportsAllIntegersF7(0))
+	res15 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF7(0))
 	if res15.GetF7() != 1 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res16 := ImportsAddOneInteger(ImportsAllIntegersF7(math.MaxInt32))
+	res16 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF7(math.MaxInt32))
 	if res16.GetF7() != math.MinInt32 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res17 := ImportsAddOneInteger(ImportsAllIntegersF8(0))
+	res17 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF8(0))
 	if res17.GetF8() != 1 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
-	res18 := ImportsAddOneInteger(ImportsAllIntegersF8(math.MaxInt64))
+	res18 := TestUnionsTestAddOneInteger(TestUnionsTestAllIntegersF8(math.MaxInt64))
 	if res18.GetF8() != math.MinInt64 {
-		panic("unexpect result in ImportsAddOneInteger")
+		panic("unexpect result in TestUnionsTestAddOneInteger")
 	}
 
 	// All Floats
-	res19 := ImportsAddOneFloat(ImportsAllFloatsF0(0.0))
+	res19 := TestUnionsTestAddOneFloat(TestUnionsTestAllFloatsF0(0.0))
 	if res19.GetF0() != 1.0 {
-		panic("unexpect result in ImportsAddOneFloat")
+		panic("unexpect result in TestUnionsTestAddOneFloat")
 	}
 
-	res20 := ImportsAddOneFloat(ImportsAllFloatsF1(0.0))
+	res20 := TestUnionsTestAddOneFloat(TestUnionsTestAllFloatsF1(0.0))
 	if res20.GetF1() != 1.0 {
-		panic("unexpect result in ImportsAddOneFloat")
+		panic("unexpect result in TestUnionsTestAddOneFloat")
 	}
 
 	// All Text
-	if ImportsReplaceFirstChar(ImportsAllTextF0('a'), 'z').GetF0() != 'z' {
-		panic("unexpect result in ImportsReplaceFirstChar")
+	if TestUnionsTestReplaceFirstChar(TestUnionsTestAllTextF0('a'), 'z').GetF0() != 'z' {
+		panic("unexpect result in TestUnionsTestReplaceFirstChar")
 	}
-	if ImportsReplaceFirstChar(ImportsAllTextF1("abc"), 'z').GetF1() != "zbc" {
-		panic("unexpect result in ImportsReplaceFirstChar")
+	if TestUnionsTestReplaceFirstChar(TestUnionsTestAllTextF1("abc"), 'z').GetF1() != "zbc" {
+		panic("unexpect result in TestUnionsTestReplaceFirstChar")
 	}
 
 	// All Integers
-	if ImportsIdentifyInteger(ImportsAllIntegersF0(true)) != 0 {
-		panic("unexpect result in ImportsIdentifyInteger")
+	if TestUnionsTestIdentifyInteger(TestUnionsTestAllIntegersF0(true)) != 0 {
+		panic("unexpect result in TestUnionsTestIdentifyInteger")
 	}
 
-	if ImportsIdentifyInteger(ImportsAllIntegersF1(0)) != 1 {
-		panic("unexpect result in ImportsIdentifyInteger")
+	if TestUnionsTestIdentifyInteger(TestUnionsTestAllIntegersF1(0)) != 1 {
+		panic("unexpect result in TestUnionsTestIdentifyInteger")
 	}
 
-	if ImportsIdentifyInteger(ImportsAllIntegersF2(0)) != 2 {
-		panic("unexpect result in ImportsIdentifyInteger")
+	if TestUnionsTestIdentifyInteger(TestUnionsTestAllIntegersF2(0)) != 2 {
+		panic("unexpect result in TestUnionsTestIdentifyInteger")
 	}
 
-	if ImportsIdentifyInteger(ImportsAllIntegersF3(0)) != 3 {
-		panic("unexpect result in ImportsIdentifyInteger")
+	if TestUnionsTestIdentifyInteger(TestUnionsTestAllIntegersF3(0)) != 3 {
+		panic("unexpect result in TestUnionsTestIdentifyInteger")
 	}
 
-	if ImportsIdentifyInteger(ImportsAllIntegersF4(0)) != 4 {
-		panic("unexpect result in ImportsIdentifyInteger")
+	if TestUnionsTestIdentifyInteger(TestUnionsTestAllIntegersF4(0)) != 4 {
+		panic("unexpect result in TestUnionsTestIdentifyInteger")
 	}
 
-	if ImportsIdentifyInteger(ImportsAllIntegersF5(0)) != 5 {
-		panic("unexpect result in ImportsIdentifyInteger")
+	if TestUnionsTestIdentifyInteger(TestUnionsTestAllIntegersF5(0)) != 5 {
+		panic("unexpect result in TestUnionsTestIdentifyInteger")
 	}
 
-	if ImportsIdentifyInteger(ImportsAllIntegersF6(0)) != 6 {
-		panic("unexpect result in ImportsIdentifyInteger")
+	if TestUnionsTestIdentifyInteger(TestUnionsTestAllIntegersF6(0)) != 6 {
+		panic("unexpect result in TestUnionsTestIdentifyInteger")
 	}
 
-	if ImportsIdentifyInteger(ImportsAllIntegersF7(0)) != 7 {
-		panic("unexpect result in ImportsIdentifyInteger")
+	if TestUnionsTestIdentifyInteger(TestUnionsTestAllIntegersF7(0)) != 7 {
+		panic("unexpect result in TestUnionsTestIdentifyInteger")
 	}
 
-	if ImportsIdentifyInteger(ImportsAllIntegersF8(0)) != 8 {
-		panic("unexpect result in ImportsIdentifyInteger")
+	if TestUnionsTestIdentifyInteger(TestUnionsTestAllIntegersF8(0)) != 8 {
+		panic("unexpect result in TestUnionsTestIdentifyInteger")
 	}
 
-	if ImportsIdentifyFloat(ImportsAllFloatsF0(0.0)) != 0 {
-		panic("unexpect result in ImportsIdentifyFloat")
+	if TestUnionsTestIdentifyFloat(TestUnionsTestAllFloatsF0(0.0)) != 0 {
+		panic("unexpect result in TestUnionsTestIdentifyFloat")
 	}
 
-	if ImportsIdentifyFloat(ImportsAllFloatsF1(0.0)) != 1 {
-		panic("unexpect result in ImportsIdentifyFloat")
+	if TestUnionsTestIdentifyFloat(TestUnionsTestAllFloatsF1(0.0)) != 1 {
+		panic("unexpect result in TestUnionsTestIdentifyFloat")
 	}
 
 	// All Text
-	if ImportsIdentifyText(ImportsAllTextF0('a')) != 0 {
-		panic("unexpected result in ImportsIdentifyText")
+	if TestUnionsTestIdentifyText(TestUnionsTestAllTextF0('a')) != 0 {
+		panic("unexpected result in TestUnionsTestIdentifyText")
 	}
-	if ImportsIdentifyText(ImportsAllTextF1("abc")) != 1 {
-		panic("unexpected result in ImportsIdentifyText")
+	if TestUnionsTestIdentifyText(TestUnionsTestAllTextF1("abc")) != 1 {
+		panic("unexpected result in TestUnionsTestIdentifyText")
 	}
 
 	// All Duplicated
-	res21 := ImportsAddOneDuplicated(ImportsDuplicatedS32F0(0))
+	res21 := TestUnionsTestAddOneDuplicated(TestUnionsTestDuplicatedS32F0(0))
 	if res21.GetF0() != 1 {
-		panic("unexpected result in ImportsAddOneDuplicated")
+		panic("unexpected result in TestUnionsTestAddOneDuplicated")
 	}
 
-	res22 := ImportsAddOneDuplicated(ImportsDuplicatedS32F1(1))
+	res22 := TestUnionsTestAddOneDuplicated(TestUnionsTestDuplicatedS32F1(1))
 	if res22.GetF1() != 2 {
-		panic("unexpected result in ImportsAddOneDuplicated")
+		panic("unexpected result in TestUnionsTestAddOneDuplicated")
 	}
 
-	res23 := ImportsAddOneDuplicated(ImportsDuplicatedS32F2(2))
+	res23 := TestUnionsTestAddOneDuplicated(TestUnionsTestDuplicatedS32F2(2))
 	if res23.GetF2() != 3 {
-		panic("unexpected result in ImportsAddOneDuplicated")
+		panic("unexpected result in TestUnionsTestAddOneDuplicated")
 	}
 
 	// Distinguishable
 
-	if ImportsAddOneDistinguishableNum(ImportsDistinguishableNumF1(0)).GetF1() != 1 {
-		panic("unexpect result in ImportsAddOneDistinguishableNum")
+	if TestUnionsTestAddOneDistinguishableNum(TestUnionsTestDistinguishableNumF1(0)).GetF1() != 1 {
+		panic("unexpect result in TestUnionsTestAddOneDistinguishableNum")
 	}
 
-	if ImportsIdentifyDistinguishableNum(ImportsDistinguishableNumF0(0.0)) != 0 {
-		panic("unexpect result in ImportsIdentifyDistinguishableNum")
+	if TestUnionsTestIdentifyDistinguishableNum(TestUnionsTestDistinguishableNumF0(0.0)) != 0 {
+		panic("unexpect result in TestUnionsTestIdentifyDistinguishableNum")
 	}
 
-	if ImportsIdentifyDistinguishableNum(ImportsDistinguishableNumF1(1)) != 1 {
-		panic("unexpect result in ImportsIdentifyDistinguishableNum")
+	if TestUnionsTestIdentifyDistinguishableNum(TestUnionsTestDistinguishableNumF1(1)) != 1 {
+		panic("unexpect result in TestUnionsTestIdentifyDistinguishableNum")
 	}
 
 }
 
-func (u UnionsImpl) AddOneInteger(num ExportsAllIntegers) ExportsAllIntegers {
+func (u UnionsImpl) AddOneInteger(num TestUnionsTestAllIntegers) TestUnionsTestAllIntegers {
 	switch num.Kind() {
-	case ExportsAllIntegersKindF0:
-		return ExportsAllIntegersF0(!num.GetF0())
-	case ExportsAllIntegersKindF1:
-		return ExportsAllIntegersF1(num.GetF1() + 1)
-	case ExportsAllIntegersKindF2:
-		return ExportsAllIntegersF2(num.GetF2() + 1)
-	case ExportsAllIntegersKindF3:
-		return ExportsAllIntegersF3(num.GetF3() + 1)
-	case ExportsAllIntegersKindF4:
-		return ExportsAllIntegersF4(num.GetF4() + 1)
-	case ExportsAllIntegersKindF5:
-		return ExportsAllIntegersF5(num.GetF5() + 1)
-	case ExportsAllIntegersKindF6:
-		return ExportsAllIntegersF6(num.GetF6() + 1)
-	case ExportsAllIntegersKindF7:
-		return ExportsAllIntegersF7(num.GetF7() + 1)
-	case ExportsAllIntegersKindF8:
-		return ExportsAllIntegersF8(num.GetF8() + 1)
+	case TestUnionsTestAllIntegersKindF0:
+		return TestUnionsTestAllIntegersF0(!num.GetF0())
+	case TestUnionsTestAllIntegersKindF1:
+		return TestUnionsTestAllIntegersF1(num.GetF1() + 1)
+	case TestUnionsTestAllIntegersKindF2:
+		return TestUnionsTestAllIntegersF2(num.GetF2() + 1)
+	case TestUnionsTestAllIntegersKindF3:
+		return TestUnionsTestAllIntegersF3(num.GetF3() + 1)
+	case TestUnionsTestAllIntegersKindF4:
+		return TestUnionsTestAllIntegersF4(num.GetF4() + 1)
+	case TestUnionsTestAllIntegersKindF5:
+		return TestUnionsTestAllIntegersF5(num.GetF5() + 1)
+	case TestUnionsTestAllIntegersKindF6:
+		return TestUnionsTestAllIntegersF6(num.GetF6() + 1)
+	case TestUnionsTestAllIntegersKindF7:
+		return TestUnionsTestAllIntegersF7(num.GetF7() + 1)
+	case TestUnionsTestAllIntegersKindF8:
+		return TestUnionsTestAllIntegersF8(num.GetF8() + 1)
 	default:
-		panic("unexpected type in ExportsAllIntegers")
+		panic("unexpected type in TestUnionsTestAllIntegers")
 	}
 }
 
-func (u UnionsImpl) AddOneFloat(num ExportsAllFloats) ExportsAllFloats {
+func (u UnionsImpl) AddOneFloat(num TestUnionsTestAllFloats) TestUnionsTestAllFloats {
 	switch num.Kind() {
-	case ExportsAllFloatsKindF0:
-		return ExportsAllFloatsF0(num.GetF0() + 1.0)
-	case ExportsAllFloatsKindF1:
-		return ExportsAllFloatsF1(num.GetF1() + 1.0)
+	case TestUnionsTestAllFloatsKindF0:
+		return TestUnionsTestAllFloatsF0(num.GetF0() + 1.0)
+	case TestUnionsTestAllFloatsKindF1:
+		return TestUnionsTestAllFloatsF1(num.GetF1() + 1.0)
 	default:
-		panic("unexpected type in ExportsAllFloats")
+		panic("unexpected type in TestUnionsTestAllFloats")
 	}
 }
 
-func (u UnionsImpl) ReplaceFirstChar(text ExportsAllText, letter rune) ExportsAllText {
+func (u UnionsImpl) ReplaceFirstChar(text TestUnionsTestAllText, letter rune) TestUnionsTestAllText {
 	switch text.Kind() {
-	case ExportsAllTextKindF0:
-		return ExportsAllTextF0(letter)
-	case ExportsAllTextKindF1:
-		return ExportsAllTextF1(string(letter) + text.GetF1()[1:])
+	case TestUnionsTestAllTextKindF0:
+		return TestUnionsTestAllTextF0(letter)
+	case TestUnionsTestAllTextKindF1:
+		return TestUnionsTestAllTextF1(string(letter) + text.GetF1()[1:])
 	default:
 		// handle error or panic
-		return ExportsAllText{}
+		return TestUnionsTestAllText{}
 	}
 }
 
-func (u UnionsImpl) IdentifyInteger(num ExportsAllIntegers) uint8 {
+func (u UnionsImpl) IdentifyInteger(num TestUnionsTestAllIntegers) uint8 {
 	switch num.Kind() {
-	case ExportsAllIntegersKindF0:
+	case TestUnionsTestAllIntegersKindF0:
 		return 0
-	case ExportsAllIntegersKindF1:
+	case TestUnionsTestAllIntegersKindF1:
 		return 1
-	case ExportsAllIntegersKindF2:
+	case TestUnionsTestAllIntegersKindF2:
 		return 2
-	case ExportsAllIntegersKindF3:
+	case TestUnionsTestAllIntegersKindF3:
 		return 3
-	case ExportsAllIntegersKindF4:
+	case TestUnionsTestAllIntegersKindF4:
 		return 4
-	case ExportsAllIntegersKindF5:
+	case TestUnionsTestAllIntegersKindF5:
 		return 5
-	case ExportsAllIntegersKindF6:
+	case TestUnionsTestAllIntegersKindF6:
 		return 6
-	case ExportsAllIntegersKindF7:
+	case TestUnionsTestAllIntegersKindF7:
 		return 7
-	case ExportsAllIntegersKindF8:
+	case TestUnionsTestAllIntegersKindF8:
 		return 8
 	default:
-		panic("unexpected type in ExportsAllIntegers")
+		panic("unexpected type in TestUnionsTestAllIntegers")
 	}
 }
 
-func (u UnionsImpl) IdentifyFloat(num ExportsAllFloats) uint8 {
+func (u UnionsImpl) IdentifyFloat(num TestUnionsTestAllFloats) uint8 {
 	switch num.Kind() {
-	case ExportsAllFloatsKindF0:
+	case TestUnionsTestAllFloatsKindF0:
 		return 0
-	case ExportsAllFloatsKindF1:
+	case TestUnionsTestAllFloatsKindF1:
 		return 1
 	default:
-		panic("unexpected type in ExportsAllFloats")
+		panic("unexpected type in TestUnionsTestAllFloats")
 	}
 }
 
-func (u UnionsImpl) IdentifyText(text ExportsAllText) uint8 {
+func (u UnionsImpl) IdentifyText(text TestUnionsTestAllText) uint8 {
 	switch text.Kind() {
-	case ExportsAllTextKindF0:
+	case TestUnionsTestAllTextKindF0:
 		return 0
-	case ExportsAllTextKindF1:
+	case TestUnionsTestAllTextKindF1:
 		return 1
 	default:
-		panic("unexpected type in ExportsAllText")
+		panic("unexpected type in TestUnionsTestAllText")
 	}
 }
 
-func (u UnionsImpl) AddOneDuplicated(num ExportsDuplicatedS32) ExportsDuplicatedS32 {
+func (u UnionsImpl) AddOneDuplicated(num TestUnionsTestDuplicatedS32) TestUnionsTestDuplicatedS32 {
 	switch num.Kind() {
-	case ExportsDuplicatedS32KindF0:
-		return ExportsDuplicatedS32F0(num.GetF0() + 1)
-	case ExportsDuplicatedS32KindF1:
-		return ExportsDuplicatedS32F1(num.GetF1() + 1)
-	case ExportsDuplicatedS32KindF2:
-		return ExportsDuplicatedS32F2(num.GetF2() + 1)
+	case TestUnionsTestDuplicatedS32KindF0:
+		return TestUnionsTestDuplicatedS32F0(num.GetF0() + 1)
+	case TestUnionsTestDuplicatedS32KindF1:
+		return TestUnionsTestDuplicatedS32F1(num.GetF1() + 1)
+	case TestUnionsTestDuplicatedS32KindF2:
+		return TestUnionsTestDuplicatedS32F2(num.GetF2() + 1)
 	default:
-		panic("unexpected type in ExportsDuplicatedS32")
+		panic("unexpected type in TestUnionsTestDuplicatedS32")
 	}
 }
 
-func (u UnionsImpl) IdentifyDuplicated(num ExportsDuplicatedS32) uint8 {
+func (u UnionsImpl) IdentifyDuplicated(num TestUnionsTestDuplicatedS32) uint8 {
 	switch num.Kind() {
-	case ExportsDuplicatedS32KindF0:
+	case TestUnionsTestDuplicatedS32KindF0:
 		return 0
-	case ExportsDuplicatedS32KindF1:
+	case TestUnionsTestDuplicatedS32KindF1:
 		return 1
-	case ExportsDuplicatedS32KindF2:
+	case TestUnionsTestDuplicatedS32KindF2:
 		return 2
 	default:
 		panic("unexpected type in IdentifyDuplicated")
 	}
 }
 
-func (u UnionsImpl) AddOneDistinguishableNum(num ExportsDistinguishableNum) ExportsDistinguishableNum {
+func (u UnionsImpl) AddOneDistinguishableNum(num TestUnionsTestDistinguishableNum) TestUnionsTestDistinguishableNum {
 	switch num.Kind() {
-	case ExportsDistinguishableNumKindF0:
-		return ExportsDistinguishableNumF0(num.GetF0() + 1.0)
-	case ExportsDistinguishableNumKindF1:
-		return ExportsDistinguishableNumF1(num.GetF1() + 1)
+	case TestUnionsTestDistinguishableNumKindF0:
+		return TestUnionsTestDistinguishableNumF0(num.GetF0() + 1.0)
+	case TestUnionsTestDistinguishableNumKindF1:
+		return TestUnionsTestDistinguishableNumF1(num.GetF1() + 1)
 	default:
-		panic("unexpected type in ExportsDistinguishableNum")
+		panic("unexpected type in TestUnionsTestDistinguishableNum")
 	}
 }
 
-func (u UnionsImpl) IdentifyDistinguishableNum(num ExportsDistinguishableNum) uint8 {
+func (u UnionsImpl) IdentifyDistinguishableNum(num TestUnionsTestDistinguishableNum) uint8 {
 	switch num.Kind() {
-	case ExportsDistinguishableNumKindF0:
+	case TestUnionsTestDistinguishableNumKindF0:
 		return 0
-	case ExportsDistinguishableNumKindF1:
+	case TestUnionsTestDistinguishableNumKindF1:
 		return 1
 	default:
-		panic("unexpected type in ExportsDistinguishableNum")
+		panic("unexpected type in TestUnionsTestDistinguishableNum")
 	}
 }
 
