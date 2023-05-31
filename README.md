@@ -48,7 +48,9 @@ transformed into a component. All imports into a WebAssembly binary and all
 exports must be described with [WIT]. An example file looks like:
 
 ```
-default world host {
+package example:host
+
+world host {
   import print: func(msg: string)
 
   export run: func()
@@ -62,6 +64,8 @@ WebAssembly component will have available. In this case the host will provide a
 Functionality in [WIT] can also be organized into `interface`s:
 
 ```
+package example:my-game
+
 interface my-plugin-api {
   record coord {
     x: u32,
@@ -80,7 +84,7 @@ interface my-plugin-api {
   monsters: func() -> list<monster>
 }
 
-default world my-game {
+world my-game {
   import print: func(msg: string)
   import plugin: self.my-plugin-api
 
@@ -167,7 +171,9 @@ project.
 
 ```
 // wit/host.wit
-default world host {
+package example:host
+
+world host {
   import print: func(msg: string)
 
   export run: func()
@@ -237,7 +243,7 @@ example inferring the WIT world that is the component:
 
 ```sh
 wasm-tools component wit my-component.wasm
-# default world my-component {
+# world my-component {
 #  import print: func(msg: string)
 #  export run: func()
 # }
