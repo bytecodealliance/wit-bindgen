@@ -168,3 +168,36 @@ mod skip {
 
     export_baz!(Component);
 }
+
+mod symbol_does_not_conflict {
+    wit_bindgen::generate!({
+        inline: "
+            package my:inline
+
+            interface foo1 {
+                foo: func()
+            }
+
+            interface foo2 {
+                foo: func()
+            }
+
+            world foo {
+                export foo1
+                export foo2
+            }
+        ",
+    });
+
+    struct Component;
+
+    impl exports::my::inline::foo1::Foo1 for Component {
+        fn foo() {}
+    }
+
+    impl exports::my::inline::foo2::Foo2 for Component {
+        fn foo() {}
+    }
+
+    export_foo!(Component);
+}

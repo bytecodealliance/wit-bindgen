@@ -566,6 +566,7 @@ impl InterfaceGenerator<'_> {
         uwrite!(
             macro_src,
             "
+            const _: () = {{
                 #[doc(hidden)]
                 #[export_name = \"{export_name}\"]
                 #[allow(non_snake_case)]
@@ -647,7 +648,8 @@ impl InterfaceGenerator<'_> {
         for param in params.iter() {
             uwrite!(macro_src, "{param},");
         }
-        uwriteln!(macro_src, ")\n}}");
+        uwriteln!(macro_src, ")\n}}"); // close function call and function
+        uwriteln!(macro_src, "\n}};"); // close `const _: () = { ...`
 
         let mut f = FunctionBindgen::new(self, params);
         f.gen.resolve.call(
