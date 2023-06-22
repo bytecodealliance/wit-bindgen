@@ -80,6 +80,3 @@ heck = { workspace = true }
 wasmtime = { version = "10", features = ['component-model'] }
 test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
-
-[patch.crates-io]
-wasmtime = { git = 'https://github.com/bytecodealliance/wasmtime' }
