@@ -33,12 +33,17 @@ impl thing_in_and_out::Host for MyImports {
 
 #[test]
 fn run() -> Result<()> {
-    crate::run_test(
-        "ownership",
-        |linker| Ownership::add_to_linker(linker, |x| &mut x.0),
-        |store, component, linker| Ownership::instantiate(store, component, linker),
-        run_test,
-    )
+    for name in ["owning", "borrowing", "borrowing-duplicate-if-necessary"] {
+        crate::run_test_from_dir(
+            "ownership",
+            name,
+            |linker| Ownership::add_to_linker(linker, |x| &mut x.0),
+            |store, component, linker| Ownership::instantiate(store, component, linker),
+            run_test,
+        )?;
+    }
+
+    Ok(())
 }
 
 fn run_test(exports: Ownership, store: &mut Store<crate::Wasi<MyImports>>) -> Result<()> {

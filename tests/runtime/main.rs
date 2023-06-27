@@ -47,6 +47,19 @@ fn run_test<T, U>(
 where
     T: Default,
 {
+    run_test_from_dir(name, name, add_to_linker, instantiate, test)
+}
+
+fn run_test_from_dir<T, U>(
+    dir_name: &str,
+    name: &str,
+    add_to_linker: fn(&mut Linker<Wasi<T>>) -> Result<()>,
+    instantiate: fn(&mut Store<Wasi<T>>, &Component, &Linker<Wasi<T>>) -> Result<(U, Instance)>,
+    test: fn(U, &mut Store<Wasi<T>>) -> Result<()>,
+) -> Result<()>
+where
+    T: Default,
+{
     // Create an engine with caching enabled to assist with iteration in this
     // project.
     let mut config = Config::new();
@@ -55,7 +68,7 @@ where
     config.wasm_component_model(true);
     let engine = Engine::new(&config)?;
 
-    for wasm in tests(name)? {
+    for wasm in tests(name, dir_name)? {
         let component = Component::from_file(&engine, &wasm)?;
         let mut linker = Linker::new(&engine);
 
@@ -71,11 +84,11 @@ where
     Ok(())
 }
 
-fn tests(name: &str) -> Result<Vec<PathBuf>> {
+fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     let mut result = Vec::new();
 
     let mut dir = PathBuf::from("./tests/runtime");
-    dir.push(name);
+    dir.push(dir_name);
 
     let mut resolve = Resolve::new();
     let (pkg, _files) = resolve.push_dir(&dir).unwrap();
