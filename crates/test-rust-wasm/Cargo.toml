@@ -47,3 +47,15 @@ test = false
 [[bin]]
 name = "results"
 test = false
+
+[[bin]]
+name = "owning"
+test = false
+
+[[bin]]
+name = "borrowing"
+test = false
+
+[[bin]]
+name = "borrowing-duplicate-if-necessary"
+test = false
