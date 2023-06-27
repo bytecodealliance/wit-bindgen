@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::borrow::Cow;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use wasm_encoder::{Encode, Section};
 use wasmtime::component::{Component, Instance, Linker};
@@ -14,6 +14,7 @@ mod flavorful;
 mod lists;
 mod many_arguments;
 mod numbers;
+mod ownership;
 mod records;
 mod smoke;
 mod strings;
@@ -289,8 +290,6 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
 
     #[cfg(feature = "teavm-java")]
     if !java.is_empty() {
-        use heck::*;
-
         const DEPTH_FROM_TARGET_DIR: u32 = 2;
 
         let base_dir = {
@@ -327,7 +326,6 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
             dst_files.push(dst);
         }
 
-        let upper = world_name.to_upper_camel_case();
         for java_impl in java {
             let dst = java_dir.join(
                 java_impl

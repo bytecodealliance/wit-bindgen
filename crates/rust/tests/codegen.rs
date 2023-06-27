@@ -18,7 +18,9 @@ mod codegen_tests {
                 mod duplicate {
                     wit_bindgen::generate!({
                         path: $test,
-                        duplicate_if_necessary,
+                        ownership: Borrowing {
+                            duplicate_if_necessary: true
+                        }
                     });
 
                     #[test]
