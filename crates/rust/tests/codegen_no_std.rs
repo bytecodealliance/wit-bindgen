@@ -18,6 +18,7 @@ mod codegen_tests {
                 wit_bindgen::generate!({
                     path: $test,
                     std_feature,
+                    stubs
                 });
 
                 #[test]
@@ -83,77 +84,6 @@ mod raw_strings {
     }
 }
 
-// This is a static compilation test to ensure that
-// export bindings can go inside of another mod/crate
-// and still compile.
-mod prefix {
-    use alloc::{
-        format,
-        string::{String, ToString},
-    };
-
-    mod bindings {
-        wit_bindgen::generate!({
-            inline: "
-                package foo:foo
-                world baz {
-                    export exports1: interface {
-                        foo: func(x: string)
-                        bar: func() -> string
-                    }
-                }
-            ",
-            macro_call_prefix: "bindings::",
-            std_feature,
-        });
-
-        pub(crate) use export_baz;
-    }
-
-    struct Component;
-
-    impl bindings::exports::exports1::Exports1 for Component {
-        fn foo(x: String) {
-            let _ = format!("foo: {}", x);
-        }
-
-        fn bar() -> String {
-            "bar".to_string()
-        }
-    }
-
-    bindings::export_baz!(Component);
-}
-
-// This is a static compilation test to check that
-// the export macro name can be overridden.
-mod macro_name {
-    use alloc::{format, string::String};
-
-    wit_bindgen::generate!({
-        inline: "
-            package foo:foo
-            world baz {
-                export exports2: interface {
-                    foo: func(x: string)
-                }
-            }
-        ",
-        export_macro_name: "jam",
-        std_feature,
-    });
-
-    struct Component;
-
-    impl exports::exports2::Exports2 for Component {
-        fn foo(x: String) {
-            let _ = format!("foo: {}", x);
-        }
-    }
-
-    jam!(Component);
-}
-
 mod skip {
     wit_bindgen::generate!({
         inline: "
@@ -167,6 +97,9 @@ mod skip {
         ",
         skip: ["foo"],
         std_feature,
+        exports: {
+            "exports": Component
+        }
     });
 
     struct Component;
@@ -174,6 +107,4 @@ mod skip {
     impl exports::exports::Exports for Component {
         fn bar() {}
     }
-
-    export_baz!(Component);
 }

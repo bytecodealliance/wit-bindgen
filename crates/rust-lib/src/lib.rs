@@ -52,6 +52,20 @@ impl FromStr for Ownership {
     }
 }
 
+impl fmt::Display for Ownership {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Ownership::Owning => "owning",
+            Ownership::Borrowing {
+                duplicate_if_necessary: false,
+            } => "borrowing",
+            Ownership::Borrowing {
+                duplicate_if_necessary: true,
+            } => "borrowing-duplicate-if-necessary",
+        })
+    }
+}
+
 pub trait RustGenerator<'a> {
     fn resolve(&self) -> &'a Resolve;
     fn path_to_interface(&self, interface: InterfaceId) -> Option<String>;
@@ -75,6 +89,10 @@ pub trait RustGenerator<'a> {
     fn use_raw_strings(&self) -> bool {
         false
     }
+
+    fn is_exported_resource(&self, ty: TypeId) -> bool;
+
+    fn mark_resource_owned(&mut self, resource: TypeId);
 
     fn push_str(&mut self, s: &str);
     fn info(&self, ty: TypeId) -> TypeInfo;
@@ -143,7 +161,11 @@ pub trait RustGenerator<'a> {
         sig: &FnSig,
     ) -> Vec<String> {
         let params = self.print_docs_and_params(func, param_mode, &sig);
-        self.print_results(&func.results, TypeMode::Owned);
+        if let FunctionKind::Constructor(_) = &func.kind {
+            self.push_str(" -> Self")
+        } else {
+            self.print_results(&func.results, TypeMode::Owned);
+        }
         params
     }
 
@@ -169,7 +191,11 @@ pub trait RustGenerator<'a> {
         }
         self.push_str("fn ");
         let func_name = if sig.use_item_name {
-            func.item_name()
+            if let FunctionKind::Constructor(_) = &func.kind {
+                "new"
+            } else {
+                func.item_name()
+            }
         } else {
             &func.name
         };
@@ -317,10 +343,7 @@ pub trait RustGenerator<'a> {
                         needs_generics(resolve, &resolve.types[*t].kind)
                     }
                     TypeDefKind::Type(Type::String) => true,
-                    TypeDefKind::Type(_) => false,
-                    TypeDefKind::Resource | TypeDefKind::Handle(_) => {
-                        todo!("implement resources")
-                    }
+                    TypeDefKind::Resource | TypeDefKind::Handle(_) | TypeDefKind::Type(_) => false,
                     TypeDefKind::Unknown => unreachable!(),
                 }
             }
@@ -356,6 +379,9 @@ pub trait RustGenerator<'a> {
                 }
                 self.push_str(")");
             }
+            TypeDefKind::Resource => {
+                panic!("unsupported anonymous type reference: resource")
+            }
             TypeDefKind::Record(_) => {
                 panic!("unsupported anonymous type reference: record")
             }
@@ -381,11 +407,17 @@ pub trait RustGenerator<'a> {
                 self.push_str(">");
             }
 
-            TypeDefKind::Type(t) => self.print_ty(t, mode),
-
-            TypeDefKind::Resource | TypeDefKind::Handle(_) => {
-                todo!("implement resources")
+            TypeDefKind::Handle(Handle::Own(ty)) => {
+                self.mark_resource_owned(*ty);
+                self.print_ty(&Type::Id(*ty), mode);
             }
+
+            TypeDefKind::Handle(Handle::Borrow(ty)) => {
+                self.push_str("&");
+                self.print_ty(&Type::Id(*ty), mode);
+            }
+
+            TypeDefKind::Type(t) => self.print_ty(t, mode),
 
             TypeDefKind::Unknown => unreachable!(),
         }
@@ -521,8 +553,14 @@ pub trait RustGenerator<'a> {
                         TypeDefKind::Variant(_) => out.push_str("Variant"),
                         TypeDefKind::Enum(_) => out.push_str("Enum"),
                         TypeDefKind::Union(_) => out.push_str("Union"),
-                        TypeDefKind::Resource | TypeDefKind::Handle(_) => {
-                            todo!("implement resources")
+                        TypeDefKind::Resource => out.push_str("Resource"),
+                        TypeDefKind::Handle(Handle::Own(ty)) => {
+                            out.push_str("Own");
+                            self.write_name(&Type::Id(*ty), out);
+                        }
+                        TypeDefKind::Handle(Handle::Borrow(ty)) => {
+                            out.push_str("Borrow");
+                            self.write_name(&Type::Id(*ty), out);
                         }
                         TypeDefKind::Unknown => unreachable!(),
                     },
@@ -609,11 +647,13 @@ pub trait RustGenerator<'a> {
                 self.push_str("#[component(record)]\n");
             }
 
-            if !info.has_list {
-                self.push_str("#[repr(C)]\n");
-                self.push_str("#[derive(Copy, Clone)]\n");
-            } else {
-                self.push_str("#[derive(Clone)]\n");
+            if !info.has_resource {
+                if !info.has_list {
+                    self.push_str("#[repr(C)]\n");
+                    self.push_str("#[derive(Copy, Clone)]\n");
+                } else {
+                    self.push_str("#[derive(Clone)]\n");
+                }
             }
             self.push_str(&format!("pub struct {}", name));
             self.print_generics(lt);
@@ -1013,7 +1053,7 @@ pub trait RustGenerator<'a> {
         let info = self.info(id);
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
-            self.push_str(&format!("pub type {}", name));
+            self.push_str(&format!("pub type {name}"));
             let lt = self.lifetime_for(&info, mode);
             self.print_generics(lt);
             self.push_str(" = ");
@@ -1058,6 +1098,8 @@ pub trait RustGenerator<'a> {
             .to_upper_camel_case();
         if self.uses_two_names(&info) {
             format!("{}Result", name)
+        } else if self.is_exported_resource(ty) {
+            format!("Own{name}")
         } else {
             name
         }
@@ -1343,6 +1385,15 @@ impl fmt::Display for RustFlagsRepr {
             RustFlagsRepr::U32 => "u32".fmt(f),
             RustFlagsRepr::U64 => "u64".fmt(f),
             RustFlagsRepr::U128 => "u128".fmt(f),
+        }
+    }
+}
+
+pub fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
+    loop {
+        match &resolve.types[id].kind {
+            TypeDefKind::Type(Type::Id(that_id)) => id = *that_id,
+            _ => break id,
         }
     }
 }

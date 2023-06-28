@@ -1,7 +1,12 @@
 use anyhow::Result;
 use wasmtime::Store;
 
-wasmtime::component::bindgen!(in "tests/runtime/lists");
+wasmtime::component::bindgen!({
+    path: "tests/runtime/lists",
+    ownership: Borrowing {
+        duplicate_if_necessary: true
+    }
+});
 
 #[derive(Default)]
 pub struct MyImports;

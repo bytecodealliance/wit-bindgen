@@ -16,6 +16,7 @@ test = false
 doctest = false
 
 [dependencies]
+anyhow = { workspace = true }
 wit-bindgen-core = { workspace = true }
 wit-bindgen-rust-lib = { workspace = true }
 wit-component = { workspace = true }

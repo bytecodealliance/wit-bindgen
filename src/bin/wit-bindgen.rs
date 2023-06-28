@@ -150,7 +150,15 @@ fn gen_world(
         resolve.push(UnresolvedPackage::parse_file(&opts.wit)?)?
     };
     let world = resolve.select_world(pkg, opts.world.as_deref())?;
-    generator.generate(&resolve, world, files);
+    if let Err(e) = generator.generate(&resolve, world, files) {
+        eprintln!(
+            "{e:?}\n\n\
+             help: Specify export implementations using the `--exports` option.\n    \
+             For example: `--exports world=MyWorld,ns:pkg/iface=MyIface`\n    \
+             Alternatively, specify `--stubs` to generate stub implementations."
+        );
+    }
+
     Ok(())
 }
 

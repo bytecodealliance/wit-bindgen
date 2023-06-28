@@ -1901,6 +1901,7 @@ dependencies = [
 name = "wit-bindgen-go"
 version = "0.7.0"
 dependencies = [
+ "anyhow",
  "clap",
  "heck",
  "test-helpers",
@@ -1913,6 +1914,7 @@ dependencies = [
 name = "wit-bindgen-markdown"
 version = "0.9.0"
 dependencies = [
+ "anyhow",
  "clap",
  "heck",
  "pulldown-cmark 0.9.3",
@@ -1924,6 +1926,7 @@ dependencies = [
 name = "wit-bindgen-rust"
 version = "0.9.0"
 dependencies = [
+ "anyhow",
  "clap",
  "heck",
  "test-helpers",
@@ -1959,6 +1962,7 @@ dependencies = [
 name = "wit-bindgen-teavm-java"
 version = "0.9.0"
 dependencies = [
+ "anyhow",
  "clap",
  "heck",
  "test-helpers",

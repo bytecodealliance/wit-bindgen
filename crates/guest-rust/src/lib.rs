@@ -44,7 +44,7 @@ pub mod rt {
     use super::alloc::alloc::Layout;
 
     // Re-export things from liballoc for convenient use.
-    pub use super::alloc::{alloc, string, vec};
+    pub use super::alloc::{alloc, boxed, string, vec};
 
     #[cfg(feature = "realloc")]
     #[no_mangle]

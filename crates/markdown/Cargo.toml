@@ -15,6 +15,7 @@ doctest = false
 test = false
 
 [dependencies]
+anyhow = { workspace = true }
 heck = { workspace = true }
 pulldown-cmark = { workspace = true }
 clap = { workspace = true, optional = true }
