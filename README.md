@@ -154,8 +154,10 @@ which has a `_start` entrypoint (e.g. a `src/main.rs` in Rust).
 
 [preview2-prototyping]: https://github.com/bytecodealliance/preview2-prototyping
 [preview1-build]: https://github.com/bytecodealliance/preview2-prototyping/releases/tag/latest
-[non-command]: https://github.com/bytecodealliance/preview2-prototyping/releases/download/latest/wasi_snapshot_preview1.reactor.wasm
-[command]: https://github.com/bytecodealliance/preview2-prototyping/releases/download/latest/wasi_snapshot_preview1.command.wasm
+[non-command]: https://github.com/bytecodealliance/wasmtime/releases/latest/download/wasi_snapshot_preview1.reactor.wasm
+[command]: https://github.com/bytecodealliance/wasmtime/releases/latest/download/wasi_snapshot_preview1.command.wasm
+
+
 
 ## Supported Guest Languages
 [guests]: #supported-guest-languages
