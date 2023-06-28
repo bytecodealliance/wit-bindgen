@@ -1,4 +1,9 @@
-wit_bindgen::generate!(in "../../tests/runtime/lists");
+wit_bindgen::generate!({
+    path: "../../tests/runtime/lists",
+    ownership: Borrowing {
+        duplicate_if_necessary: false
+    }
+});
 
 struct Component;
 

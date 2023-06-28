@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::borrow::Cow;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use wasm_encoder::{Encode, Section};
 use wasmtime::component::{Component, Instance, Linker};
@@ -14,6 +14,7 @@ mod flavorful;
 mod lists;
 mod many_arguments;
 mod numbers;
+mod ownership;
 mod records;
 mod smoke;
 mod strings;
@@ -46,6 +47,19 @@ fn run_test<T, U>(
 where
     T: Default,
 {
+    run_test_from_dir(name, name, add_to_linker, instantiate, test)
+}
+
+fn run_test_from_dir<T, U>(
+    dir_name: &str,
+    name: &str,
+    add_to_linker: fn(&mut Linker<Wasi<T>>) -> Result<()>,
+    instantiate: fn(&mut Store<Wasi<T>>, &Component, &Linker<Wasi<T>>) -> Result<(U, Instance)>,
+    test: fn(U, &mut Store<Wasi<T>>) -> Result<()>,
+) -> Result<()>
+where
+    T: Default,
+{
     // Create an engine with caching enabled to assist with iteration in this
     // project.
     let mut config = Config::new();
@@ -54,7 +68,7 @@ where
     config.wasm_component_model(true);
     let engine = Engine::new(&config)?;
 
-    for wasm in tests(name)? {
+    for wasm in tests(name, dir_name)? {
         let component = Component::from_file(&engine, &wasm)?;
         let mut linker = Linker::new(&engine);
 
@@ -70,11 +84,11 @@ where
     Ok(())
 }
 
-fn tests(name: &str) -> Result<Vec<PathBuf>> {
+fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     let mut result = Vec::new();
 
     let mut dir = PathBuf::from("./tests/runtime");
-    dir.push(name);
+    dir.push(dir_name);
 
     let mut resolve = Resolve::new();
     let (pkg, _files) = resolve.push_dir(&dir).unwrap();
@@ -289,8 +303,6 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
 
     #[cfg(feature = "teavm-java")]
     if !java.is_empty() {
-        use heck::*;
-
         const DEPTH_FROM_TARGET_DIR: u32 = 2;
 
         let base_dir = {
@@ -327,7 +339,6 @@ fn tests(name: &str) -> Result<Vec<PathBuf>> {
             dst_files.push(dst);
         }
 
-        let upper = world_name.to_upper_camel_case();
         for java_impl in java {
             let dst = java_dir.join(
                 java_impl

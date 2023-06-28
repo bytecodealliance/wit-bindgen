@@ -1862,6 +1862,7 @@ dependencies = [
  "syn 2.0.15",
  "wit-bindgen-core",
  "wit-bindgen-rust",
+ "wit-bindgen-rust-lib",
  "wit-component",
 ]
 

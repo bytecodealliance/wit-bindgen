@@ -1,0 +1,27 @@
+package test:ownership
+
+world ownership {
+    import lists: interface {
+        foo: func(a: list<list<string>>) -> list<list<string>>
+    }
+
+    import thing-in: interface {
+        record thing {
+            name: string,
+            value: list<string>
+        }
+
+        bar: func(a: thing)
+    }
+
+    import thing-in-and-out: interface {
+        record thing {
+            name: string,
+            value: list<string>
+        }
+
+        baz: func(a: thing) -> thing
+    }
+
+    export foo: func()
+}

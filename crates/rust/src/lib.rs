@@ -10,8 +10,8 @@ use wit_bindgen_core::{
     WorldGenerator,
 };
 use wit_bindgen_rust_lib::{
-    int_repr, to_rust_ident, wasm_type, FnSig, RustFlagsRepr, RustFunctionGenerator, RustGenerator,
-    TypeMode,
+    int_repr, to_rust_ident, wasm_type, FnSig, Ownership, RustFlagsRepr, RustFunctionGenerator,
+    RustGenerator, TypeMode,
 };
 
 #[derive(Default)]
@@ -69,11 +69,18 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     pub skip: Vec<String>,
 
-    /// Whether or not to generate "duplicate" type definitions for a single
-    /// WIT type if necessary, for example if it's used as both an import and an
-    /// export.
+    /// Whether to generate owning or borrowing type definitions.
+    ///
+    /// Valid values include:
+    /// - `owning`: Generated types will be composed entirely of owning fields,
+    /// regardless of whether they are used as parameters to imports or not.
+    /// - `borrowing`: Generated types used as parameters to imports will be
+    /// "deeply borrowing", i.e. contain references rather than owned values
+    /// when applicable.
+    /// - `borrowing-duplicate-if-necessary`: As above, but generating distinct
+    /// types for borrowing and owning, if necessary.
     #[cfg_attr(feature = "clap", arg(long))]
-    pub duplicate_if_necessary: bool,
+    pub ownership: Ownership,
 }
 
 impl Opts {
@@ -724,8 +731,8 @@ impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
         self.resolve
     }
 
-    fn duplicate_if_necessary(&self) -> bool {
-        self.gen.opts.duplicate_if_necessary
+    fn ownership(&self) -> Ownership {
+        self.gen.opts.ownership
     }
 
     fn path_to_interface(&self, interface: InterfaceId) -> Option<String> {
@@ -779,8 +786,14 @@ impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
         &mut self.gen.types
     }
 
-    fn print_borrowed_slice(&mut self, mutbl: bool, ty: &Type, lifetime: &'static str) {
-        self.print_rust_slice(mutbl, ty, lifetime);
+    fn print_borrowed_slice(
+        &mut self,
+        mutbl: bool,
+        ty: &Type,
+        lifetime: &'static str,
+        mode: TypeMode,
+    ) {
+        self.print_rust_slice(mutbl, ty, lifetime, mode);
     }
 
     fn print_borrowed_str(&mut self, lifetime: &'static str) {
