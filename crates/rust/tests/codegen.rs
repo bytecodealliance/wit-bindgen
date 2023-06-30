@@ -184,9 +184,20 @@ mod symbol_does_not_conflict {
                 foo: func()
             }
 
+            interface bar1 {
+                bar: func() -> string
+            }
+
+            interface bar2 {
+                bar: func() -> string
+            }
+
+
             world foo {
                 export foo1
                 export foo2
+                export bar1
+                export bar2
             }
         ",
     });
@@ -199,6 +210,18 @@ mod symbol_does_not_conflict {
 
     impl exports::my::inline::foo2::Foo2 for Component {
         fn foo() {}
+    }
+
+    impl exports::my::inline::bar1::Bar1 for Component {
+        fn bar() -> String {
+            String::new()
+        }
+    }
+
+    impl exports::my::inline::bar2::Bar2 for Component {
+        fn bar() -> String {
+            String::new()
+        }
     }
 
     export_foo!(Component);
