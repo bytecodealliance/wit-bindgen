@@ -74,7 +74,7 @@ pub struct TinyGo {
     needs_fmt_import: bool,
     sizes: SizeAlign,
     interface_names: HashMap<InterfaceId, WorldKey>,
-    types: HashMap<TypeId, wit_bindgen_core::Source>,
+    types: HashMap<TypeId, (HashSet<String>, wit_bindgen_core::Source)>,
 
     // Interfaces who have had their types printed.
     //
@@ -106,7 +106,7 @@ impl TinyGo {
 
     fn finish_types(&mut self, resolve: &Resolve) {
         for (id, _) in resolve.types.iter() {
-            if let Some(ty) = self.types.get(&id) {
+            if let Some((_, ty)) = self.types.get(&id) {
                 self.src.push_str(&ty);
             }
         }
@@ -555,11 +555,7 @@ impl InterfaceGenerator<'_> {
                             }
                         } else {
                             self.public_anonymous_types.insert(*id);
-                            format!(
-                                "{namespace}",
-                                namespace =
-                                    self.get_type_name(&self.get_ty_name(&Type::Id(*id)), false)
-                            )
+                            self.get_type_name(&self.get_ty_name(&Type::Id(*id)), false)
                         }
                     }
                 }
@@ -1086,8 +1082,16 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::Tuple(t) => {
                 let prev = mem::replace(&mut self.src, Source::default());
 
-                let ty_name = &self.get_ty_name(&Type::Id(ty));
+                let ty_name = self.get_ty_name(&Type::Id(ty));
                 let name = self.get_type_name(&ty_name, false);
+                if let Some((prev_names, _)) = self.gen.types.get(&ty) {
+                    for prev_name in prev_names {
+                        if prev_name != &name {
+                            self.src.push_str(&format!("type {prev_name} = {name}\n"));
+                        }
+                    }
+                }
+
                 self.src.push_str(&format!("type {name} struct {{\n",));
                 for (i, ty) in t.types.iter().enumerate() {
                     let ty = self.get_ty(ty);
@@ -1095,7 +1099,7 @@ impl InterfaceGenerator<'_> {
                 }
                 self.src.push_str("}\n\n");
 
-                self.finish_ty(ty, prev)
+                self.finish_ty(ty, name, prev)
             }
             TypeDefKind::Option(_t) => {}
             TypeDefKind::Result(_r) => {}
@@ -1165,14 +1169,12 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn finish_ty(&mut self, id: TypeId, source: wit_bindgen_core::Source) {
+    fn finish_ty(&mut self, id: TypeId, name: String, source: wit_bindgen_core::Source) {
         // insert or replace the type
-        let _prev = self
-            .gen
-            .types
-            .insert(id, mem::replace(&mut self.src, source));
-
-        // TODO: what if prev is not None?
+        let (names, s) = self.gen.types.entry(id).or_default();
+        // Keep track of all the names the type is called in case we have to alias it
+        names.insert(name);
+        *s = mem::replace(&mut self.src, source);
     }
 
     fn import(&mut self, resolve: &Resolve, func: &Function) {
@@ -1428,7 +1430,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.src.push_str(&format!("   {name} {ty}\n",));
         }
         self.src.push_str("}\n\n");
-        self.finish_ty(id, prev)
+        self.finish_ty(id, name, prev)
     }
 
     fn type_flags(
@@ -1459,7 +1461,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }
         }
         self.src.push_str(")\n\n");
-        self.finish_ty(id, prev)
+        self.finish_ty(id, name, prev)
     }
 
     fn type_tuple(
@@ -1477,7 +1479,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.src.push_str(&format!("F{i} {ty}\n",));
         }
         self.src.push_str("}\n\n");
-        self.finish_ty(id, prev)
+        self.finish_ty(id, name, prev)
     }
 
     fn type_variant(
@@ -1516,31 +1518,31 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 self.print_constructor_method_without_value(&name, &case_name);
             }
         }
-        self.finish_ty(id, prev)
+        self.finish_ty(id, name, prev)
     }
 
     fn type_option(
         &mut self,
         id: wit_bindgen_core::wit_parser::TypeId,
-        _name: &str,
+        name: &str,
         _payload: &wit_bindgen_core::wit_parser::Type,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let prev = mem::take(&mut self.src);
         self.get_ty(&Type::Id(id));
-        self.finish_ty(id, prev)
+        self.finish_ty(id, name.to_owned(), prev)
     }
 
     fn type_result(
         &mut self,
         id: wit_bindgen_core::wit_parser::TypeId,
-        _name: &str,
+        name: &str,
         _result: &wit_bindgen_core::wit_parser::Result_,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let prev = mem::take(&mut self.src);
         self.get_ty(&Type::Id(id));
-        self.finish_ty(id, prev)
+        self.finish_ty(id, name.to_owned(), prev)
     }
 
     fn type_union(
@@ -1576,7 +1578,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             let case_name = format!("F{i}");
             self.print_accessor_methods(&name, &case_name, &case.ty);
         }
-        self.finish_ty(id, prev)
+        self.finish_ty(id, name.to_owned(), prev)
     }
 
     fn type_enum(
@@ -1609,7 +1611,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             let case_name = case.name.to_upper_camel_case();
             self.print_constructor_method_without_value(&name, &case_name);
         }
-        self.finish_ty(id, prev)
+        self.finish_ty(id, name, prev)
     }
 
     fn type_alias(
@@ -1623,7 +1625,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         let name = self.get_type_name(name, true);
         let ty = self.get_ty(ty);
         self.src.push_str(&format!("type {name} = {ty}\n"));
-        self.finish_ty(id, prev)
+        self.finish_ty(id, name, prev)
     }
 
     fn type_list(
@@ -1637,7 +1639,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         let name = self.get_type_name(name, true);
         let ty = self.get_ty(ty);
         self.src.push_str(&format!("type {name} = {ty}\n"));
-        self.finish_ty(id, prev)
+        self.finish_ty(id, name, prev)
     }
 
     fn type_builtin(

@@ -1,7 +1,10 @@
 package foo:foo
 
 interface foo {
-  record a {}
+  type headers = list<tuple<string, string>>
+  record a {
+    headers: headers
+  }
   x: func() -> a
 }
 
