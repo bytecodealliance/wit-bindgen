@@ -34,7 +34,8 @@ macro_rules! codegen_test {
 test_helpers::codegen_tests!();
 
 fn verify(dir: &Path, name: &str) {
-    let path = PathBuf::from(env::var_os("WASI_SDK_PATH").unwrap());
+    let path =
+        PathBuf::from(env::var_os("WASI_SDK_PATH").expect("WASI_SDK_PATH env variable not set"));
     let mut cmd = Command::new(path.join("bin/clang"));
     cmd.arg("--sysroot").arg(path.join("share/wasi-sysroot"));
     cmd.arg(dir.join(format!("{}.c", name.to_snake_case())));
