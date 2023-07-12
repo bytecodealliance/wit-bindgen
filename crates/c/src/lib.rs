@@ -511,18 +511,24 @@ impl C {
                 self.src.h_defs(
                     "struct {
                     bool is_err;
-                    union {
                 ",
                 );
-                if let Some(ok) = get_nonempty_type(resolve, r.ok.as_ref()) {
-                    let ty = self.type_name(resolve, ok);
-                    uwriteln!(self.src.h_defs, "{ty} ok;");
+
+                let ok = get_nonempty_type(resolve, r.ok.as_ref());
+                let err = get_nonempty_type(resolve, r.err.as_ref());
+                if ok.is_some() || err.is_some() {
+                    self.src.h_defs("union {\n");
+                    if let Some(ok) = ok {
+                        let ty = self.type_name(resolve, ok);
+                        uwriteln!(self.src.h_defs, "{ty} ok;");
+                    }
+                    if let Some(err) = err {
+                        let ty = self.type_name(resolve, err);
+                        uwriteln!(self.src.h_defs, "{ty} err;");
+                    }
+                    self.src.h_defs("} val;\n");
                 }
-                if let Some(err) = get_nonempty_type(resolve, r.err.as_ref()) {
-                    let ty = self.type_name(resolve, err);
-                    uwriteln!(self.src.h_defs, "{ty} err;");
-                }
-                self.src.h_defs("} val;\n");
+
                 self.src.h_defs("}");
             }
             TypeDefKind::List(t) => {
@@ -873,15 +879,19 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\n");
         self.docs(docs, SourceType::HDefs);
-        self.src.h_defs("typedef struct {\n");
-        for field in record.fields.iter() {
-            self.docs(&field.docs, SourceType::HDefs);
-            self.print_ty(SourceType::HDefs, &field.ty);
-            self.src.h_defs(" ");
-            self.src.h_defs(&to_c_ident(&field.name));
-            self.src.h_defs(";\n");
+        if record.fields.is_empty() {
+            self.src.h_defs("typedef void ");
+        } else {
+            self.src.h_defs("typedef struct {\n");
+            for field in record.fields.iter() {
+                self.docs(&field.docs, SourceType::HDefs);
+                self.print_ty(SourceType::HDefs, &field.ty);
+                self.src.h_defs(" ");
+                self.src.h_defs(&to_c_ident(&field.name));
+                self.src.h_defs(";\n");
+            }
+            self.src.h_defs("} ");
         }
-        self.src.h_defs("} ");
         self.print_typedef_target(id, name);
 
         self.finish_ty(id, prev);
@@ -891,12 +901,16 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\n");
         self.docs(docs, SourceType::HDefs);
-        self.src.h_defs("typedef struct {\n");
-        for (i, ty) in tuple.types.iter().enumerate() {
-            self.print_ty(SourceType::HDefs, ty);
-            uwriteln!(self.src.h_defs, " f{i};");
+        if tuple.types.is_empty() {
+            self.src.h_defs("typedef void ");
+        } else {
+            self.src.h_defs("typedef struct {\n");
+            for (i, ty) in tuple.types.iter().enumerate() {
+                self.print_ty(SourceType::HDefs, ty);
+                uwriteln!(self.src.h_defs, " f{i};");
+            }
+            self.src.h_defs("} ");
         }
-        self.src.h_defs("} ");
         self.print_typedef_target(id, name);
 
         self.finish_ty(id, prev);
@@ -939,16 +953,22 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs("typedef struct {\n");
         self.src.h_defs(int_repr(variant.tag()));
         self.src.h_defs(" tag;\n");
-        self.src.h_defs("union {\n");
-        for case in variant.cases.iter() {
-            if let Some(ty) = get_nonempty_type(self.resolve, case.ty.as_ref()) {
-                self.print_ty(SourceType::HDefs, ty);
-                self.src.h_defs(" ");
-                self.src.h_defs(&to_c_ident(&case.name));
-                self.src.h_defs(";\n");
+        if variant
+            .cases
+            .iter()
+            .any(|case| get_nonempty_type(self.resolve, case.ty.as_ref()).is_some())
+        {
+            self.src.h_defs("union {\n");
+            for case in variant.cases.iter() {
+                if let Some(ty) = get_nonempty_type(self.resolve, case.ty.as_ref()) {
+                    self.print_ty(SourceType::HDefs, ty);
+                    self.src.h_defs(" ");
+                    self.src.h_defs(&to_c_ident(&case.name));
+                    self.src.h_defs(";\n");
+                }
             }
+            self.src.h_defs("} val;\n");
         }
-        self.src.h_defs("} val;\n");
         self.src.h_defs("} ");
         self.print_typedef_target(id, name);
 
@@ -979,13 +999,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs("typedef struct {\n");
         self.src.h_defs(int_repr(union.tag()));
         self.src.h_defs(" tag;\n");
-        self.src.h_defs("union {\n");
-        for (i, case) in union.cases.iter().enumerate() {
-            self.docs(&case.docs, SourceType::HDefs);
-            self.print_ty(SourceType::HDefs, &case.ty);
-            uwriteln!(self.src.h_defs, " f{i};");
+        if !union.cases.is_empty() {
+            self.src.h_defs("union {\n");
+            for (i, case) in union.cases.iter().enumerate() {
+                self.docs(&case.docs, SourceType::HDefs);
+                self.print_ty(SourceType::HDefs, &case.ty);
+                uwriteln!(self.src.h_defs, " f{i};");
+            }
+            self.src.h_defs("} val;\n");
         }
-        self.src.h_defs("} val;\n");
         self.src.h_defs("} ");
         self.print_typedef_target(id, name);
 
@@ -1014,16 +1036,22 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.docs(docs, SourceType::HDefs);
         self.src.h_defs("typedef struct {\n");
         self.src.h_defs("bool is_err;\n");
-        self.src.h_defs("union {\n");
-        if let Some(ok) = get_nonempty_type(self.resolve, result.ok.as_ref()) {
-            self.print_ty(SourceType::HDefs, ok);
-            self.src.h_defs(" ok;\n");
+
+        let ok = get_nonempty_type(self.resolve, result.ok.as_ref());
+        let err = get_nonempty_type(self.resolve, result.err.as_ref());
+        if ok.is_some() || err.is_some() {
+            self.src.h_defs("union {\n");
+            if let Some(ok) = get_nonempty_type(self.resolve, result.ok.as_ref()) {
+                self.print_ty(SourceType::HDefs, ok);
+                self.src.h_defs(" ok;\n");
+            }
+            if let Some(err) = get_nonempty_type(self.resolve, result.err.as_ref()) {
+                self.print_ty(SourceType::HDefs, err);
+                self.src.h_defs(" err;\n");
+            }
+            self.src.h_defs("} val;\n");
         }
-        if let Some(err) = get_nonempty_type(self.resolve, result.err.as_ref()) {
-            self.print_ty(SourceType::HDefs, err);
-            self.src.h_defs(" err;\n");
-        }
-        self.src.h_defs("} val;\n");
+
         self.src.h_defs("} ");
         self.print_typedef_target(id, name);
 
