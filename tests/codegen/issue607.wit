@@ -1,0 +1,26 @@
+package local:demo
+
+interface interface1 {
+    variant error {
+        some-error
+    } 
+    record my-record {
+        wow: u32
+    }
+    my-func: func() -> result<my-record, error>
+}
+
+interface interface2 {
+    variant error {
+        other-error
+    } 
+    record my-record {
+        wow: u32
+    }
+    my-other-func: func() -> result<my-record, error>
+}
+
+world my-world {
+    import interface1
+    import interface2
+}

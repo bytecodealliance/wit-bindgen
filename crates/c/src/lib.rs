@@ -472,7 +472,13 @@ impl C {
         // bindings as they'll be the same as the first.
         let mut name = self.owner_namespace(resolve, ty);
         name.push_str("_");
-        push_ty_name(resolve, &Type::Id(ty), &mut name);
+        push_ty_name(
+            resolve,
+            &Type::Id(ty),
+            &self.interface_names,
+            &self.world,
+            &mut name,
+        );
         name.push_str("_t");
         if self.names.insert(&name).is_err() {
             return;
@@ -556,11 +562,15 @@ impl C {
         let ns = self.owner_namespace(resolve, id);
         self.src.h_helpers(&ns);
         self.src.h_helpers("_");
-        self.src.h_helpers.print_ty_name(resolve, &ty);
+        self.src
+            .h_helpers
+            .print_ty_name(&self.interface_names, &self.world, resolve, &ty);
         self.src.h_helpers("_free(");
         self.src.h_helpers(&ns);
         self.src.h_helpers("_");
-        self.src.h_helpers.print_ty_name(resolve, &ty);
+        self.src
+            .h_helpers
+            .print_ty_name(&self.interface_names, &self.world, resolve, &ty);
         self.src.h_helpers("_t *ptr)");
 
         self.src.c_helpers(&self.src.h_helpers[pos..].to_string());
@@ -683,7 +693,9 @@ impl C {
             }
         }
         self.src.h_helpers("_");
-        self.src.h_helpers.print_ty_name(resolve, ty);
+        self.src
+            .h_helpers
+            .print_ty_name(&self.interface_names, &self.world, resolve, ty);
         let name = mem::replace(&mut self.src.h_helpers, prev);
 
         self.src.c_helpers(&name);
@@ -692,33 +704,8 @@ impl C {
         self.src.c_helpers(");\n");
     }
 
-    fn owner_namespace(&mut self, resolve: &Resolve, id: TypeId) -> String {
-        let ty = &resolve.types[id];
-        match ty.owner {
-            TypeOwner::Interface(owner) => {
-                let key = &self.interface_names[&owner];
-                match key {
-                    WorldKey::Name(name) => name.to_snake_case(),
-                    WorldKey::Interface(id) => {
-                        let mut ns = String::new();
-                        let iface = &resolve.interfaces[*id];
-                        let pkg = &resolve.packages[iface.package.unwrap()];
-                        ns.push_str(&pkg.name.namespace.to_snake_case());
-                        ns.push_str("_");
-                        ns.push_str(&pkg.name.name.to_snake_case());
-                        ns.push_str("_");
-                        ns.push_str(&iface.name.as_ref().unwrap().to_snake_case());
-                        ns
-                    }
-                }
-            }
-
-            TypeOwner::World(owner) => resolve.worlds[owner].name.to_snake_case(),
-
-            // Namespace everything else under the "default" world being
-            // generated to avoid putting too much into the root namespace in C.
-            TypeOwner::None => self.world.to_snake_case(),
-        }
+    fn owner_namespace(&self, resolve: &Resolve, id: TypeId) -> String {
+        owner_namespace(resolve, id, &self.interface_names, &self.world)
     }
 
     fn type_name(&mut self, resolve: &Resolve, ty: &Type) -> String {
@@ -764,12 +751,148 @@ impl C {
                             self.private_anonymous_types.remove(id);
                             dst.push_str(&ns);
                             dst.push_str("_");
-                            push_ty_name(resolve, &Type::Id(*id), dst);
+                            push_ty_name(
+                                resolve,
+                                &Type::Id(*id),
+                                &self.interface_names,
+                                &self.world,
+                                dst,
+                            );
                             dst.push_str("_t");
                         }
                     },
                 }
             }
+        }
+    }
+}
+
+pub fn push_ty_name(
+    resolve: &Resolve,
+    ty: &Type,
+    interface_names: &HashMap<InterfaceId, WorldKey>,
+    world: &str,
+    src: &mut String,
+) {
+    match ty {
+        Type::Bool => src.push_str("bool"),
+        Type::Char => src.push_str("char32"),
+        Type::U8 => src.push_str("u8"),
+        Type::S8 => src.push_str("s8"),
+        Type::U16 => src.push_str("u16"),
+        Type::S16 => src.push_str("s16"),
+        Type::U32 => src.push_str("u32"),
+        Type::S32 => src.push_str("s32"),
+        Type::U64 => src.push_str("u64"),
+        Type::S64 => src.push_str("s64"),
+        Type::Float32 => src.push_str("float32"),
+        Type::Float64 => src.push_str("float64"),
+        Type::String => src.push_str("string"),
+        Type::Id(id) => {
+            let ty = &resolve.types[*id];
+            if let Some(name) = &ty.name {
+                return src.push_str(&name.to_snake_case());
+            }
+            match &ty.kind {
+                TypeDefKind::Type(t) => push_ty_name(resolve, t, interface_names, world, src),
+                TypeDefKind::Record(_)
+                | TypeDefKind::Flags(_)
+                | TypeDefKind::Enum(_)
+                | TypeDefKind::Variant(_)
+                | TypeDefKind::Union(_) => {
+                    unimplemented!()
+                }
+                TypeDefKind::Tuple(t) => {
+                    src.push_str("tuple");
+                    src.push_str(&t.types.len().to_string());
+                    for ty in t.types.iter() {
+                        src.push_str("_");
+                        push_ty_name(resolve, ty, interface_names, world, src);
+                    }
+                }
+                TypeDefKind::Option(ty) => {
+                    src.push_str("option_");
+                    push_ty_name(resolve, ty, interface_names, world, src);
+                }
+                TypeDefKind::Result(r) => {
+                    src.push_str("result_");
+                    push_optional_ty_name(resolve, r.ok.as_ref(), interface_names, world, src);
+                    src.push_str("_");
+                    push_optional_ty_name(resolve, r.err.as_ref(), interface_names, world, src);
+                }
+                TypeDefKind::List(t) => {
+                    src.push_str("list_");
+                    push_ty_name(resolve, t, interface_names, world, src);
+                }
+                TypeDefKind::Future(t) => {
+                    src.push_str("future_");
+                    push_optional_ty_name(resolve, t.as_ref(), interface_names, world, src);
+                }
+                TypeDefKind::Stream(s) => {
+                    src.push_str("stream_");
+                    push_optional_ty_name(resolve, s.element.as_ref(), interface_names, world, src);
+                    src.push_str("_");
+                    push_optional_ty_name(resolve, s.end.as_ref(), interface_names, world, src);
+                }
+                TypeDefKind::Resource | TypeDefKind::Handle(_) => {
+                    todo!("implement resources")
+                }
+                TypeDefKind::Unknown => unreachable!(),
+            }
+        }
+    }
+}
+
+fn push_optional_ty_name(
+    resolve: &Resolve,
+    ty: Option<&Type>,
+    interface_names: &HashMap<InterfaceId, WorldKey>,
+    world: &str,
+    dst: &mut String,
+) {
+    match ty {
+        Some(ty) => {
+            // If the type is referenced through an id, prepend the owner namespace to ensure disambiguation
+            if let Type::Id(i) = ty {
+                let namespace = owner_namespace(resolve, *i, interface_names, world);
+                dst.push_str(&namespace);
+                dst.push_str("_");
+            }
+            push_ty_name(resolve, ty, interface_names, world, dst)
+        }
+        None => dst.push_str("void"),
+    }
+}
+
+fn owner_namespace(
+    resolve: &Resolve,
+    id: TypeId,
+    interface_names: &HashMap<InterfaceId, WorldKey>,
+    world: &str,
+) -> String {
+    let ty = &resolve.types[id];
+    match ty.owner {
+        TypeOwner::Interface(owner) => interface_identifier(&interface_names[&owner], resolve),
+        TypeOwner::World(owner) => resolve.worlds[owner].name.to_snake_case(),
+        // Namespace everything else under the "default" world being
+        // generated to avoid putting too much into the root namespace in C.
+        TypeOwner::None => world.to_snake_case(),
+    }
+}
+
+fn interface_identifier(interface_id: &WorldKey, resolve: &Resolve) -> String {
+    match interface_id {
+        WorldKey::Name(name) => name.to_snake_case(),
+        WorldKey::Interface(id) => {
+            let mut ns = String::new();
+            let iface = &resolve.interfaces[*id];
+            let pkg = &resolve.packages[iface.package.unwrap()];
+            ns.push_str(&pkg.name.namespace.to_snake_case());
+            ns.push_str("_");
+            ns.push_str(&pkg.name.name.to_snake_case());
+            ns.push_str("_");
+            ns.push_str(&iface.name.as_ref().unwrap().to_snake_case());
+            ns
         }
     }
 }
@@ -2561,91 +2684,26 @@ impl Source {
 trait SourceExt {
     fn as_source(&mut self) -> &mut wit_bindgen_core::Source;
 
-    fn print_ty_name(&mut self, resolve: &Resolve, ty: &Type) {
-        push_ty_name(resolve, ty, self.as_source().as_mut_string());
+    fn print_ty_name(
+        &mut self,
+        interface_names: &HashMap<InterfaceId, WorldKey>,
+        world: &str,
+        resolve: &Resolve,
+        ty: &Type,
+    ) {
+        push_ty_name(
+            resolve,
+            ty,
+            interface_names,
+            world,
+            self.as_source().as_mut_string(),
+        );
     }
 }
 
 impl SourceExt for wit_bindgen_core::Source {
     fn as_source(&mut self) -> &mut wit_bindgen_core::Source {
         self
-    }
-}
-
-fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
-    match ty {
-        Type::Bool => src.push_str("bool"),
-        Type::Char => src.push_str("char32"),
-        Type::U8 => src.push_str("u8"),
-        Type::S8 => src.push_str("s8"),
-        Type::U16 => src.push_str("u16"),
-        Type::S16 => src.push_str("s16"),
-        Type::U32 => src.push_str("u32"),
-        Type::S32 => src.push_str("s32"),
-        Type::U64 => src.push_str("u64"),
-        Type::S64 => src.push_str("s64"),
-        Type::Float32 => src.push_str("float32"),
-        Type::Float64 => src.push_str("float64"),
-        Type::String => src.push_str("string"),
-        Type::Id(id) => {
-            let ty = &resolve.types[*id];
-            if let Some(name) = &ty.name {
-                return src.push_str(&name.to_snake_case());
-            }
-            match &ty.kind {
-                TypeDefKind::Type(t) => push_ty_name(resolve, t, src),
-                TypeDefKind::Record(_)
-                | TypeDefKind::Flags(_)
-                | TypeDefKind::Enum(_)
-                | TypeDefKind::Variant(_)
-                | TypeDefKind::Union(_) => {
-                    unimplemented!()
-                }
-                TypeDefKind::Tuple(t) => {
-                    src.push_str("tuple");
-                    src.push_str(&t.types.len().to_string());
-                    for ty in t.types.iter() {
-                        src.push_str("_");
-                        push_ty_name(resolve, ty, src);
-                    }
-                }
-                TypeDefKind::Option(ty) => {
-                    src.push_str("option_");
-                    push_ty_name(resolve, ty, src);
-                }
-                TypeDefKind::Result(r) => {
-                    src.push_str("result_");
-                    push_optional_ty_name(resolve, r.ok.as_ref(), src);
-                    src.push_str("_");
-                    push_optional_ty_name(resolve, r.err.as_ref(), src);
-                }
-                TypeDefKind::List(t) => {
-                    src.push_str("list_");
-                    push_ty_name(resolve, t, src);
-                }
-                TypeDefKind::Future(t) => {
-                    src.push_str("future_");
-                    push_optional_ty_name(resolve, t.as_ref(), src);
-                }
-                TypeDefKind::Stream(s) => {
-                    src.push_str("stream_");
-                    push_optional_ty_name(resolve, s.element.as_ref(), src);
-                    src.push_str("_");
-                    push_optional_ty_name(resolve, s.end.as_ref(), src);
-                }
-                TypeDefKind::Resource | TypeDefKind::Handle(_) => {
-                    todo!("implement resources")
-                }
-                TypeDefKind::Unknown => unreachable!(),
-            }
-        }
-    }
-
-    fn push_optional_ty_name(resolve: &Resolve, ty: Option<&Type>, dst: &mut String) {
-        match ty {
-            Some(ty) => push_ty_name(resolve, ty, dst),
-            None => dst.push_str("void"),
-        }
     }
 }
 
