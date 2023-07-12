@@ -1,0 +1,18 @@
+package local:demo
+
+interface my-interface {
+    variant stuff {
+        thing
+    } 
+    record empty {
+    }
+    stuff-or-stuff: func() -> result<stuff, stuff>
+    stuff-or-empty: func() -> result<stuff, empty>
+    empty-or-stuff: func() -> result<empty, stuff>
+    empty-or-empty: func() -> result<empty, empty>
+}
+
+
+world my-world {
+    import my-interface
+}
