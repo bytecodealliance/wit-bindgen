@@ -1571,6 +1571,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         );
         self.ret_store_cnt = self.ret_store_cnt + 1;
     }
+
+    fn empty_return_value(&mut self) {
+        // Empty types have no state, so we don't emit stores for them. But we
+        // do need to keep track of which return variable we're looking at.
+        self.ret_store_cnt = self.ret_store_cnt + 1;
+    }
 }
 
 impl Bindgen for FunctionBindgen<'_, '_> {
@@ -2376,11 +2382,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     let variant = &operands[0];
                     assert!(self.sig.retptrs.len() <= 2);
                     uwriteln!(self.src, "if (!{}.is_err) {{", variant);
-                    if let Some(_) = get_nonempty_type(self.gen.resolve, ok.as_ref()) {
-                        if self.sig.retptrs.len() == 2 {
+                    if ok.is_some() {
+                        if get_nonempty_type(self.gen.resolve, ok.as_ref()).is_some() {
                             self.store_in_retptr(&format!("{}.val.ok", variant));
-                        } else if self.sig.retptrs.len() == 1 && ok.is_some() {
-                            self.store_in_retptr(&format!("{}.val.ok", variant));
+                        } else {
+                            self.empty_return_value();
                         }
                     }
                     uwriteln!(
@@ -2388,11 +2394,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         "   return 1;
                             }} else {{"
                     );
-                    if let Some(_) = get_nonempty_type(self.gen.resolve, err.as_ref()) {
-                        if self.sig.retptrs.len() == 2 {
+                    if err.is_some() {
+                        if get_nonempty_type(self.gen.resolve, err.as_ref()).is_some() {
                             self.store_in_retptr(&format!("{}.val.err", variant));
-                        } else if self.sig.retptrs.len() == 1 && !ok.is_some() {
-                            self.store_in_retptr(&format!("{}.val.err", variant));
+                        } else {
+                            self.empty_return_value();
                         }
                     }
                     uwriteln!(
@@ -2400,6 +2406,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         "   return 0;
                             }}"
                     );
+                    assert_eq!(self.ret_store_cnt, self.sig.retptrs.len());
                 }
             },
             Instruction::Return { amt, .. } => {
