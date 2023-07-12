@@ -514,13 +514,19 @@ impl C {
                     union {
                 ",
                 );
+                let mut any = false;
                 if let Some(ok) = get_nonempty_type(resolve, r.ok.as_ref()) {
                     let ty = self.type_name(resolve, ok);
                     uwriteln!(self.src.h_defs, "{ty} ok;");
+                    any = true;
                 }
                 if let Some(err) = get_nonempty_type(resolve, r.err.as_ref()) {
                     let ty = self.type_name(resolve, err);
                     uwriteln!(self.src.h_defs, "{ty} err;");
+                    any = true;
+                }
+                if !any {
+                    self.src.h_defs(" unsigned char __empty;\n");
                 }
                 self.src.h_defs("} val;\n");
                 self.src.h_defs("}");
@@ -874,12 +880,17 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs("\n");
         self.docs(docs, SourceType::HDefs);
         self.src.h_defs("typedef struct {\n");
+        let mut any = false;
         for field in record.fields.iter() {
             self.docs(&field.docs, SourceType::HDefs);
             self.print_ty(SourceType::HDefs, &field.ty);
             self.src.h_defs(" ");
             self.src.h_defs(&to_c_ident(&field.name));
             self.src.h_defs(";\n");
+            any = true;
+        }
+        if !any {
+            self.src.h_defs(" unsigned char __empty;\n");
         }
         self.src.h_defs("} ");
         self.print_typedef_target(id, name);
@@ -892,9 +903,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs("\n");
         self.docs(docs, SourceType::HDefs);
         self.src.h_defs("typedef struct {\n");
+        let mut any = false;
         for (i, ty) in tuple.types.iter().enumerate() {
             self.print_ty(SourceType::HDefs, ty);
             uwriteln!(self.src.h_defs, " f{i};");
+            any = true;
+        }
+        if !any {
+            self.src.h_defs(" unsigned char __empty;\n");
         }
         self.src.h_defs("} ");
         self.print_typedef_target(id, name);
@@ -940,13 +956,18 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs(int_repr(variant.tag()));
         self.src.h_defs(" tag;\n");
         self.src.h_defs("union {\n");
+        let mut any = false;
         for case in variant.cases.iter() {
             if let Some(ty) = get_nonempty_type(self.resolve, case.ty.as_ref()) {
                 self.print_ty(SourceType::HDefs, ty);
                 self.src.h_defs(" ");
                 self.src.h_defs(&to_c_ident(&case.name));
                 self.src.h_defs(";\n");
+                any = true;
             }
+        }
+        if !any {
+            self.src.h_defs(" unsigned char __empty;\n");
         }
         self.src.h_defs("} val;\n");
         self.src.h_defs("} ");
@@ -980,10 +1001,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs(int_repr(union.tag()));
         self.src.h_defs(" tag;\n");
         self.src.h_defs("union {\n");
+        let mut any = false;
         for (i, case) in union.cases.iter().enumerate() {
             self.docs(&case.docs, SourceType::HDefs);
             self.print_ty(SourceType::HDefs, &case.ty);
             uwriteln!(self.src.h_defs, " f{i};");
+            any = true;
+        }
+        if !any {
+            self.src.h_defs(" unsigned char __empty;\n");
         }
         self.src.h_defs("} val;\n");
         self.src.h_defs("} ");
@@ -1015,13 +1041,19 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs("typedef struct {\n");
         self.src.h_defs("bool is_err;\n");
         self.src.h_defs("union {\n");
+        let mut any = false;
         if let Some(ok) = get_nonempty_type(self.resolve, result.ok.as_ref()) {
             self.print_ty(SourceType::HDefs, ok);
             self.src.h_defs(" ok;\n");
+            any = true;
         }
         if let Some(err) = get_nonempty_type(self.resolve, result.err.as_ref()) {
             self.print_ty(SourceType::HDefs, err);
             self.src.h_defs(" err;\n");
+            any = true;
+        }
+        if !any {
+            self.src.h_defs(" unsigned char __empty;\n");
         }
         self.src.h_defs("} val;\n");
         self.src.h_defs("} ");
