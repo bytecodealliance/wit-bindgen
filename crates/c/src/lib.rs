@@ -467,6 +467,13 @@ impl C {
     }
 
     fn print_anonymous_type(&mut self, resolve: &Resolve, ty: TypeId) {
+        // Bindings generators that work from the C declarations, including
+        // TinyGo, aren't prepared for unconventional `typedef void`
+        // declarations, so we omit typedefs for empty types altogether.
+        if is_empty_type(resolve, &Type::Id(ty)) {
+            return;
+        }
+
         // If this anonymous type is already defined then it was referred to
         // twice from multiple various locations, so skip the second set of
         // bindings as they'll be the same as the first.
@@ -491,18 +498,14 @@ impl C {
                 unreachable!()
             }
             TypeDefKind::Tuple(t) => {
-                if t.types.iter().all(|ty| is_empty_type(resolve, ty)) {
-                    self.src.h_defs("void");
-                } else {
-                    self.src.h_defs("struct {\n");
-                    for (i, t) in t.types.iter().enumerate() {
-                        if !is_empty_type(resolve, t) {
-                            let ty = self.type_name(resolve, t);
-                            uwriteln!(self.src.h_defs, "{ty} f{i};");
-                        }
+                self.src.h_defs("struct {\n");
+                for (i, t) in t.types.iter().enumerate() {
+                    if !is_empty_type(resolve, t) {
+                        let ty = self.type_name(resolve, t);
+                        uwriteln!(self.src.h_defs, "{ty} f{i};");
                     }
-                    self.src.h_defs("}");
                 }
+                self.src.h_defs("}");
             }
             TypeDefKind::Option(t) => {
                 self.src.h_defs("struct {\n");
@@ -754,6 +757,14 @@ impl C {
                 self.needs_string = true;
             }
             Type::Id(id) => {
+                // Substitute "void" for any empty type, because C and C++
+                // aren't happy with empty structs or unions. See the comments
+                // in `print_anonymous_type` about omitting empty types.
+                if is_empty_type(resolve, ty) {
+                    dst.push_str("void");
+                    return;
+                }
+
                 let ty = &resolve.types[*id];
                 let ns = self.owner_namespace(resolve, *id);
                 match &ty.name {
@@ -883,15 +894,16 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_record(&mut self, id: TypeId, name: &str, record: &Record, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
-        self.src.h_defs("\n");
-        self.docs(docs, SourceType::HDefs);
-        if record
+
+        // Emit a type definition, if this is a non-empty type. See the
+        // comments in `print_anonymous_type` about omitting empty types.
+        if !record
             .fields
             .iter()
             .all(|field| is_empty_type(self.resolve, &field.ty))
         {
-            self.src.h_defs("typedef void ");
-        } else {
+            self.src.h_defs("\n");
+            self.docs(docs, SourceType::HDefs);
             self.src.h_defs("typedef struct {\n");
             for field in record.fields.iter() {
                 if !is_empty_type(self.resolve, &field.ty) {
@@ -903,19 +915,20 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 }
             }
             self.src.h_defs("} ");
+            self.print_typedef_target(id, name);
         }
-        self.print_typedef_target(id, name);
 
         self.finish_ty(id, prev);
     }
 
     fn type_tuple(&mut self, id: TypeId, name: &str, tuple: &Tuple, docs: &Docs) {
         let prev = mem::take(&mut self.src.h_defs);
-        self.src.h_defs("\n");
-        self.docs(docs, SourceType::HDefs);
-        if tuple.types.iter().all(|ty| is_empty_type(self.resolve, ty)) {
-            self.src.h_defs("typedef void ");
-        } else {
+
+        // Emit a type definition, if this is a non-empty type. See the
+        // comments in `print_anonymous_type` about omitting empty types.
+        if !tuple.types.iter().all(|ty| is_empty_type(self.resolve, ty)) {
+            self.src.h_defs("\n");
+            self.docs(docs, SourceType::HDefs);
             self.src.h_defs("typedef struct {\n");
             for (i, ty) in tuple.types.iter().enumerate() {
                 if !is_empty_type(self.resolve, ty) {
@@ -924,8 +937,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 }
             }
             self.src.h_defs("} ");
+            self.print_typedef_target(id, name);
         }
-        self.print_typedef_target(id, name);
 
         self.finish_ty(id, prev);
     }

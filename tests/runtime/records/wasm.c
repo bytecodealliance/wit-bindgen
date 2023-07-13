@@ -57,11 +57,6 @@ void records_test_imports() {
     assert(b.b == (TEST_RECORDS_TEST_F1_A | TEST_RECORDS_TEST_F1_B));
   }
 
-  // Ensure `records_tuple0_t` has type `void`.
-  records_tuple0_t *t0;
-  void **pt0 = &t0;
-  (void)pt0;
-
   test_records_test_tuple0(NULL, NULL);
 
   records_tuple1_u8_t t1, t2;
@@ -107,7 +102,7 @@ void exports_test_records_test_roundtrip_record1(test_records_test_r1_t *a, test
   *ret0 = *a;
 }
 
-void exports_test_records_test_tuple0(records_tuple0_t *a, records_tuple0_t *b) {
+void exports_test_records_test_tuple0(void *a, void *b) {
 }
 
 void exports_test_records_test_tuple1(records_tuple1_u8_t *a, records_tuple1_u8_t *b) {
