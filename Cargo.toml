@@ -21,19 +21,19 @@ resolver = "2"
 edition = "2021"
 
 [workspace.dependencies]
-anyhow = "1.0.70"
-bitflags = "2.1.0"
+anyhow = "1.0.71"
+bitflags = "2.3.3"
 heck =  { version = "0.4", features = ["unicode"] }
 pulldown-cmark = { version = "0.9", default-features = false }
-clap = { version = "4.2.2", features = ["derive"] }
+clap = { version = "4.3.11", features = ["derive"] }
 env_logger = "0.10.0"
-indexmap = "1.9.3"
+indexmap = "2.0.0"
 
-wasm-encoder = "0.29.0"
-wasm-metadata = "0.8.0"
-wat = "1.0.66"
-wit-parser = "0.8.0"
-wit-component = "0.11.0"
+wasm-encoder = "0.30.0"
+wasm-metadata = "0.9.0"
+wat = "1.0.67"
+wit-parser = "0.9.0"
+wit-component = "0.12.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.8.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.8.0' }
