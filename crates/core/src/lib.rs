@@ -180,6 +180,9 @@ impl Types {
                 info = self.optional_type_info(resolve, stream.element.as_ref());
                 info |= self.optional_type_info(resolve, stream.end.as_ref());
             }
+            TypeDefKind::Resource | TypeDefKind::Handle(_) => {
+                todo!("implement resources")
+            }
             TypeDefKind::Unknown => unreachable!(),
         }
         let prev = self.type_info.insert(ty, info);
@@ -531,6 +534,9 @@ pub trait InterfaceGenerator<'a> {
             TypeDefKind::Type(t) => self.type_alias(id, name, t, &ty.docs),
             TypeDefKind::Future(_) => todo!("generate for future"),
             TypeDefKind::Stream(_) => todo!("generate for stream"),
+            TypeDefKind::Resource | TypeDefKind::Handle(_) => {
+                todo!("implement resources")
+            }
             TypeDefKind::Unknown => unreachable!(),
         }
     }

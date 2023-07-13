@@ -318,6 +318,9 @@ pub trait RustGenerator<'a> {
                     }
                     TypeDefKind::Type(Type::String) => true,
                     TypeDefKind::Type(_) => false,
+                    TypeDefKind::Resource | TypeDefKind::Handle(_) => {
+                        todo!("implement resources")
+                    }
                     TypeDefKind::Unknown => unreachable!(),
                 }
             }
@@ -379,6 +382,10 @@ pub trait RustGenerator<'a> {
             }
 
             TypeDefKind::Type(t) => self.print_ty(t, mode),
+
+            TypeDefKind::Resource | TypeDefKind::Handle(_) => {
+                todo!("implement resources")
+            }
 
             TypeDefKind::Unknown => unreachable!(),
         }
@@ -514,6 +521,9 @@ pub trait RustGenerator<'a> {
                         TypeDefKind::Variant(_) => out.push_str("Variant"),
                         TypeDefKind::Enum(_) => out.push_str("Enum"),
                         TypeDefKind::Union(_) => out.push_str("Union"),
+                        TypeDefKind::Resource | TypeDefKind::Handle(_) => {
+                            todo!("implement resources")
+                        }
                         TypeDefKind::Unknown => unreachable!(),
                     },
                 }

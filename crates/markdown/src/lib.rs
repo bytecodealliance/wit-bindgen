@@ -428,6 +428,9 @@ impl InterfaceGenerator<'_> {
                             self.push_str("stream");
                         }
                     },
+                    TypeDefKind::Resource | TypeDefKind::Handle(_) => {
+                        todo!("implement resources")
+                    }
                     TypeDefKind::Unknown => unreachable!(),
                 }
             }

@@ -2075,6 +2075,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "Memory.free(Address.fromInt({address}), ({length}) * {size}, {align});"
                 );
             }
+
+            Instruction::HandleLift { .. } | Instruction::HandleLower { .. } => {
+                todo!("implement resources")
+            }
         }
     }
 

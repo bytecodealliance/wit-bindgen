@@ -490,6 +490,9 @@ impl InterfaceGenerator<'_> {
         let sig = FnSig::default();
         let param_mode = TypeMode::AllBorrowed("'_");
         match &func.kind {
+            FunctionKind::Constructor(_) | FunctionKind::Method(_) | FunctionKind::Static(_) => {
+                todo!("implement resources")
+            }
             FunctionKind::Freestanding => {}
         }
         self.src.push_str("#[allow(clippy::all)]\n");
@@ -537,6 +540,9 @@ impl InterfaceGenerator<'_> {
         self.src.push_str("}\n");
 
         match &func.kind {
+            FunctionKind::Constructor(_) | FunctionKind::Method(_) | FunctionKind::Static(_) => {
+                todo!("implement resources")
+            }
             FunctionKind::Freestanding => {}
         }
     }
@@ -1628,6 +1634,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::CallInterface { func, .. } => {
                 self.let_results(func.results.len(), results);
                 match &func.kind {
+                    FunctionKind::Constructor(_)
+                    | FunctionKind::Method(_)
+                    | FunctionKind::Static(_) => {
+                        todo!("implement resources")
+                    }
                     FunctionKind::Freestanding => {
                         self.push_str(&format!("T::{}", to_rust_ident(&func.name)));
                     }
@@ -1793,6 +1804,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "wit_bindgen::rt::dealloc({base}, ({len} as usize) * {size}, {align});\n",
                 ));
+            }
+
+            Instruction::HandleLift { .. } | Instruction::HandleLower { .. } => {
+                todo!("implement resources")
             }
         }
     }

@@ -731,6 +731,9 @@ impl InterfaceGenerator<'_> {
                         src.push('T');
                         src
                     }
+                    TypeDefKind::Resource | TypeDefKind::Handle(_) => {
+                        todo!("implement resources")
+                    }
                     TypeDefKind::Unknown => unreachable!(),
                 }
             }
@@ -806,6 +809,9 @@ impl InterfaceGenerator<'_> {
                             self.get_c_optional_type_name(s.element.as_ref()),
                             self.get_c_optional_type_name(s.end.as_ref()),
                         )
+                    }
+                    TypeDefKind::Resource | TypeDefKind::Handle(_) => {
+                        todo!("implement resources")
                     }
                     TypeDefKind::Unknown => unreachable!(),
                 }
@@ -1106,6 +1112,9 @@ impl InterfaceGenerator<'_> {
             TypeDefKind::List(_l) => {}
             TypeDefKind::Future(_) => todo!("print_anonymous_type for future"),
             TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
+            TypeDefKind::Resource | TypeDefKind::Handle(_) => {
+                todo!("implement resources")
+            }
             TypeDefKind::Unknown => unreachable!(),
         }
     }
@@ -1963,6 +1972,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     }
                     TypeDefKind::Future(_) => todo!("impl future"),
                     TypeDefKind::Stream(_) => todo!("impl future"),
+                    TypeDefKind::Resource | TypeDefKind::Handle(_) => {
+                        todo!("implement resources")
+                    }
                     TypeDefKind::Unknown => unreachable!(),
                 }
             }
@@ -2210,6 +2222,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     }
                     TypeDefKind::Future(_) => todo!("impl future"),
                     TypeDefKind::Stream(_) => todo!("impl stream"),
+                    TypeDefKind::Resource | TypeDefKind::Handle(_) => {
+                        todo!("implement resources")
+                    }
                     TypeDefKind::Unknown => unreachable!(),
                 }
             }
