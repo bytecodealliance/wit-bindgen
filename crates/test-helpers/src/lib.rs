@@ -34,7 +34,6 @@ pub fn test_directory(suite_name: &str, gen_name: &str, wit_name: &str) -> PathB
 /// Helper function to execute a process during tests and print informative
 /// information if it fails.
 pub fn run_command(cmd: &mut Command) {
-    println!("running {cmd:?}");
     let output = cmd
         .output()
         .expect("failed to run executable; is it installed");
@@ -44,6 +43,7 @@ pub fn run_command(cmd: &mut Command) {
     }
     panic!(
         "
+command: {cmd:?}
 status: {status}
 
 stdout ---

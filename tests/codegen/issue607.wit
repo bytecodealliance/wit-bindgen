@@ -5,9 +5,10 @@ interface interface1 {
         some-error
     } 
     record my-record {
-        wow: u32
+        field: u32
     }
     my-func: func() -> result<my-record, error>
+    optional: func() -> option<my-record>
 }
 
 interface interface2 {
@@ -15,9 +16,10 @@ interface interface2 {
         other-error
     } 
     record my-record {
-        wow: u32
+        other-field: u32
     }
     my-other-func: func() -> result<my-record, error>
+    other-optional: func() -> option<my-record>
 }
 
 world my-world {

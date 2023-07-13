@@ -705,7 +705,11 @@ impl C {
     }
 
     fn owner_namespace(&self, resolve: &Resolve, id: TypeId) -> String {
-        owner_namespace(resolve, id, &self.interface_names, &self.world)
+        owner_namespace(resolve, id, &self.interface_names).unwrap_or_else(|| {
+            // Namespace everything else under the "default" world being
+            // generated to avoid putting too much into the root namespace in C.
+            self.world.to_snake_case()
+        })
     }
 
     fn type_name(&mut self, resolve: &Resolve, ty: &Type) -> String {
@@ -807,11 +811,13 @@ pub fn push_ty_name(
                     src.push_str(&t.types.len().to_string());
                     for ty in t.types.iter() {
                         src.push_str("_");
+                        push_optional_owner_namespace(ty, resolve, interface_names, src);
                         push_ty_name(resolve, ty, interface_names, world, src);
                     }
                 }
                 TypeDefKind::Option(ty) => {
                     src.push_str("option_");
+                    push_optional_owner_namespace(ty, resolve, interface_names, src);
                     push_ty_name(resolve, ty, interface_names, world, src);
                 }
                 TypeDefKind::Result(r) => {
@@ -820,13 +826,14 @@ pub fn push_ty_name(
                     src.push_str("_");
                     push_optional_ty_name(resolve, r.err.as_ref(), interface_names, world, src);
                 }
-                TypeDefKind::List(t) => {
+                TypeDefKind::List(ty) => {
                     src.push_str("list_");
-                    push_ty_name(resolve, t, interface_names, world, src);
+                    push_optional_owner_namespace(ty, resolve, interface_names, src);
+                    push_ty_name(resolve, ty, interface_names, world, src);
                 }
-                TypeDefKind::Future(t) => {
+                TypeDefKind::Future(ty) => {
                     src.push_str("future_");
-                    push_optional_ty_name(resolve, t.as_ref(), interface_names, world, src);
+                    push_optional_ty_name(resolve, ty.as_ref(), interface_names, world, src);
                 }
                 TypeDefKind::Stream(s) => {
                     src.push_str("stream_");
@@ -852,15 +859,26 @@ fn push_optional_ty_name(
 ) {
     match ty {
         Some(ty) => {
-            // If the type is referenced through an id, prepend the owner namespace to ensure disambiguation
-            if let Type::Id(i) = ty {
-                let namespace = owner_namespace(resolve, *i, interface_names, world);
-                dst.push_str(&namespace);
-                dst.push_str("_");
-            }
+            push_optional_owner_namespace(ty, resolve, interface_names, dst);
             push_ty_name(resolve, ty, interface_names, world, dst)
         }
         None => dst.push_str("void"),
+    }
+}
+
+// If the type is referenced through an id, prepend the owner namespace to ensure disambiguation
+fn push_optional_owner_namespace(
+    ty: &Type,
+    resolve: &Resolve,
+    interface_names: &HashMap<InterfaceId, WorldKey>,
+    dst: &mut String,
+) {
+    if let Type::Id(i) = ty {
+        let namespace = owner_namespace(resolve, *i, interface_names);
+        if let Some(namespace) = namespace {
+            dst.push_str(&namespace);
+            dst.push_str("_");
+        }
     }
 }
 
@@ -868,15 +886,14 @@ pub fn owner_namespace(
     resolve: &Resolve,
     id: TypeId,
     interface_names: &HashMap<InterfaceId, WorldKey>,
-    world: &str,
-) -> String {
+) -> Option<String> {
     let ty = &resolve.types[id];
     match ty.owner {
-        TypeOwner::Interface(owner) => interface_identifier(&interface_names[&owner], resolve),
-        TypeOwner::World(owner) => resolve.worlds[owner].name.to_snake_case(),
-        // Namespace everything else under the "default" world being
-        // generated to avoid putting too much into the root namespace in C.
-        TypeOwner::None => world.to_snake_case(),
+        TypeOwner::Interface(owner) => {
+            Some(interface_identifier(&interface_names[&owner], resolve))
+        }
+        TypeOwner::World(owner) => Some(resolve.worlds[owner].name.to_snake_case()),
+        TypeOwner::None => None,
     }
 }
 
