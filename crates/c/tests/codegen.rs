@@ -43,6 +43,7 @@ fn verify(dir: &Path, name: &str) {
     cmd.arg("-Wall")
         .arg("-Wextra")
         .arg("-Werror")
+        .arg("-Wc++-compat")
         .arg("-Wno-unused-parameter");
     cmd.arg("-c");
     cmd.arg("-o").arg(dir.join("obj.o"));

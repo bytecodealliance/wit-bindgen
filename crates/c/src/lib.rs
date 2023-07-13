@@ -491,12 +491,18 @@ impl C {
                 unreachable!()
             }
             TypeDefKind::Tuple(t) => {
-                self.src.h_defs("struct {\n");
-                for (i, t) in t.types.iter().enumerate() {
-                    let ty = self.type_name(resolve, t);
-                    uwriteln!(self.src.h_defs, "{ty} f{i};");
+                if t.types.iter().all(|ty| is_empty_type(resolve, ty)) {
+                    self.src.h_defs("void");
+                } else {
+                    self.src.h_defs("struct {\n");
+                    for (i, t) in t.types.iter().enumerate() {
+                        if !is_empty_type(resolve, t) {
+                            let ty = self.type_name(resolve, t);
+                            uwriteln!(self.src.h_defs, "{ty} f{i};");
+                        }
+                    }
+                    self.src.h_defs("}");
                 }
-                self.src.h_defs("}");
             }
             TypeDefKind::Option(t) => {
                 self.src.h_defs("struct {\n");
@@ -879,16 +885,22 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\n");
         self.docs(docs, SourceType::HDefs);
-        if record.fields.is_empty() {
+        if record
+            .fields
+            .iter()
+            .all(|field| is_empty_type(self.resolve, &field.ty))
+        {
             self.src.h_defs("typedef void ");
         } else {
             self.src.h_defs("typedef struct {\n");
             for field in record.fields.iter() {
-                self.docs(&field.docs, SourceType::HDefs);
-                self.print_ty(SourceType::HDefs, &field.ty);
-                self.src.h_defs(" ");
-                self.src.h_defs(&to_c_ident(&field.name));
-                self.src.h_defs(";\n");
+                if !is_empty_type(self.resolve, &field.ty) {
+                    self.docs(&field.docs, SourceType::HDefs);
+                    self.print_ty(SourceType::HDefs, &field.ty);
+                    self.src.h_defs(" ");
+                    self.src.h_defs(&to_c_ident(&field.name));
+                    self.src.h_defs(";\n");
+                }
             }
             self.src.h_defs("} ");
         }
@@ -901,13 +913,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         let prev = mem::take(&mut self.src.h_defs);
         self.src.h_defs("\n");
         self.docs(docs, SourceType::HDefs);
-        if tuple.types.is_empty() {
+        if tuple.types.iter().all(|ty| is_empty_type(self.resolve, ty)) {
             self.src.h_defs("typedef void ");
         } else {
             self.src.h_defs("typedef struct {\n");
             for (i, ty) in tuple.types.iter().enumerate() {
-                self.print_ty(SourceType::HDefs, ty);
-                uwriteln!(self.src.h_defs, " f{i};");
+                if !is_empty_type(self.resolve, ty) {
+                    self.print_ty(SourceType::HDefs, ty);
+                    uwriteln!(self.src.h_defs, " f{i};");
+                }
             }
             self.src.h_defs("} ");
         }
@@ -999,12 +1013,18 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs("typedef struct {\n");
         self.src.h_defs(int_repr(union.tag()));
         self.src.h_defs(" tag;\n");
-        if !union.cases.is_empty() {
+        if !union
+            .cases
+            .iter()
+            .all(|case| is_empty_type(self.resolve, &case.ty))
+        {
             self.src.h_defs("union {\n");
             for (i, case) in union.cases.iter().enumerate() {
-                self.docs(&case.docs, SourceType::HDefs);
-                self.print_ty(SourceType::HDefs, &case.ty);
-                uwriteln!(self.src.h_defs, " f{i};");
+                if !is_empty_type(self.resolve, &case.ty) {
+                    self.docs(&case.docs, SourceType::HDefs);
+                    self.print_ty(SourceType::HDefs, &case.ty);
+                    uwriteln!(self.src.h_defs, " f{i};");
+                }
             }
             self.src.h_defs("} val;\n");
         }
@@ -1593,10 +1613,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn store_in_retptr(&mut self, operand: &String) {
-        self.store_op(
-            operand,
-            &format!("*{}", self.sig.retptrs[self.ret_store_cnt]),
-        );
+        if !operand.is_empty() {
+            self.store_op(
+                operand,
+                &format!("*{}", self.sig.retptrs[self.ret_store_cnt]),
+            );
+        }
         self.ret_store_cnt = self.ret_store_cnt + 1;
     }
 
@@ -1746,33 +1768,43 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
                 for f in record.fields.iter() {
-                    results.push(format!("({}).{}", op, to_c_ident(&f.name)));
+                    results.push(format!("({}).{} ", op, to_c_ident(&f.name)));
                 }
             }
             Instruction::RecordLift { ty, .. } => {
-                let name = self.gen.type_string(&Type::Id(*ty));
-                let mut result = format!("({}) {{\n", name);
-                for op in operands {
-                    uwriteln!(result, "{},", op);
+                if is_empty_type(self.gen.resolve, &Type::Id(*ty)) {
+                    results.push("".to_owned());
+                } else {
+                    let name = self.gen.type_string(&Type::Id(*ty));
+                    let mut result = format!("({}) {{\n", name);
+                    for op in operands {
+                        if !op.is_empty() {
+                            uwriteln!(result, "{},", op);
+                        }
+                    }
+                    result.push_str("}");
+                    results.push(result);
                 }
-                result.push_str("}");
-                results.push(result);
             }
 
             Instruction::TupleLower { tuple, .. } => {
                 let op = &operands[0];
                 for i in 0..tuple.types.len() {
-                    results.push(format!("({}).f{}", op, i));
+                    results.push(format!("({}).f{} ", op, i));
                 }
             }
             Instruction::TupleLift { ty, .. } => {
-                let name = self.gen.type_string(&Type::Id(*ty));
-                let mut result = format!("({}) {{\n", name);
-                for op in operands {
-                    uwriteln!(result, "{},", op);
+                if is_empty_type(self.gen.resolve, &Type::Id(*ty)) {
+                    results.push("".to_owned());
+                } else {
+                    let name = self.gen.type_string(&Type::Id(*ty));
+                    let mut result = format!("({})  {{\n", name);
+                    for op in operands {
+                        uwriteln!(result, "{},", op);
+                    }
+                    result.push_str("}");
+                    results.push(result);
                 }
-                result.push_str("}");
-                results.push(result);
             }
 
             // TODO: checked
@@ -1880,7 +1912,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src.push_str(&block);
                     assert!(block_results.len() == (case.ty.is_some() as usize));
 
-                    if let Some(_) = get_nonempty_type(self.gen.resolve, case.ty.as_ref()) {
+                    if get_nonempty_type(self.gen.resolve, case.ty.as_ref()).is_some() {
                         let mut dst = format!("{}.val", result);
                         dst.push_str(".");
                         dst.push_str(&to_c_ident(&case.name));
@@ -2110,20 +2142,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 let result_tmp = self.locals.tmp("result");
-                let set_ok =
-                    if let Some(_) = get_nonempty_type(self.gen.resolve, result.ok.as_ref()) {
-                        let ok_result = &ok_results[0];
-                        format!("{result_tmp}.val.ok = {ok_result};\n")
-                    } else {
-                        String::new()
-                    };
-                let set_err =
-                    if let Some(_) = get_nonempty_type(self.gen.resolve, result.err.as_ref()) {
-                        let err_result = &err_results[0];
-                        format!("{result_tmp}.val.err = {err_result};\n")
-                    } else {
-                        String::new()
-                    };
+                let set_ok = if get_nonempty_type(self.gen.resolve, result.ok.as_ref()).is_some() {
+                    let ok_result = &ok_results[0];
+                    format!("{result_tmp}.val.ok = {ok_result};\n")
+                } else {
+                    String::new()
+                };
+                let set_err = if get_nonempty_type(self.gen.resolve, result.err.as_ref()).is_some()
+                {
+                    let err_result = &err_results[0];
+                    format!("{result_tmp}.val.err = {err_result};\n")
+                } else {
+                    String::new()
+                };
 
                 let ty = self.gen.type_string(&Type::Id(*ty));
                 uwriteln!(self.src, "{ty} {result_tmp};");
@@ -2222,7 +2253,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         args.push_str(", ");
                     }
                     let ty = &func.params[i].1;
-                    if *byref {
+                    if is_empty_type(self.gen.resolve, ty) {
+                        args.push_str("NULL");
+                    } else if *byref {
                         let name = self.locals.tmp("arg");
                         let ty = self.gen.type_string(ty);
                         uwriteln!(self.src, "{} {} = {};", ty, name, op);
@@ -2250,14 +2283,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     None => {
                         let mut retptrs = Vec::new();
                         for ty in self.sig.ret.retptrs.iter() {
-                            let name = self.locals.tmp("ret");
-                            let ty = self.gen.type_string(ty);
-                            uwriteln!(self.src, "{} {};", ty, name);
                             if args.len() > 0 {
                                 args.push_str(", ");
                             }
-                            args.push_str("&");
-                            args.push_str(&name);
+                            let name = self.locals.tmp("ret");
+                            if is_empty_type(self.gen.resolve, ty) {
+                                args.push_str("NULL");
+                            } else {
+                                let ty = self.gen.type_string(ty);
+                                uwriteln!(self.src, "{} {};", ty, name);
+                                args.push_str("&");
+                                args.push_str(&name);
+                            }
                             retptrs.push(name);
                         }
                         uwriteln!(self.src, "{}({});", self.sig.name, args);
@@ -2280,10 +2317,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         if args.len() > 0 {
                             args.push_str(", ");
                         }
-                        args.push_str("&");
-                        args.push_str(&val);
-                        let payload_ty = self.gen.type_string(ty);
-                        uwriteln!(self.src, "{} {};", payload_ty, val);
+                        if is_empty_type(self.gen.resolve, ty) {
+                            args.push_str("NULL");
+                        } else {
+                            args.push_str("&");
+                            args.push_str(&val);
+                            let payload_ty = self.gen.type_string(ty);
+                            uwriteln!(self.src, "{} {};", payload_ty, val);
+                        }
                         uwriteln!(self.src, "bool {} = {}({});", ret, self.sig.name, args);
                         let option_ty = self
                             .gen
@@ -2325,13 +2366,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         uwriteln!(self.src, "{result_ty} {ret};");
                         let ok_name = if ok.is_some() {
                             if let Some(ty) = ret_iter.next() {
-                                let val = self.locals.tmp("ok");
                                 if args.len() > 0 {
                                     uwrite!(args, ", ");
                                 }
-                                uwrite!(args, "&{val}");
-                                let ty = self.gen.type_string(ty);
-                                uwriteln!(self.src, "{} {};", ty, val);
+                                let val = self.locals.tmp("ok");
+                                if is_empty_type(self.gen.resolve, ty) {
+                                    uwrite!(args, "NULL");
+                                } else {
+                                    uwrite!(args, "&{val}");
+                                    let ty = self.gen.type_string(ty);
+                                    uwriteln!(self.src, "{} {};", ty, val);
+                                }
                                 Some(val)
                             } else {
                                 None
@@ -2340,13 +2385,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             None
                         };
                         let err_name = if let Some(ty) = ret_iter.next() {
-                            let val = self.locals.tmp("err");
                             if args.len() > 0 {
                                 uwrite!(args, ", ")
                             }
-                            uwrite!(args, "&{val}");
-                            let ty = self.gen.type_string(ty);
-                            uwriteln!(self.src, "{} {};", ty, val);
+                            let val = self.locals.tmp("err");
+                            if is_empty_type(self.gen.resolve, ty) {
+                                uwrite!(args, "NULL");
+                            } else {
+                                uwrite!(args, "&{val}");
+                                let ty = self.gen.type_string(ty);
+                                uwriteln!(self.src, "{} {};", ty, val);
+                            }
                             Some(val)
                         } else {
                             None
@@ -2720,8 +2769,11 @@ pub fn is_empty_type(resolve: &Resolve, ty: &Type) -> bool {
     };
     match &resolve.types[id].kind {
         TypeDefKind::Type(t) => is_empty_type(resolve, t),
-        TypeDefKind::Record(r) => r.fields.is_empty(),
-        TypeDefKind::Tuple(t) => t.types.is_empty(),
+        TypeDefKind::Record(r) => r
+            .fields
+            .iter()
+            .all(|field| is_empty_type(resolve, &field.ty)),
+        TypeDefKind::Tuple(t) => t.types.iter().all(|ty| is_empty_type(resolve, ty)),
         _ => false,
     }
 }

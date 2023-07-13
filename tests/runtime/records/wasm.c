@@ -57,8 +57,12 @@ void records_test_imports() {
     assert(b.b == (TEST_RECORDS_TEST_F1_A | TEST_RECORDS_TEST_F1_B));
   }
 
-  records_tuple0_t t0;
-  test_records_test_tuple0(&t0, &t0);
+  // Ensure `records_tuple0_t` has type `void`.
+  records_tuple0_t *t0;
+  void **pt0 = &t0;
+  (void)pt0;
+
+  test_records_test_tuple0(NULL, NULL);
 
   records_tuple1_u8_t t1, t2;
   t1.f0 = 1;
