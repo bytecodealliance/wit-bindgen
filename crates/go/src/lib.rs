@@ -634,11 +634,10 @@ impl InterfaceGenerator<'_> {
 
     fn get_c_ty(&self, ty: &Type) -> String {
         let res = self.get_c_ty_without_package(ty);
-        if res != *"bool" {
-            format!("C.{res}")
-        } else {
-            res
+        if res == "bool" {
+            return res;
         }
+        format!("C.{res}")
     }
 
     fn get_ty_name(&self, ty: &Type) -> String {
@@ -748,82 +747,15 @@ impl InterfaceGenerator<'_> {
     }
 
     fn get_c_ty_name(&self, ty: &Type) -> String {
-        match ty {
-            Type::Bool => "bool".into(),
-            Type::Char => "char32".into(),
-            Type::U8 => "u8".into(),
-            Type::S8 => "s8".into(),
-            Type::U16 => "u16".into(),
-            Type::S16 => "s16".into(),
-            Type::U32 => "u32".into(),
-            Type::S32 => "s32".into(),
-            Type::U64 => "u64".into(),
-            Type::S64 => "s64".into(),
-            Type::Float32 => "float32".into(),
-            Type::Float64 => "float64".into(),
-            Type::String => "string".into(),
-            Type::Id(id) => {
-                let ty = &self.resolve.types[*id];
-                if let Some(name) = &ty.name {
-                    return name.to_snake_case();
-                }
-                match &ty.kind {
-                    TypeDefKind::Type(t) => self.get_c_ty_name(t),
-                    TypeDefKind::Record(_)
-                    | TypeDefKind::Flags(_)
-                    | TypeDefKind::Enum(_)
-                    | TypeDefKind::Variant(_)
-                    | TypeDefKind::Union(_) => {
-                        unimplemented!()
-                    }
-                    TypeDefKind::Tuple(t) => {
-                        let mut src = String::new();
-                        src.push_str("tuple");
-                        src.push_str(&t.types.len().to_string());
-                        for ty in t.types.iter() {
-                            src.push('_');
-                            src.push_str(&self.get_c_ty_name(ty));
-                        }
-                        src
-                    }
-                    TypeDefKind::Option(ty) => {
-                        format!("option_{}", self.get_c_ty_name(ty))
-                    }
-                    TypeDefKind::Result(r) => {
-                        //imports_result_u32_u32_t
-                        format!(
-                            "result_{}_{}",
-                            self.get_c_optional_type_name(r.ok.as_ref()),
-                            self.get_c_optional_type_name(r.err.as_ref())
-                        )
-                    }
-                    TypeDefKind::List(t) => {
-                        format!("list_{}", self.get_c_ty_name(t))
-                    }
-                    TypeDefKind::Future(t) => {
-                        format!("future_{}", self.get_c_optional_type_name(t.as_ref()),)
-                    }
-                    TypeDefKind::Stream(s) => {
-                        format!(
-                            "stream_{}_{}",
-                            self.get_c_optional_type_name(s.element.as_ref()),
-                            self.get_c_optional_type_name(s.end.as_ref()),
-                        )
-                    }
-                    TypeDefKind::Resource | TypeDefKind::Handle(_) => {
-                        todo!("implement resources")
-                    }
-                    TypeDefKind::Unknown => unreachable!(),
-                }
-            }
-        }
-    }
-
-    fn get_c_optional_type_name(&self, ty: Option<&Type>) -> String {
-        match ty {
-            Some(ty) => self.get_c_ty_name(ty),
-            None => "void".into(),
-        }
+        let mut name = String::new();
+        wit_bindgen_c::push_ty_name(
+            self.resolve,
+            ty,
+            &self.gen.interface_names,
+            &self.gen.world,
+            &mut name,
+        );
+        name
     }
 
     fn get_func_params(&mut self, _resolve: &Resolve, func: &Function) -> String {

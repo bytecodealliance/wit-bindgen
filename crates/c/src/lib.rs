@@ -864,7 +864,7 @@ fn push_optional_ty_name(
     }
 }
 
-fn owner_namespace(
+pub fn owner_namespace(
     resolve: &Resolve,
     id: TypeId,
     interface_names: &HashMap<InterfaceId, WorldKey>,
