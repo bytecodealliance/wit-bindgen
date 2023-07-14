@@ -5,10 +5,12 @@ interface interface1 {
         some-error
     } 
     record my-record {
-        field: u32
+        some-field: u32
     }
     my-func: func() -> result<my-record, error>
-    optional: func() -> option<my-record>
+    my-optional: func() -> option<my-record>
+    my-tuple: func() -> tuple<my-record, error>
+    my-list: func() -> list<my-record>
 }
 
 interface interface2 {
@@ -18,8 +20,10 @@ interface interface2 {
     record my-record {
         other-field: u32
     }
-    my-other-func: func() -> result<my-record, error>
-    other-optional: func() -> option<my-record>
+    my-func: func() -> result<my-record, error>
+    my-optional: func() -> option<my-record>
+    my-tuple: func() -> tuple<my-record, error>
+    my-list: func() -> list<my-record>
 }
 
 world my-world {
