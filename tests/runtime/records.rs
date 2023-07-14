@@ -19,7 +19,7 @@ impl test_imports::Host for MyImports {
 
     fn roundtrip_flags1(&mut self, a: test_imports::F1) -> Result<test_imports::F1> {
         drop(format!("{:?}", a));
-        drop(a & test_imports::F1::all());
+        let _ = a & test_imports::F1::all();
         Ok(a)
     }
 

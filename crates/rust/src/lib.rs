@@ -81,6 +81,12 @@ pub struct Opts {
     /// types for borrowing and owning, if necessary.
     #[cfg_attr(feature = "clap", arg(long))]
     pub ownership: Ownership,
+
+    /// The optional path to the wit-bindgen runtime module to use.
+    ///
+    /// This defaults to `wit_bindgen::rt`.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub runtime_path: Option<String>,
 }
 
 impl Opts {
@@ -148,6 +154,13 @@ impl RustWasm {
             }
             uwriteln!(self.src, "}}");
         }
+    }
+
+    fn runtime_path(&self) -> &str {
+        self.opts
+            .runtime_path
+            .as_deref()
+            .unwrap_or("wit_bindgen::rt")
     }
 }
 
@@ -414,12 +427,13 @@ impl InterfaceGenerator<'_> {
                 self.src,
                 "
                     #[allow(unused_imports)]
-                    use wit_bindgen::rt::{{alloc, vec::Vec, string::String}};
+                    use {rt}::{{alloc, vec::Vec, string::String}};
 
                     #[repr(align({align}))]
                     struct _RetArea([u8; {size}]);
                     static mut _RET_AREA: _RetArea = _RetArea([0; {size}]);
                 ",
+                rt = self.gen.runtime_path(),
                 align = self.return_pointer_area_align,
                 size = self.return_pointer_area_size,
             );
@@ -498,12 +512,13 @@ impl InterfaceGenerator<'_> {
         self.src.push_str("#[allow(clippy::all)]\n");
         let params = self.print_signature(func, param_mode, &sig);
         self.src.push_str("{\n");
-        self.src.push_str(
+        self.src.push_str(&format!(
             "
                 #[allow(unused_imports)]
-                use wit_bindgen::rt::{alloc, vec::Vec, string::String};
+                use {rt}::{{alloc, vec::Vec, string::String}};
             ",
-        );
+            rt = self.gen.runtime_path()
+        ));
         self.src.push_str("unsafe {\n");
 
         let mut f = FunctionBindgen::new(self, params);
@@ -613,7 +628,7 @@ impl InterfaceGenerator<'_> {
             self.src,
             "
                 #[allow(unused_imports)]
-                use wit_bindgen::rt::{{alloc, vec::Vec, string::String}};
+                use {rt}::{{alloc, vec::Vec, string::String}};
 
                 // Before executing any other code, use this function to run all static
                 // constructors, if they have not yet been run. This is a hack required
@@ -627,9 +642,10 @@ impl InterfaceGenerator<'_> {
                 // https://github.com/bytecodealliance/preview2-prototyping/issues/99
                 // for more details.
                 #[cfg(target_arch=\"wasm32\")]
-                wit_bindgen::rt::run_ctors_once();
+                {rt}::run_ctors_once();
 
-            "
+            ",
+            rt = self.gen.runtime_path()
         );
 
         // Finish out the macro-generated export implementation.
@@ -774,12 +790,15 @@ impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
         self.gen.opts.raw_strings
     }
 
-    fn vec_name(&self) -> &'static str {
-        "wit_bindgen::rt::vec::Vec"
+    fn push_vec_name(&mut self) {
+        self.push_str(&format!("{rt}::vec::Vec", rt = self.gen.runtime_path()));
     }
 
-    fn string_name(&self) -> &'static str {
-        "wit_bindgen::rt::string::String"
+    fn push_string_name(&mut self) {
+        self.push_str(&format!(
+            "{rt}::string::String",
+            rt = self.gen.runtime_path()
+        ));
     }
 
     fn push_str(&mut self, s: &str) {
@@ -1090,7 +1109,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::I64FromU64 | Instruction::I64FromS64 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wit_bindgen::rt::as_i64({})", s));
+                results.push(format!(
+                    "{rt}::as_i64({s})",
+                    rt = self.gen.gen.runtime_path()
+                ));
             }
             Instruction::I32FromChar
             | Instruction::I32FromU8
@@ -1100,16 +1122,25 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::I32FromU32
             | Instruction::I32FromS32 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wit_bindgen::rt::as_i32({})", s));
+                results.push(format!(
+                    "{rt}::as_i32({s})",
+                    rt = self.gen.gen.runtime_path()
+                ));
             }
 
             Instruction::F32FromFloat32 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wit_bindgen::rt::as_f32({})", s));
+                results.push(format!(
+                    "{rt}::as_f32({s})",
+                    rt = self.gen.gen.runtime_path()
+                ));
             }
             Instruction::F64FromFloat64 => {
                 let s = operands.pop().unwrap();
-                results.push(format!("wit_bindgen::rt::as_f64({})", s));
+                results.push(format!(
+                    "{rt}::as_f64({s})",
+                    rt = self.gen.gen.runtime_path()
+                ));
             }
             Instruction::Float32FromF32
             | Instruction::Float64FromF64
@@ -1604,7 +1635,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str("}\n");
                 results.push(result);
                 self.push_str(&format!(
-                    "wit_bindgen::rt::dealloc({base}, ({len} as usize) * {size}, {align});\n",
+                    "{rt}::dealloc({base}, ({len} as usize) * {size}, {align});\n",
+                    rt = self.gen.gen.runtime_path(),
                 ));
             }
 
@@ -1742,15 +1774,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::GuestDeallocate { size, align } => {
                 self.push_str(&format!(
-                    "wit_bindgen::rt::dealloc({}, {}, {});\n",
-                    operands[0], size, align
+                    "{rt}::dealloc({op}, {size}, {align});\n",
+                    rt = self.gen.gen.runtime_path(),
+                    op = operands[0]
                 ));
             }
 
             Instruction::GuestDeallocateString => {
                 self.push_str(&format!(
-                    "wit_bindgen::rt::dealloc({}, ({}) as usize, 1);\n",
-                    operands[0], operands[1],
+                    "{rt}::dealloc({op0}, ({op1}) as usize, 1);\n",
+                    rt = self.gen.gen.runtime_path(),
+                    op0 = operands[0],
+                    op1 = operands[1],
                 ));
             }
 
@@ -1802,7 +1837,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.push_str("\n}\n");
                 }
                 self.push_str(&format!(
-                    "wit_bindgen::rt::dealloc({base}, ({len} as usize) * {size}, {align});\n",
+                    "{rt}::dealloc({base}, ({len} as usize) * {size}, {align});\n",
+                    rt = self.gen.gen.runtime_path(),
                 ));
             }
 

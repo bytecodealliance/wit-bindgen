@@ -226,3 +226,25 @@ mod symbol_does_not_conflict {
 
     export_foo!(Component);
 }
+
+mod alternative_runtime_path {
+    wit_bindgen::generate!({
+        inline: "
+            package my:inline
+            world foo {
+                export foo: func()
+            }
+        ",
+        runtime_path: "my_rt",
+    });
+
+    pub(crate) use wit_bindgen::rt as my_rt;
+
+    struct Component;
+
+    impl Foo for Component {
+        fn foo() {}
+    }
+
+    export_foo!(Component);
+}
