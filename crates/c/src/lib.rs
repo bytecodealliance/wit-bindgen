@@ -1091,8 +1091,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.finish_ty(id, prev);
     }
 
-    fn type_builtin(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        drop((_id, name, ty, docs));
+    fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        let _ = (id, name, ty, docs);
     }
 }
 
