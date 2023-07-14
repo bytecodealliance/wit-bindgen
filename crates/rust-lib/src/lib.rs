@@ -101,7 +101,7 @@ pub trait RustGenerator<'a> {
     }
 
     fn rustdoc_params(&mut self, docs: &[(String, Type)], header: &str) {
-        drop((docs, header));
+        let _ = (docs, header);
         // let docs = docs
         //     .iter()
         //     .filter(|param| param.docs.trim().len() > 0)

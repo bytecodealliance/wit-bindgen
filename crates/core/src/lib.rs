@@ -447,8 +447,7 @@ pub trait WorldGenerator {
     }
 
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
-        drop(resolve);
-        drop(world);
+        let _ = (resolve, world);
     }
 
     fn import_interface(
