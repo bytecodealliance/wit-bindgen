@@ -65,6 +65,7 @@ impl Parse for Config {
                     Opt::MacroCallPrefix(prefix) => opts.macro_call_prefix = Some(prefix.value()),
                     Opt::ExportMacroName(name) => opts.export_macro_name = Some(name.value()),
                     Opt::Skip(list) => opts.skip.extend(list.iter().map(|i| i.value())),
+                    Opt::RuntimePath(path) => opts.runtime_path = Some(path.value()),
                 }
             }
         } else {
@@ -148,6 +149,7 @@ mod kw {
     syn::custom_keyword!(path);
     syn::custom_keyword!(inline);
     syn::custom_keyword!(ownership);
+    syn::custom_keyword!(runtime_path);
 }
 
 enum Opt {
@@ -161,6 +163,7 @@ enum Opt {
     ExportMacroName(syn::LitStr),
     Skip(Vec<syn::LitStr>),
     Ownership(Ownership),
+    RuntimePath(syn::LitStr),
 }
 
 impl Parse for Opt {
@@ -240,6 +243,10 @@ impl Parse for Opt {
             syn::bracketed!(contents in input);
             let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
             Ok(Opt::Skip(list.iter().cloned().collect()))
+        } else if l.peek(kw::runtime_path) {
+            input.parse::<kw::runtime_path>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::RuntimePath(input.parse()?))
         } else {
             Err(l.error())
         }
