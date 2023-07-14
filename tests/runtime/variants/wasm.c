@@ -123,7 +123,7 @@ void variants_test_imports() {
   }
 
   {
-    variants_tuple3_bool_result_void_void_my_errno_t ret;
+    variants_tuple3_bool_result_void_void_test_variants_test_my_errno_t ret;
     variants_result_void_void_t b;
     b.is_err = false;
     test_variants_test_variant_enums(true, &b, TEST_VARIANTS_TEST_MY_ERRNO_SUCCESS, &ret);
@@ -173,7 +173,7 @@ void exports_test_variants_test_variant_enums(
       bool a,
       variants_result_void_void_t *b,
       test_variants_test_my_errno_t c,
-      variants_tuple3_bool_result_void_void_my_errno_t *ret) {
+      variants_tuple3_bool_result_void_void_test_variants_test_my_errno_t *ret) {
   assert(0);
 }
 

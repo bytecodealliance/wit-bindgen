@@ -105,7 +105,7 @@ void flavorful_test_imports() {
     b.ptr = b_val;
     b.len = 2;
 
-    flavorful_list_my_errno_t c;
+    flavorful_list_test_flavorful_test_my_errno_t c;
     test_flavorful_test_my_errno_t c_val[2];
     c_val[0] = TEST_FLAVORFUL_TEST_MY_ERRNO_SUCCESS;
     c_val[1] = TEST_FLAVORFUL_TEST_MY_ERRNO_A;
@@ -114,7 +114,7 @@ void flavorful_test_imports() {
 
     flavorful_list_bool_t d;
     flavorful_list_result_void_void_t e;
-    flavorful_list_my_errno_t f;
+    flavorful_list_test_flavorful_test_my_errno_t f;
     test_flavorful_test_list_of_variants(&a, &b, &c, &d, &e, &f);
 
     assert(d.len == 2);
@@ -131,7 +131,7 @@ void flavorful_test_imports() {
 
     flavorful_list_bool_free(&d);
     flavorful_list_result_void_void_free(&e);
-    flavorful_list_my_errno_free(&f);
+    flavorful_list_test_flavorful_test_my_errno_free(&f);
   }
 }
 
@@ -208,9 +208,9 @@ void exports_test_flavorful_test_list_typedefs(test_flavorful_test_list_typedef_
 void exports_test_flavorful_test_list_of_variants(
     flavorful_list_bool_t *a,
     flavorful_list_result_void_void_t *b,
-    flavorful_list_my_errno_t *c,
+    flavorful_list_test_flavorful_test_my_errno_t *c,
     flavorful_list_bool_t *ret0,
     flavorful_list_result_void_void_t *ret1,
-    flavorful_list_my_errno_t *ret2) {
+    flavorful_list_test_flavorful_test_my_errno_t *ret2) {
   assert(0); // unimplemented
 }
