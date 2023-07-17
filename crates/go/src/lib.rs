@@ -238,12 +238,15 @@ impl WorldGenerator for TinyGo {
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
         // make sure all types are defined on top of the file
-        let src = mem::take(&mut self.src);
+        let version = env!("CARGO_PKG_VERSION");
+        let mut src = Source::default();
+        wit_bindgen_core::generated_preamble(&mut src, version);
         self.finish_types(resolve);
         self.src.push_str(&src);
 
         let world = &resolve.worlds[id];
         let mut header = Source::default();
+        wit_bindgen_core::generated_preamble(&mut header, version);
         let snake = self.world.to_snake_case();
         // add package
         header.push_str("package ");
