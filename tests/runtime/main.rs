@@ -264,6 +264,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         };
 
         if !output.status.success() {
+            println!("dir: {}", out_dir.display());
             println!("status: {}", output.status);
             println!("stdout: ------------------------------------------");
             println!("{}", String::from_utf8_lossy(&output.stdout));

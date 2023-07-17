@@ -43,8 +43,10 @@ fn verify(dir: &Path, name: &str) {
         .open(&main)
         .expect("failed to open file");
     let mut reader = BufReader::new(file);
-    reader.read_until(b'\n', &mut Vec::new()).unwrap();
     let mut buf = Vec::new();
+    reader.read_until(b'\n', &mut buf).unwrap();
+    // Skip over `package $WORLD` line
+    reader.read_until(b'\n', &mut Vec::new()).unwrap();
     buf.append(&mut "package main\n".as_bytes().to_vec());
 
     // check if {name}_types.go exists
