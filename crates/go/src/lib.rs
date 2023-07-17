@@ -242,35 +242,33 @@ impl WorldGenerator for TinyGo {
         self.finish_types(resolve);
         self.src.push_str(&src);
 
-        let world = &resolve.worlds[id];
-        let mut header = Source::default();
+        // prepend package and imports header
+        let src = mem::take(&mut self.src);
+        wit_bindgen_core::generated_preamble(&mut self.src, env!("CARGO_PKG_VERSION"));
         let snake = self.world.to_snake_case();
         // add package
-        header.push_str("package ");
-        header.push_str(&snake);
-        header.push_str("\n\n");
+        self.src.push_str("package ");
+        self.src.push_str(&snake);
+        self.src.push_str("\n\n");
 
         // import C
-        header.push_str("// #include \"");
-        header.push_str(self.world.to_snake_case().as_str());
-        header.push_str(".h\"\n");
-        header.push_str("import \"C\"\n\n");
+        self.src.push_str("// #include \"");
+        self.src.push_str(self.world.to_snake_case().as_str());
+        self.src.push_str(".h\"\n");
+        self.src.push_str("import \"C\"\n\n");
 
         if self.needs_import_unsafe {
-            header.push_str("import \"unsafe\"\n\n");
+            self.src.push_str("import \"unsafe\"\n\n");
         }
         if self.needs_fmt_import {
-            header.push_str("import \"fmt\"\n\n");
+            self.src.push_str("import \"fmt\"\n\n");
         }
-        let header = mem::take(&mut header);
-        let src = mem::take(&mut self.src);
+        self.src.push_str(&src);
+
+        let world = &resolve.worlds[id];
         files.push(
             &format!("{}.go", world.name.to_kebab_case()),
-            header.as_bytes(),
-        );
-        files.push(
-            &format!("{}.go", world.name.to_kebab_case()),
-            src.as_bytes(),
+            self.src.as_bytes(),
         );
         if self.needs_result_option {
             let mut result_option_src = Source::default();
