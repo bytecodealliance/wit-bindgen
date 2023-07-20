@@ -122,8 +122,17 @@ fn run_test(lists: Lists, store: &mut Store<crate::Wasi<MyImports>>) -> Result<(
     assert_eq!(exports.call_empty_string_result(&mut *store)?, "");
     exports.call_list_param(&mut *store, &[1, 2, 3, 4])?;
     exports.call_list_param2(&mut *store, "foo")?;
-    exports.call_list_param3(&mut *store, &["foo", "bar", "baz"])?;
-    exports.call_list_param4(&mut *store, &[&["foo", "bar"], &["baz"]])?;
+    exports.call_list_param3(
+        &mut *store,
+        &["foo".to_string(), "bar".to_string(), "baz".to_string()],
+    )?;
+    exports.call_list_param4(
+        &mut *store,
+        &[
+            vec!["foo".to_string(), "bar".to_string()],
+            vec!["baz".to_string()],
+        ],
+    )?;
     assert_eq!(exports.call_list_result(&mut *store)?, [1, 2, 3, 4, 5]);
     assert_eq!(exports.call_list_result2(&mut *store)?, "hello!");
     assert_eq!(
