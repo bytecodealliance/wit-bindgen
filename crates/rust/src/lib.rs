@@ -1327,6 +1327,31 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
         self.print_typedef_enum(id, name, enum_, docs, &[], Box::new(|_| String::new()));
+
+        let name = name.to_upper_camel_case();
+        let mut cases = String::new();
+        let repr = int_repr(enum_.tag());
+        for (i, case) in enum_.cases.iter().enumerate() {
+            let case = case.name.to_upper_camel_case();
+            cases.push_str(&format!("{i} => {name}::{case},\n"));
+        }
+        uwriteln!(
+            self.src,
+            r#"
+                impl {name} {{
+                    pub(crate) unsafe fn _lift(val: {repr}) -> {name} {{
+                        if !cfg!(debug_assertions) {{
+                            return ::core::mem::transmute(val);
+                        }}
+
+                        match val {{
+                            {cases}
+                            _ => panic!("invalid enum discriminant"),
+                        }}
+                    }}
+                }}
+            "#
+        );
     }
 
     fn type_alias(&mut self, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
@@ -1419,7 +1444,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             sig.push_str(" -> ");
             sig.push_str(wasm_type(*result));
         }
-        uwriteln!(
+        uwrite!(
             self.src,
             "
                 #[cfg(target_arch = \"wasm32\")]
@@ -1494,7 +1519,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         if src.is_empty() {
             self.blocks.push(expr);
         } else if operands.is_empty() {
-            self.blocks.push(format!("{{\n{}\n}}", &src[..]));
+            self.blocks.push(format!("{{\n{}}}", &src[..]));
         } else {
             self.blocks.push(format!("{{\n{}\n{}\n}}", &src[..], expr));
         }
@@ -1605,13 +1630,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::U64FromI64 => top_as("u64"),
             Instruction::CharFromI32 => {
                 results.push(format!(
-                    "{{
-                        #[cfg(not(debug_assertions))]
-                        {{ ::core::char::from_u32_unchecked({} as u32) }}
-                        #[cfg(debug_assertions)]
-                        {{ ::core::char::from_u32({} as u32).unwrap() }}
-                    }}",
-                    operands[0], operands[0]
+                    "{}::char_lift({} as u32)",
+                    self.gen.gen.runtime_path(),
+                    operands[0]
                 ));
             }
 
@@ -1624,19 +1645,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::BoolFromI32 => {
                 results.push(format!(
-                    "{{
-                        #[cfg(not(debug_assertions))]
-                        {{ ::core::mem::transmute::<u8, bool>({} as u8) }}
-                        #[cfg(debug_assertions)]
-                        {{
-                            match {} {{
-                                0 => false,
-                                1 => true,
-                                _ => panic!(\"invalid bool discriminant\"),
-                            }}
-                        }}
-                    }}",
-                    operands[0], operands[0],
+                    "{}::bool_lift({} as u8)",
+                    self.gen.gen.runtime_path(),
+                    operands[0]
                 ));
             }
 
@@ -1736,10 +1747,17 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .blocks
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
+                let name = self.typename_lower(*ty);
+                let name = if name.contains("::") {
+                    let tmp = self.tmp();
+                    uwriteln!(self.src, "use {name} as V{tmp};");
+                    format!("V{tmp}")
+                } else {
+                    name
+                };
                 self.let_results(result_types.len(), results);
                 let op0 = &operands[0];
                 self.push_str(&format!("match {op0} {{\n"));
-                let name = self.typename_lower(*ty);
                 for (case, block) in variant.cases.iter().zip(blocks) {
                     let case_name = case.name.to_upper_camel_case();
                     self.push_str(&format!("{name}::{case_name}"));
@@ -1749,67 +1767,50 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         self.push_str(&format!(" => {{\n{block}\n}}\n"));
                     }
                 }
-                self.push_str("};\n");
+                if results.len() == 0 {
+                    self.push_str("}\n");
+                } else {
+                    self.push_str("};\n");
+                }
             }
 
-            Instruction::VariantLift {
-                name, variant, ty, ..
-            } => {
-                let mut result = String::new();
-                result.push_str("{");
-
-                let named_enum = variant.cases.iter().all(|c| c.ty.is_none());
+            Instruction::VariantLift { variant, ty, .. } => {
                 let blocks = self
                     .blocks
                     .drain(self.blocks.len() - variant.cases.len()..)
                     .collect::<Vec<_>>();
                 let op0 = &operands[0];
-
-                if named_enum {
-                    // In unchecked mode when this type is a named enum then we know we
-                    // defined the type so we can transmute directly into it.
-                    result.push_str("#[cfg(not(debug_assertions))]");
-                    result.push_str("{");
-                    result.push_str("::core::mem::transmute::<_, ");
-                    result.push_str(&name.to_upper_camel_case());
-                    result.push_str(">(");
-                    result.push_str(op0);
-                    result.push_str(" as ");
-                    result.push_str(int_repr(variant.tag()));
-                    result.push_str(")");
-                    result.push_str("}");
-                }
-
-                if named_enum {
-                    result.push_str("#[cfg(debug_assertions)]");
-                }
-                result.push_str("{");
-                result.push_str(&format!("match {op0} {{\n"));
+                let tmp = self.tmp();
                 let name = self.typename_lift(*ty);
+                let name = if name.contains("::") {
+                    uwriteln!(self.src, "use {name} as V{tmp};");
+                    format!("V{tmp}")
+                } else {
+                    name
+                };
+                uwriteln!(self.src, "let v{tmp} = match {op0} {{");
                 for (i, (case, block)) in variant.cases.iter().zip(blocks).enumerate() {
-                    let pat = i.to_string();
-                    let block = if case.ty.is_some() {
-                        format!("({block})")
-                    } else {
-                        String::new()
-                    };
-                    let case = case.name.to_upper_camel_case();
                     if i == variant.cases.len() - 1 {
-                        result.push_str("#[cfg(debug_assertions)]");
-                        result.push_str(&format!("{pat} => {name}::{case}{block},\n"));
-                        result.push_str("#[cfg(not(debug_assertions))]");
-                        result.push_str(&format!("_ => {name}::{case}{block},\n"));
+                        uwriteln!(
+                            self.src,
+                            "n => {{
+                                debug_assert_eq!(n, {i}, \"invalid enum discriminant\");\
+                            "
+                        );
                     } else {
-                        result.push_str(&format!("{pat} => {name}::{case}{block},\n"));
+                        uwriteln!(self.src, "{i} => {{");
                     }
+                    let case_name = case.name.to_upper_camel_case();
+                    if case.ty.is_none() {
+                        uwriteln!(self.src, "{name}::{case_name}");
+                    } else {
+                        uwriteln!(self.src, "let e{tmp} = {block};");
+                        uwriteln!(self.src, "{name}::{case_name}(e{tmp})");
+                    }
+                    uwriteln!(self.src, "}}");
                 }
-                result.push_str("#[cfg(debug_assertions)]");
-                result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
-                result.push_str("}");
-                result.push_str("}");
-
-                result.push_str("}");
-                results.push(result);
+                uwriteln!(self.src, "}};");
+                results.push(format!("v{tmp}"));
             }
 
             Instruction::UnionLower {
@@ -1838,7 +1839,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .drain(self.blocks.len() - union.cases.len()..)
                     .collect::<Vec<_>>();
                 let op0 = &operands[0];
-                let mut result = format!("match {op0} {{\n");
+                let tmp = self.tmp();
+                let name = self.typename_lift(*ty);
+                let name = if name.contains("::") {
+                    uwriteln!(self.src, "use {name} as V{tmp};");
+                    format!("V{tmp}")
+                } else {
+                    name
+                };
+                uwriteln!(self.src, "let v{tmp} = match {op0} {{");
                 for (i, (case_name, block)) in self
                     .gen
                     .union_case_names(union)
@@ -1846,21 +1855,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .zip(blocks)
                     .enumerate()
                 {
-                    let pat = i.to_string();
-                    let name = self.typename_lift(*ty);
                     if i == union.cases.len() - 1 {
-                        result.push_str("#[cfg(debug_assertions)]");
-                        result.push_str(&format!("{pat} => {name}::{case_name}({block}),\n"));
-                        result.push_str("#[cfg(not(debug_assertions))]");
-                        result.push_str(&format!("_ => {name}::{case_name}({block}),\n"));
+                        uwriteln!(
+                            self.src,
+                            "n => {{
+                                debug_assert_eq!(n, {i}, \"invalid enum discriminant\");\
+                            "
+                        );
                     } else {
-                        result.push_str(&format!("{pat} => {name}::{case_name}({block}),\n"));
+                        uwriteln!(self.src, "{i} => {{");
                     }
+                    uwriteln!(self.src, "let e{tmp} = {block};");
+                    uwriteln!(self.src, "{name}::{case_name}(e{tmp})");
+                    uwriteln!(self.src, "}}");
                 }
-                result.push_str("#[cfg(debug_assertions)]");
-                result.push_str("_ => panic!(\"invalid union discriminant\"),\n");
-                result.push_str("}");
-                results.push(result);
+                uwriteln!(self.src, "}};");
+                results.push(format!("v{tmp}"));
             }
 
             Instruction::OptionLower {
@@ -1887,12 +1897,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!(
                     "match {operand} {{
                         0 => None,
-                        1 => Some({some}),
-                        #[cfg(not(debug_assertions))]
-                        _ => ::core::hint::unreachable_unchecked(),
-                        #[cfg(debug_assertions)]
-                        _ => panic!(\"invalid enum discriminant\"),
-                    }}"
+                        1 => {{
+                            let e = {some};
+                            Some(e)
+                        }}
+                        _ => {rt}::invalid_enum_discriminant(),
+                    }}",
+                    rt = self.gen.gen.runtime_path(),
                 ));
             }
 
@@ -1921,60 +1932,29 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let operand = &operands[0];
                 results.push(format!(
                     "match {operand} {{
-                        0 => Ok({ok}),
-                        1 => Err({err}),
-                        #[cfg(not(debug_assertions))]
-                        _ => ::core::hint::unreachable_unchecked(),
-                        #[cfg(debug_assertions)]
-                        _ => panic!(\"invalid enum discriminant\"),
-                    }}"
+                        0 => {{
+                            let e = {ok};
+                            Ok(e)
+                        }}
+                        1 => {{
+                            let e = {err};
+                            Err(e)
+                        }}
+                        _ => {rt}::invalid_enum_discriminant(),
+                    }}",
+                    rt = self.gen.gen.runtime_path(),
                 ));
             }
 
-            Instruction::EnumLower { enum_, ty, .. } => {
-                let mut result = format!("match {} {{\n", operands[0]);
-                let name = self.gen.type_path(*ty, true);
-                for (i, case) in enum_.cases.iter().enumerate() {
-                    let case = case.name.to_upper_camel_case();
-                    result.push_str(&format!("{name}::{case} => {i},\n"));
-                }
-                result.push_str("}");
-                results.push(result);
+            Instruction::EnumLower { .. } => {
+                results.push(format!("{}.clone() as i32", operands[0]));
             }
 
             Instruction::EnumLift { enum_, ty, .. } => {
-                let mut result = String::new();
-                result.push_str("{");
-
-                // In checked mode do a `match`.
-                result.push_str("#[cfg(debug_assertions)]");
-                result.push_str("{");
-                result.push_str("match ");
-                result.push_str(&operands[0]);
-                result.push_str(" {\n");
                 let name = self.gen.type_path(*ty, true);
-                for (i, case) in enum_.cases.iter().enumerate() {
-                    let case = case.name.to_upper_camel_case();
-                    result.push_str(&format!("{i} => {name}::{case},\n"));
-                }
-                result.push_str("_ => panic!(\"invalid enum discriminant\"),\n");
-                result.push_str("}");
-                result.push_str("}");
-
-                // In unchecked mode when this type is a named enum then we know we
-                // defined the type so we can transmute directly into it.
-                result.push_str("#[cfg(not(debug_assertions))]");
-                result.push_str("{");
-                result.push_str("::core::mem::transmute::<_, ");
-                result.push_str(&self.gen.type_path(*ty, true));
-                result.push_str(">(");
-                result.push_str(&operands[0]);
-                result.push_str(" as ");
-                result.push_str(int_repr(enum_.tag()));
-                result.push_str(")");
-                result.push_str("}");
-
-                result.push_str("}");
+                let repr = int_repr(enum_.tag());
+                let op = &operands[0];
+                let result = format!("{name}::_lift({op} as {repr})");
                 results.push(result);
             }
 
@@ -2032,29 +2012,19 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::StringLift => {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
-                self.push_str(&format!("let {} = {} as usize;\n", len, operands[1]));
-                let result = format!(
-                    "Vec::from_raw_parts({} as *mut _, {1}, {1})",
-                    operands[0], len
+                uwriteln!(self.src, "let {len} = {} as usize;", operands[1]);
+                uwriteln!(
+                    self.src,
+                    "let bytes{tmp} = Vec::from_raw_parts({} as *mut _, {len}, {len});",
+                    operands[0],
                 );
                 if self.gen.gen.opts.raw_strings {
-                    results.push(result);
+                    results.push(format!("bytes{tmp}"));
                 } else {
-                    let mut converted = String::new();
-                    converted.push_str("{");
-
-                    converted.push_str("#[cfg(not(debug_assertions))]");
-                    converted.push_str("{");
-                    converted.push_str(&format!("String::from_utf8_unchecked({})", result));
-                    converted.push_str("}");
-
-                    converted.push_str("#[cfg(debug_assertions)]");
-                    converted.push_str("{");
-                    converted.push_str(&format!("String::from_utf8({}).unwrap()", result));
-                    converted.push_str("}");
-
-                    converted.push_str("}");
-                    results.push(converted);
+                    results.push(format!(
+                        "{}::string_lift(bytes{tmp})",
+                        self.gen.gen.runtime_path()
+                    ));
                 }
             }
 
@@ -2087,7 +2057,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "let base = {result} as i32 + (i as i32) * {size};\n",
                 ));
                 self.push_str(&body);
-                self.push_str("}\n");
+                self.push_str("\n}\n");
                 results.push(format!("{result} as i32"));
                 results.push(len);
 
@@ -2119,19 +2089,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     "let mut {result} = Vec::with_capacity({len} as usize);\n",
                 ));
 
-                self.push_str("for i in 0..");
-                self.push_str(&len);
-                self.push_str(" {\n");
-                self.push_str("let base = ");
-                self.push_str(&base);
-                self.push_str(" + i *");
-                self.push_str(&size.to_string());
-                self.push_str(";\n");
-                self.push_str(&result);
-                self.push_str(".push(");
-                self.push_str(&body);
-                self.push_str(");\n");
-                self.push_str("}\n");
+                uwriteln!(self.src, "for i in 0..{len} {{");
+                uwriteln!(self.src, "let base = {base} + i * {size};");
+                uwriteln!(self.src, "let e{tmp} = {body};");
+                uwriteln!(self.src, "{result}.push(e{tmp});");
+                uwriteln!(self.src, "}}");
                 results.push(result);
                 self.push_str(&format!(
                     "{rt}::dealloc({base}, ({len} as usize) * {size}, {align});\n",
@@ -2221,40 +2183,76 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::I32Load { offset } => {
-                results.push(format!("*(({} + {}) as *const i32)", operands[0], offset));
+                let tmp = self.tmp();
+                uwriteln!(
+                    self.src,
+                    "let l{tmp} = *(({} + {offset}) as *const i32);",
+                    operands[0]
+                );
+                results.push(format!("l{tmp}"));
             }
             Instruction::I32Load8U { offset } => {
-                results.push(format!(
-                    "i32::from(*(({} + {}) as *const u8))",
-                    operands[0], offset
-                ));
+                let tmp = self.tmp();
+                uwriteln!(
+                    self.src,
+                    "let l{tmp} = i32::from(*(({} + {offset}) as *const u8));",
+                    operands[0]
+                );
+                results.push(format!("l{tmp}"));
             }
             Instruction::I32Load8S { offset } => {
-                results.push(format!(
-                    "i32::from(*(({} + {}) as *const i8))",
-                    operands[0], offset
-                ));
+                let tmp = self.tmp();
+                uwriteln!(
+                    self.src,
+                    "let l{tmp} = i32::from(*(({} + {offset}) as *const i8));",
+                    operands[0]
+                );
+                results.push(format!("l{tmp}"));
             }
             Instruction::I32Load16U { offset } => {
-                results.push(format!(
-                    "i32::from(*(({} + {}) as *const u16))",
-                    operands[0], offset
-                ));
+                let tmp = self.tmp();
+                uwriteln!(
+                    self.src,
+                    "let l{tmp} = i32::from(*(({} + {offset}) as *const u16));",
+                    operands[0]
+                );
+                results.push(format!("l{tmp}"));
             }
             Instruction::I32Load16S { offset } => {
-                results.push(format!(
-                    "i32::from(*(({} + {}) as *const i16))",
-                    operands[0], offset
-                ));
+                let tmp = self.tmp();
+                uwriteln!(
+                    self.src,
+                    "let l{tmp} = i32::from(*(({} + {offset}) as *const i16));",
+                    operands[0]
+                );
+                results.push(format!("l{tmp}"));
             }
             Instruction::I64Load { offset } => {
-                results.push(format!("*(({} + {}) as *const i64)", operands[0], offset));
+                let tmp = self.tmp();
+                uwriteln!(
+                    self.src,
+                    "let l{tmp} = *(({} + {offset}) as *const i64);",
+                    operands[0]
+                );
+                results.push(format!("l{tmp}"));
             }
             Instruction::F32Load { offset } => {
-                results.push(format!("*(({} + {}) as *const f32)", operands[0], offset));
+                let tmp = self.tmp();
+                uwriteln!(
+                    self.src,
+                    "let l{tmp} = *(({} + {offset}) as *const f32);",
+                    operands[0]
+                );
+                results.push(format!("l{tmp}"));
             }
             Instruction::F64Load { offset } => {
-                results.push(format!("*(({} + {}) as *const f64)", operands[0], offset));
+                let tmp = self.tmp();
+                uwriteln!(
+                    self.src,
+                    "let l{tmp} = *(({} + {offset}) as *const f64);",
+                    operands[0]
+                );
+                results.push(format!("l{tmp}"));
             }
             Instruction::I32Store { offset } => {
                 self.push_str(&format!(
