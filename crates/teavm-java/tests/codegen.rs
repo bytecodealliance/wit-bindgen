@@ -13,6 +13,8 @@ macro_rules! codegen_test {
     (resource_local_alias $name:tt $test:tt) => {};
     (resource_local_alias_borrow $name:tt $test:tt) => {};
     (resource_local_alias_borrow_import $name:tt $test:tt) => {};
+    (resource_borrow_in_record $name:tt $test:tt) => {};
+    (resource_borrow_in_record_export $name:tt $test:tt) => {};
 
     ($id:ident $name:tt $test:tt) => {
         #[test]

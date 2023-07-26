@@ -11,6 +11,7 @@ pub enum TypeMode {
     Owned,
     AllBorrowed(&'static str),
     LeafBorrowed(&'static str),
+    HandlesBorrowed(&'static str),
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -262,7 +263,7 @@ pub trait RustGenerator<'a> {
                 TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) => {
                     self.print_borrowed_str(lt)
                 }
-                TypeMode::Owned => {
+                TypeMode::Owned | TypeMode::HandlesBorrowed(_) => {
                     if self.use_raw_strings() {
                         self.push_vec_name();
                         self.push_str("::<u8>");
@@ -311,8 +312,11 @@ pub trait RustGenerator<'a> {
             // context and don't want ownership of the type but we're using an
             // owned type definition. Inject a `&` in front to indicate that, at
             // the API level, ownership isn't required.
-            if info.has_list && lt.is_none() {
-                if let TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) = mode {
+            if (info.has_list || info.has_borrow_handle) && lt.is_none() {
+                if let TypeMode::AllBorrowed(lt)
+                | TypeMode::LeafBorrowed(lt)
+                | TypeMode::HandlesBorrowed(lt) = mode
+                {
                     self.push_str("&");
                     if lt != "'_" {
                         self.push_str(lt);
@@ -326,7 +330,8 @@ pub trait RustGenerator<'a> {
             // If the type recursively owns data and it's a
             // variant/record/list, then we need to place the
             // lifetime parameter on the type as well.
-            if info.has_list && needs_generics(self.resolve(), &ty.kind) {
+            if (info.has_list || info.has_borrow_handle) && needs_generics(self.resolve(), &ty.kind)
+            {
                 self.print_generics(lt);
             }
 
@@ -349,6 +354,7 @@ pub trait RustGenerator<'a> {
                         needs_generics(resolve, &resolve.types[*t].kind)
                     }
                     TypeDefKind::Type(Type::String) => true,
+                    TypeDefKind::Handle(Handle::Borrow(_)) => true,
                     TypeDefKind::Resource | TypeDefKind::Handle(_) | TypeDefKind::Type(_) => false,
                     TypeDefKind::Unknown => unreachable!(),
                 }
@@ -420,6 +426,15 @@ pub trait RustGenerator<'a> {
 
             TypeDefKind::Handle(Handle::Borrow(ty)) => {
                 self.push_str("&");
+                if let TypeMode::AllBorrowed(lt)
+                | TypeMode::LeafBorrowed(lt)
+                | TypeMode::HandlesBorrowed(lt) = mode
+                {
+                    if lt != "'_" {
+                        self.push_str(lt);
+                        self.push_str(" ");
+                    }
+                }
                 if self.is_exported_resource(*ty) {
                     self.push_str(&self.type_path_with_name(
                         *ty,
@@ -445,7 +460,11 @@ pub trait RustGenerator<'a> {
 
     fn print_list(&mut self, ty: &Type, mode: TypeMode) {
         let next_mode = if matches!(self.ownership(), Ownership::Owning) {
-            TypeMode::Owned
+            if let TypeMode::HandlesBorrowed(_) = mode {
+                mode
+            } else {
+                TypeMode::Owned
+            }
         } else {
             mode
         };
@@ -463,7 +482,7 @@ pub trait RustGenerator<'a> {
                     self.push_str(">");
                 }
             }
-            TypeMode::Owned => {
+            TypeMode::Owned | TypeMode::HandlesBorrowed(_) => {
                 self.push_vec_name();
                 self.push_str("::<");
                 self.print_ty(ty, next_mode);
@@ -514,7 +533,11 @@ pub trait RustGenerator<'a> {
         let mut result = Vec::new();
         let first_mode =
             if info.owned || !info.borrowed || matches!(self.ownership(), Ownership::Owning) {
-                TypeMode::Owned
+                if info.has_borrow_handle {
+                    TypeMode::HandlesBorrowed("'a")
+                } else {
+                    TypeMode::Owned
+                }
             } else {
                 assert!(!self.uses_two_names(&info));
                 TypeMode::AllBorrowed("'a")
@@ -1166,13 +1189,18 @@ pub trait RustGenerator<'a> {
     }
 
     fn lifetime_for(&self, info: &TypeInfo, mode: TypeMode) -> Option<&'static str> {
+        let lt = match mode {
+            TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s) | TypeMode::HandlesBorrowed(s) => {
+                s
+            }
+            _ => return None,
+        };
+        if info.has_borrow_handle {
+            return Some(lt);
+        }
         if matches!(self.ownership(), Ownership::Owning) {
             return None;
         }
-        let lt = match mode {
-            TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s) => s,
-            _ => return None,
-        };
         // No lifetimes needed unless this has a list.
         if !info.has_list {
             return None;

@@ -406,7 +406,7 @@ impl WorldGenerator for RustWasm {
         );
 
         if self.opts.stubs {
-            self.src.push_str("\npub struct Stub;\n");
+            self.src.push_str("\n#[derive(Debug)]\npub struct Stub;\n");
             let world_id = world;
             let world = &resolve.worlds[world];
             let mut funcs = Vec::new();
