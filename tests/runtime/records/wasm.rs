@@ -46,7 +46,6 @@ impl Records for Component {
         assert_eq!(r.a, 0);
         assert_eq!(r.b, F1::A | F1::B);
 
-        assert_eq!(tuple0(()), ());
         assert_eq!(tuple1((1,)), (1,));
     }
 }
@@ -80,8 +79,6 @@ impl Test for Component {
     fn roundtrip_record1(a: R1) -> R1 {
         a
     }
-
-    fn tuple0(_: ()) {}
 
     fn tuple1(a: (u8,)) -> (u8,) {
         (a.0,)

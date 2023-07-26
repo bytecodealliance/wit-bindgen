@@ -47,10 +47,6 @@ impl test_imports::Host for MyImports {
         Ok(a)
     }
 
-    fn tuple0(&mut self, _: ()) -> Result<()> {
-        Ok(())
-    }
-
     fn tuple1(&mut self, a: (u8,)) -> Result<(u8,)> {
         Ok((a.0,))
     }
@@ -118,7 +114,6 @@ fn run_test(exports: Records, store: &mut Store<crate::Wasi<MyImports>>) -> Resu
     assert_eq!(r.a, 0);
     assert_eq!(r.b, F1::A | F1::B);
 
-    assert_eq!(exports.call_tuple0(&mut *store, ())?, ());
     assert_eq!(exports.call_tuple1(&mut *store, (1,))?, (1,));
     Ok(())
 }

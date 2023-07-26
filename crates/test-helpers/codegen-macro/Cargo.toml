@@ -12,4 +12,4 @@ test = false
 
 [dependencies]
 heck = { workspace = true }
-quote = "1.0.29"
+quote = "1.0.32"

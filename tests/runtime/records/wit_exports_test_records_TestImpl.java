@@ -1,6 +1,5 @@
 package wit.exports.test.records;
 
-import wit.worlds.Records.Tuple0;
 import wit.worlds.Records.Tuple1;
 import wit.worlds.Records.Tuple2;
 import wit.worlds.Records.Tuple4;
@@ -29,10 +28,6 @@ public class TestImpl {
     }
 
     public static Test.R1 roundtripRecord1(Test.R1 a) {
-        return a;
-    }
-
-    public static Tuple0 tuple0(Tuple0 a) {
         return a;
     }
 
