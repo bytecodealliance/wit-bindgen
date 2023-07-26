@@ -1,3 +1,4 @@
+use anyhow::Result;
 use heck::{ToLowerCamelCase, ToShoutySnakeCase, ToUpperCamelCase};
 use std::{
     collections::{HashMap, HashSet},
@@ -132,7 +133,7 @@ impl WorldGenerator for TeaVmJava {
         key: &WorldKey,
         id: InterfaceId,
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = interface_name(resolve, key, Direction::Export);
         self.interface_names.insert(id, name.clone());
         let mut gen = self.interface(resolve, &name);
@@ -143,6 +144,7 @@ impl WorldGenerator for TeaVmJava {
         }
 
         gen.add_interface_fragment();
+        Ok(())
     }
 
     fn export_funcs(
@@ -151,7 +153,7 @@ impl WorldGenerator for TeaVmJava {
         world: WorldId,
         funcs: &[(&str, &Function)],
         _files: &mut Files,
-    ) {
+    ) -> Result<()> {
         let name = world_name(resolve, world);
         let mut gen = self.interface(resolve, &name);
 
@@ -160,9 +162,10 @@ impl WorldGenerator for TeaVmJava {
         }
 
         gen.add_world_fragment();
+        Ok(())
     }
 
-    fn export_types(
+    fn import_types(
         &mut self,
         resolve: &Resolve,
         world: WorldId,
@@ -884,6 +887,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         );
     }
 
+    fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs) {
+        _ = (id, name, docs);
+        todo!()
+    }
+
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
         self.print_docs(docs);
 
@@ -1388,6 +1396,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     ));
                 }
             },
+
+            Instruction::HandleLower { .. } | Instruction::HandleLift { .. } => todo!(),
 
             Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
@@ -2078,10 +2088,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "Memory.free(Address.fromInt({address}), ({length}) * {size}, {align});"
                 );
-            }
-
-            Instruction::HandleLift { .. } | Instruction::HandleLower { .. } => {
-                todo!("implement resources")
             }
         }
     }

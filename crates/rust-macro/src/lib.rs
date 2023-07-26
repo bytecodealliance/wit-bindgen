@@ -60,12 +60,18 @@ impl Parse for Config {
                     }
                     Opt::UseStdFeature => opts.std_feature = true,
                     Opt::RawStrings => opts.raw_strings = true,
-                    Opt::MacroExport => opts.macro_export = true,
                     Opt::Ownership(ownership) => opts.ownership = ownership,
-                    Opt::MacroCallPrefix(prefix) => opts.macro_call_prefix = Some(prefix.value()),
-                    Opt::ExportMacroName(name) => opts.export_macro_name = Some(name.value()),
                     Opt::Skip(list) => opts.skip.extend(list.iter().map(|i| i.value())),
                     Opt::RuntimePath(path) => opts.runtime_path = Some(path.value()),
+                    Opt::Exports(exports) => opts.exports.extend(
+                        exports
+                            .into_iter()
+                            .map(|export| (export.key.into(), serialize(export.value))),
+                    ),
+                    Opt::Stubs => {
+                        opts.stubs = true;
+                    }
+                    Opt::ExportPrefix(prefix) => opts.export_prefix = Some(prefix.value()),
                 }
             }
         } else {
@@ -117,9 +123,10 @@ fn parse_source(source: &Option<Source>) -> anyhow::Result<(Resolve, PackageId, 
 impl Config {
     fn expand(self) -> Result<TokenStream> {
         let mut files = Default::default();
-        self.opts
-            .build()
-            .generate(&self.resolve, self.world, &mut files);
+        let mut generator = self.opts.build();
+        generator
+            .generate(&self.resolve, self.world, &mut files)
+            .map_err(|e| Error::new(Span::call_site(), e))?;
         let (_, src) = files.iter().next().unwrap();
         let src = std::str::from_utf8(src).unwrap();
         let mut contents = src.parse::<TokenStream>().unwrap();
@@ -141,15 +148,57 @@ impl Config {
 mod kw {
     syn::custom_keyword!(std_feature);
     syn::custom_keyword!(raw_strings);
-    syn::custom_keyword!(macro_export);
-    syn::custom_keyword!(macro_call_prefix);
-    syn::custom_keyword!(export_macro_name);
     syn::custom_keyword!(skip);
     syn::custom_keyword!(world);
     syn::custom_keyword!(path);
     syn::custom_keyword!(inline);
     syn::custom_keyword!(ownership);
     syn::custom_keyword!(runtime_path);
+    syn::custom_keyword!(exports);
+    syn::custom_keyword!(stubs);
+    syn::custom_keyword!(export_prefix);
+}
+
+#[derive(Clone)]
+enum ExportKey {
+    World,
+    Name(syn::LitStr),
+}
+
+impl Parse for ExportKey {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let l = input.lookahead1();
+        Ok(if l.peek(kw::world) {
+            input.parse::<kw::world>()?;
+            Self::World
+        } else {
+            Self::Name(input.parse()?)
+        })
+    }
+}
+
+impl From<ExportKey> for wit_bindgen_rust::ExportKey {
+    fn from(key: ExportKey) -> Self {
+        match key {
+            ExportKey::World => Self::World,
+            ExportKey::Name(s) => Self::Name(s.value()),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct Export {
+    key: ExportKey,
+    value: syn::Path,
+}
+
+impl Parse for Export {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let key = input.parse()?;
+        input.parse::<Token![:]>()?;
+        let value = input.parse()?;
+        Ok(Self { key, value })
+    }
 }
 
 enum Opt {
@@ -158,12 +207,12 @@ enum Opt {
     Inline(syn::LitStr),
     UseStdFeature,
     RawStrings,
-    MacroExport,
-    MacroCallPrefix(syn::LitStr),
-    ExportMacroName(syn::LitStr),
     Skip(Vec<syn::LitStr>),
     Ownership(Ownership),
     RuntimePath(syn::LitStr),
+    Exports(Vec<Export>),
+    Stubs,
+    ExportPrefix(syn::LitStr),
 }
 
 impl Parse for Opt {
@@ -187,9 +236,6 @@ impl Parse for Opt {
         } else if l.peek(kw::raw_strings) {
             input.parse::<kw::raw_strings>()?;
             Ok(Opt::RawStrings)
-        } else if l.peek(kw::macro_export) {
-            input.parse::<kw::macro_export>()?;
-            Ok(Opt::MacroExport)
         } else if l.peek(kw::ownership) {
             input.parse::<kw::ownership>()?;
             input.parse::<Token![:]>()?;
@@ -228,14 +274,13 @@ impl Parse for Opt {
                     ));
                 }
             }))
-        } else if l.peek(kw::macro_call_prefix) {
-            input.parse::<kw::macro_call_prefix>()?;
+        } else if l.peek(kw::exports) {
+            input.parse::<kw::exports>()?;
             input.parse::<Token![:]>()?;
-            Ok(Opt::MacroCallPrefix(input.parse()?))
-        } else if l.peek(kw::export_macro_name) {
-            input.parse::<kw::export_macro_name>()?;
-            input.parse::<Token![:]>()?;
-            Ok(Opt::ExportMacroName(input.parse()?))
+            let contents;
+            syn::braced!(contents in input);
+            let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
+            Ok(Opt::Exports(list.iter().cloned().collect()))
         } else if l.peek(kw::skip) {
             input.parse::<kw::skip>()?;
             input.parse::<Token![:]>()?;
@@ -247,8 +292,35 @@ impl Parse for Opt {
             input.parse::<kw::runtime_path>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::RuntimePath(input.parse()?))
+        } else if l.peek(kw::stubs) {
+            input.parse::<kw::stubs>()?;
+            Ok(Opt::Stubs)
+        } else if l.peek(kw::export_prefix) {
+            input.parse::<kw::export_prefix>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::ExportPrefix(input.parse()?))
         } else {
             Err(l.error())
         }
+    }
+}
+
+fn serialize(path: syn::Path) -> String {
+    let serialized = path
+        .segments
+        .iter()
+        .map(|s| {
+            if s.arguments.is_none() {
+                s.ident.to_string()
+            } else {
+                todo!("support path arguments")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("::");
+    if path.leading_colon.is_some() {
+        format!("::{serialized}")
+    } else {
+        serialized
     }
 }

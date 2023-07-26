@@ -1,8 +1,11 @@
-wit_bindgen::generate!(in "../../tests/runtime/many_arguments");
+wit_bindgen::generate!({
+    path: "../../tests/runtime/many_arguments",
+    exports: {
+        world: Component
+    }
+});
 
 struct Component;
-
-export_many_arguments!(Component);
 
 impl ManyArguments for Component {
     fn many_arguments(

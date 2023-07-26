@@ -1,8 +1,11 @@
-wit_bindgen::generate!(in "../../tests/runtime/smoke");
+wit_bindgen::generate!({
+    path: "../../tests/runtime/smoke",
+    exports: {
+        world: Exports
+    }
+});
 
 struct Exports;
-
-export_smoke!(Exports);
 
 impl Smoke for Exports {
     fn thunk() {

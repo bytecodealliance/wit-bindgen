@@ -11,6 +11,7 @@ through the `wit-bindgen-cli` crate.
 """
 
 [dependencies]
+anyhow = { workspace = true }
 wit-bindgen-core = { workspace = true }
 wit-component = { workspace = true }
 wasm-metadata = { workspace = true }

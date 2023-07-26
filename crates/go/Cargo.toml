@@ -18,6 +18,7 @@ doctest = false
 [dependencies]
 wit-bindgen-core = { workspace = true }
 wit-component = { workspace = true }
+anyhow = { workspace = true }
 heck = { workspace = true }
 clap = { workspace = true, optional = true }
 wit-bindgen-c = { workspace = true }

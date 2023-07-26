@@ -1,10 +1,14 @@
-wit_bindgen::generate!(in "../../tests/runtime/unions");
+wit_bindgen::generate!({
+    path: "../../tests/runtime/unions",
+    exports: {
+        world: Component,
+        "test:unions/test": Component
+    }
+});
 
 use exports::test::unions::test::*;
 
 struct Component;
-
-export_unions!(Component);
 
 impl Unions for Component {
     fn test_imports() {

@@ -160,7 +160,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 opts.string_encoding = wit_component::StringEncoding::UTF16;
             }
         }
-        opts.build().generate(&resolve, world, &mut files);
+        opts.build().generate(&resolve, world, &mut files).unwrap();
 
         for (file, contents) in files.iter() {
             let dst = out_dir.join(file);
@@ -234,7 +234,8 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         let mut files = Default::default();
         wit_bindgen_go::Opts::default()
             .build()
-            .generate(&resolve, world, &mut files);
+            .generate(&resolve, world, &mut files)
+            .unwrap();
         let gen_dir = out_dir.join("gen");
         fs::create_dir_all(&gen_dir).unwrap();
         for (file, contents) in files.iter() {
@@ -328,7 +329,8 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
 
         wit_bindgen_teavm_java::Opts::default()
             .build()
-            .generate(&resolve, world, &mut files);
+            .generate(&resolve, world, &mut files)
+            .unwrap();
 
         let mut dst_files = Vec::new();
 

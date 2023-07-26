@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::collections::{btree_map::Entry, BTreeMap, HashMap};
 use std::fmt::{self, Write};
 use std::ops::Deref;
@@ -33,8 +34,14 @@ pub struct TypeInfo {
     /// error case in the result of a function.
     pub error: bool,
 
-    /// Whether or not this type (transitively) has a list.
+    /// Whether or not this type (transitively) has a list (or string).
     pub has_list: bool,
+
+    /// Whether or not this type (transitively) has a resource (or handle).
+    pub has_resource: bool,
+
+    /// Whether or not this type (transitively) has a borrow handle.
+    pub has_borrow_handle: bool,
 }
 
 impl std::ops::BitOrAssign for TypeInfo {
@@ -43,6 +50,8 @@ impl std::ops::BitOrAssign for TypeInfo {
         self.owned |= rhs.owned;
         self.error |= rhs.error;
         self.has_list |= rhs.has_list;
+        self.has_resource |= rhs.has_resource;
+        self.has_borrow_handle |= rhs.has_borrow_handle;
     }
 }
 
@@ -142,6 +151,13 @@ impl Types {
                     info |= self.type_info(resolve, &field.ty);
                 }
             }
+            TypeDefKind::Resource => {
+                info.has_resource = true;
+            }
+            TypeDefKind::Handle(handle) => {
+                info.has_borrow_handle = matches!(handle, Handle::Borrow(_));
+                info.has_resource = true;
+            }
             TypeDefKind::Tuple(t) => {
                 for ty in t.types.iter() {
                     info |= self.type_info(resolve, ty);
@@ -179,9 +195,6 @@ impl Types {
             TypeDefKind::Stream(stream) => {
                 info = self.optional_type_info(resolve, stream.element.as_ref());
                 info |= self.optional_type_info(resolve, stream.end.as_ref());
-            }
-            TypeDefKind::Resource | TypeDefKind::Handle(_) => {
-                todo!("implement resources")
             }
             TypeDefKind::Unknown => unreachable!(),
         }
@@ -399,7 +412,7 @@ mod tests {
 }
 
 pub trait WorldGenerator {
-    fn generate(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
+    fn generate(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) -> Result<()> {
         let world = &resolve.worlds[id];
         self.preprocess(resolve, id);
 
@@ -420,12 +433,14 @@ pub trait WorldGenerator {
             }
         }
         if !types.is_empty() {
-            self.export_types(resolve, id, &types, files);
+            self.import_types(resolve, id, &types, files);
         }
         if !funcs.is_empty() {
             self.import_funcs(resolve, id, &funcs, files);
         }
         funcs.clear();
+
+        self.finish_imports(resolve, id, files);
 
         // First generate bindings for any freestanding functions, if any. If
         // these refer to types defined in the world they need to refer to the
@@ -442,12 +457,17 @@ pub trait WorldGenerator {
             }
         }
         if !funcs.is_empty() {
-            self.export_funcs(resolve, id, &funcs, files);
+            self.export_funcs(resolve, id, &funcs, files)?;
         }
         for (name, id) in interfaces {
-            self.export_interface(resolve, name, *id, files);
+            self.export_interface(resolve, name, *id, files)?;
         }
         self.finish(resolve, id, files);
+        Ok(())
+    }
+
+    fn finish_imports(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
+        let _ = (resolve, world, files);
     }
 
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
@@ -467,7 +487,7 @@ pub trait WorldGenerator {
         name: &WorldKey,
         iface: InterfaceId,
         files: &mut Files,
-    );
+    ) -> Result<()>;
     fn import_funcs(
         &mut self,
         resolve: &Resolve,
@@ -481,8 +501,8 @@ pub trait WorldGenerator {
         world: WorldId,
         funcs: &[(&str, &Function)],
         files: &mut Files,
-    );
-    fn export_types(
+    ) -> Result<()>;
+    fn import_types(
         &mut self,
         resolve: &Resolve,
         world: WorldId,
@@ -504,6 +524,7 @@ pub trait InterfaceGenerator<'a> {
     fn resolve(&self) -> &'a Resolve;
 
     fn type_record(&mut self, id: TypeId, name: &str, record: &Record, docs: &Docs);
+    fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs);
     fn type_flags(&mut self, id: TypeId, name: &str, flags: &Flags, docs: &Docs);
     fn type_tuple(&mut self, id: TypeId, name: &str, flags: &Tuple, docs: &Docs);
     fn type_variant(&mut self, id: TypeId, name: &str, variant: &Variant, docs: &Docs);
@@ -526,6 +547,8 @@ pub trait InterfaceGenerator<'a> {
         let ty = &self.resolve().types[id];
         match &ty.kind {
             TypeDefKind::Record(record) => self.type_record(id, name, record, &ty.docs),
+            // TODO: use real docs when they're available:
+            TypeDefKind::Resource => self.type_resource(id, name, &Docs::default()),
             TypeDefKind::Flags(flags) => self.type_flags(id, name, flags, &ty.docs),
             TypeDefKind::Tuple(tuple) => self.type_tuple(id, name, tuple, &ty.docs),
             TypeDefKind::Enum(enum_) => self.type_enum(id, name, enum_, &ty.docs),
@@ -537,9 +560,7 @@ pub trait InterfaceGenerator<'a> {
             TypeDefKind::Type(t) => self.type_alias(id, name, t, &ty.docs),
             TypeDefKind::Future(_) => todo!("generate for future"),
             TypeDefKind::Stream(_) => todo!("generate for stream"),
-            TypeDefKind::Resource | TypeDefKind::Handle(_) => {
-                todo!("implement resources")
-            }
+            TypeDefKind::Handle(_) => todo!("generate for handle"),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
