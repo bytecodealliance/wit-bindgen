@@ -24,6 +24,11 @@ enum Direction {
 
 #[derive(Default)]
 struct ResourceInfo {
+    // Note that a resource can be both imported and exported (e.g. when
+    // importing and exporting the same interface which contains one or more
+    // resources).  In that case, this field will be `Import` while we're
+    // importing the interface and later change to `Export` while we're
+    // exporting the interface.
     direction: Direction,
     owned: bool,
     docs: Docs,

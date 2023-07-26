@@ -181,6 +181,16 @@ impl WorldGenerator for C {
         gen.interface = Some(id);
         if gen.gen.interfaces_with_types_printed.insert(id) {
             gen.types(id);
+        } else {
+            let iface = &resolve.interfaces[id];
+            for id in iface.types.values() {
+                if let TypeDefKind::Resource = &resolve.types[*id].kind {
+                    // This will require a substantial refactor so we can
+                    // generate two sets of types and helper functions, one for
+                    // the imported types and one for the exported types.
+                    todo!("importing and exporting the same interface containing a resource not yet supported");
+                }
+            }
         }
 
         for (i, (_name, func)) in resolve.interfaces[id].functions.iter().enumerate() {
