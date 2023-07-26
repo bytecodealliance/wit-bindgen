@@ -44,7 +44,6 @@ interface test {
   record r1 { a: u8, b: f1 }
   roundtrip-record1: func(a: r1) -> r1
 
-  tuple0: func(a: tuple<>) -> tuple<>
   tuple1: func(a: tuple<u8>) -> tuple<u8>
 }
 

@@ -1,6 +1,5 @@
 package wit.worlds;
 
-import wit.worlds.Records.Tuple0;
 import wit.worlds.Records.Tuple1;
 import wit.worlds.Records.Tuple2;
 import wit.worlds.Records.Tuple4;
@@ -58,8 +57,6 @@ public class RecordsImpl {
             expect(result.a == (byte) 0);
             expect(result.b.value == (byte) (Test.F1.A.value | Test.F1.B.value));
         }
-
-        Test.tuple0(Tuple0.INSTANCE);
 
         {
             Tuple1<Byte> result = Test.tuple1(new Tuple1<>((byte) 1));

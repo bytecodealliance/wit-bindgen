@@ -57,9 +57,8 @@ func (r *RecordImpl) TestImports() {
 		panic("TestRecordsTestRoundtripRecord1")
 	}
 
-	TestRecordsTestTuple0(TestRecordsTestTuple0T{})
 	if TestRecordsTestTuple1(TestRecordsTestTuple1U8T{1}).F0 != 1 {
-		panic("TestRecordsTestTuple0")
+		panic("TestRecordsTestTuple1")
 	}
 }
 
@@ -84,10 +83,6 @@ func (r *RecordImpl) RoundtripFlags3(a TestRecordsTestFlag8, b TestRecordsTestFl
 }
 
 func (r *RecordImpl) RoundtripRecord1(a TestRecordsTestR1) TestRecordsTestR1 {
-	return a
-}
-
-func (r *RecordImpl) Tuple0(a TestRecordsTestTuple0T) TestRecordsTestTuple0T {
 	return a
 }
 
