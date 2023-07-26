@@ -282,11 +282,17 @@ pub trait RustGenerator<'a> {
     }
 
     fn type_path(&self, id: TypeId, owned: bool) -> String {
-        let name = if owned {
-            self.result_name(id)
-        } else {
-            self.param_name(id)
-        };
+        self.type_path_with_name(
+            id,
+            if owned {
+                self.result_name(id)
+            } else {
+                self.param_name(id)
+            },
+        )
+    }
+
+    fn type_path_with_name(&self, id: TypeId, name: String) -> String {
         if let TypeOwner::Interface(id) = self.resolve().types[id].owner {
             if let Some(path) = self.path_to_interface(id) {
                 return format!("{path}::{name}");
@@ -414,7 +420,21 @@ pub trait RustGenerator<'a> {
 
             TypeDefKind::Handle(Handle::Borrow(ty)) => {
                 self.push_str("&");
-                self.print_ty(&Type::Id(*ty), mode);
+                if self.is_exported_resource(*ty) {
+                    self.push_str(&self.type_path_with_name(
+                        *ty,
+                        format!(
+                        "Rep{}",
+                        self.resolve().types[*ty]
+                            .name
+                            .as_deref()
+                            .unwrap()
+                            .to_upper_camel_case()
+                    ),
+                    ));
+                } else {
+                    self.print_ty(&Type::Id(*ty), mode);
+                }
             }
 
             TypeDefKind::Type(t) => self.print_ty(t, mode),
@@ -1050,15 +1070,43 @@ pub trait RustGenerator<'a> {
     }
 
     fn print_typedef_alias(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
-        let info = self.info(id);
-        for (name, mode) in self.modes_of(id) {
-            self.rustdoc(docs);
-            self.push_str(&format!("pub type {name}"));
-            let lt = self.lifetime_for(&info, mode);
-            self.print_generics(lt);
-            self.push_str(" = ");
-            self.print_ty(ty, mode);
-            self.push_str(";\n");
+        if self.is_exported_resource(id) {
+            let target = dealias(self.resolve(), id);
+            let ty = &self.resolve().types[target];
+            // TODO: We could wait until we know how a resource (and its
+            // aliases) is used prior to generating declarations.  For example,
+            // if only borrows are used, no need to generate the `Own{name}`
+            // version.
+            self.mark_resource_owned(target);
+            for prefix in ["Own", "Rep"] {
+                self.rustdoc(docs);
+                self.push_str(&format!(
+                    "pub type {prefix}{} = {};\n",
+                    self.resolve().types[id]
+                        .name
+                        .as_deref()
+                        .unwrap()
+                        .to_upper_camel_case(),
+                    self.type_path_with_name(
+                        target,
+                        format!(
+                            "{prefix}{}",
+                            ty.name.as_deref().unwrap().to_upper_camel_case()
+                        )
+                    )
+                ));
+            }
+        } else {
+            let info = self.info(id);
+            for (name, mode) in self.modes_of(id) {
+                self.rustdoc(docs);
+                self.push_str(&format!("pub type {name}"));
+                let lt = self.lifetime_for(&info, mode);
+                self.print_generics(lt);
+                self.push_str(" = ");
+                self.print_ty(ty, mode);
+                self.push_str(";\n");
+            }
         }
     }
 

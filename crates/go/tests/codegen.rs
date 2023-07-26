@@ -14,6 +14,7 @@ macro_rules! codegen_test {
     (resources_with_lists $name:tt $test:tt) => {};
     (resource_local_alias $name:tt $test:tt) => {};
     (resource_local_alias_borrow $name:tt $test:tt) => {};
+    (resource_local_alias_borrow_import $name:tt $test:tt) => {};
 
     ($id:ident $name:tt $test:tt) => {
         #[test]

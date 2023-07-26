@@ -585,7 +585,7 @@ impl InterfaceGenerator<'_> {
 
                     uwriteln!(
                         self.src,
-                        "use {path_to_root}{impl_name} as Rep{trait_name};"
+                        "pub use {path_to_root}{impl_name} as Rep{trait_name};"
                     );
                 } else {
                     let impl_name = impl_name.map_err(|s| anyhow!("{s}"))?;
