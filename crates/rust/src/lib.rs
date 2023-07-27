@@ -729,7 +729,8 @@ impl InterfaceGenerator<'_> {
     }
 
     fn finish_resource_export(&mut self, id: TypeId) {
-        let info = self.gen.resources.entry(id).or_default();
+        self.gen.resources.entry(id).or_default();
+        let info = &self.gen.resources[&id];
         let name = self.resolve.types[id].name.as_deref().unwrap();
         let camel = name.to_upper_camel_case();
         let snake = to_rust_ident(name);
@@ -739,6 +740,7 @@ impl InterfaceGenerator<'_> {
         } else {
             unreachable!()
         };
+        let rt = self.gen.runtime_path();
 
         uwriteln!(
             self.src,
@@ -749,7 +751,7 @@ impl InterfaceGenerator<'_> {
                     #[allow(non_snake_case)]
                     unsafe extern "C" fn __export_dtor_{snake}(arg0: i32) {{
                         #[allow(unused_imports)]
-                        use wit_bindgen::rt::boxed::Box;
+                        use {rt}::boxed::Box;
 
                         drop(Box::from_raw(::core::mem::transmute::<isize, *mut Rep{camel}>(
                             arg0.try_into().unwrap(),
@@ -781,7 +783,7 @@ impl InterfaceGenerator<'_> {
 
                         pub fn new(rep: Rep{camel}) -> Own{camel} {{
                             #[allow(unused_imports)]
-                            use wit_bindgen::rt::boxed::Box;
+                            use {rt}::boxed::Box;
 
                             unsafe {{
                                 #[cfg(target_arch = "wasm32")]
