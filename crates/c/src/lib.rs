@@ -5,9 +5,7 @@ use heck::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
 use std::mem;
-use wit_bindgen_core::wit_parser::abi::{
-    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
-};
+use wit_bindgen_core::abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType};
 use wit_bindgen_core::{
     uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Ns, WorldGenerator,
 };
@@ -1692,7 +1690,8 @@ impl InterfaceGenerator<'_> {
             f.locals.insert(ptr).unwrap();
         }
         f.src.push_str(&optional_adapters);
-        f.gen.resolve.call(
+        abi::call(
+            f.gen.resolve,
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
@@ -1761,7 +1760,8 @@ impl InterfaceGenerator<'_> {
         f.gen.src.c_adapters(") {\n");
 
         // Perform all lifting/lowering and append it to our src.
-        f.gen.resolve.call(
+        abi::call(
+            f.gen.resolve,
             AbiVariant::GuestExport,
             LiftLower::LiftArgsLowerResults,
             func,
@@ -1771,7 +1771,7 @@ impl InterfaceGenerator<'_> {
         self.src.c_adapters(&src);
         self.src.c_adapters("}\n");
 
-        if self.resolve.guest_export_needs_post_return(func) {
+        if abi::guest_export_needs_post_return(self.resolve, func) {
             uwriteln!(
                 self.src.c_fns,
                 "__attribute__((__weak__, __export_name__(\"cabi_post_{export_name}\")))"
@@ -1796,7 +1796,7 @@ impl InterfaceGenerator<'_> {
 
             let mut f = FunctionBindgen::new(self, c_sig, &import_name);
             f.params = params;
-            f.gen.resolve.post_return(func, &mut f);
+            abi::post_return(f.gen.resolve, func, &mut f);
             let FunctionBindgen { src, .. } = f;
             self.src.c_fns(&src);
             self.src.c_fns("}\n");

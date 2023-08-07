@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::iter::zip;
 use std::str::FromStr;
-use wit_bindgen_core::wit_parser::abi::{Bitcast, LiftLower, WasmType};
+use wit_bindgen_core::abi::{Bitcast, LiftLower, WasmType};
 use wit_bindgen_core::{wit_parser::*, TypeInfo, Types};
 
 #[derive(Debug, Copy, Clone, PartialEq)]

@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
-use wit_bindgen_core::wit_parser::abi::{AbiVariant, Bindgen, Instruction, LiftLower, WasmType};
+use wit_bindgen_core::abi::{self, AbiVariant, Bindgen, Instruction, LiftLower, WasmType};
 use wit_bindgen_core::{
     uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Source, TypeInfo, Types,
     WorldGenerator,
@@ -944,7 +944,8 @@ impl InterfaceGenerator<'_> {
         self.src.push_str("unsafe {\n");
 
         let mut f = FunctionBindgen::new(self, params, None);
-        f.gen.resolve.call(
+        abi::call(
+            f.gen.resolve,
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
@@ -1045,7 +1046,8 @@ impl InterfaceGenerator<'_> {
         );
 
         let mut f = FunctionBindgen::new(self, params, Some(trait_name));
-        f.gen.resolve.call(
+        abi::call(
+            f.gen.resolve,
             AbiVariant::GuestExport,
             LiftLower::LiftArgsLowerResults,
             func,
@@ -1060,7 +1062,7 @@ impl InterfaceGenerator<'_> {
         self.src.push_str(&String::from(src));
         self.src.push_str("}\n");
 
-        if self.resolve.guest_export_needs_post_return(func) {
+        if abi::guest_export_needs_post_return(self.resolve, func) {
             let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
             uwrite!(
                 self.src,
@@ -1081,7 +1083,7 @@ impl InterfaceGenerator<'_> {
             self.src.push_str(") {\n");
 
             let mut f = FunctionBindgen::new(self, params, Some(trait_name));
-            f.gen.resolve.post_return(func, &mut f);
+            abi::post_return(f.gen.resolve, func, &mut f);
             let FunctionBindgen {
                 needs_cleanup_list,
                 src,

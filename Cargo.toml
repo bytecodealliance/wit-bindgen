@@ -80,3 +80,8 @@ heck = { workspace = true }
 wasmtime = { version = "11", features = ['component-model'] }
 test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
+
+[patch.crates-io]
+wit-parser = { git = 'https://github.com/alexcrichton/wasm-tools', branch = 'probe-for-post-return' }
+wit-component = { git = 'https://github.com/alexcrichton/wasm-tools', branch = 'probe-for-post-return' }
+wasm-metadata = { git = 'https://github.com/alexcrichton/wasm-tools', branch = 'probe-for-post-return' }

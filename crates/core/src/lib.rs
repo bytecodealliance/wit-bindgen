@@ -5,8 +5,8 @@ use std::ops::Deref;
 use wit_parser::*;
 
 pub use wit_parser;
+pub mod abi;
 mod ns;
-
 pub use ns::Ns;
 
 #[derive(Default)]

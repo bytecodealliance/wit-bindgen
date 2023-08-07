@@ -1206,8 +1206,8 @@ name = "test-helpers"
 version = "0.0.0"
 dependencies = [
  "codegen-macro",
- "wasm-encoder 0.31.1",
- "wat",
+ "wasm-encoder 0.31.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wat 1.0.69 (registry+https://github.com/rust-lang/crates.io-index)",
  "wit-bindgen-core",
  "wit-component",
  "wit-parser 0.9.2",
@@ -1380,18 +1380,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm-encoder"
+version = "0.31.1"
+source = "git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return#8894db26819fb453848402668bdb26a63936620c"
+dependencies = [
+ "leb128",
+]
+
+[[package]]
 name = "wasm-metadata"
 version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be44e148f09a188971ec512250b3ae136029e2df586dd740586ce76a17ee657d"
+source = "git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return#8894db26819fb453848402668bdb26a63936620c"
 dependencies = [
  "anyhow",
  "indexmap 2.0.0",
  "serde",
  "serde_json",
  "spdx",
- "wasm-encoder 0.31.1",
- "wasmparser 0.110.0",
+ "wasm-encoder 0.31.1 (git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return)",
+ "wasmparser 0.110.0 (git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return)",
 ]
 
 [[package]]
@@ -1415,13 +1422,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasmparser"
+version = "0.110.0"
+source = "git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return#8894db26819fb453848402668bdb26a63936620c"
+dependencies = [
+ "indexmap 2.0.0",
+ "semver",
+]
+
+[[package]]
 name = "wasmprinter"
 version = "0.2.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42cd12ed4d96a984e4b598a17457f1126d01640cc7461afbb319642111ff9e7f"
 dependencies = [
  "anyhow",
- "wasmparser 0.110.0",
+ "wasmparser 0.110.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1458,7 +1474,7 @@ dependencies = [
  "wasmtime-jit",
  "wasmtime-runtime",
  "wasmtime-winch",
- "wat",
+ "wat 1.0.69 (registry+https://github.com/rust-lang/crates.io-index)",
  "windows-sys",
 ]
 
@@ -1710,7 +1726,18 @@ dependencies = [
  "leb128",
  "memchr",
  "unicode-width",
- "wasm-encoder 0.31.1",
+ "wasm-encoder 0.31.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "wast"
+version = "62.0.1"
+source = "git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return#8894db26819fb453848402668bdb26a63936620c"
+dependencies = [
+ "leb128",
+ "memchr",
+ "unicode-width",
+ "wasm-encoder 0.31.1 (git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return)",
 ]
 
 [[package]]
@@ -1719,7 +1746,15 @@ version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "842e15861d203fb4a96d314b0751cdeaf0f6f8b35e8d81d2953af2af5e44e637"
 dependencies = [
- "wast",
+ "wast 62.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "wat"
+version = "1.0.69"
+source = "git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return#8894db26819fb453848402668bdb26a63936620c"
+dependencies = [
+ "wast 62.0.1 (git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return)",
 ]
 
 [[package]]
@@ -1851,7 +1886,7 @@ dependencies = [
  "clap",
  "heck",
  "test-helpers",
- "wasm-encoder 0.31.1",
+ "wasm-encoder 0.31.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "wasm-metadata",
  "wit-bindgen-core",
  "wit-component",
@@ -1865,9 +1900,9 @@ dependencies = [
  "clap",
  "heck",
  "test-artifacts",
- "wasm-encoder 0.31.1",
+ "wasm-encoder 0.31.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "wasmtime",
- "wat",
+ "wat 1.0.69 (registry+https://github.com/rust-lang/crates.io-index)",
  "wit-bindgen-c",
  "wit-bindgen-core",
  "wit-bindgen-go",
@@ -1964,17 +1999,16 @@ dependencies = [
 [[package]]
 name = "wit-component"
 version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d843f4dfead0d465b09e8bfba4d3dcb1a1bcc857f87917d348c7fa401158bc5"
+source = "git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return#8894db26819fb453848402668bdb26a63936620c"
 dependencies = [
  "anyhow",
  "bitflags 2.3.3",
  "indexmap 2.0.0",
  "log",
- "wasm-encoder 0.31.1",
+ "wasm-encoder 0.31.1 (git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return)",
  "wasm-metadata",
- "wasmparser 0.110.0",
- "wat",
+ "wasmparser 0.110.0 (git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return)",
+ "wat 1.0.69 (git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return)",
  "wit-parser 0.9.2",
 ]
 
@@ -1997,8 +2031,7 @@ dependencies = [
 [[package]]
 name = "wit-parser"
 version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "541efa2046e544de53a9da1e2f6299e63079840360c9e106f1f8275a97771318"
+source = "git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return#8894db26819fb453848402668bdb26a63936620c"
 dependencies = [
  "anyhow",
  "id-arena",
