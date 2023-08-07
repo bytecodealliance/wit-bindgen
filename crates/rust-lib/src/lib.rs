@@ -893,7 +893,7 @@ pub trait RustGenerator<'a> {
                 self.push_str(
                     "fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {\n",
                 );
-                self.push_str("write!(f, \"{:?}\", self)");
+                self.push_str("write!(f, \"{:?}\", self)\n");
                 self.push_str("}\n");
                 self.push_str("}\n");
                 self.push_str("\n");
@@ -1069,7 +1069,7 @@ pub trait RustGenerator<'a> {
             self.push_str(
                 "{\nfn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {\n",
             );
-            self.push_str("write!(f, \"{} (error {})\", self.name(), *self as i32)");
+            self.push_str("write!(f, \"{} (error {})\", self.name(), *self as i32)\n");
             self.push_str("}\n");
             self.push_str("}\n");
             self.push_str("\n");
@@ -1294,12 +1294,12 @@ pub trait RustFunctionGenerator {
         results: &mut Vec<String>,
     ) {
         let mut result = self.typename_lift(id);
-        result.push_str("{");
+        result.push_str("{\n");
         for (field, val) in ty.fields.iter().zip(operands) {
             result.push_str(&to_rust_ident(&field.name));
-            result.push_str(":");
+            result.push_str(": ");
             result.push_str(&val);
-            result.push_str(", ");
+            result.push_str(",\n");
         }
         result.push_str("}");
         results.push(result);
