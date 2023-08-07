@@ -573,12 +573,11 @@ impl InterfaceGenerator<'_> {
                     path_to_root.push_str("super::");
                 }
                 if let Some(ty) = resource {
-                    let name = self.resolve.types[ty].name.as_deref().unwrap();
-                    let path = if let Some(path) = path {
-                        format!("{path}/{name}")
-                    } else {
-                        name.to_owned()
-                    };
+                    let path = format!(
+                        "{}/{}",
+                        path.expect("resources can only be exported from interfaces"),
+                        self.resolve.types[ty].name.as_deref().unwrap()
+                    );
                     let impl_name = self
                         .gen
                         .opts
@@ -608,7 +607,10 @@ impl InterfaceGenerator<'_> {
                 }
 
                 if let Some(ty) = resource {
-                    self.finish_resource_export(ty);
+                    self.finish_resource_export(
+                        ty,
+                        interface_name.expect("resources can only be exported from interfaces"),
+                    );
                 }
             }
         }
@@ -728,17 +730,16 @@ impl InterfaceGenerator<'_> {
         mem::take(&mut self.src).into()
     }
 
-    fn finish_resource_export(&mut self, id: TypeId) {
+    fn finish_resource_export(&mut self, id: TypeId, interface_name: &WorldKey) {
         self.gen.resources.entry(id).or_default();
         let info = &self.gen.resources[&id];
         let name = self.resolve.types[id].name.as_deref().unwrap();
         let camel = name.to_upper_camel_case();
         let snake = to_rust_ident(name);
         let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
-        let interface_name = if let TypeOwner::Interface(id) = self.resolve.types[id].owner {
-            &self.gen.interface_names[&id]
-        } else {
-            unreachable!()
+        let module = match &self.resolve.types[id].owner {
+            TypeOwner::Interface(_) => self.resolve.name_world_key(interface_name),
+            TypeOwner::World(_) | TypeOwner::None => unreachable!(),
         };
         let rt = self.gen.runtime_path();
 
@@ -747,7 +748,7 @@ impl InterfaceGenerator<'_> {
             r#"
                 const _: () = {{
                     #[doc(hidden)]
-                    #[export_name = "{export_prefix}{interface_name}#[dtor]{name}"]
+                    #[export_name = "{export_prefix}{module}#[dtor]{name}"]
                     #[allow(non_snake_case)]
                     unsafe extern "C" fn __export_dtor_{snake}(arg0: i32) {{
                         #[allow(unused_imports)]
@@ -787,7 +788,7 @@ impl InterfaceGenerator<'_> {
 
                             unsafe {{
                                 #[cfg(target_arch = "wasm32")]
-                                #[link(wasm_import_module = "[export]{interface_name}")]
+                                #[link(wasm_import_module = "[export]{module}")]
                                 extern "C" {{
                                     #[link_name = "[resource-new]{name}"]
                                     fn wit_import(_: i32) -> i32;
@@ -815,7 +816,7 @@ impl InterfaceGenerator<'_> {
                         fn deref(&self) -> &Rep{camel} {{
                             unsafe {{
                                 #[cfg(target_arch = "wasm32")]
-                                #[link(wasm_import_module = "[export]{interface_name}")]
+                                #[link(wasm_import_module = "[export]{module}")]
                                 extern "C" {{
                                     #[link_name = "[resource-rep]{name}"]
                                     fn wit_import(_: i32) -> i32;
@@ -835,7 +836,7 @@ impl InterfaceGenerator<'_> {
                         fn drop(&mut self) {{
                             unsafe {{
                                 #[cfg(target_arch = "wasm32")]
-                                #[link(wasm_import_module = "[export]{interface_name}")]
+                                #[link(wasm_import_module = "[export]{module}")]
                                 extern "C" {{
                                     #[link_name = "[resource-drop-own]{name}"]
                                     fn wit_import(_: i32);
