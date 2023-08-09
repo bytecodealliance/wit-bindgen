@@ -518,11 +518,12 @@ impl C {
             let namespace = self.owner_namespace(resolve, *id);
             let name = resolve.types[*id].name.as_deref().unwrap();
             let snake = name.to_snake_case();
+            let module = self.owner_wasm_namespace(resolve, *id);
 
             for s in [&mut *h_str, &mut *c_str] {
                 uwriteln!(
                     s,
-                    "\n// Functions for working with resource `{namespace}::{name}`"
+                    "\n// Functions for working with resource `{module}/{name}`"
                 );
             }
 
@@ -550,13 +551,12 @@ impl C {
             if let Some(own) = &info.own {
                 let own_namespace = self.owner_namespace(resolve, *own);
                 let own_name = format!("{own_namespace}_own_{snake}_t");
-                let wasm_namespace = self.owner_wasm_namespace(resolve, *id);
 
                 uwriteln!(h_str, "void {namespace}_{snake}_drop_own({own_name});");
 
                 uwriteln!(
                     c_str,
-                    r#"__attribute__((__import_module__("{wasm_namespace}"), __import_name__("[resource-drop-own]{name}")))
+                    r#"__attribute__((__import_module__("{module}"), __import_name__("[resource-drop-own]{name}")))
                        void __wasm_import_{namespace}_{snake}_drop_own(int32_t);
 
                        void {namespace}_{snake}_drop_own({own_name}{space}arg) {{
@@ -568,7 +568,6 @@ impl C {
             if let (Direction::Import, Some(borrow)) = (&info.direction, &info.borrow) {
                 let borrow_namespace = self.owner_namespace(resolve, *borrow);
                 let borrow_name = format!("{borrow_namespace}_borrow_{snake}_t");
-                let wasm_namespace = self.owner_wasm_namespace(resolve, *id);
 
                 uwriteln!(
                     h_str,
@@ -577,7 +576,7 @@ impl C {
 
                 uwriteln!(
                     c_str,
-                    r#"__attribute__((__import_module__("{wasm_namespace}"), __import_name__("[resource-drop-borrow]{name}")))
+                    r#"__attribute__((__import_module__("{module}"), __import_name__("[resource-drop-borrow]{name}")))
                        void __wasm_import_{borrow_namespace}_{snake}_drop_borrow(int32_t);
 
                        void {borrow_namespace}_{snake}_drop_borrow({borrow_name}{space}arg) {{
@@ -597,7 +596,7 @@ impl C {
 
                 uwriteln!(
                     c_str,
-                    r#"__attribute__((__import_module__("{namespace}"), __import_name__("[resource-new]{name}")))
+                    r#"__attribute__((__import_module__("{module}"), __import_name__("[resource-new]{name}")))
                        int32_t __wasm_import_{namespace}_{snake}_new(int32_t);
 
                        {own_name} {namespace}_{snake}_new({namespace}_{snake}_t* arg) {{
@@ -612,7 +611,7 @@ impl C {
 
                 uwriteln!(
                     c_str,
-                    r#"__attribute__((__import_module__("{namespace}"), __import_name__("[resource-rep]{snake}")))
+                    r#"__attribute__((__import_module__("{module}"), __import_name__("[resource-rep]{snake}")))
                        int32_t __wasm_import_{namespace}_{snake}_rep(int32_t);
 
                        {namespace}_{snake}_t* {namespace}_{snake}_rep({own_name}{space}arg) {{
@@ -627,7 +626,7 @@ impl C {
 
                 uwriteln!(
                     c_str,
-                    r#"__attribute__((__export_name__("{namespace}#[dtor]{snake}")))
+                    r#"__attribute__((__export_name__("{module}#[dtor]{snake}")))
                        void __wasm_export_{namespace}_{snake}_dtor({namespace}_{snake}_t* arg) {{
                            {namespace}_{snake}_destructor(arg);
                        }}"#
