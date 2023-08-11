@@ -668,7 +668,7 @@ impl InterfaceGenerator<'_> {
                                          #[cfg(target_arch = "wasm32")]
                                          #[link(wasm_import_module = "{wasm_import_module}")]
                                          extern "C" {{
-                                             #[link_name = "[resource-drop-own]{name}"]
+                                             #[link_name = "[resource-drop]{name}"]
                                              fn wit_import(_: i32);
                                          }}
 
@@ -677,7 +677,7 @@ impl InterfaceGenerator<'_> {
                                          #[cfg(target_arch = "wasm32")]
                                          #[link(wasm_import_module = "{wasm_import_module}")]
                                          extern "C" {{
-                                             #[link_name = "[resource-drop-borrow]{name}"]
+                                             #[link_name = "[resource-drop]{name}"]
                                              fn wit_import(_: i32);
                                          }}
 
@@ -838,7 +838,7 @@ impl InterfaceGenerator<'_> {
                                 #[cfg(target_arch = "wasm32")]
                                 #[link(wasm_import_module = "[export]{module}")]
                                 extern "C" {{
-                                    #[link_name = "[resource-drop-own]{name}"]
+                                    #[link_name = "[resource-drop]{name}"]
                                     fn wit_import(_: i32);
                                 }}
 

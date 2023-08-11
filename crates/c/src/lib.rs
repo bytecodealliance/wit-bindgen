@@ -556,7 +556,7 @@ impl C {
 
                 uwriteln!(
                     c_str,
-                    r#"__attribute__((__import_module__("{module}"), __import_name__("[resource-drop-own]{name}")))
+                    r#"__attribute__((__import_module__("{module}"), __import_name__("[resource-drop]{name}")))
                        void __wasm_import_{namespace}_{snake}_drop_own(int32_t);
 
                        void {namespace}_{snake}_drop_own({own_name}{space}arg) {{
@@ -576,7 +576,7 @@ impl C {
 
                 uwriteln!(
                     c_str,
-                    r#"__attribute__((__import_module__("{module}"), __import_name__("[resource-drop-borrow]{name}")))
+                    r#"__attribute__((__import_module__("{module}"), __import_name__("[resource-drop]{name}")))
                        void __wasm_import_{borrow_namespace}_{snake}_drop_borrow(int32_t);
 
                        void {borrow_namespace}_{snake}_drop_borrow({borrow_name}{space}arg) {{
