@@ -7,9 +7,9 @@ use std::{
     ops::Deref,
 };
 use wit_bindgen_core::{
+    abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
     uwrite, uwriteln,
     wit_parser::{
-        abi::{AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType},
         Case, Docs, Enum, Flags, FlagsRepr, Function, FunctionKind, Int, InterfaceId, Record,
         Resolve, Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, Union,
         Variant, WorldId, WorldKey,
@@ -496,7 +496,8 @@ impl InterfaceGenerator<'_> {
                 .collect(),
         );
 
-        bindgen.gen.resolve.call(
+        abi::call(
+            bindgen.gen.resolve,
             AbiVariant::GuestImport,
             LiftLower::LowerArgsLiftResults,
             func,
@@ -564,7 +565,8 @@ impl InterfaceGenerator<'_> {
             (0..sig.params.len()).map(|i| format!("p{i}")).collect(),
         );
 
-        bindgen.gen.resolve.call(
+        abi::call(
+            bindgen.gen.resolve,
             AbiVariant::GuestExport,
             LiftLower::LiftArgsLowerResults,
             func,
@@ -604,7 +606,7 @@ impl InterfaceGenerator<'_> {
             "#
         );
 
-        if self.resolve.guest_export_needs_post_return(func) {
+        if abi::guest_export_needs_post_return(self.resolve, func) {
             let params = sig
                 .results
                 .iter()
@@ -622,7 +624,7 @@ impl InterfaceGenerator<'_> {
                 (0..sig.results.len()).map(|i| format!("p{i}")).collect(),
             );
 
-            bindgen.gen.resolve.post_return(func, &mut bindgen);
+            abi::post_return(bindgen.gen.resolve, func, &mut bindgen);
 
             let src = bindgen.src;
 
