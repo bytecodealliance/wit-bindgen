@@ -1382,7 +1382,7 @@ dependencies = [
 [[package]]
 name = "wasm-encoder"
 version = "0.31.1"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return#8894db26819fb453848402668bdb26a63936620c"
+source = "git+https://github.com/bytecodealliance/wasm-tools#9fb2019dca043434837c996ec5105de350bccaea"
 dependencies = [
  "leb128",
 ]
@@ -1390,15 +1390,15 @@ dependencies = [
 [[package]]
 name = "wasm-metadata"
 version = "0.10.1"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return#8894db26819fb453848402668bdb26a63936620c"
+source = "git+https://github.com/bytecodealliance/wasm-tools#9fb2019dca043434837c996ec5105de350bccaea"
 dependencies = [
  "anyhow",
  "indexmap 2.0.0",
  "serde",
  "serde_json",
  "spdx",
- "wasm-encoder 0.31.1 (git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return)",
- "wasmparser 0.110.0 (git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return)",
+ "wasm-encoder 0.31.1 (git+https://github.com/bytecodealliance/wasm-tools)",
+ "wasmparser 0.110.0 (git+https://github.com/bytecodealliance/wasm-tools)",
 ]
 
 [[package]]
@@ -1424,7 +1424,7 @@ dependencies = [
 [[package]]
 name = "wasmparser"
 version = "0.110.0"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return#8894db26819fb453848402668bdb26a63936620c"
+source = "git+https://github.com/bytecodealliance/wasm-tools#9fb2019dca043434837c996ec5105de350bccaea"
 dependencies = [
  "indexmap 2.0.0",
  "semver",
@@ -1732,12 +1732,12 @@ dependencies = [
 [[package]]
 name = "wast"
 version = "62.0.1"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return#8894db26819fb453848402668bdb26a63936620c"
+source = "git+https://github.com/bytecodealliance/wasm-tools#9fb2019dca043434837c996ec5105de350bccaea"
 dependencies = [
  "leb128",
  "memchr",
  "unicode-width",
- "wasm-encoder 0.31.1 (git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return)",
+ "wasm-encoder 0.31.1 (git+https://github.com/bytecodealliance/wasm-tools)",
 ]
 
 [[package]]
@@ -1752,9 +1752,9 @@ dependencies = [
 [[package]]
 name = "wat"
 version = "1.0.69"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return#8894db26819fb453848402668bdb26a63936620c"
+source = "git+https://github.com/bytecodealliance/wasm-tools#9fb2019dca043434837c996ec5105de350bccaea"
 dependencies = [
- "wast 62.0.1 (git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return)",
+ "wast 62.0.1 (git+https://github.com/bytecodealliance/wasm-tools)",
 ]
 
 [[package]]
@@ -1999,16 +1999,16 @@ dependencies = [
 [[package]]
 name = "wit-component"
 version = "0.13.1"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return#8894db26819fb453848402668bdb26a63936620c"
+source = "git+https://github.com/bytecodealliance/wasm-tools#9fb2019dca043434837c996ec5105de350bccaea"
 dependencies = [
  "anyhow",
  "bitflags 2.3.3",
  "indexmap 2.0.0",
  "log",
- "wasm-encoder 0.31.1 (git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return)",
+ "wasm-encoder 0.31.1 (git+https://github.com/bytecodealliance/wasm-tools)",
  "wasm-metadata",
- "wasmparser 0.110.0 (git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return)",
- "wat 1.0.69 (git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return)",
+ "wasmparser 0.110.0 (git+https://github.com/bytecodealliance/wasm-tools)",
+ "wat 1.0.69 (git+https://github.com/bytecodealliance/wasm-tools)",
  "wit-parser 0.9.2",
 ]
 
@@ -2031,7 +2031,7 @@ dependencies = [
 [[package]]
 name = "wit-parser"
 version = "0.9.2"
-source = "git+https://github.com/alexcrichton/wasm-tools?branch=probe-for-post-return#8894db26819fb453848402668bdb26a63936620c"
+source = "git+https://github.com/bytecodealliance/wasm-tools#9fb2019dca043434837c996ec5105de350bccaea"
 dependencies = [
  "anyhow",
  "id-arena",
