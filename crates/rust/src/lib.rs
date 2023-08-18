@@ -655,7 +655,6 @@ impl InterfaceGenerator<'_> {
                         #[derive(Debug)]
                         pub struct {camel} {{
                             handle: i32,
-                            owned: bool,
                         }}
 
                         impl Drop for {camel} {{
@@ -664,33 +663,22 @@ impl InterfaceGenerator<'_> {
                                      #[cfg(not(target_arch = "wasm32"))]
                                      unsafe fn wit_import(_n: i32) {{ unreachable!() }}
 
-                                     if self.owned {{
-                                         #[cfg(target_arch = "wasm32")]
-                                         #[link(wasm_import_module = "{wasm_import_module}")]
-                                         extern "C" {{
-                                             #[link_name = "[resource-drop]{name}"]
-                                             fn wit_import(_: i32);
-                                         }}
-
-                                         wit_import(self.handle)
-                                     }} else {{
-                                         #[cfg(target_arch = "wasm32")]
-                                         #[link(wasm_import_module = "{wasm_import_module}")]
-                                         extern "C" {{
-                                             #[link_name = "[resource-drop]{name}"]
-                                             fn wit_import(_: i32);
-                                         }}
-
-                                         wit_import(self.handle)
+                                     #[cfg(target_arch = "wasm32")]
+                                     #[link(wasm_import_module = "{wasm_import_module}")]
+                                     extern "C" {{
+                                         #[link_name = "[resource-drop]{name}"]
+                                         fn wit_import(_: i32);
                                      }}
+
+                                     wit_import(self.handle)
                                  }}
                              }}
                         }}
 
                         impl {camel} {{
                             #[doc(hidden)]
-                            pub unsafe fn from_handle(handle: i32, owned: bool) -> Self {{
-                                Self {{ handle, owned }}
+                            pub unsafe fn from_handle(handle: i32) -> Self {{
+                                Self {{ handle }}
                             }}
 
                             #[doc(hidden)]
@@ -1690,9 +1678,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::HandleLift { handle, .. } => {
                 let op = &operands[0];
-                let (prefix, resource, owned) = match handle {
-                    Handle::Borrow(resource) => ("&", resource, false),
-                    Handle::Own(resource) => ("", resource, true),
+                let (prefix, resource) = match handle {
+                    Handle::Borrow(resource) => ("&", resource),
+                    Handle::Own(resource) => ("", resource),
                 };
                 let resource = dealias(resolve, *resource);
 
@@ -1717,7 +1705,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         }
                     } else {
                         let name = self.gen.type_path(resource, true);
-                        format!("{prefix}{name}::from_handle({op}, {owned})")
+                        format!("{prefix}{name}::from_handle({op})")
                     },
                 );
             }
