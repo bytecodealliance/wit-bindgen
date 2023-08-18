@@ -1,7 +1,7 @@
 [package]
 name = "wit-bindgen"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
-version = "0.9.0"
+version = "0.10.0"
 edition.workspace = true
 repository = 'https://github.com/bytecodealliance/wit-bindgen'
 license = "Apache-2.0 WITH LLVM-exception"
@@ -12,7 +12,7 @@ Used when compiling Rust programs to the component model.
 """
 
 [dependencies]
-wit-bindgen-rust-macro = { path = "../rust-macro", optional = true, version = "0.9.0" }
+wit-bindgen-rust-macro = { path = "../rust-macro", optional = true, version = "0.10.0" }
 bitflags = { workspace = true }
 
 [features]
