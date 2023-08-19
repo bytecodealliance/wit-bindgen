@@ -63,6 +63,7 @@ impl Parse for Config {
                     Opt::Ownership(ownership) => opts.ownership = ownership,
                     Opt::Skip(list) => opts.skip.extend(list.iter().map(|i| i.value())),
                     Opt::RuntimePath(path) => opts.runtime_path = Some(path.value()),
+                    Opt::BitflagsPath(path) => opts.bitflags_path = Some(path.value()),
                     Opt::Exports(exports) => opts.exports.extend(
                         exports
                             .into_iter()
@@ -154,6 +155,7 @@ mod kw {
     syn::custom_keyword!(inline);
     syn::custom_keyword!(ownership);
     syn::custom_keyword!(runtime_path);
+    syn::custom_keyword!(bitflags_path);
     syn::custom_keyword!(exports);
     syn::custom_keyword!(stubs);
     syn::custom_keyword!(export_prefix);
@@ -210,6 +212,7 @@ enum Opt {
     Skip(Vec<syn::LitStr>),
     Ownership(Ownership),
     RuntimePath(syn::LitStr),
+    BitflagsPath(syn::LitStr),
     Exports(Vec<Export>),
     Stubs,
     ExportPrefix(syn::LitStr),
@@ -292,6 +295,10 @@ impl Parse for Opt {
             input.parse::<kw::runtime_path>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::RuntimePath(input.parse()?))
+        } else if l.peek(kw::bitflags_path) {
+            input.parse::<kw::bitflags_path>()?;
+            input.parse::<Token![:]>()?;
+            Ok(Opt::BitflagsPath(input.parse()?))
         } else if l.peek(kw::stubs) {
             input.parse::<kw::stubs>()?;
             Ok(Opt::Stubs)
