@@ -833,6 +833,26 @@ impl InterfaceGenerator<'_> {
                         }}
                     }}
 
+                    impl core::ops::DerefMut for Own{camel} {{
+                        fn deref_mut(&mut self) -> &mut Rep{camel} {{
+                            unsafe {{
+                                #[cfg(target_arch = "wasm32")]
+                                #[link(wasm_import_module = "[export]{module}")]
+                                extern "C" {{
+                                    #[link_name = "[resource-rep]{name}"]
+                                    fn wit_import(_: i32) -> i32;
+                                }}
+
+                                #[cfg(not(target_arch = "wasm32"))]
+                                unsafe fn wit_import(_n: i32) -> i32 {{ unreachable!() }}
+
+                                ::core::mem::transmute::<isize, &mut Rep{camel}>(
+                                    wit_import(self.handle).try_into().unwrap()
+                                )
+                            }}
+                        }}
+                    }}
+
                     impl Drop for Own{camel} {{
                         fn drop(&mut self) {{
                             unsafe {{

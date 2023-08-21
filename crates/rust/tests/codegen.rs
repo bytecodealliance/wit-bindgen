@@ -225,3 +225,50 @@ mod alternative_bitflags_path {
         }
     }
 }
+
+mod owned_resource_deref_mut {
+    wit_bindgen::generate!({
+        inline: "
+            package my:inline
+
+            interface foo {
+                resource bar {
+                    constructor(data: u32)
+                    get-data: func() -> u32
+                    consume: static func(%self: bar) -> u32
+                }
+            }
+
+            world baz {
+                export foo
+            }
+        ",
+        exports: {
+            "my:inline/foo/bar": Resource
+        }
+    });
+
+    pub struct Resource {
+        data: u32,
+    }
+
+    impl exports::my::inline::foo::Bar for Resource {
+        fn new(data: u32) -> Self {
+            Self { data }
+        }
+
+        fn get_data(&self) -> u32 {
+            self.data
+        }
+
+        fn consume(mut this: exports::my::inline::foo::OwnBar) -> u32 {
+            // Check that Deref<Target = Self> is implemented
+            let prior_data: &u32 = &this.data;
+            let new_data = prior_data + 1;
+            // Check that DerefMut<Target = Self> is implemented
+            let mutable_data: &mut u32 = &mut this.data;
+            *mutable_data = new_data;
+            this.data
+        }
+    }
+}
