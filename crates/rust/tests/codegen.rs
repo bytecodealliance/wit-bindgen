@@ -195,3 +195,33 @@ mod alternative_runtime_path {
         fn foobar() {}
     }
 }
+
+mod alternative_bitflags_path {
+    wit_bindgen::generate!({
+        inline: "
+            package my:inline
+            world foo {
+                flags bar {
+                    foo,
+                    bar,
+                    baz
+                }
+                export get-flag: func() -> bar
+            }
+        ",
+        bitflags_path: "my_bitflags",
+        exports: {
+            world: Component
+        }
+    });
+
+    pub(crate) use wit_bindgen::bitflags as my_bitflags;
+
+    struct Component;
+
+    impl Foo for Component {
+        fn get_flag() -> Bar {
+            Bar::BAZ
+        }
+    }
+}

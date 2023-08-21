@@ -137,6 +137,12 @@ pub struct Opts {
     /// This defaults to `wit_bindgen::rt`.
     #[cfg_attr(feature = "clap", arg(long))]
     pub runtime_path: Option<String>,
+
+    /// The optional path to the bitflags crate to use.
+    ///
+    /// This defaults to `wit_bindgen::bitflags`.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub bitflags_path: Option<String>,
 }
 
 impl Opts {
@@ -212,6 +218,13 @@ impl RustWasm {
             .runtime_path
             .as_deref()
             .unwrap_or("wit_bindgen::rt")
+    }
+
+    fn bitflags_path(&self) -> &str {
+        self.opts
+            .bitflags_path
+            .as_deref()
+            .unwrap_or("wit_bindgen::bitflags")
     }
 }
 
@@ -1281,7 +1294,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
-        self.src.push_str("wit_bindgen::bitflags::bitflags! {\n");
+        self.src.push_str(&format!(
+            "{bitflags}::bitflags! {{\n",
+            bitflags = self.gen.bitflags_path()
+        ));
         self.rustdoc(docs);
         let repr = RustFlagsRepr::new(flags);
         self.src.push_str(&format!(
