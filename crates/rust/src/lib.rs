@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 use heck::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -226,6 +226,23 @@ impl RustWasm {
             .as_deref()
             .unwrap_or("wit_bindgen::bitflags")
     }
+
+    fn lookup_export(&self, key: &ExportKey) -> Result<String> {
+        if let Some(key) = self.opts.exports.get(key) {
+            return Ok(key.clone());
+        }
+        if self.opts.stubs {
+            return Ok("Stub".to_owned());
+        }
+        let key = match key {
+            ExportKey::World => "world",
+            ExportKey::Name(name) => name,
+        };
+        if self.opts.exports.is_empty() {
+            bail!("no `exports` map provided in configuration but key is required for `{key}`")
+        }
+        bail!("expected `exports` map to contain key `{key}`")
+    }
 }
 
 impl WorldGenerator for RustWasm {
@@ -298,20 +315,12 @@ impl WorldGenerator for RustWasm {
                 String::new()
             }
         );
-        let impl_name = self
-            .opts
-            .exports
-            .get(&ExportKey::Name(path.clone()))
-            .cloned()
-            .or_else(|| self.opts.stubs.then(|| "Stub".to_owned()))
-            .ok_or_else(|| format!("export parameter required for `{path}`"));
         let mut gen = self.interface(Identifier::Interface(id, name), None, resolve, false);
         let (snake, path_to_root, pkg) = gen.start_append_submodule(name);
         gen.types(id);
         gen.generate_exports(
             &inner_name.to_upper_camel_case(),
-            Some(&path),
-            impl_name.as_deref().map_err(|s| s.as_str()),
+            &ExportKey::Name(path),
             Some(name),
             resolve.interfaces[id].functions.values(),
         )?;
@@ -327,19 +336,11 @@ impl WorldGenerator for RustWasm {
         _files: &mut Files,
     ) -> Result<()> {
         let world_name = &resolve.worlds[world].name;
-        let impl_name = self
-            .opts
-            .exports
-            .get(&ExportKey::World)
-            .cloned()
-            .or_else(|| self.opts.stubs.then(|| "Stub".to_owned()))
-            .ok_or_else(|| format!("export parameter required for `world`"));
         let trait_name = world_name.to_upper_camel_case();
         let mut gen = self.interface(Identifier::World(world), None, resolve, false);
         gen.generate_exports(
             &trait_name,
-            None,
-            impl_name.as_deref().map_err(|s| s.as_str()),
+            &ExportKey::World,
             None,
             funcs.iter().map(|f| f.1),
         )?;
@@ -517,8 +518,7 @@ impl InterfaceGenerator<'_> {
     fn generate_exports<'a>(
         &mut self,
         trait_name: &str,
-        path: Option<&str>,
-        impl_name: Result<&str, &str>,
+        export_key: &ExportKey,
         interface_name: Option<&WorldKey>,
         funcs: impl Iterator<Item = &'a Function>,
     ) -> Result<()> {
@@ -586,26 +586,20 @@ impl InterfaceGenerator<'_> {
                     path_to_root.push_str("super::");
                 }
                 if let Some(ty) = resource {
-                    let path = format!(
-                        "{}/{}",
-                        path.expect("resources can only be exported from interfaces"),
-                        self.resolve.types[ty].name.as_deref().unwrap()
-                    );
-                    let impl_name = self
-                        .gen
-                        .opts
-                        .exports
-                        .get(&ExportKey::Name(path.clone()))
-                        .cloned()
-                        .or_else(|| self.gen.opts.stubs.then(|| "Stub".to_owned()))
-                        .ok_or_else(|| anyhow!("export parameter required for `{path}`"))?;
-
+                    let path = match &export_key {
+                        ExportKey::World => panic!("can't export resources from worlds"),
+                        ExportKey::Name(path) => path,
+                    };
+                    let path =
+                        format!("{path}/{}", self.resolve.types[ty].name.as_deref().unwrap());
+                    let export_key = ExportKey::Name(path);
+                    let impl_name = self.gen.lookup_export(&export_key)?;
                     uwriteln!(
                         self.src,
                         "pub use {path_to_root}{impl_name} as Rep{trait_name};"
                     );
                 } else {
-                    let impl_name = impl_name.map_err(|s| anyhow!("{s}"))?;
+                    let impl_name = self.gen.lookup_export(&export_key)?;
                     uwriteln!(
                         self.src,
                         "use {path_to_root}{impl_name} as {trait_name}Impl;"
