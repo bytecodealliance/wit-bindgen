@@ -2,6 +2,12 @@
 
 extern crate alloc;
 
+use alloc::boxed::Box;
+use core::fmt;
+use core::marker;
+use core::mem::ManuallyDrop;
+use core::ops::{Deref, DerefMut};
+
 #[cfg(feature = "macros")]
 pub use wit_bindgen_rust_macro::*;
 
@@ -13,6 +19,8 @@ pub use bitflags;
 pub mod rt {
     use crate::alloc::string::String;
     use crate::alloc::vec::Vec;
+
+    pub use crate::{Resource, RustResource, WasmResource};
 
     /// Provide a hook for generated export functions to run static
     /// constructors at most once. wit-bindgen-rust generates a call to this
@@ -160,6 +168,123 @@ pub mod rt {
             }
         } else {
             core::mem::transmute::<u8, bool>(val)
+        }
+    }
+}
+
+/// A type which represents a component model resource, either imported or
+/// exported into this component.
+///
+/// This is a low-level wrapper which handles the lifetime of the resource
+/// (namely this has a destructor). The `T` provided defines the component model
+/// intrinsics that this wrapper uses.
+///
+/// One of the chief purposes of this type is to provide `Deref` implementations
+/// to access the underlying data when it is owned.
+///
+/// This type is primarily used in generated code for exported and imported
+/// resources.
+pub struct Resource<T: WasmResource> {
+    handle: u32,
+    _marker: marker::PhantomData<Box<T>>,
+}
+
+/// A trait which all wasm resources implement, namely providing the ability to
+/// drop a resource.
+///
+/// This generally is implemented by generated code, not user-facing code.
+pub unsafe trait WasmResource {
+    /// Invokes the `[resource-drop]...` intrinsic.
+    unsafe fn drop(handle: u32);
+}
+
+/// A trait which extends [`WasmResource`] used for Rust-defined resources, or
+/// those exported from this component.
+///
+/// This generally is implemented by generated code, not user-facing code.
+pub unsafe trait RustResource: WasmResource {
+    /// Invokes the `[resource-new]...` intrinsic.
+    unsafe fn new(rep: usize) -> u32;
+    /// Invokes the `[resource-rep]...` intrinsic.
+    unsafe fn rep(handle: u32) -> usize;
+}
+
+impl<T: WasmResource> Resource<T> {
+    #[doc(hidden)]
+    pub unsafe fn from_handle(handle: u32) -> Self {
+        Self {
+            handle,
+            _marker: marker::PhantomData,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn into_handle(resource: Resource<T>) -> u32 {
+        ManuallyDrop::new(resource).handle
+    }
+
+    #[doc(hidden)]
+    pub fn handle(resource: &Resource<T>) -> u32 {
+        resource.handle
+    }
+
+    /// Creates a new Rust-defined resource from the underlying representation
+    /// `T`.
+    ///
+    /// This will move `T` onto the heap to create a single pointer to represent
+    /// it which is then wrapped up in a component model resource.
+    pub fn new(val: T) -> Resource<T>
+    where
+        T: RustResource,
+    {
+        let rep = Box::into_raw(Box::new(val)) as usize;
+        unsafe {
+            let handle = T::new(rep);
+            Resource::from_handle(handle)
+        }
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn dtor(rep: usize)
+    where
+        T: RustResource,
+    {
+        let _ = Box::from_raw(rep as *mut T);
+    }
+}
+
+impl<T: RustResource> Deref for Resource<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        unsafe {
+            let rep = T::rep(self.handle);
+            &*(rep as *mut T)
+        }
+    }
+}
+
+impl<T: RustResource> DerefMut for Resource<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        unsafe {
+            let rep = T::rep(self.handle);
+            &mut *(rep as *mut T)
+        }
+    }
+}
+
+impl<T: WasmResource> fmt::Debug for Resource<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Resource")
+            .field("handle", &self.handle)
+            .finish()
+    }
+}
+
+impl<T: WasmResource> Drop for Resource<T> {
+    fn drop(&mut self) {
+        unsafe {
+            T::drop(self.handle);
         }
     }
 }
