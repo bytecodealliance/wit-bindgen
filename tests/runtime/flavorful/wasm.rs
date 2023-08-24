@@ -10,7 +10,7 @@ use exports::test::flavorful::test::*;
 
 struct Component;
 
-impl Flavorful for Component {
+impl Guest for Component {
     fn test_imports() {
         use test::flavorful::test::*;
 
@@ -72,7 +72,7 @@ impl Flavorful for Component {
     }
 }
 
-impl Test for Component {
+impl exports::test::flavorful::test::Guest for Component {
     fn f_list_in_record1(ty: ListInRecord1) {
         assert_eq!(ty.a, "list_in_record1");
     }

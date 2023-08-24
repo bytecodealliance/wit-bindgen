@@ -10,7 +10,7 @@ use exports::test::records::test::*;
 
 struct Component;
 
-impl Records for Component {
+impl Guest for Component {
     fn test_imports() {
         use test::records::test::*;
 
@@ -50,7 +50,7 @@ impl Records for Component {
     }
 }
 
-impl Test for Component {
+impl exports::test::records::test::Guest for Component {
     fn multiple_results() -> (u8, u16) {
         (100, 200)
     }

@@ -108,7 +108,7 @@ mod skip {
 
     struct Component;
 
-    impl exports::exports::Exports for Component {
+    impl exports::exports::Guest for Component {
         fn bar() {}
     }
 }
@@ -152,21 +152,21 @@ mod symbol_does_not_conflict {
 
     struct Component;
 
-    impl exports::my::inline::foo1::Foo1 for Component {
+    impl exports::my::inline::foo1::Guest for Component {
         fn foo() {}
     }
 
-    impl exports::my::inline::foo2::Foo2 for Component {
+    impl exports::my::inline::foo2::Guest for Component {
         fn foo() {}
     }
 
-    impl exports::my::inline::bar1::Bar1 for Component {
+    impl exports::my::inline::bar1::Guest for Component {
         fn bar() -> String {
             String::new()
         }
     }
 
-    impl exports::my::inline::bar2::Bar2 for Component {
+    impl exports::my::inline::bar2::Guest for Component {
         fn bar() -> String {
             String::new()
         }
@@ -191,7 +191,7 @@ mod alternative_runtime_path {
 
     struct Component;
 
-    impl Foo for Component {
+    impl Guest for Component {
         fn foobar() {}
     }
 }
@@ -219,7 +219,7 @@ mod alternative_bitflags_path {
 
     struct Component;
 
-    impl Foo for Component {
+    impl Guest for Component {
         fn get_flag() -> Bar {
             Bar::BAZ
         }
@@ -252,7 +252,7 @@ mod owned_resource_deref_mut {
         data: u32,
     }
 
-    impl exports::my::inline::foo::Bar for Resource {
+    impl exports::my::inline::foo::GuestBar for Resource {
         fn new(data: u32) -> Self {
             Self { data }
         }

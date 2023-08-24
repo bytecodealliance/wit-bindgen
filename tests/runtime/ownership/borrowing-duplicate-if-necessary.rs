@@ -16,7 +16,7 @@ impl PartialEq for thing_in_and_out::ThingResult {
 
 struct Exports;
 
-impl Ownership for Exports {
+impl Guest for Exports {
     fn foo() {
         let value = &[&["foo", "bar"] as &[_]] as &[_];
         assert_eq!(

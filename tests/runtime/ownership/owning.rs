@@ -14,7 +14,7 @@ impl PartialEq for thing_in_and_out::Thing {
 
 struct Exports;
 
-impl Ownership for Exports {
+impl Guest for Exports {
     fn foo() {
         let value = vec![vec!["foo".to_owned(), "bar".to_owned()]];
         assert_eq!(value, lists::foo(&value));
