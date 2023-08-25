@@ -7,7 +7,7 @@ wit_bindgen::generate!({
 
 struct Component;
 
-impl ManyArguments for Component {
+impl Guest for Component {
     fn many_arguments(
         a1: u64,
         a2: u64,

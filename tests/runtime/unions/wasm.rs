@@ -10,7 +10,7 @@ use exports::test::unions::test::*;
 
 struct Component;
 
-impl Unions for Component {
+impl Guest for Component {
     fn test_imports() {
         use test::unions::test::*;
 
@@ -170,7 +170,7 @@ impl Unions for Component {
     }
 }
 
-impl Test for Component {
+impl exports::test::unions::test::Guest for Component {
     fn add_one_integer(num: AllIntegers) -> AllIntegers {
         match num {
             // Boolean

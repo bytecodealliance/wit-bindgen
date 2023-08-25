@@ -12,7 +12,7 @@ static SCALAR: AtomicU32 = AtomicU32::new(0);
 
 struct Component;
 
-impl Numbers for Component {
+impl Guest for Component {
     fn test_imports() {
         use test::numbers::test::*;
         assert_eq!(roundtrip_u8(1), 1);
@@ -68,7 +68,7 @@ impl Numbers for Component {
     }
 }
 
-impl exports::test::numbers::test::Test for Component {
+impl exports::test::numbers::test::Guest for Component {
     fn roundtrip_u8(a: u8) -> u8 {
         a
     }

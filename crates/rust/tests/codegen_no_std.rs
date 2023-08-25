@@ -104,7 +104,7 @@ mod skip {
 
     struct Component;
 
-    impl exports::exports::Exports for Component {
+    impl exports::exports::Guest for Component {
         fn bar() {}
     }
 }

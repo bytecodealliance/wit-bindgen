@@ -10,7 +10,7 @@ use exports::test::variants::test::*;
 
 struct Component;
 
-impl Variants for Component {
+impl Guest for Component {
     fn test_imports() {
         use test::variants::test::*;
 
@@ -72,7 +72,7 @@ impl Variants for Component {
     }
 }
 
-impl Test for Component {
+impl exports::test::variants::test::Guest for Component {
     fn roundtrip_option(a: Option<f32>) -> Option<u8> {
         a.map(|x| x as u8)
     }

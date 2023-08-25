@@ -11,7 +11,7 @@ wit_bindgen::generate!({
 
 struct Component;
 
-impl Lists for Component {
+impl Guest for Component {
     fn allocated_bytes() -> u32 {
         test_rust_wasm::get() as u32
     }
@@ -72,7 +72,7 @@ impl Lists for Component {
     }
 }
 
-impl exports::test::lists::test::Test for Component {
+impl exports::test::lists::test::Guest for Component {
     fn empty_list_param(a: Vec<u8>) {
         assert!(a.is_empty());
     }

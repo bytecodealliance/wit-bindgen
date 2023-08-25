@@ -10,7 +10,7 @@ struct Exports;
 use exports::test::results::test as test_exports;
 use test::results::test as test_imports;
 
-impl test_exports::Test for Exports {
+impl test_exports::Guest for Exports {
     fn string_error(a: f32) -> Result<f32, String> {
         test_imports::string_error(a)
     }

@@ -7,7 +7,7 @@ wit_bindgen::generate!({
 
 struct Exports;
 
-impl Smoke for Exports {
+impl Guest for Exports {
     fn thunk() {
         test::smoke::imports::thunk();
     }
