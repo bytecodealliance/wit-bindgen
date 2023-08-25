@@ -683,8 +683,7 @@ impl InterfaceGenerator<'_> {
                     | TypeDefKind::Resource
                     | TypeDefKind::Flags(_)
                     | TypeDefKind::Enum(_)
-                    | TypeDefKind::Variant(_)
-                    | TypeDefKind::Union(_) => {
+                    | TypeDefKind::Variant(_) => {
                         unimplemented!()
                     }
                     TypeDefKind::Tuple(t) => {
@@ -1029,8 +1028,7 @@ impl InterfaceGenerator<'_> {
             | TypeDefKind::Record(_)
             | TypeDefKind::Resource
             | TypeDefKind::Enum(_)
-            | TypeDefKind::Variant(_)
-            | TypeDefKind::Union(_) => {
+            | TypeDefKind::Variant(_) => {
                 unreachable!()
             }
             TypeDefKind::Tuple(t) => {
@@ -1505,42 +1503,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.finish_ty(id, name.to_owned(), prev)
     }
 
-    fn type_union(
-        &mut self,
-        id: wit_bindgen_core::wit_parser::TypeId,
-        name: &str,
-        union: &wit_bindgen_core::wit_parser::Union,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
-    ) {
-        let prev = mem::take(&mut self.src);
-        let name = self.get_type_name(name, true);
-        // TODO: use variant's tag to determine how many cases are needed
-        // this will help to optmize the Kind type.
-        self.src.push_str(&format!("type {name}Kind int\n\n"));
-        self.src.push_str("const (\n");
-
-        for (i, _case) in union.cases.iter().enumerate() {
-            let case_name = format!("F{i}");
-            self.print_variant_field(&name, &case_name, i);
-        }
-        self.src.push_str(")\n\n");
-
-        self.src.push_str(&format!("type {name} struct {{\n"));
-        self.src.push_str(&format!("kind {name}Kind\n"));
-        self.src.push_str("val any\n");
-        self.src.push_str("}\n\n");
-
-        self.print_kind_method(&name);
-
-        for (i, case) in union.cases.iter().enumerate() {
-            self.gen.needs_fmt_import = true;
-
-            let case_name = format!("F{i}");
-            self.print_accessor_methods(&name, &case_name, &case.ty);
-        }
-        self.finish_ty(id, name.to_owned(), prev)
-    }
-
     fn type_enum(
         &mut self,
         id: wit_bindgen_core::wit_parser::TypeId,
@@ -1895,36 +1857,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             self.lower_src.push_str("}\n");
                         }
                     }
-                    TypeDefKind::Union(u) => {
-                        self.interface.gen.needs_import_unsafe = true;
-
-                        let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
-                        let ty = self.interface.get_ty(&Type::Id(*id));
-                        uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
-                        for (i, case) in u.cases.iter().enumerate() {
-                            let case_name = format!("F{i}");
-                            uwriteln!(
-                                self.lower_src,
-                                "if {param}.Kind() == {ty}Kind{case_name} {{"
-                            );
-                            let name = self.interface.get_c_ty(&case.ty);
-                            uwriteln!(
-                                self.lower_src,
-                                "
-                                {lower_name}.tag = {i}
-                                {lower_name}_ptr := (*{name})(unsafe.Pointer(&{lower_name}.val))"
-                            );
-
-                            self.lower_value(
-                                &format!("{param}.Get{case_name}()"),
-                                &case.ty,
-                                &format!("{lower_name}_val"),
-                            );
-                            uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
-
-                            self.lower_src.push_str("}\n");
-                        }
-                    }
                     TypeDefKind::Future(_) => todo!("impl future"),
                     TypeDefKind::Stream(_) => todo!("impl stream"),
                     TypeDefKind::Resource => todo!("impl resource"),
@@ -2145,32 +2077,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             let case_name = case.name.to_upper_camel_case();
                             uwriteln!(self.lift_src, "if {param} == {i} {{");
                             uwriteln!(self.lift_src, "{lift_name} = {name}{case_name}()");
-                            self.lift_src.push_str("}\n");
-                        }
-                    }
-                    TypeDefKind::Union(u) => {
-                        self.interface.gen.needs_import_unsafe = true;
-                        let name = self.interface.get_ty(&Type::Id(*id));
-                        uwriteln!(self.lift_src, "var {lift_name} {name}");
-                        for (i, case) in u.cases.iter().enumerate() {
-                            self.lift_src
-                                .push_str(&format!("if {param}.tag == {i} {{\n"));
-                            let ty = self.interface.get_c_ty(&case.ty);
-                            let case_name = format!("F{i}");
-                            uwriteln!(
-                                self.lift_src,
-                                "
-                                {lift_name}_ptr := *(*{ty})(unsafe.Pointer(&{param}.val))"
-                            );
-                            self.lift_value(
-                                &format!("{lift_name}_ptr"),
-                                &case.ty,
-                                &format!("{lift_name}_val"),
-                            );
-                            uwriteln!(
-                                self.lift_src,
-                                "{lift_name} = {name}{case_name}({lift_name}_val)"
-                            );
                             self.lift_src.push_str("}\n");
                         }
                     }

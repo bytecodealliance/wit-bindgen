@@ -24,14 +24,6 @@ interface types-interface {
     too-slow,
   }
 
-  /// similar to `variant`, but doesn't require naming cases and all variants
-  /// have a type payload -- note that this is not a C union, it still has a
-  /// discriminant
-  union input {
-    u64,
-    string,
-  }
-
   /// a bitflags type
   flags permissions {
     read,

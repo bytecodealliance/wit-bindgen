@@ -13,5 +13,4 @@ codegen-macro = { path = 'codegen-macro' }
 wit-bindgen-core = { workspace = true }
 wit-parser = { workspace = true }
 wit-component = { workspace = true, features = ['dummy-module'] }
-wat = { workspace = true }
 wasm-encoder = { workspace = true }

@@ -184,11 +184,6 @@ impl Types {
                 info = self.optional_type_info(resolve, r.ok.as_ref());
                 info |= self.optional_type_info(resolve, r.err.as_ref());
             }
-            TypeDefKind::Union(u) => {
-                for case in u.cases.iter() {
-                    info |= self.type_info(resolve, &case.ty);
-                }
-            }
             TypeDefKind::Future(ty) => {
                 info = self.optional_type_info(resolve, ty.as_ref());
             }
@@ -530,7 +525,6 @@ pub trait InterfaceGenerator<'a> {
     fn type_variant(&mut self, id: TypeId, name: &str, variant: &Variant, docs: &Docs);
     fn type_option(&mut self, id: TypeId, name: &str, payload: &Type, docs: &Docs);
     fn type_result(&mut self, id: TypeId, name: &str, result: &Result_, docs: &Docs);
-    fn type_union(&mut self, id: TypeId, name: &str, union: &Union, docs: &Docs);
     fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs);
     fn type_alias(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
     fn type_list(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs);
@@ -555,7 +549,6 @@ pub trait InterfaceGenerator<'a> {
             TypeDefKind::Variant(variant) => self.type_variant(id, name, variant, &ty.docs),
             TypeDefKind::Option(t) => self.type_option(id, name, t, &ty.docs),
             TypeDefKind::Result(r) => self.type_result(id, name, r, &ty.docs),
-            TypeDefKind::Union(u) => self.type_union(id, name, u, &ty.docs),
             TypeDefKind::List(t) => self.type_list(id, name, t, &ty.docs),
             TypeDefKind::Type(t) => self.type_alias(id, name, t, &ty.docs),
             TypeDefKind::Future(_) => todo!("generate for future"),

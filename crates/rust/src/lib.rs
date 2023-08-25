@@ -1321,10 +1321,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.print_typedef_variant(id, variant, docs, false);
     }
 
-    fn type_union(&mut self, id: TypeId, _name: &str, union: &Union, docs: &Docs) {
-        self.print_typedef_union(id, union, docs, false);
-    }
-
     fn type_option(&mut self, id: TypeId, _name: &str, payload: &Type, docs: &Docs) {
         self.print_typedef_option(id, payload, docs);
     }
@@ -1809,66 +1805,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         uwriteln!(self.src, "let e{tmp} = {block};");
                         uwriteln!(self.src, "{name}::{case_name}(e{tmp})");
                     }
-                    uwriteln!(self.src, "}}");
-                }
-                uwriteln!(self.src, "}};");
-                results.push(format!("v{tmp}"));
-            }
-
-            Instruction::UnionLower {
-                union,
-                results: result_types,
-                ty,
-                ..
-            } => {
-                let blocks = self
-                    .blocks
-                    .drain(self.blocks.len() - union.cases.len()..)
-                    .collect::<Vec<_>>();
-                self.let_results(result_types.len(), results);
-                let op0 = &operands[0];
-                self.push_str(&format!("match {op0} {{\n"));
-                let name = self.typename_lower(*ty);
-                for (case_name, block) in self.gen.union_case_names(union).into_iter().zip(blocks) {
-                    self.push_str(&format!("{name}::{case_name}(e) => {block},\n"));
-                }
-                self.push_str("};\n");
-            }
-
-            Instruction::UnionLift { union, ty, .. } => {
-                let blocks = self
-                    .blocks
-                    .drain(self.blocks.len() - union.cases.len()..)
-                    .collect::<Vec<_>>();
-                let op0 = &operands[0];
-                let tmp = self.tmp();
-                let name = self.typename_lift(*ty);
-                let name = if name.contains("::") {
-                    uwriteln!(self.src, "use {name} as V{tmp};");
-                    format!("V{tmp}")
-                } else {
-                    name
-                };
-                uwriteln!(self.src, "let v{tmp} = match {op0} {{");
-                for (i, (case_name, block)) in self
-                    .gen
-                    .union_case_names(union)
-                    .into_iter()
-                    .zip(blocks)
-                    .enumerate()
-                {
-                    if i == union.cases.len() - 1 {
-                        uwriteln!(
-                            self.src,
-                            "n => {{
-                                debug_assert_eq!(n, {i}, \"invalid enum discriminant\");\
-                            "
-                        );
-                    } else {
-                        uwriteln!(self.src, "{i} => {{");
-                    }
-                    uwriteln!(self.src, "let e{tmp} = {block};");
-                    uwriteln!(self.src, "{name}::{case_name}(e{tmp})");
                     uwriteln!(self.src, "}}");
                 }
                 uwriteln!(self.src, "}};");

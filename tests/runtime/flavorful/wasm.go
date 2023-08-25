@@ -27,7 +27,7 @@ func (f FlavorfulImpl) TestImports() {
 
 	var b Result[struct{}, string]
 	b.SetErr("bar")
-	TestFlavorfulTestFListInVariant1(Some[string]("foo"), b, TestFlavorfulTestListInVariant1V3F0("baz"))
+	TestFlavorfulTestFListInVariant1(Some[string]("foo"), b)
 	if TestFlavorfulTestFListInVariant2().Unwrap() != "list_in_variant2" {
 		panic("TestFlavorfulTestFListInVariant2")
 	}
@@ -110,19 +110,11 @@ func (f FlavorfulImpl) FListInRecord4(a TestFlavorfulTestListInRecord4) TestFlav
 	return TestFlavorfulTestListInRecord4{"result4"}
 }
 
-func (f FlavorfulImpl) FListInVariant1(a Option[string], b Result[struct{}, string], c TestFlavorfulTestListInVariant1V3) {
+func (f FlavorfulImpl) FListInVariant1(a Option[string], b Result[struct{}, string]) {
 	if a.Unwrap() != "foo" {
 		panic("FListInVariant1")
 	}
 	if b.UnwrapErr() != "bar" {
-		panic("FListInVariant1")
-	}
-	switch c.Kind() {
-	case TestFlavorfulTestListInVariant1V3KindF0:
-		if c.GetF0() != "baz" {
-			panic("FListInVariant1")
-		}
-	case TestFlavorfulTestListInVariant1V3KindF1:
 		panic("FListInVariant1")
 	}
 }
