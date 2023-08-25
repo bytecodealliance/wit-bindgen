@@ -563,13 +563,11 @@ pub trait RustGenerator<'a> {
                 self.push_str("#[component(record)]\n");
             }
 
-            if !info.has_resource {
-                if !info.has_list {
-                    self.push_str("#[repr(C)]\n");
-                    self.push_str("#[derive(Copy, Clone)]\n");
-                } else {
-                    self.push_str("#[derive(Clone)]\n");
-                }
+            if info.is_copy() {
+                self.push_str("#[repr(C)]\n");
+                self.push_str("#[derive(Copy, Clone)]\n");
+            } else if info.is_clone() {
+                self.push_str("#[derive(Clone)]\n");
             }
             self.push_str(&format!("pub struct {}", name));
             self.print_generics(lt);
@@ -697,9 +695,9 @@ pub trait RustGenerator<'a> {
                 self.push_str("#[derive(wasmtime::component::Lower)]\n");
                 self.push_str(&format!("#[component({})]\n", derive_component));
             }
-            if !info.has_list {
-                self.push_str("#[derive(Clone, Copy)]\n");
-            } else {
+            if info.is_copy() {
+                self.push_str("#[derive(Copy, Clone)]\n");
+            } else if info.is_clone() {
                 self.push_str("#[derive(Clone)]\n");
             }
             self.push_str(&format!("pub enum {name}"));
