@@ -11,6 +11,7 @@ macro_rules! codegen_test {
     (resource_alias $name:tt $test:tt) => {};
     (resource_local_alias $name:tt $test:tt) => {};
     (resources_with_lists $name:tt $test:tt) => {};
+    (resources_in_aggregates $name:tt $test:tt) => {};
 
     ($id:ident $name:tt $test:tt) => {
         #[test]
