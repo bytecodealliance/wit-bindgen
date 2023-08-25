@@ -20,7 +20,6 @@ interface keywords {
     typedef: func(typedef: s32) -> ()
     case: func(case: s32) -> ()
     extern: func(extern: s32) -> ()
-    %union: func(%union: s32) -> ()
     %char: func(%char: s32) -> ()
     float: func(float: s32) -> ()
     short: func(short: s32) -> ()

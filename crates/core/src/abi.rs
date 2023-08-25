@@ -1,6 +1,6 @@
 use wit_parser::{
     Enum, Flags, FlagsRepr, Function, Handle, Int, Record, Resolve, Result_, Results, SizeAlign,
-    Tuple, Type, TypeDefKind, TypeId, Union, Variant,
+    Tuple, Type, TypeDefKind, TypeId, Variant,
 };
 
 pub use wit_parser::abi::{AbiVariant, WasmSignature, WasmType};
@@ -398,21 +398,6 @@ def_instruction! {
             ty: TypeId,
         } : [1] => [1],
 
-        /// Same as `VariantLower`, except used for unions.
-        UnionLower {
-            union: &'a Union,
-            name: &'a str,
-            ty: TypeId,
-            results: &'a [WasmType],
-        } : [1] => [results.len()],
-
-        /// Same as `VariantLift`, except used for unions.
-        UnionLift {
-            union: &'a Union,
-            name: &'a str,
-            ty: TypeId,
-        } : [1] => [1],
-
         /// Pops an enum off the stack and pushes the `i32` representation.
         EnumLower {
             enum_: &'a Enum,
@@ -698,7 +683,6 @@ fn needs_post_return(resolve: &Resolve, ty: &Type) -> bool {
             TypeDefKind::Resource => false,
             TypeDefKind::Record(r) => r.fields.iter().any(|f| needs_post_return(resolve, &f.ty)),
             TypeDefKind::Tuple(t) => t.types.iter().any(|t| needs_post_return(resolve, t)),
-            TypeDefKind::Union(t) => t.cases.iter().any(|t| needs_post_return(resolve, &t.ty)),
             TypeDefKind::Variant(t) => t
                 .cases
                 .iter()
@@ -1144,16 +1128,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         results: &results,
                     });
                 }
-                TypeDefKind::Union(union) => {
-                    let results =
-                        self.lower_variant_arms(ty, union.cases.iter().map(|c| Some(&c.ty)));
-                    self.emit(&UnionLower {
-                        union,
-                        ty: id,
-                        results: &results,
-                        name: self.resolve.types[id].name.as_deref().unwrap(),
-                    });
-                }
                 TypeDefKind::Future(_) => todo!("lower future"),
                 TypeDefKind::Stream(_) => todo!("lower stream"),
                 TypeDefKind::Unknown => unreachable!(),
@@ -1339,15 +1313,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.emit(&ResultLift { result: r, ty: id });
                 }
 
-                TypeDefKind::Union(union) => {
-                    self.lift_variant_arms(ty, union.cases.iter().map(|c| Some(&c.ty)));
-                    self.emit(&UnionLift {
-                        union,
-                        ty: id,
-                        name: self.resolve.types[id].name.as_deref().unwrap(),
-                    });
-                }
-
                 TypeDefKind::Future(_) => todo!("lift future"),
                 TypeDefKind::Stream(_) => todo!("lift stream"),
                 TypeDefKind::Unknown => unreachable!(),
@@ -1505,21 +1470,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.lower(ty);
                     self.stack.push(addr);
                     self.store_intrepr(offset, e.tag());
-                }
-
-                TypeDefKind::Union(union) => {
-                    self.write_variant_arms_to_memory(
-                        offset,
-                        addr,
-                        union.tag(),
-                        union.cases.iter().map(|c| Some(&c.ty)),
-                    );
-                    self.emit(&UnionLower {
-                        union,
-                        ty: id,
-                        results: &[],
-                        name: self.resolve.types[id].name.as_deref().unwrap(),
-                    });
                 }
 
                 TypeDefKind::Future(_) => todo!("write future to memory"),
@@ -1705,20 +1655,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                     self.lift(ty);
                 }
 
-                TypeDefKind::Union(union) => {
-                    self.read_variant_arms_from_memory(
-                        offset,
-                        addr,
-                        union.tag(),
-                        union.cases.iter().map(|c| Some(&c.ty)),
-                    );
-                    self.emit(&UnionLift {
-                        union,
-                        ty: id,
-                        name: self.resolve.types[id].name.as_deref().unwrap(),
-                    });
-                }
-
                 TypeDefKind::Future(_) => todo!("read future from memory"),
                 TypeDefKind::Stream(_) => todo!("read stream from memory"),
                 TypeDefKind::Unknown => unreachable!(),
@@ -1888,18 +1824,6 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                 }
 
                 TypeDefKind::Enum(_) => {}
-
-                TypeDefKind::Union(union) => {
-                    self.deallocate_variant(
-                        offset,
-                        addr,
-                        union.tag(),
-                        union.cases.iter().map(|c| Some(&c.ty)),
-                    );
-                    self.emit(&GuestDeallocateVariant {
-                        blocks: union.cases.len(),
-                    });
-                }
 
                 TypeDefKind::Future(_) => todo!("read future from memory"),
                 TypeDefKind::Stream(_) => todo!("read stream from memory"),

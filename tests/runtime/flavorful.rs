@@ -47,14 +47,9 @@ impl test_imports::Host for MyImports {
         &mut self,
         a: test_imports::ListInVariant1V1,
         b: test_imports::ListInVariant1V2,
-        c: test_imports::ListInVariant1V3,
     ) -> Result<()> {
         assert_eq!(a.unwrap(), "foo");
         assert_eq!(b.unwrap_err(), "bar");
-        match c {
-            test_imports::ListInVariant1V3::String(s) => assert_eq!(s, "baz"),
-            test_imports::ListInVariant1V3::F32(_) => panic!(),
-        }
         Ok(())
     }
 
@@ -163,7 +158,6 @@ fn run_test(exports: Flavorful, store: &mut Store<crate::Wasi<MyImports>>) -> Re
         &mut *store,
         &Some("foo".to_string()),
         &Err("bar".to_string()),
-        &ListInVariant1V3::String("baz".to_string()),
     )?;
     assert_eq!(
         exports.call_f_list_in_variant2(&mut *store)?,

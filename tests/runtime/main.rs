@@ -18,7 +18,6 @@ mod ownership;
 mod records;
 mod smoke;
 mod strings;
-mod unions;
 mod variants;
 
 wasmtime::component::bindgen!(in "crates/wasi_snapshot_preview1/wit");

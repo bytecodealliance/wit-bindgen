@@ -34,14 +34,11 @@ void flavorful_test_imports() {
   {
     test_flavorful_test_list_in_variant1_v1_t a;
     test_flavorful_test_list_in_variant1_v2_t b;
-    test_flavorful_test_list_in_variant1_v3_t c;
     a.is_some = true;
     flavorful_string_set(&a.val, "foo");
     b.is_err = true;
     flavorful_string_set(&b.val.err, "bar");
-    c.tag = 0;
-    flavorful_string_set(&c.val.f0, "baz");
-    test_flavorful_test_f_list_in_variant1(&a.val, &b, &c);
+    test_flavorful_test_f_list_in_variant1(&a.val, &b);
   }
 
   {
@@ -156,7 +153,7 @@ void exports_test_flavorful_test_f_list_in_record4(test_flavorful_test_list_in_a
   flavorful_string_dup(&ret0->a, "result4");
 }
 
-void exports_test_flavorful_test_f_list_in_variant1(flavorful_string_t *maybe_a, test_flavorful_test_list_in_variant1_v2_t *b, test_flavorful_test_list_in_variant1_v3_t *c) {
+void exports_test_flavorful_test_f_list_in_variant1(flavorful_string_t *maybe_a, test_flavorful_test_list_in_variant1_v2_t *b) {
   assert(maybe_a != NULL);
   assert(memcmp(maybe_a->ptr, "foo", maybe_a->len) == 0);
   flavorful_string_free(maybe_a);
@@ -164,10 +161,6 @@ void exports_test_flavorful_test_f_list_in_variant1(flavorful_string_t *maybe_a,
   assert(b->is_err);
   assert(memcmp(b->val.err.ptr, "bar", b->val.err.len) == 0);
   test_flavorful_test_list_in_variant1_v2_free(b);
-
-  assert(c->tag == 0);
-  assert(memcmp(c->val.f0.ptr, "baz", c->val.f0.len) == 0);
-  test_flavorful_test_list_in_variant1_v3_free(c);
 }
 
 bool exports_test_flavorful_test_f_list_in_variant2(flavorful_string_t *ret0) {

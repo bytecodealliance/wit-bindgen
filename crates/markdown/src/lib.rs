@@ -361,8 +361,7 @@ impl InterfaceGenerator<'_> {
                     | TypeDefKind::Resource
                     | TypeDefKind::Flags(_)
                     | TypeDefKind::Enum(_)
-                    | TypeDefKind::Variant(_)
-                    | TypeDefKind::Union(_) => {
+                    | TypeDefKind::Variant(_) => {
                         // These types are always named, so we will have
                         // printed the name above, so we don't need to print
                         // the contents.
@@ -581,29 +580,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 self.push_str(": ");
                 self.print_ty(ty);
             }
-            if case.docs.contents.is_some() {
-                self.gen.src.indent(1);
-                self.push_str("\n<p>");
-                self.docs(&case.docs);
-                self.gen.src.deindent(1);
-            }
-            self.push_str("\n");
-        }
-    }
-
-    fn type_union(&mut self, _id: TypeId, name: &str, union: &Union, docs: &Docs) {
-        self.print_type_header("union", name);
-        self.push_str("\n");
-        self.docs(docs);
-        self.push_str("\n##### Union Cases\n\n");
-        let snake = name.to_snake_case();
-        for (i, case) in union.cases.iter().enumerate() {
-            self.push_str(&format!("- <a name=\"{snake}.{i}\">`{i}`</a>",));
-            self.gen
-                .hrefs
-                .insert(format!("{name}::{i}"), format!("#{snake}.{i}"));
-            self.push_str(": ");
-            self.print_ty(&case.ty);
             if case.docs.contents.is_some() {
                 self.gen.src.indent(1);
                 self.push_str("\n<p>");
