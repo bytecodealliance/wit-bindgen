@@ -55,6 +55,15 @@ impl std::ops::BitOrAssign for TypeInfo {
     }
 }
 
+impl TypeInfo {
+    pub fn is_clone(&self) -> bool {
+        !self.has_resource
+    }
+    pub fn is_copy(&self) -> bool {
+        !self.has_list && !self.has_resource
+    }
+}
+
 impl Types {
     pub fn analyze(&mut self, resolve: &Resolve) {
         for (t, _) in resolve.types.iter() {
