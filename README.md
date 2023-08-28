@@ -224,12 +224,12 @@ wit_bindgen::generate!({
     },
 });
 
-// Define a custom type and implement the generated `Host` trait for it which
+// Define a custom type and implement the generated `Guest` trait for it which
 // represents implementing all the necessary exported interfaces for this
 // component.
 struct MyHost;
 
-impl Host for MyHost {
+impl Guest for MyHost {
     fn run() {
         print("Hello, world!");
     }
