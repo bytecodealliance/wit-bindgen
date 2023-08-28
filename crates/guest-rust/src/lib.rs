@@ -259,7 +259,7 @@ impl<T: RustResource> Deref for Resource<T> {
     fn deref(&self) -> &T {
         unsafe {
             let rep = T::rep(self.handle);
-            &*(rep as *mut T)
+            &*(rep as *const T)
         }
     }
 }

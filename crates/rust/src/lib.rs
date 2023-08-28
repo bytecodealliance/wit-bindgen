@@ -568,8 +568,9 @@ impl InterfaceGenerator<'_> {
 
         // Once all the traits have been assembled then they can be emitted.
         //
-        // Additionally user-configured item for each trait here as there's only
-        // one implementation of this trait and it must be pre-configured.
+        // Additionally alias the user-configured item for each trait here as
+        // there's only one implementation of this trait and it must be
+        // pre-configured.
         for (export_key, (trait_name, local_impl_name, methods)) in traits {
             let impl_name = self.gen.lookup_export(&export_key)?;
             let path_to_root = self.path_to_root();
