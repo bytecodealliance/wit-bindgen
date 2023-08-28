@@ -31,7 +31,6 @@ struct ResourceInfo {
     // exporting the interface.
     direction: Direction,
     owned: bool,
-    docs: Docs,
 }
 
 #[derive(Default)]
@@ -69,7 +68,7 @@ fn parse_exports(s: &str) -> Result<HashMap<ExportKey, String>, String> {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ExportKey {
     World,
     Name(String),
@@ -265,12 +264,12 @@ impl WorldGenerator for RustWasm {
             resolve,
             true,
         );
-        let (snake, path_to_root, pkg) = gen.start_append_submodule(name);
+        let (snake, pkg) = gen.start_append_submodule(name);
         gen.types(id);
 
         gen.generate_imports(resolve.interfaces[id].functions.values());
 
-        gen.finish_append_submodule(&snake, &path_to_root, pkg);
+        gen.finish_append_submodule(&snake, pkg);
     }
 
     fn import_funcs(
@@ -316,14 +315,14 @@ impl WorldGenerator for RustWasm {
             }
         );
         let mut gen = self.interface(Identifier::Interface(id, name), None, resolve, false);
-        let (snake, path_to_root, pkg) = gen.start_append_submodule(name);
+        let (snake, pkg) = gen.start_append_submodule(name);
         gen.types(id);
         gen.generate_exports(
             &ExportKey::Name(path),
             Some(name),
             resolve.interfaces[id].functions.values(),
         )?;
-        gen.finish_append_submodule(&snake, &path_to_root, pkg);
+        gen.finish_append_submodule(&snake, pkg);
         Ok(())
     }
 
@@ -348,7 +347,7 @@ impl WorldGenerator for RustWasm {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(Identifier::World(world), None, resolve, true);
+        let mut gen = self.interface(Identifier::World(world), Some("$root"), resolve, true);
         for (name, ty) in types {
             gen.define_type(name, *ty);
         }
@@ -511,185 +510,88 @@ impl InterfaceGenerator<'_> {
         &mut self,
         export_key: &ExportKey,
         interface_name: Option<&WorldKey>,
-        funcs: impl Iterator<Item = &'a Function>,
+        funcs: impl Iterator<Item = &'a Function> + Clone,
     ) -> Result<()> {
-        let mut by_resource = group_by_resource(funcs);
+        let mut traits = BTreeMap::new();
 
-        // Make sure we generate code for resources with no methods:
-        match self.identifier {
-            Identifier::Interface(id, _) => {
-                for ty in self.resolve.interfaces[id].types.values() {
-                    if let TypeDefKind::Resource = &self.resolve.types[*ty].kind {
-                        by_resource.entry(Some(*ty)).or_default();
-                    }
-                }
+        for func in funcs {
+            if self.gen.skip.contains(&func.name) {
+                continue;
             }
-            Identifier::World(id) => {
-                let world = &self.resolve.worlds[id];
-                for item in world.exports.values() {
-                    if let WorldItem::Type(_) = item {
-                        // As of this writing, there's no way this can be represented in WIT, but it should be easy
-                        // to handle if that changes.
-                        todo!()
-                    }
+
+            // First generate the exported function which performs lift/lower
+            // operations and delegates to a trait (that doesn't exist just yet).
+            self.src.push_str("const _: () = {\n");
+            self.generate_guest_export(func, interface_name);
+            self.src.push_str("};\n");
+
+            // Next generate a trait signature for this method and insert it
+            // into `traits`. Note that `traits` will have a trait-per-resource.
+            let (trait_name, local_impl_name, export_key) = match func.kind {
+                FunctionKind::Freestanding => (
+                    "Guest".to_string(),
+                    "_GuestImpl".to_string(),
+                    export_key.clone(),
+                ),
+                FunctionKind::Method(id)
+                | FunctionKind::Constructor(id)
+                | FunctionKind::Static(id) => {
+                    let resource_name = self.resolve.types[id].name.as_deref().unwrap();
+                    let camel = resource_name.to_upper_camel_case();
+                    let trait_name = format!("Guest{camel}");
+                    let export_key = match export_key {
+                        ExportKey::World => unimplemented!("exported world resources"),
+                        ExportKey::Name(path) => ExportKey::Name(format!("{path}/{resource_name}")),
+                    };
+                    let local_impl_name = format!("_{camel}Impl");
+                    (trait_name, local_impl_name, export_key)
                 }
+            };
+
+            let (_, _, methods) =
+                traits
+                    .entry(export_key)
+                    .or_insert((trait_name, local_impl_name, Vec::new()));
+            let prev = mem::take(&mut self.src);
+            let mut sig = FnSig::default();
+            sig.use_item_name = true;
+            sig.private = true;
+            if let FunctionKind::Method(_) = &func.kind {
+                sig.self_arg = Some("&self".into());
+                sig.self_is_first_param = true;
             }
+            self.print_signature(func, TypeMode::Owned, &sig);
+            self.src.push_str(";\n");
+            let trait_method = mem::replace(&mut self.src, prev);
+            methods.push(trait_method);
         }
 
-        for (resource, funcs) in by_resource {
-            let trait_name = if let Some(ty) = resource {
-                format!(
-                    "Guest{}",
-                    self.resolve.types[ty]
-                        .name
-                        .as_deref()
-                        .unwrap()
-                        .to_upper_camel_case()
-                )
-            } else {
-                "Guest".to_string()
-            };
-            let mut saw_export = false;
+        // Once all the traits have been assembled then they can be emitted.
+        //
+        // Additionally alias the user-configured item for each trait here as
+        // there's only one implementation of this trait and it must be
+        // pre-configured.
+        for (export_key, (trait_name, local_impl_name, methods)) in traits {
+            let impl_name = self.gen.lookup_export(&export_key)?;
+            let path_to_root = self.path_to_root();
+            uwriteln!(
+                self.src,
+                "use {path_to_root}{impl_name} as {local_impl_name};"
+            );
+
             uwriteln!(self.src, "pub trait {trait_name} {{");
-            for &func in &funcs {
-                if self.gen.skip.contains(&func.name) {
-                    continue;
-                }
-                saw_export = true;
-                let mut sig = FnSig::default();
-                sig.use_item_name = true;
-                sig.private = true;
-                if let FunctionKind::Method(_) = &func.kind {
-                    sig.self_arg = Some("&self".into());
-                    sig.self_is_first_param = true;
-                }
-                self.print_signature(func, TypeMode::Owned, &sig);
-                self.src.push_str(";\n");
+            for method in methods {
+                self.src.push_str(&method);
             }
             uwriteln!(self.src, "}}");
-
-            if saw_export || resource.is_some() {
-                let mut path_to_root = String::new();
-                if let Some(key) = interface_name {
-                    if !self.in_import {
-                        path_to_root.push_str("super::");
-                    }
-                    if let WorldKey::Interface(_) = key {
-                        path_to_root.push_str("super::super::");
-                    }
-                    path_to_root.push_str("super::");
-                }
-                if let Some(ty) = resource {
-                    let path = match &export_key {
-                        ExportKey::World => panic!("can't export resources from worlds"),
-                        ExportKey::Name(path) => path,
-                    };
-                    let name = self.resolve.types[ty].name.as_deref().unwrap();
-                    let path = format!("{path}/{name}");
-                    let export_key = ExportKey::Name(path);
-                    let impl_name = self.gen.lookup_export(&export_key)?;
-                    let name = to_upper_camel_case(name);
-                    uwriteln!(self.src, "pub use {path_to_root}{impl_name} as {name};");
-                } else {
-                    let impl_name = self.gen.lookup_export(&export_key)?;
-                    uwriteln!(self.src, "use {path_to_root}{impl_name} as _GuestImpl;");
-                }
-                if saw_export {
-                    self.src.push_str("const _: () = {\n");
-                    for &func in &funcs {
-                        self.generate_guest_export(func, interface_name);
-                    }
-                    self.src.push_str("};\n");
-                }
-
-                if let Some(ty) = resource {
-                    self.finish_resource_export(
-                        ty,
-                        interface_name.expect("resources can only be exported from interfaces"),
-                    );
-                }
-            }
         }
 
         Ok(())
     }
 
     fn generate_imports<'a>(&mut self, funcs: impl Iterator<Item = &'a Function>) {
-        let wasm_import_module = self.wasm_import_module.unwrap();
-        let mut by_resource = group_by_resource(funcs);
-
-        // Make sure we generate code for resources with no methods:
-        match self.identifier {
-            Identifier::Interface(id, _) => {
-                for ty in self.resolve.interfaces[id].types.values() {
-                    if let TypeDefKind::Resource = &self.resolve.types[*ty].kind {
-                        by_resource.entry(Some(*ty)).or_default();
-                    }
-                }
-            }
-            Identifier::World(id) => {
-                let world = &self.resolve.worlds[id];
-                for item in world.imports.values() {
-                    if let WorldItem::Type(ty) = item {
-                        if let TypeDefKind::Resource = &self.resolve.types[*ty].kind {
-                            by_resource.entry(Some(*ty)).or_default();
-                        }
-                    }
-                }
-            }
-        }
-
-        for (resource, funcs) in by_resource {
-            if let Some(resource) = resource {
-                let name = self.resolve.types[resource].name.as_deref().unwrap();
-
-                let camel = name.to_upper_camel_case();
-
-                uwriteln!(
-                    self.src,
-                    r#"
-                        #[derive(Debug)]
-                        pub struct {camel} {{
-                            handle: i32,
-                        }}
-
-                        impl Drop for {camel} {{
-                             fn drop(&mut self) {{
-                                 unsafe {{
-                                     #[cfg(not(target_arch = "wasm32"))]
-                                     unsafe fn wit_import(_n: i32) {{ unreachable!() }}
-
-                                     #[cfg(target_arch = "wasm32")]
-                                     #[link(wasm_import_module = "{wasm_import_module}")]
-                                     extern "C" {{
-                                         #[link_name = "[resource-drop]{name}"]
-                                         fn wit_import(_: i32);
-                                     }}
-
-                                     wit_import(self.handle)
-                                 }}
-                             }}
-                        }}
-
-                        impl {camel} {{
-                            #[doc(hidden)]
-                            pub unsafe fn from_handle(handle: i32) -> Self {{
-                                Self {{ handle }}
-                            }}
-
-                            #[doc(hidden)]
-                            pub fn into_handle(self) -> i32 {{
-                                ::core::mem::ManuallyDrop::new(self).handle
-                            }}
-                    "#
-                );
-            }
-            for func in funcs {
-                self.generate_guest_import(func);
-            }
-            if resource.is_some() {
-                self.src.push_str("}\n");
-            }
+        for func in funcs {
+            self.generate_guest_import(func);
         }
     }
 
@@ -714,157 +616,36 @@ impl InterfaceGenerator<'_> {
         mem::take(&mut self.src).into()
     }
 
-    fn finish_resource_export(&mut self, id: TypeId, interface_name: &WorldKey) {
-        self.gen.resources.entry(id).or_default();
-        let info = &self.gen.resources[&id];
-        let name = self.resolve.types[id].name.as_deref().unwrap();
-        let camel = name.to_upper_camel_case();
-        let snake = to_rust_ident(name);
-        let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
-        let module = match &self.resolve.types[id].owner {
-            TypeOwner::Interface(_) => self.resolve.name_world_key(interface_name),
-            TypeOwner::World(_) | TypeOwner::None => unreachable!(),
-        };
-        let rt = self.gen.runtime_path();
+    fn path_to_root(&self) -> String {
+        let mut path_to_root = String::new();
 
-        uwriteln!(
-            self.src,
-            r#"
-                const _: () = {{
-                    #[doc(hidden)]
-                    #[export_name = "{export_prefix}{module}#[dtor]{name}"]
-                    #[allow(non_snake_case)]
-                    unsafe extern "C" fn __export_dtor_{snake}(arg0: i32) {{
-                        #[allow(unused_imports)]
-                        use {rt}::boxed::Box;
+        if let Identifier::Interface(_, key) = self.identifier {
+            // Escape the submodule for this interface
+            path_to_root.push_str("super::");
 
-                        drop(Box::from_raw(::core::mem::transmute::<isize, *mut {camel}>(
-                            arg0.try_into().unwrap(),
-                        )))
-                    }}
-                }};
-            "#
-        );
+            // Escape the `exports` top-level submodule
+            if !self.in_import {
+                path_to_root.push_str("super::");
+            }
 
-        if info.owned {
-            uwriteln!(
-                self.src,
-                r#"
-                    #[derive(Debug)]
-                    pub struct Own{camel} {{
-                        handle: i32,
-                    }}
-
-                    impl Own{camel} {{
-                        #[doc(hidden)]
-                        pub unsafe fn from_handle(handle: i32) -> Self {{
-                            Self {{ handle }}
-                        }}
-
-                        #[doc(hidden)]
-                        pub fn into_handle(self) -> i32 {{
-                            ::core::mem::ManuallyDrop::new(self).handle
-                        }}
-
-                        pub fn new(rep: {camel}) -> Own{camel} {{
-                            #[allow(unused_imports)]
-                            use {rt}::boxed::Box;
-
-                            unsafe {{
-                                #[cfg(target_arch = "wasm32")]
-                                #[link(wasm_import_module = "[export]{module}")]
-                                extern "C" {{
-                                    #[link_name = "[resource-new]{name}"]
-                                    fn wit_import(_: i32) -> i32;
-                                }}
-
-                                #[cfg(not(target_arch = "wasm32"))]
-                                unsafe fn wit_import(_n: i32) -> i32 {{ unreachable!() }}
-
-                                Own{camel} {{
-                                    handle: wit_import(
-                                        ::core::mem::transmute::<*mut {camel}, isize>(
-                                            Box::into_raw(Box::new(rep))
-                                        )
-                                            .try_into()
-                                            .unwrap(),
-                                    ),
-                                }}
-                            }}
-                        }}
-                    }}
-
-                    impl core::ops::Deref for Own{camel} {{
-                        type Target = {camel};
-
-                        fn deref(&self) -> &{camel} {{
-                            unsafe {{
-                                #[cfg(target_arch = "wasm32")]
-                                #[link(wasm_import_module = "[export]{module}")]
-                                extern "C" {{
-                                    #[link_name = "[resource-rep]{name}"]
-                                    fn wit_import(_: i32) -> i32;
-                                }}
-
-                                #[cfg(not(target_arch = "wasm32"))]
-                                unsafe fn wit_import(_n: i32) -> i32 {{ unreachable!() }}
-
-                                ::core::mem::transmute::<isize, &{camel}>(
-                                    wit_import(self.handle).try_into().unwrap()
-                                )
-                            }}
-                        }}
-                    }}
-
-                    impl core::ops::DerefMut for Own{camel} {{
-                        fn deref_mut(&mut self) -> &mut {camel} {{
-                            unsafe {{
-                                #[cfg(target_arch = "wasm32")]
-                                #[link(wasm_import_module = "[export]{module}")]
-                                extern "C" {{
-                                    #[link_name = "[resource-rep]{name}"]
-                                    fn wit_import(_: i32) -> i32;
-                                }}
-
-                                #[cfg(not(target_arch = "wasm32"))]
-                                unsafe fn wit_import(_n: i32) -> i32 {{ unreachable!() }}
-
-                                ::core::mem::transmute::<isize, &mut {camel}>(
-                                    wit_import(self.handle).try_into().unwrap()
-                                )
-                            }}
-                        }}
-                    }}
-
-                    impl Drop for Own{camel} {{
-                        fn drop(&mut self) {{
-                            unsafe {{
-                                #[cfg(target_arch = "wasm32")]
-                                #[link(wasm_import_module = "[export]{module}")]
-                                extern "C" {{
-                                    #[link_name = "[resource-drop]{name}"]
-                                    fn wit_import(_: i32);
-                                }}
-
-                                #[cfg(not(target_arch = "wasm32"))]
-                                fn wit_import(_n: i32) {{ unreachable!() }}
-
-                                wit_import(self.handle)
-                            }}
-                        }}
-                    }}
-                "#
-            );
+            // Escape the namespace/package submodules for interface-based ids
+            match key {
+                WorldKey::Name(_) => {}
+                WorldKey::Interface(_) => {
+                    path_to_root.push_str("super::super::");
+                }
+            }
         }
+        path_to_root
     }
-    fn start_append_submodule(&mut self, name: &WorldKey) -> (String, String, Option<PackageName>) {
+
+    fn start_append_submodule(&mut self, name: &WorldKey) -> (String, Option<PackageName>) {
         let snake = match name {
             WorldKey::Name(name) => to_rust_ident(name),
             WorldKey::Interface(id) => {
                 to_rust_ident(self.resolve.interfaces[*id].name.as_ref().unwrap())
             }
         };
-        let mut path_to_root = String::from("super::");
         let pkg = match name {
             WorldKey::Name(_) => None,
             WorldKey::Interface(id) => {
@@ -876,7 +657,6 @@ impl InterfaceGenerator<'_> {
             let mut path = String::new();
             if !self.in_import {
                 path.push_str("exports::");
-                path_to_root.push_str("super::");
             }
             if let Some(name) = &pkg {
                 path.push_str(&format!(
@@ -884,21 +664,16 @@ impl InterfaceGenerator<'_> {
                     name.namespace.to_snake_case(),
                     name.name.to_snake_case()
                 ));
-                path_to_root.push_str("super::super::");
             }
             path.push_str(&snake);
             self.gen.interface_names.insert(id, path);
         }
-        (snake, path_to_root, pkg)
+        (snake, pkg)
     }
 
-    fn finish_append_submodule(
-        mut self,
-        snake: &str,
-        path_to_root: &str,
-        pkg: Option<PackageName>,
-    ) {
+    fn finish_append_submodule(mut self, snake: &str, pkg: Option<PackageName>) {
         let module = self.finish();
+        let path_to_root = self.path_to_root();
         let module = format!(
             "
                 #[allow(clippy::all)]
@@ -926,9 +701,12 @@ impl InterfaceGenerator<'_> {
 
         let mut sig = FnSig::default();
         let param_mode = TypeMode::AllBorrowed("'_");
-        match &func.kind {
+        match func.kind {
             FunctionKind::Freestanding => {}
-            FunctionKind::Method(_) | FunctionKind::Static(_) | FunctionKind::Constructor(_) => {
+            FunctionKind::Method(id) | FunctionKind::Static(id) | FunctionKind::Constructor(id) => {
+                let name = self.resolve.types[id].name.as_ref().unwrap();
+                let name = to_upper_camel_case(name);
+                uwriteln!(self.src, "impl {name} {{");
                 sig.use_item_name = true;
                 if let FunctionKind::Method(_) = &func.kind {
                     sig.self_arg = Some("&self".into());
@@ -981,6 +759,13 @@ impl InterfaceGenerator<'_> {
 
         self.src.push_str("}\n");
         self.src.push_str("}\n");
+
+        match func.kind {
+            FunctionKind::Freestanding => {}
+            FunctionKind::Method(_) | FunctionKind::Static(_) | FunctionKind::Constructor(_) => {
+                self.src.push_str("}\n");
+            }
+        }
     }
 
     fn generate_guest_export(&mut self, func: &Function, interface_name: Option<&WorldKey>) {
@@ -1278,7 +1063,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.print_typedef_record(id, record, docs, false);
     }
 
-    fn type_resource(&mut self, id: TypeId, _name: &str, docs: &Docs) {
+    fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs) {
         let entry = self
             .gen
             .resources
@@ -1287,7 +1072,136 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         if !self.in_import {
             entry.direction = Direction::Export;
         }
-        entry.docs = docs.clone();
+        self.rustdoc(docs);
+        let camel = to_upper_camel_case(name);
+        let rt = self.gen.runtime_path();
+
+        let wasm_import_module = if self.in_import {
+            // Imported resources are a simple wrapper around `Resource<T>` in
+            // the `wit-bindgen` crate.
+            uwriteln!(
+                self.src,
+                r#"
+                    #[derive(Debug)]
+                    pub struct {camel} {{
+                        handle: {rt}::Resource<{camel}>,
+                    }}
+
+                    impl {camel} {{
+                        #[doc(hidden)]
+                        pub unsafe fn from_handle(handle: u32) -> Self {{
+                            Self {{
+                                handle: {rt}::Resource::from_handle(handle),
+                            }}
+                        }}
+
+                        #[doc(hidden)]
+                        pub fn into_handle(self) -> u32 {{
+                            {rt}::Resource::into_handle(self.handle)
+                        }}
+
+                        #[doc(hidden)]
+                        pub fn handle(&self) -> u32 {{
+                            {rt}::Resource::handle(&self.handle)
+                        }}
+                    }}
+                "#
+            );
+            self.wasm_import_module.unwrap().to_string()
+        } else {
+            // Exported resources are represented as `Resource<T>` as opposed
+            // to being wrapped like imported resources.
+            //
+            // An `Own` typedef is available for the `Resource<T>` type though.
+            //
+            // Note that the actual name `{camel}` is defined here though as
+            // an alias of the type this is implemented by as configured by the
+            // `exports` configuration by the user.
+            let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+            let module = match self.identifier {
+                Identifier::Interface(_, key) => self.resolve.name_world_key(key),
+                Identifier::World(_) => unimplemented!("resource exports from worlds"),
+            };
+            let export_key = ExportKey::Name(format!("{module}/{name}"));
+            // NB: errors are ignored here since they'll generate an error
+            // through the `generate_exports` method above.
+            let impl_name = self
+                .gen
+                .lookup_export(&export_key)
+                .unwrap_or_else(|_| "ERROR".to_string());
+            let path_to_root = self.path_to_root();
+            uwriteln!(
+                self.src,
+                r#"
+                    pub use {path_to_root}{impl_name} as {camel};
+                    const _: () = {{
+                        #[doc(hidden)]
+                        #[export_name = "{export_prefix}{module}#[dtor]{name}"]
+                        #[allow(non_snake_case)]
+                        unsafe extern "C" fn dtor(rep: usize) {{
+                            {rt}::Resource::<{camel}>::dtor(rep)
+                        }}
+                    }};
+                    unsafe impl {rt}::RustResource for {camel} {{
+                        unsafe fn new(rep: usize) -> u32 {{
+                            #[cfg(not(target_arch = "wasm32"))]
+                            unreachable!();
+
+                            #[cfg(target_arch = "wasm32")]
+                            {{
+                                #[link(wasm_import_module = "[export]{module}")]
+                                extern "C" {{
+                                    #[link_name = "[resource-new]{name}"]
+                                    fn new(_: usize) -> u32;
+                                }}
+                                new(rep)
+                            }}
+                        }}
+
+                        unsafe fn rep(handle: u32) -> usize {{
+                            #[cfg(not(target_arch = "wasm32"))]
+                            unreachable!();
+
+                            #[cfg(target_arch = "wasm32")]
+                            {{
+                                #[link(wasm_import_module = "[export]{module}")]
+                                extern "C" {{
+                                    #[link_name = "[resource-rep]{name}"]
+                                    fn rep(_: u32) -> usize;
+                                }}
+                                rep(handle)
+                            }}
+                        }}
+                    }}
+                    pub type Own{camel} = {rt}::Resource<{camel}>;
+                "#
+            );
+            format!("[export]{module}")
+        };
+
+        uwriteln!(
+            self.src,
+            r#"
+                unsafe impl {rt}::WasmResource for {camel} {{
+                     #[inline]
+                     unsafe fn drop(handle: u32) {{
+                         #[cfg(not(target_arch = "wasm32"))]
+                         unreachable!();
+
+                         #[cfg(target_arch = "wasm32")]
+                         {{
+                             #[link(wasm_import_module = "{wasm_import_module}")]
+                             extern "C" {{
+                                 #[link_name = "[resource-drop]{name}"]
+                                 fn drop(_: u32);
+                             }}
+
+                             drop(handle);
+                         }}
+                     }}
+                }}
+            "#
+        );
     }
 
     fn type_tuple(&mut self, id: TypeId, _name: &str, tuple: &Tuple, docs: &Docs) {
@@ -1670,11 +1584,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::HandleLower {
-                handle: Handle::Own(_),
+                handle: Handle::Own(resource),
                 ..
             } => {
                 let op = &operands[0];
-                results.push(format!("({op}).into_handle()"))
+                let rt = self.gen.gen.runtime_path();
+                let resource = dealias(self.gen.resolve, *resource);
+                results.push(match self.gen.gen.resources[&resource].direction {
+                    Direction::Import => format!("({op}).into_handle() as i32"),
+                    Direction::Export => format!("{rt}::Resource::into_handle({op}) as i32"),
+                });
             }
 
             Instruction::HandleLower {
@@ -1682,7 +1601,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 ..
             } => {
                 let op = &operands[0];
-                results.push(format!("({op}).handle"))
+                results.push(format!("({op}).handle() as i32"))
             }
 
             Instruction::HandleLift { handle, .. } => {
@@ -1702,19 +1621,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                     .as_deref()
                                     .unwrap()
                                     .to_upper_camel_case();
-                                format!(
-                                    "::core::mem::transmute::<isize, &{name}>\
-                                     ({op}.try_into().unwrap())"
-                                )
+                                format!("&*({op} as u32 as usize as *const {name})")
                             }
                             Handle::Own(_) => {
                                 let name = self.gen.type_path(resource, true);
-                                format!("{name}::from_handle({op})")
+                                format!("{name}::from_handle({op} as u32)")
                             }
                         }
                     } else {
                         let name = self.gen.type_path(resource, true);
-                        format!("{prefix}{name}::from_handle({op})")
+                        format!("{prefix}{name}::from_handle({op} as u32)")
                     },
                 );
             }
@@ -2073,7 +1989,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                     FunctionKind::Method(ty) | FunctionKind::Static(ty) => {
                         self.push_str(&format!(
-                            "<{0} as Guest{0}>::{1}",
+                            "<_{0}Impl as Guest{0}>::{1}",
                             resolve.types[*ty]
                                 .name
                                 .as_deref()
@@ -2085,7 +2001,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     FunctionKind::Constructor(ty) => {
                         self.gen.mark_resource_owned(*ty);
                         self.push_str(&format!(
-                            "Own{0}::new(<{0} as Guest{0}>::new",
+                            "Own{0}::new(<_{0}Impl as Guest{0}>::new",
                             resolve.types[*ty]
                                 .name
                                 .as_deref()
