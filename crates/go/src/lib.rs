@@ -1713,6 +1713,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 uwriteln!(self.lower_src, "{lower_name} := {param}",);
             }
             Type::String => {
+                self.interface.gen.needs_import_unsafe = true;
                 uwriteln!(
                     self.lower_src,
                     "var {lower_name} {value}",
@@ -1721,7 +1722,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 uwriteln!(
                     self.lower_src,
                     "
-                    {lower_name}.ptr = C.CString({param})
+                    // use unsafe.Pointer to avoid copy
+                    {lower_name}.ptr = (*uint8)(unsafe.Pointer(C.CString({param})))
                     {lower_name}.len = C.size_t(len({param}))"
                 );
             }
@@ -1887,10 +1889,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 uwriteln!(self.lift_src, "{lift_name} := {param}");
             }
             Type::String => {
+                self.interface.gen.needs_import_unsafe = true;
                 uwriteln!(
                     self.lift_src,
                     "var {name} {value}
-                    {lift_name} = C.GoStringN({param}.ptr, C.int({param}.len))",
+                    {lift_name} = C.GoStringN((*C.char)(unsafe.Pointer({param}.ptr)), C.int({param}.len))",
                     name = lift_name,
                     value = self.interface.get_ty(ty),
                 );
