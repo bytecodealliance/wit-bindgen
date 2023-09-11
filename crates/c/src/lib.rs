@@ -569,7 +569,7 @@ impl C {
 
                 uwriteln!(
                     h_str,
-                    "void {borrow_namespace}_{snake}_drop_borrow({borrow_name});"
+                    "extern void {borrow_namespace}_{snake}_drop_borrow({borrow_name});"
                 );
 
                 uwriteln!(
@@ -589,7 +589,7 @@ impl C {
 
                 uwriteln!(
                     h_str,
-                    "{own_name} {namespace}_{snake}_new({namespace}_{snake}_t*);"
+                    "extern {own_name} {namespace}_{snake}_new({namespace}_{snake}_t*);"
                 );
 
                 uwriteln!(
@@ -604,7 +604,7 @@ impl C {
 
                 uwriteln!(
                     h_str,
-                    "{namespace}_{snake}_t* {namespace}_{snake}_rep({own_name});"
+                    "extern {namespace}_{snake}_t* {namespace}_{snake}_rep({own_name});"
                 );
 
                 uwriteln!(
@@ -1585,6 +1585,7 @@ impl InterfaceGenerator<'_> {
         );
         let name = self.c_func_name(interface_name, func);
         let import_name = self.gen.names.tmp(&format!("__wasm_import_{name}",));
+        self.src.c_fns("extern ");
         match sig.results.len() {
             0 => self.src.c_fns("void"),
             1 => self.src.c_fns(wasm_type(sig.results[0])),
@@ -1606,6 +1607,7 @@ impl InterfaceGenerator<'_> {
 
         // Print the public facing signature into the header, and since that's
         // what we are defining also print it into the C file.
+        self.src.h_fns("extern ");
         let c_sig = self.print_sig(interface_name, func, !self.gen.opts.no_sig_flattening);
         self.src.c_adapters("\n");
         self.src.c_adapters(&c_sig.sig);
