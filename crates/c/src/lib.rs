@@ -284,23 +284,35 @@ impl WorldGenerator for C {
                 StringEncoding::CompactUTF16 => unimplemented!(),
             };
             let ty = self.char_type();
+            let c_string_ty = match self.opts.string_encoding {
+                StringEncoding::UTF8 => "char",
+                StringEncoding::UTF16 => "char16_t",
+                StringEncoding::CompactUTF16 => panic!("Compact UTF16 unsupported"),
+            };
             uwrite!(
                 self.src.h_helpers,
                 "
-                   void {snake}_string_set({snake}_string_t *ret, const {ty} *s);
-                   void {snake}_string_dup({snake}_string_t *ret, const {ty} *s);
+                   // Transfers ownership of `s` into the string `ret`
+                   void {snake}_string_set({snake}_string_t *ret, {c_string_ty} *s);
+
+                   // Creates a copy of the input nul-terminate string `s` and
+                   // stores it into the component model string `ret`.
+                   void {snake}_string_dup({snake}_string_t *ret, const {c_string_ty} *s);
+
+                   // Deallocates the string pointed to by `ret`, deallocating
+                   // the memory behind the string.
                    void {snake}_string_free({snake}_string_t *ret);\
                ",
             );
             uwrite!(
                 self.src.c_helpers,
                 "
-                   void {snake}_string_set({snake}_string_t *ret, const {ty} *s) {{
+                   void {snake}_string_set({snake}_string_t *ret, {c_string_ty} *s) {{
                        ret->ptr = ({ty}*) s;
                        ret->len = {strlen};
                    }}
 
-                   void {snake}_string_dup({snake}_string_t *ret, const {ty} *s) {{
+                   void {snake}_string_dup({snake}_string_t *ret, const {c_string_ty} *s) {{
                        ret->len = {strlen};
                        ret->ptr = cabi_realloc(NULL, 0, {size}, ret->len * {size});
                        memcpy(ret->ptr, s, ret->len * {size});
@@ -440,8 +452,8 @@ impl C {
 
     fn char_type(&self) -> &'static str {
         match self.opts.string_encoding {
-            StringEncoding::UTF8 => "char",
-            StringEncoding::UTF16 => "char16_t",
+            StringEncoding::UTF8 => "uint8_t",
+            StringEncoding::UTF16 => "uint16_t",
             StringEncoding::CompactUTF16 => panic!("Compact UTF16 unsupported"),
         }
     }
