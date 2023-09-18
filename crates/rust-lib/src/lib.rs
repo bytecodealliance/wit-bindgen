@@ -337,7 +337,9 @@ pub trait RustGenerator<'a> {
             // If the type recursively owns data and it's a
             // variant/record/list, then we need to place the
             // lifetime parameter on the type as well.
-            if (info.has_list || info.has_borrow_handle) && needs_generics(self.resolve(), &ty.kind)
+            if (info.has_list || info.has_borrow_handle)
+                && !info.has_own_handle
+                && needs_generics(self.resolve(), &ty.kind)
             {
                 self.print_generics(lt);
             }
@@ -470,6 +472,11 @@ pub trait RustGenerator<'a> {
         } else {
             mode
         };
+        // Lists with `own` handles must always be owned
+        let mode = match *ty {
+            Type::Id(id) if self.info(id).has_own_handle => TypeMode::Owned,
+            _ => mode,
+        };
         match mode {
             TypeMode::AllBorrowed(lt) => {
                 self.print_borrowed_slice(false, ty, lt, next_mode);
@@ -529,21 +536,29 @@ pub trait RustGenerator<'a> {
 
     fn modes_of(&self, ty: TypeId) -> Vec<(String, TypeMode)> {
         let info = self.info(ty);
+        // If this type isn't actually used, no need to generate it.
         if !info.owned && !info.borrowed {
             return Vec::new();
         }
         let mut result = Vec::new();
-        let first_mode =
-            if info.owned || !info.borrowed || matches!(self.ownership(), Ownership::Owning) {
-                if info.has_borrow_handle {
-                    TypeMode::HandlesBorrowed("'a")
-                } else {
-                    TypeMode::Owned
-                }
+
+        // Prioritize generating an "owned" type. This is done to simplify
+        // generated bindings by default. Borrowed handles always use a borrow,
+        // however.
+        let first_mode = if info.owned
+            || !info.borrowed
+            || matches!(self.ownership(), Ownership::Owning)
+            || info.has_own_handle
+        {
+            if info.has_borrow_handle {
+                TypeMode::HandlesBorrowed("'a")
             } else {
-                assert!(!self.uses_two_names(&info));
-                TypeMode::AllBorrowed("'a")
-            };
+                TypeMode::Owned
+            }
+        } else {
+            assert!(!self.uses_two_names(&info));
+            TypeMode::AllBorrowed("'a")
+        };
         result.push((self.result_name(ty), first_mode));
         if self.uses_two_names(&info) {
             result.push((self.param_name(ty), TypeMode::AllBorrowed("'a")));
@@ -1025,15 +1040,21 @@ pub trait RustGenerator<'a> {
     }
 
     fn uses_two_names(&self, info: &TypeInfo) -> bool {
-        info.has_list
+        // Types are only duplicated if explicitly requested ...
+        matches!(
+            self.ownership(),
+            Ownership::Borrowing {
+                duplicate_if_necessary: true
+            }
+        )
+            // ... and if they're both used in a borrowed/owned context
             && info.borrowed
             && info.owned
-            && matches!(
-                self.ownership(),
-                Ownership::Borrowing {
-                    duplicate_if_necessary: true
-                }
-            )
+            // ... and they have a list ...
+            && info.has_list
+            // ... and if there's NOT an `own` handle since those are always
+            // done by ownership.
+            && !info.has_own_handle
     }
 
     fn lifetime_for(&self, info: &TypeInfo, mode: TypeMode) -> Option<&'static str> {

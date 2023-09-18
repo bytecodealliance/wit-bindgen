@@ -1462,7 +1462,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 
     fn is_list_canonical(&self, resolve: &Resolve, ty: &Type) -> bool {
-        resolve.all_bits_valid(ty)
+        if !resolve.all_bits_valid(ty) {
+            return false;
+        }
+        match ty {
+            Type::Id(id) => !self.gen.gen.types.get(*id).has_resource,
+            _ => true,
+        }
     }
 
     fn emit(
