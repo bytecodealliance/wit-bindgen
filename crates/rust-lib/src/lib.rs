@@ -305,12 +305,21 @@ pub trait RustGenerator<'a> {
         let lt = self.lifetime_for(&info, mode);
         let ty = &self.resolve().types[id];
         if ty.name.is_some() {
-            // If this type has a list internally, no lifetime is being printed,
-            // but we're in a borrowed mode, then that means we're in a borrowed
-            // context and don't want ownership of the type but we're using an
-            // owned type definition. Inject a `&` in front to indicate that, at
-            // the API level, ownership isn't required.
-            if (info.has_list || info.has_borrow_handle) && lt.is_none() {
+            // If `mode` is borrowed then that means literal ownership of the
+            // input type is not necessarily required. In this situation we
+            // ideally want to put a `&` in front to statically indicate this.
+            // That's not required in all situations however and is only really
+            // critical for lists which otherwise would transfer ownership of
+            // the allocation to this function.
+            //
+            // Note, though, that if the type has an `own<T>` inside of it then
+            // it is actually required that we take ownership since Rust is
+            // losing access to those handles.
+            //
+            // Check here if the type has the right shape and if we're in the
+            // right mode, and if those conditions are met a lifetime is
+            // printed.
+            if info.has_list && !info.has_own_handle {
                 if let TypeMode::AllBorrowed(lt)
                 | TypeMode::LeafBorrowed(lt)
                 | TypeMode::HandlesBorrowed(lt) = mode
@@ -1032,7 +1041,7 @@ pub trait RustGenerator<'a> {
             TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s) | TypeMode::HandlesBorrowed(s) => {
                 s
             }
-            _ => return None,
+            TypeMode::Owned => return None,
         };
         if info.has_borrow_handle {
             return Some(lt);

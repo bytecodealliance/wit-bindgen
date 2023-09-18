@@ -24,7 +24,7 @@ impl Guest for Exports {
             lists::foo(value)
         );
 
-        thing_in::bar(thing_in::Thing {
+        thing_in::bar(&thing_in::Thing {
             name: "thing 1",
             value: &["some value", "another value"],
         });
@@ -38,7 +38,7 @@ impl Guest for Exports {
                 name: "thing 1".to_owned(),
                 value: vec!["some value".to_owned(), "another value".to_owned()],
             },
-            thing_in_and_out::baz(value)
+            thing_in_and_out::baz(&value)
         );
     }
 }

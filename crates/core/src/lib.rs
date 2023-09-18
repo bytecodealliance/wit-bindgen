@@ -42,6 +42,9 @@ pub struct TypeInfo {
 
     /// Whether or not this type (transitively) has a borrow handle.
     pub has_borrow_handle: bool,
+
+    /// Whether or not this type (transitively) has an own handle.
+    pub has_own_handle: bool,
 }
 
 impl std::ops::BitOrAssign for TypeInfo {
@@ -52,6 +55,7 @@ impl std::ops::BitOrAssign for TypeInfo {
         self.has_list |= rhs.has_list;
         self.has_resource |= rhs.has_resource;
         self.has_borrow_handle |= rhs.has_borrow_handle;
+        self.has_own_handle |= rhs.has_own_handle;
     }
 }
 
@@ -164,7 +168,10 @@ impl Types {
                 info.has_resource = true;
             }
             TypeDefKind::Handle(handle) => {
-                info.has_borrow_handle = matches!(handle, Handle::Borrow(_));
+                match handle {
+                    Handle::Borrow(_) => info.has_borrow_handle = true,
+                    Handle::Own(_) => info.has_own_handle = true,
+                }
                 info.has_resource = true;
             }
             TypeDefKind::Tuple(t) => {

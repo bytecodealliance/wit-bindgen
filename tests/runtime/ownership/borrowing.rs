@@ -24,7 +24,7 @@ impl Guest for Exports {
             lists::foo(value)
         );
 
-        thing_in::bar(thing_in::Thing {
+        thing_in::bar(&thing_in::Thing {
             name: "thing 1",
             value: &["some value", "another value"],
         });
