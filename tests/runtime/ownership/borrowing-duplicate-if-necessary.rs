@@ -40,5 +40,6 @@ impl Guest for Exports {
             },
             thing_in_and_out::baz(&value)
         );
+        aliased::call("string1", "string2")
     }
 }

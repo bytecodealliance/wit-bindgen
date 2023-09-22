@@ -304,6 +304,21 @@ pub trait RustGenerator<'a> {
         let info = self.info(id);
         let lt = self.lifetime_for(&info, mode);
         let ty = &self.resolve().types[id];
+
+        // Look through type aliases
+        let mut potential_alias = ty;
+        // Keep going while we're looking at aliases
+        while let TypeDefKind::Type(ty) = &potential_alias.kind {
+            if let Type::Id(i) = ty {
+                // Peel away one more type alias layer
+                potential_alias = &self.resolve().types[*i];
+            } else {
+                // The type alias was pointing at a primitive, we're done.
+                self.print_ty(ty, mode);
+                return;
+            }
+        }
+
         if ty.name.is_some() {
             // If `mode` is borrowed then that means literal ownership of the
             // input type is not necessarily required. In this situation we

@@ -22,6 +22,11 @@ world ownership {
 
         baz: func(a: thing) -> thing
     }
+    import aliased: interface {
+        type other-alias = string
+        type aliased = other-alias
+        call: func(str: string, aliased: aliased)
+    }
 
     export foo: func()
 }

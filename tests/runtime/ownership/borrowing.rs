@@ -34,5 +34,6 @@ impl Guest for Exports {
             value: vec!["some value".to_owned(), "another value".to_owned()],
         };
         assert_eq!(value, thing_in_and_out::baz(&value));
+        aliased::call("string1", "string2")
     }
 }

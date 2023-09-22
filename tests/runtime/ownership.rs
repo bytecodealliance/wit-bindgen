@@ -8,6 +8,14 @@ pub struct MyImports {
     called_foo: bool,
     called_bar: bool,
     called_baz: bool,
+    called_aliased: bool,
+}
+
+impl aliased::Host for MyImports {
+    fn call(&mut self, _string1: String, _string2: String) -> Result<()> {
+        self.called_aliased = true;
+        Ok(())
+    }
 }
 
 impl lists::Host for MyImports {
@@ -52,6 +60,7 @@ fn run_test(exports: Ownership, store: &mut Store<crate::Wasi<MyImports>>) -> Re
     assert!(store.data().0.called_foo);
     assert!(store.data().0.called_bar);
     assert!(store.data().0.called_baz);
+    assert!(store.data().0.called_aliased);
 
     Ok(())
 }
