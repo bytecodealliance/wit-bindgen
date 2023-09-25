@@ -142,6 +142,13 @@ pub struct Opts {
     /// This defaults to `wit_bindgen::bitflags`.
     #[cfg_attr(feature = "clap", arg(long))]
     pub bitflags_path: Option<String>,
+
+    /// Additional derive attributes to add to generated types. If using in a CLI, this flag can be
+    /// specified multiple times to add multiple attributes.
+    ///
+    /// These derive attributes will be added to any generated structs or enums
+    #[cfg_attr(feature = "clap", arg(long = "additional_derive_attribute", short = 'd', default_values_t = Vec::<String>::new()))]
+    pub additional_derive_attributes: Vec<String>,
 }
 
 impl Opts {
@@ -543,9 +550,11 @@ impl InterfaceGenerator<'_> {
                     .entry(export_key)
                     .or_insert((trait_name, local_impl_name, Vec::new()));
             let prev = mem::take(&mut self.src);
-            let mut sig = FnSig::default();
-            sig.use_item_name = true;
-            sig.private = true;
+            let mut sig = FnSig {
+                use_item_name: true,
+                private: true,
+                ..Default::default()
+            };
             if let FunctionKind::Method(_) = &func.kind {
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
@@ -915,9 +924,11 @@ impl InterfaceGenerator<'_> {
             if self.gen.skip.contains(&func.name) {
                 continue;
             }
-            let mut sig = FnSig::default();
-            sig.use_item_name = true;
-            sig.private = true;
+            let mut sig = FnSig {
+                use_item_name: true,
+                private: true,
+                ..Default::default()
+            };
             if let FunctionKind::Method(_) = &func.kind {
                 sig.self_arg = Some("&self".into());
                 sig.self_is_first_param = true;
@@ -939,6 +950,10 @@ impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
         self.gen.opts.ownership
     }
 
+    fn additional_derives(&self) -> &[String] {
+        &self.gen.opts.additional_derive_attributes
+    }
+
     fn path_to_interface(&self, interface: InterfaceId) -> Option<String> {
         let mut path = String::new();
         if let Identifier::Interface(cur, name) = self.identifier {
@@ -958,7 +973,7 @@ impl<'a> RustGenerator<'a> for InterfaceGenerator<'a> {
             }
         }
         let name = &self.gen.interface_names[&interface];
-        path.push_str(&name);
+        path.push_str(name);
         Some(path)
     }
 
@@ -1340,7 +1355,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             sig.push_str(wasm_type(*param));
             sig.push_str(", ");
         }
-        sig.push_str(")");
+        sig.push(')');
         assert!(results.len() < 2);
         for result in results.iter() {
             sig.push_str(" -> ");
@@ -1398,7 +1413,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
     }
 
     fn finish_block(&mut self, operands: &mut Vec<String>) {
-        if self.cleanup.len() > 0 {
+        if !self.cleanup.is_empty() {
             self.needs_cleanup_list = true;
             self.push_str("cleanup_list.extend_from_slice(&[");
             for (ptr, layout) in mem::take(&mut self.cleanup) {
@@ -1677,7 +1692,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         self.push_str(&format!(" => {{\n{block}\n}}\n"));
                     }
                 }
-                if results.len() == 0 {
+                if results.is_empty() {
                     self.push_str("}\n");
                 } else {
                     self.push_str("};\n");
@@ -1901,7 +1916,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 self.push_str(&format!(
                     "if ptr.is_null()\n{{\nalloc::handle_alloc_error({layout});\n}}\nptr\n}}",
                 ));
-                self.push_str(&format!("else {{\n::core::ptr::null_mut()\n}};\n",));
+                self.push_str("else {{\n::core::ptr::null_mut()\n}};\n");
                 self.push_str(&format!("for (i, e) in {vec}.into_iter().enumerate() {{\n",));
                 self.push_str(&format!(
                     "let base = {result} as i32 + (i as i32) * {size};\n",
@@ -1964,7 +1979,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
 
                 // ... then call the function with all our operands
-                if sig.results.len() > 0 {
+                if !sig.results.is_empty() {
                     self.push_str("let ret = ");
                     results.push("ret".to_string());
                 }
