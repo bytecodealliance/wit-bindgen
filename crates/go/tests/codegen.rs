@@ -19,6 +19,7 @@ macro_rules! codegen_test {
     (resource_borrow_in_record_export $name:tt $test:tt) => {};
     (resources_in_aggregates $name:tt $test:tt) => {};
     (issue668 $name:tt $test:tt) => {};
+    (flavorful $name:tt $test:tt) => {};
 
     ($id:ident $name:tt $test:tt) => {
         #[test]
