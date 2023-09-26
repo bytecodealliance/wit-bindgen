@@ -296,24 +296,14 @@ impl WorldGenerator for RustWasm {
         id: InterfaceId,
         _files: &mut Files,
     ) -> Result<()> {
-        let (pkg, inner_name) = match name {
-            WorldKey::Name(name) => (None, name),
+        let inner_name = match name {
+            WorldKey::Name(name) => name,
             WorldKey::Interface(id) => {
                 let interface = &resolve.interfaces[*id];
-                (
-                    Some(&resolve.packages[interface.package.unwrap()].name),
-                    interface.name.as_ref().unwrap(),
-                )
+                interface.name.as_ref().unwrap()
             }
         };
-        let path = format!(
-            "{}{inner_name}",
-            if let Some(pkg) = pkg {
-                format!("{}:{}/", pkg.namespace, pkg.name)
-            } else {
-                String::new()
-            }
-        );
+        let path = resolve.id_of(id).unwrap_or(inner_name.to_string());
         let mut gen = self.interface(Identifier::Interface(id, name), None, resolve, false);
         let (snake, pkg) = gen.start_append_submodule(name);
         gen.types(id);

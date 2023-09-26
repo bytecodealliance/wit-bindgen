@@ -134,7 +134,6 @@ mod symbol_does_not_conflict {
                 bar: func() -> string
             }
 
-
             world foo {
                 export foo1
                 export foo2
@@ -269,6 +268,35 @@ mod owned_resource_deref_mut {
             let mutable_data: &mut u32 = &mut this.data;
             *mutable_data = new_data;
             this.data
+        }
+    }
+}
+
+mod package_with_versions {
+    wit_bindgen::generate!({
+        inline: "
+            package my:inline@0.0.0
+
+            interface foo {
+                resource bar {
+                    constructor()
+                }
+            }
+
+            world baz {
+                export foo
+            }
+        ",
+        exports: {
+            "my:inline/foo@0.0.0/bar": Resource
+        }
+    });
+
+    pub struct Resource;
+
+    impl exports::my::inline::foo::GuestBar for Resource {
+        fn new() -> Self {
+            loop {}
         }
     }
 }
