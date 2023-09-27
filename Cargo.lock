@@ -1914,6 +1914,8 @@ dependencies = [
  "anyhow",
  "clap",
  "heck",
+ "serde",
+ "serde_json",
  "test-helpers",
  "wasm-metadata",
  "wit-bindgen",
@@ -1936,6 +1938,7 @@ version = "0.12.0"
 dependencies = [
  "anyhow",
  "proc-macro2",
+ "quote",
  "syn",
  "wit-bindgen-core",
  "wit-bindgen-rust",

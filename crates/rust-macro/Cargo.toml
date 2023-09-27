@@ -17,7 +17,8 @@ test = false
 
 [dependencies]
 proc-macro2 = "1.0"
-syn = "2.0"
+syn = { version = "2.0", features = ["printing"] }
+quote = "1"
 wit-bindgen-core = { workspace = true }
 wit-bindgen-rust = { workspace = true }
 wit-bindgen-rust-lib = { workspace = true }

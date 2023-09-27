@@ -1,4 +1,5 @@
 use heck::*;
+use std::collections::BTreeSet;
 use std::fmt;
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, LiftLower, WasmType};
@@ -91,6 +92,9 @@ pub trait RustGenerator<'a> {
 
     fn is_exported_resource(&self, ty: TypeId) -> bool;
 
+    /// Return any additional derive attributes to add to the generated types
+    fn additional_derives(&self) -> &[String];
+
     fn mark_resource_owned(&mut self, resource: TypeId);
 
     fn push_str(&mut self, s: &str);
@@ -159,7 +163,7 @@ pub trait RustGenerator<'a> {
         param_mode: TypeMode,
         sig: &FnSig,
     ) -> Vec<String> {
-        let params = self.print_docs_and_params(func, param_mode, &sig);
+        let params = self.print_docs_and_params(func, param_mode, sig);
         if let FunctionKind::Constructor(_) = &func.kind {
             self.push_str(" -> Self")
         } else {
@@ -198,7 +202,7 @@ pub trait RustGenerator<'a> {
         } else {
             &func.name
         };
-        self.push_str(&to_rust_ident(&func_name));
+        self.push_str(&to_rust_ident(func_name));
         if let Some(generics) = &sig.generics {
             self.push_str(generics);
         }
@@ -563,7 +567,7 @@ pub trait RustGenerator<'a> {
         if self.uses_two_names(&info) {
             result.push((self.param_name(ty), TypeMode::AllBorrowed("'a")));
         }
-        return result;
+        result
     }
 
     fn print_typedef_record(
@@ -574,6 +578,9 @@ pub trait RustGenerator<'a> {
         derive_component: bool,
     ) {
         let info = self.info(id);
+        // We use a BTree set to make sure we don't have any duplicates and we have a stable order
+        let additional_derives: BTreeSet<String> =
+            self.additional_derives().iter().cloned().collect();
         for (name, mode) in self.modes_of(id) {
             let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
@@ -586,12 +593,17 @@ pub trait RustGenerator<'a> {
                 self.push_str("#[derive(wasmtime::component::Lower)]\n");
                 self.push_str("#[component(record)]\n");
             }
-
+            let mut derives = additional_derives.clone();
             if info.is_copy() {
                 self.push_str("#[repr(C)]\n");
-                self.push_str("#[derive(Copy, Clone)]\n");
+                derives.extend(["Copy", "Clone"].into_iter().map(|s| s.to_string()));
             } else if info.is_clone() {
-                self.push_str("#[derive(Clone)]\n");
+                derives.insert("Clone".to_string());
+            }
+            if !derives.is_empty() {
+                self.push_str("#[derive(");
+                self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
+                self.push_str(")]\n")
             }
             self.push_str(&format!("pub struct {}", name));
             self.print_generics(lt);
@@ -707,7 +719,9 @@ pub trait RustGenerator<'a> {
         Self: Sized,
     {
         let info = self.info(id);
-
+        // We use a BTree set to make sure we don't have any duplicates and have a stable order
+        let additional_derives: BTreeSet<String> =
+            self.additional_derives().iter().cloned().collect();
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
             let lt = self.lifetime_for(&info, mode);
@@ -719,10 +733,16 @@ pub trait RustGenerator<'a> {
                 self.push_str("#[derive(wasmtime::component::Lower)]\n");
                 self.push_str(&format!("#[component({})]\n", derive_component));
             }
+            let mut derives = additional_derives.clone();
             if info.is_copy() {
-                self.push_str("#[derive(Copy, Clone)]\n");
+                derives.extend(["Copy", "Clone"].into_iter().map(|s| s.to_string()));
             } else if info.is_clone() {
-                self.push_str("#[derive(Clone)]\n");
+                derives.insert("Clone".to_string());
+            }
+            if !derives.is_empty() {
+                self.push_str("#[derive(");
+                self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
+                self.push_str(")]\n")
             }
             self.push_str(&format!("pub enum {name}"));
             self.print_generics(lt);
@@ -873,7 +893,17 @@ pub trait RustGenerator<'a> {
         }
         self.push_str("#[repr(");
         self.int_repr(enum_.tag());
-        self.push_str(")]\n#[derive(Clone, Copy, PartialEq, Eq)]\n");
+        self.push_str(")]\n");
+        // We use a BTree set to make sure we don't have any duplicates and a stable order
+        let mut derives: BTreeSet<String> = self.additional_derives().iter().cloned().collect();
+        derives.extend(
+            ["Clone", "Copy", "PartialEq", "Eq"]
+                .into_iter()
+                .map(|s| s.to_string()),
+        );
+        self.push_str("#[derive(");
+        self.push_str(&derives.into_iter().collect::<Vec<_>>().join(", "));
+        self.push_str(")]\n");
         self.push_str(&format!("pub enum {name} {{\n"));
         for case in enum_.cases.iter() {
             self.rustdoc(&case.docs);
@@ -1167,10 +1197,10 @@ pub trait RustFunctionGenerator {
         for (field, val) in ty.fields.iter().zip(operands) {
             result.push_str(&to_rust_ident(&field.name));
             result.push_str(": ");
-            result.push_str(&val);
+            result.push_str(val);
             result.push_str(",\n");
         }
-        result.push_str("}");
+        result.push('}');
         results.push(result);
     }
 

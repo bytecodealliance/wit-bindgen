@@ -1,4 +1,5 @@
 use proc_macro2::{Span, TokenStream};
+use quote::ToTokens;
 use std::path::{Path, PathBuf};
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
@@ -73,6 +74,12 @@ impl Parse for Config {
                         opts.stubs = true;
                     }
                     Opt::ExportPrefix(prefix) => opts.export_prefix = Some(prefix.value()),
+                    Opt::AdditionalDerives(paths) => {
+                        opts.additional_derive_attributes = paths
+                            .into_iter()
+                            .map(|p| p.into_token_stream().to_string())
+                            .collect()
+                    }
                 }
             }
         } else {
@@ -101,7 +108,7 @@ fn parse_source(source: &Option<Source>) -> anyhow::Result<(Resolve, PackageId, 
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let mut parse = |path: &Path| -> anyhow::Result<_> {
         if path.is_dir() {
-            let (pkg, sources) = resolve.push_dir(&path)?;
+            let (pkg, sources) = resolve.push_dir(path)?;
             files = sources;
             Ok(pkg)
         } else {
@@ -112,9 +119,9 @@ fn parse_source(source: &Option<Source>) -> anyhow::Result<(Resolve, PackageId, 
     };
     let pkg = match source {
         Some(Source::Inline(s)) => {
-            resolve.push(UnresolvedPackage::parse("macro-input".as_ref(), &s)?)?
+            resolve.push(UnresolvedPackage::parse("macro-input".as_ref(), s)?)?
         }
-        Some(Source::Path(s)) => parse(&root.join(&s))?,
+        Some(Source::Path(s)) => parse(&root.join(s))?,
         None => parse(&root.join("wit"))?,
     };
 
@@ -159,6 +166,7 @@ mod kw {
     syn::custom_keyword!(exports);
     syn::custom_keyword!(stubs);
     syn::custom_keyword!(export_prefix);
+    syn::custom_keyword!(additional_derives);
 }
 
 #[derive(Clone)]
@@ -216,6 +224,8 @@ enum Opt {
     Exports(Vec<Export>),
     Stubs,
     ExportPrefix(syn::LitStr),
+    // Parse as paths so we can take the concrete types/macro names rather than raw strings
+    AdditionalDerives(Vec<syn::Path>),
 }
 
 impl Parse for Opt {
@@ -306,6 +316,13 @@ impl Parse for Opt {
             input.parse::<kw::export_prefix>()?;
             input.parse::<Token![:]>()?;
             Ok(Opt::ExportPrefix(input.parse()?))
+        } else if l.peek(kw::additional_derives) {
+            input.parse::<kw::additional_derives>()?;
+            input.parse::<Token![:]>()?;
+            let contents;
+            syn::bracketed!(contents in input);
+            let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
+            Ok(Opt::AdditionalDerives(list.iter().cloned().collect()))
         } else {
             Err(l.error())
         }

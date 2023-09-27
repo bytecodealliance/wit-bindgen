@@ -27,3 +27,6 @@ clap = { workspace = true, optional = true }
 [dev-dependencies]
 wit-bindgen = { path = '../guest-rust' }
 test-helpers = { path = '../test-helpers' }
+# For use with the custom attributes test
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
