@@ -4,9 +4,7 @@ use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{Bindgen, Instruction, LiftLower, WasmType};
 use wit_bindgen_core::{uwrite, uwriteln, wit_parser::*, Source};
-use wit_bindgen_rust_lib::{
-    dealias, int_repr, to_rust_ident, wasm_type, RustFlagsRepr, RustGenerator,
-};
+use wit_bindgen_rust_lib::{dealias, int_repr, to_rust_ident, wasm_type, RustFlagsRepr};
 
 pub(super) struct FunctionBindgen<'a, 'b> {
     pub gen: &'b mut InterfaceGenerator<'a>,
@@ -191,11 +189,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             LiftLower::LowerArgsLiftResults => false,
             LiftLower::LiftArgsLowerResults => true,
         };
-        self.rust_gen().type_path(id, owned)
+        self.gen.type_path(id, owned)
     }
 
     fn typename_lift(&self, id: TypeId) -> String {
-        self.rust_gen().type_path(id, true)
+        self.gen.type_path(id, true)
     }
 
     fn push_str(&mut self, s: &str) {
@@ -206,10 +204,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let ret = self.tmp;
         self.tmp += 1;
         ret
-    }
-
-    fn rust_gen(&self) -> &dyn RustGenerator {
-        self.gen
     }
 
     fn lift_lower(&self) -> LiftLower {
