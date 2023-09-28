@@ -1,5 +1,8 @@
 use crate::bindgen::FunctionBindgen;
-use crate::{Direction, ExportKey, Identifier, RustWasm};
+use crate::{
+    dealias, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, Direction, ExportKey, FnSig,
+    Identifier, Ownership, RustFlagsRepr, RustWasm, TypeMode,
+};
 use anyhow::Result;
 use heck::*;
 use std::collections::{BTreeMap, BTreeSet};
@@ -7,10 +10,6 @@ use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
 use wit_bindgen_core::{uwrite, uwriteln, wit_parser::*, Source, TypeInfo};
-use wit_bindgen_rust_lib::{
-    dealias, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, FnSig, Ownership,
-    RustFlagsRepr, TypeMode,
-};
 
 pub struct InterfaceGenerator<'a> {
     pub src: Source,
@@ -615,9 +614,7 @@ impl InterfaceGenerator<'_> {
             Type::Float64 => self.push_str("f64"),
             Type::Char => self.push_str("char"),
             Type::String => match mode {
-                TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) => {
-                    self.print_borrowed_str(lt)
-                }
+                TypeMode::AllBorrowed(lt) => self.print_borrowed_str(lt),
                 TypeMode::Owned | TypeMode::HandlesBorrowed(_) => {
                     if self.gen.opts.raw_strings {
                         self.push_vec_name();
@@ -677,10 +674,7 @@ impl InterfaceGenerator<'_> {
             // right mode, and if those conditions are met a lifetime is
             // printed.
             if info.has_list && !info.has_own_handle {
-                if let TypeMode::AllBorrowed(lt)
-                | TypeMode::LeafBorrowed(lt)
-                | TypeMode::HandlesBorrowed(lt) = mode
-                {
+                if let TypeMode::AllBorrowed(lt) | TypeMode::HandlesBorrowed(lt) = mode {
                     self.push_str("&");
                     if lt != "'_" {
                         self.push_str(lt);
@@ -788,10 +782,7 @@ impl InterfaceGenerator<'_> {
 
             TypeDefKind::Handle(Handle::Borrow(ty)) => {
                 self.push_str("&");
-                if let TypeMode::AllBorrowed(lt)
-                | TypeMode::LeafBorrowed(lt)
-                | TypeMode::HandlesBorrowed(lt) = mode
-                {
+                if let TypeMode::AllBorrowed(lt) | TypeMode::HandlesBorrowed(lt) = mode {
                     if lt != "'_" {
                         self.push_str(lt);
                         self.push_str(" ");
@@ -837,16 +828,6 @@ impl InterfaceGenerator<'_> {
         match mode {
             TypeMode::AllBorrowed(lt) => {
                 self.print_borrowed_slice(false, ty, lt, next_mode);
-            }
-            TypeMode::LeafBorrowed(lt) => {
-                if self.resolve.all_bits_valid(ty) {
-                    self.print_borrowed_slice(false, ty, lt, next_mode);
-                } else {
-                    self.push_vec_name();
-                    self.push_str("::<");
-                    self.print_ty(ty, next_mode);
-                    self.push_str(">");
-                }
             }
             TypeMode::Owned | TypeMode::HandlesBorrowed(_) => {
                 self.push_vec_name();
@@ -1454,9 +1435,7 @@ impl InterfaceGenerator<'_> {
 
     fn lifetime_for(&self, info: &TypeInfo, mode: TypeMode) -> Option<&'static str> {
         let lt = match mode {
-            TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s) | TypeMode::HandlesBorrowed(s) => {
-                s
-            }
+            TypeMode::AllBorrowed(s) | TypeMode::HandlesBorrowed(s) => s,
             TypeMode::Owned => return None,
         };
         if info.has_borrow_handle {

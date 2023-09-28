@@ -1,10 +1,11 @@
-use crate::{Direction, InterfaceGenerator};
+use crate::{
+    dealias, int_repr, to_rust_ident, wasm_type, Direction, InterfaceGenerator, RustFlagsRepr,
+};
 use heck::*;
 use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{Bindgen, Instruction, LiftLower, WasmType};
 use wit_bindgen_core::{uwrite, uwriteln, wit_parser::*, Source};
-use wit_bindgen_rust_lib::{dealias, int_repr, to_rust_ident, wasm_type, RustFlagsRepr};
 
 pub(super) struct FunctionBindgen<'a, 'b> {
     pub gen: &'b mut InterfaceGenerator<'a>,
@@ -371,9 +372,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 ));
             }
 
-            Instruction::Bitcasts { casts } => {
-                wit_bindgen_rust_lib::bitcast(casts, operands, results)
-            }
+            Instruction::Bitcasts { casts } => crate::bitcast(casts, operands, results),
 
             Instruction::I32FromBool => {
                 results.push(format!("match {} {{ true => 1, false => 0 }}", operands[0]));
