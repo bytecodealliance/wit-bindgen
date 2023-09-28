@@ -2,7 +2,7 @@ use heck::*;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::str::FromStr;
-use wit_bindgen_core::abi::{Bitcast, LiftLower, WasmType};
+use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{wit_parser::*, TypeInfo, Types};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -1126,117 +1126,6 @@ pub struct FnSig {
     pub generics: Option<String>,
     pub self_arg: Option<String>,
     pub self_is_first_param: bool,
-}
-
-pub trait RustFunctionGenerator {
-    fn push_str(&mut self, s: &str);
-    fn tmp(&mut self) -> usize;
-    fn rust_gen(&self) -> &dyn RustGenerator;
-    fn lift_lower(&self) -> LiftLower;
-
-    fn let_results(&mut self, amt: usize, results: &mut Vec<String>) {
-        match amt {
-            0 => {}
-            1 => {
-                let tmp = self.tmp();
-                let res = format!("result{}", tmp);
-                self.push_str("let ");
-                self.push_str(&res);
-                results.push(res);
-                self.push_str(" = ");
-            }
-            n => {
-                let tmp = self.tmp();
-                self.push_str("let (");
-                for i in 0..n {
-                    let arg = format!("result{}_{}", tmp, i);
-                    self.push_str(&arg);
-                    self.push_str(",");
-                    results.push(arg);
-                }
-                self.push_str(") = ");
-            }
-        }
-    }
-
-    fn record_lower(
-        &mut self,
-        id: TypeId,
-        record: &Record,
-        operand: &str,
-        results: &mut Vec<String>,
-    ) {
-        let tmp = self.tmp();
-        self.push_str("let ");
-        let name = self.typename_lower(id);
-        self.push_str(&name);
-        self.push_str("{ ");
-        for field in record.fields.iter() {
-            let name = to_rust_ident(&field.name);
-            let arg = format!("{}{}", name, tmp);
-            self.push_str(&name);
-            self.push_str(":");
-            self.push_str(&arg);
-            self.push_str(", ");
-            results.push(arg);
-        }
-        self.push_str("} = ");
-        self.push_str(operand);
-        self.push_str(";\n");
-    }
-
-    fn record_lift(
-        &mut self,
-        id: TypeId,
-        ty: &Record,
-        operands: &[String],
-        results: &mut Vec<String>,
-    ) {
-        let mut result = self.typename_lift(id);
-        result.push_str("{\n");
-        for (field, val) in ty.fields.iter().zip(operands) {
-            result.push_str(&to_rust_ident(&field.name));
-            result.push_str(": ");
-            result.push_str(val);
-            result.push_str(",\n");
-        }
-        result.push('}');
-        results.push(result);
-    }
-
-    fn tuple_lower(&mut self, tuple: &Tuple, operand: &str, results: &mut Vec<String>) {
-        let tmp = self.tmp();
-        self.push_str("let (");
-        for i in 0..tuple.types.len() {
-            let arg = format!("t{}_{}", tmp, i);
-            self.push_str(&arg);
-            self.push_str(", ");
-            results.push(arg);
-        }
-        self.push_str(") = ");
-        self.push_str(operand);
-        self.push_str(";\n");
-    }
-
-    fn tuple_lift(&mut self, operands: &[String], results: &mut Vec<String>) {
-        if operands.len() == 1 {
-            results.push(format!("({},)", operands[0]));
-        } else {
-            results.push(format!("({})", operands.join(", ")));
-        }
-    }
-
-    fn typename_lower(&self, id: TypeId) -> String {
-        let owned = match self.lift_lower() {
-            LiftLower::LowerArgsLiftResults => false,
-            LiftLower::LiftArgsLowerResults => true,
-        };
-        self.rust_gen().type_path(id, owned)
-    }
-
-    fn typename_lift(&self, id: TypeId) -> String {
-        self.rust_gen().type_path(id, true)
-    }
 }
 
 pub fn to_rust_ident(name: &str) -> String {
