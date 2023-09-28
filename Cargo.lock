@@ -1825,16 +1825,7 @@ dependencies = [
  "wasm-metadata",
  "wit-bindgen",
  "wit-bindgen-core",
- "wit-bindgen-rust-lib",
  "wit-component",
-]
-
-[[package]]
-name = "wit-bindgen-rust-lib"
-version = "0.12.0"
-dependencies = [
- "heck",
- "wit-bindgen-core",
 ]
 
 [[package]]
@@ -1847,7 +1838,6 @@ dependencies = [
  "syn",
  "wit-bindgen-core",
  "wit-bindgen-rust",
- "wit-bindgen-rust-lib",
  "wit-component",
 ]
 

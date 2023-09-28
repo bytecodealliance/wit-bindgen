@@ -5,8 +5,7 @@ use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::{braced, token, Token};
 use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackage, WorldId};
-use wit_bindgen_rust::Opts;
-use wit_bindgen_rust_lib::Ownership;
+use wit_bindgen_rust::{Opts, Ownership};
 
 #[proc_macro]
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {

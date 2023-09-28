@@ -1,113 +1,465 @@
+use crate::bindgen::FunctionBindgen;
+use crate::{
+    dealias, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, Direction, ExportKey, FnSig,
+    Identifier, Ownership, RustFlagsRepr, RustWasm, TypeMode,
+};
+use anyhow::Result;
 use heck::*;
-use std::collections::BTreeSet;
-use std::fmt;
-use std::str::FromStr;
-use wit_bindgen_core::abi::{Bitcast, LiftLower, WasmType};
-use wit_bindgen_core::{wit_parser::*, TypeInfo, Types};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
+use std::mem;
+use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
+use wit_bindgen_core::{uwrite, uwriteln, wit_parser::*, Source, TypeInfo};
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum TypeMode {
-    Owned,
-    AllBorrowed(&'static str),
-    LeafBorrowed(&'static str),
-    HandlesBorrowed(&'static str),
+pub struct InterfaceGenerator<'a> {
+    pub src: Source,
+    pub(super) identifier: Identifier<'a>,
+    pub in_import: bool,
+    pub sizes: SizeAlign,
+    pub(super) gen: &'a mut RustWasm,
+    pub wasm_import_module: Option<&'a str>,
+    pub resolve: &'a Resolve,
+    pub return_pointer_area_size: usize,
+    pub return_pointer_area_align: usize,
 }
 
-#[derive(Default, Debug, Clone, Copy)]
-pub enum Ownership {
-    /// Generated types will be composed entirely of owning fields, regardless
-    /// of whether they are used as parameters to imports or not.
-    #[default]
-    Owning,
+impl InterfaceGenerator<'_> {
+    pub(super) fn generate_exports<'a>(
+        &mut self,
+        export_key: &ExportKey,
+        interface_name: Option<&WorldKey>,
+        funcs: impl Iterator<Item = &'a Function> + Clone,
+    ) -> Result<()> {
+        let mut traits = BTreeMap::new();
 
-    /// Generated types used as parameters to imports will be "deeply
-    /// borrowing", i.e. contain references rather than owned values when
-    /// applicable.
-    Borrowing {
-        /// Whether or not to generate "duplicate" type definitions for a single
-        /// WIT type if necessary, for example if it's used as both an import
-        /// and an export, or if it's used both as a parameter to an import and
-        /// a return value from an import.
-        duplicate_if_necessary: bool,
-    },
-}
+        for func in funcs {
+            if self.gen.skip.contains(&func.name) {
+                continue;
+            }
 
-impl FromStr for Ownership {
-    type Err = String;
+            // First generate the exported function which performs lift/lower
+            // operations and delegates to a trait (that doesn't exist just yet).
+            self.src.push_str("const _: () = {\n");
+            self.generate_guest_export(func, interface_name);
+            self.src.push_str("};\n");
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "owning" => Ok(Self::Owning),
-            "borrowing" => Ok(Self::Borrowing {
-                duplicate_if_necessary: false,
-            }),
-            "borrowing-duplicate-if-necessary" => Ok(Self::Borrowing {
-                duplicate_if_necessary: true,
-            }),
-            _ => Err(format!(
-                "unrecognized ownership: `{s}`; \
-                 expected `owning`, `borrowing`, or `borrowing-duplicate-if-necessary`"
-            )),
+            // Next generate a trait signature for this method and insert it
+            // into `traits`. Note that `traits` will have a trait-per-resource.
+            let (trait_name, local_impl_name, export_key) = match func.kind {
+                FunctionKind::Freestanding => (
+                    "Guest".to_string(),
+                    "_GuestImpl".to_string(),
+                    export_key.clone(),
+                ),
+                FunctionKind::Method(id)
+                | FunctionKind::Constructor(id)
+                | FunctionKind::Static(id) => {
+                    let resource_name = self.resolve.types[id].name.as_deref().unwrap();
+                    let camel = resource_name.to_upper_camel_case();
+                    let trait_name = format!("Guest{camel}");
+                    let export_key = match export_key {
+                        ExportKey::World => unimplemented!("exported world resources"),
+                        ExportKey::Name(path) => ExportKey::Name(format!("{path}/{resource_name}")),
+                    };
+                    let local_impl_name = format!("_{camel}Impl");
+                    (trait_name, local_impl_name, export_key)
+                }
+            };
+
+            let (_, _, methods) =
+                traits
+                    .entry(export_key)
+                    .or_insert((trait_name, local_impl_name, Vec::new()));
+            let prev = mem::take(&mut self.src);
+            let mut sig = FnSig {
+                use_item_name: true,
+                private: true,
+                ..Default::default()
+            };
+            if let FunctionKind::Method(_) = &func.kind {
+                sig.self_arg = Some("&self".into());
+                sig.self_is_first_param = true;
+            }
+            self.print_signature(func, TypeMode::Owned, &sig);
+            self.src.push_str(";\n");
+            let trait_method = mem::replace(&mut self.src, prev);
+            methods.push(trait_method);
+        }
+
+        // Once all the traits have been assembled then they can be emitted.
+        //
+        // Additionally alias the user-configured item for each trait here as
+        // there's only one implementation of this trait and it must be
+        // pre-configured.
+        for (export_key, (trait_name, local_impl_name, methods)) in traits {
+            let impl_name = self.gen.lookup_export(&export_key)?;
+            let path_to_root = self.path_to_root();
+            uwriteln!(
+                self.src,
+                "use {path_to_root}{impl_name} as {local_impl_name};"
+            );
+
+            uwriteln!(self.src, "pub trait {trait_name} {{");
+            for method in methods {
+                self.src.push_str(&method);
+            }
+            uwriteln!(self.src, "}}");
+        }
+
+        Ok(())
+    }
+
+    pub fn generate_imports<'a>(&mut self, funcs: impl Iterator<Item = &'a Function>) {
+        for func in funcs {
+            self.generate_guest_import(func);
         }
     }
-}
 
-impl fmt::Display for Ownership {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(match self {
-            Ownership::Owning => "owning",
-            Ownership::Borrowing {
-                duplicate_if_necessary: false,
-            } => "borrowing",
-            Ownership::Borrowing {
-                duplicate_if_necessary: true,
-            } => "borrowing-duplicate-if-necessary",
-        })
-    }
-}
+    pub fn finish(&mut self) -> String {
+        if self.return_pointer_area_align > 0 {
+            uwrite!(
+                self.src,
+                "
+                    #[allow(unused_imports)]
+                    use {rt}::{{alloc, vec::Vec, string::String}};
 
-pub trait RustGenerator<'a> {
-    fn resolve(&self) -> &'a Resolve;
-    fn path_to_interface(&self, interface: InterfaceId) -> Option<String>;
+                    #[repr(align({align}))]
+                    struct _RetArea([u8; {size}]);
+                    static mut _RET_AREA: _RetArea = _RetArea([0; {size}]);
+                ",
+                rt = self.gen.runtime_path(),
+                align = self.return_pointer_area_align,
+                size = self.return_pointer_area_size,
+            );
+        }
 
-    /// Whether to generate owning or borrowing type definitions.
-    fn ownership(&self) -> Ownership;
-
-    /// Return true iff the generator should qualify uses of `std` features with
-    /// `#[cfg(feature = "std")]` in its output.
-    fn std_feature(&self) -> bool {
-        true
+        mem::take(&mut self.src).into()
     }
 
-    /// Pushes the name of the `Vec` type to use.
-    fn push_vec_name(&mut self);
+    fn path_to_root(&self) -> String {
+        let mut path_to_root = String::new();
 
-    /// Pushes the name of the `String` type to use.
-    fn push_string_name(&mut self);
+        if let Identifier::Interface(_, key) = self.identifier {
+            // Escape the submodule for this interface
+            path_to_root.push_str("super::");
 
-    /// Return true iff the generator should use `&[u8]` instead of `&str` in bindings.
-    fn use_raw_strings(&self) -> bool {
-        false
+            // Escape the `exports` top-level submodule
+            if !self.in_import {
+                path_to_root.push_str("super::");
+            }
+
+            // Escape the namespace/package submodules for interface-based ids
+            match key {
+                WorldKey::Name(_) => {}
+                WorldKey::Interface(_) => {
+                    path_to_root.push_str("super::super::");
+                }
+            }
+        }
+        path_to_root
     }
 
-    fn is_exported_resource(&self, ty: TypeId) -> bool;
+    pub fn start_append_submodule(&mut self, name: &WorldKey) -> (String, Option<PackageName>) {
+        let snake = match name {
+            WorldKey::Name(name) => to_rust_ident(name),
+            WorldKey::Interface(id) => {
+                to_rust_ident(self.resolve.interfaces[*id].name.as_ref().unwrap())
+            }
+        };
+        let pkg = match name {
+            WorldKey::Name(_) => None,
+            WorldKey::Interface(id) => {
+                let pkg = self.resolve.interfaces[*id].package.unwrap();
+                Some(self.resolve.packages[pkg].name.clone())
+            }
+        };
+        if let Identifier::Interface(id, _) = self.identifier {
+            let mut path = String::new();
+            if !self.in_import {
+                path.push_str("exports::");
+            }
+            if let Some(name) = &pkg {
+                path.push_str(&format!(
+                    "{}::{}::",
+                    name.namespace.to_snake_case(),
+                    name.name.to_snake_case()
+                ));
+            }
+            path.push_str(&snake);
+            self.gen.interface_names.insert(id, path);
+        }
+        (snake, pkg)
+    }
 
-    /// Return any additional derive attributes to add to the generated types
-    fn additional_derives(&self) -> &[String];
+    pub fn finish_append_submodule(mut self, snake: &str, pkg: Option<PackageName>) {
+        let module = self.finish();
+        let path_to_root = self.path_to_root();
+        let module = format!(
+            "
+                #[allow(clippy::all)]
+                pub mod {snake} {{
+                    #[used]
+                    #[doc(hidden)]
+                    #[cfg(target_arch = \"wasm32\")]
+                    static __FORCE_SECTION_REF: fn() = {path_to_root}__link_section;
+                    {module}
+                }}
+            ",
+        );
+        let map = if self.in_import {
+            &mut self.gen.import_modules
+        } else {
+            &mut self.gen.export_modules
+        };
+        map.entry(pkg).or_insert(Vec::new()).push(module);
+    }
 
-    fn mark_resource_owned(&mut self, resource: TypeId);
+    fn generate_guest_import(&mut self, func: &Function) {
+        if self.gen.skip.contains(&func.name) {
+            return;
+        }
 
-    fn push_str(&mut self, s: &str);
-    fn info(&self, ty: TypeId) -> TypeInfo;
-    fn types_mut(&mut self) -> &mut Types;
-    fn print_borrowed_slice(
+        let mut sig = FnSig::default();
+        let param_mode = TypeMode::AllBorrowed("'_");
+        match func.kind {
+            FunctionKind::Freestanding => {}
+            FunctionKind::Method(id) | FunctionKind::Static(id) | FunctionKind::Constructor(id) => {
+                let name = self.resolve.types[id].name.as_ref().unwrap();
+                let name = to_upper_camel_case(name);
+                uwriteln!(self.src, "impl {name} {{");
+                sig.use_item_name = true;
+                if let FunctionKind::Method(_) = &func.kind {
+                    sig.self_arg = Some("&self".into());
+                    sig.self_is_first_param = true;
+                }
+            }
+        }
+        self.src.push_str("#[allow(clippy::all)]\n");
+        let params = self.print_signature(func, param_mode, &sig);
+        self.src.push_str("{\n");
+        self.src.push_str(&format!(
+            "
+                #[allow(unused_imports)]
+                use {rt}::{{alloc, vec::Vec, string::String}};
+            ",
+            rt = self.gen.runtime_path()
+        ));
+        self.src.push_str("unsafe {\n");
+
+        let mut f = FunctionBindgen::new(self, params);
+        abi::call(
+            f.gen.resolve,
+            AbiVariant::GuestImport,
+            LiftLower::LowerArgsLiftResults,
+            func,
+            &mut f,
+        );
+        let FunctionBindgen {
+            needs_cleanup_list,
+            src,
+            import_return_pointer_area_size,
+            import_return_pointer_area_align,
+            ..
+        } = f;
+
+        if needs_cleanup_list {
+            self.src.push_str("let mut cleanup_list = Vec::new();\n");
+        }
+        if import_return_pointer_area_size > 0 {
+            uwrite!(
+                self.src,
+                "
+                    #[repr(align({import_return_pointer_area_align}))]
+                    struct RetArea([u8; {import_return_pointer_area_size}]);
+                    let mut ret_area = ::core::mem::MaybeUninit::<RetArea>::uninit();
+                ",
+            );
+        }
+        self.src.push_str(&String::from(src));
+
+        self.src.push_str("}\n");
+        self.src.push_str("}\n");
+
+        match func.kind {
+            FunctionKind::Freestanding => {}
+            FunctionKind::Method(_) | FunctionKind::Static(_) | FunctionKind::Constructor(_) => {
+                self.src.push_str("}\n");
+            }
+        }
+    }
+
+    fn generate_guest_export(&mut self, func: &Function, interface_name: Option<&WorldKey>) {
+        if self.gen.skip.contains(&func.name) {
+            return;
+        }
+
+        let name_snake = func.name.to_snake_case().replace('.', "_");
+        let wasm_module_export_name = interface_name.map(|k| self.resolve.name_world_key(k));
+        let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+        let export_name = func.core_export_name(wasm_module_export_name.as_deref());
+        uwrite!(
+            self.src,
+            "
+                #[doc(hidden)]
+                #[export_name = \"{export_prefix}{export_name}\"]
+                #[allow(non_snake_case)]
+                unsafe extern \"C\" fn __export_{name_snake}(\
+            ",
+        );
+
+        let sig = self.resolve.wasm_signature(AbiVariant::GuestExport, func);
+        let mut params = Vec::new();
+        for (i, param) in sig.params.iter().enumerate() {
+            let name = format!("arg{}", i);
+            uwrite!(self.src, "{name}: {},", wasm_type(*param));
+            params.push(name);
+        }
+        self.src.push_str(")");
+
+        match sig.results.len() {
+            0 => {}
+            1 => {
+                uwrite!(self.src, " -> {}", wasm_type(sig.results[0]));
+            }
+            _ => unimplemented!(),
+        }
+
+        self.push_str(" {");
+
+        uwrite!(
+            self.src,
+            "
+                #[allow(unused_imports)]
+                use {rt}::{{alloc, vec::Vec, string::String}};
+
+                // Before executing any other code, use this function to run all static
+                // constructors, if they have not yet been run. This is a hack required
+                // to work around wasi-libc ctors calling import functions to initialize
+                // the environment.
+                //
+                // This functionality will be removed once rust 1.69.0 is stable, at which
+                // point wasi-libc will no longer have this behavior.
+                //
+                // See
+                // https://github.com/bytecodealliance/preview2-prototyping/issues/99
+                // for more details.
+                #[cfg(target_arch=\"wasm32\")]
+                {rt}::run_ctors_once();
+
+            ",
+            rt = self.gen.runtime_path()
+        );
+
+        let mut f = FunctionBindgen::new(self, params);
+        abi::call(
+            f.gen.resolve,
+            AbiVariant::GuestExport,
+            LiftLower::LiftArgsLowerResults,
+            func,
+            &mut f,
+        );
+        let FunctionBindgen {
+            needs_cleanup_list,
+            src,
+            ..
+        } = f;
+        assert!(!needs_cleanup_list);
+        self.src.push_str(&String::from(src));
+        self.src.push_str("}\n");
+
+        if abi::guest_export_needs_post_return(self.resolve, func) {
+            let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+            uwrite!(
+                self.src,
+                "
+                    const _: () = {{
+                    #[doc(hidden)]
+                    #[export_name = \"{export_prefix}cabi_post_{export_name}\"]
+                    #[allow(non_snake_case)]
+                    unsafe extern \"C\" fn __post_return_{name_snake}(\
+                "
+            );
+            let mut params = Vec::new();
+            for (i, result) in sig.results.iter().enumerate() {
+                let name = format!("arg{}", i);
+                uwrite!(self.src, "{name}: {},", wasm_type(*result));
+                params.push(name);
+            }
+            self.src.push_str(") {\n");
+
+            let mut f = FunctionBindgen::new(self, params);
+            abi::post_return(f.gen.resolve, func, &mut f);
+            let FunctionBindgen {
+                needs_cleanup_list,
+                src,
+                ..
+            } = f;
+            assert!(!needs_cleanup_list);
+            self.src.push_str(&String::from(src));
+            self.src.push_str("}\n");
+            self.src.push_str("};\n");
+        }
+    }
+
+    pub fn generate_stub(
         &mut self,
-        mutbl: bool,
-        ty: &Type,
-        lifetime: &'static str,
-        mode: TypeMode,
-    );
-    fn print_borrowed_str(&mut self, lifetime: &'static str);
+        resource: Option<TypeId>,
+        pkg: Option<&PackageName>,
+        name: &str,
+        in_interface: bool,
+        funcs: &[&Function],
+    ) {
+        let path = if let Some(pkg) = pkg {
+            format!(
+                "{}::{}::{}",
+                to_rust_ident(&pkg.namespace),
+                to_rust_ident(&pkg.name),
+                to_rust_ident(name),
+            )
+        } else {
+            to_rust_ident(name)
+        };
+
+        let name = resource
+            .map(|ty| {
+                format!(
+                    "Guest{}",
+                    self.resolve.types[ty]
+                        .name
+                        .as_deref()
+                        .unwrap()
+                        .to_upper_camel_case()
+                )
+            })
+            .unwrap_or_else(|| "Guest".to_string());
+
+        let qualified_name = if in_interface {
+            format!("exports::{path}::{name}")
+        } else {
+            name
+        };
+
+        uwriteln!(self.src, "impl {qualified_name} for Stub {{");
+
+        for &func in funcs {
+            if self.gen.skip.contains(&func.name) {
+                continue;
+            }
+            let mut sig = FnSig {
+                use_item_name: true,
+                private: true,
+                ..Default::default()
+            };
+            if let FunctionKind::Method(_) = &func.kind {
+                sig.self_arg = Some("&self".into());
+                sig.self_is_first_param = true;
+            }
+            self.print_signature(func, TypeMode::Owned, &sig);
+            self.src.push_str("{ unreachable!() }\n");
+        }
+
+        self.src.push_str("}\n");
+    }
 
     fn rustdoc(&mut self, docs: &Docs) {
         let docs = match &docs.contents {
@@ -262,11 +614,9 @@ pub trait RustGenerator<'a> {
             Type::Float64 => self.push_str("f64"),
             Type::Char => self.push_str("char"),
             Type::String => match mode {
-                TypeMode::AllBorrowed(lt) | TypeMode::LeafBorrowed(lt) => {
-                    self.print_borrowed_str(lt)
-                }
+                TypeMode::AllBorrowed(lt) => self.print_borrowed_str(lt),
                 TypeMode::Owned | TypeMode::HandlesBorrowed(_) => {
-                    if self.use_raw_strings() {
+                    if self.gen.opts.raw_strings {
                         self.push_vec_name();
                         self.push_str("::<u8>");
                     } else {
@@ -284,7 +634,7 @@ pub trait RustGenerator<'a> {
         }
     }
 
-    fn type_path(&self, id: TypeId, owned: bool) -> String {
+    pub fn type_path(&self, id: TypeId, owned: bool) -> String {
         self.type_path_with_name(
             id,
             if owned {
@@ -296,7 +646,7 @@ pub trait RustGenerator<'a> {
     }
 
     fn type_path_with_name(&self, id: TypeId, name: String) -> String {
-        if let TypeOwner::Interface(id) = self.resolve().types[id].owner {
+        if let TypeOwner::Interface(id) = self.resolve.types[id].owner {
             if let Some(path) = self.path_to_interface(id) {
                 return format!("{path}::{name}");
             }
@@ -307,7 +657,7 @@ pub trait RustGenerator<'a> {
     fn print_tyid(&mut self, id: TypeId, mode: TypeMode) {
         let info = self.info(id);
         let lt = self.lifetime_for(&info, mode);
-        let ty = &self.resolve().types[id];
+        let ty = &self.resolve.types[id];
         if ty.name.is_some() {
             // If `mode` is borrowed then that means literal ownership of the
             // input type is not necessarily required. In this situation we
@@ -324,10 +674,7 @@ pub trait RustGenerator<'a> {
             // right mode, and if those conditions are met a lifetime is
             // printed.
             if info.has_list && !info.has_own_handle {
-                if let TypeMode::AllBorrowed(lt)
-                | TypeMode::LeafBorrowed(lt)
-                | TypeMode::HandlesBorrowed(lt) = mode
-                {
+                if let TypeMode::AllBorrowed(lt) | TypeMode::HandlesBorrowed(lt) = mode {
                     self.push_str("&");
                     if lt != "'_" {
                         self.push_str(lt);
@@ -343,7 +690,7 @@ pub trait RustGenerator<'a> {
             // lifetime parameter on the type as well.
             if (info.has_list || info.has_borrow_handle)
                 && !info.has_own_handle
-                && needs_generics(self.resolve(), &ty.kind)
+                && needs_generics(self.resolve, &ty.kind)
             {
                 self.print_generics(lt);
             }
@@ -435,10 +782,7 @@ pub trait RustGenerator<'a> {
 
             TypeDefKind::Handle(Handle::Borrow(ty)) => {
                 self.push_str("&");
-                if let TypeMode::AllBorrowed(lt)
-                | TypeMode::LeafBorrowed(lt)
-                | TypeMode::HandlesBorrowed(lt) = mode
-                {
+                if let TypeMode::AllBorrowed(lt) | TypeMode::HandlesBorrowed(lt) = mode {
                     if lt != "'_" {
                         self.push_str(lt);
                         self.push_str(" ");
@@ -448,7 +792,7 @@ pub trait RustGenerator<'a> {
                     self.push_str(
                         &self.type_path_with_name(
                             *ty,
-                            self.resolve().types[*ty]
+                            self.resolve.types[*ty]
                                 .name
                                 .as_deref()
                                 .unwrap()
@@ -467,7 +811,7 @@ pub trait RustGenerator<'a> {
     }
 
     fn print_list(&mut self, ty: &Type, mode: TypeMode) {
-        let next_mode = if matches!(self.ownership(), Ownership::Owning) {
+        let next_mode = if matches!(self.gen.opts.ownership, Ownership::Owning) {
             if let TypeMode::HandlesBorrowed(_) = mode {
                 mode
             } else {
@@ -484,16 +828,6 @@ pub trait RustGenerator<'a> {
         match mode {
             TypeMode::AllBorrowed(lt) => {
                 self.print_borrowed_slice(false, ty, lt, next_mode);
-            }
-            TypeMode::LeafBorrowed(lt) => {
-                if self.resolve().all_bits_valid(ty) {
-                    self.print_borrowed_slice(false, ty, lt, next_mode);
-                } else {
-                    self.push_vec_name();
-                    self.push_str("::<");
-                    self.print_ty(ty, next_mode);
-                    self.push_str(">");
-                }
             }
             TypeMode::Owned | TypeMode::HandlesBorrowed(_) => {
                 self.push_vec_name();
@@ -534,10 +868,6 @@ pub trait RustGenerator<'a> {
         self.push_str(int_repr(repr));
     }
 
-    fn wasm_type(&mut self, ty: WasmType) {
-        self.push_str(wasm_type(ty));
-    }
-
     fn modes_of(&self, ty: TypeId) -> Vec<(String, TypeMode)> {
         let info = self.info(ty);
         // If this type isn't actually used, no need to generate it.
@@ -551,7 +881,7 @@ pub trait RustGenerator<'a> {
         // however.
         let first_mode = if info.owned
             || !info.borrowed
-            || matches!(self.ownership(), Ownership::Owning)
+            || matches!(self.gen.opts.ownership, Ownership::Owning)
             || info.has_own_handle
         {
             if info.has_borrow_handle {
@@ -579,8 +909,13 @@ pub trait RustGenerator<'a> {
     ) {
         let info = self.info(id);
         // We use a BTree set to make sure we don't have any duplicates and we have a stable order
-        let additional_derives: BTreeSet<String> =
-            self.additional_derives().iter().cloned().collect();
+        let additional_derives: BTreeSet<String> = self
+            .gen
+            .opts
+            .additional_derive_attributes
+            .iter()
+            .cloned()
+            .collect();
         for (name, mode) in self.modes_of(id) {
             let lt = self.lifetime_for(&info, mode);
             self.rustdoc(docs);
@@ -655,7 +990,7 @@ pub trait RustGenerator<'a> {
                 self.push_str("write!(f, \"{:?}\", self)\n");
                 self.push_str("}\n");
                 self.push_str("}\n");
-                if self.std_feature() {
+                if self.gen.opts.std_feature {
                     self.push_str("#[cfg(feature = \"std\")]");
                 }
                 self.push_str("impl std::error::Error for ");
@@ -720,8 +1055,13 @@ pub trait RustGenerator<'a> {
     {
         let info = self.info(id);
         // We use a BTree set to make sure we don't have any duplicates and have a stable order
-        let additional_derives: BTreeSet<String> =
-            self.additional_derives().iter().cloned().collect();
+        let additional_derives: BTreeSet<String> = self
+            .gen
+            .opts
+            .additional_derive_attributes
+            .iter()
+            .cloned()
+            .collect();
         for (name, mode) in self.modes_of(id) {
             self.rustdoc(docs);
             let lt = self.lifetime_for(&info, mode);
@@ -789,7 +1129,7 @@ pub trait RustGenerator<'a> {
                 self.push_str("}\n");
                 self.push_str("\n");
 
-                if self.std_feature() {
+                if self.gen.opts.std_feature {
                     self.push_str("#[cfg(feature = \"std\")]");
                 }
                 self.push_str("impl");
@@ -895,7 +1235,13 @@ pub trait RustGenerator<'a> {
         self.int_repr(enum_.tag());
         self.push_str(")]\n");
         // We use a BTree set to make sure we don't have any duplicates and a stable order
-        let mut derives: BTreeSet<String> = self.additional_derives().iter().cloned().collect();
+        let mut derives: BTreeSet<String> = self
+            .gen
+            .opts
+            .additional_derive_attributes
+            .iter()
+            .cloned()
+            .collect();
         derives.extend(
             ["Clone", "Copy", "PartialEq", "Eq"]
                 .into_iter()
@@ -974,7 +1320,7 @@ pub trait RustGenerator<'a> {
             self.push_str("}\n");
             self.push_str("}\n");
             self.push_str("\n");
-            if self.std_feature() {
+            if self.gen.opts.std_feature {
                 self.push_str("#[cfg(feature = \"std\")]");
             }
             self.push_str("impl std::error::Error for ");
@@ -995,8 +1341,8 @@ pub trait RustGenerator<'a> {
 
     fn print_typedef_alias(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
         if self.is_exported_resource(id) {
-            let target = dealias(self.resolve(), id);
-            let ty = &self.resolve().types[target];
+            let target = dealias(self.resolve, id);
+            let ty = &self.resolve.types[target];
             // TODO: We could wait until we know how a resource (and its
             // aliases) is used prior to generating declarations.  For example,
             // if only borrows are used, no need to generate the `Own{name}`
@@ -1006,7 +1352,7 @@ pub trait RustGenerator<'a> {
                 self.rustdoc(docs);
                 self.push_str(&format!(
                     "pub type {prefix}{} = {};\n",
-                    self.resolve().types[id]
+                    self.resolve.types[id]
                         .name
                         .as_deref()
                         .unwrap()
@@ -1049,7 +1395,7 @@ pub trait RustGenerator<'a> {
 
     fn param_name(&self, ty: TypeId) -> String {
         let info = self.info(ty);
-        let name = to_upper_camel_case(self.resolve().types[ty].name.as_ref().unwrap());
+        let name = to_upper_camel_case(self.resolve.types[ty].name.as_ref().unwrap());
         if self.uses_two_names(&info) {
             format!("{}Param", name)
         } else {
@@ -1059,7 +1405,7 @@ pub trait RustGenerator<'a> {
 
     fn result_name(&self, ty: TypeId) -> String {
         let info = self.info(ty);
-        let name = to_upper_camel_case(self.resolve().types[ty].name.as_ref().unwrap());
+        let name = to_upper_camel_case(self.resolve.types[ty].name.as_ref().unwrap());
         if self.uses_two_names(&info) {
             format!("{}Result", name)
         } else if self.is_exported_resource(ty) {
@@ -1072,7 +1418,7 @@ pub trait RustGenerator<'a> {
     fn uses_two_names(&self, info: &TypeInfo) -> bool {
         // Types are only duplicated if explicitly requested ...
         matches!(
-            self.ownership(),
+            self.gen.opts.ownership,
             Ownership::Borrowing {
                 duplicate_if_necessary: true
             }
@@ -1089,15 +1435,13 @@ pub trait RustGenerator<'a> {
 
     fn lifetime_for(&self, info: &TypeInfo, mode: TypeMode) -> Option<&'static str> {
         let lt = match mode {
-            TypeMode::AllBorrowed(s) | TypeMode::LeafBorrowed(s) | TypeMode::HandlesBorrowed(s) => {
-                s
-            }
+            TypeMode::AllBorrowed(s) | TypeMode::HandlesBorrowed(s) => s,
             TypeMode::Owned => return None,
         };
         if info.has_borrow_handle {
             return Some(lt);
         }
-        if matches!(self.ownership(), Ownership::Owning) {
+        if matches!(self.gen.opts.ownership, Ownership::Owning) {
             return None;
         }
         // No lifetimes needed unless this has a list.
@@ -1115,269 +1459,336 @@ pub trait RustGenerator<'a> {
             None
         }
     }
-}
 
-#[derive(Default)]
-pub struct FnSig {
-    pub async_: bool,
-    pub unsafe_: bool,
-    pub private: bool,
-    pub use_item_name: bool,
-    pub generics: Option<String>,
-    pub self_arg: Option<String>,
-    pub self_is_first_param: bool,
-}
+    // fn ownership(&self) -> Ownership {
+    //     self.gen.opts.ownership
+    // }
 
-pub trait RustFunctionGenerator {
-    fn push_str(&mut self, s: &str);
-    fn tmp(&mut self) -> usize;
-    fn rust_gen(&self) -> &dyn RustGenerator;
-    fn lift_lower(&self) -> LiftLower;
-
-    fn let_results(&mut self, amt: usize, results: &mut Vec<String>) {
-        match amt {
-            0 => {}
-            1 => {
-                let tmp = self.tmp();
-                let res = format!("result{}", tmp);
-                self.push_str("let ");
-                self.push_str(&res);
-                results.push(res);
-                self.push_str(" = ");
+    fn path_to_interface(&self, interface: InterfaceId) -> Option<String> {
+        let mut path = String::new();
+        if let Identifier::Interface(cur, name) = self.identifier {
+            if cur == interface {
+                return None;
             }
-            n => {
-                let tmp = self.tmp();
-                self.push_str("let (");
-                for i in 0..n {
-                    let arg = format!("result{}_{}", tmp, i);
-                    self.push_str(&arg);
-                    self.push_str(",");
-                    results.push(arg);
+            if !self.in_import {
+                path.push_str("super::");
+            }
+            match name {
+                WorldKey::Name(_) => {
+                    path.push_str("super::");
                 }
-                self.push_str(") = ");
+                WorldKey::Interface(_) => {
+                    path.push_str("super::super::super::");
+                }
             }
         }
+        let name = &self.gen.interface_names[&interface];
+        path.push_str(name);
+        Some(path)
     }
 
-    fn record_lower(
+    fn push_vec_name(&mut self) {
+        self.push_str(&format!("{rt}::vec::Vec", rt = self.gen.runtime_path()));
+    }
+
+    fn is_exported_resource(&self, mut ty: TypeId) -> bool {
+        loop {
+            let def = &self.resolve.types[ty];
+            if let TypeOwner::World(_) = &def.owner {
+                // Worlds cannot export types of any kind as of this writing.
+                return false;
+            }
+            match &def.kind {
+                TypeDefKind::Type(Type::Id(id)) => ty = *id,
+                _ => break,
+            }
+        }
+
+        matches!(
+            self.gen.resources.get(&ty).map(|info| info.direction),
+            Some(Direction::Export)
+        )
+    }
+
+    pub fn mark_resource_owned(&mut self, resource: TypeId) {
+        self.gen
+            .resources
+            .entry(dealias(self.resolve, resource))
+            .or_default()
+            .owned = true;
+    }
+
+    fn push_string_name(&mut self) {
+        self.push_str(&format!(
+            "{rt}::string::String",
+            rt = self.gen.runtime_path()
+        ));
+    }
+
+    fn push_str(&mut self, s: &str) {
+        self.src.push_str(s);
+    }
+
+    fn info(&self, ty: TypeId) -> TypeInfo {
+        self.gen.types.get(ty)
+    }
+
+    fn print_borrowed_slice(
         &mut self,
-        id: TypeId,
-        record: &Record,
-        operand: &str,
-        results: &mut Vec<String>,
+        mutbl: bool,
+        ty: &Type,
+        lifetime: &'static str,
+        mode: TypeMode,
     ) {
-        let tmp = self.tmp();
-        self.push_str("let ");
-        let name = self.typename_lower(id);
-        self.push_str(&name);
-        self.push_str("{ ");
-        for field in record.fields.iter() {
-            let name = to_rust_ident(&field.name);
-            let arg = format!("{}{}", name, tmp);
-            self.push_str(&name);
-            self.push_str(":");
-            self.push_str(&arg);
-            self.push_str(", ");
-            results.push(arg);
-        }
-        self.push_str("} = ");
-        self.push_str(operand);
-        self.push_str(";\n");
+        self.print_rust_slice(mutbl, ty, lifetime, mode);
     }
 
-    fn record_lift(
-        &mut self,
-        id: TypeId,
-        ty: &Record,
-        operands: &[String],
-        results: &mut Vec<String>,
-    ) {
-        let mut result = self.typename_lift(id);
-        result.push_str("{\n");
-        for (field, val) in ty.fields.iter().zip(operands) {
-            result.push_str(&to_rust_ident(&field.name));
-            result.push_str(": ");
-            result.push_str(val);
-            result.push_str(",\n");
+    fn print_borrowed_str(&mut self, lifetime: &'static str) {
+        self.push_str("&");
+        if lifetime != "'_" {
+            self.push_str(lifetime);
+            self.push_str(" ");
         }
-        result.push('}');
-        results.push(result);
-    }
-
-    fn tuple_lower(&mut self, tuple: &Tuple, operand: &str, results: &mut Vec<String>) {
-        let tmp = self.tmp();
-        self.push_str("let (");
-        for i in 0..tuple.types.len() {
-            let arg = format!("t{}_{}", tmp, i);
-            self.push_str(&arg);
-            self.push_str(", ");
-            results.push(arg);
-        }
-        self.push_str(") = ");
-        self.push_str(operand);
-        self.push_str(";\n");
-    }
-
-    fn tuple_lift(&mut self, operands: &[String], results: &mut Vec<String>) {
-        if operands.len() == 1 {
-            results.push(format!("({},)", operands[0]));
+        if self.gen.opts.raw_strings {
+            self.push_str("[u8]");
         } else {
-            results.push(format!("({})", operands.join(", ")));
+            self.push_str("str");
         }
     }
+}
 
-    fn typename_lower(&self, id: TypeId) -> String {
-        let owned = match self.lift_lower() {
-            LiftLower::LowerArgsLiftResults => false,
-            LiftLower::LiftArgsLowerResults => true,
+impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
+    fn resolve(&self) -> &'a Resolve {
+        self.resolve
+    }
+
+    fn type_record(&mut self, id: TypeId, _name: &str, record: &Record, docs: &Docs) {
+        self.print_typedef_record(id, record, docs, false);
+    }
+
+    fn type_resource(&mut self, id: TypeId, name: &str, docs: &Docs) {
+        let entry = self
+            .gen
+            .resources
+            .entry(dealias(self.resolve, id))
+            .or_default();
+        if !self.in_import {
+            entry.direction = Direction::Export;
+        }
+        self.rustdoc(docs);
+        let camel = to_upper_camel_case(name);
+        let rt = self.gen.runtime_path();
+
+        let wasm_import_module = if self.in_import {
+            // Imported resources are a simple wrapper around `Resource<T>` in
+            // the `wit-bindgen` crate.
+            uwriteln!(
+                self.src,
+                r#"
+                    #[derive(Debug)]
+                    pub struct {camel} {{
+                        handle: {rt}::Resource<{camel}>,
+                    }}
+
+                    impl {camel} {{
+                        #[doc(hidden)]
+                        pub unsafe fn from_handle(handle: u32) -> Self {{
+                            Self {{
+                                handle: {rt}::Resource::from_handle(handle),
+                            }}
+                        }}
+
+                        #[doc(hidden)]
+                        pub fn into_handle(self) -> u32 {{
+                            {rt}::Resource::into_handle(self.handle)
+                        }}
+
+                        #[doc(hidden)]
+                        pub fn handle(&self) -> u32 {{
+                            {rt}::Resource::handle(&self.handle)
+                        }}
+                    }}
+                "#
+            );
+            self.wasm_import_module.unwrap().to_string()
+        } else {
+            // Exported resources are represented as `Resource<T>` as opposed
+            // to being wrapped like imported resources.
+            //
+            // An `Own` typedef is available for the `Resource<T>` type though.
+            //
+            // Note that the actual name `{camel}` is defined here though as
+            // an alias of the type this is implemented by as configured by the
+            // `exports` configuration by the user.
+            let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
+            let module = match self.identifier {
+                Identifier::Interface(_, key) => self.resolve.name_world_key(key),
+                Identifier::World(_) => unimplemented!("resource exports from worlds"),
+            };
+            let export_key = ExportKey::Name(format!("{module}/{name}"));
+            // NB: errors are ignored here since they'll generate an error
+            // through the `generate_exports` method above.
+            let impl_name = self
+                .gen
+                .lookup_export(&export_key)
+                .unwrap_or_else(|_| "ERROR".to_string());
+            let path_to_root = self.path_to_root();
+            uwriteln!(
+                self.src,
+                r#"
+                    pub use {path_to_root}{impl_name} as {camel};
+                    const _: () = {{
+                        #[doc(hidden)]
+                        #[export_name = "{export_prefix}{module}#[dtor]{name}"]
+                        #[allow(non_snake_case)]
+                        unsafe extern "C" fn dtor(rep: usize) {{
+                            {rt}::Resource::<{camel}>::dtor(rep)
+                        }}
+                    }};
+                    unsafe impl {rt}::RustResource for {camel} {{
+                        unsafe fn new(rep: usize) -> u32 {{
+                            #[cfg(not(target_arch = "wasm32"))]
+                            unreachable!();
+
+                            #[cfg(target_arch = "wasm32")]
+                            {{
+                                #[link(wasm_import_module = "[export]{module}")]
+                                extern "C" {{
+                                    #[link_name = "[resource-new]{name}"]
+                                    fn new(_: usize) -> u32;
+                                }}
+                                new(rep)
+                            }}
+                        }}
+
+                        unsafe fn rep(handle: u32) -> usize {{
+                            #[cfg(not(target_arch = "wasm32"))]
+                            unreachable!();
+
+                            #[cfg(target_arch = "wasm32")]
+                            {{
+                                #[link(wasm_import_module = "[export]{module}")]
+                                extern "C" {{
+                                    #[link_name = "[resource-rep]{name}"]
+                                    fn rep(_: u32) -> usize;
+                                }}
+                                rep(handle)
+                            }}
+                        }}
+                    }}
+                    pub type Own{camel} = {rt}::Resource<{camel}>;
+                "#
+            );
+            format!("[export]{module}")
         };
-        self.rust_gen().type_path(id, owned)
+
+        uwriteln!(
+            self.src,
+            r#"
+                unsafe impl {rt}::WasmResource for {camel} {{
+                     #[inline]
+                     unsafe fn drop(handle: u32) {{
+                         #[cfg(not(target_arch = "wasm32"))]
+                         unreachable!();
+
+                         #[cfg(target_arch = "wasm32")]
+                         {{
+                             #[link(wasm_import_module = "{wasm_import_module}")]
+                             extern "C" {{
+                                 #[link_name = "[resource-drop]{name}"]
+                                 fn drop(_: u32);
+                             }}
+
+                             drop(handle);
+                         }}
+                     }}
+                }}
+            "#
+        );
     }
 
-    fn typename_lift(&self, id: TypeId) -> String {
-        self.rust_gen().type_path(id, true)
+    fn type_tuple(&mut self, id: TypeId, _name: &str, tuple: &Tuple, docs: &Docs) {
+        self.print_typedef_tuple(id, tuple, docs);
     }
-}
 
-pub fn to_rust_ident(name: &str) -> String {
-    match name {
-        // Escape Rust keywords.
-        // Source: https://doc.rust-lang.org/reference/keywords.html
-        "as" => "as_".into(),
-        "break" => "break_".into(),
-        "const" => "const_".into(),
-        "continue" => "continue_".into(),
-        "crate" => "crate_".into(),
-        "else" => "else_".into(),
-        "enum" => "enum_".into(),
-        "extern" => "extern_".into(),
-        "false" => "false_".into(),
-        "fn" => "fn_".into(),
-        "for" => "for_".into(),
-        "if" => "if_".into(),
-        "impl" => "impl_".into(),
-        "in" => "in_".into(),
-        "let" => "let_".into(),
-        "loop" => "loop_".into(),
-        "match" => "match_".into(),
-        "mod" => "mod_".into(),
-        "move" => "move_".into(),
-        "mut" => "mut_".into(),
-        "pub" => "pub_".into(),
-        "ref" => "ref_".into(),
-        "return" => "return_".into(),
-        "self" => "self_".into(),
-        "static" => "static_".into(),
-        "struct" => "struct_".into(),
-        "super" => "super_".into(),
-        "trait" => "trait_".into(),
-        "true" => "true_".into(),
-        "type" => "type_".into(),
-        "unsafe" => "unsafe_".into(),
-        "use" => "use_".into(),
-        "where" => "where_".into(),
-        "while" => "while_".into(),
-        "async" => "async_".into(),
-        "await" => "await_".into(),
-        "dyn" => "dyn_".into(),
-        "abstract" => "abstract_".into(),
-        "become" => "become_".into(),
-        "box" => "box_".into(),
-        "do" => "do_".into(),
-        "final" => "final_".into(),
-        "macro" => "macro_".into(),
-        "override" => "override_".into(),
-        "priv" => "priv_".into(),
-        "typeof" => "typeof_".into(),
-        "unsized" => "unsized_".into(),
-        "virtual" => "virtual_".into(),
-        "yield" => "yield_".into(),
-        "try" => "try_".into(),
-        s => s.to_snake_case(),
-    }
-}
-
-pub fn to_upper_camel_case(name: &str) -> String {
-    match name {
-        // The name "Guest" is reserved for traits generated by exported
-        // interfaces, so remap types defined in wit to something else.
-        "guest" => "Guest_".to_string(),
-        s => s.to_upper_camel_case(),
-    }
-}
-
-pub fn wasm_type(ty: WasmType) -> &'static str {
-    match ty {
-        WasmType::I32 => "i32",
-        WasmType::I64 => "i64",
-        WasmType::F32 => "f32",
-        WasmType::F64 => "f64",
-    }
-}
-
-pub fn int_repr(repr: Int) -> &'static str {
-    match repr {
-        Int::U8 => "u8",
-        Int::U16 => "u16",
-        Int::U32 => "u32",
-        Int::U64 => "u64",
-    }
-}
-
-pub fn bitcast(casts: &[Bitcast], operands: &[String], results: &mut Vec<String>) {
-    for (cast, operand) in casts.iter().zip(operands) {
-        results.push(match cast {
-            Bitcast::None => operand.clone(),
-            Bitcast::I32ToI64 => format!("i64::from({})", operand),
-            Bitcast::F32ToI32 => format!("({}).to_bits() as i32", operand),
-            Bitcast::F64ToI64 => format!("({}).to_bits() as i64", operand),
-            Bitcast::I64ToI32 => format!("{} as i32", operand),
-            Bitcast::I32ToF32 => format!("f32::from_bits({} as u32)", operand),
-            Bitcast::I64ToF64 => format!("f64::from_bits({} as u64)", operand),
-            Bitcast::F32ToI64 => format!("i64::from(({}).to_bits())", operand),
-            Bitcast::I64ToF32 => format!("f32::from_bits({} as u32)", operand),
-        });
-    }
-}
-
-pub enum RustFlagsRepr {
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
-}
-
-impl RustFlagsRepr {
-    pub fn new(f: &Flags) -> RustFlagsRepr {
-        match f.repr() {
-            FlagsRepr::U8 => RustFlagsRepr::U8,
-            FlagsRepr::U16 => RustFlagsRepr::U16,
-            FlagsRepr::U32(1) => RustFlagsRepr::U32,
-            FlagsRepr::U32(2) => RustFlagsRepr::U64,
-            FlagsRepr::U32(3 | 4) => RustFlagsRepr::U128,
-            FlagsRepr::U32(n) => panic!("unsupported number of flags: {}", n * 32),
+    fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
+        self.src.push_str(&format!(
+            "{bitflags}::bitflags! {{\n",
+            bitflags = self.gen.bitflags_path()
+        ));
+        self.rustdoc(docs);
+        let repr = RustFlagsRepr::new(flags);
+        self.src.push_str(&format!(
+            "#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]\npub struct {}: {repr} {{\n",
+            name.to_upper_camel_case(),
+        ));
+        for (i, flag) in flags.flags.iter().enumerate() {
+            self.rustdoc(&flag.docs);
+            self.src.push_str(&format!(
+                "const {} = 1 << {};\n",
+                flag.name.to_shouty_snake_case(),
+                i,
+            ));
         }
+        self.src.push_str("}\n");
+        self.src.push_str("}\n");
     }
-}
 
-impl fmt::Display for RustFlagsRepr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RustFlagsRepr::U8 => "u8".fmt(f),
-            RustFlagsRepr::U16 => "u16".fmt(f),
-            RustFlagsRepr::U32 => "u32".fmt(f),
-            RustFlagsRepr::U64 => "u64".fmt(f),
-            RustFlagsRepr::U128 => "u128".fmt(f),
-        }
+    fn type_variant(&mut self, id: TypeId, _name: &str, variant: &Variant, docs: &Docs) {
+        self.print_typedef_variant(id, variant, docs, false);
     }
-}
 
-pub fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
-    loop {
-        match &resolve.types[id].kind {
-            TypeDefKind::Type(Type::Id(that_id)) => id = *that_id,
-            _ => break id,
+    fn type_option(&mut self, id: TypeId, _name: &str, payload: &Type, docs: &Docs) {
+        self.print_typedef_option(id, payload, docs);
+    }
+
+    fn type_result(&mut self, id: TypeId, _name: &str, result: &Result_, docs: &Docs) {
+        self.print_typedef_result(id, result, docs);
+    }
+
+    fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
+        self.print_typedef_enum(id, name, enum_, docs, &[], Box::new(|_| String::new()));
+
+        let name = to_upper_camel_case(name);
+        let mut cases = String::new();
+        let repr = int_repr(enum_.tag());
+        for (i, case) in enum_.cases.iter().enumerate() {
+            let case = case.name.to_upper_camel_case();
+            cases.push_str(&format!("{i} => {name}::{case},\n"));
         }
+        uwriteln!(
+            self.src,
+            r#"
+                impl {name} {{
+                    pub(crate) unsafe fn _lift(val: {repr}) -> {name} {{
+                        if !cfg!(debug_assertions) {{
+                            return ::core::mem::transmute(val);
+                        }}
+
+                        match val {{
+                            {cases}
+                            _ => panic!("invalid enum discriminant"),
+                        }}
+                    }}
+                }}
+            "#
+        );
+    }
+
+    fn type_alias(&mut self, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
+        self.print_typedef_alias(id, ty, docs);
+    }
+
+    fn type_list(&mut self, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
+        self.print_type_list(id, ty, docs);
+    }
+
+    fn type_builtin(&mut self, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        self.rustdoc(docs);
+        self.src
+            .push_str(&format!("pub type {}", name.to_upper_camel_case()));
+        self.src.push_str(" = ");
+        self.print_ty(ty, TypeMode::Owned);
+        self.src.push_str(";\n");
     }
 }
