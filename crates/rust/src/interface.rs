@@ -1586,6 +1586,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 self.src,
                 r#"
                     #[derive(Debug)]
+                    #[repr(transparent)]
                     pub struct {camel} {{
                         handle: {rt}::Resource<{camel}>,
                     }}
