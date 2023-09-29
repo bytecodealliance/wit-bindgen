@@ -184,6 +184,7 @@ pub mod rt {
 ///
 /// This type is primarily used in generated code for exported and imported
 /// resources.
+#[repr(transparent)]
 pub struct Resource<T: WasmResource> {
     handle: u32,
     _marker: marker::PhantomData<Box<T>>,
