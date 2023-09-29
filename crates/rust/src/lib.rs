@@ -576,7 +576,7 @@ struct FnSig {
     self_is_first_param: bool,
 }
 
-fn to_rust_ident(name: &str) -> String {
+pub fn to_rust_ident(name: &str) -> String {
     match name {
         // Escape Rust keywords.
         // Source: https://doc.rust-lang.org/reference/keywords.html
