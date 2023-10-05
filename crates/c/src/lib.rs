@@ -3166,6 +3166,8 @@ pub fn to_c_ident(name: &str) -> String {
         "struct" => "struct_".into(),
         "_Packed" => "_Packed_".into(),
         "double" => "double_".into(),
+        // `this` is a keyword in C++, where the generated header might be used.
+        "this" => "this_".into(),
         s => s.to_snake_case(),
     }
 }
