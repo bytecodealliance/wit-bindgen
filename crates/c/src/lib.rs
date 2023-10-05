@@ -748,18 +748,22 @@ impl C {
                 self.src.h_defs(
                     "struct {
                     bool is_err;
-                    union {
                 ",
                 );
-                if let Some(ok) = get_nonempty_type(resolve, r.ok.as_ref()) {
-                    let ty = self.type_name(resolve, ok);
-                    uwriteln!(self.src.h_defs, "{ty} ok;");
+                let ok_ty = get_nonempty_type(resolve, r.ok.as_ref());
+                let err_ty = get_nonempty_type(resolve, r.err.as_ref());
+                if ok_ty.is_some() || err_ty.is_some() {
+                    self.src.h_defs("union {\n");
+                    if let Some(ok) = ok_ty {
+                        let ty = self.type_name(resolve, ok);
+                        uwriteln!(self.src.h_defs, "{ty} ok;");
+                    }
+                    if let Some(err) = err_ty {
+                        let ty = self.type_name(resolve, err);
+                        uwriteln!(self.src.h_defs, "{ty} err;");
+                    }
+                    self.src.h_defs("} val;\n");
                 }
-                if let Some(err) = get_nonempty_type(resolve, r.err.as_ref()) {
-                    let ty = self.type_name(resolve, err);
-                    uwriteln!(self.src.h_defs, "{ty} err;");
-                }
-                self.src.h_defs("} val;\n");
                 self.src.h_defs("}");
             }
             TypeDefKind::List(t) => {
