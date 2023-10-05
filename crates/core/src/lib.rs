@@ -557,8 +557,7 @@ pub trait InterfaceGenerator<'a> {
         let ty = &self.resolve().types[id];
         match &ty.kind {
             TypeDefKind::Record(record) => self.type_record(id, name, record, &ty.docs),
-            // TODO: use real docs when they're available:
-            TypeDefKind::Resource => self.type_resource(id, name, &Docs::default()),
+            TypeDefKind::Resource => self.type_resource(id, name, &ty.docs),
             TypeDefKind::Flags(flags) => self.type_flags(id, name, flags, &ty.docs),
             TypeDefKind::Tuple(tuple) => self.type_tuple(id, name, tuple, &ty.docs),
             TypeDefKind::Enum(enum_) => self.type_enum(id, name, enum_, &ty.docs),
