@@ -35,11 +35,11 @@ mod strings {
 
     wit_bindgen::generate!({
         inline: "
-            package my:strings
+            package my:strings;
             world not-used-name {
                 import cat: interface {
-                    foo: func(x: string)
-                    bar: func() -> string
+                    foo: func(x: string);
+                    bar: func() -> string;
                 }
             }
         ",
@@ -62,11 +62,11 @@ mod raw_strings {
 
     wit_bindgen::generate!({
         inline: "
-            package raw:strings
+            package raw:strings;
             world not-used-name {
                 import cat: interface {
-                    foo: func(x: string)
-                    bar: func() -> string
+                    foo: func(x: string);
+                    bar: func() -> string;
                 }
             }
         ",
@@ -87,11 +87,11 @@ mod raw_strings {
 mod skip {
     wit_bindgen::generate!({
         inline: "
-            package foo:foo
+            package foo:foo;
             world baz {
                 export exports: interface {
-                    foo: func()
-                    bar: func()
+                    foo: func();
+                    bar: func();
                 }
             }
         ",
