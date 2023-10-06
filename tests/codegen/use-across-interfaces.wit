@@ -1,23 +1,23 @@
-package foo:foo
+package foo:foo;
 
 interface foo {
-  type headers = list<tuple<string, string>>
+  type headers = list<tuple<string, string>>;
   record a {
     headers: headers
   }
-  x: func() -> a
+  x: func() -> a;
 }
 
 interface bar {
-  use foo.{a}
-  x: func() -> a
+  use foo.{a};
+  x: func() -> a;
 }
 
 world baz {
-  import foo
-  import bar
+  import foo;
+  import bar;
   import baz: interface {
-    use foo.{a}
-    x: func() -> a
+    use foo.{a};
+    x: func() -> a;
   }
 }

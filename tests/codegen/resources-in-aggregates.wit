@@ -1,7 +1,7 @@
-package my:resources
+package my:resources;
 
 interface aggregates {
-  resource z
+  resource z;
 
   record r1 {
     z: z
@@ -13,8 +13,8 @@ interface aggregates {
     z1: borrow<z>,
     z2: z,
   }
-  type t1 = tuple<z, r1>
-  type t2 = tuple<borrow<z>>
+  type t1 = tuple<z, r1>;
+  type t2 = tuple<borrow<z>>;
 
   variant v1 {
     z(z),
@@ -23,8 +23,8 @@ interface aggregates {
     z(borrow<z>),
   }
 
-  type l1 = list<z>
-  type l2 = list<borrow<z>>
+  type l1 = list<z>;
+  type l2 = list<borrow<z>>;
 
   f: func(
     r1: r1,
@@ -40,10 +40,10 @@ interface aggregates {
     o2: option<borrow<z>>,
     result1: result<z>,
     result2: result<borrow<z>>,
-  )
+  );
 }
 
 world resources {
-  import aggregates
-  export aggregates
+  import aggregates;
+  export aggregates;
 }

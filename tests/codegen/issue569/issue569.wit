@@ -1,5 +1,5 @@
-package foo:foo
+package foo:foo;
 
 world command {
-  use wasi:io/streams.{input-stream}
+  use wasi:io/streams.{input-stream};
 }

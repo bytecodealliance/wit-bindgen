@@ -1,8 +1,8 @@
-package test:test
+package test:test;
 
 interface test-import {
   resource resource-a {
-    constructor(id: u32)
+    constructor(id: u32);
   }
 
   record record-a {
@@ -11,10 +11,10 @@ interface test-import {
   }
 
   resource resource-b {
-    make: static func(record-a: record-a)
+    make: static func(record-a: record-a);
   }
 }
 
 world test-world {
-  import test-import
+  import test-import;
 }

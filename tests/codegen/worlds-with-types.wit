@@ -1,15 +1,15 @@
-package foo:foo
+package foo:foo;
 
 interface i {
-  type type1 = u32
+  type type1 = u32;
 }
 
 world foo {
-  use i.{type1}
+  use i.{type1};
 
-  type type2 = u32
+  type type2 = u32;
 
   record type3 {}
 
-  export foo: func() -> tuple<type1, type2, type3>
+  export foo: func() -> tuple<type1, type2, type3>;
 }

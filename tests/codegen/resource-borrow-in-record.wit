@@ -1,11 +1,11 @@
-package foo:bar
+package foo:bar;
 
 world x {
-  resource y
+  resource y;
 
   record r {
     y: borrow<y>
   }
 
-  import f: func(a: list<r>)
+  import f: func(a: list<r>);
 }

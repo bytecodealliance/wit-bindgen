@@ -1,9 +1,9 @@
-package wasi:io
+package wasi:io;
 
 interface streams {
-    use wasi:poll/poll.{pollable}
+    use wasi:poll/poll.{pollable};
 
-    type input-stream = u32
+    type input-stream = u32;
 
-    read: func() -> list<u8>
+    read: func() -> list<u8>;
 }

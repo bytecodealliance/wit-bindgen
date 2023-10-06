@@ -1,4 +1,4 @@
-package foo:foo
+package foo:foo;
 
 interface types-interface {
   /// "package of named fields"
@@ -33,22 +33,22 @@ interface types-interface {
 
   // type aliases are allowed to primitive types and additionally here are some
   // examples of other types
-  type t1 = u32
-  type t2 = tuple<u32, u64>
-  type t3 = string
-  type t4 = option<u32>
+  type t1 = u32;
+  type t2 = tuple<u32, u64>;
+  type t3 = string;
+  type t4 = option<u32>;
   /// no "ok" type
-  type t5 = result<_, errno>            // no "ok" type
-  type t6 = result<string>              // no "err" type
-  type t7 = result<char, errno>         // both types specified
-  type t8 = result                      // no "ok" or "err" type
-  type t9 = list<string>
-  type t10 = t9
+  type t5 = result<_, errno>;           // no "ok" type
+  type t6 = result<string>;             // no "err" type
+  type t7 = result<char, errno>;        // both types specified
+  type t8 = result;                     // no "ok" or "err" type
+  type t9 = list<string>;
+  type t10 = t9;
 }
 
 /// Comment for import interface
 interface api-imports {
-  use types-interface.{t7}
+  use types-interface.{t7};
 
   /// Same name as the type in `types-interface`, but this is a different type
   variant human {
@@ -57,15 +57,15 @@ interface api-imports {
     adult(tuple<string, option<option<string>>, tuple<s64>>),
   }
 
-  api-a1-b2: func(arg: list<human>) -> (h1: t7, val2: human)
+  api-a1-b2: func(arg: list<human>) -> (h1: t7, val2: human);
 }
 
 interface api {
   /// Comment for export function
-  f1: func() -> (val-one: tuple<s32>, val2: string)
+  f1: func() -> (val-one: tuple<s32>, val2: string);
 
   /// Comment for t5 in api
-  type t5 = result<_, option<errno>>
+  type t5 = result<_, option<errno>>;
 
   record errno {
     a-u1: u64,
@@ -75,23 +75,23 @@ interface api {
     c: option<char>,
   }
 
-  class: func(break: option<option<t5>>) -> tuple<>
-  continue: func(abstract: option<result<_, errno>>, extends: tuple<>) -> (%implements: option<tuple<>>)
+  class: func(break: option<option<t5>>) -> tuple<>;
+  continue: func(abstract: option<result<_, errno>>, extends: tuple<>) -> (%implements: option<tuple<>>);
 }
 
 world types-example {
-    use types-interface.{t2 as t2-renamed, t10, permissions}
+    use types-interface.{t2 as t2-renamed, t10, permissions};
 
-    import api-imports
-    import print: func(message: string, level: log-level)
+    import api-imports;
+    import print: func(message: string, level: log-level);
     /// Comment for import inline
     import inline: interface {
       /// Comment for import inline function
-      inline-imp: func(args: list<option<char>>) -> result<_, char>
+      inline-imp: func(args: list<option<char>>) -> result<_, char>;
     }
 
-    export types-interface
-    export api
+    export types-interface;
+    export api;
 
     enum log-level {
       /// lowest level
@@ -103,9 +103,9 @@ world types-example {
 
     record empty {}
 
-    export f-f1: func(typedef: t10) -> t10
-    export f1: func(f: float32, f-list: list<tuple<char, float64>>) -> (val-p1: s64, val2: string)
+    export f-f1: func(typedef: t10) -> t10;
+    export f1: func(f: float32, f-list: list<tuple<char, float64>>) -> (val-p1: s64, val2: string);
     /// t2 has been renamed with `use self.types-interface.{t2 as t2-renamed}`
-    export re-named: func(perm: option<permissions>, e: option<empty>) -> t2-renamed
-    export re-named2: func(tup: tuple<list<u16>>, e: empty) -> tuple<option<u8>, s8>
+    export re-named: func(perm: option<permissions>, e: option<empty>) -> t2-renamed;
+    export re-named2: func(tup: tuple<list<u16>>, e: empty) -> tuple<option<u8>, s8>;
 }

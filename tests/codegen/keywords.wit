@@ -1,46 +1,46 @@
-package foo:foo
+package foo:foo;
 
 interface keywords {
     record for {
       return: u32,
     }
-    %type: func(%type: u32) -> (%type: u32, %flags: s32)
-    %variant: func(%enum: s32) -> ()
-    %interface: func(%interface: s32) -> ()
-    throw: func(throw: s32) -> ()
-    new: func(new: s32) -> ()
-    %package: func(%package: s32) -> ()
-    final: func(final: s32) -> ()
-    auto: func(auto: s32) -> ()
-    else: func(for: s32) -> ()
-    long: func(long: s32) -> ()
-    switch: func(switch: s32) -> ()
-    break: func(break: s32) -> ()
-    register: func(register: s32) -> ()
-    typedef: func(typedef: s32) -> ()
-    case: func(case: s32) -> ()
-    extern: func(extern: s32) -> ()
-    %char: func(%char: s32) -> ()
-    float: func(float: s32) -> ()
-    short: func(short: s32) -> ()
-    unsigned: func(unsigned: s32) -> ()
-    const: func(const: s32) -> ()
-    signed: func(signed: s32) -> ()
-    void: func(void: s32) -> ()
-    continue: func(continue: s32) -> ()
-    goto: func(goto: s32) -> ()
-    sizeof: func(sizeof: s32) -> ()
-    volatile: func(volatile: s32) -> ()
-    default: func(default: s32) -> ()
-    if: func(if: s32) -> ()
-    %static: func(%static: s32) -> ()
-    while: func(while: s32) -> ()
-    do: func(do: s32) -> ()
-    %int: func(%int: s32) -> ()
-    %struct: func(%struct: s32) -> ()
+    %type: func(%type: u32) -> (%type: u32, %flags: s32);
+    %variant: func(%enum: s32) -> ();
+    %interface: func(%interface: s32) -> ();
+    throw: func(throw: s32) -> ();
+    new: func(new: s32) -> ();
+    %package: func(%package: s32) -> ();
+    final: func(final: s32) -> ();
+    auto: func(auto: s32) -> ();
+    else: func(for: s32) -> ();
+    long: func(long: s32) -> ();
+    switch: func(switch: s32) -> ();
+    break: func(break: s32) -> ();
+    register: func(register: s32) -> ();
+    typedef: func(typedef: s32) -> ();
+    case: func(case: s32) -> ();
+    extern: func(extern: s32) -> ();
+    %char: func(%char: s32) -> ();
+    float: func(float: s32) -> ();
+    short: func(short: s32) -> ();
+    unsigned: func(unsigned: s32) -> ();
+    const: func(const: s32) -> ();
+    signed: func(signed: s32) -> ();
+    void: func(void: s32) -> ();
+    continue: func(continue: s32) -> ();
+    goto: func(goto: s32) -> ();
+    sizeof: func(sizeof: s32) -> ();
+    volatile: func(volatile: s32) -> ();
+    default: func(default: s32) -> ();
+    if: func(if: s32) -> ();
+    %static: func(%static: s32) -> ();
+    while: func(while: s32) -> ();
+    do: func(do: s32) -> ();
+    %int: func(%int: s32) -> ();
+    %struct: func(%struct: s32) -> ();
 }
 
 world the-world {
-  import keywords
-  export keywords
+  import keywords;
+  export keywords;
 }
