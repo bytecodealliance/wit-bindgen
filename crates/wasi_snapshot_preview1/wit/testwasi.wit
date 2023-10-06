@@ -1,8 +1,8 @@
-package test:wasi
+package test:wasi;
 
 world testwasi {
   import testwasi: interface {
-    log: func(bytes: list<u8>)
-    log-err: func(bytes: list<u8>)
+    log: func(bytes: list<u8>);
+    log-err: func(bytes: list<u8>);
   }
 }
