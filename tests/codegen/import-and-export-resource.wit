@@ -1,13 +1,13 @@
-package my:resources
+package my:resources;
 
 interface baz {
   resource x {
-    constructor(s: string)
-    get: func() -> string
+    constructor(s: string);
+    get: func() -> string;
   }
 }
 
 world resources {
-  import baz
-  export baz
+  import baz;
+  export baz;
 }

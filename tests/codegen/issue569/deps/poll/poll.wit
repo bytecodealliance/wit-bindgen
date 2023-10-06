@@ -1,7 +1,7 @@
-package wasi:poll
+package wasi:poll;
 
 interface poll {
-    type pollable = u32
+    type pollable = u32;
 
-    poll-oneoff: func() -> list<u8>
+    poll-oneoff: func() -> list<u8>;
 }

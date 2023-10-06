@@ -1,15 +1,15 @@
-package foo:bar
+package foo:bar;
 
 interface foo4 {
-  resource y
+  resource y;
 
   record r {
     y: borrow<y>
   }
 
-  f: func(a: list<r>)
+  f: func(a: list<r>);
 }
 
 world x {
-  export foo4
+  export foo4;
 }

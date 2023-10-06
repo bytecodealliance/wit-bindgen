@@ -1,31 +1,31 @@
-package my:resources
+package my:resources;
 
 interface types {
   resource z {
-    constructor(a: float64)
+    constructor(a: float64);
   }
 }
 
 world resources {
-  use types.{z}
+  use types.{z};
 
-  export add: func(a: borrow<z>, b: borrow<z>) -> own<z>
+  export add: func(a: borrow<z>, b: borrow<z>) -> own<z>;
 
   export exports: interface {
     resource x {
-      constructor(a: float64)
-      get-a: func() -> float64
-      set-a: func(a: float64)
-      add: static func(x: x, a: float64) -> x
+      constructor(a: float64);
+      get-a: func() -> float64;
+      set-a: func(a: float64);
+      add: static func(x: x, a: float64) -> x;
     }
   }
 
   import imports: interface {
     resource y {
-      constructor(a: float64)
-      get-a: func() -> float64
-      set-a: func(a: float64)
-      add: static func(y: y, a: float64) -> y
+      constructor(a: float64);
+      get-a: func() -> float64;
+      set-a: func(a: float64);
+      add: static func(y: y, a: float64) -> y;
     }
   }
 }

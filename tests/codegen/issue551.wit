@@ -1,13 +1,13 @@
-package foo:foo
+package foo:foo;
 
 world bindings {
-    import component
+    import component;
 }
 
 interface component {
-    type value = list<tuple<>>
-    type entity = list<tuple<u32, value>>
+    type value = list<tuple<>>;
+    type entity = list<tuple<u32, value>>;
 
-    add-components: func(entity: u64, data: entity)
-    query-eval: func(q: u64) -> list<tuple<u64, list<value>>>
+    add-components: func(entity: u64, data: entity);
+    query-eval: func(q: u64) -> list<tuple<u64, list<value>>>;
 }

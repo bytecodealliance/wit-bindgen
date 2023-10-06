@@ -1,48 +1,48 @@
-package foo:bar
+package foo:bar;
 
 interface guest {
-  type guest = u32
-  x: func() -> guest
+  type guest = u32;
+  x: func() -> guest;
 }
 
 interface other-guest {
-  guest: func()
+  guest: func();
 }
 
 world another-guest {
-  import guest
-  export guest
-  import other-guest
-  export other-guest
+  import guest;
+  export guest;
+  import other-guest;
+  export other-guest;
 
-  export i1
-  export i2
-  export i3
-  export i4
+  export i1;
+  export i2;
+  export i3;
+  export i4;
 }
 
 interface i1 {
   enum guest {
     a, b, c,
   }
-  x: func() -> guest
+  x: func() -> guest;
 }
 
 interface i2 {
-  use i1.{guest}
-  x: func() -> guest
+  use i1.{guest};
+  x: func() -> guest;
 }
 
 interface i3 {
   record guest {
     x: u32,
   }
-  x: func() -> guest
+  x: func() -> guest;
 }
 
 interface i4 {
   variant guest {
     x(u32),
   }
-  x: func() -> guest
+  x: func() -> guest;
 }

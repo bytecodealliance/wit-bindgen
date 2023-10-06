@@ -1,8 +1,8 @@
-package test:ownership
+package test:ownership;
 
 world ownership {
     import lists: interface {
-        foo: func(a: list<list<string>>) -> list<list<string>>
+        foo: func(a: list<list<string>>) -> list<list<string>>;
     }
 
     import thing-in: interface {
@@ -11,7 +11,7 @@ world ownership {
             value: list<string>
         }
 
-        bar: func(a: thing)
+        bar: func(a: thing);
     }
 
     import thing-in-and-out: interface {
@@ -20,8 +20,8 @@ world ownership {
             value: list<string>
         }
 
-        baz: func(a: thing) -> thing
+        baz: func(a: thing) -> thing;
     }
 
-    export foo: func()
+    export foo: func();
 }

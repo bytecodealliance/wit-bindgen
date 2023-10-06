@@ -1,10 +1,10 @@
-package foo:foo
+package foo:foo;
 
 world bindings {
-    import component
+    import component;
 }
 
 interface component {
-    type value = tuple<>
-    query-eval: func(q: u64) -> list<value>
+    type value = tuple<>;
+    query-eval: func(q: u64) -> list<value>;
 }

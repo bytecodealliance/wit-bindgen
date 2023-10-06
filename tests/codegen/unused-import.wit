@@ -1,4 +1,4 @@
-package unused:%import
+package unused:%import;
 
 interface types {
     record r {
@@ -8,12 +8,12 @@ interface types {
 
 world the-world {
     import foo: interface {
-      use types.{r}
+      use types.{r};
 
-      foo: func(data: r)
+      foo: func(data: r);
     }
 
     export bar: interface {
-      use types.{r}
+      use types.{r};
     }
 }

@@ -1,4 +1,4 @@
-package foo:foo
+package foo:foo;
 
 interface http-fetch-imports {
     record request{
@@ -12,9 +12,9 @@ interface http-fetch-imports {
         body: string
     }
 
-    fetch: func(req: request) -> result<response>
+    fetch: func(req: request) -> result<response>;
 }
 
 world http-fetch-simple {
-    import http-fetch-imports
+    import http-fetch-imports;
 }
