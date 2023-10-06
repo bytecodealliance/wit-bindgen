@@ -1043,8 +1043,7 @@ impl C {
                                 }
                                 _ => {}
                             }
-                            self.public_anonymous_types.insert(*id);
-                            self.private_anonymous_types.remove(id);
+                            self.visit_anonymous_types(resolve, &Type::Id(*id));
                             dst.push_str(&ns);
                             dst.push_str("_");
                             push_ty_name(
@@ -1059,6 +1058,87 @@ impl C {
                     },
                 }
             }
+        }
+    }
+
+    fn visit_anonymous_types(&mut self, resolve: &Resolve, ty: &Type) {
+        match ty {
+            Type::String => {
+                self.needs_string = true;
+            }
+            Type::Id(id) => {
+                let ty = &resolve.types[*id];
+                if ty.name.is_none() {
+                    match &ty.kind {
+                        TypeDefKind::Type(_) => {}
+                        TypeDefKind::Handle(Handle::Borrow(resource))
+                            if matches!(
+                                self.resources
+                                    .get(&dealias(resolve, *resource))
+                                    .map(|info| &info.direction),
+                                Some(Direction::Export)
+                            ) => {}
+                        _ => {
+                            self.public_anonymous_types.insert(*id);
+                            self.private_anonymous_types.remove(id);
+                        }
+                    }
+                }
+
+                match &ty.kind {
+                    TypeDefKind::Type(t) => self.visit_anonymous_types(resolve, t),
+                    TypeDefKind::Record(r) => {
+                        for field in &r.fields {
+                            self.visit_anonymous_types(resolve, &field.ty);
+                        }
+                    }
+                    TypeDefKind::Resource
+                    | TypeDefKind::Handle(_)
+                    | TypeDefKind::Flags(_)
+                    | TypeDefKind::Enum(_) => {}
+                    TypeDefKind::Variant(v) => {
+                        for case in &v.cases {
+                            if let Some(ty) = &case.ty {
+                                self.visit_anonymous_types(resolve, ty);
+                            }
+                        }
+                    }
+                    TypeDefKind::Tuple(t) => {
+                        for ty in &t.types {
+                            self.visit_anonymous_types(resolve, ty);
+                        }
+                    }
+                    TypeDefKind::Option(ty) => {
+                        self.visit_anonymous_types(resolve, ty);
+                    }
+                    TypeDefKind::Result(r) => {
+                        if let Some(ty) = &r.ok {
+                            self.visit_anonymous_types(resolve, ty);
+                        }
+                        if let Some(ty) = &r.err {
+                            self.visit_anonymous_types(resolve, ty);
+                        }
+                    }
+                    TypeDefKind::List(ty) => {
+                        self.visit_anonymous_types(resolve, ty);
+                    }
+                    TypeDefKind::Future(ty) => {
+                        if let Some(ty) = ty {
+                            self.visit_anonymous_types(resolve, ty);
+                        }
+                    }
+                    TypeDefKind::Stream(s) => {
+                        if let Some(ty) = &s.element {
+                            self.visit_anonymous_types(resolve, ty);
+                        }
+                        if let Some(ty) = &s.end {
+                            self.visit_anonymous_types(resolve, ty);
+                        }
+                    }
+                    TypeDefKind::Unknown => unreachable!(),
+                }
+            }
+            _ => {}
         }
     }
 }
