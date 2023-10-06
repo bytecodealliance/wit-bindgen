@@ -670,10 +670,13 @@ impl InterfaceGenerator<'_> {
             // it is actually required that we take ownership since Rust is
             // losing access to those handles.
             //
+            // We also skip borrowing if the type has a lifetime associated with
+            // in which case we treated it as already borrowed.
+            //
             // Check here if the type has the right shape and if we're in the
             // right mode, and if those conditions are met a lifetime is
             // printed.
-            if info.has_list && !info.has_own_handle {
+            if info.has_list && !info.has_own_handle && lt.is_none() {
                 if let TypeMode::AllBorrowed(lt) | TypeMode::HandlesBorrowed(lt) = mode {
                     self.push_str("&");
                     if lt != "'_" {
