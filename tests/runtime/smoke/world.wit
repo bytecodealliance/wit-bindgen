@@ -1,11 +1,11 @@
-package test:smoke
+package test:smoke;
 
 interface imports {
-  thunk: func()
+  thunk: func();
 }
 
 world smoke {
-  import imports
+  import imports;
 
-  export thunk: func()
+  export thunk: func();
 }

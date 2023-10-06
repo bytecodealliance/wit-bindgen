@@ -1,4 +1,4 @@
-package test:many-arguments
+package test:many-arguments;
 
 world many-arguments {
   import imports: interface {
@@ -19,7 +19,7 @@ world many-arguments {
       a14: u64,
       a15: u64,
       a16: u64,
-    )
+    );
   }
   export many-arguments: func(
     a1: u64,
@@ -38,5 +38,5 @@ world many-arguments {
     a14: u64,
     a15: u64,
     a16: u64,
-  )
+  );
 }

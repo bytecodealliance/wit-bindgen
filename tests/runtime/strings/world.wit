@@ -1,14 +1,14 @@
-package test:strings
+package test:strings;
 
 interface imports {
-  take-basic: func(s: string)
-  return-unicode: func() -> string
+  take-basic: func(s: string);
+  return-unicode: func() -> string;
 }
 
 world strings {
-  import imports
+  import imports;
 
-  export test-imports: func()
-  export return-empty: func() -> string
-  export roundtrip: func(s: string) -> string
+  export test-imports: func();
+  export return-empty: func() -> string;
+  export roundtrip: func(s: string) -> string;
 }
