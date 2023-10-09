@@ -404,16 +404,16 @@ impl InterfaceGenerator<'_> {
     pub fn generate_stub(
         &mut self,
         resource: Option<TypeId>,
-        pkg: Option<&PackageName>,
+        pkg: Option<(String, String)>,
         name: &str,
         in_interface: bool,
         funcs: &[&Function],
     ) {
-        let path = if let Some(pkg) = pkg {
+        let path = if let Some((namespace, pkg_name)) = pkg {
             format!(
                 "{}::{}::{}",
-                to_rust_ident(&pkg.namespace),
-                to_rust_ident(&pkg.name),
+                to_rust_ident(&namespace),
+                to_rust_ident(&pkg_name),
                 to_rust_ident(name),
             )
         } else {

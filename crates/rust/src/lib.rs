@@ -466,7 +466,7 @@ impl WorldGenerator for RustWasm {
                     WorldKey::Interface(id) => {
                         let interface = &resolve.interfaces[*id];
                         (
-                            Some(&resolve.packages[interface.package.unwrap()].name),
+                            Some(interface.package.unwrap()),
                             interface.name.as_ref().unwrap(),
                         )
                     }
@@ -481,6 +481,11 @@ impl WorldGenerator for RustWasm {
                         {
                             let mut gen =
                                 self.interface(Identifier::World(world_id), None, resolve, false);
+                            let pkg = pkg.map(|pid| {
+                                let namespace = resolve.packages[pid].name.namespace.clone();
+                                let package_module = name_package_module(resolve, pid);
+                                (namespace, package_module)
+                            });
                             gen.generate_stub(resource, pkg, name, true, &funcs);
                             let stub = gen.finish();
                             self.src.push_str(&stub);
