@@ -191,7 +191,7 @@ impl InterfaceGenerator<'_> {
         (snake, pkg)
     }
 
-    pub fn finish_append_submodule(mut self, snake: &str, pkg: Option<PackageName>) {
+    pub fn finish_append_submodule(mut self, snake: &str, module_path: Vec<String>) {
         let module = self.finish();
         let path_to_root = self.path_to_root();
         let module = format!(
@@ -211,7 +211,7 @@ impl InterfaceGenerator<'_> {
         } else {
             &mut self.gen.export_modules
         };
-        map.entry(pkg).or_insert(Vec::new()).push(module);
+        map.push((module, module_path))
     }
 
     fn generate_guest_import(&mut self, func: &Function) {

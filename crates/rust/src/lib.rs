@@ -38,8 +38,8 @@ struct RustWasm {
     types: Types,
     src: Source,
     opts: Opts,
-    import_modules: BTreeMap<Option<PackageName>, Vec<String>>,
-    export_modules: BTreeMap<Option<PackageName>, Vec<String>>,
+    import_modules: Vec<(String, Vec<String>)>,
+    export_modules: Vec<(String, Vec<String>)>,
     skip: HashSet<String>,
     interface_names: HashMap<InterfaceId, String>,
     resources: HashMap<TypeId, ResourceInfo>,
@@ -188,34 +188,33 @@ impl RustWasm {
         }
     }
 
-    fn emit_modules(&mut self, modules: &BTreeMap<Option<PackageName>, Vec<String>>) {
-        let mut map = BTreeMap::new();
-        for (pkg, modules) in modules {
-            match pkg {
-                Some(pkg) => {
-                    let prev = map
-                        .entry(&pkg.namespace)
-                        .or_insert(BTreeMap::new())
-                        .insert(&pkg.name, modules);
-                    assert!(prev.is_none());
-                }
-                None => {
-                    for module in modules {
-                        uwriteln!(self.src, "{module}");
-                    }
-                }
-            }
+    fn emit_modules(&mut self, modules: Vec<(String, Vec<String>)>) {
+        #[derive(Default)]
+        struct Module {
+            submodules: BTreeMap<String, Module>,
+            contents: Vec<String>,
         }
-        for (ns, pkgs) in map {
-            uwriteln!(self.src, "pub mod {} {{", ns.to_snake_case());
-            for (pkg, modules) in pkgs {
-                uwriteln!(self.src, "pub mod {} {{", pkg.to_snake_case());
-                for module in modules {
-                    uwriteln!(self.src, "{module}");
-                }
-                uwriteln!(self.src, "}}");
+        let mut map = Module::default();
+        for (module, path) in modules {
+            let mut cur = &mut map;
+            for name in path[..path.len() - 1].iter() {
+                cur = cur
+                    .submodules
+                    .entry(name.clone())
+                    .or_insert(Module::default());
             }
-            uwriteln!(self.src, "}}");
+            cur.contents.push(module);
+        }
+        emit(&mut self.src, map);
+        fn emit(me: &mut Source, module: Module) {
+            for (name, submodule) in module.submodules {
+                uwriteln!(me, "pub mod {name} {{");
+                emit(me, submodule);
+                uwriteln!(me, "}}");
+            }
+            for submodule in module.contents {
+                uwriteln!(me, "{submodule}");
+            }
         }
     }
 
@@ -251,6 +250,51 @@ impl RustWasm {
     }
 }
 
+/// If the package `id` is the only package with its namespace/name combo
+/// then pass through the name unmodified. If, however, there are multiple
+/// versions of this package then the package module is going to get version
+/// information.
+fn name_package_module(resolve: &Resolve, id: PackageId) -> String {
+    let pkg = &resolve.packages[id];
+    let versions_with_same_name = resolve
+        .packages
+        .iter()
+        .filter_map(|(_, p)| {
+            if p.name.namespace == pkg.name.namespace && p.name.name == pkg.name.name {
+                Some(&p.name.version)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let base = pkg.name.name.to_snake_case();
+    if versions_with_same_name.len() == 1 {
+        return base;
+    }
+
+    let version = match &pkg.name.version {
+        Some(version) => version,
+        // If this package didn't have a version then don't mangle its name
+        // and other packages with the same name but with versions present
+        // will have their names mangled.
+        None => return base,
+    };
+
+    // Here there's multiple packages with the same name that differ only in
+    // version, so the version needs to be mangled into the Rust module name
+    // that we're generating. This in theory could look at all of
+    // `versions_with_same_name` and produce a minimal diff, e.g. for 0.1.0
+    // and 0.2.0 this could generate "foo1" and "foo2", but for now
+    // a simpler path is chosen to generate "foo0_1_0" and "foo0_2_0".
+    let version = version
+        .to_string()
+        .replace('.', "_")
+        .replace('-', "_")
+        .replace('+', "_")
+        .to_snake_case();
+    format!("{base}{version}")
+}
+
 impl WorldGenerator for RustWasm {
     fn preprocess(&mut self, resolve: &Resolve, _world: WorldId) {
         wit_bindgen_core::generated_preamble(&mut self.src, env!("CARGO_PKG_VERSION"));
@@ -276,7 +320,8 @@ impl WorldGenerator for RustWasm {
 
         gen.generate_imports(resolve.interfaces[id].functions.values());
 
-        gen.finish_append_submodule(&snake, pkg);
+        let module_path = compute_module_path(name, resolve, id, pkg, false);
+        gen.finish_append_submodule(&snake, module_path);
     }
 
     fn import_funcs(
@@ -319,7 +364,8 @@ impl WorldGenerator for RustWasm {
             Some(name),
             resolve.interfaces[id].functions.values(),
         )?;
-        gen.finish_append_submodule(&snake, pkg);
+        let module_path = compute_module_path(name, resolve, id, pkg, true);
+        gen.finish_append_submodule(&snake, module_path);
         Ok(())
     }
 
@@ -363,14 +409,11 @@ impl WorldGenerator for RustWasm {
 
     fn finish(&mut self, resolve: &Resolve, world: WorldId, files: &mut Files) {
         let name = &resolve.worlds[world].name;
+
         let imports = mem::take(&mut self.import_modules);
-        self.emit_modules(&imports);
+        self.emit_modules(imports);
         let exports = mem::take(&mut self.export_modules);
-        if !exports.is_empty() {
-            self.src.push_str("pub mod exports {\n");
-            self.emit_modules(&exports);
-            self.src.push_str("}\n");
-        }
+        self.emit_modules(exports);
 
         self.src.push_str("\n#[cfg(target_arch = \"wasm32\")]\n");
 
@@ -483,6 +526,32 @@ impl WorldGenerator for RustWasm {
         let module_name = name.to_snake_case();
         files.push(&format!("{module_name}.rs"), src.as_bytes());
     }
+}
+
+fn compute_module_path(
+    name: &WorldKey,
+    resolve: &Resolve,
+    id: InterfaceId,
+    pkg: Option<PackageName>,
+    is_export: bool,
+) -> Vec<String> {
+    let mut path = Vec::new();
+    if is_export {
+        path.push("exports".to_string());
+    }
+    match name {
+        WorldKey::Name(name) => {
+            path.push(name.to_snake_case());
+        }
+        WorldKey::Interface(_) => {
+            let iface = &resolve.interfaces[id];
+            let pkgname = pkg.unwrap();
+            path.push(pkgname.namespace.to_snake_case());
+            path.push(name_package_module(resolve, iface.package.unwrap()));
+            path.push(iface.name.as_ref().unwrap().to_snake_case());
+        }
+    }
+    path
 }
 
 enum Identifier<'a> {
