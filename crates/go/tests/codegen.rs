@@ -20,6 +20,7 @@ macro_rules! codegen_test {
     (resource_own_in_other_interface $name:tt $test:tt) => {};
     (resources_in_aggregates $name:tt $test:tt) => {};
     (issue668 $name:tt $test:tt) => {};
+    (multiversion $name:tt $test:tt) => {};
 
     ($id:ident $name:tt $test:tt) => {
         #[test]

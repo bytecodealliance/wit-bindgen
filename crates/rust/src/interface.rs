@@ -159,39 +159,21 @@ impl InterfaceGenerator<'_> {
         path_to_root
     }
 
-    pub fn start_append_submodule(&mut self, name: &WorldKey) -> (String, Option<PackageName>) {
+    pub fn start_append_submodule(&mut self, name: &WorldKey) -> (String, Vec<String>) {
         let snake = match name {
             WorldKey::Name(name) => to_rust_ident(name),
             WorldKey::Interface(id) => {
                 to_rust_ident(self.resolve.interfaces[*id].name.as_ref().unwrap())
             }
         };
-        let pkg = match name {
-            WorldKey::Name(_) => None,
-            WorldKey::Interface(id) => {
-                let pkg = self.resolve.interfaces[*id].package.unwrap();
-                Some(self.resolve.packages[pkg].name.clone())
-            }
-        };
+        let module_path = crate::compute_module_path(name, &self.resolve, !self.in_import);
         if let Identifier::Interface(id, _) = self.identifier {
-            let mut path = String::new();
-            if !self.in_import {
-                path.push_str("exports::");
-            }
-            if let Some(name) = &pkg {
-                path.push_str(&format!(
-                    "{}::{}::",
-                    name.namespace.to_snake_case(),
-                    name.name.to_snake_case()
-                ));
-            }
-            path.push_str(&snake);
-            self.gen.interface_names.insert(id, path);
+            self.gen.interface_names.insert(id, module_path.join("::"));
         }
-        (snake, pkg)
+        (snake, module_path)
     }
 
-    pub fn finish_append_submodule(mut self, snake: &str, pkg: Option<PackageName>) {
+    pub fn finish_append_submodule(mut self, snake: &str, module_path: Vec<String>) {
         let module = self.finish();
         let path_to_root = self.path_to_root();
         let module = format!(
@@ -211,7 +193,7 @@ impl InterfaceGenerator<'_> {
         } else {
             &mut self.gen.export_modules
         };
-        map.entry(pkg).or_insert(Vec::new()).push(module);
+        map.push((module, module_path))
     }
 
     fn generate_guest_import(&mut self, func: &Function) {
@@ -404,16 +386,16 @@ impl InterfaceGenerator<'_> {
     pub fn generate_stub(
         &mut self,
         resource: Option<TypeId>,
-        pkg: Option<&PackageName>,
+        pkg: Option<(String, String)>,
         name: &str,
         in_interface: bool,
         funcs: &[&Function],
     ) {
-        let path = if let Some(pkg) = pkg {
+        let path = if let Some((namespace, pkg_name)) = pkg {
             format!(
                 "{}::{}::{}",
-                to_rust_ident(&pkg.namespace),
-                to_rust_ident(&pkg.name),
+                to_rust_ident(&namespace),
+                to_rust_ident(&pkg_name),
                 to_rust_ident(name),
             )
         } else {
