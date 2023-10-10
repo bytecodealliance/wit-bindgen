@@ -159,36 +159,18 @@ impl InterfaceGenerator<'_> {
         path_to_root
     }
 
-    pub fn start_append_submodule(&mut self, name: &WorldKey) -> (String, Option<PackageName>) {
+    pub fn start_append_submodule(&mut self, name: &WorldKey) -> (String, Vec<String>) {
         let snake = match name {
             WorldKey::Name(name) => to_rust_ident(name),
             WorldKey::Interface(id) => {
                 to_rust_ident(self.resolve.interfaces[*id].name.as_ref().unwrap())
             }
         };
-        let pkg = match name {
-            WorldKey::Name(_) => None,
-            WorldKey::Interface(id) => {
-                let pkg = self.resolve.interfaces[*id].package.unwrap();
-                Some(self.resolve.packages[pkg].name.clone())
-            }
-        };
+        let module_path = crate::compute_module_path(name, &self.resolve, !self.in_import);
         if let Identifier::Interface(id, _) = self.identifier {
-            let mut path = String::new();
-            if !self.in_import {
-                path.push_str("exports::");
-            }
-            if let Some(name) = &pkg {
-                path.push_str(&format!(
-                    "{}::{}::",
-                    name.namespace.to_snake_case(),
-                    name.name.to_snake_case()
-                ));
-            }
-            path.push_str(&snake);
-            self.gen.interface_names.insert(id, path);
+            self.gen.interface_names.insert(id, module_path.join("::"));
         }
-        (snake, pkg)
+        (snake, module_path)
     }
 
     pub fn finish_append_submodule(mut self, snake: &str, module_path: Vec<String>) {

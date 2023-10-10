@@ -315,12 +315,11 @@ impl WorldGenerator for RustWasm {
             resolve,
             true,
         );
-        let (snake, pkg) = gen.start_append_submodule(name);
+        let (snake, module_path) = gen.start_append_submodule(name);
         gen.types(id);
 
         gen.generate_imports(resolve.interfaces[id].functions.values());
 
-        let module_path = compute_module_path(name, resolve, id, pkg, false);
         gen.finish_append_submodule(&snake, module_path);
     }
 
@@ -357,14 +356,13 @@ impl WorldGenerator for RustWasm {
         };
         let path = resolve.id_of(id).unwrap_or(inner_name.to_string());
         let mut gen = self.interface(Identifier::Interface(id, name), None, resolve, false);
-        let (snake, pkg) = gen.start_append_submodule(name);
+        let (snake, module_path) = gen.start_append_submodule(name);
         gen.types(id);
         gen.generate_exports(
             &ExportKey::Name(path),
             Some(name),
             resolve.interfaces[id].functions.values(),
         )?;
-        let module_path = compute_module_path(name, resolve, id, pkg, true);
         gen.finish_append_submodule(&snake, module_path);
         Ok(())
     }
@@ -533,13 +531,7 @@ impl WorldGenerator for RustWasm {
     }
 }
 
-fn compute_module_path(
-    name: &WorldKey,
-    resolve: &Resolve,
-    id: InterfaceId,
-    pkg: Option<PackageName>,
-    is_export: bool,
-) -> Vec<String> {
+fn compute_module_path(name: &WorldKey, resolve: &Resolve, is_export: bool) -> Vec<String> {
     let mut path = Vec::new();
     if is_export {
         path.push("exports".to_string());
@@ -548,11 +540,12 @@ fn compute_module_path(
         WorldKey::Name(name) => {
             path.push(name.to_snake_case());
         }
-        WorldKey::Interface(_) => {
-            let iface = &resolve.interfaces[id];
-            let pkgname = pkg.unwrap();
+        WorldKey::Interface(id) => {
+            let iface = &resolve.interfaces[*id];
+            let pkg = iface.package.unwrap();
+            let pkgname = resolve.packages[pkg].name.clone();
             path.push(pkgname.namespace.to_snake_case());
-            path.push(name_package_module(resolve, iface.package.unwrap()));
+            path.push(name_package_module(resolve, pkg));
             path.push(iface.name.as_ref().unwrap().to_snake_case());
         }
     }
