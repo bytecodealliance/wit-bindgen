@@ -12,8 +12,6 @@ macro_rules! codegen_test {
     (resource_local_alias $name:tt $test:tt) => {};
     (resources_with_lists $name:tt $test:tt) => {};
     (resources_in_aggregates $name:tt $test:tt) => {};
-    (multiversion $name:tt $test:tt) => {};
-
     ($id:ident $name:tt $test:tt) => {
         #[test]
         fn $id() {

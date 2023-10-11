@@ -1276,25 +1276,39 @@ pub fn owner_namespace(
 ) -> Option<String> {
     let ty = &resolve.types[id];
     match ty.owner {
-        TypeOwner::Interface(owner) => {
-            Some(interface_identifier(&interface_names[&owner], resolve))
-        }
+        TypeOwner::Interface(owner) => Some(interface_identifier(
+            &interface_names[&owner],
+            resolve,
+            false,
+        )),
         TypeOwner::World(owner) => Some(resolve.worlds[owner].name.to_snake_case()),
         TypeOwner::None => None,
     }
 }
 
-fn interface_identifier(interface_id: &WorldKey, resolve: &Resolve) -> String {
+fn interface_identifier(interface_id: &WorldKey, resolve: &Resolve, in_export: bool) -> String {
     match interface_id {
         WorldKey::Name(name) => name.to_snake_case(),
         WorldKey::Interface(id) => {
             let mut ns = String::new();
+            if in_export {
+                ns.push_str("exports_");
+            }
             let iface = &resolve.interfaces[*id];
             let pkg = &resolve.packages[iface.package.unwrap()];
             ns.push_str(&pkg.name.namespace.to_snake_case());
             ns.push_str("_");
             ns.push_str(&pkg.name.name.to_snake_case());
             ns.push_str("_");
+            if let Some(version) = &pkg.name.version {
+                let version = version
+                    .to_string()
+                    .replace('.', "_")
+                    .replace('-', "_")
+                    .replace('+', "_");
+                ns.push_str(&version);
+                ns.push_str("_");
+            }
             ns.push_str(&iface.name.as_ref().unwrap().to_snake_case());
             ns
         }
@@ -1638,22 +1652,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
-    fn c_func_name(&self, interface_name: Option<&WorldKey>, func: &Function) -> String {
+    fn c_func_name(&self, interface_id: Option<&WorldKey>, func: &Function) -> String {
         let mut name = String::new();
-        match interface_name {
-            Some(WorldKey::Name(k)) => name.push_str(&k.to_snake_case()),
-            Some(WorldKey::Interface(id)) => {
-                if !self.in_import {
-                    name.push_str("exports_");
-                }
-                let iface = &self.resolve.interfaces[*id];
-                let pkg = &self.resolve.packages[iface.package.unwrap()];
-                name.push_str(&pkg.name.namespace.to_snake_case());
-                name.push_str("_");
-                name.push_str(&pkg.name.name.to_snake_case());
-                name.push_str("_");
-                name.push_str(&iface.name.as_ref().unwrap().to_snake_case());
-            }
+        match interface_id {
+            Some(id) => name.push_str(&interface_identifier(id, &self.resolve, !self.in_import)),
             None => name.push_str(&self.gen.world.to_snake_case()),
         }
         name.push_str("_");
