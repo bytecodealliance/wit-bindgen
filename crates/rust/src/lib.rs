@@ -33,6 +33,14 @@ struct ResourceInfo {
     owned: bool,
 }
 
+#[derive(Clone, Debug)]
+pub enum InterfaceName {
+    /// This interface was remapped using `with` to some other Rust code.
+    Remapped(String),
+    /// This interface is generated in the module hierarchy specified.
+    Path(String),
+}
+
 #[derive(Default)]
 struct RustWasm {
     types: Types,
@@ -41,9 +49,18 @@ struct RustWasm {
     import_modules: Vec<(String, Vec<String>)>,
     export_modules: Vec<(String, Vec<String>)>,
     skip: HashSet<String>,
-    interface_names: HashMap<InterfaceId, String>,
+    interface_names: HashMap<InterfaceId, InterfaceName>,
     resources: HashMap<TypeId, ResourceInfo>,
     import_funcs_called: bool,
+}
+
+#[cfg(feature = "clap")]
+fn iterate_hashmap_string(s: &str) -> impl Iterator<Item = Result<(&str, &str), String>> {
+    s.split(',').map(move |entry| {
+        entry.split_once('=').ok_or_else(|| {
+            format!("expected string of form `<key>=<value>[,<key>=<value>...]`; got `{s}`")
+        })
+    })
 }
 
 #[cfg(feature = "clap")]
@@ -51,11 +68,9 @@ fn parse_exports(s: &str) -> Result<HashMap<ExportKey, String>, String> {
     if s.is_empty() {
         Ok(HashMap::default())
     } else {
-        s.split(',')
+        iterate_hashmap_string(s)
             .map(|entry| {
-                let (key, value) = entry.split_once('=').ok_or_else(|| {
-                    format!("expected string of form `<key>=<value>[,<key>=<value>...]`; got `{s}`")
-                })?;
+                let (key, value) = entry?;
                 Ok((
                     match key {
                         "world" => ExportKey::World,
@@ -72,6 +87,20 @@ fn parse_exports(s: &str) -> Result<HashMap<ExportKey, String>, String> {
 pub enum ExportKey {
     World,
     Name(String),
+}
+
+#[cfg(feature = "clap")]
+fn parse_with(s: &str) -> Result<HashMap<String, String>, String> {
+    if s.is_empty() {
+        Ok(HashMap::default())
+    } else {
+        iterate_hashmap_string(s)
+            .map(|entry| {
+                let (key, value) = entry?;
+                Ok((key.to_owned(), value.to_owned()))
+            })
+            .collect()
+    }
 }
 
 #[derive(Default, Debug, Clone)]
@@ -149,6 +178,10 @@ pub struct Opts {
     /// These derive attributes will be added to any generated structs or enums
     #[cfg_attr(feature = "clap", arg(long = "additional_derive_attribute", short = 'd', default_values_t = Vec::<String>::new()))]
     pub additional_derive_attributes: Vec<String>,
+
+    /// Remapping of interface names to rust module names.
+    #[cfg_attr(feature = "clap", arg(long, value_parser = parse_with, default_value = ""))]
+    pub with: HashMap<String, String>,
 }
 
 impl Opts {
@@ -316,6 +349,9 @@ impl WorldGenerator for RustWasm {
             true,
         );
         let (snake, module_path) = gen.start_append_submodule(name);
+        if matches!(gen.gen.interface_names[&id], InterfaceName::Remapped(..)) {
+            return;
+        }
         gen.types(id);
 
         gen.generate_imports(resolve.interfaces[id].functions.values());
@@ -357,6 +393,9 @@ impl WorldGenerator for RustWasm {
         let path = resolve.id_of(id).unwrap_or(inner_name.to_string());
         let mut gen = self.interface(Identifier::Interface(id, name), None, resolve, false);
         let (snake, module_path) = gen.start_append_submodule(name);
+        if matches!(gen.gen.interface_names[&id], InterfaceName::Remapped(..)) {
+            return Ok(());
+        }
         gen.types(id);
         gen.generate_exports(
             &ExportKey::Name(path),

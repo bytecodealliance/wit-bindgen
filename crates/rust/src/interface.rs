@@ -1,7 +1,7 @@
 use crate::bindgen::FunctionBindgen;
 use crate::{
     dealias, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, Direction, ExportKey, FnSig,
-    Identifier, Ownership, RustFlagsRepr, RustWasm, TypeMode,
+    Identifier, InterfaceName, Ownership, RustFlagsRepr, RustWasm, TypeMode,
 };
 use anyhow::Result;
 use heck::*;
@@ -168,7 +168,13 @@ impl InterfaceGenerator<'_> {
         };
         let module_path = crate::compute_module_path(name, &self.resolve, !self.in_import);
         if let Identifier::Interface(id, _) = self.identifier {
-            self.gen.interface_names.insert(id, module_path.join("::"));
+            let with_name = self.resolve.name_world_key(name);
+            let entry = if let Some(remapped_path) = self.gen.opts.with.get(&with_name) {
+                InterfaceName::Remapped(remapped_path.to_string())
+            } else {
+                InterfaceName::Path(module_path.join("::"))
+            };
+            self.gen.interface_names.insert(id, entry);
         }
         (snake, module_path)
     }
@@ -1450,26 +1456,30 @@ impl InterfaceGenerator<'_> {
     // }
 
     fn path_to_interface(&self, interface: InterfaceId) -> Option<String> {
-        let mut path = String::new();
-        if let Identifier::Interface(cur, name) = self.identifier {
-            if cur == interface {
-                return None;
-            }
-            if !self.in_import {
-                path.push_str("super::");
-            }
-            match name {
-                WorldKey::Name(_) => {
-                    path.push_str("super::");
+        match &self.gen.interface_names[&interface] {
+            InterfaceName::Remapped(p) => Some(p.to_string()),
+            InterfaceName::Path(p) => {
+                let mut path = String::new();
+                if let Identifier::Interface(cur, name) = self.identifier {
+                    if cur == interface {
+                        return None;
+                    }
+                    if !self.in_import {
+                        path.push_str("super::");
+                    }
+                    match name {
+                        WorldKey::Name(_) => {
+                            path.push_str("super::");
+                        }
+                        WorldKey::Interface(_) => {
+                            path.push_str("super::super::super::");
+                        }
+                    }
                 }
-                WorldKey::Interface(_) => {
-                    path.push_str("super::super::super::");
-                }
+                path.push_str(&p);
+                Some(path)
             }
         }
-        let name = &self.gen.interface_names[&interface];
-        path.push_str(name);
-        Some(path)
     }
 
     fn push_vec_name(&mut self) {
