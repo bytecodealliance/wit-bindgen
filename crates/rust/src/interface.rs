@@ -24,10 +24,59 @@ pub struct InterfaceGenerator<'a> {
 }
 
 impl InterfaceGenerator<'_> {
+    fn export_key(&self, item: Option<&str>) -> ExportKey {
+        let base = match self.identifier {
+            Identifier::World(_) => ExportKey::World,
+            Identifier::Interface(_, WorldKey::Name(n)) => ExportKey::Name(n.to_string()),
+
+            // If an interface belongs to a package with a version then `id_of`
+            // will print the version, but versions are onerous to keep in sync
+            // and write down everywhere. In lieu of proliferating the
+            // requirement of everyone always thinking about versions this
+            // will attempt to drop the version if it can unambiguously be
+            // dropped.
+            //
+            // If this interface belongs to a package with a version, and there
+            // is no other package of the same name/namespace, then drop the
+            // version from the export key.
+            Identifier::Interface(_, WorldKey::Interface(n)) => {
+                let iface = &self.resolve.interfaces[*n];
+                let package = iface.package.unwrap();
+                let package_name = &self.resolve.packages[package].name;
+                if package_name.version.is_some()
+                    && self
+                        .resolve
+                        .package_names
+                        .iter()
+                        .filter(|(name, _)| {
+                            package_name.name == name.name
+                                && package_name.namespace == name.namespace
+                        })
+                        .count()
+                        == 1
+                {
+                    ExportKey::Name(format!(
+                        "{}:{}/{}",
+                        package_name.namespace,
+                        package_name.name,
+                        iface.name.as_ref().unwrap()
+                    ))
+                } else {
+                    ExportKey::Name(self.resolve.id_of(*n).unwrap())
+                }
+            }
+        };
+        match item {
+            Some(item) => match base {
+                ExportKey::World => unimplemented!("item projected from world interface"),
+                ExportKey::Name(name) => ExportKey::Name(format!("{name}/{item}")),
+            },
+            None => base,
+        }
+    }
+
     pub(super) fn generate_exports<'a>(
         &mut self,
-        export_key: &ExportKey,
-        interface_name: Option<&WorldKey>,
         funcs: impl Iterator<Item = &'a Function> + Clone,
     ) -> Result<()> {
         let mut traits = BTreeMap::new();
@@ -40,7 +89,7 @@ impl InterfaceGenerator<'_> {
             // First generate the exported function which performs lift/lower
             // operations and delegates to a trait (that doesn't exist just yet).
             self.src.push_str("const _: () = {\n");
-            self.generate_guest_export(func, interface_name);
+            self.generate_guest_export(func);
             self.src.push_str("};\n");
 
             // Next generate a trait signature for this method and insert it
@@ -49,7 +98,7 @@ impl InterfaceGenerator<'_> {
                 FunctionKind::Freestanding => (
                     "Guest".to_string(),
                     "_GuestImpl".to_string(),
-                    export_key.clone(),
+                    self.export_key(None),
                 ),
                 FunctionKind::Method(id)
                 | FunctionKind::Constructor(id)
@@ -57,10 +106,7 @@ impl InterfaceGenerator<'_> {
                     let resource_name = self.resolve.types[id].name.as_deref().unwrap();
                     let camel = resource_name.to_upper_camel_case();
                     let trait_name = format!("Guest{camel}");
-                    let export_key = match export_key {
-                        ExportKey::World => unimplemented!("exported world resources"),
-                        ExportKey::Name(path) => ExportKey::Name(format!("{path}/{resource_name}")),
-                    };
+                    let export_key = self.export_key(Some(&resource_name));
                     let local_impl_name = format!("_{camel}Impl");
                     (trait_name, local_impl_name, export_key)
                 }
@@ -270,13 +316,16 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn generate_guest_export(&mut self, func: &Function, interface_name: Option<&WorldKey>) {
+    fn generate_guest_export(&mut self, func: &Function) {
         if self.gen.skip.contains(&func.name) {
             return;
         }
 
         let name_snake = func.name.to_snake_case().replace('.', "_");
-        let wasm_module_export_name = interface_name.map(|k| self.resolve.name_world_key(k));
+        let wasm_module_export_name = match self.identifier {
+            Identifier::Interface(_, key) => Some(self.resolve.name_world_key(key)),
+            Identifier::World(_) => None,
+        };
         let export_prefix = self.gen.opts.export_prefix.as_deref().unwrap_or("");
         let export_name = func.core_export_name(wasm_module_export_name.as_deref());
         uwrite!(
@@ -1611,12 +1660,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 Identifier::Interface(_, key) => self.resolve.name_world_key(key),
                 Identifier::World(_) => unimplemented!("resource exports from worlds"),
             };
-            let export_key = ExportKey::Name(format!("{module}/{name}"));
             // NB: errors are ignored here since they'll generate an error
             // through the `generate_exports` method above.
             let impl_name = self
                 .gen
-                .lookup_export(&export_key)
+                .lookup_export(&self.export_key(Some(name)))
                 .unwrap_or_else(|_| "ERROR".to_string());
             let path_to_root = self.path_to_root();
             uwriteln!(
