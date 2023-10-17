@@ -301,24 +301,8 @@ impl RustWasm {
                 path: name,
             }
         } else {
-            let path = match name {
-                WorldKey::Name(name) => to_rust_ident(name),
-                WorldKey::Interface(_) => {
-                    let iface = &resolve.interfaces[id];
-                    let pkgname = &resolve.packages[iface.package.unwrap()].name;
-                    format!(
-                        "{}::{}::{}",
-                        pkgname.namespace.to_snake_case(),
-                        pkgname.name.to_snake_case(),
-                        iface.name.as_ref().unwrap().to_snake_case()
-                    )
-                }
-            };
-            let path = if is_export {
-                format!("exports::{path}")
-            } else {
-                path
-            };
+            let path = compute_module_path(name, resolve, is_export).join("::");
+
             InterfaceName {
                 remapped: false,
                 path,
@@ -401,7 +385,6 @@ impl WorldGenerator for RustWasm {
         if gen.gen.name_interface(resolve, id, name, false) {
             return;
         }
-        module_path.join("::");
         gen.types(id);
 
         gen.generate_imports(resolve.interfaces[id].functions.values());
@@ -446,7 +429,6 @@ impl WorldGenerator for RustWasm {
         if gen.gen.name_interface(resolve, id, name, true) {
             return Ok(());
         }
-        module_path.join("::");
         gen.types(id);
         gen.generate_exports(
             &ExportKey::Name(path),
