@@ -167,15 +167,6 @@ impl InterfaceGenerator<'_> {
             }
         };
         let module_path = crate::compute_module_path(name, &self.resolve, !self.in_import);
-        if let Identifier::Interface(id, _) = self.identifier {
-            let with_name = self.resolve.name_world_key(name);
-            let entry = if let Some(remapped_path) = self.gen.opts.with.get(&with_name) {
-                InterfaceName::Remapped(remapped_path.to_string())
-            } else {
-                InterfaceName::Path(module_path.join("::"))
-            };
-            self.gen.interface_names.insert(id, entry);
-        }
         (snake, module_path)
     }
 
@@ -1456,29 +1447,29 @@ impl InterfaceGenerator<'_> {
     // }
 
     fn path_to_interface(&self, interface: InterfaceId) -> Option<String> {
-        match &self.gen.interface_names[&interface] {
-            InterfaceName::Remapped(p) => Some(p.to_string()),
-            InterfaceName::Path(p) => {
-                let mut path = String::new();
-                if let Identifier::Interface(cur, name) = self.identifier {
-                    if cur == interface {
-                        return None;
+        let InterfaceName { path, remapped } = &self.gen.interface_names[&interface];
+        if *remapped {
+            return Some(path.to_string());
+        } else {
+            let mut full_path = String::new();
+            if let Identifier::Interface(cur, name) = self.identifier {
+                if cur == interface {
+                    return None;
+                }
+                if !self.in_import {
+                    full_path.push_str("super::");
+                }
+                match name {
+                    WorldKey::Name(_) => {
+                        full_path.push_str("super::");
                     }
-                    if !self.in_import {
-                        path.push_str("super::");
-                    }
-                    match name {
-                        WorldKey::Name(_) => {
-                            path.push_str("super::");
-                        }
-                        WorldKey::Interface(_) => {
-                            path.push_str("super::super::super::");
-                        }
+                    WorldKey::Interface(_) => {
+                        full_path.push_str("super::super::super::");
                     }
                 }
-                path.push_str(&p);
-                Some(path)
             }
+            full_path.push_str(&path);
+            Some(full_path)
         }
     }
 

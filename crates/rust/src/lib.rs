@@ -33,12 +33,13 @@ struct ResourceInfo {
     owned: bool,
 }
 
-#[derive(Clone, Debug)]
-pub enum InterfaceName {
-    /// This interface was remapped using `with` to some other Rust code.
-    Remapped(String),
-    /// This interface is generated in the module hierarchy specified.
-    Path(String),
+struct InterfaceName {
+    /// True when this interface name has been remapped through the use of `with` in the `bindgen!`
+    /// macro invocation.
+    remapped: bool,
+
+    /// The string name for this interface.
+    path: String,
 }
 
 #[derive(Default)]
@@ -52,6 +53,7 @@ struct RustWasm {
     interface_names: HashMap<InterfaceId, InterfaceName>,
     resources: HashMap<TypeId, ResourceInfo>,
     import_funcs_called: bool,
+    with_name_counter: usize,
 }
 
 #[cfg(feature = "clap")]
@@ -281,6 +283,53 @@ impl RustWasm {
         }
         bail!("expected `exports` map to contain key `{key}`")
     }
+
+    fn name_interface(
+        &mut self,
+        resolve: &Resolve,
+        id: InterfaceId,
+        name: &WorldKey,
+        is_export: bool,
+    ) -> bool {
+        let with_name = resolve.name_world_key(name);
+        let entry = if let Some(remapped_path) = self.opts.with.get(&with_name) {
+            let name = format!("__with_name{}", self.with_name_counter);
+            self.with_name_counter += 1;
+            uwriteln!(self.src, "use {remapped_path} as {name};");
+            InterfaceName {
+                remapped: true,
+                path: name,
+            }
+        } else {
+            let path = match name {
+                WorldKey::Name(name) => to_rust_ident(name),
+                WorldKey::Interface(_) => {
+                    let iface = &resolve.interfaces[id];
+                    let pkgname = &resolve.packages[iface.package.unwrap()].name;
+                    format!(
+                        "{}::{}::{}",
+                        pkgname.namespace.to_snake_case(),
+                        pkgname.name.to_snake_case(),
+                        iface.name.as_ref().unwrap().to_snake_case()
+                    )
+                }
+            };
+            let path = if is_export {
+                format!("exports::{path}")
+            } else {
+                path
+            };
+            InterfaceName {
+                remapped: false,
+                path,
+            }
+        };
+
+        let remapped = entry.remapped;
+        self.interface_names.insert(id, entry);
+
+        remapped
+    }
 }
 
 /// If the package `id` is the only package with its namespace/name combo
@@ -349,9 +398,10 @@ impl WorldGenerator for RustWasm {
             true,
         );
         let (snake, module_path) = gen.start_append_submodule(name);
-        if matches!(gen.gen.interface_names[&id], InterfaceName::Remapped(..)) {
+        if gen.gen.name_interface(resolve, id, name, false) {
             return;
         }
+        module_path.join("::");
         gen.types(id);
 
         gen.generate_imports(resolve.interfaces[id].functions.values());
@@ -393,9 +443,10 @@ impl WorldGenerator for RustWasm {
         let path = resolve.id_of(id).unwrap_or(inner_name.to_string());
         let mut gen = self.interface(Identifier::Interface(id, name), None, resolve, false);
         let (snake, module_path) = gen.start_append_submodule(name);
-        if matches!(gen.gen.interface_names[&id], InterfaceName::Remapped(..)) {
+        if gen.gen.name_interface(resolve, id, name, true) {
             return Ok(());
         }
+        module_path.join("::");
         gen.types(id);
         gen.generate_exports(
             &ExportKey::Name(path),
