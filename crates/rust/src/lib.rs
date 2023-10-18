@@ -347,22 +347,10 @@ impl WorldGenerator for RustWasm {
         id: InterfaceId,
         _files: &mut Files,
     ) -> Result<()> {
-        let inner_name = match name {
-            WorldKey::Name(name) => name,
-            WorldKey::Interface(id) => {
-                let interface = &resolve.interfaces[*id];
-                interface.name.as_ref().unwrap()
-            }
-        };
-        let path = resolve.id_of(id).unwrap_or(inner_name.to_string());
         let mut gen = self.interface(Identifier::Interface(id, name), None, resolve, false);
         let (snake, module_path) = gen.start_append_submodule(name);
         gen.types(id);
-        gen.generate_exports(
-            &ExportKey::Name(path),
-            Some(name),
-            resolve.interfaces[id].functions.values(),
-        )?;
+        gen.generate_exports(resolve.interfaces[id].functions.values())?;
         gen.finish_append_submodule(&snake, module_path);
         Ok(())
     }
@@ -375,7 +363,7 @@ impl WorldGenerator for RustWasm {
         _files: &mut Files,
     ) -> Result<()> {
         let mut gen = self.interface(Identifier::World(world), None, resolve, false);
-        gen.generate_exports(&ExportKey::World, None, funcs.iter().map(|f| f.1))?;
+        gen.generate_exports(funcs.iter().map(|f| f.1))?;
         let src = gen.finish();
         self.src.push_str(&src);
         Ok(())
