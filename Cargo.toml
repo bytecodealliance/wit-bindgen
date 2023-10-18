@@ -13,7 +13,6 @@ CLI tool to generate bindings for WIT documents and the component model.
 [workspace]
 members = [
   "crates/test-rust-wasm",
-  "crates/wasi_snapshot_preview1",
 ]
 resolver = "2"
 

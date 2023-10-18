@@ -1589,14 +1589,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasi_snapshot_preview1"
-version = "0.0.0"
-dependencies = [
- "wasi",
- "wit-bindgen",
-]
-
-[[package]]
 name = "wasm-encoder"
 version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

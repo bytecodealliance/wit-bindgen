@@ -21,23 +21,9 @@ mod smoke;
 mod strings;
 mod variants;
 
-wasmtime::component::bindgen!(in "crates/wasi_snapshot_preview1/wit");
-
 struct MyCtx {}
 
 struct Wasi<T: Send>(T, MyCtx, Table, WasiCtx);
-
-impl<T: Send> testwasi::Host for Wasi<T> {
-    fn log(&mut self, bytes: Vec<u8>) -> Result<()> {
-        std::io::stdout().write_all(&bytes)?;
-        Ok(())
-    }
-
-    fn log_err(&mut self, bytes: Vec<u8>) -> Result<()> {
-        std::io::stderr().write_all(&bytes)?;
-        Ok(())
-    }
-}
 
 // wasi trait
 impl<T: Send> WasiView for Wasi<T> {
@@ -92,7 +78,6 @@ where
         let mut linker = Linker::new(&engine);
 
         add_to_linker(&mut linker)?;
-        crate::testwasi::add_to_linker(&mut linker, |x| x)?;
         let state = MyCtx {};
 
         let mut table = Table::new();
