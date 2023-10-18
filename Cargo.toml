@@ -31,8 +31,8 @@ indexmap = "2.0.0"
 
 wasm-encoder = "0.35.0"
 wasm-metadata = "0.10.9"
-wit-parser = "0.12"
-wit-component = "0.15.0"
+wit-parser = "0.12.1"
+wit-component = "0.16.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.12.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.12.0' }
