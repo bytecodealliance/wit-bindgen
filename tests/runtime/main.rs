@@ -593,21 +593,26 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
 
         // Write the WasmImports for NativeAOT-LLVM.
         // See https://github.com/dotnet/runtimelab/issues/2383
-        
-        for world in &resolve.worlds {
 
+        for world in &resolve.worlds {
             for import in &world.1.imports {
                 let module_name = resolve.name_world_key(import.0);
                 csproj.push_str("\t<ItemGroup>\n");
-                
+
                 match import.1 {
                     WorldItem::Function(f) => {
-                        let wasm_import = format!("\t\t<WasmImport Include=\"{}!{}\" />\n", module_name, f.name);
+                        let wasm_import = format!(
+                            "\t\t<WasmImport Include=\"{}!{}\" />\n",
+                            module_name, f.name
+                        );
                         csproj.push_str(&wasm_import);
                     }
                     WorldItem::Interface(id) => {
                         for (_, f) in resolve.interfaces[*id].functions.iter() {
-                            let wasm_import = format!("\t\t<WasmImport Include=\"{}!{}\" />\n", module_name, f.name);
+                            let wasm_import = format!(
+                                "\t\t<WasmImport Include=\"{}!{}\" />\n",
+                                module_name, f.name
+                            );
                             csproj.push_str(&wasm_import);
                         }
                     }
@@ -623,7 +628,6 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             "\t\t<NativeLibrary Include=\"{snake}_component_type.o\" />\n"
         ));
         csproj.push_str("\t</ItemGroup>\n\n");
-
 
         //TODO: Is this handled by the source generator? (Temporary just to test with numbers and strings)
         csproj.push_str(
