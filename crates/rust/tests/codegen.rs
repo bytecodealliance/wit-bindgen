@@ -288,7 +288,7 @@ mod package_with_versions {
             }
         ",
         exports: {
-            "my:inline/foo@0.0.0/bar": Resource
+            "my:inline/foo/bar": Resource
         }
     });
 

@@ -1,5 +1,6 @@
 use proc_macro2::{Span, TokenStream};
 use quote::ToTokens;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use syn::parse::{Error, Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
@@ -79,6 +80,7 @@ impl Parse for Config {
                             .map(|p| p.into_token_stream().to_string())
                             .collect()
                     }
+                    Opt::With(with) => opts.with.extend(with),
                 }
             }
         } else {
@@ -166,6 +168,7 @@ mod kw {
     syn::custom_keyword!(stubs);
     syn::custom_keyword!(export_prefix);
     syn::custom_keyword!(additional_derives);
+    syn::custom_keyword!(with);
 }
 
 #[derive(Clone)]
@@ -225,6 +228,7 @@ enum Opt {
     ExportPrefix(syn::LitStr),
     // Parse as paths so we can take the concrete types/macro names rather than raw strings
     AdditionalDerives(Vec<syn::Path>),
+    With(HashMap<String, String>),
 }
 
 impl Parse for Opt {
@@ -322,6 +326,14 @@ impl Parse for Opt {
             syn::bracketed!(contents in input);
             let list = Punctuated::<_, Token![,]>::parse_terminated(&contents)?;
             Ok(Opt::AdditionalDerives(list.iter().cloned().collect()))
+        } else if l.peek(kw::with) {
+            input.parse::<kw::with>()?;
+            input.parse::<Token![:]>()?;
+            let contents;
+            let _lbrace = braced!(contents in input);
+            let fields: Punctuated<_, Token![,]> =
+                contents.parse_terminated(with_field_parse, Token![,])?;
+            Ok(Opt::With(HashMap::from_iter(fields.into_iter())))
         } else {
             Err(l.error())
         }
@@ -346,4 +358,47 @@ fn serialize(path: syn::Path) -> String {
     } else {
         serialized
     }
+}
+
+fn with_field_parse(input: ParseStream<'_>) -> Result<(String, String)> {
+    let interface = input.parse::<syn::LitStr>()?.value();
+    input.parse::<Token![:]>()?;
+    let start = input.span();
+    let path = input.parse::<syn::Path>()?;
+
+    // It's not possible for the segments of a path to be empty
+    let span = start
+        .join(path.segments.last().unwrap().ident.span())
+        .unwrap_or(start);
+
+    let mut buf = String::new();
+    let append = |buf: &mut String, segment: syn::PathSegment| -> Result<()> {
+        if !segment.arguments.is_none() {
+            return Err(Error::new(
+                span,
+                "Module path must not contain angles or parens",
+            ));
+        }
+
+        buf.push_str(&segment.ident.to_string());
+
+        Ok(())
+    };
+
+    if path.leading_colon.is_some() {
+        buf.push_str("::");
+    }
+
+    let mut segments = path.segments.into_iter();
+
+    if let Some(segment) = segments.next() {
+        append(&mut buf, segment)?;
+    }
+
+    for segment in segments {
+        buf.push_str("::");
+        append(&mut buf, segment)?;
+    }
+
+    Ok((interface, buf))
 }

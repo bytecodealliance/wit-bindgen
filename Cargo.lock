@@ -1353,7 +1353,7 @@ dependencies = [
  "wasm-encoder 0.35.0",
  "wit-bindgen-core",
  "wit-component",
- "wit-parser 0.12.0",
+ "wit-parser 0.12.1",
 ]
 
 [[package]]
@@ -2199,7 +2199,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "bitflags 2.4.0",
  "wit-bindgen-rust-macro",
@@ -2207,7 +2207,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-c"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2221,7 +2221,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-cli"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2237,21 +2237,21 @@ dependencies = [
  "wit-bindgen-rust",
  "wit-bindgen-teavm-java",
  "wit-component",
- "wit-parser 0.12.0",
+ "wit-parser 0.12.1",
 ]
 
 [[package]]
 name = "wit-bindgen-core"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "wit-component",
- "wit-parser 0.12.0",
+ "wit-parser 0.12.1",
 ]
 
 [[package]]
 name = "wit-bindgen-go"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2264,7 +2264,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-markdown"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2276,7 +2276,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2292,7 +2292,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-rust-macro"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -2305,7 +2305,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-teavm-java"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2318,9 +2318,9 @@ dependencies = [
 
 [[package]]
 name = "wit-component"
-version = "0.15.0"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1bc644bb4205a2ee74035e5d35958777575fa4c6dd38ce7226c7680be2861c1"
+checksum = "e87488b57a08e2cbbd076b325acbe7f8666965af174d69d5929cd373bd54547f"
 dependencies = [
  "anyhow",
  "bitflags 2.4.0",
@@ -2333,7 +2333,7 @@ dependencies = [
  "wasm-metadata",
  "wasmparser 0.115.0",
  "wat",
- "wit-parser 0.12.0",
+ "wit-parser 0.12.1",
 ]
 
 [[package]]
@@ -2356,9 +2356,9 @@ dependencies = [
 
 [[package]]
 name = "wit-parser"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d08c9557c65c428ac18a3cce80bf2527dbec24ab06639642c7db73f2c7613f93"
+checksum = "f6ace9943d89bbf3dbbc71b966da0e7302057b311f36a4ac3d65ddfef17b52cf"
 dependencies = [
  "anyhow",
  "id-arena",
