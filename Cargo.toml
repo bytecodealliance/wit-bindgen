@@ -30,7 +30,7 @@ indexmap = "2.0.0"
 
 wasm-encoder = "0.35.0"
 wasm-metadata = "0.10.9"
-wasmtime-wasi = "15.0.0"
+wasmtime-wasi = "13.0.0"
 wit-parser = "0.12.1"
 wit-component = "0.16.0"
 
@@ -57,7 +57,7 @@ wit-bindgen-teavm-java = { workspace = true, features = ['clap'], optional = tru
 wit-bindgen-go = { workspace = true, features = ['clap'], optional = true }
 wit-component = { workspace = true }
 wasm-encoder = { workspace = true }
-wasmtime-wasi = { workdpace = true }
+wasmtime-wasi = { workspace = true }
 
 [features]
 default = [
