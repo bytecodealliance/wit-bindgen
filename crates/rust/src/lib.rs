@@ -298,7 +298,7 @@ impl RustWasm {
             uwriteln!(self.src, "use {remapped_path} as {name};");
             InterfaceName {
                 remapped: true,
-                path: name,
+                path: format!("super::super::super::{name}"),
             }
         } else {
             let path = compute_module_path(name, resolve, is_export).join("::");
