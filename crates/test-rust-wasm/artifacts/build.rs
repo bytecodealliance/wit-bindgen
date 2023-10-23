@@ -7,16 +7,7 @@ fn main() {
 
     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
 
-    let mut cmd = Command::new("cargo");
-    cmd.arg("build")
-        .arg("--release")
-        .current_dir("../../wasi_snapshot_preview1")
-        .arg("--target=wasm32-unknown-unknown")
-        .env("CARGO_TARGET_DIR", &out_dir);
-    let status = cmd.status().unwrap();
-    assert!(status.success());
-    println!("cargo:rerun-if-changed=../../wasi_snapshot_preview1");
-    let wasi_adapter = out_dir.join("wasm32-unknown-unknown/release/wasi_snapshot_preview1.wasm");
+    let wasi_adapter = out_dir.join("../../../../../tests/wasi_snapshot_preview1.reactor.wasm");
 
     let mut cmd = Command::new("cargo");
     cmd.arg("build")

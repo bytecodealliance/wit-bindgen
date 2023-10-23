@@ -7,6 +7,7 @@ use std::process::Command;
 use wasm_encoder::{Encode, Section};
 use wasmtime::component::{Component, Instance, Linker};
 use wasmtime::{Config, Engine, Store};
+use wasmtime_wasi::preview2::{Table, WasiCtx, WasiCtxBuilder, WasiView};
 use wit_component::{ComponentEncoder, StringEncoding};
 use wit_parser::Resolve;
 
@@ -20,20 +21,23 @@ mod smoke;
 mod strings;
 mod variants;
 
-wasmtime::component::bindgen!(in "crates/wasi_snapshot_preview1/wit");
+struct MyCtx {}
 
-#[derive(Default)]
-struct Wasi<T>(T);
+struct Wasi<T: Send>(T, MyCtx, Table, WasiCtx);
 
-impl<T> testwasi::Host for Wasi<T> {
-    fn log(&mut self, bytes: Vec<u8>) -> Result<()> {
-        std::io::stdout().write_all(&bytes)?;
-        Ok(())
+// wasi trait
+impl<T: Send> WasiView for Wasi<T> {
+    fn table(&self) -> &Table {
+        &self.2
     }
-
-    fn log_err(&mut self, bytes: Vec<u8>) -> Result<()> {
-        std::io::stderr().write_all(&bytes)?;
-        Ok(())
+    fn table_mut(&mut self) -> &mut Table {
+        &mut self.2
+    }
+    fn ctx(&self) -> &WasiCtx {
+        &self.3
+    }
+    fn ctx_mut(&mut self) -> &mut WasiCtx {
+        &mut self.3
     }
 }
 
@@ -45,6 +49,7 @@ fn run_test<T, U>(
 ) -> Result<()>
 where
     T: Default,
+    T: Send,
 {
     run_test_from_dir(name, name, add_to_linker, instantiate, test)
 }
@@ -58,6 +63,7 @@ fn run_test_from_dir<T, U>(
 ) -> Result<()>
 where
     T: Default,
+    T: Send,
 {
     // Create an engine with caching enabled to assist with iteration in this
     // project.
@@ -72,8 +78,20 @@ where
         let mut linker = Linker::new(&engine);
 
         add_to_linker(&mut linker)?;
-        crate::testwasi::add_to_linker(&mut linker, |x| x)?;
-        let mut store = Store::new(&engine, Wasi::default());
+        let state = MyCtx {};
+
+        let mut table = Table::new();
+        let wasi: WasiCtx = WasiCtxBuilder::new()
+            .inherit_stdout()
+            .args(&[""])
+            .build(&mut table)?;
+
+        let data = Wasi(T::default(), state, table, wasi);
+
+        let mut store = Store::new(&engine, data);
+
+        wasmtime_wasi::preview2::command::sync::add_to_linker(&mut linker)?;
+
         let (exports, _) = instantiate(&mut store, &component, &linker)?;
 
         println!("testing {wasm:?}");
@@ -97,6 +115,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     let mut c = Vec::new();
     let mut java = Vec::new();
     let mut go = Vec::new();
+    let mut c_sharp = Vec::new();
     for file in dir.read_dir()? {
         let path = file?.path();
         match path.extension().and_then(|s| s.to_str()) {
@@ -104,6 +123,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             Some("java") => java.push(path),
             Some("rs") => rust.push(path),
             Some("go") => go.push(path),
+            Some("cs") => c_sharp.push(path),
             _ => {}
         }
     }
@@ -136,6 +156,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             .module(&module)?
             .validate(true)
             .adapter("wasi_snapshot_preview1", &wasi_adapter)?
+            .realloc_via_memory_grow(true)
             .encode()?;
 
         let dst = out_dir.join("rust.wasm");
@@ -448,6 +469,230 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             ));
         let component_path =
             out_dir.join("target/generated/wasm/teavm-wasm/classes.component.wasm");
+        fs::write(&component_path, component).expect("write component to disk");
+
+        result.push(component_path);
+    }
+
+    #[cfg(feature = "csharp")]
+    for path in c_sharp.iter() {
+        println!("running for {}", path.display());
+        let world_name = &resolve.worlds[world].name;
+        let out_dir = out_dir.join(format!("csharp-{}", world_name));
+        drop(fs::remove_dir_all(&out_dir));
+        fs::create_dir_all(&out_dir).unwrap();
+
+        for csharp_impl in &c_sharp {
+            fs::copy(
+                &csharp_impl,
+                &out_dir.join(csharp_impl.file_name().unwrap()),
+            )
+            .unwrap();
+        }
+
+        let snake = world_name.replace("-", "_");
+
+        let assembly_name = format!(
+            "csharp-{}",
+            path.file_stem().and_then(|s| s.to_str()).unwrap()
+        );
+
+        let out_wasm = out_dir.join(&assembly_name);
+
+        let mut files = Default::default();
+        let mut opts = wit_bindgen_csharp::Opts::default();
+        if let Some(path) = path.file_name().and_then(|s| s.to_str()) {
+            if path.contains("utf16") {
+                opts.string_encoding = wit_component::StringEncoding::UTF16;
+            }
+        }
+        opts.build().generate(&resolve, world, &mut files).unwrap();
+
+        fs::write(
+            out_dir.join("nuget.config"),
+            r#"<?xml version="1.0" encoding="utf-8"?>
+        <configuration>
+            <config>
+                <add key="globalPackagesFolder" value=".packages" />
+            </config>
+            <packageSources>
+            <!--To inherit the global NuGet package sources remove the <clear/> line below -->
+            <clear />
+            <add key="nuget" value="https://api.nuget.org/v3/index.json" />
+            <!--<add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />-->
+            <add key="dotnet-experimental" value="C:\github\runtimelab\artifacts\packages\Debug\Shipping" />
+          </packageSources>
+        </configuration>"#,
+        )?;
+
+        fs::write(
+            out_dir.join("rd.xml"),
+            format!(
+                r#"<Directives xmlns="http://schemas.microsoft.com/netfx/2013/01/metadata">
+            <Application>
+                <Assembly Name="{assembly_name}">
+                    <!--<Type Name="wit_the_world.Imports">
+                        --><!--<Method Name="float32Param" />--><!--
+                        <Method Name="float64Param" />
+                        <Method Name="float32Result" />
+                        <Method Name="float64Result" />
+                    </Type>-->
+                </Assembly>
+            </Application>
+        </Directives>"#
+            ),
+        )?;
+
+        let mut csproj = format!(
+            "<Project Sdk=\"Microsoft.NET.Sdk\">
+
+    <PropertyGroup>
+      <TargetFramework>net8.0</TargetFramework>
+      <LangVersion>preview</LangVersion>
+      <RootNamespace>{assembly_name}</RootNamespace>
+      <ImplicitUsings>enable</ImplicitUsings>
+      <Nullable>enable</Nullable>
+      <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+    
+    <PropertyGroup>
+        <PublishTrimmed>true</PublishTrimmed>
+        <AssemblyName>{assembly_name}</AssemblyName>
+    </PropertyGroup>
+    "
+        );
+
+        for (file, contents) in files.iter() {
+            let dst = out_dir.join(file);
+            fs::write(dst, contents).unwrap();
+        }
+
+        csproj.push_str(
+            r#"
+    <ItemGroup>
+        <RdXmlFile Include="rd.xml" />
+    </ItemGroup>
+
+"#,
+        );
+
+        // Write the WasmImports for NativeAOT-LLVM.
+        // See https://github.com/dotnet/runtimelab/issues/2383
+
+        for world in &resolve.worlds {
+            for import in &world.1.imports {
+                let module_name = resolve.name_world_key(import.0);
+                csproj.push_str("\t<ItemGroup>\n");
+
+                match import.1 {
+                    WorldItem::Function(f) => {
+                        let wasm_import = format!(
+                            "\t\t<WasmImport Include=\"{}!{}\" />\n",
+                            module_name, f.name
+                        );
+                        csproj.push_str(&wasm_import);
+                    }
+                    WorldItem::Interface(id) => {
+                        for (_, f) in resolve.interfaces[*id].functions.iter() {
+                            let wasm_import = format!(
+                                "\t\t<WasmImport Include=\"{}!{}\" />\n",
+                                module_name, f.name
+                            );
+                            csproj.push_str(&wasm_import);
+                        }
+                    }
+                    WorldItem::Type(_) => {}
+                }
+
+                csproj.push_str("\t</ItemGroup>\n\n");
+            }
+        }
+
+        csproj.push_str("\t<ItemGroup>\n");
+        csproj.push_str(&format!(
+            "\t\t<NativeLibrary Include=\"{snake}_component_type.o\" />\n"
+        ));
+        csproj.push_str("\t</ItemGroup>\n\n");
+
+        //TODO: Is this handled by the source generator? (Temporary just to test with numbers and strings)
+        csproj.push_str(
+            r#"
+            <ItemGroup>
+                <CustomLinkerArg Include="-Wl,--export,_initialize" />
+                <CustomLinkerArg Include="-Wl,--no-entry" />
+                <CustomLinkerArg Include="-mexec-model=reactor" />
+            </ItemGroup>
+            "#,
+        );
+
+        csproj.push_str(
+            r#"
+    <ItemGroup>
+        <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+        <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+    </ItemGroup>
+</Project>
+            "#,
+        );
+
+        let camel = snake.to_upper_camel_case();
+
+        fs::write(out_dir.join(format!("{camel}.csproj")), csproj)?;
+
+        // Copy test file to target location to be included in compilation
+        let file_name = path.file_name().unwrap();
+        fs::copy(path, out_dir.join(file_name.to_str().unwrap()))?;
+
+        let mut cmd = Command::new("dotnet");
+        let mut wasm_filename = out_wasm.join(assembly_name);
+        wasm_filename.set_extension("wasm");
+
+        cmd.current_dir(&out_dir);
+
+        cmd.arg("publish")
+            .arg(out_dir.join(format!("{camel}.csproj")))
+            .arg("-r")
+            .arg("wasi-wasm")
+            .arg("-c")
+            .arg("Debug")
+            .arg("/p:PlatformTarget=AnyCPU")
+            .arg("/p:MSBuildEnableWorkloadResolver=false")
+            .arg("--self-contained")
+            .arg("/p:UseAppHost=false")
+            .arg("/bl")
+            .arg("-o")
+            .arg(&out_wasm);
+        let output = match cmd.output() {
+            Ok(output) => output,
+            Err(e) => panic!("failed to spawn compiler: {}", e),
+        };
+        println!("{:?} completed", cmd);
+
+        if !output.status.success() {
+            println!("status: {}", output.status);
+            println!("stdout: ------------------------------------------");
+            println!("{}", String::from_utf8_lossy(&output.stdout));
+            println!("stderr: ------------------------------------------");
+            println!("{}", String::from_utf8_lossy(&output.stderr));
+            panic!("failed to compile");
+        }
+
+        // Translate the canonical ABI module into a component.
+
+        let module = fs::read(&wasm_filename).expect("failed to read wasm file");
+        let component = ComponentEncoder::default()
+            .module(module.as_slice())
+            .expect("pull custom sections from module")
+            .validate(true)
+            .adapter("wasi_snapshot_preview1", &wasi_adapter)
+            .expect("adapter failed to get loaded")
+            .realloc_via_memory_grow(true)
+            .encode()
+            .expect(&format!(
+                "module {:?} can be translated to a component",
+                out_wasm
+            ));
+        let component_path = out_wasm.with_extension("component.wasm");
         fs::write(&component_path, component).expect("write component to disk");
 
         result.push(component_path);
