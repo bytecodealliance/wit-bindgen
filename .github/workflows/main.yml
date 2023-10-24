@@ -69,6 +69,7 @@ jobs:
     - run: cargo build --no-default-features --features c
     - run: cargo build --no-default-features --features teavm-java
     - run: cargo build --no-default-features --features go
+    - run: cargo build --no-default-features --features csharp
     - run: cargo build --no-default-features --features markdown
 
 
