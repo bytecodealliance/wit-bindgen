@@ -1498,7 +1498,9 @@ impl InterfaceGenerator<'_> {
     fn path_to_interface(&self, interface: InterfaceId) -> Option<String> {
         let InterfaceName { path, remapped } = &self.gen.interface_names[&interface];
         if *remapped {
-            return Some(path.to_string());
+            let mut path_to_root = self.path_to_root();
+            path_to_root.push_str(path);
+            return Some(path_to_root);
         } else {
             let mut full_path = String::new();
             if let Identifier::Interface(cur, name) = self.identifier {

@@ -346,3 +346,57 @@ mod custom_derives {
         }
     }
 }
+
+mod with {
+    wit_bindgen::generate!({
+        inline: "
+            package my:inline;
+
+            interface foo {
+                record msg {
+                    field: string,
+                }
+            }
+
+            interface bar {
+                use foo.{msg}
+
+                bar: func(m: msg);
+            }
+
+            world baz {
+                import bar;
+            }
+        ",
+        with: {
+            "my:inline/foo": other::my::inline::foo,
+        },
+    });
+
+    pub mod other {
+        wit_bindgen::generate!({
+            inline: "
+                package my:inline;
+
+                interface foo {
+                    record msg {
+                        field: string,
+                    }
+                }
+
+                world dummy {
+                    use foo.{msg};
+                    import bar: func(m: msg);
+                }
+            ",
+        });
+    }
+
+    #[allow(dead_code)]
+    fn test() {
+        let msg = other::my::inline::foo::Msg {
+            field: "hello".to_string(),
+        };
+        my::inline::bar::bar(&msg);
+    }
+}
