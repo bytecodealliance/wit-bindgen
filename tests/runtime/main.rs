@@ -82,11 +82,8 @@ where
         add_to_linker(&mut linker)?;
         let state = MyCtx {};
 
-        let mut table = Table::new();
-        let wasi: WasiCtx = WasiCtxBuilder::new()
-            .inherit_stdout()
-            .args(&[""])
-            .build(&mut table)?;
+        let table = Table::new();
+        let wasi: WasiCtx = WasiCtxBuilder::new().inherit_stdout().args(&[""]).build();
 
         let data = Wasi(T::default(), state, table, wasi);
 
