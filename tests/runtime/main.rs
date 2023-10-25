@@ -19,6 +19,7 @@ mod many_arguments;
 mod numbers;
 mod ownership;
 mod records;
+mod resources;
 mod smoke;
 mod strings;
 mod variants;
