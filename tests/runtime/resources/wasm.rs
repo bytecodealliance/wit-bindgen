@@ -65,7 +65,7 @@ impl exports::exports::GuestX for ComponentX {
         *self.val.borrow_mut() = a;
     }
     fn add(x: OwnX, a: i32) -> OwnX {
-        // not working
+        x.set_a(x.get_a() + a);
         x
     }
 }
