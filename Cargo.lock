@@ -2224,6 +2224,7 @@ dependencies = [
  "wasmtime-wasi",
  "wit-bindgen-c",
  "wit-bindgen-core",
+ "wit-bindgen-csharp",
  "wit-bindgen-go",
  "wit-bindgen-markdown",
  "wit-bindgen-rust",
@@ -2239,6 +2240,20 @@ dependencies = [
  "anyhow",
  "wit-component",
  "wit-parser 0.12.1",
+]
+
+[[package]]
+name = "wit-bindgen-csharp"
+version = "0.13.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "heck",
+ "test-helpers",
+ "wasm-encoder 0.35.0",
+ "wasm-metadata",
+ "wit-bindgen-core",
+ "wit-component",
 ]
 
 [[package]]

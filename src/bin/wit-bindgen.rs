@@ -55,6 +55,15 @@ enum Opt {
         #[clap(flatten)]
         args: Common,
     },
+
+    /// Generates bindings for C# guest modules.
+    #[cfg(feature = "csharp")]
+    CSharp {
+        #[clap(flatten)]
+        opts: wit_bindgen_csharp::Opts,
+        #[clap(flatten)]
+        args: Common,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -93,6 +102,8 @@ fn main() -> Result<()> {
         Opt::TeavmJava { opts, args } => (opts.build(), args),
         #[cfg(feature = "go")]
         Opt::TinyGo { opts, args } => (opts.build(), args),
+        #[cfg(feature = "csharp")]
+        Opt::CSharp { opts, args } => (opts.build(), args),
     };
 
     gen_world(generator, &opt, &mut files)?;

@@ -1,4 +1,6 @@
 use anyhow::Result;
+use heck::ToUpperCamelCase;
+
 use std::borrow::Cow;
 use std::fs;
 use std::io::Write;
@@ -9,7 +11,7 @@ use wasmtime::component::{Component, Instance, Linker};
 use wasmtime::{Config, Engine, Store};
 use wasmtime_wasi::preview2::{Table, WasiCtx, WasiCtxBuilder, WasiView};
 use wit_component::{ComponentEncoder, StringEncoding};
-use wit_parser::Resolve;
+use wit_parser::{Resolve, WorldItem};
 
 mod flavorful;
 mod lists;
@@ -519,8 +521,8 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             <!--To inherit the global NuGet package sources remove the <clear/> line below -->
             <clear />
             <add key="nuget" value="https://api.nuget.org/v3/index.json" />
-            <!--<add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />-->
-            <add key="dotnet-experimental" value="C:\github\runtimelab\artifacts\packages\Debug\Shipping" />
+            <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
+            <!--<add key="dotnet-experimental" value="C:\github\runtimelab\artifacts\packages\Debug\Shipping" />-->
           </packageSources>
         </configuration>"#,
         )?;
@@ -531,12 +533,6 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 r#"<Directives xmlns="http://schemas.microsoft.com/netfx/2013/01/metadata">
             <Application>
                 <Assembly Name="{assembly_name}">
-                    <!--<Type Name="wit_the_world.Imports">
-                        --><!--<Method Name="float32Param" />--><!--
-                        <Method Name="float64Param" />
-                        <Method Name="float32Result" />
-                        <Method Name="float64Result" />
-                    </Type>-->
                 </Assembly>
             </Application>
         </Directives>"#
