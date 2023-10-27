@@ -259,7 +259,7 @@ impl InterfaceGenerator<'_> {
                 }
             }
         }
-        self.src.push_str("#[allow(clippy::all)]\n");
+        self.src.push_str("#[allow(unused_unsafe, clippy::all)]\n");
         let params = self.print_signature(func, param_mode, &sig);
         self.src.push_str("{\n");
         self.src.push_str(&format!(
