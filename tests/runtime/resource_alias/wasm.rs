@@ -12,9 +12,7 @@ pub struct Test {}
 
 pub struct E1 {}
 
-pub struct E1X {
-    value: u32,
-}
+pub struct E1X(u32);
 
 pub struct E2 {}
 
@@ -27,7 +25,7 @@ impl exports::test::resource_alias::e1::Guest for E1 {
 }
 impl exports::test::resource_alias::e1::GuestX for E1X {
     fn new(v: u32) -> Self {
-        Self { value: v }
+        Self(v)
     }
 }
 impl exports::test::resource_alias::e2::Guest for E2 {

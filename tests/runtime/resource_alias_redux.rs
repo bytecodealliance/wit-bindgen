@@ -73,7 +73,7 @@ fn run() -> anyhow::Result<()> {
 
 fn run_test(
     instance: ResourceAliasRedux,
-    store: &mut Store<crate::Wasi<(MyHost)>>,
+    store: &mut Store<crate::Wasi<MyHost>>,
 ) -> anyhow::Result<()> {
     let mut thing = MyHost::default();
     let thing1 = HostThing::new(&mut thing, "Ni Hao".to_string())?;

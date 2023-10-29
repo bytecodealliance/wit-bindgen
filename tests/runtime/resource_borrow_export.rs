@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use wasmtime::{component::Resource, Store};
+use wasmtime::Store;
 
 wasmtime::component::bindgen!(in "tests/runtime/resource_borrow_export");
 
@@ -9,7 +8,7 @@ use exports::test::resource_borrow_export::test::Test;
 fn run() -> anyhow::Result<()> {
     crate::run_test(
         "resource_borrow_export",
-        |linker| Ok(()),
+        |_| Ok(()),
         |store, component, linker| {
             let (u, e) = ResourceBorrowExport::instantiate(store, component, linker)?;
             Ok((u.interface0, e))

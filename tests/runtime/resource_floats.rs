@@ -66,12 +66,6 @@ impl HostFloat2 for MyHostFloats {
     }
 }
 
-impl MyHostFloats {
-    fn get_value(&self, id: u32) -> f64 {
-        self.map_l[&id]
-    }
-}
-
 #[test]
 fn run() -> anyhow::Result<()> {
     crate::run_test(

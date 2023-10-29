@@ -1,4 +1,3 @@
-use std::vec;
 use wasmtime::Store;
 
 use exports::test::resource_alias::e1::Foo as Foo1;
@@ -10,7 +9,7 @@ wasmtime::component::bindgen!(in "tests/runtime/resource_alias");
 fn run() -> anyhow::Result<()> {
     crate::run_test(
         "resource_alias",
-        |linker| Ok(()),
+        |_| Ok(()),
         |store, component, linker| {
             let (u, e) = ResourceAlias::instantiate(store, component, linker)?;
             Ok((u, e))
@@ -29,6 +28,7 @@ fn run_test(instance: ResourceAlias, store: &mut Store<crate::Wasi<()>>) -> anyh
     let _ = instance
         .test_resource_alias_e1()
         .call_a(&mut *store, foo_e1)?;
+
     // TODO: how do I test deep equal of ResourceAny type?
     // assert_eq!(
     //     res,
@@ -53,6 +53,7 @@ fn run_test(instance: ResourceAlias, store: &mut Store<crate::Wasi<()>>) -> anyh
     let _ = instance
         .test_resource_alias_e2()
         .call_a(&mut *store, foo_e2, bar_e2)?;
+
     // TODO: how do I test deep equal of ResourceAny type?
     // assert_eq!(
     //     res,
