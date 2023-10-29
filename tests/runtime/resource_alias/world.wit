@@ -1,0 +1,24 @@
+package my:resources
+
+interface e1 {
+  resource x {
+    constructor(v: u32)
+  }
+
+  record foo { x: x }
+
+  a: func(f: foo) -> list<x>
+}
+
+interface e2 {
+  use e1.{x, foo as bar}
+
+  record foo { x: x }
+
+  a: func(f: foo, g: bar) -> list<x>
+}
+
+world resources {
+  export e1
+  export e2
+}

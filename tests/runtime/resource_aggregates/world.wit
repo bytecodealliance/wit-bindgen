@@ -1,0 +1,57 @@
+package test:test
+
+interface resource-aggregates {
+  resource thing {
+    constructor(v: u32)
+  }
+
+  record r1 {
+    thing: thing
+  }
+
+  record r2 {
+    thing: borrow<thing>
+  }
+
+  record r3 {
+    thing1: borrow<thing>,
+    thing2: thing,
+  }
+
+  type t1 = tuple<thing, r1>
+
+  type t2 = tuple<borrow<thing>>
+
+  variant v1 {
+    thing(thing),
+  }
+
+  variant v2 {
+    thing(borrow<thing>),
+  }
+
+  type l1 = list<thing>
+
+  type l2 = list<borrow<thing>>
+
+  foo: func(
+    r1: r1,
+    r2: r2,
+    r3: r3,
+    t1: t1,
+    t2: t2,
+    v1: v1,
+    v2: v2,
+    l1: l1,
+    l2: l2,
+    o1: option<thing>,
+    o2: option<borrow<thing>>,
+    result1: result<thing>,
+    result2: result<borrow<thing>>,
+  ) -> u32
+}
+
+world test {
+  import resource-aggregates
+  export resource-aggregates
+}

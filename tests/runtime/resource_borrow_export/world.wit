@@ -1,0 +1,13 @@
+package test:test
+
+interface resource-borrow-export {
+  resource thing {
+    constructor(v: u32)
+  }
+
+  foo: func(v: borrow<thing>) -> u32
+}
+
+world test {
+  export resource-borrow-export
+}

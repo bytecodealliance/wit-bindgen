@@ -1,0 +1,31 @@
+package test:test
+
+interface resource-alias1 {
+  resource thing {
+    constructor(s: string)
+    get: func() -> string
+  }
+
+  record foo { thing: thing }
+
+  a: func(f: foo) -> list<thing>
+}
+
+interface resource-alias2 {
+  use resource-alias1.{thing, foo as bar}
+
+  record foo { thing: thing }
+
+  b: func(f: foo, g: bar) -> list<thing>
+}
+
+world test {
+  use resource-alias1.{thing}
+
+  import resource-alias1
+  import resource-alias2
+  export resource-alias1
+  export resource-alias2
+  
+  export test: func(things: list<thing>) -> list<thing>
+}
