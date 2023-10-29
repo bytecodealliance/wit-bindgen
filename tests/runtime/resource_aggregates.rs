@@ -1,12 +1,11 @@
 use anyhow::Result;
 use std::collections::HashMap;
-use wasmtime::{component::Resource, Store};
+use wasmtime::Store;
 
 use test::resource_aggregates::test::{Host, HostThing, Thing, L1, L2, R1, R2, R3, T1, T2, V1, V2};
 
 use exports::test::resource_aggregates::test::{
-    L1 as TestL1, L2 as TestL2, R1 as TestR1, R2 as TestR2, R3 as TestR3, T1 as TestT1,
-    T2 as TestT2, V1 as TestV1, V2 as TestV2,
+    R1 as TestR1, R2 as TestR2, R3 as TestR3, V1 as TestV1, V2 as TestV2,
 };
 
 wasmtime::component::bindgen!(in "tests/runtime/resource_aggregates");
@@ -65,18 +64,17 @@ impl Host for MyHostThing {
             + self.get_value(t2.0)
             + match v1 {
                 V1::Thing(v) => self.get_value(v),
-                _ => 0,
             }
             + match v2 {
                 V2::Thing(v) => self.get_value(v),
-                _ => 0,
             }
             + l1.into_iter().fold(0, |a, f| a + self.get_value(f))
             + l2.into_iter().fold(0, |a, f| a + self.get_value(f))
             + o1.map(|o| self.get_value(o)).unwrap_or_default()
             + o2.map(|o| self.get_value(o)).unwrap_or_default()
             + result1.map(|o| self.get_value(o)).unwrap_or_default()
-            + result2.map(|o| self.get_value(o)).unwrap_or_default();
+            + result2.map(|o| self.get_value(o)).unwrap_or_default()
+            + 3;
         Ok(res)
     }
 }
@@ -100,7 +98,7 @@ fn run_test(
 ) -> Result<()> {
     let mut things = vec![];
     let mut expected = 0;
-    for i in 1..17 {
+    for i in 1..18 {
         let thing = instance
             .test_resource_aggregates_test()
             .thing()
@@ -111,25 +109,28 @@ fn run_test(
 
     expected += 3 + 4;
 
-    instance.test_resource_aggregates_test().call_foo(
-        &mut *store,
-        TestR1 { thing: things[0] },
-        TestR2 { thing: things[1] },
-        TestR3 {
-            thing1: things[2],
-            thing2: things[3],
-        },
-        (things[4], TestR1 { thing: things[5] }),
-        (things[6],),
-        TestV1::Thing(things[7]),
-        TestV2::Thing(things[8]),
-        &vec![things[9], things[10]],
-        &vec![things[11], things[12]],
-        Some(things[13]),
-        Some(things[14]),
-        Ok(things[15]),
-        Err(()),
-    )?;
+    assert_eq!(
+        instance.test_resource_aggregates_test().call_foo(
+            &mut *store,
+            TestR1 { thing: things[0] },
+            TestR2 { thing: things[1] },
+            TestR3 {
+                thing1: things[2],
+                thing2: things[3],
+            },
+            (things[4], TestR1 { thing: things[5] }),
+            (things[6],),
+            TestV1::Thing(things[7]),
+            TestV2::Thing(things[8]),
+            &vec![things[9], things[10]],
+            &vec![things[11], things[12]],
+            Some(things[13]),
+            Some(things[14]),
+            Ok(things[15]),
+            Ok(things[16])
+        )?,
+        expected
+    );
 
     Ok(())
 }
