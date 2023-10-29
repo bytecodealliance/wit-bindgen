@@ -1,6 +1,6 @@
-package test:test
+package test:resource-aggregates
 
-interface resource-aggregates {
+interface test {
   resource thing {
     constructor(v: u32)
   }
@@ -51,7 +51,7 @@ interface resource-aggregates {
   ) -> u32
 }
 
-world test {
-  import resource-aggregates
-  export resource-aggregates
+world resource-aggregates {
+  import test
+  export test
 }

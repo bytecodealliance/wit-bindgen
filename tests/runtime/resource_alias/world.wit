@@ -1,4 +1,4 @@
-package my:resources
+package test:resource-alias
 
 interface e1 {
   resource x {
@@ -18,7 +18,7 @@ interface e2 {
   a: func(f: foo, g: bar) -> list<x>
 }
 
-world resources {
+world resource-alias {
   export e1
   export e2
 }

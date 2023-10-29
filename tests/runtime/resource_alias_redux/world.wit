@@ -1,4 +1,4 @@
-package test:test
+package test:resource-alias-redux
 
 interface resource-alias1 {
   resource thing {
@@ -19,7 +19,7 @@ interface resource-alias2 {
   b: func(f: foo, g: bar) -> list<thing>
 }
 
-world test {
+world resource-alias-redux {
   use resource-alias1.{thing}
 
   import resource-alias1

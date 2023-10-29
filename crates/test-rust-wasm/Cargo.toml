@@ -75,3 +75,23 @@ test = false
 [[bin]]
 name = "resource_with_lists"
 test = false
+
+[[bin]]
+name = "resource_borrow_import"
+test = false
+
+[[bin]]
+name = "resource_borrow_export"
+test = false
+
+[[bin]]
+name = "resource_alias_redux"
+test = false
+
+[[bin]]
+name = "resource_alias"
+test = false
+
+[[bin]]
+name = "resource_aggregates"
+test = false

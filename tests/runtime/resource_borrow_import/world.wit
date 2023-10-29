@@ -1,6 +1,6 @@
-package test:test
+package test:resource-borrow-import
 
-interface resource-borrow-import {
+interface test {
   resource thing {
     constructor(v: u32)
   }
@@ -8,8 +8,8 @@ interface resource-borrow-import {
   foo: func(v: borrow<thing>) -> u32
 }
 
-world test {
-  import resource-borrow-import
+world resource-borrow-import {
+  import test
 
   export test: func(v: u32) -> u32
 }
