@@ -1,7 +1,7 @@
 [package]
 name = "wit-bindgen-cli"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
-version = "0.13.0"
+version = "0.13.1"
 edition = { workspace = true }
 repository = 'https://github.com/bytecodealliance/wit-bindgen'
 license = "Apache-2.0 WITH LLVM-exception"
@@ -28,11 +28,11 @@ clap = { version = "4.3.19", features = ["derive"] }
 env_logger = "0.10.0"
 indexmap = "2.0.0"
 
-wasm-encoder = "0.35.0"
-wasm-metadata = "0.10.9"
+wasm-encoder = "0.36.1"
+wasm-metadata = "0.10.10"
 wasmtime-wasi = "14.0.0"
 wit-parser = "0.12.1"
-wit-component = "0.16.0"
+wit-component = "0.17.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.13.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.13.0' }

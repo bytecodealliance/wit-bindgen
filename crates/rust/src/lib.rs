@@ -494,6 +494,7 @@ impl WorldGenerator for RustWasm {
             world,
             wit_component::StringEncoding::UTF8,
             Some(&producers),
+            None,
         )
         .unwrap();
 
