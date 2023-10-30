@@ -606,7 +606,7 @@ impl C {
 
                 uwriteln!(
                     c_str,
-                    r#"__attribute__((__import_module__("{module}"), __import_name__("[resource-new]{name}")))
+                    r#"__attribute__((__import_module__("[export]{module}"), __import_name__("[resource-new]{name}")))
                        int32_t __wasm_import_{namespace}_{snake}_new(int32_t);
 
                        {own_name} {namespace}_{snake}_new({namespace}_{snake}_t* arg) {{
@@ -621,7 +621,7 @@ impl C {
 
                 uwriteln!(
                     c_str,
-                    r#"__attribute__((__import_module__("{module}"), __import_name__("[resource-rep]{snake}")))
+                    r#"__attribute__((__import_module__("[export]{module}"), __import_name__("[resource-rep]{snake}")))
                        int32_t __wasm_import_{namespace}_{snake}_rep(int32_t);
 
                        {namespace}_{snake}_t* {namespace}_{snake}_rep({own_name}{space}arg) {{
