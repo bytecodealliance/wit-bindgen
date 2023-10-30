@@ -307,7 +307,8 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         // Translate the canonical ABI module into a component.
 
         let mut module = fs::read(&out_wasm).expect("failed to read wasm file");
-        let encoded = wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None)?;
+        let encoded =
+            wit_component::metadata::encode(&resolve, world, StringEncoding::UTF8, None, None)?;
 
         let section = wasm_encoder::CustomSection {
             name: Cow::Borrowed("component-type"),
@@ -557,7 +558,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
       <Nullable>enable</Nullable>
       <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
-    
+
     <PropertyGroup>
         <PublishTrimmed>true</PublishTrimmed>
         <AssemblyName>{assembly_name}</AssemblyName>

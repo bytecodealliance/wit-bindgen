@@ -32,7 +32,8 @@ pub fn object(resolve: &Resolve, world: WorldId, encoding: StringEncoding) -> Re
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
     );
-    let data = wit_component::metadata::encode(resolve, world, encoding, Some(&producers)).unwrap();
+    let data =
+        wit_component::metadata::encode(resolve, world, encoding, Some(&producers), None).unwrap();
 
     // The custom section name here must start with "component-type" but
     // otherwise is attempted to be unique here to ensure that this doesn't get
