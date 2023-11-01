@@ -47,6 +47,22 @@ jobs:
         echo "WASI_SDK_PATH=`pwd`/wasi-sdk-16.0" >> $GITHUB_ENV
       if : matrix.os == 'windows-latest'
 
+    - run: |
+        curl -O https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.ps1
+        powershell -File dotnet-install.ps1 -Channel 8.0.1xx -Verbose
+        echo DOTNET_ROOT=$LOCALAPPDATA'\Microsoft\dotnet' >> $GITHUB_ENV
+        export DOTNET_ROOT=$LOCALAPPDATA\\Microsoft\\dotnet
+        echo $LOCALAPPDATA'\Microsoft\dotnet' >> $GITHUB_PATH
+        echo $LOCALAPPDATA'\Microsoft\dotnet\tools' >> $GITHUB_PATH
+        $LOCALAPPDATA/Microsoft/dotnet/dotnet --info
+        echo nativeaot-llvm requires emscripten for its version of clang as wasi-sdk 20 does not work see https://github.com/WebAssembly/wasi-sdk/issues/326
+        curl -OL https://github.com/emscripten-core/emsdk/archive/refs/heads/main.zip
+        unzip main.zip
+        cd emsdk-main
+        ./emsdk.bat install 3.1.23
+        ./emsdk.bat activate 3.1.23
+      if : matrix.os == 'windows-latest'
+
     - run: ci/download-teavm.sh
 
     - uses: actions/setup-node@v2
@@ -62,7 +78,14 @@ jobs:
     - uses: acifani/setup-tinygo@v1
       with:
         tinygo-version: 0.30.0
-    - run: cargo test --workspace
+    - name: All but Windows, cargo test --workspace
+      if : matrix.os != 'windows-latest'
+      run: cargo test --workspace
+    - name: Windows, set EMSDK and run cargo test
+      if : matrix.os == 'windows-latest'
+      run: |
+        source ./emsdk-main/emsdk_env.sh
+        cargo test --workspace
     - run: cargo build
     - run: cargo build --no-default-features
     - run: cargo build --no-default-features --features rust

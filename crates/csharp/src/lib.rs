@@ -1341,28 +1341,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::F32Store { .. } => todo!("F32Store"),
             Instruction::F64Store { .. } => todo!("F64Store"),
 
-            Instruction::I64FromU64 => results.push(format!("(long)({})", operands[0].clone())),
-
-            //This is handled in the C interface, so we just pass the value as is.
-            Instruction::I32FromChar
-            | Instruction::I64FromS64
-            | Instruction::I32FromU32
-            | Instruction::I32FromS32
+            Instruction::I64FromU64 => results.push(format!("unchecked((long)({}))", operands[0])),
+            Instruction::I32FromChar => results.push(format!("((int){})", operands[0])),
+            Instruction::I32FromU32 => results.push(format!("unchecked((int)({}))", operands[0])),
+            Instruction::U8FromI32 => results.push(format!("((byte){})", operands[0])),
+            Instruction::S8FromI32 => results.push(format!("((sbyte){})", operands[0])),
+            Instruction::U16FromI32 => results.push(format!("((ushort){})", operands[0])),
+            Instruction::S16FromI32 => results.push(format!("((short){})", operands[0])),
+            Instruction::U32FromI32 => results.push(format!("unchecked((uint)({}))", operands[0])),
+            Instruction::U64FromI64 => results.push(format!("unchecked((ulong)({}))", operands[0])),
+            Instruction::CharFromI32 => results.push(format!("unchecked((uint)({}))", operands[0])),
+            Instruction::I64FromS64
             | Instruction::I32FromU16
             | Instruction::I32FromS16
             | Instruction::I32FromU8
             | Instruction::I32FromS8
+            | Instruction::I32FromS32
             | Instruction::F32FromFloat32
             | Instruction::F64FromFloat64
-            | Instruction::S8FromI32
-            | Instruction::U8FromI32
-            | Instruction::S16FromI32
-            | Instruction::U16FromI32
             | Instruction::S32FromI32
-            | Instruction::U32FromI32
             | Instruction::S64FromI64
-            | Instruction::U64FromI64
-            | Instruction::CharFromI32
             | Instruction::Float32FromF32
             | Instruction::Float64FromF64 => results.push(operands[0].clone()),
 
@@ -1495,22 +1493,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let module = self.gen.name.to_upper_camel_case();
                 let func_name = self.func_name.to_upper_camel_case();
                 let class_name = CSharp::get_class_name_from_qualified_name(module);
-
-                let params_cast = func
-                    .params
-                    .iter()
-                    .map(|(_, ty)| {
-                        let ty = self.gen.type_name(ty);
-
-                        format!("{ty}")
-                    })
-                    .collect::<Vec<String>>();
-
                 let mut oper = String::new();
 
                 for (i, param) in operands.iter().enumerate() {
-                    let cast = params_cast.get(i).unwrap();
-                    oper.push_str(&format!("({cast}){param}"));
+                    oper.push_str(&format!("({param})"));
 
                     if i < operands.len() && operands.len() != i + 1 {
                         oper.push_str(", ");
@@ -1526,28 +1512,24 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::Return { amt, func } => {
-                let sig = self
-                    .gen
-                    .resolve()
-                    .wasm_signature(AbiVariant::GuestExport, func);
-
-                let cast = sig
-                    .results
-                    .into_iter()
-                    .map(|ty| wasm_type(ty))
-                    .collect::<Vec<&str>>()
-                    .join(", ");
-
-                match *amt {
-                    0 => (),
-                    1 => uwriteln!(self.src, "return {};", operands[0]),
-                    _ => {
-                        let results = operands.join(", ");
-                        uwriteln!(self.src, "return ({cast})({results});")
-                    }
+            Instruction::Return { amt, func } => match func.results.len() {
+                0 => (),
+                1 => uwriteln!(self.src, "return {};", operands[0]),
+                _ => {
+                    let results = operands.join(", ");
+                    let sig = self
+                        .gen
+                        .resolve()
+                        .wasm_signature(AbiVariant::GuestExport, func);
+                    let cast = sig
+                        .results
+                        .into_iter()
+                        .map(|ty| wasm_type(ty))
+                        .collect::<Vec<&str>>()
+                        .join(", ");
+                    uwriteln!(self.src, "return ({cast})({results});")
                 }
-            }
+            },
 
             Instruction::Malloc { .. } => unimplemented!(),
 
