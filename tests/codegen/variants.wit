@@ -128,6 +128,14 @@ interface variants {
 
   return-named-option: func() -> (a: option<u8>);
   return-named-result: func() -> (a: result<u8, my-errno>);
+
+  variant no-data {
+    a,
+    b,
+  }
+
+  consumes-no-data: func(x: no-data);
+  produces-no-data: func() -> no-data;
 }
 
 world my-world {
