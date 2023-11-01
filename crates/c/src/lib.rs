@@ -1516,16 +1516,21 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs("typedef struct {\n");
         self.src.h_defs(int_repr(variant.tag()));
         self.src.h_defs(" tag;\n");
-        self.src.h_defs("union {\n");
-        for case in variant.cases.iter() {
-            if let Some(ty) = get_nonempty_type(self.resolve, case.ty.as_ref()) {
+
+        let cases_with_data = Vec::from_iter(variant.cases.iter().filter_map(|case| {
+            get_nonempty_type(self.resolve, case.ty.as_ref()).map(|ty| (&case.name, ty))
+        }));
+
+        if !cases_with_data.is_empty() {
+            self.src.h_defs("union {\n");
+            for (name, ty) in cases_with_data {
                 self.print_ty(SourceType::HDefs, ty);
                 self.src.h_defs(" ");
-                self.src.h_defs(&to_c_ident(&case.name));
+                self.src.h_defs(&to_c_ident(name));
                 self.src.h_defs(";\n");
             }
+            self.src.h_defs("} val;\n");
         }
-        self.src.h_defs("} val;\n");
         self.src.h_defs("} ");
         self.print_typedef_target(id, name);
 
