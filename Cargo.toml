@@ -59,7 +59,6 @@ wit-bindgen-go = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-csharp = { workspace = true, features = ['clap'], optional = true }
 wit-component = { workspace = true }
 wasm-encoder = { workspace = true }
-wasmtime-wasi = { workspace = true }
 
 [features]
 default = [
@@ -80,5 +79,6 @@ csharp = ['dep:wit-bindgen-csharp']
 [dev-dependencies]
 heck = { workspace = true }
 wasmtime = { version = "14", features = ['component-model'] }
+wasmtime-wasi = { workspace = true }
 test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
