@@ -443,3 +443,13 @@ wit`. You can link two components together with `wasm-tools compose` as well.
 Note that the runtimes above are generally intended to work with arbitrary
 components, not necessarily only those created by `wit-bindgen`. This is also
 not necessarily an exhaustive listing of what can execute a component.
+
+## Building and Testing
+
+To build the cli:
+
+```
+cargo build
+```
+
+Learn more how to run the tests in the [testing document](tests/README.md).
