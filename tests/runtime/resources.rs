@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::collections::HashMap;
+use wasmtime::component::ResourceAny;
 
 wasmtime::component::bindgen!(in "tests/runtime/resources");
 
@@ -76,11 +77,24 @@ fn run_test(exports: Exports, store: &mut Store<crate::Wasi<MyImports>>) -> Resu
     let x = exports.x();
     let x_instance = x.call_constructor(&mut *store, 5)?;
     assert_eq!(x.call_get_a(&mut *store, x_instance)?, 5);
-    let _ = x.call_set_a(&mut *store, x_instance, 10);
+    x.call_set_a(&mut *store, x_instance, 10)?;
     assert_eq!(x.call_get_a(&mut *store, x_instance)?, 10);
-    let y = exports.z();
-    let y_instance = y.call_constructor(&mut *store, 10)?;
-    assert_eq!(y.call_get_a(&mut *store, y_instance)?, 10);
+    let z = exports.z();
+    let z_instance_1 = z.call_constructor(&mut *store, 10)?;
+    assert_eq!(z.call_get_a(&mut *store, z_instance_1)?, 10);
+
+    let z_instance_2 = z.call_constructor(&mut *store, 20)?;
+    assert_eq!(z.call_get_a(&mut *store, z_instance_2)?, 20);
+
+    let x_add = x.call_add(&mut *store, x_instance, 5)?;
+    assert_eq!(x.call_get_a(&mut *store, x_add)?, 15);
+
+    let z_add = exports.call_add(&mut *store, z_instance_1, z_instance_2)?;
+    assert_eq!(z.call_get_a(&mut *store, z_add)?, 30);
+
+    ResourceAny::resource_drop(x_instance, &mut *store)?;
+    ResourceAny::resource_drop(z_instance_1, &mut *store)?;
+    ResourceAny::resource_drop(z_instance_2, &mut *store)?;
 
     Ok(())
 }

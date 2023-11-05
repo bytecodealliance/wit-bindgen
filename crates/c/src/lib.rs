@@ -30,8 +30,9 @@ struct C {
     resources: HashMap<TypeId, ResourceInfo>,
 }
 
-struct ResourceInfo {
-    direction: Direction,
+#[derive(Default)]
+pub struct ResourceInfo {
+    pub direction: Direction,
     own: String,
     borrow: String,
 }
