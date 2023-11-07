@@ -1683,7 +1683,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                         }}
                     }};
                     unsafe impl {rt}::RustResource for {camel} {{
-                        unsafe fn new(rep: usize) -> u32 {{
+                        unsafe fn new(_rep: usize) -> u32 {{
                             #[cfg(not(target_arch = "wasm32"))]
                             unreachable!();
 
@@ -1694,11 +1694,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                                     #[link_name = "[resource-new]{name}"]
                                     fn new(_: usize) -> u32;
                                 }}
-                                new(rep)
+                                new(_rep)
                             }}
                         }}
 
-                        unsafe fn rep(handle: u32) -> usize {{
+                        unsafe fn rep(_handle: u32) -> usize {{
                             #[cfg(not(target_arch = "wasm32"))]
                             unreachable!();
 
@@ -1709,7 +1709,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                                     #[link_name = "[resource-rep]{name}"]
                                     fn rep(_: u32) -> usize;
                                 }}
-                                rep(handle)
+                                rep(_handle)
                             }}
                         }}
                     }}
@@ -1724,7 +1724,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             r#"
                 unsafe impl {rt}::WasmResource for {camel} {{
                      #[inline]
-                     unsafe fn drop(handle: u32) {{
+                     unsafe fn drop(_handle: u32) {{
                          #[cfg(not(target_arch = "wasm32"))]
                          unreachable!();
 
@@ -1736,7 +1736,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                                  fn drop(_: u32);
                              }}
 
-                             drop(handle);
+                             drop(_handle);
                          }}
                      }}
                 }}
