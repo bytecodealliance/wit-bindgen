@@ -1,6 +1,10 @@
 // TODO: Implement tests similar to the other generators.
 // This requires that we have any dependencies either included here or published to NuGet or similar.
-use std::{path::{Path, PathBuf}, fs, env, process::Command};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 use wit_component::StringEncoding;
 
 macro_rules! codegen_test {
@@ -78,7 +82,11 @@ macro_rules! codegen_test {
 test_helpers::codegen_tests!();
 
 fn verify(dir: &Path, name: &str) {
+    #[cfg(all(target_os = "windows", feature = "aot"))]
+    aot_verify(dir, name);
+}
 
+fn aot_verify(dir: &Path, name: &str) {
     fs::write(
         dir.join("nuget.config"),
         r#"<?xml version="1.0" encoding="utf-8"?>
@@ -106,7 +114,8 @@ fn verify(dir: &Path, name: &str) {
         </Application>
     </Directives>"#
         ),
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut csproj = format!(
         "<Project Sdk=\"Microsoft.NET.Sdk\">
@@ -142,22 +151,22 @@ fn verify(dir: &Path, name: &str) {
     );
 
     csproj.push_str("\t<ItemGroup>\n");
-        csproj.push_str(&format!(
-            "\t\t<NativeLibrary Include=\"the_world_component_type.o\" />\n"
-        ));
-        csproj.push_str("\t</ItemGroup>\n\n");
+    csproj.push_str(&format!(
+        "\t\t<NativeLibrary Include=\"the_world_component_type.o\" />\n"
+    ));
+    csproj.push_str("\t</ItemGroup>\n\n");
 
-        csproj.push_str(
-            r#"
+    csproj.push_str(
+        r#"
             <ItemGroup>
                 <CustomLinkerArg Include="-Wl,--export,_initialize" />
                 <CustomLinkerArg Include="-Wl,--no-entry" />
                 <CustomLinkerArg Include="-mexec-model=reactor" />
             </ItemGroup>
             "#,
-        );
+    );
 
-        csproj.push_str(
+    csproj.push_str(
             r#"
     <ItemGroup>
         <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
@@ -167,48 +176,45 @@ fn verify(dir: &Path, name: &str) {
             "#,
         );
 
+    fs::write(dir.join(format!("{name}.csproj")), csproj).unwrap();
 
-        fs::write(dir.join(format!("{name}.csproj")), csproj).unwrap();
+    let dotnet_root_env = "DOTNET_ROOT";
+    let dotnet_cmd: PathBuf;
+    match env::var(dotnet_root_env) {
+        Ok(val) => dotnet_cmd = Path::new(&val).join("dotnet"),
+        Err(_e) => dotnet_cmd = "dotnet".into(),
+    }
 
+    let mut cmd = Command::new(dotnet_cmd);
+    let mut wasm_filename = dir.join(name);
+    wasm_filename.set_extension("wasm");
 
-        let dotnet_root_env = "DOTNET_ROOT";
-        let dotnet_cmd: PathBuf;
-        match env::var(dotnet_root_env) {
-            Ok(val) => dotnet_cmd = Path::new(&val).join("dotnet"),
-            Err(_e) => dotnet_cmd = "dotnet".into(),
-        }
+    cmd.current_dir(&dir);
 
-        let mut cmd = Command::new(dotnet_cmd);
-        let mut wasm_filename = dir.join(name);
-        wasm_filename.set_extension("wasm");
+    //  add .arg("/bl") to diagnose dotnet build problems
+    cmd.arg("build")
+        .arg(dir.join(format!("{name}.csproj")))
+        .arg("-r")
+        .arg("wasi-wasm")
+        .arg("-c")
+        .arg("Debug")
+        .arg("/p:PlatformTarget=AnyCPU")
+        .arg("/p:MSBuildEnableWorkloadResolver=false")
+        .arg("--self-contained")
+        .arg("/p:UseAppHost=false")
+        .arg("-o")
+        .arg(&wasm_filename);
+    let output = match cmd.output() {
+        Ok(output) => output,
+        Err(e) => panic!("failed to spawn compiler: {}", e),
+    };
 
-        cmd.current_dir(&dir);
-
-        //  add .arg("/bl") to diagnose dotnet build problems
-        cmd.arg("build")
-            .arg(dir.join(format!("{name}.csproj")))
-            .arg("-r")
-            .arg("wasi-wasm")
-            .arg("-c")
-            .arg("Debug")
-            .arg("/p:PlatformTarget=AnyCPU")
-            .arg("/p:MSBuildEnableWorkloadResolver=false")
-            .arg("--self-contained")
-            .arg("/p:UseAppHost=false")
-            .arg("-o")
-            .arg(&wasm_filename);
-        let output = match cmd.output() {
-            Ok(output) => output,
-            Err(e) => panic!("failed to spawn compiler: {}", e),
-        };
-
-        if !output.status.success() {
-            println!("status: {}", output.status);
-            println!("stdout: ------------------------------------------");
-            println!("{}", String::from_utf8_lossy(&output.stdout));
-            println!("stderr: ------------------------------------------");
-            println!("{}", String::from_utf8_lossy(&output.stderr));
-            panic!("failed to compile");
-        }
-    
+    if !output.status.success() {
+        println!("status: {}", output.status);
+        println!("stdout: ------------------------------------------");
+        println!("{}", String::from_utf8_lossy(&output.stdout));
+        println!("stderr: ------------------------------------------");
+        println!("{}", String::from_utf8_lossy(&output.stderr));
+        panic!("failed to compile");
+    }
 }
