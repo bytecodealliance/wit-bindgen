@@ -76,7 +76,7 @@ interface api {
   }
 
   class: func(break: option<option<t5>>) -> tuple<>;
-  continue: func(abstract: option<result<_, errno>>, extends: tuple<>) -> (%implements: option<tuple<>>);
+  continue: func(abstract: option<result<_, errno>>, extends: tuple<>) -> (%implements: option<tuple<u32>>);
 }
 
 world types-example {

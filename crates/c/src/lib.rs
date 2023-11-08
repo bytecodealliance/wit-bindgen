@@ -726,10 +726,8 @@ impl C {
             TypeDefKind::Option(t) => {
                 self.src.h_defs("struct {\n");
                 self.src.h_defs("bool is_some;\n");
-                if !is_empty_type(resolve, t) {
-                    let ty = self.type_name(resolve, t);
-                    uwriteln!(self.src.h_defs, "{ty} val;");
-                }
+                let ty = self.type_name(resolve, t);
+                uwriteln!(self.src.h_defs, "{ty} val;");
                 self.src.h_defs("}");
             }
             TypeDefKind::Result(r) => {
@@ -738,8 +736,8 @@ impl C {
                     bool is_err;
                 ",
                 );
-                let ok_ty = get_nonempty_type(resolve, r.ok.as_ref());
-                let err_ty = get_nonempty_type(resolve, r.err.as_ref());
+                let ok_ty = r.ok.as_ref();
+                let err_ty = r.err.as_ref();
                 if ok_ty.is_some() || err_ty.is_some() {
                     self.src.h_defs("union {\n");
                     if let Some(ok) = ok_ty {
@@ -1496,9 +1494,12 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs(int_repr(variant.tag()));
         self.src.h_defs(" tag;\n");
 
-        let cases_with_data = Vec::from_iter(variant.cases.iter().filter_map(|case| {
-            get_nonempty_type(self.resolve, case.ty.as_ref()).map(|ty| (&case.name, ty))
-        }));
+        let cases_with_data = Vec::from_iter(
+            variant
+                .cases
+                .iter()
+                .filter_map(|case| case.ty.as_ref().map(|ty| (&case.name, ty))),
+        );
 
         if !cases_with_data.is_empty() {
             self.src.h_defs("union {\n");
@@ -1539,10 +1540,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.docs(docs, SourceType::HDefs);
         self.src.h_defs("typedef struct {\n");
         self.src.h_defs("bool is_some;\n");
-        if !is_empty_type(self.resolve, payload) {
-            self.print_ty(SourceType::HDefs, payload);
-            self.src.h_defs(" val;\n");
-        }
+        self.print_ty(SourceType::HDefs, payload);
+        self.src.h_defs(" val;\n");
         self.src.h_defs("} ");
         self.print_typedef_target(id, name);
 
@@ -1556,11 +1555,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.src.h_defs("typedef struct {\n");
         self.src.h_defs("bool is_err;\n");
         self.src.h_defs("union {\n");
-        if let Some(ok) = get_nonempty_type(self.resolve, result.ok.as_ref()) {
+        if let Some(ok) = result.ok.as_ref() {
             self.print_ty(SourceType::HDefs, ok);
             self.src.h_defs(" ok;\n");
         }
-        if let Some(err) = get_nonempty_type(self.resolve, result.err.as_ref()) {
+        if let Some(err) = result.err.as_ref() {
             self.print_ty(SourceType::HDefs, err);
             self.src.h_defs(" err;\n");
         }
@@ -1702,21 +1701,19 @@ impl InterfaceGenerator<'_> {
             for (i, (_, param)) in c_sig.params.iter().enumerate() {
                 let ty = &func.params[i].1;
                 if let Type::Id(id) = ty {
-                    if let TypeDefKind::Option(option_ty) = &self.resolve.types[*id].kind {
+                    if let TypeDefKind::Option(_) = &self.resolve.types[*id].kind {
                         let ty = self.type_string(ty);
                         uwrite!(
                             optional_adapters,
                             "{ty} {param};
                             {param}.is_some = maybe_{param} != NULL;"
                         );
-                        if !is_empty_type(self.resolve, option_ty) {
-                            uwriteln!(
-                                optional_adapters,
-                                "if (maybe_{param}) {{
-                                    {param}.val = *maybe_{param};
-                                }}",
-                            );
-                        }
+                        uwriteln!(
+                            optional_adapters,
+                            "if (maybe_{param}) {{
+                                {param}.val = *maybe_{param};
+                            }}",
+                        );
                     }
                 }
             }
@@ -2376,7 +2373,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     variant.cases.iter().zip(blocks).zip(payloads).enumerate()
                 {
                     uwriteln!(self.src, "case {}: {{", i);
-                    if let Some(ty) = get_nonempty_type(self.gen.resolve, case.ty.as_ref()) {
+                    if let Some(ty) = case.ty.as_ref() {
                         let ty = self.gen.type_string(ty);
                         uwrite!(
                             self.src,
@@ -2417,7 +2414,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src.push_str(&block);
                     assert!(block_results.len() == (case.ty.is_some() as usize));
 
-                    if let Some(_) = get_nonempty_type(self.gen.resolve, case.ty.as_ref()) {
+                    if let Some(_) = case.ty.as_ref() {
                         let mut dst = format!("{}.val", result);
                         dst.push_str(".");
                         dst.push_str(&to_c_ident(&case.name));
@@ -2454,11 +2451,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let op0 = &operands[0];
                 let ty = self.gen.type_string(payload);
-                let bind_some = if is_empty_type(self.gen.resolve, payload) {
-                    String::new()
-                } else {
-                    format!("const {ty} *{some_payload} = &({op0}).val;")
-                };
+                let bind_some = format!("const {ty} *{some_payload} = &({op0}).val;");
 
                 uwrite!(
                     self.src,
@@ -2471,7 +2464,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 );
             }
 
-            Instruction::OptionLift { payload, ty, .. } => {
+            Instruction::OptionLift { ty, .. } => {
                 let (mut some, some_results) = self.blocks.pop().unwrap();
                 let (mut none, none_results) = self.blocks.pop().unwrap();
                 assert!(none_results.len() == 0);
@@ -2482,11 +2475,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let result = self.locals.tmp("option");
                 uwriteln!(self.src, "{ty} {result};");
                 let op0 = &operands[0];
-                let set_some = if is_empty_type(self.gen.resolve, payload) {
-                    String::new()
-                } else {
-                    format!("{result}.val = {some_result};\n")
-                };
+                let set_some = format!("{result}.val = {some_result};\n");
                 if none.len() > 0 {
                     none.push('\n');
                 }
@@ -2536,20 +2525,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 let op0 = &operands[0];
-                let bind_ok =
-                    if let Some(ok) = get_nonempty_type(self.gen.resolve, result.ok.as_ref()) {
-                        let ok_ty = self.gen.type_string(ok);
-                        format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;")
-                    } else {
-                        String::new()
-                    };
-                let bind_err =
-                    if let Some(err) = get_nonempty_type(self.gen.resolve, result.err.as_ref()) {
-                        let err_ty = self.gen.type_string(err);
-                        format!("const {err_ty} *{err_payload} = &({op0}).val.err;")
-                    } else {
-                        String::new()
-                    };
+                let bind_ok = if let Some(ok) = result.ok.as_ref() {
+                    let ok_ty = self.gen.type_string(ok);
+                    format!("const {ok_ty} *{ok_payload} = &({op0}).val.ok;")
+                } else {
+                    String::new()
+                };
+                let bind_err = if let Some(err) = result.err.as_ref() {
+                    let err_ty = self.gen.type_string(err);
+                    format!("const {err_ty} *{err_payload} = &({op0}).val.err;")
+                } else {
+                    String::new()
+                };
                 uwrite!(
                     self.src,
                     "\
@@ -2578,20 +2565,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
 
                 let result_tmp = self.locals.tmp("result");
-                let set_ok =
-                    if let Some(_) = get_nonempty_type(self.gen.resolve, result.ok.as_ref()) {
-                        let ok_result = &ok_results[0];
-                        format!("{result_tmp}.val.ok = {ok_result};\n")
-                    } else {
-                        String::new()
-                    };
-                let set_err =
-                    if let Some(_) = get_nonempty_type(self.gen.resolve, result.err.as_ref()) {
-                        let err_result = &err_results[0];
-                        format!("{result_tmp}.val.err = {err_result};\n")
-                    } else {
-                        String::new()
-                    };
+                let set_ok = if let Some(_) = result.ok.as_ref() {
+                    let ok_result = &ok_results[0];
+                    format!("{result_tmp}.val.ok = {ok_result};\n")
+                } else {
+                    String::new()
+                };
+                let set_err = if let Some(_) = result.err.as_ref() {
+                    let err_result = &err_results[0];
+                    format!("{result_tmp}.val.err = {err_result};\n")
+                } else {
+                    String::new()
+                };
 
                 let ty = self.gen.type_string(&Type::Id(*ty));
                 uwriteln!(self.src, "{ty} {result_tmp};");
@@ -2699,14 +2684,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     } else {
                         if !self.gen.in_import {
                             if let Type::Id(id) = ty {
-                                if let TypeDefKind::Option(option_ty) =
-                                    &self.gen.resolve.types[*id].kind
-                                {
-                                    if is_empty_type(self.gen.resolve, option_ty) {
-                                        uwrite!(args, "{op}.is_some ? (void*)1 : NULL");
-                                    } else {
-                                        uwrite!(args, "{op}.is_some ? &({op}.val) : NULL");
-                                    }
+                                if let TypeDefKind::Option(_) = &self.gen.resolve.types[*id].kind {
+                                    uwrite!(args, "{op}.is_some ? &({op}.val) : NULL");
                                     continue;
                                 }
                             }
@@ -2757,31 +2736,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             .gen
                             .type_string(func.results.iter_types().next().unwrap());
                         let option_ret = self.locals.tmp("ret");
-                        if !is_empty_type(self.gen.resolve, ty) {
-                            uwrite!(
-                                self.src,
-                                "
-                                    {ty} {ret};
-                                    {ret}.is_some = {tag};
-                                    {ret}.val = {val};
-                                ",
-                                ty = option_ty,
-                                ret = option_ret,
-                                tag = ret,
-                                val = val,
-                            );
-                        } else {
-                            uwrite!(
-                                self.src,
-                                "
-                                    {ty} {ret};
-                                    {ret}.is_some = {tag};
-                                ",
-                                ty = option_ty,
-                                ret = option_ret,
-                                tag = ret,
-                            );
-                        }
+                        uwrite!(
+                            self.src,
+                            "
+                                {ty} {ret};
+                                {ret}.is_some = {tag};
+                                {ret}.val = {val};
+                            ",
+                            ty = option_ty,
+                            ret = option_ret,
+                            tag = ret,
+                            val = val,
+                        );
                         results.push(option_ret);
                     }
                     Some(Scalar::ResultBool(ok, err)) => {
@@ -2822,7 +2788,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         assert!(ret_iter.next().is_none());
                         uwrite!(self.src, "");
                         uwriteln!(self.src, "{ret}.is_err = !{}({args});", self.sig.name);
-                        if get_nonempty_type(self.gen.resolve, err.as_ref()).is_some() {
+                        if err.is_some() {
                             if let Some(err_name) = err_name {
                                 uwriteln!(
                                     self.src,
@@ -2832,7 +2798,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                 );
                             }
                         }
-                        if get_nonempty_type(self.gen.resolve, ok.as_ref()).is_some() {
+                        if ok.is_some() {
                             if let Some(ok_name) = ok_name {
                                 uwriteln!(
                                     self.src,
@@ -2863,12 +2829,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src.push_str(&operands[0]);
                     self.src.push_str(";\n");
                 }
-                Some(Scalar::OptionBool(o)) => {
+                Some(Scalar::OptionBool(_)) => {
                     assert_eq!(operands.len(), 1);
                     let variant = &operands[0];
-                    if !is_empty_type(self.gen.resolve, &o) {
-                        self.store_in_retptr(&format!("{}.val", variant));
-                    }
+                    self.store_in_retptr(&format!("{}.val", variant));
                     self.src.push_str("return ");
                     self.src.push_str(&variant);
                     self.src.push_str(".is_some;\n");
@@ -2879,7 +2843,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     assert!(self.sig.retptrs.len() <= 2);
                     uwriteln!(self.src, "if (!{}.is_err) {{", variant);
                     if ok.is_some() {
-                        if get_nonempty_type(self.gen.resolve, ok.as_ref()).is_some() {
+                        if ok.is_some() {
                             self.store_in_retptr(&format!("{}.val.ok", variant));
                         } else {
                             self.empty_return_value();
@@ -2891,7 +2855,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             }} else {{"
                     );
                     if err.is_some() {
-                        if get_nonempty_type(self.gen.resolve, err.as_ref()).is_some() {
+                        if err.is_some() {
                             self.store_in_retptr(&format!("{}.val.err", variant));
                         } else {
                             self.empty_return_value();
@@ -3115,32 +3079,6 @@ pub fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
         },
         Type::String => true,
         _ => false,
-    }
-}
-
-pub fn is_empty_type(resolve: &Resolve, ty: &Type) -> bool {
-    let id = match ty {
-        Type::Id(id) => *id,
-        _ => return false,
-    };
-    match &resolve.types[id].kind {
-        TypeDefKind::Type(t) => is_empty_type(resolve, t),
-        TypeDefKind::Record(r) => r.fields.is_empty(),
-        TypeDefKind::Tuple(t) => t.types.is_empty(),
-        _ => false,
-    }
-}
-
-pub fn get_nonempty_type<'o>(resolve: &Resolve, ty: Option<&'o Type>) -> Option<&'o Type> {
-    match ty {
-        Some(ty) => {
-            if is_empty_type(resolve, ty) {
-                None
-            } else {
-                Some(ty)
-            }
-        }
-        None => None,
     }
 }
 
