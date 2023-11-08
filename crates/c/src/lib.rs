@@ -683,7 +683,6 @@ impl C {
         // twice from multiple various locations, so skip the second set of
         // bindings as they'll be the same as the first.
         let mut name = self.owner_namespace(resolve, ty);
-        println!("name: {}", name);
         name.push_str("_");
         push_ty_name(resolve, &Type::Id(ty), &self.interface_names, &mut name);
         name.push_str("_t");
