@@ -4,7 +4,11 @@ interface records {
   tuple-arg: func(x: tuple<char, u32>);
   tuple-result: func() -> tuple<char, u32>;
 
-  record empty {}
+  // NB: this record used to be empty, but that's no longer valid, so now it's
+  // non-empty. Don't want to delete the whole test however.
+  record empty {
+    not-empty-anymore: bool,
+  }
 
   empty-arg: func(x: empty);
   empty-result: func() -> empty;
