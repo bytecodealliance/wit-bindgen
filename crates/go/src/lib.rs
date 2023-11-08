@@ -762,7 +762,13 @@ impl InterfaceGenerator<'_> {
 
     fn get_c_ty_name(&self, ty: &Type) -> String {
         let mut name = String::new();
-        wit_bindgen_c::push_ty_name(self.resolve, ty, &self.gen.interface_names, &mut name);
+        wit_bindgen_c::push_ty_name(
+            self.resolve,
+            ty,
+            &self.gen.interface_names,
+            &self.gen.world,
+            &mut name,
+        );
         name
     }
 
