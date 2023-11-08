@@ -4,14 +4,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 macro_rules! codegen_test {
-    // TODO: support importing and exporting the same interface containing one
-    // or more resources, then remove the following lines:
-    (import_and_export_resource $name:tt $test:tt) => {};
-    (import_and_export_resource_alias $name:tt $test:tt) => {};
-    (resource_alias $name:tt $test:tt) => {};
-    (resource_local_alias $name:tt $test:tt) => {};
-    (resources_with_lists $name:tt $test:tt) => {};
-    (resources_in_aggregates $name:tt $test:tt) => {};
     ($id:ident $name:tt $test:tt) => {
         #[test]
         fn $id() {
