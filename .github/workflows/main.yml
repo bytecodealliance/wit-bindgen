@@ -31,8 +31,6 @@ jobs:
       run: rustup target add wasm32-unknown-unknown
     - name: Install wasm32-wasi target
       run: rustup target add wasm32-wasi
-    - name: Require semicolons
-      run: echo WIT_REQUIRE_SEMICOLONS=0 >> $GITHUB_ENV
 
     - run: |
         curl https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-20/wasi-sdk-20.0-linux.tar.gz -L | tar xzvf -

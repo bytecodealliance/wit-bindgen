@@ -1,19 +1,19 @@
-package test:resource-borrow-in-record
+package test:resource-borrow-in-record;
 
 interface test {
   resource thing {
-    constructor(s: string)
-    get: func() -> string
+    constructor(s: string);
+    get: func() -> string;
   }
 
   record foo {
     thing: borrow<thing>
   }
 
-  test: func(a: list<foo>) -> list<thing>
+  test: func(a: list<foo>) -> list<thing>;
 }
 
 world resource-borrow-in-record {
-  import test
-  export test
+  import test;
+  export test;
 }

@@ -1,17 +1,17 @@
-package test:resource-import-and-export
+package test:resource-import-and-export;
 
 interface test {
   resource thing {
-    constructor(v: u32)
+    constructor(v: u32);
 
-    foo: func() -> u32
-    bar: func(v: u32)
+    foo: func() -> u32;
+    bar: func(v: u32);
 
-    baz: static func(a: thing, b: thing) -> thing
+    baz: static func(a: thing, b: thing) -> thing;
   }
 }
 
 world resource-import-and-export {
-  import test
-  export test
+  import test;
+  export test;
 }
