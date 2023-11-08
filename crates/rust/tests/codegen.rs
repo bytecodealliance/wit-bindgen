@@ -359,7 +359,7 @@ mod with {
             }
 
             interface bar {
-                use foo.{msg}
+                use foo.{msg};
 
                 bar: func(m: msg);
             }
