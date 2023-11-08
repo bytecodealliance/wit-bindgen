@@ -5,9 +5,7 @@ use std::{collections::BTreeSet, mem};
 use anyhow::Result;
 use heck::{ToKebabCase, ToSnakeCase, ToUpperCamelCase};
 
-use wit_bindgen_c::{
-    flags_repr, get_nonempty_type, int_repr, is_arg_by_pointer, is_empty_type, owns_anything,
-};
+use wit_bindgen_c::{flags_repr, int_repr, is_arg_by_pointer, owns_anything};
 use wit_bindgen_core::wit_parser::{InterfaceId, Resolve, TypeOwner, WorldId};
 use wit_bindgen_core::{
     uwriteln,
@@ -1287,11 +1285,7 @@ impl InterfaceGenerator<'_> {
                 }
                 1 => {
                     let return_ty = func.results.iter_types().next().unwrap();
-                    if is_empty_type(self.resolve, return_ty) {
-                        src.push_str(&format!("{invoke}\n"));
-                    } else {
-                        src.push_str(&format!("result := {invoke}\n"));
-                    }
+                    src.push_str(&format!("result := {invoke}\n"));
                     src.push_str(&lower_src);
 
                     let lower_result = &ret[0];
@@ -1463,7 +1457,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
         for case in variant.cases.iter() {
             let case_name = case.name.to_upper_camel_case();
-            if let Some(ty) = get_nonempty_type(self.resolve, case.ty.as_ref()) {
+            if let Some(ty) = case.ty.as_ref() {
                 self.gen.needs_fmt_import = true;
                 self.print_accessor_methods(&name, &case_name, ty);
             } else {
@@ -1659,37 +1653,33 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let (ok, err) = self.interface.extract_result_ty(ty);
         uwriteln!(self.lower_src, "if {param}.IsOk() {{");
         if let Some(ok_inner) = ok {
-            if !is_empty_type(self.interface.resolve, &ok_inner) {
-                self.interface.gen.needs_import_unsafe = true;
-                let c_target_name = self.interface.get_c_ty(&ok_inner);
-                uwriteln!(
-                    self.lower_src,
-                    "{lower_name}_ptr := (*{c_target_name})(unsafe.Pointer({lower_inner_name1}))"
-                );
-                self.lower_value(
-                    &format!("{param}.Unwrap()"),
-                    &ok_inner,
-                    &format!("{lower_name}_val"),
-                );
-                uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
-            }
+            self.interface.gen.needs_import_unsafe = true;
+            let c_target_name = self.interface.get_c_ty(&ok_inner);
+            uwriteln!(
+                self.lower_src,
+                "{lower_name}_ptr := (*{c_target_name})(unsafe.Pointer({lower_inner_name1}))"
+            );
+            self.lower_value(
+                &format!("{param}.Unwrap()"),
+                &ok_inner,
+                &format!("{lower_name}_val"),
+            );
+            uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
         }
         self.lower_src.push_str("} else {\n");
         if let Some(err_inner) = err {
-            if !is_empty_type(self.interface.resolve, &err_inner) {
-                self.interface.gen.needs_import_unsafe = true;
-                let c_target_name = self.interface.get_c_ty(&err_inner);
-                uwriteln!(
-                    self.lower_src,
-                    "{lower_name}_ptr := (*{c_target_name})(unsafe.Pointer({lower_inner_name2}))"
-                );
-                self.lower_value(
-                    &format!("{param}.UnwrapErr()"),
-                    &err_inner,
-                    &format!("{lower_name}_val"),
-                );
-                uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
-            }
+            self.interface.gen.needs_import_unsafe = true;
+            let c_target_name = self.interface.get_c_ty(&err_inner);
+            uwriteln!(
+                self.lower_src,
+                "{lower_name}_ptr := (*{c_target_name})(unsafe.Pointer({lower_inner_name2}))"
+            );
+            self.lower_value(
+                &format!("{param}.UnwrapErr()"),
+                &err_inner,
+                &format!("{lower_name}_val"),
+            );
+            uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
         }
         self.lower_src.push_str("}\n");
     }
@@ -1764,15 +1754,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
                         uwriteln!(self.lower_src, "if {param}.IsSome() {{");
-                        if !is_empty_type(self.interface.resolve, o) {
-                            self.lower_value(
-                                &format!("{param}.Unwrap()"),
-                                o,
-                                &format!("{lower_name}_val"),
-                            );
-                            uwriteln!(self.lower_src, "{lower_name}.val = {lower_name}_val");
-                            uwriteln!(self.lower_src, "{lower_name}.is_some = true");
-                        }
+                        self.lower_value(
+                            &format!("{param}.Unwrap()"),
+                            o,
+                            &format!("{lower_name}_val"),
+                        );
+                        uwriteln!(self.lower_src, "{lower_name}.val = {lower_name}_val");
+                        uwriteln!(self.lower_src, "{lower_name}.is_some = true");
                         self.lower_src.push_str("}\n");
                     }
                     TypeDefKind::Result(_) => {
@@ -1817,9 +1805,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 self.lower_src,
                                 "if {param}.Kind() == {ty}Kind{case_name} {{"
                             );
-                            if let Some(ty) =
-                                get_nonempty_type(self.interface.resolve, case.ty.as_ref())
-                            {
+                            if let Some(ty) = case.ty.as_ref() {
                                 let name = self.interface.get_c_ty(ty);
                                 uwriteln!(
                                     self.lower_src,
@@ -1963,10 +1949,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         uwriteln!(self.lift_src, "if {param}.is_err {{");
                         if let Some(err_inner) = err {
                             let err_inner_name = self.interface.get_c_ty(&err_inner);
-                            if !is_empty_type(self.interface.resolve, &err_inner) {
-                                self.interface.gen.needs_import_unsafe = true;
-                                uwriteln!(self.lift_src, "{lift_name}_ptr := *(*{err_inner_name})(unsafe.Pointer(&{param}.val))");
-                            }
+                            self.interface.gen.needs_import_unsafe = true;
+                            uwriteln!(self.lift_src, "{lift_name}_ptr := *(*{err_inner_name})(unsafe.Pointer(&{param}.val))");
                             self.lift_value(
                                 &format!("{lift_name}_ptr"),
                                 &err_inner,
@@ -1979,10 +1963,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         uwriteln!(self.lift_src, "}} else {{");
                         if let Some(ok_inner) = ok {
                             let ok_inner_name = self.interface.get_c_ty(&ok_inner);
-                            if !is_empty_type(self.interface.resolve, &ok_inner) {
-                                self.interface.gen.needs_import_unsafe = true;
-                                uwriteln!(self.lift_src, "{lift_name}_ptr := *(*{ok_inner_name})(unsafe.Pointer(&{param}.val))");
-                            }
+                            self.interface.gen.needs_import_unsafe = true;
+                            uwriteln!(self.lift_src, "{lift_name}_ptr := *(*{ok_inner_name})(unsafe.Pointer(&{param}.val))");
                             self.lift_value(
                                 &format!("{lift_name}_ptr"),
                                 &ok_inner,
@@ -2044,9 +2026,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             let case_name = case.name.to_upper_camel_case();
                             self.lift_src
                                 .push_str(&format!("if {param}.tag == {i} {{\n"));
-                            if let Some(ty) =
-                                get_nonempty_type(self.interface.resolve, case.ty.as_ref())
-                            {
+                            if let Some(ty) = case.ty.as_ref() {
                                 let ty_name = self.interface.get_c_ty(ty);
                                 uwriteln!(
                                     self.lift_src,
