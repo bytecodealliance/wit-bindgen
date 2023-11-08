@@ -1,15 +1,15 @@
-package test:resource-borrow-import
+package test:resource-borrow-import;
 
 interface test {
   resource thing {
-    constructor(v: u32)
+    constructor(v: u32);
   }
 
-  foo: func(v: borrow<thing>) -> u32
+  foo: func(v: borrow<thing>) -> u32;
 }
 
 world resource-borrow-import {
-  import test
+  import test;
 
-  export test: func(v: u32) -> u32
+  export test: func(v: u32) -> u32;
 }

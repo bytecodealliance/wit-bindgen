@@ -1,8 +1,8 @@
-package test:resource-aggregates
+package test:resource-aggregates;
 
 interface test {
   resource thing {
-    constructor(v: u32)
+    constructor(v: u32);
   }
 
   record r1 {
@@ -18,9 +18,9 @@ interface test {
     thing2: thing,
   }
 
-  type t1 = tuple<thing, r1>
+  type t1 = tuple<thing, r1>;
 
-  type t2 = tuple<borrow<thing>>
+  type t2 = tuple<borrow<thing>>;
 
   variant v1 {
     thing(thing),
@@ -30,9 +30,9 @@ interface test {
     thing(borrow<thing>),
   }
 
-  type l1 = list<thing>
+  type l1 = list<thing>;
 
-  type l2 = list<borrow<thing>>
+  type l2 = list<borrow<thing>>;
 
   foo: func(
     r1: r1,
@@ -48,10 +48,10 @@ interface test {
     o2: option<borrow<thing>>,
     result1: result<thing>,
     result2: result<borrow<thing>>,
-  ) -> u32
+  ) -> u32;
 }
 
 world resource-aggregates {
-  import test
-  export test
+  import test;
+  export test;
 }
