@@ -7,16 +7,9 @@ use std::fmt::Write;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType};
 use wit_bindgen_core::{
-    uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Ns, WorldGenerator,
+    uwrite, uwriteln, wit_parser::*, Direction, Files, InterfaceGenerator as _, Ns, WorldGenerator,
 };
 use wit_component::StringEncoding;
-
-#[derive(Default, Copy, Clone, PartialEq, Eq)]
-pub enum Direction {
-    #[default]
-    Import,
-    Export,
-}
 
 #[derive(Default)]
 pub struct ResourceInfo {

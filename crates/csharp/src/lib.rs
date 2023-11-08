@@ -8,7 +8,10 @@ use std::{
     iter, mem,
     ops::Deref,
 };
-use wit_bindgen_core::abi::{self, AbiVariant, Bindgen, Instruction, LiftLower, WasmType};
+use wit_bindgen_core::{
+    abi::{self, AbiVariant, Bindgen, Instruction, LiftLower, WasmType},
+    Direction,
+};
 use wit_bindgen_core::{
     uwrite, uwriteln,
     wit_parser::{
@@ -49,11 +52,6 @@ impl Opts {
             ..CSharp::default()
         })
     }
-}
-
-enum Direction {
-    Import,
-    Export,
 }
 
 struct InterfaceFragment {

@@ -9,18 +9,12 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
-    uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Source, Types, WorldGenerator,
+    uwriteln, wit_parser::*, Direction, Files, InterfaceGenerator as _, Source, Types,
+    WorldGenerator,
 };
 
 mod bindgen;
 mod interface;
-
-#[derive(Default, Copy, Clone, PartialEq, Eq)]
-enum Direction {
-    #[default]
-    Import,
-    Export,
-}
 
 #[derive(Default)]
 struct ResourceInfo {
