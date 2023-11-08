@@ -6,7 +6,10 @@ interface my-interface {
         that
     }
 
+    // NB: this record used to be empty, but that's no longer valid, so now it's
+    // non-empty. Don't want to delete the whole test however.
     record empty {
+        not-empty-anymore: bool,
     }
 
     stuff-or-stuff: func() -> result<stuff, stuff>;
