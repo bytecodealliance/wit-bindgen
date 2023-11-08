@@ -683,9 +683,14 @@ impl C {
         // twice from multiple various locations, so skip the second set of
         // bindings as they'll be the same as the first.
         let mut name = self.owner_namespace(resolve, ty);
-        println!("name: {}", name);
         name.push_str("_");
-        push_ty_name(resolve, &Type::Id(ty), &self.interface_names, &mut name);
+        push_ty_name(
+            resolve,
+            &Type::Id(ty),
+            &self.interface_names,
+            &self.world,
+            &mut name,
+        );
         name.push_str("_t");
         if self.names.insert(&name).is_err() {
             return;
@@ -709,7 +714,13 @@ impl C {
                 if let Some(ty) = self.find_handle_alias_target(resolve, handle, handles) {
                     let mut name = self.owner_namespace(resolve, ty);
                     name.push_str("_");
-                    push_ty_name(resolve, &Type::Id(ty), &self.interface_names, &mut name);
+                    push_ty_name(
+                        resolve,
+                        &Type::Id(ty),
+                        &self.interface_names,
+                        &self.world,
+                        &mut name,
+                    );
                     name.push_str("_t");
                     self.src.h_defs(&name);
                 } else {
@@ -796,13 +807,13 @@ impl C {
         self.src.h_helpers("_");
         self.src
             .h_helpers
-            .print_ty_name(&self.interface_names, resolve, &ty);
+            .print_ty_name(&self.interface_names, &self.world, resolve, &ty);
         self.src.h_helpers("_free(");
         self.src.h_helpers(&ns);
         self.src.h_helpers("_");
         self.src
             .h_helpers
-            .print_ty_name(&self.interface_names, resolve, &ty);
+            .print_ty_name(&self.interface_names, &self.world, resolve, &ty);
         self.src.h_helpers("_t *ptr)");
 
         self.src.c_helpers(&self.src.h_helpers[pos..].to_string());
@@ -935,7 +946,7 @@ impl C {
         self.src.h_helpers("_");
         self.src
             .h_helpers
-            .print_ty_name(&self.interface_names, resolve, ty);
+            .print_ty_name(&self.interface_names, &self.world, resolve, ty);
         let name = mem::replace(&mut self.src.h_helpers, prev);
 
         self.src.c_helpers(&name);
@@ -1035,7 +1046,13 @@ impl C {
                             self.visit_anonymous_types(resolve, &Type::Id(*id));
                             dst.push_str(&ns);
                             dst.push_str("_");
-                            push_ty_name(resolve, &Type::Id(*id), &self.interface_names, dst);
+                            push_ty_name(
+                                resolve,
+                                &Type::Id(*id),
+                                &self.interface_names,
+                                &self.world,
+                                dst,
+                            );
                             dst.push_str("_t");
                         }
                     },
@@ -1130,6 +1147,7 @@ pub fn push_ty_name(
     resolve: &Resolve,
     ty: &Type,
     interface_names: &HashMap<InterfaceId, WorldKey>,
+    world: &str,
     src: &mut String,
 ) {
     match ty {
@@ -1152,7 +1170,7 @@ pub fn push_ty_name(
                 return src.push_str(&name.to_snake_case());
             }
             match &ty.kind {
-                TypeDefKind::Type(t) => push_ty_name(resolve, t, interface_names, src),
+                TypeDefKind::Type(t) => push_ty_name(resolve, t, interface_names, world, src),
                 TypeDefKind::Record(_)
                 | TypeDefKind::Resource
                 | TypeDefKind::Flags(_)
@@ -1166,37 +1184,37 @@ pub fn push_ty_name(
                     for ty in t.types.iter() {
                         src.push_str("_");
                         push_optional_owner_namespace(ty, resolve, interface_names, src);
-                        push_ty_name(resolve, ty, interface_names, src);
+                        push_ty_name(resolve, ty, interface_names, world, src);
                     }
                 }
                 TypeDefKind::Option(ty) => {
                     src.push_str("option_");
                     push_optional_owner_namespace(ty, resolve, interface_names, src);
-                    push_ty_name(resolve, ty, interface_names, src);
+                    push_ty_name(resolve, ty, interface_names, world, src);
                 }
                 TypeDefKind::Result(r) => {
                     src.push_str("result_");
-                    push_optional_ty_name(resolve, r.ok.as_ref(), interface_names, src);
+                    push_optional_ty_name(resolve, r.ok.as_ref(), interface_names, world, src);
                     src.push_str("_");
-                    push_optional_ty_name(resolve, r.err.as_ref(), interface_names, src);
+                    push_optional_ty_name(resolve, r.err.as_ref(), interface_names, world, src);
                 }
                 TypeDefKind::List(ty) => {
                     src.push_str("list_");
                     push_optional_owner_namespace(ty, resolve, interface_names, src);
-                    push_ty_name(resolve, ty, interface_names, src);
+                    push_ty_name(resolve, ty, interface_names, world, src);
                 }
                 TypeDefKind::Future(ty) => {
                     src.push_str("future_");
-                    push_optional_ty_name(resolve, ty.as_ref(), interface_names, src);
+                    push_optional_ty_name(resolve, ty.as_ref(), interface_names, world, src);
                 }
                 TypeDefKind::Stream(s) => {
                     src.push_str("stream_");
-                    push_optional_ty_name(resolve, s.element.as_ref(), interface_names, src);
+                    push_optional_ty_name(resolve, s.element.as_ref(), interface_names, world, src);
                     src.push_str("_");
-                    push_optional_ty_name(resolve, s.end.as_ref(), interface_names, src);
+                    push_optional_ty_name(resolve, s.end.as_ref(), interface_names, world, src);
                 }
                 TypeDefKind::Handle(handle) => {
-                    push_handle_name(resolve, handle, interface_names, src);
+                    push_handle_name(resolve, handle, interface_names, world, src);
                 }
                 TypeDefKind::Unknown => unreachable!(),
             }
@@ -1208,6 +1226,7 @@ fn push_handle_name(
     resolve: &Resolve,
     handle: &Handle,
     interface_names: &HashMap<InterfaceId, WorldKey>,
+    world: &str,
     src: &mut String,
 ) {
     let (resource, prefix) = match handle {
@@ -1215,19 +1234,20 @@ fn push_handle_name(
         Handle::Borrow(resource) => (resource, "borrow_"),
     };
     src.push_str(prefix);
-    push_ty_name(resolve, &Type::Id(*resource), interface_names, src);
+    push_ty_name(resolve, &Type::Id(*resource), interface_names, world, src);
 }
 
 fn push_optional_ty_name(
     resolve: &Resolve,
     ty: Option<&Type>,
     interface_names: &HashMap<InterfaceId, WorldKey>,
+    world: &str,
     dst: &mut String,
 ) {
     match ty {
         Some(ty) => {
             push_optional_owner_namespace(ty, resolve, interface_names, dst);
-            push_ty_name(resolve, ty, interface_names, dst)
+            push_ty_name(resolve, ty, interface_names, world, dst)
         }
         None => dst.push_str("void"),
     }
@@ -3052,6 +3072,7 @@ trait SourceExt {
     fn print_ty_name(
         &mut self,
         interface_names: &HashMap<InterfaceId, WorldKey>,
+        world: &str,
         resolve: &Resolve,
         ty: &Type,
     ) {
@@ -3059,6 +3080,7 @@ trait SourceExt {
             resolve,
             ty,
             interface_names,
+            world,
             self.as_source().as_mut_string(),
         );
     }
@@ -3305,7 +3327,7 @@ pub fn to_c_ident(name: &str) -> String {
     }
 }
 
-pub fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
+fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
     loop {
         match &resolve.types[id].kind {
             TypeDefKind::Type(Type::Id(that_id)) => id = *that_id,
