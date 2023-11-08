@@ -1,6 +1,6 @@
 use anyhow::Result;
-use wasmtime::component::ResourceAny;
 use std::collections::HashMap;
+use wasmtime::component::ResourceAny;
 
 wasmtime::component::bindgen!(in "tests/runtime/resources");
 
@@ -91,7 +91,6 @@ fn run_test(exports: Exports, store: &mut Store<crate::Wasi<MyImports>>) -> Resu
 
     let z_add = exports.call_add(&mut *store, z_instance_1, z_instance_2)?;
     assert_eq!(z.call_get_a(&mut *store, z_add)?, 30);
-
 
     ResourceAny::resource_drop(x_instance, &mut *store)?;
     ResourceAny::resource_drop(z_instance_1, &mut *store)?;

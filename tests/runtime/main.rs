@@ -262,9 +262,9 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     if !go.is_empty() {
         let world_name = &resolve.worlds[world].name;
         let out_dir = out_dir.join(format!("go-{}", world_name));
+        let snake = world_name.replace("-", "_");
         drop(fs::remove_dir_all(&out_dir));
 
-        let snake = world_name.replace("-", "_");
         let mut files = Default::default();
         wit_bindgen_go::Opts::default()
             .build()
