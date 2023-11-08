@@ -12,17 +12,17 @@ use wit_bindgen_core::{
 use wit_component::StringEncoding;
 
 #[derive(Default, Copy, Clone, PartialEq, Eq)]
-enum Direction {
+pub enum Direction {
     #[default]
     Import,
     Export,
 }
 
 #[derive(Default)]
-struct ResourceInfo {
-    direction: Direction,
-    borrow: Option<TypeId>,
-    own: Option<TypeId>,
+pub struct ResourceInfo {
+    pub direction: Direction,
+    pub borrow: Option<TypeId>,
+    pub own: Option<TypeId>,
 }
 
 #[derive(Default)]
@@ -563,10 +563,14 @@ impl C {
                 let own_name = format!("{own_namespace}_own_{snake}_t");
 
                 uwriteln!(h_str, "void {namespace}_{snake}_drop_own({own_name});");
-
+                let export_module = if let Direction::Export = info.direction {
+                    "[export]"
+                } else {
+                    ""
+                };
                 uwriteln!(
                     c_str,
-                    r#"__attribute__((__import_module__("{module}"), __import_name__("[resource-drop]{name}")))
+                    r#"__attribute__((__import_module__("{export_module}{module}"), __import_name__("[resource-drop]{name}")))
                        void __wasm_import_{namespace}_{snake}_drop_own(int32_t);
 
                        void {namespace}_{snake}_drop_own({own_name}{space}arg) {{
