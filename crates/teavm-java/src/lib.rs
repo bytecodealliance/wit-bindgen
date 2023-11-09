@@ -14,7 +14,7 @@ use wit_bindgen_core::{
         Result_, SizeAlign, Tuple, Type, TypeDef, TypeDefKind, TypeId, TypeOwner, Variant, WorldId,
         WorldKey,
     },
-    Files, InterfaceGenerator as _, Ns, Source, WorldGenerator,
+    Direction, Files, InterfaceGenerator as _, Ns, Source, WorldGenerator,
 };
 
 const IMPORTS: &str = "\
@@ -42,11 +42,6 @@ impl Opts {
             ..TeaVmJava::default()
         })
     }
-}
-
-enum Direction {
-    Import,
-    Export,
 }
 
 struct InterfaceFragment {

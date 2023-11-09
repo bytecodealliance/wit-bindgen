@@ -9,6 +9,13 @@ pub mod abi;
 mod ns;
 pub use ns::Ns;
 
+#[derive(Default, Copy, Clone, PartialEq, Eq)]
+pub enum Direction {
+    #[default]
+    Import,
+    Export,
+}
+
 #[derive(Default)]
 pub struct Types {
     type_info: HashMap<TypeId, TypeInfo>,
