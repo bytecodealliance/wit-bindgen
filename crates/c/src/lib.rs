@@ -224,7 +224,7 @@ impl WorldGenerator for C {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(resolve, false);
+        let mut gen = self.interface(resolve, true);
         for (name, id) in types {
             gen.define_type(name, *id);
         }
