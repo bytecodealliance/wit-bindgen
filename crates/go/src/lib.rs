@@ -228,7 +228,7 @@ impl WorldGenerator for TinyGo {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(resolve, &None, false);
+        let mut gen = self.interface(resolve, &None, true);
         for (name, id) in types {
             gen.define_type(name, *id);
         }
