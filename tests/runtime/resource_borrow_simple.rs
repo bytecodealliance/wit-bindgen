@@ -24,7 +24,7 @@ impl ResourceBorrowSimpleImports for MyHostRImpl {
 #[test]
 fn run() -> anyhow::Result<()> {
     crate::run_test(
-        "resource_borrow_import",
+        "resource_borrow_simple",
         |linker| ResourceBorrowSimple::add_to_linker(linker, |x| &mut x.0),
         |store, component: &wasmtime::component::Component, linker| {
             let (u, e) = ResourceBorrowSimple::instantiate(store, component, linker)?;
