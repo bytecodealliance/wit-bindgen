@@ -5,6 +5,6 @@ world bindings {
 }
 
 interface component {
-    type value = tuple<>;
+    type value = tuple<u32>;
     query-eval: func(q: u64) -> list<value>;
 }

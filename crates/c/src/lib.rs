@@ -926,16 +926,18 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
         self.docs(docs, SourceType::HDefs);
         self.src.h_defs("typedef struct {\n");
         self.src.h_defs("bool is_err;\n");
-        self.src.h_defs("union {\n");
-        if let Some(ok) = result.ok.as_ref() {
-            self.print_ty(SourceType::HDefs, ok);
-            self.src.h_defs(" ok;\n");
+        if result.ok.is_some() || result.err.is_some() {
+            self.src.h_defs("union {\n");
+            if let Some(ok) = result.ok.as_ref() {
+                self.print_ty(SourceType::HDefs, ok);
+                self.src.h_defs(" ok;\n");
+            }
+            if let Some(err) = result.err.as_ref() {
+                self.print_ty(SourceType::HDefs, err);
+                self.src.h_defs(" err;\n");
+            }
+            self.src.h_defs("} val;\n");
         }
-        if let Some(err) = result.err.as_ref() {
-            self.print_ty(SourceType::HDefs, err);
-            self.src.h_defs(" err;\n");
-        }
-        self.src.h_defs("} val;\n");
         self.src.h_defs("} ");
         self.print_typedef_target(id);
     }
