@@ -25,6 +25,7 @@ mod resource_alias_redux;
 mod resource_borrow_export;
 mod resource_borrow_import;
 mod resource_borrow_in_record;
+mod resource_borrow_simple;
 mod resource_floats;
 mod resource_import_and_export;
 mod resource_into_inner;
