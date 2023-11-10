@@ -56,7 +56,7 @@ jobs:
         echo $LOCALAPPDATA'\Microsoft\dotnet\tools' >> $GITHUB_PATH
         $LOCALAPPDATA/Microsoft/dotnet/dotnet --info
         echo nativeaot-llvm requires emscripten for its version of clang as wasi-sdk 20 does not work see https://github.com/WebAssembly/wasi-sdk/issues/326
-        curl -OL https://github.com/emscripten-core/emsdk/archive/refs/heads/main.zip
+        curl.exe -OL https://github.com/emscripten-core/emsdk/archive/refs/heads/main.zip
         unzip main.zip
         cd emsdk-main
         ./emsdk.bat install 3.1.23
