@@ -82,6 +82,10 @@ jobs:
     - name: Windows, set EMSDK and run cargo test
       if : matrix.os == 'windows-latest'
       run: |
+        Get-PSDrive
+        docker image prune --all --force
+        rm -Force -Recurse $env:ANDROID_HOME
+        Get-PSDrive
         source ./emsdk-main/emsdk_env.sh
         cargo test --workspace
     - run: cargo build
