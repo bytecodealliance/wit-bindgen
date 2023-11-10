@@ -1,0 +1,13 @@
+package test:resource-take;
+
+interface test {
+  resource thing {
+    constructor(text: string);
+  }
+
+  test: func();
+}
+
+world resource-take {
+  export test;
+}

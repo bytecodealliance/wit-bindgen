@@ -238,7 +238,7 @@ impl<T: WasmResource> Resource<T> {
     where
         T: RustResource,
     {
-        let rep = Box::into_raw(Box::new(val)) as usize;
+        let rep = Box::into_raw(Box::new(Some(val))) as usize;
         unsafe {
             let handle = T::new(rep);
             Resource::from_handle(handle)
@@ -250,7 +250,18 @@ impl<T: WasmResource> Resource<T> {
     where
         T: RustResource,
     {
-        let _ = Box::from_raw(rep as *mut T);
+        let _ = Box::from_raw(rep as *mut Option<T>);
+    }
+
+    /// Takes back ownership of the object, dropping the resource handle.
+    pub fn take(resource: Self) -> T
+    where
+        T: RustResource,
+    {
+        unsafe {
+            let rep = T::rep(resource.handle);
+            Option::take(&mut *(rep as *mut Option<T>)).unwrap()
+        }
     }
 }
 
@@ -260,7 +271,7 @@ impl<T: RustResource> Deref for Resource<T> {
     fn deref(&self) -> &T {
         unsafe {
             let rep = T::rep(self.handle);
-            &*(rep as *const T)
+            Option::as_ref(&*(rep as *const Option<T>)).unwrap()
         }
     }
 }
@@ -269,7 +280,7 @@ impl<T: RustResource> DerefMut for Resource<T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe {
             let rep = T::rep(self.handle);
-            &mut *(rep as *mut T)
+            Option::as_mut(&mut *(rep as *mut Option<T>)).unwrap()
         }
     }
 }
