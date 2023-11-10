@@ -2,10 +2,10 @@ use anyhow::Result;
 use heck::ToUpperCamelCase;
 
 use std::borrow::Cow;
-use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::{env, fs};
 use wasm_encoder::{Encode, Section};
 use wasmtime::component::{Component, Instance, Linker};
 use wasmtime::{Config, Engine, Store};
@@ -124,7 +124,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     let mut c = Vec::new();
     let mut java = Vec::new();
     let mut go = Vec::new();
-    let mut c_sharp = Vec::new();
+    let mut c_sharp: Vec<PathBuf> = Vec::new();
     for file in dir.read_dir()? {
         let path = file?.path();
         match path.extension().and_then(|s| s.to_str()) {
@@ -132,7 +132,11 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             Some("java") => java.push(path),
             Some("rs") => rust.push(path),
             Some("go") => go.push(path),
-            Some("cs") => c_sharp.push(path),
+            Some("cs") => {
+                if cfg!(windows) {
+                    c_sharp.push(path);
+                }
+            }
             _ => {}
         }
     }
@@ -144,7 +148,6 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     out_dir.push("runtime-tests");
     out_dir.push(name);
 
-    println!("wasi adapter = {:?}", test_artifacts::ADAPTER);
     let wasi_adapter = std::fs::read(&test_artifacts::ADAPTER)?;
 
     drop(std::fs::remove_dir_all(&out_dir));
@@ -484,9 +487,13 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         result.push(component_path);
     }
 
-    #[cfg(feature = "csharp")]
+    #[cfg(feature = "csharp-mono")]
     for path in c_sharp.iter() {
-        println!("running for {}", path.display());
+        todo!()
+    }
+
+    #[cfg(feature = "csharp-naot")]
+    for path in c_sharp.iter() {
         let world_name = &resolve.worlds[world].name;
         let out_dir = out_dir.join(format!("csharp-{}", world_name));
         drop(fs::remove_dir_all(&out_dir));
@@ -647,12 +654,20 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         let file_name = path.file_name().unwrap();
         fs::copy(path, out_dir.join(file_name.to_str().unwrap()))?;
 
-        let mut cmd = Command::new("dotnet");
+        let dotnet_root_env = "DOTNET_ROOT";
+        let dotnet_cmd: PathBuf;
+        match env::var(dotnet_root_env) {
+            Ok(val) => dotnet_cmd = Path::new(&val).join("dotnet"),
+            Err(_e) => dotnet_cmd = "dotnet".into(),
+        }
+
+        let mut cmd = Command::new(dotnet_cmd);
         let mut wasm_filename = out_wasm.join(assembly_name);
         wasm_filename.set_extension("wasm");
 
         cmd.current_dir(&out_dir);
 
+        //  add .arg("/bl") to diagnose dotnet build problems
         cmd.arg("publish")
             .arg(out_dir.join(format!("{camel}.csproj")))
             .arg("-r")
@@ -663,14 +678,12 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             .arg("/p:MSBuildEnableWorkloadResolver=false")
             .arg("--self-contained")
             .arg("/p:UseAppHost=false")
-            .arg("/bl")
             .arg("-o")
             .arg(&out_wasm);
         let output = match cmd.output() {
             Ok(output) => output,
             Err(e) => panic!("failed to spawn compiler: {}", e),
         };
-        println!("{:?} completed", cmd);
 
         if !output.status.success() {
             println!("status: {}", output.status);
