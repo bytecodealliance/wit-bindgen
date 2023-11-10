@@ -48,7 +48,7 @@ jobs:
       if : matrix.os == 'windows-latest'
 
     - run: |
-        curl -O https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.ps1
+        curl.exe -LO https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.ps1
         powershell -File dotnet-install.ps1 -Channel 8.0.1xx -Verbose
         echo DOTNET_ROOT=$LOCALAPPDATA'\Microsoft\dotnet' >> $GITHUB_ENV
         export DOTNET_ROOT=$LOCALAPPDATA\\Microsoft\\dotnet
