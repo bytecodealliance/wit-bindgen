@@ -166,6 +166,24 @@ fn aot_verify(dir: &Path, name: &str) {
             "#,
     );
 
+    let mut wasm_filename = dir.join(name);
+    wasm_filename.set_extension("wasm");
+
+    // In CI we run out of disk space if we don't clean up the files, we don't need to keep any of it around.
+    csproj.push_str(&format!(
+        "<Target Name=\"CleanAndDelete\"  AfterTargets=\"Clean\">
+            <!-- Remove obj folder -->
+            <RemoveDir Directories=\"$(BaseIntermediateOutputPath)\" />
+            <!-- Remove bin folder -->
+            <RemoveDir Directories=\"$(BaseOutputPath)\" />
+            <RemoveDir Directories=\"{}\" />
+            <RemoveDir Directories=\".packages\" />
+        </Target>
+
+",
+        wasm_filename.display()
+    ));
+
     csproj.push_str(
             r#"
     <ItemGroup>
@@ -185,9 +203,7 @@ fn aot_verify(dir: &Path, name: &str) {
         Err(_e) => dotnet_cmd = "dotnet".into(),
     }
 
-    let mut cmd = Command::new(dotnet_cmd);
-    let mut wasm_filename = dir.join(name);
-    wasm_filename.set_extension("wasm");
+    let mut cmd = Command::new(dotnet_cmd.clone());
 
     cmd.current_dir(&dir);
 
@@ -216,5 +232,14 @@ fn aot_verify(dir: &Path, name: &str) {
         println!("stderr: ------------------------------------------");
         println!("{}", String::from_utf8_lossy(&output.stderr));
         panic!("failed to compile");
+    }
+
+    let mut cmd = Command::new(dotnet_cmd);
+    match cmd.arg("clean").spawn() {
+        Err(e) => println!(
+            "failed to clean project which may cause disk pressure in CI. {}",
+            e
+        ),
+        _ => {}
     }
 }
