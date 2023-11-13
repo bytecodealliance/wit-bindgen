@@ -1,0 +1,13 @@
+package test:resource-into-inner;
+
+interface test {
+  resource thing {
+    constructor(text: string);
+  }
+
+  test: func();
+}
+
+world resource-into-inner {
+  export test;
+}
