@@ -3,7 +3,7 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
 };
 use wit_component::StringEncoding;
 
@@ -35,6 +35,7 @@ macro_rules! codegen_test {
                         "lists",
                         "many-arguments",
                         "multi-return",
+                        "multiversion",
                         "option-result",
                         "records",
                         "rename-interface",
@@ -51,11 +52,14 @@ macro_rules! codegen_test {
                         "result-empty",
                         "ret-areas",
                         "return-resource-from-export",
+                        "same_names2",
                         "same-names5",
                         "simple-functions",
                         "simple-http",
                         "simple-lists",
                         "small-anonymous",
+                        "smoke_default",
+                        "strings",
                         "unused-import",
                         "use-across-interfaces",
                         "variants",
@@ -87,6 +91,9 @@ fn verify(dir: &Path, name: &str) {
 }
 
 fn aot_verify(dir: &Path, name: &str) {
+    let mut wasm_filename = dir.join(name);
+    wasm_filename.set_extension("wasm");
+
     fs::write(
         dir.join("nuget.config"),
         r#"<?xml version="1.0" encoding="utf-8"?>
@@ -136,11 +143,6 @@ fn aot_verify(dir: &Path, name: &str) {
 "
     );
 
-    // for (file, contents) in files.iter() {
-    //     let dst = out_dir.join(file);
-    //     fs::write(dst, contents).unwrap();
-    // }
-
     csproj.push_str(
         r#"
 <ItemGroup>
@@ -165,9 +167,6 @@ fn aot_verify(dir: &Path, name: &str) {
             </ItemGroup>
             "#,
     );
-
-    let mut wasm_filename = dir.join(name);
-    wasm_filename.set_extension("wasm");
 
     // In CI we run out of disk space if we don't clean up the files, we don't need to keep any of it around.
     csproj.push_str(&format!(
@@ -235,7 +234,12 @@ fn aot_verify(dir: &Path, name: &str) {
     }
 
     let mut cmd = Command::new(dotnet_cmd);
-    match cmd.current_dir(&dir).arg("clean").spawn() {
+    match cmd
+        .stdout(Stdio::null())
+        .current_dir(&dir)
+        .arg("clean")
+        .spawn()
+    {
         Err(e) => println!(
             "failed to clean project which may cause disk pressure in CI. {}",
             e

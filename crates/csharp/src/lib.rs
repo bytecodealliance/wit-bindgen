@@ -1522,7 +1522,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::Return { amt, func } => match func.results.len() {
+            Instruction::Return { amt: _, func } => match func.results.len() {
                 0 => (),
                 1 => uwriteln!(self.src, "return {};", operands[0]),
                 _ => {
