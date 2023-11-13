@@ -235,7 +235,7 @@ fn aot_verify(dir: &Path, name: &str) {
     }
 
     let mut cmd = Command::new(dotnet_cmd);
-    match cmd.arg("clean").spawn() {
+    match cmd.current_dir(&dir).arg("clean").spawn() {
         Err(e) => println!(
             "failed to clean project which may cause disk pressure in CI. {}",
             e
