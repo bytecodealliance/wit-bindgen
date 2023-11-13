@@ -443,7 +443,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                                     .as_deref()
                                     .unwrap()
                                     .to_upper_camel_case();
-                                format!("Option::as_ref(&*({op} as u32 as usize as *const Option<{name}>)).unwrap()")
+                                let rt = self.gen.gen.runtime_path();
+                                format!(
+                                    "{rt}::Resource::<{name}>::lift_borrow({op} as u32 as usize)"
+                                )
                             }
                             Handle::Own(_) => {
                                 let name = self.gen.type_path(resource, true);

@@ -1,16 +1,16 @@
 use wasmtime::Store;
 
-wasmtime::component::bindgen!(in "tests/runtime/resource_take");
+wasmtime::component::bindgen!(in "tests/runtime/resource_into_inner");
 
-use exports::test::resource_take::test::Test;
+use exports::test::resource_into_inner::test::Test;
 
 #[test]
 fn run() -> anyhow::Result<()> {
     crate::run_test(
-        "resource_take",
+        "resource_into_inner",
         |_| Ok(()),
         |store, component, linker| {
-            let (u, e) = ResourceTake::instantiate(store, component, linker)?;
+            let (u, e) = ResourceIntoInner::instantiate(store, component, linker)?;
             Ok((u.interface0, e))
         },
         run_test,

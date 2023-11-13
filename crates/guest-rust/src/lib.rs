@@ -172,6 +172,8 @@ pub mod rt {
     }
 }
 
+type RawRep<T> = Option<T>;
+
 /// A type which represents a component model resource, either imported or
 /// exported into this component.
 ///
@@ -250,18 +252,26 @@ impl<T: WasmResource> Resource<T> {
     where
         T: RustResource,
     {
-        let _ = Box::from_raw(rep as *mut Option<T>);
+        let _ = Box::from_raw(rep as *mut RawRep<T>);
     }
 
     /// Takes back ownership of the object, dropping the resource handle.
-    pub fn take(resource: Self) -> T
+    pub fn into_inner(resource: Self) -> T
     where
         T: RustResource,
     {
         unsafe {
             let rep = T::rep(resource.handle);
-            Option::take(&mut *(rep as *mut Option<T>)).unwrap()
+            RawRep::take(&mut *(rep as *mut RawRep<T>)).unwrap()
         }
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn lift_borrow<'a>(rep: usize) -> &'a T
+    where
+        T: RustResource,
+    {
+        RawRep::as_ref(&*(rep as *const RawRep<T>)).unwrap()
     }
 }
 
@@ -271,7 +281,7 @@ impl<T: RustResource> Deref for Resource<T> {
     fn deref(&self) -> &T {
         unsafe {
             let rep = T::rep(self.handle);
-            Option::as_ref(&*(rep as *const Option<T>)).unwrap()
+            RawRep::as_ref(&*(rep as *const RawRep<T>)).unwrap()
         }
     }
 }
@@ -280,7 +290,7 @@ impl<T: RustResource> DerefMut for Resource<T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe {
             let rep = T::rep(self.handle);
-            Option::as_mut(&mut *(rep as *mut Option<T>)).unwrap()
+            RawRep::as_mut(&mut *(rep as *mut RawRep<T>)).unwrap()
         }
     }
 }

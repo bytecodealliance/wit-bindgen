@@ -1,13 +1,13 @@
 wit_bindgen::generate!({
-    path: "../../tests/runtime/resource_take",
+    path: "../../tests/runtime/resource_into_inner",
     exports: {
         world: Test,
-        "test:resource-take/test": Test,
-        "test:resource-take/test/thing": MyThing,
+        "test:resource-into-inner/test": Test,
+        "test:resource-into-inner/test/thing": MyThing,
     },
 });
 
-use exports::test::resource_take::test::{Guest, GuestThing};
+use exports::test::resource_into_inner::test::{Guest, GuestThing};
 use wit_bindgen::rt::Resource;
 
 pub struct Test;
@@ -17,7 +17,7 @@ impl Guest for Test {
         let text = "Jabberwocky";
         assert_eq!(
             text,
-            &Resource::take(Resource::new(MyThing(text.to_string()))).0
+            &Resource::into_inner(Resource::new(MyThing(text.to_string()))).0
         );
     }
 }

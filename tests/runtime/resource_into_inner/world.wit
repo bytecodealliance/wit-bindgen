@@ -1,4 +1,4 @@
-package test:resource-take;
+package test:resource-into-inner;
 
 interface test {
   resource thing {
@@ -8,6 +8,6 @@ interface test {
   test: func();
 }
 
-world resource-take {
+world resource-into-inner {
   export test;
 }

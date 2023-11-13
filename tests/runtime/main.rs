@@ -27,7 +27,7 @@ mod resource_borrow_import;
 mod resource_borrow_in_record;
 mod resource_floats;
 mod resource_import_and_export;
-mod resource_take;
+mod resource_into_inner;
 mod resource_with_lists;
 mod resources;
 mod smoke;
