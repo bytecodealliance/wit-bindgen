@@ -2,7 +2,7 @@ mod component_type_object;
 
 use anyhow::Result;
 use heck::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType};
@@ -23,6 +23,8 @@ struct C {
     world: String,
     sizes: SizeAlign,
 
+    world_id: Option<WorldId>,
+    exported_any_interface: bool,
     dtor_funcs: HashMap<TypeId, String>,
     type_names: HashMap<TypeId, String>,
     resources: HashMap<TypeId, ResourceInfo>,
@@ -83,6 +85,7 @@ impl WorldGenerator for C {
         let name = &resolve.worlds[world].name;
         self.world = name.to_string();
         self.sizes.fill(resolve);
+        self.world_id = Some(world);
     }
 
     fn import_interface(
@@ -135,6 +138,15 @@ impl WorldGenerator for C {
         id: InterfaceId,
         _files: &mut Files,
     ) -> Result<()> {
+        // If this is the first interface we're generating exports for then
+        // clean out caches on `self` which refer to types defined by imports.
+        // Exports need to generate new types for any overwritten entries so
+        // delete those.
+        if !self.exported_any_interface {
+            self.exported_any_interface = true;
+            self.remove_types_redefined_by_exports(resolve, self.world_id.unwrap());
+        }
+
         let mut gen = self.interface(resolve, false);
         gen.interface = Some((id, name));
         gen.define_interface_types(id);
@@ -440,6 +452,61 @@ impl C {
                 panic!("failed to find type name for {id:?}");
             }
         }
+    }
+
+    /// Removes all types from `self.{dtor_funcs,type_names,resources}` which
+    /// are redefined in exports.
+    ///
+    /// WIT interfaces can be both imported and exported but they're represented
+    /// with the same `TypeId` internally within the `wit-parser`
+    /// representation. This means that duplicate types need to be generated for
+    /// exports, even if the same interface was already imported. If nothing
+    /// were done here though then the same type imported and exported wouldn't
+    /// generate anything new since preexisting types are skipped in
+    /// `define_live_types`.
+    ///
+    /// This function will trim the sets on `self` to only retain those types
+    /// which exports refer to that come from imports.
+    fn remove_types_redefined_by_exports(&mut self, resolve: &Resolve, world: WorldId) {
+        // First build up a set of all types used by exports and all the
+        // exported interfaces.
+        let mut live_export_types = LiveTypes::default();
+        let mut exported_interfaces = HashSet::new();
+        for (_, export) in resolve.worlds[world].exports.iter() {
+            match export {
+                WorldItem::Function(_) => {}
+                WorldItem::Interface(i) => {
+                    exported_interfaces.insert(*i);
+                    live_export_types.add_interface(resolve, *i)
+                }
+                WorldItem::Type(_) => unreachable!(),
+            }
+        }
+
+        // Using the above sets a set of required import interfaces can be
+        // calculated. This is all referred-to-types that are owned by an
+        // interface that aren't present in an export. Note that the topological
+        // sorting and WIT requirements are what makes this check possible.
+        let mut imports_used = HashSet::new();
+        for ty in live_export_types.iter() {
+            if let TypeOwner::Interface(id) = resolve.types[ty].owner {
+                if !exported_interfaces.contains(&id) {
+                    imports_used.insert(id);
+                }
+            }
+        }
+
+        // With the set of imports used that aren't shadowed by exports the set
+        // of types on `self` can now be trimmed. All live types in all the
+        // imports are calculated and then everything except these are removed.
+        let mut live_import_types = LiveTypes::default();
+        for import in imports_used {
+            live_import_types.add_interface(resolve, import);
+        }
+        let live_import_types = live_import_types.iter().collect::<HashSet<_>>();
+        self.dtor_funcs.retain(|k, _| live_import_types.contains(k));
+        self.type_names.retain(|k, _| live_import_types.contains(k));
+        self.resources.retain(|k, _| live_import_types.contains(k));
     }
 }
 

@@ -228,7 +228,7 @@ void lists_test_imports() {
   }
 }
 
-void exports_test_lists_test_empty_list_param(test_lists_test_list_u8_t *a) {
+void exports_test_lists_test_empty_list_param(exports_test_lists_test_list_u8_t *a) {
   assert(a->len == 0);
 }
 
@@ -236,7 +236,7 @@ void exports_test_lists_test_empty_string_param(lists_string_t *a) {
   assert(a->len == 0);
 }
 
-void exports_test_lists_test_empty_list_result(test_lists_test_list_u8_t *ret0) {
+void exports_test_lists_test_empty_list_result(exports_test_lists_test_list_u8_t *ret0) {
   ret0->ptr = 0;
   ret0->len = 0;
 }
@@ -246,13 +246,13 @@ void exports_test_lists_test_empty_string_result(lists_string_t *ret0) {
   ret0->len = 0;
 }
 
-void exports_test_lists_test_list_param(test_lists_test_list_u8_t *a) {
+void exports_test_lists_test_list_param(exports_test_lists_test_list_u8_t *a) {
   assert(a->len == 4);
   assert(a->ptr[0] == 1);
   assert(a->ptr[1] == 2);
   assert(a->ptr[2] == 3);
   assert(a->ptr[3] == 4);
-  test_lists_test_list_u8_free(a);
+  exports_test_lists_test_list_u8_free(a);
 }
 
 void exports_test_lists_test_list_param2(lists_string_t *a) {
@@ -263,7 +263,7 @@ void exports_test_lists_test_list_param2(lists_string_t *a) {
   lists_string_free(a);
 }
 
-void exports_test_lists_test_list_param3(test_lists_test_list_string_t *a) {
+void exports_test_lists_test_list_param3(exports_test_lists_test_list_string_t *a) {
   assert(a->len == 3);
   assert(a->ptr[0].len == 3);
   assert(a->ptr[0].ptr[0] == 'f');
@@ -280,10 +280,10 @@ void exports_test_lists_test_list_param3(test_lists_test_list_string_t *a) {
   assert(a->ptr[2].ptr[1] == 'a');
   assert(a->ptr[2].ptr[2] == 'z');
 
-  test_lists_test_list_string_free(a);
+  exports_test_lists_test_list_string_free(a);
 }
 
-void exports_test_lists_test_list_param4(test_lists_test_list_list_string_t *a) {
+void exports_test_lists_test_list_param4(exports_test_lists_test_list_list_string_t *a) {
   assert(a->len == 2);
   assert(a->ptr[0].len == 2);
   assert(a->ptr[1].len == 1);
@@ -303,10 +303,10 @@ void exports_test_lists_test_list_param4(test_lists_test_list_list_string_t *a) 
   assert(a->ptr[1].ptr[0].ptr[1] == 'a');
   assert(a->ptr[1].ptr[0].ptr[2] == 'z');
 
-  test_lists_test_list_list_string_free(a);
+  exports_test_lists_test_list_list_string_free(a);
 }
 
-void exports_test_lists_test_list_result(test_lists_test_list_u8_t *ret0) {
+void exports_test_lists_test_list_result(exports_test_lists_test_list_u8_t *ret0) {
   ret0->ptr = malloc(5);
   ret0->len = 5;
   ret0->ptr[0] = 1;
@@ -320,7 +320,7 @@ void exports_test_lists_test_list_result2(lists_string_t *ret0) {
   lists_string_dup(ret0, "hello!");
 }
 
-void exports_test_lists_test_list_result3(test_lists_test_list_string_t *ret0) {
+void exports_test_lists_test_list_result3(exports_test_lists_test_list_string_t *ret0) {
   ret0->len = 2;
   ret0->ptr = malloc(2 * sizeof(lists_string_t));
 
@@ -328,7 +328,7 @@ void exports_test_lists_test_list_result3(test_lists_test_list_string_t *ret0) {
   lists_string_dup(&ret0->ptr[1], "world!");
 }
 
-void exports_test_lists_test_list_roundtrip(test_lists_test_list_u8_t *a, test_lists_test_list_u8_t *ret0) {
+void exports_test_lists_test_list_roundtrip(exports_test_lists_test_list_u8_t *a, exports_test_lists_test_list_u8_t *ret0) {
   *ret0 = *a;
 }
 
@@ -336,22 +336,22 @@ void exports_test_lists_test_string_roundtrip(lists_string_t *a, lists_string_t 
   *ret0 = *a;
 }
 
-void exports_test_lists_test_list_minmax8(test_lists_test_list_u8_t *a, test_lists_test_list_s8_t *b, test_lists_test_list_u8_t *ret0, test_lists_test_list_s8_t *ret1) {
+void exports_test_lists_test_list_minmax8(exports_test_lists_test_list_u8_t *a, exports_test_lists_test_list_s8_t *b, exports_test_lists_test_list_u8_t *ret0, exports_test_lists_test_list_s8_t *ret1) {
   assert(0); // unimplemented
 }
 
-void exports_test_lists_test_list_minmax16(test_lists_test_list_u16_t *a, test_lists_test_list_s16_t *b, test_lists_test_list_u16_t *ret0, test_lists_test_list_s16_t *ret1) {
+void exports_test_lists_test_list_minmax16(exports_test_lists_test_list_u16_t *a, exports_test_lists_test_list_s16_t *b, exports_test_lists_test_list_u16_t *ret0, exports_test_lists_test_list_s16_t *ret1) {
   assert(0); // unimplemented
 }
 
-void exports_test_lists_test_list_minmax32(test_lists_test_list_u32_t *a, test_lists_test_list_s32_t *b, test_lists_test_list_u32_t *ret0, test_lists_test_list_s32_t *ret1) {
+void exports_test_lists_test_list_minmax32(exports_test_lists_test_list_u32_t *a, exports_test_lists_test_list_s32_t *b, exports_test_lists_test_list_u32_t *ret0, exports_test_lists_test_list_s32_t *ret1) {
   assert(0); // unimplemented
 }
 
-void exports_test_lists_test_list_minmax64(test_lists_test_list_u64_t *a, test_lists_test_list_s64_t *b, test_lists_test_list_u64_t *ret0, test_lists_test_list_s64_t *ret1) {
+void exports_test_lists_test_list_minmax64(exports_test_lists_test_list_u64_t *a, exports_test_lists_test_list_s64_t *b, exports_test_lists_test_list_u64_t *ret0, exports_test_lists_test_list_s64_t *ret1) {
   assert(0); // unimplemented
 }
 
-void exports_test_lists_test_list_minmax_float(test_lists_test_list_float32_t *a, test_lists_test_list_float64_t *b, test_lists_test_list_float32_t *ret0, test_lists_test_list_float64_t *ret1) {
+void exports_test_lists_test_list_minmax_float(exports_test_lists_test_list_float32_t *a, exports_test_lists_test_list_float64_t *b, exports_test_lists_test_list_float32_t *ret0, exports_test_lists_test_list_float64_t *ret1) {
   assert(0); // unimplemented
 }

@@ -14,4 +14,9 @@ interface test {
 world resource-import-and-export {
   import test;
   export test;
+
+  use test.{thing};
+
+  import toplevel-import: func(a: thing) -> thing;
+  export toplevel-export: func(a: thing) -> thing;
 }

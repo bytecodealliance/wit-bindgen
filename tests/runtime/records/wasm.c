@@ -68,38 +68,38 @@ void exports_test_records_test_multiple_results(uint8_t *ret0, uint16_t *ret1) {
   *ret1 = 200;
 }
 
-void exports_test_records_test_swap_tuple(test_records_test_tuple2_u8_u32_t *a, test_records_test_tuple2_u32_u8_t *b) {
+void exports_test_records_test_swap_tuple(exports_test_records_test_tuple2_u8_u32_t *a, exports_test_records_test_tuple2_u32_u8_t *b) {
   b->f0 = a->f1;
   b->f1 = a->f0;
 }
 
-test_records_test_f1_t exports_test_records_test_roundtrip_flags1(test_records_test_f1_t a) {
+exports_test_records_test_f1_t exports_test_records_test_roundtrip_flags1(exports_test_records_test_f1_t a) {
   return a;
 }
 
-test_records_test_f2_t exports_test_records_test_roundtrip_flags2(test_records_test_f2_t a) {
+exports_test_records_test_f2_t exports_test_records_test_roundtrip_flags2(exports_test_records_test_f2_t a) {
   return a;
 }
 
 void exports_test_records_test_roundtrip_flags3(
-      test_records_test_flag8_t a,
-      test_records_test_flag16_t b,
-      test_records_test_flag32_t c,
-      test_records_test_flag64_t d,
-      test_records_test_flag8_t *ret0,
-      test_records_test_flag16_t *ret1,
-      test_records_test_flag32_t *ret2,
-      test_records_test_flag64_t *ret3) {
+      exports_test_records_test_flag8_t a,
+      exports_test_records_test_flag16_t b,
+      exports_test_records_test_flag32_t c,
+      exports_test_records_test_flag64_t d,
+      exports_test_records_test_flag8_t *ret0,
+      exports_test_records_test_flag16_t *ret1,
+      exports_test_records_test_flag32_t *ret2,
+      exports_test_records_test_flag64_t *ret3) {
   *ret0 = a;
   *ret1 = b;
   *ret2 = c;
   *ret3 = d;
 }
 
-void exports_test_records_test_roundtrip_record1(test_records_test_r1_t *a, test_records_test_r1_t *ret0) {
+void exports_test_records_test_roundtrip_record1(exports_test_records_test_r1_t *a, exports_test_records_test_r1_t *ret0) {
   *ret0 = *a;
 }
 
-void exports_test_records_test_tuple1(test_records_test_tuple1_u8_t *a, test_records_test_tuple1_u8_t *b) {
+void exports_test_records_test_tuple1(exports_test_records_test_tuple1_u8_t *a, exports_test_records_test_tuple1_u8_t *b) {
   b->f0 = a->f0;
 }

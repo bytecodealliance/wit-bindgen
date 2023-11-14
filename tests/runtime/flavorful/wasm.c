@@ -132,35 +132,35 @@ void flavorful_test_imports() {
   }
 }
 
-void exports_test_flavorful_test_f_list_in_record1(test_flavorful_test_list_in_record1_t *a) {
+void exports_test_flavorful_test_f_list_in_record1(exports_test_flavorful_test_list_in_record1_t *a) {
   assert(memcmp(a->a.ptr, "list_in_record1", a->a.len) == 0);
-  test_flavorful_test_list_in_record1_free(a);
+  exports_test_flavorful_test_list_in_record1_free(a);
 }
 
-void exports_test_flavorful_test_f_list_in_record2(test_flavorful_test_list_in_record2_t *ret0) {
+void exports_test_flavorful_test_f_list_in_record2(exports_test_flavorful_test_list_in_record2_t *ret0) {
   flavorful_string_dup(&ret0->a, "list_in_record2");
 }
 
-void exports_test_flavorful_test_f_list_in_record3(test_flavorful_test_list_in_record3_t *a, test_flavorful_test_list_in_record3_t *ret0) {
+void exports_test_flavorful_test_f_list_in_record3(exports_test_flavorful_test_list_in_record3_t *a, exports_test_flavorful_test_list_in_record3_t *ret0) {
   assert(memcmp(a->a.ptr, "list_in_record3 input", a->a.len) == 0);
-  test_flavorful_test_list_in_record3_free(a);
+  exports_test_flavorful_test_list_in_record3_free(a);
   flavorful_string_dup(&ret0->a, "list_in_record3 output");
 }
 
-void exports_test_flavorful_test_f_list_in_record4(test_flavorful_test_list_in_alias_t *a, test_flavorful_test_list_in_alias_t *ret0) {
+void exports_test_flavorful_test_f_list_in_record4(exports_test_flavorful_test_list_in_alias_t *a, exports_test_flavorful_test_list_in_alias_t *ret0) {
   assert(memcmp(a->a.ptr, "input4", a->a.len) == 0);
-  test_flavorful_test_list_in_alias_free(a);
+  exports_test_flavorful_test_list_in_alias_free(a);
   flavorful_string_dup(&ret0->a, "result4");
 }
 
-void exports_test_flavorful_test_f_list_in_variant1(flavorful_string_t *maybe_a, test_flavorful_test_list_in_variant1_v2_t *b) {
+void exports_test_flavorful_test_f_list_in_variant1(flavorful_string_t *maybe_a, exports_test_flavorful_test_list_in_variant1_v2_t *b) {
   assert(maybe_a != NULL);
   assert(memcmp(maybe_a->ptr, "foo", maybe_a->len) == 0);
   flavorful_string_free(maybe_a);
 
   assert(b->is_err);
   assert(memcmp(b->val.err.ptr, "bar", b->val.err.len) == 0);
-  test_flavorful_test_list_in_variant1_v2_free(b);
+  exports_test_flavorful_test_list_in_variant1_v2_free(b);
 }
 
 bool exports_test_flavorful_test_f_list_in_variant2(flavorful_string_t *ret0) {
@@ -181,13 +181,13 @@ bool exports_test_flavorful_test_errno_result(test_flavorful_test_my_errno_t *er
   return false;
 }
 
-void exports_test_flavorful_test_list_typedefs(test_flavorful_test_list_typedef_t *a, test_flavorful_test_list_typedef3_t *c, test_flavorful_test_list_typedef2_t *ret0, test_flavorful_test_list_typedef3_t *ret1) {
+void exports_test_flavorful_test_list_typedefs(exports_test_flavorful_test_list_typedef_t *a, exports_test_flavorful_test_list_typedef3_t *c, exports_test_flavorful_test_list_typedef2_t *ret0, exports_test_flavorful_test_list_typedef3_t *ret1) {
   assert(memcmp(a->ptr, "typedef1", a->len) == 0);
   test_flavorful_test_list_typedef_free(a);
 
   assert(c->len == 1);
   assert(memcmp(c->ptr[0].ptr, "typedef2", c->ptr[0].len) == 0);
-  test_flavorful_test_list_typedef3_free(c);
+  exports_test_flavorful_test_list_typedef3_free(c);
 
   ret0->ptr = malloc(8);
   ret0->len = 8;
@@ -199,11 +199,11 @@ void exports_test_flavorful_test_list_typedefs(test_flavorful_test_list_typedef_
 }
 
 void exports_test_flavorful_test_list_of_variants(
-    test_flavorful_test_list_bool_t *a,
-    test_flavorful_test_list_result_void_void_t *b,
-    test_flavorful_test_list_my_errno_t *c,
-    test_flavorful_test_list_bool_t *ret0,
-    test_flavorful_test_list_result_void_void_t *ret1,
-    test_flavorful_test_list_my_errno_t *ret2) {
+    exports_test_flavorful_test_list_bool_t *a,
+    exports_test_flavorful_test_list_result_void_void_t *b,
+    exports_test_flavorful_test_list_my_errno_t *c,
+    exports_test_flavorful_test_list_bool_t *ret0,
+    exports_test_flavorful_test_list_result_void_void_t *ret1,
+    exports_test_flavorful_test_list_my_errno_t *ret2) {
   assert(0); // unimplemented
 }

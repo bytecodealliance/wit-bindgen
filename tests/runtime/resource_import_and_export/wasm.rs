@@ -10,12 +10,17 @@ wit_bindgen::generate!({
 
 use exports::test::resource_import_and_export::test::GuestThing;
 use exports::test::resource_import_and_export::test::OwnThing;
-use test::resource_import_and_export::test::Thing;
 
 pub struct Test {}
 
 pub struct MyThing {
     thing: RefCell<Option<Thing>>,
+}
+
+impl Guest for Test {
+    fn toplevel_export(input: Thing) -> Thing {
+        toplevel_import(input)
+    }
 }
 
 impl GuestThing for MyThing {
