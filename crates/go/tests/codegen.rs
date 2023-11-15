@@ -24,7 +24,6 @@ macro_rules! codegen_test {
 
     ($id:ident $name:tt $test:tt) => {
         #[test]
-        #[ignore] // TODO: needs updates after C was changed
         fn $id() {
             test_helpers::run_world_codegen_test(
                 "guest-go",

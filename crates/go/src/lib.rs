@@ -1,12 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
-use std::{collections::BTreeSet, mem};
+use std::mem;
 
 use anyhow::Result;
 use heck::{ToKebabCase, ToSnakeCase, ToUpperCamelCase};
 
-use wit_bindgen_c::{flags_repr, int_repr, is_arg_by_pointer};
-use wit_bindgen_core::wit_parser::{InterfaceId, Resolve, TypeOwner, WorldId};
+use wit_bindgen_c::{
+    c_func_name, flags_repr, int_repr, is_arg_by_pointer, owner_namespace as c_owner_namespace,
+    push_ty_name,
+};
+use wit_bindgen_core::wit_parser::{InterfaceId, LiveTypes, Resolve, TypeOwner, WorldId};
 use wit_bindgen_core::{
     uwriteln,
     wit_parser::{Field, Function, Handle, SizeAlign, Type, TypeDefKind, TypeId, WorldKey},
@@ -75,20 +78,14 @@ pub struct TinyGo {
     interface_names: HashMap<InterfaceId, WorldKey>,
     types: HashMap<TypeId, (HashSet<String>, wit_bindgen_core::Source)>,
 
-    // Interfaces who have had their types printed.
-    //
-    // This is used to guard against printing the types for an interface twice.
-    // The same interface can be both imported and exported in which case only
-    // one set of types is generated and all bindings for both imports and
-    // exports use that set of types.
-    interfaces_with_types_printed: HashSet<InterfaceId>,
+    c_type_names: HashMap<TypeId, String>,
+    type_names: HashMap<TypeId, String>,
 }
 
 impl TinyGo {
     fn interface<'a>(
         &'a mut self,
         resolve: &'a Resolve,
-        name: &'a Option<&'a WorldKey>,
         in_import: bool,
     ) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
@@ -96,8 +93,6 @@ impl TinyGo {
             gen: self,
             resolve,
             interface: None,
-            name,
-            public_anonymous_types: BTreeSet::new(),
             in_import,
             export_funcs: Vec::new(),
         }
@@ -109,6 +104,40 @@ impl TinyGo {
                 self.src.push_str(&ty);
             }
         }
+    }
+
+    fn get_c_ty(&self, ty: &Type) -> String {
+        let res = match ty {
+            Type::Bool => "bool".into(),
+            Type::U8 => "uint8_t".into(),
+            Type::U16 => "uint16_t".into(),
+            Type::U32 => "uint32_t".into(),
+            Type::U64 => "uint64_t".into(),
+            Type::S8 => "int8_t".into(),
+            Type::S16 => "int16_t".into(),
+            Type::S32 => "int32_t".into(),
+            Type::S64 => "int64_t".into(),
+            Type::Float32 => "float".into(),
+            Type::Float64 => "double".into(),
+            Type::Char => "uint32_t".into(),
+            Type::String => {
+                format!(
+                    "{namespace}_string_t",
+                    namespace = self.world.to_snake_case()
+                )
+            }
+            Type::Id(id) => {
+                if let Some(name) = self.c_type_names.get(id) {
+                    name.to_owned()
+                } else {
+                    panic!("failed to find type name for {id:?}");
+                }
+            }
+        };
+        if res == "bool" {
+            return res;
+        }
+        format!("C.{res}")
     }
 }
 
@@ -131,17 +160,13 @@ impl WorldGenerator for TinyGo {
             .push_str(&format!("// Import functions from {name_raw}\n"));
         self.interface_names.insert(id, name.clone());
 
-        let binding = Some(name);
-        let mut gen = self.interface(resolve, &binding, true);
-        gen.interface = Some(id);
-        if gen.gen.interfaces_with_types_printed.insert(id) {
-            gen.types(id);
-        }
+        let mut gen = self.interface(resolve, true);
+        gen.interface = Some((id, name));
+        gen.define_interface_types(id);
 
         for (_name, func) in resolve.interfaces[id].functions.iter() {
             gen.import(resolve, func);
         }
-        gen.finish();
 
         let src = mem::take(&mut gen.src);
         self.src.push_str(&src);
@@ -158,11 +183,12 @@ impl WorldGenerator for TinyGo {
         self.src
             .push_str(&format!("// Import functions from {name}\n"));
 
-        let mut gen = self.interface(resolve, &None, true);
+        let mut gen = self.interface(resolve, true);
+        gen.define_function_types(funcs);
+
         for (_name, func) in funcs.iter() {
             gen.import(resolve, func);
         }
-        gen.finish();
 
         let src = mem::take(&mut gen.src);
         self.src.push_str(&src);
@@ -180,12 +206,9 @@ impl WorldGenerator for TinyGo {
         self.src
             .push_str(&format!("// Export functions from {name_raw}\n"));
 
-        let binding = Some(name);
-        let mut gen = self.interface(resolve, &binding, false);
-        gen.interface = Some(id);
-        if gen.gen.interfaces_with_types_printed.insert(id) {
-            gen.types(id);
-        }
+        let mut gen = self.interface(resolve, false);
+        gen.interface = Some((id, name));
+        gen.define_interface_types(id);
 
         for (_name, func) in resolve.interfaces[id].functions.iter() {
             gen.export(resolve, func);
@@ -209,7 +232,9 @@ impl WorldGenerator for TinyGo {
         self.src
             .push_str(&format!("// Export functions from {name}\n"));
 
-        let mut gen = self.interface(resolve, &None, false);
+        let mut gen = self.interface(resolve, false);
+        gen.define_function_types(funcs);
+
         for (_name, func) in funcs.iter() {
             gen.export(resolve, func);
         }
@@ -228,11 +253,12 @@ impl WorldGenerator for TinyGo {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(resolve, &None, false);
-        for (name, id) in types {
-            gen.define_type(name, *id);
+        let mut gen = self.interface(resolve, false);
+        let mut live = LiveTypes::default();
+        for (_, id) in types {
+            live.add_type_id(resolve, *id);
         }
-        gen.finish();
+        gen.define_live_types(&live);
         let src = mem::take(&mut gen.src);
         self.src.push_str(&src);
     }
@@ -402,69 +428,98 @@ struct InterfaceGenerator<'a> {
     src: Source,
     gen: &'a mut TinyGo,
     resolve: &'a Resolve,
-    interface: Option<InterfaceId>,
-    name: &'a Option<&'a WorldKey>,
-    public_anonymous_types: BTreeSet<TypeId>,
+    interface: Option<(InterfaceId, &'a WorldKey)>,
     in_import: bool,
     export_funcs: Vec<(String, String)>,
 }
 
 impl InterfaceGenerator<'_> {
-    fn get_func_name(&self, name: &str) -> String {
-        format!("{}{}", self.get_package_name(), name.to_upper_camel_case())
+    fn define_interface_types(&mut self, id: InterfaceId) {
+        let mut live = LiveTypes::default();
+        live.add_interface(self.resolve, id);
+        self.define_live_types(&live);
     }
 
-    fn get_type_name(&self, ty_name: &str, convert: bool) -> String {
-        let mut name = String::new();
-        let package_name = match self.name {
-            Some(key) => self.get_ty_name_with(key),
-            None => self.gen.world.to_upper_camel_case(),
-        };
-        let ty_name = if convert {
-            ty_name.to_upper_camel_case()
-        } else {
-            ty_name.into()
-        };
-        name.push_str(&package_name);
-        name.push_str(&ty_name);
-        name
+    fn define_function_types(&mut self, funcs: &[(&str, &Function)]) {
+        let mut live = LiveTypes::default();
+        for (_, func) in funcs {
+            live.add_func(self.resolve, func);
+        }
+        self.define_live_types(&live);
     }
 
-    fn get_c_func_name(&self, func_name: &str) -> String {
-        let mut name = String::new();
-        match self.name {
-            Some(WorldKey::Name(k)) => name.push_str(&k.to_snake_case()),
-            Some(WorldKey::Interface(id)) => {
-                if !self.in_import {
-                    name.push_str("exports_");
-                }
-                let iface = &self.resolve.interfaces[*id];
-                let pkg = &self.resolve.packages[iface.package.unwrap()];
-                name.push_str(&pkg.name.namespace.to_snake_case());
-                name.push('_');
-                name.push_str(&pkg.name.name.to_snake_case());
-                name.push('_');
-                name.push_str(&iface.name.as_ref().unwrap().to_snake_case());
+    fn define_live_types(&mut self, live: &LiveTypes) {
+        for ty in live.iter() {
+            if self.gen.c_type_names.contains_key(&ty) {
+                continue;
             }
-            None => name.push_str(&self.gen.world.to_snake_case()),
+
+            // add C type
+            let mut name = c_owner_namespace(
+                self.interface,
+                self.in_import,
+                self.gen.world.clone(),
+                self.resolve,
+                ty,
+            );
+            name.push_str("_");
+            push_ty_name(self.resolve, &Type::Id(ty), &mut name);
+            name.push_str("_t");
+            let prev = self.gen.c_type_names.insert(ty, name.clone());
+            assert!(prev.is_none());
+
+            // add Go types to the list
+            let mut name = self.owner_namespace(ty);
+            name.push_str(&self.ty_name(&Type::Id(ty)));
+            let prev = self.gen.type_names.insert(ty, name.clone());
+            assert!(prev.is_none());
+
+            // define Go types
+            match &self.resolve.types[ty].name {
+                Some(name) => self.define_type(name, ty),
+                None => self.anonymous_type(ty),
+            }
         }
-        name.push('_');
-        name.push_str(&func_name.to_snake_case());
-        name
     }
 
-    fn get_package_name(&self) -> String {
-        match self.name {
-            Some(key) => self.get_package_name_with(key),
+    /// Given a type ID, returns the namespace of the type.
+    fn owner_namespace(&self, id: TypeId) -> String {
+        let ty = &self.resolve.types[id];
+        match (ty.owner, self.interface) {
+            // If this type is owned by an interface, then we must be generating
+            // bindings for that interface to proceed.
+            (TypeOwner::Interface(a), Some((b, key))) if a == b => self.interface_identifier(key),
+
+            // If this type has no owner then it's an anonymous type. Here it's
+            // assigned to whatever we happen to be generating bindings for.
+            (TypeOwner::None, Some((_, key))) => self.interface_identifier(key),
+            (TypeOwner::None, None) => self.gen.world.to_upper_camel_case(),
+
+            // If this type is owned by a world then we must not be generating
+            // bindings for an interface.
+            (TypeOwner::World(_), None) => self.gen.world.to_upper_camel_case(),
+            (TypeOwner::World(_), Some(_)) => unreachable!(),
+            (TypeOwner::Interface(_), None) => unreachable!(),
+            (TypeOwner::Interface(_), Some(_)) => unreachable!(),
+        }
+    }
+
+    /// Returns the namespace of the current interface.
+    ///
+    /// If self is not an interface, returns the namespace of the world.
+    fn namespace(&self) -> String {
+        match self.interface {
+            Some((_, key)) => self.interface_identifier(key),
             None => self.gen.world.to_upper_camel_case(),
         }
     }
 
-    fn get_package_name_with(&self, key: &WorldKey) -> String {
-        let mut name = String::new();
+    /// Returns the identifier of the given interface.
+    fn interface_identifier(&self, key: &WorldKey) -> String {
         match key {
-            WorldKey::Name(k) => name.push_str(&k.to_upper_camel_case()),
+            WorldKey::Name(k) => k.to_upper_camel_case(),
             WorldKey::Interface(id) => {
+                let mut name = String::new();
                 if !self.in_import {
                     name.push_str("Exports");
                 }
@@ -472,45 +527,65 @@ impl InterfaceGenerator<'_> {
                 let pkg = &self.resolve.packages[iface.package.unwrap()];
                 name.push_str(&pkg.name.namespace.to_upper_camel_case());
                 name.push_str(&pkg.name.name.to_upper_camel_case());
+                if let Some(version) = &pkg.name.version {
+                    let version = version
+                        .to_string()
+                        .replace('.', "_")
+                        .replace('-', "_")
+                        .replace('+', "_");
+                    name.push_str(&version);
+                    name.push_str("_");
+                }
                 name.push_str(&iface.name.as_ref().unwrap().to_upper_camel_case());
+                name
             }
         }
-        name
     }
 
-    fn get_ty_name_with(&self, key: &WorldKey) -> String {
+    /// Returns the function name of the given function.
+    ///
+    /// Function name is prefixed with the namespace of the interface.
+    fn func_name(&self, name: &str) -> String {
+        format!(
+            "{}{}",
+            self.namespace(),
+            name.to_upper_camel_case().replace(".", "")
+        )
+    }
+
+    /// Returns the type name of the given type.
+    ///
+    /// Type name is prefixed with the namespace of the interface.
+    /// If convert is true, the type name is converted to upper camel case.
+    /// Otherwise, the type name is not converted.
+    fn convert_type_name(&self, ty_name: &str, convert: bool) -> String {
         let mut name = String::new();
-        match key {
-            WorldKey::Name(k) => name.push_str(&k.to_upper_camel_case()),
-            WorldKey::Interface(id) => {
-                let iface = &self.resolve.interfaces[*id];
-                let pkg = &self.resolve.packages[iface.package.unwrap()];
-                name.push_str(&pkg.name.namespace.to_upper_camel_case());
-                name.push_str(&pkg.name.name.to_upper_camel_case());
-                name.push_str(&iface.name.as_ref().unwrap().to_upper_camel_case());
-            }
-        }
+        let namespace = self.namespace();
+        let ty_name = if convert {
+            ty_name.to_upper_camel_case()
+        } else {
+            ty_name.into()
+        };
+        name.push_str(&namespace);
+        name.push_str(&ty_name);
         name
     }
 
+    /// A special variable generated for exported interfaces.
+    ///
+    /// This variable is used to store the exported interface.
     fn get_interface_var_name(&self) -> String {
-        let mut name = String::new();
-        match self.name {
-            Some(WorldKey::Name(k)) => name.push_str(&k.to_snake_case()),
-            Some(WorldKey::Interface(id)) => {
-                let iface = &self.resolve.interfaces[*id];
-                let pkg = &self.resolve.packages[iface.package.unwrap()];
-                name.push_str(&pkg.name.namespace.to_snake_case());
-                name.push('_');
-                name.push_str(&pkg.name.name.to_snake_case());
-                name.push('_');
-                name.push_str(&iface.name.as_ref().unwrap().to_snake_case());
-            }
-            None => name.push_str(&self.gen.world.to_snake_case()),
-        }
-        name
+        self.namespace().to_snake_case()
     }
 
+    /// Returns the type representation of the given type.
+    ///
+    /// There are some special cases:
+    ///    1. If the type is list, the type representation is `[]<element-type>`.
+    ///    2. If the type is option, the type representation is `Option[<element-type>]`.
+    ///    3. If the type is result, the type representation is `Result[<ok-type>, <err-type>]`.
+    ///
+    /// For any other ID type, the type representation is the type name of the ID.
     fn get_ty(&mut self, ty: &Type) -> String {
         match ty {
             Type::Bool => "bool".into(),
@@ -529,7 +604,6 @@ impl InterfaceGenerator<'_> {
             Type::Id(id) => {
                 let ty = &self.resolve().types[*id];
                 match &ty.kind {
-                    wit_bindgen_core::wit_parser::TypeDefKind::Type(ty) => self.get_ty(ty),
                     wit_bindgen_core::wit_parser::TypeDefKind::List(ty) => {
                         format!("[]{}", self.get_ty(ty))
                     }
@@ -541,107 +615,20 @@ impl InterfaceGenerator<'_> {
                         self.gen.needs_result_option = true;
                         format!(
                             "Result[{}, {}]",
-                            self.get_optional_ty(r.ok.as_ref()),
-                            self.get_optional_ty(r.err.as_ref())
+                            self.optional_ty(r.ok.as_ref()),
+                            self.optional_ty(r.err.as_ref())
                         )
                     }
-                    _ => {
-                        if let Some(name) = &ty.name {
-                            if let TypeOwner::Interface(owner) = ty.owner {
-                                let key = &self.gen.interface_names[&owner];
-                                let iface = self.get_ty_name_with(key);
-                                format!("{iface}{name}", name = name.to_upper_camel_case())
-                            } else {
-                                self.get_type_name(name, true)
-                            }
-                        } else {
-                            self.public_anonymous_types.insert(*id);
-                            self.get_type_name(&self.get_ty_name(&Type::Id(*id)), false)
-                        }
-                    }
+                    _ => self.gen.type_names.get(id).unwrap().to_owned(),
                 }
             }
         }
     }
 
-    fn get_c_ty_without_package(&self, ty: &Type) -> String {
-        match ty {
-            Type::Bool => "bool".into(),
-            Type::U8 => "uint8_t".into(),
-            Type::U16 => "uint16_t".into(),
-            Type::U32 => "uint32_t".into(),
-            Type::U64 => "uint64_t".into(),
-            Type::S8 => "int8_t".into(),
-            Type::S16 => "int16_t".into(),
-            Type::S32 => "int32_t".into(),
-            Type::S64 => "int64_t".into(),
-            Type::Float32 => "float".into(),
-            Type::Float64 => "double".into(),
-            Type::Char => "uint32_t".into(),
-            Type::String => {
-                format!(
-                    "{namespace}_string_t",
-                    namespace = self.gen.world.to_snake_case()
-                )
-            }
-            Type::Id(id) => {
-                let ty = &self.resolve.types[*id];
-                match &ty.name {
-                    Some(name) => match ty.owner {
-                        TypeOwner::Interface(owner) => {
-                            let key = &self.gen.interface_names[&owner];
-                            let mut ns = match &key {
-                                WorldKey::Name(name) => name.to_snake_case(),
-                                WorldKey::Interface(id) => {
-                                    let mut ns = String::new();
-                                    let iface = &self.resolve.interfaces[*id];
-                                    let pkg = &self.resolve.packages[iface.package.unwrap()];
-                                    ns.push_str(&pkg.name.namespace.to_snake_case());
-                                    ns.push('_');
-                                    ns.push_str(&pkg.name.name.to_snake_case());
-                                    ns.push('_');
-                                    ns.push_str(&iface.name.as_ref().unwrap().to_snake_case());
-                                    ns
-                                }
-                            };
-                            ns.push('_');
-                            ns.push_str(name.to_snake_case().as_str());
-                            ns.push_str("_t");
-                            ns
-                        }
-                        TypeOwner::World(owner) => {
-                            format!(
-                                "{namespace}_{name}_t",
-                                namespace = self.resolve.worlds[owner].name.to_snake_case(),
-                                name = name.to_snake_case(),
-                            )
-                        }
-                        TypeOwner::None => {
-                            format!("{name}_t", name = self.gen.world.to_snake_case(),)
-                        }
-                    },
-                    None => match &ty.kind {
-                        TypeDefKind::Type(t) => self.get_c_ty_without_package(t),
-                        _ => format!(
-                            "{namespace}_{name}_t",
-                            namespace = self.gen.world.to_snake_case(),
-                            name = self.get_c_ty_name(&Type::Id(*id)),
-                        ),
-                    },
-                }
-            }
-        }
-    }
-
-    fn get_c_ty(&self, ty: &Type) -> String {
-        let res = self.get_c_ty_without_package(ty);
-        if res == "bool" {
-            return res;
-        }
-        format!("C.{res}")
-    }
-
-    fn get_ty_name(&self, ty: &Type) -> String {
+    /// Returns the type name of the given type.
+    ///
+    /// This function does not prefixed the type name with the namespace of the type owner.
+    fn ty_name(&self, ty: &Type) -> String {
         match ty {
             Type::Bool => "Bool".into(),
             Type::U8 => "U8".into(),
@@ -658,30 +645,19 @@ impl InterfaceGenerator<'_> {
             Type::String => "String".into(),
             Type::Id(id) => {
                 let ty = &self.resolve.types[*id];
+                // if a type has name, return the name
                 if let Some(name) = &ty.name {
-                    let prefix = match ty.owner {
-                        TypeOwner::World(owner) => {
-                            self.resolve.worlds[owner].name.to_upper_camel_case()
-                        }
-                        TypeOwner::Interface(owner) => {
-                            let key = &self.gen.interface_names[&owner];
-                            self.get_ty_name_with(key)
-                        }
-                        TypeOwner::None => "".into(),
-                    };
-                    return format!(
-                        "{prefix}{name}",
-                        prefix = prefix,
-                        name = name.to_upper_camel_case()
-                    );
+                    return name.to_upper_camel_case();
                 }
+                // otherwise, return the anonymous type name
                 match &ty.kind {
-                    TypeDefKind::Type(t) => self.get_ty_name(t),
+                    TypeDefKind::Type(t) => self.ty_name(t),
                     TypeDefKind::Record(_)
                     | TypeDefKind::Resource
                     | TypeDefKind::Flags(_)
                     | TypeDefKind::Enum(_)
                     | TypeDefKind::Variant(_) => {
+                        // these types are not anonymous, and thus have a name
                         unimplemented!()
                     }
                     TypeDefKind::Tuple(t) => {
@@ -689,7 +665,7 @@ impl InterfaceGenerator<'_> {
                         src.push_str("Tuple");
                         src.push_str(&t.types.len().to_string());
                         for ty in t.types.iter() {
-                            src.push_str(&self.get_ty_name(ty));
+                            src.push_str(&self.ty_name(ty));
                         }
                         src.push('T');
                         src
@@ -697,51 +673,51 @@ impl InterfaceGenerator<'_> {
                     TypeDefKind::Option(t) => {
                         let mut src = String::new();
                         src.push_str("Option");
-                        src.push_str(&self.get_ty_name(t));
+                        src.push_str(&self.ty_name(t));
                         src.push('T');
                         src
                     }
                     TypeDefKind::Result(r) => {
                         let mut src = String::new();
                         src.push_str("Result");
-                        src.push_str(&self.get_optional_ty_name(r.ok.as_ref()));
-                        src.push_str(&self.get_optional_ty_name(r.ok.as_ref()));
+                        src.push_str(&self.optional_ty_name(r.ok.as_ref()));
+                        src.push_str(&self.optional_ty_name(r.ok.as_ref()));
                         src.push('T');
                         src
                     }
                     TypeDefKind::List(t) => {
                         let mut src = String::new();
                         src.push_str("List");
-                        src.push_str(&self.get_ty_name(t));
+                        src.push_str(&self.ty_name(t));
                         src.push('T');
                         src
                     }
                     TypeDefKind::Future(t) => {
                         let mut src = String::new();
                         src.push_str("Future");
-                        src.push_str(&self.get_optional_ty_name(t.as_ref()));
+                        src.push_str(&self.optional_ty_name(t.as_ref()));
                         src.push('T');
                         src
                     }
                     TypeDefKind::Stream(t) => {
                         let mut src = String::new();
                         src.push_str("Stream");
-                        src.push_str(&self.get_optional_ty_name(t.element.as_ref()));
-                        src.push_str(&self.get_optional_ty_name(t.end.as_ref()));
+                        src.push_str(&self.optional_ty_name(t.element.as_ref()));
+                        src.push_str(&self.optional_ty_name(t.end.as_ref()));
                         src.push('T');
                         src
                     }
                     TypeDefKind::Handle(Handle::Own(ty)) => {
                         let mut src = String::new();
                         src.push_str("Own");
-                        src.push_str(&self.get_ty_name(&Type::Id(*ty)));
+                        src.push_str(&self.ty_name(&Type::Id(*ty)));
                         src.push('T');
                         src
                     }
                     TypeDefKind::Handle(Handle::Borrow(ty)) => {
                         let mut src = String::new();
                         src.push_str("Borrow");
-                        src.push_str(&self.get_ty_name(&Type::Id(*ty)));
+                        src.push_str(&self.ty_name(&Type::Id(*ty)));
                         src.push('T');
                         src
                     }
@@ -751,20 +727,15 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn get_optional_ty_name(&self, ty: Option<&Type>) -> String {
+    /// Used in get_ty_name to get the type name of the given type.
+    fn optional_ty_name(&self, ty: Option<&Type>) -> String {
         match ty {
-            Some(ty) => self.get_ty_name(ty),
+            Some(ty) => self.ty_name(ty),
             None => "Empty".into(),
         }
     }
 
-    fn get_c_ty_name(&self, ty: &Type) -> String {
-        let mut name = String::new();
-        wit_bindgen_c::push_ty_name(self.resolve, ty, &mut name);
-        name
-    }
-
-    fn get_func_params(&mut self, _resolve: &Resolve, func: &Function) -> String {
+    fn func_params(&mut self, _resolve: &Resolve, func: &Function) -> String {
         let mut params = String::new();
         for (i, (name, param)) in func.params.iter().enumerate() {
             if i > 0 {
@@ -779,7 +750,7 @@ impl InterfaceGenerator<'_> {
         params
     }
 
-    fn get_func_results(&mut self, _resolve: &Resolve, func: &Function) -> String {
+    fn func_results(&mut self, _resolve: &Resolve, func: &Function) -> String {
         let mut results = String::new();
         results.push(' ');
         match func.results.len() {
@@ -802,11 +773,11 @@ impl InterfaceGenerator<'_> {
         results
     }
 
-    fn print_c_result(&mut self, src: &mut Source, name: &str, param: &Type, in_import: bool) {
-        self.print_c_param(src, name, param, in_import);
+    fn c_return(&mut self, src: &mut Source, name: &str, param: &Type, in_import: bool) {
+        self.c_param(src, name, param, in_import);
     }
 
-    fn print_c_param(&mut self, src: &mut Source, name: &str, param: &Type, in_import: bool) {
+    fn c_param(&mut self, src: &mut Source, name: &str, param: &Type, in_import: bool) {
         let pointer_prefix = if in_import { "&" } else { "*" };
         let mut prefix = String::new();
         let mut param_name = String::new();
@@ -827,12 +798,12 @@ impl InterfaceGenerator<'_> {
             if is_arg_by_pointer(self.resolve, param) {
                 postfix.push_str(pointer_prefix);
             }
-            postfix.push_str(&self.get_c_ty(param));
+            postfix.push_str(&self.gen.get_c_ty(param));
         }
         src.push_str(&format!("{prefix}{param_name}{postfix}"));
     }
 
-    fn print_c_func_params(
+    fn c_func_params(
         &mut self,
         params: &mut Source,
         _resolve: &Resolve,
@@ -852,7 +823,7 @@ impl InterfaceGenerator<'_> {
             if i > 0 {
                 params.push_str(", ");
             }
-            self.print_c_param(
+            self.c_param(
                 params,
                 &avoid_keyword(&name.to_snake_case()),
                 param,
@@ -861,7 +832,7 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn print_c_func_results(
+    fn c_func_returns(
         &mut self,
         src: &mut Source,
         _resolve: &Resolve,
@@ -883,12 +854,12 @@ impl InterfaceGenerator<'_> {
                 let return_ty = func.results.iter_types().next().unwrap();
                 if is_arg_by_pointer(self.resolve, return_ty) {
                     add_param_seperator(src);
-                    self.print_c_result(src, "ret", return_ty, in_import);
+                    self.c_return(src, "ret", return_ty, in_import);
                     src.push_str(")");
                 } else {
                     src.push_str(")");
                     if !in_import {
-                        src.push_str(&format!(" {ty}", ty = self.get_c_ty(return_ty)));
+                        src.push_str(&format!(" {ty}", ty = self.gen.get_c_ty(return_ty)));
                     }
                 }
             }
@@ -902,7 +873,7 @@ impl InterfaceGenerator<'_> {
                     if in_import {
                         src.push_str(&format!("&ret{i}"));
                     } else {
-                        src.push_str(&format!("ret{i} *{ty}", i = i, ty = self.get_c_ty(ty)));
+                        src.push_str(&format!("ret{i} *{ty}", i = i, ty = self.gen.get_c_ty(ty)));
                     }
                 }
                 src.push_str(")");
@@ -910,17 +881,18 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn get_c_func_signature(
-        &mut self,
-        resolve: &Resolve,
-        func: &Function,
-        in_import: bool,
-    ) -> String {
+    fn c_func_sig(&mut self, resolve: &Resolve, func: &Function, in_import: bool) -> String {
         let mut src = Source::default();
         let func_name = if in_import {
-            self.get_c_func_name(&func.name)
+            c_func_name(
+                self.in_import,
+                self.resolve,
+                &self.gen.world,
+                self.interface.map(|(_, key)| key),
+                func,
+            )
         } else {
-            self.get_func_name(&func.name)
+            self.func_name(&func.name)
         };
 
         if !in_import {
@@ -932,39 +904,40 @@ impl InterfaceGenerator<'_> {
         src.push_str("(");
 
         // prepare args
-        self.print_c_func_params(&mut src, resolve, func, in_import);
+        self.c_func_params(&mut src, resolve, func, in_import);
 
         // prepare returns
-        self.print_c_func_results(&mut src, resolve, func, in_import);
+        self.c_func_returns(&mut src, resolve, func, in_import);
         src.to_string()
     }
 
-    fn get_free_c_arg(&mut self, ty: &Type, arg: &str) -> String {
-        let mut ty_name = self.get_c_ty(ty);
+    fn free_c_arg(&mut self, ty: &Type, arg: &str) -> String {
+        let mut ty_name = self.gen.get_c_ty(ty);
         let it: Vec<&str> = ty_name.split('_').collect();
         ty_name = it[..it.len() - 1].join("_");
         format!("defer {ty_name}_free({arg})\n")
     }
 
-    fn get_func_signature_no_interface(&mut self, resolve: &Resolve, func: &Function) -> String {
+    // This is useful in defining functions in the exported interface that the guest needs to implement
+    fn func_sig_with_no_namespace(&mut self, resolve: &Resolve, func: &Function) -> String {
         format!(
             "{}({}){}",
             func.name.to_upper_camel_case(),
-            self.get_func_params(resolve, func),
-            self.get_func_results(resolve, func)
+            self.func_params(resolve, func),
+            self.func_results(resolve, func)
         )
     }
 
-    fn print_func_signature(&mut self, resolve: &Resolve, func: &Function) {
+    fn func_sig(&mut self, resolve: &Resolve, func: &Function) {
         self.src.push_str("func ");
-        let func_name = self.get_package_name();
+        let func_name = self.namespace();
         self.src.push_str(&func_name);
-        let func_sig = self.get_func_signature_no_interface(resolve, func);
+        let func_sig = self.func_sig_with_no_namespace(resolve, func);
         self.src.push_str(&func_sig);
         self.src.push_str("{\n");
     }
 
-    fn get_field_name(&mut self, field: &Field) -> String {
+    fn field_name(&mut self, field: &Field) -> String {
         field.name.to_upper_camel_case()
     }
 
@@ -975,8 +948,6 @@ impl InterfaceGenerator<'_> {
         match ty {
             Type::Id(id) => match &self.resolve.types[*id].kind {
                 TypeDefKind::Result(r) => (r.ok, r.err),
-                TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
-                TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
                 _ => (None, None),
             },
             _ => (None, None),
@@ -987,8 +958,6 @@ impl InterfaceGenerator<'_> {
         match ty {
             Type::Id(id) => match &self.resolve.types[*id].kind {
                 TypeDefKind::List(l) => Some(l),
-                TypeDefKind::Future(_) => todo!("is_arg_by_pointer for future"),
-                TypeDefKind::Stream(_) => todo!("is_arg_by_pointer for stream"),
                 _ => None,
             },
             _ => None,
@@ -1005,14 +974,14 @@ impl InterfaceGenerator<'_> {
         }
     }
 
-    fn get_optional_ty(&mut self, ty: Option<&Type>) -> String {
+    fn optional_ty(&mut self, ty: Option<&Type>) -> String {
         match ty {
             Some(ty) => self.get_ty(ty),
             None => "struct{}".into(),
         }
     }
 
-    fn print_anonymous_type(&mut self, ty: TypeId) {
+    fn anonymous_type(&mut self, ty: TypeId) {
         let kind = &self.resolve.types[ty].kind;
         match kind {
             TypeDefKind::Type(_)
@@ -1021,13 +990,14 @@ impl InterfaceGenerator<'_> {
             | TypeDefKind::Resource
             | TypeDefKind::Enum(_)
             | TypeDefKind::Variant(_) => {
+                // no anonymous type for these types
                 unreachable!()
             }
             TypeDefKind::Tuple(t) => {
                 let prev = mem::replace(&mut self.src, Source::default());
 
-                let ty_name = self.get_ty_name(&Type::Id(ty));
-                let name = self.get_type_name(&ty_name, false);
+                let ty_name = self.ty_name(&Type::Id(ty));
+                let name = self.convert_type_name(&ty_name, false);
                 if let Some((prev_names, _)) = self.gen.types.get(&ty) {
                     for prev_name in prev_names {
                         if prev_name != &name {
@@ -1045,12 +1015,13 @@ impl InterfaceGenerator<'_> {
 
                 self.finish_ty(ty, name, prev)
             }
-            TypeDefKind::Option(_t) => {}
-            TypeDefKind::Result(_r) => {}
-            TypeDefKind::List(_l) => {}
-            TypeDefKind::Future(_) => todo!("print_anonymous_type for future"),
-            TypeDefKind::Stream(_) => todo!("print_anonymous_type for stream"),
-            TypeDefKind::Handle(_) => todo!("print_anonymous_type for handle"),
+            TypeDefKind::Option(_) | TypeDefKind::Result(_) | TypeDefKind::List(_) => {
+                // no anonymous type needs to be generated here because we are using
+                // Option[T], Result[T, E], and []T in Go
+            }
+            TypeDefKind::Future(_) => todo!("anonymous_type for future"),
+            TypeDefKind::Stream(_) => todo!("anonymous_type for stream"),
+            TypeDefKind::Handle(_) => todo!("anonymous_type for handle"),
             TypeDefKind::Unknown => unreachable!(),
         }
     }
@@ -1147,7 +1118,7 @@ impl InterfaceGenerator<'_> {
         let lift_src = func_bindgen.lift_src.to_string();
 
         // // print function signature
-        self.print_func_signature(resolve, func);
+        self.func_sig(resolve, func);
 
         // body
         // prepare args
@@ -1168,7 +1139,7 @@ impl InterfaceGenerator<'_> {
         lift_src: &str,
         ret: Vec<String>,
     ) {
-        let invoke = self.get_c_func_signature(resolve, func, true);
+        let invoke = self.c_func_sig(resolve, func, true);
         match func.results.len() {
             0 => {
                 self.src.push_str(&invoke);
@@ -1177,7 +1148,7 @@ impl InterfaceGenerator<'_> {
             1 => {
                 let return_ty = func.results.iter_types().next().unwrap();
                 if is_arg_by_pointer(self.resolve, return_ty) {
-                    let c_ret_type = self.get_c_ty(return_ty);
+                    let c_ret_type = self.gen.get_c_ty(return_ty);
                     self.src.push_str(&format!("var ret {c_ret_type}\n"));
                     self.src.push_str(&invoke);
                     self.src.push_str("\n");
@@ -1189,7 +1160,7 @@ impl InterfaceGenerator<'_> {
             }
             _n => {
                 for (i, ty) in func.results.iter_types().enumerate() {
-                    let ty_name = self.get_c_ty(ty);
+                    let ty_name = self.gen.get_c_ty(ty);
                     let var_name = format!("ret{i}");
                     self.src.push_str(&format!("var {var_name} {ty_name}\n"));
                 }
@@ -1238,24 +1209,30 @@ impl InterfaceGenerator<'_> {
         let lift_src = func_bindgen.lift_src.to_string();
         let lower_src = func_bindgen.lower_src.to_string();
 
-        let interface_method_decl = self.get_func_signature_no_interface(resolve, func);
+        let interface_method_decl = self.func_sig_with_no_namespace(resolve, func);
         let export_func = {
             let mut src = String::new();
             // header
             src.push_str("//export ");
-            let name = self.get_c_func_name(&func.name);
+            let name = c_func_name(
+                self.in_import,
+                self.resolve,
+                &self.gen.world,
+                self.interface.map(|(_, key)| key),
+                func,
+            );
             src.push_str(&name);
             src.push('\n');
 
             // signature
-            src.push_str(&self.get_c_func_signature(resolve, func, false));
+            src.push_str(&self.c_func_sig(resolve, func, false));
             src.push_str(" {\n");
 
             // free all the parameters
             for (name, ty) in func.params.iter() {
                 // TODO: should test if owns anything
                 if false {
-                    let free = self.get_free_c_arg(ty, &avoid_keyword(&name.to_snake_case()));
+                    let free = self.free_c_arg(ty, &avoid_keyword(&name.to_snake_case()));
                     src.push_str(&free);
                 }
             }
@@ -1318,15 +1295,9 @@ impl InterfaceGenerator<'_> {
     }
 
     fn finish(&mut self) {
-        let src = mem::take(&mut self.src);
-        while let Some(ty) = self.public_anonymous_types.pop_last() {
-            self.print_anonymous_type(ty);
-        }
-        self.src.push_str(&src);
-
-        if !self.in_import && !self.export_funcs.is_empty() {
+        if !self.export_funcs.is_empty() {
             let interface_var_name = &self.get_interface_var_name();
-            let interface_name = &self.get_package_name();
+            let interface_name = &self.namespace();
 
             self.src
                 .push_str(format!("var {interface_var_name} {interface_name} = nil\n").as_str());
@@ -1364,11 +1335,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let prev = mem::take(&mut self.src);
-        let name = self.get_type_name(name, true);
+        let name = self.convert_type_name(name, true);
         self.src.push_str(&format!("type {name} struct {{\n",));
         for field in record.fields.iter() {
             let ty = self.get_ty(&field.ty);
-            let name = self.get_field_name(field);
+            let name = self.field_name(field);
             self.src.push_str(&format!("   {name} {ty}\n",));
         }
         self.src.push_str("}\n\n");
@@ -1388,7 +1359,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let prev = mem::take(&mut self.src);
-        let name = self.get_type_name(name, true);
+        let name = self.convert_type_name(name, true);
         // TODO: use flags repr to determine how many flags are needed
         self.src.push_str(&format!("type {name} uint64\n"));
         self.src.push_str("const (\n");
@@ -1419,7 +1390,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let prev = mem::take(&mut self.src);
-        let name = self.get_type_name(name, true);
+        let name = self.convert_type_name(name, true);
         self.src.push_str(&format!("type {name} struct {{\n",));
         for (i, case) in tuple.types.iter().enumerate() {
             let ty = self.get_ty(case);
@@ -1437,7 +1408,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let prev = mem::take(&mut self.src);
-        let name = self.get_type_name(name, true);
+        let name = self.convert_type_name(name, true);
         // TODO: use variant's tag to determine how many cases are needed
         // this will help to optmize the Kind type.
         self.src.push_str(&format!("type {name}Kind int\n\n"));
@@ -1500,7 +1471,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let prev = mem::take(&mut self.src);
-        let name = self.get_type_name(name, true);
+        let name = self.convert_type_name(name, true);
         // TODO: use variant's tag to determine how many cases are needed
         // this will help to optmize the Kind type.
         self.src.push_str(&format!("type {name}Kind int\n\n"));
@@ -1533,7 +1504,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let prev = mem::take(&mut self.src);
-        let name = self.get_type_name(name, true);
+        let name = self.convert_type_name(name, true);
         let ty = self.get_ty(ty);
         self.src.push_str(&format!("type {name} = {ty}\n"));
         self.finish_ty(id, name, prev)
@@ -1547,7 +1518,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let prev = mem::take(&mut self.src);
-        let name = self.get_type_name(name, true);
+        let name = self.convert_type_name(name, true);
         let ty = self.get_ty(ty);
         self.src.push_str(&format!("type {name} = {ty}\n"));
         self.finish_ty(id, name, prev)
@@ -1600,13 +1571,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         // TODO: should test if free is necessary
         if !in_export && false {
             self.lower_src
-                .push_str(&self.interface.get_free_c_arg(ty, &format!("&{lower_name}")));
+                .push_str(&self.interface.free_c_arg(ty, &format!("&{lower_name}")));
         }
         self.c_args.push(lower_name);
     }
 
     fn lower_list_value(&mut self, param: &str, l: &Type, lower_name: &str) {
-        let list_ty = self.interface.get_c_ty(l);
+        let list_ty = self.interface.gen.get_c_ty(l);
         uwriteln!(
             self.lower_src,
             "if len({param}) == 0 {{
@@ -1653,7 +1624,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         uwriteln!(self.lower_src, "if {param}.IsOk() {{");
         if let Some(ok_inner) = ok {
             self.interface.gen.needs_import_unsafe = true;
-            let c_target_name = self.interface.get_c_ty(&ok_inner);
+            let c_target_name = self.interface.gen.get_c_ty(&ok_inner);
             uwriteln!(
                 self.lower_src,
                 "{lower_name}_ptr := (*{c_target_name})(unsafe.Pointer({lower_inner_name1}))"
@@ -1668,7 +1639,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         self.lower_src.push_str("} else {\n");
         if let Some(err_inner) = err {
             self.interface.gen.needs_import_unsafe = true;
-            let c_target_name = self.interface.get_c_ty(&err_inner);
+            let c_target_name = self.interface.gen.get_c_ty(&err_inner);
             uwriteln!(
                 self.lower_src,
                 "{lower_name}_ptr := (*{c_target_name})(unsafe.Pointer({lower_inner_name2}))"
@@ -1700,7 +1671,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 uwriteln!(
                     self.lower_src,
                     "var {lower_name} {value}",
-                    value = self.interface.get_c_ty(ty),
+                    value = self.interface.gen.get_c_ty(ty),
                 );
                 uwriteln!(
                     self.lower_src,
@@ -1715,11 +1686,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
                 match &ty.kind {
                     TypeDefKind::Record(r) => {
-                        let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id)); // okay to unwrap because a record must have a name
+                        let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(*id)); // okay to unwrap because a record must have a name
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
                         for field in r.fields.iter() {
                             let c_field_name = &self.get_c_field_name(field);
-                            let field_name = &self.interface.get_field_name(field);
+                            let field_name = &self.interface.field_name(field);
 
                             self.lower_value(
                                 &format!("{param}.{field_name}"),
@@ -1738,7 +1709,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         uwriteln!(self.lower_src, "{lower_name} := C.{int_repr}({param})");
                     }
                     TypeDefKind::Tuple(t) => {
-                        let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id)); // okay to unwrap because a record must have a name
+                        let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(*id)); // okay to unwrap because a record must have a name
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
                         for (i, ty) in t.types.iter().enumerate() {
                             self.lower_value(
@@ -1750,7 +1721,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         }
                     }
                     TypeDefKind::Option(o) => {
-                        let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
+                        let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(*id));
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
                         uwriteln!(self.lower_src, "if {param}.IsSome() {{");
                         self.lower_value(
@@ -1763,7 +1734,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         self.lower_src.push_str("}\n");
                     }
                     TypeDefKind::Result(_) => {
-                        let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
+                        let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(*id));
 
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
                         uwriteln!(self.lower_src, "{lower_name}.is_err = {param}.IsErr()");
@@ -1778,7 +1749,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     }
                     TypeDefKind::List(l) => {
                         self.interface.gen.needs_import_unsafe = true;
-                        let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
+                        let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(*id));
 
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
                         self.lower_list_value(param, l, lower_name);
@@ -1787,7 +1758,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         uwriteln!(
                             self.lower_src,
                             "var {lower_name} {value}",
-                            value = self.interface.get_c_ty(t),
+                            value = self.interface.gen.get_c_ty(t),
                         );
                         self.lower_value(param, t, &format!("{lower_name}_val"));
                         uwriteln!(self.lower_src, "{lower_name} = {lower_name}_val");
@@ -1795,7 +1766,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     TypeDefKind::Variant(v) => {
                         self.interface.gen.needs_import_unsafe = true;
 
-                        let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
+                        let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(*id));
                         let ty = self.interface.get_ty(&Type::Id(*id));
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
                         for (i, case) in v.cases.iter().enumerate() {
@@ -1805,7 +1776,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 "if {param}.Kind() == {ty}Kind{case_name} {{"
                             );
                             if let Some(ty) = case.ty.as_ref() {
-                                let name = self.interface.get_c_ty(ty);
+                                let name = self.interface.gen.get_c_ty(ty);
                                 uwriteln!(
                                     self.lower_src,
                                     "
@@ -1825,7 +1796,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         }
                     }
                     TypeDefKind::Enum(e) => {
-                        let c_typedef_target = self.interface.get_c_ty(&Type::Id(*id));
+                        let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(*id));
                         let ty = self.interface.get_ty(&Type::Id(*id));
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
                         for (i, case) in e.cases.iter().enumerate() {
@@ -1849,7 +1820,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 uwriteln!(
                     self.lower_src,
                     "{lower_name} := {c_type_name}({param_name})",
-                    c_type_name = self.interface.get_c_ty(a),
+                    c_type_name = self.interface.gen.get_c_ty(a),
                     param_name = param,
                 );
             }
@@ -1888,7 +1859,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             value = self.interface.get_ty(&Type::Id(*id)),
                         );
                         for field in r.fields.iter() {
-                            let field_name = &self.interface.get_field_name(field);
+                            let field_name = &self.interface.field_name(field);
                             let c_field_name = &self.get_c_field_name(field);
                             self.lift_value(
                                 &format!("{param}.{c_field_name}"),
@@ -1947,7 +1918,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         // normal result route
                         uwriteln!(self.lift_src, "if {param}.is_err {{");
                         if let Some(err_inner) = err {
-                            let err_inner_name = self.interface.get_c_ty(&err_inner);
+                            let err_inner_name = self.interface.gen.get_c_ty(&err_inner);
                             self.interface.gen.needs_import_unsafe = true;
                             uwriteln!(self.lift_src, "{lift_name}_ptr := *(*{err_inner_name})(unsafe.Pointer(&{param}.val))");
                             self.lift_value(
@@ -1961,7 +1932,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         }
                         uwriteln!(self.lift_src, "}} else {{");
                         if let Some(ok_inner) = ok {
-                            let ok_inner_name = self.interface.get_c_ty(&ok_inner);
+                            let ok_inner_name = self.interface.gen.get_c_ty(&ok_inner);
                             self.interface.gen.needs_import_unsafe = true;
                             uwriteln!(self.lift_src, "{lift_name}_ptr := *(*{ok_inner_name})(unsafe.Pointer(&{param}.val))");
                             self.lift_value(
@@ -1976,7 +1947,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     TypeDefKind::List(l) => {
                         self.interface.gen.needs_import_unsafe = true;
                         let list_ty = self.interface.get_ty(&Type::Id(*id));
-                        let c_ty_name = self.interface.get_c_ty(l);
+                        let c_ty_name = self.interface.gen.get_c_ty(l);
                         uwriteln!(self.lift_src, "var {lift_name} {list_ty}",);
                         uwriteln!(self.lift_src, "{lift_name} = make({list_ty}, {param}.len)");
                         uwriteln!(self.lift_src, "if {param}.len > 0 {{");
@@ -2026,7 +1997,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             self.lift_src
                                 .push_str(&format!("if {param}.tag == {i} {{\n"));
                             if let Some(ty) = case.ty.as_ref() {
-                                let ty_name = self.interface.get_c_ty(ty);
+                                let ty_name = self.interface.gen.get_c_ty(ty);
                                 uwriteln!(
                                     self.lift_src,
                                     "{lift_name}_ptr := *(*{ty_name})(unsafe.Pointer(&{param}.val))"
