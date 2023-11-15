@@ -95,7 +95,8 @@ impl WorldGenerator for C {
         id: InterfaceId,
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(resolve, true);
+        let wasm_import_module = resolve.name_world_key(name);
+        let mut gen = self.interface(resolve, true, Some(&wasm_import_module));
         gen.interface = Some((id, name));
         gen.define_interface_types(id);
 
@@ -118,7 +119,7 @@ impl WorldGenerator for C {
         _files: &mut Files,
     ) {
         let name = &resolve.worlds[world].name;
-        let mut gen = self.interface(resolve, true);
+        let mut gen = self.interface(resolve, true, Some("$root"));
         gen.define_function_types(funcs);
 
         for (i, (_name, func)) in funcs.iter().enumerate() {
@@ -147,7 +148,7 @@ impl WorldGenerator for C {
             self.remove_types_redefined_by_exports(resolve, self.world_id.unwrap());
         }
 
-        let mut gen = self.interface(resolve, false);
+        let mut gen = self.interface(resolve, false, None);
         gen.interface = Some((id, name));
         gen.define_interface_types(id);
 
@@ -171,7 +172,7 @@ impl WorldGenerator for C {
         _files: &mut Files,
     ) -> Result<()> {
         let name = &resolve.worlds[world].name;
-        let mut gen = self.interface(resolve, false);
+        let mut gen = self.interface(resolve, false, None);
         gen.define_function_types(funcs);
 
         for (i, (_name, func)) in funcs.iter().enumerate() {
@@ -192,7 +193,7 @@ impl WorldGenerator for C {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(resolve, true);
+        let mut gen = self.interface(resolve, true, Some("$root"));
         let mut live = LiveTypes::default();
         for (_, id) in types {
             live.add_type_id(resolve, *id);
@@ -395,6 +396,7 @@ impl C {
         &'a mut self,
         resolve: &'a Resolve,
         in_import: bool,
+        wasm_import_module: Option<&'a str>,
     ) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
             src: Source::default(),
@@ -402,6 +404,7 @@ impl C {
             resolve,
             interface: None,
             in_import,
+            wasm_import_module,
         }
     }
 
@@ -635,6 +638,7 @@ struct InterfaceGenerator<'a> {
     gen: &'a mut C,
     resolve: &'a Resolve,
     interface: Option<(InterfaceId, &'a WorldKey)>,
+    wasm_import_module: Option<&'a str>,
 }
 
 impl C {
@@ -771,16 +775,13 @@ extern void {ns}_{snake}_drop_own({own} handle);
 extern void {ns}_{snake}_drop_borrow({own} handle);
             "
         ));
-        let import_module = match self.interface {
-            Some((_, key)) => {
-                let base = self.resolve.name_world_key(key);
-                if self.in_import {
-                    base
-                } else {
-                    format!("[export]{base}")
-                }
+        let import_module = if self.in_import {
+            self.wasm_import_module.unwrap().to_string()
+        } else {
+            match self.interface {
+                Some((_, key)) => self.resolve.name_world_key(key),
+                None => unimplemented!("resource exports from worlds"),
             }
-            None => self.gen.world.clone(),
         };
         self.src.c_helpers(&format!(
             r#"
@@ -1627,11 +1628,11 @@ impl InterfaceGenerator<'_> {
         match (ty.owner, self.interface) {
             // If this type is owned by an interface, then we must be generating
             // bindings for that interface to proceed.
-            (TypeOwner::Interface(a), Some((b, key))) => {
-                assert_eq!(a, b);
+            (TypeOwner::Interface(a), Some((b, key))) if a == b => {
                 interface_identifier(key, self.resolve, !self.in_import)
             }
             (TypeOwner::Interface(_), None) => unreachable!(),
+            (TypeOwner::Interface(_), Some(_)) => unreachable!(),
 
             // If this type is owned by a world then we must not be generating
             // bindings for an interface.
