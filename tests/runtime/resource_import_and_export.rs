@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use wasmtime::{component::Resource, Store};
+use wasmtime::{component::Resource, Result, Store};
 
-use self::test::resource_import_and_export::test::{Host, HostThing, Thing};
+use self::test::resource_import_and_export::test::{Host, HostThing};
 use crate::resource_import_and_export::exports::test::resource_import_and_export::test::Test;
 
 wasmtime::component::bindgen!(in "tests/runtime/resource_import_and_export");
@@ -12,38 +12,40 @@ pub struct MyHostThing {
     next_id: u32,
 }
 
+impl ResourceImportAndExportImports for MyHostThing {
+    fn toplevel_import(&mut self, a: Resource<Thing>) -> Result<Resource<Thing>> {
+        Ok(a)
+    }
+}
+
 impl Host for MyHostThing {}
 
 impl HostThing for MyHostThing {
-    fn new(&mut self, v: u32) -> wasmtime::Result<wasmtime::component::Resource<Thing>> {
+    fn new(&mut self, v: u32) -> Result<Resource<Thing>> {
         let id = self.next_id;
         self.next_id += 1;
         self.map_l.insert(id, v + 1);
         Ok(Resource::new_own(id))
     }
 
-    fn foo(&mut self, self_: wasmtime::component::Resource<Thing>) -> wasmtime::Result<u32> {
+    fn foo(&mut self, self_: Resource<Thing>) -> Result<u32> {
         let id = self_.rep();
         Ok(self.map_l[&id] + 2)
     }
 
-    fn bar(&mut self, self_: wasmtime::component::Resource<Thing>, v: u32) -> wasmtime::Result<()> {
+    fn bar(&mut self, self_: Resource<Thing>, v: u32) -> Result<()> {
         let id = self_.rep();
         self.map_l.insert(id, v + 3);
         Ok(())
     }
 
-    fn baz(
-        &mut self,
-        a: wasmtime::component::Resource<Thing>,
-        b: wasmtime::component::Resource<Thing>,
-    ) -> wasmtime::Result<wasmtime::component::Resource<Thing>> {
+    fn baz(&mut self, a: Resource<Thing>, b: Resource<Thing>) -> Result<Resource<Thing>> {
         let a = self.foo(a)?;
         let b = self.foo(b)?;
         self.new(a + b + 4)
     }
 
-    fn drop(&mut self, rep: wasmtime::component::Resource<Thing>) -> wasmtime::Result<()> {
+    fn drop(&mut self, rep: Resource<Thing>) -> Result<()> {
         let id = rep.rep();
         self.map_l.remove(&id);
         Ok(())
@@ -57,7 +59,7 @@ fn run() -> anyhow::Result<()> {
         |linker| ResourceImportAndExport::add_to_linker(linker, |x| &mut x.0),
         |store, component, linker| {
             let (u, e) = ResourceImportAndExport::instantiate(store, component, linker)?;
-            Ok((u.interface0, e))
+            Ok((u.interface1, e))
         },
         run_test,
     )

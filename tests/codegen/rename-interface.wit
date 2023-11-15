@@ -1,7 +1,9 @@
 package foo:foo;
 
 interface foo {
-  record bar {}
+  record bar {
+    r: bool,
+  }
 }
 
 world the-world {

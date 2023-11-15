@@ -9,7 +9,9 @@ world foo {
 
   type type2 = u32;
 
-  record type3 {}
+  record type3 {
+    r: u32,
+  }
 
   export foo: func() -> tuple<type1, type2, type3>;
 }

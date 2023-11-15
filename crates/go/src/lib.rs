@@ -5,7 +5,7 @@ use std::{collections::BTreeSet, mem};
 use anyhow::Result;
 use heck::{ToKebabCase, ToSnakeCase, ToUpperCamelCase};
 
-use wit_bindgen_c::{flags_repr, int_repr, is_arg_by_pointer, owns_anything};
+use wit_bindgen_c::{flags_repr, int_repr, is_arg_by_pointer};
 use wit_bindgen_core::wit_parser::{InterfaceId, Resolve, TypeOwner, WorldId};
 use wit_bindgen_core::{
     uwriteln,
@@ -760,7 +760,7 @@ impl InterfaceGenerator<'_> {
 
     fn get_c_ty_name(&self, ty: &Type) -> String {
         let mut name = String::new();
-        wit_bindgen_c::push_ty_name(self.resolve, ty, &self.gen.interface_names, &mut name);
+        wit_bindgen_c::push_ty_name(self.resolve, ty, &mut name);
         name
     }
 
@@ -1253,7 +1253,8 @@ impl InterfaceGenerator<'_> {
 
             // free all the parameters
             for (name, ty) in func.params.iter() {
-                if owns_anything(resolve, ty, &|_, _| todo!("support resources")) {
+                // TODO: should test if owns anything
+                if false {
                     let free = self.get_free_c_arg(ty, &avoid_keyword(&name.to_snake_case()));
                     src.push_str(&free);
                 }
@@ -1595,11 +1596,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         // If this variable is in inner node of the recursive call, no need to be freed.
         //    This is because the root node's call to free will recursively free the whole tree.
         // Otherwise, free this variable.
-        if !in_export
-            && owns_anything(self.interface.resolve, ty, &|_, _| {
-                todo!("support resources")
-            })
-        {
+        //
+        // TODO: should test if free is necessary
+        if !in_export && false {
             self.lower_src
                 .push_str(&self.interface.get_free_c_arg(ty, &format!("&{lower_name}")));
         }

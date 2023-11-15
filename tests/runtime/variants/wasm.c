@@ -14,7 +14,7 @@ void variants_test_imports() {
 
 
   {
-    variants_result_u32_float32_t a;
+    test_variants_test_result_u32_float32_t a;
     double b_ok;
     uint8_t b_err;
 
@@ -123,8 +123,8 @@ void variants_test_imports() {
   }
 
   {
-    variants_tuple3_bool_result_void_void_test_variants_test_my_errno_t ret;
-    variants_result_void_void_t b;
+    test_variants_test_tuple3_bool_result_void_void_my_errno_t ret;
+    test_variants_test_result_void_void_t b;
     b.is_err = false;
     test_variants_test_variant_enums(true, &b, TEST_VARIANTS_TEST_MY_ERRNO_SUCCESS, &ret);
     assert(ret.f0 == false);
@@ -140,7 +140,7 @@ bool exports_test_variants_test_roundtrip_option(float *a, uint8_t *ret0) {
   return a != NULL;
 }
 
-bool exports_test_variants_test_roundtrip_result(variants_result_u32_float32_t *a, double *ok, uint8_t *err) {
+bool exports_test_variants_test_roundtrip_result(exports_test_variants_test_result_u32_float32_t *a, double *ok, uint8_t *err) {
   if (a->is_err) {
     *err = a->val.err;
     return false;
@@ -158,22 +158,22 @@ bool exports_test_variants_test_invert_bool(bool a) {
   return !a;
 }
 
-void exports_test_variants_test_variant_casts(test_variants_test_casts_t *a, test_variants_test_casts_t *ret) {
+void exports_test_variants_test_variant_casts(exports_test_variants_test_casts_t *a, exports_test_variants_test_casts_t *ret) {
   *ret = *a;
 }
 
-void exports_test_variants_test_variant_zeros(test_variants_test_zeros_t *a, test_variants_test_zeros_t *b) {
+void exports_test_variants_test_variant_zeros(exports_test_variants_test_zeros_t *a, exports_test_variants_test_zeros_t *b) {
   *b = *a;
 }
 
-void exports_test_variants_test_variant_typedefs(uint32_t *a, test_variants_test_bool_typedef_t b, test_variants_test_result_typedef_t *c) {
+void exports_test_variants_test_variant_typedefs(uint32_t *a, exports_test_variants_test_bool_typedef_t b, exports_test_variants_test_result_typedef_t *c) {
 }
 
 void exports_test_variants_test_variant_enums(
       bool a,
-      variants_result_void_void_t *b,
-      test_variants_test_my_errno_t c,
-      variants_tuple3_bool_result_void_void_test_variants_test_my_errno_t *ret) {
+      exports_test_variants_test_result_void_void_t *b,
+      exports_test_variants_test_my_errno_t c,
+      exports_test_variants_test_tuple3_bool_result_void_void_my_errno_t *ret) {
   assert(0);
 }
 
