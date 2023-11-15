@@ -775,17 +775,13 @@ extern void {ns}_{snake}_drop_own({own} handle);
 extern void {ns}_{snake}_drop_borrow({own} handle);
             "
         ));
-        let import_module = match self.interface {
-            Some((_, key)) => {
-                if self.in_import {
-                    // wasm_import_module must be Some(...) in import direction
-                    assert!(self.wasm_import_module.is_some());
-                    self.wasm_import_module.unwrap().to_string()
-                } else {
-                    format!("[export]{base}", base = self.resolve.name_world_key(key))
-                }
+        let import_module = if self.in_import {
+            self.wasm_import_module.unwrap().to_string()
+        } else {
+            match self.interface {
+                Some((_, key)) => self.resolve.name_world_key(key),
+                None => unimplemented!("resource exports from worlds"),
             }
-            None => self.gen.world.clone(),
         };
         self.src.c_helpers(&format!(
             r#"
