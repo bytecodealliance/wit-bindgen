@@ -586,24 +586,36 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
     }
 }
 
-pub fn owner_namespace(
+pub fn owner_namespace<'a>(
+    interface: Option<(InterfaceId, &'a WorldKey)>,
+    in_import: bool,
+    world: String,
     resolve: &Resolve,
     id: TypeId,
-    interface_names: &HashMap<InterfaceId, WorldKey>,
-) -> Option<String> {
+) -> String {
     let ty = &resolve.types[id];
-    match ty.owner {
-        TypeOwner::Interface(owner) => Some(interface_identifier(
-            &interface_names[&owner],
-            resolve,
-            false,
-        )),
-        TypeOwner::World(owner) => Some(resolve.worlds[owner].name.to_snake_case()),
-        TypeOwner::None => None,
+    match (ty.owner, interface) {
+        // If this type is owned by an interface, then we must be generating
+        // bindings for that interface to proceed.
+        (TypeOwner::Interface(a), Some((b, key))) if a == b => {
+            interface_identifier(key, resolve, !in_import)
+        }
+        (TypeOwner::Interface(_), None) => unreachable!(),
+        (TypeOwner::Interface(_), Some(_)) => unreachable!(),
+
+        // If this type is owned by a world then we must not be generating
+        // bindings for an interface.
+        (TypeOwner::World(_), None) => world.to_snake_case(),
+        (TypeOwner::World(_), Some(_)) => unreachable!(),
+
+        // If this type has no owner then it's an anonymous type. Here it's
+        // assigned to whatever we happen to be generating bindings for.
+        (TypeOwner::None, Some((_, key))) => interface_identifier(key, resolve, !in_import),
+        (TypeOwner::None, None) => world.to_snake_case(),
     }
 }
 
-fn interface_identifier(interface_id: &WorldKey, resolve: &Resolve, in_export: bool) -> String {
+pub fn interface_identifier(interface_id: &WorldKey, resolve: &Resolve, in_export: bool) -> String {
     match interface_id {
         WorldKey::Name(name) => name.to_snake_case(),
         WorldKey::Interface(id) => {
@@ -630,6 +642,23 @@ fn interface_identifier(interface_id: &WorldKey, resolve: &Resolve, in_export: b
             ns
         }
     }
+}
+
+pub fn c_func_name(
+    in_import: bool,
+    resolve: &Resolve,
+    world: &str,
+    interface_id: Option<&WorldKey>,
+    func: &Function,
+) -> String {
+    let mut name = String::new();
+    match interface_id {
+        Some(id) => name.push_str(&interface_identifier(id, resolve, !in_import)),
+        None => name.push_str(&world.to_snake_case()),
+    }
+    name.push_str("_");
+    name.push_str(&func.name.to_snake_case().replace('.', "_"));
+    name
 }
 
 struct InterfaceGenerator<'a> {
@@ -1289,14 +1318,13 @@ impl InterfaceGenerator<'_> {
     }
 
     fn c_func_name(&self, interface_id: Option<&WorldKey>, func: &Function) -> String {
-        let mut name = String::new();
-        match interface_id {
-            Some(id) => name.push_str(&interface_identifier(id, &self.resolve, !self.in_import)),
-            None => name.push_str(&self.gen.world.to_snake_case()),
-        }
-        name.push_str("_");
-        name.push_str(&func.name.to_snake_case().replace('.', "_"));
-        name
+        c_func_name(
+            self.in_import,
+            self.resolve,
+            &self.gen.world,
+            interface_id,
+            func,
+        )
     }
 
     fn import(&mut self, interface_name: Option<&WorldKey>, func: &Function) {
@@ -1624,28 +1652,13 @@ impl InterfaceGenerator<'_> {
     }
 
     fn owner_namespace(&self, id: TypeId) -> String {
-        let ty = &self.resolve.types[id];
-        match (ty.owner, self.interface) {
-            // If this type is owned by an interface, then we must be generating
-            // bindings for that interface to proceed.
-            (TypeOwner::Interface(a), Some((b, key))) if a == b => {
-                interface_identifier(key, self.resolve, !self.in_import)
-            }
-            (TypeOwner::Interface(_), None) => unreachable!(),
-            (TypeOwner::Interface(_), Some(_)) => unreachable!(),
-
-            // If this type is owned by a world then we must not be generating
-            // bindings for an interface.
-            (TypeOwner::World(_), None) => self.gen.world.to_snake_case(),
-            (TypeOwner::World(_), Some(_)) => unreachable!(),
-
-            // If this type has no owner then it's an anonymous type. Here it's
-            // assigned to whatever we happen to be generating bindings for.
-            (TypeOwner::None, Some((_, key))) => {
-                interface_identifier(key, self.resolve, !self.in_import)
-            }
-            (TypeOwner::None, None) => self.gen.world.to_snake_case(),
-        }
+        owner_namespace(
+            self.interface,
+            self.in_import,
+            self.gen.world.clone(),
+            self.resolve,
+            id,
+        )
     }
 
     fn print_ty(&mut self, stype: SourceType, ty: &Type) {

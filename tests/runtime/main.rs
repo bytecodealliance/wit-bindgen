@@ -259,7 +259,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
 
     // FIXME: need to fix flaky Go test
     #[cfg(feature = "go")]
-    if !go.is_empty() && false {
+    if !go.is_empty() {
         let world_name = &resolve.worlds[world].name;
         let out_dir = out_dir.join(format!("go-{}", world_name));
         drop(fs::remove_dir_all(&out_dir));
