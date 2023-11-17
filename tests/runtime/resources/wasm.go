@@ -50,23 +50,23 @@ func (e ExportsImpl) Add(z ExportsZ, b ExportsZ) ExportsZ {
 }
 
 func (e ExportsImpl) TestImports() Result[struct{}, string]  {
-	y := ImportsConstructorY(1)
-	if y.ImportsMethodYGetA() != 1 {
+	y := NewY(1)
+	if y.GetA() != 1 {
 		panic("y.GetA() != 1")
 	}
-	y.ImportsMethodYSetA(2)
-	if y.ImportsMethodYGetA() != 2 {
+	y.SetA(2)
+	if y.GetA() != 2 {
 		panic("y.GetA() != 2")
 	}
 
-	y2 := ImportsStaticYAdd(y, 3)
-	if y2.ImportsMethodYGetA() != 5 {
+	y2 := StaticYAdd(y, 3)
+	if y2.GetA() != 5 {
 		panic("y2.GetA() != 5")
 	}
 
-	y.ImportsMethodYSetA(5)
+	y.SetA(5)
 
-	if y.ImportsMethodYGetA() != 5 {
+	if y.GetA() != 5 {
 		panic("y.GetA() != 5")
 	}
 

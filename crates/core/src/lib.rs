@@ -9,7 +9,7 @@ pub mod abi;
 mod ns;
 pub use ns::Ns;
 
-#[derive(Default, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Direction {
     #[default]
     Import,
@@ -279,6 +279,11 @@ pub struct Source {
 }
 
 impl Source {
+    pub fn append_src(&mut self, src: &Source) {
+        self.s.push_str(&src.s);
+        self.indent += src.indent;
+    }
+
     pub fn push_str(&mut self, src: &str) {
         let lines = src.lines().collect::<Vec<_>>();
         for (i, line) in lines.iter().enumerate() {
@@ -477,6 +482,9 @@ pub trait WorldGenerator {
         if !funcs.is_empty() {
             self.export_funcs(resolve, id, &funcs, files)?;
         }
+
+        self.pre_export_interface(resolve, files)?;
+
         for (name, id) in interfaces {
             self.export_interface(resolve, name, *id, files)?;
         }
@@ -499,6 +507,13 @@ pub trait WorldGenerator {
         iface: InterfaceId,
         files: &mut Files,
     );
+
+    /// Called before any exported interfaces are generated.
+    fn pre_export_interface(&mut self, resolve: &Resolve, files: &mut Files) -> Result<()> {
+        let _ = (resolve, files);
+        Ok(())
+    }
+
     fn export_interface(
         &mut self,
         resolve: &Resolve,

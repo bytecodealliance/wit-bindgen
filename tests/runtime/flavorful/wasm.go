@@ -86,28 +86,28 @@ func (f FlavorfulImpl) TestImports() {
 
 }
 
-func (f FlavorfulImpl) FListInRecord1(a TestFlavorfulTestListInRecord1) {
+func (f FlavorfulImpl) FListInRecord1(a ExportsTestFlavorfulTestListInRecord1) {
 	if a.A != "list_in_record1" {
 		panic("FListInRecord1")
 	}
 }
 
-func (f FlavorfulImpl) FListInRecord2() TestFlavorfulTestListInRecord2 {
-	return TestFlavorfulTestListInRecord2{"list_in_record2"}
+func (f FlavorfulImpl) FListInRecord2() ExportsTestFlavorfulTestListInRecord2 {
+	return ExportsTestFlavorfulTestListInRecord2{"list_in_record2"}
 }
 
-func (f FlavorfulImpl) FListInRecord3(a TestFlavorfulTestListInRecord3) TestFlavorfulTestListInRecord3 {
+func (f FlavorfulImpl) FListInRecord3(a ExportsTestFlavorfulTestListInRecord3) ExportsTestFlavorfulTestListInRecord3 {
 	if a.A != "list_in_record3 input" {
 		panic("FListInRecord3")
 	}
-	return TestFlavorfulTestListInRecord3{"list_in_record3 output"}
+	return ExportsTestFlavorfulTestListInRecord3{"list_in_record3 output"}
 }
 
-func (f FlavorfulImpl) FListInRecord4(a TestFlavorfulTestListInRecord4) TestFlavorfulTestListInRecord4 {
+func (f FlavorfulImpl) FListInRecord4(a ExportsTestFlavorfulTestListInRecord4) ExportsTestFlavorfulTestListInRecord4 {
 	if a.A != "input4" {
 		panic("FListInRecord4")
 	}
-	return TestFlavorfulTestListInRecord4{"result4"}
+	return ExportsTestFlavorfulTestListInRecord4{"result4"}
 }
 
 func (f FlavorfulImpl) FListInVariant1(a Option[string], b Result[struct{}, string]) {
@@ -130,9 +130,9 @@ func (f FlavorfulImpl) FListInVariant3(a Option[string]) Option[string] {
 	return Some[string]("output3")
 }
 
-func (f FlavorfulImpl) ErrnoResult() Result[struct{}, TestFlavorfulTestMyErrno] {
-	var res Result[struct{}, TestFlavorfulTestMyErrno]
-	res.SetErr(TestFlavorfulTestMyErrnoB())
+func (f FlavorfulImpl) ErrnoResult() Result[struct{}, ExportsTestFlavorfulTestMyErrno] {
+	var res Result[struct{}, ExportsTestFlavorfulTestMyErrno]
+	res.SetErr(ExportsTestFlavorfulTestMyErrnoB())
 	return res
 }
 
@@ -149,7 +149,7 @@ func (f FlavorfulImpl) ListTypedefs(a string, c []string) ([]uint8, []string) {
 	return []uint8("typedef3"), []string{"typedef4"}
 }
 
-func (f FlavorfulImpl) ListOfVariants(a []bool, b []Result[struct{}, struct{}], c []TestFlavorfulTestMyErrno) ([]bool, []Result[struct{}, struct{}], []TestFlavorfulTestMyErrno) {
+func (f FlavorfulImpl) ListOfVariants(a []bool, b []Result[struct{}, struct{}], c []ExportsTestFlavorfulTestMyErrno) ([]bool, []Result[struct{}, struct{}], []ExportsTestFlavorfulTestMyErrno) {
 	return a, b, c
 }
 
