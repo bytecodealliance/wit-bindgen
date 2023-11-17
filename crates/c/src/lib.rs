@@ -782,16 +782,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_resource(&mut self, id: TypeId, name: &str, _docs: &Docs) {
         let ns = self.owner_namespace(id);
         let snake = name.to_snake_case();
-        let mut own = ns.clone();
-        let mut borrow = own.clone();
-        own.push_str("_own");
-        borrow.push_str("_borrow");
-        own.push_str("_");
-        borrow.push_str("_");
-        own.push_str(&snake);
-        borrow.push_str(&snake);
-        own.push_str("_t");
-        borrow.push_str("_t");
+        let (own, borrow) = self.reosurce_handle_names(id, name);
 
         // All resources, whether or not they're imported or exported, get the
         // ability to drop handles. Note that the component model only has a
@@ -1094,6 +1085,24 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
     }
 }
 
+impl<'a> InterfaceGenerator<'a> {
+    fn reosurce_handle_names(&mut self, id: TypeId, name: &str) -> (String, String) {
+        let ns = self.owner_namespace(id);
+        let snake = name.to_snake_case();
+        let mut own = ns.clone();
+        let mut borrow = own.clone();
+        own.push_str("_own");
+        borrow.push_str("_borrow");
+        own.push_str("_");
+        borrow.push_str("_");
+        own.push_str(&snake);
+        borrow.push_str(&snake);
+        own.push_str("_t");
+        borrow.push_str("_t");
+        (own, borrow)
+    }
+}
+
 impl InterfaceGenerator<'_> {
     fn define_interface_types(&mut self, id: InterfaceId) {
         let mut live = LiveTypes::default();
@@ -1124,7 +1133,24 @@ impl InterfaceGenerator<'_> {
 
             match &self.resolve.types[ty].name {
                 Some(name) => self.define_type(name, ty),
-                None => self.define_anonymous_type(ty),
+                None => {
+                    // skip `typedef handle_x handle_y` where `handle_x` is the same as `handle_y`
+                    let name = &self.gen.type_names[&ty];
+                    match self.resolve.types[ty].kind {
+                        TypeDefKind::Handle(Handle::Borrow(id))
+                        | TypeDefKind::Handle(Handle::Own(id)) => {
+                            let info = &self.gen.resources[&dealias(self.resolve, id)];
+                            let target_borrow_name = &info.borrow;
+                            let target_own_name = &info.own;
+                            if !(name == target_borrow_name || name == target_own_name) {
+                                self.define_anonymous_type(ty);
+                            }
+                        }
+                        _ => {
+                            self.define_anonymous_type(ty);
+                        }
+                    }
+                }
             }
 
             self.define_dtor(ty);
