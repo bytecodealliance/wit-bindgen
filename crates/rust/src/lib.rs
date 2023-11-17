@@ -10,8 +10,7 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
-    name_package_module, uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Source,
-    Types, WorldGenerator,
+    name_package_module, uwrite, uwriteln, wit_parser::*, Files, InterfaceGenerator as _, Source, Types, WorldGenerator
 };
 
 mod bindgen;

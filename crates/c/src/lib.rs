@@ -7,8 +7,8 @@ use std::fmt::Write;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType};
 use wit_bindgen_core::{
-    dealias, uwrite, uwriteln, wit_parser::*, Direction, Files, InterfaceGenerator as _, Ns,
-    WorldGenerator,
+    dealias, uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, Direction, Files,
+    InterfaceGenerator as _, Ns, WorldGenerator,
 };
 use wit_component::StringEncoding;
 
@@ -1339,6 +1339,14 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
     fn type_builtin(&mut self, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         let _ = (id, name, ty, docs);
     }
+}
+
+impl<'a> wit_bindgen_core::AnonymousTypeGenerator<'a> for InterfaceGenerator<'a> {
+    fn resolve(&self) -> &'a Resolve {
+        self.resolve
+    }
+
+    
 
     fn anonymous_type_handle(&mut self, id: TypeId, handle: &Handle, docs: &Docs) {
         self.src.h_defs("\ntypedef ");
@@ -1420,6 +1428,10 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
 
     fn anonymous_type_stream(&mut self, id: TypeId, ty: &Stream, docs: &Docs) {
         todo!("print_anonymous_type for stream");
+    }
+    
+    fn anonymous_typ_type(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
+        todo!("print_anonymous_type for typ");
     }
 }
 
