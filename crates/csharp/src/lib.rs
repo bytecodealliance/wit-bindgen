@@ -1802,6 +1802,44 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             })
             .direction = self.direction;
     }
+
+    fn anonymous_type_handle(
+        &mut self,
+        id: TypeId,
+        handle: &wit_bindgen_core::wit_parser::Handle,
+        docs: &Docs,
+    ) {
+        todo!()
+    }
+
+    fn anonymous_type_tuple(&mut self, id: TypeId, ty: &Tuple, docs: &Docs) {
+        todo!()
+    }
+
+    fn anonymous_type_option(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
+        todo!()
+    }
+
+    fn anonymous_type_result(&mut self, id: TypeId, ty: &Result_, docs: &Docs) {
+        todo!()
+    }
+
+    fn anonymous_type_list(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
+        todo!()
+    }
+
+    fn anonymous_type_future(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs) {
+        todo!()
+    }
+
+    fn anonymous_type_stream(
+        &mut self,
+        id: TypeId,
+        ty: &wit_bindgen_core::wit_parser::Stream,
+        docs: &Docs,
+    ) {
+        todo!()
+    }
 }
 
 enum Stubs<'a> {
