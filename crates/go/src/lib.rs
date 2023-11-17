@@ -1533,6 +1533,69 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     ) {
         todo!("type_builtin")
     }
+
+    fn anonymous_type_handle(
+        &mut self,
+        id: TypeId,
+        handle: &Handle,
+        docs: &wit_bindgen_core::wit_parser::Docs,
+    ) {
+        todo!()
+    }
+
+    fn anonymous_type_tuple(
+        &mut self,
+        id: TypeId,
+        ty: &wit_bindgen_core::wit_parser::Tuple,
+        docs: &wit_bindgen_core::wit_parser::Docs,
+    ) {
+        todo!()
+    }
+
+    fn anonymous_type_option(
+        &mut self,
+        id: TypeId,
+        ty: &Type,
+        docs: &wit_bindgen_core::wit_parser::Docs,
+    ) {
+        todo!()
+    }
+
+    fn anonymous_type_result(
+        &mut self,
+        id: TypeId,
+        ty: &wit_bindgen_core::wit_parser::Result_,
+        docs: &wit_bindgen_core::wit_parser::Docs,
+    ) {
+        todo!()
+    }
+
+    fn anonymous_type_list(
+        &mut self,
+        id: TypeId,
+        ty: &Type,
+        docs: &wit_bindgen_core::wit_parser::Docs,
+    ) {
+        todo!()
+    }
+
+    fn anonymous_type_future(
+        &mut self,
+        id: TypeId,
+        ty: &Option<Type>,
+        docs: &wit_bindgen_core::wit_parser::Docs,
+    ) {
+        todo!()
+    }
+
+    fn anonymous_type_stream(
+        &mut self,
+        id: TypeId,
+        ty: &wit_bindgen_core::wit_parser::Stream,
+        docs: &wit_bindgen_core::wit_parser::Docs,
+    ) {
+        todo!()
+    }
 }
 
 struct FunctionBindgen<'a, 'b> {
