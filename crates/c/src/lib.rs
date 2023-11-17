@@ -24,7 +24,6 @@ struct C {
     sizes: SizeAlign,
 
     world_id: Option<WorldId>,
-    exported_any_interface: bool,
     dtor_funcs: HashMap<TypeId, String>,
     type_names: HashMap<TypeId, String>,
     resources: HashMap<TypeId, ResourceInfo>,
@@ -140,15 +139,6 @@ impl WorldGenerator for C {
         id: InterfaceId,
         _files: &mut Files,
     ) -> Result<()> {
-        // If this is the first interface we're generating exports for then
-        // clean out caches on `self` which refer to types defined by imports.
-        // Exports need to generate new types for any overwritten entries so
-        // delete those.
-        if !self.exported_any_interface {
-            self.exported_any_interface = true;
-            self.remove_types_redefined_by_exports(resolve, self.world_id.unwrap());
-        }
-
         let mut gen = self.interface(resolve, false, None);
         gen.interface = Some((id, name));
         gen.define_interface_types(id);
@@ -390,6 +380,11 @@ impl WorldGenerator for C {
                 .as_slice(),
         );
     }
+
+    fn pre_export_interface(&mut self, resolve: &Resolve, _files: &mut Files) -> Result<()> {
+        self.remove_types_redefined_by_exports(resolve, self.world_id.unwrap());
+        Ok(())
+    }
 }
 
 impl C {
@@ -472,46 +467,51 @@ impl C {
     /// This function will trim the sets on `self` to only retain those types
     /// which exports refer to that come from imports.
     fn remove_types_redefined_by_exports(&mut self, resolve: &Resolve, world: WorldId) {
-        // First build up a set of all types used by exports and all the
-        // exported interfaces.
-        let mut live_export_types = LiveTypes::default();
-        let mut exported_interfaces = HashSet::new();
-        for (_, export) in resolve.worlds[world].exports.iter() {
-            match export {
-                WorldItem::Function(_) => {}
-                WorldItem::Interface(i) => {
-                    exported_interfaces.insert(*i);
-                    live_export_types.add_interface(resolve, *i)
-                }
-                WorldItem::Type(_) => unreachable!(),
-            }
-        }
-
-        // Using the above sets a set of required import interfaces can be
-        // calculated. This is all referred-to-types that are owned by an
-        // interface that aren't present in an export. Note that the topological
-        // sorting and WIT requirements are what makes this check possible.
-        let mut imports_used = HashSet::new();
-        for ty in live_export_types.iter() {
-            if let TypeOwner::Interface(id) = resolve.types[ty].owner {
-                if !exported_interfaces.contains(&id) {
-                    imports_used.insert(id);
-                }
-            }
-        }
-
-        // With the set of imports used that aren't shadowed by exports the set
-        // of types on `self` can now be trimmed. All live types in all the
-        // imports are calculated and then everything except these are removed.
-        let mut live_import_types = LiveTypes::default();
-        for import in imports_used {
-            live_import_types.add_interface(resolve, import);
-        }
-        let live_import_types = live_import_types.iter().collect::<HashSet<_>>();
+        let live_import_types = find_live_export_types(resolve, world);
         self.dtor_funcs.retain(|k, _| live_import_types.contains(k));
         self.type_names.retain(|k, _| live_import_types.contains(k));
         self.resources.retain(|k, _| live_import_types.contains(k));
     }
+}
+
+pub fn find_live_export_types(resolve: &Resolve, world: WorldId) -> HashSet<TypeId> {
+    // First build up a set of all types used by exports and all the
+    // exported interfaces.
+    let mut live_export_types = LiveTypes::default();
+    let mut exported_interfaces = HashSet::new();
+    for (_, export) in resolve.worlds[world].exports.iter() {
+        match export {
+            WorldItem::Function(_) => {}
+            WorldItem::Interface(i) => {
+                exported_interfaces.insert(*i);
+                live_export_types.add_interface(resolve, *i)
+            }
+            WorldItem::Type(_) => unreachable!(),
+        }
+    }
+
+    // Using the above sets a set of required import interfaces can be
+    // calculated. This is all referred-to-types that are owned by an
+    // interface that aren't present in an export. Note that the topological
+    // sorting and WIT requirements are what makes this check possible.
+    let mut imports_used = HashSet::new();
+    for ty in live_export_types.iter() {
+        if let TypeOwner::Interface(id) = resolve.types[ty].owner {
+            if !exported_interfaces.contains(&id) {
+                imports_used.insert(id);
+            }
+        }
+    }
+
+    // With the set of imports used that aren't shadowed by exports the set
+    // of types on `self` can now be trimmed. All live types in all the
+    // imports are calculated and then everything except these are removed.
+    let mut live_import_types = LiveTypes::default();
+    for import in imports_used {
+        live_import_types.add_interface(resolve, import);
+    }
+    let live_import_types = live_import_types.iter().collect::<HashSet<_>>();
+    live_import_types
 }
 
 pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
