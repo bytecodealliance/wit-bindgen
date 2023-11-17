@@ -1167,33 +1167,18 @@ impl InterfaceGenerator<'_> {
 
     fn import(&mut self, resolve: &Resolve, func: &Function) {
         let mut func_bindgen = FunctionBindgen::new(self, func);
-        // lower params to c
-        func.params.iter().for_each(|(name, ty)| {
-            func_bindgen.lower(&avoid_keyword(&name.to_snake_case()), ty, Direction::Import);
-        });
-        // lift results from c
-        match func.results.len() {
-            0 => {}
-            1 => {
-                let ty = func.results.iter_types().next().unwrap();
-                func_bindgen.lift("ret", ty, Direction::Import);
-            }
-            _ => {
-                for (i, ty) in func.results.iter_types().enumerate() {
-                    func_bindgen.lift(&format!("ret{i}"), ty, Direction::Import);
-                }
-            }
-        };
+        func_bindgen.process_args();
+        func_bindgen.process_returns();
         let ret = func_bindgen.args;
-        let lower_src = func_bindgen.lower_src.to_string();
-        let lift_src = func_bindgen.lift_src.to_string();
+        let lower_src = func_bindgen.lower_src;
+        let lift_src = func_bindgen.lift_src;
 
         // // print function signature
         self.func_sig(resolve, func);
 
         // body
         // prepare args
-        self.src.push_str(lower_src.as_str());
+        self.src.push_str(&lower_src);
 
         self.import_invoke(resolve, func, &lift_src, ret);
 
@@ -1206,7 +1191,7 @@ impl InterfaceGenerator<'_> {
         &mut self,
         resolve: &Resolve,
         func: &Function,
-        lift_src: &str,
+        lift_src: &Source,
         ret: Vec<String>,
     ) {
         let invoke = self.c_func_sig(resolve, func, Direction::Import);
@@ -1251,26 +1236,13 @@ impl InterfaceGenerator<'_> {
 
     fn export(&mut self, resolve: &Resolve, func: &Function) {
         let mut func_bindgen = FunctionBindgen::new(self, func);
-        func.params.iter().for_each(|(name, ty)| {
-            func_bindgen.lift(&avoid_keyword(&name.to_snake_case()), ty, Direction::Export);
-        });
-        match func.results.len() {
-            0 => {}
-            1 => {
-                let ty = func.results.iter_types().next().unwrap();
-                func_bindgen.lower("result", ty, Direction::Export);
-            }
-            _ => {
-                for (i, ty) in func.results.iter_types().enumerate() {
-                    func_bindgen.lower(&format!("result{i}"), ty, Direction::Export);
-                }
-            }
-        };
+        func_bindgen.process_args();
+        func_bindgen.process_returns();
 
         let args = func_bindgen.args;
         let ret = func_bindgen.c_args;
-        let lift_src = func_bindgen.lift_src.to_string();
-        let lower_src = func_bindgen.lower_src.to_string();
+        let lift_src = func_bindgen.lift_src;
+        let lower_src = func_bindgen.lower_src;
 
         // This variable holds the declaration functions in the exported interface that user
         // needs to implement.
@@ -1707,7 +1679,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
 struct FunctionBindgen<'a, 'b> {
     interface: &'a mut InterfaceGenerator<'b>,
-    _func: &'a Function,
+    func: &'a Function,
     c_args: Vec<String>,
     args: Vec<String>,
     lower_src: Source,
@@ -1718,7 +1690,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn new(interface: &'a mut InterfaceGenerator<'b>, func: &'a Function) -> Self {
         Self {
             interface,
-            _func: func,
+            func: func,
             c_args: Vec::new(),
             args: Vec::new(),
             lower_src: Source::default(),
@@ -1726,9 +1698,131 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
     }
 
-    fn lower(&mut self, name: &str, ty: &Type, direction: Direction) {
+    fn process_args(&mut self) {
+        match self.func.kind {
+            FunctionKind::Method(m) => {
+                // the first argument is `self`
+                let (name, ty) = self.func.params.first().unwrap();
+                match self.interface.direction {
+                    Direction::Import => {
+                        let ns = self.interface.c_owner_namespace(m);
+                        let snake = self.interface.resolve.types[m].name.as_ref().unwrap();
+                        let mut own = ns.clone();
+                        own.push_str("_own_");
+                        own.push_str(&snake);
+                        own.push_str("_t");
+                        uwriteln!(
+                            self.lower_src,
+                            "var lower_{name}_own C.{own}
+                            lower_{name}_own.__handle = C.int32_t({name})
+                            lower_{name} := C.{ns}_borrow_{snake}(lower_{name}_own)"
+                        );
+                        self.c_args.push(format!("lower_{name}"));
+                    }
+                    Direction::Export => {
+                        let resource_name: String = self.interface.get_ty(ty).to_snake_case();
+                        uwriteln!(
+                            self.lift_src,
+                            "{name}_handle := int32({name}.__handle)
+                            lift_{name}, ok := {resource_name}_pointers[{name}_handle]
+                            if !ok {{
+                                panic(\"internal error: invalid handle\")
+                            }}"
+                        );
+                        self.args.push(format!("lift_{}", name));
+                    }
+                }
+                self.func.params.iter().skip(1).for_each(|(name, ty)| {
+                    match self.interface.direction {
+                        Direction::Import => self.lower(&avoid_keyword(&name.to_snake_case()), ty),
+                        Direction::Export => self.lift(&avoid_keyword(&name.to_snake_case()), ty),
+                    }
+                });
+            }
+            _ => {
+                self.func
+                    .params
+                    .iter()
+                    .for_each(|(name, ty)| match self.interface.direction {
+                        Direction::Import => self.lower(&avoid_keyword(&name.to_snake_case()), ty),
+                        Direction::Export => self.lift(&avoid_keyword(&name.to_snake_case()), ty),
+                    });
+            }
+        }
+    }
+
+    fn process_returns(&mut self) {
+        match self.func.results.len() {
+            0 => {}
+            1 => {
+                let ty = self.func.results.iter_types().next().unwrap();
+                match self.func.kind {
+                    FunctionKind::Constructor(c) => match self.interface.direction {
+                        Direction::Import => {
+                            self.constructor_return_import(ty, "ret");
+                        }
+                        Direction::Export => {
+                            self.constructor_return_export(c, "result");
+                        }
+                    },
+                    _ => match self.interface.direction {
+                        Direction::Import => self.lift("ret", ty),
+                        Direction::Export => self.lower("result", ty),
+                    },
+                }
+            }
+            _ => {
+                for (i, ty) in self.func.results.iter_types().enumerate() {
+                    match self.func.kind {
+                        FunctionKind::Constructor(c) => match self.interface.direction {
+                            Direction::Import => {
+                                self.constructor_return_import(ty, &format!("ret{i}"));
+                            }
+                            Direction::Export => {
+                                self.constructor_return_export(c, &format!("result{i}"));
+                            }
+                        },
+                        _ => match self.interface.direction {
+                            Direction::Import => self.lift(&format!("ret{i}"), ty),
+                            Direction::Export => self.lower(&format!("result{i}"), ty),
+                        },
+                    }
+                }
+            }
+        };
+    }
+
+    fn constructor_return_export(&mut self, c: TypeId, param: &str) {
+        let resource = dealias(self.interface.resolve, c);
+        let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(resource));
+        let ty_name = self.interface.gen.type_names[&resource].clone();
+        let private_type_name = ty_name.to_snake_case();
+        self.interface.gen.needs_import_unsafe = true;
+        uwriteln!(self.lower_src,
+            "{private_type_name}_mu.Lock()
+            {private_type_name}_next_id += 1
+            {private_type_name}_pointers[{private_type_name}_next_id] = {param}
+            {private_type_name}_mu.Unlock()
+            {param}_c := (*{c_typedef_target})(unsafe.Pointer(C.malloc(C.size_t(unsafe.Sizeof({c_typedef_target}{{}})))))
+            {param}_c.__handle = C.int32_t({private_type_name}_next_id)
+            lower_{param} := C.{private_type_name}_new({param}_c) // pass the pointer directly"
+        );
+        self.c_args.push(format!("lower_{}", param));
+    }
+
+    fn constructor_return_import(&mut self, ty: &Type, param: &str) {
+        let ty_name = self.interface.get_ty(ty);
+        uwriteln!(
+            self.lift_src,
+            "var lift_{param} {ty_name}
+            lift_{param} = {ty_name}({param}.__handle)"
+        );
+        self.args.push(format!("lift_{}", param));
+    }
+
+    fn lower(&mut self, name: &str, ty: &Type) {
         let lower_name = format!("lower_{name}");
-        self.lower_value(name, ty, lower_name.as_ref(), direction);
+        self.lower_value(name, ty, lower_name.as_ref());
 
         // Check whether or not the C variable needs to be freed.
         // If this variable is in export function, which will be returned to host to use.
@@ -1739,14 +1833,14 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         // Otherwise, free this variable.
         //
         // TODO: should test if free is necessary
-        if matches!(direction, Direction::Import) && false {
+        if matches!(self.interface.direction, Direction::Import) && false {
             self.lower_src
                 .push_str(&self.interface.free_c_arg(ty, &format!("&{lower_name}")));
         }
         self.c_args.push(lower_name);
     }
 
-    fn lower_list_value(&mut self, param: &str, l: &Type, lower_name: &str, direction: Direction) {
+    fn lower_list_value(&mut self, param: &str, l: &Type, lower_name: &str) {
         let list_ty = self.interface.gen.get_c_ty(l);
         uwriteln!(
             self.lower_src,
@@ -1769,9 +1863,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let lower_name = &format!("{lower_name}_ptr");
 
         if let Some(inner) = self.interface.extract_list_ty(l) {
-            self.lower_list_value(param, &inner.clone(), lower_name, direction);
+            self.lower_list_value(param, &inner.clone(), lower_name);
         } else {
-            self.lower_value(param, l, &format!("{lower_name}_value"), direction);
+            self.lower_value(param, l, &format!("{lower_name}_value"));
             uwriteln!(self.lower_src, "*{lower_name} = {lower_name}_value");
         }
 
@@ -1786,7 +1880,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         lower_name: &str,
         lower_inner_name1: &str,
         lower_inner_name2: &str,
-        direction: Direction,
     ) {
         // lower_inner_name could be {lower_name}.val if it's used in import
         // else, it could be either ret or err
@@ -1804,7 +1897,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 &format!("{param}.Unwrap()"),
                 &ok_inner,
                 &format!("{lower_name}_val"),
-                direction,
             );
             uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
         }
@@ -1820,7 +1912,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 &format!("{param}.UnwrapErr()"),
                 &err_inner,
                 &format!("{lower_name}_val"),
-                direction,
             );
             uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
         }
@@ -1834,7 +1925,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     /// * `param` - The string representation of the parameter of a function
     /// * `ty` - A reference to a `Type` that specifies the type of the value.
     /// * `lower_name` - A reference to a string that represents the name to be used for the lower value.
-    fn lower_value(&mut self, param: &str, ty: &Type, lower_name: &str, direction: Direction) {
+    fn lower_value(&mut self, param: &str, ty: &Type, lower_name: &str) {
         match ty {
             Type::Bool => {
                 uwriteln!(self.lower_src, "{lower_name} := {param}",);
@@ -1869,7 +1960,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &format!("{param}.{field_name}"),
                                 &field.ty,
                                 &format!("{lower_name}_{c_field_name}"),
-                                direction,
                             );
                             uwriteln!(
                                 self.lower_src,
@@ -1890,7 +1980,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &format!("{param}.F{i}"),
                                 ty,
                                 &format!("{lower_name}_f{i}"),
-                                direction,
                             );
                             uwriteln!(self.lower_src, "{lower_name}.f{i} = {lower_name}_f{i}");
                         }
@@ -1903,7 +1992,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             &format!("{param}.Unwrap()"),
                             o,
                             &format!("{lower_name}_val"),
-                            direction,
                         );
                         uwriteln!(self.lower_src, "{lower_name}.val = {lower_name}_val");
                         uwriteln!(self.lower_src, "{lower_name}.is_some = true");
@@ -1921,7 +2009,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             lower_name,
                             &inner_name,
                             &inner_name,
-                            direction,
                         );
                     }
                     TypeDefKind::List(l) => {
@@ -1929,7 +2016,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(*id));
 
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
-                        self.lower_list_value(param, l, lower_name, direction);
+                        self.lower_list_value(param, l, lower_name);
                     }
                     TypeDefKind::Type(t) => {
                         uwriteln!(
@@ -1937,7 +2024,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             "var {lower_name} {value}",
                             value = self.interface.gen.get_c_ty(t),
                         );
-                        self.lower_value(param, t, &format!("{lower_name}_val"), direction);
+                        self.lower_value(param, t, &format!("{lower_name}_val"));
                         uwriteln!(self.lower_src, "{lower_name} = {lower_name}_val");
                     }
                     TypeDefKind::Variant(v) => {
@@ -1964,7 +2051,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     &format!("{param}.Get{case_name}()"),
                                     ty,
                                     &format!("{lower_name}_val"),
-                                    direction,
                                 );
                                 uwriteln!(self.lower_src, "*{lower_name}_ptr = {lower_name}_val");
                             } else {
@@ -1990,61 +2076,42 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     TypeDefKind::Future(_) => todo!("impl future"),
                     TypeDefKind::Stream(_) => todo!("impl stream"),
                     TypeDefKind::Resource => todo!("impl resource"),
-                    TypeDefKind::Handle(h) => {
-                        if matches!(direction, Direction::Import) {
-                            match h {
-                                Own(_) => {
-                                    // we are in static methods, we want to construct a `C.<namespace>_own_<resource>_t`
-                                    let own = self.interface.gen.get_c_ty(&Type::Id(*id));
-                                    uwriteln!(
-                                        self.lower_src,
-                                        "var {lower_name} {own}
+                    TypeDefKind::Handle(h) => match h {
+                        Own(o) => match self.interface.direction {
+                            Direction::Import => {
+                                let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(*id));
+                                uwriteln!(
+                                    self.lower_src,
+                                    "var {lower_name} {c_typedef_target}
                                         {lower_name}.__handle = C.int32_t({param})"
-                                    );
-                                }
-                                Borrow(b) => {
-                                    // we want to construct a `C.<namespace>_own_<resource>_t` struct and assign self to the
-                                    // `__handle` field of the struct. Then call `C.<iface>_borrow_<name>` to get
-                                    // the borrowed handle.
-                                    let ns = self.interface.c_owner_namespace(*id);
-                                    let snake =
-                                        self.interface.resolve.types[*b].name.as_ref().unwrap();
-                                    let mut own = ns.clone();
-                                    own.push_str("_own_");
-                                    own.push_str(&snake);
-                                    own.push_str("_t");
-                                    uwriteln!(
-                                        self.lower_src,
-                                        "var {lower_name}_own C.{own}
-                                        {lower_name}_own.__handle = C.int32_t({param})
-                                        {lower_name} := C.{ns}_borrow_{snake}({lower_name}_own)"
-                                    );
-                                }
+                                )
                             }
-                        } else {
-                            // book keep the resource in the map, and alloc a new C resource.
-                            let resource = dealias(
-                                self.interface.resolve,
-                                *match h {
-                                    Handle::Borrow(resource) => resource,
-                                    Handle::Own(resource) => resource,
-                                },
-                            );
-                            let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(resource));
-                            let ty_name = self.interface.gen.type_names[&resource].clone();
-                            let private_type_name = ty_name.to_snake_case();
-                            self.interface.gen.needs_import_unsafe = true;
-                            uwriteln!(self.lower_src,
-                                "{private_type_name}_mu.Lock()
-                                {private_type_name}_next_id += 1
-                                {private_type_name}_pointers[{private_type_name}_next_id] = {param}
-                                {private_type_name}_mu.Unlock()
-                                {param}_c := (*{c_typedef_target})(unsafe.Pointer(C.malloc(C.size_t(unsafe.Sizeof({c_typedef_target}{{}})))))
-                                {param}_c.__handle = C.int32_t({private_type_name}_next_id)
-                                {lower_name} := C.{private_type_name}_new({param}_c) // pass the pointer directly"
-                            );
-                        }
-                    }
+                            Direction::Export => {
+                                let resource = dealias(
+                                    self.interface.resolve,
+                                    *match h {
+                                        Handle::Borrow(resource) => resource,
+                                        Handle::Own(resource) => resource,
+                                    },
+                                );
+                                let c_typedef_target =
+                                    self.interface.gen.get_c_ty(&Type::Id(resource));
+                                let ty_name = self.interface.gen.type_names[&resource].clone();
+                                let private_type_name = ty_name.to_snake_case();
+                                self.interface.gen.needs_import_unsafe = true;
+                                uwriteln!(self.lower_src,
+                                            "{private_type_name}_mu.Lock()
+                                            {private_type_name}_next_id += 1
+                                            {private_type_name}_pointers[{private_type_name}_next_id] = {param}
+                                            {private_type_name}_mu.Unlock()
+                                            {param}_c := (*{c_typedef_target})(unsafe.Pointer(C.malloc(C.size_t(unsafe.Sizeof({c_typedef_target}{{}})))))
+                                            {param}_c.__handle = C.int32_t({private_type_name}_next_id)
+                                            {lower_name} := C.{private_type_name}_new({param}_c) // pass the pointer directly"
+                                        );
+                            }
+                        },
+                        Borrow(_) => todo!(),
+                    },
                     TypeDefKind::Unknown => unreachable!(),
                 }
             }
@@ -2059,13 +2126,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
     }
 
-    fn lift(&mut self, name: &str, ty: &Type, direction: Direction) {
+    fn lift(&mut self, name: &str, ty: &Type) {
         let lift_name = format!("lift_{name}");
-        self.lift_value(name, ty, lift_name.as_str(), direction);
+        self.lift_value(name, ty, lift_name.as_str());
         self.args.push(lift_name);
     }
 
-    fn lift_value(&mut self, param: &str, ty: &Type, lift_name: &str, direction: Direction) {
+    fn lift_value(&mut self, param: &str, ty: &Type, lift_name: &str) {
         match ty {
             Type::Bool => {
                 uwriteln!(self.lift_src, "{lift_name} := {param}");
@@ -2097,7 +2164,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &format!("{param}.{c_field_name}"),
                                 &field.ty,
                                 &format!("{lift_name}_{field_name}"),
-                                direction,
                             );
                             uwriteln!(
                                 self.lift_src,
@@ -2127,7 +2193,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &format!("{param}.f{i}"),
                                 t,
                                 &format!("{lift_name}_F{i}"),
-                                direction,
                             );
                             uwriteln!(self.lift_src, "{lift_name}.F{i} = {lift_name}_F{i}");
                         }
@@ -2136,12 +2201,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         let ty_name = self.interface.get_ty(&Type::Id(*id));
                         uwriteln!(self.lift_src, "var {lift_name} {ty_name}");
                         uwriteln!(self.lift_src, "if {param}.is_some {{");
-                        self.lift_value(
-                            &format!("{param}.val"),
-                            o,
-                            &format!("{lift_name}_val"),
-                            direction,
-                        );
+                        self.lift_value(&format!("{param}.val"), o, &format!("{lift_name}_val"));
 
                         uwriteln!(self.lift_src, "{lift_name}.Set({lift_name}_val)");
                         self.lift_src.push_str("} else {\n");
@@ -2164,7 +2224,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &format!("{lift_name}_ptr"),
                                 &err_inner,
                                 &format!("{lift_name}_val"),
-                                direction,
                             );
                             uwriteln!(self.lift_src, "{lift_name}.SetErr({lift_name}_val)")
                         } else {
@@ -2179,7 +2238,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 &format!("{lift_name}_ptr"),
                                 &ok_inner,
                                 &format!("{lift_name}_val"),
-                                direction,
                             );
                             uwriteln!(self.lift_src, "{lift_name}.Set({lift_name}_val)")
                         }
@@ -2210,7 +2268,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             &format!("{lift_name}_ptr"),
                             l,
                             &format!("list_{lift_name}"),
-                            direction,
                         );
 
                         uwriteln!(
@@ -2227,7 +2284,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                             "var {lift_name} {ty_name}",
                             ty_name = self.interface.get_ty(&Type::Id(*id)),
                         );
-                        self.lift_value(param, t, &format!("{lift_name}_val"), direction);
+                        self.lift_value(param, t, &format!("{lift_name}_val"));
                         uwriteln!(self.lift_src, "{lift_name} = {lift_name}_val");
                     }
                     TypeDefKind::Variant(v) => {
@@ -2248,7 +2305,6 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                     &format!("{lift_name}_ptr"),
                                     ty,
                                     &format!("{lift_name}_val"),
-                                    direction,
                                 );
                                 uwriteln!(
                                     self.lift_src,
@@ -2274,7 +2330,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     TypeDefKind::Stream(_) => todo!("impl stream"),
                     TypeDefKind::Resource => todo!("impl resource"),
                     TypeDefKind::Handle(h) => {
-                        if matches!(direction, Direction::Export) {
+                        if matches!(self.interface.direction, Direction::Export) {
                             match h {
                                 Own(_) => {
                                     // we are in a static method of a resource
@@ -2310,13 +2366,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 }
                             }
                         } else {
-                            // we first need to get the handle of the resource, and then convert that into int32
-                            // ignoring own and borrow for Go
                             let ty_name = self.interface.get_ty(&Type::Id(*id));
                             uwriteln!(
                                 self.lift_src,
                                 "var {lift_name} {ty_name}
-                                {lift_name} = {ty_name}({param}.__handle)"
+                                {lift_name} = {ty_name}({param}.__handle)
+                                "
                             );
                         }
                     }
