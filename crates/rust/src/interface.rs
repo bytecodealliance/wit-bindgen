@@ -1,4 +1,5 @@
 use crate::bindgen::FunctionBindgen;
+use crate::types::TypeInfo;
 use crate::{
     dealias, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, Direction, ExportKey, FnSig,
     Identifier, InterfaceName, Ownership, RustFlagsRepr, RustWasm, TypeMode,
@@ -9,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
-use wit_bindgen_core::{uwrite, uwriteln, wit_parser::*, Source, TypeInfo};
+use wit_bindgen_core::{uwrite, uwriteln, wit_parser::*, AnonymousTypeGenerator, Source};
 
 pub struct InterfaceGenerator<'a> {
     pub src: Source,
@@ -751,94 +752,12 @@ impl InterfaceGenerator<'_> {
             }
         }
 
-        match &ty.kind {
-            TypeDefKind::List(t) => self.print_list(t, mode),
-
-            TypeDefKind::Option(t) => {
-                self.push_str("Option<");
-                self.print_ty(t, mode);
-                self.push_str(">");
-            }
-
-            TypeDefKind::Result(r) => {
-                self.push_str("Result<");
-                self.print_optional_ty(r.ok.as_ref(), mode);
-                self.push_str(",");
-                self.print_optional_ty(r.err.as_ref(), mode);
-                self.push_str(">");
-            }
-
-            TypeDefKind::Variant(_) => panic!("unsupported anonymous variant"),
-
-            // Tuple-like records are mapped directly to Rust tuples of
-            // types. Note the trailing comma after each member to
-            // appropriately handle 1-tuples.
-            TypeDefKind::Tuple(t) => {
-                self.push_str("(");
-                for ty in t.types.iter() {
-                    self.print_ty(ty, mode);
-                    self.push_str(",");
-                }
-                self.push_str(")");
-            }
-            TypeDefKind::Resource => {
-                panic!("unsupported anonymous type reference: resource")
-            }
-            TypeDefKind::Record(_) => {
-                panic!("unsupported anonymous type reference: record")
-            }
-            TypeDefKind::Flags(_) => {
-                panic!("unsupported anonymous type reference: flags")
-            }
-            TypeDefKind::Enum(_) => {
-                panic!("unsupported anonymous type reference: enum")
-            }
-            TypeDefKind::Future(ty) => {
-                self.push_str("Future<");
-                self.print_optional_ty(ty.as_ref(), mode);
-                self.push_str(">");
-            }
-            TypeDefKind::Stream(stream) => {
-                self.push_str("Stream<");
-                self.print_optional_ty(stream.element.as_ref(), mode);
-                self.push_str(",");
-                self.print_optional_ty(stream.end.as_ref(), mode);
-                self.push_str(">");
-            }
-
-            TypeDefKind::Handle(Handle::Own(ty)) => {
-                self.mark_resource_owned(*ty);
-                self.print_ty(&Type::Id(*ty), mode);
-            }
-
-            TypeDefKind::Handle(Handle::Borrow(ty)) => {
-                self.push_str("&");
-                if let TypeMode::AllBorrowed(lt) | TypeMode::HandlesBorrowed(lt) = mode {
-                    if lt != "'_" {
-                        self.push_str(lt);
-                        self.push_str(" ");
-                    }
-                }
-                if self.is_exported_resource(*ty) {
-                    self.push_str(
-                        &self.type_path_with_name(
-                            *ty,
-                            self.resolve.types[*ty]
-                                .name
-                                .as_deref()
-                                .unwrap()
-                                .to_upper_camel_case(),
-                        ),
-                    );
-                } else {
-                    self.print_ty(&Type::Id(*ty), mode);
-                }
-            }
-
-            TypeDefKind::Type(t) => self.print_ty(t, mode),
-
-            TypeDefKind::Unknown => unreachable!(),
-        }
+        let mut anonymous_type_gen = AnonTypeGenerator {
+            mode,
+            resolve: self.resolve,
+            interface: self,
+        };
+        anonymous_type_gen.define_anonymous_type(id);
     }
 
     fn print_list(&mut self, ty: &Type, mode: TypeMode) {
@@ -1828,32 +1747,86 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.print_ty(ty, TypeMode::Owned);
         self.src.push_str(";\n");
     }
+}
+
+struct AnonTypeGenerator<'a, 'b> {
+    mode: TypeMode,
+    resolve: &'a Resolve,
+    interface: &'a mut InterfaceGenerator<'b>,
+}
+
+impl<'a, 'b> wit_bindgen_core::AnonymousTypeGenerator<'a> for AnonTypeGenerator<'a, 'b> {
+    fn resolve(&self) -> &'a Resolve {
+        self.resolve
+    }
 
     fn anonymous_type_handle(&mut self, id: TypeId, handle: &Handle, docs: &Docs) {
-        todo!()
+        match handle {
+            Handle::Own(ty) => {
+                self.interface.mark_resource_owned(*ty);
+                self.interface.print_ty(&Type::Id(*ty), self.mode);
+            }
+            Handle::Borrow(ty) => {
+                self.interface.push_str("&");
+                if let TypeMode::AllBorrowed(lt) | TypeMode::HandlesBorrowed(lt) = self.mode {
+                    if lt != "'_" {
+                        self.interface.push_str(lt);
+                        self.interface.push_str(" ");
+                    }
+                }
+                if self.interface.is_exported_resource(*ty) {
+                    self.interface.push_str(
+                        &self.interface.type_path_with_name(
+                            *ty,
+                            self.resolve.types[*ty]
+                                .name
+                                .as_deref()
+                                .unwrap()
+                                .to_upper_camel_case(),
+                        ),
+                    );
+                } else {
+                    self.interface.print_ty(&Type::Id(*ty), self.mode);
+                }
+            }
+        }
     }
 
     fn anonymous_type_tuple(&mut self, id: TypeId, ty: &Tuple, docs: &Docs) {
-        todo!()
+        self.interface.push_str("(");
+        for ty in ty.types.iter() {
+            self.interface.print_ty(ty, self.mode);
+            self.interface.push_str(",");
+        }
+        self.interface.push_str(")");
     }
 
     fn anonymous_type_option(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
-        todo!()
+        self.interface.push_str("Option<");
+        self.interface.print_ty(ty, self.mode);
+        self.interface.push_str(">");
     }
 
     fn anonymous_type_result(&mut self, id: TypeId, ty: &Result_, docs: &Docs) {
-        todo!()
+        self.interface.push_str("Result<");
+        self.interface.print_optional_ty(ty.ok.as_ref(), self.mode);
+        self.interface.push_str(",");
+        self.interface.print_optional_ty(ty.err.as_ref(), self.mode);
+        self.interface.push_str(">");
     }
 
     fn anonymous_type_list(&mut self, id: TypeId, ty: &Type, docs: &Docs) {
-        todo!()
+        self.interface.print_list(ty, self.mode)
     }
 
     fn anonymous_type_future(&mut self, id: TypeId, ty: &Option<Type>, docs: &Docs) {
-        todo!()
+        self.interface.push_str("Future<");
+        self.interface.print_optional_ty(ty.as_ref(), self.mode);
+        self.interface.push_str(">");
     }
 
     fn anonymous_type_stream(&mut self, id: TypeId, ty: &Stream, docs: &Docs) {
-        todo!()
+        self.interface.mark_resource_owned(id);
+        self.interface.print_ty(&Type::Id(id), self.mode);
     }
 }

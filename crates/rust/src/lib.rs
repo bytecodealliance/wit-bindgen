@@ -7,14 +7,15 @@ use std::io::{Read, Write};
 use std::mem;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
+use types::Types;
 use wit_bindgen_core::abi::{Bitcast, WasmType};
 use wit_bindgen_core::{
-    uwriteln, wit_parser::*, Direction, Files, InterfaceGenerator as _, Source, Types,
-    WorldGenerator,
+    uwriteln, wit_parser::*, Direction, Files, InterfaceGenerator as _, Source, WorldGenerator,
 };
 
 mod bindgen;
 mod interface;
+mod types;
 
 #[derive(Default)]
 struct ResourceInfo {
