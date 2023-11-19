@@ -1000,7 +1000,6 @@ impl InterfaceGenerator<'_> {
 
     // This is useful in defining functions in the exported interface that the guest needs to implement
     fn func_sig_with_no_namespace(&mut self, resolve: &Resolve, func: &Function) -> String {
-        // TODO: simplify function name for methods, constructors and static.
         format!(
             "{}({}){}",
             self.func_name(func),
@@ -1386,18 +1385,25 @@ impl InterfaceGenerator<'_> {
                 // generate an interface that contains all the methods
                 // that the guest code needs to implement.
                 let ty_name = self.gen.type_names.get(id).unwrap();
-                if self.methods.get(id) == None {
-                    continue;
-                }
-                self.src.push_str(&format!("type {ty_name} interface {{\n"));
-                for (interface_func_declaration, _) in &self.methods[id] {
-                    self.src
-                        .push_str(format!("{interface_func_declaration}\n").as_str());
-                }
-                self.src.push_str("}\n\n");
 
-                for (_, export_func) in &self.methods[id] {
-                    self.src.push_str(export_func);
+                self.src.push_str(&format!("type {ty_name} interface {{\n"));
+                if self.methods.get(id) == None {
+                    // if this resource has no methods, generate an empty interface
+                    // note that constructor and static methods are included in the
+                    // top level interface definition.
+                    self.src.push_str("}\n\n");
+                } else {
+                    // otherwise, generate an interface that contains all the methods
+                    for (interface_func_declaration, _) in &self.methods[id] {
+                        self.src
+                            .push_str(format!("{interface_func_declaration}\n").as_str());
+                    }
+                    self.src.push_str("}\n\n");
+
+                    // generate each method as a private export function
+                    for (_, export_func) in &self.methods[id] {
+                        self.src.push_str(export_func);
+                    }
                 }
             }
 
@@ -1502,6 +1508,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 }}
                 ",
             );
+
+            self.gen.needs_import_unsafe = true;
 
             // book keep the exported resource type
             self.gen.exported_resources.insert(id);
@@ -1699,56 +1707,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn process_args(&mut self) {
-        match self.func.kind {
-            FunctionKind::Method(m) => {
-                // the first argument is `self`
-                let (name, ty) = self.func.params.first().unwrap();
-                match self.interface.direction {
-                    Direction::Import => {
-                        let ns = self.interface.c_owner_namespace(m);
-                        let snake = self.interface.resolve.types[m].name.as_ref().unwrap();
-                        let mut own = ns.clone();
-                        own.push_str("_own_");
-                        own.push_str(&snake);
-                        own.push_str("_t");
-                        uwriteln!(
-                            self.lower_src,
-                            "var lower_{name}_own C.{own}
-                            lower_{name}_own.__handle = C.int32_t({name})
-                            lower_{name} := C.{ns}_borrow_{snake}(lower_{name}_own)"
-                        );
-                        self.c_args.push(format!("lower_{name}"));
-                    }
-                    Direction::Export => {
-                        let resource_name: String = self.interface.get_ty(ty).to_snake_case();
-                        uwriteln!(
-                            self.lift_src,
-                            "{name}_handle := int32({name}.__handle)
-                            lift_{name}, ok := {resource_name}_pointers[{name}_handle]
-                            if !ok {{
-                                panic(\"internal error: invalid handle\")
-                            }}"
-                        );
-                        self.args.push(format!("lift_{}", name));
-                    }
-                }
-                self.func.params.iter().skip(1).for_each(|(name, ty)| {
-                    match self.interface.direction {
-                        Direction::Import => self.lower(&avoid_keyword(&name.to_snake_case()), ty),
-                        Direction::Export => self.lift(&avoid_keyword(&name.to_snake_case()), ty),
-                    }
-                });
-            }
-            _ => {
-                self.func
-                    .params
-                    .iter()
-                    .for_each(|(name, ty)| match self.interface.direction {
-                        Direction::Import => self.lower(&avoid_keyword(&name.to_snake_case()), ty),
-                        Direction::Export => self.lift(&avoid_keyword(&name.to_snake_case()), ty),
-                    });
-            }
-        }
+        self.func
+            .params
+            .iter()
+            .for_each(|(name, ty)| match self.interface.direction {
+                Direction::Import => self.lower(&avoid_keyword(&name.to_snake_case()), ty),
+                Direction::Export => self.lift(&avoid_keyword(&name.to_snake_case()), ty),
+            });
     }
 
     fn process_returns(&mut self) {
@@ -1756,68 +1721,20 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             0 => {}
             1 => {
                 let ty = self.func.results.iter_types().next().unwrap();
-                match self.func.kind {
-                    FunctionKind::Constructor(c) => match self.interface.direction {
-                        Direction::Import => {
-                            self.constructor_return_import(ty, "ret");
-                        }
-                        Direction::Export => {
-                            self.constructor_return_export(c, "result");
-                        }
-                    },
-                    _ => match self.interface.direction {
-                        Direction::Import => self.lift("ret", ty),
-                        Direction::Export => self.lower("result", ty),
-                    },
+                match self.interface.direction {
+                    Direction::Import => self.lift("ret", ty),
+                    Direction::Export => self.lower("result", ty),
                 }
             }
             _ => {
                 for (i, ty) in self.func.results.iter_types().enumerate() {
-                    match self.func.kind {
-                        FunctionKind::Constructor(c) => match self.interface.direction {
-                            Direction::Import => {
-                                self.constructor_return_import(ty, &format!("ret{i}"));
-                            }
-                            Direction::Export => {
-                                self.constructor_return_export(c, &format!("result{i}"));
-                            }
-                        },
-                        _ => match self.interface.direction {
-                            Direction::Import => self.lift(&format!("ret{i}"), ty),
-                            Direction::Export => self.lower(&format!("result{i}"), ty),
-                        },
+                    match self.interface.direction {
+                        Direction::Import => self.lift(&format!("ret{i}"), ty),
+                        Direction::Export => self.lower(&format!("result{i}"), ty),
                     }
                 }
             }
         };
-    }
-
-    fn constructor_return_export(&mut self, c: TypeId, param: &str) {
-        let resource = dealias(self.interface.resolve, c);
-        let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(resource));
-        let ty_name = self.interface.gen.type_names[&resource].clone();
-        let private_type_name = ty_name.to_snake_case();
-        self.interface.gen.needs_import_unsafe = true;
-        uwriteln!(self.lower_src,
-            "{private_type_name}_mu.Lock()
-            {private_type_name}_next_id += 1
-            {private_type_name}_pointers[{private_type_name}_next_id] = {param}
-            {private_type_name}_mu.Unlock()
-            {param}_c := (*{c_typedef_target})(unsafe.Pointer(C.malloc(C.size_t(unsafe.Sizeof({c_typedef_target}{{}})))))
-            {param}_c.__handle = C.int32_t({private_type_name}_next_id)
-            lower_{param} := C.{private_type_name}_new({param}_c) // pass the pointer directly"
-        );
-        self.c_args.push(format!("lower_{}", param));
-    }
-
-    fn constructor_return_import(&mut self, ty: &Type, param: &str) {
-        let ty_name = self.interface.get_ty(ty);
-        uwriteln!(
-            self.lift_src,
-            "var lift_{param} {ty_name}
-            lift_{param} = {ty_name}({param}.__handle)"
-        );
-        self.args.push(format!("lift_{}", param));
     }
 
     fn lower(&mut self, name: &str, ty: &Type) {
@@ -2076,8 +1993,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     TypeDefKind::Future(_) => todo!("impl future"),
                     TypeDefKind::Stream(_) => todo!("impl stream"),
                     TypeDefKind::Resource => todo!("impl resource"),
-                    TypeDefKind::Handle(h) => match h {
-                        Own(o) => match self.interface.direction {
+                    TypeDefKind::Handle(h) => {
+                        match self.interface.direction {
                             Direction::Import => {
                                 let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(*id));
                                 uwriteln!(
@@ -2094,24 +2011,58 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                         Handle::Own(resource) => resource,
                                     },
                                 );
-                                let c_typedef_target =
-                                    self.interface.gen.get_c_ty(&Type::Id(resource));
-                                let ty_name = self.interface.gen.type_names[&resource].clone();
-                                let private_type_name = ty_name.to_snake_case();
-                                self.interface.gen.needs_import_unsafe = true;
-                                uwriteln!(self.lower_src,
-                                            "{private_type_name}_mu.Lock()
-                                            {private_type_name}_next_id += 1
-                                            {private_type_name}_pointers[{private_type_name}_next_id] = {param}
-                                            {private_type_name}_mu.Unlock()
-                                            {param}_c := (*{c_typedef_target})(unsafe.Pointer(C.malloc(C.size_t(unsafe.Sizeof({c_typedef_target}{{}})))))
-                                            {param}_c.__handle = C.int32_t({private_type_name}_next_id)
-                                            {lower_name} := C.{private_type_name}_new({param}_c) // pass the pointer directly"
-                                        );
+                                // If the resource is exported, then `type_resource` have created a
+                                // internal bookkeeping map for this resource. We will need to
+                                // use the map to get the resource interface. Otherwise, this resource
+                                // is imported, and we will use the generated i32 handle directly.
+                                if self.interface.gen.exported_resources.contains(&resource) {
+                                    let resource = dealias(self.interface.resolve, resource);
+                                    let c_typedef_target =
+                                        self.interface.gen.get_c_ty(&Type::Id(resource));
+                                    let ty_name = self.interface.gen.type_names[&resource].clone();
+                                    let private_type_name = ty_name.to_snake_case();
+                                    self.interface.gen.needs_import_unsafe = true;
+                                    uwriteln!(self.lower_src,
+                                        "{private_type_name}_mu.Lock()
+                                        {private_type_name}_next_id += 1
+                                        {private_type_name}_pointers[{private_type_name}_next_id] = {param}
+                                        {private_type_name}_mu.Unlock()
+                                        {param}_c := (*{c_typedef_target})(unsafe.Pointer(C.malloc(C.size_t(unsafe.Sizeof({c_typedef_target}{{}})))))
+                                        {param}_c.__handle = C.int32_t({private_type_name}_next_id)
+                                        lower_{param} := C.{private_type_name}_new({param}_c) // pass the pointer directly"
+                                    );
+                                } else {
+                                    // need to construct either an own or borrowed C handle type.
+                                    let ns = self.interface.c_owner_namespace(*id);
+                                    let snake = self.interface.resolve.types[resource]
+                                        .name
+                                        .as_ref()
+                                        .unwrap();
+                                    let c_typedef_target = match h {
+                                        Own(_) => {
+                                            let mut own = ns.clone();
+                                            own.push_str("_own_");
+                                            own.push_str(&snake);
+                                            own.push_str("_t");
+                                            own
+                                        }
+                                        Borrow(_) => {
+                                            let mut borrow = ns.clone();
+                                            borrow.push_str("_borrow_");
+                                            borrow.push_str(&snake);
+                                            borrow.push_str("_t");
+                                            borrow
+                                        }
+                                    };
+                                    uwriteln!(
+                                        self.lower_src,
+                                        "var {lower_name} C.{c_typedef_target}
+                                        {lower_name}.__handle = C.int32_t({param})"
+                                    );
+                                }
                             }
-                        },
-                        Borrow(_) => todo!(),
-                    },
+                        }
+                    }
                     TypeDefKind::Unknown => unreachable!(),
                 }
             }
@@ -2330,49 +2281,61 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                     TypeDefKind::Stream(_) => todo!("impl stream"),
                     TypeDefKind::Resource => todo!("impl resource"),
                     TypeDefKind::Handle(h) => {
-                        if matches!(self.interface.direction, Direction::Export) {
-                            match h {
-                                Own(_) => {
-                                    // we are in a static method of a resource
-                                    // we need to first call `C.<namespace>_<resource_name>_rep()` on the owned resource parameter, and then
-                                    // get the handle of the resource and pass it to the bookkeeping map.
+                        match self.interface.direction {
+                            Direction::Import => {
+                                let ty_name = self.interface.get_ty(&Type::Id(*id));
+                                uwriteln!(
+                                    self.lift_src,
+                                    "var {lift_name} {ty_name}
+                                    {lift_name} = {ty_name}({param}.__handle)
+                                    "
+                                );
+                            }
+                            Direction::Export => {
+                                // If the resource is exported, then `type_resource` have created a
+                                // internal bookkeeping map for this resource. We will need to
+                                // use the map to get the resource interface. Otherwise, this resource
+                                // is imported, and we will use the generated i32 handle directly.
+                                let resource = dealias(
+                                    self.interface.resolve,
+                                    *match h {
+                                        Handle::Borrow(resource) => resource,
+                                        Handle::Own(resource) => resource,
+                                    },
+                                );
+                                if self.interface.gen.exported_resources.contains(&resource) {
                                     let resource_name: String =
-                                        self.interface.get_ty(&Type::Id(*id)).to_snake_case();
-                                    // let name = self.interface.resolve.types[*id].name.as_deref().unwrap();
+                                        self.interface.get_ty(&Type::Id(resource)).to_snake_case();
+                                    match h {
+                                        Own(_) => {
+                                            uwriteln!(
+                                                self.lift_src,
+                                                "{lift_name}_rep := C.{resource_name}_rep({param})
+                                                {lift_name}_handle := int32({lift_name}_rep.__handle)"
+                                            );
+                                        }
+                                        Borrow(_) => {
+                                            uwriteln!(
+                                                self.lift_src,
+                                                "{lift_name}_handle := int32({param}.__handle)"
+                                            );
+                                        }
+                                    }
                                     uwriteln!(
                                         self.lift_src,
-                                        "{resource_name}_rep := C.{resource_name}_rep({param})
-                                        {param}_handle := int32({resource_name}_rep.__handle)
-                                        {lift_name}, ok := {resource_name}_pointers[{param}_handle]
+                                        "{lift_name}, ok := {resource_name}_pointers[{lift_name}_handle]
                                         if !ok {{
                                             panic(\"internal error: invalid handle\")
                                         }}"
                                     );
-                                }
-                                Borrow(_) => {
-                                    // we are in a non-static method of a resource
-                                    // we need to get the handle of the resource and pass it to
-                                    // the bookkeeping map
-                                    let resource_name: String =
-                                        self.interface.get_ty(&Type::Id(*id)).to_snake_case();
+                                } else {
+                                    let resource_name = self.interface.get_ty(&Type::Id(resource));
                                     uwriteln!(
                                         self.lift_src,
-                                        "{param}_handle := int32({param}.__handle)
-                                        {lift_name}, ok := {resource_name}_pointers[{param}_handle]
-                                        if !ok {{
-                                            panic(\"internal error: invalid handle\")
-                                        }}"
+                                        "{lift_name} := {resource_name}({param}.__handle)",
                                     );
                                 }
                             }
-                        } else {
-                            let ty_name = self.interface.get_ty(&Type::Id(*id));
-                            uwriteln!(
-                                self.lift_src,
-                                "var {lift_name} {ty_name}
-                                {lift_name} = {ty_name}({param}.__handle)
-                                "
-                            );
                         }
                     }
                     TypeDefKind::Unknown => unreachable!(),
