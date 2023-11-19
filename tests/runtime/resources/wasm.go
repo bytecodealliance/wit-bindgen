@@ -10,7 +10,6 @@ func init() {
 }
 
 type ExportsImpl struct {
-
 }
 
 type MyX struct {
@@ -49,7 +48,7 @@ func (e ExportsImpl) Add(z ExportsZ, b ExportsZ) ExportsZ {
 	return &MyZ{a: z.MethodZGetA() + b.MethodZGetA()}
 }
 
-func (e ExportsImpl) TestImports() Result[struct{}, string]  {
+func (e ExportsImpl) TestImports() Result[struct{}, string] {
 	y := NewY(1)
 	if y.GetA() != 1 {
 		panic("y.GetA() != 1")
