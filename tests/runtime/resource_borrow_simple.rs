@@ -1,4 +1,4 @@
-use wasmtime::Store;
+use wasmtime::{component::Resource, Store};
 
 wasmtime::component::bindgen!(in "tests/runtime/resource_borrow_simple");
 
@@ -7,6 +7,10 @@ wasmtime::component::bindgen!(in "tests/runtime/resource_borrow_simple");
 pub struct MyHostRImpl {}
 
 impl HostR for MyHostRImpl {
+    fn new(&mut self) -> std::result::Result<wasmtime::component::Resource<R>, anyhow::Error> {
+        Ok(Resource::new_own(0))
+    }
+
     fn drop(
         &mut self,
         _: wasmtime::component::Resource<R>,
@@ -24,7 +28,7 @@ impl ResourceBorrowSimpleImports for MyHostRImpl {
 #[test]
 fn run() -> anyhow::Result<()> {
     crate::run_test(
-        "resource_borrow_import",
+        "resource_borrow_simple",
         |linker| ResourceBorrowSimple::add_to_linker(linker, |x| &mut x.0),
         |store, component: &wasmtime::component::Component, linker| {
             let (u, e) = ResourceBorrowSimple::instantiate(store, component, linker)?;
