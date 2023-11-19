@@ -6,56 +6,19 @@ use anyhow::Result;
 use heck::{ToKebabCase, ToLowerCamelCase, ToSnakeCase, ToUpperCamelCase};
 
 use wit_bindgen_c::{
-    c_func_name, dealias, find_live_export_types, flags_repr, int_repr, is_arg_by_pointer,
-    owner_namespace as c_owner_namespace, push_ty_name, ResourceInfo,
+    c_func_name, find_live_export_types, flags_repr, int_repr, is_arg_by_pointer,
+    owner_namespace as c_owner_namespace, push_ty_name,
 };
-use wit_bindgen_core::wit_parser::{FunctionKind, LiveTypes, WorldItem};
+use wit_bindgen_core::wit_parser::{FunctionKind, LiveTypes};
 use wit_bindgen_core::wit_parser::{
     Handle::Borrow, Handle::Own, InterfaceId, Resolve, TypeOwner, WorldId,
 };
 use wit_bindgen_core::Direction;
 use wit_bindgen_core::{
-    uwriteln,
+    dealias, uwriteln,
     wit_parser::{Field, Function, Handle, SizeAlign, Type, TypeDefKind, TypeId, WorldKey},
     Files, InterfaceGenerator as _, Source, WorldGenerator,
 };
-
-// a list of Go keywords
-const GOKEYWORDS: [&str; 25] = [
-    "break",
-    "default",
-    "func",
-    "interface",
-    "select",
-    "case",
-    "defer",
-    "go",
-    "map",
-    "struct",
-    "chan",
-    "else",
-    "goto",
-    "package",
-    "switch",
-    "const",
-    "fallthrough",
-    "if",
-    "range",
-    "type",
-    "continue",
-    "for",
-    "import",
-    "return",
-    "var",
-];
-
-fn avoid_keyword(s: &str) -> String {
-    if GOKEYWORDS.contains(&s) {
-        format!("{s}_")
-    } else {
-        s.into()
-    }
-}
 
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
@@ -74,21 +37,40 @@ impl Opts {
 pub struct TinyGo {
     _opts: Opts,
     src: Source,
+
     // the parts immediately precede the import of "C"
     preamble: Source,
-    world: String,
-    needs_result_option: bool,
-    needs_import_unsafe: bool,
-    needs_fmt_import: bool,
-    needs_sync_import: bool,
-    sizes: SizeAlign,
-    interface_names: HashMap<InterfaceId, WorldKey>,
-    types: HashMap<TypeId, wit_bindgen_core::Source>,
 
+    world: String,
+
+    // whether the generated code needs to import result and option
+    needs_result_option: bool,
+
+    // whether the generated code needs to import "unsafe"
+    needs_import_unsafe: bool,
+
+    // whether the generated code needs to import "fmt"
+    needs_fmt_import: bool,
+
+    // whether the generated code needs to import "sync"
+    needs_sync_import: bool,
+
+    sizes: SizeAlign,
+
+    // mapping from interface ID to the name of the interface
+    interface_names: HashMap<InterfaceId, WorldKey>,
+
+    // C type names
     c_type_names: HashMap<TypeId, String>,
+
+    // Go type names
     type_names: HashMap<TypeId, String>,
-    // tracking all the exported resources so that we can generate dtors for them
+
+    // tracking all the exported resources used in generating the
+    // resource interface and the resource destructors
     exported_resources: HashSet<TypeId>,
+
+    // the world ID
     world_id: Option<WorldId>,
 }
 
@@ -107,14 +89,6 @@ impl TinyGo {
             direction,
             export_funcs: Vec::new(),
             methods: HashMap::new(),
-        }
-    }
-
-    fn finish_types(&mut self, resolve: &Resolve) {
-        for (id, _) in resolve.types.iter() {
-            if let Some(src) = self.types.get(&id) {
-                self.src.push_str(&src);
-            }
         }
     }
 
@@ -210,7 +184,7 @@ impl WorldGenerator for TinyGo {
         self.preamble.append_src(&preamble);
     }
 
-    fn pre_export_interface(&mut self, resolve: &Resolve, files: &mut Files) -> Result<()> {
+    fn pre_export_interface(&mut self, resolve: &Resolve, _files: &mut Files) -> Result<()> {
         let world = self.world_id.unwrap();
         let live_import_types = find_live_export_types(resolve, world);
         self.c_type_names
@@ -399,48 +373,70 @@ impl WorldGenerator for TinyGo {
                 type ResultKind int
 
                 const (
-                    Ok ResultKind = iota
-                    Err
+                    resultOk ResultKind = iota
+                    resultErr
                 )
 
                 type Result[T any, E any] struct {{
-                    Kind ResultKind
-                    Val  T
-                    Err  E
+                    kind ResultKind
+                    resultOk   T
+                    resultErr  E
                 }}
 
+                // IsOk returns true if the result is Ok.
                 func (r Result[T, E]) IsOk() bool {{
-                    return r.Kind == Ok
+                    return r.kind == resultOk
                 }}
 
+                // IsErr returns true if the result is Err.
                 func (r Result[T, E]) IsErr() bool {{
-                    return r.Kind == Err
+                    return r.kind == resultErr
                 }}
 
+                // Unwrap returns the value if the result is Ok.
                 func (r Result[T, E]) Unwrap() T {{
-                    if r.Kind != Ok {{
+                    if r.kind != resultOk {{
                         panic(\"Result is Err\")
                     }}
-                    return r.Val
+                    return r.resultOk
                 }}
 
+                // UnwrapErr returns the value if the result is Err.
                 func (r Result[T, E]) UnwrapErr() E {{
-                    if r.Kind != Err {{
+                    if r.kind != resultErr {{
                         panic(\"Result is Ok\")
                     }}
-                    return r.Err
+                    return r.resultErr
                 }}
 
+                // Set sets the value and returns it.
                 func (r *Result[T, E]) Set(val T) T {{
-                    r.Kind = Ok
-                    r.Val = val
+                    r.kind = resultOk
+                    r.resultOk = val
                     return val
                 }}
 
-                func (r *Result[T, E]) SetErr(err E) E {{
-                    r.Kind = Err
-                    r.Err = err
-                    return err
+                // SetErr sets the value and returns it.
+                func (r *Result[T, E]) SetErr(val E) E {{
+                    r.kind = resultErr
+                    r.resultErr = val
+                    return val
+                }}
+
+                // Ok is a constructor for Result[T, E] which represents Ok.
+                func Ok[T any, E any](v T) Result[T, E] {{
+                    return Result[T, E]{{
+                        kind: resultOk,
+                        resultOk:   v,
+                    }}
+                }}
+
+                // Err is a constructor for Result[T, E] which represents Err.
+                func Err[T any, E any](v E) Result[T, E] {{
+                    return Result[T, E]{{
+                        kind: resultErr,
+                        resultErr:  v,
+                    }}
                 }}
                 "
             );
@@ -1098,7 +1094,10 @@ impl InterfaceGenerator<'_> {
                 // no anonymous type needs to be generated here because we are using
                 // Option[T], Result[T, E], and []T in Go
             }
-            TypeDefKind::Handle(h) => {}
+            TypeDefKind::Handle(_) => {
+                // although handles are anonymous types, they are generated in the
+                // `type_resource` function as part of the resource type generation.
+            }
             TypeDefKind::Future(_) => todo!("anonymous_type for future"),
             TypeDefKind::Stream(_) => todo!("anonymous_type for stream"),
             TypeDefKind::Unknown => unreachable!(),
@@ -1432,7 +1431,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_record(
         &mut self,
-        id: wit_bindgen_core::wit_parser::TypeId,
+        _id: wit_bindgen_core::wit_parser::TypeId,
         name: &str,
         record: &wit_bindgen_core::wit_parser::Record,
         _docs: &wit_bindgen_core::wit_parser::Docs,
@@ -1518,7 +1517,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_flags(
         &mut self,
-        id: wit_bindgen_core::wit_parser::TypeId,
+        _id: wit_bindgen_core::wit_parser::TypeId,
         name: &str,
         flags: &wit_bindgen_core::wit_parser::Flags,
         _docs: &wit_bindgen_core::wit_parser::Docs,
@@ -1548,7 +1547,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_tuple(
         &mut self,
-        id: wit_bindgen_core::wit_parser::TypeId,
+        _id: wit_bindgen_core::wit_parser::TypeId,
         name: &str,
         tuple: &wit_bindgen_core::wit_parser::Tuple,
         _docs: &wit_bindgen_core::wit_parser::Docs,
@@ -1564,7 +1563,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_variant(
         &mut self,
-        id: wit_bindgen_core::wit_parser::TypeId,
+        _id: wit_bindgen_core::wit_parser::TypeId,
         name: &str,
         variant: &wit_bindgen_core::wit_parser::Variant,
         _docs: &wit_bindgen_core::wit_parser::Docs,
@@ -1602,7 +1601,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_option(
         &mut self,
         id: wit_bindgen_core::wit_parser::TypeId,
-        name: &str,
+        _name: &str,
         _payload: &wit_bindgen_core::wit_parser::Type,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
@@ -1612,7 +1611,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     fn type_result(
         &mut self,
         id: wit_bindgen_core::wit_parser::TypeId,
-        name: &str,
+        _name: &str,
         _result: &wit_bindgen_core::wit_parser::Result_,
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
@@ -1621,7 +1620,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_enum(
         &mut self,
-        id: wit_bindgen_core::wit_parser::TypeId,
+        _id: wit_bindgen_core::wit_parser::TypeId,
         name: &str,
         enum_: &wit_bindgen_core::wit_parser::Enum,
         _docs: &wit_bindgen_core::wit_parser::Docs,
@@ -1652,7 +1651,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_alias(
         &mut self,
-        id: wit_bindgen_core::wit_parser::TypeId,
+        _id: wit_bindgen_core::wit_parser::TypeId,
         name: &str,
         ty: &wit_bindgen_core::wit_parser::Type,
         _docs: &wit_bindgen_core::wit_parser::Docs,
@@ -1664,7 +1663,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
     fn type_list(
         &mut self,
-        id: wit_bindgen_core::wit_parser::TypeId,
+        _id: wit_bindgen_core::wit_parser::TypeId,
         name: &str,
         ty: &wit_bindgen_core::wit_parser::Type,
         _docs: &wit_bindgen_core::wit_parser::Docs,
@@ -2354,3 +2353,40 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         field.name.to_snake_case()
     }
 }
+
+fn avoid_keyword(s: &str) -> String {
+    if GOKEYWORDS.contains(&s) {
+        format!("{s}_")
+    } else {
+        s.into()
+    }
+}
+
+// a list of Go keywords
+const GOKEYWORDS: [&str; 25] = [
+    "break",
+    "default",
+    "func",
+    "interface",
+    "select",
+    "case",
+    "defer",
+    "go",
+    "map",
+    "struct",
+    "chan",
+    "else",
+    "goto",
+    "package",
+    "switch",
+    "const",
+    "fallthrough",
+    "if",
+    "range",
+    "type",
+    "continue",
+    "for",
+    "import",
+    "return",
+    "var",
+];
