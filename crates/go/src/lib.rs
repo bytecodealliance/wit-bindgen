@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use std::fmt::Write;
+use std::fmt::Write as _;
+use std::io::{Read, Write};
 use std::mem;
+use std::process::Stdio;
 
 use anyhow::Result;
 use heck::{ToKebabCase, ToLowerCamelCase, ToSnakeCase, ToUpperCamelCase};
@@ -20,14 +22,26 @@ use wit_bindgen_core::{
     Files, InterfaceGenerator as _, Source, WorldGenerator,
 };
 
-#[derive(Default, Debug, Clone)]
+mod imports;
+
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
-pub struct Opts {}
+pub struct Opts {
+    /// Whether or not `gofmt` is executed to format generated code.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub gofmt: bool,
+}
+
+impl Default for Opts {
+    fn default() -> Self {
+        Self { gofmt: true } // Set the default value of gofmt to true
+    }
+}
 
 impl Opts {
     pub fn build(&self) -> Box<dyn WorldGenerator> {
         Box::new(TinyGo {
-            _opts: self.clone(),
+            opts: self.clone(),
             ..TinyGo::default()
         })
     }
@@ -35,7 +49,7 @@ impl Opts {
 
 #[derive(Default)]
 pub struct TinyGo {
-    _opts: Opts,
+    opts: Opts,
     src: Source,
 
     // the parts immediately precede the import of "C"
@@ -43,17 +57,8 @@ pub struct TinyGo {
 
     world: String,
 
-    // whether the generated code needs to import result and option
-    needs_result_option: bool,
-
-    // whether the generated code needs to import "unsafe"
-    needs_import_unsafe: bool,
-
-    // whether the generated code needs to import "fmt"
-    needs_fmt_import: bool,
-
-    // whether the generated code needs to import "sync"
-    needs_sync_import: bool,
+    // import requirements for the generated code
+    import_requirements: imports::ImportRequirements,
 
     sizes: SizeAlign,
 
@@ -124,6 +129,22 @@ impl TinyGo {
             return res;
         }
         format!("C.{res}")
+    }
+
+    fn with_result_option(&mut self, needs_result_option: bool) {
+        self.import_requirements.needs_result_option = needs_result_option;
+    }
+
+    fn with_import_unsafe(&mut self, needs_import_unsafe: bool) {
+        self.import_requirements.needs_import_unsafe = needs_import_unsafe;
+    }
+
+    fn with_fmt_import(&mut self, needs_fmt_import: bool) {
+        self.import_requirements.needs_fmt_import = needs_fmt_import;
+    }
+
+    pub fn with_sync_import(&mut self, needs_sync_import: bool) {
+        self.import_requirements.needs_sync_import = needs_sync_import;
     }
 }
 
@@ -288,163 +309,43 @@ impl WorldGenerator for TinyGo {
             self.src.append_src(&self.preamble);
         }
         self.src.push_str("import \"C\"\n");
+        let world = &resolve.worlds[id];
 
-        if self.needs_import_unsafe {
-            self.src.push_str("import \"unsafe\"\n");
-        }
-        if self.needs_fmt_import {
-            self.src.push_str("import \"fmt\"\n");
-        }
-        if self.needs_sync_import {
-            self.src.push_str("import \"sync\"\n\n");
-        }
+        self.import_requirements.generate(
+            snake,
+            files,
+            format!("{}_types.go", world.name.to_kebab_case()),
+        );
+        self.src.push_str(&self.import_requirements.src);
+
         self.src.push_str(&src);
 
-        let world = &resolve.worlds[id];
+        if self.opts.gofmt {
+            let mut child = std::process::Command::new("gofmt")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .expect("failed to spawn gofmt");
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(self.src.as_bytes())
+                .expect("failed to write to gofmt");
+            self.src.as_mut_string().truncate(0);
+            child
+                .stdout
+                .take()
+                .unwrap()
+                .read_to_string(self.src.as_mut_string())
+                .expect("failed to read from gofmt");
+            let status = child.wait().expect("failed to wait on gofmt");
+            assert!(status.success());
+        }
         files.push(
             &format!("{}.go", world.name.to_kebab_case()),
             self.src.as_bytes(),
         );
-        if self.needs_result_option {
-            let mut result_option_src = Source::default();
-            uwriteln!(
-                result_option_src,
-                "package {snake}
-
-                // inspired from https://github.com/moznion/go-optional
-
-                type optionKind int
-
-                const (
-                    none optionKind = iota
-                    some
-                )
-
-                type Option[T any] struct {{
-                    kind optionKind
-                    val  T
-                }}
-
-                // IsNone returns true if the option is None.
-                func (o Option[T]) IsNone() bool {{
-                    return o.kind == none
-                }}
-
-                // IsSome returns true if the option is Some.
-                func (o Option[T]) IsSome() bool {{
-                    return o.kind == some
-                }}
-
-                // Unwrap returns the value if the option is Some.
-                func (o Option[T]) Unwrap() T {{
-                    if o.kind != some {{
-                        panic(\"Option is None\")
-                    }}
-                    return o.val
-                }}
-
-                // Set sets the value and returns it.
-                func (o *Option[T]) Set(val T) T {{
-                    o.kind = some
-                    o.val = val
-                    return val
-                }}
-
-                // Unset sets the value to None.
-                func (o *Option[T]) Unset() {{
-                    o.kind = none
-                }}
-
-                // Some is a constructor for Option[T] which represents Some.
-                func Some[T any](v T) Option[T] {{
-                    return Option[T]{{
-                        kind: some,
-                        val:  v,
-                    }}
-                }}
-
-                // None is a constructor for Option[T] which represents None.
-                func None[T any]() Option[T] {{
-                    return Option[T]{{
-                        kind: none,
-                    }}
-                }}
-
-                type ResultKind int
-
-                const (
-                    resultOk ResultKind = iota
-                    resultErr
-                )
-
-                type Result[T any, E any] struct {{
-                    kind ResultKind
-                    resultOk   T
-                    resultErr  E
-                }}
-
-                // IsOk returns true if the result is Ok.
-                func (r Result[T, E]) IsOk() bool {{
-                    return r.kind == resultOk
-                }}
-
-                // IsErr returns true if the result is Err.
-                func (r Result[T, E]) IsErr() bool {{
-                    return r.kind == resultErr
-                }}
-
-                // Unwrap returns the value if the result is Ok.
-                func (r Result[T, E]) Unwrap() T {{
-                    if r.kind != resultOk {{
-                        panic(\"Result is Err\")
-                    }}
-                    return r.resultOk
-                }}
-
-                // UnwrapErr returns the value if the result is Err.
-                func (r Result[T, E]) UnwrapErr() E {{
-                    if r.kind != resultErr {{
-                        panic(\"Result is Ok\")
-                    }}
-                    return r.resultErr
-                }}
-
-                // Set sets the value and returns it.
-                func (r *Result[T, E]) Set(val T) T {{
-                    r.kind = resultOk
-                    r.resultOk = val
-                    return val
-                }}
-
-                // SetErr sets the value and returns it.
-                func (r *Result[T, E]) SetErr(val E) E {{
-                    r.kind = resultErr
-                    r.resultErr = val
-                    return val
-                }}
-
-                // Ok is a constructor for Result[T, E] which represents Ok.
-                func Ok[T any, E any](v T) Result[T, E] {{
-                    return Result[T, E]{{
-                        kind: resultOk,
-                        resultOk:   v,
-                    }}
-                }}
-
-                // Err is a constructor for Result[T, E] which represents Err.
-                func Err[T any, E any](v E) Result[T, E] {{
-                    return Result[T, E]{{
-                        kind: resultErr,
-                        resultErr:  v,
-                    }}
-                }}
-                "
-            );
-            files.push(
-                &format!("{}_types.go", world.name.to_kebab_case()),
-                result_option_src.as_bytes(),
-            );
-        }
 
         let mut opts = wit_bindgen_c::Opts::default();
         opts.no_sig_flattening = true;
@@ -653,11 +554,11 @@ impl InterfaceGenerator<'_> {
                         format!("[]{}", self.get_ty(ty))
                     }
                     wit_bindgen_core::wit_parser::TypeDefKind::Option(o) => {
-                        self.gen.needs_result_option = true;
+                        self.gen.with_result_option(true);
                         format!("Option[{}]", self.get_ty(o))
                     }
                     wit_bindgen_core::wit_parser::TypeDefKind::Result(r) => {
-                        self.gen.needs_result_option = true;
+                        self.gen.with_result_option(true);
                         format!(
                             "Result[{}, {}]",
                             self.optional_ty(r.ok.as_ref()),
@@ -1115,7 +1016,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn print_accessor_methods(&mut self, name: &str, case_name: &str, ty: &Type) {
-        self.gen.needs_fmt_import = true;
+        self.gen.with_fmt_import(true);
         let ty = self.get_ty(ty);
         uwriteln!(
             self.src,
@@ -1477,7 +1378,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.preamble.push_str(";\n");
 
             // import "sync" for Mutex
-            self.gen.needs_sync_import = true;
+            self.gen.with_sync_import(true);
             self.src
                 .push_str(&format!("// resource {type_name} internal bookkeeping"));
             let private_type_name = type_name.to_snake_case();
@@ -1508,7 +1409,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 ",
             );
 
-            self.gen.needs_import_unsafe = true;
+            self.gen.with_import_unsafe(true);
 
             // book keep the exported resource type
             self.gen.exported_resources.insert(id);
@@ -1590,7 +1491,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         for case in variant.cases.iter() {
             let case_name = case.name.to_upper_camel_case();
             if let Some(ty) = case.ty.as_ref() {
-                self.gen.needs_fmt_import = true;
+                self.gen.with_fmt_import(true);
                 self.print_accessor_methods(&name, &case_name, ty);
             } else {
                 self.print_constructor_method_without_value(&name, &case_name);
@@ -1803,7 +1704,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         let (ok, err) = self.interface.extract_result_ty(ty);
         uwriteln!(self.lower_src, "if {param}.IsOk() {{");
         if let Some(ok_inner) = ok {
-            self.interface.gen.needs_import_unsafe = true;
+            self.interface.gen.with_import_unsafe(true);
             let c_target_name = self.interface.gen.get_c_ty(&ok_inner);
             uwriteln!(
                 self.lower_src,
@@ -1818,7 +1719,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         }
         self.lower_src.push_str("} else {\n");
         if let Some(err_inner) = err {
-            self.interface.gen.needs_import_unsafe = true;
+            self.interface.gen.with_import_unsafe(true);
             let c_target_name = self.interface.gen.get_c_ty(&err_inner);
             uwriteln!(
                 self.lower_src,
@@ -1847,7 +1748,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 uwriteln!(self.lower_src, "{lower_name} := {param}",);
             }
             Type::String => {
-                self.interface.gen.needs_import_unsafe = true;
+                self.interface.gen.with_import_unsafe(true);
                 uwriteln!(
                     self.lower_src,
                     "var {lower_name} {value}",
@@ -1928,7 +1829,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         );
                     }
                     TypeDefKind::List(l) => {
-                        self.interface.gen.needs_import_unsafe = true;
+                        self.interface.gen.with_import_unsafe(true);
                         let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(*id));
 
                         uwriteln!(self.lower_src, "var {lower_name} {c_typedef_target}");
@@ -1944,7 +1845,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         uwriteln!(self.lower_src, "{lower_name} = {lower_name}_val");
                     }
                     TypeDefKind::Variant(v) => {
-                        self.interface.gen.needs_import_unsafe = true;
+                        self.interface.gen.with_import_unsafe(true);
 
                         let c_typedef_target = self.interface.gen.get_c_ty(&Type::Id(*id));
                         let ty = self.interface.get_ty(&Type::Id(*id));
@@ -2020,7 +1921,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                         self.interface.gen.get_c_ty(&Type::Id(resource));
                                     let ty_name = self.interface.gen.type_names[&resource].clone();
                                     let private_type_name = ty_name.to_snake_case();
-                                    self.interface.gen.needs_import_unsafe = true;
+                                    self.interface.gen.with_import_unsafe(true);
                                     uwriteln!(self.lower_src,
                                         "{private_type_name}_mu.Lock()
                                         {private_type_name}_next_id += 1
@@ -2088,7 +1989,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                 uwriteln!(self.lift_src, "{lift_name} := {param}");
             }
             Type::String => {
-                self.interface.gen.needs_import_unsafe = true;
+                self.interface.gen.with_import_unsafe(true);
                 uwriteln!(
                     self.lift_src,
                     "var {name} {value}
@@ -2159,7 +2060,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         self.lift_src.push_str("}\n");
                     }
                     TypeDefKind::Result(_) => {
-                        self.interface.gen.needs_result_option = true;
+                        self.interface.gen.with_result_option(true);
                         let ty_name = self.interface.get_ty(&Type::Id(*id));
                         uwriteln!(self.lift_src, "var {lift_name} {ty_name}");
                         let (ok, err) = self.interface.extract_result_ty(&Type::Id(*id));
@@ -2168,7 +2069,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         uwriteln!(self.lift_src, "if {param}.is_err {{");
                         if let Some(err_inner) = err {
                             let err_inner_name = self.interface.gen.get_c_ty(&err_inner);
-                            self.interface.gen.needs_import_unsafe = true;
+                            self.interface.gen.with_import_unsafe(true);
                             uwriteln!(self.lift_src, "{lift_name}_ptr := *(*{err_inner_name})(unsafe.Pointer(&{param}.val))");
                             self.lift_value(
                                 &format!("{lift_name}_ptr"),
@@ -2182,7 +2083,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         uwriteln!(self.lift_src, "}} else {{");
                         if let Some(ok_inner) = ok {
                             let ok_inner_name = self.interface.gen.get_c_ty(&ok_inner);
-                            self.interface.gen.needs_import_unsafe = true;
+                            self.interface.gen.with_import_unsafe(true);
                             uwriteln!(self.lift_src, "{lift_name}_ptr := *(*{ok_inner_name})(unsafe.Pointer(&{param}.val))");
                             self.lift_value(
                                 &format!("{lift_name}_ptr"),
@@ -2194,7 +2095,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         uwriteln!(self.lift_src, "}}");
                     }
                     TypeDefKind::List(l) => {
-                        self.interface.gen.needs_import_unsafe = true;
+                        self.interface.gen.with_import_unsafe(true);
                         let list_ty = self.interface.get_ty(&Type::Id(*id));
                         let c_ty_name = self.interface.gen.get_c_ty(l);
                         uwriteln!(self.lift_src, "var {lift_name} {list_ty}",);
@@ -2238,7 +2139,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                         uwriteln!(self.lift_src, "{lift_name} = {lift_name}_val");
                     }
                     TypeDefKind::Variant(v) => {
-                        self.interface.gen.needs_import_unsafe = true;
+                        self.interface.gen.with_import_unsafe(true);
                         let ty_name: String = self.interface.get_ty(&Type::Id(*id));
                         uwriteln!(self.lift_src, "var {lift_name} {ty_name}");
                         for (i, case) in v.cases.iter().enumerate() {
