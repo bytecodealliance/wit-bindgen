@@ -831,12 +831,3 @@ impl fmt::Display for RustFlagsRepr {
         }
     }
 }
-
-fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
-    loop {
-        match &resolve.types[id].kind {
-            TypeDefKind::Type(Type::Id(that_id)) => id = *that_id,
-            _ => break id,
-        }
-    }
-}

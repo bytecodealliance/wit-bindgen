@@ -70,10 +70,7 @@ func (e ExportsImpl) TestImports() Result[struct{}, string]  {
 		panic("y.GetA() != 5")
 	}
 
-	return Result[struct{}, string]{
-		Kind: Ok,
-		Val: struct{}{},
-	}
+	return Ok[struct{}, string](struct{}{})
 }
 
 func main() {}

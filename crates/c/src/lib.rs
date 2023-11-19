@@ -7,7 +7,8 @@ use std::fmt::Write;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType};
 use wit_bindgen_core::{
-    uwrite, uwriteln, wit_parser::*, Direction, Files, InterfaceGenerator as _, Ns, WorldGenerator,
+    dealias, uwrite, uwriteln, wit_parser::*, Direction, Files, InterfaceGenerator as _, Ns,
+    WorldGenerator,
 };
 use wit_component::StringEncoding;
 
@@ -2851,14 +2852,5 @@ pub fn to_c_ident(name: &str) -> String {
         "xor_eq" => "xor_eq_".into(),
         "_Packed" => "_Packed_".into(),
         s => s.to_snake_case(),
-    }
-}
-
-pub fn dealias(resolve: &Resolve, mut id: TypeId) -> TypeId {
-    loop {
-        match &resolve.types[id].kind {
-            TypeDefKind::Type(Type::Id(that_id)) => id = *that_id,
-            _ => break id,
-        }
     }
 }
