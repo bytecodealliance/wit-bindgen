@@ -583,7 +583,7 @@ impl InterfaceGenerator<'_> {
     fn func_name(&self, func: &Function) -> String {
         match func.kind {
             FunctionKind::Freestanding => func.name.to_upper_camel_case(),
-            FunctionKind::Static(s) => func.name.replace(".", " ").to_upper_camel_case(),
+            FunctionKind::Static(_) => func.name.replace(".", " ").to_upper_camel_case(),
             FunctionKind::Method(_) => match self.direction {
                 Direction::Import => func.name.split(".").last().unwrap().to_upper_camel_case(),
                 Direction::Export => func.name.replace(".", " ").to_upper_camel_case(),
