@@ -9,9 +9,7 @@ pub struct Test {}
 
 impl Guest for Test {
     fn test_imports() {
-        unsafe {
-            let r = R { handle: wit_bindgen::rt::Resource::from_handle(0) };
-            test(&r);
-        }
+        let r = R::new();
+        test(&r);
     }
 }
