@@ -1,8 +1,6 @@
 use std::fmt::Write as _;
 
-use wit_bindgen_core::uwriteln;
-use wit_bindgen_core::Files;
-use wit_bindgen_core::Source;
+use wit_bindgen_core::{uwriteln, Files, Source};
 
 #[derive(Default)]
 pub(crate) struct ImportRequirements {

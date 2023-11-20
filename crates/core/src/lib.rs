@@ -1,9 +1,9 @@
-use anyhow::Result;
 use std::collections::HashMap;
 use std::fmt::Write;
-use wit_parser::*;
 
+use anyhow::Result;
 pub use wit_parser;
+use wit_parser::*;
 pub mod abi;
 mod ns;
 pub use ns::Ns;

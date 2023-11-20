@@ -42,7 +42,7 @@ pub struct MyThing {
 
 impl MyThing {
     pub fn from_thing(thing: Thing) -> Self {
-        Self { thing: thing }
+        Self { thing }
     }
 }
 
