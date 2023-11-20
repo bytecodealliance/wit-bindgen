@@ -22,6 +22,6 @@ impl Ns {
             self.tmp += 1;
         }
         self.defined.insert(ret.clone());
-        return ret;
+        ret
     }
 }

@@ -1,9 +1,8 @@
+pub use wit_parser::abi::{AbiVariant, WasmSignature, WasmType};
 use wit_parser::{
     Enum, Flags, FlagsRepr, Function, Handle, Int, Record, Resolve, Result_, Results, SizeAlign,
     Tuple, Type, TypeDefKind, TypeId, Variant,
 };
-
-pub use wit_parser::abi::{AbiVariant, WasmSignature, WasmType};
 
 // Helper macro for defining instructions without having to have tons of
 // exhaustive `match` statements to update
@@ -822,7 +821,7 @@ impl<'a, B: Bindgen> Generator<'a, B> {
                         // `self.return_pointer`) so we use that to read
                         // the result of the function from memory.
                         AbiVariant::GuestImport => {
-                            assert!(sig.results.len() == 0);
+                            assert!(sig.results.is_empty());
                             self.return_pointer.take().unwrap()
                         }
 

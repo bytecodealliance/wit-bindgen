@@ -53,7 +53,7 @@ pub fn object(resolve: &Resolve, world: WorldId, encoding: StringEncoding) -> Re
     // Append the linking section, so that lld knows the custom section's symbol name
     let mut linking = LinkingSection::new();
     let mut symbols = SymbolTable::new();
-    symbols.function(0, 0, Some(&linking_symbol(&world_name)));
+    symbols.function(0, 0, Some(&linking_symbol(world_name)));
     linking.symbol_table(&symbols);
     module.section(&linking);
 

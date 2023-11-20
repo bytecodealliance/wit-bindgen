@@ -1,8 +1,9 @@
-use heck::*;
-
-use std::io::{prelude::*, BufReader};
+use std::io::prelude::*;
+use std::io::BufReader;
 use std::path::Path;
 use std::process::Command;
+
+use heck::*;
 
 macro_rules! codegen_test {
     (resource_alias $name:tt $test:tt) => {};
