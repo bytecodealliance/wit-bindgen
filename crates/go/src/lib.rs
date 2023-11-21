@@ -5,7 +5,7 @@ use std::process::Stdio;
 
 use anyhow::Result;
 use heck::{ToKebabCase, ToSnakeCase};
-use wit_bindgen_c::find_live_export_types;
+use wit_bindgen_c::imported_types_used_by_exported_interfaces;
 use wit_bindgen_core::wit_parser::{
     Function, InterfaceId, LiveTypes, Resolve, SizeAlign, Type, TypeId, WorldId, WorldKey,
 };
@@ -198,7 +198,7 @@ impl WorldGenerator for TinyGo {
 
     fn pre_export_interface(&mut self, resolve: &Resolve, _files: &mut Files) -> Result<()> {
         let world = self.world_id.unwrap();
-        let live_import_types = find_live_export_types(resolve, world);
+        let live_import_types = imported_types_used_by_exported_interfaces(resolve, world);
         self.c_type_names
             .retain(|k, _| live_import_types.contains(k));
         self.type_names.retain(|k, _| live_import_types.contains(k));
