@@ -468,14 +468,17 @@ impl C {
     /// This function will trim the sets on `self` to only retain those types
     /// which exports refer to that come from imports.
     fn remove_types_redefined_by_exports(&mut self, resolve: &Resolve, world: WorldId) {
-        let live_import_types = find_live_export_types(resolve, world);
+        let live_import_types = imported_types_used_by_exported_interfaces(resolve, world);
         self.dtor_funcs.retain(|k, _| live_import_types.contains(k));
         self.type_names.retain(|k, _| live_import_types.contains(k));
         self.resources.retain(|k, _| live_import_types.contains(k));
     }
 }
 
-pub fn find_live_export_types(resolve: &Resolve, world: WorldId) -> HashSet<TypeId> {
+pub fn imported_types_used_by_exported_interfaces(
+    resolve: &Resolve,
+    world: WorldId,
+) -> HashSet<TypeId> {
     // First build up a set of all types used by exports and all the
     // exported interfaces.
     let mut live_export_types = LiveTypes::default();
