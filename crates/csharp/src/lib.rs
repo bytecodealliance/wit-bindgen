@@ -22,6 +22,8 @@ use wit_bindgen_core::{
     Files, InterfaceGenerator as _, Ns, WorldGenerator,
 };
 use wit_component::StringEncoding;
+mod csproj;
+pub use csproj::CSProject;
 
 //cargo run c-sharp --out-dir testing-csharp tests/codegen/floats.wit
 
