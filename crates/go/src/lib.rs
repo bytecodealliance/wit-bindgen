@@ -59,6 +59,9 @@ pub struct TinyGo {
     // C type names
     c_type_names: HashMap<TypeId, String>,
 
+    // C type namespaces
+    c_type_namespaces: HashMap<TypeId, String>,
+
     // Go type names
     type_names: HashMap<TypeId, String>,
 
@@ -199,6 +202,8 @@ impl WorldGenerator for TinyGo {
     fn pre_export_interface(&mut self, resolve: &Resolve, _files: &mut Files) -> Result<()> {
         let world = self.world_id.unwrap();
         let live_import_types = imported_types_used_by_exported_interfaces(resolve, world);
+        self.c_type_namespaces
+            .retain(|k, _| live_import_types.contains(k));
         self.c_type_names
             .retain(|k, _| live_import_types.contains(k));
         self.type_names.retain(|k, _| live_import_types.contains(k));
