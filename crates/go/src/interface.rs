@@ -47,6 +47,8 @@ impl InterfaceGenerator<'_> {
 
             // add C type
             let mut name = self.c_owner_namespace(ty);
+            let prev = self.gen.c_type_namespaces.insert(ty, name.clone());
+            assert!(prev.is_none());
             name.push('_');
             push_ty_name(self.resolve, &Type::Id(ty), &mut name);
             name.push_str("_t");
@@ -108,6 +110,10 @@ impl InterfaceGenerator<'_> {
             Some((_, key)) => self.interface_identifier(key),
             None => self.gen.world.to_upper_camel_case(),
         }
+    }
+
+    pub(crate) fn c_namespace_of_resource(&self, id: TypeId) -> String {
+        self.gen.c_type_namespaces[&id].clone()
     }
 
     /// Returns the identifier of the given interface.

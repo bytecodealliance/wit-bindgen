@@ -338,6 +338,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                         Handle::Own(resource) => resource,
                                     },
                                 );
+                                let ns = self.interface.c_namespace_of_resource(resource);
+                                let snake = self.interface.resolve.types[resource]
+                                    .name
+                                    .as_ref()
+                                    .unwrap();
                                 // If the resource is exported, then `type_resource` have created a
                                 // internal bookkeeping map for this resource. We will need to
                                 // use the map to get the resource interface. Otherwise, this resource
@@ -354,17 +359,13 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                         {private_type_name}_next_id += 1
                                         {private_type_name}_pointers[{private_type_name}_next_id] = {param}
                                         {private_type_name}_mu.Unlock()
-                                        {param}_c := (*{c_typedef_target})(unsafe.Pointer(C.malloc(C.size_t(unsafe.Sizeof({c_typedef_target}{{}})))))
-                                        {param}_c.__handle = C.int32_t({private_type_name}_next_id)
-                                        lower_{param} := C.{private_type_name}_new({param}_c) // pass the pointer directly"
+                                        {lower_name}_c := (*{c_typedef_target})(unsafe.Pointer(C.malloc(C.size_t(unsafe.Sizeof({c_typedef_target}{{}})))))
+                                        {lower_name}_c.__handle = C.int32_t({private_type_name}_next_id)
+                                        {lower_name} := C.{ns}_{snake}_new({lower_name}_c) // pass the pointer directly"
                                         );
                                 } else {
                                     // need to construct either an own or borrowed C handle type.
-                                    let ns = self.interface.c_owner_namespace(*id);
-                                    let snake = self.interface.resolve.types[resource]
-                                        .name
-                                        .as_ref()
-                                        .unwrap();
+
                                     let c_typedef_target = match h {
                                         Own(_) => {
                                             let mut own = ns.clone();
@@ -630,6 +631,14 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                         Handle::Own(resource) => resource,
                                     },
                                 );
+                                // we want to get the namespace of the dealias resource since
+                                // only the `rep` and `new` functions are generated in the namespace
+                                // see issue: https://github.com/bytecodealliance/wit-bindgen/issues/763
+                                let ns = self.interface.c_namespace_of_resource(resource);
+                                let snake = self.interface.resolve.types[resource]
+                                    .name
+                                    .as_ref()
+                                    .unwrap();
                                 if self.interface.gen.exported_resources.contains(&resource) {
                                     let resource_name: String =
                                         self.interface.get_ty(&Type::Id(resource)).to_snake_case();
@@ -637,7 +646,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                         Own(_) => {
                                             uwriteln!(
                                                     self.lift_src,
-                                                    "{lift_name}_rep := C.{resource_name}_rep({param})
+                                                    "{lift_name}_rep := C.{ns}_{snake}_rep({param})
                                                 {lift_name}_handle := int32({lift_name}_rep.__handle)"
                                                 );
                                         }
