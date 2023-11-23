@@ -509,6 +509,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         }
 
         let snake = world_name.replace("-", "_");
+        let camel = snake.to_upper_camel_case();
 
         let assembly_name = format!(
             "csharp-{}",
@@ -526,67 +527,14 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         }
         opts.build().generate(&resolve, world, &mut files).unwrap();
 
-        fs::write(
-            out_dir.join("nuget.config"),
-            r#"<?xml version="1.0" encoding="utf-8"?>
-        <configuration>
-            <config>
-                <add key="globalPackagesFolder" value=".packages" />
-            </config>
-            <packageSources>
-            <!--To inherit the global NuGet package sources remove the <clear/> line below -->
-            <clear />
-            <add key="nuget" value="https://api.nuget.org/v3/index.json" />
-            <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
-            <!--<add key="dotnet-experimental" value="C:\github\runtimelab\artifacts\packages\Debug\Shipping" />-->
-          </packageSources>
-        </configuration>"#,
-        )?;
-
-        fs::write(
-            out_dir.join("rd.xml"),
-            format!(
-                r#"<Directives xmlns="http://schemas.microsoft.com/netfx/2013/01/metadata">
-            <Application>
-                <Assembly Name="{assembly_name}">
-                </Assembly>
-            </Application>
-        </Directives>"#
-            ),
-        )?;
-
-        let mut csproj = format!(
-            "<Project Sdk=\"Microsoft.NET.Sdk\">
-
-    <PropertyGroup>
-      <TargetFramework>net8.0</TargetFramework>
-      <LangVersion>preview</LangVersion>
-      <RootNamespace>{assembly_name}</RootNamespace>
-      <ImplicitUsings>enable</ImplicitUsings>
-      <Nullable>enable</Nullable>
-      <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    </PropertyGroup>
-
-    <PropertyGroup>
-        <PublishTrimmed>true</PublishTrimmed>
-        <AssemblyName>{assembly_name}</AssemblyName>
-    </PropertyGroup>
-    "
-        );
-
         for (file, contents) in files.iter() {
             let dst = out_dir.join(file);
             fs::write(dst, contents).unwrap();
         }
 
-        csproj.push_str(
-            r#"
-    <ItemGroup>
-        <RdXmlFile Include="rd.xml" />
-    </ItemGroup>
-
-"#,
-        );
+        let mut csproj =
+            wit_bindgen_csharp::CSProject::new(out_dir.clone(), &assembly_name, world_name);
+        csproj.aot();
 
         // Write the WasmImports for NativeAOT-LLVM.
         // See https://github.com/dotnet/runtimelab/issues/2383
@@ -594,66 +542,23 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         for world in &resolve.worlds {
             for import in &world.1.imports {
                 let module_name = resolve.name_world_key(import.0);
-                csproj.push_str("\t<ItemGroup>\n");
-
                 match import.1 {
-                    WorldItem::Function(f) => {
-                        let wasm_import = format!(
-                            "\t\t<WasmImport Include=\"{}!{}\" />\n",
-                            module_name, f.name
-                        );
-                        csproj.push_str(&wasm_import);
-                    }
+                    WorldItem::Function(f) => csproj.add_import(&module_name, &f.name),
                     WorldItem::Interface(id) => {
                         for (_, f) in resolve.interfaces[*id].functions.iter() {
-                            let wasm_import = format!(
-                                "\t\t<WasmImport Include=\"{}!{}\" />\n",
-                                module_name, f.name
-                            );
-                            csproj.push_str(&wasm_import);
+                            csproj.add_import(&module_name, &f.name)
                         }
                     }
                     WorldItem::Type(_) => {}
                 }
-
-                csproj.push_str("\t</ItemGroup>\n\n");
             }
         }
-
-        csproj.push_str("\t<ItemGroup>\n");
-        csproj.push_str(&format!(
-            "\t\t<NativeLibrary Include=\"{snake}_component_type.o\" />\n"
-        ));
-        csproj.push_str("\t</ItemGroup>\n\n");
-
-        //TODO: Is this handled by the source generator? (Temporary just to test with numbers and strings)
-        csproj.push_str(
-            r#"
-            <ItemGroup>
-                <CustomLinkerArg Include="-Wl,--export,_initialize" />
-                <CustomLinkerArg Include="-Wl,--no-entry" />
-                <CustomLinkerArg Include="-mexec-model=reactor" />
-            </ItemGroup>
-            "#,
-        );
-
-        csproj.push_str(
-            r#"
-    <ItemGroup>
-        <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
-        <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
-    </ItemGroup>
-</Project>
-            "#,
-        );
-
-        let camel = snake.to_upper_camel_case();
-
-        fs::write(out_dir.join(format!("{camel}.csproj")), csproj)?;
 
         // Copy test file to target location to be included in compilation
         let file_name = path.file_name().unwrap();
         fs::copy(path, out_dir.join(file_name.to_str().unwrap()))?;
+
+        csproj.generate()?;
 
         let dotnet_root_env = "DOTNET_ROOT";
         let dotnet_cmd: PathBuf;
