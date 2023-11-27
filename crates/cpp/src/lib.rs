@@ -887,7 +887,7 @@ impl CppInterfaceGenerator<'_> {
                     let mut namespace = namespace(self.resolve, &owner.owner);
                     namespace.push(owner.name.as_ref().unwrap().to_upper_camel_case());
                     self.gen.c_src.qualify(&namespace);
-                    self.gen.c_src.src.push_str("remove_resource(self);\n");
+                    uwriteln!(self.gen.c_src.src, "remove_resource({});", params[0]);
                 }
                 LiftLower::LowerArgsLiftResults => {
                     let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
@@ -1748,9 +1748,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.let_results(func.results.len(), results);
                 let (mut namespace, func_name_h) = self.gen.func_namespace_name(func);
                 if matches!(func.kind, FunctionKind::Method(_)) {
-                    let _ = operands.remove(0);
+                    let this = operands.remove(0);
                     self.gen.gen.c_src.qualify(&namespace);
-                    self.gen.gen.c_src.src.push_str("lookup_resource(self)->");
+                    uwrite!(self.gen.gen.c_src.src, "lookup_resource({this})->");
                 } else {
                     if matches!(func.kind, FunctionKind::Constructor(_)) {
                         let _ = namespace.pop();
