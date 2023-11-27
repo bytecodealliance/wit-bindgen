@@ -1075,6 +1075,16 @@ impl CppInterfaceGenerator<'_> {
         self.gen.c_src.src.push_str(&code);
         name
     }
+
+    fn docs(src: &mut Source, docs: &Docs) {
+        if let Some(docs) = docs.contents.as_ref() {
+            for line in docs.trim().lines() {
+                src.push_str("// ");
+                src.push_str(line);
+                src.push_str("\n");
+            }
+        }
+    }
 }
 
 impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> {
@@ -1084,12 +1094,24 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
 
     fn type_record(
         &mut self,
-        _id: TypeId,
+        id: TypeId,
         name: &str,
-        _record: &wit_bindgen_core::wit_parser::Record,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
+        record: &wit_bindgen_core::wit_parser::Record,
+        docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        uwriteln!(self.gen.h_src.src, "// type_record({name})");
+        let ty = &self.resolve.types[id];
+        let namespc = namespace(self.resolve, &ty.owner);
+        self.gen.h_src.change_namespace(&namespc);
+        Self::docs(&mut self.gen.h_src.src, docs);
+        let pascal = name.to_pascal_case();
+        uwriteln!(self.gen.h_src.src, "struct {pascal} {{");
+        for field in record.fields.iter() {
+            Self::docs(&mut self.gen.h_src.src, &field.docs);
+            let typename = self.type_name(&field.ty);
+            let fname = field.name.to_lower_camel_case();
+            uwriteln!(self.gen.h_src.src, "{typename} {fname};");
+        }
+        uwriteln!(self.gen.h_src.src, "}};");
     }
 
     fn type_resource(
