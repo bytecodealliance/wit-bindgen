@@ -74,6 +74,7 @@ struct Cpp {
     world: String,
     world_id: Option<WorldId>,
     imported_interfaces: HashSet<InterfaceId>,
+    user_class_files: HashMap<String, String>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -131,6 +132,29 @@ impl Cpp {
             return_pointer_area_align: 0,
             wasm_import_module,
         }
+    }
+
+    fn clang_format(code: &mut Source) {
+        let mut child = Command::new("clang-format")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("failed to spawn `clang-format`");
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(code.as_bytes())
+            .unwrap();
+        code.as_mut_string().truncate(0);
+        child
+            .stdout
+            .take()
+            .unwrap()
+            .read_to_string(code.as_mut_string())
+            .unwrap();
+        let status = child.wait().unwrap();
+        assert!(status.success());
     }
 }
 
@@ -413,7 +437,7 @@ impl WorldGenerator for Cpp {
                 uwriteln!(
                     c_str.src,
                     "  static NativeSymbol {}_funs[] = {{",
-                    i.0.replace(&[':','.','-','+'], "_").to_snake_case()
+                    i.0.replace(&[':', '.', '-', '+'], "_").to_snake_case()
                 );
                 for f in i.1.iter() {
                     uwriteln!(
@@ -439,46 +463,8 @@ impl WorldGenerator for Cpp {
         );
 
         if self.opts.format {
-            let mut child = Command::new("clang-format")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .spawn()
-                .expect("failed to spawn `clang-format`");
-            child
-                .stdin
-                .take()
-                .unwrap()
-                .write_all(c_str.src.as_bytes())
-                .unwrap();
-            c_str.src.as_mut_string().truncate(0);
-            child
-                .stdout
-                .take()
-                .unwrap()
-                .read_to_string(c_str.src.as_mut_string())
-                .unwrap();
-            let status = child.wait().unwrap();
-            assert!(status.success());
-            child = Command::new("clang-format")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .spawn()
-                .expect("failed to spawn `clang-format`");
-            child
-                .stdin
-                .take()
-                .unwrap()
-                .write_all(h_str.src.as_bytes())
-                .unwrap();
-            h_str.src.as_mut_string().truncate(0);
-            child
-                .stdout
-                .take()
-                .unwrap()
-                .read_to_string(h_str.src.as_mut_string())
-                .unwrap();
-            let status = child.wait().unwrap();
-            assert!(status.success());
+            Self::clang_format(&mut c_str.src);
+            Self::clang_format(&mut h_str.src);
         }
 
         if !self.opts.host {
@@ -487,6 +473,9 @@ impl WorldGenerator for Cpp {
         } else {
             files.push(&format!("{snake}_host.cpp"), c_str.src.as_bytes());
             files.push(&format!("{snake}_cpp_host.h"), h_str.src.as_bytes());
+        }
+        for (name, content) in self.user_class_files.iter() {
+            files.push(&name, content.as_bytes());
         }
     }
 }
@@ -628,7 +617,7 @@ impl CppInterfaceGenerator<'_> {
     }
 
     // print the signature of the lowered (wasm) function calling into highlevel
-    fn export_signature(&mut self, func: &Function) -> Vec<String> {
+    fn print_export_signature(&mut self, func: &Function) -> Vec<String> {
         let is_drop = is_drop_method(func);
         let signature = if is_drop {
             WasmSignature {
@@ -655,6 +644,9 @@ impl CppInterfaceGenerator<'_> {
         let export_name = CppInterfaceGenerator::export_name2(&module_name, &func.name);
         self.gen.c_src.src.push_str(&export_name);
         self.gen.c_src.src.push_str("(");
+        if self.gen.opts.host {
+            self.gen.c_src.src.push_str("wasm_exec_env_t exec_env, ");
+        }
         let mut params = Vec::new();
         for (n, ty) in signature.params.iter().enumerate() {
             let name = format!("arg{n}");
@@ -749,7 +741,7 @@ impl CppInterfaceGenerator<'_> {
 
         // we want to separate the lowered signature (wasm) and the high level signature
         if !import {
-            return self.export_signature(func);
+            return self.print_export_signature(func);
         }
 
         // self.rustdoc(&func.docs);
@@ -1111,12 +1103,22 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             let import = self.gen.imported_interfaces.contains(&intf) ^ self.gen.opts.host;
             let mut world_name = self.gen.world.to_snake_case();
             world_name.push_str("::");
-            let funcs = self.resolve.interfaces[intf].functions.values();
+            let mut headerfile = SourceWithState::default();
             let namespc = namespace(self.resolve, &type_.owner);
+            let pascal = name.to_upper_camel_case();
+            let user_filename = namespc.join("-") + "-" + &pascal + ".h";
+            if !import {
+                std::mem::swap(&mut headerfile, &mut self.gen.h_src);
+                uwriteln!(
+                    self.gen.h_src.src,
+                    r#"/* User class definition file, autogenerated once, then user modified 
+                    * Updated versions of this file are generated into {user_filename}.template.
+                    */"#
+                );
+            }
             self.gen.h_src.change_namespace(&namespc);
 
             self.gen.dependencies.needs_resources = true;
-            let pascal = name.to_upper_camel_case();
 
             if !import {
                 uwriteln!(self.gen.c_src.src, "template <class R> std::map<int32_t, R> {world_name}{RESOURCE_BASE_CLASS_NAME}<R>::resources;");
@@ -1129,21 +1131,21 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             };
             let derive = format!(" : public {world_name}{RESOURCE_BASE_CLASS_NAME}{base_type}");
             uwriteln!(self.gen.h_src.src, "class {pascal}{derive} {{\n");
-            if !import {
-                // TODO: Replace with virtual functions
-                uwriteln!(
-                    self.gen.h_src.src,
-                    "  // private implementation data\n  struct pImpl;\n  pImpl * p_impl;\n"
-                );
-            }
+            // if !import {
+            //     // TODO: Replace with virtual functions
+            //     uwriteln!(
+            //         self.gen.h_src.src,
+            //         "  // private implementation data\n  struct pImpl;\n  pImpl * p_impl;\n"
+            //     );
+            // }
             uwriteln!(self.gen.h_src.src, "public:\n");
-            if !import {
-                // because of pimpl
-                uwriteln!(
-                    self.gen.h_src.src,
-                    "  {pascal}({pascal}&&);\n{pascal}(const {pascal}&) = delete;\nvoid operator=({pascal}&&);\nvoid operator=(const {pascal}&) = delete;"
-                );
-            }
+            // if !import {
+            //     // because of pimpl
+            //     uwriteln!(
+            //         self.gen.h_src.src,
+            //         "  {pascal}({pascal}&&);\n{pascal}(const {pascal}&) = delete;\nvoid operator=({pascal}&&);\nvoid operator=(const {pascal}&) = delete;"
+            //     );
+            // }
             // destructor
             {
                 let name = "[resource-drop]".to_string() + &name;
@@ -1156,6 +1158,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 };
                 self.generate_guest_import(&func);
             }
+            let funcs = self.resolve.interfaces[intf].functions.values();
             for func in funcs {
                 // Some(name),
                 self.generate_guest_import(func);
@@ -1170,6 +1173,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 uwriteln!(self.gen.h_src.src, "{pascal}({pascal}&&) = default;\n");
             }
             uwriteln!(self.gen.h_src.src, "}};\n");
+            if !import {
+                // Finish the user controlled class template
+                self.gen.h_src.change_namespace(&Vec::default());
+                std::mem::swap(&mut headerfile, &mut self.gen.h_src);
+                uwriteln!(self.gen.h_src.src, "#include \"{user_filename}\"");
+                if self.gen.opts.format { Cpp::clang_format(&mut headerfile.src); }
+                self.gen.user_class_files.insert(user_filename + ".template", headerfile.src.to_string());
+            }
         }
     }
 
