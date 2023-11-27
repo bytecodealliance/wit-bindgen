@@ -1258,12 +1258,18 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
 
     fn type_alias(
         &mut self,
-        _id: TypeId,
+        id: TypeId,
         name: &str,
-        _ty: &wit_bindgen_core::wit_parser::Type,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
+        alias_type: &wit_bindgen_core::wit_parser::Type,
+        docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        uwriteln!(self.gen.h_src.src, "// type_alias({name})");
+        let ty = &self.resolve.types[id];
+        let namespc = namespace(self.resolve, &ty.owner);
+        self.gen.h_src.change_namespace(&namespc);
+        let pascal = name.to_pascal_case();
+        Self::docs(&mut self.gen.h_src.src, docs);
+        let typename = self.type_name(alias_type);
+        uwriteln!(self.gen.h_src.src, "using {pascal} = {typename};");
     }
 
     fn type_list(
