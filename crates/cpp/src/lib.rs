@@ -675,7 +675,12 @@ impl CppInterfaceGenerator<'_> {
         params
     }
 
-    fn high_level_signature(&mut self, func: &Function, import: bool) -> HighlevelSignature {
+    fn high_level_signature(
+        &mut self,
+        func: &Function,
+        import: bool,
+        from_namespace: &Vec<String>,
+    ) -> HighlevelSignature {
         let mut res = HighlevelSignature::default();
 
         let (namespace, func_name_h) = self.func_namespace_name(func);
@@ -694,7 +699,7 @@ impl CppInterfaceGenerator<'_> {
                     }
                 }
                 wit_bindgen_core::wit_parser::Results::Anon(ty) => {
-                    res.result = self.type_name(ty);
+                    res.result = self.type_name(ty, from_namespace);
                 }
             }
         }
@@ -705,7 +710,8 @@ impl CppInterfaceGenerator<'_> {
             if i == 0 && name == "self" {
                 continue;
             }
-            res.arguments.push((name.clone(), self.type_name(param)));
+            res.arguments
+                .push((name.clone(), self.type_name(param, &res.namespace)));
         }
         // default to non-const when exporting a method
         if matches!(func.kind, FunctionKind::Method(_)) && import {
@@ -715,7 +721,8 @@ impl CppInterfaceGenerator<'_> {
     }
 
     fn print_signature(&mut self, func: &Function, import: bool) -> Vec<String> {
-        let cpp_sig = self.high_level_signature(func, import);
+        let from_namespace = self.gen.h_src.namespace.clone();
+        let cpp_sig = self.high_level_signature(func, import, &from_namespace);
         if cpp_sig.static_member {
             self.gen.h_src.src.push_str("static ");
         }
@@ -768,7 +775,8 @@ impl CppInterfaceGenerator<'_> {
                         sig.push_str("void");
                         result_ptr = Some(ty.clone());
                     } else {
-                        sig.push_str(&self.type_name(ty));
+                        let from_namespace = self.gen.c_src.namespace.clone();
+                        sig.push_str(&self.type_name(ty, &from_namespace));
                     }
                 }
             }
@@ -818,7 +826,7 @@ impl CppInterfaceGenerator<'_> {
         for (i, (name, param)) in func.params.iter().enumerate() {
             if is_arg_by_pointer(self.resolve, param) {
                 params.push(name.clone() + "_ptr");
-                sig.push_str(&self.type_name(param));
+                sig.push_str(&self.type_name(param, &namespace));
                 sig.push_str("* ");
                 sig.push_str(&(name.clone() + "_ptr"));
             } else {
@@ -833,7 +841,7 @@ impl CppInterfaceGenerator<'_> {
                     }
                     continue;
                 }
-                sig.push_str(&self.type_name(param));
+                sig.push_str(&self.type_name(param, &namespace));
                 sig.push_str(" ");
                 sig.push_str(&name);
             }
@@ -843,7 +851,7 @@ impl CppInterfaceGenerator<'_> {
         }
         if let Some(result_ptr) = &result_ptr {
             params.push("result_ptr".into());
-            sig.push_str(&self.type_name(result_ptr));
+            sig.push_str(&self.type_name(result_ptr, &namespace));
             sig.push_str("* ");
             sig.push_str("result_ptr");
         }
@@ -956,7 +964,7 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
-    fn type_name(&mut self, ty: &Type) -> String {
+    fn type_name(&mut self, ty: &Type, from_namespace: &Vec<String>) -> String {
         match ty {
             Type::Bool => "bool".into(),
             Type::Char => "uint32_t".into(),
@@ -976,12 +984,21 @@ impl CppInterfaceGenerator<'_> {
             }
             Type::Id(id) => match &self.resolve.types[*id].kind {
                 TypeDefKind::Record(_r) => {
-                    format!("record.{}", self.resolve.types[*id].name.as_ref().unwrap())
+                    let ty = &self.resolve.types[*id];
+                    let namespc = namespace(self.resolve, &ty.owner);
+                    let mut relative = SourceWithState::default();
+                    relative.namespace = from_namespace.clone();
+                    relative.qualify(&namespc);
+                    format!("{}{}", relative.src.to_string(), ty.name.as_ref().unwrap().to_pascal_case())
                 }
                 TypeDefKind::Resource => self.resolve.types[*id].name.as_ref().cloned().unwrap(),
-                TypeDefKind::Handle(Handle::Own(id)) => self.type_name(&Type::Id(*id)),
+                TypeDefKind::Handle(Handle::Own(id)) => {
+                    self.type_name(&Type::Id(*id), from_namespace)
+                }
                 TypeDefKind::Handle(Handle::Borrow(id)) => {
-                    "std::reference_wrapper<".to_string() + &self.type_name(&Type::Id(*id)) + ">"
+                    "std::reference_wrapper<".to_string()
+                        + &self.type_name(&Type::Id(*id), from_namespace)
+                        + ">"
                 }
                 TypeDefKind::Flags(_) => "Flags".to_string(),
                 TypeDefKind::Tuple(_) => "Tuple".to_string(),
@@ -991,7 +1008,7 @@ impl CppInterfaceGenerator<'_> {
                         result += &case
                             .ty
                             .as_ref()
-                            .map_or("void".to_string(), |ty| self.type_name(ty));
+                            .map_or("void".to_string(), |ty| self.type_name(ty, from_namespace));
                         if n + 1 != v.cases.len() {
                             result += ", ";
                         }
@@ -1000,21 +1017,27 @@ impl CppInterfaceGenerator<'_> {
                     result
                 }
                 TypeDefKind::Enum(_e) => "Enum".to_string(),
-                TypeDefKind::Option(o) => "std::optional<".to_string() + &self.type_name(o) + ">",
+                TypeDefKind::Option(o) => {
+                    "std::optional<".to_string() + &self.type_name(o, from_namespace) + ">"
+                }
                 TypeDefKind::Result(r) => {
                     "std::expected<".to_string()
-                        + &r.ok.as_ref().map_or("void".into(), |t| self.type_name(t))
+                        + &r.ok
+                            .as_ref()
+                            .map_or("void".into(), |t| self.type_name(t, from_namespace))
                         + ", "
-                        + &r.err.as_ref().map_or("void".into(), |t| self.type_name(t))
+                        + &r.err
+                            .as_ref()
+                            .map_or("void".into(), |t| self.type_name(t, from_namespace))
                         + ">"
                 }
                 TypeDefKind::List(ty) => {
                     self.gen.dependencies.needs_vector = true;
-                    "std::vector<".to_string() + &self.type_name(ty) + ">"
+                    "std::vector<".to_string() + &self.type_name(ty, from_namespace) + ">"
                 }
                 TypeDefKind::Future(_) => todo!(),
                 TypeDefKind::Stream(_) => todo!(),
-                TypeDefKind::Type(ty) => self.type_name(ty),
+                TypeDefKind::Type(ty) => self.type_name(ty, from_namespace),
                 TypeDefKind::Unknown => todo!(),
             },
         }
@@ -1107,7 +1130,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         uwriteln!(self.gen.h_src.src, "struct {pascal} {{");
         for field in record.fields.iter() {
             Self::docs(&mut self.gen.h_src.src, &field.docs);
-            let typename = self.type_name(&field.ty);
+            let typename = self.type_name(&field.ty, &namespc);
             let fname = field.name.to_lower_camel_case();
             uwriteln!(self.gen.h_src.src, "{typename} {fname};");
         }
@@ -1130,6 +1153,8 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             let pascal = name.to_upper_camel_case();
             let user_filename = namespc.join("-") + "-" + &pascal + ".h";
             if !import {
+                // includes should be outside of namespaces
+                self.gen.h_src.change_namespace(&Vec::default());
                 // temporarily redirect header file declarations to an user controlled include file
                 std::mem::swap(&mut headerfile, &mut self.gen.h_src);
                 uwriteln!(
@@ -1248,12 +1273,27 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
 
     fn type_enum(
         &mut self,
-        _id: TypeId,
+        id: TypeId,
         name: &str,
-        _enum_: &wit_bindgen_core::wit_parser::Enum,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
+        enum_: &wit_bindgen_core::wit_parser::Enum,
+        docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        uwriteln!(self.gen.h_src.src, "// type_enum({name})");
+        let ty = &self.resolve.types[id];
+        let namespc = namespace(self.resolve, &ty.owner);
+        self.gen.h_src.change_namespace(&namespc);
+        let pascal = name.to_pascal_case();
+        Self::docs(&mut self.gen.h_src.src, docs);
+        let int_t = wit_bindgen_c::int_repr(enum_.tag());
+        uwriteln!(self.gen.h_src.src, "enum class {pascal} : {int_t} {{");
+        for (i, case) in enum_.cases.iter().enumerate() {
+            Self::docs(&mut self.gen.h_src.src, &case.docs);
+            uwriteln!(
+                self.gen.h_src.src,
+                " k{} = {i},",
+                case.name.to_pascal_case(),
+            );
+        }
+        uwriteln!(self.gen.h_src.src, "}};\n");
     }
 
     fn type_alias(
@@ -1268,7 +1308,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
         self.gen.h_src.change_namespace(&namespc);
         let pascal = name.to_pascal_case();
         Self::docs(&mut self.gen.h_src.src, docs);
-        let typename = self.type_name(alias_type);
+        let typename = self.type_name(alias_type, &namespc);
         uwriteln!(self.gen.h_src.src, "using {pascal} = {typename};");
     }
 
