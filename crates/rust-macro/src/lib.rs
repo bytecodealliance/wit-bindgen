@@ -23,9 +23,12 @@ struct Config {
     files: Vec<PathBuf>,
 }
 
+/// The source of the wit package definition
 enum Source {
+    /// A path to a wit directory
     Path(String),
-    Inline(String),
+    /// Inline sources have an optional path to a directory of their dependencies
+    Inline(String, Option<PathBuf>),
 }
 
 impl Parse for Config {
@@ -42,10 +45,15 @@ impl Parse for Config {
             for field in fields.into_pairs() {
                 match field.into_value() {
                     Opt::Path(s) => {
-                        if source.is_some() {
-                            return Err(Error::new(s.span(), "cannot specify second source"));
-                        }
-                        source = Some(Source::Path(s.value()));
+                        source = Some(match source {
+                            Some(Source::Path(_)) | Some(Source::Inline(_, Some(_))) => {
+                                return Err(Error::new(s.span(), "cannot specify second source"));
+                            }
+                            Some(Source::Inline(i, None)) => {
+                                Source::Inline(i, Some(PathBuf::from(s.value())))
+                            }
+                            None => Source::Path(s.value()),
+                        })
                     }
                     Opt::World(s) => {
                         if world.is_some() {
@@ -54,10 +62,15 @@ impl Parse for Config {
                         world = Some(s.value());
                     }
                     Opt::Inline(s) => {
-                        if source.is_some() {
-                            return Err(Error::new(s.span(), "cannot specify second source"));
-                        }
-                        source = Some(Source::Inline(s.value()));
+                        source = Some(match source {
+                            Some(Source::Inline(_, _)) => {
+                                return Err(Error::new(s.span(), "cannot specify second source"));
+                            }
+                            Some(Source::Path(p)) => {
+                                Source::Inline(s.value(), Some(PathBuf::from(p)))
+                            }
+                            None => Source::Inline(s.value(), None),
+                        })
                     }
                     Opt::UseStdFeature => opts.std_feature = true,
                     Opt::RawStrings => opts.raw_strings = true,
@@ -103,6 +116,7 @@ impl Parse for Config {
     }
 }
 
+/// Parse the source
 fn parse_source(source: &Option<Source>) -> anyhow::Result<(Resolve, PackageId, Vec<PathBuf>)> {
     let mut resolve = Resolve::default();
     let mut files = Vec::new();
@@ -119,7 +133,10 @@ fn parse_source(source: &Option<Source>) -> anyhow::Result<(Resolve, PackageId, 
         }
     };
     let pkg = match source {
-        Some(Source::Inline(s)) => {
+        Some(Source::Inline(s, path)) => {
+            if let Some(p) = path {
+                resolve.push_dir(p).unwrap();
+            }
             resolve.push(UnresolvedPackage::parse("macro-input".as_ref(), s)?)?
         }
         Some(Source::Path(s)) => parse(&root.join(s))?,
