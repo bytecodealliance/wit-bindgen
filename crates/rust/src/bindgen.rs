@@ -1,11 +1,9 @@
-use crate::{
-    dealias, int_repr, to_rust_ident, wasm_type, Direction, InterfaceGenerator, RustFlagsRepr,
-};
+use crate::{int_repr, to_rust_ident, wasm_type, Direction, InterfaceGenerator, RustFlagsRepr};
 use heck::*;
 use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{Bindgen, Instruction, LiftLower, WasmType};
-use wit_bindgen_core::{uwrite, uwriteln, wit_parser::*, Source};
+use wit_bindgen_core::{dealias, uwrite, uwriteln, wit_parser::*, Source};
 
 pub(super) struct FunctionBindgen<'a, 'b> {
     pub gen: &'b mut InterfaceGenerator<'a>,

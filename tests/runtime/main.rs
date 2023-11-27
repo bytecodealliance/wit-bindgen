@@ -26,6 +26,7 @@ mod resource_alias_redux;
 mod resource_borrow_export;
 mod resource_borrow_import;
 mod resource_borrow_in_record;
+mod resource_borrow_simple;
 mod resource_floats;
 mod resource_import_and_export;
 mod resource_into_inner;
@@ -262,9 +263,9 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         let (resolve, world) = resolve_wit_dir(&dir);
         let world_name = &resolve.worlds[world].name;
         let out_dir = out_dir.join(format!("go-{}", world_name));
+        let snake = world_name.replace("-", "_");
         drop(fs::remove_dir_all(&out_dir));
 
-        let snake = world_name.replace("-", "_");
         let mut files = Default::default();
         wit_bindgen_go::Opts::default()
             .build()

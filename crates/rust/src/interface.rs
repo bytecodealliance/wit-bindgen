@@ -1,6 +1,6 @@
 use crate::bindgen::FunctionBindgen;
 use crate::{
-    dealias, int_repr, to_rust_ident, to_upper_camel_case, wasm_type, Direction, ExportKey, FnSig,
+    int_repr, to_rust_ident, to_upper_camel_case, wasm_type, Direction, ExportKey, FnSig,
     Identifier, InterfaceName, Ownership, RustFlagsRepr, RustWasm, TypeMode,
 };
 use anyhow::Result;
@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::mem;
 use wit_bindgen_core::abi::{self, AbiVariant, LiftLower};
-use wit_bindgen_core::{uwrite, uwriteln, wit_parser::*, Source, TypeInfo};
+use wit_bindgen_core::{dealias, uwrite, uwriteln, wit_parser::*, Source, TypeInfo};
 
 pub struct InterfaceGenerator<'a> {
     pub src: Source,

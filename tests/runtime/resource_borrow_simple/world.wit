@@ -1,0 +1,9 @@
+package test:resource-borrow-simple;
+
+world resource-borrow-simple {
+  resource r {
+    constructor();
+  }
+  import test: func(r: borrow<r>);
+  export test-imports: func();
+}
