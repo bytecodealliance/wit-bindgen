@@ -11,12 +11,13 @@ use wasmtime::component::{Component, Instance, Linker};
 use wasmtime::{Config, Engine, Store};
 use wasmtime_wasi::preview2::{Table, WasiCtx, WasiCtxBuilder, WasiView};
 use wit_component::{ComponentEncoder, StringEncoding};
-use wit_parser::{Resolve, WorldItem};
+use wit_parser::{Resolve, WorldId, WorldItem};
 
 mod flavorful;
 mod lists;
 mod many_arguments;
 mod numbers;
+mod other_dependencies;
 mod ownership;
 mod records;
 mod resource_aggregates;
@@ -117,10 +118,6 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     let mut dir = PathBuf::from("./tests/runtime");
     dir.push(dir_name);
 
-    let mut resolve = Resolve::new();
-    let (pkg, _files) = resolve.push_dir(&dir).unwrap();
-    let world = resolve.select_world(pkg, None).unwrap();
-
     let mut rust = Vec::new();
     let mut c = Vec::new();
     let mut java = Vec::new();
@@ -162,7 +159,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 Some(n) => n == name,
                 None => false,
             })
-            .unwrap();
+            .unwrap_or_else(|| panic!("failed to find wasm with name '{name}' - make sure to include '{name}.rs' module in crates/test-rust-wasm/src/bin directory"));
         println!("rust core module = {core:?}");
         let module = std::fs::read(&core)?;
         let wasm = ComponentEncoder::default()
@@ -179,87 +176,90 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     }
 
     #[cfg(feature = "c")]
-    for path in c.iter() {
-        let world_name = &resolve.worlds[world].name;
-        let out_dir = out_dir.join(format!("c-{}", world_name));
-        drop(fs::remove_dir_all(&out_dir));
-        fs::create_dir_all(&out_dir).unwrap();
+    if !c.is_empty() {
+        let (resolve, world) = resolve_wit_dir(&dir);
+        for path in c.iter() {
+            let world_name = &resolve.worlds[world].name;
+            let out_dir = out_dir.join(format!("c-{}", world_name));
+            drop(fs::remove_dir_all(&out_dir));
+            fs::create_dir_all(&out_dir).unwrap();
 
-        let snake = world_name.replace("-", "_");
-        let mut files = Default::default();
-        let mut opts = wit_bindgen_c::Opts::default();
-        if let Some(path) = path.file_name().and_then(|s| s.to_str()) {
-            if path.contains("utf16") {
-                opts.string_encoding = wit_component::StringEncoding::UTF16;
+            let snake = world_name.replace("-", "_");
+            let mut files = Default::default();
+            let mut opts = wit_bindgen_c::Opts::default();
+            if let Some(path) = path.file_name().and_then(|s| s.to_str()) {
+                if path.contains("utf16") {
+                    opts.string_encoding = wit_component::StringEncoding::UTF16;
+                }
             }
-        }
-        opts.build().generate(&resolve, world, &mut files).unwrap();
+            opts.build().generate(&resolve, world, &mut files).unwrap();
 
-        for (file, contents) in files.iter() {
-            let dst = out_dir.join(file);
-            fs::write(dst, contents).unwrap();
-        }
+            for (file, contents) in files.iter() {
+                let dst = out_dir.join(file);
+                fs::write(dst, contents).unwrap();
+            }
 
-        let sdk =
-            PathBuf::from(std::env::var_os("WASI_SDK_PATH").expect(
+            let sdk = PathBuf::from(std::env::var_os("WASI_SDK_PATH").expect(
                 "point the `WASI_SDK_PATH` environment variable to the path of your wasi-sdk",
             ));
-        let mut cmd = Command::new(sdk.join("bin/clang"));
-        let out_wasm = out_dir.join(format!(
-            "c-{}.wasm",
-            path.file_stem().and_then(|s| s.to_str()).unwrap()
-        ));
-        cmd.arg("--sysroot").arg(sdk.join("share/wasi-sysroot"));
-        cmd.arg(path)
-            .arg(out_dir.join(format!("{snake}.c")))
-            .arg(out_dir.join(format!("{snake}_component_type.o")))
-            .arg("-I")
-            .arg(&out_dir)
-            .arg("-Wall")
-            .arg("-Wextra")
-            .arg("-Werror")
-            .arg("-Wno-unused-parameter")
-            .arg("-mexec-model=reactor")
-            .arg("-g")
-            .arg("-o")
-            .arg(&out_wasm);
-        println!("{:?}", cmd);
-        let output = match cmd.output() {
-            Ok(output) => output,
-            Err(e) => panic!("failed to spawn compiler: {}", e),
-        };
-
-        if !output.status.success() {
-            println!("status: {}", output.status);
-            println!("stdout: ------------------------------------------");
-            println!("{}", String::from_utf8_lossy(&output.stdout));
-            println!("stderr: ------------------------------------------");
-            println!("{}", String::from_utf8_lossy(&output.stderr));
-            panic!("failed to compile");
-        }
-
-        // Translate the canonical ABI module into a component.
-        let module = fs::read(&out_wasm).expect("failed to read wasm file");
-        let component = ComponentEncoder::default()
-            .module(module.as_slice())
-            .expect("pull custom sections from module")
-            .validate(true)
-            .adapter("wasi_snapshot_preview1", &wasi_adapter)
-            .expect("adapter failed to get loaded")
-            .encode()
-            .expect(&format!(
-                "module {:?} can be translated to a component",
-                out_wasm
+            let mut cmd = Command::new(sdk.join("bin/clang"));
+            let out_wasm = out_dir.join(format!(
+                "c-{}.wasm",
+                path.file_stem().and_then(|s| s.to_str()).unwrap()
             ));
-        let component_path = out_wasm.with_extension("component.wasm");
-        fs::write(&component_path, component).expect("write component to disk");
+            cmd.arg("--sysroot").arg(sdk.join("share/wasi-sysroot"));
+            cmd.arg(path)
+                .arg(out_dir.join(format!("{snake}.c")))
+                .arg(out_dir.join(format!("{snake}_component_type.o")))
+                .arg("-I")
+                .arg(&out_dir)
+                .arg("-Wall")
+                .arg("-Wextra")
+                .arg("-Werror")
+                .arg("-Wno-unused-parameter")
+                .arg("-mexec-model=reactor")
+                .arg("-g")
+                .arg("-o")
+                .arg(&out_wasm);
+            println!("{:?}", cmd);
+            let output = match cmd.output() {
+                Ok(output) => output,
+                Err(e) => panic!("failed to spawn compiler: {}", e),
+            };
 
-        result.push(component_path);
+            if !output.status.success() {
+                println!("status: {}", output.status);
+                println!("stdout: ------------------------------------------");
+                println!("{}", String::from_utf8_lossy(&output.stdout));
+                println!("stderr: ------------------------------------------");
+                println!("{}", String::from_utf8_lossy(&output.stderr));
+                panic!("failed to compile");
+            }
+
+            // Translate the canonical ABI module into a component.
+            let module = fs::read(&out_wasm).expect("failed to read wasm file");
+            let component = ComponentEncoder::default()
+                .module(module.as_slice())
+                .expect("pull custom sections from module")
+                .validate(true)
+                .adapter("wasi_snapshot_preview1", &wasi_adapter)
+                .expect("adapter failed to get loaded")
+                .encode()
+                .expect(&format!(
+                    "module {:?} can be translated to a component",
+                    out_wasm
+                ));
+            let component_path = out_wasm.with_extension("component.wasm");
+            fs::write(&component_path, component).expect("write component to disk");
+
+            result.push(component_path);
+        }
     }
 
     // FIXME: need to fix flaky Go test
     #[cfg(feature = "go")]
     if !go.is_empty() {
+        let (resolve, world) = resolve_wit_dir(&dir);
         let world_name = &resolve.worlds[world].name;
         let out_dir = out_dir.join(format!("go-{}", world_name));
         drop(fs::remove_dir_all(&out_dir));
@@ -340,6 +340,7 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
 
     #[cfg(feature = "teavm-java")]
     if !java.is_empty() {
+        let (resolve, world) = resolve_wit_dir(&dir);
         const DEPTH_FROM_TARGET_DIR: u32 = 2;
 
         let base_dir = {
@@ -494,132 +495,142 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     }
 
     #[cfg(feature = "csharp-naot")]
-    for path in c_sharp.iter() {
-        let world_name = &resolve.worlds[world].name;
-        let out_dir = out_dir.join(format!("csharp-{}", world_name));
-        drop(fs::remove_dir_all(&out_dir));
-        fs::create_dir_all(&out_dir).unwrap();
+    if !c_sharp.is_empty() {
+        let (resolve, world) = resolve_wit_dir(&dir);
+        for path in c_sharp.iter() {
+            let world_name = &resolve.worlds[world].name;
+            let out_dir = out_dir.join(format!("csharp-{}", world_name));
+            drop(fs::remove_dir_all(&out_dir));
+            fs::create_dir_all(&out_dir).unwrap();
 
-        for csharp_impl in &c_sharp {
-            fs::copy(
-                &csharp_impl,
-                &out_dir.join(csharp_impl.file_name().unwrap()),
-            )
-            .unwrap();
-        }
-
-        let snake = world_name.replace("-", "_");
-        let camel = snake.to_upper_camel_case();
-
-        let assembly_name = format!(
-            "csharp-{}",
-            path.file_stem().and_then(|s| s.to_str()).unwrap()
-        );
-
-        let out_wasm = out_dir.join(&assembly_name);
-
-        let mut files = Default::default();
-        let mut opts = wit_bindgen_csharp::Opts::default();
-        if let Some(path) = path.file_name().and_then(|s| s.to_str()) {
-            if path.contains("utf16") {
-                opts.string_encoding = wit_component::StringEncoding::UTF16;
+            for csharp_impl in &c_sharp {
+                fs::copy(
+                    &csharp_impl,
+                    &out_dir.join(csharp_impl.file_name().unwrap()),
+                )
+                .unwrap();
             }
-        }
-        opts.build().generate(&resolve, world, &mut files).unwrap();
 
-        for (file, contents) in files.iter() {
-            let dst = out_dir.join(file);
-            fs::write(dst, contents).unwrap();
-        }
+            let snake = world_name.replace("-", "_");
+            let camel = snake.to_upper_camel_case();
 
-        let mut csproj =
-            wit_bindgen_csharp::CSProject::new(out_dir.clone(), &assembly_name, world_name);
-        csproj.aot();
+            let assembly_name = format!(
+                "csharp-{}",
+                path.file_stem().and_then(|s| s.to_str()).unwrap()
+            );
 
-        // Write the WasmImports for NativeAOT-LLVM.
-        // See https://github.com/dotnet/runtimelab/issues/2383
+            let out_wasm = out_dir.join(&assembly_name);
 
-        for world in &resolve.worlds {
-            for import in &world.1.imports {
-                let module_name = resolve.name_world_key(import.0);
-                match import.1 {
-                    WorldItem::Function(f) => csproj.add_import(&module_name, &f.name),
-                    WorldItem::Interface(id) => {
-                        for (_, f) in resolve.interfaces[*id].functions.iter() {
-                            csproj.add_import(&module_name, &f.name)
-                        }
-                    }
-                    WorldItem::Type(_) => {}
+            let mut files = Default::default();
+            let mut opts = wit_bindgen_csharp::Opts::default();
+            if let Some(path) = path.file_name().and_then(|s| s.to_str()) {
+                if path.contains("utf16") {
+                    opts.string_encoding = wit_component::StringEncoding::UTF16;
                 }
             }
+            opts.build().generate(&resolve, world, &mut files).unwrap();
+
+            for (file, contents) in files.iter() {
+                let dst = out_dir.join(file);
+                fs::write(dst, contents).unwrap();
+            }
+
+            let mut csproj =
+                wit_bindgen_csharp::CSProject::new(out_dir.clone(), &assembly_name, world_name);
+            csproj.aot();
+
+            // Write the WasmImports for NativeAOT-LLVM.
+            // See https://github.com/dotnet/runtimelab/issues/2383
+
+            for world in &resolve.worlds {
+                for import in &world.1.imports {
+                    let module_name = resolve.name_world_key(import.0);
+                    match import.1 {
+                        WorldItem::Function(f) => csproj.add_import(&module_name, &f.name),
+                        WorldItem::Interface(id) => {
+                            for (_, f) in resolve.interfaces[*id].functions.iter() {
+                                csproj.add_import(&module_name, &f.name)
+                            }
+                        }
+                        WorldItem::Type(_) => {}
+                    }
+                }
+            }
+
+            // Copy test file to target location to be included in compilation
+            let file_name = path.file_name().unwrap();
+            fs::copy(path, out_dir.join(file_name.to_str().unwrap()))?;
+
+            csproj.generate()?;
+
+            let dotnet_root_env = "DOTNET_ROOT";
+            let dotnet_cmd: PathBuf;
+            match env::var(dotnet_root_env) {
+                Ok(val) => dotnet_cmd = Path::new(&val).join("dotnet"),
+                Err(_e) => dotnet_cmd = "dotnet".into(),
+            }
+
+            let mut cmd = Command::new(dotnet_cmd);
+            let mut wasm_filename = out_wasm.join(assembly_name);
+            wasm_filename.set_extension("wasm");
+
+            cmd.current_dir(&out_dir);
+
+            //  add .arg("/bl") to diagnose dotnet build problems
+            cmd.arg("publish")
+                .arg(out_dir.join(format!("{camel}.csproj")))
+                .arg("-r")
+                .arg("wasi-wasm")
+                .arg("-c")
+                .arg("Debug")
+                .arg("/p:PlatformTarget=AnyCPU")
+                .arg("/p:MSBuildEnableWorkloadResolver=false")
+                .arg("--self-contained")
+                .arg("/p:UseAppHost=false")
+                .arg("-o")
+                .arg(&out_wasm);
+            let output = match cmd.output() {
+                Ok(output) => output,
+                Err(e) => panic!("failed to spawn compiler: {}", e),
+            };
+
+            if !output.status.success() {
+                println!("status: {}", output.status);
+                println!("stdout: ------------------------------------------");
+                println!("{}", String::from_utf8_lossy(&output.stdout));
+                println!("stderr: ------------------------------------------");
+                println!("{}", String::from_utf8_lossy(&output.stderr));
+                panic!("failed to compile");
+            }
+
+            // Translate the canonical ABI module into a component.
+
+            let module = fs::read(&wasm_filename).expect("failed to read wasm file");
+            let component = ComponentEncoder::default()
+                .module(module.as_slice())
+                .expect("pull custom sections from module")
+                .validate(true)
+                .adapter("wasi_snapshot_preview1", &wasi_adapter)
+                .expect("adapter failed to get loaded")
+                .realloc_via_memory_grow(true)
+                .encode()
+                .expect(&format!(
+                    "module {:?} can be translated to a component",
+                    out_wasm
+                ));
+            let component_path = out_wasm.with_extension("component.wasm");
+            fs::write(&component_path, component).expect("write component to disk");
+
+            result.push(component_path);
         }
-
-        // Copy test file to target location to be included in compilation
-        let file_name = path.file_name().unwrap();
-        fs::copy(path, out_dir.join(file_name.to_str().unwrap()))?;
-
-        csproj.generate()?;
-
-        let dotnet_root_env = "DOTNET_ROOT";
-        let dotnet_cmd: PathBuf;
-        match env::var(dotnet_root_env) {
-            Ok(val) => dotnet_cmd = Path::new(&val).join("dotnet"),
-            Err(_e) => dotnet_cmd = "dotnet".into(),
-        }
-
-        let mut cmd = Command::new(dotnet_cmd);
-        let mut wasm_filename = out_wasm.join(assembly_name);
-        wasm_filename.set_extension("wasm");
-
-        cmd.current_dir(&out_dir);
-
-        //  add .arg("/bl") to diagnose dotnet build problems
-        cmd.arg("publish")
-            .arg(out_dir.join(format!("{camel}.csproj")))
-            .arg("-r")
-            .arg("wasi-wasm")
-            .arg("-c")
-            .arg("Debug")
-            .arg("/p:PlatformTarget=AnyCPU")
-            .arg("/p:MSBuildEnableWorkloadResolver=false")
-            .arg("--self-contained")
-            .arg("/p:UseAppHost=false")
-            .arg("-o")
-            .arg(&out_wasm);
-        let output = match cmd.output() {
-            Ok(output) => output,
-            Err(e) => panic!("failed to spawn compiler: {}", e),
-        };
-
-        if !output.status.success() {
-            println!("status: {}", output.status);
-            println!("stdout: ------------------------------------------");
-            println!("{}", String::from_utf8_lossy(&output.stdout));
-            println!("stderr: ------------------------------------------");
-            println!("{}", String::from_utf8_lossy(&output.stderr));
-            panic!("failed to compile");
-        }
-
-        // Translate the canonical ABI module into a component.
-
-        let module = fs::read(&wasm_filename).expect("failed to read wasm file");
-        let component = ComponentEncoder::default()
-            .module(module.as_slice())
-            .expect("pull custom sections from module")
-            .validate(true)
-            .adapter("wasi_snapshot_preview1", &wasi_adapter)
-            .expect("adapter failed to get loaded")
-            .realloc_via_memory_grow(true)
-            .encode()
-            .expect(&format!(
-                "module {:?} can be translated to a component",
-                out_wasm
-            ));
-        let component_path = out_wasm.with_extension("component.wasm");
-        fs::write(&component_path, component).expect("write component to disk");
-
-        result.push(component_path);
     }
 
     Ok(result)
+}
+
+fn resolve_wit_dir(dir: &PathBuf) -> (Resolve, WorldId) {
+    let mut resolve = Resolve::new();
+    let (pkg, _files) = resolve.push_dir(dir).unwrap();
+    let world = resolve.select_world(pkg, None).unwrap();
+    (resolve, world)
 }
