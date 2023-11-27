@@ -1108,6 +1108,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             let pascal = name.to_upper_camel_case();
             let user_filename = namespc.join("-") + "-" + &pascal + ".h";
             if !import {
+                // temporarily redirect header file declarations to an user controlled include file
                 std::mem::swap(&mut headerfile, &mut self.gen.h_src);
                 uwriteln!(
                     self.gen.h_src.src,
@@ -1131,21 +1132,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             };
             let derive = format!(" : public {world_name}{RESOURCE_BASE_CLASS_NAME}{base_type}");
             uwriteln!(self.gen.h_src.src, "class {pascal}{derive} {{\n");
-            // if !import {
-            //     // TODO: Replace with virtual functions
-            //     uwriteln!(
-            //         self.gen.h_src.src,
-            //         "  // private implementation data\n  struct pImpl;\n  pImpl * p_impl;\n"
-            //     );
-            // }
             uwriteln!(self.gen.h_src.src, "public:\n");
-            // if !import {
-            //     // because of pimpl
-            //     uwriteln!(
-            //         self.gen.h_src.src,
-            //         "  {pascal}({pascal}&&);\n{pascal}(const {pascal}&) = delete;\nvoid operator=({pascal}&&);\nvoid operator=(const {pascal}&) = delete;"
-            //     );
-            // }
             // destructor
             {
                 let name = "[resource-drop]".to_string() + &name;
@@ -1160,7 +1147,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             }
             let funcs = self.resolve.interfaces[intf].functions.values();
             for func in funcs {
-                // Some(name),
                 self.generate_guest_import(func);
             }
 
@@ -1178,8 +1164,12 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 self.gen.h_src.change_namespace(&Vec::default());
                 std::mem::swap(&mut headerfile, &mut self.gen.h_src);
                 uwriteln!(self.gen.h_src.src, "#include \"{user_filename}\"");
-                if self.gen.opts.format { Cpp::clang_format(&mut headerfile.src); }
-                self.gen.user_class_files.insert(user_filename + ".template", headerfile.src.to_string());
+                if self.gen.opts.format {
+                    Cpp::clang_format(&mut headerfile.src);
+                }
+                self.gen
+                    .user_class_files
+                    .insert(user_filename + ".template", headerfile.src.to_string());
             }
         }
     }
