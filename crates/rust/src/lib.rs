@@ -269,11 +269,11 @@ impl RustWasm {
             return Ok("Stub".to_owned());
         }
         let key = match key {
-            ExportKey::World => "world",
-            ExportKey::Name(name) => name,
+            ExportKey::World => "world".to_owned(),
+            ExportKey::Name(name) => format!("\"{name}\""),
         };
         if self.opts.exports.is_empty() {
-            bail!("no `exports` map provided in configuration but key is required for `{key}`")
+            bail!("no `exports` map provided in configuration - provide an `exports` map a key `{key}`")
         }
         bail!("expected `exports` map to contain key `{key}`")
     }
