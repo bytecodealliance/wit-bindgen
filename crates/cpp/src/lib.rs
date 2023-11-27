@@ -1385,11 +1385,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         results.push(format!("*(({}*) ({} + {}))", ty, operands[0], offset));
     }
 
-    // fn load_ext(&mut self, ty: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
-    //     self.load(ty, offset, operands, results);
-    //     let result = results.pop().unwrap();
-    //     results.push(format!("(int32_t) ({})", result));
-    // }
+    fn load_ext(&mut self, ty: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
+        self.load(ty, offset, operands, results);
+        let result = results.pop().unwrap();
+        results.push(format!("(int32_t) ({})", result));
+    }
 
     fn store(&mut self, ty: &str, offset: i32, operands: &[String]) {
         uwriteln!(
@@ -1473,23 +1473,26 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push(format!("l{tmp}"));
             }
             abi::Instruction::I32Load8U { offset } => {
-                results.push(format!(
-                    "(int32_t)(*((uint8_t const*)({} + {})))",
-                    operands[0], offset
-                ));
+                self.load_ext("uint8_t", *offset, operands, results)
             }
-            abi::Instruction::I32Load8S { offset: _ } => todo!(),
-            abi::Instruction::I32Load16U { offset: _ } => todo!(),
-            abi::Instruction::I32Load16S { offset: _ } => todo!(),
-            abi::Instruction::I64Load { offset: _ } => todo!(),
-            abi::Instruction::F32Load { offset: _ } => todo!(),
-            abi::Instruction::F64Load { offset: _ } => todo!(),
+            abi::Instruction::I32Load8S { offset } => {
+                self.load_ext("int8_t", *offset, operands, results)
+            }
+            abi::Instruction::I32Load16U { offset } => {
+                self.load_ext("uint16_t", *offset, operands, results)
+            }
+            abi::Instruction::I32Load16S { offset } => {
+                self.load_ext("int16_t", *offset, operands, results)
+            }
+            abi::Instruction::I64Load { offset } => self.load("int64_t", *offset, operands, results),
+            abi::Instruction::F32Load { offset } => self.load("float", *offset, operands, results),
+            abi::Instruction::F64Load { offset } => self.load("double", *offset, operands, results),
             abi::Instruction::I32Store { offset } => self.store("int32_t", *offset, operands),
             abi::Instruction::I32Store8 { offset } => self.store("int32_t", *offset, operands),
             abi::Instruction::I32Store16 { offset } => self.store("int32_t", *offset, operands),
             abi::Instruction::I64Store { offset } => self.store("int64_t", *offset, operands),
-            abi::Instruction::F32Store { offset: _ } => todo!(),
-            abi::Instruction::F64Store { offset: _ } => todo!(),
+            abi::Instruction::F32Store { offset } => self.store("float", *offset, operands),
+            abi::Instruction::F64Store { offset } => self.store("double", *offset, operands),
             abi::Instruction::I32FromChar
             | abi::Instruction::I32FromBool
             | abi::Instruction::I32FromU8
