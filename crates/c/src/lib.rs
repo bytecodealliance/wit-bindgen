@@ -1062,17 +1062,20 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
     }
 
     fn type_alias(&mut self, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
+        // we should skip generating `typedef` for `Resource` types because they aren't even
+        // defined anywhere, not even in `type_resource`. Only its `Handle` types are defined.
+        // The aliasing handle types are defined in `define_anonymous_type`.
         let target = dealias(self.resolve, id);
-        if !matches!(&self.resolve.types[target].kind,
-                     TypeDefKind::Resource if self.gen.resources[&target].direction == Direction::Import)
-        {
-            self.src.h_defs("\n");
-            self.docs(docs, SourceType::HDefs);
-            self.src.h_defs("typedef ");
-            self.print_ty(SourceType::HDefs, ty);
-            self.src.h_defs(" ");
-            self.print_typedef_target(id);
+        if matches!(&self.resolve.types[target].kind, TypeDefKind::Resource) {
+            return;
         }
+
+        self.src.h_defs("\n");
+        self.docs(docs, SourceType::HDefs);
+        self.src.h_defs("typedef ");
+        self.print_ty(SourceType::HDefs, ty);
+        self.src.h_defs(" ");
+        self.print_typedef_target(id);
     }
 
     fn type_list(&mut self, id: TypeId, _name: &str, ty: &Type, docs: &Docs) {
@@ -1129,8 +1132,19 @@ impl InterfaceGenerator<'_> {
     }
 
     fn define_anonymous_type(&mut self, ty: TypeId) {
-        self.src.h_defs("\ntypedef ");
+        // skip `typedef handle_x handle_y` where `handle_x` is the same as `handle_y`
         let kind = &self.resolve.types[ty].kind;
+        if let TypeDefKind::Handle(handle) = kind {
+            let resource = match handle {
+                Handle::Borrow(id) | Handle::Own(id) => id,
+            };
+            let origin = dealias(self.resolve, *resource);
+            if origin == *resource {
+                return;
+            }
+        }
+
+        self.src.h_defs("\ntypedef ");
         match kind {
             TypeDefKind::Type(_)
             | TypeDefKind::Flags(_)
