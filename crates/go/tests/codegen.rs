@@ -6,7 +6,6 @@ use std::process::Command;
 use heck::*;
 
 macro_rules! codegen_test {
-    (resource_alias $name:tt $test:tt) => {};
     (issue668 $name:tt $test:tt) => {};
     (multiversion $name:tt $test:tt) => {};
     ($id:ident $name:tt $test:tt) => {

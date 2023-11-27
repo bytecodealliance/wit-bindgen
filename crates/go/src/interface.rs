@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
 use heck::{ToLowerCamelCase, ToSnakeCase, ToUpperCamelCase};
@@ -22,6 +22,11 @@ pub(crate) struct InterfaceGenerator<'a> {
     pub(crate) direction: Direction,
     pub(crate) export_funcs: Vec<(String, String)>,
     pub(crate) methods: HashMap<TypeId, Vec<(String, String)>>,
+    // tracking all the exported resources used in generating the
+    // resource interface and the resource destructors
+    // this interface-level tracking is needed to prevent duplicated
+    // resource declaration which has been declared in other interfaces
+    pub(crate) exported_resources: HashSet<TypeId>,
 }
 
 impl InterfaceGenerator<'_> {
@@ -943,7 +948,7 @@ impl InterfaceGenerator<'_> {
 
             // print resources and methods
 
-            for id in &self.gen.exported_resources {
+            for id in &self.exported_resources {
                 // generate an interface that contains all the methods
                 // that the guest code needs to implement.
                 let ty_name = self.gen.type_names.get(id).unwrap();
@@ -1074,6 +1079,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             self.gen.with_import_unsafe(true);
 
             // book keep the exported resource type
+            self.exported_resources.insert(id);
             self.gen.exported_resources.insert(id);
         }
     }

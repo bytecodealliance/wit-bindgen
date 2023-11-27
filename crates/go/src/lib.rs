@@ -86,8 +86,9 @@ impl TinyGo {
             resolve,
             interface: None,
             direction,
-            export_funcs: Vec::new(),
-            methods: HashMap::new(),
+            export_funcs: Default::default(),
+            exported_resources: Default::default(),
+            methods: Default::default(),
         }
     }
 
