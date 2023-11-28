@@ -4,9 +4,6 @@ wit_bindgen::generate!({
         world: Component,
         "test:lists/test": Component
     },
-    ownership: Borrowing {
-        duplicate_if_necessary: false
-    }
 });
 
 struct Component;
@@ -28,8 +25,11 @@ impl Guest for Component {
 
         list_param(&[1, 2, 3, 4]);
         list_param2("foo");
-        list_param3(&["foo", "bar", "baz"]);
-        list_param4(&[&["foo", "bar"], &["baz"]]);
+        list_param3(&["foo".to_owned(), "bar".to_owned(), "baz".to_owned()]);
+        list_param4(&[
+            vec!["foo".to_owned(), "bar".to_owned()],
+            vec!["baz".to_owned()],
+        ]);
         assert_eq!(list_result(), [1, 2, 3, 4, 5]);
         assert_eq!(list_result2(), "hello!");
         assert_eq!(list_result3(), ["hello,", "world!"]);

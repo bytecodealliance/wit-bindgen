@@ -346,6 +346,7 @@ impl WorldGenerator for TinyGo {
 
         let mut opts = wit_bindgen_c::Opts::default();
         opts.no_sig_flattening = true;
+        opts.no_object_file = true;
         opts.build()
             .generate(resolve, id, files)
             .expect("C generator should be infallible")
