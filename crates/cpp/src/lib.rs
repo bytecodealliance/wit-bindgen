@@ -747,11 +747,15 @@ impl CppInterfaceGenerator<'_> {
             self.gen.h_src.src.push_str(" const");
         }
         self.gen.h_src.src.push_str(";\n");
+        drop(cpp_sig);
 
         // we want to separate the lowered signature (wasm) and the high level signature
         if !import {
             self.print_export_signature(func)
         } else {
+            // recalulate with c file namespace
+            let c_namespace = self.gen.c_src.namespace.clone();
+            let cpp_sig = self.high_level_signature(func, import, &c_namespace);
             let mut params = Vec::new();
             self.gen.c_src.src.push_str(&cpp_sig.result);
             if !cpp_sig.result.is_empty() {
@@ -814,7 +818,17 @@ impl CppInterfaceGenerator<'_> {
                 }
             }
         } else {
+            let owner = &self.resolve.types[match &func.kind {
+                FunctionKind::Static(id) => *id,
+                FunctionKind::Constructor(id) => *id,
+                FunctionKind::Method(id) => *id,
+                FunctionKind::Freestanding => todo!(),
+            }]
+            .clone();
+            let mut namespace = namespace(self.resolve, &owner.owner);
+            namespace.push(owner.name.as_ref().unwrap().to_upper_camel_case());
             let mut f = FunctionBindgen::new(self, params);
+            f.namespace = namespace;
             abi::call(
                 f.gen.resolve,
                 AbiVariant::GuestImport,
@@ -1265,8 +1279,9 @@ struct FunctionBindgen<'a, 'b> {
     gen: &'b mut CppInterfaceGenerator<'a>,
     params: Vec<String>,
     tmp: usize,
-    import_return_pointer_area_size: usize,
-    import_return_pointer_area_align: usize,
+    // import_return_pointer_area_size: usize,
+    // import_return_pointer_area_align: usize,
+    namespace: Vec<String>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1275,8 +1290,9 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             gen,
             params,
             tmp: 0,
-            import_return_pointer_area_size: 0,
-            import_return_pointer_area_align: 0,
+            // import_return_pointer_area_size: 0,
+            // import_return_pointer_area_align: 0,
+            namespace: Default::default(),
         }
     }
 
@@ -1432,19 +1448,19 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             | abi::Instruction::I32FromU32
             | abi::Instruction::I32FromS32 => top_as("int32_t"),
             abi::Instruction::I64FromU64 | abi::Instruction::I64FromS64 => top_as("int64_t"),
-            abi::Instruction::F32FromFloat32 => todo!(),
-            abi::Instruction::F64FromFloat64 => todo!(),
-            abi::Instruction::S8FromI32 => todo!(),
-            abi::Instruction::U8FromI32 => todo!(),
-            abi::Instruction::S16FromI32 => todo!(),
-            abi::Instruction::U16FromI32 => todo!(),
+            abi::Instruction::F32FromFloat32 => top_as("float"),
+            abi::Instruction::F64FromFloat64 => top_as("double"),
+            abi::Instruction::S8FromI32 => top_as("int8_t"),
+            abi::Instruction::U8FromI32 => top_as("uint8_t"),
+            abi::Instruction::S16FromI32 => top_as("int16_t"),
+            abi::Instruction::U16FromI32 => top_as("uint16_t"),
             abi::Instruction::S32FromI32 => top_as("int32_t"),
             abi::Instruction::U32FromI32 => top_as("uint32_t"),
-            abi::Instruction::S64FromI64 => todo!(),
+            abi::Instruction::S64FromI64 => top_as("int64_t"),
             abi::Instruction::U64FromI64 => top_as("uint64_t"),
-            abi::Instruction::CharFromI32 => todo!(),
-            abi::Instruction::Float32FromF32 => todo!(),
-            abi::Instruction::Float64FromF64 => todo!(),
+            abi::Instruction::CharFromI32 => top_as("uint32_t"),
+            abi::Instruction::Float32FromF32 => top_as("float"),
+            abi::Instruction::Float64FromF64 => top_as("double"),
             abi::Instruction::BoolFromI32 => top_as("bool"),
             abi::Instruction::ListCanonLower {
                 element: _,
@@ -1683,10 +1699,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             } => results.push(format!("int32_t({})", operands[0])),
             abi::Instruction::EnumLift {
                 enum_: _,
-                name,
-                ty: _,
+                name: _,
+                ty,
             } => {
-                results.push(format!("({name}){}", &operands[0]));
+                let typename = self.gen.type_name(&Type::Id(*ty), &self.namespace);
+                results.push(format!("({typename}){}", &operands[0]));
             }
             abi::Instruction::OptionLower {
                 payload: _,
