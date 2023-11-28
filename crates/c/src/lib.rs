@@ -49,6 +49,9 @@ pub struct Opts {
     // Skip optional null pointer and boolean result argument signature flattening
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub no_sig_flattening: bool,
+    // Skip generating C object file
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub no_object_file: bool,
 }
 
 impl Opts {
@@ -372,14 +375,16 @@ impl WorldGenerator for C {
             #endif"
         );
 
-        files.push(&format!("{snake}.c"), c_str.as_bytes());
         files.push(&format!("{snake}.h"), h_str.as_bytes());
-        files.push(
-            &format!("{snake}_component_type.o",),
-            component_type_object::object(resolve, id, self.opts.string_encoding)
-                .unwrap()
-                .as_slice(),
-        );
+        files.push(&format!("{snake}.c"), c_str.as_bytes());
+        if !self.opts.no_object_file {
+            files.push(
+                &format!("{snake}_component_type.o",),
+                component_type_object::object(resolve, id, self.opts.string_encoding)
+                    .unwrap()
+                    .as_slice(),
+            );
+        }
     }
 
     fn pre_export_interface(&mut self, resolve: &Resolve, _files: &mut Files) -> Result<()> {
