@@ -933,7 +933,18 @@ impl CppInterfaceGenerator<'_> {
                     result += ">";
                     result
                 }
-                TypeDefKind::Enum(_e) => "Enum".to_string(),
+                TypeDefKind::Enum(_e) => {
+                    let ty = &self.resolve.types[*id];
+                    let namespc = namespace(self.resolve, &ty.owner);
+                    let mut relative = SourceWithState::default();
+                    relative.namespace = from_namespace.clone();
+                    relative.qualify(&namespc);
+                    format!(
+                        "{}{}",
+                        relative.src.to_string(),
+                        ty.name.as_ref().unwrap().to_pascal_case()
+                    )
+                }
                 TypeDefKind::Option(o) => {
                     "std::optional<".to_string() + &self.type_name(o, from_namespace) + ">"
                 }
@@ -1452,8 +1463,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
                     self.push_str(&format!("auto {} = (int32_t)({}.data());\n", ptr, val));
                     self.push_str(&format!("auto {} = (int32_t)({}.size());\n", len, val));
-                    // TODO: allocate ret_area
-                    // self.push_str("// is this correct?\n");
+                    results.push(ptr);
                 } else {
                     self.gen.gen.dependencies.needs_guest_alloc = true;
                     uwriteln!(
@@ -1461,8 +1471,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         "int32_t {result} = guest_alloc(exec_env, {len});"
                     );
                     uwriteln!(self.gen.gen.c_src.src, "memcpy(wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {result}), {ptr}, {len});");
+                    results.push(result);
                 }
-                results.push(result);
                 results.push(len);
             }
             abi::Instruction::ListLower {
