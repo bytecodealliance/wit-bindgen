@@ -34,6 +34,7 @@ struct HighlevelSignature {
     arguments: Vec<(String, CppType)>,
     name: String,
     namespace: Vec<String>,
+    implicit_self: bool,
 }
 
 // follows https://google.github.io/styleguide/cppguide.html
@@ -708,10 +709,11 @@ impl CppInterfaceGenerator<'_> {
         }
         for (i, (name, param)) in func.params.iter().enumerate() {
             if i == 0 && name == "self" {
+                res.implicit_self = true;
                 continue;
             }
             res.arguments
-                .push((name.clone(), self.type_name(param, &res.namespace)));
+                .push((name.to_snake_case(), self.type_name(param, &res.namespace)));
         }
         // default to non-const when exporting a method
         if matches!(func.kind, FunctionKind::Method(_)) && import {
@@ -748,124 +750,33 @@ impl CppInterfaceGenerator<'_> {
 
         // we want to separate the lowered signature (wasm) and the high level signature
         if !import {
-            return self.print_export_signature(func);
-        }
-
-        // self.rustdoc(&func.docs);
-        // self.rustdoc_params(&func.params, "Parameters");
-        // TODO: re-add this when docs are back
-        // self.rustdoc_params(&func.results, "Return");
-
-        let (namespace, func_name_h) = self.func_namespace_name(func);
-        let is_drop = is_drop_method(func);
-        // we might want to separate c_sig and h_sig
-        let mut sig = String::new();
-        let mut result_ptr: Option<Type> = None;
-        if !matches!(&func.kind, FunctionKind::Constructor(_)) && !is_drop {
-            match &func.results {
-                wit_bindgen_core::wit_parser::Results::Named(n) => {
-                    if n.len() == 0 {
-                        sig.push_str("void");
-                    } else {
-                        todo!();
-                    }
-                }
-                wit_bindgen_core::wit_parser::Results::Anon(ty) => {
-                    if is_arg_by_pointer(self.resolve, ty) {
-                        sig.push_str("void");
-                        result_ptr = Some(ty.clone());
-                    } else {
-                        let from_namespace = self.gen.c_src.namespace.clone();
-                        sig.push_str(&self.type_name(ty, &from_namespace));
-                    }
-                }
-            }
-            sig.push_str(" ");
-        }
-        if import {
-            self.gen.c_src.src.push_str(&sig);
-            self.gen.c_src.qualify(&namespace);
-            self.gen.c_src.src.push_str(&func_name_h);
+            self.print_export_signature(func)
         } else {
-            self.gen.c_src.src.push_str("static ");
-            if matches!(&func.kind, FunctionKind::Constructor(_)) {
-                self.gen.c_src.src.push_str("int32_t ");
-            } else if is_drop {
-                self.gen.c_src.src.push_str("void ");
-            } else {
-                self.gen.c_src.src.push_str(&sig);
+            let mut params = Vec::new();
+            self.gen.c_src.src.push_str(&cpp_sig.result);
+            if !cpp_sig.result.is_empty() {
+                self.gen.c_src.src.push_str(" ");
             }
-            let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
-            let full_name = "host_".to_string() + &Self::export_name2(&module_name, &func.name);
-            self.gen.c_src.src.push_str(&full_name);
-            if self.gen.opts.host {
-                let signature = wamr::wamr_signature(self.resolve, func);
-                let remember = HostFunction {
-                    wasm_name: func.name.clone(),
-                    wamr_signature: signature.to_string(),
-                    host_name: full_name,
-                };
-                self.gen
-                    .host_functions
-                    .entry(module_name)
-                    .and_modify(|v| v.push(remember.clone()))
-                    .or_insert(vec![remember]);
-            }
-        }
-        sig.push_str(&func_name_h);
-        //self.gen.h_src.src.push_str(&sig);
-        sig.clear();
-        self.gen.c_src.src.push_str("(");
-        if self.gen.opts.host {
-            self.gen.c_src.src.push_str("wasm_exec_env_t exec_env");
-            if func.params.len() > 0 {
-                self.gen.c_src.src.push_str(", ");
-            }
-        }
-        let mut params = Vec::new();
-        for (i, (name, param)) in func.params.iter().enumerate() {
-            if is_arg_by_pointer(self.resolve, param) {
-                params.push(name.clone() + "_ptr");
-                sig.push_str(&self.type_name(param, &namespace));
-                sig.push_str("* ");
-                sig.push_str(&(name.clone() + "_ptr"));
-            } else {
-                params.push(name.clone());
-                if i == 0 && name == "self" {
-                    if !import {
-                        self.gen.c_src.src.push_str("int32_t ");
-                        self.gen.c_src.src.push_str(&name);
-                        if i + 1 != func.params.len() {
-                            self.gen.c_src.src.push_str(", ");
-                        }
-                    }
-                    continue;
+            self.gen.c_src.qualify(&cpp_sig.namespace);
+            self.gen.c_src.src.push_str(&cpp_sig.name);
+            self.gen.c_src.src.push_str("(");
+            if cpp_sig.implicit_self { params.push("(*this)".into()); }
+            for (num, (arg, typ)) in cpp_sig.arguments.iter().enumerate() {
+                if num > 0 {
+                    self.gen.c_src.src.push_str(", ");
                 }
-                sig.push_str(&self.type_name(param, &namespace));
-                sig.push_str(" ");
-                sig.push_str(&name);
+                self.gen.c_src.src.push_str(typ);
+                self.gen.c_src.src.push_str(" ");
+                self.gen.c_src.src.push_str(arg);
+                params.push(arg.clone());
             }
-            if i + 1 != func.params.len() {
-                sig.push_str(",");
+            self.gen.c_src.src.push_str(")");
+            if cpp_sig.const_member {
+                self.gen.c_src.src.push_str(" const");
             }
+            self.gen.c_src.src.push_str("\n");
+            params
         }
-        if let Some(result_ptr) = &result_ptr {
-            params.push("result_ptr".into());
-            sig.push_str(&self.type_name(result_ptr, &namespace));
-            sig.push_str("* ");
-            sig.push_str("result_ptr");
-        }
-        sig.push_str(")");
-        // default to non-const when exporting a method
-        if matches!(func.kind, FunctionKind::Method(_)) && import {
-            sig.push_str("const");
-        }
-        self.gen.c_src.src.push_str(&sig);
-        self.gen.c_src.src.push_str("\n");
-        // self.gen.h_src.src.push_str("(");
-        // sig.push_str(";\n");
-        // self.gen.h_src.src.push_str(&sig);
-        params
     }
 
     fn generate_guest_import(&mut self, func: &Function) {
@@ -989,7 +900,11 @@ impl CppInterfaceGenerator<'_> {
                     let mut relative = SourceWithState::default();
                     relative.namespace = from_namespace.clone();
                     relative.qualify(&namespc);
-                    format!("{}{}", relative.src.to_string(), ty.name.as_ref().unwrap().to_pascal_case())
+                    format!(
+                        "{}{}",
+                        relative.src.to_string(),
+                        ty.name.as_ref().unwrap().to_pascal_case()
+                    )
                 }
                 TypeDefKind::Resource => self.resolve.types[*id].name.as_ref().cloned().unwrap(),
                 TypeDefKind::Handle(Handle::Own(id)) => {
@@ -1484,7 +1399,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::I32Load16S { offset } => {
                 self.load_ext("int16_t", *offset, operands, results)
             }
-            abi::Instruction::I64Load { offset } => self.load("int64_t", *offset, operands, results),
+            abi::Instruction::I64Load { offset } => {
+                self.load("int64_t", *offset, operands, results)
+            }
             abi::Instruction::F32Load { offset } => self.load("float", *offset, operands, results),
             abi::Instruction::F64Load { offset } => self.load("double", *offset, operands, results),
             abi::Instruction::I32Store { offset } => self.store("int32_t", *offset, operands),
