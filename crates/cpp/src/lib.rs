@@ -760,7 +760,9 @@ impl CppInterfaceGenerator<'_> {
             self.gen.c_src.qualify(&cpp_sig.namespace);
             self.gen.c_src.src.push_str(&cpp_sig.name);
             self.gen.c_src.src.push_str("(");
-            if cpp_sig.implicit_self { params.push("(*this)".into()); }
+            if cpp_sig.implicit_self {
+                params.push("(*this)".into());
+            }
             for (num, (arg, typ)) in cpp_sig.arguments.iter().enumerate() {
                 if num > 0 {
                     self.gen.c_src.src.push_str(", ");
@@ -1447,10 +1449,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let len = format!("len{}", tmp);
                 let result = format!("result{}", tmp);
                 if realloc.is_none() {
-                    self.push_str(&format!("auto {} = {};\n", val, operands[0]));
+                    self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
                     self.push_str(&format!("auto {} = (int32_t)({}.data());\n", ptr, val));
                     self.push_str(&format!("auto {} = (int32_t)({}.size());\n", len, val));
-                    self.push_str("// is this correct?\n");
+                    // TODO: allocate ret_area
+                    // self.push_str("// is this correct?\n");
                 } else {
                     self.gen.gen.dependencies.needs_guest_alloc = true;
                     uwriteln!(
@@ -1783,27 +1786,41 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
     fn return_pointer(&mut self, size: usize, align: usize) -> Self::Operand {
         let tmp = self.tmp();
+        let elems = (size + (align - 1)) / align;
+        let tp = match align {
+            1 => "uint8_t",
+            2 => "uint16_t",
+            4 => "uint32_t",
+            8 => "uint64_t",
+            _ => todo!(),
+        };
+        uwriteln!(self.gen.gen.c_src.src, " {tp} ret_area[{elems}];");
+
+        uwrite!(
+            self.gen.gen.c_src.src,
+            "int32_t ptr{tmp} = int32_t(&ret_area);"
+        );
 
         // Imports get a per-function return area to facilitate using the
         // stack whereas exports use a per-module return area to cut down on
         // stack usage. Note that for imports this also facilitates "adapter
         // modules" for components to not have data segments.
-        if self.gen.in_import {
-            self.import_return_pointer_area_size = self.import_return_pointer_area_size.max(size);
-            self.import_return_pointer_area_align =
-                self.import_return_pointer_area_align.max(align);
-            uwrite!(
-                self.gen.gen.c_src.src,
-                "int32_t ptr{tmp} = int32_t(&ret_area);"
-            );
-        } else {
-            self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
-            self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
-            uwriteln!(
-                self.gen.gen.c_src.src,
-                "int32_t ptr{tmp} = int32_t(&RET_AREA);"
-            );
-        }
+        // if self.gen.in_import {
+        //     self.import_return_pointer_area_size = self.import_return_pointer_area_size.max(size);
+        //     self.import_return_pointer_area_align =
+        //         self.import_return_pointer_area_align.max(align);
+        //     uwrite!(
+        //         self.gen.gen.c_src.src,
+        //         "int32_t ptr{tmp} = int32_t(&ret_area);"
+        //     );
+        // } else {
+        //     self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
+        //     self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
+        //     uwriteln!(
+        //         self.gen.gen.c_src.src,
+        //         "int32_t ptr{tmp} = int32_t(&RET_AREA);"
+        //     );
+        // }
         format!("ptr{}", tmp)
     }
 
