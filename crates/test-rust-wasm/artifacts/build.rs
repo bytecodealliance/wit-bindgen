@@ -6,8 +6,9 @@ fn main() {
     std::env::remove_var("CARGO_ENCODED_RUSTFLAGS");
 
     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
 
-    let wasi_adapter = out_dir.join("../../../../../tests/wasi_snapshot_preview1.reactor.wasm");
+    let wasi_adapter = manifest_dir.join("../../../tests/wasi_snapshot_preview1.reactor.wasm");
 
     let mut cmd = Command::new("cargo");
     cmd.arg("build")
