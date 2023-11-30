@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use heck::ToUpperCamelCase;
 
 use std::borrow::Cow;
@@ -147,7 +147,8 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
     out_dir.push("runtime-tests");
     out_dir.push(name);
 
-    let wasi_adapter = std::fs::read(&test_artifacts::ADAPTER)?;
+    let wasi_adapter =
+        std::fs::read(&test_artifacts::ADAPTER).context("failed to read the wasi adapter")?;
 
     drop(std::fs::remove_dir_all(&out_dir));
     std::fs::create_dir_all(&out_dir)?;
