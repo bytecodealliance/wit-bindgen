@@ -841,6 +841,8 @@ impl CppInterfaceGenerator<'_> {
                 func,
                 &mut f,
             );
+            let code = String::from(f.src);
+            self.gen.c_src.src.push_str(&code);
         }
         self.gen.c_src.src.push_str("}\n");
     }
@@ -1287,6 +1289,10 @@ struct FunctionBindgen<'a, 'b> {
     // import_return_pointer_area_size: usize,
     // import_return_pointer_area_align: usize,
     namespace: Vec<String>,
+    src: Source,
+    block_storage: Vec<wit_bindgen_core::Source>,
+    blocks: Vec<(String, Vec<String>)>,
+    payloads: Vec<String>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1298,6 +1304,10 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             // import_return_pointer_area_size: 0,
             // import_return_pointer_area_align: 0,
             namespace: Default::default(),
+            src: Default::default(),
+            block_storage: Default::default(),
+            blocks: Default::default(),
+            payloads: Default::default(),
         }
     }
 
@@ -1308,7 +1318,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn push_str(&mut self, s: &str) {
-        self.gen.gen.c_src.src.push_str(s);
+        self.src.push_str(s);
     }
 
     fn typename_lift(&self, id: TypeId) -> String {
@@ -1342,7 +1352,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
 
     fn store(&mut self, ty: &str, offset: i32, operands: &[String]) {
         uwriteln!(
-            self.gen.gen.c_src.src,
+            self.src,
             "*(({}*)({} + {})) = {};",
             ty,
             operands[1],
@@ -1415,7 +1425,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::I32Load { offset } => {
                 let tmp = self.tmp();
                 uwriteln!(
-                    self.gen.gen.c_src.src,
+                    self.src,
                     "int32_t l{tmp} = *((int32_t const*)({} + {offset}));",
                     operands[0]
                 );
@@ -1487,11 +1497,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(ptr);
                 } else {
                     self.gen.gen.dependencies.needs_guest_alloc = true;
-                    uwriteln!(
-                        self.gen.gen.c_src.src,
-                        "int32_t {result} = guest_alloc(exec_env, {len});"
-                    );
-                    uwriteln!(self.gen.gen.c_src.src, "memcpy(wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {result}), {ptr}, {len});");
+                    uwriteln!(self.src, "int32_t {result} = guest_alloc(exec_env, {len});");
+                    uwriteln!(self.src, "memcpy(wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {result}), {ptr}, {len});");
                     results.push(result);
                 }
                 results.push(len);
@@ -1513,7 +1520,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::StringLift => {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
-                uwriteln!(self.gen.gen.c_src.src, "auto {} = {};\n", len, operands[1]);
+                uwriteln!(self.src, "auto {} = {};\n", len, operands[1]);
                 let result = format!("std::string((char const*)({}), {len})", operands[0]);
                 results.push(result);
             }
@@ -1539,14 +1546,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     "#,
                 ));
 
-                uwriteln!(
-                    self.gen.gen.c_src.src,
-                    "for (unsigned i=0; i<{len}; ++i) {{"
-                );
-                uwriteln!(self.gen.gen.c_src.src, "auto base = {base} + i * {size};");
-                uwriteln!(self.gen.gen.c_src.src, "auto e{tmp} = todo();");
-                uwriteln!(self.gen.gen.c_src.src, "{result}.push_back(e{tmp});");
-                uwriteln!(self.gen.gen.c_src.src, "}}");
+                uwriteln!(self.src, "for (unsigned i=0; i<{len}; ++i) {{");
+                uwriteln!(self.src, "auto base = {base} + i * {size};");
+                uwriteln!(self.src, "auto e{tmp} = todo();");
+                uwriteln!(self.src, "{result}.push_back(e{tmp});");
+                uwriteln!(self.src, "}}");
                 results.push(result);
                 // self.push_str(&format!(
                 //     "{rt}::dealloc({base}, ({len} as usize) * {size}, {align});\n",
@@ -1607,7 +1611,22 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push("TupleLower1".into());
                 results.push("TupleLower2".into());
             }
-            abi::Instruction::TupleLift { tuple: _, ty: _ } => todo!(),
+            abi::Instruction::TupleLift { tuple, ty: _ } => {
+                let name = format!("tuple{}", self.tmp());
+                uwrite!(self.src, "auto {name} std::tuple<");
+                self.src.push_str(
+                    &(tuple
+                        .types
+                        .iter()
+                        .map(|t| self.gen.type_name(t, &self.namespace)))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                );
+                self.src.push_str(">(");
+                self.src.push_str(&operands.join(", "));
+                self.src.push_str(");\n");
+                results.push(name);
+            }
             abi::Instruction::FlagsLower {
                 flags,
                 name: _,
@@ -1624,16 +1643,68 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 name: _,
                 ty: _,
             } => results.push("FlagsLift".to_string()),
-            abi::Instruction::VariantPayloadName => results.push("e".to_string()),
+            abi::Instruction::VariantPayloadName => {
+                let name = format!("payload{}", self.tmp());
+                results.push(format!("*{}", name));
+                self.payloads.push(name);
+            }
             abi::Instruction::VariantLower {
-                variant: _,
-                name,
+                variant,
+                name: _,
                 ty: _,
-                results: _,
+                results: result_types,
             } => {
                 //let name = self.gen.type_name(*ty);
-                let op0 = &operands[0];
-                self.push_str(&format!("({name}){op0}"));
+                // let op0 = &operands[0];
+                // self.push_str(&format!("({name}){op0}"));
+                let blocks = self
+                    .blocks
+                    .drain(self.blocks.len() - variant.cases.len()..)
+                    .collect::<Vec<_>>();
+                let payloads = self
+                    .payloads
+                    .drain(self.payloads.len() - variant.cases.len()..)
+                    .collect::<Vec<_>>();
+
+                let mut variant_results = Vec::with_capacity(result_types.len());
+                for ty in result_types.iter() {
+                    let name = format!("variant{}", self.tmp());
+                    results.push(name.clone());
+                    self.src.push_str(wasm_type(*ty));
+                    self.src.push_str(" ");
+                    self.src.push_str(&name);
+                    self.src.push_str(";\n");
+                    variant_results.push(name);
+                }
+
+                let expr_to_match = format!("({}).tag", operands[0]);
+
+                uwriteln!(self.src, "switch ((int32_t) {}) {{", expr_to_match);
+                for (i, ((case, (block, block_results)), payload)) in
+                    variant.cases.iter().zip(blocks).zip(payloads).enumerate()
+                {
+                    uwriteln!(self.src, "case {}: {{", i);
+                    if let Some(ty) = case.ty.as_ref() {
+                        let ty = self.gen.type_name(ty, &self.namespace);
+                        uwrite!(
+                            self.src,
+                            "const {} *{} = &({}).val",
+                            ty,
+                            payload,
+                            operands[0],
+                        );
+                        self.src.push_str(".");
+                        self.src.push_str(&to_c_ident(&case.name));
+                        self.src.push_str(";\n");
+                    }
+                    self.src.push_str(&block);
+
+                    for (name, result) in variant_results.iter().zip(&block_results) {
+                        uwriteln!(self.src, "{} = {};", name, result);
+                    }
+                    self.src.push_str("break;\n}\n");
+                }
+                self.src.push_str("}\n");
             }
             abi::Instruction::VariantLift {
                 variant,
@@ -1715,7 +1786,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 ty: _,
                 results: _,
             } => self.push_str("OptionLower"),
-            abi::Instruction::OptionLift { payload: _, ty: _ } => todo!(),
+            abi::Instruction::OptionLift { payload, ty: _ } => {
+                let mut result: String = "std::optional<".into();
+                result.push_str(&self.gen.type_name(*payload, &self.namespace));
+                result.push_str(">(");
+                result.push_str(&operands[0]);
+                result.push(')');
+                results.push(result);
+            }
             abi::Instruction::ResultLower {
                 result: _,
                 ty: _,
@@ -1759,13 +1837,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
 
                 // ... then call the function with all our operands
                 if sig.results.len() > 0 {
-                    self.gen.gen.c_src.src.push_str("auto ret = ");
+                    self.src.push_str("auto ret = ");
                     results.push("ret".to_string());
                 }
-                self.gen.gen.c_src.src.push_str(&func);
-                self.gen.gen.c_src.src.push_str("(");
-                self.gen.gen.c_src.src.push_str(&operands.join(", "));
-                self.gen.gen.c_src.src.push_str(");\n");
+                self.src.push_str(&func);
+                self.src.push_str("(");
+                self.src.push_str(&operands.join(", "));
+                self.src.push_str(");\n");
             }
             abi::Instruction::CallInterface { func } => {
                 // dbg!(func);
@@ -1774,14 +1852,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 if matches!(func.kind, FunctionKind::Method(_)) {
                     let this = operands.remove(0);
                     self.gen.gen.c_src.qualify(&namespace);
-                    uwrite!(self.gen.gen.c_src.src, "lookup_resource({this})->");
+                    uwrite!(self.src, "lookup_resource({this})->");
                 } else {
                     if matches!(func.kind, FunctionKind::Constructor(_)) {
                         let _ = namespace.pop();
                     }
                     self.gen.gen.c_src.qualify(&namespace);
                 }
-                self.gen.gen.c_src.src.push_str(&func_name_h);
+                self.src.push_str(&func_name_h);
                 self.push_str("(");
                 self.push_str(&operands.join(", "));
                 self.push_str(");");
@@ -1794,12 +1872,12 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         match &func.kind {
                             FunctionKind::Constructor(_) if import => {
                                 // strange but works
-                                self.gen.gen.c_src.src.push_str("this->handle = ");
+                                self.src.push_str("this->handle = ");
                             }
-                            _ => self.gen.gen.c_src.src.push_str("return "),
+                            _ => self.src.push_str("return "),
                         }
-                        self.gen.gen.c_src.src.push_str(&operands[0]);
-                        self.gen.gen.c_src.src.push_str(";\n");
+                        self.src.push_str(&operands[0]);
+                        self.src.push_str(";\n");
                     }
                     _ => todo!(),
                 }
@@ -1826,12 +1904,9 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             8 => "uint64_t",
             _ => todo!(),
         };
-        uwriteln!(self.gen.gen.c_src.src, " {tp} ret_area[{elems}];");
+        uwriteln!(self.src, " {tp} ret_area[{elems}];");
 
-        uwrite!(
-            self.gen.gen.c_src.src,
-            "int32_t ptr{tmp} = int32_t(&ret_area);"
-        );
+        uwrite!(self.src, "int32_t ptr{tmp} = int32_t(&ret_area);");
 
         // Imports get a per-function return area to facilitate using the
         // stack whereas exports use a per-module return area to cut down on
@@ -1842,14 +1917,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
         //     self.import_return_pointer_area_align =
         //         self.import_return_pointer_area_align.max(align);
         //     uwrite!(
-        //         self.gen.gen.c_src.src,
+        //         self.src,
         //         "int32_t ptr{tmp} = int32_t(&ret_area);"
         //     );
         // } else {
         //     self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
         //     self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
         //     uwriteln!(
-        //         self.gen.gen.c_src.src,
+        //         self.src,
         //         "int32_t ptr{tmp} = int32_t(&RET_AREA);"
         //     );
         // }
@@ -1857,11 +1932,16 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
     }
 
     fn push_block(&mut self) {
-        uwriteln!(self.gen.gen.c_src.src, "// push_block()");
+        let prev = core::mem::take(&mut self.src);
+        self.block_storage.push(prev);
+        //        uwriteln!(self.src, "// push_block()");
     }
 
-    fn finish_block(&mut self, _operand: &mut Vec<Self::Operand>) {
-        uwriteln!(self.gen.gen.c_src.src, "// finish_block()");
+    fn finish_block(&mut self, operands: &mut Vec<Self::Operand>) {
+        let to_restore = self.block_storage.pop().unwrap();
+        let src = core::mem::replace(&mut self.src, to_restore);
+        self.blocks.push((src.into(), core::mem::take(operands)));
+        //       uwriteln!(self.src, "// finish_block()");
     }
 
     fn sizes(&self) -> &wit_bindgen_core::wit_parser::SizeAlign {
