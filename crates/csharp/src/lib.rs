@@ -45,6 +45,10 @@ pub struct Opts {
     pub string_encoding: StringEncoding,
     #[cfg_attr(feature = "clap", arg(long))]
     pub generate_stub: bool,
+
+    // TODO: This should only temporarily needed until mono and native aot aligns.
+    #[cfg_attr(feature = "clap", arg(short, long, value_enum))]
+    pub runtime: CSharpRuntime,
 }
 
 impl Opts {
@@ -54,6 +58,14 @@ impl Opts {
             ..CSharp::default()
         })
     }
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum CSharpRuntime {
+    #[default]
+    NativeAOT,
+    Mono,
 }
 
 struct InterfaceFragment {
@@ -487,6 +499,22 @@ impl WorldGenerator for CSharp {
             );
         }
 
+        //TODO: This is currently neede for mono even if it's built as a library.
+        if self.opts.runtime == CSharpRuntime::Mono {
+            files.push(
+                &format!("MonoEntrypoint.cs",),
+                indent(
+                    r#"
+                public class MonoEntrypoint() {
+                    public static void Main() {
+                    }
+                }
+                "#,
+                )
+                .as_bytes(),
+            );
+        }
+
         files.push(
             &format!("{snake}_component_type.o",),
             component_type_object::object(resolve, id, self.opts.string_encoding)
@@ -599,7 +627,7 @@ impl InterfaceGenerator<'_> {
         });
     }
 
-    fn import(&mut self, _module: &String, func: &Function) {
+    fn import(&mut self, module: &String, func: &Function) {
         if func.kind != FunctionKind::Freestanding {
             todo!("resources");
         }
@@ -666,12 +694,14 @@ impl InterfaceGenerator<'_> {
             .join(", ");
 
         let import_name = &func.name;
+
         uwrite!(
             self.csharp_interop_src,
             r#"
             internal static class {camel_name}Interop
             {{
-                [DllImport("*", EntryPoint = "{import_name}")]
+                [WasmImportLinkage]
+                [DllImport("{module}", EntryPoint = "{import_name}")]
                 internal static extern {wasm_result_type} wasmImport{camel_name}({wasm_params});
             }}
             "#

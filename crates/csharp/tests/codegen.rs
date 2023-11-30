@@ -71,6 +71,7 @@ macro_rules! codegen_test {
                     wit_bindgen_csharp::Opts {
                         generate_stub: true,
                         string_encoding: StringEncoding::UTF8,
+                        runtime: Default::default(),
                     }
                     .build()
                     .generate(resolve, world, files)

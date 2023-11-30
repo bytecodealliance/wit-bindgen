@@ -2201,6 +2201,7 @@ dependencies = [
  "heck",
  "test-artifacts",
  "wasm-encoder 0.38.0",
+ "wasmparser 0.118.0",
  "wasmtime",
  "wasmtime-wasi",
  "wit-bindgen-c",

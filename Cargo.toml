@@ -11,9 +11,7 @@ CLI tool to generate bindings for WIT documents and the component model.
 """
 
 [workspace]
-members = [
-  "crates/test-rust-wasm",
-]
+members = ["crates/test-rust-wasm"]
 resolver = "2"
 
 [workspace.package]
@@ -22,7 +20,7 @@ edition = "2021"
 [workspace.dependencies]
 anyhow = "1.0.72"
 bitflags = "2.3.3"
-heck =  { version = "0.4", features = ["unicode"] }
+heck = { version = "0.4", features = ["unicode"] }
 pulldown-cmark = { version = "0.9", default-features = false }
 clap = { version = "4.3.19", features = ["derive"] }
 env_logger = "0.10.0"
@@ -52,22 +50,19 @@ clap = { workspace = true }
 wit-bindgen-core = { workspace = true }
 wit-bindgen-rust = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-c = { workspace = true, features = ['clap'], optional = true }
-wit-bindgen-markdown = { workspace = true, features = ['clap'], optional = true }
-wit-bindgen-teavm-java = { workspace = true, features = ['clap'], optional = true }
+wit-bindgen-markdown = { workspace = true, features = [
+  'clap',
+], optional = true }
+wit-bindgen-teavm-java = { workspace = true, features = [
+  'clap',
+], optional = true }
 wit-bindgen-go = { workspace = true, features = ['clap'], optional = true }
 wit-bindgen-csharp = { workspace = true, features = ['clap'], optional = true }
 wit-component = { workspace = true }
 wasm-encoder = { workspace = true }
 
 [features]
-default = [
-  'c',
-  'rust',
-  'markdown',
-  'teavm-java',
-  'go',
-  'csharp-naot',
-]
+default = ['c', 'rust', 'markdown', 'teavm-java', 'go', 'csharp-naot']
 c = ['dep:wit-bindgen-c']
 rust = ['dep:wit-bindgen-rust']
 markdown = ['dep:wit-bindgen-markdown']
@@ -83,3 +78,5 @@ wasmtime = { version = "15", features = ['component-model'] }
 wasmtime-wasi = { workspace = true }
 test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
+wasmparser = "0.118.0"
+wasm-encoder = { workspace = true }
