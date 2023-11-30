@@ -433,7 +433,7 @@ impl InterfaceGenerator<'_> {
                 if is_pointer {
                     prefix.push_str("&");
                 }
-                if name != "err" && name != "ret" {
+                if name != "ret" {
                     param_name = format!("lower_{name}");
                 } else {
                     param_name.push_str(name);

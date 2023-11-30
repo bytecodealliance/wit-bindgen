@@ -2833,6 +2833,10 @@ pub fn to_c_ident(name: &str) -> String {
         "xor" => "xor_".into(),
         "xor_eq" => "xor_eq_".into(),
         "_Packed" => "_Packed_".into(),
+        // ret and err needs to be escaped because they are used as
+        //  variable names for option and result flattening.
+        "ret" => "ret_".into(),
+        "err" => "err_".into(),
         s => s.to_snake_case(),
     }
 }
