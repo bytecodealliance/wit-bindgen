@@ -207,7 +207,7 @@ impl WorldGenerator for Cpp {
 
         for (_name, func) in resolve.interfaces[id].functions.iter() {
             if matches!(func.kind, FunctionKind::Freestanding) {
-                gen.generate_guest_import(func);
+                gen.generate_guest_import(func, id);
             }
         }
         // gen.finish();
@@ -785,7 +785,7 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
-    fn generate_guest_import(&mut self, func: &Function) {
+    fn generate_guest_import(&mut self, func: &Function, interface: InterfaceId) {
         let params = self.print_signature(func, !self.gen.opts.host);
         self.gen.c_src.src.push_str("{\n");
         let lift_lower = if self.gen.opts.host {
@@ -818,15 +818,20 @@ impl CppInterfaceGenerator<'_> {
                 }
             }
         } else {
-            let owner = &self.resolve.types[match &func.kind {
-                FunctionKind::Static(id) => *id,
-                FunctionKind::Constructor(id) => *id,
-                FunctionKind::Method(id) => *id,
-                FunctionKind::Freestanding => todo!(),
-            }]
-            .clone();
-            let mut namespace = namespace(self.resolve, &owner.owner);
-            namespace.push(owner.name.as_ref().unwrap().to_upper_camel_case());
+            let namespace = if matches!(func.kind, FunctionKind::Freestanding) {
+                namespace(self.resolve, &TypeOwner::Interface(interface))
+            } else {
+                let owner = &self.resolve.types[match &func.kind {
+                    FunctionKind::Static(id) => *id,
+                    FunctionKind::Constructor(id) => *id,
+                    FunctionKind::Method(id) => *id,
+                    FunctionKind::Freestanding => unreachable!(),
+                }]
+                .clone();
+                let mut namespace = namespace(self.resolve, &owner.owner);
+                namespace.push(owner.name.as_ref().unwrap().to_upper_camel_case());
+                namespace
+            };
             let mut f = FunctionBindgen::new(self, params);
             f.namespace = namespace;
             abi::call(
@@ -1132,11 +1137,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     results: Results::Named(vec![]),
                     docs: Docs::default(),
                 };
-                self.generate_guest_import(&func);
+                self.generate_guest_import(&func, intf);
             }
             let funcs = self.resolve.interfaces[intf].functions.values();
             for func in funcs {
-                self.generate_guest_import(func);
+                self.generate_guest_import(func, intf);
             }
 
             if import {
