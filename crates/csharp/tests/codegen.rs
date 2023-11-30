@@ -63,6 +63,7 @@ macro_rules! codegen_test {
                         "variants",
                         "worlds-with-types",
                         "zero-size-tuple",
+                        "go_params"
                     ]
                     .contains(&$name)
                     {
