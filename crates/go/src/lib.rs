@@ -362,7 +362,7 @@ fn avoid_keyword(s: &str) -> String {
 }
 
 // a list of Go keywords
-const GOKEYWORDS: [&str; 25] = [
+const GOKEYWORDS: [&str; 26] = [
     "break",
     "default",
     "func",
@@ -388,4 +388,7 @@ const GOKEYWORDS: [&str; 25] = [
     "import",
     "return",
     "var",
+    // not a Go keyword but needs to escape due to
+    // it's used as a variable name that passes to C
+    "ret",
 ];
