@@ -901,6 +901,19 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
+    fn scoped_type_name(&self, id: TypeId, from_namespace: &Vec<String>) -> String {
+        let ty = &self.resolve.types[id];
+        let namespc = namespace(self.resolve, &ty.owner);
+        let mut relative = SourceWithState::default();
+        relative.namespace = from_namespace.clone();
+        relative.qualify(&namespc);
+        format!(
+            "{}{}",
+            relative.src.to_string(),
+            ty.name.as_ref().unwrap().to_pascal_case()
+        )
+    }
+
     fn type_name(&mut self, ty: &Type, from_namespace: &Vec<String>) -> String {
         match ty {
             Type::Bool => "bool".into(),
@@ -920,19 +933,8 @@ impl CppInterfaceGenerator<'_> {
                 "std::string".into()
             }
             Type::Id(id) => match &self.resolve.types[*id].kind {
-                TypeDefKind::Record(_r) => {
-                    let ty = &self.resolve.types[*id];
-                    let namespc = namespace(self.resolve, &ty.owner);
-                    let mut relative = SourceWithState::default();
-                    relative.namespace = from_namespace.clone();
-                    relative.qualify(&namespc);
-                    format!(
-                        "{}{}",
-                        relative.src.to_string(),
-                        ty.name.as_ref().unwrap().to_pascal_case()
-                    )
-                }
-                TypeDefKind::Resource => self.resolve.types[*id].name.as_ref().cloned().unwrap(),
+                TypeDefKind::Record(_r) => self.scoped_type_name(*id, from_namespace),
+                TypeDefKind::Resource => self.scoped_type_name(*id, from_namespace),
                 TypeDefKind::Handle(Handle::Own(id)) => {
                     self.type_name(&Type::Id(*id), from_namespace)
                 }
@@ -957,22 +959,13 @@ impl CppInterfaceGenerator<'_> {
                     result += ">";
                     result
                 }
-                TypeDefKind::Enum(_e) => {
-                    let ty = &self.resolve.types[*id];
-                    let namespc = namespace(self.resolve, &ty.owner);
-                    let mut relative = SourceWithState::default();
-                    relative.namespace = from_namespace.clone();
-                    relative.qualify(&namespc);
-                    format!(
-                        "{}{}",
-                        relative.src.to_string(),
-                        ty.name.as_ref().unwrap().to_pascal_case()
-                    )
-                }
+                TypeDefKind::Enum(_e) => self.scoped_type_name(*id, from_namespace),
                 TypeDefKind::Option(o) => {
+                    self.gen.dependencies.needs_optional = true;
                     "std::optional<".to_string() + &self.type_name(o, from_namespace) + ">"
                 }
                 TypeDefKind::Result(r) => {
+                    self.gen.dependencies.needs_expected = true;
                     "std::expected<".to_string()
                         + &r.ok
                             .as_ref()
