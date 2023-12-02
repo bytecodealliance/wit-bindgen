@@ -86,7 +86,7 @@ pub struct Opts {
     /// Generate host bindings
     #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
     pub host: bool,
-    /// Generate code for directly linking to guest code
+    /// Generate code for directly linking to guest code (WIP)
     #[cfg_attr(feature = "clap", arg(long, default_value_t = bool::default()))]
     pub short_cut: bool,
     /// Call clang-format on the generated code
