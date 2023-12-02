@@ -19,7 +19,8 @@ use wit_bindgen_core::{
 
 mod wamr;
 
-pub const RESOURCE_BASE_CLASS_NAME: &str = "ResourceBase";
+pub const RESOURCE_IMPORT_BASE_CLASS_NAME: &str = "ResourceImportBase";
+pub const RESOURCE_EXPORT_BASE_CLASS_NAME: &str = "ResourceExportBase";
 pub const OWNED_CLASS_NAME: &str = "Owned";
 
 type CppType = String;
@@ -48,7 +49,8 @@ struct Includes {
     needs_optional: bool,
     needs_cstring: bool,
     needs_guest_alloc: bool,
-    needs_resources: bool,
+    needs_imported_resources: bool,
+    needs_exported_resources: bool,
 }
 
 #[derive(Clone)]
@@ -303,10 +305,10 @@ impl WorldGenerator for Cpp {
         if self.dependencies.needs_cstring {
             self.include("<cstring>");
         }
-        if !self.opts.host && self.dependencies.needs_resources {
+        if !self.opts.host && self.dependencies.needs_imported_resources {
             self.include("<cassert>");
         }
-        if self.opts.host && self.dependencies.needs_resources {
+        if self.opts.host && self.dependencies.needs_exported_resources {
             self.include("<map>");
         }
 
@@ -340,15 +342,14 @@ impl WorldGenerator for Cpp {
             }
         }
 
-        if self.dependencies.needs_resources {
+        if self.dependencies.needs_exported_resources {
             let namespace = namespace(resolve, &TypeOwner::World(world_id));
             h_str.change_namespace(&namespace);
             // this is export, not host
-            if self.opts.host {
-                uwriteln!(
-                    h_str.src,
-                    "template <class R>
-                     class {RESOURCE_BASE_CLASS_NAME} {{
+            uwriteln!(
+                h_str.src,
+                "template <class R>
+                     class {RESOURCE_EXPORT_BASE_CLASS_NAME} {{
                             static std::map<int32_t, R> resources;
                         public:
                             static R* lookup_resource(int32_t id) {{
@@ -368,23 +369,26 @@ impl WorldGenerator for Cpp {
                         template <typename T> struct {OWNED_CLASS_NAME} {{
                             T *ptr;
                         }};"
-                );
-            } else {
-                // somehow spaces get removed, newlines remain (problem occurs before const&)
-                // TODO: should into_handle become && ???
-                uwriteln!(
+            );
+        }
+        if self.dependencies.needs_imported_resources {
+            // somehow spaces get removed, newlines remain (problem occurs before const&)
+            // TODO: should into_handle become && ???
+            let namespace = namespace(resolve, &TypeOwner::World(world_id));
+            h_str.change_namespace(&namespace);
+            uwriteln!(
                     h_str.src,
-                    "class {RESOURCE_BASE_CLASS_NAME} {{
+                    "class {RESOURCE_IMPORT_BASE_CLASS_NAME} {{
                             static const int32_t invalid = -1;
                             protected:
                             int32_t handle;
                             public:
-                            {RESOURCE_BASE_CLASS_NAME}(int32_t h=invalid) : handle(h) {{}}
-                            {RESOURCE_BASE_CLASS_NAME}({RESOURCE_BASE_CLASS_NAME}&&r) 
+                            {RESOURCE_IMPORT_BASE_CLASS_NAME}(int32_t h=invalid) : handle(h) {{}}
+                            {RESOURCE_IMPORT_BASE_CLASS_NAME}({RESOURCE_IMPORT_BASE_CLASS_NAME}&&r) 
                                 : handle(r.handle) {{ 
                                     r.handle=invalid; 
                             }}
-                            {RESOURCE_BASE_CLASS_NAME}({RESOURCE_BASE_CLASS_NAME} 
+                            {RESOURCE_IMPORT_BASE_CLASS_NAME}({RESOURCE_IMPORT_BASE_CLASS_NAME} 
                                 const&) = delete;
                             void set_handle(int32_t h) {{ handle=h; }}
                             int32_t get_handle() const {{ return handle; }}
@@ -393,17 +397,16 @@ impl WorldGenerator for Cpp {
                                 handle= invalid;
                                 return h;
                             }}
-                            {RESOURCE_BASE_CLASS_NAME}& operator=({RESOURCE_BASE_CLASS_NAME}&&r) {{
+                            {RESOURCE_IMPORT_BASE_CLASS_NAME}& operator=({RESOURCE_IMPORT_BASE_CLASS_NAME}&&r) {{
                                 assert(handle<0);
                                 handle= r.handle;
                                 r.handle= invalid;
                                 return *this;
                             }}
-                            {RESOURCE_BASE_CLASS_NAME}& operator=({RESOURCE_BASE_CLASS_NAME} 
+                            {RESOURCE_IMPORT_BASE_CLASS_NAME}& operator=({RESOURCE_IMPORT_BASE_CLASS_NAME} 
                                 const&r) = delete;
                             }};"
                 );
-            }
         }
         h_str.change_namespace(&Vec::default());
 
@@ -1115,18 +1118,22 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             }
             self.gen.h_src.change_namespace(&namespc);
 
-            self.gen.dependencies.needs_resources = true;
+            if import {
+                self.gen.dependencies.needs_imported_resources = true;
+            } else {
+                self.gen.dependencies.needs_exported_resources = true;
+            }
 
             if !import {
-                uwriteln!(self.gen.c_src.src, "template <class R> std::map<int32_t, R> {world_name}{RESOURCE_BASE_CLASS_NAME}<R>::resources;");
+                uwriteln!(self.gen.c_src.src, "template <class R> std::map<int32_t, R> {world_name}{RESOURCE_EXPORT_BASE_CLASS_NAME}<R>::resources;");
             }
 
             let base_type = if !import {
-                format!("<{pascal}>")
+                format!("{RESOURCE_EXPORT_BASE_CLASS_NAME}<{pascal}>")
             } else {
-                String::default()
+                RESOURCE_IMPORT_BASE_CLASS_NAME.into()
             };
-            let derive = format!(" : public {world_name}{RESOURCE_BASE_CLASS_NAME}{base_type}");
+            let derive = format!(" : public {world_name}{base_type}");
             uwriteln!(self.gen.h_src.src, "class {pascal}{derive} {{\n");
             uwriteln!(self.gen.h_src.src, "public:\n");
             // destructor
@@ -1150,7 +1157,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 // consuming constructor from handle (bindings)
                 uwriteln!(
                     self.gen.h_src.src,
-                    "{pascal}({world_name}{RESOURCE_BASE_CLASS_NAME}&&);\n"
+                    "{pascal}({world_name}{RESOURCE_IMPORT_BASE_CLASS_NAME}&&);\n"
                 );
                 uwriteln!(self.gen.h_src.src, "{pascal}({pascal}&&) = default;\n");
             }
