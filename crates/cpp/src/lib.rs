@@ -129,8 +129,8 @@ impl Cpp {
             // public_anonymous_types: BTreeSet::new(),
             in_import,
             // export_funcs: Vec::new(),
-            return_pointer_area_size: 0,
-            return_pointer_area_align: 0,
+            // return_pointer_area_size: 0,
+            // return_pointer_area_align: 0,
             wasm_import_module,
         }
     }
@@ -552,8 +552,8 @@ struct CppInterfaceGenerator<'a> {
     _name: &'a Option<&'a WorldKey>,
     sizes: SizeAlign,
     in_import: bool,
-    return_pointer_area_size: usize,
-    return_pointer_area_align: usize,
+    // return_pointer_area_size: usize,
+    // return_pointer_area_align: usize,
     pub wasm_import_module: Option<String>,
 }
 
@@ -1983,14 +1983,14 @@ fn is_drop_method(func: &Function) -> bool {
     matches!(func.kind, FunctionKind::Static(_)) && func.name.starts_with("[resource-drop]")
 }
 
-fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
-    match ty {
-        Type::Id(id) => match resolve.types[*id].kind {
-            TypeDefKind::Type(t) => is_arg_by_pointer(resolve, &t),
-            // this is different from C
-            TypeDefKind::Resource => false,
-            _ => wit_bindgen_c::is_arg_by_pointer(resolve, ty),
-        },
-        _ => wit_bindgen_c::is_arg_by_pointer(resolve, ty),
-    }
-}
+// fn is_arg_by_pointer(resolve: &Resolve, ty: &Type) -> bool {
+//     match ty {
+//         Type::Id(id) => match resolve.types[*id].kind {
+//             TypeDefKind::Type(t) => is_arg_by_pointer(resolve, &t),
+//             // this is different from C
+//             TypeDefKind::Resource => false,
+//             _ => wit_bindgen_c::is_arg_by_pointer(resolve, ty),
+//         },
+//         _ => wit_bindgen_c::is_arg_by_pointer(resolve, ty),
+//     }
+// }
