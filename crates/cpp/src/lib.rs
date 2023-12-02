@@ -1797,11 +1797,21 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::ResultLower {
                 result: _,
                 ty: _,
-                results: _,
-            } => self.push_str("ResultLower"),
+                results: result_types,
+            } => {
+                let err = self.blocks.pop().unwrap().0;
+                let ok = self.blocks.pop().unwrap().0;
+                self.let_results(result_types.len(), results);
+                let operand = &operands[0];
+                self.push_str(&format!(
+                    "{operand}.has_value() 
+                        ? ({ok})
+                        : ({err});"
+                ));
+            }
             abi::Instruction::ResultLift { result, ty: _ } => {
-                let mut err = String::default(); //self.blocks.pop().unwrap();
-                let mut ok = String::default(); //self.blocks.pop().unwrap();
+                let mut err = self.blocks.pop().unwrap().0;
+                let mut ok = self.blocks.pop().unwrap().0;
                 if result.ok.is_none() {
                     ok.clear();
                 } else {
@@ -1855,7 +1865,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     let mut relative = SourceWithState::default();
                     // relative.namespace = self.namespace.clone();
                     relative.qualify(&namespace);
-                    uwrite!(self.src, "{}lookup_resource({this})->", relative.src.to_string());
+                    uwrite!(
+                        self.src,
+                        "{}lookup_resource({this})->",
+                        relative.src.to_string()
+                    );
                 } else {
                     if matches!(func.kind, FunctionKind::Constructor(_)) {
                         let _ = namespace.pop();
@@ -1864,7 +1878,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     // relative.namespace = self.namespace.clone();
                     relative.qualify(&namespace);
                     self.push_str(&relative.src);
-                        // self.gen.gen.c_src.qualify(&namespace);
+                    // self.gen.gen.c_src.qualify(&namespace);
                 }
                 self.src.push_str(&func_name_h);
                 self.push_str("(");
