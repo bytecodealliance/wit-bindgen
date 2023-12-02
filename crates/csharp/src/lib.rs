@@ -240,7 +240,7 @@ impl WorldGenerator for CSharp {
 
             namespace {namespace} {{
 
-             public interface {name}World {{
+             public interface I{name}World {{
             "
         );
 
@@ -472,7 +472,7 @@ impl WorldGenerator for CSharp {
 
                 namespace {fully_qaulified_namespace};
 
-                 public partial class {stub_class_name} : {interface_name} {{
+                 public partial class {stub_class_name} : I{interface_name} {{
                     {body}
                  }}
                 "
@@ -515,7 +515,7 @@ impl WorldGenerator for CSharp {
 
                     namespace {namespace}.{name};
         
-                    public interface {interface_name} {{
+                    public interface I{interface_name} {{
                         {body}
                     }}
                     "
