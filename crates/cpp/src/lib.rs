@@ -1150,7 +1150,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             }
             let funcs = self.resolve.interfaces[intf].functions.values();
             for func in funcs {
-                self.generate_guest_import(func, intf);
+                if match &func.kind {
+                    FunctionKind::Freestanding => false,
+                    FunctionKind::Method(mid) => *mid == id,
+                    FunctionKind::Static(mid) => *mid == id,
+                    FunctionKind::Constructor(mid) => *mid == id,
+                } {
+                    self.generate_guest_import(func, intf);
+                }
             }
 
             if import {
