@@ -1411,7 +1411,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
             }
             abi::Instruction::I32Const { val } => results.push(format!("(int32_t({}))", val)),
-            abi::Instruction::Bitcasts { casts: _ } => todo!(),
+            abi::Instruction::Bitcasts { .. } => todo!(),
             abi::Instruction::ConstZero { tys } => {
                 for ty in tys.iter() {
                     match ty {
@@ -1477,10 +1477,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             abi::Instruction::Float32FromF32 => top_as("float"),
             abi::Instruction::Float64FromF64 => top_as("double"),
             abi::Instruction::BoolFromI32 => top_as("bool"),
-            abi::Instruction::ListCanonLower {
-                element: _,
-                realloc: _,
-            } => {
+            abi::Instruction::ListCanonLower { .. } => {
                 results.push("ListCanonLower.addr".into());
                 results.push("ListCanonLower.len".into());
             }
@@ -1503,14 +1500,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 results.push(len);
             }
-            abi::Instruction::ListLower {
-                element: _,
-                realloc: _,
-            } => {
+            abi::Instruction::ListLower { .. } => {
                 results.push("ListLower1".into());
                 results.push("ListLower2".into());
             }
-            abi::Instruction::ListCanonLift { element: _, ty: _ } => {
+            abi::Instruction::ListCanonLift { .. } => {
                 let tmp = self.tmp();
                 let len = format!("len{}", tmp);
                 self.push_str(&format!("let {} = {};\n", len, operands[1]));
@@ -1524,7 +1518,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let result = format!("std::string((char const*)({}), {len})", operands[0]);
                 results.push(result);
             }
-            abi::Instruction::ListLift { element, ty: _ } => {
+            abi::Instruction::ListLift { element, .. } => {
                 // let body = self.blocks.pop().unwrap();
                 let tmp = self.tmp();
                 let size = self.gen.sizes.size(element);
@@ -1557,7 +1551,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 //     rt = self.gen.gen.runtime_path(),
                 // ));
             }
-            abi::Instruction::IterElem { element: _ } => results.push("IterElem".to_string()),
+            abi::Instruction::IterElem { .. } => results.push("IterElem".to_string()),
             abi::Instruction::IterBasePointer => results.push("base".to_string()),
             abi::Instruction::RecordLower { record, .. } => {
                 let op = &operands[0];
@@ -1565,11 +1559,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     results.push(format!("({}).{}", op, to_c_ident(&f.name)));
                 }
             }
-            abi::Instruction::RecordLift {
-                record,
-                name: _,
-                ty,
-            } => {
+            abi::Instruction::RecordLift { record, ty, .. } => {
                 let mut result = self.typename_lift(*ty);
                 result.push_str("{");
                 for (_field, val) in record.fields.iter().zip(operands) {
@@ -1599,19 +1589,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let op = &operands[0];
                 results.push(format!("{op}.get_handle()"));
             }
-            abi::Instruction::HandleLift {
-                handle: _,
-                name: _,
-                ty: _,
-            } => {
+            abi::Instruction::HandleLift { .. } => {
                 let op = &operands[0];
                 results.push(op.clone());
             }
-            abi::Instruction::TupleLower { tuple: _, ty: _ } => {
+            abi::Instruction::TupleLower { .. } => {
                 results.push("TupleLower1".into());
                 results.push("TupleLower2".into());
             }
-            abi::Instruction::TupleLift { tuple, ty: _ } => {
+            abi::Instruction::TupleLift { tuple, .. } => {
                 let name = format!("tuple{}", self.tmp());
                 uwrite!(self.src, "auto {name} std::tuple<");
                 self.src.push_str(
@@ -1627,22 +1613,14 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.src.push_str(");\n");
                 results.push(name);
             }
-            abi::Instruction::FlagsLower {
-                flags,
-                name: _,
-                ty: _,
-            } => {
+            abi::Instruction::FlagsLower { flags, .. } => {
                 let tmp = self.tmp();
                 self.push_str(&format!("auto flags{} = {};\n", tmp, operands[0]));
                 for i in 0..flags.repr().count() {
                     results.push(format!("((flags{} >> {})&1)!=0", tmp, i * 32));
                 }
             }
-            abi::Instruction::FlagsLift {
-                flags: _,
-                name: _,
-                ty: _,
-            } => results.push("FlagsLift".to_string()),
+            abi::Instruction::FlagsLift { .. } => results.push("FlagsLift".to_string()),
             abi::Instruction::VariantPayloadName => {
                 let name = format!("payload{}", self.tmp());
                 results.push(format!("*{}", name));
@@ -1650,9 +1628,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             }
             abi::Instruction::VariantLower {
                 variant,
-                name: _,
-                ty: _,
                 results: result_types,
+                ..
             } => {
                 //let name = self.gen.type_name(*ty);
                 // let op0 = &operands[0];
@@ -1706,11 +1683,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 }
                 self.src.push_str("}\n");
             }
-            abi::Instruction::VariantLift {
-                variant,
-                name: _,
-                ty,
-            } => {
+            abi::Instruction::VariantLift { variant, ty, .. } => {
                 let mut result = String::new();
                 result.push_str("{");
 
@@ -1768,25 +1741,13 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 result.push_str("}");
                 results.push(result);
             }
-            abi::Instruction::EnumLower {
-                enum_: _,
-                name: _,
-                ty: _,
-            } => results.push(format!("int32_t({})", operands[0])),
-            abi::Instruction::EnumLift {
-                enum_: _,
-                name: _,
-                ty,
-            } => {
+            abi::Instruction::EnumLower { .. } => results.push(format!("int32_t({})", operands[0])),
+            abi::Instruction::EnumLift { ty, .. } => {
                 let typename = self.gen.type_name(&Type::Id(*ty), &self.namespace);
                 results.push(format!("({typename}){}", &operands[0]));
             }
-            abi::Instruction::OptionLower {
-                payload: _,
-                ty: _,
-                results: _,
-            } => self.push_str("OptionLower"),
-            abi::Instruction::OptionLift { payload, ty: _ } => {
+            abi::Instruction::OptionLower { .. } => self.push_str("OptionLower"),
+            abi::Instruction::OptionLift { payload, .. } => {
                 let mut result: String = "std::optional<".into();
                 result.push_str(&self.gen.type_name(*payload, &self.namespace));
                 result.push_str(">(");
@@ -1795,9 +1756,8 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 results.push(result);
             }
             abi::Instruction::ResultLower {
-                result: _,
-                ty: _,
                 results: result_types,
+                ..
             } => {
                 let err = self.blocks.pop().unwrap().0;
                 let ok = self.blocks.pop().unwrap().0;
@@ -1809,7 +1769,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                         : ({err});"
                 ));
             }
-            abi::Instruction::ResultLift { result, ty: _ } => {
+            abi::Instruction::ResultLift { result, .. } => {
                 let mut err = self.blocks.pop().unwrap().0;
                 let mut ok = self.blocks.pop().unwrap().0;
                 if result.ok.is_none() {
@@ -1903,15 +1863,11 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     _ => todo!(),
                 }
             }
-            abi::Instruction::Malloc {
-                realloc: _,
-                size: _,
-                align: _,
-            } => todo!(),
-            abi::Instruction::GuestDeallocate { size: _, align: _ } => todo!(),
+            abi::Instruction::Malloc { .. } => todo!(),
+            abi::Instruction::GuestDeallocate { .. } => todo!(),
             abi::Instruction::GuestDeallocateString => todo!(),
-            abi::Instruction::GuestDeallocateList { element: _ } => todo!(),
-            abi::Instruction::GuestDeallocateVariant { blocks: _ } => todo!(),
+            abi::Instruction::GuestDeallocateList { .. } => todo!(),
+            abi::Instruction::GuestDeallocateVariant { .. } => todo!(),
         }
     }
 
