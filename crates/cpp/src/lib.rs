@@ -209,7 +209,7 @@ impl WorldGenerator for Cpp {
 
         for (_name, func) in resolve.interfaces[id].functions.iter() {
             if matches!(func.kind, FunctionKind::Freestanding) {
-                gen.generate_guest_import(func, id);
+                gen.generate_guest_import(func, id, false);
             }
         }
         // gen.finish();
@@ -217,14 +217,25 @@ impl WorldGenerator for Cpp {
 
     fn export_interface(
         &mut self,
-        _resolve: &Resolve,
+        resolve: &Resolve,
         name: &WorldKey,
-        _iface: InterfaceId,
+        id: InterfaceId,
         _files: &mut Files,
     ) -> anyhow::Result<()> {
         self.h_src
             .src
             .push_str(&format!("// export_interface {name:?}\n"));
+        let wasm_import_module = resolve.name_world_key(name);
+        let binding = Some(name);
+        let mut gen = self.interface(resolve, &binding, false, Some(wasm_import_module));
+        gen.interface = Some(id);
+        gen.types(id);
+
+        for (_name, func) in resolve.interfaces[id].functions.iter() {
+            if matches!(func.kind, FunctionKind::Freestanding) {
+                gen.generate_guest_import(func, id, true);
+            }
+        }
         Ok(())
     }
 
@@ -788,10 +799,10 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
-    fn generate_guest_import(&mut self, func: &Function, interface: InterfaceId) {
-        let params = self.print_signature(func, !self.gen.opts.host);
+    fn generate_guest_import(&mut self, func: &Function, interface: InterfaceId, export: bool) {
+        let params = self.print_signature(func, !(self.gen.opts.host ^export));
         self.gen.c_src.src.push_str("{\n");
-        let lift_lower = if self.gen.opts.host {
+        let lift_lower = if export ^ self.gen.opts.host {
             LiftLower::LiftArgsLowerResults
         } else {
             LiftLower::LowerArgsLiftResults
@@ -839,7 +850,7 @@ impl CppInterfaceGenerator<'_> {
             f.namespace = namespace;
             abi::call(
                 f.gen.resolve,
-                AbiVariant::GuestImport,
+                if export {AbiVariant::GuestExport} else {AbiVariant::GuestImport},
                 lift_lower,
                 func,
                 &mut f,
@@ -1129,7 +1140,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     results: Results::Named(vec![]),
                     docs: Docs::default(),
                 };
-                self.generate_guest_import(&func, intf);
+                self.generate_guest_import(&func, intf, !import);
             }
             let funcs = self.resolve.interfaces[intf].functions.values();
             for func in funcs {
@@ -1139,7 +1150,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     FunctionKind::Static(mid) => *mid == id,
                     FunctionKind::Constructor(mid) => *mid == id,
                 } {
-                    self.generate_guest_import(func, intf);
+                    self.generate_guest_import(func, intf, !import);
                 }
             }
 
