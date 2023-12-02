@@ -567,13 +567,13 @@ impl InterfaceGenerator<'_> {
         if let TypeOwner::Interface(id) = &ty.owner {
             if let Some(name) = self.gen.interface_names.get(id) {
                 if name != self.name {
-                    return format!("{}.", name.to_upper_camel_case());
+                    return format!("{}.", name);
                 }
             }
         }
 
         if when {
-            let name = self.name.to_upper_camel_case();
+            let name = self.name;
             format!("{name}.")
         } else {
             String::new()
@@ -583,7 +583,7 @@ impl InterfaceGenerator<'_> {
     fn add_interface_fragment(self, is_export: bool) {
         self.gen
             .interface_fragments
-            .entry(self.name.to_upper_camel_case())
+            .entry(self.name.to_string())
             .or_insert_with(|| InterfaceTypeAndFragments::new(is_export))
             .interface_fragments
             .push(InterfaceFragment {
@@ -1585,9 +1585,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::CallInterface { func } => {
-                let module = self.gen.name.to_upper_camel_case();
+                let module = self.gen.name.to_string();
                 let func_name = self.func_name.to_upper_camel_case();
-                let class_name = CSharp::get_class_name_from_qualified_name(module);
+                let class_name =
+                    CSharp::get_class_name_from_qualified_name(module).to_upper_camel_case();
                 let mut oper = String::new();
 
                 for (i, param) in operands.iter().enumerate() {
@@ -1812,21 +1813,34 @@ fn interface_name(resolve: &Resolve, name: &WorldKey, direction: Direction) -> S
     }
     .to_upper_camel_case();
 
+    let namespace = match &pkg {
+        Some(name) => {
+            let mut ns = format!(
+                "{}.{}.",
+                name.namespace.to_csharp_ident(),
+                name.name.to_csharp_ident()
+            );
+
+            if let Some(version) = &name.version {
+                let v = version
+                    .to_string()
+                    .replace('.', "_")
+                    .replace('-', "_")
+                    .replace('+', "_");
+                ns = format!("{}v{}.", ns, &v);
+            }
+            ns
+        }
+        None => String::new(),
+    };
+
     format!(
         "wit.{}.{}{name}",
         match direction {
             Direction::Import => "imports",
             Direction::Export => "exports",
         },
-        if let Some(name) = &pkg {
-            format!(
-                "{}.{}.",
-                name.namespace.to_csharp_ident(),
-                name.name.to_csharp_ident()
-            )
-        } else {
-            String::new()
-        }
+        namespace
     )
 }
 
