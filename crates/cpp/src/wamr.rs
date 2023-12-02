@@ -39,7 +39,7 @@ fn push_wamr(ty: &Type, resolve: &Resolve, params_str: &mut String) {
         Type::Id(id) => match &resolve.types[*id].kind {
             TypeDefKind::Type(t) => push_wamr(t, resolve, params_str),
             TypeDefKind::Record(_r) => {
-                todo!();
+                params_str.push_str("R");
             }
             TypeDefKind::Flags(_) => params_str.push_str("L"),
             TypeDefKind::Tuple(_) => params_str.push_str("T"),
