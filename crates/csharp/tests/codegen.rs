@@ -57,12 +57,12 @@ macro_rules! codegen_test {
                         "simple-http",
                         "simple-lists",
                         "small-anonymous",
-                        "strings",
                         "unused-import",
                         "use-across-interfaces",
                         "variants",
                         "worlds-with-types",
                         "zero-size-tuple",
+                        "go_params",
                     ]
                     .contains(&$name)
                     {

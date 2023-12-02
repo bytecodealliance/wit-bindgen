@@ -147,6 +147,7 @@ impl WorldGenerator for CSharp {
             gen.import(&resolve.name_world_key(key), func);
         }
 
+        gen.add_import_return_area();
         gen.add_interface_fragment(false);
     }
 
@@ -183,6 +184,7 @@ impl WorldGenerator for CSharp {
             gen.export(func, Some(key));
         }
 
+        gen.add_export_return_area();
         gen.add_interface_fragment(true);
         Ok(())
     }
@@ -591,6 +593,99 @@ impl InterfaceGenerator<'_> {
             });
     }
 
+    fn add_import_return_area(&mut self) {
+        let mut ret_struct_type = String::new();
+        if self.gen.return_area_size > 0 {
+            uwrite!(
+                ret_struct_type,
+                r#"
+                private unsafe struct ReturnArea
+                {{
+                    private int GetS32(IntPtr ptr, int offset)
+                    {{
+                        var span = new Span<byte>((void*)ptr, {});
+
+                        return BitConverter.ToInt32(span.Slice(offset, 4));
+                    }}
+
+                    public string GetUTF8String(IntPtr ptr)
+                    {{
+                        return Encoding.UTF8.GetString((byte*)GetS32(ptr, 0), GetS32(ptr, 4));
+                    }}
+
+                }}
+
+                [ThreadStatic]
+                [FixedAddressValueType]
+                private static ReturnArea returnArea;
+            "#,
+                self.gen.return_area_size
+            );
+        }
+
+        uwrite!(
+            self.csharp_interop_src,
+            r#"
+                {ret_struct_type}
+            "#
+        );
+    }
+
+    fn add_export_return_area(&mut self) {
+        // Declare a statically-allocated return area, if needed. We only do
+        // this for export bindings, because import bindings allocate their
+        // return-area on the stack.
+        if self.gen.return_area_size > 0 {
+            let mut ret_area_str = String::new();
+
+            uwrite!(
+                ret_area_str,
+                "
+                    [InlineArray({})]
+                    [StructLayout(LayoutKind.Sequential, Pack = {})]
+                    private struct ReturnArea
+                    {{
+                        private byte buffer;
+    
+                        private int GetS32(int offset)
+                        {{
+                            ReadOnlySpan<byte> span = this;
+
+                            return BitConverter.ToInt32(span.Slice(offset, 4));
+                        }}
+                        
+                        public void SetS32(int offset, int value)
+                        {{
+                            Span<byte> span = this;
+
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
+                        internal unsafe int AddrOfBuffer()
+                        {{
+                            fixed(byte* ptr = &buffer)
+                            {{
+                                return (int)ptr;
+                            }}
+                        }}
+
+                        public unsafe string GetUTF8String(int p0, int p1)
+                        {{
+                            return Encoding.UTF8.GetString((byte*)p0, p1);
+                        }}
+                    }}
+    
+                    [ThreadStatic]
+                    private static ReturnArea returnArea = default;
+                    ",
+                self.gen.return_area_size,
+                self.gen.return_area_align,
+            );
+
+            self.csharp_interop_src.push_str(&ret_area_str);
+        }
+    }
+
     fn add_world_fragment(self) {
         self.gen.world_fragments.push(InterfaceFragment {
             csharp_src: self.src,
@@ -677,39 +772,9 @@ impl InterfaceGenerator<'_> {
             "#
         );
 
-        let mut ret_struct_type = String::new();
-        if self.gen.return_area_size > 0 {
-            uwrite!(
-                ret_struct_type,
-                r#"
-                private unsafe struct ReturnArea
-                {{
-                    private int GetS32(IntPtr ptr, int offset)
-                    {{
-                        var span = new Span<byte>((void*)ptr, {});
-
-                        return BitConverter.ToInt32(span.Slice(offset, 4));
-                    }}
-
-                    public string GetUTF8String(IntPtr ptr)
-                    {{
-                        return Encoding.UTF8.GetString((byte*)GetS32(ptr, 0), GetS32(ptr, 4));
-                    }}
-
-                }}
-
-                [ThreadStatic]
-                [FixedAddressValueType]
-                private static ReturnArea returnArea;
-            "#,
-                self.gen.return_area_size
-            );
-        }
-
         uwrite!(
             self.csharp_interop_src,
             r#"
-                {ret_struct_type}
                 internal static unsafe {result_type} {camel_name}({params})
                 {{
                     {src}
@@ -1460,7 +1525,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "
                     var {result_var} = {op};
-                    IntPtr {interop_string} = InteropString.FromString({result_var}, out int length);"
+                    IntPtr {interop_string} = InteropString.FromString({result_var}, out int length{result_var});"
                 );
 
                 //TODO: Oppertunity to optimize and not reallocate every call
@@ -1469,7 +1534,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 } else {
                     results.push(format!("{interop_string}.ToInt32()"));
                 }
-                results.push(format!("length"));
+                results.push(format!("length{result_var}"));
 
                 self.gen.gen.needs_interop_string = true;
             }
