@@ -305,10 +305,10 @@ impl WorldGenerator for Cpp {
         if self.dependencies.needs_cstring {
             self.include("<cstring>");
         }
-        if !self.opts.host && self.dependencies.needs_imported_resources {
+        if self.dependencies.needs_imported_resources {
             self.include("<cassert>");
         }
-        if self.opts.host && self.dependencies.needs_exported_resources {
+        if self.dependencies.needs_exported_resources {
             self.include("<map>");
         }
 
