@@ -104,6 +104,7 @@ impl InterfaceGenerator<'_> {
             self.gen.world.clone(),
             self.resolve,
             id,
+            &Default::default(),
         )
     }
 
@@ -533,6 +534,7 @@ impl InterfaceGenerator<'_> {
                 &self.gen.world,
                 self.interface.map(|(_, key)| key),
                 func,
+                &Default::default(),
             )
         } else {
             // do not want to generate public functions
@@ -823,6 +825,7 @@ impl InterfaceGenerator<'_> {
                 &self.gen.world,
                 self.interface.map(|(_, key)| key),
                 func,
+                &Default::default(),
             );
             src.push_str(&name);
             src.push('\n');
