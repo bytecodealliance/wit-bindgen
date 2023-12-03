@@ -206,9 +206,11 @@ impl WorldGenerator for Cpp {
         // if self.gen.interfaces_with_types_printed.insert(id) {
         gen.types(id);
         // }
+        let namespace = namespace(resolve, &TypeOwner::Interface(id));
 
         for (_name, func) in resolve.interfaces[id].functions.iter() {
             if matches!(func.kind, FunctionKind::Freestanding) {
+                gen.gen.h_src.change_namespace(&namespace);
                 gen.generate_guest_import(func, id, false);
             }
         }
@@ -230,9 +232,11 @@ impl WorldGenerator for Cpp {
         let mut gen = self.interface(resolve, &binding, false, Some(wasm_import_module));
         gen.interface = Some(id);
         gen.types(id);
+        let namespace = namespace(resolve, &TypeOwner::Interface(id));
 
         for (_name, func) in resolve.interfaces[id].functions.iter() {
             if matches!(func.kind, FunctionKind::Freestanding) {
+                gen.gen.h_src.change_namespace(&namespace);
                 gen.generate_guest_import(func, id, true);
             }
         }
@@ -612,7 +616,9 @@ impl CppInterfaceGenerator<'_> {
         })
         .unwrap_or((
             Default::default(),
-            TypeOwner::World(self.gen.world_id.unwrap()),
+            self.interface
+                .map(|id| TypeOwner::Interface(id))
+                .unwrap_or(TypeOwner::World(self.gen.world_id.unwrap())),
         ));
         let mut namespace = namespace(self.resolve, &owner);
         let is_drop = is_drop_method(func);
@@ -800,7 +806,7 @@ impl CppInterfaceGenerator<'_> {
     }
 
     fn generate_guest_import(&mut self, func: &Function, interface: InterfaceId, export: bool) {
-        let params = self.print_signature(func, !(self.gen.opts.host ^export));
+        let params = self.print_signature(func, !(self.gen.opts.host ^ export));
         self.gen.c_src.src.push_str("{\n");
         let lift_lower = if export ^ self.gen.opts.host {
             LiftLower::LiftArgsLowerResults
@@ -850,7 +856,11 @@ impl CppInterfaceGenerator<'_> {
             f.namespace = namespace;
             abi::call(
                 f.gen.resolve,
-                if export {AbiVariant::GuestExport} else {AbiVariant::GuestImport},
+                if export {
+                    AbiVariant::GuestExport
+                } else {
+                    AbiVariant::GuestImport
+                },
                 lift_lower,
                 func,
                 &mut f,
