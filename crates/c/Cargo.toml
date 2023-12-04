@@ -26,3 +26,4 @@ clap = { workspace = true, optional = true }
 
 [dev-dependencies]
 test-helpers = { path = '../test-helpers' }
+wit-parser = { workspace = true }

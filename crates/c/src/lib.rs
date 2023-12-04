@@ -23,6 +23,7 @@ struct C {
     needs_string: bool,
     world: String,
     sizes: SizeAlign,
+    renamed_interfaces: HashMap<WorldKey, String>,
 
     world_id: Option<WorldId>,
     dtor_funcs: HashMap<TypeId, String>,
@@ -43,15 +44,34 @@ pub struct Opts {
     /// Skip emitting component allocation helper functions
     #[cfg_attr(feature = "clap", arg(long))]
     pub no_helpers: bool,
+
     /// Set component string encoding
     #[cfg_attr(feature = "clap", arg(long, default_value_t = StringEncoding::default()))]
     pub string_encoding: StringEncoding,
-    // Skip optional null pointer and boolean result argument signature flattening
+
+    /// Skip optional null pointer and boolean result argument signature
+    /// flattening
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub no_sig_flattening: bool,
-    // Skip generating C object file
+
+    /// Skip generating an object file which contains type information for the
+    /// world that is being generated.
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub no_object_file: bool,
+
+    /// Rename the interface `K` to `V` in the generated source code.
+    #[cfg_attr(feature = "clap", arg(long, name = "K=V", value_parser = parse_rename))]
+    pub rename: Vec<(String, String)>,
+}
+
+#[cfg(feature = "clap")]
+fn parse_rename(name: &str) -> Result<(String, String)> {
+    let mut parts = name.splitn(2, '=');
+    let to_rename = parts.next().unwrap();
+    match parts.next() {
+        Some(part) => Ok((to_rename.to_string(), part.to_string())),
+        None => anyhow::bail!("`--rename` option must have an `=` in it (e.g. `--rename a=b`)"),
+    }
 }
 
 impl Opts {
@@ -90,6 +110,24 @@ impl WorldGenerator for C {
         self.world = name.to_string();
         self.sizes.fill(resolve);
         self.world_id = Some(world);
+
+        let mut interfaces = HashMap::new();
+        let world = &resolve.worlds[world];
+        for (key, _item) in world.imports.iter().chain(world.exports.iter()) {
+            let name = resolve.name_world_key(key);
+            interfaces.insert(name, key.clone());
+        }
+
+        for (from, to) in self.opts.rename.iter() {
+            match interfaces.get(from) {
+                Some(key) => {
+                    self.renamed_interfaces.insert(key.clone(), to.clone());
+                }
+                None => {
+                    eprintln!("warning: rename of `{from}` did not match any interfaces");
+                }
+            }
+        }
     }
 
     fn import_interface(
@@ -602,13 +640,14 @@ pub fn owner_namespace<'a>(
     world: String,
     resolve: &Resolve,
     id: TypeId,
+    renamed_interfaces: &HashMap<WorldKey, String>,
 ) -> String {
     let ty = &resolve.types[id];
     match (ty.owner, interface) {
         // If this type is owned by an interface, then we must be generating
         // bindings for that interface to proceed.
         (TypeOwner::Interface(a), Some((b, key))) if a == b => {
-            interface_identifier(key, resolve, !in_import)
+            interface_identifier(key, resolve, !in_import, renamed_interfaces)
         }
         (TypeOwner::Interface(_), None) => unreachable!(),
         (TypeOwner::Interface(_), Some(_)) => unreachable!(),
@@ -620,12 +659,28 @@ pub fn owner_namespace<'a>(
 
         // If this type has no owner then it's an anonymous type. Here it's
         // assigned to whatever we happen to be generating bindings for.
-        (TypeOwner::None, Some((_, key))) => interface_identifier(key, resolve, !in_import),
+        (TypeOwner::None, Some((_, key))) => {
+            interface_identifier(key, resolve, !in_import, renamed_interfaces)
+        }
         (TypeOwner::None, None) => world.to_snake_case(),
     }
 }
 
-pub fn interface_identifier(interface_id: &WorldKey, resolve: &Resolve, in_export: bool) -> String {
+fn interface_identifier(
+    interface_id: &WorldKey,
+    resolve: &Resolve,
+    in_export: bool,
+    renamed_interfaces: &HashMap<WorldKey, String>,
+) -> String {
+    if let Some(rename) = renamed_interfaces.get(interface_id) {
+        let mut ns = String::new();
+        if in_export && matches!(interface_id, WorldKey::Interface(_)) {
+            ns.push_str("exports_");
+        }
+        ns.push_str(rename);
+        return ns;
+    }
+
     match interface_id {
         WorldKey::Name(name) => name.to_snake_case(),
         WorldKey::Interface(id) => {
@@ -660,10 +715,16 @@ pub fn c_func_name(
     world: &str,
     interface_id: Option<&WorldKey>,
     func: &Function,
+    renamed_interfaces: &HashMap<WorldKey, String>,
 ) -> String {
     let mut name = String::new();
     match interface_id {
-        Some(id) => name.push_str(&interface_identifier(id, resolve, !in_import)),
+        Some(id) => name.push_str(&interface_identifier(
+            id,
+            resolve,
+            !in_import,
+            renamed_interfaces,
+        )),
         None => name.push_str(&world.to_snake_case()),
     }
     name.push_str("_");
@@ -1348,6 +1409,7 @@ impl InterfaceGenerator<'_> {
             &self.gen.world,
             interface_id,
             func,
+            &self.gen.renamed_interfaces,
         )
     }
 
@@ -1682,6 +1744,7 @@ impl InterfaceGenerator<'_> {
             self.gen.world.clone(),
             self.resolve,
             id,
+            &self.gen.renamed_interfaces,
         )
     }
 
