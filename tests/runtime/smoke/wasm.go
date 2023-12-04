@@ -1,18 +1,19 @@
 package main
 
 import (
-	. "wit_smoke_go/gen"
+	exports "smoke/exports"
+	smoke "smoke/imports/test/smoke"
 )
 
 func init() {
 	n := SmokeImpl{}
-	SetSmoke(n)
+	exports.SetSmoke(n)
 }
 
 type SmokeImpl struct{}
 
 func (s SmokeImpl) Thunk() {
-	TestSmokeImportsThunk()
+	smoke.Thunk()
 }
 
 func main() {}

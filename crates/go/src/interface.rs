@@ -9,7 +9,9 @@ use wit_bindgen_core::wit_parser::{
     Field, Function, FunctionKind, Handle, InterfaceId, LiveTypes, Resolve, Type, TypeDefKind,
     TypeId, TypeOwner, WorldKey,
 };
-use wit_bindgen_core::{uwriteln, Direction, InterfaceGenerator as _, Source};
+use wit_bindgen_core::{uwriteln, Direction, InterfaceGenerator as _, Source, WorldGenerator};
+
+use crate::path::GoPath;
 
 use super::{avoid_keyword, bindgen, TinyGo};
 
@@ -61,7 +63,7 @@ impl InterfaceGenerator<'_> {
             assert!(prev.is_none());
 
             // add Go types to the list
-            let mut name = self.owner_namespace(ty);
+            let mut name = "".to_string();
             name.push_str(&self.ty_name(&Type::Id(ty)));
 
             let prev = self.gen.type_names.insert(ty, name.clone());
@@ -101,7 +103,7 @@ impl InterfaceGenerator<'_> {
         c_owner_namespace(
             self.interface,
             matches!(self.direction, Direction::Import),
-            self.gen.world.clone(),
+            self.gen.world.name().to_string(),
             self.resolve,
             id,
         )
@@ -127,18 +129,18 @@ impl InterfaceGenerator<'_> {
             WorldKey::Name(k) => k.to_upper_camel_case(),
             WorldKey::Interface(id) => {
                 let mut name = String::new();
-                if matches!(self.direction, Direction::Export) {
-                    name.push_str("Exports");
-                }
+                // if matches!(self.direction, Direction::Export) {
+                //     name.push_str("Exports");
+                // }
                 let iface = &self.resolve.interfaces[*id];
-                let pkg = &self.resolve.packages[iface.package.unwrap()];
-                name.push_str(&pkg.name.namespace.to_upper_camel_case());
-                name.push_str(&pkg.name.name.to_upper_camel_case());
-                if let Some(version) = &pkg.name.version {
-                    let version = version.to_string().replace(['.', '-', '+'], "_");
-                    name.push_str(&version);
-                    name.push('_');
-                }
+                // let pkg = &self.resolve.packages[iface.package.unwrap()];
+                // name.push_str(&pkg.name.namespace.to_upper_camel_case());
+                // name.push_str(&pkg.name.name.to_upper_camel_case());
+                // if let Some(version) = &pkg.name.version {
+                //     let version = version.to_string().replace(['.', '-', '+'], "_");
+                //     name.push_str(&version);
+                //     name.push('_');
+                // }
                 name.push_str(&iface.name.as_ref().unwrap().to_upper_camel_case());
                 name
             }
@@ -171,13 +173,13 @@ impl InterfaceGenerator<'_> {
     /// Otherwise, the type name is not converted.
     pub(crate) fn type_name(&self, ty_name: &str, convert: bool) -> String {
         let mut name = String::new();
-        let namespace = self.namespace();
+        // let namespace = self.namespace();
         let ty_name = if convert {
             ty_name.to_upper_camel_case()
         } else {
             ty_name.into()
         };
-        name.push_str(&namespace);
+        // name.push_str(&namespace);
         name.push_str(&ty_name);
         name
     }
@@ -530,13 +532,13 @@ impl InterfaceGenerator<'_> {
             c_func_name(
                 matches!(direction, Direction::Import),
                 self.resolve,
-                &self.gen.world,
+                self.gen.world.name(),
                 self.interface.map(|(_, key)| key),
                 func,
             )
         } else {
             // do not want to generate public functions
-            format!("{}{}", self.namespace(), self.func_name(func)).to_lower_camel_case()
+            self.func_name(func).to_lower_camel_case()
         };
 
         if matches!(direction, Direction::Export) {
@@ -577,8 +579,8 @@ impl InterfaceGenerator<'_> {
 
         match func.kind {
             FunctionKind::Freestanding => {
-                let namespace = self.namespace();
-                self.src.push_str(&namespace);
+                // let namespace = self.namespace();
+                // self.src.push_str(&namespace);
             }
             FunctionKind::Method(ty) => {
                 let ty = self.get_ty(&Type::Id(ty));
@@ -820,7 +822,7 @@ impl InterfaceGenerator<'_> {
             let name = c_func_name(
                 matches!(self.direction, Direction::Import),
                 self.resolve,
-                &self.gen.world,
+                self.gen.world.name(),
                 self.interface.map(|(_, key)| key),
                 func,
             );
@@ -989,6 +991,37 @@ impl InterfaceGenerator<'_> {
                 .push_str(format!("{interface_func_declaration}\n").as_str());
         }
         self.src.push_str("}\n");
+    }
+
+    pub(crate) fn start_append_submodule(&mut self, name: &WorldKey) -> (String, Vec<String>) {
+        let snake = match name {
+            WorldKey::Name(name) => avoid_keyword(name),
+            WorldKey::Interface(id) => {
+                avoid_keyword(self.resolve.interfaces[*id].name.as_ref().unwrap())
+            }
+        };
+        let module_path: Vec<String> = name.to_path(&self.resolve, self.direction);
+        (snake, module_path)
+    }
+
+    pub(crate) fn finish_append_submodule(mut self, snake: &str, module_path: Vec<String>) {
+        self.finish();
+        let _ = match self.direction {
+            Direction::Import => self.gen.go_import_packages.push(
+                snake,
+                self.src,
+                self.preamble,
+                &self.gen.world,
+                module_path,
+            ),
+            Direction::Export => self.gen.go_export_packages.push(
+                snake,
+                self.src,
+                self.preamble,
+                &self.gen.world,
+                module_path,
+            ),
+        };
     }
 }
 
@@ -1227,6 +1260,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
     ) {
         let name = self.type_name(name, true);
         let ty = self.get_ty(ty);
+        // TODO: determine where `ty` is from and add import path to preamble
         self.src.push_str(&format!("type {name} = {ty}\n"));
     }
 
