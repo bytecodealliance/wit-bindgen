@@ -268,21 +268,25 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
         drop(fs::remove_dir_all(&out_dir));
 
         let mut files = Default::default();
-        wit_bindgen_go::Opts::default()
+        let mut go_opts = wit_bindgen_go::Opts::default();
+        go_opts.package_name = Some(format!("{}", snake));
+        go_opts
             .build()
             .generate(&resolve, world, &mut files)
             .unwrap();
-        let gen_dir = out_dir.join("gen");
+        let gen_dir = out_dir.clone();
         fs::create_dir_all(&gen_dir).unwrap();
         for (file, contents) in files.iter() {
             let dst = gen_dir.join(file);
+            fs::create_dir_all(dst.parent().unwrap()).unwrap();
+            println!("write {dst:?}");
             fs::write(dst, contents).unwrap();
         }
         for go_impl in &go {
             fs::copy(&go_impl, out_dir.join(format!("{snake}.go"))).unwrap();
         }
 
-        let go_mod = format!("module wit_{snake}_go\n\ngo 1.20");
+        let go_mod = format!("module {snake}\n\ngo 1.20");
         fs::write(out_dir.join("go.mod"), go_mod).unwrap();
 
         let out_wasm = out_dir.join("go.wasm");

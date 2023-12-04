@@ -5,6 +5,7 @@ use heck::*;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::mem;
+use std::path::PathBuf;
 use wit_bindgen_core::abi::{self, AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType};
 use wit_bindgen_core::{
     dealias, uwrite, uwriteln, wit_parser::*, Direction, Files, InterfaceGenerator as _, Ns,
@@ -52,6 +53,9 @@ pub struct Opts {
     // Skip generating C object file
     #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
     pub no_object_file: bool,
+    /// output directory
+    #[cfg_attr(feature = "clap", arg(long, hide = true))]
+    pub c_out_dir: Option<String>,
 }
 
 impl Opts {
@@ -375,11 +379,16 @@ impl WorldGenerator for C {
             #endif"
         );
 
-        files.push(&format!("{snake}.h"), h_str.as_bytes());
-        files.push(&format!("{snake}.c"), c_str.as_bytes());
+        let dst = match &self.opts.c_out_dir {
+            Some(path) => path,
+            None => "",
+        };
+
+        files.push(&format!("{dst}{snake}.h"), h_str.as_bytes());
+        files.push(&format!("{dst}{snake}.c"), c_str.as_bytes());
         if !self.opts.no_object_file {
             files.push(
-                &format!("{snake}_component_type.o",),
+                &format!("{dst}{snake}_component_type.o",),
                 component_type_object::object(resolve, id, self.opts.string_encoding)
                     .unwrap()
                     .as_slice(),
