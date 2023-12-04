@@ -764,7 +764,7 @@ impl InterfaceGenerator<'_> {
         uwrite!(
             self.csharp_interop_src,
             r#"
-            internal static class {camel_name}Interop
+            internal static class {camel_name}WasmInterop
             {{
                 [DllImport("*", EntryPoint = "{import_name}")]
                 internal static extern {wasm_result_type} wasmImport{camel_name}({wasm_params});
@@ -1580,7 +1580,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 uwriteln!(
                     self.src,
-                    "{assignment} {name}Interop.wasmImport{func_name}({operands});"
+                    "{assignment} {name}WasmInterop.wasmImport{func_name}({operands});"
                 );
             }
 
