@@ -119,8 +119,13 @@ impl WorldGenerator for C {
         }
 
         for (from, to) in self.opts.rename.iter() {
-            if let Some(key) = interfaces.get(from) {
-                self.renamed_interfaces.insert(key.clone(), to.clone());
+            match interfaces.get(from) {
+                Some(key) => {
+                    self.renamed_interfaces.insert(key.clone(), to.clone());
+                }
+                None => {
+                    eprintln!("warning: rename of `{from}` did not match any interfaces");
+                }
             }
         }
     }
