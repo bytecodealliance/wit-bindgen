@@ -4,7 +4,7 @@ using wit_strings.Wit.imports.test.strings.Imports;
 
 namespace wit_strings;
 
-public class StringsWorldImpl : StringsWorld
+public class StringsWorldImpl : IStringsWorld
 {
     public static void TestImports()
     {

@@ -5,7 +5,7 @@ using wit_numbers.Wit.imports.test.numbers.Test;
 
 namespace wit_numbers;
 
-public class NumbersWorldImpl : NumbersWorld
+public class NumbersWorldImpl : INumbersWorld
 {
     public static void TestImports()
     {
@@ -62,7 +62,7 @@ public class NumbersWorldImpl : NumbersWorld
     }
 }
 
-public class TestImpl : wit_numbers.Wit.exports.test.numbers.Test.Test
+public class TestImpl : wit_numbers.Wit.exports.test.numbers.Test.ITest
 {
     static uint SCALAR = 0;
 
