@@ -35,7 +35,6 @@ macro_rules! codegen_test {
                         "lists",
                         "many-arguments",
                         "multi-return",
-                        "multiversion",
                         "option-result",
                         "records",
                         "rename-interface",

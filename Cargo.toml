@@ -1,7 +1,7 @@
 [package]
 name = "wit-bindgen-cli"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
-version = "0.15.0"
+version = "0.16.0"
 edition = { workspace = true }
 repository = 'https://github.com/bytecodealliance/wit-bindgen'
 license = "Apache-2.0 WITH LLVM-exception"
@@ -34,14 +34,14 @@ wasmtime-wasi = "15.0.0"
 wit-parser = "0.13.0"
 wit-component = "0.18.2"
 
-wit-bindgen-core = { path = 'crates/core', version = '0.15.0' }
-wit-bindgen-c = { path = 'crates/c', version = '0.15.0' }
-wit-bindgen-rust = { path = "crates/rust", version = "0.15.0" }
-wit-bindgen-teavm-java = { path = 'crates/teavm-java', version = '0.15.0' }
-wit-bindgen-go = { path = 'crates/go', version = '0.15.0' }
-wit-bindgen-csharp = { path = 'crates/csharp', version = '0.15.0' }
-wit-bindgen-markdown = { path = 'crates/markdown', version = '0.15.0' }
-wit-bindgen = { path = 'crates/guest-rust', version = '0.15.0', default-features = false }
+wit-bindgen-core = { path = 'crates/core', version = '0.16.0' }
+wit-bindgen-c = { path = 'crates/c', version = '0.16.0' }
+wit-bindgen-rust = { path = "crates/rust", version = "0.16.0" }
+wit-bindgen-teavm-java = { path = 'crates/teavm-java', version = '0.16.0' }
+wit-bindgen-go = { path = 'crates/go', version = '0.16.0' }
+wit-bindgen-csharp = { path = 'crates/csharp', version = '0.16.0' }
+wit-bindgen-markdown = { path = 'crates/markdown', version = '0.16.0' }
+wit-bindgen = { path = 'crates/guest-rust', version = '0.16.0', default-features = false }
 wit-bindgen-cpp = { path = 'crates/cpp', version = '0.2.0' }
 
 [[bin]]

@@ -240,7 +240,7 @@ impl WorldGenerator for CSharp {
 
             namespace {namespace} {{
 
-             public interface {name}World {{
+             public interface I{name}World {{
             "
         );
 
@@ -472,7 +472,7 @@ impl WorldGenerator for CSharp {
 
                 namespace {fully_qaulified_namespace};
 
-                 public partial class {stub_class_name} : {interface_name} {{
+                 public partial class {stub_class_name} : I{interface_name} {{
                     {body}
                  }}
                 "
@@ -515,7 +515,7 @@ impl WorldGenerator for CSharp {
 
                     namespace {namespace}.{name};
         
-                    public interface {interface_name} {{
+                    public interface I{interface_name} {{
                         {body}
                     }}
                     "
@@ -567,13 +567,13 @@ impl InterfaceGenerator<'_> {
         if let TypeOwner::Interface(id) = &ty.owner {
             if let Some(name) = self.gen.interface_names.get(id) {
                 if name != self.name {
-                    return format!("{}.", name.to_upper_camel_case());
+                    return format!("{}.", name);
                 }
             }
         }
 
         if when {
-            let name = self.name.to_upper_camel_case();
+            let name = self.name;
             format!("{name}.")
         } else {
             String::new()
@@ -583,7 +583,7 @@ impl InterfaceGenerator<'_> {
     fn add_interface_fragment(self, is_export: bool) {
         self.gen
             .interface_fragments
-            .entry(self.name.to_upper_camel_case())
+            .entry(self.name.to_string())
             .or_insert_with(|| InterfaceTypeAndFragments::new(is_export))
             .interface_fragments
             .push(InterfaceFragment {
@@ -764,7 +764,7 @@ impl InterfaceGenerator<'_> {
         uwrite!(
             self.csharp_interop_src,
             r#"
-            internal static class {camel_name}Interop
+            internal static class {camel_name}WasmInterop
             {{
                 [DllImport("*", EntryPoint = "{import_name}")]
                 internal static extern {wasm_result_type} wasmImport{camel_name}({wasm_params});
@@ -1580,14 +1580,15 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 uwriteln!(
                     self.src,
-                    "{assignment} {name}Interop.wasmImport{func_name}({operands});"
+                    "{assignment} {name}WasmInterop.wasmImport{func_name}({operands});"
                 );
             }
 
             Instruction::CallInterface { func } => {
-                let module = self.gen.name.to_upper_camel_case();
+                let module = self.gen.name.to_string();
                 let func_name = self.func_name.to_upper_camel_case();
-                let class_name = CSharp::get_class_name_from_qualified_name(module);
+                let class_name =
+                    CSharp::get_class_name_from_qualified_name(module).to_upper_camel_case();
                 let mut oper = String::new();
 
                 for (i, param) in operands.iter().enumerate() {
@@ -1812,21 +1813,34 @@ fn interface_name(resolve: &Resolve, name: &WorldKey, direction: Direction) -> S
     }
     .to_upper_camel_case();
 
+    let namespace = match &pkg {
+        Some(name) => {
+            let mut ns = format!(
+                "{}.{}.",
+                name.namespace.to_csharp_ident(),
+                name.name.to_csharp_ident()
+            );
+
+            if let Some(version) = &name.version {
+                let v = version
+                    .to_string()
+                    .replace('.', "_")
+                    .replace('-', "_")
+                    .replace('+', "_");
+                ns = format!("{}v{}.", ns, &v);
+            }
+            ns
+        }
+        None => String::new(),
+    };
+
     format!(
         "wit.{}.{}{name}",
         match direction {
             Direction::Import => "imports",
             Direction::Export => "exports",
         },
-        if let Some(name) = &pkg {
-            format!(
-                "{}.{}.",
-                name.namespace.to_csharp_ident(),
-                name.name.to_csharp_ident()
-            )
-        } else {
-            String::new()
-        }
+        namespace
     )
 }
 
