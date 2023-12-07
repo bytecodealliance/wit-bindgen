@@ -649,9 +649,15 @@ impl CppInterfaceGenerator<'_> {
             }
         } else {
             // TODO perhaps remember better names for the arguments
-            self.resolve.wasm_signature(AbiVariant::GuestImport, func)
+            self.resolve.wasm_signature(AbiVariant::GuestExport, func)
         };
-        self.gen.c_src.src.push_str("static ");
+        let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
+        if self.gen.opts.host {
+            self.gen.c_src.src.push_str("static ");
+        } else {
+            let func_name = &func.name;
+            uwriteln!(self.gen.c_src.src, r#"__attribute__((__export_name__("{module_name}#{func_name}")))"#);
+        }
         self.gen
             .c_src
             .src
@@ -661,7 +667,6 @@ impl CppInterfaceGenerator<'_> {
                 wasm_type(signature.results[0])
             });
         self.gen.c_src.src.push_str(" ");
-        let module_name = self.wasm_import_module.as_ref().map(|e| e.clone()).unwrap();
         let export_name = CppInterfaceGenerator::export_name2(&module_name, &func.name);
         self.gen.c_src.src.push_str(&export_name);
         self.gen.c_src.src.push_str("(");
