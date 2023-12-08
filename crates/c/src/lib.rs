@@ -562,10 +562,6 @@ pub fn imported_types_used_by_exported_interfaces(
     live_import_types
 }
 
-fn is_string_type(resolve: &Resolve, id: TypeId) -> bool {
-    matches!(&resolve.types[id].kind, TypeDefKind::Type(Type::String))
-}
-
 fn is_prim_type(resolve: &Resolve, ty: &Type) -> bool {
     if let Type::Id(id) = ty {
         is_prim_type_id(resolve, *id)
@@ -1247,63 +1243,37 @@ impl InterfaceGenerator<'_> {
                 continue;
             }
 
-            if is_prim_type_id(self.resolve, ty) {
-                let mut name = format!("{}_", self.gen.world.to_snake_case());
-                push_internal_ty_name(self.resolve, &Type::Id(ty), &mut name);
-                name.push_str("_t");
+            match &self.resolve.types[ty].name {
+                Some(name) => {
+                    let typedef_name = self.typedef_name(ty);
+                    let prev = self.gen.type_names.insert(ty, typedef_name.clone());
+                    assert!(prev.is_none());
 
-                // Use this alternate name for the type in all uses. It's important to eagerly make
-                // this entry despite possibly overriding it later, as `define_type` will expect it
-                // to exist if we need to define the primitive type.
-                self.gen.type_names.insert(ty, name.clone());
+                    self.define_type(name, ty)
+                }
+                None => {
+                    let (defined, name) = if is_prim_type_id(self.resolve, ty) {
+                        let mut name = format!("{}_", self.gen.world.to_snake_case());
+                        push_internal_ty_name(self.resolve, &Type::Id(ty), &mut name);
+                        name.push_str("_t");
+                        let new_prim = self.gen.prim_names.insert(name.clone());
+                        (!new_prim, name)
+                    } else {
+                        (false, self.typedef_name(ty))
+                    };
 
-                // Emit the definition, as this is the first time the prim type has been seen
-                if !self.gen.prim_names.contains(&name) {
-                    self.define_type(&name, ty);
+                    let prev = self.gen.type_names.insert(ty, name);
+                    assert!(prev.is_none());
 
-                    if !is_string_type(self.resolve, ty) {
-                        self.define_dtor(ty);
+                    if defined {
+                        continue;
                     }
 
-                    self.gen.prim_names.insert(name.clone());
+                    self.define_anonymous_type(ty)
                 }
-
-                // If the original type was named, introduce a typedef for the primitive type.
-                if self.resolve.types[ty].name.is_some() {
-                    let orig_name = self.typedef_name(ty);
-
-                    // Override the primitive uses of this type to use the synonym.
-                    let prev = self.gen.type_names.insert(ty, name.clone());
-                    assert!(prev.is_some());
-
-                    self.src.h_defs("\n");
-                    self.docs(&self.resolve.types[ty].docs, SourceType::HDefs);
-                    self.src.h_defs("#define ");
-                    self.src.h_defs(&orig_name);
-                    self.src.h_defs(" ");
-                    self.src.h_defs(&name);
-
-                    let name_prefix = name.strip_suffix("_t").unwrap();
-                    let orig_name_prefix = orig_name.strip_suffix("_t").unwrap();
-
-                    self.src.h_helpers("\n#define ");
-                    self.src.h_helpers(&orig_name_prefix);
-                    self.src.h_helpers("_free ");
-                    self.src.h_helpers(&name_prefix);
-                    self.src.h_helpers("_free\n");
-                }
-            } else {
-                let name = self.typedef_name(ty);
-                let prev = self.gen.type_names.insert(ty, name.clone());
-                assert!(prev.is_none());
-
-                match &self.resolve.types[ty].name {
-                    Some(name) => self.define_type(name, ty),
-                    None => self.define_anonymous_type(ty),
-                }
-
-                self.define_dtor(ty);
             }
+
+            self.define_dtor(ty);
         }
     }
 
