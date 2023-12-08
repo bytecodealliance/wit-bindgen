@@ -562,6 +562,10 @@ pub fn imported_types_used_by_exported_interfaces(
     live_import_types
 }
 
+fn is_string_type(resolve: &Resolve, id: TypeId) -> bool {
+    matches!(&resolve.types[id].kind, TypeDefKind::Type(Type::String))
+}
+
 fn is_prim_type(resolve: &Resolve, ty: &Type) -> bool {
     if let Type::Id(id) = ty {
         is_prim_type_id(resolve, *id)
@@ -593,7 +597,21 @@ fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
     }
 }
 
-pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Scope {
+    External,
+    Internal,
+}
+
+pub fn push_internal_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
+    push_ty_name(Scope::Internal, resolve, ty, src)
+}
+
+pub fn push_external_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
+    push_ty_name(Scope::External, resolve, ty, src)
+}
+
+fn push_ty_name(scope: Scope, resolve: &Resolve, ty: &Type, src: &mut String) {
     match ty {
         Type::Bool => src.push_str("bool"),
         Type::Char => src.push_str("char32"),
@@ -612,12 +630,12 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
             let ty = &resolve.types[*id];
             if let Some(name) = &ty.name {
                 // standardize on the canonical name for primitives
-                if !is_prim_type_id(resolve, *id) {
+                if scope == Scope::External || !is_prim_type_id(resolve, *id) {
                     return src.push_str(&name.to_snake_case());
                 }
             }
             match &ty.kind {
-                TypeDefKind::Type(t) => push_ty_name(resolve, t, src),
+                TypeDefKind::Type(t) => push_ty_name(scope, resolve, t, src),
                 TypeDefKind::Record(_)
                 | TypeDefKind::Resource
                 | TypeDefKind::Flags(_)
@@ -630,38 +648,38 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
                     src.push_str(&t.types.len().to_string());
                     for ty in t.types.iter() {
                         src.push_str("_");
-                        push_ty_name(resolve, ty, src);
+                        push_ty_name(scope, resolve, ty, src);
                     }
                 }
                 TypeDefKind::Option(ty) => {
                     src.push_str("option_");
-                    push_ty_name(resolve, ty, src);
+                    push_ty_name(scope, resolve, ty, src);
                 }
                 TypeDefKind::Result(r) => {
                     src.push_str("result_");
                     match &r.ok {
-                        Some(ty) => push_ty_name(resolve, ty, src),
+                        Some(ty) => push_ty_name(scope, resolve, ty, src),
                         None => src.push_str("void"),
                     }
                     src.push_str("_");
                     match &r.err {
-                        Some(ty) => push_ty_name(resolve, ty, src),
+                        Some(ty) => push_ty_name(scope, resolve, ty, src),
                         None => src.push_str("void"),
                     }
                 }
                 TypeDefKind::List(ty) => {
                     src.push_str("list_");
-                    push_ty_name(resolve, ty, src);
+                    push_ty_name(scope, resolve, ty, src);
                 }
                 TypeDefKind::Future(_) => unimplemented!(),
                 TypeDefKind::Stream(_) => unimplemented!(),
                 TypeDefKind::Handle(Handle::Own(resource)) => {
                     src.push_str("own_");
-                    push_ty_name(resolve, &Type::Id(*resource), src);
+                    push_ty_name(scope, resolve, &Type::Id(*resource), src);
                 }
                 TypeDefKind::Handle(Handle::Borrow(resource)) => {
                     src.push_str("borrow_");
-                    push_ty_name(resolve, &Type::Id(*resource), src);
+                    push_ty_name(scope, resolve, &Type::Id(*resource), src);
                 }
                 TypeDefKind::Unknown => unreachable!(),
             }
@@ -1215,6 +1233,14 @@ impl InterfaceGenerator<'_> {
         self.define_live_types(live);
     }
 
+    fn typedef_name(&self, ty: TypeId) -> String {
+        let mut name = self.owner_namespace(ty);
+        name.push_str("_");
+        push_external_ty_name(self.resolve, &Type::Id(ty), &mut name);
+        name.push_str("_t");
+        name
+    }
+
     fn define_live_types(&mut self, live: LiveTypes) {
         for ty in live.iter() {
             if self.gen.type_names.contains_key(&ty) {
@@ -1223,26 +1249,51 @@ impl InterfaceGenerator<'_> {
 
             if is_prim_type_id(self.resolve, ty) {
                 let mut name = format!("{}_", self.gen.world.to_snake_case());
-                push_ty_name(self.resolve, &Type::Id(ty), &mut name);
+                push_internal_ty_name(self.resolve, &Type::Id(ty), &mut name);
                 name.push_str("_t");
 
-                // Use this alternate name for the type in all uses.
+                // Use this alternate name for the type in all uses. It's important to eagerly make
+                // this entry despite possibly overriding it later, as `define_type` will expect it
+                // to exist if we need to define the primitive type.
                 self.gen.type_names.insert(ty, name.clone());
 
                 // Emit the definition, as this is the first time the prim type has been seen
                 if !self.gen.prim_names.contains(&name) {
                     self.define_type(&name, ty);
-                    self.define_dtor(ty);
 
-                    self.gen.prim_names.insert(name);
+                    if !is_string_type(self.resolve, ty) {
+                        self.define_dtor(ty);
+                    }
+
+                    self.gen.prim_names.insert(name.clone());
                 }
 
-                // TODO: should we introduce a typedef when the name is some?
+                // If the original type was named, introduce a typedef for the primitive type.
+                if self.resolve.types[ty].name.is_some() {
+                    let orig_name = self.typedef_name(ty);
+
+                    // Override the primitive uses of this type to use the synonym.
+                    let prev = self.gen.type_names.insert(ty, name.clone());
+                    assert!(prev.is_some());
+
+                    self.src.h_defs("\n");
+                    self.docs(&self.resolve.types[ty].docs, SourceType::HDefs);
+                    self.src.h_defs("#define ");
+                    self.src.h_defs(&orig_name);
+                    self.src.h_defs(" ");
+                    self.src.h_defs(&name);
+
+                    let name_prefix = name.strip_suffix("_t").unwrap();
+                    let orig_name_prefix = orig_name.strip_suffix("_t").unwrap();
+
+                    self.src.h_helpers("\n#define ");
+                    self.src.h_helpers(&orig_name_prefix);
+                    self.src.h_helpers("_free ");
+                    self.src.h_helpers(&name_prefix);
+                    self.src.h_helpers("_free\n");
+                }
             } else {
-                let mut name = self.owner_namespace(ty);
-                name.push_str("_");
-                push_ty_name(self.resolve, &Type::Id(ty), &mut name);
-                name.push_str("_t");
+                let name = self.typedef_name(ty);
                 let prev = self.gen.type_names.insert(ty, name.clone());
                 assert!(prev.is_none());
 
