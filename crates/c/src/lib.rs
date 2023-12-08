@@ -593,21 +593,7 @@ fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum Scope {
-    External,
-    Internal,
-}
-
-pub fn push_internal_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
-    push_ty_name(Scope::Internal, resolve, ty, src)
-}
-
-pub fn push_external_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
-    push_ty_name(Scope::External, resolve, ty, src)
-}
-
-fn push_ty_name(scope: Scope, resolve: &Resolve, ty: &Type, src: &mut String) {
+pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
     match ty {
         Type::Bool => src.push_str("bool"),
         Type::Char => src.push_str("char32"),
@@ -625,13 +611,10 @@ fn push_ty_name(scope: Scope, resolve: &Resolve, ty: &Type, src: &mut String) {
         Type::Id(id) => {
             let ty = &resolve.types[*id];
             if let Some(name) = &ty.name {
-                // standardize on the canonical name for primitives
-                if scope == Scope::External || !is_prim_type_id(resolve, *id) {
-                    return src.push_str(&name.to_snake_case());
-                }
+                return src.push_str(&name.to_snake_case());
             }
             match &ty.kind {
-                TypeDefKind::Type(t) => push_ty_name(scope, resolve, t, src),
+                TypeDefKind::Type(t) => push_ty_name(resolve, t, src),
                 TypeDefKind::Record(_)
                 | TypeDefKind::Resource
                 | TypeDefKind::Flags(_)
@@ -644,38 +627,38 @@ fn push_ty_name(scope: Scope, resolve: &Resolve, ty: &Type, src: &mut String) {
                     src.push_str(&t.types.len().to_string());
                     for ty in t.types.iter() {
                         src.push_str("_");
-                        push_ty_name(scope, resolve, ty, src);
+                        push_ty_name(resolve, ty, src);
                     }
                 }
                 TypeDefKind::Option(ty) => {
                     src.push_str("option_");
-                    push_ty_name(scope, resolve, ty, src);
+                    push_ty_name(resolve, ty, src);
                 }
                 TypeDefKind::Result(r) => {
                     src.push_str("result_");
                     match &r.ok {
-                        Some(ty) => push_ty_name(scope, resolve, ty, src),
+                        Some(ty) => push_ty_name(resolve, ty, src),
                         None => src.push_str("void"),
                     }
                     src.push_str("_");
                     match &r.err {
-                        Some(ty) => push_ty_name(scope, resolve, ty, src),
+                        Some(ty) => push_ty_name(resolve, ty, src),
                         None => src.push_str("void"),
                     }
                 }
                 TypeDefKind::List(ty) => {
                     src.push_str("list_");
-                    push_ty_name(scope, resolve, ty, src);
+                    push_ty_name(resolve, ty, src);
                 }
                 TypeDefKind::Future(_) => unimplemented!(),
                 TypeDefKind::Stream(_) => unimplemented!(),
                 TypeDefKind::Handle(Handle::Own(resource)) => {
                     src.push_str("own_");
-                    push_ty_name(scope, resolve, &Type::Id(*resource), src);
+                    push_ty_name(resolve, &Type::Id(*resource), src);
                 }
                 TypeDefKind::Handle(Handle::Borrow(resource)) => {
                     src.push_str("borrow_");
-                    push_ty_name(scope, resolve, &Type::Id(*resource), src);
+                    push_ty_name(resolve, &Type::Id(*resource), src);
                 }
                 TypeDefKind::Unknown => unreachable!(),
             }
@@ -1232,7 +1215,7 @@ impl InterfaceGenerator<'_> {
     fn typedef_name(&self, ty: TypeId) -> String {
         let mut name = self.owner_namespace(ty);
         name.push_str("_");
-        push_external_ty_name(self.resolve, &Type::Id(ty), &mut name);
+        push_ty_name(self.resolve, &Type::Id(ty), &mut name);
         name.push_str("_t");
         name
     }
@@ -1254,7 +1237,7 @@ impl InterfaceGenerator<'_> {
                 None => {
                     let (defined, name) = if is_prim_type_id(self.resolve, ty) {
                         let mut name = format!("{}_", self.gen.world.to_snake_case());
-                        push_internal_ty_name(self.resolve, &Type::Id(ty), &mut name);
+                        push_ty_name(self.resolve, &Type::Id(ty), &mut name);
                         name.push_str("_t");
                         let new_prim = self.gen.prim_names.insert(name.clone());
                         (!new_prim, name)

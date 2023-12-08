@@ -3,7 +3,7 @@ use std::fmt::Write;
 
 use heck::{ToLowerCamelCase, ToSnakeCase, ToUpperCamelCase};
 use wit_bindgen_c::{
-    c_func_name, is_arg_by_pointer, owner_namespace as c_owner_namespace, push_external_ty_name,
+    c_func_name, is_arg_by_pointer, owner_namespace as c_owner_namespace, push_ty_name,
 };
 use wit_bindgen_core::wit_parser::{
     Field, Function, FunctionKind, Handle, InterfaceId, LiveTypes, Resolve, Type, TypeDefKind,
@@ -55,7 +55,7 @@ impl InterfaceGenerator<'_> {
             let prev = self.gen.c_type_namespaces.insert(ty, name.clone());
             assert!(prev.is_none());
             name.push('_');
-            push_external_ty_name(self.resolve, &Type::Id(ty), &mut name);
+            push_ty_name(self.resolve, &Type::Id(ty), &mut name);
             name.push_str("_t");
             let prev = self.gen.c_type_names.insert(ty, name.clone());
             assert!(prev.is_none());
