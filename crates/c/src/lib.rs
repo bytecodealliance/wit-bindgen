@@ -21,6 +21,7 @@ struct C {
     return_pointer_area_align: usize,
     names: Ns,
     needs_string: bool,
+    prim_names: HashSet<String>,
     world: String,
     sizes: SizeAlign,
     renamed_interfaces: HashMap<WorldKey, String>,
@@ -231,7 +232,7 @@ impl WorldGenerator for C {
         for (_, id) in types {
             live.add_type_id(resolve, *id);
         }
-        gen.define_live_types(&live);
+        gen.define_live_types(live);
         gen.gen.src.append(&gen.src);
     }
 
@@ -561,6 +562,37 @@ pub fn imported_types_used_by_exported_interfaces(
     live_import_types
 }
 
+fn is_prim_type(resolve: &Resolve, ty: &Type) -> bool {
+    if let Type::Id(id) = ty {
+        is_prim_type_id(resolve, *id)
+    } else {
+        true
+    }
+}
+
+fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
+    match &resolve.types[id].kind {
+        TypeDefKind::List(elem) => is_prim_type(resolve, elem),
+
+        TypeDefKind::Option(ty) => is_prim_type(resolve, ty),
+
+        TypeDefKind::Tuple(tuple) => tuple.types.iter().all(|ty| is_prim_type(resolve, ty)),
+
+        TypeDefKind::Type(ty) => is_prim_type(resolve, ty),
+
+        TypeDefKind::Record(_)
+        | TypeDefKind::Resource
+        | TypeDefKind::Handle(_)
+        | TypeDefKind::Flags(_)
+        | TypeDefKind::Variant(_)
+        | TypeDefKind::Enum(_)
+        | TypeDefKind::Result(_)
+        | TypeDefKind::Future(_)
+        | TypeDefKind::Stream(_)
+        | TypeDefKind::Unknown => false,
+    }
+}
+
 pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
     match ty {
         Type::Bool => src.push_str("bool"),
@@ -579,7 +611,10 @@ pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
         Type::Id(id) => {
             let ty = &resolve.types[*id];
             if let Some(name) = &ty.name {
-                return src.push_str(&name.to_snake_case());
+                // standardize on the canonical name for primitives
+                if !is_prim_type_id(resolve, *id) {
+                    return src.push_str(&name.to_snake_case());
+                }
             }
             match &ty.kind {
                 TypeDefKind::Type(t) => push_ty_name(resolve, t, src),
@@ -1169,7 +1204,7 @@ impl InterfaceGenerator<'_> {
     fn define_interface_types(&mut self, id: InterfaceId) {
         let mut live = LiveTypes::default();
         live.add_interface(self.resolve, id);
-        self.define_live_types(&live);
+        self.define_live_types(live);
     }
 
     fn define_function_types(&mut self, funcs: &[(&str, &Function)]) {
@@ -1177,28 +1212,47 @@ impl InterfaceGenerator<'_> {
         for (_, func) in funcs {
             live.add_func(self.resolve, func);
         }
-        self.define_live_types(&live);
+        self.define_live_types(live);
     }
 
-    fn define_live_types(&mut self, live: &LiveTypes) {
+    fn define_live_types(&mut self, live: LiveTypes) {
         for ty in live.iter() {
             if self.gen.type_names.contains_key(&ty) {
                 continue;
             }
 
-            let mut name = self.owner_namespace(ty);
-            name.push_str("_");
-            push_ty_name(self.resolve, &Type::Id(ty), &mut name);
-            name.push_str("_t");
-            let prev = self.gen.type_names.insert(ty, name.clone());
-            assert!(prev.is_none());
+            if is_prim_type_id(self.resolve, ty) {
+                let mut name = format!("{}_", self.gen.world.to_snake_case());
+                push_ty_name(self.resolve, &Type::Id(ty), &mut name);
+                name.push_str("_t");
 
-            match &self.resolve.types[ty].name {
-                Some(name) => self.define_type(name, ty),
-                None => self.define_anonymous_type(ty),
+                // Use this alternate name for the type in all uses.
+                self.gen.type_names.insert(ty, name.clone());
+
+                // Emit the definition, as this is the first time the prim type has been seen
+                if !self.gen.prim_names.contains(&name) {
+                    self.define_type(&name, ty);
+                    self.define_dtor(ty);
+
+                    self.gen.prim_names.insert(name);
+                }
+
+                // TODO: should we introduce a typedef when the name is some?
+            } else {
+                let mut name = self.owner_namespace(ty);
+                name.push_str("_");
+                push_ty_name(self.resolve, &Type::Id(ty), &mut name);
+                name.push_str("_t");
+                let prev = self.gen.type_names.insert(ty, name.clone());
+                assert!(prev.is_none());
+
+                match &self.resolve.types[ty].name {
+                    Some(name) => self.define_type(name, ty),
+                    None => self.define_anonymous_type(ty),
+                }
+
+                self.define_dtor(ty);
             }
-
-            self.define_dtor(ty);
         }
     }
 
