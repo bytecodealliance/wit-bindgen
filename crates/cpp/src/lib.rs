@@ -684,6 +684,10 @@ impl CppInterfaceGenerator<'_> {
                 self.gen.c_src.src.push_str(", ");
             }
         }
+        if signature.retptr {
+            self.gen.c_src.src.push_str(", int32_t resultptr");
+            params.push("resultptr".into());
+        }
         self.gen.c_src.src.push_str(")\n");
         if self.gen.opts.host {
             let signature = wamr::wamr_signature(self.resolve, func);
