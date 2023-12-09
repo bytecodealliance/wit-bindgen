@@ -1197,6 +1197,29 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
     }
 }
 
+pub enum CTypeNameInfo<'a> {
+    Named { name: &'a str },
+    Anonymous { is_prim: bool },
+}
+
+/// Generate the type part of a c identifier, missing the namespace and the `_t` suffix.
+/// Additionally return a `CTypeNameInfo` that describes what sort of name has been produced.
+pub fn gen_type_name(resolve: &Resolve, ty: TypeId) -> (CTypeNameInfo<'_>, String) {
+    let mut encoded = String::new();
+    push_ty_name(resolve, &Type::Id(ty), &mut encoded);
+    let info = if let Some(name) = &resolve.types[ty].name {
+        CTypeNameInfo::Named {
+            name: name.as_ref(),
+        }
+    } else {
+        CTypeNameInfo::Anonymous {
+            is_prim: is_prim_type_id(resolve, ty),
+        }
+    };
+
+    (info, encoded)
+}
+
 impl InterfaceGenerator<'_> {
     fn define_interface_types(&mut self, id: InterfaceId) {
         let mut live = LiveTypes::default();
@@ -1212,37 +1235,31 @@ impl InterfaceGenerator<'_> {
         self.define_live_types(live);
     }
 
-    fn typedef_name(&self, ty: TypeId) -> String {
-        let mut name = self.owner_namespace(ty);
-        name.push_str("_");
-        push_ty_name(self.resolve, &Type::Id(ty), &mut name);
-        name.push_str("_t");
-        name
-    }
-
     fn define_live_types(&mut self, live: LiveTypes) {
         for ty in live.iter() {
             if self.gen.type_names.contains_key(&ty) {
                 continue;
             }
 
-            match &self.resolve.types[ty].name {
-                Some(name) => {
-                    let typedef_name = self.typedef_name(ty);
+            let (info, encoded) = gen_type_name(&self.resolve, ty);
+            match info {
+                CTypeNameInfo::Named { name } => {
+                    let typedef_name = format!("{}_{encoded}_t", self.owner_namespace(ty));
                     let prev = self.gen.type_names.insert(ty, typedef_name.clone());
                     assert!(prev.is_none());
 
                     self.define_type(name, ty)
                 }
-                None => {
-                    let (defined, name) = if is_prim_type_id(self.resolve, ty) {
-                        let mut name = format!("{}_", self.gen.world.to_snake_case());
-                        push_ty_name(self.resolve, &Type::Id(ty), &mut name);
-                        name.push_str("_t");
+
+                CTypeNameInfo::Anonymous { is_prim } => {
+                    let (defined, name) = if is_prim {
+                        let namespace = self.gen.world.to_snake_case();
+                        let name = format!("{namespace}_{encoded}_t");
                         let new_prim = self.gen.prim_names.insert(name.clone());
                         (!new_prim, name)
                     } else {
-                        (false, self.typedef_name(ty))
+                        let namespace = self.owner_namespace(ty);
+                        (false, format!("{namespace}_{encoded}_t"))
                     };
 
                     let prev = self.gen.type_names.insert(ty, name);
