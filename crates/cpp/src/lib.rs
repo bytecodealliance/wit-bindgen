@@ -660,7 +660,10 @@ impl CppInterfaceGenerator<'_> {
             self.gen.c_src.src.push_str("static ");
         } else {
             let func_name = &func.name;
-            uwriteln!(self.gen.c_src.src, r#"__attribute__((__export_name__("{module_name}#{func_name}")))"#);
+            uwriteln!(
+                self.gen.c_src.src,
+                r#"__attribute__((__export_name__("{module_name}#{func_name}")))"#
+            );
         }
         self.gen
             .c_src
@@ -980,18 +983,7 @@ impl CppInterfaceGenerator<'_> {
                 }
                 TypeDefKind::Flags(_) => "Flags".to_string(),
                 TypeDefKind::Tuple(_) => "Tuple".to_string(),
-                TypeDefKind::Variant(v) => {
-                    self.gen.dependencies.needs_variant = true;
-                    let mut result = "std::variant<".to_string();
-                    for (n, case) in v.cases.iter().enumerate() {
-                        result += &self.optional_type_name(case.ty.as_ref(), from_namespace);
-                        if n + 1 != v.cases.len() {
-                            result += ", ";
-                        }
-                    }
-                    result += ">";
-                    result
-                }
+                TypeDefKind::Variant(_v) => self.scoped_type_name(*id, from_namespace),
                 TypeDefKind::Enum(_e) => self.scoped_type_name(*id, from_namespace),
                 TypeDefKind::Option(o) => {
                     self.gen.dependencies.needs_optional = true;
@@ -1224,12 +1216,35 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
 
     fn type_variant(
         &mut self,
-        _id: TypeId,
+        id: TypeId,
         name: &str,
-        _variant: &wit_bindgen_core::wit_parser::Variant,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
+        variant: &wit_bindgen_core::wit_parser::Variant,
+        docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        uwriteln!(self.gen.h_src.src, "// type_variant({name})");
+        let ty = &self.resolve.types[id];
+        let namespc = namespace(self.resolve, &ty.owner);
+        self.gen.h_src.change_namespace(&namespc);
+        Self::docs(&mut self.gen.h_src.src, docs);
+        let pascal = name.to_pascal_case();
+        uwriteln!(self.gen.h_src.src, "struct {pascal} {{");
+        let mut all_types = String::new();
+        for case in variant.cases.iter() {
+            Self::docs(&mut self.gen.h_src.src, &case.docs);
+            let case_pascal = case.name.to_pascal_case();
+            if !all_types.is_empty() {
+                all_types += ", ";
+            }
+            all_types += &case_pascal;
+            uwrite!(self.gen.h_src.src, "struct {case_pascal} {{");
+            if let Some(ty) = case.ty.as_ref() {
+                let typestr = self.type_name(ty, &namespc);
+                uwrite!(self.gen.h_src.src, " {typestr} value; ")
+            }
+            uwriteln!(self.gen.h_src.src, "}};");
+        }
+        uwriteln!(self.gen.h_src.src, "  std::variant<{all_types}> variants;");
+        uwriteln!(self.gen.h_src.src, "}};");
+        self.gen.dependencies.needs_variant = true;
     }
 
     fn type_option(
