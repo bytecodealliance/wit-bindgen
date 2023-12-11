@@ -52,6 +52,7 @@ struct Includes {
     needs_imported_resources: bool,
     needs_exported_resources: bool,
     needs_variant: bool,
+    needs_tuple: bool,
 }
 
 #[derive(Clone)]
@@ -329,6 +330,9 @@ impl WorldGenerator for Cpp {
         }
         if self.dependencies.needs_variant {
             self.include("<variant>");
+        }
+        if self.dependencies.needs_tuple {
+            self.include("<tuple>");
         }
 
         for include in self.includes.iter() {
@@ -982,7 +986,16 @@ impl CppInterfaceGenerator<'_> {
                         + ">"
                 }
                 TypeDefKind::Flags(_f) => self.scoped_type_name(*id, from_namespace),
-                TypeDefKind::Tuple(_) => "Tuple".to_string(),
+                TypeDefKind::Tuple(t) => {
+                    let types = t.types.iter().fold(String::new(), |mut a, b| {
+                        if !a.is_empty() {
+                            a += ", ";
+                        }
+                        a + &self.type_name(b, from_namespace)
+                    });
+                    self.gen.dependencies.needs_tuple = true;
+                    String::from("std::tuple<") + &types + ">"
+                }
                 TypeDefKind::Variant(_v) => self.scoped_type_name(*id, from_namespace),
                 TypeDefKind::Enum(_e) => self.scoped_type_name(*id, from_namespace),
                 TypeDefKind::Option(o) => {
