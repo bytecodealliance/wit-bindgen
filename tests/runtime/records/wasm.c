@@ -10,8 +10,8 @@ void records_test_imports() {
     assert(b == 5);
   }
 
-  test_records_test_tuple2_u8_u32_t input;
-  test_records_test_tuple2_u32_u8_t output;
+  records_tuple2_u8_u32_t input;
+  records_tuple2_u32_u8_t output;
   input.f0 = 1;
   input.f1 = 2;
   test_records_test_swap_tuple(&input, &output);
@@ -57,7 +57,7 @@ void records_test_imports() {
     assert(b.b == (TEST_RECORDS_TEST_F1_A | TEST_RECORDS_TEST_F1_B));
   }
 
-  test_records_test_tuple1_u8_t t1, t2;
+  records_tuple1_u8_t t1, t2;
   t1.f0 = 1;
   test_records_test_tuple1(&t1, &t2);
   assert(t2.f0 == 1);
@@ -68,7 +68,7 @@ void exports_test_records_test_multiple_results(uint8_t *ret0, uint16_t *ret1) {
   *ret1 = 200;
 }
 
-void exports_test_records_test_swap_tuple(exports_test_records_test_tuple2_u8_u32_t *a, exports_test_records_test_tuple2_u32_u8_t *b) {
+void exports_test_records_test_swap_tuple(records_tuple2_u8_u32_t *a, records_tuple2_u32_u8_t *b) {
   b->f0 = a->f1;
   b->f1 = a->f0;
 }
@@ -100,6 +100,6 @@ void exports_test_records_test_roundtrip_record1(exports_test_records_test_r1_t 
   *ret0 = *a;
 }
 
-void exports_test_records_test_tuple1(exports_test_records_test_tuple1_u8_t *a, exports_test_records_test_tuple1_u8_t *b) {
+void exports_test_records_test_tuple1(records_tuple1_u8_t *a, records_tuple1_u8_t *b) {
   b->f0 = a->f0;
 }
