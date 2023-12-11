@@ -213,7 +213,7 @@ impl WorldGenerator for Cpp {
         for (_name, func) in resolve.interfaces[id].functions.iter() {
             if matches!(func.kind, FunctionKind::Freestanding) {
                 gen.gen.h_src.change_namespace(&namespace);
-                gen.generate_guest_import(func, id, false);
+                gen.generate_function(func, id, AbiVariant::GuestImport);
             }
         }
         // gen.finish();
@@ -239,7 +239,7 @@ impl WorldGenerator for Cpp {
         for (_name, func) in resolve.interfaces[id].functions.iter() {
             if matches!(func.kind, FunctionKind::Freestanding) {
                 gen.gen.h_src.change_namespace(&namespace);
-                gen.generate_guest_import(func, id, true);
+                gen.generate_function(func, id, AbiVariant::GuestExport);
             }
         }
         Ok(())
@@ -835,10 +835,14 @@ impl CppInterfaceGenerator<'_> {
         }
     }
 
-    fn generate_guest_import(&mut self, func: &Function, interface: InterfaceId, export: bool) {
-        let params = self.print_signature(func, !(self.gen.opts.host ^ export));
+    fn generate_function(&mut self, func: &Function, interface: InterfaceId, variant: AbiVariant) {
+        let export = match variant {
+            AbiVariant::GuestImport => self.gen.opts.host,
+            AbiVariant::GuestExport => !self.gen.opts.host,
+        };
+        let params = self.print_signature(func, !export);
         self.gen.c_src.src.push_str("{\n");
-        let lift_lower = if export ^ self.gen.opts.host {
+        let lift_lower = if export {
             LiftLower::LiftArgsLowerResults
         } else {
             LiftLower::LowerArgsLiftResults
@@ -886,11 +890,7 @@ impl CppInterfaceGenerator<'_> {
             f.namespace = namespace;
             abi::call(
                 f.gen.resolve,
-                if export {
-                    AbiVariant::GuestExport
-                } else {
-                    AbiVariant::GuestImport
-                },
+                variant,
                 lift_lower,
                 func,
                 &mut f,
@@ -1130,14 +1130,15 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
     ) {
         let type_ = &self.resolve.types[id];
         if let TypeOwner::Interface(intf) = type_.owner {
-            let import = self.gen.imported_interfaces.contains(&intf) ^ self.gen.opts.host;
+            let guest_import = self.gen.imported_interfaces.contains(&intf);
+            let definition = !(guest_import ^ self.gen.opts.host);
             let mut world_name = self.gen.world.to_snake_case();
             world_name.push_str("::");
             let mut headerfile = SourceWithState::default();
             let namespc = namespace(self.resolve, &type_.owner);
             let pascal = name.to_upper_camel_case();
             let user_filename = namespc.join("-") + "-" + &pascal + ".h";
-            if !import {
+            if definition {
                 // includes should be outside of namespaces
                 self.gen.h_src.change_namespace(&Vec::default());
                 // temporarily redirect header file declarations to an user controlled include file
@@ -1151,17 +1152,17 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             }
             self.gen.h_src.change_namespace(&namespc);
 
-            if import {
+            if !definition {
                 self.gen.dependencies.needs_imported_resources = true;
             } else {
                 self.gen.dependencies.needs_exported_resources = true;
             }
 
-            if !import {
+            if definition {
                 uwriteln!(self.gen.c_src.src, "template <class R> std::map<int32_t, R> {world_name}{RESOURCE_EXPORT_BASE_CLASS_NAME}<R>::resources;");
             }
 
-            let base_type = if !import {
+            let base_type = if definition {
                 format!("{RESOURCE_EXPORT_BASE_CLASS_NAME}<{pascal}>")
             } else {
                 RESOURCE_IMPORT_BASE_CLASS_NAME.into()
@@ -1169,6 +1170,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             let derive = format!(" : public {world_name}{base_type}");
             uwriteln!(self.gen.h_src.src, "class {pascal}{derive} {{\n");
             uwriteln!(self.gen.h_src.src, "public:\n");
+            let variant = if guest_import { AbiVariant::GuestImport} else {AbiVariant::GuestExport};
             // destructor
             {
                 let name = "[resource-drop]".to_string() + &name;
@@ -1179,7 +1181,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     results: Results::Named(vec![]),
                     docs: Docs::default(),
                 };
-                self.generate_guest_import(&func, intf, !import);
+                self.generate_function(&func, intf, variant);
             }
             let funcs = self.resolve.interfaces[intf].functions.values();
             for func in funcs {
@@ -1189,11 +1191,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                     FunctionKind::Static(mid) => *mid == id,
                     FunctionKind::Constructor(mid) => *mid == id,
                 } {
-                    self.generate_guest_import(func, intf, !import);
+                    self.generate_function(func, intf, variant);
                 }
             }
 
-            if import {
+            if !definition {
                 // consuming constructor from handle (bindings)
                 uwriteln!(
                     self.gen.h_src.src,
@@ -1202,7 +1204,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 uwriteln!(self.gen.h_src.src, "{pascal}({pascal}&&) = default;\n");
             }
             uwriteln!(self.gen.h_src.src, "}};\n");
-            if !import {
+            if definition {
                 // Finish the user controlled class template
                 self.gen.h_src.change_namespace(&Vec::default());
                 std::mem::swap(&mut headerfile, &mut self.gen.h_src);
