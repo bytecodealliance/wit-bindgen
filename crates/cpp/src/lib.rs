@@ -981,7 +981,7 @@ impl CppInterfaceGenerator<'_> {
                         + &self.type_name(&Type::Id(*id), from_namespace)
                         + ">"
                 }
-                TypeDefKind::Flags(_) => "Flags".to_string(),
+                TypeDefKind::Flags(_f) => self.scoped_type_name(*id, from_namespace),
                 TypeDefKind::Tuple(_) => "Tuple".to_string(),
                 TypeDefKind::Variant(_v) => self.scoped_type_name(*id, from_namespace),
                 TypeDefKind::Enum(_e) => self.scoped_type_name(*id, from_namespace),
@@ -1064,7 +1064,7 @@ impl CppInterfaceGenerator<'_> {
     fn docs(src: &mut Source, docs: &Docs) {
         if let Some(docs) = docs.contents.as_ref() {
             for line in docs.trim().lines() {
-                src.push_str("// ");
+                src.push_str("/// ");
                 src.push_str(line);
                 src.push_str("\n");
             }
@@ -1196,12 +1196,30 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
 
     fn type_flags(
         &mut self,
-        _id: TypeId,
+        id: TypeId,
         name: &str,
-        _flags: &wit_bindgen_core::wit_parser::Flags,
-        _docs: &wit_bindgen_core::wit_parser::Docs,
+        flags: &wit_bindgen_core::wit_parser::Flags,
+        docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
-        uwriteln!(self.gen.h_src.src, "// type_flags({name})");
+        let ty = &self.resolve.types[id];
+        let namespc = namespace(self.resolve, &ty.owner);
+        self.gen.h_src.change_namespace(&namespc);
+        Self::docs(&mut self.gen.h_src.src, docs);
+        let pascal = name.to_pascal_case();
+        let int_repr = wit_bindgen_c::int_repr(wit_bindgen_c::flags_repr(flags));
+        uwriteln!(self.gen.h_src.src, "enum class {pascal} : {int_repr} {{");
+        uwriteln!(self.gen.h_src.src, "k_None = 0,");
+        for (n, field) in flags.flags.iter().enumerate() {
+            Self::docs(&mut self.gen.h_src.src, &field.docs);
+            let fname = field.name.to_pascal_case();
+            uwriteln!(self.gen.h_src.src, "k{fname} = (1<<{n}),");
+        }
+        uwriteln!(self.gen.h_src.src, "}};");
+        uwriteln!(
+            self.gen.h_src.src,
+            r#"static inline {pascal} operator|({pascal} a, {pascal} b) {{ return {pascal}({int_repr}(a)|{int_repr}(b)); }}
+        static inline {pascal} operator&({pascal} a, {pascal} b) {{ return {pascal}({int_repr}(a)&{int_repr}(b)); }}"#
+        );
     }
 
     fn type_tuple(
