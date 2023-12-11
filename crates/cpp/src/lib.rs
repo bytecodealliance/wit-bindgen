@@ -672,7 +672,7 @@ impl CppInterfaceGenerator<'_> {
         self.gen
             .c_src
             .src
-            .push_str(if signature.results.is_empty() {
+            .push_str(if signature.results.is_empty() || signature.retptr {
                 "void"
             } else {
                 wasm_type(signature.results[0])
@@ -681,22 +681,32 @@ impl CppInterfaceGenerator<'_> {
         let export_name = CppInterfaceGenerator::export_name2(&module_name, &func.name);
         self.gen.c_src.src.push_str(&export_name);
         self.gen.c_src.src.push_str("(");
+        let mut first_arg = true;
         if self.gen.opts.host {
-            self.gen.c_src.src.push_str("wasm_exec_env_t exec_env, ");
+            self.gen.c_src.src.push_str("wasm_exec_env_t exec_env");
+            first_arg = false;
         }
         let mut params = Vec::new();
         for (n, ty) in signature.params.iter().enumerate() {
             let name = format!("arg{n}");
+            if !first_arg {
+                self.gen.c_src.src.push_str(", ");
+            } else {
+                first_arg = false;
+            }
             self.gen.c_src.src.push_str(wasm_type(*ty));
             self.gen.c_src.src.push_str(" ");
             self.gen.c_src.src.push_str(&name);
             params.push(name);
-            if n + 1 != signature.params.len() {
-                self.gen.c_src.src.push_str(", ");
-            }
         }
         if signature.retptr {
-            self.gen.c_src.src.push_str(", int32_t resultptr");
+            if !first_arg {
+                self.gen.c_src.src.push_str(", ");
+            }
+            // else {
+            //     first_arg = false;
+            // }
+            self.gen.c_src.src.push_str("int32_t resultptr");
             params.push("resultptr".into());
         }
         self.gen.c_src.src.push_str(")\n");
@@ -1419,7 +1429,11 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn load(&mut self, ty: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
-        results.push(format!("*(({}*) ({} + {}))", ty, operands[0], offset));
+        if self.gen.gen.opts.host {
+            results.push(format!("*(({}*) wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), ({} + {}))))", ty, operands[0], offset));
+        } else {
+            results.push(format!("*(({}*) ({} + {}))", ty, operands[0], offset));
+        }
     }
 
     fn load_ext(&mut self, ty: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
@@ -1429,14 +1443,25 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn store(&mut self, ty: &str, offset: i32, operands: &[String]) {
-        uwriteln!(
-            self.src,
-            "*(({}*)({} + {})) = {};",
-            ty,
-            operands[1],
-            offset,
-            operands[0]
-        );
+        if self.gen.gen.opts.host {
+            uwriteln!(
+                self.src,
+                "*(({}*)wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), ({} + {}))) = {};",
+                ty,
+                operands[1],
+                offset,
+                operands[0]
+            );
+        } else {
+            uwriteln!(
+                self.src,
+                "*(({}*)({} + {})) = {};",
+                ty,
+                operands[1],
+                offset,
+                operands[0]
+            );
+        }
     }
 
     fn has_resources(&self, id: &TypeId) -> bool {
@@ -1922,7 +1947,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 self.src.push_str(&func_name_h);
                 self.push_str("(");
                 self.push_str(&operands.join(", "));
-                self.push_str(");");
+                self.push_str(");\n");
             }
             abi::Instruction::Return { amt, func } => {
                 let import = !self.gen.gen.opts.host;
