@@ -363,6 +363,10 @@ impl WorldGenerator for Cpp {
                     );
                 }
             }
+            if self.dependencies.needs_exported_resources {
+                let world_name = &self.world;
+                uwriteln!(c_str.src, "template <class R> std::map<int32_t, R> {world_name}::{RESOURCE_EXPORT_BASE_CLASS_NAME}<R>::resources;");
+            }
         }
 
         if self.dependencies.needs_exported_resources {
@@ -888,13 +892,7 @@ impl CppInterfaceGenerator<'_> {
             };
             let mut f = FunctionBindgen::new(self, params);
             f.namespace = namespace;
-            abi::call(
-                f.gen.resolve,
-                variant,
-                lift_lower,
-                func,
-                &mut f,
-            );
+            abi::call(f.gen.resolve, variant, lift_lower, func, &mut f);
             let code = String::from(f.src);
             self.gen.c_src.src.push_str(&code);
         }
@@ -1158,10 +1156,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
                 self.gen.dependencies.needs_exported_resources = true;
             }
 
-            if definition {
-                uwriteln!(self.gen.c_src.src, "template <class R> std::map<int32_t, R> {world_name}{RESOURCE_EXPORT_BASE_CLASS_NAME}<R>::resources;");
-            }
-
             let base_type = if definition {
                 format!("{RESOURCE_EXPORT_BASE_CLASS_NAME}<{pascal}>")
             } else {
@@ -1170,7 +1164,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for CppInterfaceGenerator<'a> 
             let derive = format!(" : public {world_name}{base_type}");
             uwriteln!(self.gen.h_src.src, "class {pascal}{derive} {{\n");
             uwriteln!(self.gen.h_src.src, "public:\n");
-            let variant = if guest_import { AbiVariant::GuestImport} else {AbiVariant::GuestExport};
+            let variant = if guest_import {
+                AbiVariant::GuestImport
+            } else {
+                AbiVariant::GuestExport
+            };
             // destructor
             {
                 let name = "[resource-drop]".to_string() + &name;
@@ -1592,13 +1590,19 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let ptr = format!("ptr{}", tmp);
                 let len = format!("len{}", tmp);
                 let result = format!("result{}", tmp);
-                if realloc.is_none() {
-                    self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
+                self.push_str(&format!("auto const&{} = {};\n", val, operands[0]));
+                if self.gen.gen.opts.host {
+                    self.push_str(&format!("auto {} = {}.data();\n", ptr, val));
+                    self.push_str(&format!("auto {} = {}.size();\n", len, val));
+                } else {
                     self.push_str(&format!("auto {} = (int32_t)({}.data());\n", ptr, val));
                     self.push_str(&format!("auto {} = (int32_t)({}.size());\n", len, val));
+                }
+                if realloc.is_none() {
                     results.push(ptr);
                 } else {
                     self.gen.gen.dependencies.needs_guest_alloc = true;
+                    self.gen.gen.dependencies.needs_cstring = true;
                     uwriteln!(self.src, "int32_t {result} = guest_alloc(exec_env, {len});");
                     uwriteln!(self.src, "memcpy(wasm_runtime_addr_app_to_native(wasm_runtime_get_module_inst(exec_env), {result}), {ptr}, {len});");
                     results.push(result);
@@ -2045,15 +2049,6 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
         }
     }
 }
-
-// fn wasm_type(ty: WasmType) -> &'static str {
-//     match ty {
-//         WasmType::I32 => "int32_t",
-//         WasmType::I64 => "int64_t",
-//         WasmType::F32 => "float",
-//         WasmType::F64 => "double",
-//     }
-// }
 
 fn is_drop_method(func: &Function) -> bool {
     matches!(func.kind, FunctionKind::Static(_)) && func.name.starts_with("[resource-drop]")
