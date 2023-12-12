@@ -891,7 +891,9 @@ impl CppInterfaceGenerator<'_> {
                 namespace
             };
             let mut f = FunctionBindgen::new(self, params);
-            f.namespace = namespace;
+            if !export {
+                f.namespace = namespace;
+            }
             abi::call(f.gen.resolve, variant, lift_lower, func, &mut f);
             let code = String::from(f.src);
             self.gen.c_src.src.push_str(&code);
@@ -1632,6 +1634,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let tmp = self.tmp();
                 let size = self.gen.sizes.size(element);
                 let _align = self.gen.sizes.align(element);
+                let vtype = self.gen.type_name(element, &self.namespace);
                 let len = format!("len{tmp}");
                 let base = format!("base{tmp}");
                 let result = format!("result{tmp}");
@@ -1644,7 +1647,7 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                     operand1 = operands[1]
                 ));
                 self.push_str(&format!(
-                    r#"auto mut {result} = std::vector<>();
+                    r#"auto {result} = std::vector<{vtype}>();
                     {result}.reserve({len});
                     "#,
                 ));
