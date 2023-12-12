@@ -1,0 +1,6 @@
+#include <expected.hpp>
+
+namespace std {
+    using ::tl::expected;
+    using ::tl::unexpected;
+}
