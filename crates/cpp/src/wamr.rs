@@ -92,7 +92,7 @@ fn wamr_add_result(sig: &mut WamrSig, resolve: &Resolve, ty: &Type) {
         Type::Id(id) => match &resolve.types[*id].kind {
             TypeDefKind::Record(_r) => sig.wamr_types.push('R'),
             TypeDefKind::Flags(_) => todo!(),
-            TypeDefKind::Tuple(_) => todo!(),
+            TypeDefKind::Tuple(_) => sig.wamr_result.push('i'),
             TypeDefKind::Variant(_) => todo!(),
             TypeDefKind::Enum(_e) => {
                 sig.wamr_types.push('*');

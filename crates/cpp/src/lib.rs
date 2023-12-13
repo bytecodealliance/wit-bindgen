@@ -673,10 +673,11 @@ impl CppInterfaceGenerator<'_> {
                 r#"__attribute__((__export_name__("{module_name}#{func_name}")))"#
             );
         }
+        let return_via_pointer = signature.retptr && self.gen.opts.host;
         self.gen
             .c_src
             .src
-            .push_str(if signature.results.is_empty() || signature.retptr {
+            .push_str(if signature.results.is_empty() || return_via_pointer {
                 "void"
             } else {
                 wasm_type(signature.results[0])
@@ -703,7 +704,7 @@ impl CppInterfaceGenerator<'_> {
             self.gen.c_src.src.push_str(&name);
             params.push(name);
         }
-        if signature.retptr {
+        if return_via_pointer {
             if !first_arg {
                 self.gen.c_src.src.push_str(", ");
             }
