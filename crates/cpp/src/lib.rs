@@ -1705,13 +1705,15 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
                 let op = &operands[0];
                 results.push(op.clone());
             }
-            abi::Instruction::TupleLower { .. } => {
-                results.push("TupleLower1".into());
-                results.push("TupleLower2".into());
+            abi::Instruction::TupleLower { tuple, .. } => {
+                let op = &operands[0];
+                for n in 0..tuple.types.len() {
+                    results.push(format!("std::get<{n}>({op})"));
+                }
             }
             abi::Instruction::TupleLift { tuple, .. } => {
                 let name = format!("tuple{}", self.tmp());
-                uwrite!(self.src, "auto {name} std::tuple<");
+                uwrite!(self.src, "auto {name} = std::tuple<");
                 self.src.push_str(
                     &(tuple
                         .types
@@ -1994,30 +1996,10 @@ impl<'a, 'b> Bindgen for FunctionBindgen<'a, 'b> {
             8 => "uint64_t",
             _ => todo!(),
         };
-        uwriteln!(self.src, " {tp} ret_area[{elems}];");
+        let static_var = if self.gen.in_import { ""}else {"static "};
+        uwriteln!(self.src, "{static_var}{tp} ret_area[{elems}];");
+        uwriteln!(self.src, "int32_t ptr{tmp} = int32_t(&ret_area);");
 
-        uwrite!(self.src, "int32_t ptr{tmp} = int32_t(&ret_area);");
-
-        // Imports get a per-function return area to facilitate using the
-        // stack whereas exports use a per-module return area to cut down on
-        // stack usage. Note that for imports this also facilitates "adapter
-        // modules" for components to not have data segments.
-        // if self.gen.in_import {
-        //     self.import_return_pointer_area_size = self.import_return_pointer_area_size.max(size);
-        //     self.import_return_pointer_area_align =
-        //         self.import_return_pointer_area_align.max(align);
-        //     uwrite!(
-        //         self.src,
-        //         "int32_t ptr{tmp} = int32_t(&ret_area);"
-        //     );
-        // } else {
-        //     self.gen.return_pointer_area_size = self.gen.return_pointer_area_size.max(size);
-        //     self.gen.return_pointer_area_align = self.gen.return_pointer_area_align.max(align);
-        //     uwriteln!(
-        //         self.src,
-        //         "int32_t ptr{tmp} = int32_t(&RET_AREA);"
-        //     );
-        // }
         format!("ptr{}", tmp)
     }
 
