@@ -2248,7 +2248,6 @@ dependencies = [
  "test-helpers",
  "wit-bindgen-c",
  "wit-bindgen-core",
- "wit-component",
 ]
 
 [[package]]
