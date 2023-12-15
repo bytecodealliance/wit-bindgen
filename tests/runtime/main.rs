@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use heck::ToUpperCamelCase;
 
 use std::borrow::Cow;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
@@ -35,6 +34,7 @@ mod resources;
 mod smoke;
 mod strings;
 mod variants;
+mod versions;
 
 struct MyCtx {}
 
