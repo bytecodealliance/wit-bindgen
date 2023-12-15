@@ -541,29 +541,35 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 wit_bindgen_csharp::CSProject::new(out_dir.clone(), &assembly_name, world_name);
             csproj.aot();
 
-            // Write the WasmImports for NativeAOT-LLVM.
-            // See https://github.com/dotnet/runtimelab/issues/2383
-
-            for world in &resolve.worlds {
-                for import in &world.1.imports {
-                    let module_name = resolve.name_world_key(import.0);
-                    match import.1 {
-                        WorldItem::Function(f) => csproj.add_import(&module_name, &f.name),
-                        WorldItem::Interface(id) => {
-                            for (_, f) in resolve.interfaces[*id].functions.iter() {
-                                csproj.add_import(&module_name, &f.name)
-                            }
-                        }
-                        WorldItem::Type(_) => {}
-                    }
-                }
-            }
-
             // Copy test file to target location to be included in compilation
             let file_name = path.file_name().unwrap();
             fs::copy(path, out_dir.join(file_name.to_str().unwrap()))?;
 
             csproj.generate()?;
+
+            // generate the cabi_realloc (and TODO: release)
+            let mut cmd_emcc = Command::new("emcc.bat");
+            // let mut object_filename = out_wasm.join(assembly_name);
+            // object_filename.set_extension("o");
+            cmd_emcc.current_dir(&out_dir);
+            cmd_emcc.arg(format!("{camel}.c"));
+            cmd_emcc.arg("-c");
+            cmd_emcc.arg("-o");
+            cmd_emcc.arg(format!("{camel}.o"));
+
+            let emcc_output = match cmd_emcc.output() {
+                Ok(output) => output,
+                Err(e) => panic!("failed to spawn emcc: {}", e),
+            };
+
+            if !emcc_output.status.success() {
+                println!("status: {}", emcc_output.status);
+                println!("stdout: ------------------------------------------");
+                println!("{}", String::from_utf8_lossy(&emcc_output.stdout));
+                println!("stderr: ------------------------------------------");
+                println!("{}", String::from_utf8_lossy(&emcc_output.stderr));
+                panic!("failed to compile cabi_realloc");
+            }
 
             let dotnet_root_env = "DOTNET_ROOT";
             let dotnet_cmd: PathBuf;

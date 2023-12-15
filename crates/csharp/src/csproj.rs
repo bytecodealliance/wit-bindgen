@@ -9,7 +9,6 @@ pub struct CSProject {
     aot: bool,
     clean_targets: bool,
     world_name: String,
-    wasm_imports: Vec<(String, String)>,
 }
 
 impl CSProject {
@@ -20,7 +19,6 @@ impl CSProject {
             aot: false,
             clean_targets: false,
             world_name: world_name.to_string(),
-            wasm_imports: Vec::new(),
         }
     }
 
@@ -59,6 +57,7 @@ impl CSProject {
         </PropertyGroup>
             <ItemGroup>
           <NativeLibrary Include=\"{world}_component_type.o\" />
+          <NativeLibrary Include=\"{world}.o\" />
    
         </ItemGroup>
 
@@ -103,19 +102,6 @@ impl CSProject {
             )?;
         }
 
-        if !&self.wasm_imports.is_empty() {
-            csproj.push_str("\t<ItemGroup>\n");
-            for (module_name, func_name) in &self.wasm_imports {
-                csproj.push_str(&format!(
-                    r#"
-                    <WasmImport Include="{}!{}" />
-                    "#,
-                    module_name, func_name,
-                ));
-            }
-            csproj.push_str("\t</ItemGroup>\n\n");
-        }
-
         if self.clean_targets {
             let mut wasm_filename = self.dir.join(name);
             wasm_filename.set_extension("wasm");
@@ -150,10 +136,5 @@ impl CSProject {
 
     pub fn clean(&mut self) {
         self.clean_targets = true;
-    }
-
-    pub fn add_import(&mut self, module_name: &str, func_name: &str) {
-        self.wasm_imports
-            .push((module_name.to_string(), func_name.to_string()));
     }
 }
