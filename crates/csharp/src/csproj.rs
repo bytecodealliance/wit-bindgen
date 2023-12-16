@@ -55,7 +55,7 @@ impl CSProject {
             <PublishTrimmed>true</PublishTrimmed>
             <AssemblyName>{name}</AssemblyName>
         </PropertyGroup>
-            <ItemGroup>
+        <ItemGroup>
           <NativeLibrary Include=\"{world}_component_type.o\" />
           <NativeLibrary Include=\"{world}.o\" />
    
@@ -81,8 +81,20 @@ impl CSProject {
                     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="9.0.0-*" />
                     <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="9.0.0-*" />
                 </ItemGroup>
+
+                <Target Name="CheckWasmSdks">
+                    <Error Text="Emscripten not found, not compiling to WebAssembly. To enable WebAssembly compilation, install Emscripten and ensure the EMSDK environment variable points to the directory containing upstream/emscripten/emcc.bat"
+                        Condition="'$(EMSDK)' == ''" />
+                </Target>
                 "#,
             );
+
+            csproj.push_str(&format!("
+              <Target Name=\"BeforeBuild\" DependsOnTargets=\"CheckWasmSdks\" Condition=\"Exists({world}.c)\">
+                <Exec Command=\"$(EMSDK)/emcc.bat {world}.c -o {world}.o\"/>
+              </Target>
+            "
+            ));
 
             fs::write(
                 self.dir.join("nuget.config"),

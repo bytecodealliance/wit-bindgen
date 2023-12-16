@@ -547,30 +547,6 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
 
             csproj.generate()?;
 
-            // generate the cabi_realloc (and TODO: release)
-            let mut cmd_emcc = Command::new("emcc.bat");
-            // let mut object_filename = out_wasm.join(assembly_name);
-            // object_filename.set_extension("o");
-            cmd_emcc.current_dir(&out_dir);
-            cmd_emcc.arg(format!("{camel}.c"));
-            cmd_emcc.arg("-c");
-            cmd_emcc.arg("-o");
-            cmd_emcc.arg(format!("{camel}.o"));
-
-            let emcc_output = match cmd_emcc.output() {
-                Ok(output) => output,
-                Err(e) => panic!("failed to spawn emcc: {}", e),
-            };
-
-            if !emcc_output.status.success() {
-                println!("status: {}", emcc_output.status);
-                println!("stdout: ------------------------------------------");
-                println!("{}", String::from_utf8_lossy(&emcc_output.stdout));
-                println!("stderr: ------------------------------------------");
-                println!("{}", String::from_utf8_lossy(&emcc_output.stderr));
-                panic!("failed to compile cabi_realloc");
-            }
-
             let dotnet_root_env = "DOTNET_ROOT";
             let dotnet_cmd: PathBuf;
             match env::var(dotnet_root_env) {
