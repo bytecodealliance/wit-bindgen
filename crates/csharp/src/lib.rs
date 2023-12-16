@@ -375,6 +375,13 @@ impl WorldGenerator for CSharp {
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
+                        public void SetF32(int offset, float value)
+                        {{
+                            Span<byte> span = this;
+                            
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
                         internal unsafe int AddrOfBuffer()
                         {{
                             fixed(byte* ptr = &buffer)
@@ -601,7 +608,14 @@ impl InterfaceGenerator<'_> {
                 r#"
                 private unsafe struct ReturnArea
                 {{
-                    private int GetS32(IntPtr ptr, int offset)
+                    internal int GetS32(IntPtr ptr, int offset)
+                    {{
+                        var span = new Span<byte>((void*)ptr, {});
+
+                        return BitConverter.ToInt32(span.Slice(offset, 4));
+                    }}
+
+                    internal int GetF32(IntPtr ptr, int offset)
                     {{
                         var span = new Span<byte>((void*)ptr, {});
 
@@ -619,6 +633,7 @@ impl InterfaceGenerator<'_> {
                 [FixedAddressValueType]
                 private static ReturnArea returnArea;
             "#,
+                self.gen.return_area_size,
                 self.gen.return_area_size
             );
         }
@@ -658,6 +673,13 @@ impl InterfaceGenerator<'_> {
                         {{
                             Span<byte> span = this;
 
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
+                        public void SetF32(int offset, float value)
+                        {{
+                            Span<byte> span = this;
+                            
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
@@ -713,7 +735,15 @@ impl InterfaceGenerator<'_> {
                 let ty = func.results.iter_types().next().unwrap();
                 self.type_name(ty)
             }
-            _ => unreachable!(), //TODO
+            _ => {
+                let types = func
+                    .results
+                    .iter_types()
+                    .map(|ty| self.type_name(ty))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("Tuple<{}>", types)
+            }, 
         };
 
         let camel_name = func.name.to_upper_camel_case();
@@ -814,12 +844,13 @@ impl InterfaceGenerator<'_> {
         let result_type = match func.results.len() {
             0 => "void".to_owned(),
             1 => self.type_name(func.results.iter_types().next().unwrap()),
-            _ => func
+            _ => format!("Tuple<{}>",
+                func
                 .results
                 .iter_types()
                 .map(|ty| self.type_name(ty))
                 .collect::<Vec<String>>()
-                .join(", "),
+                .join(", ")),
         };
 
         let camel_name = func.name.to_upper_camel_case();
@@ -1045,7 +1076,7 @@ impl InterfaceGenerator<'_> {
             count => {
                 self.gen.tuple_counts.insert(count);
                 format!(
-                    "({})",
+                    "Tuple<{}>",
                     func.results
                         .iter_types()
                         .map(|ty| self.type_name_boxed(ty, qualifier))
@@ -1410,7 +1441,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 .to_owned()
             })),
 
-            Instruction::I32Load { offset } => results.push(format!("returnArea.GetS32({offset})")),
+            Instruction::I32Load { offset } => results.push(format!("returnArea.GetS32(ptr, {offset})")),
             Instruction::I32Load8U { offset } => {
                 results.push(format!("returnArea.GetU8({offset})"))
             }
@@ -1424,7 +1455,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("returnArea.GetS16({offset})"))
             }
             Instruction::I64Load { offset } => results.push(format!("returnArea.GetS64({offset})")),
-            Instruction::F32Load { offset } => results.push(format!("returnArea.GetF32({offset})")),
+            Instruction::F32Load { offset } => results.push(format!("returnArea.GetF32(ptr, {offset})")),
             Instruction::F64Load { offset } => results.push(format!("returnArea.GetF64({offset})")),
 
             Instruction::I32Store { offset } => {
@@ -1433,7 +1464,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32Store8 { .. } => todo!("I32Store8"),
             Instruction::I32Store16 { .. } => todo!("I32Store16"),
             Instruction::I64Store { .. } => todo!("I64Store"),
-            Instruction::F32Store { .. } => todo!("F32Store"),
+            Instruction::F32Store { offset } => {
+                uwriteln!(self.src, "returnArea.SetF32({}, {});", offset, operands[0])
+            },
             Instruction::F64Store { .. } => todo!("F64Store"),
 
             Instruction::I64FromU64 => results.push(format!("unchecked((long)({}))", operands[0])),
@@ -1446,6 +1479,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::U32FromI32 => results.push(format!("unchecked((uint)({}))", operands[0])),
             Instruction::U64FromI64 => results.push(format!("unchecked((ulong)({}))", operands[0])),
             Instruction::CharFromI32 => results.push(format!("unchecked((uint)({}))", operands[0])),
+            Instruction::Float32FromF32 => results.push(format!("unchecked((float){})", operands[0])),
             Instruction::I64FromS64
             | Instruction::I32FromU16
             | Instruction::I32FromS16
@@ -1456,7 +1490,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::F64FromFloat64
             | Instruction::S32FromI32
             | Instruction::S64FromI64
-            | Instruction::Float32FromF32
             | Instruction::Float64FromF64 => results.push(operands[0].clone()),
 
             Instruction::Bitcasts { .. } => todo!("Bitcasts"),
@@ -1604,7 +1637,41 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         .src
                         .push_str(&format!("{class_name}Impl.{func_name}({oper});")),
                     1 => results.push(format!("{class_name}Impl.{func_name}({oper})")),
-                    _ => results.push(format!("{class_name}Impl.{func_name}({oper})")),
+                    _ => {
+                        let ty = format!(
+                            "Tuple<{}>",
+                            func.results
+                                .iter_types()
+                                .map(|ty| self.gen.type_name_boxed(ty, false))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        );
+
+                        let result = self.locals.tmp("result");
+                        let assignment = format!("{ty} {result} = ");
+
+                        let destructure = func
+                            .results
+                            .iter_types()
+                            .enumerate()
+                            .map(|(index, ty)| {
+                                let ty = self.gen.type_name(ty);
+                                let my_result = self.locals.tmp("result");
+                                let assignment = format!("{ty} {my_result} = {result}.Item{};", index+1);
+                                results.push(my_result);
+                                assignment
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+
+                        uwrite!(
+                            self.src,
+                            "
+                            {assignment} {class_name}Impl.{func_name}({oper});
+                            {destructure}
+                            "
+                        );
+                    },
                 }
             }
 
