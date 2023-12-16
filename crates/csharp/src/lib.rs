@@ -385,6 +385,13 @@ impl WorldGenerator for CSharp {
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
+                        public void SetF32(int offset, float value)
+                        {{
+                            Span<byte> span = this;
+                            
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
                         internal unsafe int AddrOfBuffer()
                         {{
                             fixed(byte* ptr = &buffer)
@@ -668,6 +675,12 @@ impl InterfaceGenerator<'_> {
                         return BitConverter.ToInt32(span);
                     }}
 
+                    internal float GetF32(IntPtr ptr, int offset)
+                    {{
+                        var span = new Span<byte>((void*)ptr, {0});
+                        return BitConverter.ToSingle(span.Slice(offset, 4));
+                    }}
+
                     public static string GetUTF8String(IntPtr ptr)
                     {{
                         return Encoding.UTF8.GetString((byte*)GetS32(ptr), GetS32(ptr + 4));
@@ -727,6 +740,13 @@ impl InterfaceGenerator<'_> {
                         {{
                             Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
+                        public void SetF32(int offset, float value)
+                        {{
+                            Span<byte> span = this;
+                            
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
@@ -1126,7 +1146,7 @@ impl InterfaceGenerator<'_> {
             count => {
                 self.gen.tuple_counts.insert(count);
                 format!(
-                    "({})",
+                    "Tuple<{}>",
                     func.results
                         .iter_types()
                         .map(|ty| self.type_name_boxed(ty, qualifier))
@@ -1481,7 +1501,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 .to_owned()
             })),
-
             Instruction::I32Load { offset } => {
                 if self.gen.in_import {
                     results.push(format!("ReturnArea.GetS32(ptr + {offset})"))
@@ -1510,7 +1529,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("returnArea.GetS16({offset})"))
             }
             Instruction::I64Load { offset } => results.push(format!("returnArea.GetS64({offset})")),
-            Instruction::F32Load { offset } => results.push(format!("returnArea.GetF32({offset})")),
+            Instruction::F32Load { offset } => results.push(format!("returnArea.GetF32(ptr, {offset})")),
             Instruction::F64Load { offset } => results.push(format!("returnArea.GetF64({offset})")),
 
             Instruction::I32Store { offset } => {
@@ -1528,7 +1547,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 )
             }
             Instruction::I64Store { .. } => todo!("I64Store"),
-            Instruction::F32Store { .. } => todo!("F32Store"),
+            Instruction::F32Store { offset } => {
+                uwriteln!(self.src, "returnArea.SetF32({}, {});", offset, operands[0])
+            },
             Instruction::F64Store { .. } => todo!("F64Store"),
 
             Instruction::I64FromU64 => results.push(format!("unchecked((long)({}))", operands[0])),
@@ -1541,6 +1562,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::U32FromI32 => results.push(format!("unchecked((uint)({}))", operands[0])),
             Instruction::U64FromI64 => results.push(format!("unchecked((ulong)({}))", operands[0])),
             Instruction::CharFromI32 => results.push(format!("unchecked((uint)({}))", operands[0])),
+            Instruction::Float32FromF32 => results.push(format!("unchecked((float){})", operands[0])),
             Instruction::I64FromS64
             | Instruction::I32FromU16
             | Instruction::I32FromS16
@@ -1551,7 +1573,6 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             | Instruction::F64FromFloat64
             | Instruction::S32FromI32
             | Instruction::S64FromI64
-            | Instruction::Float32FromF32
             | Instruction::Float64FromF64 => results.push(operands[0].clone()),
 
             Instruction::Bitcasts { .. } => todo!("Bitcasts"),
