@@ -437,7 +437,10 @@ impl WorldGenerator for CSharp {
                 }
             "#,
         );
-        files.push(&format!("{name}.c"), indent(&cabi_relloc_src).as_bytes());
+        files.push(
+            &format!("{name}_cabi_realloc.c"),
+            indent(&cabi_relloc_src).as_bytes(),
+        );
 
         let generate_stub = |name: String, files: &mut Files, stubs: Stubs| {
             let stub_file_name = format!("{name}Impl");

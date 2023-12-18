@@ -26,6 +26,7 @@ impl CSProject {
         let name = &self.name;
         let world = &self.world_name.replace("-", "_");
         let snake_world = world.to_upper_camel_case();
+        let camel = snake_world.to_upper_camel_case();
 
         fs::write(
             self.dir.join("rd.xml"),
@@ -57,7 +58,7 @@ impl CSProject {
         </PropertyGroup>
         <ItemGroup>
           <NativeLibrary Include=\"{world}_component_type.o\" />
-          <NativeLibrary Include=\"{world}.o\" />
+          <NativeLibrary Include=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o\" />
    
         </ItemGroup>
 
@@ -90,8 +91,11 @@ impl CSProject {
             );
 
             csproj.push_str(&format!("
-              <Target Name=\"BeforeBuild\" DependsOnTargets=\"CheckWasmSdks\" Condition=\"Exists({world}.c)\">
-                <Exec Command=\"$(EMSDK)/emcc.bat {world}.c -o {world}.o\"/>
+              <Target Name=\"CompileCabiRealloc\" BeforeTargets=\"IlcCompile\" DependsOnTargets=\"CheckWasmSdks\" 
+                Inputs=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.c\"
+                Outputs=\"$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o\"
+                >
+                <Exec Command=\"emcc.bat &quot;$(MSBuildProjectDirectory)/{camel}_cabi_realloc.c&quot; -c -o &quot;$(MSBuildProjectDirectory)/{camel}_cabi_realloc.o&quot;\"/>
               </Target>
             "
             ));
@@ -136,7 +140,6 @@ impl CSProject {
             "#,
         );
 
-        let camel = snake_world.to_upper_camel_case();
         fs::write(self.dir.join(format!("{camel}.csproj")), csproj)?;
 
         Ok(())
