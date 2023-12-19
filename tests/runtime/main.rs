@@ -541,24 +541,6 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
                 wit_bindgen_csharp::CSProject::new(out_dir.clone(), &assembly_name, world_name);
             csproj.aot();
 
-            // Write the WasmImports for NativeAOT-LLVM.
-            // See https://github.com/dotnet/runtimelab/issues/2383
-
-            for world in &resolve.worlds {
-                for import in &world.1.imports {
-                    let module_name = resolve.name_world_key(import.0);
-                    match import.1 {
-                        WorldItem::Function(f) => csproj.add_import(&module_name, &f.name),
-                        WorldItem::Interface(id) => {
-                            for (_, f) in resolve.interfaces[*id].functions.iter() {
-                                csproj.add_import(&module_name, &f.name)
-                            }
-                        }
-                        WorldItem::Type(_) => {}
-                    }
-                }
-            }
-
             // Copy test file to target location to be included in compilation
             let file_name = path.file_name().unwrap();
             fs::copy(path, out_dir.join(file_name.to_str().unwrap()))?;
