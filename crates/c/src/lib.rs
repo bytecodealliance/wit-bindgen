@@ -21,6 +21,7 @@ struct C {
     return_pointer_area_align: usize,
     names: Ns,
     needs_string: bool,
+    prim_names: HashSet<String>,
     world: String,
     sizes: SizeAlign,
     renamed_interfaces: HashMap<WorldKey, String>,
@@ -231,7 +232,7 @@ impl WorldGenerator for C {
         for (_, id) in types {
             live.add_type_id(resolve, *id);
         }
-        gen.define_live_types(&live);
+        gen.define_live_types(live);
         gen.gen.src.append(&gen.src);
     }
 
@@ -561,6 +562,37 @@ pub fn imported_types_used_by_exported_interfaces(
     live_import_types
 }
 
+fn is_prim_type(resolve: &Resolve, ty: &Type) -> bool {
+    if let Type::Id(id) = ty {
+        is_prim_type_id(resolve, *id)
+    } else {
+        true
+    }
+}
+
+fn is_prim_type_id(resolve: &Resolve, id: TypeId) -> bool {
+    match &resolve.types[id].kind {
+        TypeDefKind::List(elem) => is_prim_type(resolve, elem),
+
+        TypeDefKind::Option(ty) => is_prim_type(resolve, ty),
+
+        TypeDefKind::Tuple(tuple) => tuple.types.iter().all(|ty| is_prim_type(resolve, ty)),
+
+        TypeDefKind::Type(ty) => is_prim_type(resolve, ty),
+
+        TypeDefKind::Record(_)
+        | TypeDefKind::Resource
+        | TypeDefKind::Handle(_)
+        | TypeDefKind::Flags(_)
+        | TypeDefKind::Variant(_)
+        | TypeDefKind::Enum(_)
+        | TypeDefKind::Result(_)
+        | TypeDefKind::Future(_)
+        | TypeDefKind::Stream(_)
+        | TypeDefKind::Unknown => false,
+    }
+}
+
 pub fn push_ty_name(resolve: &Resolve, ty: &Type, src: &mut String) {
     match ty {
         Type::Bool => src.push_str("bool"),
@@ -865,14 +897,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         borrow.push_str("_t");
 
         // All resources, whether or not they're imported or exported, get the
-        // ability to drop handles. Note that the component model only has a
-        // single drop intrinsic, but we're using two types to represents
-        // own/borrow, so generate two drop functions which both delegate tot he
-        // same intrinsic.
+        // ability to drop handles.
         self.src.h_helpers(&format!(
             "
 extern void {ns}_{snake}_drop_own({own} handle);
-extern void {ns}_{snake}_drop_borrow({own} handle);
             "
         ));
         let import_module = if self.in_import {
@@ -891,10 +919,6 @@ extern void __wasm_import_{ns}_{snake}_drop(int32_t handle);
 void {ns}_{snake}_drop_own({own} handle) {{
     __wasm_import_{ns}_{snake}_drop(handle.__handle);
 }}
-
-void {ns}_{snake}_drop_borrow({own} handle) {{
-    __wasm_import_{ns}_{snake}_drop(handle.__handle);
-}}
             "#
         ));
 
@@ -910,6 +934,22 @@ void {ns}_{snake}_drop_borrow({own} handle) {{
             // prevent type confusion at runtime in theory.
             self.src.h_defs(&format!(
                 "\ntypedef struct {borrow} {{\nint32_t __handle;\n}} {borrow};\n"
+            ));
+
+            // As we have two different types for owned vs borrowed resources,
+            // but owns and borrows are dropped using the same intrinsic we
+            // also generate a version of the drop function for borrows that we
+            // possibly acquire through our exports.
+            self.src.h_helpers(&format!(
+                "\nextern void {ns}_{snake}_drop_borrow({borrow} handle);\n"
+            ));
+
+            self.src.c_helpers(&format!(
+                "
+void {ns}_{snake}_drop_borrow({borrow} handle) {{
+    __wasm_import_{ns}_{snake}_drop(handle.__handle);
+}}
+                "
             ));
 
             // To handle the two types generated for borrow/own this helper
@@ -1165,11 +1205,34 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
     }
 }
 
+pub enum CTypeNameInfo<'a> {
+    Named { name: &'a str },
+    Anonymous { is_prim: bool },
+}
+
+/// Generate the type part of a c identifier, missing the namespace and the `_t` suffix.
+/// Additionally return a `CTypeNameInfo` that describes what sort of name has been produced.
+pub fn gen_type_name(resolve: &Resolve, ty: TypeId) -> (CTypeNameInfo<'_>, String) {
+    let mut encoded = String::new();
+    push_ty_name(resolve, &Type::Id(ty), &mut encoded);
+    let info = if let Some(name) = &resolve.types[ty].name {
+        CTypeNameInfo::Named {
+            name: name.as_ref(),
+        }
+    } else {
+        CTypeNameInfo::Anonymous {
+            is_prim: is_prim_type_id(resolve, ty),
+        }
+    };
+
+    (info, encoded)
+}
+
 impl InterfaceGenerator<'_> {
     fn define_interface_types(&mut self, id: InterfaceId) {
         let mut live = LiveTypes::default();
         live.add_interface(self.resolve, id);
-        self.define_live_types(&live);
+        self.define_live_types(live);
     }
 
     fn define_function_types(&mut self, funcs: &[(&str, &Function)]) {
@@ -1177,25 +1240,45 @@ impl InterfaceGenerator<'_> {
         for (_, func) in funcs {
             live.add_func(self.resolve, func);
         }
-        self.define_live_types(&live);
+        self.define_live_types(live);
     }
 
-    fn define_live_types(&mut self, live: &LiveTypes) {
+    fn define_live_types(&mut self, live: LiveTypes) {
         for ty in live.iter() {
             if self.gen.type_names.contains_key(&ty) {
                 continue;
             }
 
-            let mut name = self.owner_namespace(ty);
-            name.push_str("_");
-            push_ty_name(self.resolve, &Type::Id(ty), &mut name);
-            name.push_str("_t");
-            let prev = self.gen.type_names.insert(ty, name.clone());
-            assert!(prev.is_none());
+            let (info, encoded) = gen_type_name(&self.resolve, ty);
+            match info {
+                CTypeNameInfo::Named { name } => {
+                    let typedef_name = format!("{}_{encoded}_t", self.owner_namespace(ty));
+                    let prev = self.gen.type_names.insert(ty, typedef_name.clone());
+                    assert!(prev.is_none());
 
-            match &self.resolve.types[ty].name {
-                Some(name) => self.define_type(name, ty),
-                None => self.define_anonymous_type(ty),
+                    self.define_type(name, ty)
+                }
+
+                CTypeNameInfo::Anonymous { is_prim } => {
+                    let (defined, name) = if is_prim {
+                        let namespace = self.gen.world.to_snake_case();
+                        let name = format!("{namespace}_{encoded}_t");
+                        let new_prim = self.gen.prim_names.insert(name.clone());
+                        (!new_prim, name)
+                    } else {
+                        let namespace = self.owner_namespace(ty);
+                        (false, format!("{namespace}_{encoded}_t"))
+                    };
+
+                    let prev = self.gen.type_names.insert(ty, name);
+                    assert!(prev.is_none());
+
+                    if defined {
+                        continue;
+                    }
+
+                    self.define_anonymous_type(ty)
+                }
             }
 
             self.define_dtor(ty);
