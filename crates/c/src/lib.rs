@@ -897,14 +897,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         borrow.push_str("_t");
 
         // All resources, whether or not they're imported or exported, get the
-        // ability to drop handles. Note that the component model only has a
-        // single drop intrinsic, but we're using two types to represents
-        // own/borrow, so generate two drop functions which both delegate tot he
-        // same intrinsic.
+        // ability to drop handles.
         self.src.h_helpers(&format!(
             "
 extern void {ns}_{snake}_drop_own({own} handle);
-extern void {ns}_{snake}_drop_borrow({own} handle);
             "
         ));
         let import_module = if self.in_import {
@@ -923,10 +919,6 @@ extern void __wasm_import_{ns}_{snake}_drop(int32_t handle);
 void {ns}_{snake}_drop_own({own} handle) {{
     __wasm_import_{ns}_{snake}_drop(handle.__handle);
 }}
-
-void {ns}_{snake}_drop_borrow({own} handle) {{
-    __wasm_import_{ns}_{snake}_drop(handle.__handle);
-}}
             "#
         ));
 
@@ -942,6 +934,22 @@ void {ns}_{snake}_drop_borrow({own} handle) {{
             // prevent type confusion at runtime in theory.
             self.src.h_defs(&format!(
                 "\ntypedef struct {borrow} {{\nint32_t __handle;\n}} {borrow};\n"
+            ));
+
+            // As we have two different types for owned vs borrowed resources,
+            // but owns and borrows are dropped using the same intrinsic we
+            // also generate a version of the drop function for borrows that we
+            // possibly acquire through our exports.
+            self.src.h_helpers(&format!(
+                "\nextern void {ns}_{snake}_drop_borrow({borrow} handle);\n"
+            ));
+
+            self.src.c_helpers(&format!(
+                "
+void {ns}_{snake}_drop_borrow({borrow} handle) {{
+    __wasm_import_{ns}_{snake}_drop(handle.__handle);
+}}
+                "
             ));
 
             // To handle the two types generated for borrow/own this helper
