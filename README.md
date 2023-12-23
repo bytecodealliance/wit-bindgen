@@ -47,13 +47,13 @@ which allows core WebAssembly binaries produced by native compilers to be
 transformed into a component. All imports into a WebAssembly binary and all
 exports must be described with [WIT]. An example file looks like:
 
-```
-package example:host
+```wit
+package example:host;
 
 world host {
-  import print: func(msg: string)
+  import print: func(msg: string);
 
-  export run: func()
+  export run: func();
 }
 ```
 
@@ -63,8 +63,8 @@ WebAssembly component will have available. In this case the host will provide a
 
 Functionality in [WIT] can also be organized into `interface`s:
 
-```
-package example:my-game
+```wit
+package example:my-game;
 
 interface my-plugin-api {
   record coord {
@@ -72,8 +72,8 @@ interface my-plugin-api {
     y: u32,
   }
 
-  get-position: func() -> coord
-  set-position: func(pos: coord)
+  get-position: func() -> coord;
+  set-position: func(pos: coord);
 
   record monster {
     name: string,
@@ -81,14 +81,14 @@ interface my-plugin-api {
     pos: coord,
   }
 
-  monsters: func() -> list<monster>
+  monsters: func() -> list<monster>;
 }
 
 world my-game {
-  import print: func(msg: string)
-  import plugin: self.my-plugin-api
+  import print: func(msg: string);
+  import my-plugin-api;
 
-  export run: func()
+  export run: func();
 }
 ```
 
@@ -170,14 +170,14 @@ are listed here for each language of how to use it as well.
 Each project below will assume the following `*.wit` file in the root of your
 project.
 
-```
+```wit
 // wit/host.wit
-package example:host
+package example:host;
 
 world host {
-  import print: func(msg: string)
+  import print: func(msg: string);
 
-  export run: func()
+  export run: func();
 }
 ```
 
