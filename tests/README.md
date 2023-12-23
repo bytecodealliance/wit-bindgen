@@ -57,6 +57,7 @@ wasm and executed on hosts. The code compiled-to-wasm can be one of:
 * `wasm.rs` - compiled with Rust to WebAssembly
 * `wasm.c` - compiled with Clang
 * `wasm.java` - compiled with TeaVM-WASI
+* `wasm.cs` - compiled with NativeAOT and Mono
 
 Existence of these files indicates that the language should be supported for the
 test, and if a file is missing then it's skipped when running other tests. Each
