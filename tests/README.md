@@ -25,6 +25,12 @@ To run just `codegen` tests for a single language (replace rust with language of
 cargo test -p wit-bindgen-rust
 ```
 
+To run just `codegen` tests for a single language (replace rust with language of choice: `go`, `c`, `csharp`, etc.) and a single wit file (replace `flags` with whatever wit file should be tested):
+
+```
+cargo test -p wit-bindgen-rust -- flags
+```
+
 To run just `runtime` tests for a single language (replace rust with language of choice: `go`, `c`, `csharp`, etc.):
 
 ```bash
