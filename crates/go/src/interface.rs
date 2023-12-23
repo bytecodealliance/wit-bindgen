@@ -1044,6 +1044,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 self.src.push_str(&format!("type {type_name} int32\n\n"));
                 let import_module = self.wasm_import_module.unwrap().to_string();
 
+                // generate [resource-drop] function
                 uwriteln!(
                     self.src,
                     "//go:wasmimport {import_module} [resource-drop]{name}
@@ -1065,6 +1066,10 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 own.push_str(snake);
                 own.push_str("_t");
 
+                // generate a typedef struct for export resource
+                // the typedef struct is a dummy struct that contains a
+                // Go binding specific handle field. This handle field is used
+                // to retrieve the exported Go struct from the exported C struct.
                 self.preamble
                     .push_str(&format!("// typedef struct {c_typedef_target} "));
                 self.preamble.push_str("{");
@@ -1085,7 +1090,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     "
                     var (
                         // a map of indexed {type_name} instances
-                        // this is used to retrive the instance from exported C resources
+                        // this is used to retrieve the instance from exported C resources
                         // This establishes a link between the exported C struct and the exported Go struct.
                         // This map will be recycled when the dtor is called.
                         {private_type_name}_pointers = make(map[int32]{type_name})
@@ -1120,7 +1125,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                     "
                 );
 
-                // generate dtors for exported resources
+                // generate [dtor] function for exported resources
                 let namespace = self.c_owner_namespace(id);
                 let snake = name.to_snake_case();
                 let func_name = format!("{}_{}", namespace, snake).to_lower_camel_case();
