@@ -1164,14 +1164,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
         let name = name.to_upper_camel_case();
 
-        let ty = match flags.repr() {
-            FlagsRepr::U8 => "byte",
-            FlagsRepr::U16 => "ushort",
-            FlagsRepr::U32(1) => "uint",
-            FlagsRepr::U32(2) => "ulong",
-            repr => todo!("flags {repr:?}"),
-        };
-
         let enum_elements = flags
             .flags
             .iter()
@@ -1500,9 +1492,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 ty: _,
             } => {
                 if flags.flags.len() > 32 {
-                    results.push(format!("((int){})", operands[0].to_string()));
+                    results.push(format!(
+                        "(int)(((long){}) & uint.MaxValue)",
+                        operands[0].to_string()
+                    ));
+                    results.push(format!("((int)({})) >> 32", operands[0].to_string()));
+                } else {
+                    results.push(format!("(int){}", operands[0].to_string()));
                 }
-                results.push(format!("((int){})", operands[0].to_string()));
             }
 
             Instruction::FlagsLift { flags, name, ty } => {
