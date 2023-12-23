@@ -1032,6 +1032,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         _docs: &wit_bindgen_core::wit_parser::Docs,
     ) {
         let type_name = self.type_name(name, true);
+        let private_type_name = type_name.to_snake_case();
         // for imports, generate a `int32` type for resource handle representation.
         // for exports, generate a map to store unique IDs of resources to their
         // resource interfaces, which are implemented by guest code.
@@ -1079,7 +1080,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 self.gen.with_sync_import(true);
                 self.src
                     .push_str(&format!("// resource {type_name} internal bookkeeping"));
-                let private_type_name = type_name.to_snake_case();
                 uwriteln!(
                     self.src,
                     "
@@ -1124,7 +1124,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 let namespace = self.c_owner_namespace(id);
                 let snake = name.to_snake_case();
                 let func_name = format!("{}_{}", namespace, snake).to_lower_camel_case();
-                let private_type_name = type_name.to_snake_case();
                 self.src
                     .push_str(&format!("//export {namespace}_{snake}_destructor\n"));
                 uwriteln!(
@@ -1147,7 +1146,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                         owningHandler := get{type_name}OwningHandler(self)
                         var cOwningHandler C.{own}
                         cOwningHandler.__handle = C.int32_t(owningHandler)
-                        C.{private_type_name}_drop_own(cOwningHandler)
+                        C.{ns}_{snake}_drop_own(cOwningHandler)
                     }}
                     ",
                 );
