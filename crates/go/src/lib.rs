@@ -78,6 +78,7 @@ impl TinyGo {
         &'a mut self,
         resolve: &'a Resolve,
         direction: Direction,
+        wasm_import_module: Option<&'a str>,
     ) -> interface::InterfaceGenerator<'a> {
         interface::InterfaceGenerator {
             src: Source::default(),
@@ -89,6 +90,7 @@ impl TinyGo {
             export_funcs: Default::default(),
             exported_resources: Default::default(),
             methods: Default::default(),
+            wasm_import_module,
         }
     }
 
@@ -163,7 +165,7 @@ impl WorldGenerator for TinyGo {
             .push_str(&format!("// Import functions from {name_raw}\n"));
         self.interface_names.insert(id, name.clone());
 
-        let mut gen = self.interface(resolve, Direction::Import);
+        let mut gen = self.interface(resolve, Direction::Import, Some(name_raw));
         gen.interface = Some((id, name));
         gen.define_interface_types(id);
 
@@ -188,7 +190,7 @@ impl WorldGenerator for TinyGo {
         self.src
             .push_str(&format!("// Import functions from {name}\n"));
 
-        let mut gen = self.interface(resolve, Direction::Import);
+        let mut gen = self.interface(resolve, Direction::Import, Some("$root"));
         gen.define_function_types(funcs);
 
         for (_name, func) in funcs.iter() {
@@ -223,7 +225,7 @@ impl WorldGenerator for TinyGo {
         self.src
             .push_str(&format!("// Export functions from {name_raw}\n"));
 
-        let mut gen = self.interface(resolve, Direction::Export);
+        let mut gen = self.interface(resolve, Direction::Export, None);
         gen.interface = Some((id, name));
         gen.define_interface_types(id);
 
@@ -251,7 +253,7 @@ impl WorldGenerator for TinyGo {
         self.src
             .push_str(&format!("// Export functions from {name}\n"));
 
-        let mut gen = self.interface(resolve, Direction::Export);
+        let mut gen = self.interface(resolve, Direction::Export, None);
         gen.define_function_types(funcs);
 
         for (_name, func) in funcs.iter() {
@@ -274,7 +276,7 @@ impl WorldGenerator for TinyGo {
         types: &[(&str, TypeId)],
         _files: &mut Files,
     ) {
-        let mut gen = self.interface(resolve, Direction::Import);
+        let mut gen = self.interface(resolve, Direction::Import, Some("$root"));
         let mut live = LiveTypes::default();
         for (_, id) in types {
             live.add_type_id(resolve, *id);
