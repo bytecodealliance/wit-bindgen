@@ -72,6 +72,10 @@ pub struct Opts {
     /// the component type.
     #[cfg_attr(feature = "clap", arg(long))]
     pub type_section_suffix: Option<String>,
+
+    /// Disable the autodropping of borrows in exports.
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
+    pub no_export_autodrop: bool,
 }
 
 #[cfg(feature = "clap")]
@@ -953,21 +957,23 @@ void {ns}_{snake}_drop_own({own} handle) {{
                 "\ntypedef struct {borrow} {{\nint32_t __handle;\n}} {borrow};\n"
             ));
 
-            // As we have two different types for owned vs borrowed resources,
-            // but owns and borrows are dropped using the same intrinsic we
-            // also generate a version of the drop function for borrows that we
-            // possibly acquire through our exports.
-            self.src.h_helpers(&format!(
-                "\nextern void {ns}_{snake}_drop_borrow({borrow} handle);\n"
-            ));
+            if self.gen.opts.no_export_autodrop {
+                // As we have two different types for owned vs borrowed resources,
+                // but owns and borrows are dropped using the same intrinsic we
+                // also generate a version of the drop function for borrows that we
+                // possibly acquire through our exports.
+                self.src.h_helpers(&format!(
+                    "\nextern void {ns}_{snake}_drop_borrow({borrow} handle);\n"
+                ));
 
-            self.src.c_helpers(&format!(
-                "
+                self.src.c_helpers(&format!(
+                    "
 void {ns}_{snake}_drop_borrow({borrow} handle) {{
     __wasm_import_{ns}_{snake}_drop(handle.__handle);
 }}
                 "
-            ));
+                ));
+            }
 
             // To handle the two types generated for borrow/own this helper
             // function enables converting an own handle to a borrow handle
