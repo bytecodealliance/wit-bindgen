@@ -28,11 +28,11 @@ clap = { version = "4.3.19", features = ["derive"] }
 env_logger = "0.10.0"
 indexmap = "2.0.0"
 
-wasm-encoder = "0.38.0"
-wasm-metadata = "0.10.13"
-wasmtime-wasi = "15.0.0"
+wasm-encoder = "0.38.1"
+wasm-metadata = "0.10.14"
+wasmtime-wasi = "16.0.0"
 wit-parser = "0.13.0"
-wit-component = "0.18.2"
+wit-component = "0.19.0"
 
 wit-bindgen-core = { path = 'crates/core', version = '0.16.0' }
 wit-bindgen-c = { path = 'crates/c', version = '0.16.0' }
@@ -79,7 +79,7 @@ csharp-mono = ['csharp']
 
 [dev-dependencies]
 heck = { workspace = true }
-wasmtime = { version = "15", features = ['component-model'] }
+wasmtime = { version = "16", features = ['component-model'] }
 wasmtime-wasi = { workspace = true }
 test-artifacts = { path = 'crates/test-rust-wasm/artifacts' }
 wit-parser = { workspace = true }
