@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
 use wasm_encoder::{Encode, Section};
-use wasmtime::component::{Component, Instance, Linker};
-use wasmtime::{Config, Engine, Store};
-use wasmtime_wasi::preview2::{Table, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime::component::{Component, Instance, Linker, ResourceTable};
+use wasmtime::{Config, Engine, Store, Table};
+use wasmtime_wasi::preview2::{WasiCtx, WasiCtxBuilder, WasiView};
 use wit_component::{ComponentEncoder, StringEncoding};
 use wit_parser::{Resolve, WorldId, WorldItem};
 
@@ -38,14 +38,14 @@ mod versions;
 
 struct MyCtx {}
 
-struct Wasi<T: Send>(T, MyCtx, Table, WasiCtx);
+struct Wasi<T: Send>(T, MyCtx, ResourceTable, WasiCtx);
 
 // wasi trait
 impl<T: Send> WasiView for Wasi<T> {
-    fn table(&self) -> &Table {
+    fn table(&self) -> &ResourceTable {
         &self.2
     }
-    fn table_mut(&mut self) -> &mut Table {
+    fn table_mut(&mut self) -> &mut ResourceTable {
         &mut self.2
     }
     fn ctx(&self) -> &WasiCtx {
@@ -95,7 +95,7 @@ where
         add_to_linker(&mut linker)?;
         let state = MyCtx {};
 
-        let table = Table::new();
+        let table = ResourceTable::new();
         let wasi: WasiCtx = WasiCtxBuilder::new().inherit_stdout().args(&[""]).build();
 
         let data = Wasi(T::default(), state, table, wasi);
