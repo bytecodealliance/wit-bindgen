@@ -37,6 +37,7 @@ pub struct ResourceInfo {
     pub direction: Direction,
     own: String,
     borrow: String,
+    drop_fn: String,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -932,13 +933,16 @@ extern void {ns}_{snake}_drop_own({own} handle);
                 None => unimplemented!("resource exports from worlds"),
             }
         };
+
+        let drop_fn = format!("__wasm_import_{ns}_{snake}_drop");
+
         self.src.c_helpers(&format!(
             r#"
 __attribute__((__import_module__("{import_module}"), __import_name__("[resource-drop]{name}")))
-extern void __wasm_import_{ns}_{snake}_drop(int32_t handle);
+extern void {drop_fn}(int32_t handle);
 
 void {ns}_{snake}_drop_own({own} handle) {{
-    __wasm_import_{ns}_{snake}_drop(handle.__handle);
+    {drop_fn}(handle.__handle);
 }}
             "#
         ));
@@ -1059,6 +1063,7 @@ void __wasm_export_{ns}_{snake}_dtor({ns}_{snake}_t* arg) {{
                 } else {
                     Direction::Export
                 },
+                drop_fn,
             },
         );
     }
@@ -1887,6 +1892,10 @@ struct FunctionBindgen<'a, 'b> {
     ret_store_cnt: usize,
     import_return_pointer_area_size: usize,
     import_return_pointer_area_align: usize,
+
+    /// Borrows observed during lifting an export, that will need to be dropped when the guest
+    /// function exits.
+    borrows: Vec<(String, TypeId)>,
 }
 
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
@@ -1909,6 +1918,7 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
             ret_store_cnt: 0,
             import_return_pointer_area_size: 0,
             import_return_pointer_area_align: 0,
+            borrows: Vec::new(),
         }
     }
 
@@ -2147,7 +2157,14 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 _ => {
                     let op = &operands[0];
                     let name = self.gen.gen.type_name(&Type::Id(*ty));
-                    results.push(format!("({name}) {{ {op} }}"))
+                    results.push(format!("({name}) {{ {op} }}"));
+
+                    if let Handle::Borrow(id) = handle {
+                        if !self.gen.in_import && !self.gen.gen.opts.no_export_autodrop {
+                            let target = dealias(self.gen.resolve, *id);
+                            self.borrows.push((op.clone(), target));
+                        }
+                    }
                 }
             },
 
@@ -2705,6 +2722,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             },
             Instruction::Return { amt, .. } => {
+                for (op, ty) in self.borrows.iter() {
+                    uwriteln!(self.src, "{}({op});", self.gen.gen.resources[ty].drop_fn);
+                }
+
                 assert!(*amt <= 1);
                 if *amt == 1 {
                     uwriteln!(self.src, "return {};", operands[0]);
