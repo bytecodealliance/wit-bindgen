@@ -1073,7 +1073,6 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 self.preamble
                     .push_str(&format!("// typedef struct {c_typedef_target} "));
                 self.preamble.push_str("{");
-                self.preamble.deindent(1);
                 self.preamble.push_str("\n");
                 self.preamble.push_str("//  int32_t __handle; \n");
                 self.preamble.push_str("// ");
