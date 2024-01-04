@@ -1171,7 +1171,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .map(|(i, flag)| {
                 let flag_name = flag.name.to_shouty_snake_case();
                 let suffix = if matches!(flags.repr(), FlagsRepr::U32(2)) {
-                    "L"
+                    "UL"
                 } else {
                     ""
                 };
@@ -1180,10 +1180,11 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let enum_type = if matches!(flags.repr(), FlagsRepr::U32(2)) {
-            ": long"
-        } else {
-            ""
+        let enum_type = match flags.repr() {
+            FlagsRepr::U32(2) => ": ulong",
+            FlagsRepr::U16 => ": ushort",
+            FlagsRepr::U8 => ": byte",
+            _ => "",
         };
 
         uwrite!(
