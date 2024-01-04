@@ -63,6 +63,15 @@ pub struct Opts {
     /// Rename the interface `K` to `V` in the generated source code.
     #[cfg_attr(feature = "clap", arg(long, name = "K=V", value_parser = parse_rename))]
     pub rename: Vec<(String, String)>,
+
+    /// Rename the world in the generated source code and file names.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub rename_world: Option<String>,
+
+    /// Add the specified suffix to the name of the custome section containing
+    /// the component type.
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub type_section_suffix: Option<String>,
 }
 
 #[cfg(feature = "clap")]
@@ -107,8 +116,11 @@ enum Scalar {
 
 impl WorldGenerator for C {
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
-        let name = &resolve.worlds[world].name;
-        self.world = name.to_string();
+        self.world = self
+            .opts
+            .rename_world
+            .clone()
+            .unwrap_or_else(|| resolve.worlds[world].name.clone());
         self.sizes.fill(resolve);
         self.world_id = Some(world);
 
@@ -237,10 +249,9 @@ impl WorldGenerator for C {
     }
 
     fn finish(&mut self, resolve: &Resolve, id: WorldId, files: &mut Files) {
-        let world = &resolve.worlds[id];
-        let linking_symbol = component_type_object::linking_symbol(&world.name);
+        let linking_symbol = component_type_object::linking_symbol(&self.world);
         self.include("<stdlib.h>");
-        let snake = world.name.to_snake_case();
+        let snake = self.world.to_snake_case();
         uwrite!(
             self.src.c_adapters,
             "
@@ -335,7 +346,7 @@ impl WorldGenerator for C {
             #define __BINDINGS_{0}_H
             #ifdef __cplusplus
             extern \"C\" {{",
-            world.name.to_shouty_snake_case(),
+            self.world.to_shouty_snake_case(),
         );
 
         // Deindent the extern C { declaration
@@ -419,9 +430,15 @@ impl WorldGenerator for C {
         if !self.opts.no_object_file {
             files.push(
                 &format!("{snake}_component_type.o",),
-                component_type_object::object(resolve, id, self.opts.string_encoding)
-                    .unwrap()
-                    .as_slice(),
+                component_type_object::object(
+                    resolve,
+                    id,
+                    &self.world,
+                    self.opts.string_encoding,
+                    self.opts.type_section_suffix.as_deref(),
+                )
+                .unwrap()
+                .as_slice(),
             );
         }
     }

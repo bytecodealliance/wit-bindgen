@@ -12,7 +12,13 @@ pub fn linking_symbol(name: &str) -> String {
     format!("__component_type_object_force_link_{snake}")
 }
 
-pub fn object(resolve: &Resolve, world: WorldId, encoding: StringEncoding) -> Result<Vec<u8>> {
+pub fn object(
+    resolve: &Resolve,
+    world: WorldId,
+    world_name: &str,
+    encoding: StringEncoding,
+    suffix: Option<&str>,
+) -> Result<Vec<u8>> {
     let mut module = Module::new();
 
     // Build a module with one function that's a "dummy function"
@@ -41,8 +47,7 @@ pub fn object(resolve: &Resolve, world: WorldId, encoding: StringEncoding) -> Re
     // otherwise is attempted to be unique here to ensure that this doesn't get
     // concatenated to other custom sections by LLD by accident since LLD will
     // concatenate custom sections of the same name.
-    let world_name = &resolve.worlds[world].name;
-    let section_name = format!("component-type:{world_name}");
+    let section_name = format!("component-type:{world_name}{}", suffix.unwrap_or(""));
 
     // Add our custom section
     module.section(&CustomSection {
