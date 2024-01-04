@@ -40,6 +40,22 @@ pub struct ResourceInfo {
     drop_fn: String,
 }
 
+#[derive(Default, Debug, Eq, PartialEq, Clone, Copy, clap::ValueEnum)]
+pub enum Enabled {
+    #[default]
+    Yes,
+    No,
+}
+
+impl std::fmt::Display for Enabled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Yes => write!(f, "yes"),
+            Self::No => write!(f, "no"),
+        }
+    }
+}
+
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "clap", derive(clap::Args))]
 pub struct Opts {
@@ -74,9 +90,9 @@ pub struct Opts {
     #[cfg_attr(feature = "clap", arg(long))]
     pub type_section_suffix: Option<String>,
 
-    /// Disable the autodropping of borrows in exports.
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = false))]
-    pub no_export_autodrop: bool,
+    /// Configure the autodropping of borrows in exported functions.
+    #[cfg_attr(feature = "clap", arg(long, default_value_t = Enabled::Yes))]
+    pub autodrop_borrows: Enabled,
 }
 
 #[cfg(feature = "clap")]
@@ -961,7 +977,7 @@ void {ns}_{snake}_drop_own({own} handle) {{
                 "\ntypedef struct {borrow} {{\nint32_t __handle;\n}} {borrow};\n"
             ));
 
-            if self.gen.opts.no_export_autodrop {
+            if self.autodrop_enabled() {
                 // As we have two different types for owned vs borrowed resources,
                 // but owns and borrows are dropped using the same intrinsic we
                 // also generate a version of the drop function for borrows that we
@@ -1878,7 +1894,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn autodrop_enabled(&self) -> bool {
-        !self.in_import && !self.gen.opts.no_export_autodrop
+        self.gen.opts.autodrop_borrows == Enabled::Yes
     }
 
     fn contains_droppable_borrow(&self, ty: &Type) -> bool {
@@ -2037,8 +2053,14 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
     }
 
     fn assert_no_droppable_borrows(&self, context: &str, ty: &Type) {
-        if self.gen.autodrop_enabled() && self.gen.contains_droppable_borrow(ty) {
-            panic!("Unable to autodrop borrows in `{}` values, please disable autodrop", context)
+        if !self.gen.in_import
+            && self.gen.autodrop_enabled()
+            && self.gen.contains_droppable_borrow(ty)
+        {
+            panic!(
+                "Unable to autodrop borrows in `{}` values, please disable autodrop",
+                context
+            )
         }
     }
 }
@@ -2238,7 +2260,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results.push(format!("({name}) {{ {op} }}"));
 
                     if let Handle::Borrow(id) = handle {
-                        if self.gen.autodrop_enabled() {
+                        if !self.gen.in_import && self.gen.autodrop_enabled() {
                             // Here we've received a borrow of an imported resource, which is the
                             // kind we'll need to drop when the exported function is returning.
                             let target = dealias(self.gen.resolve, *id);
