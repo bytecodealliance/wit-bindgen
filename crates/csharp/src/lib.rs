@@ -124,6 +124,24 @@ impl CSharp {
     }
 }
 
+#[derive(Debug, Default)]
+struct Return {
+    scalar: Option<Scalar>,
+    retptrs: Vec<Type>,
+}
+
+struct CSharpSig {
+    ret: Return,
+}
+
+#[derive(Debug)]
+enum Scalar {
+    Void,
+    OptionBool(Type),
+    ResultBool(Option<Type>, Option<Type>),
+    Type(Type),
+}
+
 impl WorldGenerator for CSharp {
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
         let name = &resolve.worlds[world].name;
@@ -951,10 +969,10 @@ impl InterfaceGenerator<'_> {
                         let count = tuple.types.len();
                         self.gen.tuple_counts.insert(count);
 
-                        let params = if count == 0 {
-                            String::new()
-                        } else {
-                            format!(
+                        let params = match count {
+                            0 => String::new(),
+                            1 => self.type_name_boxed(tuple.types.first().unwrap(), qualifier),
+                            _ => format!(
                                 "({})",
                                 tuple
                                     .types
@@ -962,7 +980,7 @@ impl InterfaceGenerator<'_> {
                                     .map(|ty| self.type_name_boxed(ty, qualifier))
                                     .collect::<Vec<_>>()
                                     .join(", ")
-                            )
+                            ),
                         };
 
                         params
@@ -1148,7 +1166,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            public static class {name} {{
+            public class {name} {{
                 {fields}
 
                 public {name}({parameters}) {{
@@ -1376,6 +1394,7 @@ struct FunctionBindgen<'a, 'b> {
     func_name: &'b str,
     params: Box<[String]>,
     src: String,
+    sig: CSharpSig,
     locals: Ns,
     block_storage: Vec<BlockStorage>,
     blocks: Vec<Block>,
@@ -1385,11 +1404,13 @@ struct FunctionBindgen<'a, 'b> {
 impl<'a, 'b> FunctionBindgen<'a, 'b> {
     fn new(
         gen: &'b mut InterfaceGenerator<'a>,
+        sig: CSharpSig,
         func_name: &'b str,
         params: Box<[String]>,
     ) -> FunctionBindgen<'a, 'b> {
         Self {
             gen,
+            sig,
             func_name,
             params,
             src: String::new(),
@@ -1450,7 +1471,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32Store { offset } => {
                 uwriteln!(self.src, "returnArea.SetS32({}, {});", offset, operands[0])
             }
-            Instruction::I32Store8 { .. } => todo!("I32Store8"),
+            Instruction::I32Store8 { offset } => {
+                uwriteln!(self.src, "returnArea.SetS8({}, {});", offset, operands[0])
+            }
             Instruction::I32Store16 { .. } => todo!("I32Store16"),
             Instruction::I64Store { .. } => todo!("I64Store"),
             Instruction::F32Store { .. } => todo!("F32Store"),
@@ -1521,27 +1544,40 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::RecordLower { .. } => todo!("RecordLower"),
-            Instruction::RecordLift { .. } => todo!("RecordLift"),
-            Instruction::TupleLift { .. } => {
-                let ops = operands
-                    .iter()
-                    .map(|op| op.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
+            Instruction::RecordLower { record, .. } => {
+                let op = &operands[0];
+                for f in record.fields.iter() {
+                    results.push(format!("({}).{}", op, f.name.to_upper_camel_case()));
+                }
+            }
+            Instruction::RecordLift { ty, name, .. } => {
+                let id_type = &self.gen.resolve.types[*ty];
+                let qualified_type_name = format!(
+                    "{}{}",
+                    self.gen.qualifier(true, id_type),
+                    name.to_string().to_upper_camel_case()
+                );
+                let mut result = format!("({}) {{\n", qualified_type_name);
+                uwriteln!(result, "{}", operands.join(","));
 
-                results.push(format!("({ops})"));
+                result.push_str("}");
+                results.push(result);
+            }
+            Instruction::TupleLift { ty, .. } => {
+                let id_type = &self.gen.resolve.types[*ty];
+                let mut result = String::from("(");
+
+                uwriteln!(result, "{}", operands.join(","));
+
+                result.push_str(")");
+                results.push(result);
             }
 
-            Instruction::TupleLower { tuple: _, ty } => {
-                let ops = operands
-                    .iter()
-                    .map(|op| op.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                results.push(format!("({ops})"));
-                results.push(format!("({:?})", ty));
+            Instruction::TupleLower { tuple, ty: _ } => {
+                let op = &operands[0];
+                for i in 0..tuple.types.len() {
+                    results.push(format!("({}).Item{}", op, i + 1));
+                }
             }
 
             Instruction::VariantPayloadName => {
@@ -1650,12 +1686,22 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     }
                 }
 
-                match func.results.len() {
-                    0 => self
-                        .src
-                        .push_str(&format!("{class_name}Impl.{func_name}({oper});")),
-                    1 => results.push(format!("{class_name}Impl.{func_name}({oper})")),
-                    _ => results.push(format!("{class_name}Impl.{func_name}({oper})")),
+                // TOOD: Expect we need to fill this out similar to how C is done, then see if the match on len can be removed.
+                match &self.sig.ret.scalar {
+                    Some(Scalar::Type(_)) => {
+                        let ret = self.locals.tmp("ret");
+                        let ty = func.results.iter_types().next().unwrap();
+                        let ty = self.gen.gen.type_name(ty);
+                        uwriteln!(self.src, "{} {} = {}({});", ty, ret, self.sig.name, args);
+                        results.push(ret);
+                    }
+                    _ => match func.results.len() {
+                        0 => self
+                            .src
+                            .push_str(&format!("{class_name}Impl.{func_name}({oper});")),
+                        1 => results.push(format!("{class_name}Impl.{func_name}({oper})")),
+                        _ => results.push(format!("{class_name}Impl.{func_name}({oper})")),
+                    },
                 }
             }
 

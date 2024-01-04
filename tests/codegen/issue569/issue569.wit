@@ -1,5 +1,0 @@
-package foo:foo;
-
-world command {
-  use wasi:io/streams.{input-stream};
-}

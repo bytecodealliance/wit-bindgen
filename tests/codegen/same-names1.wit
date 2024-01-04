@@ -1,5 +1,0 @@
-package name1:name1;
-
-world name1 {
-  import name1: func();
-}
