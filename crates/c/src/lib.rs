@@ -40,7 +40,8 @@ pub struct ResourceInfo {
     drop_fn: String,
 }
 
-#[derive(Default, Debug, Eq, PartialEq, Clone, Copy, clap::ValueEnum)]
+#[derive(Default, Debug, Eq, PartialEq, Clone, Copy)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum Enabled {
     #[default]
     Yes,
