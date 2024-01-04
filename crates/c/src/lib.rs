@@ -1876,6 +1876,78 @@ impl InterfaceGenerator<'_> {
             src.push_str("\n");
         }
     }
+
+    fn autodrop_enabled(&self) -> bool {
+        !self.in_import && !self.gen.opts.no_export_autodrop
+    }
+
+    fn contains_droppable_borrow(&self, ty: &Type) -> bool {
+        if let Type::Id(id) = ty {
+            match &self.resolve.types[*id].kind {
+                TypeDefKind::Handle(h) => match h {
+                    // Handles to imported resources will need to be dropped, if the context
+                    // they're used in is an export.
+                    Handle::Borrow(id) => {
+                        !self.in_import
+                            && matches!(
+                                self.gen.resources[&dealias(self.resolve, *id)].direction,
+                                Direction::Import
+                            )
+                    }
+
+                    Handle::Own(_) => false,
+                },
+
+                TypeDefKind::Resource | TypeDefKind::Flags(_) | TypeDefKind::Enum(_) => false,
+
+                TypeDefKind::Record(r) => r
+                    .fields
+                    .iter()
+                    .any(|f| self.contains_droppable_borrow(&f.ty)),
+
+                TypeDefKind::Tuple(t) => {
+                    t.types.iter().any(|ty| self.contains_droppable_borrow(ty))
+                }
+
+                TypeDefKind::Variant(v) => v.cases.iter().any(|case| {
+                    case.ty
+                        .as_ref()
+                        .map_or(false, |ty| self.contains_droppable_borrow(ty))
+                }),
+
+                TypeDefKind::Option(ty) => self.contains_droppable_borrow(ty),
+
+                TypeDefKind::Result(r) => {
+                    r.ok.as_ref()
+                        .map_or(false, |ty| self.contains_droppable_borrow(ty))
+                        || r.err
+                            .as_ref()
+                            .map_or(false, |ty| self.contains_droppable_borrow(ty))
+                }
+
+                TypeDefKind::List(ty) => self.contains_droppable_borrow(ty),
+
+                TypeDefKind::Future(r) => r
+                    .as_ref()
+                    .map_or(false, |ty| self.contains_droppable_borrow(ty)),
+
+                TypeDefKind::Stream(s) => {
+                    s.element
+                        .as_ref()
+                        .map_or(false, |ty| self.contains_droppable_borrow(ty))
+                        || s.end
+                            .as_ref()
+                            .map_or(false, |ty| self.contains_droppable_borrow(ty))
+                }
+
+                TypeDefKind::Type(ty) => self.contains_droppable_borrow(ty),
+
+                TypeDefKind::Unknown => false,
+            }
+        } else {
+            false
+        }
+    }
 }
 
 struct FunctionBindgen<'a, 'b> {
@@ -1962,6 +2034,12 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
         // Empty types have no state, so we don't emit stores for them. But we
         // do need to keep track of which return variable we're looking at.
         self.ret_store_cnt = self.ret_store_cnt + 1;
+    }
+
+    fn assert_no_droppable_borrows(&self, context: &str, ty: &Type) {
+        if self.gen.autodrop_enabled() && self.gen.contains_droppable_borrow(ty) {
+            panic!("Unable to autodrop borrows in `{}` values, please disable autodrop", context)
+        }
     }
 }
 
@@ -2160,7 +2238,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     results.push(format!("({name}) {{ {op} }}"));
 
                     if let Handle::Borrow(id) = handle {
-                        if !self.gen.in_import && !self.gen.gen.opts.no_export_autodrop {
+                        if self.gen.autodrop_enabled() {
+                            // Here we've received a borrow of an imported resource, which is the
+                            // kind we'll need to drop when the exported function is returning.
                             let target = dealias(self.gen.resolve, *id);
                             self.borrows.push((op.clone(), target));
                         }
@@ -2269,6 +2349,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 for (i, (case, (block, block_results))) in
                     variant.cases.iter().zip(blocks).enumerate()
                 {
+                    if let Some(ty) = case.ty.as_ref() {
+                        self.assert_no_droppable_borrows("variant", ty);
+                    }
+
                     uwriteln!(self.src, "case {}: {{", i);
                     self.src.push_str(&block);
                     assert!(block_results.len() == (case.ty.is_some() as usize));
@@ -2324,6 +2408,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::OptionLift { ty, .. } => {
+                self.assert_no_droppable_borrows("option", &Type::Id(*ty));
+
                 let (mut some, some_results) = self.blocks.pop().unwrap();
                 let (mut none, none_results) = self.blocks.pop().unwrap();
                 assert!(none_results.len() == 0);
@@ -2411,6 +2497,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::ResultLift { result, ty, .. } => {
+                self.assert_no_droppable_borrows("result", &Type::Id(*ty));
+
                 let (mut err, err_results) = self.blocks.pop().unwrap();
                 assert!(err_results.len() == (result.err.is_some() as usize));
                 let (mut ok, ok_results) = self.blocks.pop().unwrap();
@@ -2468,6 +2556,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("(int32_t) ({}).len", operands[0]));
             }
             Instruction::ListCanonLift { element, ty, .. } => {
+                self.assert_no_droppable_borrows("list", &Type::Id(*ty));
+
                 let list_name = self.gen.gen.type_name(&Type::Id(*ty));
                 let elem_name = self.gen.gen.type_name(element);
                 results.push(format!(
@@ -2493,6 +2583,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::ListLift { element, ty, .. } => {
+                self.assert_no_droppable_borrows("list", &Type::Id(*ty));
+
                 let _body = self.blocks.pop().unwrap();
                 let list_name = self.gen.gen.type_name(&Type::Id(*ty));
                 let elem_name = self.gen.gen.type_name(element);
