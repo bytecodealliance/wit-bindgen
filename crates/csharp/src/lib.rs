@@ -34,6 +34,7 @@ using System.Runtime.CompilerServices;
 using System.Collections;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Collections.Generic;
 
 ";
 
@@ -360,8 +361,8 @@ impl WorldGenerator for CSharp {
                     private struct ReturnArea
                     {{
                         private byte buffer;
-    
-                        private int GetS32(int offset)
+
+                        public int GetS32(int offset)
                         {{
                             ReadOnlySpan<byte> span = this;
 
@@ -617,11 +618,49 @@ impl InterfaceGenerator<'_> {
                 r#"
                 private unsafe struct ReturnArea
                 {{
-                    private int GetS32(IntPtr ptr, int offset)
+                    public int GetS32(IntPtr ptr, int offset)
                     {{
-                        var span = new Span<byte>((void*)ptr, {});
+                        var span = new Span<byte>((void*)ptr, {0});
 
                         return BitConverter.ToInt32(span.Slice(offset, 4));
+                    }}
+
+                    public void SetS32(IntPtr ptr, int offset, int value)
+                    {{
+                        var span = new Span<byte>((void*)ptr, {0});
+
+                        BitConverter.TryWriteBytes(span.Slice(offset), value);
+                    }}
+
+                    public void SetU32(IntPtr ptr, int offset, uint value)
+                    {{
+                        var span = new Span<byte>((void*)ptr, {0});
+
+                        BitConverter.TryWriteBytes(span.Slice(offset), value);
+                    }}
+
+                    public void SetArray<T>(IntPtr ptr, int offset, T[] value, int length)
+                    {{
+                        var span = new Span<byte>((void*)ptr, {0});
+
+                        fixed (T* dstPtr = &value[0])
+                        {{
+                            Marshal.Copy(span.Slice(offset, length).ToArray(), 0, (IntPtr)dstPtr, length);
+                        }}
+                    }}
+
+                    unsafe public T[] GetArray<T>(IntPtr ptr, int offset, int length)
+                    {{
+                        var span = new Span<byte>((void*)ptr, {0});
+        
+                        var array = new T[length];
+        
+                        fixed (T* dstPtr = &array[0])
+                        {{
+                            Marshal.Copy(span.Slice(offset, length).ToArray(), 0, (IntPtr)dstPtr, length);
+                        }}
+        
+                        return array;
                     }}
 
                     public string GetUTF8String(IntPtr ptr)
@@ -663,7 +702,32 @@ impl InterfaceGenerator<'_> {
                     {{
                         private byte buffer;
     
-                        private int GetS32(int offset)
+                        unsafe public T[] GetArray<T>(int offset, int length)
+                        {{
+                            Span<byte> span = this;
+            
+                            var array = new T[length];
+            
+                            fixed (T* ptr = &array[0])
+                            {{
+                                Marshal.Copy(span.Slice(offset, length).ToArray(), 0, (IntPtr)ptr, length);
+                            }}
+            
+                            return array;
+                        }}
+
+                        unsafe public void SetArray<T>(int offset, T[] value, int length)
+                        {{
+                            Span<byte> span = this;
+                            byte[] buffer = new byte[length];
+                            Buffer.BlockCopy(value, 0, buffer, 0, length);
+                            fixed (byte* ptr = &span[offset])
+                            {{
+                                Marshal.Copy(buffer, 0, (IntPtr)ptr, length);
+                            }}
+                        }}
+
+                        public int GetS32(int offset)
                         {{
                             ReadOnlySpan<byte> span = this;
 
@@ -1361,10 +1425,10 @@ enum Stubs<'a> {
 }
 
 struct Block {
-    _body: String,
-    _results: Vec<String>,
-    _xelement: String,
-    _xbase: String,
+    body: String,
+    results: Vec<String>,
+    element: String,
+    base: String,
 }
 
 struct BlockStorage {
@@ -1426,7 +1490,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 .to_owned()
             })),
 
-            Instruction::I32Load { offset } => results.push(format!("returnArea.GetS32({offset})")),
+            Instruction::I32Load { offset } => {
+                if self.gen.in_import {
+                    results.push(format!("returnArea.GetS32({}, {offset})", operands[0]));
+                } else {
+                    results.push(format!("returnArea.GetS32({offset})"));
+                }
+            }
             Instruction::I32Load8U { offset } => {
                 results.push(format!("returnArea.GetU8({offset})"))
             }
@@ -1446,7 +1516,12 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32Store { offset } => {
                 uwriteln!(self.src, "returnArea.SetS32({}, {});", offset, operands[0])
             }
-            Instruction::I32Store8 { .. } => todo!("I32Store8"),
+            Instruction::I32Store8 { offset } => uwriteln!(
+                self.src,
+                "Address.fromInt(({}) + {offset}).putByte((byte) ({}));",
+                operands[1],
+                operands[0]
+            ),
             Instruction::I32Store16 { .. } => todo!("I32Store16"),
             Instruction::I64Store { .. } => todo!("I64Store"),
             Instruction::F32Store { .. } => todo!("F32Store"),
@@ -1529,9 +1604,77 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::EnumLift { .. } => todo!("EnumLift"),
 
-            Instruction::ListCanonLower { .. } => todo!("ListCanonLower"),
+            Instruction::ListCanonLower { element, realloc } => {
+                let op = &operands[0];
+                let (size, ty) = list_element_info(element);
 
-            Instruction::ListCanonLift { .. } => todo!("ListCanonLift"),
+                if self.gen.in_import {
+                    if self.is_list_canonical(_resolve, element) {
+                        let ptr = self.locals.tmp("ptr");
+                        let buffer: String = self.locals.tmp("buffer");
+                        uwrite!(
+                            self.src,
+                            "
+                        void* {buffer} = stackalloc int[{size} + {size} - 1];
+                        var {ptr} = ((int){buffer}) + ({size} - 1) & -{size};
+                        "
+                        );
+                        uwrite!(
+                            self.src,
+                            "
+                            returnArea.SetArray<{ty}>({ptr}, 0, {op}, ({op}).Length);
+                            "
+                        );
+                        results.push(format!("{ptr}"));
+                    } else {
+                        uwrite!(
+                            self.src,
+                            "
+                        returnArea.SetArray<{ty}>(ptr, 0, {op}, ({op}).Length);
+                        "
+                        );
+                        results.push(format!("ptr"));
+                    }
+                    results.push(format!("({op}).Length"));
+                } else {
+                    let result = self.locals.tmp("result");
+                    uwrite!(
+                        self.src,
+                        "
+                        var {result} = {op};
+                        returnArea.SetArray<{ty}>(0, {result}, {result}.Length);
+                        "
+                    );
+                    results.push(format!("ptr"));
+                    results.push(format!("{result}.Length"));
+                }
+            }
+
+            Instruction::ListCanonLift { element, .. } => {
+                let (_, ty) = list_element_info(element);
+                let op = &operands[0];
+                let array = self.locals.tmp("array");
+                let address = &operands[0];
+                let length = &operands[1];
+
+                if self.gen.in_import {
+                    uwrite!(
+                        self.src,
+                        "
+                        var {array} = returnArea.GetArray<{ty}>({op}, {address}, {length});                    
+                        "
+                    );
+                } else {
+                    uwrite!(
+                        self.src,
+                        "
+                        var {array} = returnArea.GetArray<{ty}>({address}, {length});                    
+                        "
+                    );
+                }
+
+                results.push(array);
+            }
 
             Instruction::StringLower { realloc } => {
                 let op = &operands[0];
@@ -1566,13 +1709,101 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
 
-            Instruction::ListLower { .. } => todo!("ListLower"),
+            Instruction::ListLower { element, realloc } => {
+                let Block {
+                    body,
+                    results: block_results,
+                    element: block_element,
+                    base,
+                } = self.blocks.pop().unwrap();
+                assert!(block_results.is_empty());
 
-            Instruction::ListLift { .. } => todo!("ListLift"),
+                let op = &operands[0];
+                let size = self.gen.gen.sizes.size(element);
+                let align = self.gen.gen.sizes.align(element);
+                let ty = self.gen.type_name(element);
+                let index = self.locals.tmp("index");
+                let list: String = self.locals.tmp("list");
 
-            Instruction::IterElem { .. } => todo!("IterElem"),
+                //let ptr = self.locals.tmp("ptr");
+                //let buffer: String = self.locals.tmp("buffer");
+                //uwrite!(
+                //    self.src,
+                //    "
+                //    void* {buffer} = stackalloc int[{size} + {size} - 1];
+                //    var {ptr} = ((int){buffer}) + ({size} - 1) & -{size};
+                //    "
+                //);
 
-            Instruction::IterBasePointer => todo!("IterBasePointer"),
+                uwrite!(
+                    self.src,
+                    "
+                    var {list} = {op};
+
+                    for (int {index} = 0; {index} < {list}.Count; ++{index}) {{
+                        
+                        {ty} {block_element} = {list}[{index}];
+                        int {base} = ptr + ({index} * {size});
+                        {body}
+                    }}
+                    "
+                );
+
+                //if realloc.is_none() {
+                //    self.cleanup.push(Cleanup {
+                //        address: address.clone(),
+                //        size: format!("({op}).size() * {size}"),
+                //        align,
+                //    });
+                //}
+
+                results.push("ptr".to_owned());
+                results.push(format!("{list}.Count"));
+            }
+
+            Instruction::ListLift { element, .. } => {
+                let Block {
+                    body,
+                    results: block_results,
+                    base,
+                    ..
+                } = self.blocks.pop().unwrap();
+                let address = &operands[0];
+                let length = &operands[1];
+                let array = self.locals.tmp("array");
+                let ty = self.gen.type_name(element);
+                let size = self.gen.gen.sizes.size(element);
+                let align = self.gen.gen.sizes.align(element);
+                let index = self.locals.tmp("index");
+
+                let result = match &block_results[..] {
+                    [result] => result,
+                    _ => todo!("result count == {}", results.len()),
+                };
+
+                uwrite!(
+                    self.src,
+                    "
+                    var {array} = new List<{ty}>({length});
+                    for (int {index} = 0; {index} < ({length}); ++{index}) {{
+                        int {base} = {address} + ({index} * {size});
+                        {body}
+                        {array}.Add({result});
+                    }}
+                    //Memory.free(returnArea.GetS32({address}), ({length}) * {size}, {align});
+                    "
+                );
+
+                results.push(array);
+            }
+
+            Instruction::IterElem { .. } => {
+                results.push(self.block_storage.last().unwrap().element.clone())
+            }
+
+            Instruction::IterBasePointer => {
+                results.push(self.block_storage.last().unwrap().base.clone())
+            }
 
             Instruction::CallWasm { sig, name } => {
                 //TODO: Use base_name instead?
@@ -1667,6 +1898,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
     fn return_pointer(&mut self, size: usize, align: usize) -> String {
         let ptr = self.locals.tmp("ptr");
+        let buffer: String = self.locals.tmp("buffer");
 
         // Use a stack-based return area for imports, because exports need
         // their return area to be live until the post-return call.
@@ -1677,14 +1909,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             uwrite!(
                 self.src,
                 "
-                void* buffer = stackalloc int[{} + {} - 1];
-                var {} = ((int)buffer) + ({} - 1) & -{};
-                ",
-                size,
-                align,
-                ptr,
-                align,
-                align,
+                void* {buffer} = stackalloc int[{size} + {align} - 1];
+                var {ptr} = ((int){buffer}) + ({align} - 1) & -{align};
+                "
             );
         } else {
             self.gen.gen.return_area_size = self.gen.gen.return_area_size.max(size);
@@ -1693,9 +1920,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             uwrite!(
                 self.src,
                 "
-                var {} = returnArea.AddrOfBuffer();
-                ",
-                ptr,
+                var {ptr} = returnArea.AddrOfBuffer();
+                "
             );
         }
 
@@ -1706,7 +1932,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         self.block_storage.push(BlockStorage {
             body: mem::take(&mut self.src),
             element: self.locals.tmp("element"),
-            base: self.locals.tmp("base"),
+            base: self.locals.tmp("basePtr"),
         });
     }
 
@@ -1718,10 +1944,10 @@ impl Bindgen for FunctionBindgen<'_, '_> {
         } = self.block_storage.pop().unwrap();
 
         self.blocks.push(Block {
-            _body: mem::replace(&mut self.src, body),
-            _results: mem::take(operands),
-            _xelement: element,
-            _xbase: base,
+            body: mem::replace(&mut self.src, body),
+            results: mem::take(operands),
+            element: element,
+            base: base,
         });
     }
 
@@ -1763,21 +1989,35 @@ fn wasm_type(ty: WasmType) -> &'static str {
 //    }
 //}
 
-//fn list_element_info(ty: &Type) -> (usize, &'static str) {
-//    match ty {
-//        Type::S8 => (1, "sbyte"),
-//        Type::S16 => (2, "short"),
-//        Type::S32 => (4, "int"),
-//        Type::S64 => (8, "long"),
-//        Type::U8 => (1, "byte"),
-//        Type::U16 => (2, "ushort"),
-//        Type::U32 => (4, "uint"),
-//        Type::U64 => (8, "ulong"),
-//        Type::Float32 => (4, "float"),
-//        Type::Float64 => (8, "double"),
-//        _ => unreachable!(),
-//    }
-//}
+fn list_element_info(ty: &Type) -> (usize, &'static str) {
+    match ty {
+        Type::S8 => (1, "sbyte"),
+        Type::S16 => (2, "short"),
+        Type::S32 => (4, "int"),
+        Type::S64 => (8, "long"),
+        Type::U8 => (1, "byte"),
+        Type::U16 => (2, "ushort"),
+        Type::U32 => (4, "uint"),
+        Type::U64 => (8, "ulong"),
+        Type::Float32 => (4, "float"),
+        Type::Float64 => (8, "double"),
+        _ => unreachable!(),
+    }
+
+    //match ty {
+    //    Type::S8 => (1, "S8"),
+    //    Type::S16 => (2, "S16"),
+    //    Type::S32 => (4, "S32"),
+    //    Type::S64 => (8, "S64"),
+    //    Type::U8 => (1, "U8"),
+    //    Type::U16 => (2, "U16"),
+    //    Type::U32 => (4, "U32"),
+    //    Type::U64 => (8, "U64"),
+    //    Type::Float32 => (4, "F32"),
+    //    Type::Float64 => (8, "F64"),
+    //    _ => unreachable!(),
+    //}
+}
 
 fn indent(code: &str) -> String {
     let mut indented = String::with_capacity(code.len());

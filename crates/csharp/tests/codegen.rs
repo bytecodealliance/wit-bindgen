@@ -54,7 +54,6 @@ macro_rules! codegen_test {
                         "same-names5",
                         "simple-functions",
                         "simple-http",
-                        "simple-lists",
                         "small-anonymous",
                         "unused-import",
                         "use-across-interfaces",
