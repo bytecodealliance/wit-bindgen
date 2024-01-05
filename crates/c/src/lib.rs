@@ -44,8 +44,8 @@ pub struct ResourceInfo {
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum Enabled {
     #[default]
-    Yes,
     No,
+    Yes,
 }
 
 impl std::fmt::Display for Enabled {
@@ -92,7 +92,7 @@ pub struct Opts {
     pub type_section_suffix: Option<String>,
 
     /// Configure the autodropping of borrows in exported functions.
-    #[cfg_attr(feature = "clap", arg(long, default_value_t = Enabled::Yes))]
+    #[cfg_attr(feature = "clap", arg(long))]
     pub autodrop_borrows: Enabled,
 }
 
