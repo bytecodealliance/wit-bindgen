@@ -1024,7 +1024,7 @@ void {ns}_{snake}_destructor({ty_name} *rep);
 __attribute__(( __import_module__("[export]{module}"), __import_name__("[resource-new]{name}")))
 extern int32_t __wasm_import_{ns}_{snake}_new(int32_t);
 
-__attribute__((__import_module__("[export]{module}"), __import_name__("[resource-rep]{snake}")))
+__attribute__((__import_module__("[export]{module}"), __import_name__("[resource-rep]{name}")))
 extern int32_t __wasm_import_{ns}_{snake}_rep(int32_t);
 
 {own} {ns}_{snake}_new({ty_name} *rep) {{
