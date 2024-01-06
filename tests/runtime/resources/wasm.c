@@ -11,6 +11,10 @@ struct exports_z_t {
     int32_t a;
 };
 
+struct exports_kebab_case_t {
+    int32_t a;
+};
+
 exports_own_x_t exports_constructor_x(int32_t a) {
     exports_x_t* x_instance = (exports_x_t*)malloc(sizeof(exports_x_t));
     x_instance->a = a;
@@ -55,6 +59,23 @@ void exports_x_destructor(exports_x_t* x) {
 void exports_z_destructor(exports_z_t* z) {
     free(z);
 }
+
+exports_own_kebab_case_t exports_constructor_kebab_case(uint32_t a) {
+    exports_kebab_case_t* kc_instance = (exports_kebab_case_t*)malloc(sizeof(exports_kebab_case_t));
+    kc_instance->a = a;
+    exports_own_kebab_case_t kc_own = exports_kebab_case_new(kc_instance);
+    return kc_own;
+}
+
+uint32_t exports_method_kebab_case_get_a(exports_borrow_kebab_case_t self) {
+    return self->a;
+}
+
+uint32_t exports_static_kebab_case_take_owned(exports_own_kebab_case_t k) {
+    return exports_kebab_case_rep(k)->a;
+}
+
+void exports_kebab_case_destructor(exports_kebab_case_t *rep) {}
 
 bool exports_test_imports(resources_string_t *err) {
     imports_own_y_t y = imports_constructor_y(10);
