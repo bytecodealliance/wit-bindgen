@@ -694,7 +694,6 @@ impl InterfaceGenerator<'_> {
                 [FixedAddressValueType]
                 private static ReturnArea returnArea;
             "#,
-                self.gen.return_area_size,
                 self.gen.return_area_size
             );
         }
@@ -831,7 +830,7 @@ impl InterfaceGenerator<'_> {
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("Tuple<{}>", types)
-            }, 
+            }
         };
 
         let camel_name = func.name.to_upper_camel_case();
@@ -932,13 +931,14 @@ impl InterfaceGenerator<'_> {
         let result_type = match func.results.len() {
             0 => "void".to_owned(),
             1 => self.type_name(func.results.iter_types().next().unwrap()),
-            _ => format!("Tuple<{}>",
-                func
-                .results
-                .iter_types()
-                .map(|ty| self.type_name(ty))
-                .collect::<Vec<String>>()
-                .join(", ")),
+            _ => format!(
+                "Tuple<{}>",
+                func.results
+                    .iter_types()
+                    .map(|ty| self.type_name(ty))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
         };
 
         let camel_name = func.name.to_upper_camel_case();
@@ -1539,7 +1539,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("returnArea.GetS16({offset})"))
             }
             Instruction::I64Load { offset } => results.push(format!("returnArea.GetS64({offset})")),
-            Instruction::F32Load { offset } => results.push(format!("returnArea.GetF32(ptr, {offset})")),
+            Instruction::F32Load { offset } => {
+                results.push(format!("returnArea.GetF32(ptr, {offset})"))
+            }
             Instruction::F64Load { offset } => results.push(format!("returnArea.GetF64({offset})")),
 
             Instruction::I32Store { offset } => {
@@ -1564,7 +1566,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I64Store { .. } => todo!("I64Store"),
             Instruction::F32Store { offset } => {
                 uwriteln!(self.src, "returnArea.SetF32({}, {});", offset, operands[0])
-            },
+            }
             Instruction::F64Store { .. } => todo!("F64Store"),
 
             Instruction::I64FromU64 => results.push(format!("unchecked((long)({}))", operands[0])),
@@ -1577,7 +1579,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::U32FromI32 => results.push(format!("unchecked((uint)({}))", operands[0])),
             Instruction::U64FromI64 => results.push(format!("unchecked((ulong)({}))", operands[0])),
             Instruction::CharFromI32 => results.push(format!("unchecked((uint)({}))", operands[0])),
-            Instruction::Float32FromF32 => results.push(format!("unchecked((float){})", operands[0])),
+            Instruction::Float32FromF32 => {
+                results.push(format!("unchecked((float){})", operands[0]))
+            }
             Instruction::I64FromS64
             | Instruction::I32FromU16
             | Instruction::I32FromS16
@@ -1935,7 +1939,8 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             .map(|(index, ty)| {
                                 let ty = self.gen.type_name(ty);
                                 let my_result = self.locals.tmp("result");
-                                let assignment = format!("{ty} {my_result} = {result}.Item{};", index+1);
+                                let assignment =
+                                    format!("{ty} {my_result} = {result}.Item{};", index + 1);
                                 results.push(my_result);
                                 assignment
                             })
@@ -1949,7 +1954,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                             {destructure}
                             "
                         );
-                    },
+                    }
                 }
             }
 
@@ -1968,7 +1973,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                         .map(|ty| wasm_type(ty))
                         .collect::<Vec<&str>>()
                         .join(", ");
-                    uwriteln!(self.src, "return ({cast})({results});")
+                    if self.gen.in_import {
+                        uwriteln!(self.src, "return Tuple.Create({results});")
+                    } else {
+                        uwriteln!(self.src, "return ({cast})({results});")
+                    }
                 }
             },
 
