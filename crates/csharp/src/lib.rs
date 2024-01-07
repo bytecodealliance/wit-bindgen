@@ -383,6 +383,13 @@ impl WorldGenerator for CSharp {
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
+                        internal void SetS64(int offset, long value)
+                        {{
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
                         internal void SetF32(int offset, float value)
                         {{
                             Span<byte> span = this;
@@ -636,11 +643,25 @@ impl InterfaceGenerator<'_> {
                 r#"
                 private unsafe struct ReturnArea
                 {{
+                    internal byte GetU8(IntPtr ptr, int offset)
+                    {{
+                        var span = new Span<byte>((void*)ptr, {0});
+
+                        return span[offset];
+                    }}
+
                     internal int GetS32(IntPtr ptr, int offset)
                     {{
                         var span = new Span<byte>((void*)ptr, {0});
 
                         return BitConverter.ToInt32(span.Slice(offset, 4));
+                    }}
+
+                    internal long GetS64(IntPtr ptr, int offset)
+                    {{
+                        var span = new Span<byte>((void*)ptr, {0});
+
+                        return BitConverter.ToInt64(span.Slice(offset, 8));
                     }}
 
                     internal float GetF32(IntPtr ptr, int offset)
@@ -729,8 +750,8 @@ impl InterfaceGenerator<'_> {
             uwrite!(
                 ret_area_str,
                 "
-                    [InlineArray({})]
-                    [StructLayout(LayoutKind.Sequential, Pack = {})]
+                    [InlineArray({0})]
+                    [StructLayout(LayoutKind.Sequential, Pack = {1})]
                     private struct ReturnArea
                     {{
                         private byte buffer;
@@ -760,16 +781,44 @@ impl InterfaceGenerator<'_> {
                             }}
                         }}
 
+                        internal sbyte GetS8(int offset)
+                        {{
+                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+
+                            return (sbyte)span[offset];
+                        }}
+
                         internal int GetS32(int offset)
                         {{
-                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
+                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
+
+                        internal long GetS64(int offset)
+                        {{
+                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+
+                            return BitConverter.ToInt64(span.Slice(offset, 8));
+                        }}
                         
+                        internal void SetS8(int offset, int value)
+                        {{
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
                         internal void SetS32(int offset, int value)
                         {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
+                        internal void SetS64(int offset, long value)
+                        {{
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
@@ -800,8 +849,6 @@ impl InterfaceGenerator<'_> {
                     ",
                 self.gen.return_area_size,
                 self.gen.return_area_align,
-                self.gen.return_area_size,
-                self.gen.return_area_size
             );
 
             self.csharp_interop_src.push_str(&ret_area_str);
@@ -1550,7 +1597,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
             }
             Instruction::I32Load8U { offset } => {
-                results.push(format!("returnArea.GetU8({offset})"))
+                if self.gen.in_import {
+                    results.push(format!("returnArea.GetU8({}, {offset})", operands[0]))
+                } else {
+                    results.push(format!("returnArea.GetU8({offset})"))
+                }
             }
             Instruction::I32Load8S { offset } => {
                 results.push(format!("returnArea.GetS8({offset})"))
@@ -1561,7 +1612,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::I32Load16S { offset } => {
                 results.push(format!("returnArea.GetS16({offset})"))
             }
-            Instruction::I64Load { offset } => results.push(format!("returnArea.GetS64({offset})")),
+            Instruction::I64Load { offset } => {
+                if self.gen.in_import {
+                    results.push(format!("returnArea.GetS64({}, {offset})", operands[0]))
+                } else {
+                    results.push(format!("returnArea.GetS64({offset})"))
+                }
+            }
             Instruction::F32Load { offset } => {
                 results.push(format!("returnArea.GetF32(ptr, {offset})"))
             }
@@ -1601,7 +1658,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     )
                 }
             }
-            Instruction::I64Store { .. } => todo!("I64Store"),
+            Instruction::I64Store { offset } => {
+                if self.gen.in_import {
+                    uwriteln!(
+                        self.src,
+                        "returnArea.SetS64(ptr, {}, {});",
+                        offset,
+                        operands[0]
+                    )
+                } else {
+                    uwriteln!(self.src, "returnArea.SetS64({}, {});", offset, operands[0])
+                }
+            }
             Instruction::F32Store { offset } => {
                 uwriteln!(self.src, "returnArea.SetF32({}, {});", offset, operands[0])
             }

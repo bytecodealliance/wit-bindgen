@@ -21,7 +21,6 @@ macro_rules! codegen_test {
                         "import-and-export-resource",
                         "import-and-export-resource-alias",
                         "import-func",
-                        "integers",
                         "issue544",
                         "issue551",
                         "issue569",
