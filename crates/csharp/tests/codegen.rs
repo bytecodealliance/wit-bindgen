@@ -47,7 +47,6 @@ macro_rules! codegen_test {
                         "resources-in-aggregates",
                         "resources-with-lists",
                         "result-empty",
-                        "ret-areas",
                         "return-resource-from-export",
                         "same-names5",
                         "simple-functions",

@@ -356,22 +356,29 @@ impl WorldGenerator for CSharp {
                 uwrite!(
                     ret_area_str,
                     "
-                    [InlineArray({})]
-                    [StructLayout(LayoutKind.Sequential, Pack = {})]
+                    [InlineArray({0})]
+                    [StructLayout(LayoutKind.Sequential, Pack = {1})]
                     private struct ReturnArea
                     {{
                         private byte buffer;
 
                         public int GetS32(int offset)
                         {{
-                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
+                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
                         
+                        public void SetS16(int offset, short value)
+                        {{
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
+
+                            BitConverter.TryWriteBytes(span.Slice(offset), value);
+                        }}
+
                         public void SetS32(int offset, int value)
                         {{
-                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
@@ -402,8 +409,6 @@ impl WorldGenerator for CSharp {
                     ",
                     self.return_area_size,
                     self.return_area_align,
-                    self.return_area_size,
-                    self.return_area_size
                 );
 
                 src.push_str(&ret_area_str);
@@ -633,16 +638,23 @@ impl InterfaceGenerator<'_> {
                 {{
                     internal int GetS32(IntPtr ptr, int offset)
                     {{
-                        var span = new Span<byte>((void*)ptr, {});
+                        var span = new Span<byte>((void*)ptr, {0});
 
                         return BitConverter.ToInt32(span.Slice(offset, 4));
                     }}
 
-                    internal int GetF32(IntPtr ptr, int offset)
+                    internal float GetF32(IntPtr ptr, int offset)
                     {{
                         var span = new Span<byte>((void*)ptr, {0});
 
-                        return BitConverter.ToInt32(span.Slice(offset, 4));
+                        return BitConverter.ToSingle(span.Slice(offset, 4));
+                    }}
+
+                    internal void SetS16(IntPtr ptr, int offset, short value)
+                    {{
+                        var span = new Span<byte>((void*)ptr, {0});
+
+                        BitConverter.TryWriteBytes(span.Slice(offset), value);
                     }}
 
                     public void SetS32(IntPtr ptr, int offset, int value)
@@ -677,6 +689,7 @@ impl InterfaceGenerator<'_> {
         
                         fixed (T* dstPtr = &array[0])
                         {{
+                            //TODO: Optimize this. The ToArray call is not needed and does an additional heap allocation.
                             Marshal.Copy(span.Slice(offset, length).ToArray(), 0, (IntPtr)dstPtr, length);
                         }}
         
@@ -871,7 +884,7 @@ impl InterfaceGenerator<'_> {
             .enumerate()
             .map(|(_i, param)| {
                 let ty = self.type_name(&param.1);
-                let param_name = &param.0;
+                let param_name = &param.0.to_csharp_ident();
                 format!("{ty} {param_name}")
             })
             .collect::<Vec<_>>()
@@ -1558,11 +1571,26 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::I32Store8 { offset } => uwriteln!(
                 self.src,
-                "Address.fromInt(({}) + {offset}).putByte((byte) ({}));",
-                operands[1],
+                "returnArea.SetS8({offset}, (byte){});",
                 operands[0]
             ),
-            Instruction::I32Store16 { .. } => todo!("I32Store16"),
+            Instruction::I32Store16 { offset } => {
+                if self.gen.in_import {
+                    uwriteln!(
+                        self.src,
+                        "returnArea.SetS16(ptr, {}, (short){});",
+                        offset,
+                        operands[0]
+                    )
+                } else {
+                    uwriteln!(
+                        self.src,
+                        "returnArea.SetS16({}, (short){});",
+                        offset,
+                        operands[0]
+                    )
+                }
+            }
             Instruction::I64Store { .. } => todo!("I64Store"),
             Instruction::F32Store { offset } => {
                 uwriteln!(self.src, "returnArea.SetF32({}, {});", offset, operands[0])
@@ -1648,16 +1676,30 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("({ops})"));
             }
 
-            Instruction::TupleLower { tuple: _, ty } => {
+            Instruction::TupleLower { tuple, ty: _ } => {
                 let ops = operands
                     .iter()
                     .map(|op| op.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                uwriteln!(self.src, "(var tmp0, var tmp1) = {ops};");
-                results.push(format!("(tmp0)"));
-                results.push(format!("(tmp1)"));
+                let temps = tuple
+                    .types
+                    .iter()
+                    .map(|_| self.locals.tmp("tmp"))
+                    .collect::<Vec<_>>();
+
+                let vars = temps
+                    .iter()
+                    .map(|tmp| format!("var {tmp}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                uwriteln!(self.src, "({vars}) = {ops};");
+
+                for tmp in temps {
+                    results.push(format!("({tmp})"));
+                }
             }
 
             Instruction::VariantPayloadName => {
