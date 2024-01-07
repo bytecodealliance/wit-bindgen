@@ -364,14 +364,14 @@ impl WorldGenerator for CSharp {
 
                         public int GetS32(int offset)
                         {{
-                            ReadOnlySpan<byte> span = this;
+                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
 
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
                         
                         public void SetS32(int offset, int value)
                         {{
-                            Span<byte> span = this;
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
 
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
@@ -395,6 +395,8 @@ impl WorldGenerator for CSharp {
                     ",
                     self.return_area_size,
                     self.return_area_align,
+                    self.return_area_size,
+                    self.return_area_size
                 );
 
                 src.push_str(&ret_area_str);
@@ -583,8 +585,12 @@ impl InterfaceGenerator<'_> {
     fn qualifier(&self, when: bool, ty: &TypeDef) -> String {
         if let TypeOwner::Interface(id) = &ty.owner {
             if let Some(name) = self.gen.interface_names.get(id) {
-                if name != self.name {
-                    return format!("{}.", name);
+                let name_with_interface = format!(
+                    "{name}.I{}",
+                    CSharp::get_class_name_from_qualified_name(name.clone())
+                );
+                if name_with_interface != self.name {
+                    return format!("{}.", name_with_interface);
                 }
             }
         }
@@ -618,6 +624,7 @@ impl InterfaceGenerator<'_> {
                 r#"
                 private unsafe struct ReturnArea
                 {{
+                    public int GetS32(IntPtr ptr, int offset)
                     public int GetS32(IntPtr ptr, int offset)
                     {{
                         var span = new Span<byte>((void*)ptr, {0});
@@ -729,14 +736,14 @@ impl InterfaceGenerator<'_> {
 
                         public int GetS32(int offset)
                         {{
-                            ReadOnlySpan<byte> span = this;
+                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
 
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
                         
                         public void SetS32(int offset, int value)
                         {{
-                            Span<byte> span = this;
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
 
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
@@ -760,6 +767,8 @@ impl InterfaceGenerator<'_> {
                     ",
                 self.gen.return_area_size,
                 self.gen.return_area_align,
+                self.gen.return_area_size,
+                self.gen.return_area_size
             );
 
             self.csharp_interop_src.push_str(&ret_area_str);
@@ -791,7 +800,7 @@ impl InterfaceGenerator<'_> {
             0 => "void".to_string(),
             1 => {
                 let ty = func.results.iter_types().next().unwrap();
-                self.type_name(ty)
+                self.type_name_with_qualifier(ty, true)
             }
             _ => unreachable!(), //TODO
         };
@@ -1220,43 +1229,34 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
         let name = name.to_upper_camel_case();
 
-        let ty = match flags.repr() {
-            FlagsRepr::U8 => "byte",
-            FlagsRepr::U16 => "ushort",
-            FlagsRepr::U32(1) => "uint",
-            FlagsRepr::U32(2) => "ulong",
-            repr => todo!("flags {repr:?}"),
-        };
-
-        let flags = flags
+        let enum_elements = flags
             .flags
             .iter()
             .enumerate()
             .map(|(i, flag)| {
                 let flag_name = flag.name.to_shouty_snake_case();
                 let suffix = if matches!(flags.repr(), FlagsRepr::U32(2)) {
-                    "L"
+                    "UL"
                 } else {
                     ""
                 };
-                format!(
-                    "public static readonly {name} {flag_name} = new {name}(({ty}) (1{suffix} << {i}));"
-                )
+                format!("{flag_name} = 1{suffix} << {i},")
             })
             .collect::<Vec<_>>()
             .join("\n");
 
+        let enum_type = match flags.repr() {
+            FlagsRepr::U32(2) => ": ulong",
+            FlagsRepr::U16 => ": ushort",
+            FlagsRepr::U8 => ": byte",
+            _ => "",
+        };
+
         uwrite!(
             self.src,
             "
-            public static class {name} {{
-                public readonly {ty} value;
-
-                public {name}({ty} value) {{
-                    this.value = value;
-                }}
-
-                {flags}
+            public enum {name} {enum_type} {{
+                {enum_elements}
             }}
             "
         );
@@ -1492,9 +1492,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::I32Load { offset } => {
                 if self.gen.in_import {
-                    results.push(format!("returnArea.GetS32({}, {offset})", operands[0]));
+                    results.push(format!("returnArea.GetS32(ptr, {offset})"))
                 } else {
-                    results.push(format!("returnArea.GetS32({offset})"));
+                    results.push(format!("returnArea.GetS32({offset})"))
                 }
             }
             Instruction::I32Load8U { offset } => {
@@ -1557,9 +1557,40 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::BoolFromI32 => results.push(format!("({} != 0)", operands[0])),
 
-            Instruction::FlagsLower { .. } => todo!("FlagsLower"),
+            Instruction::FlagsLower {
+                flags,
+                name: _,
+                ty: _,
+            } => {
+                if flags.flags.len() > 32 {
+                    results.push(format!(
+                        "(int)(((long){}) & uint.MaxValue)",
+                        operands[0].to_string()
+                    ));
+                    results.push(format!("((int)({})) >> 32", operands[0].to_string()));
+                } else {
+                    results.push(format!("(int){}", operands[0].to_string()));
+                }
+            }
 
-            Instruction::FlagsLift { .. } => todo!("FlagsLift"),
+            Instruction::FlagsLift { flags, name, ty } => {
+                let id_type = &self.gen.resolve.types[*ty];
+                let qualified_type_name = format!(
+                    "{}{}",
+                    self.gen.qualifier(true, id_type),
+                    name.to_string().to_upper_camel_case()
+                );
+                if flags.flags.len() > 32 {
+                    results.push(format!(
+                        "({})((long)({}) << 32 | (uint)({}))",
+                        qualified_type_name,
+                        operands[0].to_string(),
+                        operands[1].to_string()
+                    ));
+                } else {
+                    results.push(format!("({})({})", qualified_type_name, operands[0]))
+                }
+            }
 
             Instruction::RecordLower { .. } => todo!("RecordLower"),
             Instruction::RecordLift { .. } => todo!("RecordLift"),
