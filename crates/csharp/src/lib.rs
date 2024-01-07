@@ -1798,7 +1798,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 1 => uwriteln!(self.src, "return {};", operands[0]),
                 _ => {
                     let results = operands.join(", ");
-                    uwriteln!(self.src, "return ({results});")
+                    if self.gen.in_import {
+                        uwriteln!(self.src, "return Tuple.Create({results});")
+                    } else {
+                        uwriteln!(self.src, "return ({results});")
+                    }
                 }
             },
 
