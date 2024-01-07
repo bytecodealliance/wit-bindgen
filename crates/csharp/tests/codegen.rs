@@ -49,14 +49,12 @@ macro_rules! codegen_test {
                         "result-empty",
                         "return-resource-from-export",
                         "same-names5",
-                        "simple-functions",
                         "simple-http",
                         "small-anonymous",
                         "unused-import",
                         "use-across-interfaces",
                         "variants",
                         "worlds-with-types",
-                        "zero-size-tuple",
                         "go_params",
                     ]
                     .contains(&$name)

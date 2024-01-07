@@ -1063,7 +1063,7 @@ impl InterfaceGenerator<'_> {
                             String::new()
                         } else {
                             format!(
-                                "({})",
+                                "Tuple<{}>",
                                 tuple
                                     .types
                                     .iter()
@@ -1673,7 +1673,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                results.push(format!("({ops})"));
+                results.push(format!("Tuple.Create({ops})"));
             }
 
             Instruction::TupleLower { tuple, ty: _ } => {
