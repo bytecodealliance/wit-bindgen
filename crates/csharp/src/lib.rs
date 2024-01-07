@@ -625,7 +625,6 @@ impl InterfaceGenerator<'_> {
                 private unsafe struct ReturnArea
                 {{
                     public int GetS32(IntPtr ptr, int offset)
-                    public int GetS32(IntPtr ptr, int offset)
                     {{
                         var span = new Span<byte>((void*)ptr, {0});
 
@@ -943,7 +942,7 @@ impl InterfaceGenerator<'_> {
             self.csharp_interop_src,
             r#"
             [UnmanagedCallersOnly(EntryPoint = "{export_name}")]
-            public static {wasm_result_type} {interop_name}({wasm_params}) {{
+            unsafe public static {wasm_result_type} {interop_name}({wasm_params}) {{
                 {src}
             }}
             "#
@@ -1492,7 +1491,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
             Instruction::I32Load { offset } => {
                 if self.gen.in_import {
-                    results.push(format!("returnArea.GetS32(ptr, {offset})"))
+                    results.push(format!("returnArea.GetS32({}, {offset})", operands[0]))
                 } else {
                     results.push(format!("returnArea.GetS32({offset})"))
                 }
@@ -1514,7 +1513,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             Instruction::F64Load { offset } => results.push(format!("returnArea.GetF64({offset})")),
 
             Instruction::I32Store { offset } => {
-                uwriteln!(self.src, "returnArea.SetS32({}, {});", offset, operands[0])
+                if self.gen.in_import {
+                    uwriteln!(
+                        self.src,
+                        "returnArea.SetS32(ptr, {}, {});",
+                        offset,
+                        operands[0]
+                    )
+                } else {
+                    uwriteln!(self.src, "returnArea.SetS32({}, {});", offset, operands[0])
+                }
             }
             Instruction::I32Store8 { offset } => uwriteln!(
                 self.src,
@@ -1604,15 +1612,16 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("({ops})"));
             }
 
-            Instruction::TupleLower { tuple: _, ty } => {
+            Instruction::TupleLower { tuple, ty } => {
                 let ops = operands
                     .iter()
                     .map(|op| op.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                results.push(format!("({ops})"));
-                results.push(format!("({:?})", ty));
+                uwriteln!(self.src, "(var tmp0, var tmp1) = {ops};");
+                results.push(format!("(tmp0)"));
+                results.push(format!("(tmp1)"));
             }
 
             Instruction::VariantPayloadName => {
@@ -1756,25 +1765,18 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 let index = self.locals.tmp("index");
                 let list: String = self.locals.tmp("list");
 
-                //let ptr = self.locals.tmp("ptr");
-                //let buffer: String = self.locals.tmp("buffer");
-                //uwrite!(
-                //    self.src,
-                //    "
-                //    void* {buffer} = stackalloc int[{size} + {size} - 1];
-                //    var {ptr} = ((int){buffer}) + ({size} - 1) & -{size};
-                //    "
-                //);
+                let ptr = self.locals.tmp("ptr");
+                let buffer: String = self.locals.tmp("buffer");
 
                 uwrite!(
                     self.src,
                     "
+                    void* {buffer} = stackalloc int[{size} + {align} - 1];
+                    var {ptr} = ((int){buffer}) + ({align} - 1) & -{align};
                     var {list} = {op};
 
                     for (int {index} = 0; {index} < {list}.Count; ++{index}) {{
-                        
                         {ty} {block_element} = {list}[{index}];
-                        int {base} = ptr + ({index} * {size});
                         {body}
                     }}
                     "
@@ -1788,7 +1790,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 //    });
                 //}
 
-                results.push("ptr".to_owned());
+                results.push(format!("{ptr}"));
                 results.push(format!("{list}.Count"));
             }
 
@@ -1816,12 +1818,11 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                     self.src,
                     "
                     var {array} = new List<{ty}>({length});
-                    for (int {index} = 0; {index} < ({length}); ++{index}) {{
+                    for (int {index} = 0; {index} < {array}.Count; ++{index}) {{
                         int {base} = {address} + ({index} * {size});
                         {body}
                         {array}.Add({result});
                     }}
-                    //Memory.free(returnArea.GetS32({address}), ({length}) * {size}, {align});
                     "
                 );
 
