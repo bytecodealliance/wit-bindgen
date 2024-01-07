@@ -1612,7 +1612,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 results.push(format!("({ops})"));
             }
 
-            Instruction::TupleLower { tuple, ty } => {
+            Instruction::TupleLower { tuple: _, ty } => {
                 let ops = operands
                     .iter()
                     .map(|op| op.to_string())
