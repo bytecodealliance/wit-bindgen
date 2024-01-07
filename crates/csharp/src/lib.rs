@@ -1019,7 +1019,7 @@ impl InterfaceGenerator<'_> {
             .iter()
             .map(|(name, ty)| {
                 let ty = self.type_name(ty);
-
+                let name = name.to_csharp_ident();
                 format!("{ty} {name}")
             })
             .collect::<Vec<String>>()
@@ -1313,7 +1313,7 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
         uwrite!(
             self.src,
             "
-            public static class {name} {{
+            public class {name} {{
                 {fields}
 
                 public {name}({parameters}) {{
@@ -2360,7 +2360,8 @@ impl ToCSharpIdent for str {
             | "import" | "public" | "throws" | "case" | "enum" | "instanceof" | "return"
             | "transient" | "catch" | "extends" | "int" | "short" | "try" | "char" | "final"
             | "interface" | "static" | "void" | "class" | "finally" | "long" | "strictfp"
-            | "volatile" | "const" | "float" | "super" | "while" => format!("{self}_"),
+            | "volatile" | "const" | "float" | "super" | "while" | "extern" | "sizeof" | "type"
+            | "struct" => format!("@{self}"),
             _ => self.to_lower_camel_case(),
         }
     }

@@ -28,7 +28,6 @@ macro_rules! codegen_test {
                         "issue607",
                         "issue668",
                         "just-export",
-                        "keywords",
                         "lift-lower-foreign",
                         "lists",
                         "many-arguments",
