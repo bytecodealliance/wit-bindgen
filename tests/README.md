@@ -25,6 +25,12 @@ To run just `codegen` tests for a single language (replace rust with language of
 cargo test -p wit-bindgen-rust
 ```
 
+To run just `codegen` tests for a single language (replace rust with language of choice: `go`, `c`, `csharp`, etc.) and a single wit file (replace `flags` with whatever wit file should be tested):
+
+```
+cargo test -p wit-bindgen-rust -- flags
+```
+
 To run just `runtime` tests for a single language (replace rust with language of choice: `go`, `c`, `csharp`, etc.):
 
 ```bash
@@ -57,6 +63,7 @@ wasm and executed on hosts. The code compiled-to-wasm can be one of:
 * `wasm.rs` - compiled with Rust to WebAssembly
 * `wasm.c` - compiled with Clang
 * `wasm.java` - compiled with TeaVM-WASI
+* `wasm.cs` - compiled with NativeAOT and Mono
 
 Existence of these files indicates that the language should be supported for the
 test, and if a file is missing then it's skipped when running other tests. Each

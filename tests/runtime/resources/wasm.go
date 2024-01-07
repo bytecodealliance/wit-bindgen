@@ -69,6 +69,7 @@ func (e ExportsImpl) TestImports() Result[struct{}, string] {
 		panic("y.GetA() != 5")
 	}
 
+	y.Drop()
 	return Ok[struct{}, string](struct{}{})
 }
 

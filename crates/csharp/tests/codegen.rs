@@ -17,7 +17,6 @@ macro_rules! codegen_test {
                 |resolve, world, files| {
                     if [
                         "conventions",
-                        "flags",
                         "guest-name",
                         "import-and-export-resource",
                         "import-and-export-resource-alias",

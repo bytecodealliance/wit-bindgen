@@ -161,8 +161,8 @@ impl WorldGenerator for CSharp {
         let name = &format!("{}-world", resolve.worlds[world].name);
         let mut gen = self.interface(resolve, name, true);
 
-        for (_, func) in funcs {
-            gen.import(name, func);
+        for (import_module_name, func) in funcs {
+            gen.import(import_module_name, func);
         }
 
         gen.add_world_fragment();
@@ -363,14 +363,14 @@ impl WorldGenerator for CSharp {
     
                         private int GetS32(int offset)
                         {{
-                            ReadOnlySpan<byte> span = this;
+                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
 
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
                         
                         public void SetS32(int offset, int value)
                         {{
-                            Span<byte> span = this;
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
 
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
@@ -401,6 +401,8 @@ impl WorldGenerator for CSharp {
                     ",
                     self.return_area_size,
                     self.return_area_align,
+                    self.return_area_size,
+                    self.return_area_size
                 );
 
                 src.push_str(&ret_area_str);
@@ -416,40 +418,38 @@ impl WorldGenerator for CSharp {
         }
 
         src.push_str("\n");
-        src.push_str(
-            r#"
-                internal static class Intrinsics
-                {
-                    [UnmanagedCallersOnly(EntryPoint = "cabi_realloc")]
-                    internal static IntPtr cabi_realloc(IntPtr ptr, uint old_size, uint align, uint new_size)
-                    {
-                        if (new_size == 0)
-                        {
-                            if(old_size != 0)
-                            {
-                                Marshal.Release(ptr);
-                            }
-                            return new IntPtr((int)align);
-                        }
-                
-                        if (new_size > int.MaxValue)
-                        {
-                            throw new ArgumentException("Cannot allocate more that int.MaxValue", nameof(new_size));
-                        }
-                        
-                        if(old_size != 0)
-                        {
-                            return Marshal.ReAllocHGlobal(ptr, (int)new_size);
-                        }
 
-                        return Marshal.AllocHGlobal((int)new_size);
-                    }
-                }
-            "#,
-        );
         src.push_str("}\n");
 
         files.push(&format!("{name}.cs"), indent(&src).as_bytes());
+
+        let mut cabi_relloc_src = String::new();
+
+        cabi_relloc_src.push_str(
+            r#"
+                #include <stdlib.h>
+
+                /* Done in C so we can avoid initializing the dotnet runtime and hence WASI libc */
+                /* It would be preferable to do this in C# but the constrainst of cabi_realloc and the demands */
+                /* of WASI libc prevent us doing so. */
+                /* See https://github.com/bytecodealliance/wit-bindgen/issues/777  */
+                /* and https://github.com/WebAssembly/wasi-libc/issues/452 */
+                /* The component model `start` function might be an alternative to this depending on whether it 
+                /* has the same constraints as `cabi_realloc` */
+                __attribute__((__weak__, __export_name__("cabi_realloc")))
+                void *cabi_realloc(void *ptr, size_t old_size, size_t align, size_t new_size) {
+                    (void) old_size;
+                    if (new_size == 0) return (void*) align;
+                    void *ret = realloc(ptr, new_size);
+                    if (!ret) abort();
+                    return ret;
+                }
+            "#,
+        );
+        files.push(
+            &format!("{name}_cabi_realloc.c"),
+            indent(&cabi_relloc_src).as_bytes(),
+        );
 
         let generate_stub = |name: String, files: &mut Files, stubs: Stubs| {
             let stub_file_name = format!("{name}Impl");
@@ -503,6 +503,23 @@ impl WorldGenerator for CSharp {
                 .as_slice(),
         );
 
+        // TODO: remove when we switch to dotnet 9
+        let mut wasm_import_linakge_src = String::new();
+
+        wasm_import_linakge_src.push_str(
+            r#"
+            // temporarily add this attribute until it is available in dotnet 9
+            namespace System.Runtime.InteropServices
+            {
+                public class WasmImportLinkageAttribute : Attribute {}
+            }
+            "#,
+        );
+        files.push(
+            &format!("{snake}_wasm_import_linkage_attribute.cs"),
+            indent(&wasm_import_linakge_src).as_bytes(),
+        );
+
         for (name, interface_type_and_fragments) in &self.interface_fragments {
             let fragments = &interface_type_and_fragments.interface_fragments;
 
@@ -542,10 +559,11 @@ impl WorldGenerator for CSharp {
                 "// Generated by `wit-bindgen` {version}. DO NOT EDIT!
                 {CSHARP_IMPORTS}
 
-                namespace {namespace}.{name};
-
-                public static class {interface_name}Interop {{
-                    {body}
+                namespace {namespace}.{name}
+                {{
+                  public static class {interface_name}Interop {{
+                      {body}
+                  }}
                 }}
                 "
             );
@@ -573,8 +591,12 @@ impl InterfaceGenerator<'_> {
     fn qualifier(&self, when: bool, ty: &TypeDef) -> String {
         if let TypeOwner::Interface(id) = &ty.owner {
             if let Some(name) = self.gen.interface_names.get(id) {
-                if name != self.name {
-                    return format!("{}.", name);
+                let name_with_interface = format!(
+                    "{name}.I{}",
+                    CSharp::get_class_name_from_qualified_name(name.clone())
+                );
+                if name_with_interface != self.name {
+                    return format!("{}.", name_with_interface);
                 }
             }
         }
@@ -664,14 +686,14 @@ impl InterfaceGenerator<'_> {
     
                         private int GetS32(int offset)
                         {{
-                            ReadOnlySpan<byte> span = this;
+                            ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
 
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
                         
                         public void SetS32(int offset, int value)
                         {{
-                            Span<byte> span = this;
+                            Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
 
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
@@ -702,6 +724,8 @@ impl InterfaceGenerator<'_> {
                     ",
                 self.gen.return_area_size,
                 self.gen.return_area_align,
+                self.gen.return_area_size,
+                self.gen.return_area_size
             );
 
             self.csharp_interop_src.push_str(&ret_area_str);
@@ -716,7 +740,7 @@ impl InterfaceGenerator<'_> {
         });
     }
 
-    fn import(&mut self, _module: &String, func: &Function) {
+    fn import(&mut self, import_module_name: &str, func: &Function) {
         if func.kind != FunctionKind::Freestanding {
             todo!("resources");
         }
@@ -733,7 +757,7 @@ impl InterfaceGenerator<'_> {
             0 => "void".to_string(),
             1 => {
                 let ty = func.results.iter_types().next().unwrap();
-                self.type_name(ty)
+                self.type_name_with_qualifier(ty, true)
             }
             _ => {
                 let types = func
@@ -796,7 +820,7 @@ impl InterfaceGenerator<'_> {
             r#"
             internal static class {camel_name}WasmInterop
             {{
-                [DllImport("*", EntryPoint = "{import_name}")]
+                [DllImport("{import_module_name}", EntryPoint = "{import_name}"), WasmImportLinkage]
                 internal static extern {wasm_result_type} wasmImport{camel_name}({wasm_params});
             }}
             "#
@@ -1171,43 +1195,34 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
 
         let name = name.to_upper_camel_case();
 
-        let ty = match flags.repr() {
-            FlagsRepr::U8 => "byte",
-            FlagsRepr::U16 => "ushort",
-            FlagsRepr::U32(1) => "uint",
-            FlagsRepr::U32(2) => "ulong",
-            repr => todo!("flags {repr:?}"),
-        };
-
-        let flags = flags
+        let enum_elements = flags
             .flags
             .iter()
             .enumerate()
             .map(|(i, flag)| {
                 let flag_name = flag.name.to_shouty_snake_case();
                 let suffix = if matches!(flags.repr(), FlagsRepr::U32(2)) {
-                    "L"
+                    "UL"
                 } else {
                     ""
                 };
-                format!(
-                    "public static readonly {name} {flag_name} = new {name}(({ty}) (1{suffix} << {i}));"
-                )
+                format!("{flag_name} = 1{suffix} << {i},")
             })
             .collect::<Vec<_>>()
             .join("\n");
 
+        let enum_type = match flags.repr() {
+            FlagsRepr::U32(2) => ": ulong",
+            FlagsRepr::U16 => ": ushort",
+            FlagsRepr::U8 => ": byte",
+            _ => "",
+        };
+
         uwrite!(
             self.src,
             "
-            public static class {name} {{
-                public readonly {ty} value;
-
-                public {name}({ty} value) {{
-                    this.value = value;
-                }}
-
-                {flags}
+            public enum {name} {enum_type} {{
+                {enum_elements}
             }}
             "
         );
@@ -1440,8 +1455,13 @@ impl Bindgen for FunctionBindgen<'_, '_> {
                 }
                 .to_owned()
             })),
-
-            Instruction::I32Load { offset } => results.push(format!("returnArea.GetS32(ptr, {offset})")),
+            Instruction::I32Load { offset } => {
+                if self.gen.in_import {
+                    results.push(format!("returnArea.GetS32(ptr, {offset})"))
+                } else {
+                    results.push(format!("returnArea.GetS32({offset})"))
+                }
+            }
             Instruction::I32Load8U { offset } => {
                 results.push(format!("returnArea.GetU8({offset})"))
             }
@@ -1499,9 +1519,40 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
             Instruction::BoolFromI32 => results.push(format!("({} != 0)", operands[0])),
 
-            Instruction::FlagsLower { .. } => todo!("FlagsLower"),
+            Instruction::FlagsLower {
+                flags,
+                name: _,
+                ty: _,
+            } => {
+                if flags.flags.len() > 32 {
+                    results.push(format!(
+                        "(int)(((long){}) & uint.MaxValue)",
+                        operands[0].to_string()
+                    ));
+                    results.push(format!("((int)({})) >> 32", operands[0].to_string()));
+                } else {
+                    results.push(format!("(int){}", operands[0].to_string()));
+                }
+            }
 
-            Instruction::FlagsLift { .. } => todo!("FlagsLift"),
+            Instruction::FlagsLift { flags, name, ty } => {
+                let id_type = &self.gen.resolve.types[*ty];
+                let qualified_type_name = format!(
+                    "{}{}",
+                    self.gen.qualifier(true, id_type),
+                    name.to_string().to_upper_camel_case()
+                );
+                if flags.flags.len() > 32 {
+                    results.push(format!(
+                        "({})((long)({}) << 32 | (uint)({}))",
+                        qualified_type_name,
+                        operands[0].to_string(),
+                        operands[1].to_string()
+                    ));
+                } else {
+                    results.push(format!("({})({})", qualified_type_name, operands[0]))
+                }
+            }
 
             Instruction::RecordLower { .. } => todo!("RecordLower"),
             Instruction::RecordLift { .. } => todo!("RecordLift"),

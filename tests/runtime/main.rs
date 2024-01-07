@@ -2,14 +2,13 @@ use anyhow::{Context, Result};
 use heck::ToUpperCamelCase;
 
 use std::borrow::Cow;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
 use wasm_encoder::{Encode, Section};
-use wasmtime::component::{Component, Instance, Linker};
-use wasmtime::{Config, Engine, Store};
-use wasmtime_wasi::preview2::{Table, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime::component::{Component, Instance, Linker, ResourceTable};
+use wasmtime::{Config, Engine, Store, Table};
+use wasmtime_wasi::preview2::{WasiCtx, WasiCtxBuilder, WasiView};
 use wit_component::{ComponentEncoder, StringEncoding};
 use wit_parser::{Resolve, WorldId, WorldItem};
 
@@ -35,17 +34,18 @@ mod resources;
 mod smoke;
 mod strings;
 mod variants;
+mod versions;
 
 struct MyCtx {}
 
-struct Wasi<T: Send>(T, MyCtx, Table, WasiCtx);
+struct Wasi<T: Send>(T, MyCtx, ResourceTable, WasiCtx);
 
 // wasi trait
 impl<T: Send> WasiView for Wasi<T> {
-    fn table(&self) -> &Table {
+    fn table(&self) -> &ResourceTable {
         &self.2
     }
-    fn table_mut(&mut self) -> &mut Table {
+    fn table_mut(&mut self) -> &mut ResourceTable {
         &mut self.2
     }
     fn ctx(&self) -> &WasiCtx {
@@ -95,7 +95,7 @@ where
         add_to_linker(&mut linker)?;
         let state = MyCtx {};
 
-        let table = Table::new();
+        let table = ResourceTable::new();
         let wasi: WasiCtx = WasiCtxBuilder::new().inherit_stdout().args(&[""]).build();
 
         let data = Wasi(T::default(), state, table, wasi);
@@ -540,24 +540,6 @@ fn tests(name: &str, dir_name: &str) -> Result<Vec<PathBuf>> {
             let mut csproj =
                 wit_bindgen_csharp::CSProject::new(out_dir.clone(), &assembly_name, world_name);
             csproj.aot();
-
-            // Write the WasmImports for NativeAOT-LLVM.
-            // See https://github.com/dotnet/runtimelab/issues/2383
-
-            for world in &resolve.worlds {
-                for import in &world.1.imports {
-                    let module_name = resolve.name_world_key(import.0);
-                    match import.1 {
-                        WorldItem::Function(f) => csproj.add_import(&module_name, &f.name),
-                        WorldItem::Interface(id) => {
-                            for (_, f) in resolve.interfaces[*id].functions.iter() {
-                                csproj.add_import(&module_name, &f.name)
-                            }
-                        }
-                        WorldItem::Type(_) => {}
-                    }
-                }
-            }
 
             // Copy test file to target location to be included in compilation
             let file_name = path.file_name().unwrap();

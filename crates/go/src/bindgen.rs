@@ -361,7 +361,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                         {private_type_name}_mu.Unlock()
                                         {lower_name}_c := (*{c_typedef_target})(unsafe.Pointer(C.malloc(C.size_t(unsafe.Sizeof({c_typedef_target}{{}})))))
                                         {lower_name}_c.__handle = C.int32_t({private_type_name}_next_id)
-                                        {lower_name} := C.{ns}_{snake}_new({lower_name}_c) // pass the pointer directly"
+                                        {lower_name} := C.{ns}_{snake}_new({lower_name}_c) // pass the pointer directly
+                                        set{ty_name}OwningHandler({param}, int32({lower_name}.__handle))"
                                         );
                                 } else {
                                     // need to construct either an own or borrowed C handle type.
