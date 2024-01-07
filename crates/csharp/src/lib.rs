@@ -328,7 +328,7 @@ impl WorldGenerator for CSharp {
                 r#"
                 public static class InteropString
                 {
-                    public static IntPtr FromString(string input, out int length)
+                    internal static IntPtr FromString(string input, out int length)
                     {
                         var utf8Bytes = Encoding.UTF8.GetBytes(input);
                         length = utf8Bytes.Length;
@@ -362,28 +362,28 @@ impl WorldGenerator for CSharp {
                     {{
                         private byte buffer;
 
-                        public int GetS32(int offset)
+                        internal int GetS32(int offset)
                         {{
                             ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
                         
-                        public void SetS16(int offset, short value)
+                        internal void SetS16(int offset, short value)
                         {{
                             Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
-                        public void SetS32(int offset, int value)
+                        internal void SetS32(int offset, int value)
                         {{
                             Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {0});
 
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
-                        public void SetF32(int offset, float value)
+                        internal void SetF32(int offset, float value)
                         {{
                             Span<byte> span = this;
                             
@@ -398,7 +398,7 @@ impl WorldGenerator for CSharp {
                             }}
                         }}
 
-                        public unsafe string GetUTF8String(int p0, int p1)
+                        internal unsafe string GetUTF8String(int p0, int p1)
                         {{
                             return Encoding.UTF8.GetString((byte*)p0, p1);
                         }}
@@ -657,21 +657,21 @@ impl InterfaceGenerator<'_> {
                         BitConverter.TryWriteBytes(span.Slice(offset), value);
                     }}
 
-                    public void SetS32(IntPtr ptr, int offset, int value)
+                    internal void SetS32(IntPtr ptr, int offset, int value)
                     {{
                         var span = new Span<byte>((void*)ptr, {0});
 
                         BitConverter.TryWriteBytes(span.Slice(offset), value);
                     }}
 
-                    public void SetU32(IntPtr ptr, int offset, uint value)
+                    internal void SetU32(IntPtr ptr, int offset, uint value)
                     {{
                         var span = new Span<byte>((void*)ptr, {0});
 
                         BitConverter.TryWriteBytes(span.Slice(offset), value);
                     }}
 
-                    public void SetArray<T>(IntPtr ptr, int offset, T[] value, int length)
+                    internal void SetArray<T>(IntPtr ptr, int offset, T[] value, int length)
                     {{
                         var span = new Span<byte>((void*)ptr, {0});
 
@@ -681,7 +681,7 @@ impl InterfaceGenerator<'_> {
                         }}
                     }}
 
-                    unsafe public T[] GetArray<T>(IntPtr ptr, int offset, int length)
+                    unsafe internal T[] GetArray<T>(IntPtr ptr, int offset, int length)
                     {{
                         var span = new Span<byte>((void*)ptr, {0});
         
@@ -696,7 +696,7 @@ impl InterfaceGenerator<'_> {
                         return array;
                     }}
 
-                    public string GetUTF8String(IntPtr ptr)
+                    internal string GetUTF8String(IntPtr ptr)
                     {{
                         return Encoding.UTF8.GetString((byte*)GetS32(ptr, 0), GetS32(ptr, 4));
                     }}
@@ -735,7 +735,7 @@ impl InterfaceGenerator<'_> {
                     {{
                         private byte buffer;
     
-                        unsafe public T[] GetArray<T>(int offset, int length)
+                        unsafe internal T[] GetArray<T>(int offset, int length)
                         {{
                             Span<byte> span = this;
             
@@ -749,7 +749,7 @@ impl InterfaceGenerator<'_> {
                             return array;
                         }}
 
-                        unsafe public void SetArray<T>(int offset, T[] value, int length)
+                        unsafe internal void SetArray<T>(int offset, T[] value, int length)
                         {{
                             Span<byte> span = this;
                             byte[] buffer = new byte[length];
@@ -760,21 +760,21 @@ impl InterfaceGenerator<'_> {
                             }}
                         }}
 
-                        public int GetS32(int offset)
+                        internal int GetS32(int offset)
                         {{
                             ReadOnlySpan<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
 
                             return BitConverter.ToInt32(span.Slice(offset, 4));
                         }}
                         
-                        public void SetS32(int offset, int value)
+                        internal void SetS32(int offset, int value)
                         {{
                             Span<byte> span = MemoryMarshal.CreateSpan(ref buffer, {});
 
                             BitConverter.TryWriteBytes(span.Slice(offset), value);
                         }}
 
-                        public void SetF32(int offset, float value)
+                        internal void SetF32(int offset, float value)
                         {{
                             Span<byte> span = this;
                             
@@ -789,7 +789,7 @@ impl InterfaceGenerator<'_> {
                             }}
                         }}
 
-                        public unsafe string GetUTF8String(int p0, int p1)
+                        internal unsafe string GetUTF8String(int p0, int p1)
                         {{
                             return Encoding.UTF8.GetString((byte*)p0, p1);
                         }}
@@ -1059,10 +1059,11 @@ impl InterfaceGenerator<'_> {
                         let count = tuple.types.len();
                         self.gen.tuple_counts.insert(count);
 
-                        let params = if count == 0 {
-                            String::new()
-                        } else {
-                            format!(
+                        let params = match count {
+                            0 => String::new(),
+                            // Since there are only Tuples for 7 items.
+                            // See https://learn.microsoft.com/en-us/dotnet/api/system.tuple-8.-ctor?view=net-8.0
+                            1..=7 => format!(
                                 "Tuple<{}>",
                                 tuple
                                     .types
@@ -1070,7 +1071,16 @@ impl InterfaceGenerator<'_> {
                                     .map(|ty| self.type_name_boxed(ty, qualifier))
                                     .collect::<Vec<_>>()
                                     .join(", ")
-                            )
+                            ),
+                            _ => format!(
+                                "({})",
+                                tuple
+                                    .types
+                                    .iter()
+                                    .map(|ty| self.type_name_boxed(ty, qualifier))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ),
                         };
 
                         params
