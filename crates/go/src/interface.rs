@@ -1060,10 +1060,14 @@ impl<'a> wit_bindgen_core::InterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 // generate a typedef struct for export resource
                 let c_typedef_target = self.gen.c_type_names[&id].clone();
                 let ns = self.c_namespace_of_resource(id);
-                let snake = self.resolve.types[id].name.as_ref().unwrap();
+                let snake = self.resolve.types[id]
+                    .name
+                    .as_ref()
+                    .unwrap()
+                    .to_snake_case();
                 let mut own = ns.clone();
                 own.push_str("_own_");
-                own.push_str(snake);
+                own.push_str(&snake);
                 own.push_str("_t");
 
                 // generate a typedef struct for export resource
