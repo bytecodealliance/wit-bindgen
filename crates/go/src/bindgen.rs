@@ -342,7 +342,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 let snake = self.interface.resolve.types[resource]
                                     .name
                                     .as_ref()
-                                    .unwrap();
+                                    .unwrap()
+                                    .to_snake_case();
                                 // If the resource is exported, then `type_resource` have created a
                                 // internal bookkeeping map for this resource. We will need to
                                 // use the map to get the resource interface. Otherwise, this resource
@@ -361,7 +362,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                         {private_type_name}_mu.Unlock()
                                         {lower_name}_c := (*{c_typedef_target})(unsafe.Pointer(C.malloc(C.size_t(unsafe.Sizeof({c_typedef_target}{{}})))))
                                         {lower_name}_c.__handle = C.int32_t({private_type_name}_next_id)
-                                        {lower_name} := C.{ns}_{snake}_new({lower_name}_c) // pass the pointer directly"
+                                        {lower_name} := C.{ns}_{snake}_new({lower_name}_c) // pass the pointer directly
+                                        set{ty_name}OwningHandler({param}, int32({lower_name}.__handle))"
                                         );
                                 } else {
                                     // need to construct either an own or borrowed C handle type.
@@ -370,14 +372,14 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                         Own(_) => {
                                             let mut own = ns.clone();
                                             own.push_str("_own_");
-                                            own.push_str(snake);
+                                            own.push_str(&snake);
                                             own.push_str("_t");
                                             own
                                         }
                                         Borrow(_) => {
                                             let mut borrow = ns.clone();
                                             borrow.push_str("_borrow_");
-                                            borrow.push_str(snake);
+                                            borrow.push_str(&snake);
                                             borrow.push_str("_t");
                                             borrow
                                         }
@@ -638,7 +640,8 @@ impl<'a, 'b> FunctionBindgen<'a, 'b> {
                                 let snake = self.interface.resolve.types[resource]
                                     .name
                                     .as_ref()
-                                    .unwrap();
+                                    .unwrap()
+                                    .to_snake_case();
                                 if self.interface.gen.exported_resources.contains(&resource) {
                                     let resource_name: String =
                                         self.interface.get_ty(&Type::Id(resource)).to_snake_case();

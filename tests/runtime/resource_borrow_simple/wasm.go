@@ -14,6 +14,7 @@ type Simple struct {}
 func (e Simple) TestImports() {
 	r := NewR()
 	ResourceBorrowSimpleTest(r)
+	r.Drop()
 }
 
 func main() {}
